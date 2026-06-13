@@ -1,0 +1,19 @@
+{
+  "name": "libredash",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:css && npm run build:inspector",
+    "build:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css",
+    "build:inspector": "esbuild web/components/datastar-inspector/index.ts --bundle --format=esm --outfile=static/datastar-inspector.js",
+    "watch:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css --watch"
+  },
+  "devDependencies": {
+    "@primer/primitives": "11.9.0",
+    "@tailwindcss/cli": "4.3.1",
+    "esbuild": "^0.28.1",
+    "lit": "^3.3.1",
+    "tailwindcss": "4.3.1"
+  }
+}

@@ -1,0 +1,121 @@
+@import '@primer/primitives/dist/css/functional/themes/dark.css';
+@import '@primer/primitives/dist/css/functional/themes/light.css';
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@theme inline {
+  --color-primary: var(--fgColor-accent);
+  --color-on-primary: var(--button-primary-fgColor-rest);
+  --color-secondary: var(--fgColor-muted);
+  --color-on-surface-variant: var(--fgColor-muted);
+  --color-surface: var(--bgColor-default);
+  --color-container-low: var(--bgColor-muted);
+  --color-outline-variant: var(--borderColor-default);
+  --color-warning: var(--fgColor-attention);
+  --color-success: var(--fgColor-success);
+}
+
+@source '../internal/**/*.go';
+@source '../web/components/**/*.ts';
+@source './charts.js';
+
+@custom-variant dark (&:where([data-color-mode="dark"], [data-color-mode="dark"] *));
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+    --color-base-100: var(--bgColor-default);
+    --color-base-200: var(--bgColor-muted);
+    --color-base-300: var(--borderColor-default);
+    --color-base-content: var(--fgColor-default);
+    --color-primary: var(--fgColor-accent);
+    --color-primary-content: var(--button-primary-fgColor-rest);
+    --color-secondary: var(--fgColor-muted);
+    --color-secondary-content: var(--fgColor-default);
+    --color-accent: var(--fgColor-success);
+    --color-accent-content: var(--button-primary-fgColor-rest);
+    --color-neutral: var(--bgColor-emphasis);
+    --color-neutral-content: var(--fgColor-onEmphasis);
+    --color-info: var(--fgColor-accent);
+    --color-info-content: var(--button-primary-fgColor-rest);
+    --color-success: var(--fgColor-success);
+    --color-success-content: var(--button-primary-fgColor-rest);
+    --color-warning: var(--fgColor-attention);
+    --color-warning-content: var(--fgColor-default);
+    --color-error: var(--fgColor-danger);
+    --color-error-content: var(--button-primary-fgColor-rest);
+  }
+
+  html {
+    font-family: var(--font-sans);
+    background: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+
+  body {
+    min-width: 320px;
+    margin: 0;
+    background: var(--bgColor-default);
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+}
+
+@layer components {
+  datastar-inspector {
+    color: var(--fgColor-default);
+  }
+
+  datastar-inspector :where(.bg-surface, .bg-container-low) {
+    color: var(--fgColor-default);
+  }
+
+  datastar-inspector :where(.input) {
+    border-color: var(--borderColor-default);
+    background: var(--control-bgColor-rest);
+    color: var(--fgColor-default);
+  }
+
+  datastar-inspector :where(.input::placeholder) {
+    color: var(--fgColor-muted);
+  }
+
+  .status-band.has-error {
+    border-color: var(--borderColor-danger-emphasis);
+    background: var(--bgColor-danger-muted);
+  }
+
+  .pulse {
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: var(--fgColor-success);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--fgColor-success), transparent 45%);
+  }
+
+  .pulse.is-active {
+    animation: pulse 1.1s ease-out infinite;
+  }
+
+  @keyframes pulse {
+    to {
+      box-shadow: 0 0 0 14px color-mix(in srgb, var(--fgColor-success), transparent 100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
