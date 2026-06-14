@@ -31639,7 +31639,7 @@ var ModelGraph = class extends i4 {
   renderFlow() {
     if (!this.root) return;
     const graph = this.graph;
-    const nodes = graph.nodes.map((node) => toFlowNode(node, this.selectedID));
+    const nodes = graph.nodes.map((node) => toFlowNode(node, this.selectedID, graph.nodes));
     const edges = graph.edges.map(toFlowEdge);
     this.root.render(
       import_react3.default.createElement(index, {
@@ -31647,8 +31647,8 @@ var ModelGraph = class extends i4 {
         edges,
         nodeTypes: { modelNode: ModelNodeComponent },
         fitView: true,
-        fitViewOptions: { padding: 0.18 },
-        minZoom: 0.35,
+        fitViewOptions: { padding: 0.08 },
+        minZoom: 0.5,
         maxZoom: 1.4,
         nodesDraggable: true,
         nodesConnectable: false,
@@ -31692,8 +31692,8 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ModelGraph.prototype, "selectedID", 2);
-function toFlowNode(node, selectedID) {
-  const { x: x2, y: y3 } = positionFor(node);
+function toFlowNode(node, selectedID, nodes) {
+  const { x: x2, y: y3 } = positionFor(node, nodes);
   return {
     id: node.id,
     type: "modelNode",
@@ -31727,28 +31727,29 @@ function toFlowEdge(edge) {
     }
   };
 }
-function positionFor(node) {
-  const [kind, name] = node.id.split(":");
-  const index2 = stableIndex(name ?? node.id);
+function positionFor(node, nodes) {
+  const [kind] = node.id.split(":");
+  const index2 = rankWithinKind(node, nodes);
   switch (kind) {
     case "source":
-      return { x: 0, y: index2 % 7 * 150 };
+      return { x: 0, y: index2 * 116 };
     case "cache":
-      return { x: 360, y: 300 };
+      return { x: 300, y: 292 + index2 * 128 };
+    case "dataset":
+      return { x: 560, y: 292 + index2 * 128 };
     case "metric":
-      return { x: 740, y: index2 % 4 * 145 };
+      return { x: 820, y: index2 * 116 };
     case "visual":
-      return { x: 1040, y: index2 % 4 * 145 };
+      return { x: 1060, y: index2 * 116 };
     case "table":
-      return { x: 1040, y: 610 + index2 % 2 * 145 };
+      return { x: 1060, y: 620 + index2 * 116 };
     default:
-      return { x: 520, y: index2 * 120 };
+      return { x: 560, y: index2 * 116 };
   }
 }
-function stableIndex(value) {
-  let total = 0;
-  for (let i5 = 0; i5 < value.length; i5 += 1) total += value.charCodeAt(i5);
-  return total;
+function rankWithinKind(node, nodes) {
+  const [kind] = node.id.split(":");
+  return nodes.filter((candidate) => candidate.id.split(":")[0] === kind).findIndex((candidate) => candidate.id === node.id);
 }
 function ModelNodeComponent({ data }) {
   const kind = data.kind;
@@ -31783,6 +31784,7 @@ function nodeStyle(kind) {
   const palette = {
     source: ["var(--data-blue-color-muted)", "var(--data-blue-color-emphasis)", "var(--borderColor-default)"],
     cache: ["var(--data-green-color-muted)", "var(--data-green-color-emphasis)", "var(--borderColor-success-muted)"],
+    dataset: ["var(--data-auburn-color-muted)", "var(--data-auburn-color-emphasis)", "var(--borderColor-attention-muted)"],
     metric: ["var(--data-yellow-color-muted)", "var(--data-yellow-color-emphasis)", "var(--borderColor-attention-muted)"],
     visual: ["var(--data-purple-color-muted)", "var(--data-purple-color-emphasis)", "var(--borderColor-accent-muted)"],
     report_table: ["var(--data-coral-color-muted)", "var(--data-coral-color-emphasis)", "var(--borderColor-default)"]
@@ -31798,6 +31800,8 @@ function nodeColor(kind) {
   switch (kind) {
     case "cache":
       return "var(--data-green-color-emphasis)";
+    case "dataset":
+      return "var(--data-auburn-color-emphasis)";
     case "metric":
       return "var(--data-yellow-color-emphasis)";
     case "visual":
@@ -31814,6 +31818,8 @@ function kindLabel(kind) {
       return "Source table";
     case "cache":
       return "DuckDB cache";
+    case "dataset":
+      return "Semantic dataset";
     case "metric":
       return "Metric";
     case "visual":

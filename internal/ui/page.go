@@ -190,10 +190,11 @@ func initialSignals(dataDir, clientID string) map[string]any {
 			},
 		},
 		"charts": map[string]any{
-			"revenue":    chartSignal("revenue", "area", "Revenue by month", "R$", "purchase_month"),
-			"orders":     chartSignal("orders", "donut", "Orders by status", "orders", "status"),
-			"categories": chartSignal("categories", "bar", "Top product categories", "R$", "category"),
-			"delivery":   chartSignal("delivery", "bar", "Delivery speed", "orders", "delivery_bucket"),
+			"revenue":                chartSignal("revenue", "area", "Revenue by month", "R$", "purchase_month", []string{"purchase_month"}, "revenue", ""),
+			"orders":                 chartSignal("orders", "donut", "Orders by status", "orders", "status", []string{"status"}, "order_count", ""),
+			"orders_by_month_status": chartSignal("orders_by_month_status", "column", "Orders by month and status", "orders", "purchase_month", []string{"purchase_month"}, "order_count", "status"),
+			"categories":             chartSignal("categories", "bar", "Top product categories", "R$", "category", []string{"category"}, "revenue", ""),
+			"delivery":               chartSignal("delivery", "bar", "Delivery speed", "orders", "delivery_bucket", []string{"delivery_bucket"}, "order_count", ""),
 		},
 		"kpis": []any{},
 		"status": map[string]any{
@@ -206,16 +207,23 @@ func initialSignals(dataDir, clientID string) map[string]any {
 	}
 }
 
-func chartSignal(id, chartType, title, unit, field string) map[string]any {
+func chartSignal(id, chartType, title, unit, field string, dimensions []string, measure, series string) map[string]any {
+	seriesList := []string{}
+	if series != "" {
+		seriesList = append(seriesList, series)
+	}
 	return map[string]any{
-		"version":   1,
-		"id":        id,
-		"type":      chartType,
-		"title":     title,
-		"unit":      unit,
-		"field":     field,
-		"selection": []any{},
-		"data":      []any{},
+		"version":    2,
+		"id":         id,
+		"type":       chartType,
+		"title":      title,
+		"unit":       unit,
+		"field":      field,
+		"dimensions": dimensions,
+		"measure":    measure,
+		"series":     seriesList,
+		"selection":  []any{},
+		"data":       []any{},
 	}
 }
 
@@ -413,12 +421,14 @@ func filtersPane() g.Node {
 	return h.Aside(g.Attr("slot", "filters"), h.Class("filters-pane"), h.Aria("label", "Report filters"),
 		h.Div(h.Class("pane-header"),
 			h.H2(h.Class("pane-title"), g.Text("Filters")),
+			h.Span(h.Class("filter-count"), ds.Text("`${"+activeFilterCountExpr()+"} active`")),
 		),
 		filters(),
 	)
 }
 
 func filters() g.Node {
+	activeCount := activeFilterCountExpr()
 	return h.Form(
 		h.ID("filters"),
 		h.Class("filter-form"),
@@ -464,6 +474,18 @@ func filters() g.Node {
 				h.Span(g.Text("Clear")),
 			),
 		),
+		h.Div(
+			h.Class("filter-summary"),
+			h.Span(ds.Text("`${"+activeCount+"} total filter${("+activeCount+") === 1 ? '' : 's'} applied`")),
+			h.Button(
+				h.Type("button"),
+				h.Class("reset-filters-button"),
+				ds.On("click", "$filters.dateRange = 'all'; $filters.state = 'all'; $filters.category = ''; $filters.visualSelections = []; $tableCommand.offset = 0; @post('/commands/reset-filters')"),
+				ds.Attr("disabled", "$status.loading || ("+activeCount+") === 0"),
+				lucide.RotateCcw(iconAttrs()),
+				h.Span(g.Text("Reset")),
+			),
+		),
 		h.Button(
 			h.Type("button"),
 			h.Class("refresh-button"),
@@ -473,6 +495,10 @@ func filters() g.Node {
 			h.Span(g.Text("Refresh")),
 		),
 	)
+}
+
+func activeFilterCountExpr() string {
+	return "($filters.dateRange !== 'all' ? 1 : 0) + ($filters.state !== 'all' ? 1 : 0) + ((($filters.category || '').trim() !== '') ? 1 : 0) + ($filters.visualSelections ? $filters.visualSelections.length : 0)"
 }
 
 func filterLabel(label string) g.Node {

@@ -102,85 +102,170 @@ relationships:
     cardinality: many_to_one
     active: true
 
-metrics:
+datasets:
+  orders:
+    source: orders_enriched
+    dimensions:
+      purchase_month:
+        label: Purchase month
+        expr: purchase_month
+      purchase_timestamp:
+        label: Purchase timestamp
+        expr: purchase_timestamp
+      purchase_date:
+        label: Purchase date
+        expr: purchase_date
+      status:
+        label: Status
+        expr: status
+      state:
+        label: State
+        expr: state
+      category:
+        label: Category
+        expr: category
+      delivery_bucket:
+        label: Delivery speed
+        expr: delivery_bucket
+        where: delivery_bucket IS NOT NULL
+        order_expr: MIN(e.delivery_days)
+    measures:
+      order_count:
+        label: Orders
+        aggregate: count_distinct
+        column: order_id
+        unit: orders
+        format: integer
+      revenue:
+        label: Revenue
+        aggregate: sum
+        column: revenue
+        unit: R$
+        format: currency
+      aov:
+        label: AOV
+        aggregate: expression
+        expression: CASE WHEN COUNT(DISTINCT e.order_id) = 0 THEN 0 ELSE SUM(e.revenue) / COUNT(DISTINCT e.order_id) END
+        unit: R$
+        format: currency
+      review_score:
+        label: Review
+        aggregate: avg
+        column: review_score
+        format: decimal
+
+kpis:
   total_orders:
     title: Orders
-    source: orders_enriched
-    aggregate: count_distinct
-    column: order_id
+    dataset: orders
+    measure: order_count
     note: Filtered order count
     tone: ink
-    format: integer
   revenue:
     title: Revenue
-    source: orders_enriched
-    aggregate: sum
-    column: revenue
+    dataset: orders
+    measure: revenue
     note: Cached payment value
     tone: green
-    format: currency
   aov:
     title: AOV
-    source: orders_enriched
-    aggregate: expression
-    expression: CASE WHEN COUNT(DISTINCT order_id) = 0 THEN 0 ELSE SUM(revenue) / COUNT(DISTINCT order_id) END
+    dataset: orders
+    measure: aov
     note: Revenue per order
     tone: amber
-    format: currency
   review:
     title: Review
-    source: orders_enriched
-    aggregate: avg
-    column: review_score
+    dataset: orders
+    measure: review_score
     note: Average score
     tone: coral
-    format: decimal
 
 visuals:
   revenue:
     title: Revenue by month
     type: area
-    unit: R$
-    source: orders_enriched
-    label: purchase_month
-    aggregate: sum
-    value: revenue
-    order_by: purchase_month ASC
-    limit: 30
+    dataset: orders
+    query:
+      dimensions: [purchase_month]
+      measures: [revenue]
+      sort:
+        - field: purchase_month
+          direction: asc
+      limit: 30
+    interaction:
+      field: purchase_month
+      targets:
+        visuals: [orders, categories, delivery]
+        tables: [orders]
   orders:
     title: Orders by status
     type: donut
-    unit: orders
-    source: orders_enriched
-    label: status
-    aggregate: count_distinct
-    value: order_id
-    order_by: value DESC
+    dataset: orders
+    query:
+      dimensions: [status]
+      measures: [order_count]
+      sort:
+        - field: value
+          direction: desc
+    interaction:
+      field: status
+      targets:
+        visuals: [revenue, categories, delivery]
+        tables: [orders]
+  orders_by_month_status:
+    title: Orders by month and status
+    type: column
+    stacked: true
+    dataset: orders
+    query:
+      dimensions: [purchase_month]
+      series: status
+      measures: [order_count]
+      sort:
+        - field: purchase_month
+          direction: asc
+      limit: 40
+    interaction:
+      field: purchase_month
+      targets:
+        visuals: [orders, categories, delivery]
+        tables: [orders]
   categories:
     title: Top product categories
     type: bar
-    unit: R$
-    source: orders_enriched
-    label: category
-    aggregate: sum
-    value: revenue
-    order_by: value DESC
-    limit: 10
+    dataset: orders
+    query:
+      dimensions: [category]
+      measures: [revenue]
+      sort:
+        - field: value
+          direction: desc
+      limit: 10
+    interaction:
+      field: category
+      targets:
+        visuals: [revenue, orders, delivery]
+        tables: [orders]
   delivery:
     title: Delivery speed
     type: bar
-    unit: orders
-    source: orders_enriched
-    label: delivery_bucket
-    aggregate: count
-    value: order_id
-    where: delivery_bucket IS NOT NULL
-    order_by: MIN(delivery_days) ASC
+    dataset: orders
+    query:
+      dimensions: [delivery_bucket]
+      measures: [order_count]
+      sort:
+        - field: delivery_bucket
+          direction: asc
+    interaction:
+      field: delivery_bucket
+      targets:
+        visuals: [revenue, orders, categories]
+        tables: [orders]
 
 tables:
   orders:
     title: Orders
-    source: orders_enriched
+    dataset: orders
     default_sort:
       key: purchase_date
       direction: desc
@@ -297,8 +382,8 @@ pages:
         width: 650
         height: 300
       - id: orders
-        kind: bar_chart
-        visual: orders
+        kind: column_chart
+        visual: orders_by_month_status
         x: 682
         y: 250
         width: 668

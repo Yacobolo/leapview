@@ -106,8 +106,8 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := selectedPatch.KPIs[0].Value; got != "1" {
-		t.Fatalf("selected orders KPI = %q, want 1", got)
+	if got := selectedPatch.KPIs[0].Value; got != "2" {
+		t.Fatalf("selected orders KPI = %q, want 2", got)
 	}
 	if len(selectedPatch.Charts["orders"].Data) != 2 {
 		t.Fatalf("orders chart points with self-selection = %d, want 2", len(selectedPatch.Charts["orders"].Data))
@@ -117,6 +117,15 @@ relogios_presentes,watches_gifts
 	}
 	if got := selectedPatch.Charts["categories"].Data[0].Label; got != "health_beauty" {
 		t.Fatalf("category chart under status selection = %q, want health_beauty", got)
+	}
+	if got := selectedPatch.Charts["revenue"].Data[0].Series; got != "" {
+		t.Fatalf("single-series chart row series = %q, want empty", got)
+	}
+	if got := selectedPatch.Charts["orders_by_month_status"].Data[0].Series; got == "" {
+		t.Fatal("multi-series chart row series is empty")
+	}
+	if len(selectedPatch.Charts["orders_by_month_status"].Data) != 2 {
+		t.Fatalf("non-target multi-series chart points under status selection = %d, want 2", len(selectedPatch.Charts["orders_by_month_status"].Data))
 	}
 
 	table, err := metrics.QueryTable(context.Background(), dashboard.Filters{}, dashboard.TableRequest{
@@ -136,6 +145,18 @@ relogios_presentes,watches_gifts
 	}
 	if got := table.Rows[0]["order_id"]; got != "o2" {
 		t.Fatalf("first table order = %v, want o2", got)
+	}
+
+	filteredTable, err := metrics.QueryTable(context.Background(), dashboard.Filters{
+		VisualSelections: []dashboard.VisualSelection{
+			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
+		},
+	}, dashboard.TableRequest{Table: "orders", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filteredTable.TotalRows != 1 {
+		t.Fatalf("targeted table total rows = %d, want 1", filteredTable.TotalRows)
 	}
 
 	if err := metrics.RefreshCache(context.Background()); err != nil {

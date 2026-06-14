@@ -83139,6 +83139,10 @@ var EChartVisual = class extends i4 {
       title: chart.title || this.chartTitle,
       unit: chart.unit ?? this.unit,
       field: chart.field || this.field,
+      dimensions: chart.dimensions ?? [],
+      measure: chart.measure ?? "",
+      series: chart.series ?? [],
+      stacked: chart.stacked ?? false,
       selection: chart.selection ?? this.selection ?? [],
       data: chart.data ?? this.data ?? [],
       options: chart.options ?? {}
@@ -83307,7 +83311,6 @@ function buildOption(payload, tokens2) {
       opacity: hasSelection && !selected.has(point.label) ? 0.35 : 1
     }
   }));
-  const dataset = [["label", "value"], ...data.map((point) => [point.label, point.value])];
   const base2 = {
     backgroundColor: "transparent",
     color: tokens2.palette,
@@ -83315,7 +83318,7 @@ function buildOption(payload, tokens2) {
     animationDuration: 220,
     animationDurationUpdate: 260,
     tooltip: {
-      trigger: type === "line" || type === "area" || type === "bar" || type === "scatter" ? "axis" : "item",
+      trigger: type === "line" || type === "area" || type === "bar" || type === "column" || type === "scatter" ? "axis" : "item",
       valueFormatter: (value) => formatValue(Number(value), payload.unit),
       borderColor: tokens2.border,
       backgroundColor: tokens2.surface,
@@ -83422,45 +83425,53 @@ function buildOption(payload, tokens2) {
   }
   const horizontal = type === "bar";
   const seriesType2 = type === "area" ? "line" : type === "column" ? "bar" : type;
+  const labels = unique(data.map((point) => point.label));
+  const seriesNames = unique(data.map((point) => point.series || payload.title || "Value"));
+  const multiSeries = seriesNames.length > 1 || data.some((point) => point.series);
   return {
     ...base2,
-    dataset: { source: dataset },
+    yAxis: horizontal ? {
+      ...axis("category", tokens2),
+      data: labels,
+      inverse: true,
+      axisLabel: { color: tokens2.text, fontWeight: 750, fontSize: 10 }
+    } : {
+      ...axis("value", tokens2)
+    },
     xAxis: horizontal ? axis("value", tokens2) : {
       ...axis("category", tokens2),
+      data: labels,
       axisLabel: {
         color: tokens2.muted,
         fontWeight: 700,
         fontSize: 10,
-        interval: Math.ceil(data.length / 6)
+        interval: Math.ceil(labels.length / 6)
       }
     },
-    yAxis: horizontal ? {
-      ...axis("category", tokens2),
-      inverse: true,
-      axisLabel: { color: tokens2.text, fontWeight: 750, fontSize: 10 }
-    } : axis("value", tokens2),
-    series: [
-      {
-        id: payload.id || "chart",
-        name: payload.title,
-        type: seriesType2,
-        encode: horizontal ? { y: "label", x: "value" } : { x: "label", y: "value" },
-        datasetIndex: 0,
-        smooth: type === "line" || type === "area",
-        areaStyle: type === "area" ? { color: tokens2.fill, opacity: 0.7 } : void 0,
-        symbolSize: type === "scatter" ? 9 : 7,
-        barMaxWidth: 18,
-        itemStyle: {
-          color: (params) => {
-            const point = data[params.dataIndex];
-            const isSelected = selected.has(params.name || point?.label);
-            return hasSelection && !isSelected ? tokens2.dimmed : tokens2.palette[params.dataIndex % tokens2.palette.length];
+    series: seriesNames.map((seriesName, seriesIndex) => ({
+      id: `${payload.id || "chart"}:${seriesName}`,
+      name: multiSeries ? seriesName : payload.title,
+      type: seriesType2,
+      stack: payload.stacked ? payload.id || "chart" : void 0,
+      smooth: type === "line" || type === "area",
+      areaStyle: type === "area" ? { color: colorWithAlpha(tokens2.palette[seriesIndex % tokens2.palette.length], 0.24) } : void 0,
+      symbolSize: type === "scatter" ? 9 : 7,
+      barMaxWidth: 18,
+      data: labels.map((label, labelIndex) => {
+        const point = data.find((candidate) => candidate.label === label && (candidate.series || payload.title || "Value") === seriesName);
+        const isSelected = selected.has(label);
+        return {
+          name: label,
+          value: point?.value ?? 0,
+          itemStyle: {
+            color: hasSelection && !isSelected ? tokens2.dimmed : tokens2.palette[(multiSeries ? seriesIndex : labelIndex) % tokens2.palette.length],
+            opacity: hasSelection && !isSelected ? 0.35 : 1
           }
-        },
-        lineStyle: { color: tokens2.palette[0], width: 2.5 },
-        universalTransition: true
-      }
-    ]
+        };
+      }),
+      lineStyle: { color: tokens2.palette[seriesIndex % tokens2.palette.length], width: 2.5 },
+      universalTransition: true
+    }))
   };
 }
 function axis(type, tokens2) {
@@ -83492,6 +83503,18 @@ function stylesFor(element) {
       value("--ld-chart-6", "#bf3989")
     ]
   };
+}
+function unique(values) {
+  return [...new Set(values)];
+}
+function colorWithAlpha(color3, alpha) {
+  if (color3.startsWith("#") && color3.length === 7) {
+    const r5 = Number.parseInt(color3.slice(1, 3), 16);
+    const g2 = Number.parseInt(color3.slice(3, 5), 16);
+    const b3 = Number.parseInt(color3.slice(5, 7), 16);
+    return `rgba(${r5}, ${g2}, ${b3}, ${alpha})`;
+  }
+  return color3;
 }
 function normalizeType(type) {
   switch (type) {

@@ -163,7 +163,7 @@ func (m *DuckDBMetrics) QueryTable(ctx context.Context, filters dashboard.Filter
 		return dashboard.EmptyTable(request, fmt.Errorf("unknown table %q", request.Table)), nil
 	}
 
-	totalRows, err := m.countRows(ctx, tableModel.Source, filters)
+	totalRows, err := m.countRows(ctx, tableModel.Dataset, filters, "table", request.Table)
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
@@ -258,36 +258,48 @@ func (m *DuckDBMetrics) materializeCache(ctx context.Context) error {
 
 func (m *DuckDBMetrics) kpis(ctx context.Context, filters dashboard.Filters) ([]dashboard.KPI, error) {
 	keys := []string{"total_orders", "revenue", "aov", "review"}
+	seen := map[string]struct{}{}
+	for _, key := range keys {
+		seen[key] = struct{}{}
+	}
+	for _, key := range sortedKeys(m.model.KPIs) {
+		if _, ok := seen[key]; !ok {
+			keys = append(keys, key)
+		}
+	}
 	kpis := make([]dashboard.KPI, 0, len(keys))
 	for _, key := range keys {
-		metric, ok := m.model.Metrics[key]
+		kpi, ok := m.model.KPIs[key]
 		if !ok {
 			continue
 		}
-		value, err := m.metricValue(ctx, metric, filters)
+		value, err := m.kpiValue(ctx, kpi, filters)
 		if err != nil {
 			return nil, err
 		}
+		measure := m.model.Datasets[kpi.Dataset].Measures[kpi.Measure]
 		kpis = append(kpis, dashboard.KPI{
-			Label: metric.Title,
-			Value: formatMetric(value, metric.Format),
-			Note:  metric.Note,
-			Tone:  metric.Tone,
+			Label: kpi.Title,
+			Value: formatMetric(value, measure.Format),
+			Note:  kpi.Note,
+			Tone:  kpi.Tone,
 		})
 	}
 	return kpis, nil
 }
 
-func (m *DuckDBMetrics) metricValue(ctx context.Context, metric semantic.Metric, filters dashboard.Filters) (float64, error) {
-	source, err := cacheSource(metric.Source)
+func (m *DuckDBMetrics) kpiValue(ctx context.Context, kpi semantic.KPI, filters dashboard.Filters) (float64, error) {
+	source, err := m.datasetSource(kpi.Dataset)
 	if err != nil {
 		return 0, err
 	}
-	expr, err := metricAggregateExpr(metric)
+	dataset := m.model.Datasets[kpi.Dataset]
+	measure := dataset.Measures[kpi.Measure]
+	expr, err := measureAggregateExpr(measure)
 	if err != nil {
 		return 0, err
 	}
-	where, args := filterWhere("e", filters, "")
+	where, args := m.filterWhere("e", kpi.Dataset, filters, "kpi", kpi.Measure)
 	query := fmt.Sprintf("SELECT COALESCE(%s, 0) FROM %s e WHERE %s", expr, source, where)
 
 	var value float64
@@ -310,51 +322,70 @@ func (m *DuckDBMetrics) charts(ctx context.Context, filters dashboard.Filters) (
 		if err != nil {
 			return nil, err
 		}
+		dataset := m.model.Datasets[visual.Dataset]
+		measureName := visual.Query.Measures[0]
+		measure := dataset.Measures[measureName]
+		series := []string{}
+		if visual.Query.Series != "" {
+			series = append(series, visual.Query.Series)
+		}
 		charts[key] = dashboard.Chart{
-			Version:   1,
-			ID:        key,
-			Type:      chartType(visual),
-			Title:     visual.Title,
-			Unit:      visual.Unit,
-			Field:     visualField(visual),
-			Selection: selectedValues(filters, key),
-			Data:      points,
+			Version:    2,
+			ID:         key,
+			Type:       visual.Type,
+			Title:      visual.Title,
+			Unit:       measure.Unit,
+			Field:      visual.Interaction.Field,
+			Dimensions: append([]string{}, visual.Query.Dimensions...),
+			Measure:    measureName,
+			Series:     series,
+			Stacked:    visual.Stacked,
+			Selection:  selectedValues(filters, key),
+			Data:       points,
 		}
 	}
 	return charts, nil
 }
 
 func (m *DuckDBMetrics) visualPoints(ctx context.Context, visualID string, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Point, error) {
-	source, err := cacheSource(visual.Source)
+	source, err := m.datasetSource(visual.Dataset)
 	if err != nil {
 		return nil, err
 	}
-	labelExpr, err := labelExpression(visual)
+	dataset := m.model.Datasets[visual.Dataset]
+	labelDimension := visual.Query.Dimensions[0]
+	labelExpr := dimensionExpression(dataset.Dimensions[labelDimension], "e")
+	measureName := visual.Query.Measures[0]
+	valueExpr, err := measureAggregateExpr(dataset.Measures[measureName])
 	if err != nil {
 		return nil, err
 	}
-	valueExpr, err := visualAggregateExpr(visual)
-	if err != nil {
-		return nil, err
+	seriesExpr := "''"
+	groupBy := []string{"label"}
+	if visual.Query.Series != "" {
+		seriesExpr = dimensionExpression(dataset.Dimensions[visual.Query.Series], "e")
+		groupBy = append(groupBy, "series")
 	}
 
-	where, args := filterWhere("e", filters, visualID)
-	if visual.Where != "" {
-		where = fmt.Sprintf("(%s) AND (%s)", where, visual.Where)
+	where, args := m.filterWhere("e", visual.Dataset, filters, "visual", visualID)
+	for _, dimensionName := range append(append([]string{}, visual.Query.Dimensions...), visual.Query.Series) {
+		if dimensionName == "" {
+			continue
+		}
+		if dimension := dataset.Dimensions[dimensionName]; dimension.Where != "" {
+			where = fmt.Sprintf("(%s) AND (%s)", where, dimensionWhere(dimension, "e"))
+		}
 	}
 
-	orderBy := visual.OrderBy
-	if orderBy == "" {
-		orderBy = "label ASC"
-	}
+	orderBy := m.visualOrderBy(visual)
 	query := fmt.Sprintf(`
-SELECT %s AS label, %s AS value
+SELECT %s AS label, %s AS series, %s AS value
 FROM %s e
 WHERE %s
-GROUP BY label
-ORDER BY %s`, labelExpr, valueExpr, source, where, orderBy)
-	if visual.Limit > 0 {
-		query += fmt.Sprintf("\nLIMIT %d", visual.Limit)
+GROUP BY %s
+ORDER BY %s`, labelExpr, seriesExpr, valueExpr, source, where, strings.Join(groupBy, ", "), orderBy)
+	if visual.Query.Limit > 0 {
+		query += fmt.Sprintf("\nLIMIT %d", visual.Query.Limit)
 	}
 
 	points, err := m.queryPoints(ctx, query, args...)
@@ -375,21 +406,22 @@ func (m *DuckDBMetrics) queryPoints(ctx context.Context, query string, args ...a
 	points := []dashboard.Point{}
 	for rows.Next() {
 		var label string
+		var series string
 		var value float64
-		if err := rows.Scan(&label, &value); err != nil {
+		if err := rows.Scan(&label, &series, &value); err != nil {
 			return nil, err
 		}
-		points = append(points, dashboard.Point{Label: label, Value: round(value)})
+		points = append(points, dashboard.Point{Label: label, Series: series, Value: round(value)})
 	}
 	return points, rows.Err()
 }
 
-func (m *DuckDBMetrics) countRows(ctx context.Context, sourceName string, filters dashboard.Filters) (int, error) {
-	source, err := cacheSource(sourceName)
+func (m *DuckDBMetrics) countRows(ctx context.Context, datasetName string, filters dashboard.Filters, targetKind, targetID string) (int, error) {
+	source, err := m.datasetSource(datasetName)
 	if err != nil {
 		return 0, err
 	}
-	where, args := filterWhere("e", filters, "")
+	where, args := m.filterWhere("e", datasetName, filters, targetKind, targetID)
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s e WHERE %s", source, where)
 
 	var total int
@@ -400,11 +432,11 @@ func (m *DuckDBMetrics) countRows(ctx context.Context, sourceName string, filter
 }
 
 func (m *DuckDBMetrics) tableRows(ctx context.Context, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]map[string]any, error) {
-	source, err := cacheSource(table.Source)
+	source, err := m.datasetSource(table.Dataset)
 	if err != nil {
 		return nil, err
 	}
-	where, args := filterWhere("e", filters, "")
+	where, args := m.filterWhere("e", table.Dataset, filters, "table", request.Table)
 	sortExpr := tableSortExpr(table, request.Sort.Key)
 	direction := "DESC"
 	if request.Sort.Direction == "asc" {
@@ -453,72 +485,33 @@ LIMIT ? OFFSET ?`, strings.Join(selects, ", "), source, where, sortExpr, directi
 	return result, rows.Err()
 }
 
-func metricAggregateExpr(metric semantic.Metric) (string, error) {
-	switch metric.Aggregate {
+func measureAggregateExpr(measure semantic.Measure) (string, error) {
+	switch measure.Aggregate {
 	case "count":
 		return "COUNT(*)", nil
 	case "count_distinct":
-		if err := validateIdentifier(metric.Column); err != nil {
+		if err := validateIdentifier(measure.Column); err != nil {
 			return "", err
 		}
-		return "COUNT(DISTINCT e." + metric.Column + ")", nil
+		return "COUNT(DISTINCT e." + measure.Column + ")", nil
 	case "sum":
-		if err := validateIdentifier(metric.Column); err != nil {
+		if err := validateIdentifier(measure.Column); err != nil {
 			return "", err
 		}
-		return "SUM(e." + metric.Column + ")", nil
+		return "SUM(e." + measure.Column + ")", nil
 	case "avg":
-		if err := validateIdentifier(metric.Column); err != nil {
+		if err := validateIdentifier(measure.Column); err != nil {
 			return "", err
 		}
-		return "AVG(e." + metric.Column + ")", nil
+		return "AVG(e." + measure.Column + ")", nil
 	case "expression":
-		if metric.Expression == "" {
-			return "", fmt.Errorf("metric %q is missing expression", metric.Title)
+		if measure.Expression == "" {
+			return "", fmt.Errorf("measure %q is missing expression", measure.Label)
 		}
-		return metric.Expression, nil
+		return measure.Expression, nil
 	default:
-		return "", fmt.Errorf("unsupported metric aggregate %q", metric.Aggregate)
+		return "", fmt.Errorf("unsupported measure aggregate %q", measure.Aggregate)
 	}
-}
-
-func visualAggregateExpr(visual semantic.Visual) (string, error) {
-	switch visual.Aggregate {
-	case "count":
-		return "COUNT(*)", nil
-	case "count_distinct":
-		if err := validateIdentifier(visual.Value); err != nil {
-			return "", err
-		}
-		return "COUNT(DISTINCT e." + visual.Value + ")", nil
-	case "sum":
-		if err := validateIdentifier(visual.Value); err != nil {
-			return "", err
-		}
-		return "SUM(e." + visual.Value + ")", nil
-	case "avg":
-		if err := validateIdentifier(visual.Value); err != nil {
-			return "", err
-		}
-		return "AVG(e." + visual.Value + ")", nil
-	case "expression":
-		if visual.ValueExpr == "" {
-			return "", fmt.Errorf("visual %q is missing value_expr", visual.Title)
-		}
-		return visual.ValueExpr, nil
-	default:
-		return "", fmt.Errorf("unsupported visual aggregate %q", visual.Aggregate)
-	}
-}
-
-func labelExpression(visual semantic.Visual) (string, error) {
-	if visual.LabelExpr != "" {
-		return visual.LabelExpr, nil
-	}
-	if err := validateIdentifier(visual.Label); err != nil {
-		return "", err
-	}
-	return "e." + visual.Label, nil
 }
 
 func tableSortExpr(table semantic.TableVisual, key string) string {
@@ -536,7 +529,52 @@ func tableSortExpr(table semantic.TableVisual, key string) string {
 	return "e.order_id"
 }
 
-func filterWhere(alias string, filters dashboard.Filters, excludeVisualID string) (string, []any) {
+func (m *DuckDBMetrics) visualOrderBy(visual semantic.Visual) string {
+	if len(visual.Query.Sort) == 0 {
+		return "label ASC"
+	}
+	dataset := m.model.Datasets[visual.Dataset]
+	parts := make([]string, 0, len(visual.Query.Sort))
+	for _, sortSpec := range visual.Query.Sort {
+		direction := "ASC"
+		if strings.EqualFold(sortSpec.Direction, "desc") {
+			direction = "DESC"
+		}
+		expr := sortSpec.Expr
+		if expr == "" {
+			expr = m.sortExpression(dataset, visual, sortSpec.Field)
+		}
+		if expr == "" {
+			expr = "label"
+		}
+		parts = append(parts, expr+" "+direction)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func (m *DuckDBMetrics) sortExpression(dataset semantic.Dataset, visual semantic.Visual, field string) string {
+	if field == "" {
+		return "label"
+	}
+	if field == "value" || field == visual.Query.Measures[0] {
+		return "value"
+	}
+	if field == visual.Query.Series {
+		return "series"
+	}
+	if dimension, ok := dataset.Dimensions[field]; ok {
+		if dimension.OrderExpr != "" {
+			return dimension.OrderExpr
+		}
+		if field == visual.Query.Dimensions[0] {
+			return "label"
+		}
+		return dimensionExpression(dimension, "e")
+	}
+	return ""
+}
+
+func (m *DuckDBMetrics) filterWhere(alias, datasetName string, filters dashboard.Filters, targetKind, targetID string) (string, []any) {
 	filters = filters.WithDefaults()
 	conditions := []string{"1 = 1"}
 	args := []any{}
@@ -561,13 +599,25 @@ func filterWhere(alias string, filters dashboard.Filters, excludeVisualID string
 	}
 
 	for _, selection := range filters.VisualSelections {
-		if selection.VisualID == "" || selection.VisualID == excludeVisualID || len(selection.Values) == 0 {
+		if selection.VisualID == "" || len(selection.Values) == 0 {
+			continue
+		}
+		if targetKind == "visual" && selection.VisualID == targetID {
+			continue
+		}
+		sourceVisual, ok := m.model.Visuals[selection.VisualID]
+		if !ok || !targetsSelection(sourceVisual.Interaction.Targets, targetKind, targetID) {
 			continue
 		}
 		if selection.Operator != "" && selection.Operator != "in" {
 			continue
 		}
-		if err := validateIdentifier(selection.Field); err != nil {
+		dataset, ok := m.model.Datasets[datasetName]
+		if !ok {
+			continue
+		}
+		dimension, ok := dataset.Dimensions[selection.Field]
+		if !ok {
 			continue
 		}
 		placeholders := make([]string, 0, len(selection.Values))
@@ -575,24 +625,44 @@ func filterWhere(alias string, filters dashboard.Filters, excludeVisualID string
 			placeholders = append(placeholders, "?")
 			args = append(args, value)
 		}
-		conditions = append(conditions, alias+"."+selection.Field+" IN ("+strings.Join(placeholders, ", ")+")")
+		conditions = append(conditions, dimensionExpression(dimension, alias)+" IN ("+strings.Join(placeholders, ", ")+")")
 	}
 
 	return strings.Join(conditions, " AND "), args
 }
 
-func visualField(visual semantic.Visual) string {
-	if visual.Label != "" {
-		return visual.Label
+func targetsSelection(targets semantic.InteractionTargets, targetKind, targetID string) bool {
+	switch targetKind {
+	case "visual":
+		return contains(targets.Visuals, targetID)
+	case "table":
+		return contains(targets.Tables, targetID)
+	default:
+		return false
 	}
-	return "label"
 }
 
-func chartType(visual semantic.Visual) string {
-	if visual.Type != "" {
-		return visual.Type
+func contains(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
 	}
-	return "bar"
+	return false
+}
+
+func dimensionExpression(dimension semantic.Dimension, alias string) string {
+	if identifierPattern.MatchString(dimension.Expr) {
+		return alias + "." + dimension.Expr
+	}
+	return strings.ReplaceAll(dimension.Expr, "{alias}", alias)
+}
+
+func dimensionWhere(dimension semantic.Dimension, alias string) string {
+	if dimension.Where == "" {
+		return ""
+	}
+	return strings.ReplaceAll(dimension.Where, "{alias}", alias)
 }
 
 func selectedValues(filters dashboard.Filters, visualID string) []string {
@@ -636,6 +706,14 @@ func normalizeDBValue(value any) any {
 	default:
 		return typed
 	}
+}
+
+func (m *DuckDBMetrics) datasetSource(name string) (string, error) {
+	dataset, ok := m.model.Datasets[name]
+	if !ok {
+		return "", fmt.Errorf("unknown dataset %q", name)
+	}
+	return cacheSource(dataset.Source)
 }
 
 func cacheSource(name string) (string, error) {
@@ -684,7 +762,7 @@ func modelGraph(model *semantic.Model) dashboard.ModelGraph {
 		Stats: dashboard.ModelStats{
 			Sources:       len(model.Sources),
 			CacheTables:   len(model.Cache.Tables),
-			Metrics:       len(model.Metrics),
+			Metrics:       len(model.KPIs),
 			Visuals:       len(model.Visuals),
 			ReportTables:  len(model.Tables),
 			Relationships: len(model.Relationships),
@@ -746,41 +824,75 @@ func modelGraph(model *semantic.Model) dashboard.ModelGraph {
 		})
 	}
 
-	for _, name := range sortedKeys(model.Metrics) {
-		metric := model.Metrics[name]
+	for _, name := range sortedKeys(model.Datasets) {
+		dataset := model.Datasets[name]
+		fields := make([]dashboard.ModelField, 0, len(dataset.Dimensions)+len(dataset.Measures))
+		for _, dimension := range sortedKeys(dataset.Dimensions) {
+			fields = append(fields, dashboard.ModelField{Name: dimension, Role: "dimension"})
+		}
+		for _, measure := range sortedKeys(dataset.Measures) {
+			fields = append(fields, dashboard.ModelField{Name: measure, Role: "measure"})
+		}
 		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
-			ID:          nodeID("metric", name),
-			Label:       metric.Title,
-			Kind:        "metric",
-			Description: metric.Note,
-			Fields: []dashboard.ModelField{
-				{Name: metric.Source, Role: "source"},
-				{Name: metricAggregateLabel(metric.Aggregate, metric.Column), Role: "measure"},
-			},
+			ID:     nodeID("dataset", name),
+			Label:  name,
+			Kind:   "dataset",
+			Schema: "semantic",
+			Fields: fields,
 			Meta: []dashboard.ModelMeta{
-				{Label: "Format", Value: metric.Format},
-				{Label: "Aggregate", Value: metric.Aggregate},
+				{Label: "Source", Value: dataset.Source},
+				{Label: "Dimensions", Value: strconv.Itoa(len(dataset.Dimensions))},
+				{Label: "Measures", Value: strconv.Itoa(len(dataset.Measures))},
 			},
 		})
-		graph.Edges = append(graph.Edges, semanticEdge("metric", name, metric.Source, "measure"))
+		graph.Edges = append(graph.Edges, dashboard.ModelEdge{
+			ID:     "dataset_" + name + "_from_" + dataset.Source,
+			Source: nodeID("cache", dataset.Source),
+			Target: nodeID("dataset", name),
+			Label:  "semantic dataset",
+			Kind:   "semantic",
+		})
+	}
+
+	for _, name := range sortedKeys(model.KPIs) {
+		kpi := model.KPIs[name]
+		measure := model.Datasets[kpi.Dataset].Measures[kpi.Measure]
+		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
+			ID:          nodeID("metric", name),
+			Label:       kpi.Title,
+			Kind:        "metric",
+			Description: kpi.Note,
+			Fields: []dashboard.ModelField{
+				{Name: kpi.Dataset, Role: "dataset"},
+				{Name: measureAggregateLabel(measure.Aggregate, measure.Column), Role: "measure"},
+			},
+			Meta: []dashboard.ModelMeta{
+				{Label: "Format", Value: measure.Format},
+				{Label: "Aggregate", Value: measure.Aggregate},
+			},
+		})
+		graph.Edges = append(graph.Edges, semanticEdge("metric", name, kpi.Dataset, "measure"))
 	}
 
 	for _, name := range sortedKeys(model.Visuals) {
 		visual := model.Visuals[name]
+		measureName := visual.Query.Measures[0]
+		measure := model.Datasets[visual.Dataset].Measures[measureName]
 		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
 			ID:    nodeID("visual", name),
 			Label: visual.Title,
 			Kind:  "visual",
 			Fields: []dashboard.ModelField{
-				{Name: visualField(visual), Role: "axis"},
-				{Name: metricAggregateLabel(visual.Aggregate, visual.Value), Role: "value"},
+				{Name: visual.Query.Dimensions[0], Role: "axis"},
+				{Name: measureAggregateLabel(measure.Aggregate, measure.Column), Role: "value"},
 			},
 			Meta: []dashboard.ModelMeta{
-				{Label: "Unit", Value: visual.Unit},
-				{Label: "Limit", Value: intLabel(visual.Limit)},
+				{Label: "Type", Value: visual.Type},
+				{Label: "Unit", Value: measure.Unit},
+				{Label: "Limit", Value: intLabel(visual.Query.Limit)},
 			},
 		})
-		graph.Edges = append(graph.Edges, semanticEdge("visual", name, visual.Source, "visual"))
+		graph.Edges = append(graph.Edges, semanticEdge("visual", name, visual.Dataset, "visual"))
 	}
 
 	for _, name := range sortedKeys(model.Tables) {
@@ -803,7 +915,7 @@ func modelGraph(model *semantic.Model) dashboard.ModelGraph {
 				{Label: "Columns", Value: strconv.Itoa(len(table.Columns))},
 			},
 		})
-		graph.Edges = append(graph.Edges, semanticEdge("table", name, table.Source, "table"))
+		graph.Edges = append(graph.Edges, semanticEdge("table", name, table.Dataset, "table"))
 	}
 
 	return graph
@@ -825,7 +937,7 @@ func nodeID(kind, name string) string {
 func semanticEdge(kind, name, source, label string) dashboard.ModelEdge {
 	return dashboard.ModelEdge{
 		ID:     kind + "_" + name + "_from_" + source,
-		Source: nodeID("cache", source),
+		Source: nodeID("dataset", source),
 		Target: nodeID(kind, name),
 		Label:  label,
 		Kind:   "semantic",
@@ -853,7 +965,7 @@ func cacheFields() []dashboard.ModelField {
 	}
 }
 
-func metricAggregateLabel(aggregate, column string) string {
+func measureAggregateLabel(aggregate, column string) string {
 	if column == "" {
 		return aggregate
 	}

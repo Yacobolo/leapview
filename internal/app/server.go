@@ -39,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /commands/table-window", s.tableWindow)
 	mux.HandleFunc("POST /commands/chart-select", s.chartSelect)
 	mux.HandleFunc("POST /commands/clear-selection", s.clearSelection)
+	mux.HandleFunc("POST /commands/reset-filters", s.resetFilters)
 	mux.HandleFunc("POST /commands/refresh-cache", s.refreshCache)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
@@ -207,6 +208,34 @@ func (s *Server) clearSelection(w http.ResponseWriter, r *http.Request) {
 	filters := signals.Filters.WithDefaults()
 	filters.VisualSelections = nil
 	request := signals.TableCommand.WithDefaults()
+	clientID := clientIDFromRequest(r, signals)
+
+	s.broker.publish(clientID, signalPatch{
+		"status": map[string]any{
+			"loading":       true,
+			"error":         "",
+			"dataDirectory": s.metrics.DataDir(),
+		},
+	})
+
+	patch, err := s.metrics.QueryDashboard(r.Context(), filters)
+	if err != nil {
+		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
+	}
+	s.broker.publish(clientID, dashboardPatch(patch))
+	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), filters, request)))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) resetFilters(w http.ResponseWriter, r *http.Request) {
+	signals := dashboard.Signals{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	filters := dashboard.Filters{}.WithDefaults()
+	request := signals.TableCommand.WithDefaults()
+	request.Offset = 0
 	clientID := clientIDFromRequest(r, signals)
 
 	s.broker.publish(clientID, signalPatch{

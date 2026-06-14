@@ -238,18 +238,23 @@ type KPI struct {
 }
 
 type Chart struct {
-	Version   int      `json:"version"`
-	ID        string   `json:"id"`
-	Type      string   `json:"type"`
-	Title     string   `json:"title"`
-	Unit      string   `json:"unit"`
-	Field     string   `json:"field"`
-	Selection []string `json:"selection"`
-	Data      []Point  `json:"data"`
+	Version    int      `json:"version"`
+	ID         string   `json:"id"`
+	Type       string   `json:"type"`
+	Title      string   `json:"title"`
+	Unit       string   `json:"unit"`
+	Field      string   `json:"field"`
+	Dimensions []string `json:"dimensions"`
+	Measure    string   `json:"measure"`
+	Series     []string `json:"series"`
+	Stacked    bool     `json:"stacked,omitempty"`
+	Selection  []string `json:"selection"`
+	Data       []Point  `json:"data"`
 }
 
 type Point struct {
 	Label    string  `json:"label"`
+	Series   string  `json:"series,omitempty"`
 	Value    float64 `json:"value"`
 	Selected bool    `json:"selected,omitempty"`
 }
@@ -372,10 +377,10 @@ func EmptyPatch(filters Filters, dataDir string, err error) Patch {
 			{Label: "Review", Value: "-", Note: "Waiting for CSVs", Tone: "neutral"},
 		},
 		Charts: map[string]Chart{
-			"revenue":    {Version: 1, ID: "revenue", Type: "area", Title: "Revenue by month", Unit: "R$", Field: "purchase_month", Selection: []string{}, Data: []Point{}},
-			"orders":     {Version: 1, ID: "orders", Type: "donut", Title: "Orders by status", Unit: "orders", Field: "status", Selection: []string{}, Data: []Point{}},
-			"categories": {Version: 1, ID: "categories", Type: "bar", Title: "Top product categories", Unit: "R$", Field: "category", Selection: []string{}, Data: []Point{}},
-			"delivery":   {Version: 1, ID: "delivery", Type: "bar", Title: "Delivery speed", Unit: "orders", Field: "delivery_bucket", Selection: []string{}, Data: []Point{}},
+			"revenue":    {Version: 2, ID: "revenue", Type: "area", Title: "Revenue by month", Unit: "R$", Field: "purchase_month", Dimensions: []string{"purchase_month"}, Measure: "revenue", Series: []string{}, Selection: []string{}, Data: []Point{}},
+			"orders":     {Version: 2, ID: "orders", Type: "donut", Title: "Orders by status", Unit: "orders", Field: "status", Dimensions: []string{"status"}, Measure: "order_count", Series: []string{}, Selection: []string{}, Data: []Point{}},
+			"categories": {Version: 2, ID: "categories", Type: "bar", Title: "Top product categories", Unit: "R$", Field: "category", Dimensions: []string{"category"}, Measure: "revenue", Series: []string{}, Selection: []string{}, Data: []Point{}},
+			"delivery":   {Version: 2, ID: "delivery", Type: "bar", Title: "Delivery speed", Unit: "orders", Field: "delivery_bucket", Dimensions: []string{"delivery_bucket"}, Measure: "order_count", Series: []string{}, Selection: []string{}, Data: []Point{}},
 		},
 	}
 }

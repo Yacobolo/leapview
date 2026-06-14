@@ -14,7 +14,8 @@ type Model struct {
 	Title         string                 `yaml:"title"`
 	Sources       map[string]Source      `yaml:"sources"`
 	Cache         Cache                  `yaml:"cache"`
-	Metrics       map[string]Metric      `yaml:"metrics"`
+	Datasets      map[string]Dataset     `yaml:"datasets"`
+	KPIs          map[string]KPI         `yaml:"kpis"`
 	Visuals       map[string]Visual      `yaml:"visuals"`
 	Tables        map[string]TableVisual `yaml:"tables"`
 	Relationships []Relationship         `yaml:"relationships"`
@@ -34,35 +35,72 @@ type CacheTable struct {
 	SQL         string `yaml:"sql"`
 }
 
-type Metric struct {
-	Title      string `yaml:"title"`
-	Source     string `yaml:"source"`
+type Dataset struct {
+	Source     string               `yaml:"source"`
+	Dimensions map[string]Dimension `yaml:"dimensions"`
+	Measures   map[string]Measure   `yaml:"measures"`
+}
+
+type Dimension struct {
+	Label     string `yaml:"label"`
+	Expr      string `yaml:"expr"`
+	Where     string `yaml:"where"`
+	OrderExpr string `yaml:"order_expr"`
+}
+
+type Measure struct {
+	Label      string `yaml:"label"`
 	Aggregate  string `yaml:"aggregate"`
 	Column     string `yaml:"column"`
 	Expression string `yaml:"expression"`
-	Note       string `yaml:"note"`
-	Tone       string `yaml:"tone"`
+	Unit       string `yaml:"unit"`
 	Format     string `yaml:"format"`
 }
 
+type KPI struct {
+	Title   string `yaml:"title"`
+	Dataset string `yaml:"dataset"`
+	Measure string `yaml:"measure"`
+	Note    string `yaml:"note"`
+	Tone    string `yaml:"tone"`
+}
+
 type Visual struct {
-	Title     string `yaml:"title"`
-	Type      string `yaml:"type"`
-	Unit      string `yaml:"unit"`
-	Source    string `yaml:"source"`
-	Label     string `yaml:"label"`
-	LabelExpr string `yaml:"label_expr"`
-	Aggregate string `yaml:"aggregate"`
-	Value     string `yaml:"value"`
-	ValueExpr string `yaml:"value_expr"`
-	Where     string `yaml:"where"`
-	OrderBy   string `yaml:"order_by"`
-	Limit     int    `yaml:"limit"`
+	Title       string      `yaml:"title"`
+	Type        string      `yaml:"type"`
+	Stacked     bool        `yaml:"stacked"`
+	Dataset     string      `yaml:"dataset"`
+	Query       VisualQuery `yaml:"query"`
+	Interaction Interaction `yaml:"interaction"`
+}
+
+type VisualQuery struct {
+	Dimensions []string `yaml:"dimensions"`
+	Series     string   `yaml:"series"`
+	Measures   []string `yaml:"measures"`
+	Sort       []Sort   `yaml:"sort"`
+	Limit      int      `yaml:"limit"`
+}
+
+type Sort struct {
+	Field     string `yaml:"field"`
+	Direction string `yaml:"direction"`
+	Expr      string `yaml:"expr"`
+}
+
+type Interaction struct {
+	Field   string             `yaml:"field"`
+	Targets InteractionTargets `yaml:"targets"`
+}
+
+type InteractionTargets struct {
+	Visuals []string `yaml:"visuals"`
+	Tables  []string `yaml:"tables"`
 }
 
 type TableVisual struct {
 	Title       string                  `yaml:"title"`
-	Source      string                  `yaml:"source"`
+	Dataset     string                  `yaml:"dataset"`
 	DefaultSort dashboard.TableSort     `yaml:"default_sort"`
 	Columns     []dashboard.TableColumn `yaml:"columns"`
 }
@@ -110,22 +148,122 @@ func (m *Model) Validate() error {
 			return fmt.Errorf("cache table %q is missing sql", name)
 		}
 	}
-	for name, metric := range m.Metrics {
-		if metric.Title == "" || metric.Source == "" || metric.Aggregate == "" {
-			return fmt.Errorf("metric %q requires title, source, and aggregate", name)
+	if len(m.Datasets) == 0 {
+		return fmt.Errorf("semantic model %q has no datasets", m.Name)
+	}
+	for name, dataset := range m.Datasets {
+		if dataset.Source == "" {
+			return fmt.Errorf("dataset %q requires source", name)
+		}
+		if _, ok := m.Cache.Tables[dataset.Source]; !ok {
+			return fmt.Errorf("dataset %q references unknown cache table %q", name, dataset.Source)
+		}
+		if len(dataset.Dimensions) == 0 {
+			return fmt.Errorf("dataset %q requires dimensions", name)
+		}
+		if len(dataset.Measures) == 0 {
+			return fmt.Errorf("dataset %q requires measures", name)
+		}
+		for dimensionName, dimension := range dataset.Dimensions {
+			if dimension.Expr == "" {
+				return fmt.Errorf("dataset %q dimension %q requires expr", name, dimensionName)
+			}
+		}
+		for measureName, measure := range dataset.Measures {
+			if measure.Aggregate == "" {
+				return fmt.Errorf("dataset %q measure %q requires aggregate", name, measureName)
+			}
+			if measure.Aggregate != "count" && measure.Aggregate != "expression" && measure.Column == "" {
+				return fmt.Errorf("dataset %q measure %q requires column", name, measureName)
+			}
+			if measure.Aggregate == "expression" && measure.Expression == "" {
+				return fmt.Errorf("dataset %q measure %q requires expression", name, measureName)
+			}
 		}
 	}
 	for name, visual := range m.Visuals {
-		if visual.Title == "" || visual.Source == "" || visual.Aggregate == "" {
-			return fmt.Errorf("visual %q requires title, source, and aggregate", name)
+		if visual.Title == "" || visual.Dataset == "" || visual.Type == "" {
+			return fmt.Errorf("visual %q requires title, dataset, and type", name)
 		}
-		if visual.Label == "" && visual.LabelExpr == "" {
-			return fmt.Errorf("visual %q requires label or label_expr", name)
+		dataset, ok := m.Datasets[visual.Dataset]
+		if !ok {
+			return fmt.Errorf("visual %q references unknown dataset %q", name, visual.Dataset)
+		}
+		if len(visual.Query.Dimensions) != 1 {
+			return fmt.Errorf("visual %q requires exactly one query dimension", name)
+		}
+		if len(visual.Query.Measures) != 1 {
+			return fmt.Errorf("visual %q requires exactly one query measure", name)
+		}
+		for _, dimension := range visual.Query.Dimensions {
+			if _, ok := dataset.Dimensions[dimension]; !ok {
+				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension)
+			}
+		}
+		if visual.Query.Series != "" {
+			if _, ok := dataset.Dimensions[visual.Query.Series]; !ok {
+				return fmt.Errorf("visual %q references unknown series dimension %q", name, visual.Query.Series)
+			}
+			if !supportsSeries(visual.Type) {
+				return fmt.Errorf("visual %q type %q does not support series", name, visual.Type)
+			}
+		}
+		if !supportsChartType(visual.Type) {
+			return fmt.Errorf("visual %q has unsupported type %q", name, visual.Type)
+		}
+		for _, measure := range visual.Query.Measures {
+			if _, ok := dataset.Measures[measure]; !ok {
+				return fmt.Errorf("visual %q references unknown measure %q", name, measure)
+			}
+		}
+		for _, sort := range visual.Query.Sort {
+			if sort.Field == "" && sort.Expr == "" {
+				return fmt.Errorf("visual %q has sort missing field or expr", name)
+			}
+			if sort.Field != "" && sort.Field != "value" && sort.Field != visual.Query.Series {
+				if _, ok := dataset.Dimensions[sort.Field]; !ok {
+					if _, ok := dataset.Measures[sort.Field]; !ok {
+						return fmt.Errorf("visual %q sort references unknown field %q", name, sort.Field)
+					}
+				}
+			}
+		}
+		if visual.Interaction.Field != "" {
+			if _, ok := dataset.Dimensions[visual.Interaction.Field]; !ok {
+				return fmt.Errorf("visual %q interaction references unknown field %q", name, visual.Interaction.Field)
+			}
+		}
+	}
+	for name, kpi := range m.KPIs {
+		if kpi.Title == "" || kpi.Dataset == "" || kpi.Measure == "" {
+			return fmt.Errorf("kpi %q requires title, dataset, and measure", name)
+		}
+		dataset, ok := m.Datasets[kpi.Dataset]
+		if !ok {
+			return fmt.Errorf("kpi %q references unknown dataset %q", name, kpi.Dataset)
+		}
+		if _, ok := dataset.Measures[kpi.Measure]; !ok {
+			return fmt.Errorf("kpi %q references unknown measure %q", name, kpi.Measure)
 		}
 	}
 	for name, table := range m.Tables {
-		if table.Title == "" || table.Source == "" || len(table.Columns) == 0 {
-			return fmt.Errorf("table %q requires title, source, and columns", name)
+		if table.Title == "" || table.Dataset == "" || len(table.Columns) == 0 {
+			return fmt.Errorf("table %q requires title, dataset, and columns", name)
+		}
+		if _, ok := m.Datasets[table.Dataset]; !ok {
+			return fmt.Errorf("table %q references unknown dataset %q", name, table.Dataset)
+		}
+	}
+	for name, visual := range m.Visuals {
+		for _, target := range visual.Interaction.Targets.Visuals {
+			if _, ok := m.Visuals[target]; !ok {
+				return fmt.Errorf("visual %q interaction references unknown target visual %q", name, target)
+			}
+		}
+		for _, target := range visual.Interaction.Targets.Tables {
+			if _, ok := m.Tables[target]; !ok {
+				return fmt.Errorf("visual %q interaction references unknown target table %q", name, target)
+			}
 		}
 	}
 	seenRelationships := map[string]struct{}{}
@@ -190,4 +328,22 @@ func (m *Model) CacheTableNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func supportsChartType(chartType string) bool {
+	switch chartType {
+	case "line", "area", "bar", "column", "pie", "donut", "scatter", "funnel", "treemap", "gauge":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportsSeries(chartType string) bool {
+	switch chartType {
+	case "line", "area", "bar", "column", "scatter":
+		return true
+	default:
+		return false
+	}
 }
