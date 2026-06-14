@@ -23,4 +23,10 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.Tables["orders"].DefaultSort.Key; got != "purchase_date" {
 		t.Fatalf("orders table default sort = %q, want purchase_date", got)
 	}
+	if len(model.Pages) != 2 {
+		t.Fatalf("page count = %d, want 2", len(model.Pages))
+	}
+	if got := model.Pages[1].ID; got != "operations" {
+		t.Fatalf("second page id = %q, want operations", got)
+	}
 }

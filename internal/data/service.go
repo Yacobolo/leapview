@@ -101,6 +101,14 @@ func (m *DuckDBMetrics) DataDir() string {
 	return m.dataDir
 }
 
+func (m *DuckDBMetrics) Pages() []dashboard.Page {
+	pages := make([]dashboard.Page, len(m.model.Pages))
+	for i, page := range m.model.Pages {
+		pages[i] = page.WithDefaults()
+	}
+	return pages
+}
+
 func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, filters dashboard.Filters) (dashboard.Patch, error) {
 	filters = filters.WithDefaults()
 	if !m.ready {
@@ -286,11 +294,13 @@ func (m *DuckDBMetrics) metricValue(ctx context.Context, metric semantic.Metric,
 
 func (m *DuckDBMetrics) charts(ctx context.Context, filters dashboard.Filters) (map[string]dashboard.Chart, error) {
 	charts := make(map[string]dashboard.Chart, len(m.model.Visuals))
-	for _, key := range []string{"revenue", "orders", "categories", "delivery"} {
-		visual, ok := m.model.Visuals[key]
-		if !ok {
-			continue
-		}
+	keys := make([]string, 0, len(m.model.Visuals))
+	for key := range m.model.Visuals {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		visual := m.model.Visuals[key]
 		points, err := m.visualPoints(ctx, key, visual, filters)
 		if err != nil {
 			return nil, err

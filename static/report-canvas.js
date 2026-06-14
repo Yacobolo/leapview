@@ -602,8 +602,8 @@ var ReportCanvas = class extends i4 {
     this.height = 768;
     this.scale = 1;
     this.filtersOpen = true;
-    this.filtersWidth = 286;
-    this.collapsedFiltersWidth = 44;
+    this.filtersWidth = 232;
+    this.collapsedFiltersWidth = 36;
   }
   static {
     this.styles = i`
@@ -661,19 +661,19 @@ var ReportCanvas = class extends i4 {
 
     .filters-rail {
       display: flex;
-      width: 44px;
-      flex: 0 0 44px;
+      width: 36px;
+      flex: 0 0 36px;
       align-items: start;
       justify-content: center;
       border-right: 1px solid var(--borderColor-default);
       background: var(--bgColor-muted);
-      padding-top: 8px;
+      padding-top: 7px;
     }
 
     .filters-toggle {
       display: grid;
-      width: 30px;
-      height: 30px;
+      width: 24px;
+      height: 24px;
       place-items: center;
       border: 1px solid var(--borderColor-default);
       border-radius: 4px;
@@ -681,7 +681,7 @@ var ReportCanvas = class extends i4 {
       color: var(--fgColor-default);
       cursor: pointer;
       font: inherit;
-      font-size: 1rem;
+      font-size: 0.86rem;
       font-weight: 900;
       line-height: 1;
     }

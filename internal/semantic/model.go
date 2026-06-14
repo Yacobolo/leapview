@@ -17,6 +17,7 @@ type Model struct {
 	Metrics map[string]Metric      `yaml:"metrics"`
 	Visuals map[string]Visual      `yaml:"visuals"`
 	Tables  map[string]TableVisual `yaml:"tables"`
+	Pages   []dashboard.Page       `yaml:"pages"`
 }
 
 type Source struct {
@@ -115,6 +116,40 @@ func (m *Model) Validate() error {
 	for name, table := range m.Tables {
 		if table.Title == "" || table.Source == "" || len(table.Columns) == 0 {
 			return fmt.Errorf("table %q requires title, source, and columns", name)
+		}
+	}
+	seenPages := map[string]struct{}{}
+	for index, page := range m.Pages {
+		if page.ID == "" || page.Title == "" {
+			return fmt.Errorf("page %d requires id and title", index)
+		}
+		if _, exists := seenPages[page.ID]; exists {
+			return fmt.Errorf("duplicate page id %q", page.ID)
+		}
+		seenPages[page.ID] = struct{}{}
+		for _, visual := range page.Visuals {
+			if visual.ID == "" || visual.Kind == "" {
+				return fmt.Errorf("page %q has a visual missing id or kind", page.ID)
+			}
+			switch visual.Kind {
+			case "header", "kpi_strip":
+			case "line_chart", "bar_chart":
+				if visual.Visual == "" {
+					return fmt.Errorf("page %q visual %q requires visual", page.ID, visual.ID)
+				}
+				if _, ok := m.Visuals[visual.Visual]; !ok {
+					return fmt.Errorf("page %q references unknown visual %q", page.ID, visual.Visual)
+				}
+			case "table":
+				if visual.Table == "" {
+					return fmt.Errorf("page %q visual %q requires table", page.ID, visual.ID)
+				}
+				if _, ok := m.Tables[visual.Table]; !ok {
+					return fmt.Errorf("page %q references unknown table %q", page.ID, visual.Table)
+				}
+			default:
+				return fmt.Errorf("page %q visual %q has unsupported kind %q", page.ID, visual.ID, visual.Kind)
+			}
 		}
 	}
 	return nil

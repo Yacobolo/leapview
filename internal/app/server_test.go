@@ -17,6 +17,26 @@ func (fakeMetrics) DataDir() string {
 	return ".data/olist"
 }
 
+func (fakeMetrics) Pages() []dashboard.Page {
+	return []dashboard.Page{
+		{
+			ID:     "overview",
+			Title:  "Overview",
+			Width:  1366,
+			Height: 940,
+			Visuals: []dashboard.PageVisual{
+				{ID: "header", Kind: "header", X: 0, Y: 0, Width: 100, Height: 40, Title: "Test"},
+			},
+		},
+		{
+			ID:     "operations",
+			Title:  "Operations",
+			Width:  1366,
+			Height: 940,
+		},
+	}
+}
+
 func (fakeMetrics) QueryDashboard(_ context.Context, filters dashboard.Filters) (dashboard.Patch, error) {
 	return dashboard.Patch{
 		Filters: filters.WithDefaults(),
@@ -30,6 +50,32 @@ func (fakeMetrics) QueryDashboard(_ context.Context, filters dashboard.Filters) 
 			"orders": {Title: "Orders", Unit: "orders", Data: []dashboard.Point{{Label: "delivered", Value: 1}}},
 		},
 	}, nil
+}
+
+func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/pages/operations", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `class="page-tab active" href="/pages/operations"`) {
+		t.Fatalf("operations page tab was not active:\n%s", body)
+	}
+}
+
+func TestUnknownPageRouteReturnsNotFound(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/pages/missing", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
 }
 
 func (fakeMetrics) QueryTable(_ context.Context, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {

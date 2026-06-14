@@ -24,9 +24,14 @@
 
 @custom-variant dark (&:where([data-color-mode="dark"], [data-color-mode="dark"] *));
 
+@view-transition {
+  navigation: auto;
+}
+
 @layer base {
   :root {
     color-scheme: light dark;
+    --ld-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --color-base-100: var(--bgColor-default);
     --color-base-200: var(--bgColor-muted);
     --color-base-300: var(--borderColor-default);
@@ -343,6 +348,41 @@
     --report-grid-dot: color-mix(in srgb, var(--fgColor-muted), transparent 88%);
   }
 
+  .page-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 8px;
+    overflow-x: auto;
+    view-transition-name: report-tabs;
+  }
+
+  .page-tab {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    border: 1px solid var(--borderColor-default);
+    border-bottom-color: var(--borderColor-muted);
+    border-radius: 4px 4px 0 0;
+    background: var(--bgColor-muted);
+    color: var(--fgColor-muted);
+    padding: 0 12px;
+    text-decoration: none;
+    white-space: nowrap;
+    font-size: 0.74rem;
+    font-weight: 850;
+  }
+
+  .page-tab:hover,
+  .page-tab:focus-visible,
+  .page-tab.active {
+    border-color: var(--borderColor-default);
+    border-bottom-color: var(--ld-accent);
+    background: var(--bgColor-default);
+    color: var(--fgColor-default);
+    outline: 0;
+  }
+
   ld-report-canvas {
     display: block;
     width: 100%;
@@ -353,7 +393,9 @@
     border-radius: 8px;
     background: var(--bgColor-default);
     box-shadow: var(--shadow-resting-medium);
+    contain: layout paint;
     overflow: hidden;
+    view-transition-name: report-canvas;
   }
 
   .canvas-visual {
@@ -410,51 +452,57 @@
   }
 
   .filters-pane {
+    font-size: 12px;
     height: 100%;
     box-sizing: border-box;
     overflow: auto;
     background: var(--bgColor-default);
-    padding: 14px;
+    padding: 10px 10px 12px;
   }
 
   .pane-header {
     border-bottom: 1px solid var(--borderColor-default);
-    padding-bottom: 11px;
-    margin-bottom: 13px;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
   }
 
   .pane-title {
     margin: 0;
-    font-size: 1rem;
+    font-size: 0.88rem;
     font-weight: 850;
     letter-spacing: 0;
+    line-height: 1.15;
   }
 
   .filter-form {
     display: grid;
-    gap: 12px;
+    gap: 9px;
   }
 
   .filter-control {
     display: grid;
-    gap: 6px;
+    gap: 4px;
   }
 
   .filter-label {
     color: var(--fgColor-muted);
-    font-size: 0.72rem;
+    font-size: 0.62rem;
     font-weight: 900;
+    line-height: 1.1;
     text-transform: uppercase;
   }
 
   .filter-input {
-    min-height: 36px;
+    min-height: 28px;
     width: 100%;
     border: 1px solid var(--borderColor-default);
     border-radius: 4px;
     background: var(--control-bgColor-rest);
     color: var(--fgColor-default);
-    padding: 0 10px;
+    padding: 0 8px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    line-height: 1.15;
     outline-offset: 2px;
   }
 
@@ -470,15 +518,15 @@
     border: 1px solid var(--borderColor-accent-muted);
     border-radius: 4px;
     background: var(--bgColor-accent-muted);
-    padding: 8px;
+    padding: 6px;
     color: var(--fgColor-default);
-    font-size: 0.78rem;
+    font-size: 0.68rem;
     font-weight: 800;
   }
 
   .clear-selection-button {
     display: inline-flex;
-    min-height: 28px;
+    min-height: 24px;
     align-items: center;
     justify-content: center;
     gap: 5px;
@@ -487,8 +535,8 @@
     background: var(--bgColor-default);
     color: var(--fgColor-default);
     cursor: pointer;
-    padding: 0 8px;
-    font-size: 0.72rem;
+    padding: 0 7px;
+    font-size: 0.66rem;
     font-weight: 850;
   }
 
@@ -507,14 +555,15 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    min-height: 38px;
+    gap: 6px;
+    min-height: 30px;
     width: 100%;
     cursor: pointer;
     border: 1px solid var(--button-primary-bgColor-rest);
     border-radius: 4px;
     background: var(--button-primary-bgColor-rest);
     color: var(--button-primary-fgColor-rest);
+    font-size: 0.76rem;
     font-weight: 850;
   }
 
@@ -564,6 +613,56 @@
   @keyframes pulse {
     to {
       box-shadow: 0 0 0 14px color-mix(in srgb, var(--fgColor-success), transparent 100%);
+    }
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 120ms;
+    animation-timing-function: var(--ld-ease-out);
+  }
+
+  ::view-transition-old(report-canvas) {
+    animation: report-canvas-out 140ms var(--ld-ease-out) both;
+  }
+
+  ::view-transition-new(report-canvas) {
+    animation: report-canvas-in 220ms var(--ld-ease-out) both;
+  }
+
+  ::view-transition-old(report-tabs) {
+    animation: report-tabs-out 110ms var(--ld-ease-out) both;
+  }
+
+  ::view-transition-new(report-tabs) {
+    animation: report-tabs-in 180ms var(--ld-ease-out) both;
+  }
+
+  @keyframes report-canvas-out {
+    to {
+      opacity: 0;
+      transform: translateY(4px) scale(0.995);
+    }
+  }
+
+  @keyframes report-canvas-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.995);
+    }
+  }
+
+  @keyframes report-tabs-out {
+    to {
+      opacity: 0.65;
+      transform: translateY(-2px);
+    }
+  }
+
+  @keyframes report-tabs-in {
+    from {
+      opacity: 0.65;
+      transform: translateY(2px);
     }
   }
 
@@ -626,6 +725,15 @@
       animation-duration: 0.001ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.001ms !important;
+    }
+
+    ::view-transition-old(root),
+    ::view-transition-new(root),
+    ::view-transition-old(report-canvas),
+    ::view-transition-new(report-canvas),
+    ::view-transition-old(report-tabs),
+    ::view-transition-new(report-tabs) {
+      animation: none !important;
     }
   }
 }

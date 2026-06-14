@@ -12,8 +12,8 @@ class ReportCanvas extends LitElement {
   @state() private filtersOpen = true
 
   private resizeObserver?: ResizeObserver
-  private readonly filtersWidth = 286
-  private readonly collapsedFiltersWidth = 44
+  private readonly filtersWidth = 232
+  private readonly collapsedFiltersWidth = 36
 
   static styles = css`
     :host {
@@ -70,19 +70,19 @@ class ReportCanvas extends LitElement {
 
     .filters-rail {
       display: flex;
-      width: 44px;
-      flex: 0 0 44px;
+      width: 36px;
+      flex: 0 0 36px;
       align-items: start;
       justify-content: center;
       border-right: 1px solid var(--borderColor-default);
       background: var(--bgColor-muted);
-      padding-top: 8px;
+      padding-top: 7px;
     }
 
     .filters-toggle {
       display: grid;
-      width: 30px;
-      height: 30px;
+      width: 24px;
+      height: 24px;
       place-items: center;
       border: 1px solid var(--borderColor-default);
       border-radius: 4px;
@@ -90,7 +90,7 @@ class ReportCanvas extends LitElement {
       color: var(--fgColor-default);
       cursor: pointer;
       font: inherit;
-      font-size: 1rem;
+      font-size: 0.86rem;
       font-weight: 900;
       line-height: 1;
     }

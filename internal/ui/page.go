@@ -3,6 +3,7 @@ package ui
 import (
 	"strconv"
 
+	"github.com/Yacobolo/libredash/internal/dashboard"
 	lucide "github.com/eduardolat/gomponents-lucide"
 	g "maragu.dev/gomponents"
 	ds "maragu.dev/gomponents-datastar"
@@ -12,7 +13,10 @@ import (
 
 const updateAction = "@get('/updates', {openWhenHidden: true})"
 
-func Page(dataDir, clientID string) g.Node {
+func Page(dataDir, clientID string, pages []dashboard.Page, activePage dashboard.Page) g.Node {
+	if activePage.ID == "" {
+		activePage = defaultPage()
+	}
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash",
 		Language: "en",
@@ -44,38 +48,23 @@ func Page(dataDir, clientID string) g.Node {
 				h.Div(h.Class("report-workspace"),
 					navRail(),
 					h.Section(h.Class("report-canvas-shell"), h.Aria("label", "LibreDash report canvas"),
-						g.El("ld-report-canvas", g.Attr("width", "1366"), g.Attr("height", "940"),
-							canvasVisual(16, 16, 1334, 86,
-								reportHeader(),
-							),
-							canvasVisual(16, 118, 1334, 116,
-								h.Div(h.Class("kpi-band"),
-									g.El("ld-kpi-strip", g.Attr("data-attr:items", "$kpis")),
-								),
-							),
-							canvasVisual(16, 250, 650, 300,
-								chartPanel("ld-line-chart", "revenue", "charts.revenue"),
-							),
-							canvasVisual(682, 250, 326, 300,
-								chartPanel("ld-bar-chart", "orders", "charts.orders"),
-							),
-							canvasVisual(1024, 250, 326, 300,
-								chartPanel("ld-bar-chart", "delivery", "charts.delivery"),
-							),
-							canvasVisual(16, 566, 650, 354,
-								chartPanel("ld-bar-chart", "categories", "charts.categories"),
-							),
-							canvasVisual(682, 566, 668, 354,
-								tablePanel(),
-							),
-							filtersPane(),
-						),
+						pageTabs(pages, activePage.ID),
+						renderPageCanvas(activePage),
 					),
 				),
 				g.El("datastar-inspector"),
 			),
 		},
 	})
+}
+
+func defaultPage() dashboard.Page {
+	return dashboard.Page{
+		ID:     "overview",
+		Title:  "Overview",
+		Width:  1366,
+		Height: 940,
+	}
 }
 
 func initialSignals(dataDir, clientID string) map[string]any {
@@ -223,6 +212,29 @@ func navRail() g.Node {
 	)
 }
 
+func pageTabs(pages []dashboard.Page, activeID string) g.Node {
+	if len(pages) == 0 {
+		return nil
+	}
+	return h.Nav(h.Class("page-tabs"), h.Aria("label", "Report pages"),
+		g.Map(pages, func(page dashboard.Page) g.Node {
+			return pageTab(page, activeID)
+		}),
+	)
+}
+
+func pageTab(page dashboard.Page, activeID string) g.Node {
+	class := "page-tab"
+	if page.ID == activeID {
+		class += " active"
+	}
+	href := "/pages/" + page.ID
+	if page.ID == "overview" {
+		href = "/"
+	}
+	return h.A(h.Class(class), h.Href(href), g.Text(page.Title))
+}
+
 func railItem(icon g.Node, label string, active bool) g.Node {
 	class := "rail-item"
 	if active {
@@ -234,16 +246,63 @@ func railItem(icon g.Node, label string, active bool) g.Node {
 	)
 }
 
-func reportHeader() g.Node {
+func renderPageCanvas(page dashboard.Page) g.Node {
+	page = page.WithDefaults()
+	nodes := []g.Node{
+		g.Attr("width", strconv.Itoa(page.Width)),
+		g.Attr("height", strconv.Itoa(page.Height)),
+	}
+	for _, visual := range page.Visuals {
+		nodes = append(nodes, renderPageVisual(visual))
+	}
+	nodes = append(nodes, filtersPane())
+	return g.El("ld-report-canvas", nodes...)
+}
+
+func renderPageVisual(visual dashboard.PageVisual) g.Node {
+	switch visual.Kind {
+	case "header":
+		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, reportHeader(visual))
+	case "kpi_strip":
+		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height,
+			h.Div(h.Class("kpi-band"),
+				g.El("ld-kpi-strip", g.Attr("data-attr:items", "$kpis")),
+			),
+		)
+	case "line_chart", "bar_chart":
+		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height,
+			chartPanel(chartTag(visual.Kind), visual.Visual),
+		)
+	case "table":
+		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, tablePanel(visual.Table))
+	default:
+		return nil
+	}
+}
+
+func chartTag(kind string) string {
+	if kind == "line_chart" {
+		return "ld-line-chart"
+	}
+	return "ld-bar-chart"
+}
+
+func reportHeader(visual dashboard.PageVisual) g.Node {
+	if visual.Eyebrow == "" {
+		visual.Eyebrow = "LibreDash report"
+	}
+	if visual.Title == "" {
+		visual.Title = "Dashboard"
+	}
 	return h.Header(h.Class("report-header"),
 		h.Div(
-			h.P(h.Class("report-eyebrow"), g.Text("Olist commerce overview")),
-			h.H1(h.Class("report-title"), g.Text("Executive Sales Dashboard")),
+			h.P(h.Class("report-eyebrow"), g.Text(visual.Eyebrow)),
+			h.H1(h.Class("report-title"), g.Text(visual.Title)),
 		),
 		h.Div(h.Class("report-summary"),
-			h.Span(g.Text("DuckDB compute")),
-			h.Span(g.Text("Datastar stream")),
-			h.Span(g.Text("Lit visuals")),
+			g.Map(visual.Badges, func(badge string) g.Node {
+				return h.Span(g.Text(badge))
+			}),
 		),
 	)
 }
@@ -251,7 +310,6 @@ func reportHeader() g.Node {
 func filtersPane() g.Node {
 	return h.Aside(g.Attr("slot", "filters"), h.Class("filters-pane"), h.Aria("label", "Report filters"),
 		h.Div(h.Class("pane-header"),
-			h.P(h.Class("pane-eyebrow"), g.Text("Controls")),
 			h.H2(h.Class("pane-title"), g.Text("Filters")),
 		),
 		filters(),
@@ -327,7 +385,8 @@ func option(value, label string) g.Node {
 	return h.Option(h.Value(value), g.Text(label))
 }
 
-func chartPanel(tag, visualID, signal string) g.Node {
+func chartPanel(tag, visualID string) g.Node {
+	signal := "charts." + visualID
 	return h.Article(h.Class("visual-card"),
 		g.El(tag,
 			g.Attr("visual-id", visualID),
@@ -341,10 +400,13 @@ func chartPanel(tag, visualID, signal string) g.Node {
 	)
 }
 
-func tablePanel() g.Node {
+func tablePanel(tableName string) g.Node {
+	if tableName == "" {
+		tableName = "orders"
+	}
 	return h.Section(h.Class("table-card"),
 		g.El("ld-data-table",
-			g.Attr("data-attr:table", "$tables.orders"),
+			g.Attr("data-attr:table", "$tables."+tableName),
 			g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; @post('/commands/table-window')"),
 		),
 	)

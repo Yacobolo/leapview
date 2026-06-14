@@ -17,6 +17,7 @@ type queryMetrics interface {
 	QueryTable(ctx context.Context, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
 	RefreshCache(ctx context.Context) error
 	DataDir() string
+	Pages() []dashboard.Page
 }
 
 type Server struct {
@@ -31,6 +32,7 @@ func New(metrics queryMetrics) *Server {
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.home)
+	mux.HandleFunc("GET /pages/{page}", s.page)
 	mux.HandleFunc("GET /updates", s.updates)
 	mux.HandleFunc("POST /commands/table-window", s.tableWindow)
 	mux.HandleFunc("POST /commands/chart-select", s.chartSelect)
@@ -42,12 +44,46 @@ func (s *Server) Routes() http.Handler {
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
+	s.renderPage(w, r, "")
+}
+
+func (s *Server) page(w http.ResponseWriter, r *http.Request) {
+	s.renderPage(w, r, r.PathValue("page"))
+}
+
+func (s *Server) renderPage(w http.ResponseWriter, r *http.Request, pageID string) {
 	clientID := ensureClientID(w, r)
+	pages := s.metrics.Pages()
+	activePage, ok := activePage(pages, pageID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.Page(s.metrics.DataDir(), clientID).Render(w); err != nil {
+	if err := ui.Page(s.metrics.DataDir(), clientID, pages, activePage).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func activePage(pages []dashboard.Page, pageID string) (dashboard.Page, bool) {
+	if len(pages) == 0 {
+		return dashboard.Page{
+			ID:     "overview",
+			Title:  "Overview",
+			Width:  1366,
+			Height: 940,
+		}, true
+	}
+	if pageID != "" {
+		for _, page := range pages {
+			if page.ID == pageID {
+				return page.WithDefaults(), true
+			}
+		}
+		return dashboard.Page{}, false
+	}
+	return pages[0].WithDefaults(), true
 }
 
 func (s *Server) updates(w http.ResponseWriter, r *http.Request) {

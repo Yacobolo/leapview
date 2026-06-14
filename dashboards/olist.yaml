@@ -168,3 +168,109 @@ tables:
       - key: delivery_days
         label: Delivery
         align: right
+
+pages:
+  - id: overview
+    title: Overview
+    description: Executive sales summary
+    width: 1366
+    height: 940
+    visuals:
+      - id: page-header
+        kind: header
+        x: 16
+        y: 16
+        width: 1334
+        height: 86
+        eyebrow: Olist commerce overview
+        title: Executive Sales Dashboard
+        badges:
+          - DuckDB compute
+          - Datastar stream
+          - Lit visuals
+      - id: kpis
+        kind: kpi_strip
+        x: 16
+        y: 118
+        width: 1334
+        height: 116
+      - id: revenue
+        kind: line_chart
+        visual: revenue
+        x: 16
+        y: 250
+        width: 650
+        height: 300
+      - id: orders
+        kind: bar_chart
+        visual: orders
+        x: 682
+        y: 250
+        width: 326
+        height: 300
+      - id: delivery
+        kind: bar_chart
+        visual: delivery
+        x: 1024
+        y: 250
+        width: 326
+        height: 300
+      - id: categories
+        kind: bar_chart
+        visual: categories
+        x: 16
+        y: 566
+        width: 650
+        height: 354
+      - id: orders-table
+        kind: table
+        table: orders
+        x: 682
+        y: 566
+        width: 668
+        height: 354
+  - id: operations
+    title: Operations
+    description: Fulfillment and order detail
+    width: 1366
+    height: 940
+    visuals:
+      - id: page-header
+        kind: header
+        x: 16
+        y: 16
+        width: 1334
+        height: 86
+        eyebrow: Olist operations
+        title: Fulfillment Monitor
+        badges:
+          - Delivery performance
+          - Order health
+          - Detail drilldown
+      - id: kpis
+        kind: kpi_strip
+        x: 16
+        y: 118
+        width: 1334
+        height: 116
+      - id: delivery
+        kind: bar_chart
+        visual: delivery
+        x: 16
+        y: 250
+        width: 650
+        height: 300
+      - id: orders
+        kind: bar_chart
+        visual: orders
+        x: 682
+        y: 250
+        width: 668
+        height: 300
+      - id: orders-table
+        kind: table
+        table: orders
+        x: 16
+        y: 566
+        width: 1334
+        height: 354

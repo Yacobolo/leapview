@@ -7,6 +7,40 @@ type Signals struct {
 	ChartCommand ChartCommand `json:"chartCommand"`
 }
 
+type Page struct {
+	ID          string       `json:"id" yaml:"id"`
+	Title       string       `json:"title" yaml:"title"`
+	Description string       `json:"description,omitempty" yaml:"description"`
+	Width       int          `json:"width" yaml:"width"`
+	Height      int          `json:"height" yaml:"height"`
+	Visuals     []PageVisual `json:"visuals" yaml:"visuals"`
+}
+
+func (p Page) WithDefaults() Page {
+	if p.Width <= 0 {
+		p.Width = 1366
+	}
+	if p.Height <= 0 {
+		p.Height = 940
+	}
+	return p
+}
+
+type PageVisual struct {
+	ID       string   `json:"id" yaml:"id"`
+	Kind     string   `json:"kind" yaml:"kind"`
+	Visual   string   `json:"visual,omitempty" yaml:"visual"`
+	Table    string   `json:"table,omitempty" yaml:"table"`
+	X        int      `json:"x" yaml:"x"`
+	Y        int      `json:"y" yaml:"y"`
+	Width    int      `json:"width" yaml:"width"`
+	Height   int      `json:"height" yaml:"height"`
+	Eyebrow  string   `json:"eyebrow,omitempty" yaml:"eyebrow"`
+	Title    string   `json:"title,omitempty" yaml:"title"`
+	Subtitle string   `json:"subtitle,omitempty" yaml:"subtitle"`
+	Badges   []string `json:"badges,omitempty" yaml:"badges"`
+}
+
 type Filters struct {
 	DateRange        string            `json:"dateRange"`
 	State            string            `json:"state"`
