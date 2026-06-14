@@ -17,7 +17,7 @@ func TestMissingDataReturnsSetupPatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	patch, err := metrics.QueryDashboard(context.Background(), dashboard.Filters{})
+	patch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,8 +29,8 @@ func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	}
 
 	var missing *MissingDataError
-	if !errors.As(metrics.missing, &missing) {
-		t.Fatalf("missing error type = %T, want *MissingDataError", metrics.missing)
+	if !errors.As(metrics.runtimes["olist"].missing, &missing) {
+		t.Fatalf("missing error type = %T, want *MissingDataError", metrics.runtimes["olist"].missing)
 	}
 }
 
@@ -70,11 +70,11 @@ relogios_presentes,watches_gifts
 		t.Fatal(err)
 	}
 	defer metrics.Close()
-	if _, err := os.Stat(filepath.Join(dir, "libredash.duckdb")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "libredash-olist.duckdb")); err != nil {
 		t.Fatalf("expected DuckDB cache file: %v", err)
 	}
 
-	patch, err := metrics.QueryDashboard(context.Background(), dashboard.Filters{State: "SP", DateRange: "2018"})
+	patch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{State: "SP", DateRange: "2018"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("top category = %q, want health_beauty", got)
 	}
 
-	selectedPatch, err := metrics.QueryDashboard(context.Background(), dashboard.Filters{
+	selectedPatch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{
 			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
 		},
@@ -128,7 +128,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("non-target multi-series chart points under status selection = %d, want 2", len(selectedPatch.Charts["orders_by_month_status"].Data))
 	}
 
-	table, err := metrics.QueryTable(context.Background(), dashboard.Filters{}, dashboard.TableRequest{
+	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
 		Table:  "orders",
 		Offset: 0,
 		Limit:  1,
@@ -147,7 +147,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("first table order = %v, want o2", got)
 	}
 
-	filteredTable, err := metrics.QueryTable(context.Background(), dashboard.Filters{
+	filteredTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{
 			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
 		},
@@ -159,7 +159,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("targeted table total rows = %d, want 1", filteredTable.TotalRows)
 	}
 
-	if err := metrics.RefreshCache(context.Background()); err != nil {
+	if err := metrics.RefreshCache(context.Background(), "olist"); err != nil {
 		t.Fatalf("refresh cache: %v", err)
 	}
 }

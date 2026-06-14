@@ -5,21 +5,17 @@ import (
 	"os"
 	"sort"
 
-	"github.com/Yacobolo/libredash/internal/dashboard"
 	"gopkg.in/yaml.v3"
 )
 
 type Model struct {
-	Name          string                 `yaml:"name"`
-	Title         string                 `yaml:"title"`
-	Sources       map[string]Source      `yaml:"sources"`
-	Cache         Cache                  `yaml:"cache"`
-	Datasets      map[string]Dataset     `yaml:"datasets"`
-	KPIs          map[string]KPI         `yaml:"kpis"`
-	Visuals       map[string]Visual      `yaml:"visuals"`
-	Tables        map[string]TableVisual `yaml:"tables"`
-	Relationships []Relationship         `yaml:"relationships"`
-	Pages         []dashboard.Page       `yaml:"pages"`
+	Name          string             `yaml:"name"`
+	Title         string             `yaml:"title"`
+	Description   string             `yaml:"description"`
+	Sources       map[string]Source  `yaml:"sources"`
+	Cache         Cache              `yaml:"cache"`
+	Datasets      map[string]Dataset `yaml:"datasets"`
+	Relationships []Relationship     `yaml:"relationships"`
 }
 
 type Source struct {
@@ -55,54 +51,6 @@ type Measure struct {
 	Expression string `yaml:"expression"`
 	Unit       string `yaml:"unit"`
 	Format     string `yaml:"format"`
-}
-
-type KPI struct {
-	Title   string `yaml:"title"`
-	Dataset string `yaml:"dataset"`
-	Measure string `yaml:"measure"`
-	Note    string `yaml:"note"`
-	Tone    string `yaml:"tone"`
-}
-
-type Visual struct {
-	Title       string      `yaml:"title"`
-	Type        string      `yaml:"type"`
-	Stacked     bool        `yaml:"stacked"`
-	Dataset     string      `yaml:"dataset"`
-	Query       VisualQuery `yaml:"query"`
-	Interaction Interaction `yaml:"interaction"`
-}
-
-type VisualQuery struct {
-	Dimensions []string `yaml:"dimensions"`
-	Series     string   `yaml:"series"`
-	Measures   []string `yaml:"measures"`
-	Sort       []Sort   `yaml:"sort"`
-	Limit      int      `yaml:"limit"`
-}
-
-type Sort struct {
-	Field     string `yaml:"field"`
-	Direction string `yaml:"direction"`
-	Expr      string `yaml:"expr"`
-}
-
-type Interaction struct {
-	Field   string             `yaml:"field"`
-	Targets InteractionTargets `yaml:"targets"`
-}
-
-type InteractionTargets struct {
-	Visuals []string `yaml:"visuals"`
-	Tables  []string `yaml:"tables"`
-}
-
-type TableVisual struct {
-	Title       string                  `yaml:"title"`
-	Dataset     string                  `yaml:"dataset"`
-	DefaultSort dashboard.TableSort     `yaml:"default_sort"`
-	Columns     []dashboard.TableColumn `yaml:"columns"`
 }
 
 type Relationship struct {
@@ -181,91 +129,6 @@ func (m *Model) Validate() error {
 			}
 		}
 	}
-	for name, visual := range m.Visuals {
-		if visual.Title == "" || visual.Dataset == "" || visual.Type == "" {
-			return fmt.Errorf("visual %q requires title, dataset, and type", name)
-		}
-		dataset, ok := m.Datasets[visual.Dataset]
-		if !ok {
-			return fmt.Errorf("visual %q references unknown dataset %q", name, visual.Dataset)
-		}
-		if len(visual.Query.Dimensions) != 1 {
-			return fmt.Errorf("visual %q requires exactly one query dimension", name)
-		}
-		if len(visual.Query.Measures) != 1 {
-			return fmt.Errorf("visual %q requires exactly one query measure", name)
-		}
-		for _, dimension := range visual.Query.Dimensions {
-			if _, ok := dataset.Dimensions[dimension]; !ok {
-				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension)
-			}
-		}
-		if visual.Query.Series != "" {
-			if _, ok := dataset.Dimensions[visual.Query.Series]; !ok {
-				return fmt.Errorf("visual %q references unknown series dimension %q", name, visual.Query.Series)
-			}
-			if !supportsSeries(visual.Type) {
-				return fmt.Errorf("visual %q type %q does not support series", name, visual.Type)
-			}
-		}
-		if !supportsChartType(visual.Type) {
-			return fmt.Errorf("visual %q has unsupported type %q", name, visual.Type)
-		}
-		for _, measure := range visual.Query.Measures {
-			if _, ok := dataset.Measures[measure]; !ok {
-				return fmt.Errorf("visual %q references unknown measure %q", name, measure)
-			}
-		}
-		for _, sort := range visual.Query.Sort {
-			if sort.Field == "" && sort.Expr == "" {
-				return fmt.Errorf("visual %q has sort missing field or expr", name)
-			}
-			if sort.Field != "" && sort.Field != "value" && sort.Field != visual.Query.Series {
-				if _, ok := dataset.Dimensions[sort.Field]; !ok {
-					if _, ok := dataset.Measures[sort.Field]; !ok {
-						return fmt.Errorf("visual %q sort references unknown field %q", name, sort.Field)
-					}
-				}
-			}
-		}
-		if visual.Interaction.Field != "" {
-			if _, ok := dataset.Dimensions[visual.Interaction.Field]; !ok {
-				return fmt.Errorf("visual %q interaction references unknown field %q", name, visual.Interaction.Field)
-			}
-		}
-	}
-	for name, kpi := range m.KPIs {
-		if kpi.Title == "" || kpi.Dataset == "" || kpi.Measure == "" {
-			return fmt.Errorf("kpi %q requires title, dataset, and measure", name)
-		}
-		dataset, ok := m.Datasets[kpi.Dataset]
-		if !ok {
-			return fmt.Errorf("kpi %q references unknown dataset %q", name, kpi.Dataset)
-		}
-		if _, ok := dataset.Measures[kpi.Measure]; !ok {
-			return fmt.Errorf("kpi %q references unknown measure %q", name, kpi.Measure)
-		}
-	}
-	for name, table := range m.Tables {
-		if table.Title == "" || table.Dataset == "" || len(table.Columns) == 0 {
-			return fmt.Errorf("table %q requires title, dataset, and columns", name)
-		}
-		if _, ok := m.Datasets[table.Dataset]; !ok {
-			return fmt.Errorf("table %q references unknown dataset %q", name, table.Dataset)
-		}
-	}
-	for name, visual := range m.Visuals {
-		for _, target := range visual.Interaction.Targets.Visuals {
-			if _, ok := m.Visuals[target]; !ok {
-				return fmt.Errorf("visual %q interaction references unknown target visual %q", name, target)
-			}
-		}
-		for _, target := range visual.Interaction.Targets.Tables {
-			if _, ok := m.Tables[target]; !ok {
-				return fmt.Errorf("visual %q interaction references unknown target table %q", name, target)
-			}
-		}
-	}
 	seenRelationships := map[string]struct{}{}
 	for index, relationship := range m.Relationships {
 		if relationship.ID == "" || relationship.From == "" || relationship.To == "" {
@@ -275,40 +138,6 @@ func (m *Model) Validate() error {
 			return fmt.Errorf("duplicate relationship id %q", relationship.ID)
 		}
 		seenRelationships[relationship.ID] = struct{}{}
-	}
-	seenPages := map[string]struct{}{}
-	for index, page := range m.Pages {
-		if page.ID == "" || page.Title == "" {
-			return fmt.Errorf("page %d requires id and title", index)
-		}
-		if _, exists := seenPages[page.ID]; exists {
-			return fmt.Errorf("duplicate page id %q", page.ID)
-		}
-		seenPages[page.ID] = struct{}{}
-		for _, visual := range page.Visuals {
-			if visual.ID == "" || visual.Kind == "" {
-				return fmt.Errorf("page %q has a visual missing id or kind", page.ID)
-			}
-			switch visual.Kind {
-			case "header", "kpi_strip":
-			case "line_chart", "area_chart", "bar_chart", "column_chart", "pie_chart", "donut_chart", "scatter_chart", "funnel_chart", "treemap_chart", "gauge_chart":
-				if visual.Visual == "" {
-					return fmt.Errorf("page %q visual %q requires visual", page.ID, visual.ID)
-				}
-				if _, ok := m.Visuals[visual.Visual]; !ok {
-					return fmt.Errorf("page %q references unknown visual %q", page.ID, visual.Visual)
-				}
-			case "table":
-				if visual.Table == "" {
-					return fmt.Errorf("page %q visual %q requires table", page.ID, visual.ID)
-				}
-				if _, ok := m.Tables[visual.Table]; !ok {
-					return fmt.Errorf("page %q references unknown table %q", page.ID, visual.Table)
-				}
-			default:
-				return fmt.Errorf("page %q visual %q has unsupported kind %q", page.ID, visual.ID, visual.Kind)
-			}
-		}
 	}
 	return nil
 }

@@ -6,11 +6,71 @@ import (
 	"testing"
 )
 
-func TestLoadOlistModel(t *testing.T) {
-	model, err := Load(filepath.Join("..", "..", "dashboards", "olist.yaml"))
+func TestLoadWorkspaceCatalog(t *testing.T) {
+	workspace, err := LoadWorkspace(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	if len(workspace.Catalog.SemanticModels) != 1 {
+		t.Fatalf("model catalog count = %d, want 1", len(workspace.Catalog.SemanticModels))
+	}
+	if len(workspace.Catalog.Dashboards) != 1 {
+		t.Fatalf("dashboard catalog count = %d, want 1", len(workspace.Catalog.Dashboards))
+	}
+	if _, ok := workspace.Models["olist"]; !ok {
+		t.Fatal("workspace missing olist model")
+	}
+	if _, ok := workspace.Dashboards["executive-sales"]; !ok {
+		t.Fatal("workspace missing executive-sales dashboard")
+	}
+}
+
+func TestCatalogValidateRejectsDuplicateIDs(t *testing.T) {
+	baseDir := filepath.Join("..", "..", "dashboards")
+	catalog := Catalog{
+		SemanticModels: []CatalogModel{
+			{ID: "olist", Title: "Olist", Path: "olist/model.yaml"},
+			{ID: "olist", Title: "Olist Copy", Path: "olist/model.yaml"},
+		},
+		Dashboards: []CatalogDashboard{
+			{ID: "executive-sales", Title: "Executive Sales", SemanticModel: "olist", Path: "olist/executive-sales.yaml"},
+		},
+	}
+
+	assertCatalogValidateError(t, catalog, baseDir, "duplicate semantic model")
+}
+
+func TestCatalogValidateRejectsUnknownDashboardModel(t *testing.T) {
+	baseDir := filepath.Join("..", "..", "dashboards")
+	catalog := Catalog{
+		SemanticModels: []CatalogModel{
+			{ID: "olist", Title: "Olist", Path: "olist/model.yaml"},
+		},
+		Dashboards: []CatalogDashboard{
+			{ID: "executive-sales", Title: "Executive Sales", SemanticModel: "missing", Path: "olist/executive-sales.yaml"},
+		},
+	}
+
+	assertCatalogValidateError(t, catalog, baseDir, "unknown semantic model")
+}
+
+func TestCatalogValidateRejectsMissingPath(t *testing.T) {
+	baseDir := filepath.Join("..", "..", "dashboards")
+	catalog := Catalog{
+		SemanticModels: []CatalogModel{
+			{ID: "olist", Title: "Olist", Path: "olist/missing.yaml"},
+		},
+		Dashboards: []CatalogDashboard{
+			{ID: "executive-sales", Title: "Executive Sales", SemanticModel: "olist", Path: "olist/executive-sales.yaml"},
+		},
+	}
+
+	assertCatalogValidateError(t, catalog, baseDir, "missing.yaml")
+}
+
+func TestLoadOlistModel(t *testing.T) {
+	model := loadOlistModel(t)
 
 	if model.Name != "olist" {
 		t.Fatalf("model name = %q, want olist", model.Name)
@@ -21,26 +81,38 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.Datasets["orders"].Source; got != "orders_enriched" {
 		t.Fatalf("orders dataset source = %q, want orders_enriched", got)
 	}
-	if got := model.Visuals["revenue"].Dataset; got != "orders" {
-		t.Fatalf("revenue visual dataset = %q, want orders", got)
-	}
-	if got := model.Visuals["orders"].Type; got != "donut" {
-		t.Fatalf("orders visual type = %q, want donut", got)
-	}
-	if got := model.Visuals["orders_by_month_status"].Query.Series; got != "status" {
-		t.Fatalf("multi-series visual series = %q, want status", got)
-	}
-	if got := model.Tables["orders"].DefaultSort.Key; got != "purchase_date" {
-		t.Fatalf("orders table default sort = %q, want purchase_date", got)
-	}
-	if len(model.Pages) != 2 {
-		t.Fatalf("page count = %d, want 2", len(model.Pages))
-	}
-	if got := model.Pages[1].ID; got != "operations" {
-		t.Fatalf("second page id = %q, want operations", got)
-	}
 	if len(model.Relationships) != 6 {
 		t.Fatalf("relationship count = %d, want 6", len(model.Relationships))
+	}
+}
+
+func TestLoadOlistDashboard(t *testing.T) {
+	model := loadOlistModel(t)
+	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), model)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.ID != "executive-sales" {
+		t.Fatalf("dashboard id = %q, want executive-sales", report.ID)
+	}
+	if got := report.Visuals["revenue"].Dataset; got != "orders" {
+		t.Fatalf("revenue visual dataset = %q, want orders", got)
+	}
+	if got := report.Visuals["orders"].Type; got != "donut" {
+		t.Fatalf("orders visual type = %q, want donut", got)
+	}
+	if got := report.Visuals["orders_by_month_status"].Query.Series; got != "status" {
+		t.Fatalf("multi-series visual series = %q, want status", got)
+	}
+	if got := report.Tables["orders"].DefaultSort.Key; got != "purchase_date" {
+		t.Fatalf("orders table default sort = %q, want purchase_date", got)
+	}
+	if len(report.Pages) != 2 {
+		t.Fatalf("page count = %d, want 2", len(report.Pages))
+	}
+	if got := report.Pages[1].ID; got != "operations" {
+		t.Fatalf("second page id = %q, want operations", got)
 	}
 }
 
@@ -50,48 +122,82 @@ func TestValidateRejectsUnknownDatasetSource(t *testing.T) {
 	dataset.Source = "missing_cache"
 	model.Datasets["orders"] = dataset
 
-	assertValidateError(t, model, "unknown cache table")
+	assertModelValidateError(t, model, "unknown cache table")
 }
 
-func TestValidateRejectsUnknownVisualDimension(t *testing.T) {
+func TestDashboardValidateRejectsUnknownVisualDimension(t *testing.T) {
 	model := loadOlistModel(t)
-	visual := model.Visuals["revenue"]
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
 	visual.Query.Dimensions = []string{"missing_dimension"}
-	model.Visuals["revenue"] = visual
+	report.Visuals["revenue"] = visual
 
-	assertValidateError(t, model, "unknown dimension")
+	assertDashboardValidateError(t, report, model, "unknown dimension")
 }
 
-func TestValidateRejectsUnknownInteractionTarget(t *testing.T) {
+func TestDashboardValidateRejectsUnknownInteractionTarget(t *testing.T) {
 	model := loadOlistModel(t)
-	visual := model.Visuals["orders"]
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["orders"]
 	visual.Interaction.Targets.Visuals = append(visual.Interaction.Targets.Visuals, "missing_visual")
-	model.Visuals["orders"] = visual
+	report.Visuals["orders"] = visual
 
-	assertValidateError(t, model, "unknown target visual")
+	assertDashboardValidateError(t, report, model, "unknown target visual")
 }
 
-func TestValidateRejectsSeriesOnUnsupportedChart(t *testing.T) {
+func TestDashboardValidateRejectsSeriesOnUnsupportedChart(t *testing.T) {
 	model := loadOlistModel(t)
-	visual := model.Visuals["orders"]
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["orders"]
 	visual.Query.Series = "status"
-	model.Visuals["orders"] = visual
+	report.Visuals["orders"] = visual
 
-	assertValidateError(t, model, "does not support series")
+	assertDashboardValidateError(t, report, model, "does not support series")
 }
 
 func loadOlistModel(t *testing.T) *Model {
 	t.Helper()
-	model, err := Load(filepath.Join("..", "..", "dashboards", "olist.yaml"))
+	model, err := Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return model
 }
 
-func assertValidateError(t *testing.T, model *Model, contains string) {
+func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
+	t.Helper()
+	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+func assertModelValidateError(t *testing.T, model *Model, contains string) {
 	t.Helper()
 	err := model.Validate()
+	if err == nil {
+		t.Fatalf("Validate() error = nil, want %q", contains)
+	}
+	if !strings.Contains(err.Error(), contains) {
+		t.Fatalf("Validate() error = %q, want containing %q", err.Error(), contains)
+	}
+}
+
+func assertDashboardValidateError(t *testing.T, report *Dashboard, model *Model, contains string) {
+	t.Helper()
+	err := report.Validate(model)
+	if err == nil {
+		t.Fatalf("Validate() error = nil, want %q", contains)
+	}
+	if !strings.Contains(err.Error(), contains) {
+		t.Fatalf("Validate() error = %q, want containing %q", err.Error(), contains)
+	}
+}
+
+func assertCatalogValidateError(t *testing.T, catalog Catalog, baseDir, contains string) {
+	t.Helper()
+	err := catalog.Validate(baseDir)
 	if err == nil {
 		t.Fatalf("Validate() error = nil, want %q", contains)
 	}

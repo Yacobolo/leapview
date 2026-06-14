@@ -1,19 +1,25 @@
-import { LitElement, css, html } from 'lit'
+import { LitElement, css, html, svg as svgTemplate } from 'lit'
 import { property, state } from 'lit/decorators.js'
 
 type VisualElement = HTMLElement & {
   dataset: DOMStringMap
 }
 
+type ZoomMode = 'fit-width' | 'fit-page' | 'actual' | 'custom'
+
+type ZoomCommand = {
+  mode?: ZoomMode
+  scale?: number
+}
+
 class ReportCanvas extends LitElement {
   @property({ type: Number }) width = 1366
   @property({ type: Number }) height = 768
   @state() private scale = 1
-  @state() private filtersOpen = true
+  @state() private zoomMode: ZoomMode = storedZoomMode()
+  private customScale = storedCustomScale()
 
   private resizeObserver?: ResizeObserver
-  private readonly filtersWidth = 232
-  private readonly collapsedFiltersWidth = 36
 
   static styles = css`
     :host {
@@ -25,11 +31,9 @@ class ReportCanvas extends LitElement {
     }
 
     .surface {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) var(--filters-pane-width);
       width: 100%;
       min-width: 0;
-      background: var(--bgColor-default);
+      background: var(--report-canvas-bg, var(--bgColor-inset));
     }
 
     .viewport {
@@ -42,14 +46,12 @@ class ReportCanvas extends LitElement {
 
     .frame {
       position: relative;
+      box-sizing: border-box;
       width: calc(var(--report-canvas-width) * 1px);
       height: calc(var(--report-canvas-height) * 1px);
       transform: scale(var(--report-canvas-scale));
       transform-origin: top left;
-      background:
-        linear-gradient(var(--report-page-bg), var(--report-page-bg)),
-        radial-gradient(circle at 1px 1px, var(--report-grid-dot) 1px, transparent 0);
-      background-size: auto, 16px 16px;
+      background: var(--report-page-bg, transparent);
     }
 
     .sizer {
@@ -57,59 +59,6 @@ class ReportCanvas extends LitElement {
       width: calc(var(--report-canvas-width) * var(--report-canvas-scale) * 1px);
       height: calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px);
       min-width: 100%;
-    }
-
-    .filters-sidebar {
-      display: flex;
-      height: calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px);
-      min-width: 0;
-      border-left: 1px solid var(--borderColor-default);
-      background: var(--bgColor-default);
-      overflow: hidden;
-    }
-
-    .filters-rail {
-      display: flex;
-      width: 36px;
-      flex: 0 0 36px;
-      align-items: start;
-      justify-content: center;
-      border-right: 1px solid var(--borderColor-default);
-      background: var(--bgColor-muted);
-      padding-top: 7px;
-    }
-
-    .filters-toggle {
-      display: grid;
-      width: 24px;
-      height: 24px;
-      place-items: center;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
-      background: var(--bgColor-default);
-      color: var(--fgColor-default);
-      cursor: pointer;
-      font: inherit;
-      font-size: 0.86rem;
-      font-weight: 900;
-      line-height: 1;
-    }
-
-    .filters-toggle:hover,
-    .filters-toggle:focus-visible {
-      border-color: var(--borderColor-accent-emphasis);
-      color: var(--fgColor-accent);
-      outline: 0;
-    }
-
-    .filters-body {
-      flex: 1 1 auto;
-      min-width: 0;
-      overflow: auto;
-    }
-
-    .filters-sidebar.collapsed .filters-body {
-      display: none;
     }
 
     ::slotted(.canvas-visual) {
@@ -124,15 +73,18 @@ class ReportCanvas extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback()
+    document.addEventListener('ld-report-zoom-command', this.onZoomCommand as EventListener)
     this.resizeObserver = new ResizeObserver(() => this.updateScale())
     this.updateComplete.then(() => {
       this.resizeObserver?.observe(this)
       this.updateScale()
       this.positionVisuals()
+      this.emitZoomState()
     })
   }
 
   disconnectedCallback(): void {
+    document.removeEventListener('ld-report-zoom-command', this.onZoomCommand as EventListener)
     this.resizeObserver?.disconnect()
     super.disconnectedCallback()
   }
@@ -143,12 +95,25 @@ class ReportCanvas extends LitElement {
   }
 
   private updateScale(): void {
-    const sidebarWidth = this.filtersOpen ? this.filtersWidth : this.collapsedFiltersWidth
-    const availableWidth = Math.max(0, this.getBoundingClientRect().width - sidebarWidth)
+    const hostRect = this.getBoundingClientRect()
+    const surface = this.shadowRoot?.querySelector('.surface') as HTMLElement | null
+    const availableWidth = Math.max(0, hostRect.width)
+    const availableHeight = Math.max(0, hostRect.height || surface?.getBoundingClientRect().height || 0)
     if (!availableWidth || !this.width) return
-    const nextScale = Math.min(1, Math.max(0.42, availableWidth / this.width))
+    const widthScale = availableWidth / this.width
+    const heightScale = this.height > 0 && availableHeight > 0 ? availableHeight / this.height : widthScale
+    let nextScale = widthScale
+    if (this.zoomMode === 'fit-page') {
+      nextScale = Math.min(widthScale, heightScale)
+    } else if (this.zoomMode === 'actual') {
+      nextScale = 1
+    } else if (this.zoomMode === 'custom') {
+      nextScale = this.customScale
+    }
+    nextScale = Math.min(1, Math.max(0.36, nextScale))
     if (Math.abs(nextScale - this.scale) > 0.001) {
       this.scale = nextScale
+      this.emitZoomState()
     }
   }
 
@@ -172,18 +137,43 @@ class ReportCanvas extends LitElement {
     element.style.height = `${height}px`
   }
 
-  private toggleFilters(): void {
-    this.filtersOpen = !this.filtersOpen
+  private setZoomMode(mode: ZoomMode): void {
+    this.zoomMode = mode
+    try {
+      localStorage.setItem(zoomStorageKey(), mode)
+    } catch {
+      // Ignore storage failures; the active component state still updates.
+    }
     this.updateComplete.then(() => this.updateScale())
+    this.updateComplete.then(() => this.emitZoomState())
+  }
+
+  private onZoomCommand = (event: CustomEvent<ZoomCommand>): void => {
+    const detail = event.detail ?? {}
+    if (detail.scale !== undefined) {
+      this.customScale = clampScale(detail.scale)
+      try {
+        localStorage.setItem(zoomScaleStorageKey(), String(this.customScale))
+      } catch {
+        // Ignore storage failures; the active component state still updates.
+      }
+    }
+    this.setZoomMode(detail.mode ?? (detail.scale !== undefined ? 'custom' : this.zoomMode))
+  }
+
+  private emitZoomState(): void {
+    this.dispatchEvent(new CustomEvent('ld-report-zoom-state', {
+      detail: { mode: this.zoomMode, scale: this.scale },
+      bubbles: true,
+      composed: true,
+    }))
   }
 
   render() {
-    const sidebarWidth = this.filtersOpen ? this.filtersWidth : this.collapsedFiltersWidth
     const style = [
       `--report-canvas-width:${this.width}`,
       `--report-canvas-height:${this.height}`,
       `--report-canvas-scale:${this.scale}`,
-      `--filters-pane-width:${sidebarWidth}px`,
     ].join(';')
 
     return html`
@@ -195,23 +185,148 @@ class ReportCanvas extends LitElement {
             </div>
           </div>
         </div>
-        <aside class=${`filters-sidebar ${this.filtersOpen ? '' : 'collapsed'}`} aria-label="Filters">
-          <div class="filters-rail">
-            <button
-              class="filters-toggle"
-              type="button"
-              title=${this.filtersOpen ? 'Collapse filters' : 'Open filters'}
-              aria-label=${this.filtersOpen ? 'Collapse filters' : 'Open filters'}
-              aria-expanded=${this.filtersOpen ? 'true' : 'false'}
-              @click=${() => this.toggleFilters()}
-            >
-              ${this.filtersOpen ? '›' : '‹'}
-            </button>
-          </div>
-          <div class="filters-body">
-            <slot name="filters"></slot>
-          </div>
-        </aside>
+      </div>
+    `
+  }
+}
+
+class ReportZoom extends LitElement {
+  @state() private mode: ZoomMode = storedZoomMode()
+  @state() private scale = storedCustomScale()
+
+  static styles = css`
+    :host {
+      display: inline-block;
+      color: var(--fgColor-default);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    .zoom {
+      display: inline-grid;
+      grid-template-columns: auto auto auto minmax(92px, 132px) auto auto;
+      align-items: center;
+      overflow: hidden;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 5px;
+      background: var(--report-panel, var(--card-bgColor, var(--bgColor-default)));
+    }
+
+    button {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 0;
+      border-left: 1px solid var(--borderColor-muted);
+      background: transparent;
+      color: var(--fgColor-muted);
+      cursor: pointer;
+      padding: 0;
+      font: inherit;
+    }
+
+    button:first-child {
+      border-left: 0;
+    }
+
+    button:hover,
+    button:focus-visible {
+      background: var(--bgColor-muted);
+      color: var(--fgColor-default);
+      outline: 0;
+    }
+
+    button[aria-pressed='true'] {
+      background: var(--ld-accent);
+      color: var(--ld-accent-fg);
+    }
+
+    svg {
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    input {
+      width: 100%;
+      min-width: 0;
+      accent-color: var(--ld-accent);
+    }
+
+    .slider {
+      display: grid;
+      min-width: 0;
+      border-left: 1px solid var(--borderColor-muted);
+      padding: 0 8px;
+    }
+
+    .percent {
+      min-width: 45px;
+      border-left: 1px solid var(--borderColor-muted);
+      color: var(--fgColor-muted);
+      text-align: center;
+      font-size: 0.7rem;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+  `
+
+  connectedCallback(): void {
+    super.connectedCallback()
+    document.addEventListener('ld-report-zoom-state', this.onZoomState as EventListener)
+  }
+
+  disconnectedCallback(): void {
+    document.removeEventListener('ld-report-zoom-state', this.onZoomState as EventListener)
+    super.disconnectedCallback()
+  }
+
+  private onZoomState = (event: CustomEvent<{ mode: ZoomMode; scale: number }>): void => {
+    this.mode = event.detail.mode
+    this.scale = event.detail.scale
+  }
+
+  private command(detail: ZoomCommand): void {
+    this.dispatchEvent(new CustomEvent('ld-report-zoom-command', {
+      detail,
+      bubbles: true,
+      composed: true,
+    }))
+  }
+
+  private nudge(delta: number): void {
+    this.command({ mode: 'custom', scale: clampScale(this.scale + delta) })
+  }
+
+  private slide(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement
+    this.command({ mode: 'custom', scale: clampScale(Number(input.value) / 100) })
+  }
+
+  render() {
+    const percent = Math.round(this.scale * 100)
+    return html`
+      <div class="zoom" role="group" aria-label="Report zoom">
+        <button type="button" title="Fit width" aria-label="Fit width" aria-pressed=${String(this.mode === 'fit-width')} @click=${() => this.command({ mode: 'fit-width' })}>
+          ${zoomIcon('fit-width')}
+        </button>
+        <button type="button" title="Fit page" aria-label="Fit page" aria-pressed=${String(this.mode === 'fit-page')} @click=${() => this.command({ mode: 'fit-page' })}>
+          ${zoomIcon('fit-page')}
+        </button>
+        <button type="button" title="Zoom out" aria-label="Zoom out" @click=${() => this.nudge(-0.05)}>
+          ${zoomIcon('minus')}
+        </button>
+        <div class="slider">
+          <input type="range" min="36" max="100" .value=${String(percent)} aria-label="Zoom percent" @input=${this.slide} />
+        </div>
+        <button type="button" title="Zoom in" aria-label="Zoom in" @click=${() => this.nudge(0.05)}>
+          ${zoomIcon('plus')}
+        </button>
+        <span class="percent">${percent}%</span>
       </div>
     `
   }
@@ -224,3 +339,50 @@ function parseCanvasNumber(value: string | undefined, fallback: number): number 
 }
 
 customElements.define('ld-report-canvas', ReportCanvas)
+customElements.define('ld-report-zoom', ReportZoom)
+
+function zoomStorageKey(): string {
+  return `libredash-report-zoom:${location.pathname}`
+}
+
+function zoomScaleStorageKey(): string {
+  return `libredash-report-zoom-scale:${location.pathname}`
+}
+
+function storedZoomMode(): ZoomMode {
+  try {
+    const value = localStorage.getItem(zoomStorageKey())
+    if (value === 'fit-page' || value === 'actual' || value === 'fit-width' || value === 'custom') {
+      return value
+    }
+  } catch {
+    // Ignore storage failures.
+  }
+  return 'fit-width'
+}
+
+function storedCustomScale(): number {
+  try {
+    return clampScale(Number(localStorage.getItem(zoomScaleStorageKey()) || 0.6))
+  } catch {
+    return 0.6
+  }
+}
+
+function clampScale(value: number): number {
+  if (!Number.isFinite(value)) return 0.6
+  return Math.min(1, Math.max(0.36, value))
+}
+
+function zoomIcon(name: 'fit-width' | 'fit-page' | 'minus' | 'plus') {
+  switch (name) {
+    case 'fit-width':
+      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v12H3z"></path><path d="m8 12-3-3 3-3"></path><path d="m16 12 3-3-3-3"></path><path d="M5 9h14"></path></svg>`
+    case 'fit-page':
+      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path d="M15 3v4h4"></path><path d="M9 11h6"></path><path d="M9 15h6"></path></svg>`
+    case 'minus':
+      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>`
+    case 'plus':
+      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>`
+  }
+}

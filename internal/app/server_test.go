@@ -9,15 +9,72 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/semantic"
 )
 
 type fakeMetrics struct{}
+
+func (fakeMetrics) Catalog() dashboard.Catalog {
+	return dashboard.Catalog{
+		Models: []dashboard.CatalogModel{
+			{ID: "test", Title: "Test Model", Description: "Fixture model"},
+		},
+		Dashboards: []dashboard.CatalogDashboard{
+			{ID: "executive-sales", Title: "Executive Sales Dashboard", Description: "Fixture report", SemanticModel: "test", ModelTitle: "Test Model", Tags: []string{"sales"}, PageCount: 2},
+		},
+	}
+}
+
+func (fakeMetrics) DefaultDashboardID() string {
+	return "executive-sales"
+}
+
+func (fakeMetrics) ModelIDForDashboard(dashboardID string) string {
+	if dashboardID == "executive-sales" {
+		return "test"
+	}
+	return ""
+}
 
 func (fakeMetrics) DataDir() string {
 	return ".data/olist"
 }
 
-func (fakeMetrics) Pages() []dashboard.Page {
+func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Model, bool) {
+	if dashboardID != "executive-sales" {
+		return semantic.Dashboard{}, nil, false
+	}
+	return semantic.Dashboard{
+			ID:            "executive-sales",
+			Title:         "Executive Sales Dashboard",
+			SemanticModel: "test",
+			Visuals: map[string]semantic.Visual{
+				"orders": {Title: "Orders", Type: "donut", Dataset: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
+			},
+			Tables: map[string]semantic.TableVisual{
+				"orders": {Title: "Orders", Dataset: "orders", DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
+			},
+			Pages: fakeMetrics{}.Pages(dashboardID),
+		}, &semantic.Model{
+			Name:  "test",
+			Title: "Test Model",
+			Datasets: map[string]semantic.Dataset{
+				"orders": {
+					Dimensions: map[string]semantic.Dimension{"status": {Expr: "status"}},
+					Measures:   map[string]semantic.Measure{"order_count": {Aggregate: "count_distinct", Column: "order_id", Unit: "orders"}},
+				},
+			},
+		}, true
+}
+
+func (fakeMetrics) NormalizeTableRequest(_ string, request dashboard.TableRequest) dashboard.TableRequest {
+	return request.WithDefaults()
+}
+
+func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
+	if dashboardID != "executive-sales" {
+		return nil
+	}
 	return []dashboard.Page{
 		{
 			ID:     "overview",
@@ -37,7 +94,10 @@ func (fakeMetrics) Pages() []dashboard.Page {
 	}
 }
 
-func (fakeMetrics) ModelGraph() dashboard.ModelGraph {
+func (fakeMetrics) ModelGraph(modelID string) (dashboard.ModelGraph, bool) {
+	if modelID != "test" {
+		return dashboard.ModelGraph{}, false
+	}
 	return dashboard.ModelGraph{
 		Name:  "test",
 		Title: "Test Model",
@@ -49,10 +109,10 @@ func (fakeMetrics) ModelGraph() dashboard.ModelGraph {
 		Edges: []dashboard.ModelEdge{
 			{ID: "orders_cache", Source: "source:orders", Target: "cache:orders_enriched", Kind: "materialization"},
 		},
-	}
+	}, true
 }
 
-func (fakeMetrics) QueryDashboard(_ context.Context, filters dashboard.Filters) (dashboard.Patch, error) {
+func (fakeMetrics) QueryDashboard(_ context.Context, _ string, filters dashboard.Filters) (dashboard.Patch, error) {
 	return dashboard.Patch{
 		Filters: filters.WithDefaults(),
 		Status: dashboard.Status{
@@ -68,7 +128,7 @@ func (fakeMetrics) QueryDashboard(_ context.Context, filters dashboard.Filters) 
 }
 
 func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/pages/operations", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/operations", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -77,13 +137,45 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `class="page-tab active" href="/pages/operations"`) {
+	if !strings.Contains(body, `class="page-tab active" href="/dashboards/executive-sales/pages/operations"`) {
 		t.Fatalf("operations page tab was not active:\n%s", body)
 	}
 }
 
+func TestCatalogRouteRendersDashboardCatalog(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `Executive Sales Dashboard`) {
+		t.Fatalf("catalog missing dashboard title:\n%s", body)
+	}
+	if !strings.Contains(body, `href="/dashboards/executive-sales"`) {
+		t.Fatalf("catalog missing dashboard link:\n%s", body)
+	}
+}
+
+func TestDashboardRouteRedirectsToFirstPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+	if got := rec.Header().Get("Location"); got != "/dashboards/executive-sales/pages/overview" {
+		t.Fatalf("Location = %q, want first page", got)
+	}
+}
+
 func TestUnknownPageRouteReturnsNotFound(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/pages/missing", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/missing", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -93,8 +185,21 @@ func TestUnknownPageRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestLegacyRoutesReturnNotFound(t *testing.T) {
+	for _, path := range []string{"/pages/overview", "/model"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+
+		New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want %d", path, rec.Code, http.StatusNotFound)
+		}
+	}
+}
+
 func TestModelRouteRendersSemanticModelGraph(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/model", nil)
+	req := httptest.NewRequest(http.MethodGet, "/models/test", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -111,7 +216,7 @@ func TestModelRouteRendersSemanticModelGraph(t *testing.T) {
 	}
 }
 
-func (fakeMetrics) QueryTable(_ context.Context, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	request = request.WithDefaults()
 	return dashboard.Table{
 		Title: "Orders",
@@ -127,7 +232,7 @@ func (fakeMetrics) QueryTable(_ context.Context, _ dashboard.Filters, request da
 	}, nil
 }
 
-func (fakeMetrics) RefreshCache(_ context.Context) error {
+func (fakeMetrics) RefreshCache(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -135,7 +240,7 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?datastar=%7B%22filters%22%3A%7B%22state%22%3A%22SP%22%7D%7D", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22state%22%3A%22SP%22%7D%7D", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)

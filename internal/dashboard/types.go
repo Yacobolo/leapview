@@ -7,6 +7,27 @@ type Signals struct {
 	ChartCommand ChartCommand `json:"chartCommand"`
 }
 
+type Catalog struct {
+	Models     []CatalogModel     `json:"models"`
+	Dashboards []CatalogDashboard `json:"dashboards"`
+}
+
+type CatalogModel struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+type CatalogDashboard struct {
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description"`
+	SemanticModel string   `json:"semanticModel"`
+	ModelTitle    string   `json:"modelTitle"`
+	Tags          []string `json:"tags"`
+	PageCount     int      `json:"pageCount"`
+}
+
 type Page struct {
 	ID          string       `json:"id" yaml:"id"`
 	Title       string       `json:"title" yaml:"title"`
@@ -97,7 +118,10 @@ type Filters struct {
 }
 
 type Runtime struct {
-	ClientID string `json:"clientId"`
+	ClientID    string `json:"clientId"`
+	DashboardID string `json:"dashboardId"`
+	PageID      string `json:"pageId"`
+	ModelID     string `json:"modelId"`
 }
 
 func (f Filters) WithDefaults() Filters {

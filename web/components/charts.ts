@@ -42,7 +42,7 @@ const chartStyles = css`
     height: 100%;
     min-height: 0;
     grid-template-rows: auto minmax(0, 1fr);
-    background: var(--bgColor-default);
+    background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
   }
 
   header {
@@ -86,7 +86,7 @@ const chartStyles = css`
     place-items: center;
     margin: 12px;
     border: 1px dashed var(--borderColor-default);
-    background: var(--bgColor-muted);
+    background: var(--report-panel-subtle, var(--bgColor-muted));
     color: var(--fgColor-muted);
     font-weight: 800;
   }
@@ -218,7 +218,7 @@ class KPIStrip extends LitElement {
       min-height: 104px;
       border: 1px solid var(--borderColor-default);
       border-radius: 6px;
-      background: var(--bgColor-default);
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       box-shadow: var(--shadow-resting-small);
       padding: 12px 14px 12px 16px;
       overflow: hidden;
@@ -520,7 +520,7 @@ function stylesFor(element: HTMLElement): ChartTokens {
     muted: value('--fgColor-muted', '#59636e'),
     border: value('--borderColor-default', '#d0d7de'),
     grid: value('--ld-chart-grid', value('--borderColor-muted', '#d8dee4')),
-    surface: value('--bgColor-default', '#ffffff'),
+    surface: value('--report-chart-surface', value('--card-bgColor', value('--bgColor-default', '#ffffff'))),
     fill: value('--ld-chart-1-muted', 'rgba(84, 174, 255, .35)'),
     dimmed: value('--borderColor-muted', '#d8dee4'),
     palette: [

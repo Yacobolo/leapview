@@ -32,92 +32,237 @@ func (e *MissingDataError) Error() string {
 }
 
 type DuckDBMetrics struct {
-	mu          sync.RWMutex
+	mu         sync.RWMutex
+	dataDir    string
+	catalog    dashboard.Catalog
+	workspace  *semantic.Workspace
+	runtimes   map[string]*modelRuntime
+	defaultID  string
+	defaultMID string
+}
+
+type modelRuntime struct {
 	db          *sql.DB
-	dataDir     string
 	dbPath      string
 	model       *semantic.Model
-	modelPath   string
 	ready       bool
 	missing     error
 	lastRefresh time.Time
 }
 
 func NewDuckDBMetrics(dataDir string) (*DuckDBMetrics, error) {
-	modelPath := os.Getenv("LIBREDASH_MODEL_PATH")
-	if modelPath == "" {
+	catalogPath := os.Getenv("LIBREDASH_CATALOG_PATH")
+	if catalogPath == "" {
 		var err error
-		modelPath, err = discoverModelPath()
+		catalogPath, err = discoverCatalogPath()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	model, err := semantic.Load(modelPath)
+	workspace, err := semantic.LoadWorkspace(catalogPath)
 	if err != nil {
-		return nil, fmt.Errorf("loading semantic model: %w", err)
+		return nil, fmt.Errorf("loading workspace: %w", err)
 	}
 
 	metrics := &DuckDBMetrics{
-		dataDir:   dataDir,
-		dbPath:    duckDBPath(dataDir),
-		model:     model,
-		modelPath: modelPath,
+		dataDir:    dataDir,
+		workspace:  workspace,
+		runtimes:   map[string]*modelRuntime{},
+		defaultID:  workspace.Catalog.Dashboards[0].ID,
+		defaultMID: workspace.Catalog.SemanticModels[0].ID,
 	}
-	if err := metrics.validateFiles(); err != nil {
-		metrics.missing = err
-		return metrics, nil
+	metrics.catalog = metrics.catalogView()
+
+	for modelID, model := range workspace.Models {
+		runtime := &modelRuntime{
+			model:  model,
+			dbPath: duckDBPath(dataDir, modelID),
+		}
+		metrics.runtimes[modelID] = runtime
+		if err := metrics.validateFiles(runtime); err != nil {
+			runtime.missing = err
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(runtime.dbPath), 0o755); err != nil {
+			return nil, err
+		}
+		db, err := sql.Open("duckdb", runtime.dbPath)
+		if err != nil {
+			return nil, err
+		}
+		runtime.db = db
+		if err := db.Ping(); err != nil {
+			db.Close()
+			return nil, err
+		}
+		if err := metrics.RefreshCache(context.Background(), modelID); err != nil {
+			db.Close()
+			return nil, err
+		}
+		runtime.ready = true
 	}
 
-	if err := os.MkdirAll(filepath.Dir(metrics.dbPath), 0o755); err != nil {
-		return nil, err
-	}
-	db, err := sql.Open("duckdb", metrics.dbPath)
-	if err != nil {
-		return nil, err
-	}
-	metrics.db = db
-
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := metrics.RefreshCache(context.Background()); err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	metrics.ready = true
 	return metrics, nil
 }
 
 func (m *DuckDBMetrics) Close() error {
-	if m.db == nil {
-		return nil
+	var closeErr error
+	for _, runtime := range m.runtimes {
+		if runtime.db == nil {
+			continue
+		}
+		if err := runtime.db.Close(); err != nil && closeErr == nil {
+			closeErr = err
+		}
 	}
-	return m.db.Close()
+	return closeErr
 }
 
 func (m *DuckDBMetrics) DataDir() string {
 	return m.dataDir
 }
 
-func (m *DuckDBMetrics) Pages() []dashboard.Page {
-	pages := make([]dashboard.Page, len(m.model.Pages))
-	for i, page := range m.model.Pages {
+func (m *DuckDBMetrics) Catalog() dashboard.Catalog {
+	return m.catalog
+}
+
+func (m *DuckDBMetrics) DefaultDashboardID() string {
+	return m.defaultID
+}
+
+func (m *DuckDBMetrics) ModelIDForDashboard(dashboardID string) string {
+	report, ok := m.workspace.Dashboards[dashboardID]
+	if !ok {
+		return ""
+	}
+	return report.SemanticModel
+}
+
+func (m *DuckDBMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Model, bool) {
+	report, ok := m.workspace.Dashboards[dashboardID]
+	if !ok {
+		return semantic.Dashboard{}, nil, false
+	}
+	model, ok := m.workspace.Models[report.SemanticModel]
+	if !ok {
+		return semantic.Dashboard{}, nil, false
+	}
+	return *report, model, true
+}
+
+func (m *DuckDBMetrics) NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest {
+	report, ok := m.workspace.Dashboards[dashboardID]
+	if !ok {
+		return request.WithDefaults()
+	}
+	defaults := dashboard.TableRequest{Offset: 0, Limit: 120}
+	for _, name := range sortedKeys(report.Tables) {
+		table := report.Tables[name]
+		defaults.Table = name
+		defaults.Sort = table.DefaultSort
+		break
+	}
+	if defaults.Table == "" {
+		defaults = dashboard.DefaultTableRequest()
+	}
+	if request.Table == "" {
+		request.Table = defaults.Table
+	}
+	if request.Limit <= 0 {
+		request.Limit = defaults.Limit
+	}
+	if request.Limit > 500 {
+		request.Limit = 500
+	}
+	if request.Offset < 0 {
+		request.Offset = 0
+	}
+	if request.Sort.Key == "" {
+		request.Sort = defaults.Sort
+	}
+	if request.Sort.Direction != "asc" && request.Sort.Direction != "desc" {
+		if defaults.Sort.Direction != "" {
+			request.Sort.Direction = defaults.Sort.Direction
+		} else {
+			request.Sort.Direction = "desc"
+		}
+	}
+	return request
+}
+
+func (m *DuckDBMetrics) Pages(dashboardID string) []dashboard.Page {
+	report, ok := m.workspace.Dashboards[dashboardID]
+	if !ok {
+		return nil
+	}
+	pages := make([]dashboard.Page, len(report.Pages))
+	for i, page := range report.Pages {
 		pages[i] = page.WithDefaults()
 	}
 	return pages
 }
 
-func (m *DuckDBMetrics) ModelGraph() dashboard.ModelGraph {
-	return modelGraph(m.model)
+func (m *DuckDBMetrics) ModelGraph(modelID string) (dashboard.ModelGraph, bool) {
+	model, ok := m.workspace.Models[modelID]
+	if !ok {
+		return dashboard.ModelGraph{}, false
+	}
+	return modelGraph(model), true
 }
 
-func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, filters dashboard.Filters) (dashboard.Patch, error) {
+func (m *DuckDBMetrics) catalogView() dashboard.Catalog {
+	catalog := dashboard.Catalog{
+		Models:     make([]dashboard.CatalogModel, 0, len(m.workspace.Catalog.SemanticModels)),
+		Dashboards: make([]dashboard.CatalogDashboard, 0, len(m.workspace.Catalog.Dashboards)),
+	}
+	modelTitles := map[string]string{}
+	for _, model := range m.workspace.Catalog.SemanticModels {
+		modelTitles[model.ID] = model.Title
+		catalog.Models = append(catalog.Models, dashboard.CatalogModel{
+			ID:          model.ID,
+			Title:       model.Title,
+			Description: model.Description,
+		})
+	}
+	for _, report := range m.workspace.Catalog.Dashboards {
+		pageCount := 0
+		if loaded, ok := m.workspace.Dashboards[report.ID]; ok {
+			pageCount = len(loaded.Pages)
+		}
+		catalog.Dashboards = append(catalog.Dashboards, dashboard.CatalogDashboard{
+			ID:            report.ID,
+			Title:         report.Title,
+			Description:   report.Description,
+			SemanticModel: report.SemanticModel,
+			ModelTitle:    modelTitles[report.SemanticModel],
+			Tags:          append([]string{}, report.Tags...),
+			PageCount:     pageCount,
+		})
+	}
+	return catalog
+}
+
+func (m *DuckDBMetrics) reportRuntime(dashboardID string) (*semantic.Dashboard, *modelRuntime, error) {
+	report, ok := m.workspace.Dashboards[dashboardID]
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown dashboard %q", dashboardID)
+	}
+	runtime, ok := m.runtimes[report.SemanticModel]
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown semantic model %q", report.SemanticModel)
+	}
+	return report, runtime, nil
+}
+
+func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	filters = filters.WithDefaults()
-	if !m.ready {
-		return dashboard.EmptyPatch(filters, m.dataDir, m.missing), nil
+	report, runtime, err := m.reportRuntime(dashboardID)
+	if err != nil {
+		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
+	}
+	if !runtime.ready {
+		return dashboard.EmptyPatch(filters, m.dataDir, runtime.missing), nil
 	}
 
 	m.mu.RLock()
@@ -127,19 +272,19 @@ func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, filters dashboard.Fi
 		Filters: filters,
 		Status: dashboard.Status{
 			Loading:       false,
-			LastUpdated:   m.refreshLabel(),
+			LastUpdated:   refreshLabel(runtime),
 			DataDirectory: m.dataDir,
 		},
 		Charts: map[string]dashboard.Chart{},
 	}
 
-	kpis, err := m.kpis(ctx, filters)
+	kpis, err := m.kpis(ctx, runtime, report, filters)
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
 	}
 	patch.KPIs = kpis
 
-	charts, err := m.charts(ctx, filters)
+	charts, err := m.charts(ctx, runtime, report, filters)
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
 	}
@@ -148,26 +293,30 @@ func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, filters dashboard.Fi
 	return patch, nil
 }
 
-func (m *DuckDBMetrics) QueryTable(ctx context.Context, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+func (m *DuckDBMetrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	filters = filters.WithDefaults()
-	request = request.WithDefaults()
-	if !m.ready {
-		return dashboard.EmptyTable(request, m.missing), nil
+	report, runtime, err := m.reportRuntime(dashboardID)
+	request = m.NormalizeTableRequest(dashboardID, request)
+	if err != nil {
+		return dashboard.EmptyTable(request, err), nil
+	}
+	if !runtime.ready {
+		return dashboard.EmptyTable(request, runtime.missing), nil
 	}
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	tableModel, ok := m.model.Tables[request.Table]
+	tableModel, ok := report.Tables[request.Table]
 	if !ok {
 		return dashboard.EmptyTable(request, fmt.Errorf("unknown table %q", request.Table)), nil
 	}
 
-	totalRows, err := m.countRows(ctx, tableModel.Dataset, filters, "table", request.Table)
+	totalRows, err := m.countRows(ctx, runtime, report, tableModel.Dataset, filters, "table", request.Table)
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
-	rows, err := m.tableRows(ctx, tableModel, filters, request)
+	rows, err := m.tableRows(ctx, runtime, report, tableModel, filters, request)
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
@@ -184,30 +333,34 @@ func (m *DuckDBMetrics) QueryTable(ctx context.Context, filters dashboard.Filter
 	}, nil
 }
 
-func (m *DuckDBMetrics) RefreshCache(ctx context.Context) error {
-	if m.missing != nil {
-		return m.missing
+func (m *DuckDBMetrics) RefreshCache(ctx context.Context, modelID string) error {
+	runtime, ok := m.runtimes[modelID]
+	if !ok {
+		return fmt.Errorf("unknown semantic model %q", modelID)
 	}
-	if m.db == nil {
+	if runtime.missing != nil {
+		return runtime.missing
+	}
+	if runtime.db == nil {
 		return fmt.Errorf("DuckDB is not initialized")
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := m.registerSourceViews(ctx); err != nil {
+	if err := m.registerSourceViews(ctx, runtime); err != nil {
 		return err
 	}
-	if err := m.materializeCache(ctx); err != nil {
+	if err := m.materializeCache(ctx, runtime); err != nil {
 		return err
 	}
-	m.lastRefresh = time.Now()
+	runtime.lastRefresh = time.Now()
 	return nil
 }
 
-func (m *DuckDBMetrics) validateFiles() error {
+func (m *DuckDBMetrics) validateFiles(runtime *modelRuntime) error {
 	var missing []string
-	for _, file := range m.model.SourceFiles() {
+	for _, file := range runtime.model.SourceFiles() {
 		if _, err := os.Stat(filepath.Join(m.dataDir, file)); errors.Is(err, os.ErrNotExist) {
 			missing = append(missing, file)
 		} else if err != nil {
@@ -221,63 +374,63 @@ func (m *DuckDBMetrics) validateFiles() error {
 	return nil
 }
 
-func (m *DuckDBMetrics) registerSourceViews(ctx context.Context) error {
-	if _, err := m.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS raw"); err != nil {
+func (m *DuckDBMetrics) registerSourceViews(ctx context.Context, runtime *modelRuntime) error {
+	if _, err := runtime.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS raw"); err != nil {
 		return err
 	}
-	if _, err := m.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS cache"); err != nil {
+	if _, err := runtime.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS cache"); err != nil {
 		return err
 	}
 
-	for name, source := range m.model.Sources {
+	for name, source := range runtime.model.Sources {
 		if err := validateIdentifier(name); err != nil {
 			return err
 		}
 		path := filepath.Join(m.dataDir, source.File)
 		stmt := fmt.Sprintf("CREATE OR REPLACE VIEW raw.%s AS SELECT * FROM read_csv_auto('%s', header=true)", name, sqlString(path))
-		if _, err := m.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := runtime.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("registering source %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-func (m *DuckDBMetrics) materializeCache(ctx context.Context) error {
-	for _, name := range m.model.CacheTableNames() {
+func (m *DuckDBMetrics) materializeCache(ctx context.Context, runtime *modelRuntime) error {
+	for _, name := range runtime.model.CacheTableNames() {
 		if err := validateIdentifier(name); err != nil {
 			return err
 		}
-		table := m.model.Cache.Tables[name]
+		table := runtime.model.Cache.Tables[name]
 		stmt := fmt.Sprintf("CREATE OR REPLACE TABLE cache.%s AS %s", name, table.SQL)
-		if _, err := m.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := runtime.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("materializing cache.%s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-func (m *DuckDBMetrics) kpis(ctx context.Context, filters dashboard.Filters) ([]dashboard.KPI, error) {
+func (m *DuckDBMetrics) kpis(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, filters dashboard.Filters) ([]dashboard.KPI, error) {
 	keys := []string{"total_orders", "revenue", "aov", "review"}
 	seen := map[string]struct{}{}
 	for _, key := range keys {
 		seen[key] = struct{}{}
 	}
-	for _, key := range sortedKeys(m.model.KPIs) {
+	for _, key := range sortedKeys(report.KPIs) {
 		if _, ok := seen[key]; !ok {
 			keys = append(keys, key)
 		}
 	}
 	kpis := make([]dashboard.KPI, 0, len(keys))
 	for _, key := range keys {
-		kpi, ok := m.model.KPIs[key]
+		kpi, ok := report.KPIs[key]
 		if !ok {
 			continue
 		}
-		value, err := m.kpiValue(ctx, kpi, filters)
+		value, err := m.kpiValue(ctx, runtime, report, kpi, filters)
 		if err != nil {
 			return nil, err
 		}
-		measure := m.model.Datasets[kpi.Dataset].Measures[kpi.Measure]
+		measure := runtime.model.Datasets[kpi.Dataset].Measures[kpi.Measure]
 		kpis = append(kpis, dashboard.KPI{
 			Label: kpi.Title,
 			Value: formatMetric(value, measure.Format),
@@ -288,41 +441,41 @@ func (m *DuckDBMetrics) kpis(ctx context.Context, filters dashboard.Filters) ([]
 	return kpis, nil
 }
 
-func (m *DuckDBMetrics) kpiValue(ctx context.Context, kpi semantic.KPI, filters dashboard.Filters) (float64, error) {
-	source, err := m.datasetSource(kpi.Dataset)
+func (m *DuckDBMetrics) kpiValue(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, kpi semantic.KPI, filters dashboard.Filters) (float64, error) {
+	source, err := datasetSource(runtime.model, kpi.Dataset)
 	if err != nil {
 		return 0, err
 	}
-	dataset := m.model.Datasets[kpi.Dataset]
+	dataset := runtime.model.Datasets[kpi.Dataset]
 	measure := dataset.Measures[kpi.Measure]
 	expr, err := measureAggregateExpr(measure)
 	if err != nil {
 		return 0, err
 	}
-	where, args := m.filterWhere("e", kpi.Dataset, filters, "kpi", kpi.Measure)
+	where, args := m.filterWhere("e", runtime, report, kpi.Dataset, filters, "kpi", kpi.Measure)
 	query := fmt.Sprintf("SELECT COALESCE(%s, 0) FROM %s e WHERE %s", expr, source, where)
 
 	var value float64
-	if err := m.db.QueryRowContext(ctx, query, args...).Scan(&value); err != nil {
+	if err := runtime.db.QueryRowContext(ctx, query, args...).Scan(&value); err != nil {
 		return 0, err
 	}
 	return value, nil
 }
 
-func (m *DuckDBMetrics) charts(ctx context.Context, filters dashboard.Filters) (map[string]dashboard.Chart, error) {
-	charts := make(map[string]dashboard.Chart, len(m.model.Visuals))
-	keys := make([]string, 0, len(m.model.Visuals))
-	for key := range m.model.Visuals {
+func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, filters dashboard.Filters) (map[string]dashboard.Chart, error) {
+	charts := make(map[string]dashboard.Chart, len(report.Visuals))
+	keys := make([]string, 0, len(report.Visuals))
+	for key := range report.Visuals {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		visual := m.model.Visuals[key]
-		points, err := m.visualPoints(ctx, key, visual, filters)
+		visual := report.Visuals[key]
+		points, err := m.visualPoints(ctx, runtime, report, key, visual, filters)
 		if err != nil {
 			return nil, err
 		}
-		dataset := m.model.Datasets[visual.Dataset]
+		dataset := runtime.model.Datasets[visual.Dataset]
 		measureName := visual.Query.Measures[0]
 		measure := dataset.Measures[measureName]
 		series := []string{}
@@ -347,12 +500,12 @@ func (m *DuckDBMetrics) charts(ctx context.Context, filters dashboard.Filters) (
 	return charts, nil
 }
 
-func (m *DuckDBMetrics) visualPoints(ctx context.Context, visualID string, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Point, error) {
-	source, err := m.datasetSource(visual.Dataset)
+func (m *DuckDBMetrics) visualPoints(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, visualID string, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Point, error) {
+	source, err := datasetSource(runtime.model, visual.Dataset)
 	if err != nil {
 		return nil, err
 	}
-	dataset := m.model.Datasets[visual.Dataset]
+	dataset := runtime.model.Datasets[visual.Dataset]
 	labelDimension := visual.Query.Dimensions[0]
 	labelExpr := dimensionExpression(dataset.Dimensions[labelDimension], "e")
 	measureName := visual.Query.Measures[0]
@@ -367,7 +520,7 @@ func (m *DuckDBMetrics) visualPoints(ctx context.Context, visualID string, visua
 		groupBy = append(groupBy, "series")
 	}
 
-	where, args := m.filterWhere("e", visual.Dataset, filters, "visual", visualID)
+	where, args := m.filterWhere("e", runtime, report, visual.Dataset, filters, "visual", visualID)
 	for _, dimensionName := range append(append([]string{}, visual.Query.Dimensions...), visual.Query.Series) {
 		if dimensionName == "" {
 			continue
@@ -377,7 +530,7 @@ func (m *DuckDBMetrics) visualPoints(ctx context.Context, visualID string, visua
 		}
 	}
 
-	orderBy := m.visualOrderBy(visual)
+	orderBy := m.visualOrderBy(runtime.model, visual)
 	query := fmt.Sprintf(`
 SELECT %s AS label, %s AS series, %s AS value
 FROM %s e
@@ -388,7 +541,7 @@ ORDER BY %s`, labelExpr, seriesExpr, valueExpr, source, where, strings.Join(grou
 		query += fmt.Sprintf("\nLIMIT %d", visual.Query.Limit)
 	}
 
-	points, err := m.queryPoints(ctx, query, args...)
+	points, err := m.queryPoints(ctx, runtime, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -396,8 +549,8 @@ ORDER BY %s`, labelExpr, seriesExpr, valueExpr, source, where, strings.Join(grou
 	return points, nil
 }
 
-func (m *DuckDBMetrics) queryPoints(ctx context.Context, query string, args ...any) ([]dashboard.Point, error) {
-	rows, err := m.db.QueryContext(ctx, query, args...)
+func (m *DuckDBMetrics) queryPoints(ctx context.Context, runtime *modelRuntime, query string, args ...any) ([]dashboard.Point, error) {
+	rows, err := runtime.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -416,27 +569,27 @@ func (m *DuckDBMetrics) queryPoints(ctx context.Context, query string, args ...a
 	return points, rows.Err()
 }
 
-func (m *DuckDBMetrics) countRows(ctx context.Context, datasetName string, filters dashboard.Filters, targetKind, targetID string) (int, error) {
-	source, err := m.datasetSource(datasetName)
+func (m *DuckDBMetrics) countRows(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, datasetName string, filters dashboard.Filters, targetKind, targetID string) (int, error) {
+	source, err := datasetSource(runtime.model, datasetName)
 	if err != nil {
 		return 0, err
 	}
-	where, args := m.filterWhere("e", datasetName, filters, targetKind, targetID)
+	where, args := m.filterWhere("e", runtime, report, datasetName, filters, targetKind, targetID)
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s e WHERE %s", source, where)
 
 	var total int
-	if err := m.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+	if err := runtime.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
 		return 0, err
 	}
 	return total, nil
 }
 
-func (m *DuckDBMetrics) tableRows(ctx context.Context, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]map[string]any, error) {
-	source, err := m.datasetSource(table.Dataset)
+func (m *DuckDBMetrics) tableRows(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]map[string]any, error) {
+	source, err := datasetSource(runtime.model, table.Dataset)
 	if err != nil {
 		return nil, err
 	}
-	where, args := m.filterWhere("e", table.Dataset, filters, "table", request.Table)
+	where, args := m.filterWhere("e", runtime, report, table.Dataset, filters, "table", request.Table)
 	sortExpr := tableSortExpr(table, request.Sort.Key)
 	direction := "DESC"
 	if request.Sort.Direction == "asc" {
@@ -459,7 +612,7 @@ ORDER BY %s %s, e.order_id ASC
 LIMIT ? OFFSET ?`, strings.Join(selects, ", "), source, where, sortExpr, direction)
 
 	args = append(args, request.Limit, request.Offset)
-	rows, err := m.db.QueryContext(ctx, query, args...)
+	rows, err := runtime.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -529,11 +682,11 @@ func tableSortExpr(table semantic.TableVisual, key string) string {
 	return "e.order_id"
 }
 
-func (m *DuckDBMetrics) visualOrderBy(visual semantic.Visual) string {
+func (m *DuckDBMetrics) visualOrderBy(model *semantic.Model, visual semantic.Visual) string {
 	if len(visual.Query.Sort) == 0 {
 		return "label ASC"
 	}
-	dataset := m.model.Datasets[visual.Dataset]
+	dataset := model.Datasets[visual.Dataset]
 	parts := make([]string, 0, len(visual.Query.Sort))
 	for _, sortSpec := range visual.Query.Sort {
 		direction := "ASC"
@@ -574,7 +727,7 @@ func (m *DuckDBMetrics) sortExpression(dataset semantic.Dataset, visual semantic
 	return ""
 }
 
-func (m *DuckDBMetrics) filterWhere(alias, datasetName string, filters dashboard.Filters, targetKind, targetID string) (string, []any) {
+func (m *DuckDBMetrics) filterWhere(alias string, runtime *modelRuntime, report *semantic.Dashboard, datasetName string, filters dashboard.Filters, targetKind, targetID string) (string, []any) {
 	filters = filters.WithDefaults()
 	conditions := []string{"1 = 1"}
 	args := []any{}
@@ -605,14 +758,14 @@ func (m *DuckDBMetrics) filterWhere(alias, datasetName string, filters dashboard
 		if targetKind == "visual" && selection.VisualID == targetID {
 			continue
 		}
-		sourceVisual, ok := m.model.Visuals[selection.VisualID]
+		sourceVisual, ok := report.Visuals[selection.VisualID]
 		if !ok || !targetsSelection(sourceVisual.Interaction.Targets, targetKind, targetID) {
 			continue
 		}
 		if selection.Operator != "" && selection.Operator != "in" {
 			continue
 		}
-		dataset, ok := m.model.Datasets[datasetName]
+		dataset, ok := runtime.model.Datasets[datasetName]
 		if !ok {
 			continue
 		}
@@ -708,8 +861,8 @@ func normalizeDBValue(value any) any {
 	}
 }
 
-func (m *DuckDBMetrics) datasetSource(name string) (string, error) {
-	dataset, ok := m.model.Datasets[name]
+func datasetSource(model *semantic.Model, name string) (string, error) {
+	dataset, ok := model.Datasets[name]
 	if !ok {
 		return "", fmt.Errorf("unknown dataset %q", name)
 	}
@@ -730,25 +883,25 @@ func validateIdentifier(value string) error {
 	return nil
 }
 
-func discoverModelPath() (string, error) {
+func discoverCatalogPath() (string, error) {
 	candidates := []string{
-		filepath.Join("dashboards", "olist.yaml"),
-		filepath.Join("..", "dashboards", "olist.yaml"),
-		filepath.Join("..", "..", "dashboards", "olist.yaml"),
+		filepath.Join("dashboards", "catalog.yaml"),
+		filepath.Join("..", "dashboards", "catalog.yaml"),
+		filepath.Join("..", "..", "dashboards", "catalog.yaml"),
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("could not find dashboards/olist.yaml")
+	return "", fmt.Errorf("could not find dashboards/catalog.yaml")
 }
 
-func duckDBPath(dataDir string) string {
+func duckDBPath(dataDir, modelID string) string {
 	if path := os.Getenv("LIBREDASH_DUCKDB_PATH"); path != "" {
 		return path
 	}
-	return filepath.Join(dataDir, "libredash.duckdb")
+	return filepath.Join(dataDir, "libredash-"+modelID+".duckdb")
 }
 
 func sqlString(path string) string {
@@ -762,9 +915,9 @@ func modelGraph(model *semantic.Model) dashboard.ModelGraph {
 		Stats: dashboard.ModelStats{
 			Sources:       len(model.Sources),
 			CacheTables:   len(model.Cache.Tables),
-			Metrics:       len(model.KPIs),
-			Visuals:       len(model.Visuals),
-			ReportTables:  len(model.Tables),
+			Metrics:       measureCount(model),
+			Visuals:       0,
+			ReportTables:  0,
 			Relationships: len(model.Relationships),
 		},
 	}
@@ -854,70 +1007,6 @@ func modelGraph(model *semantic.Model) dashboard.ModelGraph {
 		})
 	}
 
-	for _, name := range sortedKeys(model.KPIs) {
-		kpi := model.KPIs[name]
-		measure := model.Datasets[kpi.Dataset].Measures[kpi.Measure]
-		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
-			ID:          nodeID("metric", name),
-			Label:       kpi.Title,
-			Kind:        "metric",
-			Description: kpi.Note,
-			Fields: []dashboard.ModelField{
-				{Name: kpi.Dataset, Role: "dataset"},
-				{Name: measureAggregateLabel(measure.Aggregate, measure.Column), Role: "measure"},
-			},
-			Meta: []dashboard.ModelMeta{
-				{Label: "Format", Value: measure.Format},
-				{Label: "Aggregate", Value: measure.Aggregate},
-			},
-		})
-		graph.Edges = append(graph.Edges, semanticEdge("metric", name, kpi.Dataset, "measure"))
-	}
-
-	for _, name := range sortedKeys(model.Visuals) {
-		visual := model.Visuals[name]
-		measureName := visual.Query.Measures[0]
-		measure := model.Datasets[visual.Dataset].Measures[measureName]
-		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
-			ID:    nodeID("visual", name),
-			Label: visual.Title,
-			Kind:  "visual",
-			Fields: []dashboard.ModelField{
-				{Name: visual.Query.Dimensions[0], Role: "axis"},
-				{Name: measureAggregateLabel(measure.Aggregate, measure.Column), Role: "value"},
-			},
-			Meta: []dashboard.ModelMeta{
-				{Label: "Type", Value: visual.Type},
-				{Label: "Unit", Value: measure.Unit},
-				{Label: "Limit", Value: intLabel(visual.Query.Limit)},
-			},
-		})
-		graph.Edges = append(graph.Edges, semanticEdge("visual", name, visual.Dataset, "visual"))
-	}
-
-	for _, name := range sortedKeys(model.Tables) {
-		table := model.Tables[name]
-		fields := make([]dashboard.ModelField, 0, len(table.Columns))
-		for _, column := range table.Columns {
-			role := "column"
-			if column.Align == "right" {
-				role = "measure"
-			}
-			fields = append(fields, dashboard.ModelField{Name: column.Key, Role: role})
-		}
-		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
-			ID:     nodeID("table", name),
-			Label:  table.Title,
-			Kind:   "report_table",
-			Fields: fields,
-			Meta: []dashboard.ModelMeta{
-				{Label: "Default sort", Value: table.DefaultSort.Key + " " + table.DefaultSort.Direction},
-				{Label: "Columns", Value: strconv.Itoa(len(table.Columns))},
-			},
-		})
-		graph.Edges = append(graph.Edges, semanticEdge("table", name, table.Dataset, "table"))
-	}
-
 	return graph
 }
 
@@ -932,16 +1021,6 @@ func sortedKeys[T any](items map[string]T) []string {
 
 func nodeID(kind, name string) string {
 	return kind + ":" + name
-}
-
-func semanticEdge(kind, name, source, label string) dashboard.ModelEdge {
-	return dashboard.ModelEdge{
-		ID:     kind + "_" + name + "_from_" + source,
-		Source: nodeID("dataset", source),
-		Target: nodeID(kind, name),
-		Label:  label,
-		Kind:   "semantic",
-	}
 }
 
 func modelEndpoint(path string) (string, string) {
@@ -965,25 +1044,19 @@ func cacheFields() []dashboard.ModelField {
 	}
 }
 
-func measureAggregateLabel(aggregate, column string) string {
-	if column == "" {
-		return aggregate
-	}
-	return aggregate + "(" + column + ")"
-}
-
-func intLabel(value int) string {
-	if value == 0 {
-		return "all"
-	}
-	return strconv.Itoa(value)
-}
-
-func (m *DuckDBMetrics) refreshLabel() string {
-	if m.lastRefresh.IsZero() {
+func refreshLabel(runtime *modelRuntime) string {
+	if runtime.lastRefresh.IsZero() {
 		return time.Now().Format("15:04:05")
 	}
-	return m.lastRefresh.Format("15:04:05")
+	return runtime.lastRefresh.Format("15:04:05")
+}
+
+func measureCount(model *semantic.Model) int {
+	count := 0
+	for _, dataset := range model.Datasets {
+		count += len(dataset.Measures)
+	}
+	return count
 }
 
 func formatMetric(value float64, format string) string {

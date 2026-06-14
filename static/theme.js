@@ -19,10 +19,15 @@ function setMode(mode) {
   for (const button of buttons) {
     button.setAttribute('aria-pressed', String(button.dataset.themeValue === next));
   }
+  document.dispatchEvent(new CustomEvent('libredash-theme-applied', { detail: { mode: next } }));
 }
 
 for (const button of buttons) {
   button.addEventListener('click', () => setMode(button.dataset.themeValue));
 }
+
+document.addEventListener('libredash-theme-change', (event) => {
+  setMode(event.detail?.mode);
+});
 
 setMode(preferredMode());

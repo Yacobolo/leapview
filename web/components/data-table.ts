@@ -128,7 +128,7 @@ class DataTable extends LitElement {
       flex-direction: column;
       height: 100%;
       min-height: 0;
-      background: var(--bgColor-default);
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
     }
 
     .toolbar {
@@ -138,7 +138,7 @@ class DataTable extends LitElement {
       gap: 16px;
       min-height: 48px;
       border-bottom: 1px solid var(--borderColor-default);
-      background: var(--bgColor-default);
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       padding: 8px 10px 8px 13px;
     }
 
@@ -283,7 +283,7 @@ class DataTable extends LitElement {
       flex: 1 1 auto;
       overflow: auto;
       min-height: 0;
-      background: var(--bgColor-default);
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       scrollbar-gutter: stable;
     }
 
@@ -297,12 +297,12 @@ class DataTable extends LitElement {
       inset-inline: 0;
       height: 34px;
       border-bottom: 1px solid var(--borderColor-muted);
-      background: var(--bgColor-default);
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       color: var(--fgColor-default);
     }
 
     .row:nth-child(even) {
-      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 45%);
+      background: color-mix(in srgb, var(--report-table-stripe, var(--bgColor-muted)), var(--report-chart-surface, var(--bgColor-default)) 45%);
     }
 
     .row:hover {
@@ -378,7 +378,7 @@ class DataTable extends LitElement {
       gap: 10px;
       min-height: 34px;
       border-top: 1px solid var(--borderColor-default);
-      background: var(--bgColor-muted);
+      background: var(--report-panel-subtle, var(--bgColor-muted));
       padding: 6px 10px;
       color: var(--fgColor-muted);
       font-size: 0.72rem;

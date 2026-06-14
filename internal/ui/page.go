@@ -2,9 +2,11 @@ package ui
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/semantic"
 	lucide "github.com/eduardolat/gomponents-lucide"
 	g "maragu.dev/gomponents"
 	ds "maragu.dev/gomponents-datastar"
@@ -12,12 +14,15 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-const updateAction = "@get('/updates', {openWhenHidden: true})"
+func updateAction(dashboardID, pageID string) string {
+	return "@get('/updates?dashboard=" + dashboardID + "&page=" + pageID + "', {openWhenHidden: true})"
+}
 
-func Page(dataDir, clientID string, pages []dashboard.Page, activePage dashboard.Page) g.Node {
+func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
+	action := updateAction(report.ID, activePage.ID)
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash",
 		Language: "en",
@@ -33,6 +38,7 @@ func Page(dataDir, clientID string, pages []dashboard.Page, activePage dashboard
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
 			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
 			h.Script(h.Type("module"), h.Src("/static/theme.js")),
+			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
 			h.Script(h.Type("module"), h.Src("/static/report-canvas.js")),
 			h.Script(h.Type("module"), h.Src("/static/charts.js")),
 			h.Script(h.Type("module"), h.Src("/static/table.js")),
@@ -43,14 +49,26 @@ func Page(dataDir, clientID string, pages []dashboard.Page, activePage dashboard
 			h.Main(
 				h.ID("dashboard"),
 				h.Class("report-app"),
-				ds.Signals(initialSignals(dataDir, clientID)),
-				ds.Init(updateAction),
-				appBar("report", true),
-				h.Div(h.Class("report-workspace"),
-					navRail("report"),
-					h.Section(h.Class("report-canvas-shell"), h.Aria("label", "LibreDash report canvas"),
-						pageTabs(pages, activePage.ID),
-						renderPageCanvas(activePage),
+				ds.Signals(initialSignals(dataDir, clientID, report, model, activePage)),
+				ds.Init(action),
+				h.Div(h.Class("app-shell"),
+					sidebar(sidebarConfigForReport(catalog, report, model, activePage), true, "@post('/commands/refresh-cache?model="+model.Name+"&dashboard="+report.ID+"')"),
+					h.Section(h.Class("app-main report-main"), h.Aria("label", "LibreDash report canvas"),
+						workspaceHeader(
+							"Olist report",
+							report.Title,
+							activePage.Title,
+							pageTabs(report.ID, pages, activePage.ID),
+						),
+						h.Div(h.Class("report-dashboard-shell"),
+							h.Div(h.Class("report-canvas-shell"),
+								renderPageCanvas(activePage),
+							),
+							filtersDock(action),
+						),
+						h.Footer(h.Class("report-footer"), h.Aria("label", "Report view controls"),
+							g.El("ld-report-zoom"),
+						),
 					),
 				),
 				g.El("datastar-inspector"),
@@ -59,7 +77,71 @@ func Page(dataDir, clientID string, pages []dashboard.Page, activePage dashboard
 	})
 }
 
-func ModelPage(model dashboard.ModelGraph) g.Node {
+func CatalogPage(catalog dashboard.Catalog) g.Node {
+	return c.HTML5(c.HTML5Props{
+		Title:    "LibreDash Catalog",
+		Language: "en",
+		HTMLAttrs: []g.Node{
+			g.Attr("data-color-mode", "auto"),
+			g.Attr("data-light-theme", "light"),
+			g.Attr("data-dark-theme", "dark"),
+		},
+		Head: []g.Node{
+			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
+			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
+			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
+			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
+			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
+			h.Script(h.Type("module"), h.Src("/static/theme.js")),
+			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
+		},
+		Body: []g.Node{
+			h.Main(h.Class("report-app"),
+				h.Div(h.Class("app-shell"),
+					sidebar(sidebarConfigForCatalog(catalog), false, ""),
+					h.Section(h.Class("app-main catalog-main"), h.Aria("label", "LibreDash dashboard catalog"),
+						workspaceHeader(
+							"Workspace catalog",
+							"Dashboards",
+							"Discover reports backed by reusable semantic models and DuckDB import caches.",
+							h.Div(h.Class("catalog-stats"),
+								modelStat("Models", len(catalog.Models)),
+								modelStat("Dashboards", len(catalog.Dashboards)),
+							),
+						),
+						h.Div(h.Class("catalog-grid"),
+							g.Map(catalog.Dashboards, dashboardCard),
+						),
+					),
+				),
+			),
+		},
+	})
+}
+
+func dashboardCard(report dashboard.CatalogDashboard) g.Node {
+	return h.Article(h.Class("catalog-card"),
+		h.Div(h.Class("catalog-card-main"),
+			h.P(h.Class("report-eyebrow"), g.Text(report.ModelTitle)),
+			h.H2(g.Text(report.Title)),
+			h.P(g.Text(report.Description)),
+		),
+		h.Div(h.Class("catalog-tags"),
+			g.Map(report.Tags, func(tag string) g.Node {
+				return h.Span(g.Text(tag))
+			}),
+		),
+		h.Footer(h.Class("catalog-card-footer"),
+			h.Span(g.Textf("%d pages", report.PageCount)),
+			h.A(h.Class("catalog-open"), h.Href("/dashboards/"+report.ID),
+				lucide.ExternalLink(iconAttrs()),
+				h.Span(g.Text("Open")),
+			),
+		),
+	)
+}
+
+func ModelPage(catalog dashboard.Catalog, model dashboard.ModelGraph) g.Node {
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash Model",
 		Language: "en",
@@ -76,24 +158,25 @@ func ModelPage(model dashboard.ModelGraph) g.Node {
 			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
 			h.Link(h.Rel("stylesheet"), h.Href("/static/model-graph.css")),
 			h.Script(h.Type("module"), h.Src("/static/theme.js")),
+			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
 			h.Script(h.Type("module"), h.Src("/static/model-graph.js")),
 		},
 		Body: []g.Node{
 			h.Main(
 				h.ID("model"),
 				h.Class("report-app"),
-				appBar("model", false),
-				h.Div(h.Class("report-workspace"),
-					navRail("model"),
-					h.Section(h.Class("model-shell"), h.Aria("label", "LibreDash semantic model"),
-						h.Header(h.Class("model-header"),
-							h.Div(
-								h.P(h.Class("report-eyebrow"), g.Text("Semantic model")),
-								h.H1(h.Class("report-title"), g.Text(model.Title)),
-							),
+				h.Div(h.Class("app-shell"),
+					sidebar(sidebarConfigForModel(catalog, model), false, ""),
+					h.Section(h.Class("app-main model-main"), h.Aria("label", "LibreDash semantic model"),
+						workspaceHeader(
+							"Semantic model",
+							model.Title,
+							model.Name,
 							modelStats(model.Stats),
 						),
-						g.El("ld-model-graph", g.Attr("data-model", modelGraphJSON(model))),
+						h.Div(h.Class("model-shell"),
+							g.El("ld-model-graph", g.Attr("data-model", modelGraphJSON(model))),
+						),
 					),
 				),
 			),
@@ -135,10 +218,133 @@ func modelGraphJSON(model dashboard.ModelGraph) string {
 	return string(bytes)
 }
 
-func initialSignals(dataDir, clientID string) map[string]any {
+func sidebar(config map[string]any, dynamicStatus bool, refreshAction string) g.Node {
+	attrs := []g.Node{
+		g.Attr("config", jsonString(config)),
+	}
+	if dynamicStatus {
+		attrs = append(attrs,
+			g.Attr("data-attr:status", "$status"),
+			g.Attr("data-on:ld-sidebar-refresh", refreshAction),
+		)
+	}
+	return g.El("ld-sidebar", attrs...)
+}
+
+func sidebarConfigForCatalog(catalog dashboard.Catalog) map[string]any {
+	modelID := ""
+	modelTitle := ""
+	if len(catalog.Dashboards) > 0 {
+		report := catalog.Dashboards[0]
+		modelID = report.SemanticModel
+		modelTitle = report.ModelTitle
+	}
+	return sidebarConfig(catalog, "catalog", "", "LibreDash Workspace", "Dashboard catalog", "Dashboards", modelID, modelTitle, false)
+}
+
+func sidebarConfigForReport(catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page) map[string]any {
+	return sidebarConfig(catalog, "dashboard:"+report.ID, report.ID, "LibreDash Workspace", report.Title, activePage.Title, model.Name, model.Title, true)
+}
+
+func sidebarConfigForModel(catalog dashboard.Catalog, model dashboard.ModelGraph) map[string]any {
+	return sidebarConfig(catalog, "model:"+model.Name, "", "LibreDash Workspace", "Semantic model", model.Title, model.Name, model.Title, false)
+}
+
+func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, refresh bool) map[string]any {
+	return map[string]any{
+		"workspaceTitle": workspaceTitle,
+		"active":         active,
+		"dashboardId":    dashboardID,
+		"dashboardTitle": dashboardTitle,
+		"pageTitle":      pageTitle,
+		"modelId":        modelID,
+		"modelTitle":     modelTitle,
+		"refresh":        refresh,
+		"groups":         sidebarGroups(catalog),
+	}
+}
+
+func sidebarGroups(catalog dashboard.Catalog) []map[string]any {
+	return []map[string]any{
+		{
+			"label": "Workspace",
+			"items": []map[string]any{
+				{"id": "catalog", "label": "Catalog", "href": "/", "icon": "catalog", "meta": "Dashboards and models"},
+			},
+		},
+		{
+			"label": "Dashboards",
+			"items": dashboardItems(catalog.Dashboards),
+		},
+		{
+			"label": "Semantic Models",
+			"items": modelItems(catalog.Models),
+		},
+		{
+			"label": "Data Platform",
+			"items": []map[string]any{
+				{"id": "data:sources", "label": "Sources", "href": "/", "icon": "data", "meta": "Coming soon", "disabled": true},
+				{"id": "data:cache", "label": "DuckDB Cache", "href": "/", "icon": "cache", "meta": "Import mode", "disabled": true},
+			},
+		},
+	}
+}
+
+func dashboardItems(reports []dashboard.CatalogDashboard) []map[string]any {
+	items := make([]map[string]any, 0, len(reports))
+	for _, report := range reports {
+		items = append(items, map[string]any{
+			"id":    "dashboard:" + report.ID,
+			"label": report.Title,
+			"href":  "/dashboards/" + report.ID,
+			"icon":  "dashboard",
+			"meta":  report.ModelTitle,
+		})
+	}
+	return items
+}
+
+func modelItems(models []dashboard.CatalogModel) []map[string]any {
+	items := make([]map[string]any, 0, len(models))
+	for _, model := range models {
+		items = append(items, map[string]any{
+			"id":    "model:" + model.ID,
+			"label": model.Title,
+			"href":  "/models/" + model.ID,
+			"icon":  "model",
+			"meta":  "Semantic model",
+		})
+	}
+	return items
+}
+
+func workspaceHeader(eyebrow, title, detail string, actions g.Node) g.Node {
+	return h.Header(h.Class("workspace-header"),
+		h.Div(h.Class("workspace-title-block"),
+			h.P(h.Class("report-eyebrow"), g.Text(eyebrow)),
+			h.H1(h.Class("workspace-title"), g.Text(title)),
+			h.P(h.Class("workspace-detail"), g.Text(detail)),
+		),
+		h.Div(h.Class("workspace-actions"), actions),
+	)
+}
+
+func jsonString(value any) string {
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(bytes)
+}
+
+func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page) map[string]any {
+	tableRequest := defaultTableRequest(report)
 	return map[string]any{
 		"runtime": map[string]any{
-			"clientId": clientID,
+			"clientId":    clientID,
+			"dashboardId": report.ID,
+			"pageId":      activePage.ID,
+			"modelId":     model.Name,
 		},
 		"filters": map[string]any{
 			"dateRange":        "all",
@@ -154,49 +360,17 @@ func initialSignals(dataDir, clientID string) map[string]any {
 			"mode":     "toggle",
 		},
 		"tableCommand": map[string]any{
-			"table":  "orders",
-			"offset": 0,
-			"limit":  120,
+			"table":  tableRequest.Table,
+			"offset": tableRequest.Offset,
+			"limit":  tableRequest.Limit,
 			"sort": map[string]any{
-				"key":       "purchase_date",
-				"direction": "desc",
+				"key":       tableRequest.Sort.Key,
+				"direction": tableRequest.Sort.Direction,
 			},
 		},
-		"tables": map[string]any{
-			"orders": map[string]any{
-				"title": "Orders",
-				"columns": []map[string]any{
-					{"key": "order_id", "label": "Order"},
-					{"key": "purchase_date", "label": "Purchased"},
-					{"key": "status", "label": "Status"},
-					{"key": "state", "label": "State"},
-					{"key": "category", "label": "Category"},
-					{"key": "revenue", "label": "Revenue", "align": "right"},
-					{"key": "review_score", "label": "Review", "align": "right"},
-					{"key": "delivery_days", "label": "Delivery", "align": "right"},
-				},
-				"rows":      []any{},
-				"totalRows": 0,
-				"window": map[string]any{
-					"offset": 0,
-					"limit":  120,
-				},
-				"sort": map[string]any{
-					"key":       "purchase_date",
-					"direction": "desc",
-				},
-				"loading": false,
-				"error":   "",
-			},
-		},
-		"charts": map[string]any{
-			"revenue":                chartSignal("revenue", "area", "Revenue by month", "R$", "purchase_month", []string{"purchase_month"}, "revenue", ""),
-			"orders":                 chartSignal("orders", "donut", "Orders by status", "orders", "status", []string{"status"}, "order_count", ""),
-			"orders_by_month_status": chartSignal("orders_by_month_status", "column", "Orders by month and status", "orders", "purchase_month", []string{"purchase_month"}, "order_count", "status"),
-			"categories":             chartSignal("categories", "bar", "Top product categories", "R$", "category", []string{"category"}, "revenue", ""),
-			"delivery":               chartSignal("delivery", "bar", "Delivery speed", "orders", "delivery_bucket", []string{"delivery_bucket"}, "order_count", ""),
-		},
-		"kpis": []any{},
+		"tables": tableSignals(report, tableRequest),
+		"charts": chartSignals(report, model),
+		"kpis":   []any{},
 		"status": map[string]any{
 			"loading":       false,
 			"error":         "",
@@ -207,12 +381,67 @@ func initialSignals(dataDir, clientID string) map[string]any {
 	}
 }
 
-func chartSignal(id, chartType, title, unit, field string, dimensions []string, measure, series string) map[string]any {
+func defaultTableRequest(report semantic.Dashboard) dashboard.TableRequest {
+	request := dashboard.TableRequest{Offset: 0, Limit: 120}
+	for _, name := range sortedKeys(report.Tables) {
+		table := report.Tables[name]
+		request.Table = name
+		request.Sort = table.DefaultSort
+		break
+	}
+	if request.Table == "" {
+		return dashboard.DefaultTableRequest()
+	}
+	return request
+}
+
+func tableSignals(report semantic.Dashboard, request dashboard.TableRequest) map[string]any {
+	tables := map[string]any{}
+	for _, name := range sortedKeys(report.Tables) {
+		table := report.Tables[name]
+		tables[name] = map[string]any{
+			"title":     table.Title,
+			"columns":   table.Columns,
+			"rows":      []any{},
+			"totalRows": 0,
+			"window": map[string]any{
+				"offset": 0,
+				"limit":  request.Limit,
+			},
+			"sort": map[string]any{
+				"key":       table.DefaultSort.Key,
+				"direction": table.DefaultSort.Direction,
+			},
+			"loading": false,
+			"error":   "",
+		}
+	}
+	return tables
+}
+
+func chartSignals(report semantic.Dashboard, model *semantic.Model) map[string]any {
+	charts := map[string]any{}
+	for _, id := range sortedKeys(report.Visuals) {
+		visual := report.Visuals[id]
+		measureName := ""
+		unit := ""
+		if len(visual.Query.Measures) > 0 {
+			measureName = visual.Query.Measures[0]
+			if dataset, ok := model.Datasets[visual.Dataset]; ok {
+				unit = dataset.Measures[measureName].Unit
+			}
+		}
+		charts[id] = chartSignal(id, visual.Type, visual.Title, unit, visual.Interaction.Field, visual.Query.Dimensions, measureName, visual.Query.Series, visual.Stacked)
+	}
+	return charts
+}
+
+func chartSignal(id, chartType, title, unit, field string, dimensions []string, measure, series string, stacked bool) map[string]any {
 	seriesList := []string{}
 	if series != "" {
 		seriesList = append(seriesList, series)
 	}
-	return map[string]any{
+	signal := map[string]any{
 		"version":    2,
 		"id":         id,
 		"type":       chartType,
@@ -225,77 +454,10 @@ func chartSignal(id, chartType, title, unit, field string, dimensions []string, 
 		"selection":  []any{},
 		"data":       []any{},
 	}
-}
-
-func appBar(active string, dataActions bool) g.Node {
-	return h.Header(h.Class("app-bar"),
-		h.Div(h.Class("app-brand"),
-			h.Span(h.Class("brand-mark"), lucide.ChartColumnIncreasing(iconAttrs())),
-			h.Span(g.Text("LibreDash")),
-		),
-		h.Nav(h.Class("command-bar"), h.Aria("label", "Report commands"),
-			commandLink("/", "Report", active == "report", lucide.LayoutDashboard(iconAttrs())),
-			commandLink("/", "Analyze", false, lucide.ChartColumnIncreasing(iconAttrs())),
-			commandLink("/model", "Model", active == "model", lucide.Database(iconAttrs())),
-		),
-		h.Div(h.Class("app-actions"),
-			g.If(dataActions,
-				h.Button(
-					h.Type("button"),
-					h.Class("cache-refresh-button"),
-					ds.On("click", "@post('/commands/refresh-cache')"),
-					ds.Attr("disabled", "$status.loading"),
-					h.Title("Re-import DuckDB cache"),
-					lucide.RefreshCw(iconAttrs()),
-					h.Span(g.Text("Re-import")),
-				),
-			),
-			g.If(dataActions,
-				h.Div(h.Class("stream-chip"),
-					h.Span(h.Class("pulse"), g.Attr("data-class", "{'is-active': $status.loading}")),
-					h.Span(ds.Text("$status.loading ? 'Refreshing' : ($status.lastUpdated ? `Updated ${$status.lastUpdated}` : 'Live')")),
-				),
-			),
-			h.Div(h.Class("theme-switch"), h.Aria("label", "Color mode"),
-				h.Button(
-					h.Type("button"),
-					h.Class("theme-button"),
-					g.Attr("data-theme-value", "light"),
-					g.Attr("aria-pressed", "false"),
-					h.Title("Light mode"),
-					lucide.Sun(iconAttrs()),
-					h.Span(h.Class("sr-only"), g.Text("Light mode")),
-				),
-				h.Button(
-					h.Type("button"),
-					h.Class("theme-button"),
-					g.Attr("data-theme-value", "dark"),
-					g.Attr("aria-pressed", "false"),
-					h.Title("Dark mode"),
-					lucide.Moon(iconAttrs()),
-					h.Span(h.Class("sr-only"), g.Text("Dark mode")),
-				),
-			),
-		),
-	)
-}
-
-func commandLink(href, label string, active bool, icon g.Node) g.Node {
-	class := "command-button"
-	if active {
-		class += " active"
+	if stacked {
+		signal["stacked"] = true
 	}
-	return h.A(h.Class(class), h.Href(href), g.Attr("aria-current", ariaCurrent(active)),
-		icon,
-		h.Span(g.Text(label)),
-	)
-}
-
-func ariaCurrent(active bool) string {
-	if active {
-		return "page"
-	}
-	return "false"
+	return signal
 }
 
 func iconAttrs() g.Node {
@@ -314,53 +476,24 @@ func canvasVisual(x, y, width, height int, children ...g.Node) g.Node {
 	return h.Div(nodes...)
 }
 
-func navRail(active string) g.Node {
-	return h.Aside(h.Class("nav-rail"), h.Aria("label", "Workspace navigation"),
-		railItem("/", lucide.LayoutDashboard(iconAttrs()), "Report", active == "report"),
-		railItem("/", lucide.Table2(iconAttrs()), "Data", false),
-		railItem("/model", lucide.Database(iconAttrs()), "Model", active == "model"),
-		railItem("", lucide.Activity(iconAttrs()), "Signals", false),
-	)
-}
-
-func pageTabs(pages []dashboard.Page, activeID string) g.Node {
+func pageTabs(dashboardID string, pages []dashboard.Page, activeID string) g.Node {
 	if len(pages) == 0 {
 		return nil
 	}
 	return h.Nav(h.Class("page-tabs"), h.Aria("label", "Report pages"),
 		g.Map(pages, func(page dashboard.Page) g.Node {
-			return pageTab(page, activeID)
+			return pageTab(dashboardID, page, activeID)
 		}),
 	)
 }
 
-func pageTab(page dashboard.Page, activeID string) g.Node {
+func pageTab(dashboardID string, page dashboard.Page, activeID string) g.Node {
 	class := "page-tab"
 	if page.ID == activeID {
 		class += " active"
 	}
-	href := "/pages/" + page.ID
-	if page.ID == "overview" {
-		href = "/"
-	}
+	href := "/dashboards/" + dashboardID + "/pages/" + page.ID
 	return h.A(h.Class(class), h.Href(href), g.Text(page.Title))
-}
-
-func railItem(href string, icon g.Node, label string, active bool) g.Node {
-	class := "rail-item"
-	if active {
-		class += " active"
-	}
-	if href == "" {
-		return h.Button(h.Type("button"), h.Class(class), h.Title(label),
-			icon,
-			h.Span(h.Class("sr-only"), g.Text(label)),
-		)
-	}
-	return h.A(h.Class(class), h.Href(href), h.Title(label), g.Attr("aria-current", ariaCurrent(active)),
-		icon,
-		h.Span(h.Class("sr-only"), g.Text(label)),
-	)
 }
 
 func renderPageCanvas(page dashboard.Page) g.Node {
@@ -372,7 +505,6 @@ func renderPageCanvas(page dashboard.Page) g.Node {
 	for _, visual := range page.Visuals {
 		nodes = append(nodes, renderPageVisual(visual))
 	}
-	nodes = append(nodes, filtersPane())
 	return g.El("ld-report-canvas", nodes...)
 }
 
@@ -417,23 +549,32 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 	)
 }
 
-func filtersPane() g.Node {
-	return h.Aside(g.Attr("slot", "filters"), h.Class("filters-pane"), h.Aria("label", "Report filters"),
+func filtersDock(action string) g.Node {
+	return h.Aside(h.Class("filters-dock"), h.Aria("label", "Report filters"),
+		h.Div(h.Class("filters-dock-rail"),
+			lucide.SlidersHorizontal(iconAttrs()),
+		),
+		filtersPane(action),
+	)
+}
+
+func filtersPane(action string) g.Node {
+	return h.Div(h.Class("filters-pane"),
 		h.Div(h.Class("pane-header"),
 			h.H2(h.Class("pane-title"), g.Text("Filters")),
 			h.Span(h.Class("filter-count"), ds.Text("`${"+activeFilterCountExpr()+"} active`")),
 		),
-		filters(),
+		filters(action),
 	)
 }
 
-func filters() g.Node {
+func filters(action string) g.Node {
 	activeCount := activeFilterCountExpr()
 	return h.Form(
 		h.ID("filters"),
 		h.Class("filter-form"),
-		ds.On("change", updateAction, ds.ModifierDebounce, ds.Duration(150000000)),
-		ds.On("input", updateAction, ds.ModifierDebounce, ds.Duration(450000000)),
+		ds.On("change", action, ds.ModifierDebounce, ds.Duration(150000000)),
+		ds.On("input", action, ds.ModifierDebounce, ds.Duration(450000000)),
 		h.Label(h.Class("filter-control"),
 			filterLabel("Period"),
 			h.Select(controlClass(), ds.Bind("filters.dateRange"),
@@ -489,7 +630,7 @@ func filters() g.Node {
 		h.Button(
 			h.Type("button"),
 			h.Class("refresh-button"),
-			ds.On("click", updateAction),
+			ds.On("click", action),
 			ds.Attr("disabled", "$status.loading"),
 			lucide.RefreshCw(iconAttrs()),
 			h.Span(g.Text("Refresh")),
@@ -511,6 +652,15 @@ func controlClass() g.Node {
 
 func option(value, label string) g.Node {
 	return h.Option(h.Value(value), g.Text(label))
+}
+
+func sortedKeys[T any](items map[string]T) []string {
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func chartPanel(visualID string) g.Node {
