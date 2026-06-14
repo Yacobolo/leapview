@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strconv"
+
 	g "maragu.dev/gomponents"
 	ds "maragu.dev/gomponents-datastar"
 	c "maragu.dev/gomponents/components"
@@ -24,6 +26,7 @@ func Page(dataDir, clientID string) g.Node {
 			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
 			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
+			h.Script(h.Type("module"), h.Src("/static/report-canvas.js")),
 			h.Script(h.Type("module"), h.Src("/static/charts.js")),
 			h.Script(h.Type("module"), h.Src("/static/table.js")),
 			h.Script(h.Type("module"), h.Src("/static/datastar-inspector.js")),
@@ -32,23 +35,44 @@ func Page(dataDir, clientID string) g.Node {
 		Body: []g.Node{
 			h.Main(
 				h.ID("dashboard"),
+				h.Class("report-app"),
 				ds.Signals(initialSignals(dataDir, clientID)),
 				ds.Init(updateAction),
-				h.Section(h.Class("mx-auto w-[min(1460px,calc(100vw-32px))] px-0 py-7 max-sm:w-[min(100vw-20px,560px)] max-sm:py-3"),
-					header(),
-					filters(),
-					statusBar(),
-					h.Div(h.Class("mb-3.5"),
-						g.El("ld-kpi-strip", g.Attr("data-attr:items", "$kpis")),
+				appBar(),
+				h.Div(h.Class("report-workspace"),
+					navRail(),
+					h.Section(h.Class("report-canvas-shell"), h.Aria("label", "LibreDash report canvas"),
+						g.El("ld-report-canvas", g.Attr("width", "1366"), g.Attr("height", "940"),
+							canvasVisual(16, 16, 1334, 86,
+								reportHeader(),
+							),
+							canvasVisual(16, 116, 1334, 54,
+								statusBar(),
+							),
+							canvasVisual(16, 186, 1334, 116,
+								h.Div(h.Class("kpi-band"),
+									g.El("ld-kpi-strip", g.Attr("data-attr:items", "$kpis")),
+								),
+							),
+							canvasVisual(16, 318, 650, 286,
+								chartPanel("ld-line-chart", "charts.revenue"),
+							),
+							canvasVisual(682, 318, 326, 286,
+								chartPanel("ld-bar-chart", "charts.orders"),
+							),
+							canvasVisual(1024, 318, 326, 286,
+								chartPanel("ld-bar-chart", "charts.delivery"),
+							),
+							canvasVisual(16, 620, 650, 300,
+								chartPanel("ld-bar-chart", "charts.categories"),
+							),
+							canvasVisual(682, 620, 668, 300,
+								tablePanel(),
+							),
+						),
+						debugPanel(),
 					),
-					h.Section(h.Class("grid grid-cols-4 gap-3.5 max-lg:grid-cols-2 max-sm:grid-cols-1"), h.Aria("label", "Olist dashboard charts"),
-						chartPanel(true, "ld-line-chart", "charts.revenue"),
-						chartPanel(false, "ld-bar-chart", "charts.orders"),
-						chartPanel(false, "ld-bar-chart", "charts.delivery"),
-						chartPanel(true, "ld-bar-chart", "charts.categories"),
-					),
-					tablePanel(),
-					debugPanel(),
+					filtersPane(),
 				),
 				g.El("datastar-inspector"),
 			),
@@ -119,26 +143,93 @@ func initialSignals(dataDir, clientID string) map[string]any {
 	}
 }
 
-func header() g.Node {
-	return h.Header(h.Class("flex items-end justify-between gap-6 border-b-2 border-[var(--borderColor-emphasis)] py-5 max-sm:flex-col max-sm:items-stretch"),
-		h.Div(
-			h.P(h.Class("mb-1 text-xs font-extrabold uppercase text-[var(--fgColor-muted)]"), g.Text("DuckDB semantic cockpit")),
-			h.H1(h.Class("m-0 text-6xl font-black leading-none tracking-normal max-sm:text-5xl lg:text-8xl"), g.Text("LibreDash")),
+func appBar() g.Node {
+	return h.Header(h.Class("app-bar"),
+		h.Div(h.Class("app-brand"),
+			h.Span(h.Class("brand-mark"), g.Text("L")),
+			h.Span(g.Text("LibreDash")),
 		),
-		h.Div(h.Class("inline-flex min-h-10 items-center gap-2.5 whitespace-nowrap border border-[var(--borderColor-emphasis)] bg-[var(--bgColor-default)] px-3 py-2 text-sm font-extrabold text-[var(--fgColor-default)] shadow-[var(--shadow-resting-small)]"),
+		h.Nav(h.Class("command-bar"), h.Aria("label", "Report commands"),
+			h.Button(h.Type("button"), h.Class("command-button active"), g.Text("Report")),
+			h.Button(h.Type("button"), h.Class("command-button"), g.Text("Analyze")),
+			h.Button(h.Type("button"), h.Class("command-button"), g.Text("Model")),
+			h.Button(
+				h.Type("button"),
+				h.Class("command-button"),
+				ds.On("click", "@post('/commands/refresh-cache')"),
+				ds.Attr("disabled", "$status.loading"),
+				g.Text("Refresh cache"),
+			),
+		),
+		h.Div(h.Class("stream-chip"),
 			h.Span(h.Class("pulse"), g.Attr("data-class", "{'is-active': $status.loading}")),
-			h.Span(ds.Text("$status.loading ? 'Refreshing' : ($status.lastUpdated ? `Updated ${$status.lastUpdated}` : 'Ready')")),
+			h.Span(ds.Text("$status.loading ? 'Refreshing' : ($status.lastUpdated ? `Updated ${$status.lastUpdated}` : 'Live')")),
 		),
+	)
+}
+
+func canvasVisual(x, y, width, height int, children ...g.Node) g.Node {
+	nodes := []g.Node{
+		h.Class("canvas-visual"),
+		g.Attr("data-x", strconv.Itoa(x)),
+		g.Attr("data-y", strconv.Itoa(y)),
+		g.Attr("data-w", strconv.Itoa(width)),
+		g.Attr("data-h", strconv.Itoa(height)),
+	}
+	nodes = append(nodes, children...)
+	return h.Div(nodes...)
+}
+
+func navRail() g.Node {
+	return h.Aside(h.Class("nav-rail"), h.Aria("label", "Workspace navigation"),
+		railItem("R", "Report", true),
+		railItem("D", "Data", false),
+		railItem("M", "Model", false),
+		railItem("S", "Signals", false),
+	)
+}
+
+func railItem(icon, label string, active bool) g.Node {
+	class := "rail-item"
+	if active {
+		class += " active"
+	}
+	return h.Button(h.Type("button"), h.Class(class), h.Title(label),
+		h.Span(g.Text(icon)),
+	)
+}
+
+func reportHeader() g.Node {
+	return h.Header(h.Class("report-header"),
+		h.Div(
+			h.P(h.Class("report-eyebrow"), g.Text("Olist commerce overview")),
+			h.H1(h.Class("report-title"), g.Text("Executive Sales Dashboard")),
+		),
+		h.Div(h.Class("report-summary"),
+			h.Span(g.Text("DuckDB compute")),
+			h.Span(g.Text("Datastar stream")),
+			h.Span(g.Text("Lit visuals")),
+		),
+	)
+}
+
+func filtersPane() g.Node {
+	return h.Aside(h.Class("filters-pane"), h.Aria("label", "Report filters"),
+		h.Div(h.Class("pane-header"),
+			h.P(h.Class("pane-eyebrow"), g.Text("Controls")),
+			h.H2(h.Class("pane-title"), g.Text("Filters")),
+		),
+		filters(),
 	)
 }
 
 func filters() g.Node {
 	return h.Form(
 		h.ID("filters"),
-		h.Class("my-4 grid grid-cols-[minmax(130px,0.8fr)_minmax(120px,0.65fr)_minmax(220px,1.8fr)_auto] items-end gap-2.5 max-lg:grid-cols-2 max-sm:grid-cols-1"),
+		h.Class("filter-form"),
 		ds.On("change", updateAction, ds.ModifierDebounce, ds.Duration(150000000)),
 		ds.On("input", updateAction, ds.ModifierDebounce, ds.Duration(450000000)),
-		h.Label(h.Class("grid gap-1.5"),
+		h.Label(h.Class("filter-control"),
 			filterLabel("Period"),
 			h.Select(controlClass(), ds.Bind("filters.dateRange"),
 				option("all", "All orders"),
@@ -147,7 +238,7 @@ func filters() g.Node {
 				option("2017", "2017"),
 			),
 		),
-		h.Label(h.Class("grid gap-1.5"),
+		h.Label(h.Class("filter-control"),
 			filterLabel("State"),
 			h.Select(controlClass(), ds.Bind("filters.state"),
 				option("all", "Brazil"),
@@ -156,7 +247,7 @@ func filters() g.Node {
 				option("GO", "GO"), option("ES", "ES"), option("PE", "PE"), option("CE", "CE"),
 			),
 		),
-		h.Label(h.Class("grid gap-1.5"),
+		h.Label(h.Class("filter-control"),
 			filterLabel("Category contains"),
 			h.Input(
 				controlClass(),
@@ -167,7 +258,7 @@ func filters() g.Node {
 		),
 		h.Button(
 			h.Type("button"),
-			h.Class("min-h-11 w-full cursor-pointer border border-[var(--button-primary-bgColor-rest)] bg-[var(--button-primary-bgColor-rest)] px-3 font-black text-[var(--button-primary-fgColor-rest)] shadow-[var(--shadow-resting-small)] outline-offset-2 focus:outline-3 focus:outline-[var(--borderColor-accent-emphasis)] disabled:cursor-wait disabled:opacity-70"),
+			h.Class("refresh-button"),
 			ds.On("click", updateAction),
 			ds.Attr("disabled", "$status.loading"),
 			g.Text("Refresh"),
@@ -176,11 +267,11 @@ func filters() g.Node {
 }
 
 func filterLabel(label string) g.Node {
-	return h.Span(h.Class("text-xs font-black uppercase text-[var(--fgColor-muted)]"), g.Text(label))
+	return h.Span(h.Class("filter-label"), g.Text(label))
 }
 
 func controlClass() g.Node {
-	return h.Class("min-h-11 w-full border border-[var(--borderColor-emphasis)] bg-[var(--control-bgColor-rest)] px-3 text-[var(--fgColor-default)] outline-offset-2 focus:outline-3 focus:outline-[var(--borderColor-accent-emphasis)]")
+	return h.Class("filter-input")
 }
 
 func option(value, label string) g.Node {
@@ -188,22 +279,18 @@ func option(value, label string) g.Node {
 }
 
 func statusBar() g.Node {
-	return h.Section(h.Class("status-band mb-3.5 flex min-h-14 items-center justify-between gap-4 border border-[var(--borderColor-default)] bg-[var(--bgColor-success-muted)] px-3.5 py-3 max-sm:flex-col max-sm:items-stretch"),
+	return h.Section(h.Class("status-band"),
 		g.Attr("data-class", "{'has-error': $status.error}"),
 		h.Div(
-			h.Strong(h.Class("mb-0.5 block text-[var(--fgColor-default)]"), ds.Text("$status.error ? 'Setup needed' : 'Signal stream'")),
-			h.P(h.Class("m-0 text-[var(--fgColor-muted)]"), ds.Text("$status.error || `Reading ${$status.dataDirectory}`")),
+			h.Strong(ds.Text("$status.error ? 'Setup needed' : 'Signal stream'")),
+			h.P(ds.Text("$status.error || `Reading ${$status.dataDirectory}`")),
 		),
-		h.Code(h.Class("border border-[var(--borderColor-default)] bg-[var(--bgColor-default)] px-2.5 py-2 font-sans text-sm text-[var(--fgColor-default)]"), ds.Text("$status.setupRequired ? 'python3 scripts/bootstrap_olist.py' : '/updates'")),
+		h.Code(ds.Text("$status.setupRequired ? 'python3 scripts/bootstrap_olist.py' : '/updates'")),
 	)
 }
 
-func chartPanel(wide bool, tag, signal string) g.Node {
-	class := "min-h-[310px] border border-[var(--borderColor-emphasis)] bg-[var(--bgColor-default)] shadow-[var(--shadow-resting-medium)]"
-	if wide {
-		class += " col-span-2 max-sm:col-span-1"
-	}
-	return h.Article(h.Class(class),
+func chartPanel(tag, signal string) g.Node {
+	return h.Article(h.Class("visual-card"),
 		g.El(tag,
 			g.Attr("data-attr:data", "$"+signal+".data"),
 			g.Attr("data-attr:chart-title", "$"+signal+".title"),
@@ -213,7 +300,7 @@ func chartPanel(wide bool, tag, signal string) g.Node {
 }
 
 func tablePanel() g.Node {
-	return h.Section(h.Class("mt-4 border border-[var(--borderColor-emphasis)] bg-[var(--bgColor-default)] shadow-[var(--shadow-resting-medium)]"),
+	return h.Section(h.Class("table-card"),
 		g.El("ld-data-table",
 			g.Attr("data-attr:table", "$tables.orders"),
 			g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; @post('/commands/table-window')"),
@@ -222,8 +309,8 @@ func tablePanel() g.Node {
 }
 
 func debugPanel() g.Node {
-	return h.Details(h.Class("mt-4 border-t border-[var(--borderColor-default)] text-[var(--fgColor-muted)]"),
-		h.Summary(h.Class("cursor-pointer py-3 font-extrabold"), g.Text("Signals")),
-		h.Pre(h.Class("max-h-72 overflow-auto bg-[var(--bgColor-emphasis)] p-3 font-sans text-[var(--fgColor-onEmphasis)]"), ds.JSONSignals(ds.Filter{}, ds.ModifierTerse)),
+	return h.Details(h.Class("signals-panel"),
+		h.Summary(g.Text("Signals")),
+		h.Pre(ds.JSONSignals(ds.Filter{}, ds.ModifierTerse)),
 	)
 }

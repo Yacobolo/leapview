@@ -1,0 +1,26 @@
+package semantic
+
+import (
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadOlistModel(t *testing.T) {
+	model, err := Load(filepath.Join("..", "..", "dashboards", "olist.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if model.Name != "olist" {
+		t.Fatalf("model name = %q, want olist", model.Name)
+	}
+	if len(model.Sources) != 7 {
+		t.Fatalf("source count = %d, want 7", len(model.Sources))
+	}
+	if model.Visuals["revenue"].Source != "orders_enriched" {
+		t.Fatalf("revenue visual source = %q, want orders_enriched", model.Visuals["revenue"].Source)
+	}
+	if got := model.Tables["orders"].DefaultSort.Key; got != "purchase_date" {
+		t.Fatalf("orders table default sort = %q, want purchase_date", got)
+	}
+}

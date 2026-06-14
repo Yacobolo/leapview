@@ -4669,7 +4669,7 @@ var VirtualizerController = class extends VirtualizerControllerBase {
   }
 };
 
-// web/components/data-table.js
+// web/components/data-table.ts
 var emptyTable = {
   title: "Orders",
   columns: [],
@@ -4709,11 +4709,35 @@ function formatCell(value, column) {
 function defaultDirection(column) {
   return ["revenue", "review_score", "delivery_days", "purchase_date"].includes(column.key) ? "desc" : "asc";
 }
+function rowKey(row, fallback) {
+  const id = row.order_id;
+  return typeof id === "string" && id ? id : String(fallback);
+}
 var DataTable = class extends i4 {
-  static properties = {
-    table: { attribute: "table", converter: tableConverter }
-  };
-  static styles = i`
+  constructor() {
+    super(...arguments);
+    this.table = emptyTable;
+    this.selectedRowId = "";
+    this.selectedCellKey = "";
+    this.pendingKey = "";
+    this.scrollElementRef = e5();
+    this.tableController = new TableController(this);
+    this.virtualizerController = new VirtualizerController(this, {
+      getScrollElement: () => this.scrollElementRef.value,
+      count: 0,
+      estimateSize: () => 34,
+      overscan: 10
+    });
+  }
+  static {
+    this.properties = {
+      table: { attribute: "table", converter: tableConverter },
+      selectedRowId: { state: true },
+      selectedCellKey: { state: true }
+    };
+  }
+  static {
+    this.styles = i`
     :host {
       display: block;
       color: var(--fgColor-default);
@@ -4722,23 +4746,27 @@ var DataTable = class extends i4 {
 
     .shell {
       display: grid;
-      grid-template-rows: auto auto minmax(320px, 52vh);
-      min-height: 480px;
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      height: 100%;
+      min-height: 0;
+      background: var(--bgColor-default);
     }
 
     .toolbar {
       display: flex;
-      align-items: end;
+      align-items: center;
       justify-content: space-between;
       gap: 16px;
+      min-height: 48px;
       border-bottom: 1px solid var(--borderColor-default);
-      padding: 14px 16px 12px;
+      background: var(--bgColor-default);
+      padding: 8px 10px 8px 13px;
     }
 
     .eyebrow {
       margin: 0 0 3px;
       color: var(--fgColor-muted);
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       font-weight: 900;
       letter-spacing: 0;
       text-transform: uppercase;
@@ -4746,34 +4774,80 @@ var DataTable = class extends i4 {
 
     h2 {
       margin: 0;
-      font-size: 1.35rem;
-      font-weight: 900;
+      font-size: 1rem;
+      font-weight: 850;
       letter-spacing: 0;
+      line-height: 1.1;
     }
 
-    .meta {
+    .visual-actions,
+    .meta,
+    .footer {
       display: flex;
-      flex-wrap: wrap;
-      justify-content: end;
-      gap: 8px;
+      align-items: center;
+    }
+
+    .visual-actions {
+      gap: 2px;
+    }
+
+    .visual-action {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      background: transparent;
       color: var(--fgColor-muted);
-      font-size: 0.78rem;
+      cursor: pointer;
+      font-size: 0.9rem;
       font-weight: 850;
     }
 
-    .pill {
-      border: 1px solid var(--borderColor-default);
+    .visual-action:hover,
+    .visual-action:focus-visible {
+      border-color: var(--borderColor-default);
       background: var(--bgColor-muted);
-      padding: 6px 9px;
+      color: var(--fgColor-default);
+      outline: 0;
+    }
+
+    .meta {
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--borderColor-default);
+      background: var(--bgColor-muted);
+      padding: 7px 10px;
+      color: var(--fgColor-muted);
+      font-size: 0.74rem;
+      font-weight: 750;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 999px;
+      background: var(--bgColor-default);
+      padding: 4px 8px;
       white-space: nowrap;
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--fgColor-success);
     }
 
     .error {
       border-bottom: 1px solid var(--borderColor-danger-emphasis);
       background: var(--bgColor-danger-muted);
       color: var(--fgColor-danger);
-      padding: 10px 16px;
-      font-size: 0.86rem;
+      padding: 9px 12px;
+      font-size: 0.82rem;
       font-weight: 850;
     }
 
@@ -4781,13 +4855,16 @@ var DataTable = class extends i4 {
     .row {
       display: grid;
       grid-template-columns: var(--ld-table-columns);
-      min-width: 1040px;
+      min-width: 1080px;
     }
 
     .head {
+      position: relative;
+      z-index: 1;
       border-bottom: 1px solid var(--borderColor-emphasis);
       background: var(--bgColor-muted);
       color: var(--fgColor-muted);
+      box-shadow: inset 0 -1px 0 var(--borderColor-emphasis);
     }
 
     .header-cell,
@@ -4812,29 +4889,39 @@ var DataTable = class extends i4 {
       justify-content: space-between;
       gap: 8px;
       width: 100%;
-      min-height: 42px;
+      min-height: 34px;
       border: 0;
+      border-bottom: 2px solid transparent;
       background: transparent;
       color: inherit;
       cursor: pointer;
-      padding: 0 10px;
+      padding: 0 9px;
       font: inherit;
-      font-size: 0.74rem;
-      font-weight: 950;
+      font-size: 0.7rem;
+      font-weight: 900;
       letter-spacing: 0;
+      text-align: left;
       text-transform: uppercase;
     }
 
     button.header-button:hover,
-    button.header-button:focus-visible {
-      background: var(--control-transparent-bgColor-hover);
+    button.header-button:focus-visible,
+    .sorted button.header-button {
+      background: color-mix(in srgb, var(--fgColor-accent), transparent 92%);
       color: var(--fgColor-default);
       outline: 0;
     }
 
+    .sorted button.header-button {
+      border-bottom-color: var(--fgColor-accent);
+    }
+
     .sort {
+      display: inline-grid;
+      min-width: 18px;
+      place-items: center;
       color: var(--fgColor-accent);
-      font-size: 0.8rem;
+      font-size: 0.82rem;
       opacity: 0;
     }
 
@@ -4845,38 +4932,62 @@ var DataTable = class extends i4 {
     .viewport {
       position: relative;
       overflow: auto;
+      min-height: 0;
       background: var(--bgColor-default);
+      scrollbar-gutter: stable;
     }
 
     .canvas {
       position: relative;
-      min-width: 1040px;
+      min-width: 1080px;
     }
 
     .row {
       position: absolute;
       inset-inline: 0;
-      height: 38px;
+      height: 34px;
       border-bottom: 1px solid var(--borderColor-muted);
       background: var(--bgColor-default);
       color: var(--fgColor-default);
     }
 
     .row:nth-child(even) {
-      background: var(--bgColor-muted);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 45%);
+    }
+
+    .row:hover {
+      background: color-mix(in srgb, var(--fgColor-accent), transparent 91%);
+    }
+
+    .row.selected {
+      background: color-mix(in srgb, var(--fgColor-accent), transparent 86%);
+      box-shadow: inset 3px 0 0 var(--fgColor-accent);
     }
 
     .cell {
       display: flex;
       align-items: center;
+      min-width: 0;
+      border: 0;
       border-right: 1px solid var(--borderColor-muted);
-      padding: 0 10px;
-      font-size: 0.82rem;
-      font-weight: 700;
+      background: transparent;
+      color: inherit;
+      cursor: default;
+      font: inherit;
+      padding: 0 9px;
+      font-size: 0.77rem;
+      font-weight: 600;
+      text-align: left;
     }
 
     .cell:last-child {
       border-right: 0;
+    }
+
+    .cell.active {
+      outline: 2px solid var(--fgColor-accent);
+      outline-offset: -2px;
+      background: color-mix(in srgb, var(--fgColor-accent), transparent 88%);
     }
 
     .right {
@@ -4897,6 +5008,7 @@ var DataTable = class extends i4 {
       position: absolute;
       inset-inline: 0;
       top: 0;
+      z-index: 2;
       height: 3px;
       overflow: hidden;
       background: var(--bgColor-accent-muted);
@@ -4911,6 +5023,23 @@ var DataTable = class extends i4 {
       animation: load 900ms ease-in-out infinite;
     }
 
+    .footer {
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 34px;
+      border-top: 1px solid var(--borderColor-default);
+      background: var(--bgColor-muted);
+      padding: 6px 10px;
+      color: var(--fgColor-muted);
+      font-size: 0.72rem;
+      font-weight: 750;
+    }
+
+    .footer strong {
+      color: var(--fgColor-default);
+      font-weight: 850;
+    }
+
     @keyframes load {
       0% { transform: translateX(-100%); }
       100% { transform: translateX(310%); }
@@ -4918,36 +5047,30 @@ var DataTable = class extends i4 {
 
     @media (max-width: 760px) {
       .shell {
-        grid-template-rows: auto auto minmax(300px, 62vh);
+        grid-template-rows: auto auto auto minmax(260px, 1fr) auto;
       }
 
-      .toolbar {
+      .toolbar,
+      .meta,
+      .footer {
         align-items: stretch;
         flex-direction: column;
       }
 
-      .meta {
-        justify-content: start;
+      .visual-actions {
+        align-self: end;
       }
     }
   `;
-  constructor() {
-    super();
-    this.table = emptyTable;
-    this.scrollElementRef = e5();
-    this.tableController = new TableController(this);
-    this.virtualizerController = new VirtualizerController(this, {
-      getScrollElement: () => this.scrollElementRef.value,
-      count: 0,
-      estimateSize: () => 38,
-      overscan: 8
-    });
-    this.pendingKey = "";
   }
   updated() {
     const key = this.requestKey(this.table?.window?.offset, this.table?.sort);
     if (!this.table?.loading && this.pendingKey === key) {
       this.pendingKey = "";
+    }
+    if (this.selectedRowId && !this.rows.some((row, index) => rowKey(row, index) === this.selectedRowId)) {
+      this.selectedRowId = "";
+      this.selectedCellKey = "";
     }
   }
   get rows() {
@@ -4958,13 +5081,13 @@ var DataTable = class extends i4 {
   }
   get gridTemplate() {
     const widths = {
-      order_id: "minmax(190px,1.35fr)",
+      order_id: "minmax(210px,1.35fr)",
       purchase_date: "minmax(118px,.75fr)",
-      status: "minmax(120px,.75fr)",
-      state: "minmax(74px,.45fr)",
-      category: "minmax(180px,1.1fr)",
-      revenue: "minmax(112px,.7fr)",
-      review_score: "minmax(92px,.55fr)",
+      status: "minmax(118px,.75fr)",
+      state: "minmax(70px,.42fr)",
+      category: "minmax(190px,1.1fr)",
+      revenue: "minmax(120px,.72fr)",
+      review_score: "minmax(96px,.55fr)",
       delivery_days: "minmax(96px,.55fr)"
     };
     return this.columns.map((column) => widths[column.key] ?? "minmax(120px,1fr)").join(" ");
@@ -5009,6 +5132,11 @@ var DataTable = class extends i4 {
     const direction = current.key === column.key ? current.direction === "asc" ? "desc" : "asc" : defaultDirection(column);
     this.emitWindow(0, { key: column.key, direction });
   }
+  selectCell(row, column, rowIndex) {
+    const key = rowKey(row, rowIndex);
+    this.selectedRowId = key;
+    this.selectedCellKey = `${key}:${column.key}`;
+  }
   render() {
     const rows = this.rows;
     const columns = this.columns;
@@ -5029,67 +5157,93 @@ var DataTable = class extends i4 {
     virtualizer.setOptions({
       ...virtualizer.options,
       count: rowModel.length,
-      estimateSize: () => 38,
-      overscan: 8
+      estimateSize: () => 34,
+      overscan: 10
     });
     const virtualRows = virtualizer.getVirtualItems();
     const totalSize = virtualizer.getTotalSize();
     const first = (this.table?.window?.offset ?? 0) + 1;
     const last = Math.min((this.table?.window?.offset ?? 0) + rows.length, this.table?.totalRows ?? 0);
+    const sortedColumn = this.columns.find((column) => column.key === this.table?.sort?.key);
+    const selectedText = this.selectedRowId ? "1 row selected" : "No selection";
     return b2`
       <section class="shell" style=${`--ld-table-columns:${this.gridTemplate}`}>
         <div class="toolbar">
           <div>
-            <p class="eyebrow">Windowed read model</p>
+            <p class="eyebrow">Table visual</p>
             <h2>${this.table?.title ?? "Orders"}</h2>
           </div>
-          <div class="meta">
-            <span class="pill">${this.table?.totalRows ? `${first.toLocaleString()}-${last.toLocaleString()} of ${this.table.totalRows.toLocaleString()}` : "No rows"}</span>
-            <span class="pill">${this.table?.sort?.key ?? "purchase_date"} ${this.table?.sort?.direction ?? "desc"}</span>
+          <div class="visual-actions" aria-label="Visual header actions">
+            <button class="visual-action" type="button" title="Drill mode" aria-label="Drill mode">↧</button>
+            <button class="visual-action" type="button" title="Focus mode" aria-label="Focus mode">□</button>
+            <button class="visual-action" type="button" title="More options" aria-label="More options">⋯</button>
           </div>
         </div>
+        <div class="meta">
+          <span class="pill"><span class="dot" aria-hidden="true"></span>${this.table?.totalRows ? `${first.toLocaleString()}-${last.toLocaleString()} of ${this.table.totalRows.toLocaleString()}` : "No rows"}</span>
+          <span class="pill">Sorted by ${sortedColumn?.label ?? this.table?.sort?.key ?? "purchase date"} ${this.table?.sort?.direction ?? "desc"}</span>
+        </div>
         ${this.table?.error ? b2`<div class="error">${this.table.error}</div>` : A}
-        <div>
-          <div class="head" role="row">
-            ${columns.map((column) => {
+        <div class="head" role="row">
+          ${columns.map((column) => {
       const sorted = this.table?.sort?.key === column.key;
       const sortMark = this.table?.sort?.direction === "asc" ? "\u2191" : "\u2193";
       return b2`
-                <div class=${`header-cell ${sorted ? "sorted" : ""}`} role="columnheader">
-                  <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
-                    <span>${column.label}</span>
-                    <span class="sort">${sortMark}</span>
-                  </button>
-                </div>
-              `;
-    })}
-          </div>
-          <div class="viewport" ${n5(this.scrollElementRef)} @scroll=${this.handleScroll} role="table" aria-label=${this.table?.title ?? "Orders"}>
-            ${this.table?.loading ? b2`<div class="loading" aria-hidden="true"></div>` : A}
-            ${rows.length === 0 && !this.table?.loading ? b2`<div class="empty">Waiting for table data</div>` : b2`
-              <div class="canvas" style=${`height:${totalSize}px`}>
-                ${virtualRows.map((virtualRow) => {
-      const row = rowModel[virtualRow.index];
-      return b2`
-                    <div
-                      class="row"
-                      role="row"
-                      style=${`transform:translateY(${virtualRow.start}px)`}
-                    >
-                      ${row.getVisibleCells().map((cell) => {
-        const column = columns.find((item) => item.key === cell.column.id) ?? {};
-        return b2`
-                          <div class=${`cell ${column.align === "right" ? "right" : ""}`} role="cell" title=${String(cell.getValue() ?? "")}>
-                            ${flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </div>
-                        `;
-      })}
-                    </div>
-                  `;
-    })}
+              <div class=${`header-cell ${sorted ? "sorted" : ""}`} role="columnheader">
+                <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
+                  <span>${column.label}</span>
+                  <span class="sort">${sortMark}</span>
+                </button>
               </div>
-            `}
-          </div>
+            `;
+    })}
+        </div>
+        <div class="viewport" ${n5(this.scrollElementRef)} @scroll=${this.handleScroll} role="table" aria-label=${this.table?.title ?? "Orders"}>
+          ${this.table?.loading ? b2`<div class="loading" aria-hidden="true"></div>` : A}
+          ${rows.length === 0 && !this.table?.loading ? b2`<div class="empty">Waiting for table data</div>` : b2`
+            <div class="canvas" style=${`height:${totalSize}px`}>
+              ${virtualRows.map((virtualRow) => {
+      const row = rowModel[virtualRow.index];
+      const original = row.original;
+      const key = rowKey(original, virtualRow.index);
+      const selected = key === this.selectedRowId;
+      return b2`
+                  <div
+                    class=${`row ${selected ? "selected" : ""}`}
+                    role="row"
+                    aria-selected=${selected ? "true" : "false"}
+                    style=${`transform:translateY(${virtualRow.start}px)`}
+                    @click=${() => {
+        this.selectedRowId = key;
+        this.selectedCellKey = "";
+      }}
+                  >
+                    ${row.getVisibleCells().map((cell) => {
+        const column = columns.find((item) => item.key === cell.column.id) ?? { key: cell.column.id, label: cell.column.id };
+        const cellKey = `${key}:${column.key}`;
+        return b2`
+                        <button
+                          class=${`cell ${column.align === "right" ? "right" : ""} ${cellKey === this.selectedCellKey ? "active" : ""}`}
+                          role="cell"
+                          title=${String(cell.getValue() ?? "")}
+                          @click=${(event) => {
+          event.stopPropagation();
+          this.selectCell(original, column, virtualRow.index);
+        }}
+                        >
+                          ${flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </button>
+                      `;
+      })}
+                  </div>
+                `;
+    })}
+            </div>
+          `}
+        </div>
+        <div class="footer">
+          <span><strong>${rows.length.toLocaleString()}</strong> rows loaded in current server window</span>
+          <span>${selectedText}</span>
         </div>
       </section>
     `;

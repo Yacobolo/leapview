@@ -70,6 +70,9 @@ relogios_presentes,watches_gifts
 		t.Fatal(err)
 	}
 	defer metrics.Close()
+	if _, err := os.Stat(filepath.Join(dir, "libredash.duckdb")); err != nil {
+		t.Fatalf("expected DuckDB cache file: %v", err)
+	}
 
 	patch, err := metrics.QueryDashboard(context.Background(), dashboard.Filters{State: "SP", DateRange: "2018"})
 	if err != nil {
@@ -106,6 +109,10 @@ relogios_presentes,watches_gifts
 	}
 	if got := table.Rows[0]["order_id"]; got != "o2" {
 		t.Fatalf("first table order = %v, want o2", got)
+	}
+
+	if err := metrics.RefreshCache(context.Background()); err != nil {
+		t.Fatalf("refresh cache: %v", err)
 	}
 }
 

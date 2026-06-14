@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run build:css && npm run build:inspector && npm run build:table",
+    "build": "npm run build:css && npm run build:inspector && npm run build:table && npm run build:canvas",
     "build:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css",
     "build:inspector": "esbuild web/components/datastar-inspector/index.ts --bundle --format=esm --outfile=static/datastar-inspector.js",
-    "build:table": "esbuild web/components/data-table.js --bundle --format=esm --outfile=static/table.js",
+    "build:table": "esbuild web/components/data-table.ts --bundle --format=esm --outfile=static/table.js",
+    "build:canvas": "esbuild web/components/report-canvas.ts --bundle --format=esm --outfile=static/report-canvas.js",
     "watch:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css --watch"
   },
   "devDependencies": {

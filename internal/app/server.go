@@ -15,6 +15,7 @@ import (
 type queryMetrics interface {
 	QueryDashboard(ctx context.Context, filters dashboard.Filters) (dashboard.Patch, error)
 	QueryTable(ctx context.Context, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
+	RefreshCache(ctx context.Context) error
 	DataDir() string
 }
 
@@ -32,6 +33,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /", s.home)
 	mux.HandleFunc("GET /updates", s.updates)
 	mux.HandleFunc("POST /commands/table-window", s.tableWindow)
+	mux.HandleFunc("POST /commands/refresh-cache", s.refreshCache)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	return mux
@@ -121,6 +123,39 @@ func (s *Server) tableWindow(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
+	signals := dashboard.Signals{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	filters := signals.Filters.WithDefaults()
+	request := signals.TableCommand.WithDefaults()
+	clientID := clientIDFromRequest(r, signals)
+
+	s.broker.publish(clientID, signalPatch{
+		"status": map[string]any{
+			"loading":       true,
+			"error":         "",
+			"dataDirectory": s.metrics.DataDir(),
+		},
+	})
+
+	if err := s.metrics.RefreshCache(r.Context()); err != nil {
+		s.broker.publish(clientID, dashboardPatch(dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)))
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	patch, err := s.metrics.QueryDashboard(r.Context(), filters)
+	if err != nil {
+		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
+	}
+	s.broker.publish(clientID, dashboardPatch(patch))
+	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), filters, request)))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) queryTable(ctx context.Context, filters dashboard.Filters, request dashboard.TableRequest) dashboard.Table {
 	table, err := s.metrics.QueryTable(ctx, filters, request)
 	if err != nil {
@@ -134,6 +169,15 @@ func tablePatch(name string, table dashboard.Table) signalPatch {
 		"tables": map[string]dashboard.Table{
 			name: table,
 		},
+	}
+}
+
+func dashboardPatch(patch dashboard.Patch) signalPatch {
+	return signalPatch{
+		"filters": patch.Filters,
+		"status":  patch.Status,
+		"kpis":    patch.KPIs,
+		"charts":  patch.Charts,
 	}
 }
 

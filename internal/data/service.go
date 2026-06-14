@@ -8,22 +8,18 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/semantic"
 	_ "github.com/marcboeker/go-duckdb/v2"
 )
 
-var requiredFiles = map[string]string{
-	"orders":       "olist_orders_dataset.csv",
-	"order_items":  "olist_order_items_dataset.csv",
-	"payments":     "olist_order_payments_dataset.csv",
-	"products":     "olist_products_dataset.csv",
-	"customers":    "olist_customers_dataset.csv",
-	"reviews":      "olist_order_reviews_dataset.csv",
-	"translations": "product_category_name_translation.csv",
-}
+var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 type MissingDataError struct {
 	DataDir string
@@ -35,20 +31,47 @@ func (e *MissingDataError) Error() string {
 }
 
 type DuckDBMetrics struct {
-	db      *sql.DB
-	dataDir string
-	ready   bool
-	missing error
+	mu          sync.RWMutex
+	db          *sql.DB
+	dataDir     string
+	dbPath      string
+	model       *semantic.Model
+	modelPath   string
+	ready       bool
+	missing     error
+	lastRefresh time.Time
 }
 
 func NewDuckDBMetrics(dataDir string) (*DuckDBMetrics, error) {
-	metrics := &DuckDBMetrics{dataDir: dataDir}
+	modelPath := os.Getenv("LIBREDASH_MODEL_PATH")
+	if modelPath == "" {
+		var err error
+		modelPath, err = discoverModelPath()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	model, err := semantic.Load(modelPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading semantic model: %w", err)
+	}
+
+	metrics := &DuckDBMetrics{
+		dataDir:   dataDir,
+		dbPath:    duckDBPath(dataDir),
+		model:     model,
+		modelPath: modelPath,
+	}
 	if err := metrics.validateFiles(); err != nil {
 		metrics.missing = err
 		return metrics, nil
 	}
 
-	db, err := sql.Open("duckdb", "")
+	if err := os.MkdirAll(filepath.Dir(metrics.dbPath), 0o755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("duckdb", metrics.dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +81,7 @@ func NewDuckDBMetrics(dataDir string) (*DuckDBMetrics, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := metrics.registerViews(context.Background()); err != nil {
+	if err := metrics.RefreshCache(context.Background()); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -84,11 +107,14 @@ func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, filters dashboard.Fi
 		return dashboard.EmptyPatch(filters, m.dataDir, m.missing), nil
 	}
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	patch := dashboard.Patch{
 		Filters: filters,
 		Status: dashboard.Status{
 			Loading:       false,
-			LastUpdated:   time.Now().Format("15:04:05"),
+			LastUpdated:   m.refreshLabel(),
 			DataDirectory: m.dataDir,
 		},
 		Charts: map[string]dashboard.Chart{},
@@ -115,22 +141,27 @@ func (m *DuckDBMetrics) QueryTable(ctx context.Context, filters dashboard.Filter
 	if !m.ready {
 		return dashboard.EmptyTable(request, m.missing), nil
 	}
-	if request.Table != "orders" {
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	tableModel, ok := m.model.Tables[request.Table]
+	if !ok {
 		return dashboard.EmptyTable(request, fmt.Errorf("unknown table %q", request.Table)), nil
 	}
 
-	totalRows, err := m.countOrders(ctx, filters)
+	totalRows, err := m.countRows(ctx, tableModel.Source, filters)
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
-	rows, err := m.orderRows(ctx, filters, request)
+	rows, err := m.tableRows(ctx, tableModel, filters, request)
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
 
 	return dashboard.Table{
-		Title:     "Orders",
-		Columns:   dashboard.OrdersTableColumns(),
+		Title:     tableModel.Title,
+		Columns:   tableModel.Columns,
 		Rows:      rows,
 		TotalRows: totalRows,
 		Window:    dashboard.TableWindow{Offset: request.Offset, Limit: request.Limit},
@@ -140,9 +171,30 @@ func (m *DuckDBMetrics) QueryTable(ctx context.Context, filters dashboard.Filter
 	}, nil
 }
 
+func (m *DuckDBMetrics) RefreshCache(ctx context.Context) error {
+	if m.missing != nil {
+		return m.missing
+	}
+	if m.db == nil {
+		return fmt.Errorf("DuckDB is not initialized")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.registerSourceViews(ctx); err != nil {
+		return err
+	}
+	if err := m.materializeCache(ctx); err != nil {
+		return err
+	}
+	m.lastRefresh = time.Now()
+	return nil
+}
+
 func (m *DuckDBMetrics) validateFiles() error {
 	var missing []string
-	for _, file := range requiredFiles {
+	for _, file := range m.model.SourceFiles() {
 		if _, err := os.Stat(filepath.Join(m.dataDir, file)); errors.Is(err, os.ErrNotExist) {
 			missing = append(missing, file)
 		} else if err != nil {
@@ -150,158 +202,137 @@ func (m *DuckDBMetrics) validateFiles() error {
 		}
 	}
 	if len(missing) > 0 {
+		sort.Strings(missing)
 		return &MissingDataError{DataDir: m.dataDir, Missing: missing}
 	}
 	return nil
 }
 
-func (m *DuckDBMetrics) registerViews(ctx context.Context) error {
-	for view, file := range requiredFiles {
-		path := filepath.Join(m.dataDir, file)
-		stmt := fmt.Sprintf("CREATE OR REPLACE VIEW %s AS SELECT * FROM read_csv_auto('%s', header=true)", view, sqlString(path))
+func (m *DuckDBMetrics) registerSourceViews(ctx context.Context) error {
+	if _, err := m.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS raw"); err != nil {
+		return err
+	}
+	if _, err := m.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS cache"); err != nil {
+		return err
+	}
+
+	for name, source := range m.model.Sources {
+		if err := validateIdentifier(name); err != nil {
+			return err
+		}
+		path := filepath.Join(m.dataDir, source.File)
+		stmt := fmt.Sprintf("CREATE OR REPLACE VIEW raw.%s AS SELECT * FROM read_csv_auto('%s', header=true)", name, sqlString(path))
 		if _, err := m.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("registering %s: %w", view, err)
+			return fmt.Errorf("registering source %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func (m *DuckDBMetrics) materializeCache(ctx context.Context) error {
+	for _, name := range m.model.CacheTableNames() {
+		if err := validateIdentifier(name); err != nil {
+			return err
+		}
+		table := m.model.Cache.Tables[name]
+		stmt := fmt.Sprintf("CREATE OR REPLACE TABLE cache.%s AS %s", name, table.SQL)
+		if _, err := m.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("materializing cache.%s: %w", name, err)
 		}
 	}
 	return nil
 }
 
 func (m *DuckDBMetrics) kpis(ctx context.Context, filters dashboard.Filters) ([]dashboard.KPI, error) {
-	where, args := filterWhere("o", filters)
-	query := fmt.Sprintf(`
-WITH filtered_orders AS (
-	SELECT o.order_id
-	FROM orders o
-	JOIN customers c ON c.customer_id = o.customer_id
-	WHERE %s
-),
-revenue AS (
-	SELECT COALESCE(SUM(try_cast(p.payment_value AS DOUBLE)), 0) AS revenue
-	FROM payments p
-	JOIN filtered_orders fo ON fo.order_id = p.order_id
-),
-order_count AS (
-	SELECT COUNT(DISTINCT order_id) AS orders FROM filtered_orders
-),
-review_score AS (
-	SELECT AVG(try_cast(r.review_score AS DOUBLE)) AS score
-	FROM reviews r
-	JOIN filtered_orders fo ON fo.order_id = r.order_id
-)
-SELECT
-	order_count.orders,
-	revenue.revenue,
-	CASE WHEN order_count.orders = 0 THEN 0 ELSE revenue.revenue / order_count.orders END AS aov,
-	COALESCE(review_score.score, 0) AS review_score
-FROM order_count, revenue, review_score`, where)
-
-	var orders int64
-	var revenue, aov, review float64
-	if err := m.db.QueryRowContext(ctx, query, args...).Scan(&orders, &revenue, &aov, &review); err != nil {
-		return nil, err
+	keys := []string{"total_orders", "revenue", "aov", "review"}
+	kpis := make([]dashboard.KPI, 0, len(keys))
+	for _, key := range keys {
+		metric, ok := m.model.Metrics[key]
+		if !ok {
+			continue
+		}
+		value, err := m.metricValue(ctx, metric, filters)
+		if err != nil {
+			return nil, err
+		}
+		kpis = append(kpis, dashboard.KPI{
+			Label: metric.Title,
+			Value: formatMetric(value, metric.Format),
+			Note:  metric.Note,
+			Tone:  metric.Tone,
+		})
 	}
+	return kpis, nil
+}
 
-	return []dashboard.KPI{
-		{Label: "Orders", Value: formatInt(orders), Note: "Filtered order count", Tone: "ink"},
-		{Label: "Revenue", Value: formatCurrency(revenue), Note: "Total payment value", Tone: "green"},
-		{Label: "AOV", Value: formatCurrency(aov), Note: "Revenue per order", Tone: "amber"},
-		{Label: "Review", Value: fmt.Sprintf("%.2f", review), Note: "Average score", Tone: "coral"},
-	}, nil
+func (m *DuckDBMetrics) metricValue(ctx context.Context, metric semantic.Metric, filters dashboard.Filters) (float64, error) {
+	source, err := cacheSource(metric.Source)
+	if err != nil {
+		return 0, err
+	}
+	expr, err := metricAggregateExpr(metric)
+	if err != nil {
+		return 0, err
+	}
+	where, args := filterWhere("e", filters)
+	query := fmt.Sprintf("SELECT COALESCE(%s, 0) FROM %s e WHERE %s", expr, source, where)
+
+	var value float64
+	if err := m.db.QueryRowContext(ctx, query, args...).Scan(&value); err != nil {
+		return 0, err
+	}
+	return value, nil
 }
 
 func (m *DuckDBMetrics) charts(ctx context.Context, filters dashboard.Filters) (map[string]dashboard.Chart, error) {
-	revenue, err := m.revenueByMonth(ctx, filters)
-	if err != nil {
-		return nil, err
+	charts := make(map[string]dashboard.Chart, len(m.model.Visuals))
+	for _, key := range []string{"revenue", "orders", "categories", "delivery"} {
+		visual, ok := m.model.Visuals[key]
+		if !ok {
+			continue
+		}
+		points, err := m.visualPoints(ctx, visual, filters)
+		if err != nil {
+			return nil, err
+		}
+		charts[key] = dashboard.Chart{Title: visual.Title, Unit: visual.Unit, Data: points}
 	}
-	orders, err := m.ordersByStatus(ctx, filters)
-	if err != nil {
-		return nil, err
-	}
-	categories, err := m.topCategories(ctx, filters)
-	if err != nil {
-		return nil, err
-	}
-	delivery, err := m.deliveryBuckets(ctx, filters)
-	if err != nil {
-		return nil, err
-	}
-
-	return map[string]dashboard.Chart{
-		"revenue":    {Title: "Revenue by month", Unit: "R$", Data: revenue},
-		"orders":     {Title: "Orders by status", Unit: "orders", Data: orders},
-		"categories": {Title: "Top product categories", Unit: "R$", Data: categories},
-		"delivery":   {Title: "Delivery speed", Unit: "orders", Data: delivery},
-	}, nil
+	return charts, nil
 }
 
-func (m *DuckDBMetrics) revenueByMonth(ctx context.Context, filters dashboard.Filters) ([]dashboard.Point, error) {
-	where, args := filterWhere("o", filters)
+func (m *DuckDBMetrics) visualPoints(ctx context.Context, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Point, error) {
+	source, err := cacheSource(visual.Source)
+	if err != nil {
+		return nil, err
+	}
+	labelExpr, err := labelExpression(visual)
+	if err != nil {
+		return nil, err
+	}
+	valueExpr, err := visualAggregateExpr(visual)
+	if err != nil {
+		return nil, err
+	}
+
+	where, args := filterWhere("e", filters)
+	if visual.Where != "" {
+		where = fmt.Sprintf("(%s) AND (%s)", where, visual.Where)
+	}
+
+	orderBy := visual.OrderBy
+	if orderBy == "" {
+		orderBy = "label ASC"
+	}
 	query := fmt.Sprintf(`
-SELECT
-	strftime(CAST(o.order_purchase_timestamp AS TIMESTAMP), '%%Y-%%m') AS month,
-	COALESCE(SUM(try_cast(p.payment_value AS DOUBLE)), 0) AS revenue
-FROM orders o
-JOIN payments p ON p.order_id = o.order_id
-JOIN customers c ON c.customer_id = o.customer_id
+SELECT %s AS label, %s AS value
+FROM %s e
 WHERE %s
-GROUP BY month
-ORDER BY month
-LIMIT 30`, where)
-	return m.queryPoints(ctx, query, args...)
-}
+GROUP BY label
+ORDER BY %s`, labelExpr, valueExpr, source, where, orderBy)
+	if visual.Limit > 0 {
+		query += fmt.Sprintf("\nLIMIT %d", visual.Limit)
+	}
 
-func (m *DuckDBMetrics) ordersByStatus(ctx context.Context, filters dashboard.Filters) ([]dashboard.Point, error) {
-	where, args := filterWhere("o", filters)
-	query := fmt.Sprintf(`
-SELECT o.order_status, COUNT(DISTINCT o.order_id) AS orders
-FROM orders o
-JOIN customers c ON c.customer_id = o.customer_id
-WHERE %s
-GROUP BY o.order_status
-ORDER BY orders DESC`, where)
-	return m.queryPoints(ctx, query, args...)
-}
-
-func (m *DuckDBMetrics) topCategories(ctx context.Context, filters dashboard.Filters) ([]dashboard.Point, error) {
-	where, args := filterWhere("o", filters)
-	query := fmt.Sprintf(`
-SELECT
-	COALESCE(t.product_category_name_english, p.product_category_name, 'uncategorized') AS category,
-	COALESCE(SUM(try_cast(oi.price AS DOUBLE) + try_cast(oi.freight_value AS DOUBLE)), 0) AS revenue
-FROM order_items oi
-JOIN orders o ON o.order_id = oi.order_id
-JOIN customers c ON c.customer_id = o.customer_id
-LEFT JOIN products p ON p.product_id = oi.product_id
-LEFT JOIN translations t ON t.product_category_name = p.product_category_name
-WHERE %s
-GROUP BY category
-ORDER BY revenue DESC
-LIMIT 10`, where)
-	return m.queryPoints(ctx, query, args...)
-}
-
-func (m *DuckDBMetrics) deliveryBuckets(ctx context.Context, filters dashboard.Filters) ([]dashboard.Point, error) {
-	where, args := filterWhere("o", filters)
-	query := fmt.Sprintf(`
-WITH deliveries AS (
-	SELECT datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP)) AS days
-	FROM orders o
-	JOIN customers c ON c.customer_id = o.customer_id
-	WHERE %s AND o.order_delivered_customer_date IS NOT NULL
-)
-SELECT
-	CASE
-		WHEN days <= 3 THEN '0-3 days'
-		WHEN days <= 7 THEN '4-7 days'
-		WHEN days <= 14 THEN '8-14 days'
-		WHEN days <= 30 THEN '15-30 days'
-		ELSE '31+ days'
-	END AS bucket,
-	COUNT(*) AS orders
-FROM deliveries
-GROUP BY bucket
-ORDER BY MIN(days)`, where)
 	return m.queryPoints(ctx, query, args...)
 }
 
@@ -324,13 +355,13 @@ func (m *DuckDBMetrics) queryPoints(ctx context.Context, query string, args ...a
 	return points, rows.Err()
 }
 
-func (m *DuckDBMetrics) countOrders(ctx context.Context, filters dashboard.Filters) (int, error) {
-	where, args := filterWhere("o", filters)
-	query := fmt.Sprintf(`
-SELECT COUNT(DISTINCT o.order_id)
-FROM orders o
-JOIN customers c ON c.customer_id = o.customer_id
-WHERE %s`, where)
+func (m *DuckDBMetrics) countRows(ctx context.Context, sourceName string, filters dashboard.Filters) (int, error) {
+	source, err := cacheSource(sourceName)
+	if err != nil {
+		return 0, err
+	}
+	where, args := filterWhere("e", filters)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s e WHERE %s", source, where)
 
 	var total int
 	if err := m.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
@@ -339,54 +370,32 @@ WHERE %s`, where)
 	return total, nil
 }
 
-func (m *DuckDBMetrics) orderRows(ctx context.Context, filters dashboard.Filters, request dashboard.TableRequest) ([]map[string]any, error) {
-	where, args := filterWhere("o", filters)
-	sortExpr := orderTableSortExpr(request.Sort.Key)
+func (m *DuckDBMetrics) tableRows(ctx context.Context, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]map[string]any, error) {
+	source, err := cacheSource(table.Source)
+	if err != nil {
+		return nil, err
+	}
+	where, args := filterWhere("e", filters)
+	sortExpr := tableSortExpr(table, request.Sort.Key)
 	direction := "DESC"
 	if request.Sort.Direction == "asc" {
 		direction = "ASC"
 	}
 
+	selects := make([]string, 0, len(table.Columns))
+	for _, column := range table.Columns {
+		if err := validateIdentifier(column.Key); err != nil {
+			return nil, err
+		}
+		selects = append(selects, "e."+column.Key)
+	}
+
 	query := fmt.Sprintf(`
-WITH revenue AS (
-	SELECT order_id, SUM(try_cast(payment_value AS DOUBLE)) AS revenue
-	FROM payments
-	GROUP BY order_id
-),
-review AS (
-	SELECT order_id, AVG(try_cast(review_score AS DOUBLE)) AS review_score
-	FROM reviews
-	GROUP BY order_id
-),
-category AS (
-	SELECT
-		oi.order_id,
-		MIN(COALESCE(t.product_category_name_english, p.product_category_name, 'uncategorized')) AS category
-	FROM order_items oi
-	LEFT JOIN products p ON p.product_id = oi.product_id
-	LEFT JOIN translations t ON t.product_category_name = p.product_category_name
-	GROUP BY oi.order_id
-)
-SELECT
-	o.order_id,
-	strftime(CAST(o.order_purchase_timestamp AS TIMESTAMP), '%%Y-%%m-%%d') AS purchase_date,
-	o.order_status,
-	c.customer_state,
-	COALESCE(category.category, 'uncategorized') AS category,
-	round(COALESCE(revenue.revenue, 0), 2) AS revenue,
-	round(COALESCE(review.review_score, 0), 2) AS review_score,
-	CASE
-		WHEN o.order_delivered_customer_date IS NULL THEN NULL
-		ELSE datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP))
-	END AS delivery_days
-FROM orders o
-JOIN customers c ON c.customer_id = o.customer_id
-LEFT JOIN revenue ON revenue.order_id = o.order_id
-LEFT JOIN review ON review.order_id = o.order_id
-LEFT JOIN category ON category.order_id = o.order_id
+SELECT %s
+FROM %s e
 WHERE %s
-ORDER BY %s %s, o.order_id ASC
-LIMIT ? OFFSET ?`, where, sortExpr, direction)
+ORDER BY %s %s, e.order_id ASC
+LIMIT ? OFFSET ?`, strings.Join(selects, ", "), source, where, sortExpr, direction)
 
 	args = append(args, request.Limit, request.Offset)
 	rows, err := m.db.QueryContext(ctx, query, args...)
@@ -395,94 +404,210 @@ LIMIT ? OFFSET ?`, where, sortExpr, direction)
 	}
 	defer rows.Close()
 
+	values := make([]any, len(table.Columns))
+	scans := make([]any, len(table.Columns))
+	for i := range values {
+		scans[i] = &values[i]
+	}
+
 	result := []map[string]any{}
 	for rows.Next() {
-		var orderID, purchaseDate, status, state, category string
-		var revenue, review float64
-		var delivery sql.NullInt64
-		if err := rows.Scan(&orderID, &purchaseDate, &status, &state, &category, &revenue, &review, &delivery); err != nil {
+		if err := rows.Scan(scans...); err != nil {
 			return nil, err
 		}
-		row := map[string]any{
-			"order_id":      orderID,
-			"purchase_date": purchaseDate,
-			"status":        status,
-			"state":         state,
-			"category":      category,
-			"revenue":       round(revenue),
-			"review_score":  round(review),
-			"delivery_days": nil,
-		}
-		if delivery.Valid {
-			row["delivery_days"] = delivery.Int64
+		row := map[string]any{}
+		for i, column := range table.Columns {
+			row[column.Key] = normalizeDBValue(values[i])
 		}
 		result = append(result, row)
 	}
 	return result, rows.Err()
 }
 
-func orderTableSortExpr(key string) string {
-	switch key {
-	case "order_id":
-		return "o.order_id"
-	case "purchase_date":
-		return "CAST(o.order_purchase_timestamp AS TIMESTAMP)"
-	case "status":
-		return "o.order_status"
-	case "state":
-		return "c.customer_state"
-	case "category":
-		return "COALESCE(category.category, 'uncategorized')"
-	case "revenue":
-		return "COALESCE(revenue.revenue, 0)"
-	case "review_score":
-		return "COALESCE(review.review_score, 0)"
-	case "delivery_days":
-		return `CASE
-			WHEN o.order_delivered_customer_date IS NULL THEN NULL
-			ELSE datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP))
-		END`
+func metricAggregateExpr(metric semantic.Metric) (string, error) {
+	switch metric.Aggregate {
+	case "count":
+		return "COUNT(*)", nil
+	case "count_distinct":
+		if err := validateIdentifier(metric.Column); err != nil {
+			return "", err
+		}
+		return "COUNT(DISTINCT e." + metric.Column + ")", nil
+	case "sum":
+		if err := validateIdentifier(metric.Column); err != nil {
+			return "", err
+		}
+		return "SUM(e." + metric.Column + ")", nil
+	case "avg":
+		if err := validateIdentifier(metric.Column); err != nil {
+			return "", err
+		}
+		return "AVG(e." + metric.Column + ")", nil
+	case "expression":
+		if metric.Expression == "" {
+			return "", fmt.Errorf("metric %q is missing expression", metric.Title)
+		}
+		return metric.Expression, nil
 	default:
-		return "CAST(o.order_purchase_timestamp AS TIMESTAMP)"
+		return "", fmt.Errorf("unsupported metric aggregate %q", metric.Aggregate)
 	}
 }
 
-func filterWhere(orderAlias string, filters dashboard.Filters) (string, []any) {
+func visualAggregateExpr(visual semantic.Visual) (string, error) {
+	switch visual.Aggregate {
+	case "count":
+		return "COUNT(*)", nil
+	case "count_distinct":
+		if err := validateIdentifier(visual.Value); err != nil {
+			return "", err
+		}
+		return "COUNT(DISTINCT e." + visual.Value + ")", nil
+	case "sum":
+		if err := validateIdentifier(visual.Value); err != nil {
+			return "", err
+		}
+		return "SUM(e." + visual.Value + ")", nil
+	case "avg":
+		if err := validateIdentifier(visual.Value); err != nil {
+			return "", err
+		}
+		return "AVG(e." + visual.Value + ")", nil
+	case "expression":
+		if visual.ValueExpr == "" {
+			return "", fmt.Errorf("visual %q is missing value_expr", visual.Title)
+		}
+		return visual.ValueExpr, nil
+	default:
+		return "", fmt.Errorf("unsupported visual aggregate %q", visual.Aggregate)
+	}
+}
+
+func labelExpression(visual semantic.Visual) (string, error) {
+	if visual.LabelExpr != "" {
+		return visual.LabelExpr, nil
+	}
+	if err := validateIdentifier(visual.Label); err != nil {
+		return "", err
+	}
+	return "e." + visual.Label, nil
+}
+
+func tableSortExpr(table semantic.TableVisual, key string) string {
+	if key == "" {
+		key = table.DefaultSort.Key
+	}
+	for _, column := range table.Columns {
+		if column.Key == key {
+			return "e." + column.Key
+		}
+	}
+	if table.DefaultSort.Key != "" {
+		return "e." + table.DefaultSort.Key
+	}
+	return "e.order_id"
+}
+
+func filterWhere(alias string, filters dashboard.Filters) (string, []any) {
 	filters = filters.WithDefaults()
 	conditions := []string{"1 = 1"}
 	args := []any{}
 
 	if filters.State != "" && filters.State != "all" {
-		conditions = append(conditions, "c.customer_state = ?")
+		conditions = append(conditions, alias+".state = ?")
 		args = append(args, strings.ToUpper(filters.State))
 	}
 
 	switch filters.DateRange {
 	case "2017":
-		conditions = append(conditions, fmt.Sprintf("CAST(%s.order_purchase_timestamp AS TIMESTAMP) >= TIMESTAMP '2017-01-01' AND CAST(%s.order_purchase_timestamp AS TIMESTAMP) < TIMESTAMP '2018-01-01'", orderAlias, orderAlias))
+		conditions = append(conditions, alias+".purchase_timestamp >= TIMESTAMP '2017-01-01' AND "+alias+".purchase_timestamp < TIMESTAMP '2018-01-01'")
 	case "2018":
-		conditions = append(conditions, fmt.Sprintf("CAST(%s.order_purchase_timestamp AS TIMESTAMP) >= TIMESTAMP '2018-01-01' AND CAST(%s.order_purchase_timestamp AS TIMESTAMP) < TIMESTAMP '2019-01-01'", orderAlias, orderAlias))
+		conditions = append(conditions, alias+".purchase_timestamp >= TIMESTAMP '2018-01-01' AND "+alias+".purchase_timestamp < TIMESTAMP '2019-01-01'")
 	case "recent":
-		conditions = append(conditions, fmt.Sprintf("CAST(%s.order_purchase_timestamp AS TIMESTAMP) >= (SELECT max(CAST(order_purchase_timestamp AS TIMESTAMP)) - INTERVAL 90 DAY FROM orders)", orderAlias))
+		conditions = append(conditions, alias+".purchase_timestamp >= (SELECT max(purchase_timestamp) - INTERVAL 90 DAY FROM cache.orders_enriched)")
 	}
 
 	if filters.Category != "" && filters.Category != "all" {
-		conditions = append(conditions, fmt.Sprintf(`EXISTS (
-			SELECT 1
-			FROM order_items filter_oi
-			LEFT JOIN products filter_p ON filter_p.product_id = filter_oi.product_id
-			LEFT JOIN translations filter_t ON filter_t.product_category_name = filter_p.product_category_name
-			WHERE filter_oi.order_id = %s.order_id
-			AND lower(COALESCE(filter_t.product_category_name_english, filter_p.product_category_name, '')) LIKE lower(?)
-		)`, orderAlias))
+		conditions = append(conditions, "lower("+alias+".category) LIKE lower(?)")
 		args = append(args, "%"+filters.Category+"%")
 	}
 
 	return strings.Join(conditions, " AND "), args
 }
 
+func normalizeDBValue(value any) any {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case []byte:
+		return string(typed)
+	case time.Time:
+		return typed.Format("2006-01-02")
+	case float32:
+		return round(float64(typed))
+	case float64:
+		return round(typed)
+	default:
+		return typed
+	}
+}
+
+func cacheSource(name string) (string, error) {
+	if err := validateIdentifier(name); err != nil {
+		return "", err
+	}
+	return "cache." + name, nil
+}
+
+func validateIdentifier(value string) error {
+	if !identifierPattern.MatchString(value) {
+		return fmt.Errorf("invalid identifier %q", value)
+	}
+	return nil
+}
+
+func discoverModelPath() (string, error) {
+	candidates := []string{
+		filepath.Join("dashboards", "olist.yaml"),
+		filepath.Join("..", "dashboards", "olist.yaml"),
+		filepath.Join("..", "..", "dashboards", "olist.yaml"),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("could not find dashboards/olist.yaml")
+}
+
+func duckDBPath(dataDir string) string {
+	if path := os.Getenv("LIBREDASH_DUCKDB_PATH"); path != "" {
+		return path
+	}
+	return filepath.Join(dataDir, "libredash.duckdb")
+}
+
 func sqlString(path string) string {
 	return strings.ReplaceAll(filepath.ToSlash(path), "'", "''")
+}
+
+func (m *DuckDBMetrics) refreshLabel() string {
+	if m.lastRefresh.IsZero() {
+		return time.Now().Format("15:04:05")
+	}
+	return m.lastRefresh.Format("15:04:05")
+}
+
+func formatMetric(value float64, format string) string {
+	switch format {
+	case "currency":
+		return formatCurrency(value)
+	case "integer":
+		return formatInt(int64(math.Round(value)))
+	case "decimal":
+		return fmt.Sprintf("%.2f", value)
+	default:
+		return fmt.Sprintf("%.2f", value)
+	}
 }
 
 func formatCurrency(value float64) string {

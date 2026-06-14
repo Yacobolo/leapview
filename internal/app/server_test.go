@@ -48,6 +48,10 @@ func (fakeMetrics) QueryTable(_ context.Context, _ dashboard.Filters, request da
 	}, nil
 }
 
+func (fakeMetrics) RefreshCache(_ context.Context) error {
+	return nil
+}
+
 func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
@@ -67,6 +71,19 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	}
 	if !strings.Contains(body, `"state":"SP"`) {
 		t.Fatalf("body does not include decoded filter state:\n%s", body)
+	}
+}
+
+func TestRefreshCacheCommandAcceptsDatastarSignals(t *testing.T) {
+	body := strings.NewReader(`{"filters":{"dateRange":"2018"},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","offset":0,"limit":25}}`)
+	req := httptest.NewRequest(http.MethodPost, "/commands/refresh-cache", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
 	}
 }
 

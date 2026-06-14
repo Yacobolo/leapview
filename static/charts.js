@@ -4,7 +4,7 @@ const chartStyles = css`
   :host {
     display: block;
     height: 100%;
-    min-height: 310px;
+    min-height: 286px;
     color: var(--fgColor-default);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
@@ -13,8 +13,8 @@ const chartStyles = css`
     display: grid;
     grid-template-rows: auto 1fr;
     height: 100%;
-    min-height: 310px;
-    padding: 16px;
+    min-height: 286px;
+    background: var(--bgColor-default);
   }
 
   header {
@@ -22,12 +22,14 @@ const chartStyles = css`
     justify-content: space-between;
     gap: 16px;
     align-items: baseline;
-    margin-bottom: 12px;
+    min-height: 42px;
+    border-bottom: 1px solid var(--borderColor-default);
+    padding: 10px 12px 8px;
   }
 
   h2 {
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 0.98rem;
     font-weight: 850;
     letter-spacing: 0;
   }
@@ -42,23 +44,27 @@ const chartStyles = css`
   .empty {
     display: grid;
     place-items: center;
-    min-height: 220px;
-    border: 1px dashed var(--borderColor-muted);
+    margin: 12px;
+    min-height: 210px;
+    border: 1px dashed var(--borderColor-default);
+    background: var(--bgColor-muted);
     color: var(--fgColor-muted);
     font-weight: 800;
   }
 
   svg {
     width: 100%;
-    height: 230px;
+    height: 224px;
+    padding: 12px;
     overflow: visible;
+    box-sizing: border-box;
   }
 
   text {
     fill: var(--fgColor-muted);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 10px;
+    font-weight: 750;
   }
 `;
 
@@ -91,7 +97,7 @@ class LineChart extends BaseChart {
     const data = this.data ?? [];
     const max = Math.max(...data.map((d) => d.value), 1);
     const width = 760;
-    const height = 230;
+    const height = 224;
     const pad = 28;
     const step = data.length > 1 ? (width - pad * 2) / (data.length - 1) : 0;
     const points = data.map((d, index) => {
@@ -110,9 +116,9 @@ class LineChart extends BaseChart {
         </header>
         ${data.length === 0 ? html`<div class="empty">Waiting for signal data</div>` : svg`
           <svg viewBox="0 0 ${width} ${height}" role="img" aria-label=${this.chartTitle ?? 'Line chart'}>
-            <path d=${area} fill="color-mix(in srgb, var(--bgColor-success-emphasis), transparent 82%)"></path>
-            <path d=${path} fill="none" stroke="var(--fgColor-success)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"></path>
-            ${points.map((p) => svg`<circle cx=${p.x} cy=${p.y} r="4.5" fill="var(--bgColor-default)" stroke="var(--fgColor-success)" stroke-width="3"><title>${p.label}: ${format(p.value)}</title></circle>`)}
+            <path d=${area} fill="color-mix(in srgb, var(--data-blue-color-emphasis), transparent 86%)"></path>
+            <path d=${path} fill="none" stroke="var(--data-blue-color-emphasis)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+            ${points.map((p) => svg`<circle cx=${p.x} cy=${p.y} r="3.6" fill="var(--bgColor-default)" stroke="var(--data-blue-color-emphasis)" stroke-width="2.4"><title>${p.label}: ${format(p.value)}</title></circle>`)}
             ${points.filter((_, index) => index === 0 || index === points.length - 1 || index % Math.ceil(points.length / 6) === 0).map((p) => svg`<text x=${p.x} y=${height - 4} text-anchor="middle">${p.label}</text>`)}
           </svg>
         `}
@@ -142,10 +148,10 @@ class BarChart extends BaseChart {
             ${data.map((d, index) => {
               const y = 14 + index * rowHeight;
               const barWidth = Math.max(2, (d.value / max) * 470);
-              const tone = index % 3 === 0 ? 'var(--data-green-color-emphasis)' : index % 3 === 1 ? 'var(--data-blue-color-emphasis)' : 'var(--data-coral-color-emphasis)';
+              const tone = index % 4 === 0 ? 'var(--data-blue-color-emphasis)' : index % 4 === 1 ? 'var(--data-green-color-emphasis)' : index % 4 === 2 ? 'var(--data-purple-color-emphasis)' : 'var(--data-coral-color-emphasis)';
               return svg`
                 <text x="0" y=${y + 16}>${d.label}</text>
-                <rect x="210" y=${y} width=${barWidth} height="18" fill=${tone}></rect>
+                <rect x="210" y=${y} width=${barWidth} height="16" rx="1.5" fill=${tone}></rect>
                 <text x=${220 + barWidth} y=${y + 15}>${format(d.value)}</text>
               `;
             })}
@@ -174,15 +180,27 @@ class KPIStrip extends LitElement {
     .strip {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
+      gap: 12px;
     }
 
     .kpi {
-      min-height: 124px;
-      padding: 14px;
-      border: 1px solid var(--borderColor-emphasis);
+      position: relative;
+      min-height: 104px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 6px;
       background: var(--bgColor-default);
-      box-shadow: var(--shadow-resting-medium);
+      box-shadow: var(--shadow-resting-small);
+      padding: 12px 14px 12px 16px;
+      overflow: hidden;
+    }
+
+    .kpi::before {
+      content: '';
+      position: absolute;
+      inset-block: 0;
+      left: 0;
+      width: 5px;
+      background: var(--borderColor-muted);
     }
 
     .label {
@@ -193,10 +211,10 @@ class KPIStrip extends LitElement {
     }
 
     .value {
-      margin: 12px 0 6px;
-      font-size: clamp(2rem, 5vw, 3.4rem);
-      font-weight: 900;
-      line-height: 0.9;
+      margin: 8px 0 4px;
+      font-size: clamp(1.72rem, 3.5vw, 2.65rem);
+      font-weight: 850;
+      line-height: 1;
       letter-spacing: 0;
     }
 
@@ -206,11 +224,11 @@ class KPIStrip extends LitElement {
       font-weight: 700;
     }
 
-    .green { border-top: 6px solid var(--fgColor-success); }
-    .amber { border-top: 6px solid var(--fgColor-attention); }
-    .coral { border-top: 6px solid var(--fgColor-danger); }
-    .ink { border-top: 6px solid var(--fgColor-default); }
-    .neutral { border-top: 6px solid var(--borderColor-muted); }
+    .green::before { background: var(--fgColor-success); }
+    .amber::before { background: var(--fgColor-attention); }
+    .coral::before { background: var(--fgColor-danger); }
+    .ink::before { background: var(--data-blue-color-emphasis); }
+    .neutral::before { background: var(--borderColor-muted); }
 
     @media (max-width: 760px) {
       .strip {
