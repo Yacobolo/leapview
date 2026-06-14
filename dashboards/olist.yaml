@@ -55,7 +55,15 @@ cache:
           CASE
             WHEN o.order_delivered_customer_date IS NULL THEN NULL
             ELSE datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP))
-          END AS delivery_days
+          END AS delivery_days,
+          CASE
+            WHEN o.order_delivered_customer_date IS NULL THEN NULL
+            WHEN datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP)) <= 3 THEN '0-3 days'
+            WHEN datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP)) <= 7 THEN '4-7 days'
+            WHEN datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP)) <= 14 THEN '8-14 days'
+            WHEN datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP)) <= 30 THEN '15-30 days'
+            ELSE '31+ days'
+          END AS delivery_bucket
         FROM raw.orders o
         JOIN raw.customers c ON c.customer_id = o.customer_id
         LEFT JOIN revenue ON revenue.order_id = o.order_id
@@ -127,17 +135,10 @@ visuals:
     title: Delivery speed
     unit: orders
     source: orders_enriched
-    label_expr: |
-      CASE
-        WHEN delivery_days <= 3 THEN '0-3 days'
-        WHEN delivery_days <= 7 THEN '4-7 days'
-        WHEN delivery_days <= 14 THEN '8-14 days'
-        WHEN delivery_days <= 30 THEN '15-30 days'
-        ELSE '31+ days'
-      END
+    label: delivery_bucket
     aggregate: count
     value: order_id
-    where: delivery_days IS NOT NULL
+    where: delivery_bucket IS NOT NULL
     order_by: MIN(delivery_days) ASC
 
 tables:

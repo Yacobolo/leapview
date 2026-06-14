@@ -4,12 +4,14 @@ type Signals struct {
 	Filters      Filters      `json:"filters"`
 	Runtime      Runtime      `json:"runtime"`
 	TableCommand TableRequest `json:"tableCommand"`
+	ChartCommand ChartCommand `json:"chartCommand"`
 }
 
 type Filters struct {
-	DateRange string `json:"dateRange"`
-	State     string `json:"state"`
-	Category  string `json:"category"`
+	DateRange        string            `json:"dateRange"`
+	State            string            `json:"state"`
+	Category         string            `json:"category"`
+	VisualSelections []VisualSelection `json:"visualSelections"`
 }
 
 type Runtime struct {
@@ -24,6 +26,111 @@ func (f Filters) WithDefaults() Filters {
 		f.State = "all"
 	}
 	return f
+}
+
+type VisualSelection struct {
+	ID       string   `json:"id"`
+	VisualID string   `json:"visualId"`
+	Field    string   `json:"field"`
+	Operator string   `json:"operator"`
+	Values   []string `json:"values"`
+	Label    string   `json:"label"`
+	Order    int      `json:"order"`
+}
+
+type ChartCommand struct {
+	VisualID string `json:"visualId"`
+	Field    string `json:"field"`
+	Value    string `json:"value"`
+	Label    string `json:"label"`
+	Mode     string `json:"mode"`
+}
+
+func (c ChartCommand) IsEmpty() bool {
+	return c.VisualID == "" || c.Field == "" || c.Value == ""
+}
+
+func (f Filters) ToggleSelection(command ChartCommand) Filters {
+	f = f.WithDefaults()
+	if command.IsEmpty() {
+		return f
+	}
+
+	selectionID := command.VisualID + ":" + command.Field
+	next := make([]VisualSelection, 0, len(f.VisualSelections)+1)
+	toggled := false
+	maxOrder := 0
+
+	for _, selection := range f.VisualSelections {
+		if selection.Order > maxOrder {
+			maxOrder = selection.Order
+		}
+		if selection.ID == selectionID || (selection.VisualID == command.VisualID && selection.Field == command.Field) {
+			values, removed := toggleValue(selection.Values, command.Value)
+			if len(values) > 0 {
+				selection.ID = selectionID
+				selection.Operator = "in"
+				selection.Values = values
+				selection.Label = selectionLabel(command.Field, values)
+				next = append(next, selection)
+			}
+			toggled = true
+			if removed && command.Mode != "replace" {
+				continue
+			}
+			continue
+		}
+		next = append(next, selection)
+	}
+
+	if !toggled {
+		next = append(next, VisualSelection{
+			ID:       selectionID,
+			VisualID: command.VisualID,
+			Field:    command.Field,
+			Operator: "in",
+			Values:   []string{command.Value},
+			Label:    selectionLabel(command.Field, []string{command.Value}),
+			Order:    maxOrder + 1,
+		})
+	}
+
+	f.VisualSelections = next
+	return f
+}
+
+func toggleValue(values []string, value string) ([]string, bool) {
+	next := make([]string, 0, len(values)+1)
+	removed := false
+	for _, existing := range values {
+		if existing == value {
+			removed = true
+			continue
+		}
+		next = append(next, existing)
+	}
+	if !removed {
+		next = append(next, value)
+	}
+	return next, removed
+}
+
+func selectionLabel(field string, values []string) string {
+	if len(values) == 1 {
+		return field + " is " + values[0]
+	}
+	return field + " in " + joinValues(values)
+}
+
+func joinValues(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	out := values[0]
+	for _, value := range values[1:] {
+		out += ", " + value
+	}
+	return out
 }
 
 type Patch struct {
@@ -49,14 +156,17 @@ type KPI struct {
 }
 
 type Chart struct {
-	Title string  `json:"title"`
-	Unit  string  `json:"unit"`
-	Data  []Point `json:"data"`
+	Title     string   `json:"title"`
+	Unit      string   `json:"unit"`
+	Field     string   `json:"field"`
+	Selection []string `json:"selection"`
+	Data      []Point  `json:"data"`
 }
 
 type Point struct {
-	Label string  `json:"label"`
-	Value float64 `json:"value"`
+	Label    string  `json:"label"`
+	Value    float64 `json:"value"`
+	Selected bool    `json:"selected,omitempty"`
 }
 
 type TableRequest struct {
@@ -177,10 +287,10 @@ func EmptyPatch(filters Filters, dataDir string, err error) Patch {
 			{Label: "Review", Value: "-", Note: "Waiting for CSVs", Tone: "neutral"},
 		},
 		Charts: map[string]Chart{
-			"revenue":    {Title: "Revenue by month", Unit: "R$", Data: []Point{}},
-			"orders":     {Title: "Orders by status", Unit: "orders", Data: []Point{}},
-			"categories": {Title: "Top product categories", Unit: "R$", Data: []Point{}},
-			"delivery":   {Title: "Delivery delay", Unit: "orders", Data: []Point{}},
+			"revenue":    {Title: "Revenue by month", Unit: "R$", Field: "purchase_month", Selection: []string{}, Data: []Point{}},
+			"orders":     {Title: "Orders by status", Unit: "orders", Field: "status", Selection: []string{}, Data: []Point{}},
+			"categories": {Title: "Top product categories", Unit: "R$", Field: "category", Selection: []string{}, Data: []Point{}},
+			"delivery":   {Title: "Delivery delay", Unit: "orders", Field: "delivery_bucket", Selection: []string{}, Data: []Point{}},
 		},
 	}
 }

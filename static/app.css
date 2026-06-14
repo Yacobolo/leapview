@@ -4017,6 +4017,17 @@
   .visible {
     visibility: visible;
   }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border-width: 0;
+  }
   .fixed {
     position: fixed;
   }
@@ -4034,6 +4045,9 @@
   }
   .flex {
     display: flex;
+  }
+  .grid {
+    display: grid;
   }
   .hidden {
     display: none;
@@ -4244,6 +4258,21 @@
   datastar-inspector {
     color: var(--fgColor-default);
   }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+  svg[data-glucide="icon"] {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    stroke-width: 2.15;
+  }
   datastar-inspector :where(.bg-surface, .bg-container-low) {
     color: var(--fgColor-default);
   }
@@ -4256,8 +4285,24 @@
     color: var(--fgColor-muted);
   }
   .report-app {
-    --power-accent: #f2c811;
-    --power-accent-strong: #d9a300;
+    --ld-accent: var(--data-yellow-color-emphasis);
+    --ld-accent-muted: var(--data-yellow-color-muted);
+    --ld-accent-strong: var(--display-yellow-scale-5);
+    --ld-accent-fg: var(--fgColor-default);
+    --ld-chart-1: var(--data-blue-color-emphasis);
+    --ld-chart-1-muted: var(--data-blue-color-muted);
+    --ld-chart-2: var(--data-green-color-emphasis);
+    --ld-chart-2-muted: var(--data-green-color-muted);
+    --ld-chart-3: var(--data-purple-color-emphasis);
+    --ld-chart-3-muted: var(--data-purple-color-muted);
+    --ld-chart-4: var(--data-coral-color-emphasis);
+    --ld-chart-4-muted: var(--data-coral-color-muted);
+    --ld-chart-5: var(--data-pine-color-emphasis);
+    --ld-chart-5-muted: var(--data-pine-color-muted);
+    --ld-chart-6: var(--data-pink-color-emphasis);
+    --ld-chart-6-muted: var(--data-pink-color-muted);
+    --ld-chart-axis: var(--fgColor-muted);
+    --ld-chart-grid: var(--borderColor-muted);
     --report-panel: var(--bgColor-default);
     --report-panel-subtle: var(--bgColor-muted);
     --report-canvas-bg: var(--bgColor-muted);
@@ -4274,7 +4319,7 @@
     z-index: 30;
     display: grid;
     min-height: 48px;
-    grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) auto auto;
     align-items: center;
     border-bottom: 1px solid var(--borderColor-default);
     background: var(--bgColor-emphasis);
@@ -4295,10 +4340,14 @@
     height: 24px;
     place-items: center;
     border-radius: 4px;
-    background: var(--power-accent);
-    color: #24292f;
+    background: var(--ld-accent);
+    color: var(--ld-accent-fg);
     font-size: 0.8rem;
     font-weight: 950;
+  }
+  .brand-mark svg[data-glucide="icon"] {
+    width: 15px;
+    height: 15px;
   }
   .command-bar {
     display: flex;
@@ -4308,6 +4357,10 @@
     overflow-x: auto;
   }
   .command-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
     min-width: 78px;
     border: 0;
     border-bottom: 3px solid transparent;
@@ -4319,12 +4372,53 @@
     font-weight: 800;
   }
   .command-button:hover, .command-button:focus-visible, .command-button.active {
-    border-bottom-color: var(--power-accent);
+    border-bottom-color: var(--ld-accent);
     background: var(--fgColor-onEmphasis);
     @supports (color: color-mix(in lab, red, red)) {
       background: color-mix(in srgb, var(--fgColor-onEmphasis), transparent 90%);
     }
     outline: 0;
+  }
+  .theme-switch {
+    display: inline-grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    margin-right: 12px;
+    border: 1px solid var(--fgColor-onEmphasis);
+    @supports (color: color-mix(in lab, red, red)) {
+      border: 1px solid color-mix(in srgb, var(--fgColor-onEmphasis), transparent 78%);
+    }
+    border-radius: 4px;
+    background: var(--fgColor-onEmphasis);
+    @supports (color: color-mix(in lab, red, red)) {
+      background: color-mix(in srgb, var(--fgColor-onEmphasis), transparent 94%);
+    }
+    padding: 2px;
+  }
+  .theme-button {
+    display: grid;
+    width: 30px;
+    min-height: 28px;
+    place-items: center;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--fgColor-onEmphasis);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.72rem;
+    font-weight: 850;
+  }
+  .theme-button:hover, .theme-button:focus-visible {
+    background: var(--fgColor-onEmphasis);
+    @supports (color: color-mix(in lab, red, red)) {
+      background: color-mix(in srgb, var(--fgColor-onEmphasis), transparent 90%);
+    }
+    outline: 0;
+  }
+  .theme-button[aria-pressed="true"] {
+    background: var(--ld-accent);
+    color: var(--ld-accent-fg);
   }
   .stream-chip {
     display: inline-flex;
@@ -4368,8 +4462,12 @@
     font-size: 0.78rem;
     font-weight: 950;
   }
+  .rail-item svg[data-glucide="icon"] {
+    width: 18px;
+    height: 18px;
+  }
   .rail-item:hover, .rail-item:focus-visible, .rail-item.active {
-    border-left-color: var(--power-accent);
+    border-left-color: var(--ld-accent);
     background: var(--bgColor-muted);
     color: var(--fgColor-default);
     outline: 0;
@@ -4407,7 +4505,7 @@
     gap: 18px;
     margin-bottom: 12px;
     border: 1px solid var(--borderColor-default);
-    border-left: 5px solid var(--power-accent);
+    border-left: 5px solid var(--ld-accent);
     border-radius: 6px;
     background: var(--report-panel);
     padding: 14px 16px;
@@ -4488,9 +4586,49 @@
     outline-offset: 2px;
   }
   .filter-input:focus {
-    outline: 2px solid var(--power-accent);
+    outline: 2px solid var(--ld-accent);
+  }
+  .selection-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid var(--borderColor-accent-muted);
+    border-radius: 4px;
+    background: var(--bgColor-accent-muted);
+    padding: 8px;
+    color: var(--fgColor-default);
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+  .clear-selection-button {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: 1px solid var(--borderColor-default);
+    border-radius: 4px;
+    background: var(--bgColor-default);
+    color: var(--fgColor-default);
+    cursor: pointer;
+    padding: 0 8px;
+    font-size: 0.72rem;
+    font-weight: 850;
+  }
+  .clear-selection-button:hover, .clear-selection-button:focus-visible {
+    border-color: var(--borderColor-accent-emphasis);
+    outline: 0;
+  }
+  .clear-selection-button:disabled {
+    cursor: wait;
+    opacity: 0.68;
   }
   .refresh-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     min-height: 38px;
     width: 100%;
     cursor: pointer;
@@ -4606,8 +4744,14 @@
       box-shadow: 0 0 0 14px color-mix(in srgb, var(--fgColor-success), transparent 100%);
     }
   }
+  [data-color-mode="dark"] .report-app {
+    --report-canvas-bg: var(--bgColor-inset);
+    @supports (color: color-mix(in lab, red, red)) {
+      --report-canvas-bg: color-mix(in srgb, var(--bgColor-inset), var(--bgColor-default) 18%);
+    }
+  }
   @media (prefers-color-scheme: dark) {
-    .report-app {
+    [data-color-mode="auto"] .report-app {
       --report-canvas-bg: var(--bgColor-inset);
       @supports (color: color-mix(in lab, red, red)) {
         --report-canvas-bg: color-mix(in srgb, var(--bgColor-inset), var(--bgColor-default) 18%);
@@ -4632,7 +4776,7 @@
   }
   @media (max-width: 860px) {
     .app-bar {
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto auto;
     }
     .command-bar {
       display: none;

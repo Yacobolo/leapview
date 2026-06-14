@@ -274,7 +274,7 @@ func (m *DuckDBMetrics) metricValue(ctx context.Context, metric semantic.Metric,
 	if err != nil {
 		return 0, err
 	}
-	where, args := filterWhere("e", filters)
+	where, args := filterWhere("e", filters, "")
 	query := fmt.Sprintf("SELECT COALESCE(%s, 0) FROM %s e WHERE %s", expr, source, where)
 
 	var value float64
@@ -291,16 +291,22 @@ func (m *DuckDBMetrics) charts(ctx context.Context, filters dashboard.Filters) (
 		if !ok {
 			continue
 		}
-		points, err := m.visualPoints(ctx, visual, filters)
+		points, err := m.visualPoints(ctx, key, visual, filters)
 		if err != nil {
 			return nil, err
 		}
-		charts[key] = dashboard.Chart{Title: visual.Title, Unit: visual.Unit, Data: points}
+		charts[key] = dashboard.Chart{
+			Title:     visual.Title,
+			Unit:      visual.Unit,
+			Field:     visualField(visual),
+			Selection: selectedValues(filters, key),
+			Data:      points,
+		}
 	}
 	return charts, nil
 }
 
-func (m *DuckDBMetrics) visualPoints(ctx context.Context, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Point, error) {
+func (m *DuckDBMetrics) visualPoints(ctx context.Context, visualID string, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Point, error) {
 	source, err := cacheSource(visual.Source)
 	if err != nil {
 		return nil, err
@@ -314,7 +320,7 @@ func (m *DuckDBMetrics) visualPoints(ctx context.Context, visual semantic.Visual
 		return nil, err
 	}
 
-	where, args := filterWhere("e", filters)
+	where, args := filterWhere("e", filters, visualID)
 	if visual.Where != "" {
 		where = fmt.Sprintf("(%s) AND (%s)", where, visual.Where)
 	}
@@ -333,7 +339,12 @@ ORDER BY %s`, labelExpr, valueExpr, source, where, orderBy)
 		query += fmt.Sprintf("\nLIMIT %d", visual.Limit)
 	}
 
-	return m.queryPoints(ctx, query, args...)
+	points, err := m.queryPoints(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	markSelected(points, selectedValues(filters, visualID))
+	return points, nil
 }
 
 func (m *DuckDBMetrics) queryPoints(ctx context.Context, query string, args ...any) ([]dashboard.Point, error) {
@@ -360,7 +371,7 @@ func (m *DuckDBMetrics) countRows(ctx context.Context, sourceName string, filter
 	if err != nil {
 		return 0, err
 	}
-	where, args := filterWhere("e", filters)
+	where, args := filterWhere("e", filters, "")
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s e WHERE %s", source, where)
 
 	var total int
@@ -375,7 +386,7 @@ func (m *DuckDBMetrics) tableRows(ctx context.Context, table semantic.TableVisua
 	if err != nil {
 		return nil, err
 	}
-	where, args := filterWhere("e", filters)
+	where, args := filterWhere("e", filters, "")
 	sortExpr := tableSortExpr(table, request.Sort.Key)
 	direction := "DESC"
 	if request.Sort.Direction == "asc" {
@@ -507,7 +518,7 @@ func tableSortExpr(table semantic.TableVisual, key string) string {
 	return "e.order_id"
 }
 
-func filterWhere(alias string, filters dashboard.Filters) (string, []any) {
+func filterWhere(alias string, filters dashboard.Filters, excludeVisualID string) (string, []any) {
 	filters = filters.WithDefaults()
 	conditions := []string{"1 = 1"}
 	args := []any{}
@@ -531,7 +542,58 @@ func filterWhere(alias string, filters dashboard.Filters) (string, []any) {
 		args = append(args, "%"+filters.Category+"%")
 	}
 
+	for _, selection := range filters.VisualSelections {
+		if selection.VisualID == "" || selection.VisualID == excludeVisualID || len(selection.Values) == 0 {
+			continue
+		}
+		if selection.Operator != "" && selection.Operator != "in" {
+			continue
+		}
+		if err := validateIdentifier(selection.Field); err != nil {
+			continue
+		}
+		placeholders := make([]string, 0, len(selection.Values))
+		for _, value := range selection.Values {
+			placeholders = append(placeholders, "?")
+			args = append(args, value)
+		}
+		conditions = append(conditions, alias+"."+selection.Field+" IN ("+strings.Join(placeholders, ", ")+")")
+	}
+
 	return strings.Join(conditions, " AND "), args
+}
+
+func visualField(visual semantic.Visual) string {
+	if visual.Label != "" {
+		return visual.Label
+	}
+	return "label"
+}
+
+func selectedValues(filters dashboard.Filters, visualID string) []string {
+	for _, selection := range filters.VisualSelections {
+		if selection.VisualID == visualID {
+			values := make([]string, len(selection.Values))
+			copy(values, selection.Values)
+			return values
+		}
+	}
+	return []string{}
+}
+
+func markSelected(points []dashboard.Point, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	selected := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		selected[value] = struct{}{}
+	}
+	for i := range points {
+		if _, ok := selected[points[i].Label]; ok {
+			points[i].Selected = true
+		}
+	}
 }
 
 func normalizeDBValue(value any) any {

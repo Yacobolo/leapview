@@ -87,6 +87,32 @@ func TestRefreshCacheCommandAcceptsDatastarSignals(t *testing.T) {
 	}
 }
 
+func TestChartSelectCommandAcceptsDatastarSignals(t *testing.T) {
+	body := strings.NewReader(`{"filters":{"dateRange":"2018","visualSelections":[]},"runtime":{"clientId":"test-client"},"chartCommand":{"visualId":"orders","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"table":"orders","offset":0,"limit":25}}`)
+	req := httptest.NewRequest(http.MethodPost, "/commands/chart-select", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+}
+
+func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {
+	body := strings.NewReader(`{"filters":{"visualSelections":[{"visualId":"orders","field":"status","values":["delivered"]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","offset":0,"limit":25}}`)
+	req := httptest.NewRequest(http.MethodPost, "/commands/clear-selection", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+}
+
 func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
 	body := strings.NewReader(`{"filters":{"state":"SP"},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","offset":10,"limit":25,"sort":{"key":"revenue","direction":"desc"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/table-window", body)

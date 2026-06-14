@@ -92,6 +92,27 @@ relogios_presentes,watches_gifts
 		t.Fatalf("top category = %q, want health_beauty", got)
 	}
 
+	selectedPatch, err := metrics.QueryDashboard(context.Background(), dashboard.Filters{
+		VisualSelections: []dashboard.VisualSelection{
+			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := selectedPatch.KPIs[0].Value; got != "1" {
+		t.Fatalf("selected orders KPI = %q, want 1", got)
+	}
+	if len(selectedPatch.Charts["orders"].Data) != 2 {
+		t.Fatalf("orders chart points with self-selection = %d, want 2", len(selectedPatch.Charts["orders"].Data))
+	}
+	if !pointSelected(selectedPatch.Charts["orders"].Data, "delivered") {
+		t.Fatalf("orders chart did not mark delivered as selected: %#v", selectedPatch.Charts["orders"].Data)
+	}
+	if got := selectedPatch.Charts["categories"].Data[0].Label; got != "health_beauty" {
+		t.Fatalf("category chart under status selection = %q, want health_beauty", got)
+	}
+
 	table, err := metrics.QueryTable(context.Background(), dashboard.Filters{}, dashboard.TableRequest{
 		Table:  "orders",
 		Offset: 0,
@@ -114,6 +135,15 @@ relogios_presentes,watches_gifts
 	if err := metrics.RefreshCache(context.Background()); err != nil {
 		t.Fatalf("refresh cache: %v", err)
 	}
+}
+
+func pointSelected(points []dashboard.Point, label string) bool {
+	for _, point := range points {
+		if point.Label == label {
+			return point.Selected
+		}
+	}
+	return false
 }
 
 func writeFixture(t *testing.T, dir, name, content string) {

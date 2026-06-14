@@ -117,13 +117,15 @@ class DataTable extends LitElement {
   static styles = css`
     :host {
       display: block;
+      height: 100%;
+      min-height: 0;
       color: var(--fgColor-default);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
 
     .shell {
-      display: grid;
-      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      display: flex;
+      flex-direction: column;
       height: 100%;
       min-height: 0;
       background: var(--bgColor-default);
@@ -308,6 +310,7 @@ class DataTable extends LitElement {
 
     .viewport {
       position: relative;
+      flex: 1 1 auto;
       overflow: auto;
       min-height: 0;
       background: var(--bgColor-default);
@@ -424,7 +427,7 @@ class DataTable extends LitElement {
 
     @media (max-width: 760px) {
       .shell {
-        grid-template-rows: auto auto auto minmax(260px, 1fr) auto;
+        min-height: 360px;
       }
 
       .toolbar,

@@ -3,6 +3,7 @@ package ui
 import (
 	"strconv"
 
+	lucide "github.com/eduardolat/gomponents-lucide"
 	g "maragu.dev/gomponents"
 	ds "maragu.dev/gomponents-datastar"
 	c "maragu.dev/gomponents/components"
@@ -26,6 +27,7 @@ func Page(dataDir, clientID string) g.Node {
 			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
 			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
+			h.Script(h.Type("module"), h.Src("/static/theme.js")),
 			h.Script(h.Type("module"), h.Src("/static/report-canvas.js")),
 			h.Script(h.Type("module"), h.Src("/static/charts.js")),
 			h.Script(h.Type("module"), h.Src("/static/table.js")),
@@ -55,16 +57,16 @@ func Page(dataDir, clientID string) g.Node {
 								),
 							),
 							canvasVisual(16, 318, 650, 286,
-								chartPanel("ld-line-chart", "charts.revenue"),
+								chartPanel("ld-line-chart", "revenue", "charts.revenue"),
 							),
 							canvasVisual(682, 318, 326, 286,
-								chartPanel("ld-bar-chart", "charts.orders"),
+								chartPanel("ld-bar-chart", "orders", "charts.orders"),
 							),
 							canvasVisual(1024, 318, 326, 286,
-								chartPanel("ld-bar-chart", "charts.delivery"),
+								chartPanel("ld-bar-chart", "delivery", "charts.delivery"),
 							),
 							canvasVisual(16, 620, 650, 300,
-								chartPanel("ld-bar-chart", "charts.categories"),
+								chartPanel("ld-bar-chart", "categories", "charts.categories"),
 							),
 							canvasVisual(682, 620, 668, 300,
 								tablePanel(),
@@ -86,9 +88,17 @@ func initialSignals(dataDir, clientID string) map[string]any {
 			"clientId": clientID,
 		},
 		"filters": map[string]any{
-			"dateRange": "all",
-			"state":     "all",
-			"category":  "",
+			"dateRange":        "all",
+			"state":            "all",
+			"category":         "",
+			"visualSelections": []any{},
+		},
+		"chartCommand": map[string]any{
+			"visualId": "",
+			"field":    "",
+			"value":    "",
+			"label":    "",
+			"mode":     "toggle",
 		},
 		"tableCommand": map[string]any{
 			"table":  "orders",
@@ -127,10 +137,10 @@ func initialSignals(dataDir, clientID string) map[string]any {
 			},
 		},
 		"charts": map[string]any{
-			"revenue":    map[string]any{"title": "Revenue by month", "unit": "R$", "data": []any{}},
-			"orders":     map[string]any{"title": "Orders by status", "unit": "orders", "data": []any{}},
-			"categories": map[string]any{"title": "Top product categories", "unit": "R$", "data": []any{}},
-			"delivery":   map[string]any{"title": "Delivery speed", "unit": "orders", "data": []any{}},
+			"revenue":    map[string]any{"title": "Revenue by month", "unit": "R$", "field": "purchase_month", "selection": []any{}, "data": []any{}},
+			"orders":     map[string]any{"title": "Orders by status", "unit": "orders", "field": "status", "selection": []any{}, "data": []any{}},
+			"categories": map[string]any{"title": "Top product categories", "unit": "R$", "field": "category", "selection": []any{}, "data": []any{}},
+			"delivery":   map[string]any{"title": "Delivery speed", "unit": "orders", "field": "delivery_bucket", "selection": []any{}, "data": []any{}},
 		},
 		"kpis": []any{},
 		"status": map[string]any{
@@ -146,26 +156,51 @@ func initialSignals(dataDir, clientID string) map[string]any {
 func appBar() g.Node {
 	return h.Header(h.Class("app-bar"),
 		h.Div(h.Class("app-brand"),
-			h.Span(h.Class("brand-mark"), g.Text("L")),
+			h.Span(h.Class("brand-mark"), lucide.ChartColumnIncreasing(iconAttrs())),
 			h.Span(g.Text("LibreDash")),
 		),
 		h.Nav(h.Class("command-bar"), h.Aria("label", "Report commands"),
-			h.Button(h.Type("button"), h.Class("command-button active"), g.Text("Report")),
-			h.Button(h.Type("button"), h.Class("command-button"), g.Text("Analyze")),
-			h.Button(h.Type("button"), h.Class("command-button"), g.Text("Model")),
+			h.Button(h.Type("button"), h.Class("command-button active"), lucide.LayoutDashboard(iconAttrs()), h.Span(g.Text("Report"))),
+			h.Button(h.Type("button"), h.Class("command-button"), lucide.ChartColumnIncreasing(iconAttrs()), h.Span(g.Text("Analyze"))),
+			h.Button(h.Type("button"), h.Class("command-button"), lucide.Database(iconAttrs()), h.Span(g.Text("Model"))),
 			h.Button(
 				h.Type("button"),
 				h.Class("command-button"),
 				ds.On("click", "@post('/commands/refresh-cache')"),
 				ds.Attr("disabled", "$status.loading"),
-				g.Text("Refresh cache"),
+				lucide.RefreshCw(iconAttrs()),
+				h.Span(g.Text("Refresh cache")),
 			),
 		),
 		h.Div(h.Class("stream-chip"),
 			h.Span(h.Class("pulse"), g.Attr("data-class", "{'is-active': $status.loading}")),
 			h.Span(ds.Text("$status.loading ? 'Refreshing' : ($status.lastUpdated ? `Updated ${$status.lastUpdated}` : 'Live')")),
 		),
+		h.Div(h.Class("theme-switch"), h.Aria("label", "Color mode"),
+			h.Button(
+				h.Type("button"),
+				h.Class("theme-button"),
+				g.Attr("data-theme-value", "light"),
+				g.Attr("aria-pressed", "false"),
+				h.Title("Light mode"),
+				lucide.Sun(iconAttrs()),
+				h.Span(h.Class("sr-only"), g.Text("Light mode")),
+			),
+			h.Button(
+				h.Type("button"),
+				h.Class("theme-button"),
+				g.Attr("data-theme-value", "dark"),
+				g.Attr("aria-pressed", "false"),
+				h.Title("Dark mode"),
+				lucide.Moon(iconAttrs()),
+				h.Span(h.Class("sr-only"), g.Text("Dark mode")),
+			),
+		),
 	)
+}
+
+func iconAttrs() g.Node {
+	return g.Attr("aria-hidden", "true")
 }
 
 func canvasVisual(x, y, width, height int, children ...g.Node) g.Node {
@@ -182,20 +217,21 @@ func canvasVisual(x, y, width, height int, children ...g.Node) g.Node {
 
 func navRail() g.Node {
 	return h.Aside(h.Class("nav-rail"), h.Aria("label", "Workspace navigation"),
-		railItem("R", "Report", true),
-		railItem("D", "Data", false),
-		railItem("M", "Model", false),
-		railItem("S", "Signals", false),
+		railItem(lucide.LayoutDashboard(iconAttrs()), "Report", true),
+		railItem(lucide.Table2(iconAttrs()), "Data", false),
+		railItem(lucide.Database(iconAttrs()), "Model", false),
+		railItem(lucide.Activity(iconAttrs()), "Signals", false),
 	)
 }
 
-func railItem(icon, label string, active bool) g.Node {
+func railItem(icon g.Node, label string, active bool) g.Node {
 	class := "rail-item"
 	if active {
 		class += " active"
 	}
 	return h.Button(h.Type("button"), h.Class(class), h.Title(label),
-		h.Span(g.Text(icon)),
+		icon,
+		h.Span(h.Class("sr-only"), g.Text(label)),
 	)
 }
 
@@ -256,12 +292,26 @@ func filters() g.Node {
 				ds.Bind("filters.category"),
 			),
 		),
+		h.Div(
+			h.Class("selection-summary"),
+			g.Attr("data-show", "$filters.visualSelections.length > 0"),
+			h.Span(ds.Text("`${$filters.visualSelections.length} visual filter${$filters.visualSelections.length === 1 ? '' : 's'} active`")),
+			h.Button(
+				h.Type("button"),
+				h.Class("clear-selection-button"),
+				ds.On("click", "@post('/commands/clear-selection')"),
+				ds.Attr("disabled", "$status.loading"),
+				lucide.X(iconAttrs()),
+				h.Span(g.Text("Clear")),
+			),
+		),
 		h.Button(
 			h.Type("button"),
 			h.Class("refresh-button"),
 			ds.On("click", updateAction),
 			ds.Attr("disabled", "$status.loading"),
-			g.Text("Refresh"),
+			lucide.RefreshCw(iconAttrs()),
+			h.Span(g.Text("Refresh")),
 		),
 	)
 }
@@ -289,12 +339,16 @@ func statusBar() g.Node {
 	)
 }
 
-func chartPanel(tag, signal string) g.Node {
+func chartPanel(tag, visualID, signal string) g.Node {
 	return h.Article(h.Class("visual-card"),
 		g.El(tag,
+			g.Attr("visual-id", visualID),
 			g.Attr("data-attr:data", "$"+signal+".data"),
 			g.Attr("data-attr:chart-title", "$"+signal+".title"),
 			g.Attr("data-attr:unit", "$"+signal+".unit"),
+			g.Attr("data-attr:field", "$"+signal+".field"),
+			g.Attr("data-attr:selection", "$"+signal+".selection"),
+			g.Attr("data-on:ld-chart-select", "$chartCommand = evt.detail; @post('/commands/chart-select')"),
 		),
 	)
 }

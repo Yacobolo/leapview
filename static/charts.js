@@ -6,6 +6,14 @@ const chartStyles = css`
     height: 100%;
     min-height: 286px;
     color: var(--fgColor-default);
+    --chart-line: var(--ld-chart-1, var(--data-blue-color-emphasis));
+    --chart-line-fill: var(--ld-chart-1-muted, var(--data-blue-color-muted));
+    --chart-bar-1: var(--ld-chart-1, var(--data-blue-color-emphasis));
+    --chart-bar-2: var(--ld-chart-2, var(--data-green-color-emphasis));
+    --chart-bar-3: var(--ld-chart-3, var(--data-purple-color-emphasis));
+    --chart-bar-4: var(--ld-chart-4, var(--data-coral-color-emphasis));
+    --chart-bar-5: var(--ld-chart-5, var(--data-pine-color-emphasis));
+    --chart-bar-6: var(--ld-chart-6, var(--data-pink-color-emphasis));
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
@@ -60,8 +68,30 @@ const chartStyles = css`
     box-sizing: border-box;
   }
 
+  .grid {
+    stroke: var(--ld-chart-grid, var(--borderColor-muted));
+    stroke-width: 1;
+    opacity: 0.8;
+  }
+
+  .selectable {
+    cursor: pointer;
+    outline: none;
+  }
+
+  .selectable.dimmed {
+    opacity: 0.38;
+  }
+
+  .selectable:focus-visible .mark,
+  .selected .mark {
+    filter: drop-shadow(0 0 0.22rem color-mix(in srgb, var(--fgColor-accent), transparent 45%));
+    stroke: var(--fgColor-accent);
+    stroke-width: 3;
+  }
+
   text {
-    fill: var(--fgColor-muted);
+    fill: var(--ld-chart-axis, var(--fgColor-muted));
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 10px;
     font-weight: 750;
@@ -73,6 +103,9 @@ class BaseChart extends LitElement {
     data: { type: Array },
     chartTitle: { type: String, attribute: 'chart-title' },
     unit: { type: String },
+    visualId: { type: String, attribute: 'visual-id' },
+    field: { type: String },
+    selection: { type: Array },
   };
 
   constructor() {
@@ -80,6 +113,34 @@ class BaseChart extends LitElement {
     this.data = [];
     this.chartTitle = 'Chart';
     this.unit = '';
+    this.visualId = '';
+    this.field = '';
+    this.selection = [];
+  }
+
+  selectedLabels() {
+    return new Set([...(this.selection ?? []), ...(this.data ?? []).filter((d) => d.selected).map((d) => d.label)]);
+  }
+
+  selectPoint(point) {
+    if (!this.visualId || !this.field || !point?.label) return;
+    this.dispatchEvent(new CustomEvent('ld-chart-select', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        visualId: this.visualId,
+        field: this.field,
+        value: point.label,
+        label: point.label,
+        mode: 'toggle',
+      },
+    }));
+  }
+
+  selectFromKeyboard(event, point) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    this.selectPoint(point);
   }
 }
 
@@ -105,6 +166,8 @@ class LineChart extends BaseChart {
       const y = height - pad - (d.value / max) * (height - pad * 2);
       return { ...d, x, y };
     });
+    const selected = this.selectedLabels();
+    const hasSelection = selected.size > 0;
     const path = points.map((p, index) => `${index === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
     const area = points.length ? `${path} L${points.at(-1).x},${height - pad} L${points[0].x},${height - pad} Z` : '';
 
@@ -116,9 +179,25 @@ class LineChart extends BaseChart {
         </header>
         ${data.length === 0 ? html`<div class="empty">Waiting for signal data</div>` : svg`
           <svg viewBox="0 0 ${width} ${height}" role="img" aria-label=${this.chartTitle ?? 'Line chart'}>
-            <path d=${area} fill="color-mix(in srgb, var(--data-blue-color-emphasis), transparent 86%)"></path>
-            <path d=${path} fill="none" stroke="var(--data-blue-color-emphasis)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
-            ${points.map((p) => svg`<circle cx=${p.x} cy=${p.y} r="3.6" fill="var(--bgColor-default)" stroke="var(--data-blue-color-emphasis)" stroke-width="2.4"><title>${p.label}: ${format(p.value)}</title></circle>`)}
+            <line class="grid" x1=${pad} x2=${width - pad} y1=${height - pad} y2=${height - pad}></line>
+            <line class="grid" x1=${pad} x2=${width - pad} y1=${pad} y2=${pad}></line>
+            <path d=${area} fill="var(--chart-line-fill)"></path>
+            <path d=${path} fill="none" stroke="var(--chart-line)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+            ${points.map((p) => {
+              const isSelected = selected.has(p.label);
+              return svg`
+                <g
+                  class=${`selectable ${isSelected ? 'selected' : ''} ${hasSelection && !isSelected ? 'dimmed' : ''}`}
+                  tabindex="0"
+                  role="button"
+                  aria-label=${`Filter ${this.chartTitle} by ${p.label}`}
+                  @click=${() => this.selectPoint(p)}
+                  @keydown=${(event) => this.selectFromKeyboard(event, p)}
+                >
+                  <circle class="mark" cx=${p.x} cy=${p.y} r=${isSelected ? '5.2' : '3.8'} fill="var(--bgColor-default)" stroke="var(--chart-line)" stroke-width="2.4"><title>${p.label}: ${format(p.value)}</title></circle>
+                </g>
+              `;
+            })}
             ${points.filter((_, index) => index === 0 || index === points.length - 1 || index % Math.ceil(points.length / 6) === 0).map((p) => svg`<text x=${p.x} y=${height - 4} text-anchor="middle">${p.label}</text>`)}
           </svg>
         `}
@@ -136,6 +215,8 @@ class BarChart extends BaseChart {
     const width = 760;
     const rowHeight = 28;
     const height = Math.max(230, data.length * rowHeight + 32);
+    const selected = this.selectedLabels();
+    const hasSelection = selected.size > 0;
 
     return html`
       <section class="chart">
@@ -148,11 +229,22 @@ class BarChart extends BaseChart {
             ${data.map((d, index) => {
               const y = 14 + index * rowHeight;
               const barWidth = Math.max(2, (d.value / max) * 470);
-              const tone = index % 4 === 0 ? 'var(--data-blue-color-emphasis)' : index % 4 === 1 ? 'var(--data-green-color-emphasis)' : index % 4 === 2 ? 'var(--data-purple-color-emphasis)' : 'var(--data-coral-color-emphasis)';
+              const tones = ['var(--chart-bar-1)', 'var(--chart-bar-2)', 'var(--chart-bar-3)', 'var(--chart-bar-4)', 'var(--chart-bar-5)', 'var(--chart-bar-6)'];
+              const tone = tones[index % tones.length];
+              const isSelected = selected.has(d.label);
               return svg`
-                <text x="0" y=${y + 16}>${d.label}</text>
-                <rect x="210" y=${y} width=${barWidth} height="16" rx="1.5" fill=${tone}></rect>
-                <text x=${220 + barWidth} y=${y + 15}>${format(d.value)}</text>
+                <g
+                  class=${`selectable ${isSelected ? 'selected' : ''} ${hasSelection && !isSelected ? 'dimmed' : ''}`}
+                  tabindex="0"
+                  role="button"
+                  aria-label=${`Filter ${this.chartTitle} by ${d.label}`}
+                  @click=${() => this.selectPoint(d)}
+                  @keydown=${(event) => this.selectFromKeyboard(event, d)}
+                >
+                  <text x="0" y=${y + 16}>${d.label}</text>
+                  <rect class="mark" x="210" y=${y} width=${barWidth} height="16" rx="1.5" fill=${tone}></rect>
+                  <text x=${220 + barWidth} y=${y + 15}>${format(d.value)}</text>
+                </g>
               `;
             })}
           </svg>
@@ -224,10 +316,10 @@ class KPIStrip extends LitElement {
       font-weight: 700;
     }
 
-    .green::before { background: var(--fgColor-success); }
-    .amber::before { background: var(--fgColor-attention); }
-    .coral::before { background: var(--fgColor-danger); }
-    .ink::before { background: var(--data-blue-color-emphasis); }
+    .green::before { background: var(--ld-chart-2, var(--data-green-color-emphasis)); }
+    .amber::before { background: var(--ld-accent, var(--data-yellow-color-emphasis)); }
+    .coral::before { background: var(--ld-chart-4, var(--data-coral-color-emphasis)); }
+    .ink::before { background: var(--ld-chart-1, var(--data-blue-color-emphasis)); }
     .neutral::before { background: var(--borderColor-muted); }
 
     @media (max-width: 760px) {
