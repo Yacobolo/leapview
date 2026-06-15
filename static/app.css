@@ -4045,6 +4045,9 @@
   .z-\[99999\] {
     z-index: 99999;
   }
+  .block {
+    display: block;
+  }
   .flex {
     display: flex;
   }

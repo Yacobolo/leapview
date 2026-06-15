@@ -1,24 +1,13 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { createRef, ref, type Ref } from 'lit/directives/ref.js'
-import {
-  flexRender,
-  getCoreRowModel,
-  TableController,
-  type ColumnDef,
-} from '@tanstack/lit-table'
-import { VirtualizerController } from '@tanstack/lit-virtual'
 import { visualMenuIcon } from './visual-menu-icons'
 
 type SortDirection = 'asc' | 'desc'
+type BlockID = 'a' | 'b' | 'c'
 
 interface TableSort {
   key: string
   direction: SortDirection
-}
-
-interface TableWindow {
-  offset: number
-  limit: number
 }
 
 interface TableColumn {
@@ -29,34 +18,58 @@ interface TableColumn {
 
 type TableRow = Record<string, unknown>
 
+interface TableBlock {
+  start: number
+  rows: TableRow[]
+}
+
 interface TableSignal {
+  version: number
   title: string
   columns: TableColumn[]
-  rows: TableRow[]
   totalRows: number
-  window: TableWindow
+  availableRows: number
+  isCapped: boolean
+  rowCap: number
+  chunkSize: number
+  rowHeight: number
+  resetVersion: number
   sort: TableSort
-  loading: boolean
+  blocks: Record<BlockID, TableBlock>
+  loadingBlock: string
   error: string
 }
 
-interface TableWindowCommand {
+interface TableBlockCommand {
   table: string
-  offset: number
-  limit: number
+  block: BlockID | 'all'
+  start: number
+  count: number
   sort: TableSort
+  resetVersion: number
 }
 
 type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
 
+const blockIDs: BlockID[] = ['a', 'b', 'c']
+const defaultChunkSize = 200
+const defaultRowHeight = 34
+const defaultSort: TableSort = { key: 'purchase_date', direction: 'desc' }
+
 const emptyTable: TableSignal = {
+  version: 2,
   title: 'Orders',
   columns: [],
-  rows: [],
   totalRows: 0,
-  window: { offset: 0, limit: 120 },
-  sort: { key: 'purchase_date', direction: 'desc' },
-  loading: false,
+  availableRows: 0,
+  isCapped: false,
+  rowCap: 10000,
+  chunkSize: defaultChunkSize,
+  rowHeight: defaultRowHeight,
+  resetVersion: 0,
+  sort: defaultSort,
+  blocks: emptyBlocks(),
+  loadingBlock: '',
   error: '',
 }
 
@@ -64,7 +77,7 @@ const tableConverter = {
   fromAttribute(value: string | null): TableSignal {
     if (!value) return emptyTable
     try {
-      return { ...emptyTable, ...JSON.parse(value) } as TableSignal
+      return normalizeTable(JSON.parse(value) as Partial<TableSignal>)
     } catch {
       return { ...emptyTable, error: 'Could not parse table signal.' }
     }
@@ -72,6 +85,50 @@ const tableConverter = {
   toAttribute(value: TableSignal | null): string {
     return JSON.stringify(value ?? emptyTable)
   },
+}
+
+function emptyBlocks(): Record<BlockID, TableBlock> {
+  return {
+    a: { start: 0, rows: [] },
+    b: { start: defaultChunkSize, rows: [] },
+    c: { start: defaultChunkSize * 2, rows: [] },
+  }
+}
+
+function normalizeTable(value: Partial<TableSignal>): TableSignal {
+  const chunkSize = positiveNumber(value.chunkSize, defaultChunkSize)
+  return {
+    ...emptyTable,
+    ...value,
+    version: 2,
+    totalRows: positiveNumber(value.totalRows, 0),
+    availableRows: positiveNumber(value.availableRows, positiveNumber(value.totalRows, 0)),
+    rowCap: positiveNumber(value.rowCap, 10000),
+    chunkSize,
+    rowHeight: positiveNumber(value.rowHeight, defaultRowHeight),
+    resetVersion: positiveNumber(value.resetVersion, 0),
+    sort: value.sort?.key ? value.sort : defaultSort,
+    columns: Array.isArray(value.columns) ? value.columns : [],
+    blocks: {
+      a: normalizeBlock(value.blocks?.a, 0),
+      b: normalizeBlock(value.blocks?.b, chunkSize),
+      c: normalizeBlock(value.blocks?.c, chunkSize * 2),
+    },
+    loadingBlock: value.loadingBlock ?? '',
+    error: value.error ?? '',
+  }
+}
+
+function normalizeBlock(block: TableBlock | undefined, fallbackStart: number): TableBlock {
+  return {
+    start: positiveNumber(block?.start, fallbackStart),
+    rows: Array.isArray(block?.rows) ? block.rows : [],
+  }
+}
+
+function positiveNumber(value: unknown, fallback: number): number {
+  const next = Number(value)
+  return Number.isFinite(next) && next >= 0 ? next : fallback
 }
 
 function formatCell(value: unknown, column: TableColumn): string {
@@ -103,14 +160,22 @@ class DataTable extends LitElement {
     table: { attribute: 'table', converter: tableConverter },
     selectedRowId: { state: true },
     selectedCellKey: { state: true },
+    viewportTop: { state: true },
+    viewportHeight: { state: true },
   }
 
   tableId = 'orders'
   table: TableSignal = emptyTable
   private selectedRowId = ''
   private selectedCellKey = ''
-  private pendingKey = ''
+  private viewportTop = 0
+  private viewportHeight = 0
+  private lastResetVersion = -1
+  private shouldResetScroll = false
+  private pendingLoads = new Set<string>()
+  private blockCache: Record<BlockID, TableBlock> = emptyBlocks()
   private scrollElementRef: Ref<HTMLDivElement> = createRef()
+  private resizeObserver?: ResizeObserver
   private handleOutsidePointerDown = (event: PointerEvent) => {
     const details = this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')
     if (!details?.open) return
@@ -120,13 +185,6 @@ class DataTable extends LitElement {
     if (event.key !== 'Escape') return
     this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')?.removeAttribute('open')
   }
-  private tableController = new TableController<TableRow>(this)
-  private virtualizerController = new VirtualizerController<HTMLDivElement, Element>(this, {
-    getScrollElement: () => this.scrollElementRef.value,
-    count: 0,
-    estimateSize: () => 34,
-    overscan: 10,
-  })
 
   static styles = css`
     :host {
@@ -156,15 +214,6 @@ class DataTable extends LitElement {
       padding: 6px 8px 5px 10px;
     }
 
-    .eyebrow {
-      margin: 0 0 3px;
-      color: var(--fgColor-muted);
-      font-size: 0.68rem;
-      font-weight: 900;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-
     h2 {
       min-width: 0;
       margin: 0;
@@ -175,11 +224,6 @@ class DataTable extends LitElement {
       font-weight: 850;
       letter-spacing: 0;
       line-height: 1.1;
-    }
-
-    .footer {
-      display: flex;
-      align-items: center;
     }
 
     .visual-options {
@@ -377,7 +421,7 @@ class DataTable extends LitElement {
     .row {
       position: absolute;
       inset-inline: 0;
-      height: 34px;
+      height: var(--ld-row-height, 34px);
       border-bottom: 1px solid var(--borderColor-muted);
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       color: var(--fgColor-default);
@@ -456,6 +500,8 @@ class DataTable extends LitElement {
     }
 
     .footer {
+      display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 10px;
       min-height: 34px;
@@ -487,10 +533,6 @@ class DataTable extends LitElement {
         align-items: stretch;
         flex-direction: column;
       }
-
-      .visual-actions {
-        align-self: end;
-      }
     }
   `
 
@@ -500,29 +542,81 @@ class DataTable extends LitElement {
     document.addEventListener('keydown', this.handleDocumentKeyDown)
   }
 
+  firstUpdated(): void {
+    const viewport = this.scrollElementRef.value
+    if (!viewport) return
+    this.viewportHeight = viewport.clientHeight
+    this.resizeObserver = new ResizeObserver(() => {
+      this.viewportHeight = viewport.clientHeight
+      this.ensureBlocksForScroll()
+    })
+    this.resizeObserver.observe(viewport)
+    this.ensureBlocksForScroll()
+  }
+
   disconnectedCallback(): void {
     document.removeEventListener('pointerdown', this.handleOutsidePointerDown)
     document.removeEventListener('keydown', this.handleDocumentKeyDown)
+    this.resizeObserver?.disconnect()
     super.disconnectedCallback()
   }
 
-  updated(): void {
-    const key = this.requestKey(this.table?.window?.offset, this.table?.sort)
-    if (!this.table?.loading && this.pendingKey === key) {
-      this.pendingKey = ''
+  willUpdate(): void {
+    if (this.lastResetVersion !== this.table.resetVersion) {
+      this.lastResetVersion = this.table.resetVersion
+      this.blockCache = emptyBlocks()
+      this.shouldResetScroll = true
+      this.pendingLoads.clear()
+      this.selectedRowId = ''
+      this.selectedCellKey = ''
     }
-    if (this.selectedRowId && !this.rows.some((row, index) => rowKey(row, index) === this.selectedRowId)) {
+    this.mergeIncomingBlocks()
+    this.clearArrivedLoads()
+    if (this.selectedRowId && !this.loadedRows.some((item) => rowKey(item.row, item.index) === this.selectedRowId)) {
       this.selectedRowId = ''
       this.selectedCellKey = ''
     }
   }
 
-  get rows(): TableRow[] {
-    return Array.isArray(this.table?.rows) ? this.table.rows : []
+  updated(): void {
+    if (this.shouldResetScroll) {
+      this.shouldResetScroll = false
+      queueMicrotask(() => {
+        const viewport = this.scrollElementRef.value
+        if (!viewport) return
+        viewport.scrollTop = 0
+        this.viewportTop = 0
+        this.viewportHeight = viewport.clientHeight
+      })
+    }
   }
 
   get columns(): TableColumn[] {
     return Array.isArray(this.table?.columns) ? this.table.columns : []
+  }
+
+  get loadedRows(): Array<{ row: TableRow; index: number }> {
+    return blockIDs
+      .map((id) => this.blocks[id])
+      .sort((a, b) => a.start - b.start)
+      .flatMap((block) => block.rows.map((row, offset) => ({ row, index: block.start + offset })))
+      .filter((item) => item.index < this.availableRows)
+  }
+
+  get availableRows(): number {
+    return Math.max(0, this.table.availableRows ?? 0)
+  }
+
+  get blocks(): Record<BlockID, TableBlock> {
+    return this.blockCache
+  }
+
+  get chunkSize(): number {
+    return Math.max(1, this.table.chunkSize || defaultChunkSize)
+  }
+
+  get rowHeight(): number {
+    return Math.max(1, this.table.rowHeight || defaultRowHeight)
   }
 
   get gridTemplate(): string {
@@ -539,93 +633,37 @@ class DataTable extends LitElement {
     return this.columns.map((column) => widths[column.key] ?? 'minmax(120px,1fr)').join(' ')
   }
 
-  requestKey(offset: number | undefined, sort = this.table?.sort): string {
-    return `${offset ?? 0}:${this.table?.window?.limit ?? 120}:${sort?.key ?? ''}:${sort?.direction ?? ''}`
-  }
-
-  emitWindow(offset: number, sort = this.table?.sort): void {
-    const limit = this.table?.window?.limit ?? 120
-    const maxOffset = Math.max(0, (this.table?.totalRows ?? 0) - limit)
-    const nextOffset = Math.max(0, Math.min(offset, maxOffset))
-    const nextSort = sort?.key ? sort : { key: 'purchase_date', direction: 'desc' as SortDirection }
-    const key = this.requestKey(nextOffset, nextSort)
-    if (this.pendingKey === key || this.table?.loading) return
-
-    this.pendingKey = key
-    this.dispatchEvent(new CustomEvent<TableWindowCommand>('ld-table-window-change', {
-      bubbles: true,
-      composed: true,
-      detail: {
-        table: 'orders',
-        offset: nextOffset,
-        limit,
-        sort: nextSort,
-      },
-    }))
-  }
-
   handleScroll(event: Event): void {
     const target = event.currentTarget as HTMLDivElement
-    const offset = this.table?.window?.offset ?? 0
-    const limit = this.table?.window?.limit ?? 120
-    const total = this.table?.totalRows ?? 0
-    const nearBottom = target.scrollTop + target.clientHeight > target.scrollHeight - 160
-    const nearTop = target.scrollTop < 80
-
-    if (nearBottom && offset + limit < total) {
-      this.emitWindow(offset + limit)
-    } else if (nearTop && offset > 0) {
-      this.emitWindow(offset - limit)
-    }
+    this.viewportTop = target.scrollTop
+    this.viewportHeight = target.clientHeight
+    this.ensureBlocksForScroll()
   }
 
   sortColumn(column: TableColumn): void {
-    const current = this.table?.sort ?? {}
+    const current = this.table?.sort ?? defaultSort
     const direction: SortDirection = current.key === column.key
       ? current.direction === 'asc' ? 'desc' : 'asc'
       : defaultDirection(column)
-    this.emitWindow(0, { key: column.key, direction })
+    this.emitBlock('all', 0, { key: column.key, direction }, this.table.resetVersion + 1)
   }
 
-  selectCell(row: TableRow, column: TableColumn, rowIndex: number): void {
-    const key = rowKey(row, rowIndex)
+  selectCell(row: TableRow, column: TableColumn, absoluteIndex: number): void {
+    const key = rowKey(row, absoluteIndex)
     this.selectedRowId = key
     this.selectedCellKey = `${key}:${column.key}`
   }
 
   render() {
-    const rows = this.rows
     const columns = this.columns
-    const table = this.tableController.table({
-      data: rows,
-      columns: columns.map((column): ColumnDef<TableRow> => ({
-        id: column.key,
-        accessorKey: column.key,
-        header: () => column.label,
-        cell: (info) => formatCell(info.getValue(), column),
-      })),
-      getCoreRowModel: getCoreRowModel(),
-      renderFallbackValue: '-',
-      manualSorting: true,
-    })
-
-    const rowModel = table.getRowModel().rows
-    const virtualizer = this.virtualizerController.getVirtualizer()
-    virtualizer.setOptions({
-      ...virtualizer.options,
-      count: rowModel.length,
-      estimateSize: () => 34,
-      overscan: 10,
-    })
-    const virtualRows = virtualizer.getVirtualItems()
-    const totalSize = virtualizer.getTotalSize()
-    const first = (this.table?.window?.offset ?? 0) + 1
-    const last = Math.min((this.table?.window?.offset ?? 0) + rows.length, this.table?.totalRows ?? 0)
-    const rowRange = this.table?.totalRows ? `${first.toLocaleString()}-${last.toLocaleString()} of ${this.table.totalRows.toLocaleString()}` : 'No rows'
+    const loadedRows = this.loadedRows
+    const totalHeight = this.availableRows * this.rowHeight
+    const rowRange = this.rowRangeText()
     const selectedText = this.selectedRowId ? '1 row selected' : 'No selection'
+    const loading = Boolean(this.table.loadingBlock)
 
     return html`
-      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate}`}>
+      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? 'Orders'}</h2>
@@ -657,39 +695,36 @@ class DataTable extends LitElement {
           })}
         </div>
         <div class="viewport" ${ref(this.scrollElementRef)} @scroll=${this.handleScroll} role="table" aria-label=${this.table?.title ?? 'Orders'}>
-          ${this.table?.loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
-          ${rows.length === 0 && !this.table?.loading ? html`<div class="empty">Waiting for table data</div>` : html`
-            <div class="canvas" style=${`height:${totalSize}px`}>
-              ${virtualRows.map((virtualRow) => {
-                const row = rowModel[virtualRow.index]
-                const original = row.original
-                const key = rowKey(original, virtualRow.index)
+          ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
+          ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
+            <div class="canvas" style=${`height:${totalHeight}px`}>
+              ${loadedRows.map(({ row, index }) => {
+                const key = rowKey(row, index)
                 const selected = key === this.selectedRowId
                 return html`
                   <div
                     class=${`row ${selected ? 'selected' : ''}`}
                     role="row"
                     aria-selected=${selected ? 'true' : 'false'}
-                    style=${`transform:translateY(${virtualRow.start}px)`}
+                    style=${`transform:translateY(${index * this.rowHeight}px)`}
                     @click=${() => {
                       this.selectedRowId = key
                       this.selectedCellKey = ''
                     }}
                   >
-                    ${row.getVisibleCells().map((cell) => {
-                      const column = columns.find((item) => item.key === cell.column.id) ?? { key: cell.column.id, label: cell.column.id }
+                    ${columns.map((column) => {
                       const cellKey = `${key}:${column.key}`
                       return html`
                         <button
                           class=${`cell ${column.align === 'right' ? 'right' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
                           role="cell"
-                          title=${String(cell.getValue() ?? '')}
+                          title=${String(row[column.key] ?? '')}
                           @click=${(event: Event) => {
                             event.stopPropagation()
-                            this.selectCell(original, column, virtualRow.index)
+                            this.selectCell(row, column, index)
                           }}
                         >
-                          ${flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          ${formatCell(row[column.key], column)}
                         </button>
                       `
                     })}
@@ -700,11 +735,104 @@ class DataTable extends LitElement {
           `}
         </div>
         <div class="footer">
-          <span><strong>${rowRange}</strong></span>
+          <span><strong>${rowRange}</strong>${this.table.isCapped ? html` · browsing first ${this.table.rowCap.toLocaleString()}` : nothing}</span>
           <span>${selectedText}</span>
         </div>
       </section>
     `
+  }
+
+  private ensureBlocksForScroll(): void {
+    if (this.availableRows <= 0) return
+    const currentStart = Math.floor(Math.floor(this.viewportTop / this.rowHeight) / this.chunkSize) * this.chunkSize
+    const desired = this.desiredStarts(currentStart)
+    const desiredSet = new Set(desired)
+    const loadedStarts = new Set(blockIDs.map((id) => this.blocks[id]?.start ?? -1))
+    const pendingStarts = new Set([...this.pendingLoads].map((key) => Number(key.split(':')[1])))
+    const usedBlocks = new Set<BlockID>()
+
+    for (const start of desired) {
+      if (loadedStarts.has(start) || pendingStarts.has(start)) continue
+      const block = this.reusableBlock(desiredSet, usedBlocks)
+      if (!block) continue
+      usedBlocks.add(block)
+      this.emitBlock(block, start, this.table.sort, this.table.resetVersion)
+    }
+  }
+
+  private desiredStarts(currentStart: number): number[] {
+    const starts = currentStart <= 0
+      ? [0, this.chunkSize, this.chunkSize * 2]
+      : [Math.max(0, currentStart - this.chunkSize), currentStart, currentStart + this.chunkSize]
+    return starts.filter((start, index, all) => start < this.availableRows && all.indexOf(start) === index)
+  }
+
+  private reusableBlock(desiredStarts: Set<number>, usedBlocks: Set<BlockID>): BlockID | undefined {
+    return blockIDs.find((id) => !usedBlocks.has(id) && !desiredStarts.has(this.blocks[id]?.start ?? -1))
+      ?? blockIDs.find((id) => !usedBlocks.has(id))
+  }
+
+  private emitBlock(block: BlockID | 'all', start: number, sort = this.table.sort, resetVersion = this.table.resetVersion): void {
+    const count = this.chunkSize
+    const key = `${block}:${start}:${sort.key}:${sort.direction}:${resetVersion}`
+    if (this.pendingLoads.has(key)) return
+    this.pendingLoads.add(key)
+    this.dispatchEvent(new CustomEvent<TableBlockCommand>('ld-table-window-change', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        table: this.tableId || 'orders',
+        block,
+        start,
+        count,
+        sort,
+        resetVersion,
+      },
+    }))
+  }
+
+  private clearArrivedLoads(): void {
+    for (const key of [...this.pendingLoads]) {
+      const [block, start, sortKey, sortDirection, resetVersion] = key.split(':')
+      if (block === 'all') {
+        if (this.table.resetVersion === Number(resetVersion) && this.table.sort.key === sortKey && this.table.sort.direction === sortDirection) {
+          this.pendingLoads.delete(key)
+        }
+        continue
+      }
+      const tableBlock = this.blocks[block as BlockID]
+      if (
+        tableBlock?.start === Number(start)
+        && this.table.sort.key === sortKey
+        && this.table.sort.direction === sortDirection
+        && this.table.resetVersion === Number(resetVersion)
+      ) {
+        this.pendingLoads.delete(key)
+      }
+    }
+  }
+
+  private rowRangeText(): string {
+    if (!this.table.totalRows || !this.availableRows) return 'No rows'
+    const firstIndex = Math.min(this.availableRows - 1, Math.max(0, Math.floor(this.viewportTop / this.rowHeight)))
+    const visibleRows = Math.max(1, Math.ceil((this.viewportHeight || this.rowHeight) / this.rowHeight))
+    const lastIndex = Math.min(this.availableRows, firstIndex + visibleRows)
+    return `${(firstIndex + 1).toLocaleString()}-${lastIndex.toLocaleString()} of ${this.table.totalRows.toLocaleString()}`
+  }
+
+  private mergeIncomingBlocks(): void {
+    const defaults = emptyBlocks()
+    for (const id of blockIDs) {
+      const incoming = this.table.blocks[id]
+      if (!incoming) continue
+      const defaultBlock = defaults[id]
+      const carriesRows = incoming.rows.length > 0
+      const carriesNonDefaultStart = incoming.start !== defaultBlock.start
+      const cacheIsEmpty = this.blockCache[id].rows.length === 0
+      if (carriesRows || carriesNonDefaultStart || cacheIsEmpty) {
+        this.blockCache[id] = { start: incoming.start, rows: incoming.rows }
+      }
+    }
   }
 
   private runAction(action: VisualAction): void {
@@ -727,7 +855,8 @@ class DataTable extends LitElement {
           selection: this.selectedRowId ? [this.selectedRowId] : [],
           table: {
             ...(this.table ?? emptyTable),
-            rows: this.rows,
+            blocks: this.blocks,
+            rows: this.exportRows(),
             columns: this.columns,
           },
         },
@@ -736,7 +865,7 @@ class DataTable extends LitElement {
   }
 
   private exportRows(): TableRow[] {
-    return this.rows.map((row) => {
+    return this.loadedRows.map(({ row }) => {
       const next: TableRow = {}
       for (const column of this.columns) {
         next[column.key] = formatCell(row[column.key], column)

@@ -25,6 +25,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 	}
 	action := updateAction(report.ID, activePage.ID)
 	initAction := "window.DatastarURLSync && window.DatastarURLSync.bindPopstate($urlParamShape); " + action
+	tableReset := tableResetExpression()
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash",
 		Language: "en",
@@ -59,7 +60,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 				h.Class("report-app"),
 				ds.Signals(initialSignals(dataDir, clientID, report, model, activePage, initialFilters)),
 				ds.Init(initAction),
-				g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); $tableCommand.offset = 0; "+action),
+				g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); "+tableReset+action),
 				h.Div(h.Class("app-shell"),
 					sidebar(sidebarConfigForReport(catalog, report, model, activePage), true, "@post('/commands/refresh-cache?model="+model.Name+"&dashboard="+report.ID+"')"),
 					h.Section(h.Class("app-main report-main"), h.Aria("label", "LibreDash report canvas"),
@@ -371,9 +372,11 @@ func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *
 			"mode":     "toggle",
 		},
 		"tableCommand": map[string]any{
-			"table":  tableRequest.Table,
-			"offset": tableRequest.Offset,
-			"limit":  tableRequest.Limit,
+			"table":        tableRequest.Table,
+			"block":        tableRequest.Block,
+			"start":        tableRequest.Start,
+			"count":        tableRequest.Count,
+			"resetVersion": tableRequest.ResetVersion,
 			"sort": map[string]any{
 				"key":       tableRequest.Sort.Key,
 				"direction": tableRequest.Sort.Direction,
@@ -393,7 +396,7 @@ func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *
 }
 
 func defaultTableRequest(report semantic.Dashboard) dashboard.TableRequest {
-	request := dashboard.TableRequest{Offset: 0, Limit: 120}
+	request := dashboard.TableRequest{Block: "all", Start: 0, Count: dashboard.TableChunkSize}
 	for _, name := range sortedKeys(report.Tables) {
 		table := report.Tables[name]
 		request.Table = name
@@ -411,23 +414,35 @@ func tableSignals(report semantic.Dashboard, request dashboard.TableRequest) map
 	for _, name := range sortedKeys(report.Tables) {
 		table := report.Tables[name]
 		tables[name] = map[string]any{
-			"title":     table.Title,
-			"columns":   table.Columns,
-			"rows":      []any{},
-			"totalRows": 0,
-			"window": map[string]any{
-				"offset": 0,
-				"limit":  request.Limit,
-			},
+			"title":         table.Title,
+			"columns":       table.Columns,
+			"version":       2,
+			"totalRows":     0,
+			"availableRows": 0,
+			"isCapped":      false,
+			"rowCap":        dashboard.TableInteractiveRowCap,
+			"chunkSize":     dashboard.TableChunkSize,
+			"rowHeight":     dashboard.TableRowHeight,
+			"resetVersion":  request.ResetVersion,
 			"sort": map[string]any{
 				"key":       table.DefaultSort.Key,
 				"direction": table.DefaultSort.Direction,
 			},
-			"loading": false,
-			"error":   "",
+			"blocks": map[string]any{
+				"a": map[string]any{"start": 0, "rows": []any{}},
+				"b": map[string]any{"start": dashboard.TableChunkSize, "rows": []any{}},
+				"c": map[string]any{"start": dashboard.TableChunkSize * 2, "rows": []any{}},
+			},
+			"loadingBlock": "",
+			"error":        "",
 		}
 	}
 	return tables
+}
+
+func tableResetExpression() string {
+	count := strconv.Itoa(dashboard.TableChunkSize)
+	return "$tableCommand.block = 'all'; $tableCommand.start = 0; $tableCommand.count = " + count + "; $tableCommand.resetVersion = ($tableCommand.resetVersion || 0) + 1; "
 }
 
 func chartSignals(report semantic.Dashboard, model *semantic.Model) map[string]any {
@@ -562,6 +577,7 @@ func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, fi
 }
 
 func filterCard(filterID string, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
+	tableReset := tableResetExpression()
 	return h.Article(h.Class("visual-card filter-visual-card"),
 		g.El("ld-filter-card",
 			g.Attr("filter-id", filterID),
@@ -572,7 +588,7 @@ func filterCard(filterID string, report semantic.Dashboard, filters dashboard.Fi
 			g.Attr("data-attr:filters", "$filters"),
 			g.Attr("data-attr:options", "$filterOptions"),
 			g.Attr("data-attr:loading", "$status.loading"),
-			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); $tableCommand.offset = 0; "+action),
+			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); "+tableReset+action),
 			filterCardFallback(filterID, report, filters),
 		),
 	)
@@ -669,14 +685,15 @@ func filtersDock(report semantic.Dashboard, action string) g.Node {
 }
 
 func filtersPane(report semantic.Dashboard, action string) g.Node {
+	tableReset := tableResetExpression()
 	return h.Div(h.Class("filters-pane"),
 		g.El("ld-filter-panel",
 			g.Attr("config", jsonString(report.Filters)),
 			g.Attr("data-attr:filters", "$filters"),
 			g.Attr("data-attr:options", "$filterOptions"),
 			g.Attr("data-attr:loading", "$status.loading"),
-			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); $tableCommand.offset = 0; "+action),
-			g.Attr("data-on:ld-filters-reset", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); $tableCommand.offset = 0; @post('/commands/reset-filters')"),
+			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); "+tableReset+action),
+			g.Attr("data-on:ld-filters-reset", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); "+tableReset+"@post('/commands/reset-filters')"),
 			g.Attr("data-on:ld-filters-refresh", action),
 			g.Attr("data-on:ld-visual-selection-clear", "$filters.visualSelections = []; @post('/commands/clear-selection')"),
 		),

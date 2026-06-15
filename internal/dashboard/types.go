@@ -375,18 +375,28 @@ type Point struct {
 }
 
 type TableRequest struct {
-	Table  string    `json:"table"`
-	Offset int       `json:"offset"`
-	Limit  int       `json:"limit"`
-	Sort   TableSort `json:"sort"`
+	Table        string    `json:"table"`
+	Block        string    `json:"block"`
+	Start        int       `json:"start"`
+	Count        int       `json:"count"`
+	Sort         TableSort `json:"sort"`
+	ResetVersion int       `json:"resetVersion"`
 }
+
+const (
+	TableChunkSize         = 200
+	TableInteractiveRowCap = 10000
+	TableRowHeight         = 34
+	TableMaxRequestCount   = 1000
+)
 
 func DefaultTableRequest() TableRequest {
 	return TableRequest{
-		Table:  "orders",
-		Offset: 0,
-		Limit:  120,
-		Sort:   TableSort{Key: "purchase_date", Direction: "desc"},
+		Table: "orders",
+		Block: "all",
+		Start: 0,
+		Count: TableChunkSize,
+		Sort:  TableSort{Key: "purchase_date", Direction: "desc"},
 	}
 }
 
@@ -395,14 +405,20 @@ func (r TableRequest) WithDefaults() TableRequest {
 	if r.Table == "" {
 		r.Table = defaults.Table
 	}
-	if r.Limit <= 0 {
-		r.Limit = defaults.Limit
+	if r.Block == "" {
+		r.Block = defaults.Block
 	}
-	if r.Limit > 500 {
-		r.Limit = 500
+	if r.Block != "all" && r.Block != "a" && r.Block != "b" && r.Block != "c" {
+		r.Block = defaults.Block
 	}
-	if r.Offset < 0 {
-		r.Offset = 0
+	if r.Count <= 0 {
+		r.Count = defaults.Count
+	}
+	if r.Count > TableMaxRequestCount {
+		r.Count = TableMaxRequestCount
+	}
+	if r.Start < 0 {
+		r.Start = 0
 	}
 	if r.Sort.Key == "" {
 		r.Sort = defaults.Sort
@@ -413,25 +429,40 @@ func (r TableRequest) WithDefaults() TableRequest {
 	return r
 }
 
+func (r TableRequest) Reset() TableRequest {
+	r = r.WithDefaults()
+	r.Block = "all"
+	r.Start = 0
+	r.Count = TableChunkSize
+	r.ResetVersion++
+	return r
+}
+
 type TableSort struct {
 	Key       string `json:"key"`
 	Direction string `json:"direction"`
 }
 
 type Table struct {
-	Title     string           `json:"title"`
-	Columns   []TableColumn    `json:"columns"`
-	Rows      []map[string]any `json:"rows"`
-	TotalRows int              `json:"totalRows"`
-	Window    TableWindow      `json:"window"`
-	Sort      TableSort        `json:"sort"`
-	Loading   bool             `json:"loading"`
-	Error     string           `json:"error"`
+	Version       int                   `json:"version"`
+	Title         string                `json:"title"`
+	Columns       []TableColumn         `json:"columns"`
+	TotalRows     int                   `json:"totalRows"`
+	AvailableRows int                   `json:"availableRows"`
+	IsCapped      bool                  `json:"isCapped"`
+	RowCap        int                   `json:"rowCap"`
+	ChunkSize     int                   `json:"chunkSize"`
+	RowHeight     int                   `json:"rowHeight"`
+	ResetVersion  int                   `json:"resetVersion"`
+	Sort          TableSort             `json:"sort"`
+	Blocks        map[string]TableBlock `json:"blocks"`
+	LoadingBlock  string                `json:"loadingBlock"`
+	Error         string                `json:"error"`
 }
 
-type TableWindow struct {
-	Offset int `json:"offset"`
-	Limit  int `json:"limit"`
+type TableBlock struct {
+	Start int              `json:"start"`
+	Rows  []map[string]any `json:"rows"`
 }
 
 type TableColumn struct {
@@ -460,14 +491,28 @@ func EmptyTable(request TableRequest, err error) Table {
 		message = err.Error()
 	}
 	return Table{
-		Title:     "Orders",
-		Columns:   OrdersTableColumns(),
-		Rows:      []map[string]any{},
-		TotalRows: 0,
-		Window:    TableWindow{Offset: request.Offset, Limit: request.Limit},
-		Sort:      request.Sort,
-		Loading:   false,
-		Error:     message,
+		Version:       2,
+		Title:         "Orders",
+		Columns:       OrdersTableColumns(),
+		TotalRows:     0,
+		AvailableRows: 0,
+		IsCapped:      false,
+		RowCap:        TableInteractiveRowCap,
+		ChunkSize:     TableChunkSize,
+		RowHeight:     TableRowHeight,
+		ResetVersion:  request.ResetVersion,
+		Sort:          request.Sort,
+		Blocks:        emptyTableBlocks(),
+		LoadingBlock:  "",
+		Error:         message,
+	}
+}
+
+func emptyTableBlocks() map[string]TableBlock {
+	return map[string]TableBlock{
+		"a": {Start: 0, Rows: []map[string]any{}},
+		"b": {Start: TableChunkSize, Rows: []map[string]any{}},
+		"c": {Start: TableChunkSize * 2, Rows: []map[string]any{}},
 	}
 }
 

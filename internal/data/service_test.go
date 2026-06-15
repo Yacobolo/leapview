@@ -3,8 +3,10 @@ package data
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -31,6 +33,54 @@ func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	var missing *MissingDataError
 	if !errors.As(metrics.runtimes["olist"].missing, &missing) {
 		t.Fatalf("missing error type = %T, want *MissingDataError", metrics.runtimes["olist"].missing)
+	}
+}
+
+func TestDuckDBMetricsTableInteractiveCap(t *testing.T) {
+	dir := t.TempDir()
+	const rows = dashboard.TableInteractiveRowCap + 5
+	var orders, items, payments, customers, reviews strings.Builder
+	orders.WriteString("order_id,customer_id,order_status,order_purchase_timestamp,order_delivered_customer_date\n")
+	items.WriteString("order_id,order_item_id,product_id,price,freight_value\n")
+	payments.WriteString("order_id,payment_value\n")
+	customers.WriteString("customer_id,customer_state\n")
+	reviews.WriteString("review_id,order_id,review_score\n")
+	for i := 0; i < rows; i++ {
+		fmt.Fprintf(&orders, "o%d,c%d,delivered,2018-01-10 10:00:00,2018-01-14 10:00:00\n", i, i)
+		fmt.Fprintf(&items, "o%d,1,p1,100.00,10.00\n", i)
+		fmt.Fprintf(&payments, "o%d,110.00\n", i)
+		fmt.Fprintf(&customers, "c%d,SP\n", i)
+		fmt.Fprintf(&reviews, "r%d,o%d,5\n", i, i)
+	}
+	writeFixture(t, dir, "olist_orders_dataset.csv", orders.String())
+	writeFixture(t, dir, "olist_order_items_dataset.csv", items.String())
+	writeFixture(t, dir, "olist_order_payments_dataset.csv", payments.String())
+	writeFixture(t, dir, "olist_products_dataset.csv", "product_id,product_category_name\np1,beleza_saude\n")
+	writeFixture(t, dir, "olist_customers_dataset.csv", customers.String())
+	writeFixture(t, dir, "olist_order_reviews_dataset.csv", reviews.String())
+	writeFixture(t, dir, "product_category_name_translation.csv", "product_category_name,product_category_name_english\nbeleza_saude,health_beauty\n")
+
+	metrics, err := NewDuckDBMetrics(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metrics.Close()
+
+	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{Table: "orders", Block: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table.TotalRows != rows {
+		t.Fatalf("total rows = %d, want %d", table.TotalRows, rows)
+	}
+	if table.AvailableRows != dashboard.TableInteractiveRowCap {
+		t.Fatalf("available rows = %d, want %d", table.AvailableRows, dashboard.TableInteractiveRowCap)
+	}
+	if !table.IsCapped {
+		t.Fatal("table is not capped")
+	}
+	if got := len(table.Blocks["a"].Rows) + len(table.Blocks["b"].Rows) + len(table.Blocks["c"].Rows); got != dashboard.TableChunkSize*3 {
+		t.Fatalf("initial block rows = %d, want %d", got, dashboard.TableChunkSize*3)
 	}
 }
 
@@ -135,10 +185,11 @@ relogios_presentes,watches_gifts
 	}
 
 	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
-		Table:  "orders",
-		Offset: 0,
-		Limit:  1,
-		Sort:   dashboard.TableSort{Key: "revenue", Direction: "asc"},
+		Table: "orders",
+		Block: "a",
+		Start: 0,
+		Count: 1,
+		Sort:  dashboard.TableSort{Key: "revenue", Direction: "asc"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -146,10 +197,10 @@ relogios_presentes,watches_gifts
 	if table.TotalRows != 2 {
 		t.Fatalf("table total rows = %d, want 2", table.TotalRows)
 	}
-	if len(table.Rows) != 1 {
-		t.Fatalf("table rows = %d, want 1", len(table.Rows))
+	if len(table.Blocks["a"].Rows) != 1 {
+		t.Fatalf("table block rows = %d, want 1", len(table.Blocks["a"].Rows))
 	}
-	if got := table.Rows[0]["order_id"]; got != "o2" {
+	if got := table.Blocks["a"].Rows[0]["order_id"]; got != "o2" {
 		t.Fatalf("first table order = %v, want o2", got)
 	}
 
@@ -157,12 +208,15 @@ relogios_presentes,watches_gifts
 		VisualSelections: []dashboard.VisualSelection{
 			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
 		},
-	}, dashboard.TableRequest{Table: "orders", Limit: 10})
+	}, dashboard.TableRequest{Table: "orders", Block: "all", Count: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if filteredTable.TotalRows != 1 {
 		t.Fatalf("targeted table total rows = %d, want 1", filteredTable.TotalRows)
+	}
+	if filteredTable.AvailableRows != 1 {
+		t.Fatalf("targeted table available rows = %d, want 1", filteredTable.AvailableRows)
 	}
 
 	if err := metrics.RefreshCache(context.Background(), "olist"); err != nil {

@@ -156,7 +156,7 @@ func (m *DuckDBMetrics) NormalizeTableRequest(dashboardID string, request dashbo
 	if !ok {
 		return request.WithDefaults()
 	}
-	defaults := dashboard.TableRequest{Offset: 0, Limit: 120}
+	defaults := dashboard.TableRequest{Block: "all", Start: 0, Count: dashboard.TableChunkSize}
 	for _, name := range sortedKeys(report.Tables) {
 		table := report.Tables[name]
 		defaults.Table = name
@@ -169,14 +169,20 @@ func (m *DuckDBMetrics) NormalizeTableRequest(dashboardID string, request dashbo
 	if request.Table == "" {
 		request.Table = defaults.Table
 	}
-	if request.Limit <= 0 {
-		request.Limit = defaults.Limit
+	if request.Block == "" {
+		request.Block = defaults.Block
 	}
-	if request.Limit > 500 {
-		request.Limit = 500
+	if request.Block != "all" && request.Block != "a" && request.Block != "b" && request.Block != "c" {
+		request.Block = defaults.Block
 	}
-	if request.Offset < 0 {
-		request.Offset = 0
+	if request.Count <= 0 {
+		request.Count = defaults.Count
+	}
+	if request.Count > dashboard.TableMaxRequestCount {
+		request.Count = dashboard.TableMaxRequestCount
+	}
+	if request.Start < 0 {
+		request.Start = 0
 	}
 	if request.Sort.Key == "" {
 		request.Sort = defaults.Sort
@@ -338,20 +344,27 @@ func (m *DuckDBMetrics) QueryTable(ctx context.Context, dashboardID string, filt
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
-	rows, err := m.tableRows(ctx, runtime, report, tableModel, filters, request)
+	availableRows := min(totalRows, dashboard.TableInteractiveRowCap)
+	blocks, err := m.tableBlocks(ctx, runtime, report, tableModel, filters, request, availableRows)
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
 
 	return dashboard.Table{
-		Title:     tableModel.Title,
-		Columns:   tableModel.Columns,
-		Rows:      rows,
-		TotalRows: totalRows,
-		Window:    dashboard.TableWindow{Offset: request.Offset, Limit: request.Limit},
-		Sort:      request.Sort,
-		Loading:   false,
-		Error:     "",
+		Version:       2,
+		Title:         tableModel.Title,
+		Columns:       tableModel.Columns,
+		TotalRows:     totalRows,
+		AvailableRows: availableRows,
+		IsCapped:      totalRows > availableRows,
+		RowCap:        dashboard.TableInteractiveRowCap,
+		ChunkSize:     dashboard.TableChunkSize,
+		RowHeight:     dashboard.TableRowHeight,
+		ResetVersion:  request.ResetVersion,
+		Sort:          request.Sort,
+		Blocks:        blocks,
+		LoadingBlock:  "",
+		Error:         "",
 	}, nil
 }
 
@@ -695,7 +708,65 @@ func (m *DuckDBMetrics) countRows(ctx context.Context, runtime *modelRuntime, re
 	return total, nil
 }
 
-func (m *DuckDBMetrics) tableRows(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]map[string]any, error) {
+func (m *DuckDBMetrics) tableBlocks(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, availableRows int) (map[string]dashboard.TableBlock, error) {
+	blocks := map[string]dashboard.TableBlock{}
+	count := request.Count
+	if count <= 0 {
+		count = dashboard.TableChunkSize
+	}
+	if count > dashboard.TableMaxRequestCount {
+		count = dashboard.TableMaxRequestCount
+	}
+	if request.Block == "all" {
+		starts := initialBlockStarts(request.Start, count, availableRows)
+		for block, start := range starts {
+			rows, err := m.tableRows(ctx, runtime, report, table, filters, request, start, count, availableRows)
+			if err != nil {
+				return nil, err
+			}
+			blocks[block] = dashboard.TableBlock{Start: start, Rows: rows}
+		}
+		return blocks, nil
+	}
+
+	start := clampTableStart(request.Start, availableRows)
+	rows, err := m.tableRows(ctx, runtime, report, table, filters, request, start, count, availableRows)
+	if err != nil {
+		return nil, err
+	}
+	blocks[request.Block] = dashboard.TableBlock{Start: start, Rows: rows}
+	return blocks, nil
+}
+
+func initialBlockStarts(start, count, availableRows int) map[string]int {
+	start = clampTableStart(start, availableRows)
+	if start <= 0 {
+		return map[string]int{"a": 0, "b": count, "c": count * 2}
+	}
+	base := (start / count) * count
+	return map[string]int{"a": max(0, base-count), "b": base, "c": base + count}
+}
+
+func clampTableStart(start, availableRows int) int {
+	if start < 0 {
+		return 0
+	}
+	if availableRows <= 0 {
+		return 0
+	}
+	if start >= availableRows {
+		return max(0, availableRows-1)
+	}
+	return start
+}
+
+func (m *DuckDBMetrics) tableRows(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, start, count, availableRows int) ([]map[string]any, error) {
+	if count <= 0 || start >= availableRows {
+		return []map[string]any{}, nil
+	}
+	if start+count > availableRows {
+		count = availableRows - start
+	}
 	source, err := datasetSource(runtime.model, table.Dataset)
 	if err != nil {
 		return nil, err
@@ -722,7 +793,7 @@ WHERE %s
 ORDER BY %s %s, e.order_id ASC
 LIMIT ? OFFSET ?`, strings.Join(selects, ", "), source, where, sortExpr, direction)
 
-	args = append(args, request.Limit, request.Offset)
+	args = append(args, count, start)
 	rows, err := runtime.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

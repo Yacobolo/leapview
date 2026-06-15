@@ -206,7 +206,6 @@ func (s *Server) tableWindow(w http.ResponseWriter, r *http.Request) {
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
-	s.broker.publish(clientID, tableLoadingPatch(request))
 	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), dashboardID, filters, request)))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -219,7 +218,7 @@ func (s *Server) chartSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	filters := s.normalizeFilters(dashboardID, signals.Filters).ToggleSelection(signals.ChartCommand)
-	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
+	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
 	s.broker.publish(clientID, signalPatch{
@@ -248,7 +247,7 @@ func (s *Server) clearSelection(w http.ResponseWriter, r *http.Request) {
 	dashboardID := s.dashboardID(r, signals)
 	filters := s.normalizeFilters(dashboardID, signals.Filters)
 	filters.VisualSelections = nil
-	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
+	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
 	s.broker.publish(clientID, signalPatch{
@@ -276,8 +275,7 @@ func (s *Server) resetFilters(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	filters := s.metrics.DefaultFilters(dashboardID)
-	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
-	request.Offset = 0
+	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
 	s.broker.publish(clientID, signalPatch{
@@ -306,7 +304,7 @@ func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
 	dashboardID := s.dashboardID(r, signals)
 	modelID := s.modelID(r, signals, dashboardID)
 	filters := s.normalizeFilters(dashboardID, signals.Filters)
-	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
+	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
 	s.broker.publish(clientID, signalPatch{
@@ -365,23 +363,6 @@ func dashboardPatch(patch dashboard.Patch) signalPatch {
 		"status":        patch.Status,
 		"kpis":          patch.KPIs,
 		"charts":        patch.Charts,
-	}
-}
-
-func tableLoadingPatch(request dashboard.TableRequest) signalPatch {
-	request = request.WithDefaults()
-	return signalPatch{
-		"tables": map[string]any{
-			request.Table: map[string]any{
-				"loading": true,
-				"error":   "",
-				"window": dashboard.TableWindow{
-					Offset: request.Offset,
-					Limit:  request.Limit,
-				},
-				"sort": request.Sort,
-			},
-		},
 	}
 }
 

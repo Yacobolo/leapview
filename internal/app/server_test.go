@@ -255,16 +255,22 @@ func TestModelRouteRendersSemanticModelGraph(t *testing.T) {
 func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	request = request.WithDefaults()
 	return dashboard.Table{
-		Title: "Orders",
+		Version: 2,
+		Title:   "Orders",
 		Columns: []dashboard.TableColumn{
 			{Key: "order_id", Label: "Order"},
 		},
-		Rows: []map[string]any{
-			{"order_id": "o1"},
+		TotalRows:     1,
+		AvailableRows: 1,
+		IsCapped:      false,
+		RowCap:        dashboard.TableInteractiveRowCap,
+		ChunkSize:     dashboard.TableChunkSize,
+		RowHeight:     dashboard.TableRowHeight,
+		ResetVersion:  request.ResetVersion,
+		Sort:          request.Sort,
+		Blocks: map[string]dashboard.TableBlock{
+			"a": {Start: request.Start, Rows: []map[string]any{{"order_id": "o1"}}},
 		},
-		TotalRows: 1,
-		Window:    dashboard.TableWindow{Offset: request.Offset, Limit: request.Limit},
-		Sort:      request.Sort,
 	}, nil
 }
 
@@ -295,7 +301,7 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 }
 
 func TestRefreshCacheCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","offset":0,"limit":25}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":0,"count":200}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/refresh-cache", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -308,7 +314,7 @@ func TestRefreshCacheCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestChartSelectCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[]},"runtime":{"clientId":"test-client"},"chartCommand":{"visualId":"orders","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"table":"orders","offset":0,"limit":25}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[]},"runtime":{"clientId":"test-client"},"chartCommand":{"visualId":"orders","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"table":"orders","block":"all","start":0,"count":200}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/chart-select", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -321,7 +327,7 @@ func TestChartSelectCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"visualSelections":[{"visualId":"orders","field":"status","values":["delivered"]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","offset":0,"limit":25}}`)
+	body := strings.NewReader(`{"filters":{"visualSelections":[{"visualId":"orders","field":"status","values":["delivered"]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":0,"count":200}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/clear-selection", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -334,7 +340,7 @@ func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestResetFiltersCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[{"visualId":"orders","field":"status","values":["delivered"]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","offset":25,"limit":25}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[{"visualId":"orders","field":"status","values":["delivered"]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":200,"count":200}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/reset-filters", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -347,7 +353,7 @@ func TestResetFiltersCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","offset":10,"limit":25,"sort":{"key":"revenue","direction":"desc"}}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"a","start":400,"count":200,"sort":{"key":"revenue","direction":"desc"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/table-window", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
