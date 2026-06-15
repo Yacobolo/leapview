@@ -212,10 +212,21 @@ class EChartVisual extends LitElement {
 
   private instance?: ECharts
   private observer?: ResizeObserver
+  private handleOutsidePointerDown = (event: PointerEvent) => {
+    const details = this.renderRoot.querySelector<HTMLDetailsElement>('.options')
+    if (!details?.open) return
+    if (!event.composedPath().includes(details)) details.removeAttribute('open')
+  }
+  private handleDocumentKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return
+    this.renderRoot.querySelector<HTMLDetailsElement>('.options')?.removeAttribute('open')
+  }
 
   connectedCallback(): void {
     super.connectedCallback()
     this.observer = new ResizeObserver(() => this.instance?.resize())
+    document.addEventListener('pointerdown', this.handleOutsidePointerDown)
+    document.addEventListener('keydown', this.handleDocumentKeyDown)
   }
 
   firstUpdated(): void {
@@ -235,6 +246,8 @@ class EChartVisual extends LitElement {
   }
 
   disconnectedCallback(): void {
+    document.removeEventListener('pointerdown', this.handleOutsidePointerDown)
+    document.removeEventListener('keydown', this.handleDocumentKeyDown)
     this.observer?.disconnect()
     this.instance?.dispose()
     super.disconnectedCallback()

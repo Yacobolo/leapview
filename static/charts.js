@@ -83200,6 +83200,15 @@ var EChartVisual = class extends i4 {
     this.field = "";
     this.type = "bar";
     this.selection = [];
+    this.handleOutsidePointerDown = (event) => {
+      const details = this.renderRoot.querySelector(".options");
+      if (!details?.open) return;
+      if (!event.composedPath().includes(details)) details.removeAttribute("open");
+    };
+    this.handleDocumentKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      this.renderRoot.querySelector(".options")?.removeAttribute("open");
+    };
   }
   static {
     this.styles = chartStyles;
@@ -83207,6 +83216,8 @@ var EChartVisual = class extends i4 {
   connectedCallback() {
     super.connectedCallback();
     this.observer = new ResizeObserver(() => this.instance?.resize());
+    document.addEventListener("pointerdown", this.handleOutsidePointerDown);
+    document.addEventListener("keydown", this.handleDocumentKeyDown);
   }
   firstUpdated() {
     const canvas = this.renderRoot.querySelector(".canvas");
@@ -83223,6 +83234,8 @@ var EChartVisual = class extends i4 {
     this.renderChart();
   }
   disconnectedCallback() {
+    document.removeEventListener("pointerdown", this.handleOutsidePointerDown);
+    document.removeEventListener("keydown", this.handleDocumentKeyDown);
     this.observer?.disconnect();
     this.instance?.dispose();
     super.disconnectedCallback();

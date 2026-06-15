@@ -4741,6 +4741,15 @@ var DataTable = class extends i4 {
     this.selectedCellKey = "";
     this.pendingKey = "";
     this.scrollElementRef = e5();
+    this.handleOutsidePointerDown = (event) => {
+      const details = this.renderRoot.querySelector(".visual-options");
+      if (!details?.open) return;
+      if (!event.composedPath().includes(details)) details.removeAttribute("open");
+    };
+    this.handleDocumentKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      this.renderRoot.querySelector(".visual-options")?.removeAttribute("open");
+    };
     this.tableController = new TableController(this);
     this.virtualizerController = new VirtualizerController(this, {
       getScrollElement: () => this.scrollElementRef.value,
@@ -5123,6 +5132,16 @@ var DataTable = class extends i4 {
       }
     }
   `;
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    document.addEventListener("pointerdown", this.handleOutsidePointerDown);
+    document.addEventListener("keydown", this.handleDocumentKeyDown);
+  }
+  disconnectedCallback() {
+    document.removeEventListener("pointerdown", this.handleOutsidePointerDown);
+    document.removeEventListener("keydown", this.handleDocumentKeyDown);
+    super.disconnectedCallback();
   }
   updated() {
     const key = this.requestKey(this.table?.window?.offset, this.table?.sort);

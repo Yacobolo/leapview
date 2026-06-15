@@ -111,6 +111,15 @@ class DataTable extends LitElement {
   private selectedCellKey = ''
   private pendingKey = ''
   private scrollElementRef: Ref<HTMLDivElement> = createRef()
+  private handleOutsidePointerDown = (event: PointerEvent) => {
+    const details = this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')
+    if (!details?.open) return
+    if (!event.composedPath().includes(details)) details.removeAttribute('open')
+  }
+  private handleDocumentKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return
+    this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')?.removeAttribute('open')
+  }
   private tableController = new TableController<TableRow>(this)
   private virtualizerController = new VirtualizerController<HTMLDivElement, Element>(this, {
     getScrollElement: () => this.scrollElementRef.value,
@@ -484,6 +493,18 @@ class DataTable extends LitElement {
       }
     }
   `
+
+  connectedCallback(): void {
+    super.connectedCallback()
+    document.addEventListener('pointerdown', this.handleOutsidePointerDown)
+    document.addEventListener('keydown', this.handleDocumentKeyDown)
+  }
+
+  disconnectedCallback(): void {
+    document.removeEventListener('pointerdown', this.handleOutsidePointerDown)
+    document.removeEventListener('keydown', this.handleDocumentKeyDown)
+    super.disconnectedCallback()
+  }
 
   updated(): void {
     const key = this.requestKey(this.table?.window?.offset, this.table?.sort)
