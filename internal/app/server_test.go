@@ -49,7 +49,7 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 			Title:         "Executive Sales Dashboard",
 			SemanticModel: "test",
 			Filters: map[string]semantic.FilterDefinition{
-				"state": {Type: "multi_select", Label: "State", Dataset: "orders", Dimension: "status", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
+				"state": {Type: "multi_select", Label: "State", Dataset: "orders", Dimension: "status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
 			},
 			Visuals: map[string]semantic.Visual{
 				"orders": {Title: "Orders", Type: "donut", Dataset: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
@@ -154,6 +154,27 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, `class="page-tab active" href="/dashboards/executive-sales/pages/operations"`) {
 		t.Fatalf("operations page tab was not active:\n%s", body)
+	}
+}
+
+func TestPageRouteSeedsFiltersFromURL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/overview?state=SP&state=RJ", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `/static/url-sync.js`) {
+		t.Fatalf("page did not include url sync script:\n%s", body)
+	}
+	if !strings.Contains(body, `&#34;state&#34;:[&#34;RJ&#34;,&#34;SP&#34;]`) {
+		t.Fatalf("page did not seed state url params:\n%s", body)
+	}
+	if !strings.Contains(body, `&#34;values&#34;:[&#34;RJ&#34;,&#34;SP&#34;]`) {
+		t.Fatalf("page did not seed state filter values:\n%s", body)
 	}
 }
 

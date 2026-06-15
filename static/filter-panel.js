@@ -594,8 +594,64 @@ function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// web/components/filter-panel.ts
+// web/components/filter-url.ts
 var emptyFilters = { controls: {}, visualSelections: [] };
+function defaultControl(definition) {
+  switch (definition.type) {
+    case "date_range":
+      return { type: "date_range", preset: definition.default?.preset || "all", from: definition.default?.from || "", to: definition.default?.to || "" };
+    case "multi_select":
+      return { type: "multi_select", operator: definition.operator || "in", values: [...definition.default?.values ?? []] };
+    case "text":
+      return { type: "text", operator: definition.default?.operator || definition.defaultOperator || "contains", value: definition.default?.value || "" };
+    default:
+      return { type: definition.type || "" };
+  }
+}
+function filtersToURLParams(config, filters) {
+  const params = {};
+  for (const [name, definition] of Object.entries(config)) {
+    const control = filters.controls?.[name] ?? defaultControl(definition);
+    const base = defaultControl(definition);
+    switch (definition.type) {
+      case "date_range":
+        if (!definition.urlParam) break;
+        if (control.from || control.to || control.preset === "custom") {
+          params[definition.urlParam] = "custom";
+          addString(params, definition.fromURLParam, control.from);
+          addString(params, definition.toURLParam, control.to);
+          break;
+        }
+        if (control.preset && control.preset !== base.preset) {
+          params[definition.urlParam] = control.preset;
+        }
+        break;
+      case "multi_select":
+        if (definition.urlParam && (control.values ?? []).length > 0) {
+          params[definition.urlParam] = [...control.values ?? []].filter(Boolean).sort();
+        }
+        break;
+      case "text": {
+        const value = (control.value ?? "").trim();
+        if (!definition.urlParam || !value) break;
+        params[definition.urlParam] = value;
+        if (definition.operatorURLParam && control.operator && control.operator !== base.operator) {
+          params[definition.operatorURLParam] = control.operator;
+        }
+        break;
+      }
+    }
+  }
+  return params;
+}
+function addString(params, key, value) {
+  const trimmed = (value ?? "").trim();
+  if (key && trimmed) {
+    params[key] = trimmed;
+  }
+}
+
+// web/components/filter-panel.ts
 var jsonConverter = (fallback) => ({
   fromAttribute(value) {
     if (!value) return fallback;
@@ -617,6 +673,12 @@ var FilterPanel = class extends i4 {
     this.options = {};
     this.loading = false;
     this.searches = {};
+    this.openDate = null;
+    this.dateDraft = null;
+    this.cancelDateDraft = () => {
+      this.openDate = null;
+      this.dateDraft = null;
+    };
     this.clearVisualSelections = () => {
       this.dispatchEvent(new CustomEvent("ld-visual-selection-clear", { bubbles: true, composed: true }));
     };
@@ -625,7 +687,9 @@ var FilterPanel = class extends i4 {
       for (const [name, definition] of Object.entries(this.config)) {
         filters.controls[name] = defaultControl(definition);
       }
-      this.dispatchEvent(new CustomEvent("ld-filters-reset", { detail: { filters }, bubbles: true, composed: true }));
+      this.openDate = null;
+      this.dateDraft = null;
+      this.dispatchEvent(new CustomEvent("ld-filters-reset", { detail: { filters, urlParams: filtersToURLParams(this.config, filters) }, bubbles: true, composed: true }));
     };
     this.refresh = () => {
       this.dispatchEvent(new CustomEvent("ld-filters-refresh", { bubbles: true, composed: true }));
@@ -721,7 +785,12 @@ var FilterPanel = class extends i4 {
 
     .clear:disabled,
     .reset:disabled,
-    .refresh:disabled {
+    .refresh:disabled,
+    .preset:disabled,
+    .date-trigger:disabled,
+    .calendar-nav:disabled,
+    .day:disabled,
+    .popover-action:disabled {
       cursor: default;
       opacity: 0.55;
     }
@@ -732,10 +801,173 @@ var FilterPanel = class extends i4 {
       gap: 6px;
     }
 
+    .date-filter {
+      position: relative;
+      display: grid;
+      gap: 6px;
+    }
+
+    .preset-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+    }
+
+    .preset,
+    .date-trigger,
+    .calendar-nav,
+    .day,
+    .popover-action {
+      border: 1px solid var(--borderColor-default);
+      border-radius: 4px;
+      background: var(--control-bgColor-rest);
+      color: var(--fgColor-default);
+      cursor: pointer;
+      font-weight: 850;
+    }
+
+    .preset {
+      min-width: 0;
+      min-height: 27px;
+      overflow: hidden;
+      padding: 0 6px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.64rem;
+    }
+
+    .preset.custom {
+      grid-column: 1 / -1;
+    }
+
+    .preset[aria-pressed='true'] {
+      border-color: var(--ld-accent);
+      background: color-mix(in srgb, var(--ld-accent) 20%, var(--control-bgColor-rest));
+      color: var(--fgColor-default);
+    }
+
+    .date-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 32px;
+      padding: 0 9px;
+      text-align: left;
+      font-size: 0.72rem;
+    }
+
+    .date-trigger span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .date-popover {
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: grid;
+      gap: 7px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 6px;
+      background: var(--overlay-bgColor, var(--bgColor-default));
+      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      padding: 8px;
+    }
+
+    .calendar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .calendar-title {
+      color: var(--fgColor-default);
+      font-size: 0.67rem;
+      font-weight: 900;
+    }
+
+    .calendar-nav {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      font-size: 0.8rem;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 2px;
+    }
+
+    .weekday {
+      color: var(--fgColor-muted);
+      text-align: center;
+      font-size: 0.52rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .day {
+      aspect-ratio: 1;
+      min-height: 0;
+      padding: 0;
+      border-color: transparent;
+      background: transparent;
+      color: var(--fgColor-default);
+      font-size: 0.58rem;
+    }
+
+    .day.outside {
+      color: var(--fgColor-muted);
+      opacity: 0.45;
+    }
+
+    .day.in-range {
+      background: color-mix(in srgb, var(--ld-accent) 16%, transparent);
+    }
+
+    .day.selected {
+      border-color: var(--ld-accent);
+      background: var(--ld-accent);
+      color: var(--button-primary-fgColor-rest);
+    }
+
     .date-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 6px;
+    }
+
+    .date-field {
+      display: grid;
+      gap: 3px;
+      color: var(--fgColor-muted);
+      font-size: 0.52rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .popover-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+    }
+
+    .popover-action {
+      min-height: 24px;
+      padding: 0 5px;
+      font-size: 0.6rem;
+    }
+
+    .popover-action.primary {
+      border-color: var(--button-primary-bgColor-rest);
+      background: var(--button-primary-bgColor-rest);
+      color: var(--button-primary-fgColor-rest);
     }
 
     input,
@@ -874,18 +1106,83 @@ var FilterPanel = class extends i4 {
   }
   renderDate(name, definition, control) {
     const preset = control.preset || definition.default?.preset || "all";
-    const showCustom = definition.custom && (preset === "custom" || control.from || control.to);
+    const showCustom = definition.custom && (preset === "custom" || control.from || control.to || this.openDate === name);
+    const presets = [...definition.presets ?? []];
+    if (definition.custom) {
+      presets.push({ value: "custom", label: "Custom" });
+    }
     return b2`
-      <div class="input-row">
-        <select aria-label=${definition.label} .value=${showCustom ? "custom" : preset} @change=${(event) => this.setDatePreset(name, event)}>
-          ${(definition.presets ?? []).map((item) => b2`<option value=${item.value}>${item.label}</option>`)}
-          ${definition.custom ? b2`<option value="custom">Custom range</option>` : A}
-        </select>
-        ${showCustom ? b2`<div class="date-row">
-              <input type="date" aria-label="${definition.label} from" .value=${control.from ?? ""} @input=${(event) => this.setDateValue(name, "from", event)} />
-              <input type="date" aria-label="${definition.label} to" .value=${control.to ?? ""} @input=${(event) => this.setDateValue(name, "to", event)} />
-            </div>` : A}
+      <div class="date-filter">
+        <button
+          class="date-trigger"
+          type="button"
+          aria-expanded=${this.openDate === name ? "true" : "false"}
+          ?disabled=${this.loading || !definition.custom}
+          @click=${() => this.toggleDatePopover(name, definition, control)}
+        >
+          <span>${dateSummary(definition, control)}</span>
+          <span aria-hidden="true">▾</span>
+        </button>
+        <div class="preset-row" role="group" aria-label=${definition.label}>
+          ${presets.map((item) => b2`
+            <button
+              class=${`preset ${item.value === "custom" ? "custom" : ""}`}
+              type="button"
+              aria-pressed=${(showCustom ? "custom" : preset) === item.value ? "true" : "false"}
+              ?disabled=${this.loading}
+              @click=${() => this.pickDatePreset(name, item.value)}
+            >${presetShortLabel(item)}</button>
+          `)}
+        </div>
+        ${showCustom ? this.renderDatePopover(name, definition, control) : A}
       </div>
+    `;
+  }
+  renderDatePopover(name, definition, control) {
+    if (this.openDate !== name) return A;
+    const draft = this.activeDateDraft(name, definition, control);
+    const month = parseMonth(draft.month);
+    const days = calendarDays(month);
+    return b2`
+      <div class="date-popover" @keydown=${(event) => this.handleDatePopoverKey(name, event)}>
+        <div class="calendar-head">
+          <button class="calendar-nav" type="button" aria-label="Previous month" @click=${() => this.shiftDraftMonth(-1)}>‹</button>
+          <div class="calendar-title">${monthTitle(month)}</div>
+          <button class="calendar-nav" type="button" aria-label="Next month" @click=${() => this.shiftDraftMonth(1)}>›</button>
+        </div>
+        <div class="calendar-grid">
+          ${["M", "T", "W", "T", "F", "S", "S"].map((day) => b2`<div class="weekday">${day}</div>`)}
+          ${days.map((day) => this.renderCalendarDay(day, month, draft))}
+        </div>
+        <div class="date-row">
+          <label class="date-field">
+            From
+            <input type="date" .value=${draft.from} @input=${(event) => this.setDraftDate("from", event)} />
+          </label>
+          <label class="date-field">
+            To
+            <input type="date" .value=${draft.to} @input=${(event) => this.setDraftDate("to", event)} />
+          </label>
+        </div>
+        <div class="popover-actions">
+          <button class="popover-action" type="button" @click=${() => this.clearDateDraft(name, definition)}>Clear</button>
+          <button class="popover-action" type="button" @click=${this.cancelDateDraft}>Cancel</button>
+          <button class="popover-action primary" type="button" @click=${() => this.applyDateDraft(name)}>Apply</button>
+        </div>
+      </div>
+    `;
+  }
+  renderCalendarDay(day, month, draft) {
+    const selected = day.value === draft.from || day.value === draft.to;
+    const inRange = isInRange(day.value, draft.from, draft.to);
+    const classes = ["day"];
+    if (day.month !== month.getMonth()) classes.push("outside");
+    if (inRange) classes.push("in-range");
+    if (selected) classes.push("selected");
+    return b2`
+      <button class=${classes.join(" ")} type="button" @click=${() => this.pickDraftDay(day.value)}>
+        ${day.day}
+      </button>
     `;
   }
   renderMulti(name, definition, control) {
@@ -942,29 +1239,118 @@ var FilterPanel = class extends i4 {
     };
   }
   emitChange(filters) {
-    this.dispatchEvent(new CustomEvent("ld-filters-change", { detail: { filters }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent("ld-filters-change", { detail: { filters, urlParams: filtersToURLParams(this.config, filters) }, bubbles: true, composed: true }));
   }
   updateControl(name, control) {
     const filters = this.nextFilters();
     filters.controls[name] = control;
     this.emitChange(filters);
   }
-  setDatePreset(name, event) {
-    const value = event.currentTarget.value;
+  pickDatePreset(name, value) {
     const definition = this.config[name];
     const control = this.control(name, definition);
+    if (value === "custom") {
+      this.toggleDatePopover(name, definition, { ...control, type: "date_range", preset: "custom" });
+      return;
+    }
+    this.openDate = null;
+    this.dateDraft = null;
     this.updateControl(name, {
       ...control,
       type: "date_range",
       preset: value,
-      from: value === "custom" ? control.from ?? "" : "",
-      to: value === "custom" ? control.to ?? "" : ""
+      from: "",
+      to: ""
     });
   }
-  setDateValue(name, key, event) {
+  toggleDatePopover(name, definition, control) {
+    if (!definition.custom) return;
+    if (this.openDate === name) {
+      this.openDate = null;
+      this.dateDraft = null;
+      return;
+    }
+    this.openDate = name;
+    this.dateDraft = this.createDateDraft(name, definition, control);
+  }
+  activeDateDraft(name, definition, control) {
+    if (this.dateDraft?.filter === name) return this.dateDraft;
+    const draft = this.createDateDraft(name, definition, control);
+    this.dateDraft = draft;
+    return draft;
+  }
+  createDateDraft(name, definition, control) {
+    const from = control.from ?? "";
+    const to = control.to ?? "";
+    return {
+      filter: name,
+      from,
+      to,
+      month: monthSeed(definition, from, to)
+    };
+  }
+  shiftDraftMonth(delta) {
+    if (!this.dateDraft) return;
+    const month = parseMonth(this.dateDraft.month);
+    month.setMonth(month.getMonth() + delta);
+    this.dateDraft = { ...this.dateDraft, month: formatMonth(month) };
+  }
+  pickDraftDay(value) {
+    if (!this.dateDraft) return;
+    const { from, to } = this.dateDraft;
+    if (!from || from && to) {
+      this.dateDraft = { ...this.dateDraft, from: value, to: "" };
+      return;
+    }
+    if (value < from) {
+      this.dateDraft = { ...this.dateDraft, from: value, to: from };
+      return;
+    }
+    this.dateDraft = { ...this.dateDraft, to: value };
+  }
+  setDraftDate(key, event) {
+    if (!this.dateDraft) return;
+    const value = event.currentTarget.value;
+    const next = { ...this.dateDraft, [key]: value };
+    if (value) {
+      next.month = value.slice(0, 7);
+    }
+    if (next.from && next.to && next.to < next.from) {
+      const from = next.to;
+      next.to = next.from;
+      next.from = from;
+    }
+    this.dateDraft = next;
+  }
+  clearDateDraft(name, definition) {
+    this.openDate = null;
+    this.dateDraft = null;
+    this.updateControl(name, defaultControl(definition));
+  }
+  applyDateDraft(name) {
+    if (!this.dateDraft) return;
     const definition = this.config[name];
     const control = this.control(name, definition);
-    this.updateControl(name, { ...control, type: "date_range", preset: "custom", [key]: event.currentTarget.value });
+    this.openDate = null;
+    this.updateControl(name, {
+      ...control,
+      type: "date_range",
+      preset: "custom",
+      from: this.dateDraft.from,
+      to: this.dateDraft.to
+    });
+    this.dateDraft = null;
+  }
+  handleDatePopoverKey(name, event) {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      this.openDate = null;
+      this.dateDraft = null;
+    }
+    if (event.key === "Enter" && event.metaKey) {
+      event.stopPropagation();
+      this.applyDateDraft(name);
+    }
   }
   toggleValue(name, value) {
     const definition = this.config[name];
@@ -992,6 +1378,10 @@ var FilterPanel = class extends i4 {
   }
   clearFilter(name) {
     const definition = this.config[name];
+    if (this.openDate === name) {
+      this.openDate = null;
+      this.dateDraft = null;
+    }
     this.updateControl(name, defaultControl(definition));
   }
   activeCount() {
@@ -1030,18 +1420,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], FilterPanel.prototype, "searches", 2);
-function defaultControl(definition) {
-  switch (definition.type) {
-    case "date_range":
-      return { type: "date_range", preset: definition.default?.preset || "all", from: definition.default?.from || "", to: definition.default?.to || "" };
-    case "multi_select":
-      return { type: "multi_select", operator: definition.operator || "in", values: [...definition.default?.values ?? []] };
-    case "text":
-      return { type: "text", operator: definition.default?.operator || definition.defaultOperator || "contains", value: definition.default?.value || "" };
-    default:
-      return { type: definition.type || "" };
-  }
-}
+__decorateClass([
+  r5()
+], FilterPanel.prototype, "openDate", 2);
+__decorateClass([
+  r5()
+], FilterPanel.prototype, "dateDraft", 2);
 function operatorLabel(operator) {
   switch (operator) {
     case "equals":
@@ -1053,6 +1437,66 @@ function operatorLabel(operator) {
     default:
       return "Contains";
   }
+}
+function presetShortLabel(preset) {
+  if (preset.value === "all") return "All";
+  if (preset.relativeDays) return `${preset.relativeDays}d`;
+  return preset.label.replace(/^Latest\s+/i, "");
+}
+function dateSummary(definition, control) {
+  if (control.from || control.to) {
+    if (control.from && control.to) return `${formatReadableDate(control.from)} - ${formatReadableDate(control.to)}`;
+    if (control.from) return `From ${formatReadableDate(control.from)}`;
+    return `Until ${formatReadableDate(control.to ?? "")}`;
+  }
+  const preset = control.preset || definition.default?.preset || "all";
+  return (definition.presets ?? []).find((item) => item.value === preset)?.label ?? "Custom range";
+}
+function monthSeed(definition, from, to) {
+  if (from) return from.slice(0, 7);
+  if (to) return to.slice(0, 7);
+  const datedPreset = (definition.presets ?? []).find((item) => item.from);
+  if (datedPreset?.from) return datedPreset.from.slice(0, 7);
+  return formatMonth(/* @__PURE__ */ new Date());
+}
+function parseMonth(month) {
+  const [year, index] = month.split("-").map((part) => Number(part));
+  if (!year || !index) return new Date((/* @__PURE__ */ new Date()).getFullYear(), (/* @__PURE__ */ new Date()).getMonth(), 1);
+  return new Date(year, index - 1, 1);
+}
+function formatMonth(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+function monthTitle(date) {
+  return new Intl.DateTimeFormat(void 0, { month: "short", year: "numeric" }).format(date);
+}
+function calendarDays(month) {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const mondayOffset = (first.getDay() + 6) % 7;
+  const start = new Date(first);
+  start.setDate(first.getDate() - mondayOffset);
+  return Array.from({ length: 42 }, (_2, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return {
+      value: formatDate(date),
+      day: date.getDate(),
+      month: date.getMonth()
+    };
+  });
+}
+function formatDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+function formatReadableDate(value) {
+  if (!value) return "";
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat(void 0, { month: "short", day: "numeric", year: "numeric" }).format(new Date(year, month - 1, day));
+}
+function isInRange(value, from, to) {
+  if (!from || !to) return false;
+  return value > from && value < to;
 }
 customElements.define("ld-filter-panel", FilterPanel);
 /*! Bundled license information:

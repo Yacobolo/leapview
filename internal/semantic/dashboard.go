@@ -2,7 +2,10 @@ package semantic
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"gopkg.in/yaml.v3"
@@ -21,18 +24,22 @@ type Dashboard struct {
 }
 
 type FilterDefinition struct {
-	Type            string         `yaml:"type" json:"type"`
-	Label           string         `yaml:"label" json:"label"`
-	Dataset         string         `yaml:"dataset" json:"dataset"`
-	Dimension       string         `yaml:"dimension" json:"dimension"`
-	Default         FilterDefault  `yaml:"default" json:"default"`
-	Custom          bool           `yaml:"custom" json:"custom,omitempty"`
-	Presets         []FilterPreset `yaml:"presets" json:"presets,omitempty"`
-	Operator        string         `yaml:"operator" json:"operator,omitempty"`
-	Values          FilterValues   `yaml:"values" json:"values,omitempty"`
-	DefaultOperator string         `yaml:"default_operator" json:"defaultOperator,omitempty"`
-	Operators       []string       `yaml:"operators" json:"operators,omitempty"`
-	Options         []FilterOption `yaml:"options" json:"options,omitempty"`
+	Type             string         `yaml:"type" json:"type"`
+	Label            string         `yaml:"label" json:"label"`
+	Dataset          string         `yaml:"dataset" json:"dataset"`
+	Dimension        string         `yaml:"dimension" json:"dimension"`
+	Default          FilterDefault  `yaml:"default" json:"default"`
+	Custom           bool           `yaml:"custom" json:"custom,omitempty"`
+	Presets          []FilterPreset `yaml:"presets" json:"presets,omitempty"`
+	Operator         string         `yaml:"operator" json:"operator,omitempty"`
+	Values           FilterValues   `yaml:"values" json:"values,omitempty"`
+	DefaultOperator  string         `yaml:"default_operator" json:"defaultOperator,omitempty"`
+	Operators        []string       `yaml:"operators" json:"operators,omitempty"`
+	Options          []FilterOption `yaml:"options" json:"options,omitempty"`
+	URLParam         string         `yaml:"url_param" json:"urlParam,omitempty"`
+	FromURLParam     string         `yaml:"from_url_param" json:"fromURLParam,omitempty"`
+	ToURLParam       string         `yaml:"to_url_param" json:"toURLParam,omitempty"`
+	OperatorURLParam string         `yaml:"operator_url_param" json:"operatorURLParam,omitempty"`
 }
 
 type FilterOption struct {
@@ -157,6 +164,9 @@ func (d *Dashboard) Validate(model *Model) error {
 		}
 		switch filter.Type {
 		case "date_range":
+			if filter.URLParam == "" || filter.FromURLParam == "" || filter.ToURLParam == "" {
+				return fmt.Errorf("filter %q date_range requires url_param, from_url_param, and to_url_param", name)
+			}
 			if len(filter.Presets) == 0 {
 				return fmt.Errorf("filter %q date_range requires presets", name)
 			}
@@ -193,6 +203,9 @@ func (d *Dashboard) Validate(model *Model) error {
 			if len(filter.Operators) == 0 {
 				return fmt.Errorf("filter %q text requires operators", name)
 			}
+			if filter.OperatorURLParam != "" && filter.URLParam == "" {
+				return fmt.Errorf("filter %q operator_url_param requires url_param", name)
+			}
 			if !containsString(filter.Operators, filter.DefaultOperator) {
 				return fmt.Errorf("filter %q has unsupported default operator %q", name, filter.DefaultOperator)
 			}
@@ -204,6 +217,9 @@ func (d *Dashboard) Validate(model *Model) error {
 		default:
 			return fmt.Errorf("filter %q has unsupported type %q", name, filter.Type)
 		}
+	}
+	if err := d.validateFilterURLParams(); err != nil {
+		return err
 	}
 	for name, kpi := range d.KPIs {
 		if kpi.Title == "" || kpi.Dataset == "" || kpi.Measure == "" {
@@ -327,6 +343,22 @@ func (d *Dashboard) Validate(model *Model) error {
 	return nil
 }
 
+func (d *Dashboard) validateFilterURLParams() error {
+	seen := map[string]string{}
+	for name, filter := range d.Filters {
+		for _, param := range []string{filter.URLParam, filter.FromURLParam, filter.ToURLParam, filter.OperatorURLParam} {
+			if param == "" {
+				continue
+			}
+			if owner, exists := seen[param]; exists {
+				return fmt.Errorf("filter %q url param %q duplicates filter %q", name, param, owner)
+			}
+			seen[param] = name
+		}
+	}
+	return nil
+}
+
 func (d *Dashboard) DefaultFilters() dashboard.Filters {
 	filters := dashboard.Filters{
 		Controls:         map[string]dashboard.FilterControl{},
@@ -352,6 +384,174 @@ func (d *Dashboard) DefaultFilters() dashboard.Filters {
 		filters.Controls[name] = control
 	}
 	return filters.WithDefaults()
+}
+
+func (d *Dashboard) FiltersFromURL(values url.Values) dashboard.Filters {
+	filters := d.DefaultFilters()
+	for _, name := range sortedFilterNames(d.Filters) {
+		filter := d.Filters[name]
+		control := filters.Controls[name]
+		switch filter.Type {
+		case "date_range":
+			control = d.dateFilterFromURL(filter, control, values)
+		case "multi_select":
+			if filter.URLParam != "" {
+				control.Values = compactStrings(values[filter.URLParam])
+			}
+		case "text":
+			if filter.URLParam != "" {
+				control.Value = strings.TrimSpace(values.Get(filter.URLParam))
+			}
+			if filter.OperatorURLParam != "" {
+				operator := strings.TrimSpace(values.Get(filter.OperatorURLParam))
+				if containsString(filter.Operators, operator) {
+					control.Operator = operator
+				}
+			}
+		}
+		filters.Controls[name] = control
+	}
+	return filters.WithDefaults()
+}
+
+func (d *Dashboard) dateFilterFromURL(filter FilterDefinition, control dashboard.FilterControl, values url.Values) dashboard.FilterControl {
+	preset := strings.TrimSpace(values.Get(filter.URLParam))
+	from := strings.TrimSpace(values.Get(filter.FromURLParam))
+	to := strings.TrimSpace(values.Get(filter.ToURLParam))
+	if from != "" || to != "" {
+		control.Preset = "custom"
+		control.From = from
+		control.To = to
+		return control
+	}
+	if preset == "" {
+		control.From = ""
+		control.To = ""
+		return control
+	}
+	if preset == "custom" {
+		control.Preset = "custom"
+		control.From = ""
+		control.To = ""
+		return control
+	}
+	if d.hasPreset(filter, preset) {
+		control.Preset = preset
+		control.From = ""
+		control.To = ""
+	}
+	return control
+}
+
+func (d *Dashboard) hasPreset(filter FilterDefinition, preset string) bool {
+	for _, item := range filter.Presets {
+		if item.Value == preset {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Dashboard) URLParamShape() map[string]any {
+	shape := map[string]any{}
+	for _, name := range sortedFilterNames(d.Filters) {
+		filter := d.Filters[name]
+		switch filter.Type {
+		case "date_range":
+			addStringShape(shape, filter.URLParam)
+			addStringShape(shape, filter.FromURLParam)
+			addStringShape(shape, filter.ToURLParam)
+		case "multi_select":
+			if filter.URLParam != "" {
+				shape[filter.URLParam] = []string{}
+			}
+		case "text":
+			addStringShape(shape, filter.URLParam)
+			addStringShape(shape, filter.OperatorURLParam)
+		}
+	}
+	return shape
+}
+
+func (d *Dashboard) URLParamsFromFilters(filters dashboard.Filters) map[string]any {
+	params := map[string]any{}
+	defaults := d.DefaultFilters()
+	filters = filters.WithDefaults()
+	for _, name := range sortedFilterNames(d.Filters) {
+		filter := d.Filters[name]
+		control, ok := filters.Controls[name]
+		if !ok {
+			control = defaults.Controls[name]
+		}
+		switch filter.Type {
+		case "date_range":
+			defaultPreset := defaults.Controls[name].Preset
+			if control.From != "" || control.To != "" || control.Preset == "custom" {
+				params[filter.URLParam] = "custom"
+				addStringParam(params, filter.FromURLParam, control.From)
+				addStringParam(params, filter.ToURLParam, control.To)
+				continue
+			}
+			if control.Preset != "" && control.Preset != defaultPreset {
+				params[filter.URLParam] = control.Preset
+			}
+		case "multi_select":
+			if filter.URLParam != "" && len(control.Values) > 0 {
+				params[filter.URLParam] = append([]string{}, control.Values...)
+			}
+		case "text":
+			value := strings.TrimSpace(control.Value)
+			if filter.URLParam == "" || value == "" {
+				continue
+			}
+			params[filter.URLParam] = value
+			defaultOperator := defaults.Controls[name].Operator
+			if filter.OperatorURLParam != "" && control.Operator != "" && control.Operator != defaultOperator {
+				params[filter.OperatorURLParam] = control.Operator
+			}
+		}
+	}
+	return params
+}
+
+func addStringShape(shape map[string]any, param string) {
+	if param != "" {
+		shape[param] = ""
+	}
+}
+
+func addStringParam(params map[string]any, param, value string) {
+	value = strings.TrimSpace(value)
+	if param != "" && value != "" {
+		params[param] = value
+	}
+}
+
+func compactStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	next := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		next = append(next, value)
+	}
+	sort.Strings(next)
+	return next
+}
+
+func sortedFilterNames(filters map[string]FilterDefinition) []string {
+	names := make([]string, 0, len(filters))
+	for name := range filters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func containsString(values []string, value string) bool {

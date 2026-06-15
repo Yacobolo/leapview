@@ -18,11 +18,12 @@ func updateAction(dashboardID, pageID string) string {
 	return "@get('/updates?dashboard=" + dashboardID + "&page=" + pageID + "', {openWhenHidden: true})"
 }
 
-func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page) g.Node {
+func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
 	action := updateAction(report.ID, activePage.ID)
+	initAction := "window.DatastarURLSync && window.DatastarURLSync.bindPopstate($urlParamShape); " + action
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash",
 		Language: "en",
@@ -38,6 +39,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
 			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
 			h.Script(h.Type("module"), h.Src("/static/theme.js")),
+			h.Script(h.Type("module"), h.Src("/static/url-sync.js")),
 			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-dock.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-panel.js")),
@@ -52,8 +54,9 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Main(
 				h.ID("dashboard"),
 				h.Class("report-app"),
-				ds.Signals(initialSignals(dataDir, clientID, report, model, activePage)),
-				ds.Init(action),
+				ds.Signals(initialSignals(dataDir, clientID, report, model, activePage, initialFilters)),
+				ds.Init(initAction),
+				g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); $tableCommand.offset = 0; "+action),
 				h.Div(h.Class("app-shell"),
 					sidebar(sidebarConfigForReport(catalog, report, model, activePage), true, "@post('/commands/refresh-cache?model="+model.Name+"&dashboard="+report.ID+"')"),
 					h.Section(h.Class("app-main report-main"), h.Aria("label", "LibreDash report canvas"),
@@ -341,8 +344,9 @@ func jsonString(value any) string {
 	return string(bytes)
 }
 
-func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page) map[string]any {
+func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page, initialFilters dashboard.Filters) map[string]any {
 	tableRequest := defaultTableRequest(report)
+	initialFilters = initialFilters.WithDefaults()
 	return map[string]any{
 		"runtime": map[string]any{
 			"clientId":    clientID,
@@ -350,7 +354,10 @@ func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *
 			"pageId":      activePage.ID,
 			"modelId":     model.Name,
 		},
-		"filters":       report.DefaultFilters(),
+		"filterConfig":  report.Filters,
+		"filters":       initialFilters,
+		"urlParams":     report.URLParamsFromFilters(initialFilters),
+		"urlParamShape": report.URLParamShape(),
 		"filterOptions": map[string]any{},
 		"chartCommand": map[string]any{
 			"visualId": "",
@@ -567,8 +574,8 @@ func filtersPane(report semantic.Dashboard, action string) g.Node {
 			g.Attr("data-attr:filters", "$filters"),
 			g.Attr("data-attr:options", "$filterOptions"),
 			g.Attr("data-attr:loading", "$status.loading"),
-			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $tableCommand.offset = 0; "+action),
-			g.Attr("data-on:ld-filters-reset", "$filters = evt.detail.filters; $tableCommand.offset = 0; @post('/commands/reset-filters')"),
+			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); $tableCommand.offset = 0; "+action),
+			g.Attr("data-on:ld-filters-reset", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); $tableCommand.offset = 0; @post('/commands/reset-filters')"),
 			g.Attr("data-on:ld-filters-refresh", action),
 			g.Attr("data-on:ld-visual-selection-clear", "$filters.visualSelections = []; @post('/commands/clear-selection')"),
 		),

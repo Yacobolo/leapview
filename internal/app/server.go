@@ -108,7 +108,8 @@ func (s *Server) renderPage(w http.ResponseWriter, r *http.Request, dashboardID,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.Page(s.metrics.DataDir(), clientID, s.metrics.Catalog(), report, model, pages, activePage).Render(w); err != nil {
+	initialFilters := report.FiltersFromURL(r.URL.Query())
+	if err := ui.Page(s.metrics.DataDir(), clientID, s.metrics.Catalog(), report, model, pages, activePage, initialFilters).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

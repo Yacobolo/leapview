@@ -1,65 +1,32 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
-
-type FilterType = 'date_range' | 'multi_select' | 'text'
-
-type FilterDefinition = {
-  type: FilterType
-  label: string
-  dataset: string
-  dimension: string
-  default?: FilterDefault
-  custom?: boolean
-  presets?: DatePreset[]
-  operator?: string
-  values?: { source?: string; limit?: number }
-  defaultOperator?: string
-  operators?: string[]
-}
-
-type FilterDefault = {
-  preset?: string
-  from?: string
-  to?: string
-  operator?: string
-  value?: string
-  values?: string[]
-}
-
-type DatePreset = {
-  value: string
-  label: string
-  from?: string
-  to?: string
-  relativeDays?: number
-}
-
-type FilterControl = {
-  type: FilterType | string
-  operator?: string
-  preset?: string
-  from?: string
-  to?: string
-  value?: string
-  values?: string[]
-}
-
-type VisualSelection = {
-  label?: string
-  values?: string[]
-}
-
-type FiltersSignal = {
-  controls: Record<string, FilterControl>
-  visualSelections: VisualSelection[]
-}
+import {
+  defaultControl,
+  emptyFilters,
+  filtersToURLParams,
+  type DatePreset,
+  type FilterControl,
+  type FilterDefinition,
+  type FiltersSignal,
+} from './filter-url'
 
 type FilterOption = {
   value: string
   label: string
 }
 
-const emptyFilters: FiltersSignal = { controls: {}, visualSelections: [] }
+type DateDraft = {
+  filter: string
+  from: string
+  to: string
+  month: string
+}
+
+type CalendarDay = {
+  value: string
+  day: number
+  month: number
+}
 
 const jsonConverter = <T,>(fallback: T) => ({
   fromAttribute(value: string | null): T {
@@ -81,6 +48,8 @@ class FilterPanel extends LitElement {
   @property({ attribute: 'options', converter: jsonConverter<Record<string, FilterOption[]>>({}) }) options: Record<string, FilterOption[]> = {}
   @property({ type: Boolean, reflect: true }) loading = false
   @state() private searches: Record<string, string> = {}
+  @state() private openDate: string | null = null
+  @state() private dateDraft: DateDraft | null = null
 
   static styles = css`
     :host {
@@ -171,7 +140,12 @@ class FilterPanel extends LitElement {
 
     .clear:disabled,
     .reset:disabled,
-    .refresh:disabled {
+    .refresh:disabled,
+    .preset:disabled,
+    .date-trigger:disabled,
+    .calendar-nav:disabled,
+    .day:disabled,
+    .popover-action:disabled {
       cursor: default;
       opacity: 0.55;
     }
@@ -182,10 +156,173 @@ class FilterPanel extends LitElement {
       gap: 6px;
     }
 
+    .date-filter {
+      position: relative;
+      display: grid;
+      gap: 6px;
+    }
+
+    .preset-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+    }
+
+    .preset,
+    .date-trigger,
+    .calendar-nav,
+    .day,
+    .popover-action {
+      border: 1px solid var(--borderColor-default);
+      border-radius: 4px;
+      background: var(--control-bgColor-rest);
+      color: var(--fgColor-default);
+      cursor: pointer;
+      font-weight: 850;
+    }
+
+    .preset {
+      min-width: 0;
+      min-height: 27px;
+      overflow: hidden;
+      padding: 0 6px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.64rem;
+    }
+
+    .preset.custom {
+      grid-column: 1 / -1;
+    }
+
+    .preset[aria-pressed='true'] {
+      border-color: var(--ld-accent);
+      background: color-mix(in srgb, var(--ld-accent) 20%, var(--control-bgColor-rest));
+      color: var(--fgColor-default);
+    }
+
+    .date-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 32px;
+      padding: 0 9px;
+      text-align: left;
+      font-size: 0.72rem;
+    }
+
+    .date-trigger span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .date-popover {
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: grid;
+      gap: 7px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 6px;
+      background: var(--overlay-bgColor, var(--bgColor-default));
+      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      padding: 8px;
+    }
+
+    .calendar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .calendar-title {
+      color: var(--fgColor-default);
+      font-size: 0.67rem;
+      font-weight: 900;
+    }
+
+    .calendar-nav {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      font-size: 0.8rem;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 2px;
+    }
+
+    .weekday {
+      color: var(--fgColor-muted);
+      text-align: center;
+      font-size: 0.52rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .day {
+      aspect-ratio: 1;
+      min-height: 0;
+      padding: 0;
+      border-color: transparent;
+      background: transparent;
+      color: var(--fgColor-default);
+      font-size: 0.58rem;
+    }
+
+    .day.outside {
+      color: var(--fgColor-muted);
+      opacity: 0.45;
+    }
+
+    .day.in-range {
+      background: color-mix(in srgb, var(--ld-accent) 16%, transparent);
+    }
+
+    .day.selected {
+      border-color: var(--ld-accent);
+      background: var(--ld-accent);
+      color: var(--button-primary-fgColor-rest);
+    }
+
     .date-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 6px;
+    }
+
+    .date-field {
+      display: grid;
+      gap: 3px;
+      color: var(--fgColor-muted);
+      font-size: 0.52rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .popover-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+    }
+
+    .popover-action {
+      min-height: 24px;
+      padding: 0 5px;
+      font-size: 0.6rem;
+    }
+
+    .popover-action.primary {
+      border-color: var(--button-primary-bgColor-rest);
+      background: var(--button-primary-bgColor-rest);
+      color: var(--button-primary-fgColor-rest);
     }
 
     input,
@@ -326,20 +463,87 @@ class FilterPanel extends LitElement {
 
   private renderDate(name: string, definition: FilterDefinition, control: FilterControl) {
     const preset = control.preset || definition.default?.preset || 'all'
-    const showCustom = definition.custom && (preset === 'custom' || control.from || control.to)
+    const showCustom = definition.custom && (preset === 'custom' || control.from || control.to || this.openDate === name)
+    const presets = [...(definition.presets ?? [])]
+    if (definition.custom) {
+      presets.push({ value: 'custom', label: 'Custom' })
+    }
     return html`
-      <div class="input-row">
-        <select aria-label=${definition.label} .value=${showCustom ? 'custom' : preset} @change=${(event: Event) => this.setDatePreset(name, event)}>
-          ${(definition.presets ?? []).map((item) => html`<option value=${item.value}>${item.label}</option>`)}
-          ${definition.custom ? html`<option value="custom">Custom range</option>` : nothing}
-        </select>
+      <div class="date-filter">
+        <button
+          class="date-trigger"
+          type="button"
+          aria-expanded=${this.openDate === name ? 'true' : 'false'}
+          ?disabled=${this.loading || !definition.custom}
+          @click=${() => this.toggleDatePopover(name, definition, control)}
+        >
+          <span>${dateSummary(definition, control)}</span>
+          <span aria-hidden="true">▾</span>
+        </button>
+        <div class="preset-row" role="group" aria-label=${definition.label}>
+          ${presets.map((item) => html`
+            <button
+              class=${`preset ${item.value === 'custom' ? 'custom' : ''}`}
+              type="button"
+              aria-pressed=${(showCustom ? 'custom' : preset) === item.value ? 'true' : 'false'}
+              ?disabled=${this.loading}
+              @click=${() => this.pickDatePreset(name, item.value)}
+            >${presetShortLabel(item)}</button>
+          `)}
+        </div>
         ${showCustom
-          ? html`<div class="date-row">
-              <input type="date" aria-label="${definition.label} from" .value=${control.from ?? ''} @input=${(event: Event) => this.setDateValue(name, 'from', event)} />
-              <input type="date" aria-label="${definition.label} to" .value=${control.to ?? ''} @input=${(event: Event) => this.setDateValue(name, 'to', event)} />
-            </div>`
+          ? this.renderDatePopover(name, definition, control)
           : nothing}
       </div>
+    `
+  }
+
+  private renderDatePopover(name: string, definition: FilterDefinition, control: FilterControl) {
+    if (this.openDate !== name) return nothing
+    const draft = this.activeDateDraft(name, definition, control)
+    const month = parseMonth(draft.month)
+    const days = calendarDays(month)
+    return html`
+      <div class="date-popover" @keydown=${(event: KeyboardEvent) => this.handleDatePopoverKey(name, event)}>
+        <div class="calendar-head">
+          <button class="calendar-nav" type="button" aria-label="Previous month" @click=${() => this.shiftDraftMonth(-1)}>‹</button>
+          <div class="calendar-title">${monthTitle(month)}</div>
+          <button class="calendar-nav" type="button" aria-label="Next month" @click=${() => this.shiftDraftMonth(1)}>›</button>
+        </div>
+        <div class="calendar-grid">
+          ${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) => html`<div class="weekday">${day}</div>`)}
+          ${days.map((day) => this.renderCalendarDay(day, month, draft))}
+        </div>
+        <div class="date-row">
+          <label class="date-field">
+            From
+            <input type="date" .value=${draft.from} @input=${(event: Event) => this.setDraftDate('from', event)} />
+          </label>
+          <label class="date-field">
+            To
+            <input type="date" .value=${draft.to} @input=${(event: Event) => this.setDraftDate('to', event)} />
+          </label>
+        </div>
+        <div class="popover-actions">
+          <button class="popover-action" type="button" @click=${() => this.clearDateDraft(name, definition)}>Clear</button>
+          <button class="popover-action" type="button" @click=${this.cancelDateDraft}>Cancel</button>
+          <button class="popover-action primary" type="button" @click=${() => this.applyDateDraft(name)}>Apply</button>
+        </div>
+      </div>
+    `
+  }
+
+  private renderCalendarDay(day: CalendarDay, month: Date, draft: DateDraft) {
+    const selected = day.value === draft.from || day.value === draft.to
+    const inRange = isInRange(day.value, draft.from, draft.to)
+    const classes = ['day']
+    if (day.month !== month.getMonth()) classes.push('outside')
+    if (inRange) classes.push('in-range')
+    if (selected) classes.push('selected')
+    return html`
+      <button class=${classes.join(' ')} type="button" @click=${() => this.pickDraftDay(day.value)}>
+        ${day.day}
+      </button>
     `
   }
 
@@ -402,7 +606,7 @@ class FilterPanel extends LitElement {
   }
 
   private emitChange(filters: FiltersSignal): void {
-    this.dispatchEvent(new CustomEvent('ld-filters-change', { detail: { filters }, bubbles: true, composed: true }))
+    this.dispatchEvent(new CustomEvent('ld-filters-change', { detail: { filters, urlParams: filtersToURLParams(this.config, filters) }, bubbles: true, composed: true }))
   }
 
   private updateControl(name: string, control: FilterControl): void {
@@ -411,23 +615,125 @@ class FilterPanel extends LitElement {
     this.emitChange(filters)
   }
 
-  private setDatePreset(name: string, event: Event): void {
-    const value = (event.currentTarget as HTMLSelectElement).value
+  private pickDatePreset(name: string, value: string): void {
     const definition = this.config[name]
     const control = this.control(name, definition)
+    if (value === 'custom') {
+      this.toggleDatePopover(name, definition, { ...control, type: 'date_range', preset: 'custom' })
+      return
+    }
+    this.openDate = null
+    this.dateDraft = null
     this.updateControl(name, {
       ...control,
       type: 'date_range',
       preset: value,
-      from: value === 'custom' ? control.from ?? '' : '',
-      to: value === 'custom' ? control.to ?? '' : '',
+      from: '',
+      to: '',
     })
   }
 
-  private setDateValue(name: string, key: 'from' | 'to', event: Event): void {
+  private toggleDatePopover(name: string, definition: FilterDefinition, control: FilterControl): void {
+    if (!definition.custom) return
+    if (this.openDate === name) {
+      this.openDate = null
+      this.dateDraft = null
+      return
+    }
+    this.openDate = name
+    this.dateDraft = this.createDateDraft(name, definition, control)
+  }
+
+  private activeDateDraft(name: string, definition: FilterDefinition, control: FilterControl): DateDraft {
+    if (this.dateDraft?.filter === name) return this.dateDraft
+    const draft = this.createDateDraft(name, definition, control)
+    this.dateDraft = draft
+    return draft
+  }
+
+  private createDateDraft(name: string, definition: FilterDefinition, control: FilterControl): DateDraft {
+    const from = control.from ?? ''
+    const to = control.to ?? ''
+    return {
+      filter: name,
+      from,
+      to,
+      month: monthSeed(definition, from, to),
+    }
+  }
+
+  private shiftDraftMonth(delta: number): void {
+    if (!this.dateDraft) return
+    const month = parseMonth(this.dateDraft.month)
+    month.setMonth(month.getMonth() + delta)
+    this.dateDraft = { ...this.dateDraft, month: formatMonth(month) }
+  }
+
+  private pickDraftDay(value: string): void {
+    if (!this.dateDraft) return
+    const { from, to } = this.dateDraft
+    if (!from || (from && to)) {
+      this.dateDraft = { ...this.dateDraft, from: value, to: '' }
+      return
+    }
+    if (value < from) {
+      this.dateDraft = { ...this.dateDraft, from: value, to: from }
+      return
+    }
+    this.dateDraft = { ...this.dateDraft, to: value }
+  }
+
+  private setDraftDate(key: 'from' | 'to', event: Event): void {
+    if (!this.dateDraft) return
+    const value = (event.currentTarget as HTMLInputElement).value
+    const next = { ...this.dateDraft, [key]: value }
+    if (value) {
+      next.month = value.slice(0, 7)
+    }
+    if (next.from && next.to && next.to < next.from) {
+      const from = next.to
+      next.to = next.from
+      next.from = from
+    }
+    this.dateDraft = next
+  }
+
+  private clearDateDraft(name: string, definition: FilterDefinition): void {
+    this.openDate = null
+    this.dateDraft = null
+    this.updateControl(name, defaultControl(definition))
+  }
+
+  private cancelDateDraft = (): void => {
+    this.openDate = null
+    this.dateDraft = null
+  }
+
+  private applyDateDraft(name: string): void {
+    if (!this.dateDraft) return
     const definition = this.config[name]
     const control = this.control(name, definition)
-    this.updateControl(name, { ...control, type: 'date_range', preset: 'custom', [key]: (event.currentTarget as HTMLInputElement).value })
+    this.openDate = null
+    this.updateControl(name, {
+      ...control,
+      type: 'date_range',
+      preset: 'custom',
+      from: this.dateDraft.from,
+      to: this.dateDraft.to,
+    })
+    this.dateDraft = null
+  }
+
+  private handleDatePopoverKey(name: string, event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.stopPropagation()
+      this.openDate = null
+      this.dateDraft = null
+    }
+    if (event.key === 'Enter' && event.metaKey) {
+      event.stopPropagation()
+      this.applyDateDraft(name)
+    }
   }
 
   private toggleValue(name: string, value: string): void {
@@ -460,6 +766,10 @@ class FilterPanel extends LitElement {
 
   private clearFilter(name: string): void {
     const definition = this.config[name]
+    if (this.openDate === name) {
+      this.openDate = null
+      this.dateDraft = null
+    }
     this.updateControl(name, defaultControl(definition))
   }
 
@@ -472,7 +782,9 @@ class FilterPanel extends LitElement {
     for (const [name, definition] of Object.entries(this.config)) {
       filters.controls[name] = defaultControl(definition)
     }
-    this.dispatchEvent(new CustomEvent('ld-filters-reset', { detail: { filters }, bubbles: true, composed: true }))
+    this.openDate = null
+    this.dateDraft = null
+    this.dispatchEvent(new CustomEvent('ld-filters-reset', { detail: { filters, urlParams: filtersToURLParams(this.config, filters) }, bubbles: true, composed: true }))
   }
 
   private refresh = (): void => {
@@ -502,19 +814,6 @@ class FilterPanel extends LitElement {
   }
 }
 
-function defaultControl(definition: FilterDefinition): FilterControl {
-  switch (definition.type) {
-    case 'date_range':
-      return { type: 'date_range', preset: definition.default?.preset || 'all', from: definition.default?.from || '', to: definition.default?.to || '' }
-    case 'multi_select':
-      return { type: 'multi_select', operator: definition.operator || 'in', values: [...(definition.default?.values ?? [])] }
-    case 'text':
-      return { type: 'text', operator: definition.default?.operator || definition.defaultOperator || 'contains', value: definition.default?.value || '' }
-    default:
-      return { type: definition.type || '' }
-  }
-}
-
 function operatorLabel(operator: string): string {
   switch (operator) {
     case 'equals':
@@ -526,6 +825,76 @@ function operatorLabel(operator: string): string {
     default:
       return 'Contains'
   }
+}
+
+function presetShortLabel(preset: DatePreset): string {
+  if (preset.value === 'all') return 'All'
+  if (preset.relativeDays) return `${preset.relativeDays}d`
+  return preset.label.replace(/^Latest\s+/i, '')
+}
+
+function dateSummary(definition: FilterDefinition, control: FilterControl): string {
+  if (control.from || control.to) {
+    if (control.from && control.to) return `${formatReadableDate(control.from)} - ${formatReadableDate(control.to)}`
+    if (control.from) return `From ${formatReadableDate(control.from)}`
+    return `Until ${formatReadableDate(control.to ?? '')}`
+  }
+  const preset = control.preset || definition.default?.preset || 'all'
+  return (definition.presets ?? []).find((item) => item.value === preset)?.label ?? 'Custom range'
+}
+
+function monthSeed(definition: FilterDefinition, from: string, to: string): string {
+  if (from) return from.slice(0, 7)
+  if (to) return to.slice(0, 7)
+  const datedPreset = (definition.presets ?? []).find((item) => item.from)
+  if (datedPreset?.from) return datedPreset.from.slice(0, 7)
+  return formatMonth(new Date())
+}
+
+function parseMonth(month: string): Date {
+  const [year, index] = month.split('-').map((part) => Number(part))
+  if (!year || !index) return new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  return new Date(year, index - 1, 1)
+}
+
+function formatMonth(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthTitle(date: Date): string {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' }).format(date)
+}
+
+function calendarDays(month: Date): CalendarDay[] {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1)
+  const mondayOffset = (first.getDay() + 6) % 7
+  const start = new Date(first)
+  start.setDate(first.getDate() - mondayOffset)
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start)
+    date.setDate(start.getDate() + index)
+    return {
+      value: formatDate(date),
+      day: date.getDate(),
+      month: date.getMonth(),
+    }
+  })
+}
+
+function formatDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatReadableDate(value: string): string {
+  if (!value) return ''
+  const [year, month, day] = value.split('-').map((part) => Number(part))
+  if (!year || !month || !day) return value
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(year, month - 1, day))
+}
+
+function isInRange(value: string, from: string, to: string): boolean {
+  if (!from || !to) return false
+  return value > from && value < to
 }
 
 customElements.define('ld-filter-panel', FilterPanel)

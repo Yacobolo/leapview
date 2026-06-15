@@ -9,6 +9,9 @@ filters:
     label: Period
     dataset: orders
     dimension: purchase_timestamp
+    url_param: period
+    from_url_param: from
+    to_url_param: to
     default:
       preset: all
     custom: true
@@ -31,6 +34,7 @@ filters:
     label: State
     dataset: orders
     dimension: state
+    url_param: state
     operator: in
     values:
       source: distinct
@@ -40,6 +44,8 @@ filters:
     label: Category
     dataset: orders
     dimension: category
+    url_param: category
+    operator_url_param: category_op
     default_operator: contains
     operators: [contains, equals, starts_with, not_contains]
 

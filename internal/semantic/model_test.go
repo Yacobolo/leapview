@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -114,6 +115,9 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Pages[1].ID; got != "operations" {
 		t.Fatalf("second page id = %q, want operations", got)
 	}
+	if got := report.Filters["purchase_date"].URLParam; got != "period" {
+		t.Fatalf("purchase_date url param = %q, want period", got)
+	}
 }
 
 func TestValidateRejectsUnknownDatasetSource(t *testing.T) {
@@ -183,6 +187,70 @@ func TestDashboardValidateRejectsInvalidDatePreset(t *testing.T) {
 	report.Filters["purchase_date"] = filter
 
 	assertDashboardValidateError(t, report, model, "requires both from and to")
+}
+
+func TestDashboardValidateRejectsDuplicateFilterURLParam(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["state"]
+	filter.URLParam = "period"
+	report.Filters["state"] = filter
+
+	assertDashboardValidateError(t, report, model, "duplicates")
+}
+
+func TestDashboardFiltersFromURL(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	values := url.Values{
+		"period":      {"custom"},
+		"from":        {"2018-01-01"},
+		"to":          {"2018-01-31"},
+		"state":       {"SP", "RJ", "SP"},
+		"category":    {"health"},
+		"category_op": {"starts_with"},
+	}
+
+	filters := report.FiltersFromURL(values)
+
+	date := filters.Controls["purchase_date"]
+	if date.Preset != "custom" || date.From != "2018-01-01" || date.To != "2018-01-31" {
+		t.Fatalf("date filter = %#v, want custom January 2018", date)
+	}
+	state := filters.Controls["state"]
+	if strings.Join(state.Values, ",") != "RJ,SP" {
+		t.Fatalf("state values = %#v, want RJ/SP", state.Values)
+	}
+	category := filters.Controls["category"]
+	if category.Value != "health" || category.Operator != "starts_with" {
+		t.Fatalf("category filter = %#v, want starts_with health", category)
+	}
+}
+
+func TestDashboardURLParamsFromFiltersOmitsDefaults(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+
+	if params := report.URLParamsFromFilters(report.DefaultFilters()); len(params) != 0 {
+		t.Fatalf("default url params = %#v, want empty", params)
+	}
+
+	filters := report.FiltersFromURL(url.Values{
+		"state":       {"SP", "RJ"},
+		"category":    {"health"},
+		"category_op": {"starts_with"},
+	})
+	params := report.URLParamsFromFilters(filters)
+
+	if got := strings.Join(params["state"].([]string), ","); got != "RJ,SP" {
+		t.Fatalf("state params = %q, want RJ,SP", got)
+	}
+	if got := params["category"]; got != "health" {
+		t.Fatalf("category param = %#v, want health", got)
+	}
+	if got := params["category_op"]; got != "starts_with" {
+		t.Fatalf("category_op param = %#v, want starts_with", got)
+	}
 }
 
 func loadOlistModel(t *testing.T) *Model {
