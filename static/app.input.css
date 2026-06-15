@@ -364,11 +364,17 @@
   }
 
   .report-canvas-shell {
+    display: grid;
     min-width: 0;
     min-height: 0;
-    overflow: auto;
+    overflow: hidden;
     padding: 22px 24px;
     background: transparent;
+  }
+
+  .report-canvas-shell > ld-report-canvas {
+    min-width: 0;
+    min-height: 0;
   }
 
   .page-tabs {

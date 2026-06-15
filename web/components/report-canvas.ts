@@ -12,12 +12,18 @@ type ZoomCommand = {
   scale?: number
 }
 
+type ZoomAnchor = {
+  x: number
+  y: number
+}
+
 class ReportCanvas extends LitElement {
   @property({ type: Number }) width = 1366
   @property({ type: Number }) height = 768
   @state() private scale = 1
   @state() private zoomMode: ZoomMode = storedZoomMode()
   private customScale = storedCustomScale()
+  private zoomAnchor?: ZoomAnchor
 
   private resizeObserver?: ResizeObserver
 
@@ -25,40 +31,57 @@ class ReportCanvas extends LitElement {
     :host {
       display: block;
       width: 100%;
+      height: 100%;
       max-width: 100%;
       min-width: 0;
+      min-height: 0;
       box-sizing: border-box;
     }
 
     .surface {
       width: 100%;
+      height: 100%;
       min-width: 0;
+      min-height: 0;
       background: var(--report-canvas-bg, var(--bgColor-inset));
     }
 
     .viewport {
       position: relative;
       width: 100%;
+      height: 100%;
       min-width: 0;
-      overflow: auto hidden;
+      min-height: 0;
+      overflow: auto;
       padding: 0;
     }
 
-    .frame {
+    .sizer {
+      display: grid;
+      width: max(100%, calc(var(--report-canvas-width) * var(--report-canvas-scale) * 1px));
+      height: max(100%, calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px));
+      min-width: 100%;
+      min-height: 100%;
+      align-items: start;
+      justify-items: center;
+    }
+
+    .frame-wrap {
       position: relative;
+      width: calc(var(--report-canvas-width) * var(--report-canvas-scale) * 1px);
+      height: calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px);
+      flex: 0 0 auto;
+    }
+
+    .frame {
+      position: absolute;
+      inset: 0 auto auto 0;
       box-sizing: border-box;
       width: calc(var(--report-canvas-width) * 1px);
       height: calc(var(--report-canvas-height) * 1px);
       transform: scale(var(--report-canvas-scale));
       transform-origin: top left;
       background: var(--report-page-bg, transparent);
-    }
-
-    .sizer {
-      position: relative;
-      width: calc(var(--report-canvas-width) * var(--report-canvas-scale) * 1px);
-      height: calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px);
-      min-width: 100%;
     }
 
     ::slotted(.canvas-visual) {
@@ -97,16 +120,24 @@ class ReportCanvas extends LitElement {
   private updateScale(): void {
     const hostRect = this.getBoundingClientRect()
     const availableWidth = Math.max(0, hostRect.width)
-    if (!availableWidth || !this.width) return
+    const availableHeight = Math.max(0, hostRect.height)
+    if (!availableWidth || !availableHeight || !this.width || !this.height) return
     const widthScale = availableWidth / this.width
-    let nextScale = widthScale
+    const heightScale = availableHeight / this.height
+    let nextScale = Math.min(widthScale, heightScale)
     if (this.zoomMode === 'custom') {
       nextScale = this.customScale
     }
     nextScale = clampScale(nextScale)
     if (Math.abs(nextScale - this.scale) > 0.001) {
+      const anchor = this.zoomAnchor
       this.scale = nextScale
       this.emitZoomState()
+      if (anchor) {
+        this.updateComplete.then(() => this.restoreZoomAnchor(anchor))
+      }
+    } else {
+      this.zoomAnchor = undefined
     }
   }
 
@@ -143,6 +174,7 @@ class ReportCanvas extends LitElement {
 
   private onZoomCommand = (event: CustomEvent<ZoomCommand>): void => {
     const detail = event.detail ?? {}
+    this.zoomAnchor = this.captureZoomAnchor()
     if (detail.scale !== undefined) {
       this.customScale = clampScale(detail.scale)
       try {
@@ -152,6 +184,42 @@ class ReportCanvas extends LitElement {
       }
     }
     this.setZoomMode(detail.mode ?? (detail.scale !== undefined ? 'custom' : this.zoomMode))
+  }
+
+  private captureZoomAnchor(): ZoomAnchor {
+    const viewport = this.viewportElement()
+    const frame = this.frameWrapElement()
+    if (!viewport || !frame || frame.offsetWidth === 0 || frame.offsetHeight === 0) {
+      return { x: 0.5, y: 0.5 }
+    }
+    const centerX = viewport.scrollLeft + viewport.clientWidth / 2 - frame.offsetLeft
+    const centerY = viewport.scrollTop + viewport.clientHeight / 2 - frame.offsetTop
+    return {
+      x: clampRatio(centerX / frame.offsetWidth),
+      y: clampRatio(centerY / frame.offsetHeight),
+    }
+  }
+
+  private restoreZoomAnchor(anchor: ZoomAnchor): void {
+    const viewport = this.viewportElement()
+    const frame = this.frameWrapElement()
+    if (!viewport || !frame) {
+      this.zoomAnchor = undefined
+      return
+    }
+    const left = frame.offsetLeft + frame.offsetWidth * anchor.x - viewport.clientWidth / 2
+    const top = frame.offsetTop + frame.offsetHeight * anchor.y - viewport.clientHeight / 2
+    viewport.scrollLeft = clampScroll(left, viewport.scrollWidth - viewport.clientWidth)
+    viewport.scrollTop = clampScroll(top, viewport.scrollHeight - viewport.clientHeight)
+    this.zoomAnchor = undefined
+  }
+
+  private viewportElement(): HTMLDivElement | null {
+    return this.shadowRoot?.querySelector('.viewport') ?? null
+  }
+
+  private frameWrapElement(): HTMLDivElement | null {
+    return this.shadowRoot?.querySelector('.frame-wrap') ?? null
   }
 
   private emitZoomState(): void {
@@ -173,8 +241,10 @@ class ReportCanvas extends LitElement {
       <div class="surface" style=${style}>
         <div class="viewport">
           <div class="sizer">
-            <div class="frame">
-              <slot @slotchange=${this.positionVisuals}></slot>
+            <div class="frame-wrap">
+              <div class="frame">
+                <slot @slotchange=${this.positionVisuals}></slot>
+              </div>
             </div>
           </div>
         </div>
@@ -362,6 +432,16 @@ function storedCustomScale(): number {
 function clampScale(value: number): number {
   if (!Number.isFinite(value)) return 1
   return Math.min(2, Math.max(0, value))
+}
+
+function clampRatio(value: number): number {
+  if (!Number.isFinite(value)) return 0.5
+  return Math.min(1, Math.max(0, value))
+}
+
+function clampScroll(value: number, max: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(Math.max(0, max), Math.max(0, value))
 }
 
 function zoomIcon(name: 'fit-page' | 'minus' | 'plus') {

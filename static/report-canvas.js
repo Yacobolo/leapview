@@ -605,6 +605,7 @@ var ReportCanvas = class extends i4 {
     this.customScale = storedCustomScale();
     this.onZoomCommand = (event) => {
       const detail = event.detail ?? {};
+      this.zoomAnchor = this.captureZoomAnchor();
       if (detail.scale !== void 0) {
         this.customScale = clampScale(detail.scale);
         try {
@@ -620,40 +621,57 @@ var ReportCanvas = class extends i4 {
     :host {
       display: block;
       width: 100%;
+      height: 100%;
       max-width: 100%;
       min-width: 0;
+      min-height: 0;
       box-sizing: border-box;
     }
 
     .surface {
       width: 100%;
+      height: 100%;
       min-width: 0;
+      min-height: 0;
       background: var(--report-canvas-bg, var(--bgColor-inset));
     }
 
     .viewport {
       position: relative;
       width: 100%;
+      height: 100%;
       min-width: 0;
-      overflow: auto hidden;
+      min-height: 0;
+      overflow: auto;
       padding: 0;
     }
 
-    .frame {
+    .sizer {
+      display: grid;
+      width: max(100%, calc(var(--report-canvas-width) * var(--report-canvas-scale) * 1px));
+      height: max(100%, calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px));
+      min-width: 100%;
+      min-height: 100%;
+      align-items: start;
+      justify-items: center;
+    }
+
+    .frame-wrap {
       position: relative;
+      width: calc(var(--report-canvas-width) * var(--report-canvas-scale) * 1px);
+      height: calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px);
+      flex: 0 0 auto;
+    }
+
+    .frame {
+      position: absolute;
+      inset: 0 auto auto 0;
       box-sizing: border-box;
       width: calc(var(--report-canvas-width) * 1px);
       height: calc(var(--report-canvas-height) * 1px);
       transform: scale(var(--report-canvas-scale));
       transform-origin: top left;
       background: var(--report-page-bg, transparent);
-    }
-
-    .sizer {
-      position: relative;
-      width: calc(var(--report-canvas-width) * var(--report-canvas-scale) * 1px);
-      height: calc(var(--report-canvas-height) * var(--report-canvas-scale) * 1px);
-      min-width: 100%;
     }
 
     ::slotted(.canvas-visual) {
@@ -689,16 +707,24 @@ var ReportCanvas = class extends i4 {
   updateScale() {
     const hostRect = this.getBoundingClientRect();
     const availableWidth = Math.max(0, hostRect.width);
-    if (!availableWidth || !this.width) return;
+    const availableHeight = Math.max(0, hostRect.height);
+    if (!availableWidth || !availableHeight || !this.width || !this.height) return;
     const widthScale = availableWidth / this.width;
-    let nextScale = widthScale;
+    const heightScale = availableHeight / this.height;
+    let nextScale = Math.min(widthScale, heightScale);
     if (this.zoomMode === "custom") {
       nextScale = this.customScale;
     }
     nextScale = clampScale(nextScale);
     if (Math.abs(nextScale - this.scale) > 1e-3) {
+      const anchor = this.zoomAnchor;
       this.scale = nextScale;
       this.emitZoomState();
+      if (anchor) {
+        this.updateComplete.then(() => this.restoreZoomAnchor(anchor));
+      }
+    } else {
+      this.zoomAnchor = void 0;
     }
   }
   positionVisuals() {
@@ -728,6 +754,38 @@ var ReportCanvas = class extends i4 {
     this.updateComplete.then(() => this.updateScale());
     this.updateComplete.then(() => this.emitZoomState());
   }
+  captureZoomAnchor() {
+    const viewport = this.viewportElement();
+    const frame = this.frameWrapElement();
+    if (!viewport || !frame || frame.offsetWidth === 0 || frame.offsetHeight === 0) {
+      return { x: 0.5, y: 0.5 };
+    }
+    const centerX = viewport.scrollLeft + viewport.clientWidth / 2 - frame.offsetLeft;
+    const centerY = viewport.scrollTop + viewport.clientHeight / 2 - frame.offsetTop;
+    return {
+      x: clampRatio(centerX / frame.offsetWidth),
+      y: clampRatio(centerY / frame.offsetHeight)
+    };
+  }
+  restoreZoomAnchor(anchor) {
+    const viewport = this.viewportElement();
+    const frame = this.frameWrapElement();
+    if (!viewport || !frame) {
+      this.zoomAnchor = void 0;
+      return;
+    }
+    const left = frame.offsetLeft + frame.offsetWidth * anchor.x - viewport.clientWidth / 2;
+    const top = frame.offsetTop + frame.offsetHeight * anchor.y - viewport.clientHeight / 2;
+    viewport.scrollLeft = clampScroll(left, viewport.scrollWidth - viewport.clientWidth);
+    viewport.scrollTop = clampScroll(top, viewport.scrollHeight - viewport.clientHeight);
+    this.zoomAnchor = void 0;
+  }
+  viewportElement() {
+    return this.shadowRoot?.querySelector(".viewport") ?? null;
+  }
+  frameWrapElement() {
+    return this.shadowRoot?.querySelector(".frame-wrap") ?? null;
+  }
   emitZoomState() {
     this.dispatchEvent(new CustomEvent("ld-report-zoom-state", {
       detail: { mode: this.zoomMode, scale: this.scale },
@@ -745,8 +803,10 @@ var ReportCanvas = class extends i4 {
       <div class="surface" style=${style}>
         <div class="viewport">
           <div class="sizer">
-            <div class="frame">
-              <slot @slotchange=${this.positionVisuals}></slot>
+            <div class="frame-wrap">
+              <div class="frame">
+                <slot @slotchange=${this.positionVisuals}></slot>
+              </div>
             </div>
           </div>
         </div>
@@ -940,6 +1000,14 @@ function storedCustomScale() {
 function clampScale(value) {
   if (!Number.isFinite(value)) return 1;
   return Math.min(2, Math.max(0, value));
+}
+function clampRatio(value) {
+  if (!Number.isFinite(value)) return 0.5;
+  return Math.min(1, Math.max(0, value));
+}
+function clampScroll(value, max) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(0, max), Math.max(0, value));
 }
 function zoomIcon(name) {
   switch (name) {
