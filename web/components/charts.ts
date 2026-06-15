@@ -413,7 +413,7 @@ class KPIStrip extends LitElement {
       background: var(--ld-chart-2, var(--data-green-color-emphasis));
     }
     .amber::before {
-      background: var(--ld-accent, var(--data-yellow-color-emphasis));
+      background: var(--ld-accent, var(--bgColor-accent-emphasis));
     }
     .coral::before {
       background: var(--ld-chart-4, var(--data-coral-color-emphasis));

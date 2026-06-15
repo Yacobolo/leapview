@@ -110,10 +110,10 @@
   }
 
   .report-app {
-    --ld-accent: var(--data-yellow-color-emphasis);
-    --ld-accent-muted: var(--data-yellow-color-muted);
-    --ld-accent-strong: var(--display-yellow-scale-5);
-    --ld-accent-fg: var(--fgColor-default);
+    --ld-accent: var(--bgColor-accent-emphasis);
+    --ld-accent-muted: var(--bgColor-accent-muted);
+    --ld-accent-strong: var(--borderColor-accent-emphasis);
+    --ld-accent-fg: var(--fgColor-onEmphasis);
     --ld-chart-1: var(--data-blue-color-emphasis);
     --ld-chart-1-muted: var(--data-blue-color-muted);
     --ld-chart-2: var(--data-green-color-emphasis);
@@ -186,10 +186,10 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
     min-width: 0;
     border-bottom: 1px solid var(--borderColor-muted);
-    padding: 10px 24px;
+    padding: 10px 18px;
     view-transition-name: workspace-header;
   }
 
@@ -203,7 +203,7 @@
     color: var(--fgColor-default);
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 1rem;
+    font-size: 0.95rem;
     line-height: 1.08;
     font-weight: 850;
     letter-spacing: 0;
@@ -211,11 +211,11 @@
 
   .workspace-detail {
     overflow: hidden;
-    margin: 6px 0 0;
+    margin: 4px 0 0;
     color: var(--fgColor-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.74rem;
+    font-size: 0.7rem;
     line-height: 1.2;
     font-weight: 720;
   }
@@ -243,7 +243,7 @@
     gap: 24px;
     align-items: end;
     border: 1px solid var(--borderColor-default);
-    border-left: 4px solid var(--ld-accent);
+    border-left: 1px solid var(--borderColor-default);
     border-radius: 6px;
     background: var(--bgColor-default);
     box-shadow: var(--shadow-resting-small);

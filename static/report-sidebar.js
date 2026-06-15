@@ -796,7 +796,7 @@ var ReportSidebar = class extends i4 {
 
     .page-link[aria-current='page'] {
       border-color: transparent;
-      background: color-mix(in srgb, var(--ld-accent-muted), var(--bgColor-default) 58%);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 34%);
       color: var(--fgColor-default);
     }
 
@@ -848,6 +848,10 @@ var ReportSidebar = class extends i4 {
       grid-template-columns: 26px;
       justify-content: center;
       padding-inline: 0;
+    }
+
+    :host([data-collapsed]) .page-link[aria-current='page']::before {
+      content: none;
     }
   `;
   }

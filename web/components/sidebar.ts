@@ -199,6 +199,7 @@ class LibreDashSidebar extends LitElement {
     }
 
     .nav-item {
+      position: relative;
       display: grid;
       grid-template-columns: 26px minmax(0, 1fr) auto;
       min-height: 34px;
@@ -237,7 +238,7 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item[aria-current='page'] {
       border-color: transparent;
-      background: color-mix(in srgb, var(--ld-accent-muted), var(--bgColor-default) 60%);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 36%);
       color: var(--fgColor-default);
     }
 
@@ -266,7 +267,7 @@ class LibreDashSidebar extends LitElement {
     }
 
     .nav-item[aria-current='page'] .nav-icon {
-      background: color-mix(in srgb, var(--ld-accent), transparent 84%);
+      background: color-mix(in srgb, var(--fgColor-muted), transparent 88%);
       color: var(--fgColor-default);
     }
 
@@ -282,21 +283,12 @@ class LibreDashSidebar extends LitElement {
 
     .footer {
       display: grid;
-      gap: 7px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: center;
       padding: 8px 7px 10px;
       border-top: 1px solid var(--borderColor-muted);
       background: transparent;
-    }
-
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 28px;
-      color: var(--fgColor-muted);
-      padding: 0 7px;
-      font-size: 0.72rem;
-      font-weight: 800;
     }
 
     .user-card {
@@ -320,8 +312,8 @@ class LibreDashSidebar extends LitElement {
       height: 24px;
       place-items: center;
       border-radius: 50%;
-      background: color-mix(in srgb, var(--ld-accent), transparent 16%);
-      color: var(--ld-accent-fg);
+      background: color-mix(in srgb, var(--fgColor-muted), transparent 78%);
+      color: var(--fgColor-default);
       font-size: 0.58rem;
       font-weight: 850;
       letter-spacing: 0;
@@ -351,23 +343,11 @@ class LibreDashSidebar extends LitElement {
       font-weight: 720;
     }
 
-    .pulse {
-      width: 9px;
-      height: 9px;
-      flex: 0 0 auto;
-      border-radius: 50%;
-      background: var(--fgColor-success);
-    }
-
-    .pulse.loading {
-      background: var(--fgColor-attention);
-      animation: pulse 1s var(--ld-ease-out) infinite;
-    }
-
     .actions {
       display: flex;
       gap: 5px;
       align-items: center;
+      justify-content: end;
     }
 
     .refresh,
@@ -393,8 +373,9 @@ class LibreDashSidebar extends LitElement {
     .refresh:focus-visible,
     .theme-button:hover,
     .theme-button:focus-visible {
-      border-color: var(--borderColor-accent-emphasis);
-      color: var(--fgColor-accent);
+      border-color: var(--borderColor-muted);
+      background: var(--bgColor-muted);
+      color: var(--fgColor-default);
       outline: 0;
     }
 
@@ -424,7 +405,6 @@ class LibreDashSidebar extends LitElement {
     :host([data-collapsed]) .name,
     :host([data-collapsed]) .nav-group-label,
     :host([data-collapsed]) .nav-text,
-    :host([data-collapsed]) .status span:last-child,
     :host([data-collapsed]) .user-text {
       display: none;
     }
@@ -457,18 +437,19 @@ class LibreDashSidebar extends LitElement {
       height: 28px;
     }
 
+    :host([data-collapsed]) .nav-item[aria-current='page']::before {
+      content: none;
+    }
+
     :host([data-collapsed]) .footer {
+      grid-template-columns: 1fr;
       padding: 8px 5px 9px;
     }
 
-    :host([data-collapsed]) .status {
-      justify-content: center;
-      padding: 0;
-    }
-
     :host([data-collapsed]) .actions {
-      justify-items: center;
+      display: grid;
       justify-content: center;
+      justify-items: center;
     }
 
     :host([data-collapsed]) .refresh,
@@ -483,18 +464,6 @@ class LibreDashSidebar extends LitElement {
       grid-template-columns: 1fr;
       justify-items: center;
       padding: 0;
-    }
-
-    @keyframes pulse {
-      0%,
-      100% {
-        transform: scale(1);
-        opacity: 1;
-      }
-      50% {
-        transform: scale(0.72);
-        opacity: 0.55;
-      }
     }
 
     @media (max-width: 640px) {
@@ -590,13 +559,6 @@ class LibreDashSidebar extends LitElement {
     }))
   }
 
-  private statusText(): string {
-    if (this.status.loading) return 'Refreshing'
-    if (this.status.error) return 'Needs setup'
-    if (this.status.lastUpdated) return `Updated ${this.status.lastUpdated}`
-    return 'Live'
-  }
-
   render() {
     const collapsed = this.effectiveCollapsed
     return html`
@@ -627,10 +589,6 @@ class LibreDashSidebar extends LitElement {
         </nav>
 
         <footer class="footer">
-          <div class="status">
-            <span class=${`pulse ${this.status.loading ? 'loading' : ''}`}></span>
-            <span>${this.statusText()}</span>
-          </div>
           <div class="user-card" title="Jacob Nielsen">
             <span class="avatar" aria-hidden="true">JN</span>
             <span class="user-text">
