@@ -45,7 +45,7 @@ class ReportSidebar extends LitElement {
 
   static styles = css`
     :host {
-      --ld-report-sidebar-width: 192px;
+      --ld-report-sidebar-width: 176px;
       display: block;
       width: var(--ld-report-sidebar-width);
       min-height: 100svh;
@@ -55,7 +55,7 @@ class ReportSidebar extends LitElement {
     }
 
     :host([data-collapsed]) {
-      --ld-report-sidebar-width: 48px;
+      --ld-report-sidebar-width: 44px;
     }
 
     aside {
@@ -66,16 +66,16 @@ class ReportSidebar extends LitElement {
       min-height: 100svh;
       grid-template-rows: auto minmax(0, 1fr) auto;
       border-right: 1px solid var(--borderColor-default);
-      background: var(--bgColor-muted);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 42%);
       transition: width 180ms var(--ld-ease-out);
     }
 
     header {
       display: grid;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
       border-bottom: 1px solid var(--borderColor-muted);
-      padding: 14px 12px 12px;
+      padding: 11px 8px 10px;
     }
 
     .top-row {
@@ -88,18 +88,20 @@ class ReportSidebar extends LitElement {
     .glyph,
     .page-initial {
       display: grid;
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       flex: 0 0 auto;
       place-items: center;
-      border-radius: 5px;
-      background: var(--bgColor-default);
+      border-radius: 6px;
+      background: transparent;
       color: var(--fgColor-muted);
       font-size: 0.65rem;
       font-weight: 900;
     }
 
-    .glyph svg {
+    .glyph svg,
+    .model-link svg,
+    .collapse svg {
       width: 15px;
       height: 15px;
       fill: none;
@@ -148,14 +150,14 @@ class ReportSidebar extends LitElement {
 
     .collapse {
       display: grid;
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       flex: 0 0 auto;
       place-items: center;
       margin-left: auto;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 5px;
-      background: var(--bgColor-default);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
       padding: 0;
@@ -163,19 +165,20 @@ class ReportSidebar extends LitElement {
 
     .collapse:hover,
     .collapse:focus-visible {
-      border-color: var(--borderColor-accent-emphasis);
-      color: var(--fgColor-accent);
+      border-color: var(--borderColor-muted);
+      background: var(--bgColor-muted);
+      color: var(--fgColor-default);
       outline: 0;
     }
 
     nav {
       display: grid;
       align-content: start;
-      gap: 6px;
+      gap: 5px;
       min-width: 0;
       min-height: 0;
       overflow: auto;
-      padding: 10px 8px;
+      padding: 9px 5px;
     }
 
     a {
@@ -186,12 +189,12 @@ class ReportSidebar extends LitElement {
     .model-link {
       position: relative;
       display: grid;
-      grid-template-columns: 28px minmax(0, 1fr);
-      min-height: 34px;
+      grid-template-columns: 26px minmax(0, 1fr);
+      min-height: 32px;
       align-items: center;
       gap: 8px;
       border: 1px solid transparent;
-      border-radius: 5px;
+      border-radius: 7px;
       color: var(--fgColor-muted);
       padding: 0 8px;
       font-size: 0.72rem;
@@ -202,15 +205,14 @@ class ReportSidebar extends LitElement {
     .page-link:focus-visible,
     .model-link:hover,
     .model-link:focus-visible {
-      border-color: var(--borderColor-default);
-      background: var(--bgColor-default);
+      background: var(--bgColor-muted);
       color: var(--fgColor-default);
       outline: 0;
     }
 
     .page-link[aria-current='page'] {
-      border-color: var(--ld-accent);
-      background: var(--ld-accent-muted, var(--bgColor-accent-muted));
+      border-color: transparent;
+      background: color-mix(in srgb, var(--ld-accent-muted), var(--bgColor-default) 58%);
       color: var(--fgColor-default);
     }
 
@@ -218,8 +220,8 @@ class ReportSidebar extends LitElement {
       content: '';
       position: absolute;
       inset-block: 7px;
-      left: -1px;
-      width: 3px;
+      left: 0;
+      width: 2px;
       border-radius: 999px;
       background: var(--ld-accent);
     }
@@ -235,21 +237,11 @@ class ReportSidebar extends LitElement {
       display: grid;
       gap: 6px;
       border-top: 1px solid var(--borderColor-muted);
-      padding: 8px;
-    }
-
-    .model-link svg {
-      width: 15px;
-      height: 15px;
-      fill: none;
-      stroke: currentColor;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      stroke-width: 2;
+      padding: 7px 5px 8px;
     }
 
     :host([data-collapsed]) header {
-      padding-inline: 10px;
+      padding-inline: 6px;
     }
 
     :host([data-collapsed]) .titles,
@@ -269,7 +261,7 @@ class ReportSidebar extends LitElement {
 
     :host([data-collapsed]) .page-link,
     :host([data-collapsed]) .model-link {
-      grid-template-columns: 28px;
+      grid-template-columns: 26px;
       justify-content: center;
       padding-inline: 0;
     }
