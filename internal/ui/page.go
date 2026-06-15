@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/semantic"
@@ -43,6 +44,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-dock.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-panel.js")),
+			h.Script(h.Type("module"), h.Src("/static/filter-card.js")),
 			h.Script(h.Type("module"), h.Src("/static/report-canvas.js")),
 			h.Script(h.Type("module"), h.Src("/static/report-footer.js")),
 			h.Script(h.Type("module"), h.Src("/static/charts.js")),
@@ -68,7 +70,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 						),
 						h.Div(h.Class("report-dashboard-shell"),
 							h.Div(h.Class("report-canvas-shell"),
-								renderPageCanvas(activePage),
+								renderPageCanvas(activePage, report, initialFilters, action),
 							),
 							filtersDock(report, action),
 						),
@@ -483,6 +485,18 @@ func canvasVisual(x, y, width, height float64, children ...g.Node) g.Node {
 	return h.Div(nodes...)
 }
 
+func canvasFilterVisual(x, y, width, height float64, children ...g.Node) g.Node {
+	nodes := []g.Node{
+		h.Class("canvas-visual canvas-filter-visual"),
+		g.Attr("data-x", formatCanvasNumber(x)),
+		g.Attr("data-y", formatCanvasNumber(y)),
+		g.Attr("data-w", formatCanvasNumber(width)),
+		g.Attr("data-h", formatCanvasNumber(height)),
+	}
+	nodes = append(nodes, children...)
+	return h.Div(nodes...)
+}
+
 func pageTabs(dashboardID string, pages []dashboard.Page, activeID string) g.Node {
 	if len(pages) == 0 {
 		return nil
@@ -503,14 +517,15 @@ func pageTab(dashboardID string, page dashboard.Page, activeID string) g.Node {
 	return h.A(h.Class(class), h.Href(href), g.Text(page.Title))
 }
 
-func renderPageCanvas(page dashboard.Page) g.Node {
+func renderPageCanvas(page dashboard.Page, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
 	page = page.WithDefaults()
+	filters = filters.WithDefaults()
 	nodes := []g.Node{
 		g.Attr("width", strconv.Itoa(page.Canvas.Width)),
 		g.Attr("height", strconv.Itoa(page.Canvas.Height)),
 	}
 	for _, visual := range page.PlacedVisuals() {
-		nodes = append(nodes, renderPageVisual(visual))
+		nodes = append(nodes, renderPageVisual(visual, report, filters, action))
 	}
 	return g.El("ld-report-canvas", nodes...)
 }
@@ -519,7 +534,7 @@ func formatCanvasNumber(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-func renderPageVisual(visual dashboard.PageVisual) g.Node {
+func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
 	switch visual.Kind {
 	case "header":
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, reportHeader(visual))
@@ -529,6 +544,10 @@ func renderPageVisual(visual dashboard.PageVisual) g.Node {
 				g.El("ld-kpi-strip", g.Attr("data-attr:items", "$kpis")),
 			),
 		)
+	case "filter_card":
+		return canvasFilterVisual(visual.X, visual.Y, visual.Width, visual.Height,
+			filterCard(visual.Filter, report, filters, action),
+		)
 	case "line_chart", "area_chart", "bar_chart", "column_chart", "pie_chart", "donut_chart", "scatter_chart", "funnel_chart", "treemap_chart", "gauge_chart":
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height,
 			chartPanel(visual.Visual),
@@ -537,6 +556,82 @@ func renderPageVisual(visual dashboard.PageVisual) g.Node {
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, tablePanel(visual.Table))
 	default:
 		return nil
+	}
+}
+
+func filterCard(filterID string, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
+	return h.Article(h.Class("visual-card filter-visual-card"),
+		g.El("ld-filter-card",
+			g.Attr("filter-id", filterID),
+			g.Attr("config", jsonString(report.Filters)),
+			g.Attr("filters", jsonString(filters)),
+			g.Attr("options", "{}"),
+			g.Attr("data-attr:config", "$filterConfig"),
+			g.Attr("data-attr:filters", "$filters"),
+			g.Attr("data-attr:options", "$filterOptions"),
+			g.Attr("data-attr:loading", "$status.loading"),
+			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); $tableCommand.offset = 0; "+action),
+			filterCardFallback(filterID, report, filters),
+		),
+	)
+}
+
+func filterCardFallback(filterID string, report semantic.Dashboard, filters dashboard.Filters) g.Node {
+	definition, ok := report.Filters[filterID]
+	if !ok {
+		return nil
+	}
+	control := filters.Controls[filterID]
+	return h.Div(h.Class("filter-card-fallback"),
+		h.Span(h.Class("filter-card-fallback-label"), g.Text(definition.Label)),
+		h.Span(h.Class("filter-card-fallback-value"), g.Text(filterCardSummary(definition, control))),
+	)
+}
+
+func filterCardSummary(definition semantic.FilterDefinition, control dashboard.FilterControl) string {
+	switch definition.Type {
+	case "date_range":
+		if control.From != "" || control.To != "" {
+			if control.From != "" && control.To != "" {
+				return control.From + " - " + control.To
+			}
+			if control.From != "" {
+				return "From " + control.From
+			}
+			return "Until " + control.To
+		}
+		preset := control.Preset
+		if preset == "" {
+			preset = definition.Default.Preset
+		}
+		if preset == "" {
+			preset = "all"
+		}
+		for _, item := range definition.Presets {
+			if item.Value == preset {
+				return item.Label
+			}
+		}
+		return "Custom range"
+	case "multi_select":
+		if len(control.Values) == 0 {
+			label := strings.ToLower(definition.Label)
+			if label == "state" {
+				return "All states"
+			}
+			return "All " + label
+		}
+		if len(control.Values) == 1 {
+			return control.Values[0]
+		}
+		return strconv.Itoa(len(control.Values)) + " selected"
+	case "text":
+		if strings.TrimSpace(control.Value) == "" {
+			return "Any " + strings.ToLower(definition.Label)
+		}
+		return control.Value
+	default:
+		return definition.Label
 	}
 }
 

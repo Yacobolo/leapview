@@ -325,6 +325,13 @@ func (d *Dashboard) Validate(model *Model) error {
 			}
 			switch visual.Kind {
 			case "header", "kpi_strip":
+			case "filter_card":
+				if visual.Filter == "" {
+					return fmt.Errorf("page %q visual %q requires filter", page.ID, visual.ID)
+				}
+				if _, ok := d.Filters[visual.Filter]; !ok {
+					return fmt.Errorf("page %q references unknown filter %q", page.ID, visual.Filter)
+				}
 			case "line_chart", "area_chart", "bar_chart", "column_chart", "pie_chart", "donut_chart", "scatter_chart", "funnel_chart", "treemap_chart", "gauge_chart":
 				if visual.Visual == "" {
 					return fmt.Errorf("page %q visual %q requires visual", page.ID, visual.ID)

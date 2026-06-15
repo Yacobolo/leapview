@@ -92,6 +92,11 @@ class ReportCanvas extends LitElement {
       overflow: hidden;
       box-sizing: border-box;
     }
+
+    ::slotted(.canvas-filter-visual) {
+      overflow: visible;
+      z-index: 5;
+    }
   `
 
   connectedCallback(): void {

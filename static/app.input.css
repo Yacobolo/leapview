@@ -1005,6 +1005,44 @@
     margin-top: 0;
   }
 
+  .filter-visual-card {
+    overflow: visible;
+  }
+
+  .filter-visual-card ld-filter-card {
+    display: block;
+    height: 100%;
+  }
+
+  .filter-card-fallback {
+    display: grid;
+    height: 100%;
+    align-content: center;
+    gap: 4px;
+    padding: 8px 10px;
+  }
+
+  .filter-card-fallback-label {
+    overflow: hidden;
+    color: var(--fgColor-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.58rem;
+    font-weight: 900;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .filter-card-fallback-value {
+    overflow: hidden;
+    color: var(--fgColor-default);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-weight: 850;
+    line-height: 1.15;
+  }
+
   .pulse {
     width: 10px;
     height: 10px;

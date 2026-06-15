@@ -120,7 +120,10 @@ func TestLoadOlistDashboard(t *testing.T) {
 		t.Fatalf("overview grid = %#v, want 12 columns and 48 row height", page.Grid)
 	}
 	visuals := page.PlacedVisuals()
-	if got := visuals[0].Width; got != 1334 {
+	if visuals[0].Kind != "filter_card" || visuals[0].Filter != "purchase_date" {
+		t.Fatalf("first page visual = %#v, want purchase_date filter card", visuals[0])
+	}
+	if got := visuals[2].Width; got != 1334 {
 		t.Fatalf("kpi compiled width = %v, want 1334", got)
 	}
 	if got := report.Filters["purchase_date"].URLParam; got != "period" {
@@ -204,6 +207,22 @@ func TestDashboardValidateRejectsInvalidPagePlacement(t *testing.T) {
 	report.Pages[0].Visuals[0].Placement.ColSpan = 2
 
 	assertDashboardValidateError(t, report, model, "placement exceeds")
+}
+
+func TestDashboardValidateRejectsUnknownFilterCardReference(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	report.Pages[0].Visuals[0].Filter = "missing_filter"
+
+	assertDashboardValidateError(t, report, model, "unknown filter")
+}
+
+func TestDashboardValidateRejectsMissingFilterCardReference(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	report.Pages[0].Visuals[0].Filter = ""
+
+	assertDashboardValidateError(t, report, model, "requires filter")
 }
 
 func TestDashboardValidateRejectsDuplicateFilterURLParam(t *testing.T) {

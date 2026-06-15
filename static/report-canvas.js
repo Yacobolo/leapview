@@ -682,6 +682,11 @@ var ReportCanvas = class extends i4 {
       overflow: hidden;
       box-sizing: border-box;
     }
+
+    ::slotted(.canvas-filter-visual) {
+      overflow: visible;
+      z-index: 5;
+    }
   `;
   }
   connectedCallback() {
