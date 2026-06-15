@@ -227,6 +227,11 @@ func (m *DuckDBMetrics) ModelGraph(modelID string) (dashboard.ModelGraph, bool) 
 
 func (m *DuckDBMetrics) catalogView() dashboard.Catalog {
 	catalog := dashboard.Catalog{
+		Workspace: dashboard.CatalogWorkspace{
+			ID:          workspaceID(m.workspace.Catalog.Workspace),
+			Title:       workspaceTitle(m.workspace.Catalog.Workspace),
+			Description: m.workspace.Catalog.Workspace.Description,
+		},
 		Models:     make([]dashboard.CatalogModel, 0, len(m.workspace.Catalog.SemanticModels)),
 		Dashboards: make([]dashboard.CatalogDashboard, 0, len(m.workspace.Catalog.Dashboards)),
 	}
@@ -255,6 +260,20 @@ func (m *DuckDBMetrics) catalogView() dashboard.Catalog {
 		})
 	}
 	return catalog
+}
+
+func workspaceID(workspace semantic.CatalogWorkspace) string {
+	if strings.TrimSpace(workspace.ID) != "" {
+		return workspace.ID
+	}
+	return "libredash"
+}
+
+func workspaceTitle(workspace semantic.CatalogWorkspace) string {
+	if strings.TrimSpace(workspace.Title) != "" {
+		return workspace.Title
+	}
+	return "LibreDash Workspace"
 }
 
 func (m *DuckDBMetrics) reportRuntime(dashboardID string) (*semantic.Dashboard, *modelRuntime, error) {

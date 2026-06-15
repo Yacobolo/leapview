@@ -24,6 +24,7 @@ type SidebarConfig = {
   modelId?: string
   dashboardId?: string
   refresh?: boolean
+  compact?: boolean
   groups: NavGroup[]
 }
 
@@ -33,12 +34,16 @@ type SidebarStatus = {
   error?: string
 }
 
+type ThemeMode = 'system' | 'light' | 'dark'
+
 type IconName =
   | 'catalog'
   | 'dashboard'
   | 'model'
   | 'data'
   | 'cache'
+  | 'settings'
+  | 'system'
   | 'refresh'
   | 'sun'
   | 'moon'
@@ -47,10 +52,10 @@ type IconName =
   | 'expand'
 
 const defaultConfig: SidebarConfig = {
-  active: 'catalog',
+  active: 'dashboards',
   workspaceTitle: 'LibreDash Workspace',
   groups: [
-    { label: 'Workspace', items: [{ id: 'catalog', label: 'Catalog', href: '/', icon: 'catalog' }] },
+    { label: 'Workspace', items: [{ id: 'dashboards', label: 'Dashboards', href: '/', icon: 'dashboard' }] },
   ],
 }
 
@@ -85,7 +90,7 @@ const statusConverter = {
 class LibreDashSidebar extends LitElement {
   @property({ attribute: 'config', converter: configConverter }) config: SidebarConfig = defaultConfig
   @property({ attribute: 'status', converter: statusConverter }) status: SidebarStatus = {}
-  @state() private mode = document.documentElement.dataset.colorMode || 'light'
+  @state() private mode: ThemeMode = storedThemeMode()
   @state() private collapsed = storedCollapsed()
 
   static styles = css`
@@ -177,6 +182,16 @@ class LibreDashSidebar extends LitElement {
       border-color: var(--borderColor-accent-emphasis);
       color: var(--fgColor-accent);
       outline: 0;
+    }
+
+    .collapse-button:disabled {
+      cursor: default;
+      opacity: 0.7;
+    }
+
+    .collapse-button:disabled:hover {
+      border-color: var(--borderColor-default);
+      color: var(--fgColor-muted);
     }
 
     .context {
@@ -387,13 +402,7 @@ class LibreDashSidebar extends LitElement {
       opacity: 0.62;
     }
 
-    .theme-switch {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .theme-button[aria-pressed='true'] {
+    .theme-button {
       border-color: color-mix(in srgb, var(--ld-accent), var(--borderColor-default) 22%);
       background: var(--ld-accent);
       color: var(--ld-accent-fg);
@@ -468,10 +477,6 @@ class LibreDashSidebar extends LitElement {
       padding: 0;
     }
 
-    :host([data-collapsed]) .theme-switch {
-      grid-template-columns: 1fr;
-    }
-
     @keyframes pulse {
       0%,
       100% {
@@ -520,7 +525,7 @@ class LibreDashSidebar extends LitElement {
   connectedCallback(): void {
     super.connectedCallback()
     document.addEventListener('libredash-theme-applied', this.onThemeApplied as EventListener)
-    this.mode = document.documentElement.dataset.colorMode || 'light'
+    this.mode = storedThemeMode()
     this.syncCollapsedState()
   }
 
@@ -529,11 +534,11 @@ class LibreDashSidebar extends LitElement {
     super.disconnectedCallback()
   }
 
-  private onThemeApplied = (event: CustomEvent<{ mode: string }>): void => {
-    this.mode = event.detail?.mode || document.documentElement.dataset.colorMode || 'light'
+  private onThemeApplied = (event: CustomEvent<{ mode: ThemeMode }>): void => {
+    this.mode = normalizeThemeMode(event.detail?.mode)
   }
 
-  private changeTheme(mode: 'light' | 'dark'): void {
+  private changeTheme(mode: ThemeMode): void {
     this.dispatchEvent(new CustomEvent('libredash-theme-change', {
       detail: { mode },
       bubbles: true,
@@ -546,7 +551,7 @@ class LibreDashSidebar extends LitElement {
   }
 
   private syncCollapsedState(): void {
-    if (this.collapsed) {
+    if (this.effectiveCollapsed) {
       this.setAttribute('data-collapsed', '')
       this.style.setProperty('--ld-sidebar-width', '64px')
     } else {
@@ -556,6 +561,7 @@ class LibreDashSidebar extends LitElement {
   }
 
   private toggleCollapsed(): void {
+    if (this.config.compact) return
     this.collapsed = !this.collapsed
     try {
       localStorage.setItem('libredash-sidebar-collapsed', String(this.collapsed))
@@ -586,6 +592,7 @@ class LibreDashSidebar extends LitElement {
   render() {
     const title = this.config.dashboardTitle || this.config.modelTitle || this.config.workspaceTitle || 'Workspace'
     const detail = this.config.pageTitle || this.config.modelId || this.config.dashboardId || 'Catalog'
+    const collapsed = this.effectiveCollapsed
     return html`
       <aside aria-label="LibreDash workspace">
         <header class="brand">
@@ -595,12 +602,13 @@ class LibreDashSidebar extends LitElement {
             <button
               class="collapse-button"
               type="button"
-              aria-label=${this.collapsed ? 'Expand navigation' : 'Collapse navigation'}
-              aria-pressed=${String(this.collapsed)}
-              title=${this.collapsed ? 'Expand navigation' : 'Collapse navigation'}
+              aria-label=${collapsed ? 'Expand navigation' : 'Collapse navigation'}
+              aria-pressed=${String(collapsed)}
+              title=${this.config.compact ? 'Workspace navigation is compact on report pages' : collapsed ? 'Expand navigation' : 'Collapse navigation'}
+              ?disabled=${this.config.compact}
               @click=${this.toggleCollapsed}
             >
-              ${icon(this.collapsed ? 'expand' : 'collapse')}
+              ${icon(collapsed ? 'expand' : 'collapse')}
             </button>
           </div>
           <div class="context">
@@ -630,18 +638,41 @@ class LibreDashSidebar extends LitElement {
                 ${icon('refresh')} <span>Re-import</span>
               </button>
             ` : nothing}
-            <div class="theme-switch" aria-label="Color mode">
-              <button class="theme-button" type="button" aria-pressed=${String(this.mode !== 'dark')} @click=${() => this.changeTheme('light')} title="Light mode">
-                ${icon('sun')} <span>Light</span>
-              </button>
-              <button class="theme-button" type="button" aria-pressed=${String(this.mode === 'dark')} @click=${() => this.changeTheme('dark')} title="Dark mode">
-                ${icon('moon')} <span>Dark</span>
-              </button>
-            </div>
+            <button class="theme-button" type="button" aria-label=${this.themeLabel()} title=${this.themeTitle()} @click=${() => this.changeTheme(this.nextTheme())}>
+              ${icon(this.themeIcon())} <span>${this.themeLabel()}</span>
+            </button>
           </div>
         </footer>
       </aside>
     `
+  }
+
+  private get effectiveCollapsed(): boolean {
+    return Boolean(this.config.compact || this.collapsed)
+  }
+
+  private nextTheme(): ThemeMode {
+    if (this.mode === 'system') return 'light'
+    if (this.mode === 'light') return 'dark'
+    return 'system'
+  }
+
+  private themeLabel(): string {
+    if (this.mode === 'system') return 'System'
+    if (this.mode === 'light') return 'Light'
+    return 'Dark'
+  }
+
+  private themeTitle(): string {
+    const next = this.nextTheme()
+    const nextLabel = next === 'system' ? 'System preference' : next === 'light' ? 'Light mode' : 'Dark mode'
+    return `${this.themeLabel()} theme. Switch to ${nextLabel}.`
+  }
+
+  private themeIcon(): IconName {
+    if (this.mode === 'system') return 'system'
+    if (this.mode === 'light') return 'sun'
+    return 'moon'
   }
 
   private renderLink(item: NavItem) {
@@ -684,6 +715,10 @@ function icon(name: IconName) {
       return iconSvg(svgTemplate`<path d="M3 4h18"></path><path d="M3 10h18"></path><path d="M3 16h18"></path><path d="M8 4v16"></path><path d="M16 4v16"></path>`)
     case 'cache':
       return iconSvg(svgTemplate`<path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path><path d="M7 4v16"></path><path d="M17 4v16"></path>`)
+    case 'settings':
+      return iconSvg(svgTemplate`<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 .9-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .9 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5.9Z"></path>`)
+    case 'system':
+      return iconSvg(svgTemplate`<rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M8 8h8"></path><path d="M8 12h5"></path>`)
     case 'refresh':
       return iconSvg(svgTemplate`<path d="M21 12a9 9 0 0 1-15.4 6.4"></path><path d="M3 12a9 9 0 0 1 15.4-6.4"></path><path d="M3 16v5h5"></path><path d="M21 8V3h-5"></path>`)
     case 'sun':
@@ -709,6 +744,19 @@ function storedCollapsed(): boolean {
   } catch {
     return false
   }
+}
+
+function storedThemeMode(): ThemeMode {
+  try {
+    return normalizeThemeMode(localStorage.getItem('libredash-color-mode') || document.documentElement.dataset.colorMode)
+  } catch {
+    return normalizeThemeMode(document.documentElement.dataset.colorMode)
+  }
+}
+
+function normalizeThemeMode(mode: string | null | undefined): ThemeMode {
+  if (mode === 'light' || mode === 'dark') return mode
+  return 'system'
 }
 
 customElements.define('ld-sidebar', LibreDashSidebar)

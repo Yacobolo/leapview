@@ -8,8 +8,15 @@ type Signals struct {
 }
 
 type Catalog struct {
+	Workspace  CatalogWorkspace   `json:"workspace"`
 	Models     []CatalogModel     `json:"models"`
 	Dashboards []CatalogDashboard `json:"dashboards"`
+}
+
+type CatalogWorkspace struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 type CatalogModel struct {

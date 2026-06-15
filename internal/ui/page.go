@@ -43,6 +43,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Script(h.Type("module"), h.Src("/static/theme.js")),
 			h.Script(h.Type("module"), h.Src("/static/url-sync.js")),
 			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
+			h.Script(h.Type("module"), h.Src("/static/report-sidebar.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-dock.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-panel.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-card.js")),
@@ -61,14 +62,15 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 				ds.Signals(initialSignals(dataDir, clientID, report, model, activePage, initialFilters)),
 				ds.Init(initAction),
 				g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); "+tableReset+action),
-				h.Div(h.Class("app-shell"),
+				h.Div(h.Class("app-shell report-shell"),
 					sidebar(sidebarConfigForReport(catalog, report, model, activePage), true, "@post('/commands/refresh-cache?model="+model.Name+"&dashboard="+report.ID+"')"),
+					reportSidebar(reportSidebarConfig(report, model, pages, activePage)),
 					h.Section(h.Class("app-main report-main"), h.Aria("label", "LibreDash report canvas"),
 						workspaceHeader(
 							"",
 							report.Title,
-							"",
-							pageTabs(report.ID, pages, activePage.ID),
+							activePage.Title,
+							nil,
 						),
 						h.Div(h.Class("report-dashboard-shell"),
 							h.Div(h.Class("report-canvas-shell"),
@@ -91,7 +93,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 
 func CatalogPage(catalog dashboard.Catalog) g.Node {
 	return c.HTML5(c.HTML5Props{
-		Title:    "LibreDash Catalog",
+		Title:    "LibreDash Dashboards",
 		Language: "en",
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
@@ -113,7 +115,7 @@ func CatalogPage(catalog dashboard.Catalog) g.Node {
 					sidebar(sidebarConfigForCatalog(catalog), false, ""),
 					h.Section(h.Class("app-main catalog-main"), h.Aria("label", "LibreDash dashboard catalog"),
 						workspaceHeader(
-							"Workspace catalog",
+							"Workspace dashboards",
 							"Dashboards",
 							"Discover reports backed by reusable semantic models and DuckDB import caches.",
 							h.Div(h.Class("catalog-stats"),
@@ -251,18 +253,18 @@ func sidebarConfigForCatalog(catalog dashboard.Catalog) map[string]any {
 		modelID = report.SemanticModel
 		modelTitle = report.ModelTitle
 	}
-	return sidebarConfig(catalog, "catalog", "", "LibreDash Workspace", "Dashboard catalog", "Dashboards", modelID, modelTitle, false)
+	return sidebarConfig(catalog, "dashboards", "", workspaceDisplayTitle(catalog), "Dashboards", "Discovery", modelID, modelTitle, false, false)
 }
 
 func sidebarConfigForReport(catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page) map[string]any {
-	return sidebarConfig(catalog, "dashboard:"+report.ID, report.ID, "LibreDash Workspace", report.Title, activePage.Title, model.Name, model.Title, true)
+	return sidebarConfig(catalog, "dashboards", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, model.Name, model.Title, true, true)
 }
 
 func sidebarConfigForModel(catalog dashboard.Catalog, model dashboard.ModelGraph) map[string]any {
-	return sidebarConfig(catalog, "model:"+model.Name, "", "LibreDash Workspace", "Semantic model", model.Title, model.Name, model.Title, false)
+	return sidebarConfig(catalog, "model:"+model.Name, "", workspaceDisplayTitle(catalog), "Semantic model", model.Title, model.Name, model.Title, false, false)
 }
 
-func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, refresh bool) map[string]any {
+func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, refresh, compact bool) map[string]any {
 	return map[string]any{
 		"workspaceTitle": workspaceTitle,
 		"active":         active,
@@ -272,6 +274,7 @@ func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitl
 		"modelId":        modelID,
 		"modelTitle":     modelTitle,
 		"refresh":        refresh,
+		"compact":        compact,
 		"groups":         sidebarGroups(catalog),
 	}
 }
@@ -281,12 +284,8 @@ func sidebarGroups(catalog dashboard.Catalog) []map[string]any {
 		{
 			"label": "Workspace",
 			"items": []map[string]any{
-				{"id": "catalog", "label": "Catalog", "href": "/", "icon": "catalog", "meta": "Dashboards and models"},
+				{"id": "dashboards", "label": "Dashboards", "href": "/", "icon": "dashboard", "meta": "Reports and models"},
 			},
-		},
-		{
-			"label": "Dashboards",
-			"items": dashboardItems(catalog.Dashboards),
 		},
 		{
 			"label": "Semantic Models",
@@ -297,23 +296,10 @@ func sidebarGroups(catalog dashboard.Catalog) []map[string]any {
 			"items": []map[string]any{
 				{"id": "data:sources", "label": "Sources", "href": "/", "icon": "data", "meta": "Coming soon", "disabled": true},
 				{"id": "data:cache", "label": "DuckDB Cache", "href": "/", "icon": "cache", "meta": "Import mode", "disabled": true},
+				{"id": "settings", "label": "Settings", "href": "/", "icon": "settings", "meta": "Coming soon", "disabled": true},
 			},
 		},
 	}
-}
-
-func dashboardItems(reports []dashboard.CatalogDashboard) []map[string]any {
-	items := make([]map[string]any, 0, len(reports))
-	for _, report := range reports {
-		items = append(items, map[string]any{
-			"id":    "dashboard:" + report.ID,
-			"label": report.Title,
-			"href":  "/dashboards/" + report.ID,
-			"icon":  "dashboard",
-			"meta":  report.ModelTitle,
-		})
-	}
-	return items
 }
 
 func modelItems(models []dashboard.CatalogModel) []map[string]any {
@@ -328,6 +314,39 @@ func modelItems(models []dashboard.CatalogModel) []map[string]any {
 		})
 	}
 	return items
+}
+
+func workspaceDisplayTitle(catalog dashboard.Catalog) string {
+	if strings.TrimSpace(catalog.Workspace.Title) != "" {
+		return catalog.Workspace.Title
+	}
+	return "LibreDash Workspace"
+}
+
+func reportSidebar(config map[string]any) g.Node {
+	return g.El("ld-report-sidebar", g.Attr("config", jsonString(config)))
+}
+
+func reportSidebarConfig(report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page) map[string]any {
+	items := make([]map[string]any, 0, len(pages))
+	for _, page := range pages {
+		items = append(items, map[string]any{
+			"id":     page.ID,
+			"title":  page.Title,
+			"href":   "/dashboards/" + report.ID + "/pages/" + page.ID,
+			"active": page.ID == activePage.ID,
+		})
+	}
+	return map[string]any{
+		"dashboardId":    report.ID,
+		"dashboardTitle": report.Title,
+		"pageId":         activePage.ID,
+		"pageTitle":      activePage.Title,
+		"modelId":        model.Name,
+		"modelTitle":     model.Title,
+		"modelHref":      "/models/" + model.Name,
+		"pages":          items,
+	}
 }
 
 func workspaceHeader(eyebrow, title, detail string, actions g.Node) g.Node {
@@ -518,26 +537,6 @@ func canvasFilterVisual(x, y, width, height float64, children ...g.Node) g.Node 
 	}
 	nodes = append(nodes, children...)
 	return h.Div(nodes...)
-}
-
-func pageTabs(dashboardID string, pages []dashboard.Page, activeID string) g.Node {
-	if len(pages) == 0 {
-		return nil
-	}
-	return h.Nav(h.Class("page-tabs"), h.Aria("label", "Report pages"),
-		g.Map(pages, func(page dashboard.Page) g.Node {
-			return pageTab(dashboardID, page, activeID)
-		}),
-	)
-}
-
-func pageTab(dashboardID string, page dashboard.Page, activeID string) g.Node {
-	class := "page-tab"
-	if page.ID == activeID {
-		class += " active"
-	}
-	href := "/dashboards/" + dashboardID + "/pages/" + page.ID
-	return h.A(h.Class(class), h.Href(href), g.Text(page.Title))
 }
 
 func renderPageCanvas(page dashboard.Page, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {

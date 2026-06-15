@@ -20,6 +20,7 @@ type canceledTableMetrics struct {
 
 func (fakeMetrics) Catalog() dashboard.Catalog {
 	return dashboard.Catalog{
+		Workspace: dashboard.CatalogWorkspace{ID: "test-workspace", Title: "Test Workspace", Description: "Fixture workspace"},
 		Models: []dashboard.CatalogModel{
 			{ID: "test", Title: "Test Model", Description: "Fixture model"},
 		},
@@ -156,8 +157,17 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `class="page-tab active" href="/dashboards/executive-sales/pages/operations"`) {
-		t.Fatalf("operations page tab was not active:\n%s", body)
+	if !strings.Contains(body, `<ld-report-sidebar`) {
+		t.Fatalf("report page did not render report sidebar:\n%s", body)
+	}
+	if !strings.Contains(body, `&#34;compact&#34;:true`) {
+		t.Fatalf("report page did not compact the primary sidebar:\n%s", body)
+	}
+	if !strings.Contains(body, `/dashboards/executive-sales/pages/operations`) {
+		t.Fatalf("report sidebar did not include operations page link:\n%s", body)
+	}
+	if strings.Contains(body, `class="page-tab`) {
+		t.Fatalf("report header still rendered page tabs:\n%s", body)
 	}
 }
 
@@ -197,6 +207,9 @@ func TestCatalogRouteRendersDashboardCatalog(t *testing.T) {
 	}
 	if !strings.Contains(body, `href="/dashboards/executive-sales"`) {
 		t.Fatalf("catalog missing dashboard link:\n%s", body)
+	}
+	if strings.Contains(body, `<ld-report-sidebar`) {
+		t.Fatalf("catalog should not render report sidebar:\n%s", body)
 	}
 }
 
@@ -253,6 +266,9 @@ func TestModelRouteRendersSemanticModelGraph(t *testing.T) {
 	}
 	if !strings.Contains(body, `Test Model`) {
 		t.Fatalf("body does not include model title:\n%s", body)
+	}
+	if strings.Contains(body, `<ld-report-sidebar`) {
+		t.Fatalf("model page should not render report sidebar:\n%s", body)
 	}
 }
 

@@ -594,13 +594,11 @@ function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// web/components/sidebar.ts
+// web/components/report-sidebar.ts
 var defaultConfig = {
-  active: "dashboards",
-  workspaceTitle: "LibreDash Workspace",
-  groups: [
-    { label: "Workspace", items: [{ id: "dashboards", label: "Dashboards", href: "/", icon: "dashboard" }] }
-  ]
+  dashboardTitle: "Dashboard",
+  pageTitle: "Page",
+  pages: []
 };
 var configConverter = {
   fromAttribute(value) {
@@ -615,36 +613,25 @@ var configConverter = {
     return JSON.stringify(value ?? defaultConfig);
   }
 };
-var statusConverter = {
-  fromAttribute(value) {
-    if (!value) return {};
-    try {
-      return JSON.parse(value);
-    } catch {
-      return {};
-    }
-  },
-  toAttribute(value) {
-    return JSON.stringify(value ?? {});
-  }
-};
-var LibreDashSidebar = class extends i4 {
+var ReportSidebar = class extends i4 {
   constructor() {
     super(...arguments);
     this.config = defaultConfig;
-    this.status = {};
-    this.mode = storedThemeMode();
     this.collapsed = storedCollapsed();
-    this.onThemeApplied = (event) => {
-      this.mode = normalizeThemeMode(event.detail?.mode);
+    this.toggleCollapsed = () => {
+      this.collapsed = !this.collapsed;
+      try {
+        localStorage.setItem("libredash-report-sidebar-collapsed", String(this.collapsed));
+      } catch {
+      }
     };
   }
   static {
     this.styles = i`
     :host {
-      --ld-sidebar-width: 276px;
+      --ld-report-sidebar-width: 192px;
       display: block;
-      width: var(--ld-sidebar-width);
+      width: var(--ld-report-sidebar-width);
       min-height: 100svh;
       color: var(--fgColor-default);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -652,226 +639,51 @@ var LibreDashSidebar = class extends i4 {
     }
 
     :host([data-collapsed]) {
-      --ld-sidebar-width: 64px;
+      --ld-report-sidebar-width: 48px;
     }
 
     aside {
       position: sticky;
       top: 0;
       display: grid;
-      width: var(--ld-sidebar-width);
+      width: var(--ld-report-sidebar-width);
       min-height: 100svh;
       grid-template-rows: auto minmax(0, 1fr) auto;
       border-right: 1px solid var(--borderColor-default);
-      background: var(--bgColor-default);
+      background: var(--bgColor-muted);
       transition: width 180ms var(--ld-ease-out);
     }
 
-    .brand {
+    header {
       display: grid;
-      gap: 12px;
-      padding: 16px 16px 14px;
+      gap: 8px;
+      min-width: 0;
       border-bottom: 1px solid var(--borderColor-muted);
+      padding: 14px 12px 12px;
     }
 
-    .brand-row {
+    .top-row {
       display: flex;
       min-width: 0;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .mark {
-      display: grid;
-      width: 30px;
-      height: 30px;
-      flex: 0 0 auto;
-      place-items: center;
-      border-radius: 5px;
-      background: var(--ld-accent);
-      color: var(--ld-accent-fg);
-    }
-
-    .mark svg {
-      width: 17px;
-      height: 17px;
-      stroke-width: 2.2;
-    }
-
-    .name {
-      overflow: hidden;
-      min-width: 0;
-      color: var(--fgColor-default);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 1rem;
-      font-weight: 850;
-      letter-spacing: 0;
-    }
-
-    .collapse-button {
+    .glyph,
+    .page-initial {
       display: grid;
       width: 28px;
       height: 28px;
       flex: 0 0 auto;
       place-items: center;
-      margin-left: auto;
-      border: 1px solid var(--borderColor-default);
       border-radius: 5px;
-      background: var(--bgColor-muted);
+      background: var(--bgColor-default);
       color: var(--fgColor-muted);
-      cursor: pointer;
-      padding: 0;
-    }
-
-    .collapse-button:hover,
-    .collapse-button:focus-visible {
-      border-color: var(--borderColor-accent-emphasis);
-      color: var(--fgColor-accent);
-      outline: 0;
-    }
-
-    .collapse-button:disabled {
-      cursor: default;
-      opacity: 0.7;
-    }
-
-    .collapse-button:disabled:hover {
-      border-color: var(--borderColor-default);
-      color: var(--fgColor-muted);
-    }
-
-    .context {
-      display: grid;
-      gap: 2px;
-      min-width: 0;
-      border-left: 3px solid var(--ld-accent);
-      padding-left: 9px;
-    }
-
-    .context span {
-      overflow: hidden;
-      color: var(--fgColor-muted);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.62rem;
+      font-size: 0.65rem;
       font-weight: 900;
-      letter-spacing: 0;
-      text-transform: uppercase;
     }
 
-    .context strong {
-      overflow: hidden;
-      color: var(--fgColor-default);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.79rem;
-      font-weight: 820;
-      letter-spacing: 0;
-    }
-
-    nav {
-      display: grid;
-      align-content: start;
-      gap: 14px;
-      min-height: 0;
-      overflow: auto;
-      padding: 12px 10px;
-      border-bottom: 1px solid var(--borderColor-muted);
-    }
-
-    .nav-group {
-      display: grid;
-      gap: 5px;
-    }
-
-    .nav-group-label {
-      color: var(--fgColor-muted);
-      padding: 0 8px;
-      font-size: 0.59rem;
-      font-weight: 950;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-
-    a,
-    button {
-      font: inherit;
-    }
-
-    .nav-item {
-      display: grid;
-      grid-template-columns: 28px minmax(0, 1fr) auto;
-      min-height: 36px;
-      align-items: center;
-      gap: 8px;
-      border: 1px solid transparent;
-      border-radius: 5px;
-      color: var(--fgColor-muted);
-      padding: 0 8px;
-      text-decoration: none;
-      font-size: 0.78rem;
-      font-weight: 760;
-    }
-
-    .nav-text {
-      display: grid;
-      gap: 1px;
-      min-width: 0;
-    }
-
-    .nav-text strong {
-      overflow: hidden;
-      color: inherit;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.76rem;
-      font-weight: 800;
-    }
-
-    .nav-text span {
-      overflow: hidden;
-      color: var(--fgColor-muted);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.61rem;
-      font-weight: 760;
-    }
-
-    .nav-item:hover,
-    .nav-item:focus-visible {
-      border-color: var(--borderColor-muted);
-      background: var(--bgColor-muted);
-      color: var(--fgColor-default);
-      outline: 0;
-    }
-
-    .nav-item[aria-current='page'] {
-      border-color: color-mix(in srgb, var(--ld-accent), var(--borderColor-default) 34%);
-      background: color-mix(in srgb, var(--ld-accent-muted), var(--bgColor-default) 62%);
-      color: var(--fgColor-default);
-    }
-
-    .nav-item.disabled {
-      cursor: not-allowed;
-      opacity: 0.48;
-    }
-
-    .nav-icon {
-      display: grid;
-      width: 24px;
-      height: 24px;
-      place-items: center;
-      border-radius: 4px;
-      background: color-mix(in srgb, var(--fgColor-muted), transparent 92%);
-    }
-
-    .nav-item[aria-current='page'] .nav-icon {
-      background: var(--ld-accent);
-      color: var(--ld-accent-fg);
-    }
-
-    svg {
+    .glyph svg {
       width: 15px;
       height: 15px;
       fill: none;
@@ -881,390 +693,252 @@ var LibreDashSidebar = class extends i4 {
       stroke-width: 2;
     }
 
-    .footer {
+    .titles {
       display: grid;
-      gap: 10px;
-      padding: 12px 10px;
-      border-top: 1px solid var(--borderColor-muted);
-      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 40%);
+      gap: 2px;
+      min-width: 0;
     }
 
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 28px;
+    .eyebrow,
+    .model-label {
+      overflow: hidden;
       color: var(--fgColor-muted);
-      padding: 0 6px;
-      font-size: 0.72rem;
-      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.58rem;
+      font-weight: 950;
+      letter-spacing: 0;
+      text-transform: uppercase;
     }
 
-    .pulse {
-      width: 9px;
-      height: 9px;
-      flex: 0 0 auto;
-      border-radius: 50%;
-      background: var(--fgColor-success);
+    .dashboard-title,
+    .page-title {
+      overflow: hidden;
+      color: var(--fgColor-default);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 850;
+      letter-spacing: 0;
     }
 
-    .pulse.loading {
-      background: var(--fgColor-attention);
-      animation: pulse 1s var(--ld-ease-out) infinite;
+    .dashboard-title {
+      font-size: 0.75rem;
     }
 
-    .actions {
+    .page-title {
+      font-size: 0.68rem;
+      color: var(--fgColor-muted);
+    }
+
+    .collapse {
       display: grid;
-      gap: 6px;
-    }
-
-    .refresh,
-    .theme-button {
-      display: inline-flex;
-      min-height: 32px;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      place-items: center;
+      margin-left: auto;
       border: 1px solid var(--borderColor-default);
       border-radius: 5px;
       background: var(--bgColor-default);
-      color: var(--fgColor-default);
+      color: var(--fgColor-muted);
       cursor: pointer;
-      padding: 0 9px;
-      font-size: 0.75rem;
-      font-weight: 820;
+      padding: 0;
     }
 
-    .refresh:hover,
-    .refresh:focus-visible,
-    .theme-button:hover,
-    .theme-button:focus-visible {
+    .collapse:hover,
+    .collapse:focus-visible {
       border-color: var(--borderColor-accent-emphasis);
       color: var(--fgColor-accent);
       outline: 0;
     }
 
-    .refresh:disabled {
-      cursor: wait;
-      opacity: 0.62;
-    }
-
-    .theme-button {
-      border-color: color-mix(in srgb, var(--ld-accent), var(--borderColor-default) 22%);
-      background: var(--ld-accent);
-      color: var(--ld-accent-fg);
-    }
-
-    :host([data-collapsed]) .brand {
-      justify-items: center;
-      gap: 0;
-      padding: 14px 10px;
-    }
-
-    :host([data-collapsed]) .brand-row {
+    nav {
       display: grid;
-      justify-items: center;
-      gap: 8px;
+      align-content: start;
+      gap: 6px;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px 8px;
     }
 
-    :host([data-collapsed]) .name,
-    :host([data-collapsed]) .context,
-    :host([data-collapsed]) .nav-group-label,
-    :host([data-collapsed]) .nav-text,
-    :host([data-collapsed]) .status span:last-child,
-    :host([data-collapsed]) .refresh span,
-    :host([data-collapsed]) .theme-button span {
+    a {
+      text-decoration: none;
+    }
+
+    .page-link,
+    .model-link {
+      position: relative;
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      min-height: 34px;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      color: var(--fgColor-muted);
+      padding: 0 8px;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .page-link:hover,
+    .page-link:focus-visible,
+    .model-link:hover,
+    .model-link:focus-visible {
+      border-color: var(--borderColor-default);
+      background: var(--bgColor-default);
+      color: var(--fgColor-default);
+      outline: 0;
+    }
+
+    .page-link[aria-current='page'] {
+      border-color: var(--ld-accent);
+      background: var(--ld-accent-muted, var(--bgColor-accent-muted));
+      color: var(--fgColor-default);
+    }
+
+    .page-link[aria-current='page']::before {
+      content: '';
+      position: absolute;
+      inset-block: 7px;
+      left: -1px;
+      width: 3px;
+      border-radius: 999px;
+      background: var(--ld-accent);
+    }
+
+    .link-text {
+      overflow: hidden;
+      min-width: 0;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    footer {
+      display: grid;
+      gap: 6px;
+      border-top: 1px solid var(--borderColor-muted);
+      padding: 8px;
+    }
+
+    .model-link svg {
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    :host([data-collapsed]) header {
+      padding-inline: 10px;
+    }
+
+    :host([data-collapsed]) .titles,
+    :host([data-collapsed]) .link-text,
+    :host([data-collapsed]) .model-label {
       display: none;
     }
 
-    :host([data-collapsed]) .collapse-button {
+    :host([data-collapsed]) .top-row {
+      display: grid;
+      justify-items: center;
+    }
+
+    :host([data-collapsed]) .collapse {
       margin-left: 0;
     }
 
-    :host([data-collapsed]) nav {
-      gap: 10px;
-      padding: 10px;
-    }
-
-    :host([data-collapsed]) .nav-group {
-      justify-items: center;
-      gap: 8px;
-    }
-
-    :host([data-collapsed]) .nav-item {
-      width: 42px;
-      min-height: 42px;
-      grid-template-columns: 1fr;
-      justify-items: center;
-      gap: 0;
-      padding: 0;
-    }
-
-    :host([data-collapsed]) .nav-icon {
-      width: 30px;
-      height: 30px;
-    }
-
-    :host([data-collapsed]) .footer {
-      padding: 10px;
-    }
-
-    :host([data-collapsed]) .status {
+    :host([data-collapsed]) .page-link,
+    :host([data-collapsed]) .model-link {
+      grid-template-columns: 28px;
       justify-content: center;
-      padding: 0;
-    }
-
-    :host([data-collapsed]) .actions {
-      justify-items: center;
-    }
-
-    :host([data-collapsed]) .refresh,
-    :host([data-collapsed]) .theme-button {
-      width: 42px;
-      padding: 0;
-    }
-
-    @keyframes pulse {
-      0%,
-      100% {
-        transform: scale(1);
-        opacity: 1;
-      }
-      50% {
-        transform: scale(0.72);
-        opacity: 0.55;
-      }
-    }
-
-    @media (max-width: 760px) {
-      :host,
-      :host([data-collapsed]) {
-        --ld-sidebar-width: 100%;
-        width: 100%;
-      }
-
-      aside {
-        position: static;
-        width: 100%;
-        min-height: auto;
-        grid-template-rows: auto;
-      }
-
-      .brand {
-        padding: 12px;
-      }
-
-      nav {
-        display: flex;
-        overflow-x: auto;
-      }
-
-      .nav-group {
-        min-width: max-content;
-      }
-
-      .footer {
-        display: none;
-      }
+      padding-inline: 0;
     }
   `;
   }
-  connectedCallback() {
-    super.connectedCallback();
-    document.addEventListener("libredash-theme-applied", this.onThemeApplied);
-    this.mode = storedThemeMode();
-    this.syncCollapsedState();
-  }
-  disconnectedCallback() {
-    document.removeEventListener("libredash-theme-applied", this.onThemeApplied);
-    super.disconnectedCallback();
-  }
-  changeTheme(mode) {
-    this.dispatchEvent(new CustomEvent("libredash-theme-change", {
-      detail: { mode },
-      bubbles: true,
-      composed: true
-    }));
-  }
   updated() {
-    this.syncCollapsedState();
-  }
-  syncCollapsedState() {
-    if (this.effectiveCollapsed) {
-      this.setAttribute("data-collapsed", "");
-      this.style.setProperty("--ld-sidebar-width", "64px");
-    } else {
-      this.removeAttribute("data-collapsed");
-      this.style.setProperty("--ld-sidebar-width", "276px");
-    }
-  }
-  toggleCollapsed() {
-    if (this.config.compact) return;
-    this.collapsed = !this.collapsed;
-    try {
-      localStorage.setItem("libredash-sidebar-collapsed", String(this.collapsed));
-    } catch {
-    }
-    this.dispatchEvent(new CustomEvent("ld-sidebar-collapse", {
-      detail: { collapsed: this.collapsed },
-      bubbles: true,
-      composed: true
-    }));
-  }
-  refreshCache() {
-    this.dispatchEvent(new CustomEvent("ld-sidebar-refresh", {
-      bubbles: true,
-      composed: true
-    }));
-  }
-  statusText() {
-    if (this.status.loading) return "Refreshing";
-    if (this.status.error) return "Needs setup";
-    if (this.status.lastUpdated) return `Updated ${this.status.lastUpdated}`;
-    return "Live";
+    this.toggleAttribute("data-collapsed", this.collapsed);
   }
   render() {
-    const title = this.config.dashboardTitle || this.config.modelTitle || this.config.workspaceTitle || "Workspace";
-    const detail = this.config.pageTitle || this.config.modelId || this.config.dashboardId || "Catalog";
-    const collapsed = this.effectiveCollapsed;
+    const pages = this.config.pages ?? [];
     return b2`
-      <aside aria-label="LibreDash workspace">
-        <header class="brand">
-          <div class="brand-row">
-            <span class="mark">${icon("dashboard")}</span>
-            <span class="name">LibreDash</span>
+      <aside aria-label="Report pages">
+        <header>
+          <div class="top-row">
+            <span class="glyph">${icon("report")}</span>
+            <div class="titles">
+              <span class="eyebrow">Report</span>
+              <strong class="dashboard-title" title=${this.config.dashboardTitle || ""}>${this.config.dashboardTitle || "Dashboard"}</strong>
+              <span class="page-title" title=${this.config.pageTitle || ""}>${this.config.pageTitle || ""}</span>
+            </div>
             <button
-              class="collapse-button"
+              class="collapse"
               type="button"
-              aria-label=${collapsed ? "Expand navigation" : "Collapse navigation"}
-              aria-pressed=${String(collapsed)}
-              title=${this.config.compact ? "Workspace navigation is compact on report pages" : collapsed ? "Expand navigation" : "Collapse navigation"}
-              ?disabled=${this.config.compact}
+              aria-label=${this.collapsed ? "Expand report pages" : "Collapse report pages"}
+              aria-pressed=${String(this.collapsed)}
+              title=${this.collapsed ? "Expand report pages" : "Collapse report pages"}
               @click=${this.toggleCollapsed}
             >
-              ${icon(collapsed ? "expand" : "collapse")}
+              ${icon(this.collapsed ? "expand" : "collapse")}
             </button>
-          </div>
-          <div class="context">
-            <span>${this.config.workspaceTitle || "Workspace"}</span>
-            <strong title=${title}>${title}</strong>
-            <span title=${detail}>${detail}</span>
           </div>
         </header>
 
-        <nav aria-label="Primary">
-          ${this.config.groups.map((group) => b2`
-            <section class="nav-group" aria-label=${group.label}>
-              <span class="nav-group-label">${group.label}</span>
-              ${group.items.map((item) => item.disabled ? this.renderDisabledItem(item) : this.renderLink(item))}
-            </section>
-          `)}
+        <nav aria-label="Report pages">
+          ${pages.map((page) => this.renderPageLink(page))}
         </nav>
 
-        <footer class="footer">
-          <div class="status">
-            <span class=${`pulse ${this.status.loading ? "loading" : ""}`}></span>
-            <span>${this.statusText()}</span>
-          </div>
-          <div class="actions">
-            ${this.config.refresh ? b2`
-              <button class="refresh" type="button" ?disabled=${this.status.loading} @click=${this.refreshCache} title="Re-import DuckDB cache">
-                ${icon("refresh")} <span>Re-import</span>
-              </button>
-            ` : A}
-            <button class="theme-button" type="button" aria-label=${this.themeLabel()} title=${this.themeTitle()} @click=${() => this.changeTheme(this.nextTheme())}>
-              ${icon(this.themeIcon())} <span>${this.themeLabel()}</span>
-            </button>
-          </div>
+        <footer>
+          <span class="model-label">Semantic model</span>
+          ${this.config.modelHref ? b2`
+            <a class="model-link" href=${this.config.modelHref} title=${this.config.modelTitle || "Semantic model"}>
+              <span class="glyph">${icon("model")}</span>
+              <span class="link-text">${this.config.modelTitle || this.config.modelId || "Model"}</span>
+            </a>
+          ` : A}
         </footer>
       </aside>
     `;
   }
-  get effectiveCollapsed() {
-    return Boolean(this.config.compact || this.collapsed);
-  }
-  nextTheme() {
-    if (this.mode === "system") return "light";
-    if (this.mode === "light") return "dark";
-    return "system";
-  }
-  themeLabel() {
-    if (this.mode === "system") return "System";
-    if (this.mode === "light") return "Light";
-    return "Dark";
-  }
-  themeTitle() {
-    const next = this.nextTheme();
-    const nextLabel = next === "system" ? "System preference" : next === "light" ? "Light mode" : "Dark mode";
-    return `${this.themeLabel()} theme. Switch to ${nextLabel}.`;
-  }
-  themeIcon() {
-    if (this.mode === "system") return "system";
-    if (this.mode === "light") return "sun";
-    return "moon";
-  }
-  renderLink(item) {
-    const current = item.id === this.config.active;
-    const label = item.meta ? `${item.label}: ${item.meta}` : item.label;
+  renderPageLink(page) {
+    const active = Boolean(page.active || page.id === this.config.pageId);
+    const title = page.title || page.id;
     return b2`
-      <a class="nav-item" href=${item.href} aria-current=${current ? "page" : "false"} aria-label=${label} title=${label}>
-        <span class="nav-icon">${icon(item.icon)}</span>
-        <span class="nav-text">
-          <strong>${item.label}</strong>
-          ${item.meta ? b2`<span>${item.meta}</span>` : A}
-        </span>
+      <a class="page-link" href=${page.href} aria-current=${active ? "page" : "false"} title=${title}>
+        <span class="page-initial" aria-hidden="true">${initials(title)}</span>
+        <span class="link-text">${title}</span>
       </a>
-    `;
-  }
-  renderDisabledItem(item) {
-    const label = item.meta ? `${item.label}: ${item.meta}` : item.label;
-    return b2`
-      <span class="nav-item disabled" aria-disabled="true" aria-label=${label} title=${label}>
-        <span class="nav-icon">${icon(item.icon)}</span>
-        <span class="nav-text">
-          <strong>${item.label}</strong>
-          ${item.meta ? b2`<span>${item.meta}</span>` : A}
-        </span>
-      </span>
     `;
   }
 };
 __decorateClass([
   n4({ attribute: "config", converter: configConverter })
-], LibreDashSidebar.prototype, "config", 2);
-__decorateClass([
-  n4({ attribute: "status", converter: statusConverter })
-], LibreDashSidebar.prototype, "status", 2);
+], ReportSidebar.prototype, "config", 2);
 __decorateClass([
   r5()
-], LibreDashSidebar.prototype, "mode", 2);
-__decorateClass([
-  r5()
-], LibreDashSidebar.prototype, "collapsed", 2);
+], ReportSidebar.prototype, "collapsed", 2);
+function initials(value) {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "P";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
+function storedCollapsed() {
+  try {
+    return localStorage.getItem("libredash-report-sidebar-collapsed") === "true";
+  } catch {
+    return false;
+  }
+}
 function icon(name) {
   switch (name) {
-    case "catalog":
-      return iconSvg(w`<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect>`);
-    case "dashboard":
+    case "report":
       return iconSvg(w`<path d="M3 3v18h18"></path><path d="M8 17V9"></path><path d="M13 17V5"></path><path d="M18 17v-6"></path>`);
     case "model":
       return iconSvg(w`<ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path>`);
-    case "data":
-      return iconSvg(w`<path d="M3 4h18"></path><path d="M3 10h18"></path><path d="M3 16h18"></path><path d="M8 4v16"></path><path d="M16 4v16"></path>`);
-    case "cache":
-      return iconSvg(w`<path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path><path d="M7 4v16"></path><path d="M17 4v16"></path>`);
-    case "settings":
-      return iconSvg(w`<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 .9-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .9 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5.9Z"></path>`);
-    case "system":
-      return iconSvg(w`<rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M8 8h8"></path><path d="M8 12h5"></path>`);
-    case "refresh":
-      return iconSvg(w`<path d="M21 12a9 9 0 0 1-15.4 6.4"></path><path d="M3 12a9 9 0 0 1 15.4-6.4"></path><path d="M3 16v5h5"></path><path d="M21 8V3h-5"></path>`);
-    case "sun":
-      return iconSvg(w`<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.9 4.9 1.4 1.4"></path><path d="m17.7 17.7 1.4 1.4"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.3 17.7-1.4 1.4"></path><path d="m19.1 4.9-1.4 1.4"></path>`);
-    case "moon":
-      return iconSvg(w`<path d="M20.9 13.4A8 8 0 0 1 10.6 3.1 8.9 8.9 0 1 0 20.9 13.4Z"></path>`);
-    case "activity":
-      return iconSvg(w`<path d="M22 12h-4l-3 8L9 4l-3 8H2"></path>`);
     case "collapse":
       return iconSvg(w`<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path><path d="m16 10-2 2 2 2"></path>`);
     case "expand":
@@ -1274,25 +948,7 @@ function icon(name) {
 function iconSvg(content) {
   return w`<svg viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`;
 }
-function storedCollapsed() {
-  try {
-    return localStorage.getItem("libredash-sidebar-collapsed") === "true";
-  } catch {
-    return false;
-  }
-}
-function storedThemeMode() {
-  try {
-    return normalizeThemeMode(localStorage.getItem("libredash-color-mode") || document.documentElement.dataset.colorMode);
-  } catch {
-    return normalizeThemeMode(document.documentElement.dataset.colorMode);
-  }
-}
-function normalizeThemeMode(mode) {
-  if (mode === "light" || mode === "dark") return mode;
-  return "system";
-}
-customElements.define("ld-sidebar", LibreDashSidebar);
+customElements.define("ld-report-sidebar", ReportSidebar);
 /*! Bundled license information:
 
 @lit/reactive-element/css-tag.js:

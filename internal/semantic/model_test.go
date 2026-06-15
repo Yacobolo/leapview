@@ -22,6 +22,9 @@ func TestLoadWorkspaceCatalog(t *testing.T) {
 	if len(workspace.Catalog.Dashboards) != 1 {
 		t.Fatalf("dashboard catalog count = %d, want 1", len(workspace.Catalog.Dashboards))
 	}
+	if got := workspace.Catalog.Workspace.Title; got != "LibreDash Workspace" {
+		t.Fatalf("workspace title = %q, want LibreDash Workspace", got)
+	}
 	if _, ok := workspace.Models["olist"]; !ok {
 		t.Fatal("workspace missing olist model")
 	}

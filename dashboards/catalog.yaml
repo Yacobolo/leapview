@@ -1,3 +1,8 @@
+workspace:
+  id: libredash
+  title: LibreDash Workspace
+  description: Local BI workspace.
+
 semantic_models:
   - id: olist
     title: Olist Commerce

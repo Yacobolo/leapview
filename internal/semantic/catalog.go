@@ -9,8 +9,15 @@ import (
 )
 
 type Catalog struct {
+	Workspace      CatalogWorkspace   `yaml:"workspace"`
 	SemanticModels []CatalogModel     `yaml:"semantic_models"`
 	Dashboards     []CatalogDashboard `yaml:"dashboards"`
+}
+
+type CatalogWorkspace struct {
+	ID          string `yaml:"id"`
+	Title       string `yaml:"title"`
+	Description string `yaml:"description"`
 }
 
 type CatalogModel struct {

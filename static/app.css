@@ -4338,8 +4338,15 @@
     grid-template-columns: auto minmax(0, 1fr);
     background: var(--report-workspace-bg);
   }
+  .app-shell.report-shell {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
   ld-sidebar {
     z-index: 20;
+    min-width: 0;
+  }
+  ld-report-sidebar {
+    z-index: 19;
     min-width: 0;
   }
   .app-main {
@@ -4537,35 +4544,6 @@
   .report-canvas-shell > ld-report-canvas {
     min-width: 0;
     min-height: 0;
-  }
-  .page-tabs {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin: 0;
-    overflow-x: auto;
-    view-transition-name: report-tabs;
-  }
-  .page-tab {
-    display: inline-flex;
-    min-height: 30px;
-    align-items: center;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    background: transparent;
-    color: var(--fgColor-muted);
-    padding: 0 1px;
-    text-decoration: none;
-    white-space: nowrap;
-    font-size: 0.74rem;
-    font-weight: 850;
-  }
-  .page-tab:hover, .page-tab:focus-visible, .page-tab.active {
-    border-bottom-color: var(--ld-accent);
-    background: transparent;
-    color: var(--fgColor-default);
-    outline: 0;
   }
   ld-report-canvas {
     display: block;
