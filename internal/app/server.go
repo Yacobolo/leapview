@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -206,7 +207,10 @@ func (s *Server) tableWindow(w http.ResponseWriter, r *http.Request) {
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
-	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), dashboardID, filters, request)))
+	table := s.queryTable(r.Context(), dashboardID, filters, request)
+	if !isCanceledTable(table) {
+		s.broker.publish(clientID, tablePatch(request.Table, table))
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -336,6 +340,13 @@ func (s *Server) queryTable(ctx context.Context, dashboardID string, filters das
 		return dashboard.EmptyTable(request, err)
 	}
 	return table
+}
+
+func isCanceledTable(table dashboard.Table) bool {
+	message := strings.ToLower(table.Error)
+	return strings.Contains(message, "context canceled") ||
+		strings.Contains(message, "context cancelled") ||
+		strings.Contains(message, "interrupt")
 }
 
 func (s *Server) normalizeFilters(dashboardID string, filters dashboard.Filters) dashboard.Filters {

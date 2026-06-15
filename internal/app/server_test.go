@@ -14,6 +14,10 @@ import (
 
 type fakeMetrics struct{}
 
+type canceledTableMetrics struct {
+	fakeMetrics
+}
+
 func (fakeMetrics) Catalog() dashboard.Catalog {
 	return dashboard.Catalog{
 		Models: []dashboard.CatalogModel{
@@ -280,6 +284,11 @@ func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, 
 	}, nil
 }
 
+func (canceledTableMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	request = request.WithDefaults()
+	return dashboard.EmptyTable(request, context.Canceled), nil
+}
+
 func (fakeMetrics) RefreshCache(_ context.Context, _ string) error {
 	return nil
 }
@@ -368,5 +377,27 @@ func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+}
+
+func TestTableWindowCommandDoesNotPublishCanceledQueries(t *testing.T) {
+	server := New(canceledTableMetrics{})
+	updates, unsubscribe := server.broker.subscribe("test-client:executive-sales:overview")
+	defer unsubscribe()
+
+	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"overview"},"tableCommand":{"table":"orders","block":"all","start":400,"count":200,"requestSeq":42}}`)
+	req := httptest.NewRequest(http.MethodPost, "/commands/table-window", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	select {
+	case patch := <-updates:
+		t.Fatalf("received canceled table patch: %#v", patch)
+	default:
 	}
 }

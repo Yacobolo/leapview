@@ -193,6 +193,8 @@ class DataTable extends LitElement {
   private shouldResetScroll = false
   private requestSeq = 0
   private scrollFrame = 0
+  private jumpTimer = 0
+  private pendingJumpStart = 0
   private expectedBlocks = new Map<BlockID, ExpectedBlockRequest>()
   private latestAcceptedSeq = new Map<BlockID, number>()
   private blockCache: Record<BlockID, TableBlock> = emptyBlocks()
@@ -619,6 +621,7 @@ class DataTable extends LitElement {
     document.removeEventListener('keydown', this.handleDocumentKeyDown)
     this.resizeObserver?.disconnect()
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame)
+    this.clearJumpTimer()
     super.disconnectedCallback()
   }
 
@@ -629,6 +632,7 @@ class DataTable extends LitElement {
       this.shouldResetScroll = true
       this.expectedBlocks.clear()
       this.latestAcceptedSeq.clear()
+      this.clearJumpTimer()
       this.selectedRowId = ''
       this.selectedCellKey = ''
     }
@@ -849,10 +853,11 @@ class DataTable extends LitElement {
     const missingStarts = desired.filter((start) => !loadedStarts.has(start) && !expectedStarts.has(start))
 
     if (missingStarts.length > 1 || !loadedStarts.has(currentStart) && !expectedStarts.has(currentStart)) {
-      this.emitBlock('all', currentStart, this.table.sort, this.table.resetVersion)
+      this.scheduleJumpBlock(currentStart)
       return
     }
 
+    this.clearJumpTimer()
     const usedBlocks = new Set<BlockID>()
 
     for (const start of missingStarts) {
@@ -869,6 +874,23 @@ class DataTable extends LitElement {
       this.scrollFrame = 0
       this.ensureBlocksForScroll()
     })
+  }
+
+  private scheduleJumpBlock(start: number): void {
+    if (this.jumpTimer && this.pendingJumpStart === start) return
+    this.pendingJumpStart = start
+    this.requestUpdate()
+    this.clearJumpTimer()
+    this.jumpTimer = window.setTimeout(() => {
+      this.jumpTimer = 0
+      this.emitBlock('all', this.pendingJumpStart, this.table.sort, this.table.resetVersion)
+    }, 75)
+  }
+
+  private clearJumpTimer(): void {
+    if (!this.jumpTimer) return
+    clearTimeout(this.jumpTimer)
+    this.jumpTimer = 0
   }
 
   private desiredStarts(currentStart: number): number[] {

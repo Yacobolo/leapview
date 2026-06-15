@@ -793,6 +793,8 @@ var DataTable = class extends i4 {
     this.shouldResetScroll = false;
     this.requestSeq = 0;
     this.scrollFrame = 0;
+    this.jumpTimer = 0;
+    this.pendingJumpStart = 0;
     this.expectedBlocks = /* @__PURE__ */ new Map();
     this.latestAcceptedSeq = /* @__PURE__ */ new Map();
     this.blockCache = emptyBlocks();
@@ -1227,6 +1229,7 @@ var DataTable = class extends i4 {
     document.removeEventListener("keydown", this.handleDocumentKeyDown);
     this.resizeObserver?.disconnect();
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
+    this.clearJumpTimer();
     super.disconnectedCallback();
   }
   willUpdate() {
@@ -1236,6 +1239,7 @@ var DataTable = class extends i4 {
       this.shouldResetScroll = true;
       this.expectedBlocks.clear();
       this.latestAcceptedSeq.clear();
+      this.clearJumpTimer();
       this.selectedRowId = "";
       this.selectedCellKey = "";
     }
@@ -1433,9 +1437,10 @@ var DataTable = class extends i4 {
     const expectedStarts = new Set([...this.expectedBlocks.values()].map((request) => request.start));
     const missingStarts = desired.filter((start) => !loadedStarts.has(start) && !expectedStarts.has(start));
     if (missingStarts.length > 1 || !loadedStarts.has(currentStart) && !expectedStarts.has(currentStart)) {
-      this.emitBlock("all", currentStart, this.table.sort, this.table.resetVersion);
+      this.scheduleJumpBlock(currentStart);
       return;
     }
+    this.clearJumpTimer();
     const usedBlocks = /* @__PURE__ */ new Set();
     for (const start of missingStarts) {
       const block = this.reusableBlock(desiredSet, usedBlocks);
@@ -1450,6 +1455,21 @@ var DataTable = class extends i4 {
       this.scrollFrame = 0;
       this.ensureBlocksForScroll();
     });
+  }
+  scheduleJumpBlock(start) {
+    if (this.jumpTimer && this.pendingJumpStart === start) return;
+    this.pendingJumpStart = start;
+    this.requestUpdate();
+    this.clearJumpTimer();
+    this.jumpTimer = window.setTimeout(() => {
+      this.jumpTimer = 0;
+      this.emitBlock("all", this.pendingJumpStart, this.table.sort, this.table.resetVersion);
+    }, 75);
+  }
+  clearJumpTimer() {
+    if (!this.jumpTimer) return;
+    clearTimeout(this.jumpTimer);
+    this.jumpTimer = 0;
   }
   desiredStarts(currentStart) {
     const starts = currentStart <= 0 ? [0, this.chunkSize, this.chunkSize * 2] : [Math.max(0, currentStart - this.chunkSize), currentStart, currentStart + this.chunkSize];
