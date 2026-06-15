@@ -106,6 +106,18 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Visuals["orders_by_month_status"].Query.Series; got != "status" {
 		t.Fatalf("multi-series visual series = %q, want status", got)
 	}
+	if got := report.Visuals["revenue"].KindOrDefault(); got != "chart" {
+		t.Fatalf("revenue visual kind = %q, want chart", got)
+	}
+	if got := report.Visuals["revenue"].ShapeOrDefault(); got != "category_value" {
+		t.Fatalf("revenue visual shape = %q, want category_value", got)
+	}
+	if got := report.Visuals["orders_by_month_status"].ShapeOrDefault(); got != "category_series_value" {
+		t.Fatalf("multi-series visual shape = %q, want category_series_value", got)
+	}
+	if got := report.Visuals["revenue"].RendererOrDefault(); got != "echarts" {
+		t.Fatalf("revenue visual renderer = %q, want echarts", got)
+	}
 	if got := report.Tables["orders"].DefaultSort.Key; got != "purchase_date" {
 		t.Fatalf("orders table default sort = %q, want purchase_date", got)
 	}
@@ -129,6 +141,104 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Filters["purchase_date"].URLParam; got != "period" {
 		t.Fatalf("purchase_date url param = %q, want period", got)
 	}
+}
+
+func TestDashboardValidateAcceptsV3VisualMetadata(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.Kind = "chart"
+	visual.Shape = "category_value"
+	visual.Renderer = "echarts"
+	visual.Options = map[string]any{"stacked": false}
+	visual.RendererOptions = map[string]any{
+		"echarts": map[string]any{
+			"legend": map[string]any{"show": true},
+			"dataZoom": []any{
+				map[string]any{"type": "inside"},
+			},
+		},
+	}
+	report.Visuals["revenue"] = visual
+
+	if err := report.Validate(model); err != nil {
+		t.Fatalf("validate v3 visual: %v", err)
+	}
+}
+
+func TestDashboardValidateRejectsInvalidVisualShape(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.Shape = "matrix"
+	report.Visuals["revenue"] = visual
+
+	assertDashboardValidateError(t, report, model, "unsupported shape")
+}
+
+func TestDashboardValidateRejectsInvalidVisualKind(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.Kind = "map"
+	report.Visuals["revenue"] = visual
+
+	assertDashboardValidateError(t, report, model, "unsupported kind")
+}
+
+func TestDashboardValidateRejectsInvalidRenderer(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.Renderer = "canvas"
+	report.Visuals["revenue"] = visual
+
+	assertDashboardValidateError(t, report, model, "unsupported renderer")
+}
+
+func TestDashboardValidateRejectsShapeQueryMismatch(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.Shape = "category_series_value"
+	report.Visuals["revenue"] = visual
+
+	assertDashboardValidateError(t, report, model, "requires query series")
+}
+
+func TestDashboardValidateRejectsRendererTypeMismatch(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.Renderer = "echarts"
+	visual.Type = "sankey"
+	report.Visuals["revenue"] = visual
+
+	assertDashboardValidateError(t, report, model, "does not support type")
+}
+
+func TestDashboardValidateRejectsUnsafeRendererOptions(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.RendererOptions = map[string]any{
+		"echarts": map[string]any{
+			"series": []any{map[string]any{"renderItem": "function() {}"}},
+		},
+	}
+	report.Visuals["revenue"] = visual
+
+	assertDashboardValidateError(t, report, model, "unsafe renderer option")
+}
+
+func TestDashboardValidateRejectsNonObjectRendererOptions(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["revenue"]
+	visual.RendererOptions = map[string]any{"echarts": "bad"}
+	report.Visuals["revenue"] = visual
+
+	assertDashboardValidateError(t, report, model, "must be an object")
 }
 
 func TestValidateRejectsUnknownDatasetSource(t *testing.T) {

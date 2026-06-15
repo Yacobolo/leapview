@@ -17596,15 +17596,15 @@ var GlobalModel = (
       var optionChanged = false;
       var optionManager = this._optionManager;
       if (!type || type === "recreate") {
-        var baseOption = optionManager.mountOption(type === "recreate");
+        var baseOption2 = optionManager.mountOption(type === "recreate");
         if (true) {
-          checkMissingComponents(baseOption);
+          checkMissingComponents(baseOption2);
         }
         if (!this.option || type === "recreate") {
-          initBase(this, baseOption);
+          initBase(this, baseOption2);
         } else {
           this.restoreData();
-          this._mergeOption(baseOption, opt);
+          this._mergeOption(baseOption2, opt);
         }
         optionChanged = true;
       }
@@ -17977,20 +17977,20 @@ var GlobalModel = (
           }
         }
       };
-      initBase = function(ecModel, baseOption) {
+      initBase = function(ecModel, baseOption2) {
         ecModel.option = {};
         ecModel.option[OPTION_INNER_KEY] = OPTION_INNER_VALUE;
         ecModel._componentsMap = createHashMap({
           series: []
         });
         ecModel._componentsCount = createHashMap();
-        var airaOption = baseOption.aria;
+        var airaOption = baseOption2.aria;
         if (isObject(airaOption) && airaOption.enabled == null) {
           airaOption.enabled = true;
         }
-        mergeTheme(baseOption, ecModel._theme.option);
-        merge(baseOption, globalDefault_default, false);
-        ecModel._mergeOption(baseOption, null);
+        mergeTheme(baseOption2, ecModel._theme.option);
+        merge(baseOption2, globalDefault_default, false);
+        ecModel._mergeOption(baseOption2, null);
       };
     })();
     return GlobalModel2;
@@ -18152,7 +18152,7 @@ var OptionManager = (
 function parseRawOption(rawOption, optionPreprocessorFuncs2, isNew) {
   var mediaList = [];
   var mediaDefault;
-  var baseOption;
+  var baseOption2;
   var declaredBaseOption = rawOption.baseOption;
   var timelineOnRoot = rawOption.timeline;
   var timelineOptionsOnRoot = rawOption.options;
@@ -18160,15 +18160,15 @@ function parseRawOption(rawOption, optionPreprocessorFuncs2, isNew) {
   var hasMedia = !!rawOption.media;
   var hasTimeline = !!(timelineOptionsOnRoot || timelineOnRoot || declaredBaseOption && declaredBaseOption.timeline);
   if (declaredBaseOption) {
-    baseOption = declaredBaseOption;
-    if (!baseOption.timeline) {
-      baseOption.timeline = timelineOnRoot;
+    baseOption2 = declaredBaseOption;
+    if (!baseOption2.timeline) {
+      baseOption2.timeline = timelineOnRoot;
     }
   } else {
     if (hasTimeline || hasMedia) {
       rawOption.options = rawOption.media = null;
     }
-    baseOption = rawOption;
+    baseOption2 = rawOption;
   }
   if (hasMedia) {
     if (isArray(mediaOnRoot)) {
@@ -18192,7 +18192,7 @@ function parseRawOption(rawOption, optionPreprocessorFuncs2, isNew) {
       }
     }
   }
-  doPreprocess(baseOption);
+  doPreprocess(baseOption2);
   each(timelineOptionsOnRoot, function(option) {
     return doPreprocess(option);
   });
@@ -18205,7 +18205,7 @@ function parseRawOption(rawOption, optionPreprocessorFuncs2, isNew) {
     });
   }
   return {
-    baseOption,
+    baseOption: baseOption2,
     timelineOptions: timelineOptionsOnRoot || [],
     mediaDefault,
     mediaList
@@ -83274,25 +83274,35 @@ var EChartVisual = class extends i4 {
       this.instance.clear();
       return;
     }
-    this.instance.setOption(buildOption(payload, stylesFor(this)), true);
+    const renderer = chartRenderers[payload.renderer ?? "echarts"];
+    if (!renderer) {
+      this.instance.clear();
+      return;
+    }
+    this.instance.setOption(renderer.buildOption(payload, stylesFor(this)), true);
     this.instance.resize();
   }
   get payload() {
     const chart = this.chart ?? {};
     return {
-      version: chart.version ?? 1,
+      version: chart.version ?? 3,
       id: chart.id || this.visualId,
+      kind: chart.kind || "chart",
+      shape: normalizeShape(chart.shape || (chart.series?.length ? "category_series_value" : "category_value")),
+      renderer: chart.renderer || "echarts",
       type: normalizeType(chart.type || this.type),
       title: chart.title || this.chartTitle,
       unit: chart.unit ?? this.unit,
       field: chart.field || this.field,
       dimensions: chart.dimensions ?? [],
       measure: chart.measure ?? "",
+      measures: chart.measures ?? (chart.measure ? [chart.measure] : []),
       series: chart.series ?? [],
-      stacked: chart.stacked ?? false,
+      stacked: chart.stacked ?? Boolean(chart.options?.stacked),
       selection: chart.selection ?? this.selection ?? [],
       data: chart.data ?? this.data ?? [],
-      options: chart.options ?? {}
+      options: chart.options ?? {},
+      rendererOptions: chart.rendererOptions ?? {}
     };
   }
   selectLabel(label) {
@@ -83484,21 +83494,29 @@ var KPIStrip = class extends i4 {
 __decorateClass([
   n4({ type: Array })
 ], KPIStrip.prototype, "items", 2);
-function buildOption(payload, tokens2) {
-  const type = normalizeType(payload.type);
-  const data = payload.data ?? [];
-  const selected = /* @__PURE__ */ new Set([...payload.selection ?? [], ...data.filter((point) => point.selected).map((point) => point.label)]);
-  const hasSelection = selected.size > 0;
-  const itemData = data.map((point, index) => ({
-    name: point.label,
-    value: point.value,
-    selected: selected.has(point.label),
-    itemStyle: {
-      color: tokens2.palette[index % tokens2.palette.length],
-      opacity: hasSelection && !selected.has(point.label) ? 0.35 : 1
+var chartRenderers = {
+  echarts: {
+    buildOption(payload, tokens2) {
+      const generated = buildEChartsOption(payload, tokens2);
+      const override = payload.rendererOptions?.echarts ?? {};
+      return deepMerge(generated, override);
     }
-  }));
-  const base2 = {
+  }
+};
+function buildEChartsOption(payload, tokens2) {
+  switch (normalizeShape(payload.shape)) {
+    case "single_value":
+      return singleValueAdapter(payload, tokens2);
+    case "category_series_value":
+    case "category_value":
+    default:
+      if (isPartToWholeType(normalizeType(payload.type))) return partToWholeAdapter(payload, tokens2);
+      return categoryAdapter(payload, tokens2);
+  }
+}
+function baseOption(payload, tokens2) {
+  const type = normalizeType(payload.type);
+  return {
     backgroundColor: "transparent",
     color: tokens2.palette,
     aria: { show: true },
@@ -83519,6 +83537,28 @@ function buildOption(payload, tokens2) {
       containLabel: true
     }
   };
+}
+function pointSelection(payload) {
+  const data = payload.data ?? [];
+  const selected = /* @__PURE__ */ new Set([...payload.selection ?? [], ...data.filter((point) => point.selected).map((point) => point.label)]);
+  return { selected, hasSelection: selected.size > 0 };
+}
+function itemDataFor(payload, tokens2) {
+  const { selected, hasSelection } = pointSelection(payload);
+  return (payload.data ?? []).map((point, index) => ({
+    name: point.label,
+    value: point.value,
+    selected: selected.has(point.label),
+    itemStyle: {
+      color: tokens2.palette[index % tokens2.palette.length],
+      opacity: hasSelection && !selected.has(point.label) ? 0.35 : 1
+    }
+  }));
+}
+function partToWholeAdapter(payload, tokens2) {
+  const type = normalizeType(payload.type);
+  const itemData = itemDataFor(payload, tokens2);
+  const base2 = baseOption(payload, tokens2);
   if (type === "pie" || type === "donut") {
     return {
       ...base2,
@@ -83574,49 +83614,56 @@ function buildOption(payload, tokens2) {
       ]
     };
   }
-  if (type === "gauge") {
-    const point = data[0];
-    return {
-      ...base2,
-      series: [
-        {
-          id: payload.id || "chart",
-          name: payload.title,
-          type: "gauge",
-          min: 0,
-          max: Math.max(100, Math.ceil((point?.value ?? 0) * 1.2)),
-          progress: { show: true, width: 12 },
-          axisLine: { lineStyle: { width: 12, color: [[1, tokens2.grid]] } },
-          axisTick: { show: false },
-          splitLine: { length: 8, lineStyle: { color: tokens2.border } },
-          axisLabel: { color: tokens2.muted, fontSize: 10, fontWeight: 700 },
-          pointer: { width: 4 },
-          anchor: { show: true, size: 6, itemStyle: { color: tokens2.palette[0] } },
-          detail: {
-            valueAnimation: true,
-            color: tokens2.text,
-            fontSize: 24,
-            fontWeight: 850,
-            formatter: (value) => formatValue(value, payload.unit)
-          },
-          data: [
-            {
-              name: point?.label ?? payload.title,
-              value: point?.value ?? 0,
-              itemStyle: { color: tokens2.palette[0] }
-            }
-          ]
-        }
-      ]
-    };
-  }
+  return categoryAdapter(payload, tokens2);
+}
+function singleValueAdapter(payload, tokens2) {
+  const point = payload.data?.[0];
+  return {
+    ...baseOption(payload, tokens2),
+    series: [
+      {
+        id: payload.id || "chart",
+        name: payload.title,
+        type: "gauge",
+        min: 0,
+        max: Math.max(100, Math.ceil((point?.value ?? 0) * 1.2)),
+        progress: { show: true, width: 12 },
+        axisLine: { lineStyle: { width: 12, color: [[1, tokens2.grid]] } },
+        axisTick: { show: false },
+        splitLine: { length: 8, lineStyle: { color: tokens2.border } },
+        axisLabel: { color: tokens2.muted, fontSize: 10, fontWeight: 700 },
+        pointer: { width: 4 },
+        anchor: { show: true, size: 6, itemStyle: { color: tokens2.palette[0] } },
+        detail: {
+          valueAnimation: true,
+          color: tokens2.text,
+          fontSize: 24,
+          fontWeight: 850,
+          formatter: (value) => formatValue(value, payload.unit)
+        },
+        data: [
+          {
+            name: point?.label ?? payload.title,
+            value: point?.value ?? 0,
+            itemStyle: { color: tokens2.palette[0] }
+          }
+        ]
+      }
+    ]
+  };
+}
+function categoryAdapter(payload, tokens2) {
+  const type = normalizeType(payload.type);
+  const data = payload.data ?? [];
+  const { selected, hasSelection } = pointSelection(payload);
+  const stacked = Boolean(payload.options?.stacked ?? payload.stacked);
   const horizontal = type === "bar";
   const seriesType2 = type === "area" ? "line" : type === "column" ? "bar" : type;
   const labels = unique(data.map((point) => point.label));
   const seriesNames = unique(data.map((point) => point.series || payload.title || "Value"));
   const multiSeries = seriesNames.length > 1 || data.some((point) => point.series);
   return {
-    ...base2,
+    ...baseOption(payload, tokens2),
     yAxis: horizontal ? {
       ...axis("category", tokens2),
       data: labels,
@@ -83639,7 +83686,7 @@ function buildOption(payload, tokens2) {
       id: `${payload.id || "chart"}:${seriesName}`,
       name: multiSeries ? seriesName : payload.title,
       type: seriesType2,
-      stack: payload.stacked ? payload.id || "chart" : void 0,
+      stack: stacked ? payload.id || "chart" : void 0,
       smooth: type === "line" || type === "area",
       areaStyle: type === "area" ? { color: colorWithAlpha(tokens2.palette[seriesIndex % tokens2.palette.length], 0.24) } : void 0,
       symbolSize: type === "scatter" ? 9 : 7,
@@ -83739,6 +83786,37 @@ function normalizeType(type) {
     default:
       return "bar";
   }
+}
+function normalizeShape(shape) {
+  switch (shape) {
+    case "category_series_value":
+      return "category_series_value";
+    case "single_value":
+      return "single_value";
+    case "category_value":
+    default:
+      return "category_value";
+  }
+}
+function isPartToWholeType(type) {
+  return type === "pie" || type === "donut" || type === "funnel" || type === "treemap";
+}
+function deepMerge(base2, override) {
+  if (!isPlainObject(base2) || !isPlainObject(override)) {
+    return override === void 0 ? base2 : override;
+  }
+  const result = { ...base2 };
+  for (const [key2, value] of Object.entries(override)) {
+    if (Array.isArray(value)) {
+      result[key2] = value;
+      continue;
+    }
+    result[key2] = deepMerge(result[key2], value);
+  }
+  return result;
+}
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function formatValue(value, unit) {
   if (!Number.isFinite(value)) return "-";

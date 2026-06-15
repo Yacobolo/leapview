@@ -159,7 +159,27 @@ func (m *Model) CacheTableNames() []string {
 	return names
 }
 
-func supportsChartType(chartType string) bool {
+func supportsVisualKind(kind string) bool {
+	return kind == "chart"
+}
+
+func supportsVisualShape(shape string) bool {
+	switch shape {
+	case "category_value", "category_series_value", "single_value":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportsRenderer(renderer string) bool {
+	return renderer == "echarts"
+}
+
+func rendererSupportsType(renderer, chartType string) bool {
+	if renderer != "echarts" {
+		return false
+	}
 	switch chartType {
 	case "line", "area", "bar", "column", "pie", "donut", "scatter", "funnel", "treemap", "gauge":
 		return true
@@ -168,7 +188,14 @@ func supportsChartType(chartType string) bool {
 	}
 }
 
-func supportsSeries(chartType string) bool {
+func supportsSeries(shape string) bool {
+	return shape == "category_series_value"
+}
+
+func rendererTypeSupportsSeries(renderer, chartType string) bool {
+	if renderer != "echarts" {
+		return false
+	}
 	switch chartType {
 	case "line", "area", "bar", "column", "scatter":
 		return true

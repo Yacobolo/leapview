@@ -606,19 +606,31 @@ func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, repor
 		if visual.Query.Series != "" {
 			series = append(series, visual.Query.Series)
 		}
+		rendererOptions := map[string]map[string]any{}
+		for renderer, options := range visual.RendererOptions {
+			if typed, ok := options.(map[string]any); ok {
+				rendererOptions[renderer] = typed
+			}
+		}
 		charts[key] = dashboard.Chart{
-			Version:    2,
-			ID:         key,
-			Type:       visual.Type,
-			Title:      visual.Title,
-			Unit:       measure.Unit,
-			Field:      visual.Interaction.Field,
-			Dimensions: append([]string{}, visual.Query.Dimensions...),
-			Measure:    measureName,
-			Series:     series,
-			Stacked:    visual.Stacked,
-			Selection:  selectedValues(filters, key),
-			Data:       points,
+			Version:         3,
+			ID:              key,
+			Kind:            visual.KindOrDefault(),
+			Shape:           visual.ShapeOrDefault(),
+			Renderer:        visual.RendererOrDefault(),
+			Type:            visual.Type,
+			Title:           visual.Title,
+			Unit:            measure.Unit,
+			Field:           visual.Interaction.Field,
+			Dimensions:      append([]string{}, visual.Query.Dimensions...),
+			Measure:         measureName,
+			Measures:        append([]string{}, visual.Query.Measures...),
+			Series:          series,
+			Stacked:         visual.Stacked,
+			Options:         visual.CoreOptions(),
+			RendererOptions: rendererOptions,
+			Selection:       selectedValues(filters, key),
+			Data:            points,
 		}
 	}
 	return charts, nil

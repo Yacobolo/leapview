@@ -147,8 +147,29 @@ relogios_presentes,watches_gifts
 	if got := patch.Charts["revenue"].Type; got != "area" {
 		t.Fatalf("revenue chart type = %q, want area", got)
 	}
+	if got := patch.Charts["revenue"].Version; got != 3 {
+		t.Fatalf("revenue chart version = %d, want 3", got)
+	}
+	if got := patch.Charts["revenue"].Kind; got != "chart" {
+		t.Fatalf("revenue chart kind = %q, want chart", got)
+	}
+	if got := patch.Charts["revenue"].Shape; got != "category_value" {
+		t.Fatalf("revenue chart shape = %q, want category_value", got)
+	}
+	if got := patch.Charts["revenue"].Renderer; got != "echarts" {
+		t.Fatalf("revenue chart renderer = %q, want echarts", got)
+	}
+	if got := patch.Charts["revenue"].Measures[0]; got != "revenue" {
+		t.Fatalf("revenue chart measure = %q, want revenue", got)
+	}
 	if got := patch.Charts["orders"].Type; got != "donut" {
 		t.Fatalf("orders chart type = %q, want donut", got)
+	}
+	if got := patch.Charts["orders_by_month_status"].Shape; got != "category_series_value" {
+		t.Fatalf("multi-series chart shape = %q, want category_series_value", got)
+	}
+	if got := patch.Charts["orders_by_month_status"].Options["stacked"]; got != true {
+		t.Fatalf("multi-series chart stacked option = %v, want true", got)
 	}
 	if got := patch.Charts["categories"].Data[0].Label; got != "health_beauty" {
 		t.Fatalf("top category = %q, want health_beauty", got)

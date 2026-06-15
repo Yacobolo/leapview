@@ -5,6 +5,7 @@ import type { ECharts, EChartsOption } from 'echarts'
 import { visualMenuIcon } from './visual-menu-icons'
 
 type ChartType = 'line' | 'area' | 'bar' | 'column' | 'pie' | 'donut' | 'scatter' | 'funnel' | 'treemap' | 'gauge'
+type ChartShape = 'category_value' | 'category_series_value' | 'single_value'
 
 type ChartPoint = {
   label: string
@@ -16,20 +17,29 @@ type ChartPoint = {
 type ChartPayload = {
   version?: number
   id?: string
+  kind?: string
+  shape?: ChartShape | string
+  renderer?: string
   type?: ChartType | string
   title?: string
   unit?: string
   field?: string
   dimensions?: string[]
   measure?: string
+  measures?: string[]
   series?: string[]
   stacked?: boolean
   selection?: string[]
   data?: ChartPoint[]
   options?: Record<string, unknown>
+  rendererOptions?: Record<string, Record<string, unknown>>
 }
 
 type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
+
+type ChartRenderer = {
+  buildOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption
+}
 
 const chartStyles = css`
   :host {
@@ -288,26 +298,36 @@ class EChartVisual extends LitElement {
       this.instance.clear()
       return
     }
-    this.instance.setOption(buildOption(payload, stylesFor(this)), true)
+    const renderer = chartRenderers[payload.renderer ?? 'echarts']
+    if (!renderer) {
+      this.instance.clear()
+      return
+    }
+    this.instance.setOption(renderer.buildOption(payload, stylesFor(this)), true)
     this.instance.resize()
   }
 
   private get payload(): ChartPayload {
     const chart = this.chart ?? {}
     return {
-      version: chart.version ?? 1,
+      version: chart.version ?? 3,
       id: chart.id || this.visualId,
+      kind: chart.kind || 'chart',
+      shape: normalizeShape(chart.shape || (chart.series?.length ? 'category_series_value' : 'category_value')),
+      renderer: chart.renderer || 'echarts',
       type: normalizeType(chart.type || this.type),
       title: chart.title || this.chartTitle,
       unit: chart.unit ?? this.unit,
       field: chart.field || this.field,
       dimensions: chart.dimensions ?? [],
       measure: chart.measure ?? '',
+      measures: chart.measures ?? (chart.measure ? [chart.measure] : []),
       series: chart.series ?? [],
-      stacked: chart.stacked ?? false,
+      stacked: chart.stacked ?? Boolean(chart.options?.stacked),
       selection: chart.selection ?? this.selection ?? [],
       data: chart.data ?? this.data ?? [],
       options: chart.options ?? {},
+      rendererOptions: chart.rendererOptions ?? {},
     }
   }
 
@@ -476,21 +496,31 @@ class KPIStrip extends LitElement {
   }
 }
 
-function buildOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption {
-  const type = normalizeType(payload.type)
-  const data = payload.data ?? []
-  const selected = new Set([...(payload.selection ?? []), ...data.filter((point) => point.selected).map((point) => point.label)])
-  const hasSelection = selected.size > 0
-  const itemData = data.map((point, index) => ({
-    name: point.label,
-    value: point.value,
-    selected: selected.has(point.label),
-    itemStyle: {
-      color: tokens.palette[index % tokens.palette.length],
-      opacity: hasSelection && !selected.has(point.label) ? 0.35 : 1,
+const chartRenderers: Record<string, ChartRenderer> = {
+  echarts: {
+    buildOption(payload, tokens) {
+      const generated = buildEChartsOption(payload, tokens)
+      const override = payload.rendererOptions?.echarts ?? {}
+      return deepMerge(generated, override) as EChartsOption
     },
-  }))
-  const base: EChartsOption = {
+  },
+}
+
+function buildEChartsOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption {
+  switch (normalizeShape(payload.shape)) {
+    case 'single_value':
+      return singleValueAdapter(payload, tokens)
+    case 'category_series_value':
+    case 'category_value':
+    default:
+      if (isPartToWholeType(normalizeType(payload.type))) return partToWholeAdapter(payload, tokens)
+      return categoryAdapter(payload, tokens)
+  }
+}
+
+function baseOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption {
+  const type = normalizeType(payload.type)
+  return {
     backgroundColor: 'transparent',
     color: tokens.palette,
     aria: { show: true },
@@ -511,6 +541,31 @@ function buildOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption 
       containLabel: true,
     },
   }
+}
+
+function pointSelection(payload: ChartPayload) {
+  const data = payload.data ?? []
+  const selected = new Set([...(payload.selection ?? []), ...data.filter((point) => point.selected).map((point) => point.label)])
+  return { selected, hasSelection: selected.size > 0 }
+}
+
+function itemDataFor(payload: ChartPayload, tokens: ChartTokens) {
+  const { selected, hasSelection } = pointSelection(payload)
+  return (payload.data ?? []).map((point, index) => ({
+    name: point.label,
+    value: point.value,
+    selected: selected.has(point.label),
+    itemStyle: {
+      color: tokens.palette[index % tokens.palette.length],
+      opacity: hasSelection && !selected.has(point.label) ? 0.35 : 1,
+    },
+  }))
+}
+
+function partToWholeAdapter(payload: ChartPayload, tokens: ChartTokens): EChartsOption {
+  const type = normalizeType(payload.type)
+  const itemData = itemDataFor(payload, tokens)
+  const base = baseOption(payload, tokens)
 
   if (type === 'pie' || type === 'donut') {
     return {
@@ -569,51 +624,58 @@ function buildOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption 
       ],
     }
   }
+  return categoryAdapter(payload, tokens)
+}
 
-  if (type === 'gauge') {
-    const point = data[0]
-    return {
-      ...base,
-      series: [
-        {
-          id: payload.id || 'chart',
-          name: payload.title,
-          type: 'gauge',
-          min: 0,
-          max: Math.max(100, Math.ceil((point?.value ?? 0) * 1.2)),
-          progress: { show: true, width: 12 },
-          axisLine: { lineStyle: { width: 12, color: [[1, tokens.grid]] } },
-          axisTick: { show: false },
-          splitLine: { length: 8, lineStyle: { color: tokens.border } },
-          axisLabel: { color: tokens.muted, fontSize: 10, fontWeight: 700 },
-          pointer: { width: 4 },
-          anchor: { show: true, size: 6, itemStyle: { color: tokens.palette[0] } },
-          detail: {
-            valueAnimation: true,
-            color: tokens.text,
-            fontSize: 24,
-            fontWeight: 850,
-            formatter: (value: number) => formatValue(value, payload.unit),
-          },
-          data: [
-            {
-              name: point?.label ?? payload.title,
-              value: point?.value ?? 0,
-              itemStyle: { color: tokens.palette[0] },
-            },
-          ],
+function singleValueAdapter(payload: ChartPayload, tokens: ChartTokens): EChartsOption {
+  const point = payload.data?.[0]
+  return {
+    ...baseOption(payload, tokens),
+    series: [
+      {
+        id: payload.id || 'chart',
+        name: payload.title,
+        type: 'gauge',
+        min: 0,
+        max: Math.max(100, Math.ceil((point?.value ?? 0) * 1.2)),
+        progress: { show: true, width: 12 },
+        axisLine: { lineStyle: { width: 12, color: [[1, tokens.grid]] } },
+        axisTick: { show: false },
+        splitLine: { length: 8, lineStyle: { color: tokens.border } },
+        axisLabel: { color: tokens.muted, fontSize: 10, fontWeight: 700 },
+        pointer: { width: 4 },
+        anchor: { show: true, size: 6, itemStyle: { color: tokens.palette[0] } },
+        detail: {
+          valueAnimation: true,
+          color: tokens.text,
+          fontSize: 24,
+          fontWeight: 850,
+          formatter: (value: number) => formatValue(value, payload.unit),
         },
-      ],
-    }
+        data: [
+          {
+            name: point?.label ?? payload.title,
+            value: point?.value ?? 0,
+            itemStyle: { color: tokens.palette[0] },
+          },
+        ],
+      },
+    ],
   }
+}
 
+function categoryAdapter(payload: ChartPayload, tokens: ChartTokens): EChartsOption {
+  const type = normalizeType(payload.type)
+  const data = payload.data ?? []
+  const { selected, hasSelection } = pointSelection(payload)
+  const stacked = Boolean(payload.options?.stacked ?? payload.stacked)
   const horizontal = type === 'bar'
   const seriesType = type === 'area' ? 'line' : type === 'column' ? 'bar' : type
   const labels = unique(data.map((point) => point.label))
   const seriesNames = unique(data.map((point) => point.series || payload.title || 'Value'))
   const multiSeries = seriesNames.length > 1 || data.some((point) => point.series)
   return {
-    ...base,
+    ...baseOption(payload, tokens),
     yAxis: horizontal
       ? {
           ...axis('category', tokens),
@@ -640,7 +702,7 @@ function buildOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption 
       id: `${payload.id || 'chart'}:${seriesName}`,
       name: multiSeries ? seriesName : payload.title,
       type: seriesType,
-      stack: payload.stacked ? payload.id || 'chart' : undefined,
+      stack: stacked ? payload.id || 'chart' : undefined,
       smooth: type === 'line' || type === 'area',
       areaStyle: type === 'area' ? { color: colorWithAlpha(tokens.palette[seriesIndex % tokens.palette.length], 0.24) } : undefined,
       symbolSize: type === 'scatter' ? 9 : 7,
@@ -759,6 +821,41 @@ function normalizeType(type: string | undefined): ChartType {
     default:
       return 'bar'
   }
+}
+
+function normalizeShape(shape: string | undefined): ChartShape {
+  switch (shape) {
+    case 'category_series_value':
+      return 'category_series_value'
+    case 'single_value':
+      return 'single_value'
+    case 'category_value':
+    default:
+      return 'category_value'
+  }
+}
+
+function isPartToWholeType(type: ChartType): boolean {
+  return type === 'pie' || type === 'donut' || type === 'funnel' || type === 'treemap'
+}
+
+function deepMerge(base: unknown, override: unknown): unknown {
+  if (!isPlainObject(base) || !isPlainObject(override)) {
+    return override === undefined ? base : override
+  }
+  const result: Record<string, unknown> = { ...base }
+  for (const [key, value] of Object.entries(override)) {
+    if (Array.isArray(value)) {
+      result[key] = value
+      continue
+    }
+    result[key] = deepMerge(result[key], value)
+  }
+  return result
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function formatValue(value: number, unit?: string): string {

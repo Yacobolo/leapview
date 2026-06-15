@@ -353,18 +353,24 @@ type KPI struct {
 }
 
 type Chart struct {
-	Version    int      `json:"version"`
-	ID         string   `json:"id"`
-	Type       string   `json:"type"`
-	Title      string   `json:"title"`
-	Unit       string   `json:"unit"`
-	Field      string   `json:"field"`
-	Dimensions []string `json:"dimensions"`
-	Measure    string   `json:"measure"`
-	Series     []string `json:"series"`
-	Stacked    bool     `json:"stacked,omitempty"`
-	Selection  []string `json:"selection"`
-	Data       []Point  `json:"data"`
+	Version         int                       `json:"version"`
+	ID              string                    `json:"id"`
+	Kind            string                    `json:"kind"`
+	Shape           string                    `json:"shape"`
+	Renderer        string                    `json:"renderer"`
+	Type            string                    `json:"type"`
+	Title           string                    `json:"title"`
+	Unit            string                    `json:"unit"`
+	Field           string                    `json:"field"`
+	Dimensions      []string                  `json:"dimensions"`
+	Measure         string                    `json:"measure"`
+	Measures        []string                  `json:"measures"`
+	Series          []string                  `json:"series"`
+	Stacked         bool                      `json:"stacked,omitempty"`
+	Options         map[string]any            `json:"options"`
+	RendererOptions map[string]map[string]any `json:"rendererOptions"`
+	Selection       []string                  `json:"selection"`
+	Data            []Point                   `json:"data"`
 }
 
 type Point struct {
@@ -544,10 +550,32 @@ func EmptyPatch(filters Filters, dataDir string, err error) Patch {
 			{Label: "Review", Value: "-", Note: "Waiting for CSVs", Tone: "neutral"},
 		},
 		Charts: map[string]Chart{
-			"revenue":    {Version: 2, ID: "revenue", Type: "area", Title: "Revenue by month", Unit: "R$", Field: "purchase_month", Dimensions: []string{"purchase_month"}, Measure: "revenue", Series: []string{}, Selection: []string{}, Data: []Point{}},
-			"orders":     {Version: 2, ID: "orders", Type: "donut", Title: "Orders by status", Unit: "orders", Field: "status", Dimensions: []string{"status"}, Measure: "order_count", Series: []string{}, Selection: []string{}, Data: []Point{}},
-			"categories": {Version: 2, ID: "categories", Type: "bar", Title: "Top product categories", Unit: "R$", Field: "category", Dimensions: []string{"category"}, Measure: "revenue", Series: []string{}, Selection: []string{}, Data: []Point{}},
-			"delivery":   {Version: 2, ID: "delivery", Type: "bar", Title: "Delivery speed", Unit: "orders", Field: "delivery_bucket", Dimensions: []string{"delivery_bucket"}, Measure: "order_count", Series: []string{}, Selection: []string{}, Data: []Point{}},
+			"revenue":    emptyChart("revenue", "area", "Revenue by month", "R$", "purchase_month", "revenue"),
+			"orders":     emptyChart("orders", "donut", "Orders by status", "orders", "status", "order_count"),
+			"categories": emptyChart("categories", "bar", "Top product categories", "R$", "category", "revenue"),
+			"delivery":   emptyChart("delivery", "bar", "Delivery speed", "orders", "delivery_bucket", "order_count"),
 		},
+	}
+}
+
+func emptyChart(id, chartType, title, unit, dimension, measure string) Chart {
+	return Chart{
+		Version:         3,
+		ID:              id,
+		Kind:            "chart",
+		Shape:           "category_value",
+		Renderer:        "echarts",
+		Type:            chartType,
+		Title:           title,
+		Unit:            unit,
+		Field:           dimension,
+		Dimensions:      []string{dimension},
+		Measure:         measure,
+		Measures:        []string{measure},
+		Series:          []string{},
+		Options:         map[string]any{},
+		RendererOptions: map[string]map[string]any{},
+		Selection:       []string{},
+		Data:            []Point{},
 	}
 }

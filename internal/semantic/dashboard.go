@@ -78,12 +78,17 @@ type KPI struct {
 }
 
 type Visual struct {
-	Title       string      `yaml:"title"`
-	Type        string      `yaml:"type"`
-	Stacked     bool        `yaml:"stacked"`
-	Dataset     string      `yaml:"dataset"`
-	Query       VisualQuery `yaml:"query"`
-	Interaction Interaction `yaml:"interaction"`
+	Title           string         `yaml:"title"`
+	Kind            string         `yaml:"kind"`
+	Shape           string         `yaml:"shape"`
+	Renderer        string         `yaml:"renderer"`
+	Type            string         `yaml:"type"`
+	Stacked         bool           `yaml:"stacked"`
+	Dataset         string         `yaml:"dataset"`
+	Query           VisualQuery    `yaml:"query"`
+	Options         map[string]any `yaml:"options"`
+	RendererOptions map[string]any `yaml:"renderer_options"`
+	Interaction     Interaction    `yaml:"interaction"`
 }
 
 type VisualQuery struct {
@@ -115,6 +120,52 @@ type TableVisual struct {
 	Dataset     string                  `yaml:"dataset"`
 	DefaultSort dashboard.TableSort     `yaml:"default_sort"`
 	Columns     []dashboard.TableColumn `yaml:"columns"`
+}
+
+func (v Visual) KindOrDefault() string {
+	if v.Kind != "" {
+		return v.Kind
+	}
+	return "chart"
+}
+
+func (v Visual) ShapeOrDefault() string {
+	if v.Shape != "" {
+		return v.Shape
+	}
+	if v.Type == "gauge" {
+		return "single_value"
+	}
+	if v.Query.Series != "" {
+		return "category_series_value"
+	}
+	return "category_value"
+}
+
+func (v Visual) RendererOrDefault() string {
+	if v.Renderer != "" {
+		return v.Renderer
+	}
+	return "echarts"
+}
+
+func (v Visual) CoreOptions() map[string]any {
+	options := copyMap(v.Options)
+	if v.Stacked {
+		options["stacked"] = true
+	}
+	return options
+}
+
+func copyMap(source map[string]any) map[string]any {
+	if len(source) == 0 {
+		return map[string]any{}
+	}
+	next := make(map[string]any, len(source))
+	for key, value := range source {
+		next[key] = value
+	}
+	return next
 }
 
 func LoadDashboard(path string, model *Model) (*Dashboard, error) {
@@ -241,14 +292,26 @@ func (d *Dashboard) Validate(model *Model) error {
 		if !ok {
 			return fmt.Errorf("visual %q references unknown dataset %q", name, visual.Dataset)
 		}
-		if !supportsChartType(visual.Type) {
-			return fmt.Errorf("visual %q has unsupported type %q", name, visual.Type)
+		kind := visual.KindOrDefault()
+		shape := visual.ShapeOrDefault()
+		renderer := visual.RendererOrDefault()
+		if !supportsVisualKind(kind) {
+			return fmt.Errorf("visual %q has unsupported kind %q", name, kind)
 		}
-		if len(visual.Query.Dimensions) != 1 {
-			return fmt.Errorf("visual %q requires exactly one query dimension", name)
+		if !supportsVisualShape(shape) {
+			return fmt.Errorf("visual %q has unsupported shape %q", name, shape)
 		}
-		if len(visual.Query.Measures) != 1 {
-			return fmt.Errorf("visual %q requires exactly one query measure", name)
+		if !supportsRenderer(renderer) {
+			return fmt.Errorf("visual %q has unsupported renderer %q", name, renderer)
+		}
+		if !rendererSupportsType(renderer, visual.Type) {
+			return fmt.Errorf("visual %q renderer %q does not support type %q", name, renderer, visual.Type)
+		}
+		if err := validateVisualQueryShape(name, visual); err != nil {
+			return err
+		}
+		if err := validateRendererOptions(name, visual.RendererOptions); err != nil {
+			return err
 		}
 		for _, dimension := range visual.Query.Dimensions {
 			if _, ok := dataset.Dimensions[dimension]; !ok {
@@ -259,8 +322,11 @@ func (d *Dashboard) Validate(model *Model) error {
 			if _, ok := dataset.Dimensions[visual.Query.Series]; !ok {
 				return fmt.Errorf("visual %q references unknown series dimension %q", name, visual.Query.Series)
 			}
-			if !supportsSeries(visual.Type) {
-				return fmt.Errorf("visual %q type %q does not support series", name, visual.Type)
+			if !supportsSeries(shape) {
+				return fmt.Errorf("visual %q shape %q does not support series", name, shape)
+			}
+			if !rendererTypeSupportsSeries(renderer, visual.Type) {
+				return fmt.Errorf("visual %q renderer %q type %q does not support series", name, renderer, visual.Type)
 			}
 		}
 		for _, measure := range visual.Query.Measures {
@@ -364,6 +430,78 @@ func validatePlacement(page dashboard.Page, visual dashboard.PageVisual) error {
 	}
 	if placement.Col+placement.ColSpan-1 > page.Grid.Columns {
 		return fmt.Errorf("page %q visual %q placement exceeds %d grid columns", page.ID, visual.ID, page.Grid.Columns)
+	}
+	return nil
+}
+
+func validateVisualQueryShape(name string, visual Visual) error {
+	if len(visual.Query.Measures) != 1 {
+		return fmt.Errorf("visual %q requires exactly one query measure", name)
+	}
+	switch visual.ShapeOrDefault() {
+	case "category_value":
+		if len(visual.Query.Dimensions) != 1 {
+			return fmt.Errorf("visual %q shape category_value requires exactly one query dimension", name)
+		}
+		if visual.Query.Series != "" {
+			return fmt.Errorf("visual %q shape category_value does not support series", name)
+		}
+	case "category_series_value":
+		if len(visual.Query.Dimensions) != 1 {
+			return fmt.Errorf("visual %q shape category_series_value requires exactly one query dimension", name)
+		}
+		if visual.Query.Series == "" {
+			return fmt.Errorf("visual %q shape category_series_value requires query series", name)
+		}
+	case "single_value":
+		if len(visual.Query.Dimensions) > 1 {
+			return fmt.Errorf("visual %q shape single_value supports at most one query dimension", name)
+		}
+		if visual.Query.Series != "" {
+			return fmt.Errorf("visual %q shape single_value does not support series", name)
+		}
+	}
+	return nil
+}
+
+func validateRendererOptions(name string, options map[string]any) error {
+	for renderer, value := range options {
+		if !supportsRenderer(renderer) {
+			return fmt.Errorf("visual %q has renderer_options for unsupported renderer %q", name, renderer)
+		}
+		option, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("visual %q renderer_options.%s must be an object", name, renderer)
+		}
+		if err := validateSafeRendererOption(name, "renderer_options."+renderer, option); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSafeRendererOption(name, path string, value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			nextPath := path + "." + key
+			if key == "renderItem" {
+				return fmt.Errorf("visual %q has unsafe renderer option %q", name, nextPath)
+			}
+			if err := validateSafeRendererOption(name, nextPath, item); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for index, item := range typed {
+			if err := validateSafeRendererOption(name, fmt.Sprintf("%s[%d]", path, index), item); err != nil {
+				return err
+			}
+		}
+	case string:
+		if strings.Contains(typed, "function(") || strings.Contains(typed, "=>") {
+			return fmt.Errorf("visual %q has unsafe renderer option %q", name, path)
+		}
 	}
 	return nil
 }
