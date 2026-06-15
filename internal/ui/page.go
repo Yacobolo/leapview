@@ -40,6 +40,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Script(h.Type("module"), h.Src("/static/theme.js")),
 			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
 			h.Script(h.Type("module"), h.Src("/static/filter-dock.js")),
+			h.Script(h.Type("module"), h.Src("/static/filter-panel.js")),
 			h.Script(h.Type("module"), h.Src("/static/report-canvas.js")),
 			h.Script(h.Type("module"), h.Src("/static/report-footer.js")),
 			h.Script(h.Type("module"), h.Src("/static/charts.js")),
@@ -66,7 +67,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 							h.Div(h.Class("report-canvas-shell"),
 								renderPageCanvas(activePage),
 							),
-							filtersDock(action),
+							filtersDock(report, action),
 						),
 						g.El("ld-report-footer",
 							h.Aria("label", "Report view controls"),
@@ -349,12 +350,8 @@ func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *
 			"pageId":      activePage.ID,
 			"modelId":     model.Name,
 		},
-		"filters": map[string]any{
-			"dateRange":        "all",
-			"state":            "all",
-			"category":         "",
-			"visualSelections": []any{},
-		},
+		"filters":       report.DefaultFilters(),
+		"filterOptions": map[string]any{},
 		"chartCommand": map[string]any{
 			"visualId": "",
 			"field":    "",
@@ -552,111 +549,30 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 	)
 }
 
-func filtersDock(action string) g.Node {
+func filtersDock(report semantic.Dashboard, action string) g.Node {
 	return h.Details(h.Class("filters-dock"), h.Aria("label", "Report filters"),
 		h.Summary(h.Class("filters-dock-rail"), h.Title("Toggle filters"),
 			lucide.SlidersHorizontal(iconAttrs()),
 			h.Span(h.Class("filters-rail-label"), g.Text("Filters")),
 			h.Span(h.Class("sr-only"), g.Text("Toggle filters")),
 		),
-		filtersPane(action),
+		filtersPane(report, action),
 	)
 }
 
-func filtersPane(action string) g.Node {
+func filtersPane(report semantic.Dashboard, action string) g.Node {
 	return h.Div(h.Class("filters-pane"),
-		h.Div(h.Class("pane-header"),
-			h.H2(h.Class("pane-title"), g.Text("Filters")),
-			h.Span(h.Class("filter-count"), ds.Text("`${"+activeFilterCountExpr()+"} active`")),
-		),
-		filters(action),
-	)
-}
-
-func filters(action string) g.Node {
-	activeCount := activeFilterCountExpr()
-	return h.Form(
-		h.ID("filters"),
-		h.Class("filter-form"),
-		ds.On("change", action, ds.ModifierDebounce, ds.Duration(150000000)),
-		ds.On("input", action, ds.ModifierDebounce, ds.Duration(450000000)),
-		h.Label(h.Class("filter-control"),
-			filterLabel("Period"),
-			h.Select(controlClass(), ds.Bind("filters.dateRange"),
-				option("all", "All orders"),
-				option("recent", "Latest 90 days"),
-				option("2018", "2018"),
-				option("2017", "2017"),
-			),
-		),
-		h.Label(h.Class("filter-control"),
-			filterLabel("State"),
-			h.Select(controlClass(), ds.Bind("filters.state"),
-				option("all", "Brazil"),
-				option("SP", "SP"), option("RJ", "RJ"), option("MG", "MG"), option("RS", "RS"),
-				option("PR", "PR"), option("SC", "SC"), option("BA", "BA"), option("DF", "DF"),
-				option("GO", "GO"), option("ES", "ES"), option("PE", "PE"), option("CE", "CE"),
-			),
-		),
-		h.Label(h.Class("filter-control"),
-			filterLabel("Category contains"),
-			h.Input(
-				controlClass(),
-				h.Type("search"),
-				h.Placeholder("health, watches, furniture..."),
-				ds.Bind("filters.category"),
-			),
-		),
-		h.Div(
-			h.Class("selection-summary"),
-			g.Attr("data-show", "$filters.visualSelections.length > 0"),
-			h.Span(ds.Text("`${$filters.visualSelections.length} visual filter${$filters.visualSelections.length === 1 ? '' : 's'} active`")),
-			h.Button(
-				h.Type("button"),
-				h.Class("clear-selection-button"),
-				ds.On("click", "@post('/commands/clear-selection')"),
-				ds.Attr("disabled", "$status.loading"),
-				lucide.X(iconAttrs()),
-				h.Span(g.Text("Clear")),
-			),
-		),
-		h.Div(
-			h.Class("filter-summary"),
-			h.Span(ds.Text("`${"+activeCount+"} total filter${("+activeCount+") === 1 ? '' : 's'} applied`")),
-			h.Button(
-				h.Type("button"),
-				h.Class("reset-filters-button"),
-				ds.On("click", "$filters.dateRange = 'all'; $filters.state = 'all'; $filters.category = ''; $filters.visualSelections = []; $tableCommand.offset = 0; @post('/commands/reset-filters')"),
-				ds.Attr("disabled", "$status.loading || ("+activeCount+") === 0"),
-				lucide.RotateCcw(iconAttrs()),
-				h.Span(g.Text("Reset")),
-			),
-		),
-		h.Button(
-			h.Type("button"),
-			h.Class("refresh-button"),
-			ds.On("click", action),
-			ds.Attr("disabled", "$status.loading"),
-			lucide.RefreshCw(iconAttrs()),
-			h.Span(g.Text("Refresh")),
+		g.El("ld-filter-panel",
+			g.Attr("config", jsonString(report.Filters)),
+			g.Attr("data-attr:filters", "$filters"),
+			g.Attr("data-attr:options", "$filterOptions"),
+			g.Attr("data-attr:loading", "$status.loading"),
+			g.Attr("data-on:ld-filters-change", "$filters = evt.detail.filters; $tableCommand.offset = 0; "+action),
+			g.Attr("data-on:ld-filters-reset", "$filters = evt.detail.filters; $tableCommand.offset = 0; @post('/commands/reset-filters')"),
+			g.Attr("data-on:ld-filters-refresh", action),
+			g.Attr("data-on:ld-visual-selection-clear", "$filters.visualSelections = []; @post('/commands/clear-selection')"),
 		),
 	)
-}
-
-func activeFilterCountExpr() string {
-	return "($filters.dateRange !== 'all' ? 1 : 0) + ($filters.state !== 'all' ? 1 : 0) + ((($filters.category || '').trim() !== '') ? 1 : 0) + ($filters.visualSelections ? $filters.visualSelections.length : 0)"
-}
-
-func filterLabel(label string) g.Node {
-	return h.Span(h.Class("filter-label"), g.Text(label))
-}
-
-func controlClass() g.Node {
-	return h.Class("filter-input")
-}
-
-func option(value, label string) g.Node {
-	return h.Option(h.Value(value), g.Text(label))
 }
 
 func sortedKeys[T any](items map[string]T) []string {

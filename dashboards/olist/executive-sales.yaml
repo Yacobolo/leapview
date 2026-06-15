@@ -4,27 +4,44 @@ description: Sales, order, category, and delivery overview.
 semantic_model: olist
 
 filters:
-  dateRange:
-    type: select
+  purchase_date:
+    type: date_range
     label: Period
-    default: all
-    options:
+    dataset: orders
+    dimension: purchase_timestamp
+    default:
+      preset: all
+    custom: true
+    presets:
       - value: all
         label: All orders
       - value: recent
         label: Latest 90 days
+        relative_days: 90
       - value: "2018"
         label: "2018"
+        from: "2018-01-01"
+        to: "2019-01-01"
       - value: "2017"
         label: "2017"
+        from: "2017-01-01"
+        to: "2018-01-01"
   state:
-    type: select
+    type: multi_select
     label: State
-    default: all
+    dataset: orders
+    dimension: state
+    operator: in
+    values:
+      source: distinct
+      limit: 50
   category:
-    type: search
-    label: Category contains
-    default: ""
+    type: text
+    label: Category
+    dataset: orders
+    dimension: category
+    default_operator: contains
+    operators: [contains, equals, starts_with, not_contains]
 
 kpis:
   total_orders:

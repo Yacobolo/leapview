@@ -155,6 +155,36 @@ func TestDashboardValidateRejectsSeriesOnUnsupportedChart(t *testing.T) {
 	assertDashboardValidateError(t, report, model, "does not support series")
 }
 
+func TestDashboardValidateRejectsUnknownFilterDimension(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["state"]
+	filter.Dimension = "missing_dimension"
+	report.Filters["state"] = filter
+
+	assertDashboardValidateError(t, report, model, "unknown dimension")
+}
+
+func TestDashboardValidateRejectsUnsupportedFilterOperator(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["category"]
+	filter.Operators = append(filter.Operators, "regex")
+	report.Filters["category"] = filter
+
+	assertDashboardValidateError(t, report, model, "unsupported operator")
+}
+
+func TestDashboardValidateRejectsInvalidDatePreset(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["purchase_date"]
+	filter.Presets = append(filter.Presets, FilterPreset{Value: "bad", Label: "Bad", From: "2018-01-01"})
+	report.Filters["purchase_date"] = filter
+
+	assertDashboardValidateError(t, report, model, "requires both from and to")
+}
+
 func loadOlistModel(t *testing.T) *Model {
 	t.Helper()
 	model, err := Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))

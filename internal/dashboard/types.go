@@ -111,10 +111,18 @@ type ModelEdge struct {
 }
 
 type Filters struct {
-	DateRange        string            `json:"dateRange"`
-	State            string            `json:"state"`
-	Category         string            `json:"category"`
-	VisualSelections []VisualSelection `json:"visualSelections"`
+	Controls         map[string]FilterControl `json:"controls"`
+	VisualSelections []VisualSelection        `json:"visualSelections"`
+}
+
+type FilterControl struct {
+	Type     string   `json:"type"`
+	Operator string   `json:"operator,omitempty"`
+	Preset   string   `json:"preset,omitempty"`
+	From     string   `json:"from,omitempty"`
+	To       string   `json:"to,omitempty"`
+	Value    string   `json:"value,omitempty"`
+	Values   []string `json:"values,omitempty"`
 }
 
 type Runtime struct {
@@ -125,11 +133,11 @@ type Runtime struct {
 }
 
 func (f Filters) WithDefaults() Filters {
-	if f.DateRange == "" {
-		f.DateRange = "all"
+	if f.Controls == nil {
+		f.Controls = map[string]FilterControl{}
 	}
-	if f.State == "" {
-		f.State = "all"
+	if f.VisualSelections == nil {
+		f.VisualSelections = []VisualSelection{}
 	}
 	return f
 }
@@ -240,10 +248,16 @@ func joinValues(values []string) string {
 }
 
 type Patch struct {
-	Filters Filters          `json:"filters"`
-	Status  Status           `json:"status"`
-	KPIs    []KPI            `json:"kpis"`
-	Charts  map[string]Chart `json:"charts"`
+	Filters       Filters                   `json:"filters"`
+	FilterOptions map[string][]FilterOption `json:"filterOptions,omitempty"`
+	Status        Status                    `json:"status"`
+	KPIs          []KPI                     `json:"kpis"`
+	Charts        map[string]Chart          `json:"charts"`
+}
+
+type FilterOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
 }
 
 type Status struct {

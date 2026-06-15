@@ -21,15 +21,45 @@ type Dashboard struct {
 }
 
 type FilterDefinition struct {
-	Type    string         `yaml:"type"`
-	Label   string         `yaml:"label"`
-	Default string         `yaml:"default"`
-	Options []FilterOption `yaml:"options"`
+	Type            string         `yaml:"type" json:"type"`
+	Label           string         `yaml:"label" json:"label"`
+	Dataset         string         `yaml:"dataset" json:"dataset"`
+	Dimension       string         `yaml:"dimension" json:"dimension"`
+	Default         FilterDefault  `yaml:"default" json:"default"`
+	Custom          bool           `yaml:"custom" json:"custom,omitempty"`
+	Presets         []FilterPreset `yaml:"presets" json:"presets,omitempty"`
+	Operator        string         `yaml:"operator" json:"operator,omitempty"`
+	Values          FilterValues   `yaml:"values" json:"values,omitempty"`
+	DefaultOperator string         `yaml:"default_operator" json:"defaultOperator,omitempty"`
+	Operators       []string       `yaml:"operators" json:"operators,omitempty"`
+	Options         []FilterOption `yaml:"options" json:"options,omitempty"`
 }
 
 type FilterOption struct {
-	Value string `yaml:"value"`
-	Label string `yaml:"label"`
+	Value string `yaml:"value" json:"value"`
+	Label string `yaml:"label" json:"label"`
+}
+
+type FilterDefault struct {
+	Preset   string   `yaml:"preset" json:"preset,omitempty"`
+	From     string   `yaml:"from" json:"from,omitempty"`
+	To       string   `yaml:"to" json:"to,omitempty"`
+	Operator string   `yaml:"operator" json:"operator,omitempty"`
+	Value    string   `yaml:"value" json:"value,omitempty"`
+	Values   []string `yaml:"values" json:"values,omitempty"`
+}
+
+type FilterPreset struct {
+	Value        string `yaml:"value" json:"value"`
+	Label        string `yaml:"label" json:"label"`
+	From         string `yaml:"from" json:"from,omitempty"`
+	To           string `yaml:"to" json:"to,omitempty"`
+	RelativeDays int    `yaml:"relative_days" json:"relativeDays,omitempty"`
+}
+
+type FilterValues struct {
+	Source string `yaml:"source" json:"source,omitempty"`
+	Limit  int    `yaml:"limit" json:"limit,omitempty"`
 }
 
 type KPI struct {
@@ -113,6 +143,67 @@ func (d *Dashboard) Validate(model *Model) error {
 	}
 	if len(d.Pages) == 0 {
 		return fmt.Errorf("dashboard %q requires pages", d.ID)
+	}
+	for name, filter := range d.Filters {
+		if filter.Type == "" || filter.Label == "" || filter.Dataset == "" || filter.Dimension == "" {
+			return fmt.Errorf("filter %q requires type, label, dataset, and dimension", name)
+		}
+		dataset, ok := model.Datasets[filter.Dataset]
+		if !ok {
+			return fmt.Errorf("filter %q references unknown dataset %q", name, filter.Dataset)
+		}
+		if _, ok := dataset.Dimensions[filter.Dimension]; !ok {
+			return fmt.Errorf("filter %q references unknown dimension %q", name, filter.Dimension)
+		}
+		switch filter.Type {
+		case "date_range":
+			if len(filter.Presets) == 0 {
+				return fmt.Errorf("filter %q date_range requires presets", name)
+			}
+			seen := map[string]struct{}{}
+			for _, preset := range filter.Presets {
+				if preset.Value == "" || preset.Label == "" {
+					return fmt.Errorf("filter %q has date preset missing value or label", name)
+				}
+				if _, exists := seen[preset.Value]; exists {
+					return fmt.Errorf("filter %q has duplicate date preset %q", name, preset.Value)
+				}
+				seen[preset.Value] = struct{}{}
+				if preset.RelativeDays < 0 {
+					return fmt.Errorf("filter %q date preset %q has invalid relative_days", name, preset.Value)
+				}
+				if (preset.From == "") != (preset.To == "") {
+					return fmt.Errorf("filter %q date preset %q requires both from and to", name, preset.Value)
+				}
+			}
+			if filter.Default.Preset == "" {
+				return fmt.Errorf("filter %q date_range requires default preset", name)
+			}
+			if _, ok := seen[filter.Default.Preset]; !ok {
+				return fmt.Errorf("filter %q default preset %q is unknown", name, filter.Default.Preset)
+			}
+		case "multi_select":
+			if filter.Operator != "in" {
+				return fmt.Errorf("filter %q has unsupported operator %q", name, filter.Operator)
+			}
+			if filter.Values.Source != "" && filter.Values.Source != "distinct" {
+				return fmt.Errorf("filter %q has unsupported values source %q", name, filter.Values.Source)
+			}
+		case "text":
+			if len(filter.Operators) == 0 {
+				return fmt.Errorf("filter %q text requires operators", name)
+			}
+			if !containsString(filter.Operators, filter.DefaultOperator) {
+				return fmt.Errorf("filter %q has unsupported default operator %q", name, filter.DefaultOperator)
+			}
+			for _, operator := range filter.Operators {
+				if !containsString([]string{"contains", "equals", "starts_with", "not_contains"}, operator) {
+					return fmt.Errorf("filter %q has unsupported operator %q", name, operator)
+				}
+			}
+		default:
+			return fmt.Errorf("filter %q has unsupported type %q", name, filter.Type)
+		}
 	}
 	for name, kpi := range d.KPIs {
 		if kpi.Title == "" || kpi.Dataset == "" || kpi.Measure == "" {
@@ -234,4 +325,40 @@ func (d *Dashboard) Validate(model *Model) error {
 		}
 	}
 	return nil
+}
+
+func (d *Dashboard) DefaultFilters() dashboard.Filters {
+	filters := dashboard.Filters{
+		Controls:         map[string]dashboard.FilterControl{},
+		VisualSelections: []dashboard.VisualSelection{},
+	}
+	for name, filter := range d.Filters {
+		control := dashboard.FilterControl{Type: filter.Type}
+		switch filter.Type {
+		case "date_range":
+			control.Preset = filter.Default.Preset
+			control.From = filter.Default.From
+			control.To = filter.Default.To
+		case "multi_select":
+			control.Operator = filter.Operator
+			control.Values = append([]string{}, filter.Default.Values...)
+		case "text":
+			control.Operator = filter.DefaultOperator
+			if filter.Default.Operator != "" {
+				control.Operator = filter.Default.Operator
+			}
+			control.Value = filter.Default.Value
+		}
+		filters.Controls[name] = control
+	}
+	return filters.WithDefaults()
+}
+
+func containsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }

@@ -18,6 +18,7 @@ type queryMetrics interface {
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
 	Report(dashboardID string) (semantic.Dashboard, *semantic.Model, bool)
+	DefaultFilters(dashboardID string) dashboard.Filters
 	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest
 	QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error)
 	QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
@@ -139,7 +140,7 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
-	filters := signals.Filters.WithDefaults()
+	filters := s.normalizeFilters(dashboardID, signals.Filters)
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 	tableRequest := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 
@@ -200,7 +201,7 @@ func (s *Server) tableWindow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
-	filters := signals.Filters.WithDefaults()
+	filters := s.normalizeFilters(dashboardID, signals.Filters)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
@@ -216,7 +217,7 @@ func (s *Server) chartSelect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
-	filters := signals.Filters.ToggleSelection(signals.ChartCommand)
+	filters := s.normalizeFilters(dashboardID, signals.Filters).ToggleSelection(signals.ChartCommand)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
@@ -244,7 +245,7 @@ func (s *Server) clearSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
-	filters := signals.Filters.WithDefaults()
+	filters := s.normalizeFilters(dashboardID, signals.Filters)
 	filters.VisualSelections = nil
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
@@ -273,7 +274,7 @@ func (s *Server) resetFilters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
-	filters := dashboard.Filters{}.WithDefaults()
+	filters := s.metrics.DefaultFilters(dashboardID)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 	request.Offset = 0
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
@@ -303,7 +304,7 @@ func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	modelID := s.modelID(r, signals, dashboardID)
-	filters := signals.Filters.WithDefaults()
+	filters := s.normalizeFilters(dashboardID, signals.Filters)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
 
@@ -338,6 +339,16 @@ func (s *Server) queryTable(ctx context.Context, dashboardID string, filters das
 	return table
 }
 
+func (s *Server) normalizeFilters(dashboardID string, filters dashboard.Filters) dashboard.Filters {
+	defaults := s.metrics.DefaultFilters(dashboardID)
+	filters = filters.WithDefaults()
+	for name, control := range filters.Controls {
+		defaults.Controls[name] = control
+	}
+	defaults.VisualSelections = append([]dashboard.VisualSelection{}, filters.VisualSelections...)
+	return defaults.WithDefaults()
+}
+
 func tablePatch(name string, table dashboard.Table) signalPatch {
 	return signalPatch{
 		"tables": map[string]dashboard.Table{
@@ -348,10 +359,11 @@ func tablePatch(name string, table dashboard.Table) signalPatch {
 
 func dashboardPatch(patch dashboard.Patch) signalPatch {
 	return signalPatch{
-		"filters": patch.Filters,
-		"status":  patch.Status,
-		"kpis":    patch.KPIs,
-		"charts":  patch.Charts,
+		"filters":       patch.Filters,
+		"filterOptions": patch.FilterOptions,
+		"status":        patch.Status,
+		"kpis":          patch.KPIs,
+		"charts":        patch.Charts,
 	}
 }
 

@@ -191,6 +191,14 @@ func (m *DuckDBMetrics) NormalizeTableRequest(dashboardID string, request dashbo
 	return request
 }
 
+func (m *DuckDBMetrics) DefaultFilters(dashboardID string) dashboard.Filters {
+	report, ok := m.workspace.Dashboards[dashboardID]
+	if !ok {
+		return dashboard.Filters{}.WithDefaults()
+	}
+	return report.DefaultFilters()
+}
+
 func (m *DuckDBMetrics) Pages(dashboardID string) []dashboard.Page {
 	report, ok := m.workspace.Dashboards[dashboardID]
 	if !ok {
@@ -256,8 +264,12 @@ func (m *DuckDBMetrics) reportRuntime(dashboardID string) (*semantic.Dashboard, 
 }
 
 func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
-	filters = filters.WithDefaults()
 	report, runtime, err := m.reportRuntime(dashboardID)
+	if report != nil {
+		filters = normalizeFilters(report, filters)
+	} else {
+		filters = filters.WithDefaults()
+	}
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
 	}
@@ -278,6 +290,12 @@ func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, dashboardID string, 
 		Charts: map[string]dashboard.Chart{},
 	}
 
+	options, err := m.filterOptions(ctx, runtime, report)
+	if err != nil {
+		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
+	}
+	patch.FilterOptions = options
+
 	kpis, err := m.kpis(ctx, runtime, report, filters)
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
@@ -294,8 +312,12 @@ func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, dashboardID string, 
 }
 
 func (m *DuckDBMetrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
-	filters = filters.WithDefaults()
 	report, runtime, err := m.reportRuntime(dashboardID)
+	if report != nil {
+		filters = normalizeFilters(report, filters)
+	} else {
+		filters = filters.WithDefaults()
+	}
 	request = m.NormalizeTableRequest(dashboardID, request)
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
@@ -331,6 +353,95 @@ func (m *DuckDBMetrics) QueryTable(ctx context.Context, dashboardID string, filt
 		Loading:   false,
 		Error:     "",
 	}, nil
+}
+
+func (m *DuckDBMetrics) filterOptions(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard) (map[string][]dashboard.FilterOption, error) {
+	options := map[string][]dashboard.FilterOption{}
+	for _, name := range sortedKeys(report.Filters) {
+		filter := report.Filters[name]
+		if filter.Values.Source != "distinct" {
+			continue
+		}
+		source, err := datasetSource(runtime.model, filter.Dataset)
+		if err != nil {
+			return nil, err
+		}
+		dataset := runtime.model.Datasets[filter.Dataset]
+		dimension := dataset.Dimensions[filter.Dimension]
+		expr := dimensionExpression(dimension, "e")
+		where := "1 = 1"
+		if dimension.Where != "" {
+			where = dimensionWhere(dimension, "e")
+		}
+		limit := filter.Values.Limit
+		if limit <= 0 {
+			limit = 200
+		}
+		if limit > 500 {
+			limit = 500
+		}
+		query := fmt.Sprintf(`
+SELECT DISTINCT CAST(%s AS VARCHAR) AS value
+FROM %s e
+WHERE %s AND %s IS NOT NULL AND CAST(%s AS VARCHAR) <> ''
+ORDER BY value ASC
+LIMIT %d`, expr, source, where, expr, expr, limit)
+		rows, err := runtime.db.QueryContext(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		values := []dashboard.FilterOption{}
+		for rows.Next() {
+			var value string
+			if err := rows.Scan(&value); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			values = append(values, dashboard.FilterOption{Value: value, Label: value})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+		options[name] = values
+	}
+	return options, nil
+}
+
+func normalizeFilters(report *semantic.Dashboard, filters dashboard.Filters) dashboard.Filters {
+	defaults := report.DefaultFilters()
+	filters = filters.WithDefaults()
+	for name, control := range filters.Controls {
+		filter, ok := report.Filters[name]
+		if !ok {
+			continue
+		}
+		base := defaults.Controls[name]
+		if control.Type == "" {
+			control.Type = filter.Type
+		}
+		switch filter.Type {
+		case "date_range":
+			if control.Preset == "" && control.From == "" && control.To == "" {
+				control.Preset = base.Preset
+			}
+		case "multi_select":
+			if control.Operator == "" {
+				control.Operator = base.Operator
+			}
+			if control.Values == nil {
+				control.Values = []string{}
+			}
+		case "text":
+			if control.Operator == "" {
+				control.Operator = base.Operator
+			}
+		}
+		defaults.Controls[name] = control
+	}
+	defaults.VisualSelections = append([]dashboard.VisualSelection{}, filters.VisualSelections...)
+	return defaults.WithDefaults()
 }
 
 func (m *DuckDBMetrics) RefreshCache(ctx context.Context, modelID string) error {
@@ -728,27 +839,65 @@ func (m *DuckDBMetrics) sortExpression(dataset semantic.Dataset, visual semantic
 }
 
 func (m *DuckDBMetrics) filterWhere(alias string, runtime *modelRuntime, report *semantic.Dashboard, datasetName string, filters dashboard.Filters, targetKind, targetID string) (string, []any) {
-	filters = filters.WithDefaults()
+	filters = normalizeFilters(report, filters)
 	conditions := []string{"1 = 1"}
 	args := []any{}
 
-	if filters.State != "" && filters.State != "all" {
-		conditions = append(conditions, alias+".state = ?")
-		args = append(args, strings.ToUpper(filters.State))
-	}
-
-	switch filters.DateRange {
-	case "2017":
-		conditions = append(conditions, alias+".purchase_timestamp >= TIMESTAMP '2017-01-01' AND "+alias+".purchase_timestamp < TIMESTAMP '2018-01-01'")
-	case "2018":
-		conditions = append(conditions, alias+".purchase_timestamp >= TIMESTAMP '2018-01-01' AND "+alias+".purchase_timestamp < TIMESTAMP '2019-01-01'")
-	case "recent":
-		conditions = append(conditions, alias+".purchase_timestamp >= (SELECT max(purchase_timestamp) - INTERVAL 90 DAY FROM cache.orders_enriched)")
-	}
-
-	if filters.Category != "" && filters.Category != "all" {
-		conditions = append(conditions, "lower("+alias+".category) LIKE lower(?)")
-		args = append(args, "%"+filters.Category+"%")
+	for _, name := range sortedKeys(report.Filters) {
+		filter := report.Filters[name]
+		if filter.Dataset != datasetName {
+			continue
+		}
+		control, ok := filters.Controls[name]
+		if !ok {
+			continue
+		}
+		dataset, ok := runtime.model.Datasets[filter.Dataset]
+		if !ok {
+			continue
+		}
+		dimension, ok := dataset.Dimensions[filter.Dimension]
+		if !ok {
+			continue
+		}
+		expr := dimensionExpression(dimension, alias)
+		switch filter.Type {
+		case "date_range":
+			condition, conditionArgs := m.dateFilterCondition(runtime, filter, control, expr)
+			if condition != "" {
+				conditions = append(conditions, condition)
+				args = append(args, conditionArgs...)
+			}
+		case "multi_select":
+			if control.Operator != "in" || len(control.Values) == 0 {
+				continue
+			}
+			placeholders := make([]string, 0, len(control.Values))
+			for _, value := range control.Values {
+				placeholders = append(placeholders, "?")
+				args = append(args, value)
+			}
+			conditions = append(conditions, expr+" IN ("+strings.Join(placeholders, ", ")+")")
+		case "text":
+			value := strings.TrimSpace(control.Value)
+			if value == "" {
+				continue
+			}
+			switch control.Operator {
+			case "equals":
+				conditions = append(conditions, "lower("+expr+") = lower(?)")
+				args = append(args, value)
+			case "starts_with":
+				conditions = append(conditions, "lower("+expr+") LIKE lower(?)")
+				args = append(args, value+"%")
+			case "not_contains":
+				conditions = append(conditions, "lower("+expr+") NOT LIKE lower(?)")
+				args = append(args, "%"+value+"%")
+			default:
+				conditions = append(conditions, "lower("+expr+") LIKE lower(?)")
+				args = append(args, "%"+value+"%")
+			}
+		}
 	}
 
 	for _, selection := range filters.VisualSelections {
@@ -782,6 +931,44 @@ func (m *DuckDBMetrics) filterWhere(alias string, runtime *modelRuntime, report 
 	}
 
 	return strings.Join(conditions, " AND "), args
+}
+
+func (m *DuckDBMetrics) dateFilterCondition(runtime *modelRuntime, filter semantic.FilterDefinition, control dashboard.FilterControl, expr string) (string, []any) {
+	if control.From != "" || control.To != "" {
+		conditions := []string{}
+		args := []any{}
+		if control.From != "" {
+			conditions = append(conditions, expr+" >= CAST(? AS TIMESTAMP)")
+			args = append(args, control.From)
+		}
+		if control.To != "" {
+			conditions = append(conditions, expr+" < CAST(? AS TIMESTAMP) + INTERVAL 1 DAY")
+			args = append(args, control.To)
+		}
+		return strings.Join(conditions, " AND "), args
+	}
+	if control.Preset == "" || control.Preset == "all" {
+		return "", nil
+	}
+	for _, preset := range filter.Presets {
+		if preset.Value != control.Preset {
+			continue
+		}
+		if preset.RelativeDays > 0 {
+			source, err := datasetSource(runtime.model, filter.Dataset)
+			if err != nil {
+				return "", nil
+			}
+			dataset := runtime.model.Datasets[filter.Dataset]
+			dimension := dataset.Dimensions[filter.Dimension]
+			sourceExpr := dimensionExpression(dimension, "recent")
+			return fmt.Sprintf("%s >= (SELECT max(%s) - INTERVAL %d DAY FROM %s recent)", expr, sourceExpr, preset.RelativeDays, source), nil
+		}
+		if preset.From != "" && preset.To != "" {
+			return expr + " >= CAST(? AS TIMESTAMP) AND " + expr + " < CAST(? AS TIMESTAMP)", []any{preset.From, preset.To}
+		}
+	}
+	return "", nil
 }
 
 func targetsSelection(targets semantic.InteractionTargets, targetKind, targetID string) bool {
