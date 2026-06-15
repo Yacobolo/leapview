@@ -269,7 +269,13 @@ func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, 
 		ResetVersion:  request.ResetVersion,
 		Sort:          request.Sort,
 		Blocks: map[string]dashboard.TableBlock{
-			"a": {Start: request.Start, Rows: []map[string]any{{"order_id": "o1"}}},
+			"a": {
+				Start:        request.Start,
+				RequestSeq:   request.RequestSeq,
+				ResetVersion: request.ResetVersion,
+				Sort:         request.Sort,
+				Rows:         []map[string]any{{"order_id": "o1"}},
+			},
 		},
 	}, nil
 }
@@ -353,7 +359,7 @@ func TestResetFiltersCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"a","start":400,"count":200,"sort":{"key":"revenue","direction":"desc"}}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"a","start":400,"count":200,"requestSeq":42,"sort":{"key":"revenue","direction":"desc"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/table-window", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

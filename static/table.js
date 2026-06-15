@@ -716,9 +716,9 @@ var tableConverter = {
 };
 function emptyBlocks() {
   return {
-    a: { start: 0, rows: [] },
-    b: { start: defaultChunkSize, rows: [] },
-    c: { start: defaultChunkSize * 2, rows: [] }
+    a: { start: 0, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+    b: { start: defaultChunkSize, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+    c: { start: defaultChunkSize * 2, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] }
   };
 }
 function normalizeTable(value) {
@@ -747,6 +747,9 @@ function normalizeTable(value) {
 function normalizeBlock(block, fallbackStart) {
   return {
     start: positiveNumber(block?.start, fallbackStart),
+    requestSeq: positiveNumber(block?.requestSeq, 0),
+    resetVersion: positiveNumber(block?.resetVersion, 0),
+    sort: block?.sort?.key ? block.sort : defaultSort,
     rows: Array.isArray(block?.rows) ? block.rows : []
   };
 }
@@ -774,6 +777,9 @@ function rowKey(row, fallback) {
   const id = row.order_id;
   return typeof id === "string" && id ? id : String(fallback);
 }
+function sameSort(a3, b3) {
+  return a3.key === b3.key && a3.direction === b3.direction;
+}
 var DataTable = class extends i4 {
   constructor() {
     super(...arguments);
@@ -785,7 +791,10 @@ var DataTable = class extends i4 {
     this.viewportHeight = 0;
     this.lastResetVersion = -1;
     this.shouldResetScroll = false;
-    this.pendingLoads = /* @__PURE__ */ new Set();
+    this.requestSeq = 0;
+    this.scrollFrame = 0;
+    this.expectedBlocks = /* @__PURE__ */ new Map();
+    this.latestAcceptedSeq = /* @__PURE__ */ new Map();
     this.blockCache = emptyBlocks();
     this.scrollElementRef = e5();
     this.handleOutsidePointerDown = (event) => {
@@ -1063,6 +1072,14 @@ var DataTable = class extends i4 {
       box-shadow: inset 3px 0 0 var(--fgColor-accent);
     }
 
+    .row.skeleton-row {
+      pointer-events: none;
+    }
+
+    .row.skeleton-row:hover {
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
+    }
+
     .cell {
       display: flex;
       align-items: center;
@@ -1087,6 +1104,31 @@ var DataTable = class extends i4 {
       outline: 2px solid var(--fgColor-accent);
       outline-offset: -2px;
       background: color-mix(in srgb, var(--fgColor-accent), transparent 88%);
+    }
+
+    .skeleton-cell {
+      cursor: default;
+    }
+
+    .skeleton-line {
+      display: block;
+      width: min(76%, 140px);
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: linear-gradient(
+        90deg,
+        var(--bgColor-muted) 0%,
+        color-mix(in srgb, var(--fgColor-muted), transparent 82%) 45%,
+        var(--bgColor-muted) 90%
+      );
+      background-size: 220% 100%;
+      animation: shimmer 1.15s ease-in-out infinite;
+      opacity: 0.78;
+    }
+
+    .skeleton-cell:nth-child(2n) .skeleton-line {
+      width: min(58%, 120px);
     }
 
     .right {
@@ -1146,6 +1188,11 @@ var DataTable = class extends i4 {
       100% { transform: translateX(310%); }
     }
 
+    @keyframes shimmer {
+      0% { background-position: 120% 0; }
+      100% { background-position: -120% 0; }
+    }
+
     @media (max-width: 760px) {
       .shell {
         min-height: 360px;
@@ -1170,15 +1217,16 @@ var DataTable = class extends i4 {
     this.viewportHeight = viewport.clientHeight;
     this.resizeObserver = new ResizeObserver(() => {
       this.viewportHeight = viewport.clientHeight;
-      this.ensureBlocksForScroll();
+      this.scheduleEnsureBlocksForScroll();
     });
     this.resizeObserver.observe(viewport);
-    this.ensureBlocksForScroll();
+    this.scheduleEnsureBlocksForScroll();
   }
   disconnectedCallback() {
     document.removeEventListener("pointerdown", this.handleOutsidePointerDown);
     document.removeEventListener("keydown", this.handleDocumentKeyDown);
     this.resizeObserver?.disconnect();
+    if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
     super.disconnectedCallback();
   }
   willUpdate() {
@@ -1186,12 +1234,12 @@ var DataTable = class extends i4 {
       this.lastResetVersion = this.table.resetVersion;
       this.blockCache = emptyBlocks();
       this.shouldResetScroll = true;
-      this.pendingLoads.clear();
+      this.expectedBlocks.clear();
+      this.latestAcceptedSeq.clear();
       this.selectedRowId = "";
       this.selectedCellKey = "";
     }
     this.mergeIncomingBlocks();
-    this.clearArrivedLoads();
     if (this.selectedRowId && !this.loadedRows.some((item) => rowKey(item.row, item.index) === this.selectedRowId)) {
       this.selectedRowId = "";
       this.selectedCellKey = "";
@@ -1206,6 +1254,7 @@ var DataTable = class extends i4 {
         viewport.scrollTop = 0;
         this.viewportTop = 0;
         this.viewportHeight = viewport.clientHeight;
+        this.scheduleEnsureBlocksForScroll();
       });
     }
   }
@@ -1214,6 +1263,22 @@ var DataTable = class extends i4 {
   }
   get loadedRows() {
     return blockIDs.map((id) => this.blocks[id]).sort((a3, b3) => a3.start - b3.start).flatMap((block) => block.rows.map((row, offset) => ({ row, index: block.start + offset }))).filter((item) => item.index < this.availableRows);
+  }
+  get visibleRows() {
+    if (this.availableRows <= 0) return [];
+    const rowMap = new Map(this.loadedRows.map((item) => [item.index, item.row]));
+    const first = Math.max(0, Math.floor(this.viewportTop / this.rowHeight) - 2);
+    const visibleCount = Math.max(1, Math.ceil((this.viewportHeight || this.rowHeight) / this.rowHeight) + 4);
+    const last = Math.min(this.availableRows, first + visibleCount);
+    const rows = [];
+    for (let index = first; index < last; index++) {
+      const row = rowMap.get(index);
+      rows.push(row ? { kind: "row", row, index } : { kind: "skeleton", index });
+    }
+    return rows;
+  }
+  get visibleLoading() {
+    return this.visibleRows.some((row) => row.kind === "skeleton") || this.expectedBlocks.size > 0;
   }
   get availableRows() {
     return Math.max(0, this.table.availableRows ?? 0);
@@ -1244,7 +1309,7 @@ var DataTable = class extends i4 {
     const target = event.currentTarget;
     this.viewportTop = target.scrollTop;
     this.viewportHeight = target.clientHeight;
-    this.ensureBlocksForScroll();
+    this.scheduleEnsureBlocksForScroll();
   }
   sortColumn(column) {
     const current = this.table?.sort ?? defaultSort;
@@ -1258,11 +1323,11 @@ var DataTable = class extends i4 {
   }
   render() {
     const columns = this.columns;
-    const loadedRows = this.loadedRows;
+    const visibleRows = this.visibleRows;
     const totalHeight = this.availableRows * this.rowHeight;
     const rowRange = this.rowRangeText();
     const selectedText = this.selectedRowId ? "1 row selected" : "No selection";
-    const loading = Boolean(this.table.loadingBlock);
+    const loading = Boolean(this.table.loadingBlock) || this.visibleLoading;
     return b2`
       <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
         <div class="toolbar">
@@ -1299,7 +1364,24 @@ var DataTable = class extends i4 {
           ${loading ? b2`<div class="loading" aria-hidden="true"></div>` : A}
           ${this.availableRows === 0 && !loading ? b2`<div class="empty">Waiting for table data</div>` : b2`
             <div class="canvas" style=${`height:${totalHeight}px`}>
-              ${loadedRows.map(({ row, index }) => {
+              ${visibleRows.map((slot) => {
+      if (slot.kind === "skeleton") {
+        return b2`
+                    <div
+                      class="row skeleton-row"
+                      role="row"
+                      aria-busy="true"
+                      style=${`transform:translateY(${slot.index * this.rowHeight}px)`}
+                    >
+                      ${columns.map((column) => b2`
+                        <span class=${`cell skeleton-cell ${column.align === "right" ? "right" : ""}`} role="cell">
+                          <span class="skeleton-line"></span>
+                        </span>
+                      `)}
+                    </div>
+                  `;
+      }
+      const { row, index } = slot;
       const key = rowKey(row, index);
       const selected = key === this.selectedRowId;
       return b2`
@@ -1336,7 +1418,7 @@ var DataTable = class extends i4 {
           `}
         </div>
         <div class="footer">
-          <span><strong>${rowRange}</strong>${this.table.isCapped ? b2` · browsing first ${this.table.rowCap.toLocaleString()}` : A}</span>
+          <span><strong>${rowRange}</strong>${this.visibleLoading ? b2` · loading` : A}${this.table.isCapped ? b2` · browsing first ${this.table.rowCap.toLocaleString()}` : A}</span>
           <span>${selectedText}</span>
         </div>
       </section>
@@ -1348,15 +1430,26 @@ var DataTable = class extends i4 {
     const desired = this.desiredStarts(currentStart);
     const desiredSet = new Set(desired);
     const loadedStarts = new Set(blockIDs.map((id) => this.blocks[id]?.start ?? -1));
-    const pendingStarts = new Set([...this.pendingLoads].map((key) => Number(key.split(":")[1])));
+    const expectedStarts = new Set([...this.expectedBlocks.values()].map((request) => request.start));
+    const missingStarts = desired.filter((start) => !loadedStarts.has(start) && !expectedStarts.has(start));
+    if (missingStarts.length > 1 || !loadedStarts.has(currentStart) && !expectedStarts.has(currentStart)) {
+      this.emitBlock("all", currentStart, this.table.sort, this.table.resetVersion);
+      return;
+    }
     const usedBlocks = /* @__PURE__ */ new Set();
-    for (const start of desired) {
-      if (loadedStarts.has(start) || pendingStarts.has(start)) continue;
+    for (const start of missingStarts) {
       const block = this.reusableBlock(desiredSet, usedBlocks);
       if (!block) continue;
       usedBlocks.add(block);
       this.emitBlock(block, start, this.table.sort, this.table.resetVersion);
     }
+  }
+  scheduleEnsureBlocksForScroll() {
+    if (this.scrollFrame) return;
+    this.scrollFrame = requestAnimationFrame(() => {
+      this.scrollFrame = 0;
+      this.ensureBlocksForScroll();
+    });
   }
   desiredStarts(currentStart) {
     const starts = currentStart <= 0 ? [0, this.chunkSize, this.chunkSize * 2] : [Math.max(0, currentStart - this.chunkSize), currentStart, currentStart + this.chunkSize];
@@ -1367,9 +1460,18 @@ var DataTable = class extends i4 {
   }
   emitBlock(block, start, sort = this.table.sort, resetVersion = this.table.resetVersion) {
     const count = this.chunkSize;
-    const key = `${block}:${start}:${sort.key}:${sort.direction}:${resetVersion}`;
-    if (this.pendingLoads.has(key)) return;
-    this.pendingLoads.add(key);
+    const requestSeq = ++this.requestSeq;
+    if (block === "all") {
+      this.expectedBlocks.clear();
+      const starts = this.allBlockStarts(start);
+      blockIDs.forEach((id, index) => {
+        const expectedStart = starts[index];
+        this.expectedBlocks.set(id, { start: expectedStart, requestSeq, resetVersion, sort });
+      });
+    } else {
+      this.expectedBlocks.set(block, { start, requestSeq, resetVersion, sort });
+    }
+    this.requestUpdate();
     this.dispatchEvent(new CustomEvent("ld-table-window-change", {
       bubbles: true,
       composed: true,
@@ -1378,25 +1480,16 @@ var DataTable = class extends i4 {
         block,
         start,
         count,
+        requestSeq,
         sort,
         resetVersion
       }
     }));
   }
-  clearArrivedLoads() {
-    for (const key of [...this.pendingLoads]) {
-      const [block, start, sortKey, sortDirection, resetVersion] = key.split(":");
-      if (block === "all") {
-        if (this.table.resetVersion === Number(resetVersion) && this.table.sort.key === sortKey && this.table.sort.direction === sortDirection) {
-          this.pendingLoads.delete(key);
-        }
-        continue;
-      }
-      const tableBlock = this.blocks[block];
-      if (tableBlock?.start === Number(start) && this.table.sort.key === sortKey && this.table.sort.direction === sortDirection && this.table.resetVersion === Number(resetVersion)) {
-        this.pendingLoads.delete(key);
-      }
-    }
+  allBlockStarts(start) {
+    const currentStart = Math.max(0, Math.floor(start / this.chunkSize) * this.chunkSize);
+    if (currentStart <= 0) return [0, this.chunkSize, this.chunkSize * 2];
+    return [Math.max(0, currentStart - this.chunkSize), currentStart, currentStart + this.chunkSize];
   }
   rowRangeText() {
     if (!this.table.totalRows || !this.availableRows) return "No rows";
@@ -1410,14 +1503,32 @@ var DataTable = class extends i4 {
     for (const id of blockIDs) {
       const incoming = this.table.blocks[id];
       if (!incoming) continue;
+      if (!this.shouldAcceptBlock(id, incoming)) continue;
       const defaultBlock = defaults[id];
       const carriesRows = incoming.rows.length > 0;
       const carriesNonDefaultStart = incoming.start !== defaultBlock.start;
       const cacheIsEmpty = this.blockCache[id].rows.length === 0;
       if (carriesRows || carriesNonDefaultStart || cacheIsEmpty) {
-        this.blockCache[id] = { start: incoming.start, rows: incoming.rows };
+        this.blockCache[id] = { ...incoming, rows: incoming.rows };
+        if (incoming.requestSeq > 0) this.latestAcceptedSeq.set(id, incoming.requestSeq);
+        const expected = this.expectedBlocks.get(id);
+        if (expected && this.blockMatchesExpected(incoming, expected)) {
+          this.expectedBlocks.delete(id);
+        }
       }
     }
+  }
+  shouldAcceptBlock(id, incoming) {
+    const expected = this.expectedBlocks.get(id);
+    if (expected) return this.blockMatchesExpected(incoming, expected);
+    if (incoming.requestSeq > 0) {
+      const lastAcceptedSeq = this.latestAcceptedSeq.get(id) ?? 0;
+      return incoming.requestSeq >= lastAcceptedSeq && incoming.resetVersion === this.table.resetVersion && sameSort(incoming.sort, this.table.sort);
+    }
+    return incoming.resetVersion === 0 || incoming.resetVersion === this.table.resetVersion && sameSort(incoming.sort, this.table.sort);
+  }
+  blockMatchesExpected(block, expected) {
+    return block.start === expected.start && block.requestSeq === expected.requestSeq && block.resetVersion === expected.resetVersion && sameSort(block.sort, expected.sort);
   }
   runAction(action) {
     this.renderRoot.querySelector(".visual-options")?.removeAttribute("open");

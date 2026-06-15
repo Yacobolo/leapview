@@ -20,6 +20,9 @@ type TableRow = Record<string, unknown>
 
 interface TableBlock {
   start: number
+  requestSeq: number
+  resetVersion: number
+  sort: TableSort
   rows: TableRow[]
 }
 
@@ -45,11 +48,20 @@ interface TableBlockCommand {
   block: BlockID | 'all'
   start: number
   count: number
+  requestSeq: number
   sort: TableSort
   resetVersion: number
 }
 
 type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
+type VisibleRowSlot = { kind: 'row'; row: TableRow; index: number } | { kind: 'skeleton'; index: number }
+
+interface ExpectedBlockRequest {
+  start: number
+  requestSeq: number
+  resetVersion: number
+  sort: TableSort
+}
 
 const blockIDs: BlockID[] = ['a', 'b', 'c']
 const defaultChunkSize = 200
@@ -89,9 +101,9 @@ const tableConverter = {
 
 function emptyBlocks(): Record<BlockID, TableBlock> {
   return {
-    a: { start: 0, rows: [] },
-    b: { start: defaultChunkSize, rows: [] },
-    c: { start: defaultChunkSize * 2, rows: [] },
+    a: { start: 0, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+    b: { start: defaultChunkSize, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+    c: { start: defaultChunkSize * 2, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
   }
 }
 
@@ -122,6 +134,9 @@ function normalizeTable(value: Partial<TableSignal>): TableSignal {
 function normalizeBlock(block: TableBlock | undefined, fallbackStart: number): TableBlock {
   return {
     start: positiveNumber(block?.start, fallbackStart),
+    requestSeq: positiveNumber(block?.requestSeq, 0),
+    resetVersion: positiveNumber(block?.resetVersion, 0),
+    sort: block?.sort?.key ? block.sort : defaultSort,
     rows: Array.isArray(block?.rows) ? block.rows : [],
   }
 }
@@ -154,6 +169,10 @@ function rowKey(row: TableRow, fallback: number): string {
   return typeof id === 'string' && id ? id : String(fallback)
 }
 
+function sameSort(a: TableSort, b: TableSort): boolean {
+  return a.key === b.key && a.direction === b.direction
+}
+
 class DataTable extends LitElement {
   static properties = {
     tableId: { attribute: 'table-id' },
@@ -172,7 +191,10 @@ class DataTable extends LitElement {
   private viewportHeight = 0
   private lastResetVersion = -1
   private shouldResetScroll = false
-  private pendingLoads = new Set<string>()
+  private requestSeq = 0
+  private scrollFrame = 0
+  private expectedBlocks = new Map<BlockID, ExpectedBlockRequest>()
+  private latestAcceptedSeq = new Map<BlockID, number>()
   private blockCache: Record<BlockID, TableBlock> = emptyBlocks()
   private scrollElementRef: Ref<HTMLDivElement> = createRef()
   private resizeObserver?: ResizeObserver
@@ -440,6 +462,14 @@ class DataTable extends LitElement {
       box-shadow: inset 3px 0 0 var(--fgColor-accent);
     }
 
+    .row.skeleton-row {
+      pointer-events: none;
+    }
+
+    .row.skeleton-row:hover {
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
+    }
+
     .cell {
       display: flex;
       align-items: center;
@@ -464,6 +494,31 @@ class DataTable extends LitElement {
       outline: 2px solid var(--fgColor-accent);
       outline-offset: -2px;
       background: color-mix(in srgb, var(--fgColor-accent), transparent 88%);
+    }
+
+    .skeleton-cell {
+      cursor: default;
+    }
+
+    .skeleton-line {
+      display: block;
+      width: min(76%, 140px);
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: linear-gradient(
+        90deg,
+        var(--bgColor-muted) 0%,
+        color-mix(in srgb, var(--fgColor-muted), transparent 82%) 45%,
+        var(--bgColor-muted) 90%
+      );
+      background-size: 220% 100%;
+      animation: shimmer 1.15s ease-in-out infinite;
+      opacity: 0.78;
+    }
+
+    .skeleton-cell:nth-child(2n) .skeleton-line {
+      width: min(58%, 120px);
     }
 
     .right {
@@ -523,6 +578,11 @@ class DataTable extends LitElement {
       100% { transform: translateX(310%); }
     }
 
+    @keyframes shimmer {
+      0% { background-position: 120% 0; }
+      100% { background-position: -120% 0; }
+    }
+
     @media (max-width: 760px) {
       .shell {
         min-height: 360px;
@@ -548,16 +608,17 @@ class DataTable extends LitElement {
     this.viewportHeight = viewport.clientHeight
     this.resizeObserver = new ResizeObserver(() => {
       this.viewportHeight = viewport.clientHeight
-      this.ensureBlocksForScroll()
+      this.scheduleEnsureBlocksForScroll()
     })
     this.resizeObserver.observe(viewport)
-    this.ensureBlocksForScroll()
+    this.scheduleEnsureBlocksForScroll()
   }
 
   disconnectedCallback(): void {
     document.removeEventListener('pointerdown', this.handleOutsidePointerDown)
     document.removeEventListener('keydown', this.handleDocumentKeyDown)
     this.resizeObserver?.disconnect()
+    if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame)
     super.disconnectedCallback()
   }
 
@@ -566,12 +627,12 @@ class DataTable extends LitElement {
       this.lastResetVersion = this.table.resetVersion
       this.blockCache = emptyBlocks()
       this.shouldResetScroll = true
-      this.pendingLoads.clear()
+      this.expectedBlocks.clear()
+      this.latestAcceptedSeq.clear()
       this.selectedRowId = ''
       this.selectedCellKey = ''
     }
     this.mergeIncomingBlocks()
-    this.clearArrivedLoads()
     if (this.selectedRowId && !this.loadedRows.some((item) => rowKey(item.row, item.index) === this.selectedRowId)) {
       this.selectedRowId = ''
       this.selectedCellKey = ''
@@ -587,6 +648,7 @@ class DataTable extends LitElement {
         viewport.scrollTop = 0
         this.viewportTop = 0
         this.viewportHeight = viewport.clientHeight
+        this.scheduleEnsureBlocksForScroll()
       })
     }
   }
@@ -601,6 +663,24 @@ class DataTable extends LitElement {
       .sort((a, b) => a.start - b.start)
       .flatMap((block) => block.rows.map((row, offset) => ({ row, index: block.start + offset })))
       .filter((item) => item.index < this.availableRows)
+  }
+
+  get visibleRows(): VisibleRowSlot[] {
+    if (this.availableRows <= 0) return []
+    const rowMap = new Map(this.loadedRows.map((item) => [item.index, item.row]))
+    const first = Math.max(0, Math.floor(this.viewportTop / this.rowHeight) - 2)
+    const visibleCount = Math.max(1, Math.ceil((this.viewportHeight || this.rowHeight) / this.rowHeight) + 4)
+    const last = Math.min(this.availableRows, first + visibleCount)
+    const rows: VisibleRowSlot[] = []
+    for (let index = first; index < last; index++) {
+      const row = rowMap.get(index)
+      rows.push(row ? { kind: 'row', row, index } : { kind: 'skeleton', index })
+    }
+    return rows
+  }
+
+  get visibleLoading(): boolean {
+    return this.visibleRows.some((row) => row.kind === 'skeleton') || this.expectedBlocks.size > 0
   }
 
   get availableRows(): number {
@@ -637,7 +717,7 @@ class DataTable extends LitElement {
     const target = event.currentTarget as HTMLDivElement
     this.viewportTop = target.scrollTop
     this.viewportHeight = target.clientHeight
-    this.ensureBlocksForScroll()
+    this.scheduleEnsureBlocksForScroll()
   }
 
   sortColumn(column: TableColumn): void {
@@ -656,11 +736,11 @@ class DataTable extends LitElement {
 
   render() {
     const columns = this.columns
-    const loadedRows = this.loadedRows
+    const visibleRows = this.visibleRows
     const totalHeight = this.availableRows * this.rowHeight
     const rowRange = this.rowRangeText()
     const selectedText = this.selectedRowId ? '1 row selected' : 'No selection'
-    const loading = Boolean(this.table.loadingBlock)
+    const loading = Boolean(this.table.loadingBlock) || this.visibleLoading
 
     return html`
       <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
@@ -698,7 +778,24 @@ class DataTable extends LitElement {
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
           ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
             <div class="canvas" style=${`height:${totalHeight}px`}>
-              ${loadedRows.map(({ row, index }) => {
+              ${visibleRows.map((slot) => {
+                if (slot.kind === 'skeleton') {
+                  return html`
+                    <div
+                      class="row skeleton-row"
+                      role="row"
+                      aria-busy="true"
+                      style=${`transform:translateY(${slot.index * this.rowHeight}px)`}
+                    >
+                      ${columns.map((column) => html`
+                        <span class=${`cell skeleton-cell ${column.align === 'right' ? 'right' : ''}`} role="cell">
+                          <span class="skeleton-line"></span>
+                        </span>
+                      `)}
+                    </div>
+                  `
+                }
+                const { row, index } = slot
                 const key = rowKey(row, index)
                 const selected = key === this.selectedRowId
                 return html`
@@ -735,7 +832,7 @@ class DataTable extends LitElement {
           `}
         </div>
         <div class="footer">
-          <span><strong>${rowRange}</strong>${this.table.isCapped ? html` · browsing first ${this.table.rowCap.toLocaleString()}` : nothing}</span>
+          <span><strong>${rowRange}</strong>${this.visibleLoading ? html` · loading` : nothing}${this.table.isCapped ? html` · browsing first ${this.table.rowCap.toLocaleString()}` : nothing}</span>
           <span>${selectedText}</span>
         </div>
       </section>
@@ -748,16 +845,30 @@ class DataTable extends LitElement {
     const desired = this.desiredStarts(currentStart)
     const desiredSet = new Set(desired)
     const loadedStarts = new Set(blockIDs.map((id) => this.blocks[id]?.start ?? -1))
-    const pendingStarts = new Set([...this.pendingLoads].map((key) => Number(key.split(':')[1])))
+    const expectedStarts = new Set([...this.expectedBlocks.values()].map((request) => request.start))
+    const missingStarts = desired.filter((start) => !loadedStarts.has(start) && !expectedStarts.has(start))
+
+    if (missingStarts.length > 1 || !loadedStarts.has(currentStart) && !expectedStarts.has(currentStart)) {
+      this.emitBlock('all', currentStart, this.table.sort, this.table.resetVersion)
+      return
+    }
+
     const usedBlocks = new Set<BlockID>()
 
-    for (const start of desired) {
-      if (loadedStarts.has(start) || pendingStarts.has(start)) continue
+    for (const start of missingStarts) {
       const block = this.reusableBlock(desiredSet, usedBlocks)
       if (!block) continue
       usedBlocks.add(block)
       this.emitBlock(block, start, this.table.sort, this.table.resetVersion)
     }
+  }
+
+  private scheduleEnsureBlocksForScroll(): void {
+    if (this.scrollFrame) return
+    this.scrollFrame = requestAnimationFrame(() => {
+      this.scrollFrame = 0
+      this.ensureBlocksForScroll()
+    })
   }
 
   private desiredStarts(currentStart: number): number[] {
@@ -774,9 +885,18 @@ class DataTable extends LitElement {
 
   private emitBlock(block: BlockID | 'all', start: number, sort = this.table.sort, resetVersion = this.table.resetVersion): void {
     const count = this.chunkSize
-    const key = `${block}:${start}:${sort.key}:${sort.direction}:${resetVersion}`
-    if (this.pendingLoads.has(key)) return
-    this.pendingLoads.add(key)
+    const requestSeq = ++this.requestSeq
+    if (block === 'all') {
+      this.expectedBlocks.clear()
+      const starts = this.allBlockStarts(start)
+      blockIDs.forEach((id, index) => {
+        const expectedStart = starts[index]
+        this.expectedBlocks.set(id, { start: expectedStart, requestSeq, resetVersion, sort })
+      })
+    } else {
+      this.expectedBlocks.set(block, { start, requestSeq, resetVersion, sort })
+    }
+    this.requestUpdate()
     this.dispatchEvent(new CustomEvent<TableBlockCommand>('ld-table-window-change', {
       bubbles: true,
       composed: true,
@@ -785,31 +905,17 @@ class DataTable extends LitElement {
         block,
         start,
         count,
+        requestSeq,
         sort,
         resetVersion,
       },
     }))
   }
 
-  private clearArrivedLoads(): void {
-    for (const key of [...this.pendingLoads]) {
-      const [block, start, sortKey, sortDirection, resetVersion] = key.split(':')
-      if (block === 'all') {
-        if (this.table.resetVersion === Number(resetVersion) && this.table.sort.key === sortKey && this.table.sort.direction === sortDirection) {
-          this.pendingLoads.delete(key)
-        }
-        continue
-      }
-      const tableBlock = this.blocks[block as BlockID]
-      if (
-        tableBlock?.start === Number(start)
-        && this.table.sort.key === sortKey
-        && this.table.sort.direction === sortDirection
-        && this.table.resetVersion === Number(resetVersion)
-      ) {
-        this.pendingLoads.delete(key)
-      }
-    }
+  private allBlockStarts(start: number): number[] {
+    const currentStart = Math.max(0, Math.floor(start / this.chunkSize) * this.chunkSize)
+    if (currentStart <= 0) return [0, this.chunkSize, this.chunkSize * 2]
+    return [Math.max(0, currentStart - this.chunkSize), currentStart, currentStart + this.chunkSize]
   }
 
   private rowRangeText(): string {
@@ -825,14 +931,43 @@ class DataTable extends LitElement {
     for (const id of blockIDs) {
       const incoming = this.table.blocks[id]
       if (!incoming) continue
+      if (!this.shouldAcceptBlock(id, incoming)) continue
       const defaultBlock = defaults[id]
       const carriesRows = incoming.rows.length > 0
       const carriesNonDefaultStart = incoming.start !== defaultBlock.start
       const cacheIsEmpty = this.blockCache[id].rows.length === 0
       if (carriesRows || carriesNonDefaultStart || cacheIsEmpty) {
-        this.blockCache[id] = { start: incoming.start, rows: incoming.rows }
+        this.blockCache[id] = { ...incoming, rows: incoming.rows }
+        if (incoming.requestSeq > 0) this.latestAcceptedSeq.set(id, incoming.requestSeq)
+        const expected = this.expectedBlocks.get(id)
+        if (expected && this.blockMatchesExpected(incoming, expected)) {
+          this.expectedBlocks.delete(id)
+        }
       }
     }
+  }
+
+  private shouldAcceptBlock(id: BlockID, incoming: TableBlock): boolean {
+    const expected = this.expectedBlocks.get(id)
+    if (expected) return this.blockMatchesExpected(incoming, expected)
+
+    if (incoming.requestSeq > 0) {
+      const lastAcceptedSeq = this.latestAcceptedSeq.get(id) ?? 0
+      return incoming.requestSeq >= lastAcceptedSeq
+        && incoming.resetVersion === this.table.resetVersion
+        && sameSort(incoming.sort, this.table.sort)
+    }
+
+    return incoming.resetVersion === 0
+      || incoming.resetVersion === this.table.resetVersion
+      && sameSort(incoming.sort, this.table.sort)
+  }
+
+  private blockMatchesExpected(block: TableBlock, expected: ExpectedBlockRequest): boolean {
+    return block.start === expected.start
+      && block.requestSeq === expected.requestSeq
+      && block.resetVersion === expected.resetVersion
+      && sameSort(block.sort, expected.sort)
   }
 
   private runAction(action: VisualAction): void {

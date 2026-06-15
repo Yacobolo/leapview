@@ -66,7 +66,7 @@ func TestDuckDBMetricsTableInteractiveCap(t *testing.T) {
 	}
 	defer metrics.Close()
 
-	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{Table: "orders", Block: "all"})
+	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{Table: "orders", Block: "all", RequestSeq: 9})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +81,9 @@ func TestDuckDBMetricsTableInteractiveCap(t *testing.T) {
 	}
 	if got := len(table.Blocks["a"].Rows) + len(table.Blocks["b"].Rows) + len(table.Blocks["c"].Rows); got != dashboard.TableChunkSize*3 {
 		t.Fatalf("initial block rows = %d, want %d", got, dashboard.TableChunkSize*3)
+	}
+	if got := table.Blocks["a"].RequestSeq; got != 9 {
+		t.Fatalf("block request seq = %d, want 9", got)
 	}
 }
 
@@ -185,11 +188,12 @@ relogios_presentes,watches_gifts
 	}
 
 	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
-		Table: "orders",
-		Block: "a",
-		Start: 0,
-		Count: 1,
-		Sort:  dashboard.TableSort{Key: "revenue", Direction: "asc"},
+		Table:      "orders",
+		Block:      "a",
+		Start:      0,
+		Count:      1,
+		RequestSeq: 7,
+		Sort:       dashboard.TableSort{Key: "revenue", Direction: "asc"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -203,12 +207,21 @@ relogios_presentes,watches_gifts
 	if got := table.Blocks["a"].Rows[0]["order_id"]; got != "o2" {
 		t.Fatalf("first table order = %v, want o2", got)
 	}
+	if got := table.Blocks["a"].RequestSeq; got != 7 {
+		t.Fatalf("single block request seq = %d, want 7", got)
+	}
+	if got := table.Blocks["a"].ResetVersion; got != table.ResetVersion {
+		t.Fatalf("single block reset version = %d, want %d", got, table.ResetVersion)
+	}
+	if got := table.Blocks["a"].Sort; got.Key != "revenue" || got.Direction != "asc" {
+		t.Fatalf("single block sort = %#v, want revenue asc", got)
+	}
 
 	filteredTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{
 			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
 		},
-	}, dashboard.TableRequest{Table: "orders", Block: "all", Count: 10})
+	}, dashboard.TableRequest{Table: "orders", Block: "all", Count: 10, RequestSeq: 8})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,6 +230,9 @@ relogios_presentes,watches_gifts
 	}
 	if filteredTable.AvailableRows != 1 {
 		t.Fatalf("targeted table available rows = %d, want 1", filteredTable.AvailableRows)
+	}
+	if got := filteredTable.Blocks["a"].RequestSeq; got != 8 {
+		t.Fatalf("all block request seq = %d, want 8", got)
 	}
 
 	if err := metrics.RefreshCache(context.Background(), "olist"); err != nil {

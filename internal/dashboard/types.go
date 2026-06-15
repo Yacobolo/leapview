@@ -379,6 +379,7 @@ type TableRequest struct {
 	Block        string    `json:"block"`
 	Start        int       `json:"start"`
 	Count        int       `json:"count"`
+	RequestSeq   int       `json:"requestSeq"`
 	Sort         TableSort `json:"sort"`
 	ResetVersion int       `json:"resetVersion"`
 }
@@ -419,6 +420,9 @@ func (r TableRequest) WithDefaults() TableRequest {
 	}
 	if r.Start < 0 {
 		r.Start = 0
+	}
+	if r.RequestSeq < 0 {
+		r.RequestSeq = 0
 	}
 	if r.Sort.Key == "" {
 		r.Sort = defaults.Sort
@@ -461,8 +465,11 @@ type Table struct {
 }
 
 type TableBlock struct {
-	Start int              `json:"start"`
-	Rows  []map[string]any `json:"rows"`
+	Start        int              `json:"start"`
+	RequestSeq   int              `json:"requestSeq"`
+	ResetVersion int              `json:"resetVersion"`
+	Sort         TableSort        `json:"sort"`
+	Rows         []map[string]any `json:"rows"`
 }
 
 type TableColumn struct {

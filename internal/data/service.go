@@ -724,7 +724,13 @@ func (m *DuckDBMetrics) tableBlocks(ctx context.Context, runtime *modelRuntime, 
 			if err != nil {
 				return nil, err
 			}
-			blocks[block] = dashboard.TableBlock{Start: start, Rows: rows}
+			blocks[block] = dashboard.TableBlock{
+				Start:        start,
+				RequestSeq:   request.RequestSeq,
+				ResetVersion: request.ResetVersion,
+				Sort:         request.Sort,
+				Rows:         rows,
+			}
 		}
 		return blocks, nil
 	}
@@ -734,7 +740,13 @@ func (m *DuckDBMetrics) tableBlocks(ctx context.Context, runtime *modelRuntime, 
 	if err != nil {
 		return nil, err
 	}
-	blocks[request.Block] = dashboard.TableBlock{Start: start, Rows: rows}
+	blocks[request.Block] = dashboard.TableBlock{
+		Start:        start,
+		RequestSeq:   request.RequestSeq,
+		ResetVersion: request.ResetVersion,
+		Sort:         request.Sort,
+		Rows:         rows,
+	}
 	return blocks, nil
 }
 

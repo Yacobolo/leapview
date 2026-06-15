@@ -4,11 +4,12 @@ import "testing"
 
 func TestTableRequestWithDefaultsClampsRuntimePolicy(t *testing.T) {
 	request := TableRequest{
-		Table: "orders",
-		Block: "z",
-		Start: -20,
-		Count: TableMaxRequestCount + 500,
-		Sort:  TableSort{Key: "revenue", Direction: "sideways"},
+		Table:      "orders",
+		Block:      "z",
+		Start:      -20,
+		Count:      TableMaxRequestCount + 500,
+		RequestSeq: -8,
+		Sort:       TableSort{Key: "revenue", Direction: "sideways"},
 	}.WithDefaults()
 
 	if request.Block != "all" {
@@ -19,6 +20,9 @@ func TestTableRequestWithDefaultsClampsRuntimePolicy(t *testing.T) {
 	}
 	if request.Count != TableMaxRequestCount {
 		t.Fatalf("count = %d, want %d", request.Count, TableMaxRequestCount)
+	}
+	if request.RequestSeq != 0 {
+		t.Fatalf("request seq = %d, want 0", request.RequestSeq)
 	}
 	if request.Sort.Direction != "desc" {
 		t.Fatalf("sort direction = %q, want desc", request.Sort.Direction)
@@ -31,6 +35,7 @@ func TestTableRequestResetRequestsInitialBlocks(t *testing.T) {
 		Block:        "b",
 		Start:        600,
 		Count:        500,
+		RequestSeq:   42,
 		ResetVersion: 4,
 		Sort:         TableSort{Key: "revenue", Direction: "asc"},
 	}.Reset()
@@ -40,6 +45,9 @@ func TestTableRequestResetRequestsInitialBlocks(t *testing.T) {
 	}
 	if request.ResetVersion != 5 {
 		t.Fatalf("reset version = %d, want 5", request.ResetVersion)
+	}
+	if request.RequestSeq != 42 {
+		t.Fatalf("request seq = %d, want 42", request.RequestSeq)
 	}
 	if request.Sort.Key != "revenue" || request.Sort.Direction != "asc" {
 		t.Fatalf("reset sort = %#v, want preserved revenue asc", request.Sort)
