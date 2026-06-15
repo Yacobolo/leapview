@@ -40,6 +40,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Script(h.Type("module"), h.Src("/static/theme.js")),
 			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
 			h.Script(h.Type("module"), h.Src("/static/report-canvas.js")),
+			h.Script(h.Type("module"), h.Src("/static/report-footer.js")),
 			h.Script(h.Type("module"), h.Src("/static/charts.js")),
 			h.Script(h.Type("module"), h.Src("/static/table.js")),
 			h.Script(h.Type("module"), h.Src("/static/datastar-inspector.js")),
@@ -66,7 +67,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 							),
 							filtersDock(action),
 						),
-						h.Footer(h.Class("report-footer"), h.Aria("label", "Report view controls"),
+						g.El("ld-report-footer", h.Aria("label", "Report view controls"),
 							g.El("ld-report-zoom"),
 						),
 					),
@@ -550,9 +551,11 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 }
 
 func filtersDock(action string) g.Node {
-	return h.Aside(h.Class("filters-dock"), h.Aria("label", "Report filters"),
-		h.Div(h.Class("filters-dock-rail"),
+	return h.Details(h.Class("filters-dock"), h.Open(), h.Aria("label", "Report filters"),
+		h.Summary(h.Class("filters-dock-rail"), h.Title("Toggle filters"),
 			lucide.SlidersHorizontal(iconAttrs()),
+			h.Span(h.Class("filters-rail-label"), g.Text("Filters")),
+			h.Span(h.Class("sr-only"), g.Text("Toggle filters")),
 		),
 		filtersPane(action),
 	)

@@ -5,7 +5,7 @@ type VisualElement = HTMLElement & {
   dataset: DOMStringMap
 }
 
-type ZoomMode = 'fit-width' | 'fit-page' | 'actual' | 'custom'
+type ZoomMode = 'fit-page' | 'custom'
 
 type ZoomCommand = {
   mode?: ZoomMode
@@ -96,21 +96,14 @@ class ReportCanvas extends LitElement {
 
   private updateScale(): void {
     const hostRect = this.getBoundingClientRect()
-    const surface = this.shadowRoot?.querySelector('.surface') as HTMLElement | null
     const availableWidth = Math.max(0, hostRect.width)
-    const availableHeight = Math.max(0, hostRect.height || surface?.getBoundingClientRect().height || 0)
     if (!availableWidth || !this.width) return
     const widthScale = availableWidth / this.width
-    const heightScale = this.height > 0 && availableHeight > 0 ? availableHeight / this.height : widthScale
     let nextScale = widthScale
-    if (this.zoomMode === 'fit-page') {
-      nextScale = Math.min(widthScale, heightScale)
-    } else if (this.zoomMode === 'actual') {
-      nextScale = 1
-    } else if (this.zoomMode === 'custom') {
+    if (this.zoomMode === 'custom') {
       nextScale = this.customScale
     }
-    nextScale = Math.min(1, Math.max(0.36, nextScale))
+    nextScale = clampScale(nextScale)
     if (Math.abs(nextScale - this.scale) > 0.001) {
       this.scale = nextScale
       this.emitZoomState()
@@ -203,7 +196,7 @@ class ReportZoom extends LitElement {
 
     .zoom {
       display: inline-grid;
-      grid-template-columns: auto auto auto minmax(92px, 132px) auto auto;
+      grid-template-columns: auto auto minmax(132px, 190px) auto auto;
       align-items: center;
       overflow: hidden;
       border: 1px solid var(--borderColor-default);
@@ -311,19 +304,16 @@ class ReportZoom extends LitElement {
     const percent = Math.round(this.scale * 100)
     return html`
       <div class="zoom" role="group" aria-label="Report zoom">
-        <button type="button" title="Fit width" aria-label="Fit width" aria-pressed=${String(this.mode === 'fit-width')} @click=${() => this.command({ mode: 'fit-width' })}>
-          ${zoomIcon('fit-width')}
-        </button>
         <button type="button" title="Fit page" aria-label="Fit page" aria-pressed=${String(this.mode === 'fit-page')} @click=${() => this.command({ mode: 'fit-page' })}>
           ${zoomIcon('fit-page')}
         </button>
-        <button type="button" title="Zoom out" aria-label="Zoom out" @click=${() => this.nudge(-0.05)}>
+        <button type="button" title="Zoom out" aria-label="Zoom out" @click=${() => this.nudge(-0.1)}>
           ${zoomIcon('minus')}
         </button>
         <div class="slider">
-          <input type="range" min="36" max="100" .value=${String(percent)} aria-label="Zoom percent" @input=${this.slide} />
+          <input type="range" min="0" max="200" .value=${String(percent)} aria-label="Zoom percent" @input=${this.slide} />
         </div>
-        <button type="button" title="Zoom in" aria-label="Zoom in" @click=${() => this.nudge(0.05)}>
+        <button type="button" title="Zoom in" aria-label="Zoom in" @click=${() => this.nudge(0.1)}>
           ${zoomIcon('plus')}
         </button>
         <span class="percent">${percent}%</span>
@@ -352,13 +342,13 @@ function zoomScaleStorageKey(): string {
 function storedZoomMode(): ZoomMode {
   try {
     const value = localStorage.getItem(zoomStorageKey())
-    if (value === 'fit-page' || value === 'actual' || value === 'fit-width' || value === 'custom') {
+    if (value === 'custom') {
       return value
     }
   } catch {
     // Ignore storage failures.
   }
-  return 'fit-width'
+  return 'fit-page'
 }
 
 function storedCustomScale(): number {
@@ -370,16 +360,14 @@ function storedCustomScale(): number {
 }
 
 function clampScale(value: number): number {
-  if (!Number.isFinite(value)) return 0.6
-  return Math.min(1, Math.max(0.36, value))
+  if (!Number.isFinite(value)) return 1
+  return Math.min(2, Math.max(0, value))
 }
 
-function zoomIcon(name: 'fit-width' | 'fit-page' | 'minus' | 'plus') {
+function zoomIcon(name: 'fit-page' | 'minus' | 'plus') {
   switch (name) {
-    case 'fit-width':
-      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v12H3z"></path><path d="m8 12-3-3 3-3"></path><path d="m16 12 3-3-3-3"></path><path d="M5 9h14"></path></svg>`
     case 'fit-page':
-      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path d="M15 3v4h4"></path><path d="M9 11h6"></path><path d="M9 15h6"></path></svg>`
+      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path></svg>`
     case 'minus':
       return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>`
     case 'plus':

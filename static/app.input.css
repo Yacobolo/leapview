@@ -158,15 +158,19 @@
     min-width: 0;
     min-height: 100svh;
     grid-template-rows: auto minmax(0, 1fr) auto;
-    gap: 12px;
     background: var(--report-workspace-bg);
-    padding: 16px 18px 18px;
   }
 
   .report-main {
     height: 100svh;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .catalog-main,
+  .model-main {
+    gap: 12px;
+    padding: 16px 18px 18px;
   }
 
   .workspace-header {
@@ -176,7 +180,7 @@
     gap: 20px;
     min-width: 0;
     border-bottom: 1px solid var(--borderColor-muted);
-    padding: 2px 2px 12px;
+    padding: 16px 24px 14px;
     view-transition-name: workspace-header;
   }
 
@@ -352,30 +356,19 @@
 
   .report-dashboard-shell {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 236px;
-    gap: 16px;
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
     min-width: 0;
     min-height: 0;
-    overflow: auto;
-    scrollbar-gutter: stable;
+    overflow: hidden;
   }
 
   .report-canvas-shell {
     min-width: 0;
     min-height: 0;
-    overflow: hidden;
-    padding: 0;
+    overflow: auto;
+    padding: 22px 24px;
     background: transparent;
-  }
-
-  .report-footer {
-    display: flex;
-    min-height: 34px;
-    align-items: center;
-    justify-content: flex-end;
-    border-top: 1px solid var(--borderColor-muted);
-    padding-top: 8px;
   }
 
   .page-tabs {
@@ -733,30 +726,78 @@
   }
 
   .filters-dock {
-    position: sticky;
-    top: 0;
     display: grid;
     grid-template-columns: 32px minmax(0, 1fr);
+    width: 236px;
     min-width: 0;
-    min-height: min(838px, 100%);
-    margin-top: 34px;
+    min-height: 0;
+    height: 100%;
     border-left: 1px solid var(--borderColor-default);
     background: transparent;
+    transition: width 160ms var(--ld-ease-out);
+  }
+
+  .filters-dock:not([open]) {
+    width: 32px;
+  }
+
+  .filters-dock:not([open]) .filters-pane {
+    display: none;
   }
 
   .filters-dock-rail {
     display: grid;
     align-content: start;
+    gap: 12px;
     justify-items: center;
+    min-width: 0;
+    min-height: 0;
     border-right: 1px solid var(--borderColor-default);
     background: var(--report-panel-subtle);
-    padding-top: 7px;
+    cursor: pointer;
+    list-style: none;
+    padding: 12px 0 0;
+  }
+
+  .filters-dock-rail::-webkit-details-marker {
+    display: none;
+  }
+
+  .filters-dock-rail:focus-visible {
+    outline: 2px solid var(--ld-accent);
+    outline-offset: -2px;
   }
 
   .filters-dock-rail svg[data-glucide="icon"] {
     width: 15px;
     height: 15px;
     color: var(--fgColor-muted);
+    transition: color 160ms var(--ld-ease-out);
+  }
+
+  .filters-dock[open] .filters-dock-rail svg[data-glucide="icon"],
+  .filters-dock-rail:hover svg[data-glucide="icon"] {
+    color: var(--fgColor-default);
+  }
+
+  .filters-rail-label {
+    display: none;
+    color: var(--fgColor-muted);
+    font-size: 0.62rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-transform: uppercase;
+    transform: rotate(90deg);
+    transform-origin: center;
+    white-space: nowrap;
+    writing-mode: vertical-rl;
+    transform: none;
+  }
+
+  .filters-dock:not([open]) .filters-rail-label {
+    display: block;
+    margin-top: 8px;
   }
 
   .filters-pane {
@@ -765,7 +806,7 @@
     box-sizing: border-box;
     overflow: auto;
     background: transparent;
-    padding: 8px 0 10px 12px;
+    padding: 12px 12px 12px 12px;
   }
 
   .pane-header {
@@ -1032,7 +1073,8 @@
       grid-template-columns: 1fr;
     }
 
-    .app-main {
+    .catalog-main,
+    .model-main {
       min-height: auto;
       padding: 12px;
     }
@@ -1071,27 +1113,25 @@
 
     .report-dashboard-shell {
       grid-template-columns: 1fr;
-    }
-
-    .report-footer {
-      justify-content: start;
+      overflow: auto;
     }
 
     .filters-dock {
       position: static;
       grid-template-columns: 1fr;
+      width: auto;
       min-height: auto;
-      margin-top: 0;
       border-top: 1px solid var(--borderColor-default);
       border-left: 0;
-      padding-top: 12px;
     }
 
     .filters-dock-rail {
       display: none;
     }
 
+    .filters-dock:not([open]) .filters-pane,
     .filters-pane {
+      display: block;
       padding: 0;
     }
 
