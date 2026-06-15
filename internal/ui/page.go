@@ -49,6 +49,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Script(h.Type("module"), h.Src("/static/report-footer.js")),
 			h.Script(h.Type("module"), h.Src("/static/charts.js")),
 			h.Script(h.Type("module"), h.Src("/static/table.js")),
+			h.Script(h.Type("module"), h.Src("/static/visual-modal.js")),
 			h.Script(h.Type("module"), h.Src("/static/datastar-inspector.js")),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		},
@@ -80,6 +81,7 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 						),
 					),
 				),
+				g.El("ld-visual-modal"),
 				g.El("datastar-inspector"),
 			),
 		},
@@ -697,6 +699,7 @@ func chartPanel(visualID string) g.Node {
 			g.Attr("visual-id", visualID),
 			g.Attr("data-attr:chart", "$"+signal),
 			g.Attr("data-on:ld-chart-select", "$chartCommand = evt.detail; @post('/commands/chart-select')"),
+			g.Attr("data-on:ld-chart-clear-selection", "$filters.visualSelections = []; @post('/commands/clear-selection')"),
 		),
 	)
 }
@@ -707,6 +710,7 @@ func tablePanel(tableName string) g.Node {
 	}
 	return h.Section(h.Class("table-card"),
 		g.El("ld-data-table",
+			g.Attr("table-id", tableName),
 			g.Attr("data-attr:table", "$tables."+tableName),
 			g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; @post('/commands/table-window')"),
 		),

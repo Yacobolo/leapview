@@ -83003,6 +83003,25 @@ use(installAxisBreak);
 use(installLegacyGridContainLabel);
 use(installScatterJitter);
 
+// web/components/visual-menu-icons.ts
+function visualMenuIcon(name) {
+  switch (name) {
+    case "focus":
+      return iconSvg(w`<path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>`);
+    case "show-data":
+      return iconSvg(w`<path d="M3 5h18v14H3z"></path><path d="M3 10h18"></path><path d="M8 5v14"></path>`);
+    case "copy-data":
+      return iconSvg(w`<rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>`);
+    case "export-csv":
+      return iconSvg(w`<path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path>`);
+    case "clear-selection":
+      return iconSvg(w`<circle cx="12" cy="12" r="9"></circle><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path>`);
+  }
+}
+function iconSvg(content) {
+  return w`<svg viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`;
+}
+
 // web/components/charts.ts
 var chartStyles = i`
   :host {
@@ -83023,25 +83042,128 @@ var chartStyles = i`
 
   header {
     display: flex;
-    min-height: 42px;
-    align-items: baseline;
+    min-height: 34px;
+    align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding: 10px 12px 8px;
+    gap: 8px;
+    padding: 6px 8px 5px 10px;
   }
 
   h2 {
+    min-width: 0;
     margin: 0;
-    font-size: 0.98rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
     font-weight: 850;
     letter-spacing: 0;
+    line-height: 1.1;
   }
 
   .unit {
+    flex: 0 0 auto;
     color: var(--fgColor-muted);
-    font-size: 0.72rem;
+    font-size: 0.6rem;
     font-weight: 900;
     text-transform: uppercase;
+  }
+
+  .header-main {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .options {
+    position: relative;
+    flex: 0 0 auto;
+  }
+
+  .options summary {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--fgColor-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1;
+    list-style: none;
+  }
+
+  .options summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .options summary:hover,
+  .options summary:focus-visible,
+  .options[open] summary {
+    border-color: var(--borderColor-default);
+    background: var(--bgColor-muted);
+    color: var(--fgColor-default);
+    outline: 0;
+  }
+
+  .menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 30;
+    display: grid;
+    width: 176px;
+    border: 1px solid var(--borderColor-default);
+    border-radius: 6px;
+    background: var(--overlay-bgColor, var(--bgColor-default));
+    box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+    padding: 4px;
+  }
+
+  .menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 27px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fgColor-default);
+    cursor: pointer;
+    padding: 0 8px;
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 750;
+    text-align: left;
+  }
+
+  .menu svg {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+  }
+
+  .menu button:hover,
+  .menu button:focus-visible {
+    background: var(--bgColor-muted);
+    outline: 0;
+  }
+
+  .menu button:disabled {
+    cursor: default;
+    opacity: 0.48;
+  }
+
+  .menu button:disabled:hover {
+    background: transparent;
   }
 
   .canvas {
@@ -83111,8 +83233,20 @@ var EChartVisual = class extends i4 {
     return b2`
       <section class="chart">
         <header>
-          <h2>${payload.title ?? "Chart"}</h2>
-          <span class="unit">${payload.unit ?? ""}</span>
+          <div class="header-main">
+            <h2>${payload.title ?? "Chart"}</h2>
+            <span class="unit">${payload.unit ?? ""}</span>
+          </div>
+          <details class="options">
+            <summary aria-label="Visual options" title="Visual options">⋮</summary>
+            <div class="menu" role="menu">
+              <button type="button" role="menuitem" @click=${() => this.runAction("focus")}>${visualMenuIcon("focus")}<span>Focus mode</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction("show-data")}>${visualMenuIcon("show-data")}<span>Show data</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction("copy-data")}>${visualMenuIcon("copy-data")}<span>Copy data</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction("export-csv")}>${visualMenuIcon("export-csv")}<span>Export CSV</span></button>
+              <button type="button" role="menuitem" ?disabled=${!this.hasSelection(payload)} @click=${() => this.runAction("clear-selection")}>${visualMenuIcon("clear-selection")}<span>Clear selection</span></button>
+            </div>
+          </details>
         </header>
         <div class=${data.length === 0 ? "canvas idle" : "canvas"}></div>
         ${data.length === 0 ? b2`<div class="empty">Waiting for signal data</div>` : null}
@@ -83165,6 +83299,32 @@ var EChartVisual = class extends i4 {
       })
     );
   }
+  runAction(action) {
+    const payload = this.payload;
+    this.renderRoot.querySelector(".options")?.removeAttribute("open");
+    this.dispatchEvent(
+      new CustomEvent("ld-visual-action", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          action,
+          visualType: "chart",
+          visualId: payload.id || this.visualId,
+          title: payload.title || "Chart",
+          columns: chartColumns(),
+          rows: chartRows(payload),
+          selection: payload.selection ?? [],
+          chart: payload
+        }
+      })
+    );
+    if (action === "clear-selection") {
+      this.dispatchEvent(new CustomEvent("ld-chart-clear-selection", { bubbles: true, composed: true }));
+    }
+  }
+  hasSelection(payload) {
+    return Boolean(payload.selection?.length || payload.data?.some((point) => point.selected));
+  }
 };
 __decorateClass([
   n4({ type: Object })
@@ -83190,6 +83350,20 @@ __decorateClass([
 __decorateClass([
   n4({ type: Array })
 ], EChartVisual.prototype, "selection", 2);
+function chartColumns() {
+  return [
+    { key: "label", label: "Label" },
+    { key: "series", label: "Series" },
+    { key: "value", label: "Value", align: "right" }
+  ];
+}
+function chartRows(payload) {
+  return (payload.data ?? []).map((point) => ({
+    label: point.label,
+    series: point.series ?? "",
+    value: point.value
+  }));
+}
 var KPIStrip = class extends i4 {
   constructor() {
     super(...arguments);

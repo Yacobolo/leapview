@@ -7,6 +7,7 @@ import {
   type ColumnDef,
 } from '@tanstack/lit-table'
 import { VirtualizerController } from '@tanstack/lit-virtual'
+import { visualMenuIcon } from './visual-menu-icons'
 
 type SortDirection = 'asc' | 'desc'
 
@@ -45,6 +46,8 @@ interface TableWindowCommand {
   limit: number
   sort: TableSort
 }
+
+type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
 
 const emptyTable: TableSignal = {
   title: 'Orders',
@@ -96,11 +99,13 @@ function rowKey(row: TableRow, fallback: number): string {
 
 class DataTable extends LitElement {
   static properties = {
+    tableId: { attribute: 'table-id' },
     table: { attribute: 'table', converter: tableConverter },
     selectedRowId: { state: true },
     selectedCellKey: { state: true },
   }
 
+  tableId = 'orders'
   table: TableSignal = emptyTable
   private selectedRowId = ''
   private selectedCellKey = ''
@@ -135,11 +140,11 @@ class DataTable extends LitElement {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      min-height: 48px;
+      gap: 8px;
+      min-height: 34px;
       border-bottom: 1px solid var(--borderColor-default);
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
-      padding: 8px 10px 8px 13px;
+      padding: 6px 8px 5px 10px;
     }
 
     .eyebrow {
@@ -152,43 +157,111 @@ class DataTable extends LitElement {
     }
 
     h2 {
+      min-width: 0;
       margin: 0;
-      font-size: 1rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.8rem;
       font-weight: 850;
       letter-spacing: 0;
       line-height: 1.1;
     }
 
-    .visual-actions,
     .footer {
       display: flex;
       align-items: center;
     }
 
-    .visual-actions {
-      gap: 2px;
+    .visual-options {
+      position: relative;
+      flex: 0 0 auto;
     }
 
-    .visual-action {
+    .visual-options summary {
       display: grid;
-      width: 30px;
-      height: 30px;
+      width: 24px;
+      height: 24px;
       place-items: center;
       border: 1px solid transparent;
-      border-radius: 3px;
+      border-radius: 4px;
       background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
-      font-size: 0.9rem;
-      font-weight: 850;
+      font-size: 1rem;
+      font-weight: 900;
+      line-height: 1;
+      list-style: none;
     }
 
-    .visual-action:hover,
-    .visual-action:focus-visible {
+    .visual-options summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .visual-options summary:hover,
+    .visual-options summary:focus-visible,
+    .visual-options[open] summary {
       border-color: var(--borderColor-default);
       background: var(--bgColor-muted);
       color: var(--fgColor-default);
       outline: 0;
+    }
+
+    .menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      z-index: 30;
+      display: grid;
+      width: 176px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 6px;
+      background: var(--overlay-bgColor, var(--bgColor-default));
+      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      padding: 4px;
+    }
+
+    .menu button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 27px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--fgColor-default);
+      cursor: pointer;
+      padding: 0 8px;
+      font: inherit;
+      font-size: 0.68rem;
+      font-weight: 750;
+      text-align: left;
+    }
+
+    .menu svg {
+      flex: 0 0 auto;
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    .menu button:hover,
+    .menu button:focus-visible {
+      background: var(--bgColor-muted);
+      outline: 0;
+    }
+
+    .menu button:disabled {
+      cursor: default;
+      opacity: 0.48;
+    }
+
+    .menu button:disabled:hover {
+      background: transparent;
     }
 
     .error {
@@ -536,11 +609,16 @@ class DataTable extends LitElement {
           <div>
             <h2>${this.table?.title ?? 'Orders'}</h2>
           </div>
-          <div class="visual-actions" aria-label="Visual header actions">
-            <button class="visual-action" type="button" title="Drill mode" aria-label="Drill mode">↧</button>
-            <button class="visual-action" type="button" title="Focus mode" aria-label="Focus mode">□</button>
-            <button class="visual-action" type="button" title="More options" aria-label="More options">⋯</button>
-          </div>
+          <details class="visual-options">
+            <summary aria-label="Visual options" title="Visual options">⋮</summary>
+            <div class="menu" role="menu">
+              <button type="button" role="menuitem" @click=${() => this.runAction('focus')}>${visualMenuIcon('focus')}<span>Focus mode</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction('show-data')}>${visualMenuIcon('show-data')}<span>Show data</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction('copy-data')}>${visualMenuIcon('copy-data')}<span>Copy data</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction('export-csv')}>${visualMenuIcon('export-csv')}<span>Export CSV</span></button>
+              <button type="button" role="menuitem" ?disabled=${!this.selectedRowId} @click=${() => this.runAction('clear-selection')}>${visualMenuIcon('clear-selection')}<span>Clear selection</span></button>
+            </div>
+          </details>
         </div>
         ${this.table?.error ? html`<div class="error">${this.table.error}</div>` : nothing}
         <div class="head" role="row">
@@ -606,6 +684,44 @@ class DataTable extends LitElement {
         </div>
       </section>
     `
+  }
+
+  private runAction(action: VisualAction): void {
+    this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')?.removeAttribute('open')
+    if (action === 'clear-selection') {
+      this.selectedRowId = ''
+      this.selectedCellKey = ''
+    }
+    this.dispatchEvent(
+      new CustomEvent('ld-visual-action', {
+        bubbles: true,
+        composed: true,
+        detail: {
+          action,
+          visualType: 'table',
+          visualId: this.tableId || 'orders',
+          title: this.table?.title ?? 'Orders',
+          columns: this.columns,
+          rows: this.exportRows(),
+          selection: this.selectedRowId ? [this.selectedRowId] : [],
+          table: {
+            ...(this.table ?? emptyTable),
+            rows: this.rows,
+            columns: this.columns,
+          },
+        },
+      }),
+    )
+  }
+
+  private exportRows(): TableRow[] {
+    return this.rows.map((row) => {
+      const next: TableRow = {}
+      for (const column of this.columns) {
+        next[column.key] = formatCell(row[column.key], column)
+      }
+      return next
+    })
   }
 }
 

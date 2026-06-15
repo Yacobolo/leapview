@@ -4669,6 +4669,25 @@ var VirtualizerController = class extends VirtualizerControllerBase {
   }
 };
 
+// web/components/visual-menu-icons.ts
+function visualMenuIcon(name) {
+  switch (name) {
+    case "focus":
+      return iconSvg(w`<path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>`);
+    case "show-data":
+      return iconSvg(w`<path d="M3 5h18v14H3z"></path><path d="M3 10h18"></path><path d="M8 5v14"></path>`);
+    case "copy-data":
+      return iconSvg(w`<rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>`);
+    case "export-csv":
+      return iconSvg(w`<path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path>`);
+    case "clear-selection":
+      return iconSvg(w`<circle cx="12" cy="12" r="9"></circle><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path>`);
+  }
+}
+function iconSvg(content) {
+  return w`<svg viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`;
+}
+
 // web/components/data-table.ts
 var emptyTable = {
   title: "Orders",
@@ -4716,6 +4735,7 @@ function rowKey(row, fallback) {
 var DataTable = class extends i4 {
   constructor() {
     super(...arguments);
+    this.tableId = "orders";
     this.table = emptyTable;
     this.selectedRowId = "";
     this.selectedCellKey = "";
@@ -4731,6 +4751,7 @@ var DataTable = class extends i4 {
   }
   static {
     this.properties = {
+      tableId: { attribute: "table-id" },
       table: { attribute: "table", converter: tableConverter },
       selectedRowId: { state: true },
       selectedCellKey: { state: true }
@@ -4758,11 +4779,11 @@ var DataTable = class extends i4 {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      min-height: 48px;
+      gap: 8px;
+      min-height: 34px;
       border-bottom: 1px solid var(--borderColor-default);
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
-      padding: 8px 10px 8px 13px;
+      padding: 6px 8px 5px 10px;
     }
 
     .eyebrow {
@@ -4775,43 +4796,111 @@ var DataTable = class extends i4 {
     }
 
     h2 {
+      min-width: 0;
       margin: 0;
-      font-size: 1rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.8rem;
       font-weight: 850;
       letter-spacing: 0;
       line-height: 1.1;
     }
 
-    .visual-actions,
     .footer {
       display: flex;
       align-items: center;
     }
 
-    .visual-actions {
-      gap: 2px;
+    .visual-options {
+      position: relative;
+      flex: 0 0 auto;
     }
 
-    .visual-action {
+    .visual-options summary {
       display: grid;
-      width: 30px;
-      height: 30px;
+      width: 24px;
+      height: 24px;
       place-items: center;
       border: 1px solid transparent;
-      border-radius: 3px;
+      border-radius: 4px;
       background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
-      font-size: 0.9rem;
-      font-weight: 850;
+      font-size: 1rem;
+      font-weight: 900;
+      line-height: 1;
+      list-style: none;
     }
 
-    .visual-action:hover,
-    .visual-action:focus-visible {
+    .visual-options summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .visual-options summary:hover,
+    .visual-options summary:focus-visible,
+    .visual-options[open] summary {
       border-color: var(--borderColor-default);
       background: var(--bgColor-muted);
       color: var(--fgColor-default);
       outline: 0;
+    }
+
+    .menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      z-index: 30;
+      display: grid;
+      width: 176px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 6px;
+      background: var(--overlay-bgColor, var(--bgColor-default));
+      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      padding: 4px;
+    }
+
+    .menu button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 27px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--fgColor-default);
+      cursor: pointer;
+      padding: 0 8px;
+      font: inherit;
+      font-size: 0.68rem;
+      font-weight: 750;
+      text-align: left;
+    }
+
+    .menu svg {
+      flex: 0 0 auto;
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    .menu button:hover,
+    .menu button:focus-visible {
+      background: var(--bgColor-muted);
+      outline: 0;
+    }
+
+    .menu button:disabled {
+      cursor: default;
+      opacity: 0.48;
+    }
+
+    .menu button:disabled:hover {
+      background: transparent;
     }
 
     .error {
@@ -5144,11 +5233,16 @@ var DataTable = class extends i4 {
           <div>
             <h2>${this.table?.title ?? "Orders"}</h2>
           </div>
-          <div class="visual-actions" aria-label="Visual header actions">
-            <button class="visual-action" type="button" title="Drill mode" aria-label="Drill mode">↧</button>
-            <button class="visual-action" type="button" title="Focus mode" aria-label="Focus mode">□</button>
-            <button class="visual-action" type="button" title="More options" aria-label="More options">⋯</button>
-          </div>
+          <details class="visual-options">
+            <summary aria-label="Visual options" title="Visual options">⋮</summary>
+            <div class="menu" role="menu">
+              <button type="button" role="menuitem" @click=${() => this.runAction("focus")}>${visualMenuIcon("focus")}<span>Focus mode</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction("show-data")}>${visualMenuIcon("show-data")}<span>Show data</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction("copy-data")}>${visualMenuIcon("copy-data")}<span>Copy data</span></button>
+              <button type="button" role="menuitem" @click=${() => this.runAction("export-csv")}>${visualMenuIcon("export-csv")}<span>Export CSV</span></button>
+              <button type="button" role="menuitem" ?disabled=${!this.selectedRowId} @click=${() => this.runAction("clear-selection")}>${visualMenuIcon("clear-selection")}<span>Clear selection</span></button>
+            </div>
+          </details>
         </div>
         ${this.table?.error ? b2`<div class="error">${this.table.error}</div>` : A}
         <div class="head" role="row">
@@ -5214,6 +5308,42 @@ var DataTable = class extends i4 {
         </div>
       </section>
     `;
+  }
+  runAction(action) {
+    this.renderRoot.querySelector(".visual-options")?.removeAttribute("open");
+    if (action === "clear-selection") {
+      this.selectedRowId = "";
+      this.selectedCellKey = "";
+    }
+    this.dispatchEvent(
+      new CustomEvent("ld-visual-action", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          action,
+          visualType: "table",
+          visualId: this.tableId || "orders",
+          title: this.table?.title ?? "Orders",
+          columns: this.columns,
+          rows: this.exportRows(),
+          selection: this.selectedRowId ? [this.selectedRowId] : [],
+          table: {
+            ...this.table ?? emptyTable,
+            rows: this.rows,
+            columns: this.columns
+          }
+        }
+      })
+    );
+  }
+  exportRows() {
+    return this.rows.map((row) => {
+      const next = {};
+      for (const column of this.columns) {
+        next[column.key] = formatCell(row[column.key], column);
+      }
+      return next;
+    });
   }
 };
 customElements.define("ld-data-table", DataTable);
