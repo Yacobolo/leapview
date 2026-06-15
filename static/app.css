@@ -4838,7 +4838,7 @@
   }
   .filters-dock {
     display: grid;
-    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     width: 236px;
     min-width: 0;
     min-height: 0;
@@ -4848,9 +4848,13 @@
     transition: width 160ms var(--ld-ease-out);
   }
   .filters-dock:not([open]) {
+    grid-template-columns: 32px;
     width: 32px;
   }
   .filters-dock:not([open]) .filters-pane {
+    display: none;
+  }
+  .filters-dock[open] .filters-dock-rail {
     display: none;
   }
   .filters-dock-rail {

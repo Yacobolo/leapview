@@ -65,6 +65,7 @@ class FilterPanel extends LitElement {
     }
 
     header,
+    .header-title,
     .summary {
       display: flex;
       align-items: center;
@@ -75,6 +76,10 @@ class FilterPanel extends LitElement {
     header {
       border-bottom: 1px solid var(--borderColor-default);
       padding-bottom: 7px;
+    }
+
+    .header-title {
+      min-width: 0;
     }
 
     h2 {
@@ -94,6 +99,25 @@ class FilterPanel extends LitElement {
       font-weight: 900;
       line-height: 1;
       white-space: nowrap;
+    }
+
+    .close {
+      display: inline-grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 4px;
+      background: var(--control-bgColor-rest);
+      color: var(--fgColor-muted);
+      cursor: pointer;
+      font-size: 0.72rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .close:hover {
+      color: var(--fgColor-default);
     }
 
     .card {
@@ -432,8 +456,11 @@ class FilterPanel extends LitElement {
     return html`
       <section class="panel" aria-label="Filters">
         <header>
-          <h2>Filters</h2>
-          <span class="count">${activeCount} active</span>
+          <div class="header-title">
+            <h2>Filters</h2>
+            <span class="count">${activeCount} active</span>
+          </div>
+          <button class="close" type="button" aria-label="Collapse filters" title="Collapse filters" @click=${this.close}>x</button>
         </header>
         ${names.map((name) => this.renderFilter(name, this.config[name]))}
         ${this.renderVisualSelections()}
@@ -789,6 +816,10 @@ class FilterPanel extends LitElement {
 
   private refresh = (): void => {
     this.dispatchEvent(new CustomEvent('ld-filters-refresh', { bubbles: true, composed: true }))
+  }
+
+  private close = (): void => {
+    this.dispatchEvent(new CustomEvent('ld-filters-close', { bubbles: true, composed: true }))
   }
 
   private activeCount(): number {

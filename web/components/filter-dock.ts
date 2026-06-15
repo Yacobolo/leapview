@@ -16,6 +16,12 @@ function storeOpen(open: boolean): void {
   }
 }
 
+function setDockOpen(dock: HTMLDetailsElement, open: boolean): void {
+  dock.open = open
+  dock.dataset.state = open ? 'open' : 'closed'
+  storeOpen(open)
+}
+
 function syncDock(dock: HTMLDetailsElement, open: boolean): void {
   if (dock.open !== open) {
     dock.open = open
@@ -30,6 +36,7 @@ function hydrateFilterDock(dock: HTMLDetailsElement): void {
     storeOpen(dock.open)
     dock.dataset.state = dock.open ? 'open' : 'closed'
   })
+  dock.addEventListener('ld-filters-close', () => setDockOpen(dock, false))
 }
 
 function hydrateFilterDocks(): void {

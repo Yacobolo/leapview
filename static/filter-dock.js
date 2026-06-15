@@ -13,6 +13,11 @@ function storeOpen(open) {
   } catch {
   }
 }
+function setDockOpen(dock, open) {
+  dock.open = open;
+  dock.dataset.state = open ? "open" : "closed";
+  storeOpen(open);
+}
 function syncDock(dock, open) {
   if (dock.open !== open) {
     dock.open = open;
@@ -26,6 +31,7 @@ function hydrateFilterDock(dock) {
     storeOpen(dock.open);
     dock.dataset.state = dock.open ? "open" : "closed";
   });
+  dock.addEventListener("ld-filters-close", () => setDockOpen(dock, false));
 }
 function hydrateFilterDocks() {
   document.querySelectorAll("details.filters-dock").forEach(hydrateFilterDock);
