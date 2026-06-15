@@ -213,6 +213,30 @@ func TestCatalogRouteRendersDashboardCatalog(t *testing.T) {
 	}
 }
 
+func TestModelsRouteRendersSemanticModelCatalog(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/models", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `Semantic Models`) {
+		t.Fatalf("models catalog missing title:\n%s", body)
+	}
+	if !strings.Contains(body, `Test Model`) {
+		t.Fatalf("models catalog missing model card:\n%s", body)
+	}
+	if !strings.Contains(body, `href="/models/test"`) {
+		t.Fatalf("models catalog missing model link:\n%s", body)
+	}
+	if strings.Contains(body, `<ld-report-sidebar`) {
+		t.Fatalf("models catalog should not render report sidebar:\n%s", body)
+	}
+}
+
 func TestDashboardRouteRedirectsToFirstPage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales", nil)
 	rec := httptest.NewRecorder()

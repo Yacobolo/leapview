@@ -5152,7 +5152,7 @@
       transform: translateY(2px);
     }
   }
-  @media (max-width: 860px) {
+  @media (max-width: 640px) {
     .app-shell {
       grid-template-columns: 1fr;
     }

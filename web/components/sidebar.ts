@@ -134,23 +134,6 @@ class LibreDashSidebar extends LitElement {
       gap: 10px;
     }
 
-    .mark {
-      display: grid;
-      width: 28px;
-      height: 28px;
-      flex: 0 0 auto;
-      place-items: center;
-      border-radius: 6px;
-      background: var(--ld-accent);
-      color: var(--ld-accent-fg);
-    }
-
-    .mark svg {
-      width: 17px;
-      height: 17px;
-      stroke-width: 2.2;
-    }
-
     .name {
       overflow: hidden;
       min-width: 0;
@@ -195,39 +178,10 @@ class LibreDashSidebar extends LitElement {
       color: var(--fgColor-muted);
     }
 
-    .context {
-      display: grid;
-      gap: 2px;
-      min-width: 0;
-      border-left: 2px solid var(--ld-accent);
-      padding-left: 8px;
-    }
-
-    .context span {
-      overflow: hidden;
-      color: var(--fgColor-muted);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.58rem;
-      font-weight: 900;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-
-    .context strong {
-      overflow: hidden;
-      color: var(--fgColor-default);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.79rem;
-      font-weight: 820;
-      letter-spacing: 0;
-    }
-
     nav {
       display: grid;
       align-content: start;
-      gap: 11px;
+      gap: 9px;
       min-height: 0;
       overflow: auto;
       padding: 10px 7px;
@@ -237,15 +191,6 @@ class LibreDashSidebar extends LitElement {
     .nav-group {
       display: grid;
       gap: 5px;
-    }
-
-    .nav-group-label {
-      color: var(--fgColor-muted);
-      padding: 0 8px;
-      font-size: 0.56rem;
-      font-weight: 950;
-      letter-spacing: 0;
-      text-transform: uppercase;
     }
 
     a,
@@ -270,7 +215,7 @@ class LibreDashSidebar extends LitElement {
 
     .nav-text {
       display: grid;
-      gap: 1px;
+      gap: 0;
       min-width: 0;
     }
 
@@ -281,15 +226,6 @@ class LibreDashSidebar extends LitElement {
       white-space: nowrap;
       font-size: 0.74rem;
       font-weight: 800;
-    }
-
-    .nav-text span {
-      overflow: hidden;
-      color: var(--fgColor-muted);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.61rem;
-      font-weight: 760;
     }
 
     .nav-item:hover,
@@ -346,8 +282,8 @@ class LibreDashSidebar extends LitElement {
 
     .footer {
       display: grid;
-      gap: 8px;
-      padding: 9px 7px 10px;
+      gap: 7px;
+      padding: 8px 7px 10px;
       border-top: 1px solid var(--borderColor-muted);
       background: transparent;
     }
@@ -361,6 +297,58 @@ class LibreDashSidebar extends LitElement {
       padding: 0 7px;
       font-size: 0.72rem;
       font-weight: 800;
+    }
+
+    .user-card {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      min-height: 34px;
+      align-items: center;
+      gap: 8px;
+      border-radius: 7px;
+      color: var(--fgColor-default);
+      padding: 0 7px;
+    }
+
+    .user-card:hover {
+      background: var(--bgColor-muted);
+    }
+
+    .avatar {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--ld-accent), transparent 16%);
+      color: var(--ld-accent-fg);
+      font-size: 0.58rem;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .user-text {
+      display: grid;
+      gap: 1px;
+      min-width: 0;
+    }
+
+    .user-name,
+    .user-role {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-name {
+      font-size: 0.72rem;
+      font-weight: 820;
+    }
+
+    .user-role {
+      color: var(--fgColor-muted);
+      font-size: 0.58rem;
+      font-weight: 720;
     }
 
     .pulse {
@@ -377,13 +365,16 @@ class LibreDashSidebar extends LitElement {
     }
 
     .actions {
-      display: grid;
+      display: flex;
       gap: 5px;
+      align-items: center;
     }
 
     .refresh,
     .theme-button {
       display: inline-flex;
+      width: 32px;
+      height: 30px;
       min-height: 30px;
       align-items: center;
       justify-content: center;
@@ -393,7 +384,7 @@ class LibreDashSidebar extends LitElement {
       background: transparent;
       color: var(--fgColor-default);
       cursor: pointer;
-      padding: 0 9px;
+      padding: 0;
       font-size: 0.75rem;
       font-weight: 820;
     }
@@ -414,7 +405,7 @@ class LibreDashSidebar extends LitElement {
 
     .theme-button {
       border-color: var(--borderColor-default);
-      background: color-mix(in srgb, var(--ld-accent-muted), transparent 50%);
+      background: transparent;
       color: var(--fgColor-default);
     }
 
@@ -431,13 +422,10 @@ class LibreDashSidebar extends LitElement {
     }
 
     :host([data-collapsed]) .name,
-    :host([data-collapsed]) .mark,
-    :host([data-collapsed]) .context,
     :host([data-collapsed]) .nav-group-label,
     :host([data-collapsed]) .nav-text,
     :host([data-collapsed]) .status span:last-child,
-    :host([data-collapsed]) .refresh span,
-    :host([data-collapsed]) .theme-button span {
+    :host([data-collapsed]) .user-text {
       display: none;
     }
 
@@ -480,12 +468,20 @@ class LibreDashSidebar extends LitElement {
 
     :host([data-collapsed]) .actions {
       justify-items: center;
+      justify-content: center;
     }
 
     :host([data-collapsed]) .refresh,
     :host([data-collapsed]) .theme-button {
-      width: 36px;
+      width: 34px;
       min-height: 34px;
+      height: 34px;
+      padding: 0;
+    }
+
+    :host([data-collapsed]) .user-card {
+      grid-template-columns: 1fr;
+      justify-items: center;
       padding: 0;
     }
 
@@ -501,7 +497,7 @@ class LibreDashSidebar extends LitElement {
       }
     }
 
-    @media (max-width: 760px) {
+    @media (max-width: 640px) {
       :host,
       :host([data-collapsed]) {
         --ld-sidebar-width: 100%;
@@ -602,14 +598,11 @@ class LibreDashSidebar extends LitElement {
   }
 
   render() {
-    const title = this.config.dashboardTitle || this.config.modelTitle || this.config.workspaceTitle || 'Workspace'
-    const detail = this.config.pageTitle || this.config.modelId || this.config.dashboardId || 'Catalog'
     const collapsed = this.effectiveCollapsed
     return html`
       <aside aria-label="LibreDash workspace">
         <header class="brand">
           <div class="brand-row">
-            <span class="mark">${icon('dashboard')}</span>
             <span class="name">LibreDash</span>
             <button
               class="collapse-button"
@@ -623,17 +616,11 @@ class LibreDashSidebar extends LitElement {
               ${icon(collapsed ? 'expand' : 'collapse')}
             </button>
           </div>
-          <div class="context">
-            <span>${this.config.workspaceTitle || 'Workspace'}</span>
-            <strong title=${title}>${title}</strong>
-            <span title=${detail}>${detail}</span>
-          </div>
         </header>
 
         <nav aria-label="Primary">
           ${this.config.groups.map((group) => html`
             <section class="nav-group" aria-label=${group.label}>
-              <span class="nav-group-label">${group.label}</span>
               ${group.items.map((item) => item.disabled ? this.renderDisabledItem(item) : this.renderLink(item))}
             </section>
           `)}
@@ -644,14 +631,21 @@ class LibreDashSidebar extends LitElement {
             <span class=${`pulse ${this.status.loading ? 'loading' : ''}`}></span>
             <span>${this.statusText()}</span>
           </div>
+          <div class="user-card" title="Jacob Nielsen">
+            <span class="avatar" aria-hidden="true">JN</span>
+            <span class="user-text">
+              <strong class="user-name">Jacob Nielsen</strong>
+              <span class="user-role">Local workspace</span>
+            </span>
+          </div>
           <div class="actions">
             ${this.config.refresh ? html`
               <button class="refresh" type="button" ?disabled=${this.status.loading} @click=${this.refreshCache} title="Re-import DuckDB cache">
-                ${icon('refresh')} <span>Re-import</span>
+                ${icon('refresh')}
               </button>
             ` : nothing}
             <button class="theme-button" type="button" aria-label=${this.themeLabel()} title=${this.themeTitle()} @click=${() => this.changeTheme(this.nextTheme())}>
-              ${icon(this.themeIcon())} <span>${this.themeLabel()}</span>
+              ${icon(this.themeIcon())}
             </button>
           </div>
         </footer>
@@ -695,7 +689,6 @@ class LibreDashSidebar extends LitElement {
         <span class="nav-icon">${icon(item.icon)}</span>
         <span class="nav-text">
           <strong>${item.label}</strong>
-          ${item.meta ? html`<span>${item.meta}</span>` : nothing}
         </span>
       </a>
     `
@@ -708,7 +701,6 @@ class LibreDashSidebar extends LitElement {
         <span class="nav-icon">${icon(item.icon)}</span>
         <span class="nav-text">
           <strong>${item.label}</strong>
-          ${item.meta ? html`<span>${item.meta}</span>` : nothing}
         </span>
       </span>
     `

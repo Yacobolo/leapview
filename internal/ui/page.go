@@ -133,6 +133,48 @@ func CatalogPage(catalog dashboard.Catalog) g.Node {
 	})
 }
 
+func ModelsPage(catalog dashboard.Catalog) g.Node {
+	return c.HTML5(c.HTML5Props{
+		Title:    "LibreDash Semantic Models",
+		Language: "en",
+		HTMLAttrs: []g.Node{
+			g.Attr("data-color-mode", "auto"),
+			g.Attr("data-light-theme", "light"),
+			g.Attr("data-dark-theme", "dark"),
+		},
+		Head: []g.Node{
+			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
+			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
+			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
+			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
+			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
+			h.Script(h.Type("module"), h.Src("/static/theme.js")),
+			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
+		},
+		Body: []g.Node{
+			h.Main(h.Class("report-app"),
+				h.Div(h.Class("app-shell"),
+					sidebar(sidebarConfigForModels(catalog), false, ""),
+					h.Section(h.Class("app-main catalog-main"), h.Aria("label", "LibreDash semantic model catalog"),
+						workspaceHeader(
+							"Workspace models",
+							"Semantic Models",
+							"Reusable data models that define sources, cache tables, relationships, dimensions, and measures.",
+							h.Div(h.Class("catalog-stats"),
+								modelStat("Models", len(catalog.Models)),
+								modelStat("Dashboards", len(catalog.Dashboards)),
+							),
+						),
+						h.Div(h.Class("catalog-grid"),
+							g.Map(catalog.Models, modelCard),
+						),
+					),
+				),
+			),
+		},
+	})
+}
+
 func dashboardCard(report dashboard.CatalogDashboard) g.Node {
 	return h.Article(h.Class("catalog-card"),
 		h.Div(h.Class("catalog-card-main"),
@@ -148,6 +190,23 @@ func dashboardCard(report dashboard.CatalogDashboard) g.Node {
 		h.Footer(h.Class("catalog-card-footer"),
 			h.Span(g.Textf("%d pages", report.PageCount)),
 			h.A(h.Class("catalog-open"), h.Href("/dashboards/"+report.ID),
+				lucide.ExternalLink(iconAttrs()),
+				h.Span(g.Text("Open")),
+			),
+		),
+	)
+}
+
+func modelCard(model dashboard.CatalogModel) g.Node {
+	return h.Article(h.Class("catalog-card"),
+		h.Div(h.Class("catalog-card-main"),
+			h.P(h.Class("report-eyebrow"), g.Text("Semantic model")),
+			h.H2(g.Text(model.Title)),
+			h.P(g.Text(model.Description)),
+		),
+		h.Footer(h.Class("catalog-card-footer"),
+			h.Span(g.Text("Reusable model")),
+			h.A(h.Class("catalog-open"), h.Href("/models/"+model.ID),
 				lucide.ExternalLink(iconAttrs()),
 				h.Span(g.Text("Open")),
 			),
@@ -256,12 +315,16 @@ func sidebarConfigForCatalog(catalog dashboard.Catalog) map[string]any {
 	return sidebarConfig(catalog, "dashboards", "", workspaceDisplayTitle(catalog), "Dashboards", "Discovery", modelID, modelTitle, false, false)
 }
 
+func sidebarConfigForModels(catalog dashboard.Catalog) map[string]any {
+	return sidebarConfig(catalog, "models", "", workspaceDisplayTitle(catalog), "Semantic Models", "Catalog", "", "", false, false)
+}
+
 func sidebarConfigForReport(catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page) map[string]any {
 	return sidebarConfig(catalog, "dashboards", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, model.Name, model.Title, true, true)
 }
 
 func sidebarConfigForModel(catalog dashboard.Catalog, model dashboard.ModelGraph) map[string]any {
-	return sidebarConfig(catalog, "model:"+model.Name, "", workspaceDisplayTitle(catalog), "Semantic model", model.Title, model.Name, model.Title, false, false)
+	return sidebarConfig(catalog, "models", "", workspaceDisplayTitle(catalog), "Semantic model", model.Title, model.Name, model.Title, false, false)
 }
 
 func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, refresh, compact bool) map[string]any {
@@ -282,17 +345,14 @@ func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitl
 func sidebarGroups(catalog dashboard.Catalog) []map[string]any {
 	return []map[string]any{
 		{
-			"label": "Workspace",
+			"label": "Navigation",
 			"items": []map[string]any{
 				{"id": "dashboards", "label": "Dashboards", "href": "/", "icon": "dashboard", "meta": "Reports and models"},
+				{"id": "models", "label": "Semantic Models", "href": "/models", "icon": "model", "meta": "Reusable data models"},
 			},
 		},
 		{
-			"label": "Semantic Models",
-			"items": modelItems(catalog.Models),
-		},
-		{
-			"label": "Data Platform",
+			"label": "Data",
 			"items": []map[string]any{
 				{"id": "data:sources", "label": "Sources", "href": "/", "icon": "data", "meta": "Coming soon", "disabled": true},
 				{"id": "data:cache", "label": "DuckDB Cache", "href": "/", "icon": "cache", "meta": "Import mode", "disabled": true},

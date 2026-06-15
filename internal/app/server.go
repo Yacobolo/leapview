@@ -43,6 +43,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /", s.home)
 	mux.HandleFunc("GET /dashboards/{dashboard}", s.dashboard)
 	mux.HandleFunc("GET /dashboards/{dashboard}/pages/{page}", s.page)
+	mux.HandleFunc("GET /models", s.models)
 	mux.HandleFunc("GET /models/{model}", s.model)
 	mux.HandleFunc("GET /updates", s.updates)
 	mux.HandleFunc("POST /commands/table-window", s.tableWindow)
@@ -79,6 +80,14 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	s.renderPage(w, r, r.PathValue("dashboard"), r.PathValue("page"))
+}
+
+func (s *Server) models(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if err := ui.ModelsPage(s.metrics.Catalog()).Render(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) model(w http.ResponseWriter, r *http.Request) {
