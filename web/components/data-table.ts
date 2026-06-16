@@ -295,7 +295,8 @@ class DataTable extends LitElement {
     .row {
       display: grid;
       grid-template-columns: var(--ld-table-columns);
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
     }
 
     .group-head {
@@ -454,25 +455,44 @@ class DataTable extends LitElement {
 
     .table-plane {
       position: relative;
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
     }
 
     .sticky-header {
       position: sticky;
       top: 0;
       z-index: 8;
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
       background: var(--bgColor-muted);
     }
 
     .canvas {
       position: relative;
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
+    }
+
+    .grid-lines {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .grid-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--borderColor-muted);
     }
 
     .row {
       position: absolute;
       inset-inline: 0;
+      z-index: 1;
       height: var(--ld-row-height, 34px);
       border-bottom: 1px solid var(--borderColor-muted);
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
@@ -636,10 +656,8 @@ class DataTable extends LitElement {
     const viewport = this.scrollElementRef.value
     if (!viewport) return
     this.viewportHeight = viewport.clientHeight
-    this.viewportLeft = viewport.scrollLeft
     this.resizeObserver = new ResizeObserver(() => {
       this.viewportHeight = viewport.clientHeight
-      this.viewportLeft = viewport.scrollLeft
       this.scheduleEnsureBlocksForScroll()
     })
     this.resizeObserver.observe(viewport)
@@ -681,7 +699,6 @@ class DataTable extends LitElement {
         if (!viewport) return
         viewport.scrollTop = 0
         this.viewportTop = 0
-        this.viewportLeft = viewport.scrollLeft
         this.viewportHeight = viewport.clientHeight
         this.scheduleEnsureBlocksForScroll()
       })
@@ -731,6 +748,23 @@ class DataTable extends LitElement {
   }
 
   get gridTemplate(): string {
+    return this.columnPixelWidths().map((size) => `${size}px`).join(' ')
+  }
+
+  get tableWidth(): number {
+    return this.columnPixelWidths().reduce((sum, size) => sum + size, 0)
+  }
+
+  get columnLineOffsets(): number[] {
+    const widths = this.columnPixelWidths()
+    let offset = 0
+    return widths.slice(0, -1).map((width) => {
+      offset += width
+      return offset
+    })
+  }
+
+  private columnPixelWidths(): number[] {
     const widths: Record<string, number> = {
       __select: 34,
       order_id: 240,
@@ -742,7 +776,7 @@ class DataTable extends LitElement {
       review_score: 104,
       delivery_days: 108,
     }
-    return this.visibleColumnSizes.map(({ key, size }) => `${Math.max(44, size || widths[key] || 130)}px`).join(' ')
+    return this.visibleColumnSizes.map(({ key, size }) => Math.max(44, size || widths[key] || 130))
   }
 
   get tanstackRows(): TanStackTableRow[] {
@@ -842,7 +876,6 @@ class DataTable extends LitElement {
   handleScroll(event: Event): void {
     const target = event.currentTarget as HTMLDivElement
     this.viewportTop = target.scrollTop
-    this.viewportLeft = target.scrollLeft
     this.viewportHeight = target.clientHeight
     this.scheduleEnsureBlocksForScroll()
   }
@@ -870,12 +903,13 @@ class DataTable extends LitElement {
     const groupHeaders = this.groupHeaderSegments(columns)
     const visibleRows = this.visibleRows
     const totalHeight = this.availableRows * this.rowHeight
+    const columnLineOffsets = this.columnLineOffsets
     const rowRange = this.rowRangeText()
     const selectedText = this.selectedRowId ? '1 row selected' : 'No selection'
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading
 
     return html`
-      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
+      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-table-width:${this.tableWidth}px;--ld-row-height:${this.rowHeight}px`}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? 'Orders'}</h2>
@@ -950,6 +984,9 @@ class DataTable extends LitElement {
                 </div>
               </div>
               <div class="canvas" style=${`height:${totalHeight}px`}>
+                <div class="grid-lines" aria-hidden="true">
+                  ${columnLineOffsets.map((offset) => html`<span class="grid-line" style=${`left:${offset}px`}></span>`)}
+                </div>
                 ${visibleRows.map((slot) => {
                   if (slot.kind === 'skeleton') {
                     return html`

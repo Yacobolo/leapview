@@ -4125,7 +4125,8 @@ var DataTable = class extends i4 {
     .row {
       display: grid;
       grid-template-columns: var(--ld-table-columns);
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
     }
 
     .group-head {
@@ -4284,25 +4285,44 @@ var DataTable = class extends i4 {
 
     .table-plane {
       position: relative;
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
     }
 
     .sticky-header {
       position: sticky;
       top: 0;
       z-index: 8;
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
       background: var(--bgColor-muted);
     }
 
     .canvas {
       position: relative;
-      min-width: 1080px;
+      width: var(--ld-table-width, 1080px);
+      min-width: var(--ld-table-width, 1080px);
+    }
+
+    .grid-lines {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .grid-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--borderColor-muted);
     }
 
     .row {
       position: absolute;
       inset-inline: 0;
+      z-index: 1;
       height: var(--ld-row-height, 34px);
       border-bottom: 1px solid var(--borderColor-muted);
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
@@ -4465,10 +4485,8 @@ var DataTable = class extends i4 {
     const viewport = this.scrollElementRef.value;
     if (!viewport) return;
     this.viewportHeight = viewport.clientHeight;
-    this.viewportLeft = viewport.scrollLeft;
     this.resizeObserver = new ResizeObserver(() => {
       this.viewportHeight = viewport.clientHeight;
-      this.viewportLeft = viewport.scrollLeft;
       this.scheduleEnsureBlocksForScroll();
     });
     this.resizeObserver.observe(viewport);
@@ -4507,7 +4525,6 @@ var DataTable = class extends i4 {
         if (!viewport) return;
         viewport.scrollTop = 0;
         this.viewportTop = 0;
-        this.viewportLeft = viewport.scrollLeft;
         this.viewportHeight = viewport.clientHeight;
         this.scheduleEnsureBlocksForScroll();
       });
@@ -4548,6 +4565,20 @@ var DataTable = class extends i4 {
     return Math.max(1, this.table.rowHeight || defaultRowHeight);
   }
   get gridTemplate() {
+    return this.columnPixelWidths().map((size) => `${size}px`).join(" ");
+  }
+  get tableWidth() {
+    return this.columnPixelWidths().reduce((sum, size) => sum + size, 0);
+  }
+  get columnLineOffsets() {
+    const widths = this.columnPixelWidths();
+    let offset = 0;
+    return widths.slice(0, -1).map((width) => {
+      offset += width;
+      return offset;
+    });
+  }
+  columnPixelWidths() {
     const widths = {
       __select: 34,
       order_id: 240,
@@ -4559,7 +4590,7 @@ var DataTable = class extends i4 {
       review_score: 104,
       delivery_days: 108
     };
-    return this.visibleColumnSizes.map(({ key, size }) => `${Math.max(44, size || widths[key] || 130)}px`).join(" ");
+    return this.visibleColumnSizes.map(({ key, size }) => Math.max(44, size || widths[key] || 130));
   }
   get tanstackRows() {
     return this.loadedRows.map(({ row, index }) => ({
@@ -4648,7 +4679,6 @@ var DataTable = class extends i4 {
   handleScroll(event) {
     const target = event.currentTarget;
     this.viewportTop = target.scrollTop;
-    this.viewportLeft = target.scrollLeft;
     this.viewportHeight = target.clientHeight;
     this.scheduleEnsureBlocksForScroll();
   }
@@ -4671,11 +4701,12 @@ var DataTable = class extends i4 {
     const groupHeaders = this.groupHeaderSegments(columns);
     const visibleRows = this.visibleRows;
     const totalHeight = this.availableRows * this.rowHeight;
+    const columnLineOffsets = this.columnLineOffsets;
     const rowRange = this.rowRangeText();
     const selectedText = this.selectedRowId ? "1 row selected" : "No selection";
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading;
     return b2`
-      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
+      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-table-width:${this.tableWidth}px;--ld-row-height:${this.rowHeight}px`}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? "Orders"}</h2>
@@ -4750,6 +4781,9 @@ var DataTable = class extends i4 {
                 </div>
               </div>
               <div class="canvas" style=${`height:${totalHeight}px`}>
+                <div class="grid-lines" aria-hidden="true">
+                  ${columnLineOffsets.map((offset) => b2`<span class="grid-line" style=${`left:${offset}px`}></span>`)}
+                </div>
                 ${visibleRows.map((slot) => {
       if (slot.kind === "skeleton") {
         return b2`
