@@ -183,6 +183,14 @@
     padding: 16px 18px 18px;
   }
 
+  .metric-main {
+    height: 100svh;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
   .workspace-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -459,14 +467,20 @@
     grid-template-columns: minmax(0, 1fr) minmax(250px, 288px);
     gap: 0;
     min-height: 0;
-    border-bottom: 1px solid var(--borderColor-default);
+    overflow: hidden;
+  }
+
+  .metric-workspace[data-rail-collapsed] {
+    grid-template-columns: minmax(0, 1fr) 48px;
   }
 
   .metric-content-column {
     display: grid;
     min-width: 0;
-    align-self: start;
+    align-self: stretch;
+    grid-template-rows: auto minmax(0, 1fr);
     border-right: 1px solid var(--borderColor-default);
+    overflow: hidden;
   }
 
   .metric-info-sidebar {
@@ -474,7 +488,8 @@
     align-self: stretch;
     align-content: start;
     min-width: 0;
-    background: var(--bgColor-default);
+    overflow: hidden;
+    background: var(--report-workspace-bg);
   }
 
   .metric-info-header {
@@ -486,12 +501,13 @@
     justify-content: space-between;
     gap: 10px;
     border-bottom: 1px solid var(--borderColor-default);
-    background: color-mix(in srgb, var(--bgColor-default), transparent 2%);
+    background: var(--report-workspace-bg);
     padding: 16px 18px;
   }
 
   .metric-info-header h2 {
     display: inline-flex;
+    min-width: 0;
     align-items: center;
     gap: 8px;
     margin: 0;
@@ -501,31 +517,46 @@
     font-weight: 850;
   }
 
+  .metric-rail-toggle {
+    display: grid;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border: 1px solid var(--borderColor-muted);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fgColor-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .metric-rail-toggle:hover,
+  .metric-rail-toggle:focus-visible {
+    border-color: var(--borderColor-default);
+    background: var(--bgColor-muted);
+    color: var(--fgColor-default);
+    outline: 0;
+  }
+
+  .metric-workspace[data-rail-collapsed] .metric-info-header {
+    justify-content: center;
+    border-bottom: 0;
+    padding: 10px;
+  }
+
+  .metric-workspace[data-rail-collapsed] .metric-info-header h2,
+  .metric-workspace[data-rail-collapsed] .metric-info-body {
+    display: none;
+  }
+
   .metric-info-header svg {
     width: 15px;
     height: 15px;
     color: var(--fgColor-muted);
-  }
-
-  .metric-verified-badge {
-    display: inline-flex;
-    min-height: 20px;
-    align-items: center;
-    gap: 4px;
-    border: 1px solid color-mix(in srgb, var(--fgColor-success), transparent 72%);
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--fgColor-success), transparent 91%);
-    color: var(--fgColor-success);
-    padding: 0 6px;
-    font-size: 0.56rem;
-    font-weight: 950;
-    text-transform: uppercase;
-  }
-
-  .metric-verified-badge svg {
-    width: 10px;
-    height: 10px;
-    color: currentColor;
   }
 
   .metric-info-body {
@@ -538,20 +569,6 @@
     display: grid;
     gap: 13px;
     min-width: 0;
-  }
-
-  .metric-info-group h3 {
-    margin: 0 0 -2px;
-    color: var(--fgColor-muted);
-    font-size: 0.62rem;
-    font-weight: 950;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .metric-info-divider {
-    height: 1px;
-    background: var(--borderColor-muted);
   }
 
   .metric-info-item {
@@ -587,8 +604,7 @@
     outline: 0;
   }
 
-  .metric-info-value svg,
-  .metric-info-stat svg {
+  .metric-info-value svg {
     width: 14px;
     height: 14px;
     color: var(--fgColor-muted);
@@ -603,29 +619,6 @@
     white-space: nowrap;
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.76rem;
-  }
-
-  .metric-info-stat,
-  .metric-info-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    color: var(--fgColor-muted);
-    font-size: 0.76rem;
-    font-weight: 750;
-  }
-
-  .metric-info-stat span {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-  }
-
-  .metric-info-stat strong,
-  .metric-info-row strong {
-    color: var(--fgColor-default);
-    font-weight: 850;
   }
 
   .metric-metadata-bar {
@@ -741,6 +734,8 @@
   .metric-contract-main {
     display: grid;
     min-width: 0;
+    align-content: start;
+    overflow: hidden;
     padding: 18px;
   }
 
@@ -752,7 +747,7 @@
     flex-wrap: wrap;
     gap: 24px;
     border-bottom: 1px solid var(--borderColor-default);
-    background: color-mix(in srgb, var(--bgColor-default), transparent 2%);
+    background: var(--report-workspace-bg);
     padding: 0 18px;
   }
 
@@ -813,6 +808,12 @@
     display: grid;
     min-width: 0;
     background: transparent;
+  }
+
+  ld-data-grid {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .metric-contract-section-measures {
@@ -903,66 +904,29 @@
     font-weight: 750;
   }
 
-  .metric-section-header {
-    padding: 0 0 12px;
-  }
-
-  .metric-section-header h2 {
-    margin: 0;
-    color: var(--fgColor-default);
-    font-size: 0.96rem;
-    line-height: 1.15;
-    font-weight: 850;
-  }
-
-  .metric-table-wrap {
+  .data-grid-wrap {
+    width: 100%;
     min-width: 0;
+    max-width: 100%;
     border-top: 1px solid var(--borderColor-default);
     overflow-x: auto;
   }
 
-  .metric-field-table {
+  .data-grid {
     width: 100%;
-    min-width: 760px;
     border-collapse: collapse;
     table-layout: fixed;
   }
 
-  .metric-measure-table {
-    min-width: 0;
-  }
-
-  .metric-measure-table th:nth-child(1),
-  .metric-measure-table td:nth-child(1) {
-    width: 20%;
-  }
-
-  .metric-measure-table th:nth-child(2),
-  .metric-measure-table td:nth-child(2) {
-    width: 20%;
-  }
-
-  .metric-measure-table th:nth-child(3),
-  .metric-measure-table td:nth-child(3) {
-    width: 36%;
-  }
-
-  .metric-measure-table th:nth-child(4),
-  .metric-measure-table td:nth-child(4),
-  .metric-measure-table th:nth-child(5),
-  .metric-measure-table td:nth-child(5) {
-    width: 12%;
-  }
-
-  .metric-field-table th,
-  .metric-field-table td {
+  .data-grid th,
+  .data-grid td {
     border-bottom: 1px solid var(--borderColor-muted);
     padding: 11px 12px;
     text-align: left;
     vertical-align: top;
   }
 
-  .metric-field-table th {
+  .data-grid th {
     background: color-mix(in srgb, var(--bgColor-default), transparent 2%);
     color: var(--fgColor-muted);
     font-size: 0.62rem;
@@ -971,52 +935,92 @@
     text-transform: uppercase;
   }
 
-  .metric-field-table td {
+  .data-grid td {
     color: var(--fgColor-default);
     font-size: 0.78rem;
     line-height: 1.4;
     font-weight: 700;
   }
 
-  .metric-field-table tr:last-child td {
+  .data-grid th.is-right,
+  .data-grid td.is-right {
+    text-align: right;
+  }
+
+  .data-grid tr:last-child td {
     border-bottom: 0;
   }
 
-  .metric-field-table tbody tr {
+  .data-grid tbody tr {
     transition: background-color 0.12s ease;
   }
 
-  .metric-field-table tbody tr:hover {
+  .data-grid tbody tr:hover {
     background: var(--bgColor-muted);
   }
 
-  .metric-field-table code,
+  .data-grid-sort {
+    display: inline-flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    text-transform: inherit;
+  }
+
+  .data-grid-sort:hover,
+  .data-grid-sort:focus-visible {
+    color: var(--fgColor-default);
+    outline: 0;
+  }
+
+  .data-grid-sort-indicator {
+    min-width: 8px;
+    color: var(--fgColor-accent);
+    text-align: right;
+  }
+
+  .grid-code,
+  .grid-expression,
   .metric-metadata-item code {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   }
 
-  .metric-field-table td:first-child code {
+  .grid-code {
     display: inline-flex;
     max-width: 100%;
+    overflow: hidden;
     border: 1px solid var(--borderColor-muted);
     border-radius: 4px;
     background: var(--bgColor-muted);
     color: var(--fgColor-muted);
     padding: 2px 6px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.72rem;
     font-weight: 800;
   }
 
-  .metric-expression {
+  .grid-expression {
     display: block;
-    overflow-wrap: anywhere;
+    overflow: hidden;
     color: var(--fgColor-default);
-    white-space: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.76rem;
     font-weight: 800;
   }
 
-  .metric-field-chip {
+  .grid-badge {
     display: inline-flex;
     min-height: 22px;
     align-items: center;
@@ -1027,79 +1031,54 @@
     font-weight: 850;
   }
 
-  .metric-field-chip svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  .metric-field-chip-unit {
+  .grid-badge-success {
     border: 1px solid color-mix(in srgb, var(--fgColor-success), transparent 64%);
     background: color-mix(in srgb, var(--fgColor-success), transparent 91%);
     color: var(--fgColor-default);
   }
 
-  .metric-field-chip-unit svg {
-    color: var(--fgColor-success);
-  }
-
-  .metric-field-chip-format {
+  .grid-badge-accent {
     border: 1px solid color-mix(in srgb, var(--fgColor-accent), transparent 64%);
     background: color-mix(in srgb, var(--fgColor-accent), transparent 91%);
     color: var(--fgColor-default);
   }
 
-  .metric-field-chip-format svg {
-    color: var(--fgColor-accent);
+  .grid-badge-attention {
+    border: 1px solid color-mix(in srgb, var(--fgColor-attention), transparent 64%);
+    background: color-mix(in srgb, var(--fgColor-attention), transparent 91%);
+    color: var(--fgColor-default);
   }
 
-  .metric-field-table th:nth-child(1),
-  .metric-field-table td:nth-child(1) {
-    width: 150px;
+  .grid-badge-muted,
+  .grid-badge-default {
+    border: 1px solid var(--borderColor-muted);
+    background: var(--bgColor-muted);
+    color: var(--fgColor-muted);
   }
 
-  .metric-field-table th:nth-child(2),
-  .metric-field-table td:nth-child(2) {
-    width: 150px;
+  .grid-number {
+    font-variant-numeric: tabular-nums;
   }
 
-  .metric-field-table th:nth-child(4),
-  .metric-field-table td:nth-child(4),
-  .metric-field-table th:nth-child(5),
-  .metric-field-table td:nth-child(5) {
-    width: 150px;
-  }
-
-  .metric-measure-table th:nth-child(4),
-  .metric-measure-table td:nth-child(4),
-  .metric-measure-table th:nth-child(5),
-  .metric-measure-table td:nth-child(5) {
-    width: 86px;
-  }
-
-  .metric-measure-table th:nth-child(6),
-  .metric-measure-table td:nth-child(6) {
-    width: 150px;
-  }
-
-  .metric-table-link {
+  .grid-link {
     color: var(--fgColor-accent);
     font-weight: 850;
     text-decoration: none;
   }
 
-  .metric-table-link:hover,
-  .metric-table-link:focus-visible {
+  .grid-link:hover,
+  .grid-link:focus-visible {
     text-decoration: underline;
     outline: 0;
   }
 
-  .metric-tag-list {
+  .grid-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
   }
 
-  .metric-tag-list span {
+  .grid-tags span {
     display: inline-flex;
     min-height: 21px;
     align-items: center;
@@ -1111,6 +1090,18 @@
     font-size: 0.64rem;
     font-weight: 850;
     text-transform: uppercase;
+  }
+
+  .grid-muted,
+  .data-grid-empty {
+    color: var(--fgColor-muted);
+  }
+
+  .data-grid-empty {
+    border-top: 1px solid var(--borderColor-default);
+    padding: 16px 0 0;
+    font-size: 0.78rem;
+    font-weight: 650;
   }
 
   .metric-empty {
@@ -2019,6 +2010,10 @@
       padding: 12px;
     }
 
+    .metric-main {
+      padding-bottom: 0;
+    }
+
     .metric-metadata-bar {
       align-items: stretch;
       flex-direction: column;
@@ -2046,6 +2041,14 @@
       grid-template-columns: 1fr;
     }
 
+    .metric-workspace[data-rail-collapsed] {
+      grid-template-columns: 1fr;
+    }
+
+    .metric-workspace[data-rail-collapsed] .metric-info-sidebar {
+      display: none;
+    }
+
     .metric-content-column {
       border-right: 0;
     }
@@ -2062,10 +2065,6 @@
 
     .metric-contract-main {
       padding: 14px 12px;
-    }
-
-    .metric-field-table {
-      min-width: 680px;
     }
 
     .workspace-header {

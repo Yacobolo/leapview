@@ -369,7 +369,11 @@ func TestMetricViewMeasuresRouteRendersMeasuresTab(t *testing.T) {
 		`href="/metrics/orders/dimensions"`,
 		`href="/metrics/orders/usage"`,
 		`aria-current="page"`,
-		`>Measures</h2>`,
+		`/static/detail-rail.js`,
+		`<ld-detail-rail class="metric-workspace">`,
+		`data-signals=`,
+		`metricGrid`,
+		`<ld-data-grid data-attr:grid="$metricGrid"></ld-data-grid>`,
 		`Revenue`,
 		`SUM(e.revenue)`,
 	} {
@@ -380,7 +384,7 @@ func TestMetricViewMeasuresRouteRendersMeasuresTab(t *testing.T) {
 	if strings.Contains(body, `metric-contract-rail`) || strings.Contains(body, `metric-rail-section`) {
 		t.Fatalf("metric view detail should not render the old right rail:\n%s", body)
 	}
-	for _, notWant := range []string{`>Dimensions</h2>`, `>Used by</h2>`, `metricUsageGraph`, `data-signals=`, `<ld-metric-usage-graph`} {
+	for _, notWant := range []string{`>Measures</h2>`, `>Dimensions</h2>`, `>Used by</h2>`, `metric-section-header`, `metricUsageGraph`, `<ld-metric-usage-graph`} {
 		if strings.Contains(body, notWant) {
 			t.Fatalf("metric view measures tab should not render %q:\n%s", notWant, body)
 		}
@@ -398,18 +402,19 @@ func TestMetricViewDimensionsRouteRendersDimensionsTab(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`>Dimensions</h2>`,
 		`aria-current="page"`,
 		`Category`,
 		`e.category`,
 		`Delivery speed`,
 		`e.delivery_bucket IS NOT NULL`,
+		`metricGrid`,
+		`<ld-data-grid data-attr:grid="$metricGrid"></ld-data-grid>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metric view dimensions tab missing %q:\n%s", want, body)
 		}
 	}
-	for _, notWant := range []string{`>Measures</h2>`, `>Used by</h2>`, `SUM(e.revenue)`, `<ld-metric-usage-graph`} {
+	for _, notWant := range []string{`>Measures</h2>`, `>Dimensions</h2>`, `>Used by</h2>`, `metric-section-header`, `SUM(e.revenue)`, `<ld-metric-usage-graph`} {
 		if strings.Contains(body, notWant) {
 			t.Fatalf("metric view dimensions tab should not render %q:\n%s", notWant, body)
 		}
@@ -427,14 +432,15 @@ func TestMetricViewUsageRouteRendersUsageTab(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`>Used by</h2>`,
 		`aria-current="page"`,
 		`data-signals=`,
 		`metricUsageGraph`,
 		`<ld-metric-usage-graph data-attr:graph="$metricUsageGraph"></ld-metric-usage-graph>`,
-		`<th>Dashboard</th>`,
-		`<th>Tags</th>`,
-		`href="/dashboards/executive-sales"`,
+		`metricGrid`,
+		`<ld-data-grid data-attr:grid="$metricGrid"></ld-data-grid>`,
+		`Dashboard`,
+		`Tags`,
+		`/dashboards/executive-sales`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metric view usage tab missing %q:\n%s", want, body)
@@ -443,7 +449,7 @@ func TestMetricViewUsageRouteRendersUsageTab(t *testing.T) {
 	if strings.Contains(body, `data-graph=`) {
 		t.Fatalf("metric view detail should use signals instead of a serialized data-graph attribute:\n%s", body)
 	}
-	for _, notWant := range []string{`>Measures</h2>`, `>Dimensions</h2>`, `SUM(e.revenue)`, `e.category`} {
+	for _, notWant := range []string{`>Measures</h2>`, `>Dimensions</h2>`, `>Used by</h2>`, `metric-section-header`, `SUM(e.revenue)`, `e.category`} {
 		if strings.Contains(body, notWant) {
 			t.Fatalf("metric view usage tab should not render %q:\n%s", notWant, body)
 		}

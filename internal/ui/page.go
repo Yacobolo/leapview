@@ -354,30 +354,15 @@ func metricViewHeader(view dashboard.MetricViewDetail) g.Node {
 }
 
 func metricViewInfoSidebar(view dashboard.MetricViewDetail) g.Node {
-	return h.Aside(h.Class("metric-info-sidebar"), h.Aria("label", "Metric view data contract"),
+	return h.Aside(h.Class("metric-info-sidebar"), h.Aria("label", "Metric view details"),
 		h.Div(h.Class("metric-info-header"),
-			h.H2(lucide.FileText(iconAttrs()), h.Span(g.Text("Data Contract"))),
-			h.Span(h.Class("metric-verified-badge"), lucide.Check(iconAttrs()), g.Text("Verified")),
+			h.H2(lucide.FileText(iconAttrs()), h.Span(g.Text("Details"))),
 		),
 		h.Div(h.Class("metric-info-body"),
 			h.Div(h.Class("metric-info-group"),
 				metricInfoItem("Model context", h.A(h.Href("/models/"+view.SemanticModel), lucide.Box(iconAttrs()), h.Span(g.Text(view.ModelTitle)))),
 				metricInfoItem("Source dataset", h.Span(lucide.Table2(iconAttrs()), h.Code(g.Text(view.Dataset)))),
 				metricInfoItem("Primary timeseries", h.Span(lucide.Calendar(iconAttrs()), h.Code(g.Text(view.Timeseries)))),
-			),
-			h.Div(h.Class("metric-info-divider")),
-			h.Div(h.Class("metric-info-group"),
-				h.H3(g.Text("Fields")),
-				metricInfoStat("Measures", view.MeasureCount, lucide.Sigma(iconAttrs())),
-				metricInfoStat("Dimensions", view.DimensionCount, lucide.List(iconAttrs())),
-				metricInfoStat("Dashboards", view.DashboardCount, lucide.LayoutDashboard(iconAttrs())),
-			),
-			h.Div(h.Class("metric-info-divider")),
-			h.Div(h.Class("metric-info-group"),
-				h.H3(g.Text("Governance")),
-				metricInfoRow("Owner", "Data Platform"),
-				metricInfoRow("Tier", "Core"),
-				metricInfoRow("Status", "Ready"),
 			),
 		),
 	)
@@ -387,20 +372,6 @@ func metricInfoItem(label string, value g.Node) g.Node {
 	return h.Div(h.Class("metric-info-item"),
 		h.Span(h.Class("metric-info-label"), g.Text(label)),
 		h.Div(h.Class("metric-info-value"), value),
-	)
-}
-
-func metricInfoStat(label string, count int, icon g.Node) g.Node {
-	return h.Div(h.Class("metric-info-stat"),
-		h.Span(icon, g.Text(label)),
-		h.Strong(g.Text(strconv.Itoa(count))),
-	)
-}
-
-func metricInfoRow(label, value string) g.Node {
-	return h.Div(h.Class("metric-info-row"),
-		h.Span(g.Text(label)),
-		h.Strong(g.Text(value)),
 	)
 }
 
@@ -439,89 +410,124 @@ func normalizeMetricViewSection(section string) string {
 	return "measures"
 }
 
-func metricViewDimensions(dimensions []dashboard.MetricViewDimension) g.Node {
+type metricGrid struct {
+	Columns  []metricGridColumn `json:"columns"`
+	Rows     []map[string]any   `json:"rows"`
+	Empty    string             `json:"empty"`
+	MinWidth string             `json:"minWidth,omitempty"`
+}
+
+type metricGridColumn struct {
+	ID      string `json:"id"`
+	Header  string `json:"header"`
+	Kind    string `json:"kind,omitempty"`
+	Align   string `json:"align,omitempty"`
+	HrefKey string `json:"hrefKey,omitempty"`
+	Width   string `json:"width,omitempty"`
+}
+
+type metricGridBadge struct {
+	Label string `json:"label"`
+	Tone  string `json:"tone,omitempty"`
+}
+
+func metricViewDimensions() g.Node {
 	return h.Section(h.ID("dimensions"), h.Class("metric-contract-section metric-contract-section-dimensions"),
-		metricSectionHeader("Dimensions"),
-		h.Div(h.Class("metric-table-wrap"),
-			h.Table(h.Class("metric-field-table"),
-				h.THead(
-					h.Tr(
-						h.Th(g.Text("Name")),
-						h.Th(g.Text("Label")),
-						h.Th(g.Text("Expression")),
-						h.Th(g.Text("Filter")),
-						h.Th(g.Text("Order")),
-					),
-				),
-				h.TBody(g.Map(dimensions, func(dimension dashboard.MetricViewDimension) g.Node {
-					return h.Tr(
-						h.Td(h.Code(g.Text(dimension.Name))),
-						h.Td(g.Text(displayLabel(dimension.Label, dimension.Name))),
-						h.Td(h.Code(h.Class("metric-expression"), g.Text(dimension.Expr))),
-						h.Td(g.Text(emptyDash(dimension.Where))),
-						h.Td(g.Text(emptyDash(dimension.OrderExpr))),
-					)
-				})),
-			),
-		),
+		g.El("ld-data-grid", g.Attr("data-attr:grid", "$metricGrid")),
 	)
 }
 
-func metricViewMeasures(measures []dashboard.MetricViewMeasure) g.Node {
+func metricViewMeasures() g.Node {
 	return h.Section(h.ID("measures"), h.Class("metric-contract-section metric-contract-section-measures"),
-		metricSectionHeader("Measures"),
-		h.Div(h.Class("metric-table-wrap"),
-			h.Table(h.Class("metric-field-table metric-measure-table"),
-				h.THead(
-					h.Tr(
-						h.Th(g.Text("Name")),
-						h.Th(g.Text("Label")),
-						h.Th(g.Text("Expression")),
-						h.Th(g.Text("Unit")),
-						h.Th(g.Text("Format")),
-					),
-				),
-				h.TBody(g.Map(measures, func(measure dashboard.MetricViewMeasure) g.Node {
-					return h.Tr(
-						h.Td(h.Code(g.Text(measure.Name))),
-						h.Td(g.Text(displayLabel(measure.Label, measure.Name))),
-						h.Td(h.Code(h.Class("metric-expression"), g.Text(measure.Expression))),
-						h.Td(metricFieldChip(measure.Unit, "unit", unitIcon(measure.Unit))),
-						h.Td(metricFieldChip(measure.Format, "format", formatIcon(measure.Format))),
-					)
-				})),
-			),
-		),
+		g.El("ld-data-grid", g.Attr("data-attr:grid", "$metricGrid")),
 	)
 }
 
-func metricViewDashboards(view dashboard.MetricViewDetail) g.Node {
-	reports := view.Dashboards
+func metricViewDashboards() g.Node {
 	return h.Section(h.ID("usage"), h.Class("metric-contract-section metric-contract-section-usage"),
-		metricSectionHeader("Used by"),
 		g.El("ld-metric-usage-graph", g.Attr("data-attr:graph", "$metricUsageGraph")),
-		g.If(len(reports) == 0, h.P(h.Class("metric-empty"), g.Text("No dashboards reference this metric view yet."))),
-		g.If(len(reports) > 0, h.Div(h.Class("metric-table-wrap"),
-			h.Table(h.Class("metric-field-table metric-usage-table"),
-				h.THead(
-					h.Tr(
-						h.Th(g.Text("Dashboard")),
-						h.Th(g.Text("Description")),
-						h.Th(g.Text("Tags")),
-						h.Th(g.Text("Pages")),
-					),
-				),
-				h.TBody(g.Map(reports, func(report dashboard.MetricViewDashboard) g.Node {
-					return h.Tr(
-						h.Td(h.A(h.Class("metric-table-link"), h.Href("/dashboards/"+report.ID), g.Text(report.Title))),
-						h.Td(g.Text(emptyDash(report.Description))),
-						h.Td(metricTagList(report.Tags)),
-						h.Td(g.Text(strconv.Itoa(report.PageCount))),
-					)
-				})),
-			),
-		)),
+		g.El("ld-data-grid", g.Attr("data-attr:grid", "$metricGrid")),
 	)
+}
+
+func metricViewGrid(view dashboard.MetricViewDetail, activeSection string) metricGrid {
+	switch activeSection {
+	case "dimensions":
+		rows := make([]map[string]any, 0, len(view.Dimensions))
+		for _, dimension := range view.Dimensions {
+			rows = append(rows, map[string]any{
+				"name":       dimension.Name,
+				"label":      displayLabel(dimension.Label, dimension.Name),
+				"expression": dimension.Expr,
+				"filter":     emptyDash(dimension.Where),
+				"order":      emptyDash(dimension.OrderExpr),
+			})
+		}
+		return metricGrid{
+			Columns: []metricGridColumn{
+				{ID: "name", Header: "Name", Kind: "code", Width: "170px"},
+				{ID: "label", Header: "Label", Width: "180px"},
+				{ID: "expression", Header: "Expression", Kind: "expression", Width: "260px"},
+				{ID: "filter", Header: "Filter", Kind: "expression", Width: "220px"},
+				{ID: "order", Header: "Order", Kind: "expression", Width: "190px"},
+			},
+			Rows:     rows,
+			Empty:    "No dimensions are defined for this metric view.",
+			MinWidth: "1020px",
+		}
+	case "usage":
+		rows := make([]map[string]any, 0, len(view.Dashboards))
+		for _, report := range view.Dashboards {
+			rows = append(rows, map[string]any{
+				"dashboard":     report.Title,
+				"dashboardHref": "/dashboards/" + report.ID,
+				"description":   emptyDash(report.Description),
+				"tags":          report.Tags,
+				"pages":         report.PageCount,
+			})
+		}
+		return metricGrid{
+			Columns: []metricGridColumn{
+				{ID: "dashboard", Header: "Dashboard", Kind: "link", HrefKey: "dashboardHref", Width: "250px"},
+				{ID: "description", Header: "Description", Width: "420px"},
+				{ID: "tags", Header: "Tags", Kind: "tags", Width: "220px"},
+				{ID: "pages", Header: "Pages", Kind: "number", Align: "right", Width: "90px"},
+			},
+			Rows:     rows,
+			Empty:    "No dashboards reference this metric view yet.",
+			MinWidth: "980px",
+		}
+	default:
+		rows := make([]map[string]any, 0, len(view.Measures))
+		for _, measure := range view.Measures {
+			rows = append(rows, map[string]any{
+				"name":       measure.Name,
+				"label":      displayLabel(measure.Label, measure.Name),
+				"expression": measure.Expression,
+				"unit":       metricGridBadgeValue(measure.Unit, "success"),
+				"format":     metricGridBadgeValue(measure.Format, "accent"),
+			})
+		}
+		return metricGrid{
+			Columns: []metricGridColumn{
+				{ID: "name", Header: "Name", Kind: "code", Width: "150px"},
+				{ID: "label", Header: "Label", Width: "160px"},
+				{ID: "expression", Header: "Expression", Kind: "expression", Width: "420px"},
+				{ID: "unit", Header: "Unit", Kind: "badge", Width: "96px"},
+				{ID: "format", Header: "Format", Kind: "badge", Width: "108px"},
+			},
+			Rows:     rows,
+			Empty:    "No measures are defined for this metric view.",
+			MinWidth: "934px",
+		}
+	}
+}
+
+func metricGridBadgeValue(value, tone string) any {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return metricGridBadge{Label: value, Tone: tone}
 }
 
 func metricUsageGraph(view dashboard.MetricViewDetail) any {
@@ -570,22 +576,6 @@ func metricUsageGraph(view dashboard.MetricViewDetail) any {
 	return graph{Nodes: nodes, Edges: edges}
 }
 
-func metricSectionHeader(title string) g.Node {
-	return h.Div(h.Class("metric-section-header"),
-		h.H2(g.Text(title)),
-	)
-}
-
-func metricFieldChip(value, tone string, icon g.Node) g.Node {
-	if strings.TrimSpace(value) == "" {
-		return g.Text("-")
-	}
-	return h.Span(h.Class("metric-field-chip metric-field-chip-"+tone),
-		icon,
-		g.Text(value),
-	)
-}
-
 func metricTabs(view dashboard.MetricViewDetail, activeSection string) g.Node {
 	return h.Nav(h.Class("metric-tabs"), h.Aria("label", "Metric view sections"),
 		metricTabLink(view.ID, "measures", activeSection, "Measures", metricTabCount(view.MeasureCount)),
@@ -605,49 +595,22 @@ func metricTabLink(viewID, section, activeSection, label string, meta g.Node) g.
 func metricViewActiveSection(view dashboard.MetricViewDetail, activeSection string) g.Node {
 	switch activeSection {
 	case "dimensions":
-		return metricViewDimensions(view.Dimensions)
+		return metricViewDimensions()
 	case "usage":
-		return metricViewDashboards(view)
+		return metricViewDashboards()
 	default:
-		return metricViewMeasures(view.Measures)
+		return metricViewMeasures()
 	}
 }
 
-func formatIcon(format string) g.Node {
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "currency":
-		return lucide.BadgeDollarSign(iconAttrs())
-	case "integer":
-		return lucide.Hash(iconAttrs())
-	case "decimal":
-		return lucide.Binary(iconAttrs())
-	case "percent", "percentage":
-		return lucide.Percent(iconAttrs())
-	default:
-		return lucide.Type(iconAttrs())
+func metricViewSignals(view dashboard.MetricViewDetail, activeSection string) map[string]any {
+	signals := map[string]any{
+		"metricGrid": metricViewGrid(view, activeSection),
 	}
-}
-
-func unitIcon(unit string) g.Node {
-	switch strings.ToLower(strings.TrimSpace(unit)) {
-	case "r$", "$", "usd", "eur", "gbp":
-		return lucide.DollarSign(iconAttrs())
-	case "orders", "order":
-		return lucide.Hash(iconAttrs())
-	default:
-		return lucide.Type(iconAttrs())
+	if activeSection == "usage" {
+		signals["metricUsageGraph"] = metricUsageGraph(view)
 	}
-}
-
-func metricTagList(tags []string) g.Node {
-	if len(tags) == 0 {
-		return g.Text("-")
-	}
-	nodes := []g.Node{h.Class("metric-tag-list")}
-	for _, tag := range tags {
-		nodes = append(nodes, h.Span(g.Text(tag)))
-	}
-	return h.Div(nodes...)
+	return signals
 }
 
 func displayLabel(label, fallback string) string {
@@ -683,19 +646,19 @@ func MetricViewPage(catalog dashboard.Catalog, view dashboard.MetricViewDetail, 
 			g.If(activeSection == "usage", h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/metric-usage-graph.css")))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/data-grid.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/detail-rail.js"))),
 			g.If(activeSection == "usage", h.Script(h.Type("module"), h.Src(staticAsset("/static/metric-usage-graph.js")))),
-			g.If(activeSection == "usage", h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js"))),
+			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		},
 		Body: []g.Node{
 			h.Main(h.Class("report-app"),
-				g.If(activeSection == "usage", ds.Signals(map[string]any{
-					"metricUsageGraph": metricUsageGraph(view),
-				})),
+				ds.Signals(metricViewSignals(view, activeSection)),
 				h.Div(h.Class("app-shell"),
 					sidebar(sidebarConfigForMetricView(catalog, view)),
 					h.Section(h.Class("app-main metric-main"), h.Aria("label", "LibreDash metric view"),
 						metricViewHeader(view),
-						h.Div(h.Class("metric-workspace"),
+						g.El("ld-detail-rail", h.Class("metric-workspace"),
 							h.Div(h.Class("metric-content-column"),
 								metricTabs(view, activeSection),
 								h.Div(h.Class("metric-contract-main"),
