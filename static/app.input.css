@@ -1161,7 +1161,7 @@
     position: relative;
     z-index: 2;
     display: grid;
-    width: min(100%, 410px);
+    width: min(100%, 386px);
     justify-items: center;
     gap: 22px;
     border: 1px solid rgb(255 255 255 / 12%);
@@ -1170,7 +1170,7 @@
     box-shadow:
       0 24px 70px rgb(0 0 0 / 48%),
       inset 0 1px 0 rgb(255 255 255 / 9%);
-    padding: 32px 34px 34px;
+    padding: 30px 30px 32px;
     text-align: center;
     backdrop-filter: blur(14px);
   }
@@ -1183,7 +1183,7 @@
   .login-brand h1 {
     margin: 0;
     color: #f0f6fc;
-    font-size: clamp(1.8rem, 10vw, 2.6rem);
+    font-size: clamp(1.72rem, 9vw, 2.38rem);
     line-height: 1;
     font-weight: 850;
     letter-spacing: 0;
@@ -1196,7 +1196,7 @@
     grid-template-columns: 22px minmax(0, 1fr);
     align-items: center;
     gap: 12px;
-    border: 1px solid color-mix(in srgb, var(--login-accent), transparent 32%);
+    border: 1px solid color-mix(in srgb, var(--login-accent), transparent 48%);
     border-radius: 8px;
     background: rgb(255 255 255 / 7%);
     box-shadow: 0 12px 34px rgb(0 0 0 / 28%);
@@ -1211,10 +1211,12 @@
 
   .login-azure-button:hover,
   .login-azure-button:focus-visible {
-    border-color: color-mix(in srgb, var(--login-accent), white 12%);
-    background: color-mix(in srgb, var(--login-accent), transparent 80%);
-    outline: 2px solid color-mix(in srgb, var(--login-accent), white 32%);
-    outline-offset: 3px;
+    border-color: color-mix(in srgb, var(--login-accent), transparent 30%);
+    background: color-mix(in srgb, var(--login-accent), transparent 90%);
+    box-shadow:
+      0 12px 34px rgb(0 0 0 / 28%),
+      inset 0 0 0 1px color-mix(in srgb, var(--login-accent), transparent 62%);
+    outline: 0;
   }
 
   .microsoft-mark {
