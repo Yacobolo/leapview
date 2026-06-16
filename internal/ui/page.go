@@ -331,26 +331,81 @@ func metricViewActions(view dashboard.MetricViewDetail) g.Node {
 	)
 }
 
-func metricViewSummary(view dashboard.MetricViewDetail) g.Node {
-	return h.Div(h.Class("metric-metadata-bar"),
-		h.Div(h.Class("metric-metadata-items"),
-			metricMetadataItem("Model", h.A(h.Href("/models/"+view.SemanticModel), g.Text(view.ModelTitle))),
-			metricMetadataItem("Dataset", h.Code(g.Text(view.Dataset))),
-			metricMetadataItem("Timeseries", h.Code(g.Text(view.Timeseries))),
+func metricViewHeader(view dashboard.MetricViewDetail) g.Node {
+	return h.Header(h.Class("metric-detail-header"),
+		h.Nav(h.Class("metric-breadcrumb"), h.Aria("label", "Metric view breadcrumb"),
+			h.A(h.Href("/metrics"), g.Text("Metric Views")),
+			lucide.ChevronRight(iconAttrs()),
+			h.A(h.Href("/models/"+view.SemanticModel), lucide.Box(iconAttrs()), h.Span(g.Text(view.ModelTitle))),
+			lucide.ChevronRight(iconAttrs()),
+			h.Span(lucide.Table2(iconAttrs()), h.Code(g.Text(view.Dataset))),
+			lucide.ChevronRight(iconAttrs()),
+			h.Span(lucide.Calendar(iconAttrs()), h.Code(g.Text(view.Timeseries))),
 		),
-		h.Div(h.Class("metric-count-pills"),
-			metricCountPill("Measure", view.MeasureCount, "measure", lucide.Sigma(iconAttrs())),
-			metricCountPill("Dimension", view.DimensionCount, "dimension", lucide.List(iconAttrs())),
-			metricCountPill("Dashboard", view.DashboardCount, "dashboard", lucide.LayoutDashboard(iconAttrs())),
+		h.Div(h.Class("metric-header-row"),
+			h.Div(h.Class("metric-header-copy"),
+				h.P(h.Class("report-eyebrow"), g.Text("Metric view")),
+				h.H1(h.Class("workspace-title"), g.Text(view.Title)),
+				g.If(strings.TrimSpace(view.Description) != "", h.P(h.Class("workspace-detail"), g.Text(view.Description))),
+			),
+			metricViewActions(view),
 		),
 	)
 }
 
-func metricMetadataItem(label string, value g.Node) g.Node {
-	return h.Div(h.Class("metric-metadata-item"),
-		h.Span(g.Text(label)),
-		value,
+func metricViewInfoSidebar(view dashboard.MetricViewDetail) g.Node {
+	return h.Aside(h.Class("metric-info-sidebar"), h.Aria("label", "Metric view data contract"),
+		h.Div(h.Class("metric-info-header"),
+			h.H2(lucide.FileText(iconAttrs()), h.Span(g.Text("Data Contract"))),
+			h.Span(h.Class("metric-verified-badge"), lucide.Check(iconAttrs()), g.Text("Verified")),
+		),
+		h.Div(h.Class("metric-info-body"),
+			h.Div(h.Class("metric-info-group"),
+				metricInfoItem("Model context", h.A(h.Href("/models/"+view.SemanticModel), lucide.Box(iconAttrs()), h.Span(g.Text(view.ModelTitle)))),
+				metricInfoItem("Source dataset", h.Span(lucide.Table2(iconAttrs()), h.Code(g.Text(view.Dataset)))),
+				metricInfoItem("Primary timeseries", h.Span(lucide.Calendar(iconAttrs()), h.Code(g.Text(view.Timeseries)))),
+			),
+			h.Div(h.Class("metric-info-divider")),
+			h.Div(h.Class("metric-info-group"),
+				h.H3(g.Text("Fields")),
+				metricInfoStat("Measures", view.MeasureCount, lucide.Sigma(iconAttrs())),
+				metricInfoStat("Dimensions", view.DimensionCount, lucide.List(iconAttrs())),
+				metricInfoStat("Dashboards", view.DashboardCount, lucide.LayoutDashboard(iconAttrs())),
+			),
+			h.Div(h.Class("metric-info-divider")),
+			h.Div(h.Class("metric-info-group"),
+				h.H3(g.Text("Governance")),
+				metricInfoRow("Owner", "Data Platform"),
+				metricInfoRow("Tier", "Core"),
+				metricInfoRow("Status", "Ready"),
+			),
+		),
 	)
+}
+
+func metricInfoItem(label string, value g.Node) g.Node {
+	return h.Div(h.Class("metric-info-item"),
+		h.Span(h.Class("metric-info-label"), g.Text(label)),
+		h.Div(h.Class("metric-info-value"), value),
+	)
+}
+
+func metricInfoStat(label string, count int, icon g.Node) g.Node {
+	return h.Div(h.Class("metric-info-stat"),
+		h.Span(icon, g.Text(label)),
+		h.Strong(g.Text(strconv.Itoa(count))),
+	)
+}
+
+func metricInfoRow(label, value string) g.Node {
+	return h.Div(h.Class("metric-info-row"),
+		h.Span(g.Text(label)),
+		h.Strong(g.Text(value)),
+	)
+}
+
+func metricTabCount(count int) g.Node {
+	return h.Span(h.Class("metric-tab-count"), g.Text(strconv.Itoa(count)))
 }
 
 func metricCountPill(label string, count int, tone string, icon g.Node) g.Node {
@@ -424,7 +479,6 @@ func metricViewMeasures(measures []dashboard.MetricViewMeasure) g.Node {
 						h.Th(g.Text("Expression")),
 						h.Th(g.Text("Unit")),
 						h.Th(g.Text("Format")),
-						h.Th(g.Text("Description")),
 					),
 				),
 				h.TBody(g.Map(measures, func(measure dashboard.MetricViewMeasure) g.Node {
@@ -434,7 +488,6 @@ func metricViewMeasures(measures []dashboard.MetricViewMeasure) g.Node {
 						h.Td(h.Code(h.Class("metric-expression"), g.Text(measure.Expression))),
 						h.Td(metricFieldChip(measure.Unit, "unit", unitIcon(measure.Unit))),
 						h.Td(metricFieldChip(measure.Format, "format", formatIcon(measure.Format))),
-						h.Td(g.Text(emptyDash(measure.Description))),
 					)
 				})),
 			),
@@ -535,18 +588,18 @@ func metricFieldChip(value, tone string, icon g.Node) g.Node {
 
 func metricTabs(view dashboard.MetricViewDetail, activeSection string) g.Node {
 	return h.Nav(h.Class("metric-tabs"), h.Aria("label", "Metric view sections"),
-		metricTabLink(view.ID, "measures", activeSection, lucide.Sigma(iconAttrs()), "Measures"),
-		metricTabLink(view.ID, "dimensions", activeSection, lucide.List(iconAttrs()), "Dimensions"),
-		metricTabLink(view.ID, "usage", activeSection, lucide.LayoutDashboard(iconAttrs()), "Used by"),
+		metricTabLink(view.ID, "measures", activeSection, "Measures", metricTabCount(view.MeasureCount)),
+		metricTabLink(view.ID, "dimensions", activeSection, "Dimensions", metricTabCount(view.DimensionCount)),
+		metricTabLink(view.ID, "usage", activeSection, "Usage", metricTabCount(view.DashboardCount)),
 	)
 }
 
-func metricTabLink(viewID, section, activeSection string, icon g.Node, label string) g.Node {
+func metricTabLink(viewID, section, activeSection, label string, meta g.Node) g.Node {
 	className := "metric-tab"
 	if section == activeSection {
 		className += " metric-tab-active"
 	}
-	return h.A(h.Class(className), h.Href("/metrics/"+viewID+"/"+section), g.If(section == activeSection, h.Aria("current", "page")), icon, h.Span(g.Text(label)))
+	return h.A(h.Class(className), h.Href("/metrics/"+viewID+"/"+section), g.If(section == activeSection, h.Aria("current", "page")), h.Span(g.Text(label)), meta)
 }
 
 func metricViewActiveSection(view dashboard.MetricViewDetail, activeSection string) g.Node {
@@ -641,18 +694,15 @@ func MetricViewPage(catalog dashboard.Catalog, view dashboard.MetricViewDetail, 
 				h.Div(h.Class("app-shell"),
 					sidebar(sidebarConfigForMetricView(catalog, view)),
 					h.Section(h.Class("app-main metric-main"), h.Aria("label", "LibreDash metric view"),
-						workspaceHeader(
-							"Metric view",
-							view.Title,
-							view.Description,
-							metricViewActions(view),
-						),
-						h.Div(h.Class("metric-contract-shell"),
-							metricViewSummary(view),
-							metricTabs(view, activeSection),
-							h.Div(h.Class("metric-contract-main"),
-								metricViewActiveSection(view, activeSection),
+						metricViewHeader(view),
+						h.Div(h.Class("metric-workspace"),
+							h.Div(h.Class("metric-content-column"),
+								metricTabs(view, activeSection),
+								h.Div(h.Class("metric-contract-main"),
+									metricViewActiveSection(view, activeSection),
+								),
 							),
+							metricViewInfoSidebar(view),
 						),
 					),
 				),

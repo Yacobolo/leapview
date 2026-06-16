@@ -382,11 +382,250 @@
     font-weight: 800;
   }
 
-  .metric-contract-shell {
+  .metric-detail-header {
     display: grid;
     gap: 14px;
+    border-bottom: 1px solid var(--borderColor-default);
+    padding-bottom: 18px;
+  }
+
+  .metric-breadcrumb {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    color: var(--fgColor-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+
+  .metric-breadcrumb > svg {
+    width: 12px;
+    height: 12px;
+    color: var(--fgColor-muted);
+    opacity: 0.7;
+  }
+
+  .metric-breadcrumb a,
+  .metric-breadcrumb span {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--fgColor-muted);
+    text-decoration: none;
+  }
+
+  .metric-breadcrumb a:hover,
+  .metric-breadcrumb a:focus-visible {
+    color: var(--fgColor-default);
+    outline: 0;
+  }
+
+  .metric-breadcrumb a svg,
+  .metric-breadcrumb span svg {
+    width: 13px;
+    height: 13px;
+    color: var(--fgColor-muted);
+  }
+
+  .metric-breadcrumb code {
+    overflow: hidden;
+    max-width: 22ch;
+    border: 1px solid var(--borderColor-muted);
+    border-radius: 4px;
+    background: var(--bgColor-muted);
+    color: var(--fgColor-default);
+    padding: 2px 6px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.68rem;
+  }
+
+  .metric-header-row {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 18px;
+  }
+
+  .metric-header-copy {
+    min-width: 0;
+  }
+
+  .metric-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 288px);
+    gap: 0;
+    min-height: 0;
+    border-bottom: 1px solid var(--borderColor-default);
+  }
+
+  .metric-content-column {
+    display: grid;
     min-width: 0;
     align-self: start;
+    border-right: 1px solid var(--borderColor-default);
+  }
+
+  .metric-info-sidebar {
+    display: grid;
+    align-self: stretch;
+    align-content: start;
+    min-width: 0;
+    background: var(--bgColor-default);
+  }
+
+  .metric-info-header {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--borderColor-default);
+    background: color-mix(in srgb, var(--bgColor-default), transparent 2%);
+    padding: 16px 18px;
+  }
+
+  .metric-info-header h2 {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--fgColor-default);
+    font-size: 0.86rem;
+    line-height: 1.2;
+    font-weight: 850;
+  }
+
+  .metric-info-header svg {
+    width: 15px;
+    height: 15px;
+    color: var(--fgColor-muted);
+  }
+
+  .metric-verified-badge {
+    display: inline-flex;
+    min-height: 20px;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid color-mix(in srgb, var(--fgColor-success), transparent 72%);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--fgColor-success), transparent 91%);
+    color: var(--fgColor-success);
+    padding: 0 6px;
+    font-size: 0.56rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .metric-verified-badge svg {
+    width: 10px;
+    height: 10px;
+    color: currentColor;
+  }
+
+  .metric-info-body {
+    display: grid;
+    gap: 20px;
+    padding: 18px;
+  }
+
+  .metric-info-group {
+    display: grid;
+    gap: 13px;
+    min-width: 0;
+  }
+
+  .metric-info-group h3 {
+    margin: 0 0 -2px;
+    color: var(--fgColor-muted);
+    font-size: 0.62rem;
+    font-weight: 950;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .metric-info-divider {
+    height: 1px;
+    background: var(--borderColor-muted);
+  }
+
+  .metric-info-item {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .metric-info-label {
+    color: var(--fgColor-muted);
+    font-size: 0.62rem;
+    font-weight: 950;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .metric-info-value,
+  .metric-info-value a,
+  .metric-info-value span {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    color: var(--fgColor-default);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+
+  .metric-info-value a:hover,
+  .metric-info-value a:focus-visible {
+    color: var(--fgColor-accent);
+    outline: 0;
+  }
+
+  .metric-info-value svg,
+  .metric-info-stat svg {
+    width: 14px;
+    height: 14px;
+    color: var(--fgColor-muted);
+    flex: 0 0 auto;
+  }
+
+  .metric-info-value code {
+    overflow: hidden;
+    max-width: 20ch;
+    color: var(--fgColor-default);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.76rem;
+  }
+
+  .metric-info-stat,
+  .metric-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--fgColor-muted);
+    font-size: 0.76rem;
+    font-weight: 750;
+  }
+
+  .metric-info-stat span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .metric-info-stat strong,
+  .metric-info-row strong {
+    color: var(--fgColor-default);
+    font-weight: 850;
   }
 
   .metric-metadata-bar {
@@ -501,8 +740,8 @@
 
   .metric-contract-main {
     display: grid;
-    gap: 18px;
     min-width: 0;
+    padding: 18px;
   }
 
   .metric-tabs {
@@ -511,78 +750,90 @@
     z-index: 4;
     display: flex;
     flex-wrap: wrap;
-    gap: 7px;
-    border: 1px solid var(--borderColor-default);
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--bgColor-default), transparent 4%);
-    box-shadow: var(--shadow-resting-small);
-    padding: 7px;
+    gap: 24px;
+    border-bottom: 1px solid var(--borderColor-default);
+    background: color-mix(in srgb, var(--bgColor-default), transparent 2%);
+    padding: 0 18px;
   }
 
   .metric-tabs a {
+    position: relative;
     display: inline-flex;
-    min-height: 30px;
+    min-height: 44px;
     align-items: center;
-    gap: 7px;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    color: var(--fgColor-default);
-    padding: 0 10px;
-    font-size: 0.78rem;
+    gap: 8px;
+    border: 0;
+    color: var(--fgColor-muted);
+    padding: 0;
+    font-size: 0.82rem;
     font-weight: 850;
     text-decoration: none;
   }
 
+  .metric-tabs a::after {
+    position: absolute;
+    right: 0;
+    bottom: -1px;
+    left: 0;
+    height: 2px;
+    background: transparent;
+    content: "";
+  }
+
   .metric-tabs a:hover,
   .metric-tabs a:focus-visible {
-    border-color: var(--borderColor-muted);
-    background: var(--bgColor-muted);
+    color: var(--fgColor-default);
     outline: 0;
   }
 
   .metric-tabs a[aria-current="page"] {
-    border-color: var(--borderColor-accent-muted);
-    background: var(--bgColor-accent-muted);
-    color: var(--fgColor-accent);
+    color: var(--fgColor-default);
   }
 
-  .metric-tabs svg {
-    width: 14px;
-    height: 14px;
+  .metric-tabs a[aria-current="page"]::after {
+    background: var(--fgColor-accent);
+  }
+
+  .metric-tab-count {
+    display: inline-flex;
+    min-width: 22px;
+    min-height: 20px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--borderColor-muted);
+    border-radius: 999px;
+    background: var(--bgColor-muted);
     color: var(--fgColor-muted);
-  }
-
-  .metric-tabs a[aria-current="page"] svg {
-    color: currentColor;
+    padding: 0 7px;
+    font-size: 0.65rem;
+    font-weight: 900;
   }
 
   .metric-contract-section {
     display: grid;
     min-width: 0;
-    border: 1px solid var(--borderColor-default);
-    border-radius: 6px;
-    background: var(--bgColor-default);
-    box-shadow: var(--shadow-resting-small);
-    overflow: hidden;
+    background: transparent;
   }
 
   .metric-contract-section-measures {
-    border-top: 3px solid var(--fgColor-success);
+    border-top: 0;
   }
 
   .metric-contract-section-dimensions {
-    border-top: 3px solid var(--fgColor-accent);
+    border-top: 0;
   }
 
   .metric-contract-section-usage {
-    border-top: 3px solid var(--fgColor-attention);
+    border-top: 0;
   }
 
   ld-metric-usage-graph {
     display: block;
     min-width: 0;
     min-height: 280px;
-    border-bottom: 1px solid var(--borderColor-muted);
+    border: 1px solid var(--borderColor-default);
+    border-radius: 6px;
+    overflow: hidden;
   }
 
   ld-metric-usage-graph .metric-usage-flow {
@@ -653,20 +904,20 @@
   }
 
   .metric-section-header {
-    border-bottom: 1px solid var(--borderColor-muted);
-    padding: 14px 18px;
+    padding: 0 0 12px;
   }
 
   .metric-section-header h2 {
     margin: 0;
     color: var(--fgColor-default);
-    font-size: 1.05rem;
+    font-size: 0.96rem;
     line-height: 1.15;
     font-weight: 850;
   }
 
   .metric-table-wrap {
     min-width: 0;
+    border-top: 1px solid var(--borderColor-default);
     overflow-x: auto;
   }
 
@@ -677,18 +928,46 @@
     table-layout: fixed;
   }
 
+  .metric-measure-table {
+    min-width: 0;
+  }
+
+  .metric-measure-table th:nth-child(1),
+  .metric-measure-table td:nth-child(1) {
+    width: 20%;
+  }
+
+  .metric-measure-table th:nth-child(2),
+  .metric-measure-table td:nth-child(2) {
+    width: 20%;
+  }
+
+  .metric-measure-table th:nth-child(3),
+  .metric-measure-table td:nth-child(3) {
+    width: 36%;
+  }
+
+  .metric-measure-table th:nth-child(4),
+  .metric-measure-table td:nth-child(4),
+  .metric-measure-table th:nth-child(5),
+  .metric-measure-table td:nth-child(5) {
+    width: 12%;
+  }
+
   .metric-field-table th,
   .metric-field-table td {
     border-bottom: 1px solid var(--borderColor-muted);
-    padding: 10px 12px;
+    padding: 11px 12px;
     text-align: left;
     vertical-align: top;
   }
 
   .metric-field-table th {
+    background: color-mix(in srgb, var(--bgColor-default), transparent 2%);
     color: var(--fgColor-muted);
     font-size: 0.62rem;
     font-weight: 900;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
   }
 
@@ -701,6 +980,14 @@
 
   .metric-field-table tr:last-child td {
     border-bottom: 0;
+  }
+
+  .metric-field-table tbody tr {
+    transition: background-color 0.12s ease;
+  }
+
+  .metric-field-table tbody tr:hover {
+    background: var(--bgColor-muted);
   }
 
   .metric-field-table code,
@@ -1739,6 +2026,42 @@
 
     .metric-count-pills {
       justify-content: start;
+    }
+
+    .metric-detail-header {
+      gap: 12px;
+      padding-bottom: 14px;
+    }
+
+    .metric-breadcrumb {
+      flex-wrap: wrap;
+    }
+
+    .metric-header-row {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .metric-workspace {
+      grid-template-columns: 1fr;
+    }
+
+    .metric-content-column {
+      border-right: 0;
+    }
+
+    .metric-info-sidebar {
+      border-top: 1px solid var(--borderColor-default);
+    }
+
+    .metric-tabs {
+      gap: 16px;
+      overflow-x: auto;
+      padding: 0 12px;
+    }
+
+    .metric-contract-main {
+      padding: 14px 12px;
     }
 
     .metric-field-table {
