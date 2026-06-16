@@ -14,11 +14,14 @@ import (
 	"github.com/Yacobolo/libredash/internal/deploy"
 	"github.com/Yacobolo/libredash/internal/platform"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
+	"github.com/Yacobolo/libredash/internal/runtime"
 	"github.com/go-chi/chi/v5"
 )
 
 type runtimeReloader interface {
 	Reload(ctx context.Context) error
+	PrepareDeployment(ctx context.Context, deploymentID string) (*runtime.Prepared, error)
+	CommitPrepared(prepared *runtime.Prepared) error
 }
 
 func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
@@ -122,12 +125,23 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
+	var prepared *runtime.Prepared
+	if s.reloader != nil {
+		prepared, err = s.reloader.PrepareDeployment(r.Context(), deployment.ID)
+		if err != nil {
+			writeJSONError(w, err, http.StatusInternalServerError)
+			return
+		}
+	}
 	if err := s.store.ActivateDeployment(r.Context(), deployment.WorkspaceID, deployment.ID); err != nil {
+		if prepared != nil {
+			_ = prepared.Close()
+		}
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	if s.reloader != nil {
-		if err := s.reloader.Reload(r.Context()); err != nil {
+	if prepared != nil {
+		if err := s.reloader.CommitPrepared(prepared); err != nil {
 			writeJSONError(w, err, http.StatusInternalServerError)
 			return
 		}

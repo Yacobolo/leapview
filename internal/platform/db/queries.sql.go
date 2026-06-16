@@ -415,7 +415,7 @@ func (q *Queries) InsertDeploymentArtifact(ctx context.Context, arg InsertDeploy
 }
 
 const insertRoleBinding = `-- name: InsertRoleBinding :exec
-INSERT INTO role_bindings (id, workspace_id, role_id, principal_id, group_id)
+INSERT OR IGNORE INTO role_bindings (id, workspace_id, role_id, principal_id, group_id)
 VALUES (?, ?, ?, ?, ?)
 `
 

@@ -12,6 +12,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/data"
 	"github.com/Yacobolo/libredash/internal/deploy"
 	"github.com/Yacobolo/libredash/internal/platform"
+	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/internal/semantic"
 )
 
@@ -26,6 +27,20 @@ type Manager struct {
 	activeDeployment string
 	activeDigest     string
 	current          *data.DuckDBMetrics
+}
+
+type Prepared struct {
+	deploymentID string
+	digest       string
+	metrics      *data.DuckDBMetrics
+	noChange     bool
+}
+
+func (p *Prepared) Close() error {
+	if p == nil || p.metrics == nil {
+		return nil
+	}
+	return p.metrics.Close()
 }
 
 func NewManager(store *platform.Store, workspaceID, dataDir, duckDBDir, runtimeDir string) *Manager {
@@ -46,34 +61,68 @@ func (m *Manager) Reload(ctx context.Context) error {
 		}
 		return err
 	}
+	prepared, err := m.prepare(ctx, deployment, artifact)
+	if err != nil {
+		return err
+	}
+	return m.CommitPrepared(prepared)
+}
+
+func (m *Manager) PrepareDeployment(ctx context.Context, deploymentID string) (*Prepared, error) {
+	deployment, err := m.store.Queries().GetDeployment(ctx, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if deployment.WorkspaceID != m.workspaceID {
+		return nil, fmt.Errorf("deployment %s is not in workspace %s", deploymentID, m.workspaceID)
+	}
+	artifact, err := m.store.Queries().GetArtifactByDeployment(ctx, deployment.ID)
+	if err != nil {
+		return nil, err
+	}
+	return m.prepare(ctx, deployment, artifact)
+}
+
+func (m *Manager) prepare(ctx context.Context, deployment platformdb.Deployment, artifact platformdb.DeploymentArtifact) (*Prepared, error) {
 	m.mu.RLock()
 	if m.current != nil && m.activeDeployment == deployment.ID && m.activeDigest == artifact.Digest {
 		m.mu.RUnlock()
-		return nil
+		return &Prepared{deploymentID: deployment.ID, digest: artifact.Digest, noChange: true}, nil
 	}
 	m.mu.RUnlock()
 
 	targetDir := filepath.Join(m.runtimeDir, deployment.ID+"-"+shortDigest(artifact.Digest))
 	if err := os.RemoveAll(targetDir); err != nil {
-		return err
+		return nil, err
 	}
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return err
+		return nil, err
 	}
 	if err := deploy.ExtractArtifact(artifact.Path, targetDir); err != nil {
-		return err
+		return nil, err
 	}
 	duckDir := filepath.Join(m.duckDBDir, deployment.ID)
 	metrics, err := data.NewDuckDBMetricsFromCatalog(m.dataDir, filepath.Join(targetDir, deploy.CatalogFile), duckDir)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	return &Prepared{deploymentID: deployment.ID, digest: artifact.Digest, metrics: metrics}, nil
+}
+
+func (m *Manager) CommitPrepared(prepared *Prepared) error {
+	if prepared == nil {
+		return fmt.Errorf("prepared runtime is nil")
+	}
+	if prepared.noChange {
+		return nil
 	}
 
 	m.mu.Lock()
 	old := m.current
-	m.current = metrics
-	m.activeDeployment = deployment.ID
-	m.activeDigest = artifact.Digest
+	m.current = prepared.metrics
+	m.activeDeployment = prepared.deploymentID
+	m.activeDigest = prepared.digest
+	prepared.metrics = nil
 	m.mu.Unlock()
 	if old != nil {
 		_ = old.Close()

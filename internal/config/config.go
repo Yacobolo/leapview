@@ -1,8 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -25,6 +28,7 @@ type Config struct {
 	AzureCallbackURL string `env:"LIBREDASH_AZURE_CALLBACK_URL"`
 	AzureTenant      string `env:"LIBREDASH_AZURE_TENANT"`
 	CSRFKey          string `env:"LIBREDASH_CSRF_KEY"`
+	CookieSecureRaw  string `env:"LIBREDASH_COOKIE_SECURE"`
 	Target           string `env:"LIBREDASH_TARGET"`
 	APIToken         string `env:"LIBREDASH_API_TOKEN"`
 	CLIConfig        string `env:"LIBREDASH_CLI_CONFIG"`
@@ -94,4 +98,29 @@ func (c Config) ClientConfigPath() string {
 
 func (c Config) AzureConfigured() bool {
 	return c.AzureClientID != "" && c.AzureSecret != "" && c.AzureCallbackURL != ""
+}
+
+func (c Config) CookieSecure() (bool, error) {
+	value := strings.TrimSpace(c.CookieSecureRaw)
+	if value == "" {
+		return c.Production && !c.DevAuthBypass, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("LIBREDASH_COOKIE_SECURE must be a boolean: %w", err)
+	}
+	return parsed, nil
+}
+
+func (c Config) ValidateProductionAuth() error {
+	if !c.Production {
+		return nil
+	}
+	if !c.AzureConfigured() && !c.DevAuthBypass && !c.APITokenOnlyAuth {
+		return fmt.Errorf("production serve requires Azure auth env vars, LIBREDASH_DEV_AUTH_BYPASS, or LIBREDASH_API_TOKEN_ONLY_AUTH")
+	}
+	if !c.DevAuthBypass && len(c.CSRFKey) < 32 {
+		return fmt.Errorf("production serve requires LIBREDASH_CSRF_KEY with at least 32 characters")
+	}
+	return nil
 }

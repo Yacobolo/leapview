@@ -4,23 +4,43 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/deploy"
 	"github.com/Yacobolo/libredash/internal/platform"
+	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
+	"github.com/Yacobolo/libredash/internal/runtime"
 	"github.com/gorilla/csrf"
 )
 
 type fakeReloader struct {
-	calls int
+	prepareCalls int
+	commitCalls  int
+	prepareErr   error
 }
 
 func (r *fakeReloader) Reload(context.Context) error {
-	r.calls++
+	r.prepareCalls++
+	r.commitCalls++
+	return nil
+}
+
+func (r *fakeReloader) PrepareDeployment(context.Context, string) (*runtime.Prepared, error) {
+	r.prepareCalls++
+	if r.prepareErr != nil {
+		return nil, r.prepareErr
+	}
+	return &runtime.Prepared{}, nil
+}
+
+func (r *fakeReloader) CommitPrepared(*runtime.Prepared) error {
+	r.commitCalls++
 	return nil
 }
 
@@ -83,6 +103,15 @@ func TestCSRFMiddlewareAllowsBrowserPostWithToken(t *testing.T) {
 	handler.ServeHTTP(postRec, postReq)
 	if postRec.Code != http.StatusNoContent {
 		t.Fatalf("POST status = %d, want %d, body=%s", postRec.Code, http.StatusNoContent, postRec.Body.String())
+	}
+}
+
+func TestSessionCookieUsesConfiguredSecureFlag(t *testing.T) {
+	store := testStore(t)
+	auth := NewAuth(store, "test", AuthConfig{DevBypass: true, CookieSecure: true})
+	cookie := auth.sessionCookie("token", time.Now().Add(time.Hour))
+	if !cookie.Secure {
+		t.Fatal("session cookie Secure = false, want true")
 	}
 }
 
@@ -165,8 +194,47 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	if activateRec.Code != http.StatusOK {
 		t.Fatalf("activate status = %d body=%s", activateRec.Code, activateRec.Body.String())
 	}
-	if reloader.calls != 1 {
-		t.Fatalf("reload calls = %d, want 1", reloader.calls)
+	if reloader.prepareCalls != 1 {
+		t.Fatalf("prepare calls = %d, want 1", reloader.prepareCalls)
+	}
+	if reloader.commitCalls != 1 {
+		t.Fatalf("commit calls = %d, want 1", reloader.commitCalls)
+	}
+}
+
+func TestDeploymentActivationPrepareFailureLeavesDeploymentInactive(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	ctx := context.Background()
+	deployment, err := store.CreateDeployment(ctx, "test", "tester")
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	if err := store.ValidateDeployment(ctx, deployment.ID, "digest", "{}", zeroArtifact(deployment.ID, "test"), nil, nil); err != nil {
+		t.Fatalf("validate deployment: %v", err)
+	}
+	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	reloader := &fakeReloader{prepareErr: errors.New("runtime load failed")}
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/deployments/"+deployment.ID+"/activate", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	after, err := store.Queries().GetDeployment(ctx, deployment.ID)
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if after.Status != "validated" {
+		t.Fatalf("status = %q, want validated", after.Status)
+	}
+	if reloader.commitCalls != 0 {
+		t.Fatalf("commit calls = %d, want 0", reloader.commitCalls)
 	}
 }
 
@@ -181,4 +249,16 @@ func testStore(t *testing.T) *platform.Store {
 		t.Fatalf("ensure workspace: %v", err)
 	}
 	return store
+}
+
+func zeroArtifact(deploymentID, workspaceID string) platformdb.InsertDeploymentArtifactParams {
+	return platformdb.InsertDeploymentArtifactParams{
+		ID:           "artifact_" + deploymentID,
+		DeploymentID: deploymentID,
+		WorkspaceID:  workspaceID,
+		Digest:       "digest",
+		Format:       "tar.gz",
+		Path:         "artifact.tar.gz",
+		ManifestJson: "{}",
+	}
 }

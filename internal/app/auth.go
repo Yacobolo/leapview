@@ -32,6 +32,7 @@ type Auth struct {
 	enabled      bool
 	configured   bool
 	azureTenant  string
+	cookieSecure bool
 	csrf         func(http.Handler) http.Handler
 }
 
@@ -43,6 +44,7 @@ type AuthConfig struct {
 	AzureCallback   string
 	AzureTenant     string
 	CSRFKey         string
+	CookieSecure    bool
 	BootstrapTenant string
 }
 
@@ -53,6 +55,7 @@ func NewAuth(store *platform.Store, workspaceID string, cfg AuthConfig) *Auth {
 		devBypass:    cfg.DevBypass,
 		apiTokenOnly: cfg.APITokenOnly,
 		azureTenant:  cfg.AzureTenant,
+		cookieSecure: cfg.CookieSecure,
 	}
 	if cfg.AzureClientID != "" && cfg.AzureSecret != "" && cfg.AzureCallback != "" {
 		tenant := azureadv2.TenantType(cfg.AzureTenant)
@@ -61,7 +64,7 @@ func NewAuth(store *platform.Store, workspaceID string, cfg AuthConfig) *Auth {
 	}
 	auth.csrf = csrf.Protect(
 		csrfKey(cfg.CSRFKey),
-		csrf.Secure(false),
+		csrf.Secure(cfg.CookieSecure),
 		csrf.SameSite(csrf.SameSiteLaxMode),
 		csrf.ErrorHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, csrf.FailureReason(r).Error(), http.StatusForbidden)
@@ -124,7 +127,7 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, sessionCookie(r, token, time.Now().Add(8*time.Hour)))
+	http.SetCookie(w, a.sessionCookie(token, time.Now().Add(8*time.Hour)))
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -132,7 +135,7 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("ld_session"); err == nil {
 		_ = a.store.DeleteSession(r.Context(), cookie.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: "ld_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil})
+	http.SetCookie(w, &http.Cookie{Name: "ld_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: a.cookieSecure})
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -214,7 +217,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, bool) {
 	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, true
 }
 
-func sessionCookie(r *http.Request, token string, expires time.Time) *http.Cookie {
+func (a *Auth) sessionCookie(token string, expires time.Time) *http.Cookie {
 	return &http.Cookie{
 		Name:     "ld_session",
 		Value:    token,
@@ -222,7 +225,7 @@ func sessionCookie(r *http.Request, token string, expires time.Time) *http.Cooki
 		Expires:  expires,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   a.cookieSecure,
 	}
 }
 

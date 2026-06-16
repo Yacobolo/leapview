@@ -123,6 +123,37 @@ func TestResolveExternalPrincipalAttachesBootstrappedEmail(t *testing.T) {
 	}
 }
 
+func TestBootstrapAdminIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.EnsureWorkspace(ctx, WorkspaceInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := store.BootstrapAdmin(ctx, "test", "owner@example.com"); err != nil {
+			t.Fatalf("bootstrap admin %d: %v", i, err)
+		}
+	}
+	var count int
+	err = store.db.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM role_bindings rb
+		JOIN roles r ON r.id = rb.role_id
+		WHERE rb.workspace_id = ? AND rb.principal_id = ? AND r.name = ?
+	`, "test", PrincipalIDForEmail("owner@example.com"), "owner").Scan(&count)
+	if err != nil {
+		t.Fatalf("count role bindings: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("owner role bindings = %d, want 1", count)
+	}
+}
+
 func TestResolveExternalPrincipalWithoutEmailCreatesUnprivilegedPrincipal(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))

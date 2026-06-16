@@ -161,4 +161,10 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS deployments_workspace_created_idx ON deployments(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS assets_deployment_type_idx ON assets(deployment_id, asset_type);
 CREATE INDEX IF NOT EXISTS role_bindings_principal_idx ON role_bindings(workspace_id, principal_id);
+CREATE UNIQUE INDEX IF NOT EXISTS role_bindings_principal_unique_idx
+  ON role_bindings(workspace_id, role_id, principal_id)
+  WHERE principal_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS role_bindings_group_unique_idx
+  ON role_bindings(workspace_id, role_id, group_id)
+  WHERE group_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions(token_hash);

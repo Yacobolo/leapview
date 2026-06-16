@@ -47,6 +47,7 @@ Production mode serves the active deployed BI-as-code bundle from `.libredash` b
 ```sh
 export LIBREDASH_PRODUCTION=1
 export LIBREDASH_API_TOKEN_ONLY_AUTH=1 # or configure Azure below
+export LIBREDASH_CSRF_KEY=<32+ byte secret>
 libredash serve --production
 libredash admin bootstrap
 libredash deploy --target http://localhost:8080 --token <token> --catalog dashboards/catalog.yaml
@@ -63,6 +64,7 @@ LIBREDASH_AZURE_CLIENT_SECRET=...
 LIBREDASH_AZURE_CALLBACK_URL=https://your-host/auth/azureadv2/callback
 LIBREDASH_AZURE_TENANT=...
 LIBREDASH_CSRF_KEY=<32+ byte secret>
+LIBREDASH_COOKIE_SECURE=true
 ```
 
 ## Test
