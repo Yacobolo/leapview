@@ -328,7 +328,7 @@ func TestMetricsRouteRendersMetricViewCatalog(t *testing.T) {
 	if !strings.Contains(body, `Orders Metrics`) {
 		t.Fatalf("metric view catalog missing metric view card:\n%s", body)
 	}
-	if !strings.Contains(body, `href="/metrics/orders"`) {
+	if !strings.Contains(body, `href="/metrics/orders/measures"`) {
 		t.Fatalf("metric view catalog missing detail link:\n%s", body)
 	}
 	if !strings.Contains(body, `Metric Views`) || !strings.Contains(body, `/metrics`) {
@@ -336,8 +336,22 @@ func TestMetricsRouteRendersMetricViewCatalog(t *testing.T) {
 	}
 }
 
-func TestMetricViewRouteRendersMetricViewDetail(t *testing.T) {
+func TestMetricViewRouteRedirectsToMeasures(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/metrics/orders", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+	if got, want := rec.Header().Get("Location"), "/metrics/orders/measures"; got != want {
+		t.Fatalf("Location = %q, want %q", got, want)
+	}
+}
+
+func TestMetricViewMeasuresRouteRendersMeasuresTab(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/metrics/orders/measures", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -349,24 +363,106 @@ func TestMetricViewRouteRendersMetricViewDetail(t *testing.T) {
 	for _, want := range []string{
 		`Orders Metrics`,
 		`href="/models/test"`,
-		`>Dataset</span><code>orders</code>`,
-		`>Timeseries</span><code>purchase_timestamp</code>`,
-		`<h2>Measures</h2>`,
-		`<h2>Dimensions</h2>`,
-		`Category`,
-		`e.category`,
+		`<code>orders</code>`,
+		`<code>purchase_timestamp</code>`,
+		`href="/metrics/orders/measures"`,
+		`href="/metrics/orders/dimensions"`,
+		`href="/metrics/orders/usage"`,
+		`aria-current="page"`,
+		`>Measures</h2>`,
 		`Revenue`,
 		`SUM(e.revenue)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metric view measures tab missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `metric-contract-rail`) || strings.Contains(body, `metric-rail-section`) {
+		t.Fatalf("metric view detail should not render the old right rail:\n%s", body)
+	}
+	for _, notWant := range []string{`>Dimensions</h2>`, `>Used by</h2>`, `metricUsageGraph`, `data-signals=`, `<ld-metric-usage-graph`} {
+		if strings.Contains(body, notWant) {
+			t.Fatalf("metric view measures tab should not render %q:\n%s", notWant, body)
+		}
+	}
+}
+
+func TestMetricViewDimensionsRouteRendersDimensionsTab(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/metrics/orders/dimensions", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`>Dimensions</h2>`,
+		`aria-current="page"`,
+		`Category`,
+		`e.category`,
+		`Delivery speed`,
+		`e.delivery_bucket IS NOT NULL`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metric view dimensions tab missing %q:\n%s", want, body)
+		}
+	}
+	for _, notWant := range []string{`>Measures</h2>`, `>Used by</h2>`, `SUM(e.revenue)`, `<ld-metric-usage-graph`} {
+		if strings.Contains(body, notWant) {
+			t.Fatalf("metric view dimensions tab should not render %q:\n%s", notWant, body)
+		}
+	}
+}
+
+func TestMetricViewUsageRouteRendersUsageTab(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/metrics/orders/usage", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`>Used by</h2>`,
+		`aria-current="page"`,
+		`data-signals=`,
+		`metricUsageGraph`,
+		`<ld-metric-usage-graph data-attr:graph="$metricUsageGraph"></ld-metric-usage-graph>`,
+		`<th>Dashboard</th>`,
+		`<th>Tags</th>`,
 		`href="/dashboards/executive-sales"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("metric view detail missing %q:\n%s", want, body)
+			t.Fatalf("metric view usage tab missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `data-graph=`) {
+		t.Fatalf("metric view detail should use signals instead of a serialized data-graph attribute:\n%s", body)
+	}
+	for _, notWant := range []string{`>Measures</h2>`, `>Dimensions</h2>`, `SUM(e.revenue)`, `e.category`} {
+		if strings.Contains(body, notWant) {
+			t.Fatalf("metric view usage tab should not render %q:\n%s", notWant, body)
 		}
 	}
 }
 
 func TestUnknownMetricViewRouteReturnsNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/metrics/missing", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestUnknownMetricViewSectionRouteReturnsNotFound(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/metrics/orders/missing", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)

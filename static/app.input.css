@@ -389,57 +389,114 @@
     align-self: start;
   }
 
-  .metric-summary-strip {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+  .metric-metadata-bar {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
     border: 1px solid var(--borderColor-default);
     border-radius: 6px;
-    background: var(--bgColor-default);
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--fgColor-accent), transparent 94%), transparent 46%),
+      var(--bgColor-default);
     box-shadow: var(--shadow-resting-small);
-    overflow: hidden;
-  }
-
-  .metric-summary-item {
-    display: grid;
-    gap: 5px;
-    min-width: 0;
-    border-left: 1px solid var(--borderColor-muted);
     padding: 12px 14px;
   }
 
-  .metric-summary-item:first-child {
-    border-left: 0;
+  .metric-metadata-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
   }
 
-  .metric-summary-item > span,
-  .metric-rail-row > span {
+  .metric-metadata-item {
+    display: inline-flex;
+    min-height: 27px;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--borderColor-muted);
+    border-radius: 999px;
+    background: var(--bgColor-muted);
+    padding: 0 9px;
+  }
+
+  .metric-metadata-item > span {
     color: var(--fgColor-muted);
     font-size: 0.62rem;
     font-weight: 900;
     text-transform: uppercase;
   }
 
-  .metric-summary-item a,
-  .metric-summary-item strong,
-  .metric-summary-item code,
-  .metric-rail-row a,
-  .metric-rail-row strong,
-  .metric-rail-row code {
-    overflow: hidden;
-    color: var(--fgColor-default);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.8rem;
-    font-weight: 850;
+  .metric-metadata-item a {
+    color: var(--fgColor-accent);
     text-decoration: none;
   }
 
-  .metric-contract-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 18px;
-    align-items: start;
-    min-width: 0;
+  .metric-metadata-item a,
+  .metric-metadata-item code {
+    color: var(--fgColor-default);
+    font-size: 0.76rem;
+    font-weight: 800;
+  }
+
+  .metric-count-pills {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: end;
+    gap: 7px;
+  }
+
+  .metric-count-pill {
+    display: inline-flex;
+    min-height: 26px;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--borderColor-muted);
+    border-radius: 999px;
+    background: var(--bgColor-muted);
+    color: var(--fgColor-muted);
+    padding: 0 9px;
+    font-size: 0.68rem;
+    font-weight: 850;
+  }
+
+  .metric-count-pill svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .metric-count-pill strong {
+    color: var(--fgColor-default);
+  }
+
+  .metric-count-pill-measure {
+    border-color: color-mix(in srgb, var(--fgColor-success), transparent 62%);
+    background: color-mix(in srgb, var(--fgColor-success), transparent 91%);
+  }
+
+  .metric-count-pill-measure svg {
+    color: var(--fgColor-success);
+  }
+
+  .metric-count-pill-dimension {
+    border-color: color-mix(in srgb, var(--fgColor-accent), transparent 62%);
+    background: color-mix(in srgb, var(--fgColor-accent), transparent 91%);
+  }
+
+  .metric-count-pill-dimension svg {
+    color: var(--fgColor-accent);
+  }
+
+  .metric-count-pill-dashboard {
+    border-color: color-mix(in srgb, var(--fgColor-attention), transparent 62%);
+    background: color-mix(in srgb, var(--fgColor-attention), transparent 91%);
+  }
+
+  .metric-count-pill-dashboard svg {
+    color: var(--fgColor-attention);
   }
 
   .metric-contract-main {
@@ -448,9 +505,59 @@
     min-width: 0;
   }
 
+  .metric-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    border: 1px solid var(--borderColor-default);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bgColor-default), transparent 4%);
+    box-shadow: var(--shadow-resting-small);
+    padding: 7px;
+  }
+
+  .metric-tabs a {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--fgColor-default);
+    padding: 0 10px;
+    font-size: 0.78rem;
+    font-weight: 850;
+    text-decoration: none;
+  }
+
+  .metric-tabs a:hover,
+  .metric-tabs a:focus-visible {
+    border-color: var(--borderColor-muted);
+    background: var(--bgColor-muted);
+    outline: 0;
+  }
+
+  .metric-tabs a[aria-current="page"] {
+    border-color: var(--borderColor-accent-muted);
+    background: var(--bgColor-accent-muted);
+    color: var(--fgColor-accent);
+  }
+
+  .metric-tabs svg {
+    width: 14px;
+    height: 14px;
+    color: var(--fgColor-muted);
+  }
+
+  .metric-tabs a[aria-current="page"] svg {
+    color: currentColor;
+  }
+
   .metric-contract-section {
     display: grid;
-    gap: 12px;
     min-width: 0;
     border: 1px solid var(--borderColor-default);
     border-radius: 6px;
@@ -459,11 +566,95 @@
     overflow: hidden;
   }
 
-  .metric-section-header {
-    display: grid;
-    gap: 4px;
+  .metric-contract-section-measures {
+    border-top: 3px solid var(--fgColor-success);
+  }
+
+  .metric-contract-section-dimensions {
+    border-top: 3px solid var(--fgColor-accent);
+  }
+
+  .metric-contract-section-usage {
+    border-top: 3px solid var(--fgColor-attention);
+  }
+
+  ld-metric-usage-graph {
+    display: block;
+    min-width: 0;
+    min-height: 280px;
     border-bottom: 1px solid var(--borderColor-muted);
-    padding: 16px 18px 14px;
+  }
+
+  ld-metric-usage-graph .metric-usage-flow {
+    height: 280px;
+    min-width: 0;
+    background:
+      linear-gradient(var(--bgColor-default), var(--bgColor-default)),
+      radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fgColor-muted), transparent 87%) 1px, transparent 0);
+    background-size: auto, 18px 18px;
+  }
+
+  ld-metric-usage-graph .react-flow {
+    color: var(--fgColor-default);
+  }
+
+  ld-metric-usage-graph .react-flow__attribution {
+    display: none;
+  }
+
+  ld-metric-usage-graph .react-flow__controls {
+    border: 1px solid var(--borderColor-default);
+    background: var(--bgColor-default);
+    box-shadow: var(--shadow-resting-small);
+  }
+
+  ld-metric-usage-graph .react-flow__controls-button {
+    border-bottom-color: var(--borderColor-muted);
+    background: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+
+  ld-metric-usage-graph .metric-usage-node {
+    width: 190px;
+    border: 1px solid var(--usage-node-border);
+    border-left: 4px solid var(--usage-node-accent);
+    border-radius: 6px;
+    background: var(--usage-node-bg);
+    box-shadow: var(--shadow-resting-small);
+    color: var(--fgColor-default);
+    padding: 9px 10px;
+  }
+
+  ld-metric-usage-graph .metric-usage-node-kind {
+    color: var(--fgColor-muted);
+    font-size: 0.58rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  ld-metric-usage-graph .metric-usage-node-title {
+    overflow: hidden;
+    margin-top: 3px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.15;
+  }
+
+  ld-metric-usage-graph .metric-usage-node-meta {
+    overflow: hidden;
+    margin-top: 5px;
+    color: var(--fgColor-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.68rem;
+    font-weight: 750;
+  }
+
+  .metric-section-header {
+    border-bottom: 1px solid var(--borderColor-muted);
+    padding: 14px 18px;
   }
 
   .metric-section-header h2 {
@@ -472,14 +663,6 @@
     font-size: 1.05rem;
     line-height: 1.15;
     font-weight: 850;
-  }
-
-  .metric-section-header p:last-child {
-    margin: 0;
-    color: var(--fgColor-muted);
-    font-size: 0.78rem;
-    line-height: 1.4;
-    font-weight: 650;
   }
 
   .metric-table-wrap {
@@ -521,8 +704,7 @@
   }
 
   .metric-field-table code,
-  .metric-summary-item code,
-  .metric-rail-row code {
+  .metric-metadata-item code {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   }
 
@@ -545,6 +727,42 @@
     white-space: normal;
     font-size: 0.76rem;
     font-weight: 800;
+  }
+
+  .metric-field-chip {
+    display: inline-flex;
+    min-height: 22px;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    padding: 0 8px;
+    font-size: 0.66rem;
+    font-weight: 850;
+  }
+
+  .metric-field-chip svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .metric-field-chip-unit {
+    border: 1px solid color-mix(in srgb, var(--fgColor-success), transparent 64%);
+    background: color-mix(in srgb, var(--fgColor-success), transparent 91%);
+    color: var(--fgColor-default);
+  }
+
+  .metric-field-chip-unit svg {
+    color: var(--fgColor-success);
+  }
+
+  .metric-field-chip-format {
+    border: 1px solid color-mix(in srgb, var(--fgColor-accent), transparent 64%);
+    background: color-mix(in srgb, var(--fgColor-accent), transparent 91%);
+    color: var(--fgColor-default);
+  }
+
+  .metric-field-chip-format svg {
+    color: var(--fgColor-accent);
   }
 
   .metric-field-table th:nth-child(1),
@@ -576,91 +794,36 @@
     width: 150px;
   }
 
-  .metric-contract-rail {
-    position: sticky;
-    top: 16px;
-    display: grid;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .metric-rail-section {
-    display: grid;
-    gap: 10px;
-    border: 1px solid var(--borderColor-default);
-    border-radius: 6px;
-    background: var(--bgColor-default);
-    box-shadow: var(--shadow-resting-small);
-    padding: 14px;
-  }
-
-  .metric-rail-section h2 {
-    margin: 0;
-    color: var(--fgColor-default);
-    font-size: 0.88rem;
-    line-height: 1.15;
+  .metric-table-link {
+    color: var(--fgColor-accent);
     font-weight: 850;
-  }
-
-  .metric-section-nav a {
-    color: var(--fgColor-default);
-    font-size: 0.8rem;
-    font-weight: 750;
     text-decoration: none;
   }
 
-  .metric-section-nav a:hover,
-  .metric-section-nav a:focus-visible,
-  .metric-dashboard-link:hover,
-  .metric-dashboard-link:focus-visible {
-    color: var(--fgColor-accent);
+  .metric-table-link:hover,
+  .metric-table-link:focus-visible {
+    text-decoration: underline;
     outline: 0;
   }
 
-  .metric-rail-row {
-    display: grid;
-    gap: 4px;
-    min-width: 0;
-    border-top: 1px solid var(--borderColor-muted);
-    padding-top: 9px;
+  .metric-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
   }
 
-  .metric-rail-row:nth-child(2) {
-    border-top: 0;
-    padding-top: 0;
-  }
-
-  .metric-dashboard-link {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 8px;
+  .metric-tag-list span {
+    display: inline-flex;
+    min-height: 21px;
     align-items: center;
-    border-top: 1px solid var(--borderColor-muted);
-    padding-top: 10px;
-    color: var(--fgColor-default);
-    text-decoration: none;
-  }
-
-  .metric-dashboard-link span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.8rem;
-    font-weight: 850;
-  }
-
-  .metric-dashboard-link small {
-    grid-column: 1;
+    border: 1px solid var(--borderColor-muted);
+    border-radius: 999px;
+    background: var(--bgColor-muted);
     color: var(--fgColor-muted);
-    font-size: 0.68rem;
-    font-weight: 800;
-  }
-
-  .metric-dashboard-link svg {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    width: 14px;
-    height: 14px;
+    padding: 0 7px;
+    font-size: 0.64rem;
+    font-weight: 850;
+    text-transform: uppercase;
   }
 
   .metric-empty {
@@ -1569,19 +1732,13 @@
       padding: 12px;
     }
 
-    .metric-summary-strip,
-    .metric-contract-rail {
-      grid-template-columns: 1fr;
+    .metric-metadata-bar {
+      align-items: stretch;
+      flex-direction: column;
     }
 
-    .metric-summary-item,
-    .metric-summary-item:nth-child(4) {
-      border-top: 1px solid var(--borderColor-muted);
-      border-left: 0;
-    }
-
-    .metric-summary-item:first-child {
-      border-top: 0;
+    .metric-count-pills {
+      justify-content: start;
     }
 
     .metric-field-table {

@@ -123,14 +123,28 @@ func (s *Server) metricsCatalog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) metricView(w http.ResponseWriter, r *http.Request) {
+	viewID := r.PathValue("view")
+	if _, ok := s.metrics.MetricView(viewID); !ok {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/metrics/"+viewID+"/measures", http.StatusFound)
+}
+
+func (s *Server) metricViewSection(w http.ResponseWriter, r *http.Request) {
 	view, ok := s.metrics.MetricView(r.PathValue("view"))
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
+	section := r.PathValue("section")
+	if !ui.ValidMetricViewSection(section) {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.MetricViewPage(s.metrics.Catalog(), view).Render(w); err != nil {
+	if err := ui.MetricViewPage(s.metrics.Catalog(), view, section).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
