@@ -67,6 +67,14 @@ LIBREDASH_CSRF_KEY=<32+ byte secret>
 LIBREDASH_COOKIE_SECURE=true
 ```
 
+LibreDash reads production secrets from environment variables. Infisical is the recommended production workflow, but any env-based secret manager works:
+
+```sh
+infisical run --env=prod -- libredash serve --production
+```
+
+Use `.env.example` as the list of required/common variables; do not commit real `.env` files.
+
 ## Test
 
 ```sh
