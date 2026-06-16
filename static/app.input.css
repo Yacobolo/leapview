@@ -393,7 +393,6 @@
   .metric-detail-header {
     display: grid;
     gap: 14px;
-    border-bottom: 1px solid var(--borderColor-default);
     padding-bottom: 18px;
   }
 
@@ -463,15 +462,18 @@
   }
 
   .metric-workspace {
+    --metric-detail-rail-width: 288px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 288px);
+    grid-template-columns: minmax(0, 1fr) var(--metric-detail-rail-width);
     gap: 0;
     min-height: 0;
     overflow: hidden;
+    transition: grid-template-columns 180ms var(--ld-ease-out);
   }
 
-  .metric-workspace[data-rail-collapsed] {
-    grid-template-columns: minmax(0, 1fr) 48px;
+  .metric-workspace[data-rail-collapsed],
+  :root[data-metric-detail-rail="collapsed"] .metric-workspace {
+    --metric-detail-rail-width: 48px;
   }
 
   .metric-content-column {
@@ -489,6 +491,7 @@
     align-content: start;
     min-width: 0;
     overflow: hidden;
+    border-top: 1px solid var(--borderColor-default);
     background: var(--report-workspace-bg);
   }
 
@@ -500,7 +503,6 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    border-bottom: 1px solid var(--borderColor-default);
     background: var(--report-workspace-bg);
     padding: 16px 18px;
   }
@@ -542,15 +544,22 @@
     outline: 0;
   }
 
-  .metric-workspace[data-rail-collapsed] .metric-info-header {
+  .metric-workspace[data-rail-collapsed] .metric-info-header,
+  :root[data-metric-detail-rail="collapsed"] .metric-workspace .metric-info-header {
     justify-content: center;
     border-bottom: 0;
     padding: 10px;
   }
 
   .metric-workspace[data-rail-collapsed] .metric-info-header h2,
-  .metric-workspace[data-rail-collapsed] .metric-info-body {
+  :root[data-metric-detail-rail="collapsed"] .metric-workspace .metric-info-header h2 {
     display: none;
+  }
+
+  .metric-workspace[data-rail-collapsed] .metric-info-body,
+  :root[data-metric-detail-rail="collapsed"] .metric-workspace .metric-info-body {
+    opacity: 0;
+    pointer-events: none;
   }
 
   .metric-info-header svg {
@@ -563,6 +572,8 @@
     display: grid;
     gap: 20px;
     padding: 18px;
+    opacity: 1;
+    transition: opacity 120ms var(--ld-ease-out);
   }
 
   .metric-info-group {
@@ -908,7 +919,6 @@
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    border-top: 1px solid var(--borderColor-default);
     overflow-x: auto;
   }
 
@@ -920,17 +930,17 @@
 
   .data-grid th,
   .data-grid td {
-    border-bottom: 1px solid var(--borderColor-muted);
-    padding: 11px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--borderColor-muted), transparent 28%);
+    padding: 10px 12px;
     text-align: left;
     vertical-align: top;
   }
 
   .data-grid th {
-    background: color-mix(in srgb, var(--bgColor-default), transparent 2%);
+    background: transparent;
     color: var(--fgColor-muted);
-    font-size: 0.62rem;
-    font-weight: 900;
+    font-size: 0.6rem;
+    font-weight: 850;
     letter-spacing: 0.03em;
     text-transform: uppercase;
   }
@@ -939,7 +949,7 @@
     color: var(--fgColor-default);
     font-size: 0.78rem;
     line-height: 1.4;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   .data-grid th.is-right,
@@ -956,7 +966,7 @@
   }
 
   .data-grid tbody tr:hover {
-    background: var(--bgColor-muted);
+    background: color-mix(in srgb, var(--bgColor-muted), transparent 58%);
   }
 
   .data-grid-sort {
@@ -999,15 +1009,12 @@
     display: inline-flex;
     max-width: 100%;
     overflow: hidden;
-    border: 1px solid var(--borderColor-muted);
-    border-radius: 4px;
-    background: var(--bgColor-muted);
-    color: var(--fgColor-muted);
-    padding: 2px 6px;
+    color: var(--fgColor-default);
+    padding: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.72rem;
-    font-weight: 800;
+    font-size: 0.78rem;
+    font-weight: 700;
   }
 
   .grid-expression {
@@ -1017,7 +1024,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.76rem;
-    font-weight: 800;
+    font-weight: 650;
   }
 
   .grid-badge {
@@ -2041,11 +2048,13 @@
       grid-template-columns: 1fr;
     }
 
-    .metric-workspace[data-rail-collapsed] {
+    .metric-workspace[data-rail-collapsed],
+    :root[data-metric-detail-rail="collapsed"] .metric-workspace {
       grid-template-columns: 1fr;
     }
 
-    .metric-workspace[data-rail-collapsed] .metric-info-sidebar {
+    .metric-workspace[data-rail-collapsed] .metric-info-sidebar,
+    :root[data-metric-detail-rail="collapsed"] .metric-workspace .metric-info-sidebar {
       display: none;
     }
 

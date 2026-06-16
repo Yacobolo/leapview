@@ -613,6 +613,10 @@ func metricViewSignals(view dashboard.MetricViewDetail, activeSection string) ma
 	return signals
 }
 
+func metricDetailRailStateScript() g.Node {
+	return h.Script(g.Raw(`try{if(window.localStorage.getItem("libredash.metricDetailRail")==="collapsed"){document.documentElement.setAttribute("data-metric-detail-rail","collapsed")}}catch(e){}`))
+}
+
 func displayLabel(label, fallback string) string {
 	if strings.TrimSpace(label) != "" {
 		return label
@@ -642,6 +646,7 @@ func MetricViewPage(catalog dashboard.Catalog, view dashboard.MetricViewDetail, 
 			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
+			metricDetailRailStateScript(),
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			g.If(activeSection == "usage", h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/metric-usage-graph.css")))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),

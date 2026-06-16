@@ -33,6 +33,11 @@ class DetailRail extends HTMLElement {
 
   private sync(): void {
     this.toggleAttribute('data-rail-collapsed', this.collapsed)
+    if (this.collapsed) {
+      document.documentElement.setAttribute('data-metric-detail-rail', 'collapsed')
+    } else {
+      document.documentElement.removeAttribute('data-metric-detail-rail')
+    }
     if (!this.button) return
     this.button.setAttribute('aria-expanded', String(!this.collapsed))
     this.button.setAttribute('aria-label', this.collapsed ? 'Expand details' : 'Collapse details')
