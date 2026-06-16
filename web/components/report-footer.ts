@@ -38,10 +38,10 @@ class ReportFooter extends LitElement {
       height: 32px;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 12px;
       border-top: 1px solid var(--borderColor-muted);
       box-sizing: border-box;
-      padding: 0 24px;
+      padding: 0 18px;
     }
 
     .status {
@@ -72,10 +72,10 @@ class ReportFooter extends LitElement {
     }
 
     ld-report-zoom {
-      flex: 0 0 auto;
+      flex: 0 1 auto;
     }
 
-    @media (max-width: 860px) {
+    @media (max-width: 560px) {
       footer {
         height: auto;
         min-height: 32px;

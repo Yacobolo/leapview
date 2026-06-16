@@ -19,6 +19,10 @@ func updateAction(dashboardID, pageID string) string {
 	return "@get('/updates?dashboard=" + dashboardID + "&page=" + pageID + "', {openWhenHidden: true})"
 }
 
+func staticAsset(path string) string {
+	return path + "?v=dev"
+}
+
 func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
@@ -39,20 +43,20 @@ func Page(dataDir, clientID string, catalog dashboard.Catalog, report semantic.D
 			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
-			h.Script(h.Type("module"), h.Src("/static/theme.js")),
-			h.Script(h.Type("module"), h.Src("/static/url-sync.js")),
-			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
-			h.Script(h.Type("module"), h.Src("/static/report-sidebar.js")),
-			h.Script(h.Type("module"), h.Src("/static/filter-dock.js")),
-			h.Script(h.Type("module"), h.Src("/static/filter-panel.js")),
-			h.Script(h.Type("module"), h.Src("/static/filter-card.js")),
-			h.Script(h.Type("module"), h.Src("/static/report-canvas.js")),
-			h.Script(h.Type("module"), h.Src("/static/report-footer.js")),
-			h.Script(h.Type("module"), h.Src("/static/charts.js")),
-			h.Script(h.Type("module"), h.Src("/static/table.js")),
-			h.Script(h.Type("module"), h.Src("/static/visual-modal.js")),
-			h.Script(h.Type("module"), h.Src("/static/datastar-inspector.js")),
+			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/report-sidebar.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/filter-dock.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/filter-panel.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/filter-card.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/report-canvas.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/report-footer.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/charts.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/table.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/visual-modal.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/datastar-inspector.js"))),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		},
 		Body: []g.Node{
@@ -105,9 +109,9 @@ func CatalogPage(catalog dashboard.Catalog) g.Node {
 			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
-			h.Script(h.Type("module"), h.Src("/static/theme.js")),
-			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
+			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 		},
 		Body: []g.Node{
 			h.Main(h.Class("report-app"),
@@ -144,9 +148,9 @@ func ModelsPage(catalog dashboard.Catalog) g.Node {
 			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
-			h.Script(h.Type("module"), h.Src("/static/theme.js")),
-			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
+			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 		},
 		Body: []g.Node{
 			h.Main(h.Class("report-app"),
@@ -222,11 +226,11 @@ func ModelPage(catalog dashboard.Catalog, model dashboard.ModelGraph) g.Node {
 			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
 			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href("/static/app.css")),
-			h.Link(h.Rel("stylesheet"), h.Href("/static/model-graph.css")),
-			h.Script(h.Type("module"), h.Src("/static/theme.js")),
-			h.Script(h.Type("module"), h.Src("/static/sidebar.js")),
-			h.Script(h.Type("module"), h.Src("/static/model-graph.js")),
+			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
+			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/model-graph.css"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/model-graph.js"))),
 		},
 		Body: []g.Node{
 			h.Main(

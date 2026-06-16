@@ -51,9 +51,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /commands/clear-selection", s.clearSelection)
 	mux.HandleFunc("POST /commands/reset-filters", s.resetFilters)
 	mux.HandleFunc("POST /commands/refresh-cache", s.refreshCache)
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.Handle("GET /static/", noCache(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 
 	return mux
+}
+
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {

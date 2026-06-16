@@ -851,30 +851,23 @@ var ReportZoom = class extends i4 {
 
     .zoom {
       display: inline-grid;
-      grid-template-columns: auto auto minmax(132px, 190px) auto auto;
+      grid-template-columns: auto auto minmax(86px, 176px) auto auto;
       align-items: center;
-      overflow: hidden;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 5px;
-      background: var(--report-panel, var(--card-bgColor, var(--bgColor-default)));
+      min-height: 32px;
     }
 
     button {
       display: grid;
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       place-items: center;
       border: 0;
-      border-left: 1px solid var(--borderColor-muted);
+      border-radius: 5px;
       background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
       padding: 0;
       font: inherit;
-    }
-
-    button:first-child {
-      border-left: 0;
     }
 
     button:hover,
@@ -885,8 +878,8 @@ var ReportZoom = class extends i4 {
     }
 
     button[aria-pressed='true'] {
-      background: var(--ld-accent);
-      color: var(--ld-accent-fg);
+      background: color-mix(in srgb, var(--fgColor-accent), transparent 86%);
+      color: var(--fgColor-accent);
     }
 
     svg {
@@ -900,26 +893,84 @@ var ReportZoom = class extends i4 {
     }
 
     input {
+      appearance: none;
       width: 100%;
       min-width: 0;
-      accent-color: var(--ld-accent);
+      height: 16px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    input::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--borderColor-muted);
+    }
+
+    input::-webkit-slider-thumb {
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      margin-top: -4px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 999px;
+      background: var(--fgColor-muted);
+    }
+
+    input::-moz-range-track {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--borderColor-muted);
+    }
+
+    input::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border: 1px solid var(--borderColor-default);
+      border-radius: 999px;
+      background: var(--fgColor-muted);
+    }
+
+    input:focus-visible {
+      outline: 0;
+    }
+
+    input:focus-visible::-webkit-slider-thumb {
+      outline: 2px solid var(--borderColor-accent-muted);
+      outline-offset: 2px;
+    }
+
+    input:focus-visible::-moz-range-thumb {
+      outline: 2px solid var(--borderColor-accent-muted);
+      outline-offset: 2px;
     }
 
     .slider {
       display: grid;
       min-width: 0;
-      border-left: 1px solid var(--borderColor-muted);
-      padding: 0 8px;
+      margin-inline: 6px;
+      padding-inline: 10px;
+      border-inline: 1px solid var(--borderColor-muted);
     }
 
     .percent {
-      min-width: 45px;
-      border-left: 1px solid var(--borderColor-muted);
+      min-width: 38px;
       color: var(--fgColor-muted);
       text-align: center;
       font-size: 0.7rem;
       font-weight: 850;
       white-space: nowrap;
+    }
+
+    @media (max-width: 700px) {
+      .zoom {
+        grid-template-columns: auto auto minmax(64px, 112px) auto auto;
+      }
+
+      .slider {
+        margin-inline: 4px;
+        padding-inline: 7px;
+      }
     }
   `;
   }
