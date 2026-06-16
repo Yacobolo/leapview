@@ -9,6 +9,10 @@ import (
 
 func (s *Server) Routes() http.Handler {
 	mux := chi.NewRouter()
+	if s.requestLogging {
+		mux.Use(requestLogger(s.logger))
+	}
+	mux.Use(securityHeaders(s.securityHeaders))
 	mux.Group(func(r chi.Router) {
 		r.Use(s.csrf)
 		r.Get("/", s.protected(platform.PermissionDashboardView, s.home))
@@ -16,7 +20,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/dashboards/{dashboard}/pages/{page}", s.protected(platform.PermissionDashboardView, s.page))
 		r.Get("/models", s.protected(platform.PermissionDashboardView, s.models))
 		r.Get("/models/{model}", s.protected(platform.PermissionDashboardView, s.model))
-		r.Get("/updates", s.protected(platform.PermissionDashboardView, s.updates))
+		r.With(s.rateLimits.updatesMiddleware()).Get("/updates", s.protected(platform.PermissionDashboardView, s.updates))
 		r.Post("/commands/table-window", s.protected(platform.PermissionDashboardView, s.tableWindow))
 		r.Post("/commands/chart-select", s.protected(platform.PermissionDashboardView, s.chartSelect))
 		r.Post("/commands/clear-selection", s.protected(platform.PermissionDashboardView, s.clearSelection))
@@ -24,10 +28,14 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/commands/refresh-cache", s.protected(platform.PermissionCacheRefresh, s.refreshCache))
 		r.Post("/auth/logout", s.authLogout)
 	})
-	mux.Get("/auth/{provider}", s.authBegin)
-	mux.Get("/auth/{provider}/callback", s.authCallback)
+	mux.Group(func(r chi.Router) {
+		r.Use(s.rateLimits.authMiddleware())
+		r.Get("/auth/{provider}", s.authBegin)
+		r.Get("/auth/{provider}/callback", s.authCallback)
+	})
 	if s.store != nil {
 		mux.Route("/api", func(r chi.Router) {
+			r.Use(s.rateLimits.apiMiddleware())
 			r.Use(s.csrf)
 			r.Post("/deployments", s.protected(platform.PermissionDeploymentCreate, s.createDeployment))
 			r.Get("/deployments", s.protected(platform.PermissionDeploymentCreate, s.listDeployments))

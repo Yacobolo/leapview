@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
+	"github.com/gorilla/sessions"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
 	"github.com/markbates/goth/providers/azureadv2"
@@ -70,6 +72,7 @@ func NewAuth(store *platform.Store, workspaceID string, cfg AuthConfig) *Auth {
 			http.Error(w, csrf.FailureReason(r).Error(), http.StatusForbidden)
 		})),
 	)
+	gothic.Store = gothCookieStore(cfg.CSRFKey, cfg.CookieSecure)
 	auth.enabled = true
 	return auth
 }
@@ -276,4 +279,24 @@ func csrfKey(value string) []byte {
 	key := make([]byte, 32)
 	copy(key, []byte(seed))
 	return key
+}
+
+func gothCookieStore(secret string, secure bool) *sessions.CookieStore {
+	signingKey := derivedSecret(secret, "goth-signing")
+	encryptionKey := derivedSecret(secret, "goth-encryption")
+	store := sessions.NewCookieStore(signingKey, encryptionKey)
+	store.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   10 * 60,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return store
+}
+
+func derivedSecret(secret, purpose string) []byte {
+	base := csrfKey(secret)
+	sum := sha256.Sum256(append([]byte("libredash:"+purpose+":"), base...))
+	return sum[:]
 }

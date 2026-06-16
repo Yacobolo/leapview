@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -57,7 +57,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		}
 		defer metrics.Close()
 		server := app.New(metrics)
-		log.Printf("LibreDash listening on http://localhost%s", addr)
+		slog.Info("LibreDash listening", "url", "http://localhost"+addr)
 		return http.ListenAndServe(addr, server.Routes())
 	}
 
@@ -100,13 +100,19 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		CookieSecure:    cookieSecure,
 		BootstrapTenant: cfg.AzureTenant,
 	})
+	rateLimits := app.ProductionRateLimitConfig()
+	rateLimits.Enabled = cfg.RateLimitingEnabled()
 	server := app.NewWithOptions(manager, app.Options{
 		Store:              store,
 		Auth:               auth,
 		Reloader:           manager,
 		ArtifactDir:        cfg.ArtifactDir(),
 		DefaultWorkspaceID: opts.workspaceID,
+		RateLimits:         rateLimits,
+		SecurityHeaders:    app.SecurityHeaders(cfg.HSTSEnabled(cookieSecure)),
+		RequestLogging:     cfg.RequestLoggingEnabled(),
+		Logger:             slog.Default(),
 	})
-	log.Printf("LibreDash listening on http://localhost%s", addr)
+	slog.Info("LibreDash listening", "url", "http://localhost"+addr)
 	return http.ListenAndServe(addr, server.Routes())
 }

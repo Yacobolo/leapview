@@ -75,6 +75,8 @@ infisical run --env=prod -- libredash serve --production
 
 Use `.env.example` as the list of required/common variables; do not commit real `.env` files.
 
+Production serve enables structured request logs, security headers, rate limits, and OAuth state cookies derived from `LIBREDASH_CSRF_KEY`.
+
 ## Test
 
 ```sh

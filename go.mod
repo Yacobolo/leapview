@@ -6,7 +6,9 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/eduardolat/gomponents-lucide v1.5.0
 	github.com/go-chi/chi/v5 v5.2.2
+	github.com/go-chi/httprate v0.15.0
 	github.com/gorilla/csrf v1.7.3
+	github.com/gorilla/sessions v1.4.0
 	github.com/marcboeker/go-duckdb/v2 v2.4.3
 	github.com/markbates/goth v1.82.0
 	github.com/pressly/goose/v3 v3.27.1
@@ -36,7 +38,6 @@ require (
 	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/mux v1.6.2 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
-	github.com/gorilla/sessions v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect

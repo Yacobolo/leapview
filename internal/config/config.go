@@ -124,3 +124,15 @@ func (c Config) ValidateProductionAuth() error {
 	}
 	return nil
 }
+
+func (c Config) RequestLoggingEnabled() bool {
+	return c.Production
+}
+
+func (c Config) RateLimitingEnabled() bool {
+	return c.Production
+}
+
+func (c Config) HSTSEnabled(cookieSecure bool) bool {
+	return c.Production && cookieSecure
+}

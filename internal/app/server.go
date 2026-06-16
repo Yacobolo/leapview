@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -39,10 +40,14 @@ type Server struct {
 	reloader           runtimeReloader
 	artifactDir        string
 	defaultWorkspaceID string
+	rateLimits         RateLimitConfig
+	securityHeaders    SecurityHeadersConfig
+	requestLogging     bool
+	logger             *slog.Logger
 }
 
 func New(metrics queryMetrics) *Server {
-	return &Server{metrics: metrics, broker: newBroker()}
+	return &Server{metrics: metrics, broker: newBroker(), logger: slog.Default()}
 }
 
 type Options struct {
@@ -51,6 +56,10 @@ type Options struct {
 	Reloader           runtimeReloader
 	ArtifactDir        string
 	DefaultWorkspaceID string
+	RateLimits         RateLimitConfig
+	SecurityHeaders    SecurityHeadersConfig
+	RequestLogging     bool
+	Logger             *slog.Logger
 }
 
 func NewWithOptions(metrics queryMetrics, options Options) *Server {
@@ -60,6 +69,12 @@ func NewWithOptions(metrics queryMetrics, options Options) *Server {
 	server.reloader = options.Reloader
 	server.artifactDir = options.ArtifactDir
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
+	server.rateLimits = options.RateLimits
+	server.securityHeaders = options.SecurityHeaders
+	server.requestLogging = options.RequestLogging
+	if options.Logger != nil {
+		server.logger = options.Logger
+	}
 	return server
 }
 
