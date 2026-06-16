@@ -73,7 +73,6 @@ class DataTable extends LitElement {
     selectedRowId: { state: true },
     selectedCellKey: { state: true },
     viewportTop: { state: true },
-    viewportLeft: { state: true },
     viewportHeight: { state: true },
     columnVisibility: { state: true },
     columnSizing: { state: true },
@@ -85,7 +84,6 @@ class DataTable extends LitElement {
   private selectedRowId = ''
   private selectedCellKey = ''
   private viewportTop = 0
-  private viewportLeft = 0
   private viewportHeight = 0
   private columnVisibility: ColumnVisibilityState = {}
   private columnSizing: ColumnSizingState = {}
@@ -300,18 +298,6 @@ class DataTable extends LitElement {
       min-width: 1080px;
     }
 
-    .header-clip {
-      flex: 0 0 auto;
-      overflow: hidden;
-      background: var(--bgColor-muted);
-    }
-
-    .header-track {
-      min-width: 1080px;
-      transform: translateX(calc(-1 * var(--ld-scroll-left, 0px)));
-      will-change: transform;
-    }
-
     .group-head {
       border-bottom: 1px solid var(--borderColor-default);
       background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
@@ -381,11 +367,6 @@ class DataTable extends LitElement {
 
     .group-head .group-cell.row-header {
       background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
-    }
-
-    .header-track .row-header {
-      transform: translateX(var(--ld-scroll-left, 0px));
-      will-change: transform;
     }
 
     .header-cell:last-child {
@@ -469,6 +450,19 @@ class DataTable extends LitElement {
       min-height: 0;
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       scrollbar-gutter: stable;
+    }
+
+    .table-plane {
+      position: relative;
+      min-width: 1080px;
+    }
+
+    .sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 8;
+      min-width: 1080px;
+      background: var(--bgColor-muted);
     }
 
     .canvas {
@@ -881,7 +875,7 @@ class DataTable extends LitElement {
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading
 
     return html`
-      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px;--ld-scroll-left:${this.viewportLeft}px`}>
+      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? 'Orders'}</h2>
@@ -913,105 +907,105 @@ class DataTable extends LitElement {
           </details>
         </div>
         ${this.table?.error ? html`<div class="error">${this.table.error}</div>` : nothing}
-        <div class="header-clip" aria-hidden="false">
-          <div class="header-track">
-            ${groupHeaders.length ? html`
-              <div class="group-head" role="row">
-                ${groupHeaders.map((group) => html`
-                  <div
-                    class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
-                    role="columnheader"
-                    style=${`grid-column:span ${group.span}`}
-                  >
-                    ${group.label}
-                  </div>
-                `)}
-              </div>
-            ` : nothing}
-            <div class="head" role="row">
-              ${headers.map((header: any) => {
-                const column = this.columns.find((item) => item.key === header.column.id)
-                if (!column) return nothing
-                const sorted = this.table?.sort?.key === header.column.id
-                const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
-                return html`
-                  <div class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`} role="columnheader">
-                    <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
-                      <span>${FlexRender({ header })}</span>
-                      <span class="sort">${sortMark}</span>
-                    </button>
-                    ${header.column.getCanResize?.() ? html`
-                      <span
-                        class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
-                        @mousedown=${header.getResizeHandler?.()}
-                        @touchstart=${header.getResizeHandler?.()}
-                      ></span>
-                    ` : nothing}
-                  </div>
-                `
-              })}
-            </div>
-          </div>
-        </div>
         <div class="viewport" ${ref(this.scrollElementRef)} @scroll=${this.handleScroll} role="table" aria-label=${this.table?.title ?? 'Orders'}>
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
           ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
-            <div class="canvas" style=${`height:${totalHeight}px`}>
-              ${visibleRows.map((slot) => {
-                if (slot.kind === 'skeleton') {
+            <div class="table-plane">
+              <div class="sticky-header">
+                ${groupHeaders.length ? html`
+                  <div class="group-head" role="row">
+                    ${groupHeaders.map((group) => html`
+                      <div
+                        class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
+                        role="columnheader"
+                        style=${`grid-column:span ${group.span}`}
+                      >
+                        ${group.label}
+                      </div>
+                    `)}
+                  </div>
+                ` : nothing}
+                <div class="head" role="row">
+                  ${headers.map((header: any) => {
+                    const column = this.columns.find((item) => item.key === header.column.id)
+                    if (!column) return nothing
+                    const sorted = this.table?.sort?.key === header.column.id
+                    const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
+                    return html`
+                      <div class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`} role="columnheader">
+                        <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
+                          <span>${FlexRender({ header })}</span>
+                          <span class="sort">${sortMark}</span>
+                        </button>
+                        ${header.column.getCanResize?.() ? html`
+                          <span
+                            class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
+                            @mousedown=${header.getResizeHandler?.()}
+                            @touchstart=${header.getResizeHandler?.()}
+                          ></span>
+                        ` : nothing}
+                      </div>
+                    `
+                  })}
+                </div>
+              </div>
+              <div class="canvas" style=${`height:${totalHeight}px`}>
+                ${visibleRows.map((slot) => {
+                  if (slot.kind === 'skeleton') {
+                    return html`
+                      <div
+                        class="row skeleton-row"
+                        role="row"
+                        aria-busy="true"
+                        style=${`top:${slot.index * this.rowHeight}px`}
+                      >
+                        ${columns.map((column) => html`
+                          <span class=${`cell skeleton-cell ${column.role === 'row_header' ? 'row-header' : ''} ${column.align === 'right' ? 'right' : ''}`} role="cell">
+                            <span class="skeleton-line"></span>
+                          </span>
+                        `)}
+                      </div>
+                    `
+                  }
+                  const { row, index } = slot
+                  const key = rowKey(row, index)
+                  const selected = key === this.selectedRowId
+                  const tanstackRow = rowsByKey.get(key)
+                  const cells = tanstackRow?.getVisibleCells?.() ?? []
                   return html`
                     <div
-                      class="row skeleton-row"
+                      class=${`row ${selected ? 'selected' : ''}`}
                       role="row"
-                      aria-busy="true"
-                      style=${`transform:translateY(${slot.index * this.rowHeight}px)`}
+                      aria-selected=${selected ? 'true' : 'false'}
+                      style=${`top:${index * this.rowHeight}px`}
+                      @click=${() => {
+                        this.selectedRowId = key
+                        this.rowSelection = { [key]: true }
+                        this.selectedCellKey = ''
+                      }}
                     >
-                      ${columns.map((column) => html`
-                        <span class=${`cell skeleton-cell ${column.role === 'row_header' ? 'row-header' : ''} ${column.align === 'right' ? 'right' : ''}`} role="cell">
-                          <span class="skeleton-line"></span>
-                        </span>
-                      `)}
+                      ${cells.map((cell: any) => {
+                        const column = this.columns.find((item) => item.key === cell.column.id)
+                        if (!column) return nothing
+                        const cellKey = `${key}:${cell.column.id}`
+                        return html`
+                          <button
+                            class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
+                            role="cell"
+                            title=${String(row[cell.column.id] ?? '')}
+                            @click=${(event: Event) => {
+                              event.stopPropagation()
+                              this.selectCell(row, column, index)
+                            }}
+                          >
+                            ${FlexRender({ cell })}
+                          </button>
+                        `
+                      })}
                     </div>
                   `
-                }
-                const { row, index } = slot
-                const key = rowKey(row, index)
-                const selected = key === this.selectedRowId
-                const tanstackRow = rowsByKey.get(key)
-                const cells = tanstackRow?.getVisibleCells?.() ?? []
-                return html`
-                  <div
-                    class=${`row ${selected ? 'selected' : ''}`}
-                    role="row"
-                    aria-selected=${selected ? 'true' : 'false'}
-                    style=${`transform:translateY(${index * this.rowHeight}px)`}
-                    @click=${() => {
-                      this.selectedRowId = key
-                      this.rowSelection = { [key]: true }
-                      this.selectedCellKey = ''
-                    }}
-                  >
-                    ${cells.map((cell: any) => {
-                      const column = this.columns.find((item) => item.key === cell.column.id)
-                      if (!column) return nothing
-                      const cellKey = `${key}:${cell.column.id}`
-                      return html`
-                        <button
-                          class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
-                          role="cell"
-                          title=${String(row[cell.column.id] ?? '')}
-                          @click=${(event: Event) => {
-                            event.stopPropagation()
-                            this.selectCell(row, column, index)
-                          }}
-                        >
-                          ${FlexRender({ cell })}
-                        </button>
-                      `
-                    })}
-                  </div>
-                `
-              })}
+                })}
+              </div>
             </div>
           `}
         </div>
