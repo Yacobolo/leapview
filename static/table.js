@@ -3901,6 +3901,7 @@ var DataTable = class extends i4 {
     this.selectedRowId = "";
     this.selectedCellKey = "";
     this.viewportTop = 0;
+    this.viewportLeft = 0;
     this.viewportHeight = 0;
     this.columnVisibility = {};
     this.columnSizing = {};
@@ -3933,6 +3934,7 @@ var DataTable = class extends i4 {
       selectedRowId: { state: true },
       selectedCellKey: { state: true },
       viewportTop: { state: true },
+      viewportLeft: { state: true },
       viewportHeight: { state: true },
       columnVisibility: { state: true },
       columnSizing: { state: true },
@@ -4128,6 +4130,18 @@ var DataTable = class extends i4 {
       min-width: 1080px;
     }
 
+    .header-clip {
+      flex: 0 0 auto;
+      overflow: hidden;
+      background: var(--bgColor-muted);
+    }
+
+    .header-track {
+      min-width: 1080px;
+      transform: translateX(calc(-1 * var(--ld-scroll-left, 0px)));
+      will-change: transform;
+    }
+
     .group-head {
       border-bottom: 1px solid var(--borderColor-default);
       background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
@@ -4197,6 +4211,11 @@ var DataTable = class extends i4 {
 
     .group-head .group-cell.row-header {
       background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
+    }
+
+    .header-track .row-header {
+      transform: translateX(var(--ld-scroll-left, 0px));
+      will-change: transform;
     }
 
     .header-cell:last-child {
@@ -4452,8 +4471,10 @@ var DataTable = class extends i4 {
     const viewport = this.scrollElementRef.value;
     if (!viewport) return;
     this.viewportHeight = viewport.clientHeight;
+    this.viewportLeft = viewport.scrollLeft;
     this.resizeObserver = new ResizeObserver(() => {
       this.viewportHeight = viewport.clientHeight;
+      this.viewportLeft = viewport.scrollLeft;
       this.scheduleEnsureBlocksForScroll();
     });
     this.resizeObserver.observe(viewport);
@@ -4492,6 +4513,7 @@ var DataTable = class extends i4 {
         if (!viewport) return;
         viewport.scrollTop = 0;
         this.viewportTop = 0;
+        this.viewportLeft = viewport.scrollLeft;
         this.viewportHeight = viewport.clientHeight;
         this.scheduleEnsureBlocksForScroll();
       });
@@ -4632,6 +4654,7 @@ var DataTable = class extends i4 {
   handleScroll(event) {
     const target = event.currentTarget;
     this.viewportTop = target.scrollTop;
+    this.viewportLeft = target.scrollLeft;
     this.viewportHeight = target.clientHeight;
     this.scheduleEnsureBlocksForScroll();
   }
@@ -4658,7 +4681,7 @@ var DataTable = class extends i4 {
     const selectedText = this.selectedRowId ? "1 row selected" : "No selection";
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading;
     return b2`
-      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
+      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px;--ld-scroll-left:${this.viewportLeft}px`}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? "Orders"}</h2>
@@ -4690,41 +4713,45 @@ var DataTable = class extends i4 {
           </details>
         </div>
         ${this.table?.error ? b2`<div class="error">${this.table.error}</div>` : A}
-        ${groupHeaders.length ? b2`
-          <div class="group-head" role="row">
-            ${groupHeaders.map((group) => b2`
-              <div
-                class=${`group-cell ${group.rowHeader ? "row-header" : "measure-group"}`}
-                role="columnheader"
-                style=${`grid-column:span ${group.span}`}
-              >
-                ${group.label}
+        <div class="header-clip" aria-hidden="false">
+          <div class="header-track">
+            ${groupHeaders.length ? b2`
+              <div class="group-head" role="row">
+                ${groupHeaders.map((group) => b2`
+                  <div
+                    class=${`group-cell ${group.rowHeader ? "row-header" : "measure-group"}`}
+                    role="columnheader"
+                    style=${`grid-column:span ${group.span}`}
+                  >
+                    ${group.label}
+                  </div>
+                `)}
               </div>
-            `)}
-          </div>
-        ` : A}
-        <div class="head" role="row">
-          ${headers.map((header) => {
+            ` : A}
+            <div class="head" role="row">
+              ${headers.map((header) => {
       const column = this.columns.find((item) => item.key === header.column.id);
       if (!column) return A;
       const sorted = this.table?.sort?.key === header.column.id;
       const sortMark = this.table?.sort?.direction === "asc" ? "\u2191" : "\u2193";
       return b2`
-              <div class=${`header-cell ${column.role === "row_header" ? "row-header" : ""} ${sorted ? "sorted" : ""}`} role="columnheader">
-                <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
-                  <span>${FlexRender({ header })}</span>
-                  <span class="sort">${sortMark}</span>
-                </button>
-                ${header.column.getCanResize?.() ? b2`
-                  <span
-                    class=${`column-resizer ${header.column.getIsResizing?.() ? "resizing" : ""}`}
-                    @mousedown=${header.getResizeHandler?.()}
-                    @touchstart=${header.getResizeHandler?.()}
-                  ></span>
-                ` : A}
-              </div>
-            `;
+                  <div class=${`header-cell ${column.role === "row_header" ? "row-header" : ""} ${sorted ? "sorted" : ""}`} role="columnheader">
+                    <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
+                      <span>${FlexRender({ header })}</span>
+                      <span class="sort">${sortMark}</span>
+                    </button>
+                    ${header.column.getCanResize?.() ? b2`
+                      <span
+                        class=${`column-resizer ${header.column.getIsResizing?.() ? "resizing" : ""}`}
+                        @mousedown=${header.getResizeHandler?.()}
+                        @touchstart=${header.getResizeHandler?.()}
+                      ></span>
+                    ` : A}
+                  </div>
+                `;
     })}
+            </div>
+          </div>
         </div>
         <div class="viewport" ${n5(this.scrollElementRef)} @scroll=${this.handleScroll} role="table" aria-label=${this.table?.title ?? "Orders"}>
           ${loading ? b2`<div class="loading" aria-hidden="true"></div>` : A}

@@ -73,6 +73,7 @@ class DataTable extends LitElement {
     selectedRowId: { state: true },
     selectedCellKey: { state: true },
     viewportTop: { state: true },
+    viewportLeft: { state: true },
     viewportHeight: { state: true },
     columnVisibility: { state: true },
     columnSizing: { state: true },
@@ -84,6 +85,7 @@ class DataTable extends LitElement {
   private selectedRowId = ''
   private selectedCellKey = ''
   private viewportTop = 0
+  private viewportLeft = 0
   private viewportHeight = 0
   private columnVisibility: ColumnVisibilityState = {}
   private columnSizing: ColumnSizingState = {}
@@ -298,6 +300,18 @@ class DataTable extends LitElement {
       min-width: 1080px;
     }
 
+    .header-clip {
+      flex: 0 0 auto;
+      overflow: hidden;
+      background: var(--bgColor-muted);
+    }
+
+    .header-track {
+      min-width: 1080px;
+      transform: translateX(calc(-1 * var(--ld-scroll-left, 0px)));
+      will-change: transform;
+    }
+
     .group-head {
       border-bottom: 1px solid var(--borderColor-default);
       background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
@@ -367,6 +381,11 @@ class DataTable extends LitElement {
 
     .group-head .group-cell.row-header {
       background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
+    }
+
+    .header-track .row-header {
+      transform: translateX(var(--ld-scroll-left, 0px));
+      will-change: transform;
     }
 
     .header-cell:last-child {
@@ -623,8 +642,10 @@ class DataTable extends LitElement {
     const viewport = this.scrollElementRef.value
     if (!viewport) return
     this.viewportHeight = viewport.clientHeight
+    this.viewportLeft = viewport.scrollLeft
     this.resizeObserver = new ResizeObserver(() => {
       this.viewportHeight = viewport.clientHeight
+      this.viewportLeft = viewport.scrollLeft
       this.scheduleEnsureBlocksForScroll()
     })
     this.resizeObserver.observe(viewport)
@@ -666,6 +687,7 @@ class DataTable extends LitElement {
         if (!viewport) return
         viewport.scrollTop = 0
         this.viewportTop = 0
+        this.viewportLeft = viewport.scrollLeft
         this.viewportHeight = viewport.clientHeight
         this.scheduleEnsureBlocksForScroll()
       })
@@ -826,6 +848,7 @@ class DataTable extends LitElement {
   handleScroll(event: Event): void {
     const target = event.currentTarget as HTMLDivElement
     this.viewportTop = target.scrollTop
+    this.viewportLeft = target.scrollLeft
     this.viewportHeight = target.clientHeight
     this.scheduleEnsureBlocksForScroll()
   }
@@ -858,7 +881,7 @@ class DataTable extends LitElement {
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading
 
     return html`
-      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px`}>
+      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-row-height:${this.rowHeight}px;--ld-scroll-left:${this.viewportLeft}px`}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? 'Orders'}</h2>
@@ -890,41 +913,45 @@ class DataTable extends LitElement {
           </details>
         </div>
         ${this.table?.error ? html`<div class="error">${this.table.error}</div>` : nothing}
-        ${groupHeaders.length ? html`
-          <div class="group-head" role="row">
-            ${groupHeaders.map((group) => html`
-              <div
-                class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
-                role="columnheader"
-                style=${`grid-column:span ${group.span}`}
-              >
-                ${group.label}
+        <div class="header-clip" aria-hidden="false">
+          <div class="header-track">
+            ${groupHeaders.length ? html`
+              <div class="group-head" role="row">
+                ${groupHeaders.map((group) => html`
+                  <div
+                    class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
+                    role="columnheader"
+                    style=${`grid-column:span ${group.span}`}
+                  >
+                    ${group.label}
+                  </div>
+                `)}
               </div>
-            `)}
+            ` : nothing}
+            <div class="head" role="row">
+              ${headers.map((header: any) => {
+                const column = this.columns.find((item) => item.key === header.column.id)
+                if (!column) return nothing
+                const sorted = this.table?.sort?.key === header.column.id
+                const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
+                return html`
+                  <div class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`} role="columnheader">
+                    <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
+                      <span>${FlexRender({ header })}</span>
+                      <span class="sort">${sortMark}</span>
+                    </button>
+                    ${header.column.getCanResize?.() ? html`
+                      <span
+                        class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
+                        @mousedown=${header.getResizeHandler?.()}
+                        @touchstart=${header.getResizeHandler?.()}
+                      ></span>
+                    ` : nothing}
+                  </div>
+                `
+              })}
+            </div>
           </div>
-        ` : nothing}
-        <div class="head" role="row">
-          ${headers.map((header: any) => {
-            const column = this.columns.find((item) => item.key === header.column.id)
-            if (!column) return nothing
-            const sorted = this.table?.sort?.key === header.column.id
-            const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
-            return html`
-              <div class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`} role="columnheader">
-                <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
-                  <span>${FlexRender({ header })}</span>
-                  <span class="sort">${sortMark}</span>
-                </button>
-                ${header.column.getCanResize?.() ? html`
-                  <span
-                    class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
-                    @mousedown=${header.getResizeHandler?.()}
-                    @touchstart=${header.getResizeHandler?.()}
-                  ></span>
-                ` : nothing}
-              </div>
-            `
-          })}
         </div>
         <div class="viewport" ${ref(this.scrollElementRef)} @scroll=${this.handleScroll} role="table" aria-label=${this.table?.title ?? 'Orders'}>
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
