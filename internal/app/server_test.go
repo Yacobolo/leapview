@@ -24,8 +24,11 @@ func (fakeMetrics) Catalog() dashboard.Catalog {
 		Models: []dashboard.CatalogModel{
 			{ID: "test", Title: "Test Model", Description: "Fixture model"},
 		},
+		MetricViews: []dashboard.CatalogMetricView{
+			{ID: "orders", Title: "Orders Metrics", Description: "Fixture metrics view", SemanticModel: "test", ModelTitle: "Test Model"},
+		},
 		Dashboards: []dashboard.CatalogDashboard{
-			{ID: "executive-sales", Title: "Executive Sales Dashboard", Description: "Fixture report", SemanticModel: "test", ModelTitle: "Test Model", Tags: []string{"sales"}, PageCount: 2},
+			{ID: "executive-sales", Title: "Executive Sales Dashboard", Description: "Fixture report", MetricViews: []string{"orders"}, MetricViewTitles: []string{"Orders Metrics"}, Tags: []string{"sales"}, PageCount: 2},
 		},
 	}
 }
@@ -50,17 +53,17 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 		return semantic.Dashboard{}, nil, false
 	}
 	return semantic.Dashboard{
-			ID:            "executive-sales",
-			Title:         "Executive Sales Dashboard",
-			SemanticModel: "test",
+			ID:          "executive-sales",
+			Title:       "Executive Sales Dashboard",
+			MetricViews: []string{"orders"},
 			Filters: map[string]semantic.FilterDefinition{
-				"state": {Type: "multi_select", Label: "State", Dataset: "orders", Dimension: "status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
+				"state": {Type: "multi_select", Label: "State", MetricView: "orders", Dimension: "status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
 			},
 			Visuals: map[string]semantic.Visual{
-				"orders": {Title: "Orders", Type: "donut", Dataset: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
+				"orders": {Title: "Orders", Type: "donut", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
 			},
 			Tables: map[string]semantic.TableVisual{
-				"orders": {Title: "Orders", Dataset: "orders", DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
+				"orders": {Title: "Orders", MetricView: "orders", DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
 			},
 			Pages: fakeMetrics{}.Pages(dashboardID),
 		}, &semantic.Model{
@@ -68,8 +71,7 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 			Title: "Test Model",
 			Datasets: map[string]semantic.Dataset{
 				"orders": {
-					Dimensions: map[string]semantic.Dimension{"status": {Expr: "status"}},
-					Measures:   map[string]semantic.Measure{"order_count": {Aggregate: "count_distinct", Column: "order_id", Unit: "orders"}},
+					Source: "orders_enriched",
 				},
 			},
 		}, true

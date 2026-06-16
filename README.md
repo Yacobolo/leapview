@@ -37,7 +37,9 @@ go run ./cmd/libredash
 - `GET /models/{model}` renders the semantic model graph.
 - `GET /updates?dashboard={dashboard}&page={page}` opens a long-running Datastar SSE stream and patches signals with `datastar.MarshalAndPatchSignals`.
 - DuckDB registers local CSV files as views and materializes model-scoped import tables.
-- `dashboards/catalog.yaml` discovers semantic models and dashboards; dashboard YAML owns pages, filters, KPIs, visuals, tables, and interactions.
+- `dashboards/catalog.yaml` discovers semantic models, metrics views, and dashboards.
+- Semantic model YAML owns sources, cache tables, datasets, and relationships; metrics view YAML owns business dimensions and aggregate measure expressions.
+- Dashboard YAML owns pages, filters, KPIs, visuals, tables, and interactions over metrics views.
 - Lit chart components bind to signal paths such as `charts.revenue`.
 - The bundled `datastar-inspector` web component shows live Datastar signals in the browser.
 

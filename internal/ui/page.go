@@ -221,9 +221,13 @@ func ModelsPage(catalog dashboard.Catalog) g.Node {
 }
 
 func dashboardCard(report dashboard.CatalogDashboard) g.Node {
+	eyebrow := strings.Join(report.MetricViewTitles, ", ")
+	if eyebrow == "" {
+		eyebrow = "Dashboard"
+	}
 	return h.Article(h.Class("catalog-card"),
 		h.Div(h.Class("catalog-card-main"),
-			h.P(h.Class("report-eyebrow"), g.Text(report.ModelTitle)),
+			h.P(h.Class("report-eyebrow"), g.Text(eyebrow)),
 			h.H2(g.Text(report.Title)),
 			h.P(g.Text(report.Description)),
 		),
@@ -233,7 +237,7 @@ func dashboardCard(report dashboard.CatalogDashboard) g.Node {
 			}),
 		),
 		h.Footer(h.Class("catalog-card-footer"),
-			h.Span(g.Textf("%d pages", report.PageCount)),
+			h.Span(g.Textf("%d pages, %d views", report.PageCount, len(report.MetricViews))),
 			h.A(h.Class("catalog-open"), h.Href("/dashboards/"+report.ID),
 				lucide.ExternalLink(iconAttrs()),
 				h.Span(g.Text("Open")),
@@ -343,10 +347,10 @@ func sidebar(config map[string]any) g.Node {
 func sidebarConfigForCatalog(catalog dashboard.Catalog) map[string]any {
 	modelID := ""
 	modelTitle := ""
-	if len(catalog.Dashboards) > 0 {
-		report := catalog.Dashboards[0]
-		modelID = report.SemanticModel
-		modelTitle = report.ModelTitle
+	if len(catalog.MetricViews) > 0 {
+		view := catalog.MetricViews[0]
+		modelID = view.SemanticModel
+		modelTitle = view.ModelTitle
 	}
 	return sidebarConfig(catalog, "dashboards", "", workspaceDisplayTitle(catalog), "Dashboards", "Discovery", modelID, modelTitle, false)
 }
@@ -512,7 +516,7 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 			},
 		},
 		"tables": tableSignals(report, tableRequest),
-		"charts": chartSignals(report, model),
+		"charts": chartSignals(report),
 		"kpis":   []any{},
 		"status": map[string]any{
 			"loading":       false,
@@ -583,7 +587,7 @@ func tableResetExpression() string {
 	return "$tableCommand.block = 'all'; $tableCommand.start = 0; $tableCommand.count = " + count + "; $tableCommand.resetVersion = ($tableCommand.resetVersion || 0) + 1; "
 }
 
-func chartSignals(report semantic.Dashboard, model *semantic.Model) map[string]any {
+func chartSignals(report semantic.Dashboard) map[string]any {
 	charts := map[string]any{}
 	for _, id := range sortedKeys(report.Visuals) {
 		visual := report.Visuals[id]
@@ -591,9 +595,6 @@ func chartSignals(report semantic.Dashboard, model *semantic.Model) map[string]a
 		unit := ""
 		if len(visual.Query.Measures) > 0 {
 			measureName = visual.Query.Measures[0]
-			if dataset, ok := model.Datasets[visual.Dataset]; ok {
-				unit = dataset.Measures[measureName].Unit
-			}
 		}
 		charts[id] = chartSignal(id, visual, unit, measureName)
 	}
