@@ -115,10 +115,67 @@ type InteractionTargets struct {
 }
 
 type TableVisual struct {
+	Kind        string                  `yaml:"kind"`
 	Title       string                  `yaml:"title"`
 	Dataset     string                  `yaml:"dataset"`
 	DefaultSort dashboard.TableSort     `yaml:"default_sort"`
 	Columns     []dashboard.TableColumn `yaml:"columns"`
+	Rows        []string                `yaml:"rows"`
+	Measures    []string                `yaml:"measures"`
+	ColumnDims  []string                `yaml:"-"`
+}
+
+func (t *TableVisual) UnmarshalYAML(value *yaml.Node) error {
+	type rawTableVisual struct {
+		Kind        string              `yaml:"kind"`
+		Title       string              `yaml:"title"`
+		Dataset     string              `yaml:"dataset"`
+		DefaultSort dashboard.TableSort `yaml:"default_sort"`
+		Rows        []string            `yaml:"rows"`
+		Measures    []string            `yaml:"measures"`
+	}
+	var raw rawTableVisual
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	t.Kind = raw.Kind
+	t.Title = raw.Title
+	t.Dataset = raw.Dataset
+	t.DefaultSort = raw.DefaultSort
+	t.Rows = raw.Rows
+	t.Measures = raw.Measures
+
+	columnsNode := mappingValue(value, "columns")
+	if columnsNode == nil {
+		return nil
+	}
+	if columnsNode.Kind != yaml.SequenceNode {
+		return fmt.Errorf("table %q columns must be a sequence", raw.Title)
+	}
+	if len(columnsNode.Content) == 0 {
+		return nil
+	}
+	switch columnsNode.Content[0].Kind {
+	case yaml.MappingNode:
+		if err := columnsNode.Decode(&t.Columns); err != nil {
+			return err
+		}
+	case yaml.ScalarNode:
+		t.ColumnDims = make([]string, 0, len(columnsNode.Content))
+		for _, item := range columnsNode.Content {
+			t.ColumnDims = append(t.ColumnDims, item.Value)
+		}
+	default:
+		return fmt.Errorf("table %q columns must contain column objects or dimension names", raw.Title)
+	}
+	return nil
+}
+
+func (t TableVisual) KindOrDefault() string {
+	if t.Kind != "" {
+		return t.Kind
+	}
+	return "data_table"
 }
 
 func (v Visual) KindOrDefault() string {
@@ -432,11 +489,49 @@ func (d *Dashboard) Validate(model *Model) error {
 		}
 	}
 	for name, table := range d.Tables {
-		if table.Title == "" || table.Dataset == "" || len(table.Columns) == 0 {
-			return fmt.Errorf("table %q requires title, dataset, and columns", name)
+		if table.Title == "" || table.Dataset == "" {
+			return fmt.Errorf("table %q requires title and dataset", name)
 		}
-		if _, ok := model.Datasets[table.Dataset]; !ok {
+		dataset, ok := model.Datasets[table.Dataset]
+		if !ok {
 			return fmt.Errorf("table %q references unknown dataset %q", name, table.Dataset)
+		}
+		switch table.KindOrDefault() {
+		case "data_table":
+			if len(table.Columns) == 0 {
+				return fmt.Errorf("table %q kind data_table requires columns", name)
+			}
+		case "matrix_table":
+			if len(table.Rows) == 0 || len(table.Measures) == 0 {
+				return fmt.Errorf("table %q kind matrix_table requires rows and measures", name)
+			}
+			if len(table.ColumnDims) > 1 {
+				return fmt.Errorf("table %q kind matrix_table supports at most one column dimension", name)
+			}
+			for _, dimension := range append(append([]string{}, table.Rows...), table.ColumnDims...) {
+				if _, ok := dataset.Dimensions[dimension]; !ok {
+					return fmt.Errorf("table %q references unknown dimension %q", name, dimension)
+				}
+			}
+			for _, measure := range table.Measures {
+				if _, ok := dataset.Measures[measure]; !ok {
+					return fmt.Errorf("table %q references unknown measure %q", name, measure)
+				}
+			}
+		case "pivot_table":
+			if len(table.Rows) == 0 || len(table.ColumnDims) != 1 || len(table.Measures) != 1 {
+				return fmt.Errorf("table %q kind pivot_table requires rows, one column dimension, and one measure", name)
+			}
+			for _, dimension := range append(append([]string{}, table.Rows...), table.ColumnDims...) {
+				if _, ok := dataset.Dimensions[dimension]; !ok {
+					return fmt.Errorf("table %q references unknown dimension %q", name, dimension)
+				}
+			}
+			if _, ok := dataset.Measures[table.Measures[0]]; !ok {
+				return fmt.Errorf("table %q references unknown measure %q", name, table.Measures[0])
+			}
+		default:
+			return fmt.Errorf("table %q has unsupported kind %q", name, table.Kind)
 		}
 	}
 	for name, visual := range d.Visuals {

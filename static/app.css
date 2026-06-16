@@ -4867,6 +4867,7 @@
   .filters-dock:not([open]) {
     grid-template-columns: 32px;
     width: 32px;
+    background: var(--report-panel-subtle);
   }
   .filters-dock:not([open]) .filters-pane {
     display: none;

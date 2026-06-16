@@ -139,11 +139,33 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Tables["orders"].DefaultSort.Key; got != "purchase_date" {
 		t.Fatalf("orders table default sort = %q, want purchase_date", got)
 	}
-	if len(report.Pages) != 2 {
-		t.Fatalf("page count = %d, want 2", len(report.Pages))
+	if got := report.Tables["orders"].KindOrDefault(); got != "data_table" {
+		t.Fatalf("orders table kind = %q, want data_table", got)
+	}
+	if got := report.Tables["state_status_matrix"].KindOrDefault(); got != "matrix_table" {
+		t.Fatalf("state_status_matrix table kind = %q, want matrix_table", got)
+	}
+	if got := report.Tables["category_status_pivot"].ColumnDims[0]; got != "status" {
+		t.Fatalf("category_status_pivot column dimension = %q, want status", got)
+	}
+	if len(report.Pages) != 3 {
+		t.Fatalf("page count = %d, want 3", len(report.Pages))
 	}
 	if got := report.Pages[1].ID; got != "operations" {
 		t.Fatalf("second page id = %q, want operations", got)
+	}
+	if got := report.Pages[2].ID; got != "tables" {
+		t.Fatalf("third page id = %q, want tables", got)
+	}
+	tablePage := report.Pages[2].WithDefaults()
+	tableVisualCount := 0
+	for _, visual := range tablePage.PlacedVisuals() {
+		if visual.Kind == "table" {
+			tableVisualCount++
+		}
+	}
+	if tableVisualCount != 3 {
+		t.Fatalf("tables page table visual count = %d, want 3", tableVisualCount)
 	}
 	page := report.Pages[0].WithDefaults()
 	if page.Grid.Columns != 12 || page.Grid.RowHeight != 48 {
@@ -457,6 +479,38 @@ func TestDashboardValidateRejectsSeriesOnUnsupportedChart(t *testing.T) {
 	report.Visuals["orders"] = visual
 
 	assertDashboardValidateError(t, report, model, "does not support series")
+}
+
+func TestDashboardValidateRejectsInvalidTableVariant(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+
+	table := report.Tables["state_status_matrix"]
+	table.Rows = []string{"missing_dimension"}
+	report.Tables["state_status_matrix"] = table
+	assertDashboardValidateError(t, report, model, "unknown dimension")
+
+	report = loadOlistDashboard(t, model)
+	table = report.Tables["category_status_pivot"]
+	table.ColumnDims = []string{"missing_dimension"}
+	report.Tables["category_status_pivot"] = table
+	assertDashboardValidateError(t, report, model, "unknown dimension")
+}
+
+func TestDashboardValidateRejectsLegacyTableKinds(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+
+	table := report.Tables["state_status_matrix"]
+	table.Kind = "matrix"
+	report.Tables["state_status_matrix"] = table
+	assertDashboardValidateError(t, report, model, "unsupported kind")
+
+	report = loadOlistDashboard(t, model)
+	table = report.Tables["category_status_pivot"]
+	table.Kind = "pivot"
+	report.Tables["category_status_pivot"] = table
+	assertDashboardValidateError(t, report, model, "unsupported kind")
 }
 
 func TestDashboardValidateRejectsUnknownFilterDimension(t *testing.T) {

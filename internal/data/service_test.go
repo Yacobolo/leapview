@@ -292,6 +292,54 @@ relogios_presentes,watches_gifts
 		t.Fatalf("all block request seq = %d, want 8", got)
 	}
 
+	matrixTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
+		Table:      "state_status_matrix",
+		Block:      "all",
+		Count:      10,
+		RequestSeq: 10,
+		Sort:       dashboard.TableSort{Key: "state", Direction: "asc"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matrixTable.Kind != "matrix_table" {
+		t.Fatalf("matrix table kind = %q, want matrix_table", matrixTable.Kind)
+	}
+	if len(matrixTable.Blocks["a"].Rows) != 2 {
+		t.Fatalf("matrix rows = %d, want 2", len(matrixTable.Blocks["a"].Rows))
+	}
+	if !tableHasColumn(matrixTable.Columns, "pivot_delivered__order_count") {
+		t.Fatalf("matrix columns missing delivered order count: %#v", matrixTable.Columns)
+	}
+	if got := matrixTable.Columns[0].Role; got != "row_header" {
+		t.Fatalf("matrix first column role = %q, want row_header", got)
+	}
+	if !tableRowsHaveKey(matrixTable.Blocks["a"].Rows, "pivot_delivered__order_count") {
+		t.Fatalf("matrix rows missing delivered order count: %#v", matrixTable.Blocks["a"].Rows)
+	}
+
+	pivotTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
+		Table:      "category_status_pivot",
+		Block:      "all",
+		Count:      10,
+		RequestSeq: 11,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pivotTable.Kind != "pivot_table" {
+		t.Fatalf("pivot table kind = %q, want pivot_table", pivotTable.Kind)
+	}
+	if len(pivotTable.Columns) < 3 {
+		t.Fatalf("pivot columns = %d, want category plus status columns", len(pivotTable.Columns))
+	}
+	if !tableHasColumn(pivotTable.Columns, "pivot_delivered") {
+		t.Fatalf("pivot columns missing delivered column: %#v", pivotTable.Columns)
+	}
+	if got := pivotTable.Columns[1].Group; got != "Orders" {
+		t.Fatalf("pivot first value column group = %q, want Orders", got)
+	}
+
 	if err := metrics.RefreshCache(context.Background(), "olist"); err != nil {
 		t.Fatalf("refresh cache: %v", err)
 	}
@@ -411,6 +459,15 @@ func hasDatumValue(rows []dashboard.Datum, key string, value string) bool {
 func hasHierarchyPathValue(rows []dashboard.Datum, value string) bool {
 	for _, row := range rows {
 		if strings.Contains(fmt.Sprint(row["path"]), value) {
+			return true
+		}
+	}
+	return false
+}
+
+func tableRowsHaveKey(rows []map[string]any, key string) bool {
+	for _, row := range rows {
+		if _, ok := row[key]; ok {
 			return true
 		}
 	}

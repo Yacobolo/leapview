@@ -478,11 +478,19 @@ func initialSignals(dataDir, clientID string, report semantic.Dashboard, model *
 
 func defaultTableRequest(report semantic.Dashboard) dashboard.TableRequest {
 	request := dashboard.TableRequest{Block: "all", Start: 0, Count: dashboard.TableChunkSize}
-	for _, name := range sortedKeys(report.Tables) {
-		table := report.Tables[name]
-		request.Table = name
+	if table, ok := report.Tables["orders"]; ok && table.KindOrDefault() == "data_table" {
+		request.Table = "orders"
 		request.Sort = table.DefaultSort
-		break
+	} else {
+		for _, name := range sortedKeys(report.Tables) {
+			table := report.Tables[name]
+			if table.KindOrDefault() != "data_table" {
+				continue
+			}
+			request.Table = name
+			request.Sort = table.DefaultSort
+			break
+		}
 	}
 	if request.Table == "" {
 		return dashboard.DefaultTableRequest()
@@ -495,6 +503,7 @@ func tableSignals(report semantic.Dashboard, request dashboard.TableRequest) map
 	for _, name := range sortedKeys(report.Tables) {
 		table := report.Tables[name]
 		tables[name] = map[string]any{
+			"kind":          table.KindOrDefault(),
 			"title":         table.Title,
 			"columns":       table.Columns,
 			"version":       2,

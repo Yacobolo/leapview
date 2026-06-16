@@ -456,6 +456,7 @@ type TableSort struct {
 
 type Table struct {
 	Version       int                   `json:"version"`
+	Kind          string                `json:"kind"`
 	Title         string                `json:"title"`
 	Columns       []TableColumn         `json:"columns"`
 	TotalRows     int                   `json:"totalRows"`
@@ -480,9 +481,13 @@ type TableBlock struct {
 }
 
 type TableColumn struct {
-	Key   string `json:"key"`
-	Label string `json:"label"`
-	Align string `json:"align,omitempty"`
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Align       string `json:"align,omitempty"`
+	Role        string `json:"role,omitempty"`
+	Group       string `json:"group,omitempty"`
+	Measure     string `json:"measure,omitempty"`
+	ColumnValue string `json:"columnValue,omitempty"`
 }
 
 func OrdersTableColumns() []TableColumn {
@@ -506,6 +511,7 @@ func EmptyTable(request TableRequest, err error) Table {
 	}
 	return Table{
 		Version:       2,
+		Kind:          "data_table",
 		Title:         "Orders",
 		Columns:       OrdersTableColumns(),
 		TotalRows:     0,

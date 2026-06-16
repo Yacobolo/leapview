@@ -1,176 +1,69 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { createRef, ref, type Ref } from 'lit/directives/ref.js'
+import {
+  FlexRender,
+  TableController,
+  columnPinningFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  rowSelectionFeature,
+  rowSortingFeature,
+  tableFeatures,
+  type ColumnDef,
+  type ColumnSizingState,
+  type ColumnVisibilityState,
+  type RowSelectionState,
+  type SortingState,
+} from '@tanstack/lit-table'
 import { visualMenuIcon } from './visual-menu-icons'
+import { defaultDirection, formatCell, rowKey } from './table/format'
+import { blockStartsForAll, emptyBlocks, emptyTable, sameSort, sortedBlockRows, tableConverter } from './table/block-source'
+import {
+  blockIDs,
+  defaultChunkSize,
+  defaultRowHeight,
+  defaultSort,
+  type BlockID,
+  type ExpectedBlockRequest,
+  type SortDirection,
+  type TableBlock,
+  type TableBlockCommand,
+  type TableColumn,
+  type TableRow,
+  type TableSignal,
+  type TanStackTableRow,
+  type VisualAction,
+  type VisibleRowSlot,
+} from './table/types'
 
-type SortDirection = 'asc' | 'desc'
-type BlockID = 'a' | 'b' | 'c'
+const tableFeaturesConfig = tableFeatures({
+  columnPinningFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  rowSelectionFeature,
+  rowSortingFeature,
+})
 
-interface TableSort {
-  key: string
-  direction: SortDirection
-}
-
-interface TableColumn {
-  key: string
-  label: string
-  align?: 'left' | 'right'
-}
-
-type TableRow = Record<string, unknown>
-
-interface TableBlock {
-  start: number
-  requestSeq: number
-  resetVersion: number
-  sort: TableSort
-  rows: TableRow[]
-}
-
-interface TableSignal {
-  version: number
-  title: string
-  columns: TableColumn[]
-  totalRows: number
-  availableRows: number
-  isCapped: boolean
-  rowCap: number
-  chunkSize: number
-  rowHeight: number
-  resetVersion: number
-  sort: TableSort
-  blocks: Record<BlockID, TableBlock>
-  loadingBlock: string
-  error: string
-}
-
-interface TableBlockCommand {
-  table: string
-  block: BlockID | 'all'
-  start: number
-  count: number
-  requestSeq: number
-  sort: TableSort
-  resetVersion: number
-}
-
-type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
-type VisibleRowSlot = { kind: 'row'; row: TableRow; index: number } | { kind: 'skeleton'; index: number }
-
-interface ExpectedBlockRequest {
-  start: number
-  requestSeq: number
-  resetVersion: number
-  sort: TableSort
-}
-
-const blockIDs: BlockID[] = ['a', 'b', 'c']
-const defaultChunkSize = 200
-const defaultRowHeight = 34
-const defaultSort: TableSort = { key: 'purchase_date', direction: 'desc' }
-
-const emptyTable: TableSignal = {
-  version: 2,
-  title: 'Orders',
-  columns: [],
-  totalRows: 0,
-  availableRows: 0,
-  isCapped: false,
-  rowCap: 10000,
-  chunkSize: defaultChunkSize,
-  rowHeight: defaultRowHeight,
-  resetVersion: 0,
-  sort: defaultSort,
-  blocks: emptyBlocks(),
-  loadingBlock: '',
-  error: '',
-}
-
-const tableConverter = {
-  fromAttribute(value: string | null): TableSignal {
-    if (!value) return emptyTable
-    try {
-      return normalizeTable(JSON.parse(value) as Partial<TableSignal>)
-    } catch {
-      return { ...emptyTable, error: 'Could not parse table signal.' }
-    }
-  },
-  toAttribute(value: TableSignal | null): string {
-    return JSON.stringify(value ?? emptyTable)
-  },
-}
-
-function emptyBlocks(): Record<BlockID, TableBlock> {
-  return {
-    a: { start: 0, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
-    b: { start: defaultChunkSize, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
-    c: { start: defaultChunkSize * 2, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+function defaultColumnSize(column: TableColumn): number {
+  const widths: Record<string, number> = {
+    order_id: 240,
+    purchase_date: 126,
+    status: 128,
+    state: 78,
+    category: 210,
+    revenue: 130,
+    review_score: 104,
+    delivery_days: 108,
   }
+  if (widths[column.key]) return widths[column.key]
+  if (column.align === 'right') return 120
+  return 140
 }
 
-function normalizeTable(value: Partial<TableSignal>): TableSignal {
-  const chunkSize = positiveNumber(value.chunkSize, defaultChunkSize)
-  return {
-    ...emptyTable,
-    ...value,
-    version: 2,
-    totalRows: positiveNumber(value.totalRows, 0),
-    availableRows: positiveNumber(value.availableRows, positiveNumber(value.totalRows, 0)),
-    rowCap: positiveNumber(value.rowCap, 10000),
-    chunkSize,
-    rowHeight: positiveNumber(value.rowHeight, defaultRowHeight),
-    resetVersion: positiveNumber(value.resetVersion, 0),
-    sort: value.sort?.key ? value.sort : defaultSort,
-    columns: Array.isArray(value.columns) ? value.columns : [],
-    blocks: {
-      a: normalizeBlock(value.blocks?.a, 0),
-      b: normalizeBlock(value.blocks?.b, chunkSize),
-      c: normalizeBlock(value.blocks?.c, chunkSize * 2),
-    },
-    loadingBlock: value.loadingBlock ?? '',
-    error: value.error ?? '',
-  }
-}
-
-function normalizeBlock(block: TableBlock | undefined, fallbackStart: number): TableBlock {
-  return {
-    start: positiveNumber(block?.start, fallbackStart),
-    requestSeq: positiveNumber(block?.requestSeq, 0),
-    resetVersion: positiveNumber(block?.resetVersion, 0),
-    sort: block?.sort?.key ? block.sort : defaultSort,
-    rows: Array.isArray(block?.rows) ? block.rows : [],
-  }
-}
-
-function positiveNumber(value: unknown, fallback: number): number {
-  const next = Number(value)
-  return Number.isFinite(next) && next >= 0 ? next : fallback
-}
-
-function formatCell(value: unknown, column: TableColumn): string {
-  if (value === null || value === undefined || value === '') return '-'
-  if (column.key === 'revenue' && Number.isFinite(Number(value))) {
-    return `R$ ${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-  }
-  if (column.key === 'review_score' && Number.isFinite(Number(value))) {
-    return Number(value).toFixed(2)
-  }
-  if (column.key === 'delivery_days' && Number.isFinite(Number(value))) {
-    return `${Number(value)}d`
-  }
-  return String(value)
-}
-
-function defaultDirection(column: TableColumn): SortDirection {
-  return ['revenue', 'review_score', 'delivery_days', 'purchase_date'].includes(column.key) ? 'desc' : 'asc'
-}
-
-function rowKey(row: TableRow, fallback: number): string {
-  const id = row.order_id
-  return typeof id === 'string' && id ? id : String(fallback)
-}
-
-function sameSort(a: TableSort, b: TableSort): boolean {
-  return a.key === b.key && a.direction === b.direction
+function applyUpdater<T>(updater: unknown, current: T): T {
+  return typeof updater === 'function' ? (updater as (old: T) => T)(current) : updater as T
 }
 
 class DataTable extends LitElement {
@@ -181,6 +74,9 @@ class DataTable extends LitElement {
     selectedCellKey: { state: true },
     viewportTop: { state: true },
     viewportHeight: { state: true },
+    columnVisibility: { state: true },
+    columnSizing: { state: true },
+    rowSelection: { state: true },
   }
 
   tableId = 'orders'
@@ -189,6 +85,9 @@ class DataTable extends LitElement {
   private selectedCellKey = ''
   private viewportTop = 0
   private viewportHeight = 0
+  private columnVisibility: ColumnVisibilityState = {}
+  private columnSizing: ColumnSizingState = {}
+  private rowSelection: RowSelectionState = {}
   private lastResetVersion = -1
   private shouldResetScroll = false
   private requestSeq = 0
@@ -200,6 +99,7 @@ class DataTable extends LitElement {
   private blockCache: Record<BlockID, TableBlock> = emptyBlocks()
   private scrollElementRef: Ref<HTMLDivElement> = createRef()
   private resizeObserver?: ResizeObserver
+  private tableController = new TableController<typeof tableFeaturesConfig, TanStackTableRow>(this)
   private handleOutsidePointerDown = (event: PointerEvent) => {
     const details = this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')
     if (!details?.open) return
@@ -341,6 +241,46 @@ class DataTable extends LitElement {
       background: transparent;
     }
 
+    .menu-divider {
+      height: 1px;
+      margin: 4px 2px;
+      background: var(--borderColor-muted);
+    }
+
+    .column-menu {
+      display: grid;
+      gap: 3px;
+      padding: 2px;
+    }
+
+    .column-menu > span {
+      padding: 2px 6px;
+      color: var(--fgColor-muted);
+      font-size: 0.62rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .column-menu label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      padding: 0 6px;
+      font-size: 0.67rem;
+      font-weight: 750;
+    }
+
+    .column-menu label:hover {
+      background: var(--bgColor-muted);
+    }
+
+    .column-menu input {
+      accent-color: var(--fgColor-accent);
+    }
+
     .error {
       border-bottom: 1px solid var(--borderColor-danger-emphasis);
       background: var(--bgColor-danger-muted);
@@ -351,10 +291,42 @@ class DataTable extends LitElement {
     }
 
     .head,
+    .group-head,
     .row {
       display: grid;
       grid-template-columns: var(--ld-table-columns);
       min-width: 1080px;
+    }
+
+    .group-head {
+      border-bottom: 1px solid var(--borderColor-default);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
+      color: var(--fgColor-muted);
+    }
+
+    .group-cell {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      min-height: 26px;
+      overflow: hidden;
+      border-right: 1px solid var(--borderColor-default);
+      padding: 0 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.64rem;
+      font-weight: 900;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .group-cell.measure-group {
+      justify-content: center;
+      color: var(--fgColor-default);
+    }
+
+    .group-cell:last-child {
+      border-right: 0;
     }
 
     .head {
@@ -375,7 +347,26 @@ class DataTable extends LitElement {
     }
 
     .header-cell {
+      position: relative;
       border-right: 1px solid var(--borderColor-default);
+    }
+
+    .header-cell.row-header,
+    .cell.row-header,
+    .group-cell.row-header {
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
+      box-shadow: 1px 0 0 var(--borderColor-default);
+    }
+
+    .head .header-cell.row-header {
+      background: var(--bgColor-muted);
+    }
+
+    .group-head .group-cell.row-header {
+      background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
     }
 
     .header-cell:last-child {
@@ -426,6 +417,30 @@ class DataTable extends LitElement {
 
     .sorted .sort {
       opacity: 1;
+    }
+
+    .column-resizer {
+      position: absolute;
+      inset-block: 5px;
+      right: -3px;
+      z-index: 3;
+      width: 6px;
+      cursor: col-resize;
+    }
+
+    .column-resizer::after {
+      content: '';
+      position: absolute;
+      inset-block: 3px;
+      left: 2px;
+      width: 2px;
+      border-radius: 999px;
+      background: transparent;
+    }
+
+    .header-cell:hover .column-resizer::after,
+    .column-resizer.resizing::after {
+      background: var(--fgColor-accent);
     }
 
     .viewport {
@@ -662,11 +677,7 @@ class DataTable extends LitElement {
   }
 
   get loadedRows(): Array<{ row: TableRow; index: number }> {
-    return blockIDs
-      .map((id) => this.blocks[id])
-      .sort((a, b) => a.start - b.start)
-      .flatMap((block) => block.rows.map((row, offset) => ({ row, index: block.start + offset })))
-      .filter((item) => item.index < this.availableRows)
+    return sortedBlockRows(this.blocks, this.availableRows)
   }
 
   get visibleRows(): VisibleRowSlot[] {
@@ -704,17 +715,112 @@ class DataTable extends LitElement {
   }
 
   get gridTemplate(): string {
-    const widths: Record<string, string> = {
-      order_id: 'minmax(210px,1.35fr)',
-      purchase_date: 'minmax(118px,.75fr)',
-      status: 'minmax(118px,.75fr)',
-      state: 'minmax(70px,.42fr)',
-      category: 'minmax(190px,1.1fr)',
-      revenue: 'minmax(120px,.72fr)',
-      review_score: 'minmax(96px,.55fr)',
-      delivery_days: 'minmax(96px,.55fr)',
+    const widths: Record<string, number> = {
+      __select: 34,
+      order_id: 240,
+      purchase_date: 126,
+      status: 128,
+      state: 78,
+      category: 210,
+      revenue: 130,
+      review_score: 104,
+      delivery_days: 108,
     }
-    return this.columns.map((column) => widths[column.key] ?? 'minmax(120px,1fr)').join(' ')
+    return this.visibleColumnSizes.map(({ key, size }) => `${Math.max(44, size || widths[key] || 130)}px`).join(' ')
+  }
+
+  get tanstackRows(): TanStackTableRow[] {
+    return this.loadedRows.map(({ row, index }) => ({
+      ...row,
+      __absoluteIndex: index,
+      __rowKey: rowKey(row, index),
+    }))
+  }
+
+  get visibleColumnSizes(): Array<{ key: string; size: number }> {
+    const base = this.columnsForTanStack()
+    return base
+      .filter((column) => this.columnVisibility[column.key] !== false)
+      .map((column) => ({ key: column.key, size: this.columnSizing[column.key] ?? defaultColumnSize(column) }))
+  }
+
+  private columnsForTanStack(): TableColumn[] {
+    return this.columns
+  }
+
+  private groupHeaderSegments(columns: TableColumn[]): Array<{ label: string; span: number; rowHeader: boolean }> {
+    if (!columns.some((column) => column.group)) return []
+    const segments: Array<{ label: string; span: number; rowHeader: boolean }> = []
+    for (const column of columns) {
+      const rowHeader = column.role === 'row_header'
+      const label = rowHeader ? '' : column.group || ''
+      const previous = segments[segments.length - 1]
+      if (previous && previous.label === label && previous.rowHeader === rowHeader) {
+        previous.span++
+        continue
+      }
+      segments.push({ label, span: 1, rowHeader })
+    }
+    return segments
+  }
+
+  private tanstackColumnDefs(): Array<ColumnDef<typeof tableFeaturesConfig, TanStackTableRow, unknown>> {
+    return this.columnsForTanStack().map((column) => ({
+      id: column.key,
+      accessorKey: column.key,
+      header: column.label,
+      cell: (info: any) => formatCell(info.getValue(), column),
+      size: defaultColumnSize(column),
+      minSize: column.key === 'order_id' || column.key === 'category' ? 160 : 64,
+      enableResizing: true,
+      meta: { align: column.align },
+    })) as Array<ColumnDef<typeof tableFeaturesConfig, TanStackTableRow, unknown>>
+  }
+
+  private tanstackTable() {
+    const firstColumn = this.columns[0]?.key
+    const sorting: SortingState = this.table.sort?.key
+      ? [{ id: this.table.sort.key, desc: this.table.sort.direction === 'desc' }]
+      : []
+    return this.tableController.table(
+      {
+        features: tableFeaturesConfig,
+        columns: this.tanstackColumnDefs(),
+        data: this.tanstackRows,
+        getRowId: (row) => row.__rowKey,
+        manualSorting: true,
+        manualFiltering: true,
+        manualPagination: true,
+        enableRowSelection: true,
+        enableMultiRowSelection: false,
+        columnResizeMode: 'onEnd',
+        renderFallbackValue: '-',
+        state: {
+          sorting,
+          columnVisibility: this.columnVisibility,
+          columnSizing: this.columnSizing,
+          columnPinning: { left: firstColumn ? [firstColumn] : [], right: [] },
+          rowSelection: this.rowSelection,
+        },
+        onColumnVisibilityChange: (updater: unknown) => {
+          this.columnVisibility = applyUpdater(updater, this.columnVisibility)
+        },
+        onColumnSizingChange: (updater: unknown) => {
+          this.columnSizing = applyUpdater(updater, this.columnSizing)
+        },
+        onRowSelectionChange: (updater: unknown) => {
+          this.rowSelection = applyUpdater(updater, this.rowSelection)
+          this.selectedRowId = Object.keys(this.rowSelection).find((key) => this.rowSelection[key]) ?? ''
+          if (!this.selectedRowId) this.selectedCellKey = ''
+        },
+      } as any,
+      (state: any) => ({
+        columnVisibility: state.columnVisibility,
+        columnSizing: state.columnSizing,
+        rowSelection: state.rowSelection,
+        sorting: state.sorting,
+      }),
+    ) as any
   }
 
   handleScroll(event: Event): void {
@@ -739,7 +845,12 @@ class DataTable extends LitElement {
   }
 
   render() {
-    const columns = this.columns
+    const tanstack = this.tanstackTable()
+    const headers = tanstack.getHeaderGroups()[0]?.headers ?? []
+    const visibleColumns = tanstack.getVisibleLeafColumns()
+    const rowsByKey = new Map(tanstack.getRowModel().rows.map((row: any) => [row.original.__rowKey, row]))
+    const columns = visibleColumns.map((column: any) => this.columns.find((item) => item.key === column.id)).filter(Boolean) as TableColumn[]
+    const groupHeaders = this.groupHeaderSegments(columns)
     const visibleRows = this.visibleRows
     const totalHeight = this.availableRows * this.rowHeight
     const rowRange = this.rowRangeText()
@@ -760,20 +871,57 @@ class DataTable extends LitElement {
               <button type="button" role="menuitem" @click=${() => this.runAction('copy-data')}>${visualMenuIcon('copy-data')}<span>Copy data</span></button>
               <button type="button" role="menuitem" @click=${() => this.runAction('export-csv')}>${visualMenuIcon('export-csv')}<span>Export CSV</span></button>
               <button type="button" role="menuitem" ?disabled=${!this.selectedRowId} @click=${() => this.runAction('clear-selection')}>${visualMenuIcon('clear-selection')}<span>Clear selection</span></button>
+              <div class="menu-divider"></div>
+              <div class="column-menu" @click=${(event: Event) => event.stopPropagation()}>
+                <span>Columns</span>
+                ${tanstack.getAllLeafColumns().map((column: any) => html`
+                  <label>
+                    <input
+                      type="checkbox"
+                      .checked=${column.getIsVisible()}
+                      ?disabled=${!column.getCanHide()}
+                      @change=${column.getToggleVisibilityHandler()}
+                    />
+                    ${column.columnDef.header}
+                  </label>
+                `)}
+              </div>
             </div>
           </details>
         </div>
         ${this.table?.error ? html`<div class="error">${this.table.error}</div>` : nothing}
+        ${groupHeaders.length ? html`
+          <div class="group-head" role="row">
+            ${groupHeaders.map((group) => html`
+              <div
+                class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
+                role="columnheader"
+                style=${`grid-column:span ${group.span}`}
+              >
+                ${group.label}
+              </div>
+            `)}
+          </div>
+        ` : nothing}
         <div class="head" role="row">
-          ${columns.map((column) => {
-            const sorted = this.table?.sort?.key === column.key
+          ${headers.map((header: any) => {
+            const column = this.columns.find((item) => item.key === header.column.id)
+            if (!column) return nothing
+            const sorted = this.table?.sort?.key === header.column.id
             const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
             return html`
-              <div class=${`header-cell ${sorted ? 'sorted' : ''}`} role="columnheader">
+              <div class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`} role="columnheader">
                 <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
-                  <span>${column.label}</span>
+                  <span>${FlexRender({ header })}</span>
                   <span class="sort">${sortMark}</span>
                 </button>
+                ${header.column.getCanResize?.() ? html`
+                  <span
+                    class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
+                    @mousedown=${header.getResizeHandler?.()}
+                    @touchstart=${header.getResizeHandler?.()}
+                  ></span>
+                ` : nothing}
               </div>
             `
           })}
@@ -792,7 +940,7 @@ class DataTable extends LitElement {
                       style=${`transform:translateY(${slot.index * this.rowHeight}px)`}
                     >
                       ${columns.map((column) => html`
-                        <span class=${`cell skeleton-cell ${column.align === 'right' ? 'right' : ''}`} role="cell">
+                        <span class=${`cell skeleton-cell ${column.role === 'row_header' ? 'row-header' : ''} ${column.align === 'right' ? 'right' : ''}`} role="cell">
                           <span class="skeleton-line"></span>
                         </span>
                       `)}
@@ -802,6 +950,8 @@ class DataTable extends LitElement {
                 const { row, index } = slot
                 const key = rowKey(row, index)
                 const selected = key === this.selectedRowId
+                const tanstackRow = rowsByKey.get(key)
+                const cells = tanstackRow?.getVisibleCells?.() ?? []
                 return html`
                   <div
                     class=${`row ${selected ? 'selected' : ''}`}
@@ -810,22 +960,25 @@ class DataTable extends LitElement {
                     style=${`transform:translateY(${index * this.rowHeight}px)`}
                     @click=${() => {
                       this.selectedRowId = key
+                      this.rowSelection = { [key]: true }
                       this.selectedCellKey = ''
                     }}
                   >
-                    ${columns.map((column) => {
-                      const cellKey = `${key}:${column.key}`
+                    ${cells.map((cell: any) => {
+                      const column = this.columns.find((item) => item.key === cell.column.id)
+                      if (!column) return nothing
+                      const cellKey = `${key}:${cell.column.id}`
                       return html`
                         <button
-                          class=${`cell ${column.align === 'right' ? 'right' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
+                          class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
                           role="cell"
-                          title=${String(row[column.key] ?? '')}
+                          title=${String(row[cell.column.id] ?? '')}
                           @click=${(event: Event) => {
                             event.stopPropagation()
                             this.selectCell(row, column, index)
                           }}
                         >
-                          ${formatCell(row[column.key], column)}
+                          ${FlexRender({ cell })}
                         </button>
                       `
                     })}

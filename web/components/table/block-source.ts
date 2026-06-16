@@ -1,0 +1,108 @@
+import {
+  blockIDs,
+  defaultChunkSize,
+  defaultRowHeight,
+  defaultSort,
+  type BlockID,
+  type TableBlock,
+  type TableSignal,
+  type TableSort,
+} from './types'
+
+export function emptyBlocks(): Record<BlockID, TableBlock> {
+  return {
+    a: { start: 0, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+    b: { start: defaultChunkSize, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+    c: { start: defaultChunkSize * 2, requestSeq: 0, resetVersion: 0, sort: defaultSort, rows: [] },
+  }
+}
+
+export const emptyTable: TableSignal = {
+  version: 2,
+  kind: 'data_table',
+  title: 'Orders',
+  columns: [],
+  totalRows: 0,
+  availableRows: 0,
+  isCapped: false,
+  rowCap: 10000,
+  chunkSize: defaultChunkSize,
+  rowHeight: defaultRowHeight,
+  resetVersion: 0,
+  sort: defaultSort,
+  blocks: emptyBlocks(),
+  loadingBlock: '',
+  error: '',
+}
+
+export const tableConverter = {
+  fromAttribute(value: string | null): TableSignal {
+    if (!value) return emptyTable
+    try {
+      return normalizeTable(JSON.parse(value) as Partial<TableSignal>)
+    } catch {
+      return { ...emptyTable, error: 'Could not parse table signal.' }
+    }
+  },
+  toAttribute(value: TableSignal | null): string {
+    return JSON.stringify(value ?? emptyTable)
+  },
+}
+
+export function normalizeTable(value: Partial<TableSignal>): TableSignal {
+  const chunkSize = positiveNumber(value.chunkSize, defaultChunkSize)
+  return {
+    ...emptyTable,
+    ...value,
+    version: 2,
+    kind: value.kind === 'matrix_table' || value.kind === 'pivot_table' ? value.kind : 'data_table',
+    totalRows: positiveNumber(value.totalRows, 0),
+    availableRows: positiveNumber(value.availableRows, positiveNumber(value.totalRows, 0)),
+    rowCap: positiveNumber(value.rowCap, 10000),
+    chunkSize,
+    rowHeight: positiveNumber(value.rowHeight, defaultRowHeight),
+    resetVersion: positiveNumber(value.resetVersion, 0),
+    sort: value.sort?.key ? value.sort : defaultSort,
+    columns: Array.isArray(value.columns) ? value.columns : [],
+    blocks: {
+      a: normalizeBlock(value.blocks?.a, 0),
+      b: normalizeBlock(value.blocks?.b, chunkSize),
+      c: normalizeBlock(value.blocks?.c, chunkSize * 2),
+    },
+    loadingBlock: value.loadingBlock ?? '',
+    error: value.error ?? '',
+  }
+}
+
+export function normalizeBlock(block: TableBlock | undefined, fallbackStart: number): TableBlock {
+  return {
+    start: positiveNumber(block?.start, fallbackStart),
+    requestSeq: positiveNumber(block?.requestSeq, 0),
+    resetVersion: positiveNumber(block?.resetVersion, 0),
+    sort: block?.sort?.key ? block.sort : defaultSort,
+    rows: Array.isArray(block?.rows) ? block.rows : [],
+  }
+}
+
+export function positiveNumber(value: unknown, fallback: number): number {
+  const next = Number(value)
+  return Number.isFinite(next) && next >= 0 ? next : fallback
+}
+
+export function sameSort(a: TableSort, b: TableSort): boolean {
+  return a.key === b.key && a.direction === b.direction
+}
+
+export function blockStartsForAll(start: number, chunkSize: number): number[] {
+  const currentStart = Math.max(0, Math.floor(start / chunkSize) * chunkSize)
+  if (currentStart <= 0) return [0, chunkSize, chunkSize * 2]
+  return [Math.max(0, currentStart - chunkSize), currentStart, currentStart + chunkSize]
+}
+
+export function sortedBlockRows(blocks: Record<BlockID, TableBlock>, availableRows: number) {
+  return blockIDs
+    .map((id) => blocks[id])
+    .sort((a, b) => a.start - b.start)
+    .flatMap((block) => block.rows.map((row, offset) => ({ row, index: block.start + offset })))
+    .filter((item) => item.index < availableRows)
+}

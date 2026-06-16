@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -182,7 +183,7 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 	if err := sse.MarshalAndPatchSignals(patch); err != nil {
 		return
 	}
-	if err := sse.MarshalAndPatchSignals(tablePatch(tableRequest.Table, s.queryTable(r.Context(), dashboardID, filters, tableRequest))); err != nil {
+	if err := sse.MarshalAndPatchSignals(s.tablesPatch(r.Context(), dashboardID, filters, tableRequest)); err != nil {
 		return
 	}
 
@@ -205,7 +206,7 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 			if err := sse.MarshalAndPatchSignals(patch); err != nil {
 				return
 			}
-			if err := sse.MarshalAndPatchSignals(tablePatch(tableRequest.Table, s.queryTable(r.Context(), dashboardID, filters, tableRequest))); err != nil {
+			if err := sse.MarshalAndPatchSignals(s.tablesPatch(r.Context(), dashboardID, filters, tableRequest)); err != nil {
 				return
 			}
 		}
@@ -254,7 +255,7 @@ func (s *Server) chartSelect(w http.ResponseWriter, r *http.Request) {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), dashboardID, filters, request)))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -283,7 +284,7 @@ func (s *Server) clearSelection(w http.ResponseWriter, r *http.Request) {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), dashboardID, filters, request)))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -311,7 +312,7 @@ func (s *Server) resetFilters(w http.ResponseWriter, r *http.Request) {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), dashboardID, filters, request)))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -346,7 +347,7 @@ func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, tablePatch(request.Table, s.queryTable(r.Context(), dashboardID, filters, request)))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -381,6 +382,34 @@ func tablePatch(name string, table dashboard.Table) signalPatch {
 			name: table,
 		},
 	}
+}
+
+func (s *Server) tablesPatch(ctx context.Context, dashboardID string, filters dashboard.Filters, baseRequest dashboard.TableRequest) signalPatch {
+	report, _, ok := s.metrics.Report(dashboardID)
+	if !ok {
+		return tablePatch(baseRequest.Table, s.queryTable(ctx, dashboardID, filters, baseRequest))
+	}
+	tables := map[string]dashboard.Table{}
+	for _, name := range sortedTableNames(report.Tables) {
+		table := report.Tables[name]
+		request := baseRequest
+		request.Table = name
+		request.Block = "all"
+		request.Start = 0
+		request.Count = dashboard.TableChunkSize
+		request.Sort = table.DefaultSort
+		tables[name] = s.queryTable(ctx, dashboardID, filters, request)
+	}
+	return signalPatch{"tables": tables}
+}
+
+func sortedTableNames(tables map[string]semantic.TableVisual) []string {
+	names := make([]string, 0, len(tables))
+	for name := range tables {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func dashboardPatch(patch dashboard.Patch) signalPatch {

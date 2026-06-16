@@ -309,6 +309,7 @@ visuals:
 
 tables:
   orders:
+    kind: data_table
     title: Orders
     dataset: orders
     default_sort:
@@ -334,6 +335,26 @@ tables:
       - key: delivery_days
         label: Delivery
         align: right
+  state_status_matrix:
+    kind: matrix_table
+    title: State status matrix
+    dataset: orders
+    rows: [state]
+    columns: [status]
+    measures: [order_count, revenue]
+    default_sort:
+      key: state
+      direction: asc
+  category_status_pivot:
+    kind: pivot_table
+    title: Category status pivot
+    dataset: orders
+    rows: [category]
+    columns: [status]
+    measures: [order_count]
+    default_sort:
+      key: category
+      direction: asc
 
 pages:
   - id: overview
@@ -384,7 +405,7 @@ pages:
     description: Fulfillment and order detail
     canvas:
       width: 1366
-      height: 1850
+      height: 2300
     grid:
       columns: 12
       row_height: 48
@@ -450,3 +471,43 @@ pages:
         kind: table
         table: orders
         placement: { col: 6, row: 23, col_span: 7, row_span: 6 }
+      - id: state-status-matrix
+        kind: table
+        table: state_status_matrix
+        placement: { col: 1, row: 29, col_span: 6, row_span: 6 }
+      - id: category-status-pivot
+        kind: table
+        table: category_status_pivot
+        placement: { col: 7, row: 29, col_span: 6, row_span: 6 }
+  - id: tables
+    title: Tables
+    description: Detail, matrix, and pivot table variations
+    canvas:
+      width: 1366
+      height: 1248
+    grid:
+      columns: 12
+      row_height: 48
+      gap: 16
+      padding: 16
+    visuals:
+      - id: period-filter
+        kind: filter_card
+        filter: purchase_date
+        placement: { col: 1, row: 1, col_span: 3, row_span: 1 }
+      - id: state-filter
+        kind: filter_card
+        filter: state
+        placement: { col: 4, row: 1, col_span: 3, row_span: 1 }
+      - id: orders-table
+        kind: table
+        table: orders
+        placement: { col: 1, row: 2, col_span: 12, row_span: 8 }
+      - id: state-status-matrix
+        kind: table
+        table: state_status_matrix
+        placement: { col: 1, row: 10, col_span: 6, row_span: 7 }
+      - id: category-status-pivot
+        kind: table
+        table: category_status_pivot
+        placement: { col: 7, row: 10, col_span: 6, row_span: 7 }
