@@ -338,7 +338,7 @@ tables:
   state_status_matrix:
     kind: matrix_table
     title: State status matrix
-    dataset: orders
+    metrics_view: orders
     rows: [state]
     columns: [status]
     measures: [order_count, revenue]
@@ -348,7 +348,7 @@ tables:
   category_status_pivot:
     kind: pivot_table
     title: Category status pivot
-    dataset: orders
+    metrics_view: orders
     rows: [category]
     columns: [status]
     measures: [order_count]

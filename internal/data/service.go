@@ -1392,29 +1392,30 @@ func (m *DuckDBMetrics) matrixTableRows(ctx context.Context, runtime *modelRunti
 	if len(table.ColumnDims) == 1 {
 		return m.crossTabTableRows(ctx, runtime, report, table, filters, request, false)
 	}
-	source, err := datasetSource(runtime.model, table.Dataset)
+	source, err := m.metricViewSource(table.MetricView)
 	if err != nil {
 		return nil, nil, err
 	}
-	dataset := runtime.model.Datasets[table.Dataset]
+	metricView := m.workspace.MetricViews[table.MetricView]
 	columns := make([]dashboard.TableColumn, 0, len(table.Rows)+len(table.Measures))
 	selects := make([]string, 0, len(table.Rows)+len(table.Measures))
 	groupBy := make([]string, 0, len(table.Rows))
 	for _, dimensionName := range table.Rows {
-		dimension := dataset.Dimensions[dimensionName]
+		dimension := metricView.Dimensions[dimensionName]
 		selects = append(selects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), dimensionName))
 		groupBy = append(groupBy, dimensionName)
 		columns = append(columns, dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header"})
 	}
 	for _, measureName := range table.Measures {
-		expr, err := measureAggregateExpr(dataset.Measures[measureName])
+		measure := metricView.Measures[measureName]
+		expr, err := measureAggregateExpr(measure)
 		if err != nil {
 			return nil, nil, err
 		}
 		selects = append(selects, fmt.Sprintf("%s AS %s", expr, measureName))
-		columns = append(columns, dashboard.TableColumn{Key: measureName, Label: measureLabel(measureName, dataset.Measures[measureName]), Align: "right", Role: "measure", Measure: measureName})
+		columns = append(columns, dashboard.TableColumn{Key: measureName, Label: measureLabel(measureName, measure), Align: "right", Role: "measure", Measure: measureName})
 	}
-	where, args := m.filterWhere("e", runtime, report, table.Dataset, filters, "table", request.Table)
+	where, args := m.filterWhere("e", runtime, report, table.MetricView, filters, "table", request.Table)
 	orderBy := strings.Join(groupBy, ", ")
 	if request.Sort.Key != "" && tableHasColumn(columns, request.Sort.Key) {
 		direction := "DESC"
@@ -1440,26 +1441,26 @@ func (m *DuckDBMetrics) pivotTableRows(ctx context.Context, runtime *modelRuntim
 }
 
 func (m *DuckDBMetrics) crossTabTableRows(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, table semantic.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, pivotMode bool) ([]dashboard.TableColumn, []map[string]any, error) {
-	source, err := datasetSource(runtime.model, table.Dataset)
+	source, err := m.metricViewSource(table.MetricView)
 	if err != nil {
 		return nil, nil, err
 	}
-	dataset := runtime.model.Datasets[table.Dataset]
+	metricView := m.workspace.MetricViews[table.MetricView]
 	rowSelects := make([]string, 0, len(table.Rows))
 	groupBy := make([]string, 0, len(table.Rows)+1)
 	baseColumns := make([]dashboard.TableColumn, 0, len(table.Rows))
 	for _, dimensionName := range table.Rows {
-		dimension := dataset.Dimensions[dimensionName]
+		dimension := metricView.Dimensions[dimensionName]
 		rowSelects = append(rowSelects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), dimensionName))
 		groupBy = append(groupBy, dimensionName)
 		baseColumns = append(baseColumns, dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header"})
 	}
 	columnDimensionName := table.ColumnDims[0]
-	columnDimension := dataset.Dimensions[columnDimensionName]
+	columnDimension := metricView.Dimensions[columnDimensionName]
 	valueSelects := make([]string, 0, len(table.Measures))
 	valueColumns := make([]string, 0, len(table.Measures))
 	for _, measureName := range table.Measures {
-		measureExpr, err := measureAggregateExpr(dataset.Measures[measureName])
+		measureExpr, err := measureAggregateExpr(metricView.Measures[measureName])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1467,7 +1468,7 @@ func (m *DuckDBMetrics) crossTabTableRows(ctx context.Context, runtime *modelRun
 		valueColumns = append(valueColumns, measureName)
 	}
 	groupBy = append(groupBy, "pivot_label")
-	where, args := m.filterWhere("e", runtime, report, table.Dataset, filters, "table", request.Table)
+	where, args := m.filterWhere("e", runtime, report, table.MetricView, filters, "table", request.Table)
 	query := fmt.Sprintf(`
 SELECT %s, %s AS pivot_label, %s
 FROM %s e
@@ -1507,7 +1508,7 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 		label := fmt.Sprint(raw["pivot_label"])
 		groupLabel := label
 		if pivotMode {
-			groupLabel = measureLabel(table.Measures[0], dataset.Measures[table.Measures[0]])
+			groupLabel = measureLabel(table.Measures[0], metricView.Measures[table.Measures[0]])
 		}
 		pivotKey, exists := pivotKeys[label]
 		if !exists {
@@ -1515,7 +1516,7 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 			pivotKeys[label] = pivotKey
 		}
 		for _, measureName := range table.Measures {
-			measure := dataset.Measures[measureName]
+			measure := metricView.Measures[measureName]
 			columnIdentity := label + "\x00" + measureName
 			columnKey, columnExists := columnKeys[columnIdentity]
 			candidate := "pivot_" + pivotKey
@@ -1649,7 +1650,7 @@ func numericTableValue(value any) (float64, bool) {
 	}
 }
 
-func dimensionLabel(name string, dimension semantic.Dimension) string {
+func dimensionLabel(name string, dimension semantic.MetricDimension) string {
 	if strings.TrimSpace(dimension.Label) != "" {
 		return dimension.Label
 	}
