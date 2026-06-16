@@ -10,3 +10,7 @@ static/app.css
 static/*.js
 !static/theme.js
 static/model-graph.css
+.env
+.env.*
+!.env.example
+infisical-export.*
