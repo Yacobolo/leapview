@@ -42,6 +42,7 @@ func New(metrics queryMetrics) *Server {
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.home)
+	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("GET /dashboards/{dashboard}", s.dashboard)
 	mux.HandleFunc("GET /dashboards/{dashboard}/pages/{page}", s.page)
 	mux.HandleFunc("GET /models", s.models)
@@ -72,6 +73,14 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if err := ui.CatalogPage(s.metrics.Catalog()).Render(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if err := ui.LoginPage().Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
