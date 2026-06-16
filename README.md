@@ -9,10 +9,10 @@ python3 -m pip install -r scripts/requirements.txt
 npm install
 npm run build
 python3 scripts/bootstrap_olist.py
-go run ./cmd/libredash
+task dev
 ```
 
-Open http://localhost:8080 to browse the dashboard catalog.
+`task dev` starts a managed dev server, chooses a worktree-safe port, stops this worktree's stale server if one is already running, and prints the URL. Use `task dev:status`, `task dev:logs`, and `task dev:stop` for lifecycle checks.
 
 If you only need to run the existing checked-in CSS, the npm steps can be skipped:
 

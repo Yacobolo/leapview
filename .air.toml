@@ -1,0 +1,19 @@
+root = "."
+tmp_dir = ".tmp/air"
+
+[build]
+cmd = "go build -o ./.tmp/air/libredash ./cmd/libredash"
+entrypoint = ["./.tmp/air/libredash"]
+delay = 250
+exclude_dir = [".data", ".git", ".tmp", "bin", "node_modules", "output", "static"]
+include_ext = ["go", "yaml", "yml"]
+kill_delay = "500ms"
+log = "build-errors.log"
+send_interrupt = true
+stop_on_error = true
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = false

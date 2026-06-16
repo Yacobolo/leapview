@@ -1,0 +1,32 @@
+version: '3'
+
+tasks:
+  dev:
+    desc: Start the managed LibreDash dev server for this worktree
+    cmds:
+      - ./scripts/dev-server.sh start
+
+  dev:stop:
+    desc: Stop the managed LibreDash dev server for this worktree
+    cmds:
+      - ./scripts/dev-server.sh stop
+
+  dev:status:
+    desc: Show managed LibreDash dev server status
+    cmds:
+      - ./scripts/dev-server.sh status
+
+  dev:logs:
+    desc: Tail managed LibreDash dev server logs
+    cmds:
+      - ./scripts/dev-server.sh logs
+
+  build:
+    desc: Build browser assets
+    cmds:
+      - npm run build
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test ./...

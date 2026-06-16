@@ -15,10 +15,7 @@ func main() {
 		dataDir = ".data/olist"
 	}
 
-	addr := os.Getenv("ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
+	addr := listenAddr()
 
 	metrics, err := data.NewDuckDBMetrics(dataDir)
 	if err != nil {
@@ -32,4 +29,20 @@ func main() {
 	if err := http.ListenAndServe(addr, server.Routes()); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func listenAddr() string {
+	if addr := os.Getenv("LIBREDASH_ADDR"); addr != "" {
+		return addr
+	}
+	if addr := os.Getenv("ADDR"); addr != "" {
+		return addr
+	}
+	if port := os.Getenv("PORT"); port != "" {
+		if port[0] == ':' {
+			return port
+		}
+		return ":" + port
+	}
+	return ":8080"
 }
