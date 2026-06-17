@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing } from 'lit'
 import { createRef, ref, type Ref } from 'lit/directives/ref.js'
 import {
   TableController,
+  callMemoOrStaticFn,
   createCoreRowModel,
   flexRender,
   type ColumnDef,
@@ -10,6 +11,13 @@ import {
   type RowSelectionState,
   type SortingState,
 } from '@tanstack/lit-table'
+import {
+  column_getCanHide,
+  column_getIsVisible,
+  column_getToggleVisibilityHandler,
+  row_getVisibleCells,
+  table_getAllLeafColumns,
+} from '@tanstack/table-core/static-functions'
 import { visualMenuIcon } from './visual-menu-icons'
 import { defaultDirection, formatCell, rowKey } from './table/format'
 import { blockStartsForAll, emptyBlocks, emptyTable, sameSort, sortedBlockRows, tableConverter } from './table/block-source'
@@ -51,6 +59,48 @@ function applyUpdater<T>(updater: unknown, current: T): T {
   return typeof updater === 'function' ? (updater as (old: T) => T)(current) : updater as T
 }
 
+function columnVisible(columnID: string, visibility: ColumnVisibilityState): boolean {
+  return visibility[columnID] !== false
+}
+
+function visibleHeaders(table: any, visibility: ColumnVisibilityState): any[] {
+  const groups = table.getHeaderGroups?.() ?? []
+  const headers = groups[groups.length - 1]?.headers ?? []
+  return headers.filter((header: any) => columnVisible(header.column.id, visibility))
+}
+
+function allTableColumns(table: any): any[] {
+  return table.getAllLeafColumns?.() ?? callMemoOrStaticFn(table, 'getAllLeafColumns', table_getAllLeafColumns)
+}
+
+function visibleColumnsFromHeaders(headers: any[], columns: TableColumn[]): TableColumn[] {
+  return headers
+    .map((header) => header.column.columnDef.meta?.column ?? columns.find((item) => item.key === header.column.id))
+    .filter(Boolean) as TableColumn[]
+}
+
+function visibleCellsForRow(row: any, visibility: ColumnVisibilityState): any[] {
+  const cells = row?.getVisibleCells?.() ?? callMemoOrStaticFn(row, 'getVisibleCells', row_getVisibleCells)
+  return cells.filter((cell: any) => columnVisible(cell.column.id, visibility))
+}
+
+function columnIsVisible(column: any, fallback: ColumnVisibilityState): boolean {
+  if (column.id in fallback) return columnVisible(column.id, fallback)
+  return column?.getIsVisible?.() ?? callMemoOrStaticFn(column, 'getIsVisible', column_getIsVisible) ?? true
+}
+
+function columnCanHide(column: any): boolean {
+  return column?.getCanHide?.() ?? callMemoOrStaticFn(column, 'getCanHide', column_getCanHide) ?? true
+}
+
+function columnVisibilityHandler(column: any, fallback: (checked: boolean) => void): (event: Event) => void {
+  const handler = column?.getToggleVisibilityHandler?.() ?? callMemoOrStaticFn(column, 'getToggleVisibilityHandler', column_getToggleVisibilityHandler)
+  return (event: Event) => {
+    if (typeof handler === 'function') handler(event)
+    fallback((event.currentTarget as HTMLInputElement).checked)
+  }
+}
+
 class DataTable extends LitElement {
   static properties = {
     tableId: { attribute: 'table-id' },
@@ -82,7 +132,8 @@ class DataTable extends LitElement {
   private expectedBlocks = new Map<BlockID, ExpectedBlockRequest>()
   private latestAcceptedSeq = new Map<BlockID, number>()
   private blockCache: Record<BlockID, TableBlock> = emptyBlocks()
-  private scrollElementRef: Ref<HTMLDivElement> = createRef()
+  private bodyViewportRef: Ref<HTMLDivElement> = createRef()
+  private headerViewportRef: Ref<HTMLDivElement> = createRef()
   private resizeObserver?: ResizeObserver
   private tableController = new TableController<TanStackTableRow>(this)
   private handleOutsidePointerDown = (event: PointerEvent) => {
@@ -109,6 +160,7 @@ class DataTable extends LitElement {
       flex-direction: column;
       height: 100%;
       min-height: 0;
+      min-width: 0;
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
     }
 
@@ -429,28 +481,41 @@ class DataTable extends LitElement {
       background: var(--fgColor-accent);
     }
 
-    .viewport {
+    .table-frame {
+      position: relative;
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      border-top: 1px solid var(--borderColor-default);
+      background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
+    }
+
+    .header-viewport {
+      flex: 0 0 auto;
+      overflow: hidden;
+      min-height: 0;
+      min-width: 0;
+      border-bottom: 1px solid var(--borderColor-emphasis);
+      background: var(--bgColor-muted);
+    }
+
+    .body-viewport {
       position: relative;
       flex: 1 1 auto;
       overflow: auto;
       min-height: 0;
+      min-width: 0;
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       scrollbar-gutter: stable;
     }
 
-    .table-plane {
+    .header-plane,
+    .body-plane {
       position: relative;
       width: var(--ld-table-width, 1080px);
       min-width: var(--ld-table-width, 1080px);
-    }
-
-    .sticky-header {
-      position: sticky;
-      top: 0;
-      z-index: 8;
-      width: var(--ld-table-width, 1080px);
-      min-width: var(--ld-table-width, 1080px);
-      background: var(--bgColor-muted);
     }
 
     .canvas {
@@ -638,7 +703,7 @@ class DataTable extends LitElement {
   }
 
   firstUpdated(): void {
-    const viewport = this.scrollElementRef.value
+    const viewport = this.bodyViewportRef.value
     if (!viewport) return
     this.viewportHeight = viewport.clientHeight
     this.resizeObserver = new ResizeObserver(() => {
@@ -680,10 +745,12 @@ class DataTable extends LitElement {
     if (this.shouldResetScroll) {
       this.shouldResetScroll = false
       queueMicrotask(() => {
-        const viewport = this.scrollElementRef.value
+        const viewport = this.bodyViewportRef.value
         if (!viewport) return
         viewport.scrollTop = 0
+        viewport.scrollLeft = 0
         this.viewportTop = 0
+        if (this.headerViewportRef.value) this.headerViewportRef.value.scrollLeft = 0
         this.viewportHeight = viewport.clientHeight
         this.scheduleEnsureBlocksForScroll()
       })
@@ -764,8 +831,8 @@ class DataTable extends LitElement {
     return this.visibleColumnSizes.map(({ key, size }) => Math.max(44, size || widths[key] || 130))
   }
 
-  get tanstackRows(): TanStackTableRow[] {
-    return this.loadedRows.map(({ row, index }) => ({
+  private tanstackRowsForSlots(slots: VisibleRowSlot[]): TanStackTableRow[] {
+    return slots.filter((slot): slot is Extract<VisibleRowSlot, { kind: 'row' }> => slot.kind === 'row').map(({ row, index }) => ({
       ...row,
       __absoluteIndex: index,
       __rowKey: rowKey(row, index),
@@ -808,11 +875,11 @@ class DataTable extends LitElement {
       size: defaultColumnSize(column),
       minSize: column.key === 'order_id' || column.key === 'category' ? 160 : 64,
       enableResizing: true,
-      meta: { align: column.align },
+      meta: { align: column.align, column },
     })) as Array<ColumnDef<TanStackTableRow, unknown>>
   }
 
-  private tanstackTable() {
+  private tanstackTable(rows: TanStackTableRow[]) {
     const firstColumn = this.columns[0]?.key
     const sorting: SortingState = this.table.sort?.key
       ? [{ id: this.table.sort.key, desc: this.table.sort.direction === 'desc' }]
@@ -820,7 +887,7 @@ class DataTable extends LitElement {
     return this.tableController.table(
       {
         columns: this.tanstackColumnDefs(),
-        data: this.tanstackRows,
+        data: rows,
         getRowId: (row) => row.__rowKey,
         getCoreRowModel: createCoreRowModel(),
         manualSorting: true,
@@ -855,6 +922,7 @@ class DataTable extends LitElement {
   handleScroll(event: Event): void {
     const target = event.currentTarget as HTMLDivElement
     this.viewportTop = target.scrollTop
+    if (this.headerViewportRef.value) this.headerViewportRef.value.scrollLeft = target.scrollLeft
     this.viewportHeight = target.clientHeight
     this.scheduleEnsureBlocksForScroll()
   }
@@ -874,11 +942,13 @@ class DataTable extends LitElement {
   }
 
   render() {
-    const tanstack = this.tanstackTable()
-    const headers = tanstack.getHeaderGroups()[0]?.headers ?? []
-    const columns = headers.map((header: any) => this.columns.find((item) => item.key === header.column.id)).filter(Boolean) as TableColumn[]
-    const groupHeaders = this.groupHeaderSegments(columns)
     const visibleRows = this.visibleRows
+    const tanstack = this.tanstackTable(this.tanstackRowsForSlots(visibleRows))
+    const headers = visibleHeaders(tanstack, this.columnVisibility)
+    const columns = visibleColumnsFromHeaders(headers, this.columns)
+    const columnModels = allTableColumns(tanstack)
+    const tanstackRows = new Map((tanstack.getRowModel?.().rows ?? []).map((row: any) => [row.id, row]))
+    const groupHeaders = this.groupHeaderSegments(columns)
     const totalHeight = this.availableRows * this.rowHeight
     const columnLineOffsets = this.columnLineOffsets
     const rowRange = this.rowRangeText()
@@ -902,67 +972,72 @@ class DataTable extends LitElement {
               <div class="menu-divider"></div>
               <div class="column-menu" @click=${(event: Event) => event.stopPropagation()}>
                 <span>Columns</span>
-                ${this.columnsForTanStack().map((column) => html`
-                  <label>
-                    <input
-                      type="checkbox"
-                      .checked=${this.columnVisibility[column.key] !== false}
-                      ?disabled=${this.columnsForTanStack().length <= 1}
-                      @change=${(event: Event) => {
-                        const checked = (event.currentTarget as HTMLInputElement).checked
-                        this.columnVisibility = { ...this.columnVisibility, [column.key]: checked }
-                      }}
-                    />
-                    ${column.label}
-                  </label>
-                `)}
+                ${columnModels.map((column: any) => {
+                  const checked = columnIsVisible(column, this.columnVisibility)
+                  return html`
+                    <label>
+                      <input
+                        type="checkbox"
+                        .checked=${checked}
+                        ?disabled=${!columnCanHide(column) || checked && columns.length <= 1}
+                        @change=${columnVisibilityHandler(column, (next) => {
+                          this.columnVisibility = { ...this.columnVisibility, [column.id]: next }
+                        })}
+                      />
+                      ${column.columnDef.header}
+                    </label>
+                  `
+                })}
               </div>
             </div>
           </details>
         </div>
         ${this.table?.error ? html`<div class="error">${this.table.error}</div>` : nothing}
-        <div class="viewport" ${ref(this.scrollElementRef)} @scroll=${this.handleScroll} role="table" aria-label=${this.table?.title ?? 'Orders'}>
+        <div class="table-frame" role="table" aria-label=${this.table?.title ?? 'Orders'}>
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
-          ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
-            <div class="table-plane">
-              <div class="sticky-header">
-                ${groupHeaders.length ? html`
-                  <div class="group-head" role="row">
-                    ${groupHeaders.map((group) => html`
-                      <div
-                        class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
-                        role="columnheader"
-                        style=${`grid-column:span ${group.span}`}
-                      >
-                        ${group.label}
-                      </div>
-                    `)}
-                  </div>
-                ` : nothing}
-                <div class="head" role="row">
-                  ${headers.map((header: any) => {
-                    const column = this.columns.find((item) => item.key === header.column.id)
-                    if (!column) return nothing
-                    const sorted = this.table?.sort?.key === header.column.id
-                    const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
-                    return html`
-                      <div class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`} role="columnheader">
-                        <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
-                          <span>${flexRender(header.column.columnDef.header, header.getContext())}</span>
-                          <span class="sort">${sortMark}</span>
-                        </button>
-                        ${header.column.getCanResize?.() ? html`
-                          <span
-                            class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
-                            @mousedown=${header.getResizeHandler?.()}
-                            @touchstart=${header.getResizeHandler?.()}
-                          ></span>
-                        ` : nothing}
-                      </div>
-                    `
-                  })}
+          <div class="header-viewport" ${ref(this.headerViewportRef)}>
+            <div class="header-plane">
+              ${groupHeaders.length ? html`
+                <div class="group-head" role="row">
+                  ${groupHeaders.map((group) => html`
+                    <div
+                      class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
+                      role="columnheader"
+                      style=${`grid-column:span ${group.span}`}
+                    >
+                      ${group.label}
+                    </div>
+                  `)}
                 </div>
+              ` : nothing}
+              <div class="head" role="row">
+                ${headers.map((header: any) => {
+                  const column = this.columns.find((item) => item.key === header.column.id)
+                  if (!column) return nothing
+                  const sorted = this.table?.sort?.key === header.column.id
+                  const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
+                  return html`
+                    <div class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`} role="columnheader">
+                      <button class="header-button" type="button" @click=${() => this.sortColumn(column)}>
+                        <span>${flexRender(header.column.columnDef.header, header.getContext())}</span>
+                        <span class="sort">${sortMark}</span>
+                      </button>
+                      ${header.column.getCanResize?.() ? html`
+                        <span
+                          class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
+                          @mousedown=${header.getResizeHandler?.()}
+                          @touchstart=${header.getResizeHandler?.()}
+                        ></span>
+                      ` : nothing}
+                    </div>
+                  `
+                })}
               </div>
+            </div>
+          </div>
+          <div class="body-viewport" ${ref(this.bodyViewportRef)} @scroll=${this.handleScroll} role="rowgroup">
+            ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
+              <div class="body-plane">
               <div class="canvas" style=${`height:${totalHeight}px`}>
                 <div class="grid-lines" aria-hidden="true">
                   ${columnLineOffsets.map((offset) => html`<span class="grid-line" style=${`left:${offset}px`}></span>`)}
@@ -986,6 +1061,8 @@ class DataTable extends LitElement {
                   }
                   const { row, index } = slot
                   const key = rowKey(row, index)
+                  const tanstackRow = tanstackRows.get(key)
+                  const cells = tanstackRow ? visibleCellsForRow(tanstackRow, this.columnVisibility) : []
                   const selected = key === this.selectedRowId
                   return html`
                     <div
@@ -999,19 +1076,21 @@ class DataTable extends LitElement {
                         this.selectedCellKey = ''
                       }}
                     >
-                      ${columns.map((column) => {
-                        const cellKey = `${key}:${column.key}`
+                      ${cells.map((cell: any) => {
+                        const column = cell.column.columnDef.meta?.column ?? this.columns.find((item) => item.key === cell.column.id)
+                        if (!column) return nothing
+                        const cellKey = `${key}:${cell.column.id}`
                         return html`
                           <button
                             class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
                             role="cell"
-                            title=${String(row[column.key] ?? '')}
+                            title=${String(row[cell.column.id] ?? '')}
                             @click=${(event: Event) => {
                               event.stopPropagation()
                               this.selectCell(row, column, index)
                             }}
                           >
-                            ${formatCell(row[column.key], column)}
+                            ${flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </button>
                         `
                       })}
@@ -1020,7 +1099,8 @@ class DataTable extends LitElement {
                 })}
               </div>
             </div>
-          `}
+            `}
+          </div>
         </div>
         <div class="footer">
           <span><strong>${rowRange}</strong>${this.visibleLoading ? html` · loading` : nothing}${this.table.isCapped ? html` · browsing first ${this.table.rowCap.toLocaleString()}` : nothing}</span>
