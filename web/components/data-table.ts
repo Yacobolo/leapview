@@ -20,6 +20,8 @@ import {
 } from '@tanstack/lit-table'
 import {
   column_getCanHide,
+  column_getIsLastColumn,
+  column_getIsPinned,
   column_getStart,
   column_getIsVisible,
   column_getToggleVisibilityHandler,
@@ -421,9 +423,9 @@ class DataTable extends LitElement {
       border-right: 0;
     }
 
-    .header-cell.row-header,
-    .group-cell.row-header,
-    .cell.row-header {
+    .header-cell.pinned-left,
+    .group-cell.pinned-left,
+    .cell.pinned-left {
       position: sticky;
       left: calc(var(--ld-pin-left, 0px) - 1px);
       overflow: visible;
@@ -432,9 +434,9 @@ class DataTable extends LitElement {
       box-shadow: none;
     }
 
-    .header-cell.row-header::after,
-    .group-cell.row-header::after,
-    .cell.row-header::after {
+    .header-cell.pinned-left-edge::after,
+    .group-cell.pinned-left-edge::after,
+    .cell.pinned-left-edge::after {
       content: '';
       position: absolute;
       inset-block: 0;
@@ -446,23 +448,23 @@ class DataTable extends LitElement {
       pointer-events: none;
     }
 
-    .header-cell.row-header {
+    .header-cell.pinned-left {
       z-index: 36;
       background: var(--bgColor-muted);
     }
 
-    .group-cell.row-header {
+    .group-cell.pinned-left {
       z-index: 38;
       background: color-mix(in srgb, var(--bgColor-muted), var(--report-chart-surface, var(--bgColor-default)) 34%);
     }
 
-    .cell.row-header {
+    .cell.pinned-left {
       z-index: 12;
     }
 
-    .header-cell.row-header > .header-button,
-    .cell.row-header > *,
-    .group-cell.row-header > * {
+    .header-cell.pinned-left > .header-button,
+    .cell.pinned-left > *,
+    .group-cell.pinned-left > * {
       position: relative;
       z-index: 2;
       min-width: 0;
@@ -866,16 +868,16 @@ class DataTable extends LitElement {
     return Math.max(1, this.table.rowHeight || defaultRowHeight)
   }
 
-  get gridTemplate(): string {
-    return this.columnPixelWidths(this.visibleColumnsForLayout).map((size) => `${size}px`).join(' ')
+  private gridTemplateFor(columns: TableColumn[]): string {
+    return this.columnPixelWidths(columns).map((size) => `${size}px`).join(' ')
   }
 
-  get tableWidth(): number {
-    return this.columnPixelWidths(this.visibleColumnsForLayout).reduce((sum, size) => sum + size, 0)
+  private tableWidthFor(columns: TableColumn[]): number {
+    return this.columnPixelWidths(columns).reduce((sum, size) => sum + size, 0)
   }
 
-  get columnLineOffsets(): number[] {
-    const widths = this.columnPixelWidths(this.visibleColumnsForLayout)
+  private columnLineOffsetsFor(columns: TableColumn[]): number[] {
+    const widths = this.columnPixelWidths(columns)
     let offset = 0
     return widths.slice(0, -1).map((width) => {
       offset += width
@@ -904,16 +906,6 @@ class DataTable extends LitElement {
       __absoluteIndex: index,
       __rowKey: rowKey(row, index),
     }))
-  }
-
-  get visibleColumnSizes(): Array<{ key: string; size: number }> {
-    return this.visibleColumnsForLayout
-      .map((column) => ({ key: column.key, size: this.columnSizing[column.key] ?? defaultColumnSize(column) }))
-  }
-
-  get visibleColumnsForLayout(): TableColumn[] {
-    return this.columnsForTanStack()
-      .filter((column) => this.columnVisibility[column.key] !== false)
   }
 
   private columnsForTanStack(): TableColumn[] {
@@ -1019,9 +1011,22 @@ class DataTable extends LitElement {
     this.selectedCellKey = ''
   }
 
+  private columnPinPosition(column: any): false | 'left' | 'right' {
+    return column?.getIsPinned?.() ?? callMemoOrStaticFn(column, 'getIsPinned', column_getIsPinned) ?? false
+  }
+
+  private isLastLeftPinnedColumn(column: any): boolean {
+    return Boolean(column?.getIsLastColumn?.('left') ?? callMemoOrStaticFn(column, 'getIsLastColumn', column_getIsLastColumn, 'left'))
+  }
+
+  private pinnedCellClass(column: any): string {
+    const pinPosition = this.columnPinPosition(column)
+    if (pinPosition !== 'left') return ''
+    return `pinned-left ${this.isLastLeftPinnedColumn(column) ? 'pinned-left-edge' : ''}`
+  }
+
   private pinnedCellStyle(column: any): string {
-    const metaColumn = column?.columnDef?.meta?.column as TableColumn | undefined
-    if (metaColumn?.role !== 'row_header') return ''
+    if (this.columnPinPosition(column) !== 'left') return ''
     const offset = column.getStart?.('left') ?? callMemoOrStaticFn(column, 'getStart', column_getStart, 'left') ?? 0
     return `--ld-pin-left:${Math.max(0, Number(offset) || 0)}px`
   }
@@ -1033,7 +1038,7 @@ class DataTable extends LitElement {
       <div class="group-head" role="row">
         ${groupHeaders.map((group) => html`
           <div
-            class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'}`}
+            class=${`group-cell ${group.rowHeader ? 'row-header' : 'measure-group'} ${this.pinnedCellClass(group.column)}`}
             role="columnheader"
             style=${`grid-column:span ${group.span};${this.pinnedCellStyle(group.column)}`}
           >
@@ -1054,7 +1059,7 @@ class DataTable extends LitElement {
           const sortMark = this.table?.sort?.direction === 'asc' ? '↑' : '↓'
           return html`
             <div
-              class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${sorted ? 'sorted' : ''}`}
+              class=${`header-cell ${column.role === 'row_header' ? 'row-header' : ''} ${this.pinnedCellClass(header.column)} ${sorted ? 'sorted' : ''}`}
               role="columnheader"
               style=${this.pinnedCellStyle(header.column)}
             >
@@ -1089,7 +1094,7 @@ class DataTable extends LitElement {
           if (!column) return nothing
           return html`
             <span
-              class=${`cell skeleton-cell ${column.role === 'row_header' ? 'row-header' : ''} ${column.align === 'right' ? 'right' : ''}`}
+              class=${`cell skeleton-cell ${column.role === 'row_header' ? 'row-header' : ''} ${this.pinnedCellClass(header.column)} ${column.align === 'right' ? 'right' : ''}`}
               role="cell"
               style=${this.pinnedCellStyle(header.column)}
             >
@@ -1120,7 +1125,7 @@ class DataTable extends LitElement {
           const cellKey = `${key}:${cell.column.id}`
           return html`
             <button
-              class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
+              class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${this.pinnedCellClass(cell.column)} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
               role="cell"
               title=${String(row[cell.column.id] ?? '')}
               style=${this.pinnedCellStyle(cell.column)}
@@ -1149,9 +1154,12 @@ class DataTable extends LitElement {
     const rowRange = this.rowRangeText()
     const selectedText = this.selectedRowId ? '1 row selected' : 'No selection'
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading
+    const gridTemplate = this.gridTemplateFor(columns)
+    const tableWidth = this.tableWidthFor(columns)
+    const columnLineOffsets = this.columnLineOffsetsFor(columns)
 
     return html`
-      <section class="shell" style=${`--ld-table-columns:${this.gridTemplate};--ld-table-width:${this.tableWidth}px;--ld-row-height:${this.rowHeight}px;--ld-head-top:${hasGroupHeaderRow ? '26px' : '0px'}`}>
+      <section class="shell" style=${`--ld-table-columns:${gridTemplate};--ld-table-width:${tableWidth}px;--ld-row-height:${this.rowHeight}px;--ld-head-top:${hasGroupHeaderRow ? '26px' : '0px'}`}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? 'Orders'}</h2>
@@ -1197,7 +1205,7 @@ class DataTable extends LitElement {
               ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
                 <div class="canvas" role="rowgroup" style=${`height:${totalHeight}px`}>
                   <div class="grid-lines" aria-hidden="true">
-                    ${this.columnLineOffsets.map((offset) => html`<span class="grid-line" style=${`left:${offset}px`}></span>`)}
+                    ${columnLineOffsets.map((offset) => html`<span class="grid-line" style=${`left:${offset}px`}></span>`)}
                   </div>
                   ${visibleRows.map((slot) => {
                     if (slot.kind === 'skeleton') return this.renderSkeletonSegment(headers, slot.index)
