@@ -206,11 +206,15 @@ func (m *Manager) NormalizeTableRequest(dashboardID string, request dashboard.Ta
 }
 
 func (m *Manager) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return m.QueryDashboardPage(ctx, dashboardID, "", filters)
+}
+
+func (m *Manager) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	metrics, err := m.metrics()
 	if err != nil {
 		return dashboard.EmptyPatch(filters.WithDefaults(), m.dataDir, err), nil
 	}
-	return metrics.QueryDashboard(ctx, dashboardID, filters)
+	return metrics.QueryDashboardPage(ctx, dashboardID, pageID, filters)
 }
 
 func (m *Manager) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {

@@ -478,7 +478,7 @@ func jsonString(value any) string {
 }
 
 func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page, initialFilters dashboard.Filters) map[string]any {
-	tableRequest := defaultTableRequest(report)
+	tableRequest := defaultTableRequest(report, activePage)
 	initialFilters = initialFilters.WithDefaults()
 	return map[string]any{
 		"runtime": map[string]any{
@@ -511,8 +511,8 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 				"direction": tableRequest.Sort.Direction,
 			},
 		},
-		"tables": tableSignals(report, tableRequest),
-		"charts": chartSignals(report, model),
+		"tables": tableSignals(report, activePage, tableRequest),
+		"charts": chartSignals(report, model, activePage),
 		"kpis":   []any{},
 		"status": map[string]any{
 			"loading":       false,
@@ -524,32 +524,29 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 	}
 }
 
-func defaultTableRequest(report semantic.Dashboard) dashboard.TableRequest {
+func defaultTableRequest(report semantic.Dashboard, page dashboard.Page) dashboard.TableRequest {
 	request := dashboard.TableRequest{Block: "all", Start: 0, Count: dashboard.TableChunkSize}
-	if table, ok := report.Tables["orders"]; ok && table.KindOrDefault() == "data_table" {
-		request.Table = "orders"
-		request.Sort = table.DefaultSort
-	} else {
-		for _, name := range sortedKeys(report.Tables) {
-			table := report.Tables[name]
-			if table.KindOrDefault() != "data_table" {
-				continue
-			}
+	for _, name := range pageTableIDs(page) {
+		table, ok := report.Tables[name]
+		if !ok {
+			continue
+		}
+		if table.KindOrDefault() == "data_table" {
 			request.Table = name
 			request.Sort = table.DefaultSort
 			break
 		}
 	}
-	if request.Table == "" {
-		return dashboard.DefaultTableRequest()
-	}
 	return request
 }
 
-func tableSignals(report semantic.Dashboard, request dashboard.TableRequest) map[string]any {
+func tableSignals(report semantic.Dashboard, page dashboard.Page, request dashboard.TableRequest) map[string]any {
 	tables := map[string]any{}
-	for _, name := range sortedKeys(report.Tables) {
-		table := report.Tables[name]
+	for _, name := range pageTableIDs(page) {
+		table, ok := report.Tables[name]
+		if !ok {
+			continue
+		}
 		tables[name] = map[string]any{
 			"kind":          table.KindOrDefault(),
 			"title":         table.Title,
@@ -583,13 +580,16 @@ func tableResetExpression() string {
 	return "$tableCommand.block = 'all'; $tableCommand.start = 0; $tableCommand.count = " + count + "; $tableCommand.resetVersion = ($tableCommand.resetVersion || 0) + 1; "
 }
 
-func chartSignals(report semantic.Dashboard, model *semantic.Model) map[string]any {
+func chartSignals(report semantic.Dashboard, model *semantic.Model, page dashboard.Page) map[string]any {
 	charts := map[string]any{}
-	for _, id := range sortedKeys(report.Visuals) {
-		visual := report.Visuals[id]
+	for _, id := range pageChartIDs(page) {
+		visual, ok := report.Visuals[id]
+		if !ok {
+			continue
+		}
 		measureName := ""
 		unit := ""
-		if len(visual.Query.Measures) > 0 {
+		if model != nil && len(visual.Query.Measures) > 0 {
 			measureName = visual.Query.Measures[0]
 			if dataset, ok := model.Datasets[visual.Dataset]; ok {
 				unit = dataset.Measures[measureName].Unit
@@ -598,6 +598,39 @@ func chartSignals(report semantic.Dashboard, model *semantic.Model) map[string]a
 		charts[id] = chartSignal(id, visual, unit, measureName)
 	}
 	return charts
+}
+
+func pageChartIDs(page dashboard.Page) []string {
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Visual == "" {
+			continue
+		}
+		if _, ok := seen[item.Visual]; ok {
+			continue
+		}
+		seen[item.Visual] = struct{}{}
+		ids = append(ids, item.Visual)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func pageTableIDs(page dashboard.Page) []string {
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Table == "" {
+			continue
+		}
+		if _, ok := seen[item.Table]; ok {
+			continue
+		}
+		seen[item.Table] = struct{}{}
+		ids = append(ids, item.Table)
+	}
+	return ids
 }
 
 func chartSignal(id string, visual semantic.Visual, unit, measure string) map[string]any {

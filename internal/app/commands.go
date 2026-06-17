@@ -3,11 +3,9 @@ package app
 import (
 	"context"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	"github.com/Yacobolo/libredash/internal/semantic"
 	"github.com/starfederation/datastar-go/datastar"
 )
 
@@ -36,18 +34,19 @@ func (s *Server) chartSelect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
+	pageID := pageIDFromRequest(r, signals)
 	filters := s.normalizeFilters(dashboardID, signals.Filters).ToggleSelection(signals.ChartCommand)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
-	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
+	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
 	s.broker.publish(clientID, loadingPatch(s.metrics.DataDir()))
 
-	patch, err := s.metrics.QueryDashboard(r.Context(), dashboardID, filters)
+	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, pageID, filters)
 	if err != nil {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, pageID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -58,19 +57,20 @@ func (s *Server) clearSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
+	pageID := pageIDFromRequest(r, signals)
 	filters := s.normalizeFilters(dashboardID, signals.Filters)
 	filters.VisualSelections = nil
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
-	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
+	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
 	s.broker.publish(clientID, loadingPatch(s.metrics.DataDir()))
 
-	patch, err := s.metrics.QueryDashboard(r.Context(), dashboardID, filters)
+	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, pageID, filters)
 	if err != nil {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, pageID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -81,18 +81,19 @@ func (s *Server) resetFilters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
+	pageID := pageIDFromRequest(r, signals)
 	filters := s.metrics.DefaultFilters(dashboardID)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
-	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
+	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
 	s.broker.publish(clientID, loadingPatch(s.metrics.DataDir()))
 
-	patch, err := s.metrics.QueryDashboard(r.Context(), dashboardID, filters)
+	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, pageID, filters)
 	if err != nil {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, pageID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -103,10 +104,11 @@ func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
+	pageID := pageIDFromRequest(r, signals)
 	modelID := s.modelID(r, signals, dashboardID)
 	filters := s.normalizeFilters(dashboardID, signals.Filters)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
-	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
+	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
 	s.broker.publish(clientID, loadingPatch(s.metrics.DataDir()))
 
@@ -116,12 +118,12 @@ func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patch, err := s.metrics.QueryDashboard(r.Context(), dashboardID, filters)
+	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, pageID, filters)
 	if err != nil {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
 	s.broker.publish(clientID, dashboardPatch(patch))
-	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, filters, request))
+	s.broker.publish(clientID, s.tablesPatch(r.Context(), dashboardID, pageID, filters, request))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -158,13 +160,16 @@ func tablePatch(name string, table dashboard.Table) signalPatch {
 	}
 }
 
-func (s *Server) tablesPatch(ctx context.Context, dashboardID string, filters dashboard.Filters, baseRequest dashboard.TableRequest) signalPatch {
+func (s *Server) tablesPatch(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, baseRequest dashboard.TableRequest) signalPatch {
 	report, _, ok := s.metrics.Report(dashboardID)
 	if !ok {
+		if baseRequest.Table == "" {
+			return signalPatch{"tables": map[string]dashboard.Table{}}
+		}
 		return tablePatch(baseRequest.Table, s.queryTable(ctx, dashboardID, filters, baseRequest))
 	}
 	tables := map[string]dashboard.Table{}
-	for _, name := range sortedTableNames(report.Tables) {
+	for _, name := range pageTableNames(report.Pages, pageID) {
 		table := report.Tables[name]
 		request := baseRequest
 		request.Table = name
@@ -177,13 +182,38 @@ func (s *Server) tablesPatch(ctx context.Context, dashboardID string, filters da
 	return signalPatch{"tables": tables}
 }
 
-func sortedTableNames(tables map[string]semantic.TableVisual) []string {
-	names := make([]string, 0, len(tables))
-	for name := range tables {
-		names = append(names, name)
+func pageTableNames(pages []dashboard.Page, pageID string) []string {
+	page, ok := activePageOrDefault(pages, pageID)
+	if !ok {
+		return nil
 	}
-	sort.Strings(names)
+	seen := map[string]struct{}{}
+	names := []string{}
+	for _, visual := range page.Visuals {
+		if visual.Table == "" {
+			continue
+		}
+		if _, ok := seen[visual.Table]; ok {
+			continue
+		}
+		seen[visual.Table] = struct{}{}
+		names = append(names, visual.Table)
+	}
 	return names
+}
+
+func activePageOrDefault(pages []dashboard.Page, pageID string) (dashboard.Page, bool) {
+	if len(pages) == 0 {
+		return dashboard.Page{}, false
+	}
+	if pageID != "" {
+		for _, page := range pages {
+			if page.ID == pageID {
+				return page.WithDefaults(), true
+			}
+		}
+	}
+	return pages[0].WithDefaults(), true
 }
 
 func loadingPatch(dataDir string) signalPatch {

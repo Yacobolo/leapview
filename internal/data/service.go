@@ -304,6 +304,10 @@ func (m *DuckDBMetrics) reportRuntime(dashboardID string) (*semantic.Dashboard, 
 }
 
 func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return m.QueryDashboardPage(ctx, dashboardID, "", filters)
+}
+
+func (m *DuckDBMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	report, runtime, err := m.reportRuntime(dashboardID)
 	if report != nil {
 		filters = normalizeFilters(report, filters)
@@ -342,13 +346,45 @@ func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, dashboardID string, 
 	}
 	patch.KPIs = kpis
 
-	charts, err := m.charts(ctx, runtime, report, filters)
+	page := dashboardPage(report, pageID)
+	charts, err := m.charts(ctx, runtime, report, filters, pageChartIDs(page))
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
 	}
 	patch.Charts = charts
 
 	return patch, nil
+}
+
+func dashboardPage(report *semantic.Dashboard, pageID string) dashboard.Page {
+	if report == nil || len(report.Pages) == 0 {
+		return dashboard.Page{}
+	}
+	if pageID != "" {
+		for _, page := range report.Pages {
+			if page.ID == pageID {
+				return page.WithDefaults()
+			}
+		}
+	}
+	return report.Pages[0].WithDefaults()
+}
+
+func pageChartIDs(page dashboard.Page) []string {
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Visual == "" {
+			continue
+		}
+		if _, ok := seen[item.Visual]; ok {
+			continue
+		}
+		seen[item.Visual] = struct{}{}
+		ids = append(ids, item.Visual)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (m *DuckDBMetrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
@@ -624,15 +660,13 @@ func (m *DuckDBMetrics) kpiValue(ctx context.Context, runtime *modelRuntime, rep
 	return value, nil
 }
 
-func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, filters dashboard.Filters) (map[string]dashboard.Chart, error) {
-	charts := make(map[string]dashboard.Chart, len(report.Visuals))
-	keys := make([]string, 0, len(report.Visuals))
-	for key := range report.Visuals {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, filters dashboard.Filters, keys []string) (map[string]dashboard.Chart, error) {
+	charts := make(map[string]dashboard.Chart, len(keys))
 	for _, key := range keys {
-		visual := report.Visuals[key]
+		visual, ok := report.Visuals[key]
+		if !ok {
+			return nil, fmt.Errorf("page references unknown visual %q", key)
+		}
 		data, err := m.visualData(ctx, runtime, report, key, visual, filters)
 		if err != nil {
 			return nil, err

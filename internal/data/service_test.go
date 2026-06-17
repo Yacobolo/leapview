@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -127,7 +128,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("expected DuckDB cache file: %v", err)
 	}
 
-	patch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
+	patch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 		"state":         {Type: "multi_select", Operator: "in", Values: []string{"SP"}},
 		"purchase_date": {Type: "date_range", Preset: "2018"},
 	}})
@@ -138,6 +139,7 @@ relogios_presentes,watches_gifts
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error: %s", patch.Status.Error)
 	}
+	assertChartKeys(t, patch, []string{"categories", "delivery", "orders", "revenue"})
 	if got := patch.KPIs[0].Value; got != "1" {
 		t.Fatalf("orders KPI = %q, want 1", got)
 	}
@@ -165,12 +167,6 @@ relogios_presentes,watches_gifts
 	if got := patch.Charts["orders"].Type; got != "donut" {
 		t.Fatalf("orders chart type = %q, want donut", got)
 	}
-	if got := patch.Charts["orders_by_month_status"].Shape; got != "category_series_value" {
-		t.Fatalf("multi-series chart shape = %q, want category_series_value", got)
-	}
-	if got := patch.Charts["orders_by_month_status"].Options["stacked"]; got != true {
-		t.Fatalf("multi-series chart stacked option = %v, want true", got)
-	}
 	if got := datumString(patch.Charts["categories"].Data[0], "label"); got != "health_beauty" {
 		t.Fatalf("top category = %q, want health_beauty", got)
 	}
@@ -178,11 +174,12 @@ relogios_presentes,watches_gifts
 		t.Fatalf("state filter options = %d, want 2", got)
 	}
 
-	selectedPatch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{
+	selectedFilters := dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{
 			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
 		},
-	})
+	}
+	selectedPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", selectedFilters)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,47 +198,107 @@ relogios_presentes,watches_gifts
 	if got := datumString(selectedPatch.Charts["revenue"].Data[0], "series"); got != "" {
 		t.Fatalf("single-series chart row series = %q, want empty", got)
 	}
-	if got := datumString(selectedPatch.Charts["orders_by_month_status"].Data[0], "series"); got == "" {
+
+	columnPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-column", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertChartKeys(t, columnPatch, []string{"orders_by_month_column", "orders_by_month_status"})
+	if got := columnPatch.Charts["orders_by_month_status"].Shape; got != "category_series_value" {
+		t.Fatalf("multi-series chart shape = %q, want category_series_value", got)
+	}
+	if got := columnPatch.Charts["orders_by_month_status"].Options["stacked"]; got != true {
+		t.Fatalf("multi-series chart stacked option = %v, want true", got)
+	}
+	if got := datumString(columnPatch.Charts["orders_by_month_status"].Data[0], "series"); got == "" {
 		t.Fatal("multi-series chart row series is empty")
 	}
-	if len(selectedPatch.Charts["orders_by_month_status"].Data) != 2 {
-		t.Fatalf("non-target multi-series chart points under status selection = %d, want 2", len(selectedPatch.Charts["orders_by_month_status"].Data))
+	if len(columnPatch.Charts["orders_by_month_status"].Data) != 2 {
+		t.Fatalf("non-target multi-series chart points under status selection = %d, want 2", len(columnPatch.Charts["orders_by_month_status"].Data))
 	}
-	if got := selectedPatch.Charts["revenue_orders_combo"].Shape; got != "category_multi_measure" {
+
+	boxplotPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-boxplot", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertChartKeys(t, boxplotPatch, []string{"delivery_distribution", "review_distribution"})
+
+	emptyPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertChartKeys(t, emptyPagePatch, []string{"categories", "delivery", "orders", "revenue"})
+
+	unknownPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "missing", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertChartKeys(t, unknownPagePatch, []string{"categories", "delivery", "orders", "revenue"})
+
+	comboPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-combo", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := comboPatch.Charts["revenue_orders_combo"].Shape; got != "category_multi_measure" {
 		t.Fatalf("combo chart shape = %q, want category_multi_measure", got)
 	}
-	if !hasDatumValue(selectedPatch.Charts["revenue_orders_combo"].Data, "series", "Revenue") || !hasDatumValue(selectedPatch.Charts["revenue_orders_combo"].Data, "series", "Orders") {
-		t.Fatalf("combo chart rows missing expected measure series: %#v", selectedPatch.Charts["revenue_orders_combo"].Data)
+	if !hasDatumValue(comboPatch.Charts["revenue_orders_combo"].Data, "series", "Revenue") || !hasDatumValue(comboPatch.Charts["revenue_orders_combo"].Data, "series", "Orders") {
+		t.Fatalf("combo chart rows missing expected measure series: %#v", comboPatch.Charts["revenue_orders_combo"].Data)
 	}
-	if got := selectedPatch.Charts["revenue_waterfall"].Shape; got != "category_delta" {
+
+	waterfallPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-waterfall", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := waterfallPatch.Charts["revenue_waterfall"].Shape; got != "category_delta" {
 		t.Fatalf("waterfall chart shape = %q, want category_delta", got)
 	}
-	if _, ok := selectedPatch.Charts["revenue_waterfall"].Data[0]["start"]; !ok {
-		t.Fatalf("waterfall row missing start/end: %#v", selectedPatch.Charts["revenue_waterfall"].Data[0])
+	if _, ok := waterfallPatch.Charts["revenue_waterfall"].Data[0]["start"]; !ok {
+		t.Fatalf("waterfall row missing start/end: %#v", waterfallPatch.Charts["revenue_waterfall"].Data[0])
 	}
-	if got := selectedPatch.Charts["delivery_histogram"].Shape; got != "binned_measure" {
+
+	histogramPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-histogram", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := histogramPatch.Charts["delivery_histogram"].Shape; got != "binned_measure" {
 		t.Fatalf("histogram chart shape = %q, want binned_measure", got)
 	}
-	if _, ok := selectedPatch.Charts["delivery_histogram"].Data[0]["binStart"]; !ok {
-		t.Fatalf("histogram row missing bin metadata: %#v", selectedPatch.Charts["delivery_histogram"].Data[0])
+	if _, ok := histogramPatch.Charts["delivery_histogram"].Data[0]["binStart"]; !ok {
+		t.Fatalf("histogram row missing bin metadata: %#v", histogramPatch.Charts["delivery_histogram"].Data[0])
 	}
-	if got := selectedPatch.Charts["state_order_map"].Shape; got != "geo" {
+
+	mapPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-map", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := mapPatch.Charts["state_order_map"].Shape; got != "geo" {
 		t.Fatalf("map chart shape = %q, want geo", got)
 	}
-	if !hasDatumValue(selectedPatch.Charts["state_order_map"].Data, "name", "SP") {
-		t.Fatalf("map chart rows missing SP: %#v", selectedPatch.Charts["state_order_map"].Data)
+	if !hasDatumValue(mapPatch.Charts["state_order_map"].Data, "name", "SP") {
+		t.Fatalf("map chart rows missing SP: %#v", mapPatch.Charts["state_order_map"].Data)
 	}
-	if got := selectedPatch.Charts["status_delivery_graph"].Type; got != "graph" {
+
+	graphPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-graph", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := graphPatch.Charts["status_delivery_graph"].Type; got != "graph" {
 		t.Fatalf("graph visual type = %q, want graph", got)
 	}
-	if !hasDatumValue(selectedPatch.Charts["status_delivery_graph"].Data, "source", "delivered") {
-		t.Fatalf("graph rows missing delivered source: %#v", selectedPatch.Charts["status_delivery_graph"].Data)
+	if !hasDatumValue(graphPatch.Charts["status_delivery_graph"].Data, "source", "delivered") {
+		t.Fatalf("graph rows missing delivered source: %#v", graphPatch.Charts["status_delivery_graph"].Data)
 	}
-	if got := selectedPatch.Charts["category_status_sunburst"].Shape; got != "hierarchy" {
+
+	sunburstPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-sunburst", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sunburstPatch.Charts["category_status_sunburst"].Shape; got != "hierarchy" {
 		t.Fatalf("hierarchy chart shape = %q, want hierarchy", got)
 	}
-	if !hasHierarchyPathValue(selectedPatch.Charts["category_status_sunburst"].Data, "health_beauty") {
-		t.Fatalf("hierarchy rows missing health_beauty path: %#v", selectedPatch.Charts["category_status_sunburst"].Data)
+	if !hasHierarchyPathValue(sunburstPatch.Charts["category_status_sunburst"].Data, "health_beauty") {
+		t.Fatalf("hierarchy rows missing health_beauty path: %#v", sunburstPatch.Charts["category_status_sunburst"].Data)
 	}
 
 	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
@@ -445,6 +502,19 @@ func pointSelected(points []dashboard.Datum, label string) bool {
 		}
 	}
 	return false
+}
+
+func assertChartKeys(t *testing.T, patch dashboard.Patch, want []string) {
+	t.Helper()
+	got := make([]string, 0, len(patch.Charts))
+	for key := range patch.Charts {
+		got = append(got, key)
+	}
+	sort.Strings(got)
+	sort.Strings(want)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("chart keys = %#v, want %#v", got, want)
+	}
 }
 
 func hasDatumValue(rows []dashboard.Datum, key string, value string) bool {
