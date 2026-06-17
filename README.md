@@ -22,7 +22,7 @@ python3 scripts/bootstrap_olist.py
 go run ./cmd/libredash
 ```
 
-By default, the bootstrap script copies CSVs into `.data/olist`. To use a different location:
+By default, the bootstrap script copies CSVs into `.data/olist`. To use a different path:
 
 ```sh
 export LIBREDASH_DATA_DIR=/path/to/olist-csvs
@@ -46,7 +46,7 @@ go run ./cmd/libredash
 
 ## Source Model
 
-Semantic model YAML declares user-facing `sources` and named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. Each source is an object with exactly one of `location` or `object`.
+Semantic model YAML declares user-facing `sources` and named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. Each source is an object with exactly one of `path` or `object`.
 
 Local CSV:
 
@@ -62,10 +62,10 @@ connections:
 
 sources:
   orders:
-    location: olist_orders_dataset.csv
+    path: olist_orders_dataset.csv
 
   order_items:
-    location: olist_order_items_dataset.csv
+    path: olist_order_items_dataset.csv
 ```
 
 S3 Parquet with credential-chain auth:
@@ -84,7 +84,7 @@ connections:
 sources:
   sales_events:
     connection: prod_lake
-    location: events/*
+    path: events/*
     format: parquet
 ```
 
@@ -102,7 +102,7 @@ connections:
 sources:
   delta_orders:
     connection: azure_lake
-    location: tables/orders
+    path: tables/orders
     format: delta
 ```
 
@@ -120,7 +120,42 @@ sources:
     object: public.accounts
 ```
 
-For file locations, LibreDash infers `format` from clear extensions such as `.csv`, `.csv.gz`, `.json`, `.jsonl`, `.ndjson`, `.parquet`, `.xlsx`, `.txt`, `.blob`, and `.vortex`. Set source-level `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. Advanced DuckDB integrations should be modeled explicitly before being exposed in source YAML.
+Lance dataset:
+
+```yaml
+connections:
+  prod_lake:
+    kind: s3
+    scope: s3://analytics-prod/
+    auth:
+      method: credential_chain
+
+sources:
+  product_embeddings:
+    connection: prod_lake
+    path: vectors/products.lance
+```
+
+DuckLake catalog:
+
+```yaml
+connections:
+  lakehouse:
+    kind: ducklake
+    scope: s3://analytics-prod/ducklake/
+    path: metadata.ducklake
+    auth:
+      method: credential_chain
+    options:
+      data_path: data
+
+sources:
+  lake_orders:
+    connection: lakehouse
+    object: main.orders
+```
+
+For file and table paths, LibreDash infers `format` from clear extensions such as `.csv`, `.csv.gz`, `.json`, `.jsonl`, `.ndjson`, `.parquet`, `.xlsx`, `.txt`, `.blob`, `.vortex`, and `.lance`. Set source-level `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. Advanced DuckDB integrations should be modeled explicitly before being exposed in source YAML.
 
 ## Deploy
 

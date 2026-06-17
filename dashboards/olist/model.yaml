@@ -13,19 +13,19 @@ connections:
 
 sources:
   orders:
-    location: olist_orders_dataset.csv
+    path: olist_orders_dataset.csv
   order_items:
-    location: olist_order_items_dataset.csv
+    path: olist_order_items_dataset.csv
   payments:
-    location: olist_order_payments_dataset.csv
+    path: olist_order_payments_dataset.csv
   products:
-    location: olist_products_dataset.csv
+    path: olist_products_dataset.csv
   customers:
-    location: olist_customers_dataset.csv
+    path: olist_customers_dataset.csv
   reviews:
-    location: olist_order_reviews_dataset.csv
+    path: olist_order_reviews_dataset.csv
   translations:
-    location: product_category_name_translation.csv
+    path: product_category_name_translation.csv
 
 cache:
   tables:

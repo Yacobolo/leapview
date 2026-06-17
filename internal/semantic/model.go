@@ -27,6 +27,7 @@ type Model struct {
 
 type Connection struct {
 	Kind     string             `yaml:"kind"`
+	Path     string             `yaml:"path"`
 	Root     string             `yaml:"root"`
 	Secret   string             `yaml:"secret"`
 	Scope    string             `yaml:"scope"`
@@ -49,7 +50,7 @@ type ConnectionAuth struct {
 
 type Source struct {
 	Format     string         `yaml:"format"`
-	Location   string         `yaml:"location"`
+	Path       string         `yaml:"path"`
 	Connection string         `yaml:"connection"`
 	Object     string         `yaml:"object"`
 	Options    map[string]any `yaml:"options"`
@@ -183,7 +184,7 @@ func (m *Model) Validate() error {
 
 func (m *Model) resolveSource(source Source) (Source, error) {
 	switch source.Kind() {
-	case "location", "database":
+	case "path", "database":
 		if source.Connection == "" {
 			source.Connection = m.DefaultConnection
 		}
@@ -194,7 +195,7 @@ func (m *Model) resolveSource(source Source) (Source, error) {
 		if !ok {
 			return source, fmt.Errorf("references unknown connection %q", source.Connection)
 		}
-		if source.Location != "" {
+		if source.Path != "" {
 			if len(connection.Defaults.Options) > 0 {
 				options := make(map[string]any, len(connection.Defaults.Options)+len(source.Options))
 				for key, value := range connection.Defaults.Options {
@@ -206,9 +207,9 @@ func (m *Model) resolveSource(source Source) (Source, error) {
 				source.Options = options
 			}
 			if source.Format == "" {
-				format, ok := inferSourceFormat(source.Location)
+				format, ok := inferSourceFormat(source.Path)
 				if !ok {
-					return source, fmt.Errorf("location %q requires format", source.Location)
+					return source, fmt.Errorf("path %q requires format", source.Path)
 				}
 				source.Format = format
 			}
@@ -282,7 +283,7 @@ func (s Source) Validate(name string, connections map[string]Connection) error {
 		}
 	}
 	switch s.Kind() {
-	case "location":
+	case "path":
 		if s.Connection == "" {
 			return fmt.Errorf("source %q requires connection", name)
 		}
@@ -291,19 +292,22 @@ func (s Source) Validate(name string, connections map[string]Connection) error {
 			return fmt.Errorf("source %q references unknown connection %q", name, s.Connection)
 		}
 		if !supportsLocationConnection(connection.Kind) {
-			return fmt.Errorf("source %q location cannot use %s connection %q", name, connection.Kind, s.Connection)
+			return fmt.Errorf("source %q path cannot use %s connection %q", name, connection.Kind, s.Connection)
 		}
-		if connection.Kind == "local" && !isLocalLocation(s.Location) {
-			return fmt.Errorf("source %q local connection %q cannot use remote location %q", name, s.Connection, s.Location)
+		if connection.Kind == "local" && !isLocalLocation(s.Path) {
+			return fmt.Errorf("source %q local connection %q cannot use remote path %q", name, s.Connection, s.Path)
 		}
-		if isRemoteConnection(connection.Kind) && isLocalLocation(s.Location) && connection.Scope == "" {
-			return fmt.Errorf("source %q remote connection %q requires scope for relative location %q", name, s.Connection, s.Location)
+		if isRemoteConnection(connection.Kind) && isLocalLocation(s.Path) && connection.Scope == "" {
+			return fmt.Errorf("source %q remote connection %q requires scope for relative path %q", name, s.Connection, s.Path)
 		}
 		if s.Format == "" {
-			return fmt.Errorf("source %q location requires format", name)
+			return fmt.Errorf("source %q path requires format", name)
 		}
 		if !supportsSourceFormat(s.Format) {
 			return fmt.Errorf("source %q has unsupported format %q", name, s.Format)
+		}
+		if s.Format == "lance" && len(s.Options) > 0 {
+			return fmt.Errorf("source %q lance path cannot set options", name)
 		}
 	case "database":
 		if s.Connection == "" {
@@ -320,7 +324,7 @@ func (s Source) Validate(name string, connections map[string]Connection) error {
 			return fmt.Errorf("source %q object cannot use %s connection %q", name, connection.Kind, s.Connection)
 		}
 	default:
-		return fmt.Errorf("source %q requires exactly one of location or object", name)
+		return fmt.Errorf("source %q requires exactly one of path or object", name)
 	}
 	return nil
 }
@@ -334,6 +338,13 @@ func (c Connection) Validate(name string) error {
 	}
 	if !supportsConnectionKind(c.Kind) {
 		return fmt.Errorf("connection %q has unsupported kind %q", name, c.Kind)
+	}
+	if c.Kind == "ducklake" {
+		if c.Path == "" {
+			return fmt.Errorf("connection %q ducklake requires path", name)
+		}
+	} else if c.Path != "" {
+		return fmt.Errorf("connection %q path is only supported for ducklake", name)
 	}
 	if c.Secret != "" {
 		if err := validateSemanticIdentifier(c.Secret); err != nil {
@@ -349,7 +360,7 @@ func (c Connection) Validate(name string) error {
 		}
 	}
 	for key := range c.Options {
-		if !supportsConnectionOption(key) {
+		if !supportsConnectionOption(c.Kind, key) {
 			return fmt.Errorf("connection %q has unsupported option %q", name, key)
 		}
 	}
@@ -363,11 +374,11 @@ func (c Connection) Validate(name string) error {
 
 func (s Source) Description() string {
 	switch s.Kind() {
-	case "location":
+	case "path":
 		if supportsLakehouseFormat(s.Format) {
-			return s.Format + " table: " + s.Location
+			return s.Format + " table: " + s.Path
 		}
-		return s.Format + " file: " + s.Location
+		return s.Format + " file: " + s.Path
 	case "database":
 		return "database object: " + s.Object
 	default:
@@ -377,7 +388,7 @@ func (s Source) Description() string {
 
 func (s Source) Role() string {
 	switch s.Kind() {
-	case "location":
+	case "path":
 		return s.Format
 	case "database":
 		return "database"
@@ -389,9 +400,9 @@ func (s Source) Role() string {
 func (s Source) Kind() string {
 	count := 0
 	kind := ""
-	if s.Location != "" {
+	if s.Path != "" {
 		count++
-		kind = "location"
+		kind = "path"
 	}
 	if s.Object != "" {
 		count++
@@ -414,7 +425,7 @@ func isLocalLocation(location string) bool {
 
 func supportsConnectionKind(kind string) bool {
 	switch kind {
-	case "local", "s3", "r2", "gcs", "http", "azure_blob", "postgres", "mysql", "sqlite":
+	case "local", "s3", "r2", "gcs", "http", "azure_blob", "postgres", "mysql", "sqlite", "ducklake":
 		return true
 	default:
 		return false
@@ -430,10 +441,17 @@ func supportsAuthMethod(method string) bool {
 	}
 }
 
-func supportsConnectionOption(option string) bool {
-	switch option {
-	case "connection_string", "uri", "path", "database":
-		return true
+func supportsConnectionOption(kind, option string) bool {
+	switch kind {
+	case "ducklake":
+		return option == "data_path"
+	case "postgres", "mysql", "sqlite":
+		switch option {
+		case "connection_string", "uri", "path", "database":
+			return true
+		default:
+			return false
+		}
 	default:
 		return false
 	}
@@ -448,7 +466,7 @@ func validateSemanticIdentifier(value string) error {
 
 func supportsFileFormat(format string) bool {
 	switch format {
-	case "csv", "json", "parquet", "excel", "text", "blob", "vortex":
+	case "csv", "json", "parquet", "excel", "text", "blob", "vortex", "lance":
 		return true
 	default:
 		return false
@@ -457,7 +475,7 @@ func supportsFileFormat(format string) bool {
 
 func supportsLakehouseFormat(format string) bool {
 	switch format {
-	case "delta", "iceberg":
+	case "delta", "iceberg", "lance":
 		return true
 	default:
 		return false
@@ -479,7 +497,7 @@ func supportsLocationConnection(kind string) bool {
 
 func supportsDatabaseConnection(kind string) bool {
 	switch kind {
-	case "postgres", "mysql", "sqlite":
+	case "postgres", "mysql", "sqlite", "ducklake":
 		return true
 	default:
 		return false
@@ -508,6 +526,8 @@ func inferSourceFormat(location string) (string, bool) {
 		return "blob", true
 	case ext == ".vortex":
 		return "vortex", true
+	case ext == ".lance":
+		return "lance", true
 	default:
 		return "", false
 	}

@@ -662,14 +662,14 @@ func (m *DuckDBMetrics) RefreshCache(ctx context.Context, modelID string) error 
 func (m *DuckDBMetrics) validateFiles(runtime *modelRuntime) error {
 	var missing []string
 	for name, source := range runtime.model.Sources {
-		if source.Location == "" {
+		if source.Path == "" {
 			continue
 		}
 		connection := runtime.model.Connections[source.Connection]
 		if connection.Kind != "local" {
 			continue
 		}
-		file, err := m.resolveSourceLocation(runtime.model, source)
+		file, err := m.resolveSourcePath(runtime.model, source)
 		if err != nil {
 			return fmt.Errorf("resolving local source %s: %w", name, err)
 		}
@@ -1793,8 +1793,8 @@ func modelGraph(model *semantic.Model, metricViews map[string]*semantic.MetricVi
 		if source.Format != "" {
 			meta = append(meta, dashboard.ModelMeta{Label: "Format", Value: source.Format})
 		}
-		if source.Location != "" {
-			meta = append(meta, dashboard.ModelMeta{Label: "Location", Value: source.Location})
+		if source.Path != "" {
+			meta = append(meta, dashboard.ModelMeta{Label: "Path", Value: source.Path})
 		}
 		if source.Object != "" {
 			meta = append(meta, dashboard.ModelMeta{Label: "Object", Value: source.Object})

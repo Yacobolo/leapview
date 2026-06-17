@@ -112,8 +112,8 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.Sources["orders"].Connection; got != "olist" {
 		t.Fatalf("orders source connection = %q, want olist", got)
 	}
-	if got := model.Sources["orders"].Location; got != "olist_orders_dataset.csv" {
-		t.Fatalf("orders source location = %q, want olist_orders_dataset.csv", got)
+	if got := model.Sources["orders"].Path; got != "olist_orders_dataset.csv" {
+		t.Fatalf("orders source path = %q, want olist_orders_dataset.csv", got)
 	}
 	if got := model.Datasets["orders"].Source; got != "orders_enriched" {
 		t.Fatalf("orders dataset source = %q, want orders_enriched", got)
@@ -146,24 +146,36 @@ func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 			Kind:   "postgres",
 			Secret: "crm_readonly",
 		},
+		"lakehouse": {
+			Kind: "ducklake",
+			Path: "metadata.ducklake",
+		},
 	}
 	model.Sources = map[string]Source{
 		"orders": {
-			Location: "olist_orders_dataset.csv",
+			Path: "olist_orders_dataset.csv",
 		},
 		"sales_events": {
 			Format:     "parquet",
-			Location:   "events/*",
+			Path:       "events/*",
 			Connection: "prod_lake",
 		},
 		"delta_orders": {
 			Format:     "delta",
-			Location:   "az://warehouse/tables/orders",
+			Path:       "az://warehouse/tables/orders",
 			Connection: "azure_lake",
 		},
 		"crm_accounts": {
 			Connection: "crm",
 			Object:     "public.accounts",
+		},
+		"embeddings": {
+			Connection: "prod_lake",
+			Path:       "vectors/products.lance",
+		},
+		"ducklake_orders": {
+			Connection: "lakehouse",
+			Object:     "main.orders",
 		},
 	}
 
@@ -180,25 +192,26 @@ func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 
 func TestModelValidateInfersFileFormats(t *testing.T) {
 	cases := map[string]struct {
-		location string
-		want     string
+		path string
+		want string
 	}{
-		"csv":     {location: "orders.csv", want: "csv"},
-		"csv_gz":  {location: "orders.csv.gz", want: "csv"},
-		"json":    {location: "orders.json", want: "json"},
-		"jsonl":   {location: "orders.jsonl", want: "json"},
-		"ndjson":  {location: "orders.ndjson", want: "json"},
-		"parquet": {location: "orders.parquet", want: "parquet"},
-		"excel":   {location: "orders.xlsx", want: "excel"},
-		"text":    {location: "orders.txt", want: "text"},
-		"blob":    {location: "orders.blob", want: "blob"},
-		"vortex":  {location: "orders.vortex", want: "vortex"},
+		"csv":     {path: "orders.csv", want: "csv"},
+		"csv_gz":  {path: "orders.csv.gz", want: "csv"},
+		"json":    {path: "orders.json", want: "json"},
+		"jsonl":   {path: "orders.jsonl", want: "json"},
+		"ndjson":  {path: "orders.ndjson", want: "json"},
+		"parquet": {path: "orders.parquet", want: "parquet"},
+		"excel":   {path: "orders.xlsx", want: "excel"},
+		"text":    {path: "orders.txt", want: "text"},
+		"blob":    {path: "orders.blob", want: "blob"},
+		"vortex":  {path: "orders.vortex", want: "vortex"},
+		"lance":   {path: "products.lance", want: "lance"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			model := minimalSourceModel()
 			model.Connections["local_files"] = Connection{Kind: "local"}
-			model.Sources = map[string]Source{"orders": {Location: tc.location}}
+			model.Sources = map[string]Source{"orders": {Path: tc.path}}
 			if err := model.Validate(); err != nil {
 				t.Fatal(err)
 			}
@@ -217,19 +230,27 @@ func TestModelValidateRejectsInvalidSources(t *testing.T) {
 	}{
 		"missing_source_shape": {
 			source:   Source{Format: "csv"},
-			contains: "exactly one of location or object",
+			contains: "exactly one of path or object",
 		},
 		"multiple_source_shapes": {
-			source:   Source{Location: "orders.csv", Object: "public.orders"},
-			contains: "exactly one of location or object",
+			source:   Source{Path: "orders.csv", Object: "public.orders"},
+			contains: "exactly one of path or object",
 		},
-		"location_bad_format": {
-			source:   Source{Format: "orc", Location: "orders.orc", Connection: "local_files"},
+		"path_bad_format": {
+			source:   Source{Format: "orc", Path: "orders.orc", Connection: "local_files"},
 			contains: "unsupported format",
 		},
-		"ambiguous_location_missing_format": {
-			source:   Source{Location: "events/*", Connection: "local_files"},
+		"ambiguous_path_missing_format": {
+			source:   Source{Path: "events/*", Connection: "local_files"},
 			contains: "requires format",
+		},
+		"lance_with_options": {
+			source:   Source{Path: "vectors/products.lance", Connection: "local_files", Options: map[string]any{"sample_size": 1000}},
+			contains: "lance path cannot set options",
+		},
+		"ducklake_path_source": {
+			source:   Source{Path: "main.orders", Connection: "lakehouse", Format: "parquet"},
+			contains: "path cannot use ducklake connection",
 		},
 		"database_missing_connection": {
 			source:    Source{Object: "public.accounts"},
@@ -241,11 +262,11 @@ func TestModelValidateRejectsInvalidSources(t *testing.T) {
 			contains: "object cannot use local connection",
 		},
 		"unknown_connection": {
-			source:   Source{Format: "parquet", Location: "s3://bucket/*.parquet", Connection: "missing"},
+			source:   Source{Format: "parquet", Path: "s3://bucket/*.parquet", Connection: "missing"},
 			contains: "unknown connection",
 		},
 		"bad_source_option_key": {
-			source:   Source{Format: "csv", Location: "orders.csv", Connection: "local_files", Options: map[string]any{"bad-key": true}},
+			source:   Source{Format: "csv", Path: "orders.csv", Connection: "local_files", Options: map[string]any{"bad-key": true}},
 			contains: "option",
 		},
 	}
@@ -258,6 +279,7 @@ func TestModelValidateRejectsInvalidSources(t *testing.T) {
 			model.Connections = map[string]Connection{
 				"local_files": {Kind: "local"},
 				"crm":         {Kind: "mysql"},
+				"lakehouse":   {Kind: "ducklake", Path: "metadata.ducklake"},
 			}
 			model.Sources = map[string]Source{"orders": tc.source}
 			assertModelValidateError(t, model, tc.contains)
@@ -290,13 +312,25 @@ func TestModelValidateRejectsInvalidConnections(t *testing.T) {
 			connection: Connection{Kind: "local", Defaults: ConnectionDefaults{Options: map[string]any{"bad-key": true}}},
 			contains:   "default option",
 		},
+		"ducklake_missing_path": {
+			connection: Connection{Kind: "ducklake"},
+			contains:   "ducklake requires path",
+		},
+		"ducklake_bad_option": {
+			connection: Connection{Kind: "ducklake", Path: "metadata.ducklake", Options: map[string]any{"read_only": true}},
+			contains:   "unsupported option",
+		},
+		"non_ducklake_path": {
+			connection: Connection{Kind: "s3", Path: "s3://bucket/"},
+			contains:   "path is only supported for ducklake",
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			model := minimalSourceModel()
 			model.Connections = map[string]Connection{"crm": tc.connection}
 			model.Sources = map[string]Source{
-				"orders": {Format: "csv", Location: "orders.csv", Connection: "crm"},
+				"orders": {Format: "csv", Path: "orders.csv", Connection: "crm"},
 			}
 			assertModelValidateError(t, model, tc.contains)
 		})
@@ -313,7 +347,7 @@ source_defaults:
 sources:
   orders:
     type: file
-    location: orders.csv
+    path: orders.csv
 `,
 		"source_engine": `
 sources:
@@ -333,6 +367,11 @@ sources:
   orders:
     query: SELECT 1 AS id
 `,
+		"source_location": `
+sources:
+  orders:
+    location: orders.csv
+`,
 		"scalar_source": `
 sources:
   orders: orders.csv
@@ -350,7 +389,7 @@ connections:
     kind: local
 sources:
   products:
-    location: products.csv
+    path: products.csv
 cache:
   tables:
     orders_cache:
@@ -947,7 +986,7 @@ func minimalSourceModel() *Model {
 			},
 		},
 		Sources: map[string]Source{
-			"orders": {Location: "orders.csv"},
+			"orders": {Path: "orders.csv"},
 		},
 		Cache: Cache{Tables: map[string]CacheTable{
 			"orders_cache": {SQL: "SELECT * FROM raw.orders"},
