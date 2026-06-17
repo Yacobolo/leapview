@@ -159,8 +159,8 @@ const metricUsageGraphStyles = `
 
   ld-metric-usage-graph .metric-usage-node-kind {
     color: var(--fgColor-muted);
-    font-size: 0.58rem;
-    font-weight: 950;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-950);
     text-transform: uppercase;
   }
 
@@ -169,9 +169,9 @@ const metricUsageGraphStyles = `
     margin-top: 3px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.82rem;
-    font-weight: 900;
-    line-height: 1.15;
+    font-size: var(--ld-font-size-body-md);
+    font-weight: var(--ld-font-weight-900);
+    line-height: var(--ld-line-height-tight);
   }
 
   ld-metric-usage-graph .metric-usage-node-meta {
@@ -180,8 +180,8 @@ const metricUsageGraphStyles = `
     color: var(--fgColor-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.68rem;
-    font-weight: 750;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-750);
   }
 `
 

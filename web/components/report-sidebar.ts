@@ -46,7 +46,7 @@ class ReportSidebar extends LitElement {
       width: var(--ld-report-sidebar-width);
       min-height: 100svh;
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
       transition: width 180ms var(--ld-ease-out);
     }
 
@@ -95,15 +95,15 @@ class ReportSidebar extends LitElement {
       color: var(--fgColor-muted);
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 0.58rem;
-      font-weight: 950;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-950);
       letter-spacing: 0;
       text-transform: uppercase;
     }
 
     .section-title {
       color: var(--fgColor-default);
-      font-size: 0.64rem;
+      font-size: var(--ld-font-size-caption);
     }
 
     .collapse {
@@ -153,8 +153,8 @@ class ReportSidebar extends LitElement {
       border-radius: 6px;
       color: var(--fgColor-muted);
       padding: 0 9px;
-      font-size: 0.7rem;
-      font-weight: 800;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-800);
     }
 
     .page-link:hover,
@@ -264,10 +264,10 @@ class ReportSidebar extends LitElement {
       display: block;
       margin: 8px auto 10px;
       color: var(--fgColor-muted);
-      font-size: 0.56rem;
-      font-weight: 950;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-950);
       letter-spacing: 0;
-      line-height: 1;
+      line-height: var(--ld-line-height-none);
       text-orientation: mixed;
       text-transform: uppercase;
       transform: rotate(180deg);

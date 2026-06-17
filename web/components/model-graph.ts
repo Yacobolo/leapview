@@ -196,15 +196,15 @@ const modelGraphStyles = `
 
   ld-model-graph .inspector h2 {
     margin: 0 0 4px;
-    font-size: 0.95rem;
-    line-height: 1.15;
+    font-size: var(--ld-font-size-body-lg);
+    line-height: var(--ld-line-height-tight);
   }
 
   ld-model-graph .kind {
     margin: 0 0 12px;
     color: var(--fgColor-muted);
-    font-size: 0.68rem;
-    font-weight: 900;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-900);
     text-transform: uppercase;
   }
 
@@ -218,13 +218,13 @@ const modelGraphStyles = `
     gap: 2px;
     border-bottom: 1px solid var(--borderColor-muted);
     padding-bottom: 7px;
-    font-size: 0.74rem;
+    font-size: var(--ld-font-size-caption);
   }
 
   ld-model-graph .detail-row span:first-child {
     color: var(--fgColor-muted);
-    font-size: 0.62rem;
-    font-weight: 900;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-900);
     text-transform: uppercase;
   }
 
@@ -244,8 +244,8 @@ const modelGraphStyles = `
     border-radius: var(--borderRadius-small);
     background: var(--bgColor-default);
     padding: 5px 7px;
-    font-size: 0.72rem;
-    font-weight: 750;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-750);
   }
 
   ld-model-graph .field code {
@@ -257,15 +257,15 @@ const modelGraphStyles = `
 
   ld-model-graph .field span {
     color: var(--fgColor-muted);
-    font-size: 0.62rem;
-    font-weight: 900;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-900);
     text-transform: uppercase;
   }
 
   ld-model-graph .empty {
     color: var(--fgColor-muted);
-    font-size: 0.78rem;
-    line-height: 1.45;
+    font-size: var(--ld-font-size-body-md);
+    line-height: var(--ld-line-height-normal);
   }
 
   ld-model-graph .node-card {
@@ -291,8 +291,8 @@ const modelGraphStyles = `
 
   ld-model-graph .node-kind {
     color: var(--fgColor-muted);
-    font-size: 0.58rem;
-    font-weight: 950;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-950);
     letter-spacing: 0;
     text-transform: uppercase;
   }
@@ -302,9 +302,9 @@ const modelGraphStyles = `
     margin-top: 2px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.82rem;
-    font-weight: 900;
-    line-height: 1.15;
+    font-size: var(--ld-font-size-body-md);
+    font-weight: var(--ld-font-weight-900);
+    line-height: var(--ld-line-height-tight);
   }
 
   ld-model-graph .node-fields {
@@ -321,8 +321,8 @@ const modelGraphStyles = `
     gap: 8px;
     border-bottom: 1px solid var(--borderColor-muted);
     padding: 3px 0;
-    font-size: 0.66rem;
-    font-weight: 750;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-750);
   }
 
   ld-model-graph .node-field:last-child {
@@ -338,8 +338,8 @@ const modelGraphStyles = `
 
   ld-model-graph .node-field span {
     color: var(--fgColor-muted);
-    font-size: 0.56rem;
-    font-weight: 900;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-900);
     text-transform: uppercase;
   }
 

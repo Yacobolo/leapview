@@ -231,17 +231,17 @@ const dataGridStyles = `
   ld-data-grid .data-grid th {
     background: transparent;
     color: var(--fgColor-muted);
-    font-size: 0.6rem;
-    font-weight: 850;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-850);
     letter-spacing: 0.03em;
     text-transform: uppercase;
   }
 
   ld-data-grid .data-grid td {
     color: var(--fgColor-default);
-    font-size: 0.78rem;
-    line-height: 1.4;
-    font-weight: 600;
+    font-size: var(--ld-font-size-body-md);
+    line-height: var(--ld-line-height-normal);
+    font-weight: var(--base-text-weight-semibold);
   }
 
   ld-data-grid .data-grid th.is-right,
@@ -293,7 +293,7 @@ const dataGridStyles = `
 
   ld-data-grid .grid-code,
   ld-data-grid .grid-expression {
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    font-family: var(--fontStack-monospace);
   }
 
   ld-data-grid .grid-code {
@@ -304,8 +304,8 @@ const dataGridStyles = `
     padding: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.78rem;
-    font-weight: 700;
+    font-size: var(--ld-font-size-body-md);
+    font-weight: var(--ld-font-weight-700);
   }
 
   ld-data-grid .grid-expression {
@@ -314,8 +314,8 @@ const dataGridStyles = `
     color: var(--fgColor-default);
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.76rem;
-    font-weight: 650;
+    font-size: var(--ld-font-size-body-md);
+    font-weight: var(--ld-font-weight-650);
   }
 
   ld-data-grid .grid-badge {
@@ -325,8 +325,8 @@ const dataGridStyles = `
     gap: 5px;
     border-radius: var(--borderRadius-full);
     padding: 0 7px;
-    font-size: 0.62rem;
-    font-weight: 850;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-850);
   }
 
   ld-data-grid .grid-badge-success {
@@ -360,7 +360,7 @@ const dataGridStyles = `
 
   ld-data-grid .grid-link {
     color: var(--fgColor-accent);
-    font-weight: 850;
+    font-weight: var(--ld-font-weight-850);
     text-decoration: none;
   }
 
@@ -385,8 +385,8 @@ const dataGridStyles = `
     background: var(--bgColor-muted);
     color: var(--fgColor-muted);
     padding: 0 7px;
-    font-size: 0.64rem;
-    font-weight: 850;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-850);
     text-transform: uppercase;
   }
 
@@ -399,8 +399,8 @@ const dataGridStyles = `
     border-top: 1px solid var(--borderColor-muted);
     border-bottom: 1px solid var(--borderColor-muted);
     padding: 18px 0;
-    font-size: 0.78rem;
-    font-weight: 650;
+    font-size: var(--ld-font-size-body-md);
+    font-weight: var(--ld-font-weight-650);
   }
 `
 

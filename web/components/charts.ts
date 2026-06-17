@@ -14,7 +14,7 @@ const chartStyles = css`
     height: 100%;
     min-height: 0;
     color: var(--fgColor-default);
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--fontStack-system);
   }
 
   .chart {
@@ -40,17 +40,17 @@ const chartStyles = css`
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.8rem;
-    font-weight: 850;
+    font-size: var(--ld-font-size-body-md);
+    font-weight: var(--ld-font-weight-850);
     letter-spacing: 0;
-    line-height: 1.1;
+    line-height: var(--ld-line-height-compact);
   }
 
   .unit {
     flex: 0 0 auto;
     color: var(--fgColor-muted);
-    font-size: 0.6rem;
-    font-weight: 900;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-900);
     text-transform: uppercase;
   }
 
@@ -75,9 +75,9 @@ const chartStyles = css`
     border-radius: 4px;
     color: var(--fgColor-muted);
     cursor: pointer;
-    font-size: 1rem;
-    font-weight: 900;
-    line-height: 1;
+    font-size: var(--ld-font-size-body-lg);
+    font-weight: var(--ld-font-weight-900);
+    line-height: var(--ld-line-height-none);
     list-style: none;
   }
 
@@ -120,8 +120,8 @@ const chartStyles = css`
     cursor: pointer;
     padding: 0 8px;
     font: inherit;
-    font-size: 0.68rem;
-    font-weight: 750;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-750);
     text-align: left;
   }
 
@@ -171,7 +171,7 @@ const chartStyles = css`
     border: 1px dashed var(--borderColor-default);
     background: var(--report-panel-subtle, var(--bgColor-muted));
     color: var(--fgColor-muted);
-    font-weight: 800;
+    font-weight: var(--ld-font-weight-800);
   }
 `
 
@@ -389,23 +389,23 @@ class KPICard extends LitElement {
 
     .label {
       color: var(--fgColor-muted);
-      font-size: 0.72rem;
-      font-weight: 900;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
       text-transform: uppercase;
     }
 
     .value {
       margin: 8px 0 4px;
-      font-size: clamp(1.72rem, 3.5vw, 2.65rem);
-      font-weight: 850;
-      line-height: 1;
+      font-size: var(--ld-font-size-display);
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-none);
       letter-spacing: 0;
     }
 
     .note {
       color: var(--fgColor-muted);
-      font-size: 0.85rem;
-      font-weight: 700;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--ld-font-weight-700);
     }
 
     .green::before {

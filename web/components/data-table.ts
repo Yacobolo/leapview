@@ -101,7 +101,7 @@ class DataTable extends LitElement {
       height: 100%;
       min-height: 0;
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
     }
 
     .shell {
@@ -129,10 +129,10 @@ class DataTable extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 0.8rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--ld-font-weight-850);
       letter-spacing: 0;
-      line-height: 1.1;
+      line-height: var(--ld-line-height-compact);
     }
 
     .visual-options {
@@ -150,9 +150,9 @@ class DataTable extends LitElement {
       background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
-      font-size: 1rem;
-      font-weight: 900;
-      line-height: 1;
+      font-size: var(--ld-font-size-body-lg);
+      font-weight: var(--ld-font-weight-900);
+      line-height: var(--ld-line-height-none);
       list-style: none;
     }
 
@@ -195,8 +195,8 @@ class DataTable extends LitElement {
       cursor: pointer;
       padding: 0 8px;
       font: inherit;
-      font-size: 0.68rem;
-      font-weight: 750;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-750);
       text-align: left;
     }
 
@@ -241,8 +241,8 @@ class DataTable extends LitElement {
     .column-menu > span {
       padding: 2px 6px;
       color: var(--fgColor-muted);
-      font-size: 0.62rem;
-      font-weight: 900;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
       text-transform: uppercase;
     }
 
@@ -254,8 +254,8 @@ class DataTable extends LitElement {
       border-radius: 4px;
       cursor: pointer;
       padding: 0 6px;
-      font-size: 0.67rem;
-      font-weight: 750;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-750);
     }
 
     .column-menu label:hover {
@@ -271,8 +271,8 @@ class DataTable extends LitElement {
       background: var(--bgColor-danger-muted);
       color: var(--fgColor-danger);
       padding: 9px 12px;
-      font-size: 0.82rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--ld-font-weight-850);
     }
 
     .head,
@@ -300,8 +300,8 @@ class DataTable extends LitElement {
       padding: 0 9px;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 0.64rem;
-      font-weight: 900;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
       letter-spacing: 0;
       text-transform: uppercase;
     }
@@ -373,8 +373,8 @@ class DataTable extends LitElement {
       cursor: pointer;
       padding: 0 9px;
       font: inherit;
-      font-size: 0.7rem;
-      font-weight: 900;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
       letter-spacing: 0;
       text-align: left;
       text-transform: uppercase;
@@ -397,7 +397,7 @@ class DataTable extends LitElement {
       min-width: 18px;
       place-items: center;
       color: var(--fgColor-accent);
-      font-size: 0.82rem;
+      font-size: var(--ld-font-size-body-md);
       opacity: 0;
     }
 
@@ -516,8 +516,8 @@ class DataTable extends LitElement {
       cursor: default;
       font: inherit;
       padding: 0 9px;
-      font-size: 0.77rem;
-      font-weight: 600;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--base-text-weight-semibold);
       text-align: left;
     }
 
@@ -566,8 +566,8 @@ class DataTable extends LitElement {
       min-height: 240px;
       place-items: center;
       color: var(--fgColor-muted);
-      font-size: 0.9rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-body-lg);
+      font-weight: var(--ld-font-weight-850);
     }
 
     .loading {
@@ -599,13 +599,13 @@ class DataTable extends LitElement {
       background: var(--report-panel-subtle, var(--bgColor-muted));
       padding: 6px 10px;
       color: var(--fgColor-muted);
-      font-size: 0.72rem;
-      font-weight: 750;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-750);
     }
 
     .footer strong {
       color: var(--fgColor-default);
-      font-weight: 850;
+      font-weight: var(--ld-font-weight-850);
     }
 
     @keyframes load {

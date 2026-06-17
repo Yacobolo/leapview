@@ -1,3 +1,5 @@
+@import '@fontsource-variable/inter/index.css';
+
 /* size/typography */
 @import '@primer/primitives/dist/css/base/size/size.css';
 @import '@primer/primitives/dist/css/base/typography/typography.css';
@@ -28,6 +30,12 @@
 
 @view-transition {
   navigation: auto;
+}
+
+:root {
+  --fontStack-system: "Inter Variable", "Inter", "Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --fontStack-sansSerif: var(--fontStack-system);
+  --fontStack-sansSerifDisplay: var(--fontStack-system);
 }
 
 @theme {
@@ -236,6 +244,29 @@
 @layer base {
   :root {
     color-scheme: light dark;
+    --ld-font-size-caption: var(--text-caption-size);
+    --ld-font-size-body-sm: var(--text-body-size-small);
+    --ld-font-size-body-md: var(--text-body-size-medium);
+    --ld-font-size-body-lg: var(--text-body-size-large);
+    --ld-font-size-title-sm: var(--text-title-size-small);
+    --ld-font-size-title-md: var(--text-title-size-medium);
+    --ld-font-size-title-lg: var(--text-title-size-large);
+    --ld-font-size-display: var(--text-display-size);
+    --ld-font-weight-650: 650;
+    --ld-font-weight-700: 700;
+    --ld-font-weight-720: 720;
+    --ld-font-weight-750: 750;
+    --ld-font-weight-760: 760;
+    --ld-font-weight-800: 800;
+    --ld-font-weight-820: 820;
+    --ld-font-weight-850: 850;
+    --ld-font-weight-900: 900;
+    --ld-font-weight-950: 950;
+    --ld-line-height-none: 1;
+    --ld-line-height-compact: var(--base-text-lineHeight-tight);
+    --ld-line-height-tight: var(--base-text-lineHeight-tight);
+    --ld-line-height-snug: var(--base-text-lineHeight-snug);
+    --ld-line-height-normal: var(--base-text-lineHeight-normal);
     --ld-accent: var(--bgColor-accent-emphasis);
     --ld-accent-muted: var(--bgColor-accent-muted);
     --ld-accent-strong: var(--borderColor-accent-emphasis);

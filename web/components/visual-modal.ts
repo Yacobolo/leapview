@@ -33,7 +33,7 @@ class VisualModal extends LitElement {
   static styles = css`
     :host {
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
     }
 
     .backdrop {
@@ -76,9 +76,9 @@ class VisualModal extends LitElement {
     .eyebrow {
       margin: 0 0 3px;
       color: var(--fgColor-muted);
-      font-size: 0.62rem;
-      font-weight: 900;
-      line-height: 1;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
+      line-height: var(--ld-line-height-none);
       text-transform: uppercase;
     }
 
@@ -87,9 +87,9 @@ class VisualModal extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 1rem;
-      font-weight: 850;
-      line-height: 1.1;
+      font-size: var(--ld-font-size-body-lg);
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-compact);
     }
 
     .actions {
@@ -108,8 +108,8 @@ class VisualModal extends LitElement {
       cursor: pointer;
       padding: 0 9px;
       font: inherit;
-      font-size: 0.72rem;
-      font-weight: 800;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-800);
     }
 
     button:hover,
@@ -121,8 +121,8 @@ class VisualModal extends LitElement {
     .close {
       width: 30px;
       padding: 0;
-      font-size: 1rem;
-      line-height: 1;
+      font-size: var(--ld-font-size-body-lg);
+      line-height: var(--ld-line-height-none);
     }
 
     .body {
@@ -148,8 +148,8 @@ class VisualModal extends LitElement {
       border-bottom: 1px solid var(--borderColor-default);
       color: var(--fgColor-muted);
       padding: 8px 10px;
-      font-size: 0.72rem;
-      font-weight: 800;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-800);
     }
 
     .data-scroll {
@@ -160,7 +160,7 @@ class VisualModal extends LitElement {
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.76rem;
+      font-size: var(--ld-font-size-body-md);
     }
 
     th,
@@ -180,8 +180,8 @@ class VisualModal extends LitElement {
       z-index: 1;
       background: var(--bgColor-muted);
       color: var(--fgColor-muted);
-      font-size: 0.66rem;
-      font-weight: 900;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
       text-transform: uppercase;
     }
 
@@ -196,7 +196,7 @@ class VisualModal extends LitElement {
       height: 100%;
       place-items: center;
       color: var(--fgColor-muted);
-      font-weight: 850;
+      font-weight: var(--ld-font-weight-850);
     }
 
     .notice {
@@ -210,8 +210,8 @@ class VisualModal extends LitElement {
       box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
       color: var(--fgColor-default);
       padding: 7px 11px;
-      font-size: 0.72rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
     }
   `
 

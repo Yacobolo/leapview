@@ -266,7 +266,7 @@ class ReportZoom extends LitElement {
     :host {
       display: inline-block;
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
     }
 
     .zoom {
@@ -377,8 +377,8 @@ class ReportZoom extends LitElement {
       min-width: 38px;
       color: var(--fgColor-muted);
       text-align: center;
-      font-size: 0.7rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
       white-space: nowrap;
     }
 

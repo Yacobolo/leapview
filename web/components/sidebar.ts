@@ -98,7 +98,7 @@ class LibreDashSidebar extends LitElement {
       width: var(--ld-sidebar-width);
       min-height: 100svh;
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
       transition: width 180ms var(--ld-ease-out);
     }
 
@@ -136,8 +136,8 @@ class LibreDashSidebar extends LitElement {
       color: var(--fgColor-default);
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 0.94rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-body-lg);
+      font-weight: var(--ld-font-weight-850);
       letter-spacing: 0;
     }
 
@@ -206,8 +206,8 @@ class LibreDashSidebar extends LitElement {
       color: var(--fgColor-muted);
       padding: 0 9px;
       text-decoration: none;
-      font-size: 0.78rem;
-      font-weight: 760;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--ld-font-weight-760);
     }
 
     .nav-text {
@@ -221,8 +221,8 @@ class LibreDashSidebar extends LitElement {
       color: inherit;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 0.74rem;
-      font-weight: 800;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-800);
     }
 
     .nav-item:hover,
@@ -310,8 +310,8 @@ class LibreDashSidebar extends LitElement {
       border-radius: 50%;
       background: color-mix(in srgb, var(--fgColor-muted), transparent 78%);
       color: var(--fgColor-default);
-      font-size: 0.58rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
       letter-spacing: 0;
     }
 
@@ -329,14 +329,14 @@ class LibreDashSidebar extends LitElement {
     }
 
     .user-name {
-      font-size: 0.72rem;
-      font-weight: 820;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-820);
     }
 
     .user-role {
       color: var(--fgColor-muted);
-      font-size: 0.58rem;
-      font-weight: 720;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-720);
     }
 
     .actions {
@@ -360,8 +360,8 @@ class LibreDashSidebar extends LitElement {
       color: var(--fgColor-default);
       cursor: pointer;
       padding: 0;
-      font-size: 0.75rem;
-      font-weight: 820;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-820);
     }
 
     .theme-button:hover,
