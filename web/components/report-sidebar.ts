@@ -220,7 +220,6 @@ class ReportSidebar extends LitElement {
       width: 24px;
       height: 24px;
       place-items: center;
-      border-radius: var(--ld-radius-full);
       color: var(--fgColor-muted);
       background: transparent;
       font-size: var(--ld-font-size-caption);
@@ -231,12 +230,10 @@ class ReportSidebar extends LitElement {
     :host([data-collapsed]) .page-link:hover .page-index,
     :host([data-collapsed]) .page-link:focus-visible .page-index {
       color: var(--fgColor-default);
-      background: var(--bgColor-muted);
     }
 
     :host([data-collapsed]) .page-link[aria-current='page'] .page-index {
-      color: var(--fgColor-onEmphasis);
-      background: var(--fgColor-accent);
+      color: var(--fgColor-default);
     }
 
     :host([data-collapsed]) .page-link {
@@ -244,7 +241,10 @@ class ReportSidebar extends LitElement {
     }
 
     :host([data-collapsed]) .page-link[aria-current='page']::before {
-      content: none;
+      content: '';
+      inset-block: 6px;
+      left: 0;
+      width: 2px;
     }
 
     .rail-label {
