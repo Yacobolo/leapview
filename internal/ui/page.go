@@ -27,6 +27,30 @@ func staticAsset(path string) string {
 	return path + "?v=dev"
 }
 
+const (
+	appRootClass               = "min-h-svh bg-report-workspace text-fg-default"
+	appShellClass              = "grid min-h-svh grid-cols-app-shell bg-report-workspace max-sm:grid-cols-1"
+	reportShellClass           = "grid min-h-svh grid-cols-report-shell bg-report-workspace max-sm:grid-cols-1"
+	appMainClass               = "grid min-w-0 min-h-svh grid-rows-app-main bg-report-workspace"
+	catalogMainClass           = appMainClass + " gap-3 px-4 py-4 max-sm:min-h-0 max-sm:p-3"
+	reportMainClass            = appMainClass + " h-svh min-h-0 overflow-hidden"
+	metricMainClass            = "grid h-svh min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-report-workspace"
+	modelMainClass             = appMainClass + " gap-3 px-4 py-4 max-sm:min-h-0 max-sm:p-3"
+	cardClass                  = "grid min-h-card max-w-card grid-rows-card rounded-default border border-outline-variant bg-surface p-5 shadow-resting-sm"
+	cardTitleClass             = "m-0 mt-1 text-title-sm leading-snug font-850 text-fg-default"
+	cardDescriptionClass       = "m-0 mt-3 text-body-sm leading-relaxed font-650 text-fg-muted"
+	cardFooterClass            = "mt-5 flex items-center justify-between gap-3 border-t border-outline-muted pt-4 text-caption font-800 text-fg-muted"
+	eyebrowClass               = "m-0 mb-1 text-caption leading-tight font-900 uppercase text-fg-muted"
+	visualCardClass            = "h-full min-h-0 w-full overflow-hidden rounded-default border border-outline-variant bg-report-panel"
+	actionButtonClass          = "inline-flex size-action min-h-action items-center justify-center rounded-default border border-outline-variant bg-transparent p-0 text-fg-default hover:bg-control-hover focus-visible:bg-control-hover focus-visible:outline-0 disabled:cursor-not-allowed disabled:opacity-disabled"
+	primaryLinkButtonClass     = "inline-flex min-h-control-md items-center justify-center gap-2 rounded-small bg-button-primary px-3 text-caption font-850 text-on-primary no-underline hover:bg-button-primary-hover focus-visible:bg-button-primary-hover focus-visible:outline-0"
+	tagClass                   = "rounded-full border border-outline-muted bg-container-low px-2 py-1 text-caption font-800 uppercase text-fg-muted"
+	metricContractSectionClass = "grid min-h-0 gap-3 overflow-hidden bg-transparent"
+	metricWorkspaceClass       = "grid min-h-0 min-w-0 grid-cols-metric-workspace overflow-hidden bg-report-workspace data-[rail-collapsed]:grid-cols-metric-workspace-collapsed max-md:grid-cols-1"
+	metricContentColumnClass   = "grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+	metricInfoSidebarClass     = "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-outline-variant bg-report-panel-subtle max-md:border-l-0 max-md:border-t"
+)
+
 func inspectorScript() g.Node {
 	return h.Script(h.Type("module"), h.Src(staticAsset("/static/datastar-inspector.js")))
 }
@@ -584,7 +608,7 @@ func metricUsageGraph(view dashboard.MetricViewDetail) any {
 }
 
 func metricTabs(view dashboard.MetricViewDetail, activeSection string) g.Node {
-	return h.Nav(h.Class("metric-tabs"), h.Aria("label", "Metric view sections"),
+	return h.Nav(h.Class("flex min-w-0 gap-6 overflow-x-auto border-b border-outline-variant bg-report-workspace px-3"), h.Aria("label", "Metric view sections"),
 		metricTabLink(view.ID, "measures", activeSection, "Measures", metricTabCount(view.MeasureCount)),
 		metricTabLink(view.ID, "dimensions", activeSection, "Dimensions", metricTabCount(view.DimensionCount)),
 		metricTabLink(view.ID, "usage", activeSection, "Usage", metricTabCount(view.DashboardCount)),
@@ -592,9 +616,11 @@ func metricTabs(view dashboard.MetricViewDetail, activeSection string) g.Node {
 }
 
 func metricTabLink(viewID, section, activeSection, label string, meta g.Node) g.Node {
-	className := "metric-tab"
+	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-850 no-underline transition-colors duration-fast"
 	if section == activeSection {
-		className += " metric-tab-active"
+		className += " border-fg-accent text-fg-default"
+	} else {
+		className += " border-transparent text-fg-muted hover:border-outline-muted hover:text-fg-default"
 	}
 	return h.A(h.Class(className), h.Href("/metrics/"+viewID+"/"+section), g.If(section == activeSection, h.Aria("current", "page")), h.Span(g.Text(label)), meta)
 }
@@ -674,7 +700,7 @@ func MetricViewPage(catalog dashboard.Catalog, view dashboard.MetricViewDetail, 
 						g.El("ld-detail-rail", h.Class("metric-workspace"),
 							h.Div(h.Class("metric-content-column"),
 								metricTabs(view, activeSection),
-								h.Div(h.Class("metric-contract-main"),
+								h.Div(h.Class("min-h-0 overflow-auto px-3 py-4"),
 									metricViewActiveSection(view, activeSection),
 								),
 							),

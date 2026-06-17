@@ -210,6 +210,8 @@ const dataGridStyles = `
     min-width: 0;
     max-width: 100%;
     overflow-x: auto;
+    border-top: 1px solid var(--borderColor-muted);
+    border-bottom: 1px solid var(--borderColor-muted);
   }
 
   ld-data-grid .data-grid {
@@ -221,7 +223,7 @@ const dataGridStyles = `
   ld-data-grid .data-grid th,
   ld-data-grid .data-grid td {
     border-bottom: 1px solid color-mix(in srgb, var(--borderColor-muted), transparent 28%);
-    padding: 10px 12px;
+    padding: 11px 12px;
     text-align: left;
     vertical-align: top;
   }
@@ -247,7 +249,7 @@ const dataGridStyles = `
     text-align: right;
   }
 
-  ld-data-grid .data-grid tr:last-child td {
+  ld-data-grid .data-grid tbody tr:last-child td {
     border-bottom: 0;
   }
 
@@ -394,8 +396,9 @@ const dataGridStyles = `
   }
 
   ld-data-grid .data-grid-empty {
-    border-top: 1px solid var(--borderColor-default);
-    padding: 16px 0 0;
+    border-top: 1px solid var(--borderColor-muted);
+    border-bottom: 1px solid var(--borderColor-muted);
+    padding: 18px 0;
     font-size: 0.78rem;
     font-weight: 650;
   }
