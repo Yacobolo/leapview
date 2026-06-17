@@ -876,9 +876,7 @@ class DataTable extends LitElement {
   render() {
     const tanstack = this.tanstackTable()
     const headers = tanstack.getHeaderGroups()[0]?.headers ?? []
-    const visibleColumns = tanstack.getVisibleLeafColumns()
-    const rowsByKey = new Map(tanstack.getRowModel().rows.map((row: any) => [row.original.__rowKey, row]))
-    const columns = visibleColumns.map((column: any) => this.columns.find((item) => item.key === column.id)).filter(Boolean) as TableColumn[]
+    const columns = headers.map((header: any) => this.columns.find((item) => item.key === header.column.id)).filter(Boolean) as TableColumn[]
     const groupHeaders = this.groupHeaderSegments(columns)
     const visibleRows = this.visibleRows
     const totalHeight = this.availableRows * this.rowHeight
@@ -904,15 +902,18 @@ class DataTable extends LitElement {
               <div class="menu-divider"></div>
               <div class="column-menu" @click=${(event: Event) => event.stopPropagation()}>
                 <span>Columns</span>
-                ${tanstack.getAllLeafColumns().map((column: any) => html`
+                ${this.columnsForTanStack().map((column) => html`
                   <label>
                     <input
                       type="checkbox"
-                      .checked=${column.getIsVisible()}
-                      ?disabled=${!column.getCanHide()}
-                      @change=${column.getToggleVisibilityHandler()}
+                      .checked=${this.columnVisibility[column.key] !== false}
+                      ?disabled=${this.columnsForTanStack().length <= 1}
+                      @change=${(event: Event) => {
+                        const checked = (event.currentTarget as HTMLInputElement).checked
+                        this.columnVisibility = { ...this.columnVisibility, [column.key]: checked }
+                      }}
                     />
-                    ${column.columnDef.header}
+                    ${column.label}
                   </label>
                 `)}
               </div>
@@ -986,8 +987,6 @@ class DataTable extends LitElement {
                   const { row, index } = slot
                   const key = rowKey(row, index)
                   const selected = key === this.selectedRowId
-                  const tanstackRow = rowsByKey.get(key)
-                  const cells = tanstackRow?.getVisibleCells?.() ?? []
                   return html`
                     <div
                       class=${`row ${selected ? 'selected' : ''}`}
@@ -1000,21 +999,19 @@ class DataTable extends LitElement {
                         this.selectedCellKey = ''
                       }}
                     >
-                      ${cells.map((cell: any) => {
-                        const column = this.columns.find((item) => item.key === cell.column.id)
-                        if (!column) return nothing
-                        const cellKey = `${key}:${cell.column.id}`
+                      ${columns.map((column) => {
+                        const cellKey = `${key}:${column.key}`
                         return html`
                           <button
                             class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
                             role="cell"
-                            title=${String(row[cell.column.id] ?? '')}
+                            title=${String(row[column.key] ?? '')}
                             @click=${(event: Event) => {
                               event.stopPropagation()
                               this.selectCell(row, column, index)
                             }}
                           >
-                            ${flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            ${formatCell(row[column.key], column)}
                           </button>
                         `
                       })}
