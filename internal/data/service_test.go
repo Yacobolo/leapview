@@ -182,6 +182,9 @@ relogios_presentes,watches_gifts
 	if got := len(patch.FilterOptions["state"]); got != 2 {
 		t.Fatalf("state filter options = %d, want 2", got)
 	}
+	if _, ok := patch.Filters.Controls["category"]; ok {
+		t.Fatalf("overview patch included off-page category filter: %#v", patch.Filters.Controls)
+	}
 
 	selectedFilters := dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{
@@ -237,6 +240,24 @@ relogios_presentes,watches_gifts
 		t.Fatal(err)
 	}
 	assertVisualKeys(t, funnelPatch, []string{"delivery_funnel", "status_funnel"})
+
+	piePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-pie", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
+		"category": {Type: "text", Operator: "contains", Value: "health"},
+		"state":    {Type: "multi_select", Operator: "in", Values: []string{"SP"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, piePatch, []string{"category_pie", "status_pie"})
+	if _, ok := piePatch.Filters.Controls["category"]; ok {
+		t.Fatalf("pie patch included off-page category filter: %#v", piePatch.Filters.Controls)
+	}
+	if _, ok := piePatch.FilterOptions["category"]; ok {
+		t.Fatalf("pie patch included off-page category options: %#v", piePatch.FilterOptions)
+	}
+	if got := len(piePatch.FilterOptions["state"]); got != 2 {
+		t.Fatalf("pie state filter options = %d, want 2", got)
+	}
 
 	emptyPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "", dashboard.Filters{})
 	if err != nil {
@@ -467,25 +488,25 @@ relogios_presentes,watches_gifts
 			want: "2",
 		},
 		{
-			name: "category contains",
+			name: "off-page category contains ignored",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "contains", Value: "watch"},
 			}},
-			want: "1",
+			want: "2",
 		},
 		{
-			name: "category equals",
+			name: "off-page category equals ignored",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "equals", Value: "health_beauty"},
 			}},
-			want: "1",
+			want: "2",
 		},
 		{
-			name: "category not contains",
+			name: "off-page category not contains ignored",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "not_contains", Value: "health"},
 			}},
-			want: "1",
+			want: "2",
 		},
 		{
 			name: "custom date range",

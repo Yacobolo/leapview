@@ -689,6 +689,50 @@ func TestDashboardURLParamsFromFiltersOmitsDefaults(t *testing.T) {
 	}
 }
 
+func TestDashboardPageScopedFilters(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+
+	if got := strings.Join(report.PageFilterIDs("chart-pie"), ","); got != "purchase_date,state" {
+		t.Fatalf("chart-pie filter ids = %q, want purchase_date,state", got)
+	}
+	config := report.FiltersForPage("chart-pie")
+	if _, ok := config["purchase_date"]; !ok {
+		t.Fatal("chart-pie filter config missing purchase_date")
+	}
+	if _, ok := config["state"]; !ok {
+		t.Fatal("chart-pie filter config missing state")
+	}
+	if _, ok := config["category"]; ok {
+		t.Fatalf("chart-pie filter config included off-page category: %#v", config)
+	}
+
+	values := url.Values{
+		"period":      {"2018"},
+		"state":       {"SP"},
+		"category":    {"health"},
+		"category_op": {"equals"},
+	}
+	filters := report.FiltersFromURLForPage("chart-pie", values)
+	if _, ok := filters.Controls["category"]; ok {
+		t.Fatalf("chart-pie URL filters included off-page category: %#v", filters.Controls)
+	}
+	if got := filters.Controls["purchase_date"].Preset; got != "2018" {
+		t.Fatalf("chart-pie period preset = %q, want 2018", got)
+	}
+	if got := strings.Join(filters.Controls["state"].Values, ","); got != "SP" {
+		t.Fatalf("chart-pie state values = %q, want SP", got)
+	}
+
+	shape := report.URLParamShapeForPage("chart-pie")
+	if _, ok := shape["category"]; ok {
+		t.Fatalf("chart-pie URL shape included category: %#v", shape)
+	}
+	if _, ok := shape["state"]; !ok {
+		t.Fatalf("chart-pie URL shape missing state: %#v", shape)
+	}
+}
+
 func loadOlistModel(t *testing.T) *Model {
 	t.Helper()
 	model, err := Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))

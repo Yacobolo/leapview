@@ -60,7 +60,8 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 			Title:         "Executive Sales Dashboard",
 			SemanticModel: "test",
 			Filters: map[string]semantic.FilterDefinition{
-				"state": {Type: "multi_select", Label: "State", Dataset: "orders", Dimension: "status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
+				"state":    {Type: "multi_select", Label: "State", Dataset: "orders", Dimension: "status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
+				"category": {Type: "text", Label: "Category", Dataset: "orders", Dimension: "status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
 			},
 			Visuals: map[string]semantic.Visual{
 				"orders":       {Title: "Orders", Type: "donut", Dataset: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
@@ -85,7 +86,8 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 func (fakeMetrics) DefaultFilters(_ string) dashboard.Filters {
 	return dashboard.Filters{
 		Controls: map[string]dashboard.FilterControl{
-			"state": {Type: "multi_select", Operator: "in", Values: []string{}},
+			"state":    {Type: "multi_select", Operator: "in", Values: []string{}},
+			"category": {Type: "text", Operator: "contains"},
 		},
 		VisualSelections: []dashboard.VisualSelection{},
 	}
@@ -107,6 +109,7 @@ func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
 			Height: 940,
 			Visuals: []dashboard.PageVisual{
 				{ID: "header", Kind: "header", X: 0, Y: 0, Width: 100, Height: 40, Title: "Test"},
+				{ID: "state-filter", Kind: "filter_card", Filter: "state", X: 0, Y: 42, Width: 100, Height: 32},
 				{ID: "orders-chart", Kind: "donut_chart", Visual: "orders", X: 0, Y: 48, Width: 100, Height: 100},
 				{ID: "orders-table", Kind: "table", Table: "orders", X: 0, Y: 160, Width: 100, Height: 100},
 			},
@@ -117,6 +120,7 @@ func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
 			Width:  1366,
 			Height: 940,
 			Visuals: []dashboard.PageVisual{
+				{ID: "category-filter", Kind: "filter_card", Filter: "category", X: 0, Y: 8, Width: 100, Height: 32},
 				{ID: "ops-pipeline-chart", Kind: "bar_chart", Visual: "ops_pipeline", X: 0, Y: 48, Width: 100, Height: 100},
 			},
 		},
@@ -207,8 +211,8 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 	}
 }
 
-func TestPageRouteSeedsFiltersFromURL(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/overview?state=SP&state=RJ", nil)
+func TestPageRouteSeedsPageScopedFiltersFromURL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/overview?state=SP&state=RJ&category=ignored", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -225,6 +229,27 @@ func TestPageRouteSeedsFiltersFromURL(t *testing.T) {
 	}
 	if !strings.Contains(body, `&#34;values&#34;:[&#34;RJ&#34;,&#34;SP&#34;]`) {
 		t.Fatalf("page did not seed state filter values:\n%s", body)
+	}
+	if strings.Contains(body, `&#34;category&#34;`) {
+		t.Fatalf("overview page seeded off-page category filter:\n%s", body)
+	}
+}
+
+func TestPageRouteSeedsOperationsPageFiltersFromURL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/operations?state=SP&category=ops", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `&#34;category&#34;:&#34;ops&#34;`) && !strings.Contains(body, `&#34;value&#34;:&#34;ops&#34;`) {
+		t.Fatalf("operations page did not seed category URL filter:\n%s", body)
+	}
+	if strings.Contains(body, `&#34;state&#34;`) {
+		t.Fatalf("operations page seeded off-page state filter:\n%s", body)
 	}
 }
 
@@ -354,6 +379,10 @@ func TestModelRouteRendersSemanticModelGraph(t *testing.T) {
 }
 
 func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return fakeMetrics{}.QueryTablePage(context.Background(), "executive-sales", "", dashboard.Filters{}, request)
+}
+
+func (fakeMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	request = request.WithDefaults()
 	return dashboard.Table{
 		Version: 2,
@@ -382,6 +411,10 @@ func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, 
 }
 
 func (canceledTableMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return canceledTableMetrics{}.QueryTablePage(context.Background(), "executive-sales", "", dashboard.Filters{}, request)
+}
+
+func (canceledTableMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	request = request.WithDefaults()
 	return dashboard.EmptyTable(request, context.Canceled), nil
 }
@@ -394,7 +427,7 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22controls%22%3A%7B%22state%22%3A%7B%22type%22%3A%22multi_select%22%2C%22operator%22%3A%22in%22%2C%22values%22%3A%5B%22SP%22%5D%7D%7D%7D%7D", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22controls%22%3A%7B%22state%22%3A%7B%22type%22%3A%22multi_select%22%2C%22operator%22%3A%22in%22%2C%22values%22%3A%5B%22SP%22%5D%7D%2C%22category%22%3A%7B%22type%22%3A%22text%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%22ignored%22%7D%7D%7D%7D", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -409,6 +442,9 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	}
 	if !strings.Contains(body, `"values":["SP"]`) {
 		t.Fatalf("body does not include decoded filter state:\n%s", body)
+	}
+	if strings.Contains(body, `"category"`) {
+		t.Fatalf("body streamed off-page category filter:\n%s", body)
 	}
 }
 

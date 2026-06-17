@@ -14,6 +14,10 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		ID:            "report",
 		Title:         "Report",
 		SemanticModel: "test",
+		Filters: map[string]semantic.FilterDefinition{
+			"state":    {Type: "multi_select", Label: "State", Dataset: "orders", Dimension: "state", URLParam: "state", Operator: "in"},
+			"category": {Type: "text", Label: "Category", Dataset: "orders", Dimension: "category", URLParam: "category", DefaultOperator: "contains"},
+		},
 		Visuals: map[string]semantic.Visual{
 			"active_chart":   {Title: "Active", Type: "bar", Dataset: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}},
 			"active_kpi":     {Kind: "kpi", Shape: "single_value", Dataset: "orders", Query: semantic.VisualQuery{Measures: []string{"order_count"}}, Options: map[string]any{"note": "Filtered", "tone": "ink"}},
@@ -31,6 +35,7 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 				Title:  "Showcase",
 				Canvas: dashboard.PageCanvas{Width: 1200, Height: 800},
 				Visuals: []dashboard.PageVisual{
+					{ID: "state-filter", Kind: "filter_card", Filter: "state", X: 0, Y: 0, Width: 100, Height: 40},
 					{ID: "kpi", Kind: "kpi_card", Visual: "active_kpi", X: 0, Y: 0, Width: 100, Height: 100},
 					{ID: "chart", Kind: "bar_chart", Visual: "active_chart", X: 0, Y: 0, Width: 100, Height: 100},
 				},
@@ -74,6 +79,15 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	}
 	if !strings.Contains(showcase, `"tables":{}`) {
 		t.Fatalf("showcase page should seed no tables:\n%s", showcase)
+	}
+	if !strings.Contains(showcase, `"filterConfig":{"state"`) {
+		t.Fatalf("showcase page did not seed active page filter config:\n%s", showcase)
+	}
+	if !strings.Contains(showcase, `"controls":{"state"`) {
+		t.Fatalf("showcase page did not seed active page filter controls:\n%s", showcase)
+	}
+	if strings.Contains(showcase, `"category":{"type":"text"`) || strings.Contains(showcase, `"category":""`) {
+		t.Fatalf("showcase page seeded off-page category filter:\n%s", showcase)
 	}
 
 	tables := renderPageForTest(t, report, model, report.Pages[1])

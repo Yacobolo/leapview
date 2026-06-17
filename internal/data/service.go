@@ -310,7 +310,8 @@ func (m *DuckDBMetrics) QueryDashboard(ctx context.Context, dashboardID string, 
 func (m *DuckDBMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	report, runtime, err := m.reportRuntime(dashboardID)
 	if report != nil {
-		filters = normalizeFilters(report, filters)
+		page := dashboardPage(report, pageID)
+		filters = report.NormalizeFiltersForPage(page.ID, filters)
 	} else {
 		filters = filters.WithDefaults()
 	}
@@ -334,13 +335,13 @@ func (m *DuckDBMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pag
 		Visuals: map[string]dashboard.Visual{},
 	}
 
-	options, err := m.filterOptions(ctx, runtime, report)
+	page := dashboardPage(report, pageID)
+	options, err := m.filterOptions(ctx, runtime, report, report.PageFilterIDs(page.ID))
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
 	}
 	patch.FilterOptions = options
 
-	page := dashboardPage(report, pageID)
 	visuals, err := m.visuals(ctx, runtime, report, filters, pageVisualIDs(page))
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
@@ -382,9 +383,14 @@ func pageVisualIDs(page dashboard.Page) []string {
 }
 
 func (m *DuckDBMetrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return m.QueryTablePage(ctx, dashboardID, "", filters, request)
+}
+
+func (m *DuckDBMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	report, runtime, err := m.reportRuntime(dashboardID)
 	if report != nil {
-		filters = normalizeFilters(report, filters)
+		page := dashboardPage(report, pageID)
+		filters = report.NormalizeFiltersForPage(page.ID, filters)
 	} else {
 		filters = filters.WithDefaults()
 	}
@@ -436,9 +442,11 @@ func (m *DuckDBMetrics) QueryTable(ctx context.Context, dashboardID string, filt
 	}, nil
 }
 
-func (m *DuckDBMetrics) filterOptions(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard) (map[string][]dashboard.FilterOption, error) {
+func (m *DuckDBMetrics) filterOptions(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, names []string) (map[string][]dashboard.FilterOption, error) {
 	options := map[string][]dashboard.FilterOption{}
-	for _, name := range sortedKeys(report.Filters) {
+	names = append([]string{}, names...)
+	sort.Strings(names)
+	for _, name := range names {
 		filter := report.Filters[name]
 		if filter.Values.Source != "distinct" {
 			continue
@@ -488,41 +496,6 @@ LIMIT %d`, expr, source, where, expr, expr, limit)
 		options[name] = values
 	}
 	return options, nil
-}
-
-func normalizeFilters(report *semantic.Dashboard, filters dashboard.Filters) dashboard.Filters {
-	defaults := report.DefaultFilters()
-	filters = filters.WithDefaults()
-	for name, control := range filters.Controls {
-		filter, ok := report.Filters[name]
-		if !ok {
-			continue
-		}
-		base := defaults.Controls[name]
-		if control.Type == "" {
-			control.Type = filter.Type
-		}
-		switch filter.Type {
-		case "date_range":
-			if control.Preset == "" && control.From == "" && control.To == "" {
-				control.Preset = base.Preset
-			}
-		case "multi_select":
-			if control.Operator == "" {
-				control.Operator = base.Operator
-			}
-			if control.Values == nil {
-				control.Values = []string{}
-			}
-		case "text":
-			if control.Operator == "" {
-				control.Operator = base.Operator
-			}
-		}
-		defaults.Controls[name] = control
-	}
-	defaults.VisualSelections = append([]dashboard.VisualSelection{}, filters.VisualSelections...)
-	return defaults.WithDefaults()
 }
 
 func (m *DuckDBMetrics) RefreshCache(ctx context.Context, modelID string) error {
@@ -1814,7 +1787,7 @@ func dimensionSortColumn(shape string, index int) string {
 }
 
 func (m *DuckDBMetrics) filterWhere(alias string, runtime *modelRuntime, report *semantic.Dashboard, datasetName string, filters dashboard.Filters, targetKind, targetID string) (string, []any) {
-	filters = normalizeFilters(report, filters)
+	filters = filters.WithDefaults()
 	conditions := []string{"1 = 1"}
 	args := []any{}
 

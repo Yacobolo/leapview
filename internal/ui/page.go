@@ -34,6 +34,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 	action := updateAction(report.ID, activePage.ID)
 	initAction := "window.DatastarURLSync && window.DatastarURLSync.bindPopstate($urlParamShape); " + action
 	tableReset := tableResetExpression()
+	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters)
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash",
 		Language: "en",
@@ -84,7 +85,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 							h.Div(h.Class("report-canvas-shell"),
 								renderPageCanvas(activePage, report, initialFilters, action),
 							),
-							filtersDock(report, action),
+							filtersDock(report, activePage.ID, action),
 						),
 						g.El("ld-report-footer",
 							h.Aria("label", "Report view controls"),
@@ -488,10 +489,10 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 			"modelId":     model.Name,
 		},
 		"csrfToken":     csrfToken,
-		"filterConfig":  report.Filters,
+		"filterConfig":  report.FiltersForPage(activePage.ID),
 		"filters":       initialFilters,
-		"urlParams":     report.URLParamsFromFilters(initialFilters),
-		"urlParamShape": report.URLParamShape(),
+		"urlParams":     report.URLParamsFromFiltersForPage(activePage.ID, initialFilters),
+		"urlParamShape": report.URLParamShapeForPage(activePage.ID),
 		"filterOptions": map[string]any{},
 		"chartCommand": map[string]any{
 			"visualId": "",
@@ -713,7 +714,7 @@ func renderPageCanvas(page dashboard.Page, report semantic.Dashboard, filters da
 		g.Attr("height", strconv.Itoa(page.Canvas.Height)),
 	}
 	for _, visual := range page.PlacedVisuals() {
-		nodes = append(nodes, renderPageVisual(visual, report, filters, action))
+		nodes = append(nodes, renderPageVisual(page.ID, visual, report, filters, action))
 	}
 	return g.El("ld-report-canvas", nodes...)
 }
@@ -722,7 +723,7 @@ func formatCanvasNumber(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
+func renderPageVisual(pageID string, visual dashboard.PageVisual, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
 	switch visual.Kind {
 	case "header":
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, reportHeader(visual))
@@ -730,7 +731,7 @@ func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, fi
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, kpiCard(visual.Visual))
 	case "filter_card":
 		return canvasFilterVisual(visual.X, visual.Y, visual.Width, visual.Height,
-			filterCard(visual.Filter, report, filters, action),
+			filterCard(pageID, visual.Filter, report, filters, action),
 		)
 	case "line_chart", "area_chart", "bar_chart", "column_chart", "pie_chart", "donut_chart", "scatter_chart", "funnel_chart", "treemap_chart", "gauge_chart", "heatmap_chart", "sankey_chart", "graph_chart", "map_chart", "candlestick_chart", "boxplot_chart", "combo_chart", "waterfall_chart", "histogram_chart", "radar_chart", "tree_chart", "sunburst_chart":
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height,
@@ -743,12 +744,12 @@ func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, fi
 	}
 }
 
-func filterCard(filterID string, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
+func filterCard(pageID, filterID string, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
 	tableReset := tableResetExpression()
 	return h.Article(h.Class("visual-card filter-visual-card"),
 		g.El("ld-filter-card",
 			g.Attr("filter-id", filterID),
-			g.Attr("config", jsonString(report.Filters)),
+			g.Attr("config", jsonString(report.FiltersForPage(pageID))),
 			g.Attr("filters", jsonString(filters)),
 			g.Attr("options", "{}"),
 			g.Attr("data-attr:config", "$filterConfig"),
@@ -840,22 +841,23 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 	)
 }
 
-func filtersDock(report semantic.Dashboard, action string) g.Node {
+func filtersDock(report semantic.Dashboard, pageID string, action string) g.Node {
 	return h.Details(h.Class("filters-dock"), h.Aria("label", "Report filters"),
 		h.Summary(h.Class("filters-dock-rail"), h.Title("Toggle filters"),
 			lucide.SlidersHorizontal(iconAttrs()),
 			h.Span(h.Class("filters-rail-label"), g.Text("Filters")),
 			h.Span(h.Class("sr-only"), g.Text("Toggle filters")),
 		),
-		filtersPane(report, action),
+		filtersPane(report, pageID, action),
 	)
 }
 
-func filtersPane(report semantic.Dashboard, action string) g.Node {
+func filtersPane(report semantic.Dashboard, pageID string, action string) g.Node {
 	tableReset := tableResetExpression()
 	return h.Div(h.Class("filters-pane"),
 		g.El("ld-filter-panel",
-			g.Attr("config", jsonString(report.Filters)),
+			g.Attr("config", jsonString(report.FiltersForPage(pageID))),
+			g.Attr("filter-order", jsonString(report.PageFilterIDs(pageID))),
 			g.Attr("data-attr:filters", "$filters"),
 			g.Attr("data-attr:options", "$filterOptions"),
 			g.Attr("data-attr:loading", "$status.loading"),

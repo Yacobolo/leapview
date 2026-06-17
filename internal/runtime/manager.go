@@ -218,11 +218,15 @@ func (m *Manager) QueryDashboardPage(ctx context.Context, dashboardID, pageID st
 }
 
 func (m *Manager) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return m.QueryTablePage(ctx, dashboardID, "", filters, request)
+}
+
+func (m *Manager) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	metrics, err := m.metrics()
 	if err != nil {
 		return dashboard.EmptyTable(request.WithDefaults(), err), nil
 	}
-	return metrics.QueryTable(ctx, dashboardID, filters, request)
+	return metrics.QueryTablePage(ctx, dashboardID, pageID, filters, request)
 }
 
 func (m *Manager) RefreshCache(ctx context.Context, modelID string) error {

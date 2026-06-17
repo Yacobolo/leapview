@@ -27,6 +27,7 @@ type queryMetrics interface {
 	QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error)
 	QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error)
 	QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
+	QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
 	RefreshCache(ctx context.Context, modelID string) error
 	DataDir() string
 	Pages(dashboardID string) []dashboard.Page
@@ -149,7 +150,7 @@ func (s *Server) renderPage(w http.ResponseWriter, r *http.Request, dashboardID,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	initialFilters := report.FiltersFromURL(r.URL.Query())
+	initialFilters := report.FiltersFromURLForPage(activePage.ID, r.URL.Query())
 	csrfToken := ""
 	if s.auth != nil {
 		csrfToken = csrf.Token(r)
@@ -187,7 +188,7 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	pageID := pageIDFromRequest(r, signals)
-	filters := s.normalizeFilters(dashboardID, signals.Filters)
+	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters)
 	clientID := clientStreamID(r, signals, dashboardID, pageID)
 	tableRequest := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 

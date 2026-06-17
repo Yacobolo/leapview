@@ -16,11 +16,12 @@ func (s *Server) tableWindow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
-	filters := s.normalizeFilters(dashboardID, signals.Filters)
+	pageID := pageIDFromRequest(r, signals)
+	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
-	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
+	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
-	table := s.queryTable(r.Context(), dashboardID, filters, request)
+	table := s.queryTable(r.Context(), dashboardID, pageID, filters, request)
 	if !isCanceledTable(table) {
 		s.broker.publish(clientID, tablePatch(request.Table, table))
 	}
@@ -35,7 +36,8 @@ func (s *Server) chartSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	pageID := pageIDFromRequest(r, signals)
-	filters := s.normalizeFilters(dashboardID, signals.Filters).ToggleSelection(signals.ChartCommand)
+	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters).ToggleSelection(signals.ChartCommand)
+	filters = s.normalizeFilters(dashboardID, pageID, filters)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
@@ -58,7 +60,7 @@ func (s *Server) clearSelection(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	pageID := pageIDFromRequest(r, signals)
-	filters := s.normalizeFilters(dashboardID, signals.Filters)
+	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters)
 	filters.VisualSelections = nil
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageID)
@@ -82,7 +84,7 @@ func (s *Server) resetFilters(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	pageID := pageIDFromRequest(r, signals)
-	filters := s.metrics.DefaultFilters(dashboardID)
+	filters := s.defaultFilters(dashboardID, pageID)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
@@ -106,7 +108,7 @@ func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
 	dashboardID := s.dashboardID(r, signals)
 	pageID := pageIDFromRequest(r, signals)
 	modelID := s.modelID(r, signals, dashboardID)
-	filters := s.normalizeFilters(dashboardID, signals.Filters)
+	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageID)
 
@@ -127,8 +129,8 @@ func (s *Server) refreshCache(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) queryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) dashboard.Table {
-	table, err := s.metrics.QueryTable(ctx, dashboardID, filters, request)
+func (s *Server) queryTable(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) dashboard.Table {
+	table, err := s.metrics.QueryTablePage(ctx, dashboardID, pageID, filters, request)
 	if err != nil {
 		return dashboard.EmptyTable(request, err)
 	}
@@ -142,7 +144,27 @@ func isCanceledTable(table dashboard.Table) bool {
 		strings.Contains(message, "interrupt")
 }
 
-func (s *Server) normalizeFilters(dashboardID string, filters dashboard.Filters) dashboard.Filters {
+func (s *Server) defaultFilters(dashboardID, pageID string) dashboard.Filters {
+	report, _, ok := s.metrics.Report(dashboardID)
+	if !ok {
+		return s.metrics.DefaultFilters(dashboardID)
+	}
+	page, ok := report.PageOrDefault(pageID)
+	if !ok {
+		return dashboard.Filters{}.WithDefaults()
+	}
+	return report.DefaultFiltersForPage(page.ID)
+}
+
+func (s *Server) normalizeFilters(dashboardID, pageID string, filters dashboard.Filters) dashboard.Filters {
+	report, _, ok := s.metrics.Report(dashboardID)
+	if ok {
+		page, ok := report.PageOrDefault(pageID)
+		if !ok {
+			return dashboard.Filters{}.WithDefaults()
+		}
+		return report.NormalizeFiltersForPage(page.ID, filters)
+	}
 	defaults := s.metrics.DefaultFilters(dashboardID)
 	filters = filters.WithDefaults()
 	for name, control := range filters.Controls {
@@ -166,7 +188,7 @@ func (s *Server) tablesPatch(ctx context.Context, dashboardID, pageID string, fi
 		if baseRequest.Table == "" {
 			return signalPatch{"tables": map[string]dashboard.Table{}}
 		}
-		return tablePatch(baseRequest.Table, s.queryTable(ctx, dashboardID, filters, baseRequest))
+		return tablePatch(baseRequest.Table, s.queryTable(ctx, dashboardID, pageID, filters, baseRequest))
 	}
 	tables := map[string]dashboard.Table{}
 	for _, name := range pageTableNames(report.Pages, pageID) {
@@ -177,7 +199,7 @@ func (s *Server) tablesPatch(ctx context.Context, dashboardID, pageID string, fi
 		request.Start = 0
 		request.Count = dashboard.TableChunkSize
 		request.Sort = table.DefaultSort
-		tables[name] = s.queryTable(ctx, dashboardID, filters, request)
+		tables[name] = s.queryTable(ctx, dashboardID, pageID, filters, request)
 	}
 	return signalPatch{"tables": tables}
 }

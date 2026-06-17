@@ -805,11 +805,23 @@ func (d *Dashboard) validateFilterURLParams() error {
 }
 
 func (d *Dashboard) DefaultFilters() dashboard.Filters {
+	return d.defaultFiltersForNames(sortedFilterNames(d.Filters))
+}
+
+func (d *Dashboard) DefaultFiltersForPage(pageID string) dashboard.Filters {
+	return d.defaultFiltersForNames(d.PageFilterIDs(pageID))
+}
+
+func (d *Dashboard) defaultFiltersForNames(names []string) dashboard.Filters {
 	filters := dashboard.Filters{
 		Controls:         map[string]dashboard.FilterControl{},
 		VisualSelections: []dashboard.VisualSelection{},
 	}
-	for name, filter := range d.Filters {
+	for _, name := range names {
+		filter, ok := d.Filters[name]
+		if !ok {
+			continue
+		}
 		control := dashboard.FilterControl{Type: filter.Type}
 		switch filter.Type {
 		case "date_range":
@@ -832,8 +844,16 @@ func (d *Dashboard) DefaultFilters() dashboard.Filters {
 }
 
 func (d *Dashboard) FiltersFromURL(values url.Values) dashboard.Filters {
-	filters := d.DefaultFilters()
-	for _, name := range sortedFilterNames(d.Filters) {
+	return d.filtersFromURLForNames(sortedFilterNames(d.Filters), values)
+}
+
+func (d *Dashboard) FiltersFromURLForPage(pageID string, values url.Values) dashboard.Filters {
+	return d.filtersFromURLForNames(d.PageFilterIDs(pageID), values)
+}
+
+func (d *Dashboard) filtersFromURLForNames(names []string, values url.Values) dashboard.Filters {
+	filters := d.defaultFiltersForNames(names)
+	for _, name := range names {
 		filter := d.Filters[name]
 		control := filters.Controls[name]
 		switch filter.Type {
@@ -898,8 +918,16 @@ func (d *Dashboard) hasPreset(filter FilterDefinition, preset string) bool {
 }
 
 func (d *Dashboard) URLParamShape() map[string]any {
+	return d.urlParamShapeForNames(sortedFilterNames(d.Filters))
+}
+
+func (d *Dashboard) URLParamShapeForPage(pageID string) map[string]any {
+	return d.urlParamShapeForNames(d.PageFilterIDs(pageID))
+}
+
+func (d *Dashboard) urlParamShapeForNames(names []string) map[string]any {
 	shape := map[string]any{}
-	for _, name := range sortedFilterNames(d.Filters) {
+	for _, name := range names {
 		filter := d.Filters[name]
 		switch filter.Type {
 		case "date_range":
@@ -919,10 +947,18 @@ func (d *Dashboard) URLParamShape() map[string]any {
 }
 
 func (d *Dashboard) URLParamsFromFilters(filters dashboard.Filters) map[string]any {
+	return d.urlParamsFromFiltersForNames(sortedFilterNames(d.Filters), filters)
+}
+
+func (d *Dashboard) URLParamsFromFiltersForPage(pageID string, filters dashboard.Filters) map[string]any {
+	return d.urlParamsFromFiltersForNames(d.PageFilterIDs(pageID), filters)
+}
+
+func (d *Dashboard) urlParamsFromFiltersForNames(names []string, filters dashboard.Filters) map[string]any {
 	params := map[string]any{}
-	defaults := d.DefaultFilters()
+	defaults := d.defaultFiltersForNames(names)
 	filters = filters.WithDefaults()
-	for _, name := range sortedFilterNames(d.Filters) {
+	for _, name := range names {
 		filter := d.Filters[name]
 		control, ok := filters.Controls[name]
 		if !ok {
@@ -957,6 +993,112 @@ func (d *Dashboard) URLParamsFromFilters(filters dashboard.Filters) map[string]a
 		}
 	}
 	return params
+}
+
+func (d *Dashboard) NormalizeFiltersForPage(pageID string, filters dashboard.Filters) dashboard.Filters {
+	names := d.PageFilterIDs(pageID)
+	defaults := d.defaultFiltersForNames(names)
+	activeFilters := map[string]struct{}{}
+	for _, name := range names {
+		activeFilters[name] = struct{}{}
+	}
+
+	filters = filters.WithDefaults()
+	for name, control := range filters.Controls {
+		if _, ok := activeFilters[name]; !ok {
+			continue
+		}
+		filter := d.Filters[name]
+		base := defaults.Controls[name]
+		if control.Type == "" {
+			control.Type = filter.Type
+		}
+		switch filter.Type {
+		case "date_range":
+			if control.Preset == "" && control.From == "" && control.To == "" {
+				control.Preset = base.Preset
+			}
+		case "multi_select":
+			if control.Operator == "" {
+				control.Operator = base.Operator
+			}
+			if control.Values == nil {
+				control.Values = []string{}
+			}
+		case "text":
+			if control.Operator == "" {
+				control.Operator = base.Operator
+			}
+		}
+		defaults.Controls[name] = control
+	}
+
+	activeVisuals := d.pageVisualIDSet(pageID)
+	defaults.VisualSelections = make([]dashboard.VisualSelection, 0, len(filters.VisualSelections))
+	for _, selection := range filters.VisualSelections {
+		if _, ok := activeVisuals[selection.VisualID]; ok {
+			defaults.VisualSelections = append(defaults.VisualSelections, selection)
+		}
+	}
+	return defaults.WithDefaults()
+}
+
+func (d *Dashboard) FiltersForPage(pageID string) map[string]FilterDefinition {
+	filters := map[string]FilterDefinition{}
+	for _, name := range d.PageFilterIDs(pageID) {
+		if filter, ok := d.Filters[name]; ok {
+			filters[name] = filter
+		}
+	}
+	return filters
+}
+
+func (d *Dashboard) PageFilterIDs(pageID string) []string {
+	page, ok := d.PageOrDefault(pageID)
+	if !ok {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Kind != "filter_card" || item.Filter == "" {
+			continue
+		}
+		if _, ok := seen[item.Filter]; ok {
+			continue
+		}
+		seen[item.Filter] = struct{}{}
+		ids = append(ids, item.Filter)
+	}
+	return ids
+}
+
+func (d *Dashboard) PageOrDefault(pageID string) (dashboard.Page, bool) {
+	if d == nil || len(d.Pages) == 0 {
+		return dashboard.Page{}, false
+	}
+	if pageID != "" {
+		for _, page := range d.Pages {
+			if page.ID == pageID {
+				return page.WithDefaults(), true
+			}
+		}
+	}
+	return d.Pages[0].WithDefaults(), true
+}
+
+func (d *Dashboard) pageVisualIDSet(pageID string) map[string]struct{} {
+	page, ok := d.PageOrDefault(pageID)
+	if !ok {
+		return map[string]struct{}{}
+	}
+	ids := map[string]struct{}{}
+	for _, item := range page.Visuals {
+		if item.Visual != "" {
+			ids[item.Visual] = struct{}{}
+		}
+	}
+	return ids
 }
 
 func addStringShape(shape map[string]any, param string) {

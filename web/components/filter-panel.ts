@@ -46,6 +46,7 @@ class FilterPanel extends LitElement {
   @property({ attribute: 'config', converter: jsonConverter<Record<string, FilterDefinition>>({}) }) config: Record<string, FilterDefinition> = {}
   @property({ attribute: 'filters', converter: jsonConverter<FiltersSignal>(emptyFilters) }) filters: FiltersSignal = emptyFilters
   @property({ attribute: 'options', converter: jsonConverter<Record<string, FilterOption[]>>({}) }) options: Record<string, FilterOption[]> = {}
+  @property({ attribute: 'filter-order', converter: jsonConverter<string[]>([]) }) filterOrder: string[] = []
   @property({ type: Boolean, reflect: true }) loading = false
   @state() private searches: Record<string, string> = {}
   @state() private openDate: string | null = null
@@ -451,7 +452,9 @@ class FilterPanel extends LitElement {
   `
 
   render() {
-    const names = Object.keys(this.config).sort()
+    const ordered = this.filterOrder.filter((name) => this.config[name])
+    const orderedSet = new Set(ordered)
+    const names = [...ordered, ...Object.keys(this.config).filter((name) => !orderedSet.has(name)).sort()]
     const activeCount = this.activeCount()
     return html`
       <section class="panel" aria-label="Filters">
