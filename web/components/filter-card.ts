@@ -88,10 +88,10 @@ const filterCardStyles = css`
       display: grid;
       width: min(260px, max(100%, 220px));
       gap: 7px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 6px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
       background: var(--overlay-bgColor, var(--bgColor-default));
-      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      box-shadow: var(--ld-shadow-floating-sm);
       padding: 8px;
     }
 
@@ -106,8 +106,8 @@ const filterCardStyles = css`
       width: 100%;
       min-width: 0;
       min-height: 27px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       padding: 0 7px;
@@ -120,7 +120,7 @@ const filterCardStyles = css`
     input:focus,
     select:focus,
     button:focus-visible {
-      outline: 2px solid var(--ld-accent);
+      outline: var(--ld-border-width-focus) solid var(--ld-accent);
     }
 
     .chips {
@@ -132,8 +132,8 @@ const filterCardStyles = css`
     .chip,
     .action {
       min-height: 27px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       cursor: pointer;
@@ -180,7 +180,7 @@ const filterCardStyles = css`
       min-width: 0;
       align-items: center;
       gap: 6px;
-      border-radius: 4px;
+      border-radius: var(--ld-radius-tight);
       padding: 4px;
       color: var(--fgColor-default);
       font-size: var(--ld-font-size-caption);

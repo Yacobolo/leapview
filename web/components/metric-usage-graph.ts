@@ -135,7 +135,7 @@ const metricUsageGraphStyles = `
   }
 
   ld-metric-usage-graph .react-flow__controls {
-    border: 1px solid var(--borderColor-default);
+    border: var(--ld-border-default);
     background: var(--bgColor-default);
     box-shadow: var(--shadow-resting-small);
   }

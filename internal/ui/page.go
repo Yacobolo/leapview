@@ -155,19 +155,24 @@ func LoginPage() g.Node {
 			inspectorScript(),
 		},
 		Body: []g.Node{
-			h.Main(h.Class("login-screen"), h.Aria("label", "LibreDash login"),
+			h.Main(h.Class("relative grid min-h-svh place-items-center overflow-hidden bg-login p-8 text-login-fg max-sm:p-6"), h.Aria("label", "LibreDash login"),
 				g.El("ld-topology-background"),
-				h.Div(h.Class("login-shade"), h.Aria("hidden", "true")),
-				h.Section(h.Class("login-panel"),
-					h.Div(h.Class("login-brand"), h.Aria("hidden", "true"),
-						h.H1(g.Text("LibreDash")),
+				h.Div(h.Class("pointer-events-none absolute inset-0 z-login-shade bg-login-shade"), h.Aria("hidden", "true")),
+				h.Button(h.Type("button"), h.Class("absolute right-4 top-4 z-login-panel inline-grid size-8 place-items-center rounded-default border border-login-outline bg-login-panel text-login-fg shadow-resting-sm transition-colors duration-fast hover:bg-login-control-hover focus-visible:border-login-accent-strong focus-visible:bg-login-control-hover focus-visible:outline-0 max-sm:right-3 max-sm:top-3"), g.Attr("data-theme-toggle", ""),
+					lucide.Monitor(loginThemeIconAttrs("system")...),
+					lucide.Sun(loginThemeIconAttrs("light")...),
+					lucide.Moon(loginThemeIconAttrs("dark")...),
+				),
+				h.Section(h.Class("relative z-login-panel grid w-full max-w-login-panel justify-items-center gap-6 rounded-large border border-login-outline bg-login-panel p-8 text-center shadow-login-panel backdrop-blur-md max-sm:gap-5 max-sm:px-6 max-sm:py-7"),
+					h.Div(h.Class("grid justify-items-center"), h.Aria("hidden", "true"),
+						h.H1(h.Class("m-0 text-display font-850 leading-tight text-login-fg"), g.Text("LibreDash")),
 					),
-					h.Button(h.Type("button"), h.Class("login-azure-button"),
-						h.Span(h.Class("microsoft-mark"), h.Aria("hidden", "true"),
-							h.Span(),
-							h.Span(),
-							h.Span(),
-							h.Span(),
+					h.Button(h.Type("button"), h.Class("inline-grid min-h-control-xl w-full grid-cols-login-button items-center gap-3 rounded-large border border-login-accent bg-login-control px-5 text-body-md font-800 text-login-fg shadow-login-button hover:border-login-accent-strong hover:bg-login-control-hover focus-visible:border-login-accent-strong focus-visible:bg-login-control-hover focus-visible:outline-0"),
+						h.Span(h.Class("grid size-5 grid-cols-2 grid-rows-2 gap-px"), h.Aria("hidden", "true"),
+							h.Span(h.Class("block bg-danger")),
+							h.Span(h.Class("block bg-success")),
+							h.Span(h.Class("block bg-accent")),
+							h.Span(h.Class("block bg-warning")),
 						),
 						h.Span(g.Text("Sign in with Azure Active Directory")),
 					),
@@ -1148,6 +1153,10 @@ func metricActionIconAttrs() []g.Node {
 
 func filterDockIconAttrs() []g.Node {
 	return []g.Node{g.Attr("aria-hidden", "true"), h.Class("size-4 shrink-0"), h.Style("stroke-width: 1.75")}
+}
+
+func loginThemeIconAttrs(mode string) []g.Node {
+	return []g.Node{g.Attr("aria-hidden", "true"), g.Attr("data-theme-icon", mode), h.Class("hidden size-4 shrink-0"), h.Style("stroke-width: 1.75")}
 }
 
 func canvasVisual(x, y, width, height float64, children ...g.Node) g.Node {

@@ -77,7 +77,7 @@ class FilterPanel extends LitElement {
     }
 
     header {
-      border-bottom: 1px solid var(--borderColor-default);
+      border-bottom: var(--ld-border-default);
       padding-bottom: 7px;
     }
 
@@ -93,8 +93,8 @@ class FilterPanel extends LitElement {
     }
 
     .count {
-      border: 1px solid var(--borderColor-default);
-      border-radius: 999px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-full);
       background: var(--bgColor-muted);
       color: var(--fgColor-muted);
       padding: 2px 6px;
@@ -109,8 +109,8 @@ class FilterPanel extends LitElement {
       width: 24px;
       height: 24px;
       place-items: center;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-muted);
       cursor: pointer;
@@ -126,8 +126,8 @@ class FilterPanel extends LitElement {
     .card {
       display: grid;
       gap: 6px;
-      border: 1px solid var(--borderColor-muted);
-      border-radius: 5px;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
       background: color-mix(in srgb, var(--report-panel, var(--bgColor-default)), transparent 18%);
       padding: 8px;
     }
@@ -155,8 +155,8 @@ class FilterPanel extends LitElement {
 
     .clear,
     .reset {
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--bgColor-default);
       color: var(--fgColor-muted);
       cursor: pointer;
@@ -200,8 +200,8 @@ class FilterPanel extends LitElement {
     .calendar-nav,
     .day,
     .popover-action {
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       cursor: pointer;
@@ -253,10 +253,10 @@ class FilterPanel extends LitElement {
       z-index: 20;
       display: grid;
       gap: 7px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 6px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
       background: var(--overlay-bgColor, var(--bgColor-default));
-      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      box-shadow: var(--ld-shadow-floating-sm);
       padding: 8px;
     }
 
@@ -357,8 +357,8 @@ class FilterPanel extends LitElement {
       width: 100%;
       min-width: 0;
       min-height: 25px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       padding: 0 7px;
@@ -369,7 +369,7 @@ class FilterPanel extends LitElement {
 
     input:focus,
     select:focus {
-      outline: 2px solid var(--ld-accent);
+      outline: var(--ld-border-width-focus) solid var(--ld-accent);
     }
 
     .checks {
@@ -384,7 +384,7 @@ class FilterPanel extends LitElement {
       min-width: 0;
       align-items: center;
       gap: 6px;
-      border-radius: 4px;
+      border-radius: var(--ld-radius-tight);
       padding: 3px 4px;
       color: var(--fgColor-default);
       font-size: var(--ld-font-size-caption);
@@ -418,8 +418,8 @@ class FilterPanel extends LitElement {
     .chip {
       max-width: 100%;
       overflow: hidden;
-      border: 1px solid var(--borderColor-muted);
-      border-radius: 999px;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-full);
       background: var(--bgColor-muted);
       color: var(--fgColor-muted);
       padding: 2px 6px;
@@ -445,7 +445,7 @@ class FilterPanel extends LitElement {
       width: 100%;
       cursor: pointer;
       border: 1px solid var(--button-primary-bgColor-rest);
-      border-radius: 4px;
+      border-radius: var(--ld-radius-tight);
       background: var(--button-primary-bgColor-rest);
       color: var(--button-primary-fgColor-rest);
       font-size: var(--ld-font-size-caption);

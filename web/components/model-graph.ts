@@ -171,7 +171,7 @@ const modelGraphStyles = `
     height: 100%;
     min-height: 620px;
     grid-template-columns: minmax(0, 1fr) 280px;
-    border: 1px solid var(--borderColor-default);
+    border: var(--ld-border-default);
     border-radius: var(--borderRadius-default);
     background: var(--bgColor-default);
     box-shadow: var(--shadow-resting-medium);
@@ -188,7 +188,7 @@ const modelGraphStyles = `
   }
 
   ld-model-graph .inspector {
-    border-left: 1px solid var(--borderColor-default);
+    border-left: var(--ld-border-default);
     background: var(--bgColor-muted);
     padding: 12px;
     overflow: auto;
@@ -216,7 +216,7 @@ const modelGraphStyles = `
   ld-model-graph .detail-row {
     display: grid;
     gap: 2px;
-    border-bottom: 1px solid var(--borderColor-muted);
+    border-bottom: var(--ld-border-muted);
     padding-bottom: 7px;
     font-size: var(--ld-font-size-caption);
   }
@@ -240,7 +240,7 @@ const modelGraphStyles = `
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    border: 1px solid var(--borderColor-default);
+    border: var(--ld-border-default);
     border-radius: var(--borderRadius-small);
     background: var(--bgColor-default);
     padding: 5px 7px;
@@ -279,7 +279,7 @@ const modelGraphStyles = `
   }
 
   ld-model-graph .node-card.selected {
-    outline: 2px solid var(--fgColor-accent);
+    outline: var(--ld-border-width-focus) solid var(--fgColor-accent);
     outline-offset: 2px;
   }
 
@@ -319,7 +319,7 @@ const modelGraphStyles = `
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    border-bottom: 1px solid var(--borderColor-muted);
+    border-bottom: var(--ld-border-muted);
     padding: 3px 0;
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-750);
@@ -353,7 +353,7 @@ const modelGraphStyles = `
 
   ld-model-graph .react-flow__controls,
   ld-model-graph .react-flow__minimap {
-    border: 1px solid var(--borderColor-default);
+    border: var(--ld-border-default);
     background: var(--bgColor-default);
     box-shadow: var(--shadow-resting-small);
   }
@@ -371,7 +371,7 @@ const modelGraphStyles = `
 
     ld-model-graph .inspector {
       max-height: 260px;
-      border-top: 1px solid var(--borderColor-default);
+      border-top: var(--ld-border-default);
       border-left: 0;
     }
   }

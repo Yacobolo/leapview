@@ -39,7 +39,7 @@ class ReportFooter extends LitElement {
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      border-top: 1px solid var(--borderColor-muted);
+      border-top: var(--ld-border-muted);
       box-sizing: border-box;
       padding: 0 18px;
     }
@@ -59,7 +59,7 @@ class ReportFooter extends LitElement {
       width: 7px;
       height: 7px;
       flex: 0 0 auto;
-      border-radius: 999px;
+      border-radius: var(--ld-radius-full);
       background: var(--fgColor-success);
     }
 

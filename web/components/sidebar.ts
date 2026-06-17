@@ -148,8 +148,8 @@ class LibreDashSidebar extends LitElement {
       flex: 0 0 auto;
       place-items: center;
       margin-left: auto;
-      border: 1px solid transparent;
-      border-radius: 6px;
+      border: var(--ld-border-transparent);
+      border-radius: var(--ld-radius-default);
       background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
@@ -181,7 +181,7 @@ class LibreDashSidebar extends LitElement {
       min-height: 0;
       overflow: auto;
       padding: 10px 7px;
-      border-bottom: 1px solid var(--borderColor-muted);
+      border-bottom: var(--ld-border-muted);
     }
 
     .nav-group {
@@ -201,8 +201,8 @@ class LibreDashSidebar extends LitElement {
       min-height: 34px;
       align-items: center;
       gap: 8px;
-      border: 1px solid transparent;
-      border-radius: 7px;
+      border: var(--ld-border-transparent);
+      border-radius: var(--ld-radius-default);
       color: var(--fgColor-muted);
       padding: 0 9px;
       text-decoration: none;
@@ -244,7 +244,7 @@ class LibreDashSidebar extends LitElement {
       inset-block: 7px;
       left: 0;
       width: 2px;
-      border-radius: 999px;
+      border-radius: var(--ld-radius-full);
       background: var(--ld-accent);
     }
 
@@ -258,7 +258,7 @@ class LibreDashSidebar extends LitElement {
       width: 24px;
       height: 24px;
       place-items: center;
-      border-radius: 6px;
+      border-radius: var(--ld-radius-default);
       background: transparent;
     }
 
@@ -283,7 +283,7 @@ class LibreDashSidebar extends LitElement {
       gap: 6px;
       align-items: center;
       padding: 8px 7px 10px;
-      border-top: 1px solid var(--borderColor-muted);
+      border-top: var(--ld-border-muted);
       background: transparent;
     }
 
@@ -293,7 +293,7 @@ class LibreDashSidebar extends LitElement {
       min-height: 34px;
       align-items: center;
       gap: 8px;
-      border-radius: 7px;
+      border-radius: var(--ld-radius-default);
       color: var(--fgColor-default);
       padding: 0 7px;
     }
@@ -354,8 +354,8 @@ class LibreDashSidebar extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 7px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 7px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
       background: transparent;
       color: var(--fgColor-default);
       cursor: pointer;

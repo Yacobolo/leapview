@@ -210,8 +210,8 @@ const dataGridStyles = `
     min-width: 0;
     max-width: 100%;
     overflow-x: auto;
-    border-top: 1px solid var(--borderColor-muted);
-    border-bottom: 1px solid var(--borderColor-muted);
+    border-top: var(--ld-border-muted);
+    border-bottom: var(--ld-border-muted);
   }
 
   ld-data-grid .data-grid {
@@ -349,7 +349,7 @@ const dataGridStyles = `
 
   ld-data-grid .grid-badge-muted,
   ld-data-grid .grid-badge-default {
-    border: 1px solid var(--borderColor-muted);
+    border: var(--ld-border-muted);
     background: var(--bgColor-muted);
     color: var(--fgColor-muted);
   }
@@ -380,7 +380,7 @@ const dataGridStyles = `
     display: inline-flex;
     min-height: 21px;
     align-items: center;
-    border: 1px solid var(--borderColor-muted);
+    border: var(--ld-border-muted);
     border-radius: var(--borderRadius-full);
     background: var(--bgColor-muted);
     color: var(--fgColor-muted);
@@ -396,8 +396,8 @@ const dataGridStyles = `
   }
 
   ld-data-grid .data-grid-empty {
-    border-top: 1px solid var(--borderColor-muted);
-    border-bottom: 1px solid var(--borderColor-muted);
+    border-top: var(--ld-border-muted);
+    border-bottom: var(--ld-border-muted);
     padding: 18px 0;
     font-size: var(--ld-font-size-body-md);
     font-weight: var(--ld-font-weight-650);

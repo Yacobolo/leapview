@@ -71,8 +71,8 @@ const chartStyles = css`
     width: 24px;
     height: 24px;
     place-items: center;
-    border: 1px solid transparent;
-    border-radius: 4px;
+    border: var(--ld-border-transparent);
+    border-radius: var(--ld-radius-tight);
     color: var(--fgColor-muted);
     cursor: pointer;
     font-size: var(--ld-font-size-body-lg);
@@ -101,10 +101,10 @@ const chartStyles = css`
     z-index: 30;
     display: grid;
     width: 176px;
-    border: 1px solid var(--borderColor-default);
-    border-radius: 6px;
+    border: var(--ld-border-default);
+    border-radius: var(--ld-radius-default);
     background: var(--overlay-bgColor, var(--bgColor-default));
-    box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+    box-shadow: var(--ld-shadow-floating-sm);
     padding: 4px;
   }
 
@@ -114,7 +114,7 @@ const chartStyles = css`
     gap: 8px;
     min-height: 27px;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--ld-radius-tight);
     background: transparent;
     color: var(--fgColor-default);
     cursor: pointer;
@@ -369,8 +369,9 @@ class KPICard extends LitElement {
       height: 100%;
       min-height: 0;
       position: relative;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 6px;
+      min-height: 104px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       box-shadow: var(--shadow-resting-small);
       padding: 12px 14px 12px 16px;

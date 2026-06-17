@@ -282,7 +282,7 @@ class ReportZoom extends LitElement {
       height: 28px;
       place-items: center;
       border: 0;
-      border-radius: 5px;
+      border-radius: var(--ld-radius-default);
       background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
@@ -323,7 +323,7 @@ class ReportZoom extends LitElement {
 
     input::-webkit-slider-runnable-track {
       height: 4px;
-      border-radius: 999px;
+      border-radius: var(--ld-radius-full);
       background: var(--borderColor-muted);
     }
 
@@ -332,22 +332,22 @@ class ReportZoom extends LitElement {
       width: 12px;
       height: 12px;
       margin-top: -4px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 999px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-full);
       background: var(--fgColor-muted);
     }
 
     input::-moz-range-track {
       height: 4px;
-      border-radius: 999px;
+      border-radius: var(--ld-radius-full);
       background: var(--borderColor-muted);
     }
 
     input::-moz-range-thumb {
       width: 12px;
       height: 12px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 999px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-full);
       background: var(--fgColor-muted);
     }
 
@@ -356,12 +356,12 @@ class ReportZoom extends LitElement {
     }
 
     input:focus-visible::-webkit-slider-thumb {
-      outline: 2px solid var(--borderColor-accent-muted);
+      outline: var(--ld-border-width-focus) solid var(--borderColor-accent-muted);
       outline-offset: 2px;
     }
 
     input:focus-visible::-moz-range-thumb {
-      outline: 2px solid var(--borderColor-accent-muted);
+      outline: var(--ld-border-width-focus) solid var(--borderColor-accent-muted);
       outline-offset: 2px;
     }
 
@@ -370,7 +370,7 @@ class ReportZoom extends LitElement {
       min-width: 0;
       margin-inline: 6px;
       padding-inline: 10px;
-      border-inline: 1px solid var(--borderColor-muted);
+      border-inline: var(--ld-border-muted);
     }
 
     .percent {
