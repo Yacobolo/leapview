@@ -2,8 +2,10 @@ import { css, html, nothing, render as renderLit } from 'lit'
 import {
   defaultControl,
   emptyFilters,
+  filterConfigMap,
   filtersToURLParams,
   type DatePreset,
+  type FilterConfig,
   type FilterControl,
   type FilterDefinition,
   type FiltersSignal,
@@ -430,7 +432,7 @@ class FilterCard extends HTMLElement {
       controls: { ...(filtersSignal.controls ?? {}), [this.currentFilterId()]: control },
       visualSelections: [...(filtersSignal.visualSelections ?? [])],
     }
-    const config = this.currentConfig()
+    const config = this.currentFilterConfig()
     this.dispatchEvent(new CustomEvent('ld-filters-change', {
       detail: { filters, urlParams: filtersToURLParams(config, filters) },
       bubbles: true,
@@ -443,7 +445,11 @@ class FilterCard extends HTMLElement {
   }
 
   private currentConfig(): Record<string, FilterDefinition> {
-    return readJSONAttribute(this, 'config', {})
+    return filterConfigMap(this.currentFilterConfig())
+  }
+
+  private currentFilterConfig(): FilterConfig {
+    return readJSONAttribute<FilterConfig>(this, 'config', [])
   }
 
   private currentFilters(): FiltersSignal {

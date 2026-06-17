@@ -199,7 +199,7 @@ func (m *Model) CacheTableNames() []string {
 }
 
 func supportsVisualKind(kind string) bool {
-	return kind == "chart"
+	return kind == "chart" || kind == "kpi"
 }
 
 func supportsVisualShape(shape string) bool {
@@ -212,10 +212,13 @@ func supportsVisualShape(shape string) bool {
 }
 
 func supportsRenderer(renderer string) bool {
-	return renderer == "echarts"
+	return renderer == "echarts" || renderer == "html"
 }
 
 func rendererSupportsType(renderer, chartType string) bool {
+	if renderer == "html" {
+		return chartType == "kpi" || chartType == ""
+	}
 	if renderer != "echarts" {
 		return false
 	}
@@ -232,6 +235,9 @@ func supportsSeries(shape string) bool {
 }
 
 func rendererSupportsShapeType(renderer, shape, chartType string) bool {
+	if renderer == "html" {
+		return shape == "single_value" && (chartType == "kpi" || chartType == "")
+	}
 	if renderer != "echarts" {
 		return false
 	}

@@ -1,10 +1,10 @@
 package dashboard
 
 type Signals struct {
-	Filters      Filters      `json:"filters"`
-	Runtime      Runtime      `json:"runtime"`
-	TableCommand TableRequest `json:"tableCommand"`
-	ChartCommand ChartCommand `json:"chartCommand"`
+	Filters       Filters       `json:"filters"`
+	Runtime       Runtime       `json:"runtime"`
+	TableCommand  TableRequest  `json:"tableCommand"`
+	VisualCommand VisualCommand `json:"visualCommand"`
 }
 
 type Catalog struct {
@@ -290,7 +290,7 @@ type VisualSelection struct {
 	Order    int      `json:"order"`
 }
 
-type ChartCommand struct {
+type VisualCommand struct {
 	VisualID string `json:"visualId"`
 	Field    string `json:"field"`
 	Value    string `json:"value"`
@@ -298,11 +298,11 @@ type ChartCommand struct {
 	Mode     string `json:"mode"`
 }
 
-func (c ChartCommand) IsEmpty() bool {
+func (c VisualCommand) IsEmpty() bool {
 	return c.VisualID == "" || c.Field == "" || c.Value == ""
 }
 
-func (f Filters) ToggleSelection(command ChartCommand) Filters {
+func (f Filters) ToggleSelection(command VisualCommand) Filters {
 	f = f.WithDefaults()
 	if command.IsEmpty() {
 		return f
@@ -389,8 +389,7 @@ type Patch struct {
 	Filters       Filters                   `json:"filters"`
 	FilterOptions map[string][]FilterOption `json:"filterOptions,omitempty"`
 	Status        Status                    `json:"status"`
-	KPIs          []KPI                     `json:"kpis"`
-	Charts        map[string]Chart          `json:"charts"`
+	Visuals       map[string]Visual         `json:"visuals"`
 }
 
 type FilterOption struct {
@@ -406,14 +405,7 @@ type Status struct {
 	SetupRequired bool   `json:"setupRequired"`
 }
 
-type KPI struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
-	Note  string `json:"note"`
-	Tone  string `json:"tone"`
-}
-
-type Chart struct {
+type Visual struct {
 	Version         int                       `json:"version"`
 	ID              string                    `json:"id"`
 	Kind            string                    `json:"kind"`
@@ -422,6 +414,7 @@ type Chart struct {
 	Type            string                    `json:"type"`
 	Title           string                    `json:"title"`
 	Unit            string                    `json:"unit"`
+	Format          string                    `json:"format,omitempty"`
 	Field           string                    `json:"field"`
 	Dimensions      []string                  `json:"dimensions"`
 	Measure         string                    `json:"measure"`
@@ -604,23 +597,12 @@ func EmptyPatch(filters Filters, dataDir string, err error) Patch {
 			DataDirectory: dataDir,
 			SetupRequired: err != nil,
 		},
-		KPIs: []KPI{
-			{Label: "Orders", Value: "-", Note: "Waiting for CSVs", Tone: "neutral"},
-			{Label: "Revenue", Value: "-", Note: "Waiting for CSVs", Tone: "neutral"},
-			{Label: "AOV", Value: "-", Note: "Waiting for CSVs", Tone: "neutral"},
-			{Label: "Review", Value: "-", Note: "Waiting for CSVs", Tone: "neutral"},
-		},
-		Charts: map[string]Chart{
-			"revenue":    emptyChart("revenue", "area", "Revenue by month", "R$", "purchase_month", "revenue"),
-			"orders":     emptyChart("orders", "donut", "Orders by status", "orders", "status", "order_count"),
-			"categories": emptyChart("categories", "bar", "Top product categories", "R$", "category", "revenue"),
-			"delivery":   emptyChart("delivery", "bar", "Delivery speed", "orders", "delivery_bucket", "order_count"),
-		},
+		Visuals: map[string]Visual{},
 	}
 }
 
-func emptyChart(id, chartType, title, unit, dimension, measure string) Chart {
-	return Chart{
+func emptyChart(id, chartType, title, unit, dimension, measure string) Visual {
+	return Visual{
 		Version:         3,
 		ID:              id,
 		Kind:            "chart",

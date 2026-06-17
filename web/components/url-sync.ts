@@ -1,4 +1,4 @@
-import { filtersFromURLParams, type FilterDefinition, type FiltersSignal, type URLParamsShape } from './filter-url'
+import { filtersFromURLParams, type FilterConfig, type FiltersSignal, type URLParamsShape } from './filter-url'
 
 const dataStarURLSyncEvent = 'datastar-url-params-sync'
 
@@ -110,7 +110,7 @@ const datastarURLSync = {
 }
 
 const libreDashFilterURL = {
-  fromParams(config: Record<string, FilterDefinition>, filters: FiltersSignal, params: URLParamsShape): FiltersSignal {
+  fromParams(config: FilterConfig, filters: FiltersSignal, params: URLParamsShape): FiltersSignal {
     return filtersFromURLParams(config, filters, params)
   },
 }

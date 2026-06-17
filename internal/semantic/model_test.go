@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -163,16 +165,23 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Tables["category_status_pivot"].ColumnDims[0]; got != "status" {
 		t.Fatalf("category_status_pivot column dimension = %q, want status", got)
 	}
-	if len(report.Pages) != 3 {
-		t.Fatalf("page count = %d, want 3", len(report.Pages))
+	if len(report.Pages) != 24 {
+		t.Fatalf("page count = %d, want 24", len(report.Pages))
 	}
-	if got := report.Pages[1].ID; got != "operations" {
-		t.Fatalf("second page id = %q, want operations", got)
+	if got := report.Pages[1].ID; got != "chart-line" {
+		t.Fatalf("second page id = %q, want chart-line", got)
 	}
-	if got := report.Pages[2].ID; got != "tables" {
-		t.Fatalf("third page id = %q, want tables", got)
+	tablePageIndex := -1
+	for index, page := range report.Pages {
+		if page.ID == "tables" {
+			tablePageIndex = index
+			break
+		}
 	}
-	tablePage := report.Pages[2].WithDefaults()
+	if tablePageIndex == -1 {
+		t.Fatal("tables page missing")
+	}
+	tablePage := report.Pages[tablePageIndex].WithDefaults()
 	tableVisualCount := 0
 	for _, visual := range tablePage.PlacedVisuals() {
 		if visual.Kind == "table" {
@@ -190,11 +199,113 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if visuals[0].Kind != "filter_card" || visuals[0].Filter != "purchase_date" {
 		t.Fatalf("first page visual = %#v, want purchase_date filter card", visuals[0])
 	}
-	if got := visuals[2].Width; got != 1334 {
-		t.Fatalf("kpi compiled width = %v, want 1334", got)
+	kpiCards := 0
+	for _, visual := range visuals {
+		if visual.Kind == "kpi_card" {
+			kpiCards++
+			if visual.Width != 321.5 {
+				t.Fatalf("kpi card compiled width = %v, want 321.5", visual.Width)
+			}
+		}
+	}
+	if kpiCards != 4 {
+		t.Fatalf("overview kpi card count = %d, want 4", kpiCards)
 	}
 	if got := report.Filters["purchase_date"].URLParam; got != "period" {
 		t.Fatalf("purchase_date url param = %q, want period", got)
+	}
+}
+
+func TestOlistDashboardChartShowcaseContract(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	matrix := chartShowcaseMatrix()
+	pageByID := map[string]dashboard.Page{}
+	for _, page := range report.Pages {
+		pageByID[page.ID] = page
+	}
+
+	chartPageCount := 0
+	for _, page := range report.Pages {
+		if !strings.HasPrefix(page.ID, "chart-") {
+			continue
+		}
+		chartPageCount++
+		if _, ok := matrix[strings.TrimPrefix(page.ID, "chart-")]; !ok {
+			t.Fatalf("unexpected chart showcase page %q", page.ID)
+		}
+	}
+	if chartPageCount != len(matrix) {
+		t.Fatalf("chart showcase page count = %d, want %d", chartPageCount, len(matrix))
+	}
+
+	for chartType, expectedVisualIDs := range matrix {
+		page, ok := pageByID["chart-"+chartType]
+		if !ok {
+			t.Fatalf("missing chart showcase page for %q", chartType)
+		}
+		gotVisualIDs := chartPageVisualIDs(page)
+		wantVisualIDs := append([]string(nil), expectedVisualIDs...)
+		sort.Strings(gotVisualIDs)
+		sort.Strings(wantVisualIDs)
+		if !reflect.DeepEqual(gotVisualIDs, wantVisualIDs) {
+			t.Fatalf("%s visual ids = %#v, want %#v", page.ID, gotVisualIDs, wantVisualIDs)
+		}
+		for _, pageVisual := range page.Visuals {
+			if pageVisual.Visual == "" {
+				continue
+			}
+			visual := report.Visuals[pageVisual.Visual]
+			if got := visual.Type; got != chartType {
+				t.Fatalf("%s visual %q type = %q, want %q", page.ID, pageVisual.Visual, got, chartType)
+			}
+			if got := pageVisual.Kind; got != chartType+"_chart" {
+				t.Fatalf("%s page visual %q kind = %q, want %q", page.ID, pageVisual.ID, got, chartType+"_chart")
+			}
+		}
+	}
+
+	tablePage, ok := pageByID["tables"]
+	if !ok {
+		t.Fatal("tables showcase page missing")
+	}
+	gotTables := make([]string, 0, 3)
+	for _, pageVisual := range tablePage.Visuals {
+		if pageVisual.Kind == "table" {
+			gotTables = append(gotTables, pageVisual.Table)
+		}
+	}
+	wantTables := []string{"category_status_pivot", "orders", "state_status_matrix"}
+	sort.Strings(gotTables)
+	if !reflect.DeepEqual(gotTables, wantTables) {
+		t.Fatalf("tables showcase tables = %#v, want %#v", gotTables, wantTables)
+	}
+}
+
+func TestOlistShowcaseVisualOptions(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+
+	cases := map[string]string{
+		"revenue_line_step":              "step",
+		"status_pie_rose":                "rose_type",
+		"orders_donut_center":            "center_label",
+		"status_funnel_left":             "funnel_align",
+		"review_gauge_thresholds":        "thresholds",
+		"category_status_graph_circular": "layout",
+		"revenue_orders_dual_axis_combo": "dual_axis",
+		"category_status_heatmap_labels": "show_labels",
+		"category_treemap_roam":          "breadcrumb",
+		"category_state_status_sunburst": "initial_depth",
+	}
+	for visualID, option := range cases {
+		visual, ok := report.Visuals[visualID]
+		if !ok {
+			t.Fatalf("missing showcase visual %q", visualID)
+		}
+		if _, ok := visual.Options[option]; !ok {
+			t.Fatalf("showcase visual %q missing option %q", visualID, option)
+		}
 	}
 }
 
@@ -239,12 +350,13 @@ func TestLoadDashboardRejectsLegacyTopLevelStacked(t *testing.T) {
 title: Executive Sales Dashboard
 metrics_views: [orders]
 filters: {}
-kpis:
-  total_orders:
-    title: Orders
-    metrics_view: orders
-    measure: order_count
 visuals:
+  total_orders:
+    kind: kpi
+    shape: single_value
+    metrics_view: orders
+    query:
+      measures: [order_count]
   revenue:
     title: Revenue
     type: area
@@ -275,6 +387,46 @@ pages:
 	_, err := LoadDashboard(path, loadOlistMetricViews(t, model))
 	if err == nil || !strings.Contains(err.Error(), "legacy top-level stacked") {
 		t.Fatalf("LoadDashboard error = %v, want legacy stacked rejection", err)
+	}
+}
+
+func TestLoadDashboardRejectsLegacyKPIs(t *testing.T) {
+	model := loadOlistModel(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dashboard.yaml")
+	content := strings.ReplaceAll(`id: executive-sales
+title: Executive Sales Dashboard
+semantic_model: olist
+filters: {}
+kpis:
+  total_orders:
+    title: Orders
+    dataset: orders
+    measure: order_count
+visuals:
+  revenue:
+    title: Revenue
+    type: area
+    dataset: orders
+    query:
+      dimensions: [purchase_month]
+      measures: [revenue]
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals:
+      - id: revenue
+        kind: area_chart
+        visual: revenue
+        placement: { col: 1, row: 1, col_span: 1, row_span: 1 }
+`, "\t", "  ")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDashboard(path, loadOlistMetricViews(t, model))
+	if err == nil || !strings.Contains(err.Error(), "legacy kpis") {
+		t.Fatalf("LoadDashboard error = %v, want legacy kpis rejection", err)
 	}
 }
 
@@ -647,6 +799,50 @@ func TestDashboardURLParamsFromFiltersOmitsDefaults(t *testing.T) {
 	}
 }
 
+func TestDashboardPageScopedFilters(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+
+	if got := strings.Join(report.PageFilterIDs("chart-pie"), ","); got != "purchase_date,state" {
+		t.Fatalf("chart-pie filter ids = %q, want purchase_date,state", got)
+	}
+	config := report.FiltersForPage("chart-pie")
+	if _, ok := config["purchase_date"]; !ok {
+		t.Fatal("chart-pie filter config missing purchase_date")
+	}
+	if _, ok := config["state"]; !ok {
+		t.Fatal("chart-pie filter config missing state")
+	}
+	if _, ok := config["category"]; ok {
+		t.Fatalf("chart-pie filter config included off-page category: %#v", config)
+	}
+
+	values := url.Values{
+		"period":      {"2018"},
+		"state":       {"SP"},
+		"category":    {"health"},
+		"category_op": {"equals"},
+	}
+	filters := report.FiltersFromURLForPage("chart-pie", values)
+	if _, ok := filters.Controls["category"]; ok {
+		t.Fatalf("chart-pie URL filters included off-page category: %#v", filters.Controls)
+	}
+	if got := filters.Controls["purchase_date"].Preset; got != "2018" {
+		t.Fatalf("chart-pie period preset = %q, want 2018", got)
+	}
+	if got := strings.Join(filters.Controls["state"].Values, ","); got != "SP" {
+		t.Fatalf("chart-pie state values = %q, want SP", got)
+	}
+
+	shape := report.URLParamShapeForPage("chart-pie")
+	if _, ok := shape["category"]; ok {
+		t.Fatalf("chart-pie URL shape included category: %#v", shape)
+	}
+	if _, ok := shape["state"]; !ok {
+		t.Fatalf("chart-pie URL shape missing state: %#v", shape)
+	}
+}
+
 func loadOlistModel(t *testing.T) *Model {
 	t.Helper()
 	model, err := Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))
@@ -672,6 +868,43 @@ func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
 		t.Fatal(err)
 	}
 	return report
+}
+
+func chartShowcaseMatrix() map[string][]string {
+	return map[string][]string{
+		"line":        {"revenue_line", "revenue_line_status", "revenue_line_step"},
+		"area":        {"revenue", "revenue_area_status", "revenue_area_smooth"},
+		"bar":         {"categories", "delivery", "categories_by_status_bar"},
+		"column":      {"orders_by_month_column", "orders_by_month_status", "orders_by_month_status_grouped"},
+		"pie":         {"status_pie", "status_pie_rose", "category_pie_inside"},
+		"donut":       {"orders", "category_donut", "orders_donut_center"},
+		"scatter":     {"delivery_scatter", "delivery_scatter_status", "delivery_scatter_labeled"},
+		"funnel":      {"status_funnel", "delivery_funnel", "status_funnel_left"},
+		"treemap":     {"category_treemap", "state_treemap", "category_treemap_roam"},
+		"gauge":       {"total_orders_gauge", "review_gauge", "review_gauge_thresholds"},
+		"heatmap":     {"state_status_heatmap", "category_status_heatmap", "category_status_heatmap_labels"},
+		"sankey":      {"status_delivery_flow", "category_status_flow", "category_status_flow_spacious"},
+		"graph":       {"status_delivery_graph", "category_status_graph", "category_status_graph_circular"},
+		"map":         {"state_order_map", "state_revenue_map", "state_revenue_map_labeled"},
+		"candlestick": {"delivery_candlestick", "revenue_candlestick"},
+		"boxplot":     {"delivery_distribution", "review_distribution", "revenue_distribution"},
+		"combo":       {"revenue_orders_combo", "review_delivery_combo", "revenue_orders_dual_axis_combo"},
+		"waterfall":   {"revenue_waterfall", "orders_waterfall", "revenue_waterfall_labeled"},
+		"histogram":   {"delivery_histogram", "revenue_histogram", "review_histogram"},
+		"radar":       {"status_radar", "delivery_radar", "state_radar"},
+		"tree":        {"state_status_tree", "category_status_tree", "category_state_status_tree"},
+		"sunburst":    {"category_status_sunburst", "state_status_sunburst", "category_state_status_sunburst"},
+	}
+}
+
+func chartPageVisualIDs(page dashboard.Page) []string {
+	visualIDs := make([]string, 0, len(page.Visuals))
+	for _, pageVisual := range page.Visuals {
+		if pageVisual.Visual != "" {
+			visualIDs = append(visualIDs, pageVisual.Visual)
+		}
+	}
+	return visualIDs
 }
 
 func assertModelValidateError(t *testing.T, model *Model, contains string) {

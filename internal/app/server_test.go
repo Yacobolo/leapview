@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +17,11 @@ type fakeMetrics struct{}
 
 type canceledTableMetrics struct {
 	fakeMetrics
+}
+
+type recordingMetrics struct {
+	fakeMetrics
+	pageIDs []string
 }
 
 func (fakeMetrics) Catalog() dashboard.Catalog {
@@ -105,10 +111,12 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 			Title:       "Executive Sales Dashboard",
 			MetricViews: []string{"orders"},
 			Filters: map[string]semantic.FilterDefinition{
-				"state": {Type: "multi_select", Label: "State", MetricView: "orders", Dimension: "status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
+				"state":    {Type: "multi_select", Label: "State", MetricView: "orders", Dimension: "status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
+				"category": {Type: "text", Label: "Category", MetricView: "orders", Dimension: "status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
 			},
 			Visuals: map[string]semantic.Visual{
-				"orders": {Title: "Orders", Type: "donut", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
+				"orders":       {Title: "Orders", Type: "donut", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
+				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
 			},
 			Tables: map[string]semantic.TableVisual{
 				"orders": {Title: "Orders", MetricView: "orders", DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
@@ -128,7 +136,8 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 func (fakeMetrics) DefaultFilters(_ string) dashboard.Filters {
 	return dashboard.Filters{
 		Controls: map[string]dashboard.FilterControl{
-			"state": {Type: "multi_select", Operator: "in", Values: []string{}},
+			"state":    {Type: "multi_select", Operator: "in", Values: []string{}},
+			"category": {Type: "text", Operator: "contains"},
 		},
 		VisualSelections: []dashboard.VisualSelection{},
 	}
@@ -150,6 +159,9 @@ func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
 			Height: 940,
 			Visuals: []dashboard.PageVisual{
 				{ID: "header", Kind: "header", X: 0, Y: 0, Width: 100, Height: 40, Title: "Test"},
+				{ID: "state-filter", Kind: "filter_card", Filter: "state", X: 0, Y: 42, Width: 100, Height: 32},
+				{ID: "orders-chart", Kind: "donut_chart", Visual: "orders", X: 0, Y: 48, Width: 100, Height: 100},
+				{ID: "orders-table", Kind: "table", Table: "orders", X: 0, Y: 160, Width: 100, Height: 100},
 			},
 		},
 		{
@@ -157,6 +169,10 @@ func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
 			Title:  "Operations",
 			Width:  1366,
 			Height: 940,
+			Visuals: []dashboard.PageVisual{
+				{ID: "category-filter", Kind: "filter_card", Filter: "category", X: 0, Y: 8, Width: 100, Height: 32},
+				{ID: "ops-pipeline-chart", Kind: "bar_chart", Visual: "ops_pipeline", X: 0, Y: 48, Width: 100, Height: 100},
+			},
 		},
 	}
 }
@@ -184,6 +200,16 @@ func (fakeMetrics) ModelGraph(modelID string) (dashboard.ModelGraph, bool) {
 }
 
 func (fakeMetrics) QueryDashboard(_ context.Context, _ string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return fakeMetrics{}.QueryDashboardPage(context.Background(), "executive-sales", "", filters)
+}
+
+func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	chartID := "orders"
+	chartTitle := "Orders"
+	if pageID == "operations" {
+		chartID = "ops_pipeline"
+		chartTitle = "Ops Pipeline"
+	}
 	return dashboard.Patch{
 		Filters: filters.WithDefaults(),
 		FilterOptions: map[string][]dashboard.FilterOption{
@@ -194,11 +220,15 @@ func (fakeMetrics) QueryDashboard(_ context.Context, _ string, filters dashboard
 			LastUpdated:   "12:00:00",
 			DataDirectory: ".data/olist",
 		},
-		KPIs: []dashboard.KPI{{Label: "Orders", Value: "1", Note: "test", Tone: "ink"}},
-		Charts: map[string]dashboard.Chart{
-			"orders": {Title: "Orders", Unit: "orders", Data: []dashboard.Datum{{"label": "delivered", "value": 1}}},
+		Visuals: map[string]dashboard.Visual{
+			chartID: {Title: chartTitle, Unit: "orders", Data: []dashboard.Datum{{"label": "delivered", "value": 1}}},
 		},
 	}, nil
+}
+
+func (m *recordingMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	m.pageIDs = append(m.pageIDs, pageID)
+	return m.fakeMetrics.QueryDashboardPage(ctx, dashboardID, pageID, filters)
 }
 
 func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
@@ -223,10 +253,20 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 	if strings.Contains(body, `class="page-tab`) {
 		t.Fatalf("report header still rendered page tabs:\n%s", body)
 	}
+	decoded := html.UnescapeString(body)
+	if !strings.Contains(decoded, `"visuals":{"ops_pipeline"`) {
+		t.Fatalf("operations page did not seed active page chart only:\n%s", decoded)
+	}
+	if strings.Contains(decoded, `"orders":{"version":3`) {
+		t.Fatalf("operations page seeded off-page order chart:\n%s", decoded)
+	}
+	if !strings.Contains(decoded, `"tables":{}`) {
+		t.Fatalf("operations page should seed no table placeholders:\n%s", decoded)
+	}
 }
 
-func TestPageRouteSeedsFiltersFromURL(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/overview?state=SP&state=RJ", nil)
+func TestPageRouteSeedsPageScopedFiltersFromURL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/overview?state=SP&state=RJ&category=ignored", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -243,6 +283,27 @@ func TestPageRouteSeedsFiltersFromURL(t *testing.T) {
 	}
 	if !strings.Contains(body, `&#34;values&#34;:[&#34;RJ&#34;,&#34;SP&#34;]`) {
 		t.Fatalf("page did not seed state filter values:\n%s", body)
+	}
+	if strings.Contains(body, `&#34;category&#34;`) {
+		t.Fatalf("overview page seeded off-page category filter:\n%s", body)
+	}
+}
+
+func TestPageRouteSeedsOperationsPageFiltersFromURL(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/dashboards/executive-sales/pages/operations?state=SP&category=ops", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `&#34;category&#34;:&#34;ops&#34;`) && !strings.Contains(body, `&#34;value&#34;:&#34;ops&#34;`) {
+		t.Fatalf("operations page did not seed category URL filter:\n%s", body)
+	}
+	if strings.Contains(body, `&#34;state&#34;`) {
+		t.Fatalf("operations page seeded off-page state filter:\n%s", body)
 	}
 }
 
@@ -576,6 +637,10 @@ func TestModelRouteRendersSemanticModelGraph(t *testing.T) {
 }
 
 func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return fakeMetrics{}.QueryTablePage(context.Background(), "executive-sales", "", dashboard.Filters{}, request)
+}
+
+func (fakeMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	request = request.WithDefaults()
 	return dashboard.Table{
 		Version: 2,
@@ -604,6 +669,10 @@ func (fakeMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, 
 }
 
 func (canceledTableMetrics) QueryTable(_ context.Context, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return canceledTableMetrics{}.QueryTablePage(context.Background(), "executive-sales", "", dashboard.Filters{}, request)
+}
+
+func (canceledTableMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	request = request.WithDefaults()
 	return dashboard.EmptyTable(request, context.Canceled), nil
 }
@@ -616,7 +685,7 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22controls%22%3A%7B%22state%22%3A%7B%22type%22%3A%22multi_select%22%2C%22operator%22%3A%22in%22%2C%22values%22%3A%5B%22SP%22%5D%7D%7D%7D%7D", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22controls%22%3A%7B%22state%22%3A%7B%22type%22%3A%22multi_select%22%2C%22operator%22%3A%22in%22%2C%22values%22%3A%5B%22SP%22%5D%7D%2C%22category%22%3A%7B%22type%22%3A%22text%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%22ignored%22%7D%7D%7D%7D", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -631,6 +700,33 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	}
 	if !strings.Contains(body, `"values":["SP"]`) {
 		t.Fatalf("body does not include decoded filter state:\n%s", body)
+	}
+	if strings.Contains(body, `"category"`) {
+		t.Fatalf("body streamed off-page category filter:\n%s", body)
+	}
+}
+
+func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
+	rec := httptest.NewRecorder()
+
+	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"visuals":{"ops_pipeline"`) {
+		t.Fatalf("updates did not stream active page chart:\n%s", body)
+	}
+	if strings.Contains(body, `"visuals":{"orders"`) {
+		t.Fatalf("updates streamed off-page chart:\n%s", body)
+	}
+	if !strings.Contains(body, `"tables":{}`) {
+		t.Fatalf("updates should stream empty tables for chart-only page:\n%s", body)
+	}
+	if strings.Contains(body, `"kpis"`) {
+		t.Fatalf("updates streamed legacy KPI signal:\n%s", body)
 	}
 }
 
@@ -648,7 +744,7 @@ func TestRefreshCacheCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestChartSelectCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[]},"runtime":{"clientId":"test-client"},"chartCommand":{"visualId":"orders","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"table":"orders","block":"all","start":0,"count":200}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[]},"runtime":{"clientId":"test-client"},"visualCommand":{"visualId":"orders","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"table":"orders","block":"all","start":0,"count":200}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/chart-select", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -657,6 +753,53 @@ func TestChartSelectCommandAcceptsDatastarSignals(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+}
+
+func TestPageCommandsQueryActivePage(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		body string
+	}{
+		{
+			name: "chart select",
+			path: "/commands/chart-select",
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"visualSelections":[]},"visualCommand":{"visualId":"ops_pipeline","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"block":"all","start":0,"count":200}}`,
+		},
+		{
+			name: "clear selection",
+			path: "/commands/clear-selection",
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"visualSelections":[{"visualId":"ops_pipeline","field":"status","values":["delivered"]}]},"tableCommand":{"block":"all","start":0,"count":200}}`,
+		},
+		{
+			name: "reset filters",
+			path: "/commands/reset-filters",
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":200}}`,
+		},
+		{
+			name: "refresh cache",
+			path: "/commands/refresh-cache",
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations","modelId":"test"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":0,"count":200}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metrics := &recordingMetrics{}
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			New(metrics).Routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+			}
+			if len(metrics.pageIDs) != 1 || metrics.pageIDs[0] != "operations" {
+				t.Fatalf("queried page IDs = %#v, want [operations]", metrics.pageIDs)
+			}
+		})
 	}
 }
 

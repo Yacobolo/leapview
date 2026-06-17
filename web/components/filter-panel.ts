@@ -3,8 +3,11 @@ import { property, state } from 'lit/decorators.js'
 import {
   defaultControl,
   emptyFilters,
+  filterConfigEntries,
+  filterConfigMap,
   filtersToURLParams,
   type DatePreset,
+  type FilterConfig,
   type FilterControl,
   type FilterDefinition,
   type FiltersSignal,
@@ -43,7 +46,7 @@ const jsonConverter = <T,>(fallback: T) => ({
 })
 
 class FilterPanel extends LitElement {
-  @property({ attribute: 'config', converter: jsonConverter<Record<string, FilterDefinition>>({}) }) config: Record<string, FilterDefinition> = {}
+  @property({ attribute: 'config', converter: jsonConverter<FilterConfig>([]) }) config: FilterConfig = []
   @property({ attribute: 'filters', converter: jsonConverter<FiltersSignal>(emptyFilters) }) filters: FiltersSignal = emptyFilters
   @property({ attribute: 'options', converter: jsonConverter<Record<string, FilterOption[]>>({}) }) options: Record<string, FilterOption[]> = {}
   @property({ type: Boolean, reflect: true }) loading = false
@@ -451,7 +454,7 @@ class FilterPanel extends LitElement {
   `
 
   render() {
-    const names = Object.keys(this.config).sort()
+    const entries = filterConfigEntries(this.config)
     const activeCount = this.activeCount()
     return html`
       <section class="panel" aria-label="Filters">
@@ -462,7 +465,7 @@ class FilterPanel extends LitElement {
           </div>
           <button class="close" type="button" aria-label="Collapse filters" title="Collapse filters" @click=${this.close}>x</button>
         </header>
-        ${names.map((name) => this.renderFilter(name, this.config[name]))}
+        ${entries.map(([name, definition]) => this.renderFilter(name, definition))}
         ${this.renderVisualSelections()}
         <div class="summary">
           <span>${activeCount} total filter${activeCount === 1 ? '' : 's'} applied</span>
@@ -643,7 +646,7 @@ class FilterPanel extends LitElement {
   }
 
   private pickDatePreset(name: string, value: string): void {
-    const definition = this.config[name]
+    const definition = this.configMap()[name]
     const control = this.control(name, definition)
     if (value === 'custom') {
       this.toggleDatePopover(name, definition, { ...control, type: 'date_range', preset: 'custom' })
@@ -738,7 +741,7 @@ class FilterPanel extends LitElement {
 
   private applyDateDraft(name: string): void {
     if (!this.dateDraft) return
-    const definition = this.config[name]
+    const definition = this.configMap()[name]
     const control = this.control(name, definition)
     this.openDate = null
     this.updateControl(name, {
@@ -764,7 +767,7 @@ class FilterPanel extends LitElement {
   }
 
   private toggleValue(name: string, value: string): void {
-    const definition = this.config[name]
+    const definition = this.configMap()[name]
     const control = this.control(name, definition)
     const selected = new Set(control.values ?? [])
     if (selected.has(value)) {
@@ -776,13 +779,13 @@ class FilterPanel extends LitElement {
   }
 
   private setOperator(name: string, event: Event): void {
-    const definition = this.config[name]
+    const definition = this.configMap()[name]
     const control = this.control(name, definition)
     this.updateControl(name, { ...control, type: 'text', operator: (event.currentTarget as HTMLSelectElement).value })
   }
 
   private setTextValue(name: string, event: Event): void {
-    const definition = this.config[name]
+    const definition = this.configMap()[name]
     const control = this.control(name, definition)
     this.updateControl(name, { ...control, type: 'text', value: (event.currentTarget as HTMLInputElement).value })
   }
@@ -792,7 +795,7 @@ class FilterPanel extends LitElement {
   }
 
   private clearFilter(name: string): void {
-    const definition = this.config[name]
+    const definition = this.configMap()[name]
     if (this.openDate === name) {
       this.openDate = null
       this.dateDraft = null
@@ -806,7 +809,7 @@ class FilterPanel extends LitElement {
 
   private reset = (): void => {
     const filters: FiltersSignal = { controls: {}, visualSelections: [] }
-    for (const [name, definition] of Object.entries(this.config)) {
+    for (const [name, definition] of filterConfigEntries(this.config)) {
       filters.controls[name] = defaultControl(definition)
     }
     this.openDate = null
@@ -824,7 +827,7 @@ class FilterPanel extends LitElement {
 
   private activeCount(): number {
     let count = this.filters.visualSelections?.length ?? 0
-    for (const [name, definition] of Object.entries(this.config)) {
+    for (const [name, definition] of filterConfigEntries(this.config)) {
       if (this.isActive(name, definition)) count += 1
     }
     return count
@@ -842,6 +845,10 @@ class FilterPanel extends LitElement {
       default:
         return false
     }
+  }
+
+  private configMap(): Record<string, FilterDefinition> {
+    return filterConfigMap(this.config)
   }
 }
 

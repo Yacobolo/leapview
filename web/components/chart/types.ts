@@ -23,6 +23,7 @@ export type ChartType =
   | 'radar'
   | 'tree'
   | 'sunburst'
+  | 'kpi'
 
 export type ChartShape =
   | 'category_value'
@@ -49,6 +50,7 @@ export type ChartPayload = {
   type?: ChartType | string
   title?: string
   unit?: string
+  format?: string
   field?: string
   dimensions?: string[]
   measure?: string
