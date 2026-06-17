@@ -61,6 +61,16 @@ func inspectorElement() g.Node {
 	return g.El("datastar-inspector")
 }
 
+func pageHead(extra ...g.Node) []g.Node {
+	nodes := []g.Node{
+		h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
+		h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
+		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
+		h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+	}
+	return append(nodes, extra...)
+}
+
 func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
@@ -77,13 +87,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: []g.Node{
-			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
-			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
-			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
-			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+		Head: pageHead(
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/report-sidebar.js"))),
@@ -97,26 +101,26 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/visual-modal.js"))),
 			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
-		},
+		),
 		Body: []g.Node{
 			h.Main(
 				h.ID("dashboard"),
-				h.Class("report-app"),
+				h.Class(appRootClass),
 				ds.Signals(initialSignals(dataDir, clientID, csrfToken, report, model, activePage, initialFilters)),
 				ds.Init(initAction),
 				g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); "+tableReset+action),
-				h.Div(h.Class("app-shell report-shell"),
+				h.Div(h.Class(reportShellClass),
 					sidebar(sidebarConfigForReport(catalog, report, model, activePage)),
 					reportSidebar(reportSidebarConfig(report, model, pages, activePage)),
-					h.Section(h.Class("app-main report-main"), h.Aria("label", "LibreDash report canvas"),
+					h.Section(h.Class(reportMainClass), h.Aria("label", "LibreDash report canvas"),
 						workspaceHeader(
 							"",
 							report.Title,
 							activePage.Title,
 							reportActions(model.Name, report.ID),
 						),
-						h.Div(h.Class("report-dashboard-shell"),
-							h.Div(h.Class("report-canvas-shell"),
+						h.Div(h.Class("grid min-h-0 min-w-0 grid-cols-report-dashboard items-stretch overflow-hidden max-sm:grid-cols-1 max-sm:overflow-auto"),
+							h.Div(h.Class("grid min-h-0 min-w-0 overflow-hidden bg-transparent px-6 py-5 max-sm:p-3"),
 								renderPageCanvas(activePage, report, initialFilters, action),
 							),
 							filtersDock(report, activePage.ID, action),
@@ -197,28 +201,22 @@ func CatalogPage(catalog dashboard.Catalog) g.Node {
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: []g.Node{
-			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
-			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
-			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
-			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+		Head: pageHead(
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 			inspectorScript(),
-		},
+		),
 		Body: []g.Node{
-			h.Main(h.Class("report-app"),
-				h.Div(h.Class("app-shell"),
+			h.Main(h.Class(appRootClass),
+				h.Div(h.Class(appShellClass),
 					sidebar(sidebarConfigForCatalog(catalog)),
-					h.Section(h.Class("app-main catalog-main"), h.Aria("label", "LibreDash dashboard catalog"),
+					h.Section(h.Class(catalogMainClass), h.Aria("label", "LibreDash dashboard catalog"),
 						workspaceHeader(
 							"",
 							"Dashboards",
 							"Reports backed by semantic models.",
 							nil,
 						),
-						h.Div(h.Class("catalog-grid"),
+						h.Div(h.Class("grid grid-cols-catalog-grid items-start justify-start gap-4"),
 							g.Map(catalog.Dashboards, dashboardCard),
 						),
 					),
@@ -238,28 +236,22 @@ func ModelsPage(catalog dashboard.Catalog) g.Node {
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: []g.Node{
-			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
-			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
-			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
-			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+		Head: pageHead(
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 			inspectorScript(),
-		},
+		),
 		Body: []g.Node{
-			h.Main(h.Class("report-app"),
-				h.Div(h.Class("app-shell"),
+			h.Main(h.Class(appRootClass),
+				h.Div(h.Class(appShellClass),
 					sidebar(sidebarConfigForModels(catalog)),
-					h.Section(h.Class("app-main catalog-main"), h.Aria("label", "LibreDash semantic model catalog"),
+					h.Section(h.Class(catalogMainClass), h.Aria("label", "LibreDash semantic model catalog"),
 						workspaceHeader(
 							"",
 							"Semantic Models",
 							"Reusable model definitions.",
 							nil,
 						),
-						h.Div(h.Class("catalog-grid"),
+						h.Div(h.Class("grid grid-cols-catalog-grid items-start justify-start gap-4"),
 							g.Map(catalog.Models, modelCard),
 						),
 					),
@@ -279,28 +271,22 @@ func MetricViewsPage(catalog dashboard.Catalog, views []dashboard.MetricViewSumm
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: []g.Node{
-			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
-			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
-			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
-			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+		Head: pageHead(
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 			inspectorScript(),
-		},
+		),
 		Body: []g.Node{
-			h.Main(h.Class("report-app"),
-				h.Div(h.Class("app-shell"),
+			h.Main(h.Class(appRootClass),
+				h.Div(h.Class(appShellClass),
 					sidebar(sidebarConfigForMetrics(catalog)),
-					h.Section(h.Class("app-main catalog-main"), h.Aria("label", "LibreDash metric view catalog"),
+					h.Section(h.Class(catalogMainClass), h.Aria("label", "LibreDash metric view catalog"),
 						workspaceHeader(
 							"",
 							"Metric Views",
 							"Business-facing analytics contracts.",
 							nil,
 						),
-						h.Div(h.Class("catalog-grid"),
+						h.Div(h.Class("grid grid-cols-catalog-grid items-start justify-start gap-4"),
 							g.Map(views, metricViewCard),
 						),
 					),
@@ -316,21 +302,21 @@ func dashboardCard(report dashboard.CatalogDashboard) g.Node {
 	if eyebrow == "" {
 		eyebrow = "Dashboard"
 	}
-	return h.Article(h.Class("catalog-card"),
-		h.Div(h.Class("catalog-card-main"),
-			h.P(h.Class("report-eyebrow"), g.Text(eyebrow)),
-			h.H2(g.Text(report.Title)),
-			h.P(g.Text(report.Description)),
+	return h.Article(h.Class(cardClass),
+		h.Div(h.Class("min-w-0"),
+			h.P(h.Class(eyebrowClass), g.Text(eyebrow)),
+			h.H2(h.Class(cardTitleClass), g.Text(report.Title)),
+			h.P(h.Class(cardDescriptionClass), g.Text(report.Description)),
 		),
-		h.Div(h.Class("catalog-tags"),
+		h.Div(h.Class("mt-4 flex flex-wrap gap-2"),
 			g.Map(report.Tags, func(tag string) g.Node {
-				return h.Span(g.Text(tag))
+				return h.Span(h.Class(tagClass), g.Text(tag))
 			}),
 		),
-		h.Footer(h.Class("catalog-card-footer"),
+		h.Footer(h.Class(cardFooterClass),
 			h.Span(g.Textf("%d pages, %d views", report.PageCount, len(report.MetricViews))),
-			h.A(h.Class("catalog-open"), h.Href("/dashboards/"+report.ID),
-				lucide.ExternalLink(iconAttrs()),
+			h.A(h.Class(primaryLinkButtonClass), h.Href("/dashboards/"+report.ID),
+				lucide.ExternalLink(buttonIconAttrs()...),
 				h.Span(g.Text("Open")),
 			),
 		),
@@ -338,20 +324,20 @@ func dashboardCard(report dashboard.CatalogDashboard) g.Node {
 }
 
 func metricViewCard(view dashboard.MetricViewSummary) g.Node {
-	return h.Article(h.Class("catalog-card"),
-		h.Div(h.Class("catalog-card-main"),
-			h.P(h.Class("report-eyebrow"), g.Text(view.ModelTitle)),
-			h.H2(g.Text(view.Title)),
-			h.P(g.Text(view.Description)),
+	return h.Article(h.Class(cardClass),
+		h.Div(h.Class("min-w-0"),
+			h.P(h.Class(eyebrowClass), g.Text(view.ModelTitle)),
+			h.H2(h.Class(cardTitleClass), g.Text(view.Title)),
+			h.P(h.Class(cardDescriptionClass), g.Text(view.Description)),
 		),
-		h.Div(h.Class("catalog-tags"),
-			h.Span(g.Text(view.Dataset)),
-			h.Span(g.Text(view.Timeseries)),
+		h.Div(h.Class("mt-4 flex flex-wrap gap-2"),
+			h.Span(h.Class(tagClass), g.Text(view.Dataset)),
+			h.Span(h.Class(tagClass), g.Text(view.Timeseries)),
 		),
-		h.Footer(h.Class("catalog-card-footer"),
+		h.Footer(h.Class(cardFooterClass),
 			h.Span(g.Textf("%d dimensions, %d measures", view.DimensionCount, view.MeasureCount)),
-			h.A(h.Class("catalog-open"), h.Href("/metrics/"+view.ID+"/measures"),
-				lucide.ExternalLink(iconAttrs()),
+			h.A(h.Class(primaryLinkButtonClass), h.Href("/metrics/"+view.ID+"/measures"),
+				lucide.ExternalLink(buttonIconAttrs()...),
 				h.Span(g.Text("Open")),
 			),
 		),
@@ -359,16 +345,16 @@ func metricViewCard(view dashboard.MetricViewSummary) g.Node {
 }
 
 func modelCard(model dashboard.CatalogModel) g.Node {
-	return h.Article(h.Class("catalog-card"),
-		h.Div(h.Class("catalog-card-main"),
-			h.P(h.Class("report-eyebrow"), g.Text("Semantic model")),
-			h.H2(g.Text(model.Title)),
-			h.P(g.Text(model.Description)),
+	return h.Article(h.Class(cardClass),
+		h.Div(h.Class("min-w-0"),
+			h.P(h.Class(eyebrowClass), g.Text("Semantic model")),
+			h.H2(h.Class(cardTitleClass), g.Text(model.Title)),
+			h.P(h.Class(cardDescriptionClass), g.Text(model.Description)),
 		),
-		h.Footer(h.Class("catalog-card-footer"),
+		h.Footer(h.Class(cardFooterClass),
 			h.Span(g.Text("Reusable model")),
-			h.A(h.Class("catalog-open"), h.Href("/models/"+model.ID),
-				lucide.ExternalLink(iconAttrs()),
+			h.A(h.Class(primaryLinkButtonClass), h.Href("/models/"+model.ID),
+				lucide.ExternalLink(buttonIconAttrs()...),
 				h.Span(g.Text("Open")),
 			),
 		),
@@ -419,14 +405,6 @@ func metricTabCount(count int) g.Node {
 	return h.Span(h.Class("inline-flex min-w-4 items-center justify-center rounded-full bg-container-low px-1.5 py-px text-caption font-800 leading-none text-fg-muted"), g.Text(strconv.Itoa(count)))
 }
 
-func metricCountPill(label string, count int, tone string, icon g.Node) g.Node {
-	return h.Span(h.Class("metric-count-pill metric-count-pill-"+tone),
-		icon,
-		h.Strong(g.Text(strconv.Itoa(count))),
-		g.Text(" "+pluralize(label, count)),
-	)
-}
-
 func pluralize(label string, count int) string {
 	if count == 1 {
 		return label
@@ -472,19 +450,19 @@ type metricGridBadge struct {
 }
 
 func metricViewDimensions() g.Node {
-	return h.Section(h.ID("dimensions"), h.Class("metric-contract-section metric-contract-section-dimensions"),
+	return h.Section(h.ID("dimensions"), h.Class(metricContractSectionClass+" metric-contract-section-dimensions"),
 		g.El("ld-data-grid", g.Attr("data-attr:grid", "$metricGrid")),
 	)
 }
 
 func metricViewMeasures() g.Node {
-	return h.Section(h.ID("measures"), h.Class("metric-contract-section metric-contract-section-measures"),
+	return h.Section(h.ID("measures"), h.Class(metricContractSectionClass+" metric-contract-section-measures"),
 		g.El("ld-data-grid", g.Attr("data-attr:grid", "$metricGrid")),
 	)
 }
 
 func metricViewDashboards() g.Node {
-	return h.Section(h.ID("usage"), h.Class("metric-contract-section metric-contract-section-usage"),
+	return h.Section(h.ID("usage"), h.Class(metricContractSectionClass+" metric-contract-section-usage"),
 		g.El("ld-metric-usage-graph", h.Class("block h-metric-usage min-h-0 rounded-default border border-outline-muted bg-surface"), g.Attr("data-attr:graph", "$metricUsageGraph")),
 		g.El("ld-data-grid", g.Attr("data-attr:grid", "$metricGrid")),
 	)
@@ -687,31 +665,25 @@ func MetricViewPage(catalog dashboard.Catalog, view dashboard.MetricViewDetail, 
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: []g.Node{
-			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
-			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
-			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
-			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
+		Head: pageHead(
 			metricDetailRailStateScript(),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			g.If(activeSection == "usage", h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/metric-usage-graph.css")))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/data-grid.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/detail-rail.js"))),
 			g.If(activeSection == "usage", h.Script(h.Type("module"), h.Src(staticAsset("/static/metric-usage-graph.js")))),
 			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
-		},
+		),
 		Body: []g.Node{
-			h.Main(h.Class("report-app"),
+			h.Main(h.Class(appRootClass),
 				ds.Signals(metricViewSignals(view, activeSection)),
-				h.Div(h.Class("app-shell"),
+				h.Div(h.Class(appShellClass),
 					sidebar(sidebarConfigForMetricView(catalog, view)),
-					h.Section(h.Class("app-main metric-main"), h.Aria("label", "LibreDash metric view"),
+					h.Section(h.Class(metricMainClass), h.Aria("label", "LibreDash metric view"),
 						metricViewHeader(view),
-						g.El("ld-detail-rail", h.Class("metric-workspace"), g.Attr("data-detail-rail", ""),
-							h.Div(h.Class("metric-content-column"),
+						g.El("ld-detail-rail", h.Class(metricWorkspaceClass), g.Attr("data-detail-rail", ""),
+							h.Div(h.Class(metricContentColumnClass),
 								metricTabs(view, activeSection),
 								h.Div(h.Class("min-h-0 overflow-auto px-3 py-4"),
 									metricViewActiveSection(view, activeSection),
@@ -736,33 +708,27 @@ func ModelPage(catalog dashboard.Catalog, model dashboard.ModelGraph) g.Node {
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: []g.Node{
-			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
-			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
-			h.Link(h.Href("https://cdn.jsdelivr.net/npm/daisyui@5"), h.Rel("stylesheet"), h.Type("text/css")),
-			h.Script(h.Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
+		Head: pageHead(
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/model-graph.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/model-graph.js"))),
 			inspectorScript(),
-		},
+		),
 		Body: []g.Node{
 			h.Main(
 				h.ID("model"),
-				h.Class("report-app"),
-				h.Div(h.Class("app-shell"),
+				h.Class(appRootClass),
+				h.Div(h.Class(appShellClass),
 					sidebar(sidebarConfigForModel(catalog, model)),
-					h.Section(h.Class("app-main model-main"), h.Aria("label", "LibreDash semantic model"),
+					h.Section(h.Class(modelMainClass), h.Aria("label", "LibreDash semantic model"),
 						workspaceHeader(
 							"Semantic model",
 							model.Title,
 							model.Name,
 							modelStats(model.Stats),
 						),
-						h.Div(h.Class("model-shell"),
-							g.El("ld-model-graph", g.Attr("data-model", modelGraphJSON(model))),
+						h.Div(h.Class("grid min-h-model-graph min-w-0 flex-1 overflow-hidden rounded-default border border-outline-variant bg-surface shadow-resting-md"),
+							g.El("ld-model-graph", h.Class("block min-h-0 w-full"), g.Attr("data-model", modelGraphJSON(model))),
 						),
 					),
 				),
@@ -924,26 +890,26 @@ func reportSidebarConfig(report semantic.Dashboard, model *semantic.Model, pages
 }
 
 func workspaceHeader(eyebrow, title, detail string, actions g.Node) g.Node {
-	return h.Header(h.Class("workspace-header"),
-		h.Div(h.Class("workspace-title-block"),
-			g.If(eyebrow != "", h.P(h.Class("report-eyebrow"), g.Text(eyebrow))),
-			h.H1(h.Class("workspace-title"), g.Text(title)),
-			g.If(detail != "", h.P(h.Class("workspace-detail"), g.Text(detail))),
+	return h.Header(h.Class("grid min-w-0 grid-cols-workspace-header items-center gap-2 border-b border-outline-muted px-4 py-2.5"),
+		h.Div(h.Class("min-w-0"),
+			g.If(eyebrow != "", h.P(h.Class(eyebrowClass), g.Text(eyebrow))),
+			h.H1(h.Class("m-0 truncate text-title-sm font-850 leading-snug text-fg-default"), g.Text(title)),
+			g.If(detail != "", h.P(h.Class("m-0 mt-1 truncate text-body-sm font-650 leading-snug text-fg-muted"), g.Text(detail))),
 		),
-		h.Div(h.Class("workspace-actions"), actions),
+		h.Div(h.Class("inline-flex min-w-0 items-center justify-end gap-2"), actions),
 	)
 }
 
 func reportActions(modelID, dashboardID string) g.Node {
-	return h.Div(h.Class("report-actions"),
+	return h.Div(h.Class("inline-flex min-w-0 items-center justify-end gap-2"),
 		h.Button(
-			h.Class("report-action-button"),
+			h.Class(actionButtonClass),
 			h.Type("button"),
 			h.Title("Re-import DuckDB cache"),
 			h.Aria("label", "Re-import DuckDB cache"),
 			g.Attr("data-attr:disabled", "$status.loading"),
 			g.Attr("data-on:click", postAction("/commands/refresh-cache?model="+modelID+"&dashboard="+dashboardID)),
-			lucide.RefreshCw(iconAttrs()),
+			lucide.RefreshCw(buttonIconAttrs()...),
 		),
 	)
 }
@@ -1152,6 +1118,10 @@ func iconAttrs() g.Node {
 	return g.Attr("aria-hidden", "true")
 }
 
+func buttonIconAttrs() []g.Node {
+	return []g.Node{g.Attr("aria-hidden", "true"), h.Class("size-4 shrink-0"), h.Style("stroke-width: 1.75")}
+}
+
 func metricInfoIconAttrs() []g.Node {
 	return []g.Node{g.Attr("aria-hidden", "true"), h.Class("size-4 shrink-0 text-fg-muted"), h.Style("stroke-width: 1.75")}
 }
@@ -1232,7 +1202,7 @@ func renderPageVisual(pageID string, visual dashboard.PageVisual, report semanti
 
 func filterCard(pageID, filterID string, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
 	tableReset := tableResetExpression()
-	return h.Article(h.Class("visual-card filter-visual-card"),
+	return h.Article(h.Class(visualCardClass), g.Attr("data-canvas-filter-visual", ""),
 		g.El("ld-filter-card",
 			g.Attr("filter-id", filterID),
 			g.Attr("config", jsonString(report.FilterConfigForPage(pageID))),
@@ -1254,9 +1224,9 @@ func filterCardFallback(filterID string, report semantic.Dashboard, filters dash
 		return nil
 	}
 	control := filters.Controls[filterID]
-	return h.Div(h.Class("filter-card-fallback"),
-		h.Span(h.Class("filter-card-fallback-label"), g.Text(definition.Label)),
-		h.Span(h.Class("filter-card-fallback-value"), g.Text(filterCardSummary(definition, control))),
+	return h.Div(h.Class("grid h-full min-h-0 content-center gap-1 rounded-default bg-report-panel p-3 text-body-sm"),
+		h.Span(h.Class("text-caption font-900 uppercase leading-tight text-fg-muted"), g.Text(definition.Label)),
+		h.Span(h.Class("truncate text-body-sm font-850 text-fg-default"), g.Text(filterCardSummary(definition, control))),
 	)
 }
 
@@ -1314,14 +1284,14 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 	if visual.Title == "" {
 		visual.Title = "Dashboard"
 	}
-	return h.Header(h.Class("report-header"),
+	return h.Header(h.Class("grid h-full min-h-0 grid-cols-workspace-header items-center gap-3 rounded-default bg-transparent p-2"),
 		h.Div(
-			h.P(h.Class("report-eyebrow"), g.Text(visual.Eyebrow)),
-			h.H1(h.Class("report-title"), g.Text(visual.Title)),
+			h.P(h.Class(eyebrowClass), g.Text(visual.Eyebrow)),
+			h.H1(h.Class("m-0 text-title-lg font-850 leading-tight text-fg-default"), g.Text(visual.Title)),
 		),
-		h.Div(h.Class("report-summary"),
+		h.Div(h.Class("flex flex-wrap justify-end gap-2"),
 			g.Map(visual.Badges, func(badge string) g.Node {
-				return h.Span(g.Text(badge))
+				return h.Span(h.Class(tagClass), g.Text(badge))
 			}),
 		),
 	)
@@ -1365,7 +1335,7 @@ func sortedKeys[T any](items map[string]T) []string {
 
 func chartPanel(visualID string) g.Node {
 	signal := "visuals." + visualID
-	return h.Article(h.Class("visual-card"),
+	return h.Article(h.Class(visualCardClass),
 		g.El("ld-echart",
 			g.Attr("visual-id", visualID),
 			g.Attr("data-attr:chart", "$"+signal),
@@ -1376,7 +1346,7 @@ func chartPanel(visualID string) g.Node {
 }
 
 func kpiCard(visualID string) g.Node {
-	return h.Article(h.Class("visual-card"),
+	return h.Article(h.Class(visualCardClass),
 		g.El("ld-kpi-card",
 			g.Attr("visual-id", visualID),
 			g.Attr("data-attr:visual", "$visuals."+visualID),
@@ -1388,7 +1358,7 @@ func tablePanel(tableName string) g.Node {
 	if tableName == "" {
 		tableName = "orders"
 	}
-	return h.Section(h.Class("table-card"),
+	return h.Section(h.Class(visualCardClass),
 		g.El("ld-data-table",
 			g.Attr("table-id", tableName),
 			g.Attr("data-attr:table", "$tables."+tableName),
