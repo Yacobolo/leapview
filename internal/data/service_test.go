@@ -215,7 +215,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertVisualKeys(t, columnPatch, []string{"orders_by_month_column", "orders_by_month_status"})
+	assertVisualKeys(t, columnPatch, []string{"orders_by_month_column", "orders_by_month_status", "orders_by_month_status_grouped"})
 	if got := columnPatch.Visuals["orders_by_month_status"].Shape; got != "category_series_value" {
 		t.Fatalf("multi-series chart shape = %q, want category_series_value", got)
 	}
@@ -233,13 +233,16 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertVisualKeys(t, boxplotPatch, []string{"delivery_distribution", "review_distribution"})
+	assertVisualKeys(t, boxplotPatch, []string{"delivery_distribution", "review_distribution", "revenue_distribution"})
+	if len(boxplotPatch.Visuals["revenue_distribution"].Data) == 0 {
+		t.Fatal("revenue distribution payload is empty")
+	}
 
 	funnelPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-funnel", dashboard.Filters{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertVisualKeys(t, funnelPatch, []string{"delivery_funnel", "status_funnel"})
+	assertVisualKeys(t, funnelPatch, []string{"delivery_funnel", "status_funnel", "status_funnel_left"})
 
 	piePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-pie", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 		"category": {Type: "text", Operator: "contains", Value: "health"},
@@ -248,7 +251,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertVisualKeys(t, piePatch, []string{"category_pie", "status_pie"})
+	assertVisualKeys(t, piePatch, []string{"category_pie_inside", "status_pie", "status_pie_rose"})
 	if _, ok := piePatch.Filters.Controls["category"]; ok {
 		t.Fatalf("pie patch included off-page category filter: %#v", piePatch.Filters.Controls)
 	}
@@ -271,10 +274,26 @@ relogios_presentes,watches_gifts
 	}
 	assertVisualKeys(t, unknownPagePatch, overviewVisualKeys())
 
+	for chartType, visualKeys := range chartShowcaseMatrix() {
+		pagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-"+chartType, dashboard.Filters{})
+		if err != nil {
+			t.Fatalf("query chart-%s: %v", chartType, err)
+		}
+		assertVisualKeys(t, pagePatch, visualKeys)
+	}
+	candlestickPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-candlestick", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candlestickPatch.Visuals["revenue_candlestick"].Data) == 0 {
+		t.Fatal("revenue candlestick payload is empty")
+	}
+
 	comboPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-combo", selectedFilters)
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertVisualKeys(t, comboPatch, []string{"review_delivery_combo", "revenue_orders_combo", "revenue_orders_dual_axis_combo"})
 	if got := comboPatch.Visuals["revenue_orders_combo"].Shape; got != "category_multi_measure" {
 		t.Fatalf("combo chart shape = %q, want category_multi_measure", got)
 	}
@@ -286,6 +305,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertVisualKeys(t, waterfallPatch, []string{"orders_waterfall", "revenue_waterfall", "revenue_waterfall_labeled"})
 	if got := waterfallPatch.Visuals["revenue_waterfall"].Shape; got != "category_delta" {
 		t.Fatalf("waterfall chart shape = %q, want category_delta", got)
 	}
@@ -297,6 +317,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertVisualKeys(t, histogramPatch, []string{"delivery_histogram", "review_histogram", "revenue_histogram"})
 	if got := histogramPatch.Visuals["delivery_histogram"].Shape; got != "binned_measure" {
 		t.Fatalf("histogram chart shape = %q, want binned_measure", got)
 	}
@@ -308,6 +329,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertVisualKeys(t, mapPatch, []string{"state_order_map", "state_revenue_map", "state_revenue_map_labeled"})
 	if got := mapPatch.Visuals["state_order_map"].Shape; got != "geo" {
 		t.Fatalf("map chart shape = %q, want geo", got)
 	}
@@ -319,6 +341,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertVisualKeys(t, graphPatch, []string{"category_status_graph", "category_status_graph_circular", "status_delivery_graph"})
 	if got := graphPatch.Visuals["status_delivery_graph"].Type; got != "graph" {
 		t.Fatalf("graph visual type = %q, want graph", got)
 	}
@@ -330,6 +353,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertVisualKeys(t, sunburstPatch, []string{"category_state_status_sunburst", "category_status_sunburst", "state_status_sunburst"})
 	if got := sunburstPatch.Visuals["category_status_sunburst"].Shape; got != "hierarchy" {
 		t.Fatalf("hierarchy chart shape = %q, want hierarchy", got)
 	}
@@ -544,6 +568,33 @@ func overviewVisualKeys() []string {
 	return []string{"aov_kpi", "categories", "delivery", "orders", "revenue", "revenue_kpi", "review_kpi", "total_orders"}
 }
 
+func chartShowcaseMatrix() map[string][]string {
+	return map[string][]string{
+		"line":        {"revenue_line", "revenue_line_status", "revenue_line_step"},
+		"area":        {"revenue", "revenue_area_status", "revenue_area_smooth"},
+		"bar":         {"categories", "delivery", "categories_by_status_bar"},
+		"column":      {"orders_by_month_column", "orders_by_month_status", "orders_by_month_status_grouped"},
+		"pie":         {"status_pie", "status_pie_rose", "category_pie_inside"},
+		"donut":       {"orders", "category_donut", "orders_donut_center"},
+		"scatter":     {"delivery_scatter", "delivery_scatter_status", "delivery_scatter_labeled"},
+		"funnel":      {"status_funnel", "delivery_funnel", "status_funnel_left"},
+		"treemap":     {"category_treemap", "state_treemap", "category_treemap_roam"},
+		"gauge":       {"total_orders_gauge", "review_gauge", "review_gauge_thresholds"},
+		"heatmap":     {"state_status_heatmap", "category_status_heatmap", "category_status_heatmap_labels"},
+		"sankey":      {"status_delivery_flow", "category_status_flow", "category_status_flow_spacious"},
+		"graph":       {"status_delivery_graph", "category_status_graph", "category_status_graph_circular"},
+		"map":         {"state_order_map", "state_revenue_map", "state_revenue_map_labeled"},
+		"candlestick": {"delivery_candlestick", "revenue_candlestick"},
+		"boxplot":     {"delivery_distribution", "review_distribution", "revenue_distribution"},
+		"combo":       {"revenue_orders_combo", "review_delivery_combo", "revenue_orders_dual_axis_combo"},
+		"waterfall":   {"revenue_waterfall", "orders_waterfall", "revenue_waterfall_labeled"},
+		"histogram":   {"delivery_histogram", "revenue_histogram", "review_histogram"},
+		"radar":       {"status_radar", "delivery_radar", "state_radar"},
+		"tree":        {"state_status_tree", "category_status_tree", "category_state_status_tree"},
+		"sunburst":    {"category_status_sunburst", "state_status_sunburst", "category_state_status_sunburst"},
+	}
+}
+
 func assertVisualKeys(t *testing.T, patch dashboard.Patch, want []string) {
 	t.Helper()
 	got := make([]string, 0, len(patch.Visuals))
@@ -553,7 +604,7 @@ func assertVisualKeys(t *testing.T, patch dashboard.Patch, want []string) {
 	sort.Strings(got)
 	sort.Strings(want)
 	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("visual keys = %#v, want %#v", got, want)
+		t.Fatalf("visual keys = %#v, want %#v; status error = %q", got, want, patch.Status.Error)
 	}
 }
 

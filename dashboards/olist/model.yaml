@@ -111,6 +111,30 @@ datasets:
         column: revenue
         unit: R$
         format: currency
+      revenue_min:
+        label: Revenue min
+        aggregate: expression
+        expression: MIN(e.revenue)
+        unit: R$
+        format: currency
+      revenue_q1:
+        label: Revenue q1
+        aggregate: expression
+        expression: quantile_cont(e.revenue, 0.25)
+        unit: R$
+        format: currency
+      revenue_q3:
+        label: Revenue q3
+        aggregate: expression
+        expression: quantile_cont(e.revenue, 0.75)
+        unit: R$
+        format: currency
+      revenue_max:
+        label: Revenue max
+        aggregate: expression
+        expression: MAX(e.revenue)
+        unit: R$
+        format: currency
       aov:
         label: AOV
         aggregate: expression
