@@ -187,15 +187,15 @@ class ReportSidebar extends LitElement {
       position: relative;
       display: grid;
       grid-template-columns: 24px minmax(0, 1fr);
-      min-height: 30px;
+      min-height: 29px;
       align-items: center;
       gap: 6px;
       border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-default);
-      color: var(--fgColor-muted);
+      color: color-mix(in srgb, var(--fgColor-muted), transparent 8%);
       padding: 0 9px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-800);
+      font-weight: var(--ld-font-weight-760);
     }
 
     .page-link:hover,
@@ -207,7 +207,7 @@ class ReportSidebar extends LitElement {
 
     .page-link[aria-current='page'] {
       border-color: transparent;
-      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 30%);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 42%);
       color: var(--fgColor-default);
     }
 
@@ -226,7 +226,7 @@ class ReportSidebar extends LitElement {
       width: 24px;
       height: 24px;
       place-items: center;
-      color: color-mix(in srgb, var(--fgColor-muted), transparent 12%);
+      color: color-mix(in srgb, var(--fgColor-muted), transparent 24%);
       font-size: var(--ld-font-size-caption);
       font-variant-numeric: tabular-nums;
       font-weight: var(--ld-font-weight-850);
@@ -244,6 +244,12 @@ class ReportSidebar extends LitElement {
       min-width: 0;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .page-link:hover .link-text,
+    .page-link:focus-visible .link-text,
+    .page-link[aria-current='page'] .link-text {
+      font-weight: var(--ld-font-weight-850);
     }
 
     :host([data-collapsed]) header {
@@ -281,7 +287,6 @@ class ReportSidebar extends LitElement {
     }
 
     :host([data-collapsed]) .page-index {
-      color: color-mix(in srgb, var(--fgColor-muted), transparent 24%);
       background: transparent;
     }
 
@@ -295,12 +300,12 @@ class ReportSidebar extends LitElement {
     }
 
     :host([data-collapsed]) .page-link {
-      min-height: 28px;
+      min-height: 29px;
     }
 
     :host([data-collapsed]) .page-link[aria-current='page']::before {
       content: '';
-      inset-block: 6px;
+      inset-block: 7px;
       left: 0;
       width: 2px;
     }
@@ -313,7 +318,7 @@ class ReportSidebar extends LitElement {
       position: absolute;
       z-index: 40;
       left: 7px;
-      min-height: 28px;
+      min-height: 29px;
       max-width: 12rem;
       display: inline-flex;
       align-items: center;
@@ -333,7 +338,7 @@ class ReportSidebar extends LitElement {
     :host([data-collapsed]) .hover-title[data-active]::before {
       content: '';
       position: absolute;
-      inset-block: 6px;
+      inset-block: 7px;
       left: -2px;
       width: 2px;
       border-radius: var(--ld-radius-full);
