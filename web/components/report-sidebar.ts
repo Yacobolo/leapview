@@ -16,6 +16,12 @@ type ReportSidebarConfig = {
   pages?: ReportPage[]
 }
 
+type HoverTitle = {
+  index: number
+  title: string
+  top: number
+}
+
 const defaultConfig: ReportSidebarConfig = {
   pageTitle: 'Page',
   pages: [],
@@ -38,6 +44,7 @@ const configConverter = {
 class ReportSidebar extends LitElement {
   @property({ attribute: 'config', converter: configConverter }) config: ReportSidebarConfig = defaultConfig
   @state() private collapsed = storedCollapsed()
+  @state() private hoverTitle?: HoverTitle
 
   static styles = css`
     :host {
@@ -54,6 +61,12 @@ class ReportSidebar extends LitElement {
 
     :host([data-collapsed]) {
       --ld-report-sidebar-width: 38px;
+      z-index: 30;
+      overflow: visible;
+    }
+
+    :host([data-collapsed]) aside {
+      overflow: visible;
     }
 
     aside {
@@ -283,6 +296,42 @@ class ReportSidebar extends LitElement {
       width: 2px;
     }
 
+    .hover-title {
+      display: none;
+    }
+
+    :host([data-collapsed]) .hover-title {
+      position: absolute;
+      z-index: 40;
+      left: calc(var(--ld-report-sidebar-width) - 1px);
+      min-height: 28px;
+      max-width: 12rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 9px 0 8px;
+      border-left: 1px solid color-mix(in srgb, var(--borderColor-muted), transparent 36%);
+      border-right: 2px solid var(--ld-accent);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 56%);
+      color: var(--fgColor-default);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-none);
+      pointer-events: none;
+      transform: translateY(-50%);
+      white-space: nowrap;
+    }
+
+    .hover-title-index {
+      color: var(--fgColor-muted);
+      font-weight: var(--ld-font-weight-850);
+    }
+
+    .hover-title-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .rail-label {
       display: none;
     }
@@ -329,10 +378,16 @@ class ReportSidebar extends LitElement {
           </div>
         </header>
 
-        <nav aria-label="Report pages">
+        <nav aria-label="Report pages" @scroll=${this.hideHoverTitle}>
           <span class="rail-label" aria-hidden="true">Pages</span>
           ${pages.map((page, index) => this.renderPageLink(page, index))}
         </nav>
+        ${this.collapsed && this.hoverTitle ? html`
+          <div class="hover-title" style=${`top:${this.hoverTitle.top}px`}>
+            <span class="hover-title-index" aria-hidden="true">${this.hoverTitle.index}</span>
+            <span class="hover-title-name">${this.hoverTitle.title}</span>
+          </div>
+        ` : null}
       </aside>
     `
   }
@@ -341,7 +396,16 @@ class ReportSidebar extends LitElement {
     const active = Boolean(page.active || page.id === this.config.pageId)
     const title = page.title || page.id
     return html`
-      <a class="page-link" href=${page.href} aria-current=${active ? 'page' : 'false'} title=${title}>
+      <a
+        class="page-link"
+        href=${page.href}
+        aria-current=${active ? 'page' : 'false'}
+        title=${title}
+        @mouseenter=${(event: MouseEvent) => this.showHoverTitle(event, title, index + 1)}
+        @mouseleave=${this.hideHoverTitle}
+        @focus=${(event: FocusEvent) => this.showHoverTitle(event, title, index + 1)}
+        @blur=${this.hideHoverTitle}
+      >
         <span class="page-index" aria-hidden="true">${index + 1}</span>
         <span class="link-text">${title}</span>
       </a>
@@ -362,6 +426,24 @@ class ReportSidebar extends LitElement {
       const active = this.renderRoot.querySelector<HTMLElement>('.page-link[aria-current="page"]')
       active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     })
+  }
+
+  private showHoverTitle(event: MouseEvent | FocusEvent, title: string, index: number): void {
+    if (!this.collapsed) return
+    const target = event.currentTarget
+    const aside = this.renderRoot.querySelector<HTMLElement>('aside')
+    if (!(target instanceof HTMLElement) || !aside) return
+    const targetRect = target.getBoundingClientRect()
+    const asideRect = aside.getBoundingClientRect()
+    this.hoverTitle = {
+      index,
+      title,
+      top: targetRect.top - asideRect.top + targetRect.height / 2,
+    }
+  }
+
+  private hideHoverTitle = (): void => {
+    this.hoverTitle = undefined
   }
 }
 
