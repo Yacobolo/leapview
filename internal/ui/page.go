@@ -48,7 +48,7 @@ const (
 	metricContractSectionClass = "grid min-h-0 gap-3 overflow-hidden bg-transparent"
 	metricWorkspaceClass       = "grid min-h-0 min-w-0 grid-cols-metric-workspace overflow-hidden bg-report-workspace data-[rail-collapsed]:grid-cols-metric-workspace-collapsed max-md:grid-cols-1"
 	metricContentColumnClass   = "grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
-	metricInfoSidebarClass     = "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-outline-variant bg-report-panel-subtle max-md:border-l-0 max-md:border-t"
+	metricInfoSidebarClass     = "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-outline-variant bg-report-workspace max-md:border-l-0 max-md:border-t"
 )
 
 func inspectorScript() g.Node {
@@ -385,29 +385,29 @@ func metricViewHeader(view dashboard.MetricViewDetail) g.Node {
 }
 
 func metricViewInfoSidebar(view dashboard.MetricViewDetail) g.Node {
-	return h.Aside(h.Class("metric-info-sidebar"), h.Aria("label", "Metric view details"),
-		h.Div(h.Class("metric-info-header"),
-			h.H2(lucide.FileText(iconAttrs()), h.Span(g.Text("Details"))),
+	return h.Aside(h.Class(metricInfoSidebarClass), h.Aria("label", "Metric view details"), g.Attr("data-metric-info-sidebar", ""),
+		h.Div(h.Class("flex min-h-control-xl items-center justify-between gap-2 border-b border-outline-muted px-4 py-2"), g.Attr("data-metric-info-header", ""),
+			h.H2(h.Class("m-0 flex min-w-0 items-center gap-2 truncate text-body-sm font-850 text-fg-default"), lucide.FileText(metricInfoIconAttrs()...), h.Span(g.Text("Details"))),
 		),
-		h.Div(h.Class("metric-info-body"),
-			h.Div(h.Class("metric-info-group"),
-				metricInfoItem("Model context", h.A(h.Href("/models/"+view.SemanticModel), lucide.Box(iconAttrs()), h.Span(g.Text(view.ModelTitle)))),
-				metricInfoItem("Source dataset", h.Span(lucide.Table2(iconAttrs()), h.Code(g.Text(view.Dataset)))),
-				metricInfoItem("Primary timeseries", h.Span(lucide.Calendar(iconAttrs()), h.Code(g.Text(view.Timeseries)))),
+		h.Div(h.Class("grid content-start overflow-auto"), g.Attr("data-metric-info-body", ""),
+			h.Div(h.Class("grid content-start"),
+				metricInfoItem("Model context", h.A(h.Class("inline-flex min-w-0 items-center gap-2 text-fg-accent no-underline hover:underline"), h.Href("/models/"+view.SemanticModel), lucide.Box(metricInfoIconAttrs()...), h.Span(h.Class("truncate"), g.Text(view.ModelTitle)))),
+				metricInfoItem("Source dataset", h.Span(h.Class("inline-flex min-w-0 items-center gap-2"), lucide.Table2(metricInfoIconAttrs()...), h.Code(h.Class("truncate font-mono"), g.Text(view.Dataset)))),
+				metricInfoItem("Primary timeseries", h.Span(h.Class("inline-flex min-w-0 items-center gap-2"), lucide.Calendar(metricInfoIconAttrs()...), h.Code(h.Class("truncate font-mono"), g.Text(view.Timeseries)))),
 			),
 		),
 	)
 }
 
 func metricInfoItem(label string, value g.Node) g.Node {
-	return h.Div(h.Class("metric-info-item"),
-		h.Span(h.Class("metric-info-label"), g.Text(label)),
-		h.Div(h.Class("metric-info-value"), value),
+	return h.Div(h.Class("grid content-start gap-2 border-b border-outline-muted px-4 py-4 text-body-sm last:border-b-0"),
+		h.Span(h.Class("text-caption font-900 uppercase leading-none text-fg-muted"), g.Text(label)),
+		h.Div(h.Class("min-w-0 text-body-sm font-720 text-fg-default"), value),
 	)
 }
 
 func metricTabCount(count int) g.Node {
-	return h.Span(h.Class("metric-tab-count"), g.Text(strconv.Itoa(count)))
+	return h.Span(h.Class("inline-flex min-w-4 items-center justify-center rounded-full bg-container-low px-1.5 py-px text-caption font-800 leading-none text-fg-muted"), g.Text(strconv.Itoa(count)))
 }
 
 func metricCountPill(label string, count int, tone string, icon g.Node) g.Node {
@@ -543,13 +543,13 @@ func metricViewGrid(view dashboard.MetricViewDetail, activeSection string) metri
 			Columns: []metricGridColumn{
 				{ID: "name", Header: "Name", Kind: "code", Width: "150px"},
 				{ID: "label", Header: "Label", Width: "160px"},
-				{ID: "expression", Header: "Expression", Kind: "expression", Width: "420px"},
-				{ID: "unit", Header: "Unit", Kind: "badge", Width: "96px"},
-				{ID: "format", Header: "Format", Kind: "badge", Width: "108px"},
+				{ID: "expression", Header: "Expression", Kind: "expression"},
+				{ID: "unit", Header: "Unit", Kind: "badge", Width: "82px"},
+				{ID: "format", Header: "Format", Kind: "badge", Width: "88px"},
 			},
 			Rows:     rows,
 			Empty:    "No measures are defined for this metric view.",
-			MinWidth: "934px",
+			MinWidth: "100%",
 		}
 	}
 }
@@ -1137,6 +1137,10 @@ func visualSignal(id string, visual semantic.Visual, title, unit, format, measur
 
 func iconAttrs() g.Node {
 	return g.Attr("aria-hidden", "true")
+}
+
+func metricInfoIconAttrs() []g.Node {
+	return []g.Node{g.Attr("aria-hidden", "true"), h.Class("size-4 shrink-0 text-fg-muted")}
 }
 
 func canvasVisual(x, y, width, height float64, children ...g.Node) g.Node {

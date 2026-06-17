@@ -223,7 +223,7 @@ const dataGridStyles = `
   ld-data-grid .data-grid th,
   ld-data-grid .data-grid td {
     border-bottom: 1px solid color-mix(in srgb, var(--borderColor-muted), transparent 28%);
-    padding: 11px 12px;
+    padding: 10px 10px;
     text-align: left;
     vertical-align: top;
   }
@@ -320,12 +320,12 @@ const dataGridStyles = `
 
   ld-data-grid .grid-badge {
     display: inline-flex;
-    min-height: 22px;
+    min-height: 20px;
     align-items: center;
     gap: 5px;
     border-radius: var(--borderRadius-full);
-    padding: 0 8px;
-    font-size: 0.66rem;
+    padding: 0 7px;
+    font-size: 0.62rem;
     font-weight: 850;
   }
 
