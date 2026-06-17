@@ -96,13 +96,6 @@ func ExtractAssets(workspaceID, deploymentID string, workspace *semantic.Workspa
 			}
 			edge(filterID, byKey["dimension:"+report.SemanticModel+"."+filter.Dataset+"."+filter.Dimension], "filters_dimension")
 		}
-		for kpiName, kpi := range report.KPIs {
-			kpiID, err := add("kpi", report.ID+"."+kpiName, reportID, kpi.Title, kpi.Note, kpi)
-			if err != nil {
-				return nil, nil, err
-			}
-			edge(kpiID, byKey["measure:"+report.SemanticModel+"."+kpi.Dataset+"."+kpi.Measure], "uses_measure")
-		}
 		for visualName, visual := range report.Visuals {
 			visualID, err := add("visual", report.ID+"."+visualName, reportID, visual.Title, "", visual)
 			if err != nil {

@@ -16,6 +16,7 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		SemanticModel: "test",
 		Visuals: map[string]semantic.Visual{
 			"active_chart":   {Title: "Active", Type: "bar", Dataset: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}},
+			"active_kpi":     {Kind: "kpi", Shape: "single_value", Dataset: "orders", Query: semantic.VisualQuery{Measures: []string{"order_count"}}, Options: map[string]any{"note": "Filtered", "tone": "ink"}},
 			"off_page_chart": {Title: "Off Page", Type: "bar", Dataset: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}},
 		},
 		Tables: map[string]semantic.TableVisual{
@@ -30,6 +31,7 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 				Title:  "Showcase",
 				Canvas: dashboard.PageCanvas{Width: 1200, Height: 800},
 				Visuals: []dashboard.PageVisual{
+					{ID: "kpi", Kind: "kpi_card", Visual: "active_kpi", X: 0, Y: 0, Width: 100, Height: 100},
 					{ID: "chart", Kind: "bar_chart", Visual: "active_chart", X: 0, Y: 0, Width: 100, Height: 100},
 				},
 			},
@@ -58,11 +60,17 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	}
 
 	showcase := renderPageForTest(t, report, model, report.Pages[0])
-	if !strings.Contains(showcase, `"charts":{"active_chart"`) {
-		t.Fatalf("showcase page did not seed active chart:\n%s", showcase)
+	if !strings.Contains(showcase, `"active_chart"`) || !strings.Contains(showcase, `"active_kpi"`) {
+		t.Fatalf("showcase page did not seed active chart and KPI visuals:\n%s", showcase)
 	}
 	if strings.Contains(showcase, `"off_page_chart"`) {
 		t.Fatalf("showcase page seeded off-page chart:\n%s", showcase)
+	}
+	if strings.Contains(showcase, `"kpis"`) {
+		t.Fatalf("showcase page seeded legacy kpis signal:\n%s", showcase)
+	}
+	if !strings.Contains(showcase, `<ld-kpi-card`) {
+		t.Fatalf("showcase page did not render kpi card component:\n%s", showcase)
 	}
 	if !strings.Contains(showcase, `"tables":{}`) {
 		t.Fatalf("showcase page should seed no tables:\n%s", showcase)
@@ -75,8 +83,8 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	if strings.Contains(tables, `"off_page"`) {
 		t.Fatalf("tables page seeded off-page table:\n%s", tables)
 	}
-	if !strings.Contains(tables, `"charts":{}`) {
-		t.Fatalf("tables page should seed no charts:\n%s", tables)
+	if !strings.Contains(tables, `"visuals":{}`) {
+		t.Fatalf("tables page should seed no visuals:\n%s", tables)
 	}
 }
 

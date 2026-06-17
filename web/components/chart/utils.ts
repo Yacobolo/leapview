@@ -90,6 +90,7 @@ export function normalizeType(type: string | undefined): ChartType {
     case 'radar':
     case 'tree':
     case 'sunburst':
+    case 'kpi':
       return type
     default:
       return 'bar'

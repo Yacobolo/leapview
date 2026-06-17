@@ -162,8 +162,7 @@ func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, pageID string
 			LastUpdated:   "12:00:00",
 			DataDirectory: ".data/olist",
 		},
-		KPIs: []dashboard.KPI{{Label: "Orders", Value: "1", Note: "test", Tone: "ink"}},
-		Charts: map[string]dashboard.Chart{
+		Visuals: map[string]dashboard.Visual{
 			chartID: {Title: chartTitle, Unit: "orders", Data: []dashboard.Datum{{"label": "delivered", "value": 1}}},
 		},
 	}, nil
@@ -197,7 +196,7 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 		t.Fatalf("report header still rendered page tabs:\n%s", body)
 	}
 	decoded := html.UnescapeString(body)
-	if !strings.Contains(decoded, `"charts":{"ops_pipeline"`) {
+	if !strings.Contains(decoded, `"visuals":{"ops_pipeline"`) {
 		t.Fatalf("operations page did not seed active page chart only:\n%s", decoded)
 	}
 	if strings.Contains(decoded, `"orders":{"version":3`) {
@@ -423,14 +422,17 @@ func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `"charts":{"ops_pipeline"`) {
+	if !strings.Contains(body, `"visuals":{"ops_pipeline"`) {
 		t.Fatalf("updates did not stream active page chart:\n%s", body)
 	}
-	if strings.Contains(body, `"charts":{"orders"`) {
+	if strings.Contains(body, `"visuals":{"orders"`) {
 		t.Fatalf("updates streamed off-page chart:\n%s", body)
 	}
 	if !strings.Contains(body, `"tables":{}`) {
 		t.Fatalf("updates should stream empty tables for chart-only page:\n%s", body)
+	}
+	if strings.Contains(body, `"kpis"`) {
+		t.Fatalf("updates streamed legacy KPI signal:\n%s", body)
 	}
 }
 

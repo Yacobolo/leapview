@@ -246,8 +246,7 @@ func dashboardPatch(patch dashboard.Patch) signalPatch {
 		"filters":       patch.Filters,
 		"filterOptions": patch.FilterOptions,
 		"status":        patch.Status,
-		"kpis":          patch.KPIs,
-		"charts":        patch.Charts,
+		"visuals":       patch.Visuals,
 	}
 }
 

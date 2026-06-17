@@ -17,7 +17,6 @@ type Dashboard struct {
 	Description   string                      `yaml:"description"`
 	SemanticModel string                      `yaml:"semantic_model"`
 	Filters       map[string]FilterDefinition `yaml:"filters"`
-	KPIs          map[string]KPI              `yaml:"kpis"`
 	Visuals       map[string]Visual           `yaml:"visuals"`
 	Tables        map[string]TableVisual      `yaml:"tables"`
 	Pages         []dashboard.Page            `yaml:"pages"`
@@ -67,14 +66,6 @@ type FilterPreset struct {
 type FilterValues struct {
 	Source string `yaml:"source" json:"source,omitempty"`
 	Limit  int    `yaml:"limit" json:"limit,omitempty"`
-}
-
-type KPI struct {
-	Title   string `yaml:"title"`
-	Dataset string `yaml:"dataset"`
-	Measure string `yaml:"measure"`
-	Note    string `yaml:"note"`
-	Tone    string `yaml:"tone"`
 }
 
 type Visual struct {
@@ -189,6 +180,9 @@ func (v Visual) ShapeOrDefault() string {
 	if v.Shape != "" {
 		return v.Shape
 	}
+	if v.KindOrDefault() == "kpi" {
+		return "single_value"
+	}
 	switch v.Type {
 	case "combo":
 		return "category_multi_measure"
@@ -224,6 +218,9 @@ func (v Visual) RendererOrDefault() string {
 	if v.Renderer != "" {
 		return v.Renderer
 	}
+	if v.KindOrDefault() == "kpi" {
+		return "html"
+	}
 	return "echarts"
 }
 
@@ -254,6 +251,9 @@ func LoadDashboard(path string, model *Model) (*Dashboard, error) {
 	if err := rejectLegacyVisualStacked(bytes); err != nil {
 		return nil, err
 	}
+	if err := rejectLegacyKPIs(bytes); err != nil {
+		return nil, err
+	}
 	if err := report.Validate(model); err != nil {
 		return nil, err
 	}
@@ -282,6 +282,21 @@ func rejectLegacyVisualStacked(bytes []byte) error {
 		if mappingValue(visualNode, "stacked") != nil {
 			return fmt.Errorf("visual %q uses legacy top-level stacked; use options.stacked", name)
 		}
+	}
+	return nil
+}
+
+func rejectLegacyKPIs(bytes []byte) error {
+	var node yaml.Node
+	if err := yaml.Unmarshal(bytes, &node); err != nil {
+		return err
+	}
+	root := mappingNode(&node)
+	if root == nil {
+		return nil
+	}
+	if mappingValue(root, "kpis") != nil {
+		return fmt.Errorf("dashboard uses legacy kpis; define KPI cards as visuals with kind kpi")
 	}
 	return nil
 }
@@ -317,9 +332,6 @@ func (d *Dashboard) Validate(model *Model) error {
 	}
 	if d.SemanticModel != model.Name {
 		return fmt.Errorf("dashboard %q semantic_model %q does not match model %q", d.ID, d.SemanticModel, model.Name)
-	}
-	if len(d.KPIs) == 0 {
-		return fmt.Errorf("dashboard %q requires kpis", d.ID)
 	}
 	if len(d.Visuals) == 0 {
 		return fmt.Errorf("dashboard %q requires visuals", d.ID)
@@ -397,27 +409,15 @@ func (d *Dashboard) Validate(model *Model) error {
 	if err := d.validateFilterURLParams(); err != nil {
 		return err
 	}
-	for name, kpi := range d.KPIs {
-		if kpi.Title == "" || kpi.Dataset == "" || kpi.Measure == "" {
-			return fmt.Errorf("kpi %q requires title, dataset, and measure", name)
-		}
-		dataset, ok := model.Datasets[kpi.Dataset]
-		if !ok {
-			return fmt.Errorf("kpi %q references unknown dataset %q", name, kpi.Dataset)
-		}
-		if _, ok := dataset.Measures[kpi.Measure]; !ok {
-			return fmt.Errorf("kpi %q references unknown measure %q", name, kpi.Measure)
-		}
-	}
 	for name, visual := range d.Visuals {
-		if visual.Title == "" || visual.Dataset == "" || visual.Type == "" {
+		kind := visual.KindOrDefault()
+		if visual.Dataset == "" || (kind != "kpi" && visual.Title == "") || (kind != "kpi" && visual.Type == "") {
 			return fmt.Errorf("visual %q requires title, dataset, and type", name)
 		}
 		dataset, ok := model.Datasets[visual.Dataset]
 		if !ok {
 			return fmt.Errorf("visual %q references unknown dataset %q", name, visual.Dataset)
 		}
-		kind := visual.KindOrDefault()
 		shape := visual.ShapeOrDefault()
 		renderer := visual.RendererOrDefault()
 		if !supportsVisualKind(kind) {
@@ -426,13 +426,13 @@ func (d *Dashboard) Validate(model *Model) error {
 		if !supportsVisualShape(shape) {
 			return fmt.Errorf("visual %q has unsupported shape %q", name, shape)
 		}
-		if !supportsRenderer(renderer) {
+		if kind != "kpi" && !supportsRenderer(renderer) {
 			return fmt.Errorf("visual %q has unsupported renderer %q", name, renderer)
 		}
-		if !rendererSupportsType(renderer, visual.Type) {
+		if kind != "kpi" && !rendererSupportsType(renderer, visual.Type) {
 			return fmt.Errorf("visual %q renderer %q does not support type %q", name, renderer, visual.Type)
 		}
-		if !rendererSupportsShapeType(renderer, shape, visual.Type) {
+		if kind != "kpi" && !rendererSupportsShapeType(renderer, shape, visual.Type) {
 			return fmt.Errorf("visual %q renderer %q type %q does not support shape %q", name, renderer, visual.Type, shape)
 		}
 		if err := validateVisualQueryShape(name, visual); err != nil {
@@ -564,7 +564,7 @@ func (d *Dashboard) Validate(model *Model) error {
 				return err
 			}
 			switch visual.Kind {
-			case "header", "kpi_strip":
+			case "header":
 			case "filter_card":
 				if visual.Filter == "" {
 					return fmt.Errorf("page %q visual %q requires filter", page.ID, visual.ID)
@@ -572,12 +572,27 @@ func (d *Dashboard) Validate(model *Model) error {
 				if _, ok := d.Filters[visual.Filter]; !ok {
 					return fmt.Errorf("page %q references unknown filter %q", page.ID, visual.Filter)
 				}
+			case "kpi_card":
+				if visual.Visual == "" {
+					return fmt.Errorf("page %q visual %q requires visual", page.ID, visual.ID)
+				}
+				target, ok := d.Visuals[visual.Visual]
+				if !ok {
+					return fmt.Errorf("page %q references unknown visual %q", page.ID, visual.Visual)
+				}
+				if target.KindOrDefault() != "kpi" {
+					return fmt.Errorf("page %q visual %q requires a kpi visual", page.ID, visual.ID)
+				}
 			case "line_chart", "area_chart", "bar_chart", "column_chart", "pie_chart", "donut_chart", "scatter_chart", "funnel_chart", "treemap_chart", "gauge_chart", "heatmap_chart", "sankey_chart", "graph_chart", "map_chart", "candlestick_chart", "boxplot_chart", "combo_chart", "waterfall_chart", "histogram_chart", "radar_chart", "tree_chart", "sunburst_chart":
 				if visual.Visual == "" {
 					return fmt.Errorf("page %q visual %q requires visual", page.ID, visual.ID)
 				}
-				if _, ok := d.Visuals[visual.Visual]; !ok {
+				target, ok := d.Visuals[visual.Visual]
+				if !ok {
 					return fmt.Errorf("page %q references unknown visual %q", page.ID, visual.Visual)
+				}
+				if target.KindOrDefault() == "kpi" {
+					return fmt.Errorf("page %q visual %q requires a chart visual", page.ID, visual.ID)
 				}
 			case "table":
 				if visual.Table == "" {
@@ -609,6 +624,21 @@ func validatePlacement(page dashboard.Page, visual dashboard.PageVisual) error {
 }
 
 func validateVisualQueryShape(name string, visual Visual) error {
+	if visual.KindOrDefault() == "kpi" {
+		if visual.ShapeOrDefault() != "single_value" {
+			return fmt.Errorf("visual %q kind kpi requires shape single_value", name)
+		}
+		if len(visual.Query.Measures) != 1 {
+			return fmt.Errorf("visual %q kind kpi requires exactly one query measure", name)
+		}
+		if len(visual.Query.Dimensions) != 0 {
+			return fmt.Errorf("visual %q kind kpi does not support query dimensions", name)
+		}
+		if visual.Query.Series != "" {
+			return fmt.Errorf("visual %q kind kpi does not support series", name)
+		}
+		return nil
+	}
 	shape := visual.ShapeOrDefault()
 	switch shape {
 	case "ohlc":

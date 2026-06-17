@@ -331,7 +331,7 @@ func (m *DuckDBMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pag
 			LastUpdated:   refreshLabel(runtime),
 			DataDirectory: m.dataDir,
 		},
-		Charts: map[string]dashboard.Chart{},
+		Visuals: map[string]dashboard.Visual{},
 	}
 
 	options, err := m.filterOptions(ctx, runtime, report)
@@ -340,18 +340,12 @@ func (m *DuckDBMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pag
 	}
 	patch.FilterOptions = options
 
-	kpis, err := m.kpis(ctx, runtime, report, filters)
-	if err != nil {
-		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
-	}
-	patch.KPIs = kpis
-
 	page := dashboardPage(report, pageID)
-	charts, err := m.charts(ctx, runtime, report, filters, pageChartIDs(page))
+	visuals, err := m.visuals(ctx, runtime, report, filters, pageVisualIDs(page))
 	if err != nil {
 		return dashboard.EmptyPatch(filters, m.dataDir, err), nil
 	}
-	patch.Charts = charts
+	patch.Visuals = visuals
 
 	return patch, nil
 }
@@ -370,7 +364,7 @@ func dashboardPage(report *semantic.Dashboard, pageID string) dashboard.Page {
 	return report.Pages[0].WithDefaults()
 }
 
-func pageChartIDs(page dashboard.Page) []string {
+func pageVisualIDs(page dashboard.Page) []string {
 	seen := map[string]struct{}{}
 	ids := []string{}
 	for _, item := range page.Visuals {
@@ -607,61 +601,8 @@ func (m *DuckDBMetrics) materializeCache(ctx context.Context, runtime *modelRunt
 	return nil
 }
 
-func (m *DuckDBMetrics) kpis(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, filters dashboard.Filters) ([]dashboard.KPI, error) {
-	keys := []string{"total_orders", "revenue", "aov", "review"}
-	seen := map[string]struct{}{}
-	for _, key := range keys {
-		seen[key] = struct{}{}
-	}
-	for _, key := range sortedKeys(report.KPIs) {
-		if _, ok := seen[key]; !ok {
-			keys = append(keys, key)
-		}
-	}
-	kpis := make([]dashboard.KPI, 0, len(keys))
-	for _, key := range keys {
-		kpi, ok := report.KPIs[key]
-		if !ok {
-			continue
-		}
-		value, err := m.kpiValue(ctx, runtime, report, kpi, filters)
-		if err != nil {
-			return nil, err
-		}
-		measure := runtime.model.Datasets[kpi.Dataset].Measures[kpi.Measure]
-		kpis = append(kpis, dashboard.KPI{
-			Label: kpi.Title,
-			Value: formatMetric(value, measure.Format),
-			Note:  kpi.Note,
-			Tone:  kpi.Tone,
-		})
-	}
-	return kpis, nil
-}
-
-func (m *DuckDBMetrics) kpiValue(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, kpi semantic.KPI, filters dashboard.Filters) (float64, error) {
-	source, err := datasetSource(runtime.model, kpi.Dataset)
-	if err != nil {
-		return 0, err
-	}
-	dataset := runtime.model.Datasets[kpi.Dataset]
-	measure := dataset.Measures[kpi.Measure]
-	expr, err := measureAggregateExpr(measure)
-	if err != nil {
-		return 0, err
-	}
-	where, args := m.filterWhere("e", runtime, report, kpi.Dataset, filters, "kpi", kpi.Measure)
-	query := fmt.Sprintf("SELECT COALESCE(%s, 0) FROM %s e WHERE %s", expr, source, where)
-
-	var value float64
-	if err := runtime.db.QueryRowContext(ctx, query, args...).Scan(&value); err != nil {
-		return 0, err
-	}
-	return value, nil
-}
-
-func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, filters dashboard.Filters, keys []string) (map[string]dashboard.Chart, error) {
-	charts := make(map[string]dashboard.Chart, len(keys))
+func (m *DuckDBMetrics) visuals(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, filters dashboard.Filters, keys []string) (map[string]dashboard.Visual, error) {
+	visuals := make(map[string]dashboard.Visual, len(keys))
 	for _, key := range keys {
 		visual, ok := report.Visuals[key]
 		if !ok {
@@ -674,6 +615,13 @@ func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, repor
 		dataset := runtime.model.Datasets[visual.Dataset]
 		measureName := visual.Query.Measures[0]
 		measure := dataset.Measures[measureName]
+		title := visual.Title
+		if title == "" {
+			title = measure.Label
+		}
+		if title == "" {
+			title = measureName
+		}
 		unit := measure.Unit
 		if len(visual.Query.Measures) > 1 {
 			unit = ""
@@ -688,15 +636,20 @@ func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, repor
 				rendererOptions[renderer] = typed
 			}
 		}
-		charts[key] = dashboard.Chart{
+		visualType := visual.Type
+		if visualType == "" && visual.KindOrDefault() == "kpi" {
+			visualType = "kpi"
+		}
+		visuals[key] = dashboard.Visual{
 			Version:         3,
 			ID:              key,
 			Kind:            visual.KindOrDefault(),
 			Shape:           visual.ShapeOrDefault(),
 			Renderer:        visual.RendererOrDefault(),
-			Type:            visual.Type,
-			Title:           visual.Title,
+			Type:            visualType,
+			Title:           title,
 			Unit:            unit,
+			Format:          measure.Format,
 			Field:           visual.Interaction.Field,
 			Dimensions:      append([]string{}, visual.Query.Dimensions...),
 			Measure:         measureName,
@@ -708,7 +661,7 @@ func (m *DuckDBMetrics) charts(ctx context.Context, runtime *modelRuntime, repor
 			Data:            data,
 		}
 	}
-	return charts, nil
+	return visuals, nil
 }
 
 func (m *DuckDBMetrics) visualData(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, visualID string, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Datum, error) {
@@ -982,7 +935,14 @@ func (m *DuckDBMetrics) singleValueData(ctx context.Context, runtime *modelRunti
 	if err != nil {
 		return nil, err
 	}
-	labelExpr := "'" + strings.ReplaceAll(visual.Title, "'", "''") + "'"
+	title := visual.Title
+	if title == "" {
+		title = dataset.Measures[measureName].Label
+	}
+	if title == "" {
+		title = measureName
+	}
+	labelExpr := "'" + strings.ReplaceAll(title, "'", "''") + "'"
 	groupBy := ""
 	if len(visual.Query.Dimensions) == 1 {
 		labelExpr = dimensionExpression(dataset.Dimensions[visual.Query.Dimensions[0]], "e")

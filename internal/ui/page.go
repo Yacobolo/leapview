@@ -511,9 +511,8 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 				"direction": tableRequest.Sort.Direction,
 			},
 		},
-		"tables": tableSignals(report, activePage, tableRequest),
-		"charts": chartSignals(report, model, activePage),
-		"kpis":   []any{},
+		"tables":  tableSignals(report, activePage, tableRequest),
+		"visuals": visualSignals(report, model, activePage),
 		"status": map[string]any{
 			"loading":       false,
 			"error":         "",
@@ -580,27 +579,37 @@ func tableResetExpression() string {
 	return "$tableCommand.block = 'all'; $tableCommand.start = 0; $tableCommand.count = " + count + "; $tableCommand.resetVersion = ($tableCommand.resetVersion || 0) + 1; "
 }
 
-func chartSignals(report semantic.Dashboard, model *semantic.Model, page dashboard.Page) map[string]any {
-	charts := map[string]any{}
-	for _, id := range pageChartIDs(page) {
+func visualSignals(report semantic.Dashboard, model *semantic.Model, page dashboard.Page) map[string]any {
+	visuals := map[string]any{}
+	for _, id := range pageVisualIDs(page) {
 		visual, ok := report.Visuals[id]
 		if !ok {
 			continue
 		}
 		measureName := ""
 		unit := ""
+		format := ""
+		title := visual.Title
 		if model != nil && len(visual.Query.Measures) > 0 {
 			measureName = visual.Query.Measures[0]
 			if dataset, ok := model.Datasets[visual.Dataset]; ok {
-				unit = dataset.Measures[measureName].Unit
+				measure := dataset.Measures[measureName]
+				unit = measure.Unit
+				format = measure.Format
+				if title == "" {
+					title = measure.Label
+				}
 			}
 		}
-		charts[id] = chartSignal(id, visual, unit, measureName)
+		if title == "" {
+			title = measureName
+		}
+		visuals[id] = visualSignal(id, visual, title, unit, format, measureName)
 	}
-	return charts
+	return visuals
 }
 
-func pageChartIDs(page dashboard.Page) []string {
+func pageVisualIDs(page dashboard.Page) []string {
 	seen := map[string]struct{}{}
 	ids := []string{}
 	for _, item := range page.Visuals {
@@ -633,10 +642,14 @@ func pageTableIDs(page dashboard.Page) []string {
 	return ids
 }
 
-func chartSignal(id string, visual semantic.Visual, unit, measure string) map[string]any {
+func visualSignal(id string, visual semantic.Visual, title, unit, format, measure string) map[string]any {
 	seriesList := []string{}
 	if visual.Query.Series != "" {
 		seriesList = append(seriesList, visual.Query.Series)
+	}
+	visualType := visual.Type
+	if visualType == "" && visual.KindOrDefault() == "kpi" {
+		visualType = "kpi"
 	}
 	signal := map[string]any{
 		"version":         3,
@@ -644,9 +657,10 @@ func chartSignal(id string, visual semantic.Visual, unit, measure string) map[st
 		"kind":            visual.KindOrDefault(),
 		"shape":           visual.ShapeOrDefault(),
 		"renderer":        visual.RendererOrDefault(),
-		"type":            visual.Type,
-		"title":           visual.Title,
+		"type":            visualType,
+		"title":           title,
 		"unit":            unit,
+		"format":          format,
 		"field":           visual.Interaction.Field,
 		"dimensions":      visual.Query.Dimensions,
 		"measure":         measure,
@@ -712,12 +726,8 @@ func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, fi
 	switch visual.Kind {
 	case "header":
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, reportHeader(visual))
-	case "kpi_strip":
-		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height,
-			h.Div(h.Class("kpi-band"),
-				g.El("ld-kpi-strip", g.Attr("data-attr:items", "$kpis")),
-			),
-		)
+	case "kpi_card":
+		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, kpiCard(visual.Visual))
 	case "filter_card":
 		return canvasFilterVisual(visual.X, visual.Y, visual.Width, visual.Height,
 			filterCard(visual.Filter, report, filters, action),
@@ -867,13 +877,22 @@ func sortedKeys[T any](items map[string]T) []string {
 }
 
 func chartPanel(visualID string) g.Node {
-	signal := "charts." + visualID
+	signal := "visuals." + visualID
 	return h.Article(h.Class("visual-card"),
 		g.El("ld-echart",
 			g.Attr("visual-id", visualID),
 			g.Attr("data-attr:chart", "$"+signal),
 			g.Attr("data-on:ld-chart-select", "$chartCommand = evt.detail; "+postAction("/commands/chart-select")),
 			g.Attr("data-on:ld-chart-clear-selection", "$filters.visualSelections = []; "+postAction("/commands/clear-selection")),
+		),
+	)
+}
+
+func kpiCard(visualID string) g.Node {
+	return h.Article(h.Class("visual-card"),
+		g.El("ld-kpi-card",
+			g.Attr("visual-id", visualID),
+			g.Attr("data-attr:visual", "$visuals."+visualID),
 		),
 	)
 }

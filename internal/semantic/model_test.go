@@ -182,8 +182,17 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if visuals[0].Kind != "filter_card" || visuals[0].Filter != "purchase_date" {
 		t.Fatalf("first page visual = %#v, want purchase_date filter card", visuals[0])
 	}
-	if got := visuals[2].Width; got != 1334 {
-		t.Fatalf("kpi compiled width = %v, want 1334", got)
+	kpiCards := 0
+	for _, visual := range visuals {
+		if visual.Kind == "kpi_card" {
+			kpiCards++
+			if visual.Width != 321.5 {
+				t.Fatalf("kpi card compiled width = %v, want 321.5", visual.Width)
+			}
+		}
+	}
+	if kpiCards != 4 {
+		t.Fatalf("overview kpi card count = %d, want 4", kpiCards)
 	}
 	if got := report.Filters["purchase_date"].URLParam; got != "period" {
 		t.Fatalf("purchase_date url param = %q, want period", got)
@@ -231,12 +240,13 @@ func TestLoadDashboardRejectsLegacyTopLevelStacked(t *testing.T) {
 title: Executive Sales Dashboard
 semantic_model: olist
 filters: {}
-kpis:
-  total_orders:
-    title: Orders
-    dataset: orders
-    measure: order_count
 visuals:
+  total_orders:
+    kind: kpi
+    shape: single_value
+    dataset: orders
+    query:
+      measures: [order_count]
   revenue:
     title: Revenue
     type: area
@@ -267,6 +277,46 @@ pages:
 	_, err := LoadDashboard(path, model)
 	if err == nil || !strings.Contains(err.Error(), "legacy top-level stacked") {
 		t.Fatalf("LoadDashboard error = %v, want legacy stacked rejection", err)
+	}
+}
+
+func TestLoadDashboardRejectsLegacyKPIs(t *testing.T) {
+	model := loadOlistModel(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dashboard.yaml")
+	content := strings.ReplaceAll(`id: executive-sales
+title: Executive Sales Dashboard
+semantic_model: olist
+filters: {}
+kpis:
+  total_orders:
+    title: Orders
+    dataset: orders
+    measure: order_count
+visuals:
+  revenue:
+    title: Revenue
+    type: area
+    dataset: orders
+    query:
+      dimensions: [purchase_month]
+      measures: [revenue]
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals:
+      - id: revenue
+        kind: area_chart
+        visual: revenue
+        placement: { col: 1, row: 1, col_span: 1, row_span: 1 }
+`, "\t", "  ")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDashboard(path, model)
+	if err == nil || !strings.Contains(err.Error(), "legacy kpis") {
+		t.Fatalf("LoadDashboard error = %v, want legacy kpis rejection", err)
 	}
 }
 
