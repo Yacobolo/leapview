@@ -40,14 +40,14 @@ func (m *DuckDBMetrics) prepareSourceRuntime(ctx context.Context, runtime *model
 	}
 	for _, sourceName := range sortedKeys(runtime.model.Sources) {
 		source := runtime.model.Sources[sourceName]
-		if source.Type != "database" {
+		if source.Kind() != "database" {
 			continue
 		}
 		if _, ok := runtime.attachedConnections[source.Connection]; ok {
 			continue
 		}
 		connection := runtime.model.Connections[source.Connection]
-		stmt, err := compileDatabaseAttach(source.Connection, source.Engine, connection)
+		stmt, err := compileDatabaseAttach(source.Connection, connection)
 		if err != nil {
 			return err
 		}
@@ -59,52 +59,115 @@ func (m *DuckDBMetrics) prepareSourceRuntime(ctx context.Context, runtime *model
 	return nil
 }
 
-func (m *DuckDBMetrics) sourceRelation(source semantic.Source) (string, error) {
-	location := source.Location
-	if source.Type == "file" && source.Location != "" && isLocalSourceLocation(source.Location) {
-		location = filepath.Join(m.dataDir, source.Location)
-	}
-	return compileSourceRelation(location, source)
+type sourcePlan struct {
+	kind       string
+	format     string
+	location   string
+	connection string
+	object     string
+	query      string
+	options    map[string]any
 }
 
-func compileSourceRelation(location string, source semantic.Source) (string, error) {
-	switch source.Type {
-	case "file":
-		switch source.Format {
-		case "csv":
-			return scanRelation("read_csv", location, source.Options)
-		case "json":
-			return scanRelation("read_json", location, source.Options)
-		case "parquet":
-			return scanRelation("read_parquet", location, source.Options)
-		case "excel":
-			return scanRelation("read_xlsx", location, source.Options)
-		default:
-			return "", fmt.Errorf("unsupported file format %q", source.Format)
+func (m *DuckDBMetrics) sourceRelation(model *semantic.Model, source semantic.Source) (string, error) {
+	plan, err := m.resolveSourcePlan(model, source)
+	if err != nil {
+		return "", err
+	}
+	return compileSourceRelation(plan)
+}
+
+func (m *DuckDBMetrics) resolveSourcePlan(model *semantic.Model, source semantic.Source) (sourcePlan, error) {
+	plan := sourcePlan{
+		kind:       source.Kind(),
+		format:     source.Format,
+		connection: source.Connection,
+		object:     source.Object,
+		query:      source.Query,
+		options:    source.Options,
+	}
+	if source.Location == "" {
+		return plan, nil
+	}
+	location, err := m.resolveSourceLocation(model, source)
+	if err != nil {
+		return plan, err
+	}
+	plan.location = location
+	return plan, nil
+}
+
+func (m *DuckDBMetrics) resolveSourceLocation(model *semantic.Model, source semantic.Source) (string, error) {
+	connection := model.Connections[source.Connection]
+	switch connection.Kind {
+	case "local":
+		if filepath.IsAbs(source.Location) {
+			return source.Location, nil
 		}
-	case "lakehouse":
-		switch source.Format {
+		root := connection.Root
+		if root == "" {
+			root = m.dataDir
+		} else if !filepath.IsAbs(root) {
+			root = filepath.Join(m.dataDir, root)
+		}
+		return filepath.Join(root, source.Location), nil
+	default:
+		if connection.Scope == "" {
+			return source.Location, nil
+		}
+		if isLocalSourceLocation(source.Location) {
+			return joinRemoteScope(connection.Scope, source.Location), nil
+		}
+		if !withinRemoteScope(connection.Scope, source.Location) {
+			return "", fmt.Errorf("location %q is outside connection %q scope %q", source.Location, source.Connection, connection.Scope)
+		}
+		return source.Location, nil
+	}
+}
+
+func joinRemoteScope(scope, location string) string {
+	return strings.TrimRight(scope, "/") + "/" + strings.TrimLeft(location, "/")
+}
+
+func withinRemoteScope(scope, location string) bool {
+	scope = strings.TrimRight(scope, "/")
+	location = strings.TrimRight(location, "/")
+	return location == scope || strings.HasPrefix(location, scope+"/")
+}
+
+func compileSourceRelation(plan sourcePlan) (string, error) {
+	switch plan.kind {
+	case "location":
+		switch plan.format {
+		case "csv":
+			return scanRelation("read_csv", plan.location, plan.options)
+		case "json":
+			return scanRelation("read_json", plan.location, plan.options)
+		case "parquet":
+			return scanRelation("read_parquet", plan.location, plan.options)
+		case "excel":
+			return scanRelation("read_xlsx", plan.location, plan.options)
 		case "delta":
-			return scanRelation("delta_scan", location, source.Options)
+			return scanRelation("delta_scan", plan.location, plan.options)
 		case "iceberg":
-			return scanRelation("iceberg_scan", location, source.Options)
+			return scanRelation("iceberg_scan", plan.location, plan.options)
 		default:
-			return "", fmt.Errorf("unsupported lakehouse format %q", source.Format)
+			return "", fmt.Errorf("unsupported source format %q", plan.format)
 		}
 	case "database":
-		object, err := qualifiedSQLName(source.Object)
+		object, err := qualifiedSQLName(plan.object)
 		if err != nil {
 			return "", err
 		}
-		alias, err := databaseAlias(source.Connection)
+		alias, err := databaseAlias(plan.connection)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("SELECT * FROM %s.%s", alias, object), nil
 	case "query":
-		return source.Query, nil
+		return plan.query, nil
 	default:
-		return "", fmt.Errorf("unsupported source type %q", source.Type)
+		return "", fmt.Errorf("unsupported source kind %q", plan.kind)
 	}
 }
 
@@ -187,14 +250,14 @@ func sqlLiteral(value any) string {
 
 func requiredExtensions(model *semantic.Model) []string {
 	extensions := map[string]struct{}{}
-	addConnection := func(connectionType string) {
-		switch connectionType {
+	addConnection := func(kind string) {
+		switch kind {
 		case "s3", "r2", "gcs", "http":
 			extensions["httpfs"] = struct{}{}
-		case "azure":
+		case "azure_blob":
 			extensions["azure"] = struct{}{}
 		case "postgres", "mysql", "sqlite":
-			extensions[connectionType] = struct{}{}
+			extensions[kind] = struct{}{}
 		}
 	}
 	addLocation := func(location string) {
@@ -206,23 +269,34 @@ func requiredExtensions(model *semantic.Model) []string {
 		}
 	}
 	for _, name := range sortedKeys(model.Connections) {
-		addConnection(model.Connections[name].Type)
+		addConnection(model.Connections[name].Kind)
 	}
 	for _, name := range sortedKeys(model.Sources) {
 		source := model.Sources[name]
 		addLocation(source.Location)
-		switch source.Type {
-		case "file":
-			if source.Format == "excel" {
+		switch source.Kind() {
+		case "location":
+			switch source.Format {
+			case "excel":
 				extensions["excel"] = struct{}{}
+			case "delta", "iceberg":
+				extensions[source.Format] = struct{}{}
 			}
-		case "lakehouse":
-			extensions[source.Format] = struct{}{}
 		case "database":
-			extensions[source.Engine] = struct{}{}
+			connection := model.Connections[source.Connection]
+			extensions[connection.Kind] = struct{}{}
 		}
 	}
 	return sortedKeys(extensions)
+}
+
+func duckDBConnectionType(kind string) string {
+	switch kind {
+	case "azure_blob":
+		return "azure"
+	default:
+		return kind
+	}
 }
 
 func compileConnectionSecret(name string, connection semantic.Connection) (string, bool, error) {
@@ -236,7 +310,7 @@ func compileConnectionSecret(name string, connection semantic.Connection) (strin
 	if err != nil {
 		return "", false, err
 	}
-	parts := []string{"TYPE " + connection.Type}
+	parts := []string{"TYPE " + duckDBConnectionType(connection.Kind)}
 	if connection.Auth.Method != "" {
 		if err := validateIdentifier(connection.Auth.Method); err != nil {
 			return "", false, fmt.Errorf("invalid auth method %q: %w", connection.Auth.Method, err)
@@ -264,7 +338,7 @@ func compileConnectionSecret(name string, connection semantic.Connection) (strin
 	return fmt.Sprintf("CREATE OR REPLACE SECRET %s (%s)", secret, strings.Join(parts, ", ")), true, nil
 }
 
-func compileDatabaseAttach(connectionName, engine string, connection semantic.Connection) (string, error) {
+func compileDatabaseAttach(connectionName string, connection semantic.Connection) (string, error) {
 	alias, err := databaseAlias(connectionName)
 	if err != nil {
 		return "", err
@@ -273,7 +347,7 @@ func compileDatabaseAttach(connectionName, engine string, connection semantic.Co
 	if err != nil {
 		return "", err
 	}
-	parts := []string{"TYPE " + engine, "READ_ONLY"}
+	parts := []string{"TYPE " + duckDBConnectionType(connection.Kind), "READ_ONLY"}
 	if secret, ok, err := databaseAttachSecret(connectionName, connection); err != nil {
 		return "", err
 	} else if ok {

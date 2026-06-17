@@ -16,44 +16,37 @@ import (
 
 func TestCompileSourceRelation(t *testing.T) {
 	cases := map[string]struct {
-		location string
-		source   semantic.Source
-		want     string
+		plan sourcePlan
+		want string
 	}{
 		"csv": {
-			location: "/data/orders.csv",
-			source:   semantic.Source{Type: "file", Format: "csv", Options: map[string]any{"header": true, "sample_size": 1000}},
-			want:     "SELECT * FROM read_csv('/data/orders.csv', header = true, sample_size = 1000)",
+			plan: sourcePlan{kind: "location", format: "csv", location: "/data/orders.csv", options: map[string]any{"header": true, "sample_size": 1000}},
+			want: "SELECT * FROM read_csv('/data/orders.csv', header = true, sample_size = 1000)",
 		},
 		"json": {
-			location: "/data/orders.json",
-			source:   semantic.Source{Type: "file", Format: "json", Options: map[string]any{"format": "array"}},
-			want:     "SELECT * FROM read_json('/data/orders.json', format = 'array')",
+			plan: sourcePlan{kind: "location", format: "json", location: "/data/orders.json", options: map[string]any{"format": "array"}},
+			want: "SELECT * FROM read_json('/data/orders.json', format = 'array')",
 		},
 		"parquet": {
-			location: "s3://bucket/orders/*.parquet",
-			source:   semantic.Source{Type: "file", Format: "parquet", Options: map[string]any{"union_by_name": true}},
-			want:     "SELECT * FROM read_parquet('s3://bucket/orders/*.parquet', union_by_name = true)",
+			plan: sourcePlan{kind: "location", format: "parquet", location: "s3://bucket/orders/*.parquet", options: map[string]any{"union_by_name": true}},
+			want: "SELECT * FROM read_parquet('s3://bucket/orders/*.parquet', union_by_name = true)",
 		},
 		"excel": {
-			location: "/data/budget.xlsx",
-			source:   semantic.Source{Type: "file", Format: "excel", Options: map[string]any{"sheet": "FY2026"}},
-			want:     "SELECT * FROM read_xlsx('/data/budget.xlsx', sheet = 'FY2026')",
+			plan: sourcePlan{kind: "location", format: "excel", location: "/data/budget.xlsx", options: map[string]any{"sheet": "FY2026"}},
+			want: "SELECT * FROM read_xlsx('/data/budget.xlsx', sheet = 'FY2026')",
 		},
 		"delta": {
-			location: "az://warehouse/orders",
-			source:   semantic.Source{Type: "lakehouse", Format: "delta"},
-			want:     "SELECT * FROM delta_scan('az://warehouse/orders')",
+			plan: sourcePlan{kind: "location", format: "delta", location: "az://warehouse/orders"},
+			want: "SELECT * FROM delta_scan('az://warehouse/orders')",
 		},
 		"iceberg": {
-			location: "s3://warehouse/orders/metadata/v1.metadata.json",
-			source:   semantic.Source{Type: "lakehouse", Format: "iceberg", Options: map[string]any{"allow_moved_paths": true}},
-			want:     "SELECT * FROM iceberg_scan('s3://warehouse/orders/metadata/v1.metadata.json', allow_moved_paths = true)",
+			plan: sourcePlan{kind: "location", format: "iceberg", location: "s3://warehouse/orders/metadata/v1.metadata.json", options: map[string]any{"allow_moved_paths": true}},
+			want: "SELECT * FROM iceberg_scan('s3://warehouse/orders/metadata/v1.metadata.json', allow_moved_paths = true)",
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			relation, err := compileSourceRelation(tc.location, tc.source)
+			relation, err := compileSourceRelation(tc.plan)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,12 +58,7 @@ func TestCompileSourceRelation(t *testing.T) {
 
 	var relation string
 	var err error
-	relation, err = compileSourceRelation("", semantic.Source{
-		Type:       "database",
-		Engine:     "postgres",
-		Connection: "crm",
-		Object:     "public.accounts",
-	})
+	relation, err = compileSourceRelation(sourcePlan{kind: "database", connection: "crm", object: "public.accounts"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +66,7 @@ func TestCompileSourceRelation(t *testing.T) {
 		t.Fatalf("database relation = %q, want %q", relation, want)
 	}
 
-	relation, err = compileSourceRelation("", semantic.Source{Type: "query", Query: "SELECT 1 AS id"})
+	relation, err = compileSourceRelation(sourcePlan{kind: "query", query: "SELECT 1 AS id"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +74,7 @@ func TestCompileSourceRelation(t *testing.T) {
 		t.Fatalf("query relation = %q, want trusted query passthrough", relation)
 	}
 
-	_, err = compileSourceRelation("/data/orders.csv", semantic.Source{Type: "file", Format: "csv", Options: map[string]any{"bad-key": true}})
+	_, err = compileSourceRelation(sourcePlan{kind: "location", format: "csv", location: "/data/orders.csv", options: map[string]any{"bad-key": true}})
 	if err == nil || !strings.Contains(err.Error(), "invalid source option") {
 		t.Fatalf("invalid option error = %v, want invalid source option", err)
 	}
@@ -94,7 +82,7 @@ func TestCompileSourceRelation(t *testing.T) {
 
 func TestCompileConnectionSecret(t *testing.T) {
 	stmt, ok, err := compileConnectionSecret("prod_lake", semantic.Connection{
-		Type:  "s3",
+		Kind:  "s3",
 		Scope: "s3://analytics-prod/",
 		Auth:  semantic.ConnectionAuth{Method: "credential_chain", Profile: "analytics", Params: map[string]any{"region": "us-east-1"}},
 	})
@@ -110,7 +98,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 	}
 
 	stmt, ok, err = compileConnectionSecret("azure_lake", semantic.Connection{
-		Type: "azure",
+		Kind: "azure_blob",
 		Auth: semantic.ConnectionAuth{Method: "credential_chain", Account: "mystorageaccount"},
 	})
 	if err != nil {
@@ -121,7 +109,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 		t.Fatalf("azure secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
 
-	stmt, ok, err = compileConnectionSecret("crm", semantic.Connection{Type: "postgres", Secret: "crm_readonly"})
+	stmt, ok, err = compileConnectionSecret("crm", semantic.Connection{Kind: "postgres", Secret: "crm_readonly"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,29 +120,25 @@ func TestCompileConnectionSecret(t *testing.T) {
 
 func TestCompileDatabaseAttach(t *testing.T) {
 	cases := map[string]struct {
-		engine     string
 		connection semantic.Connection
 		want       string
 	}{
 		"postgres_existing_secret": {
-			engine:     "postgres",
-			connection: semantic.Connection{Type: "postgres", Secret: "crm_readonly"},
+			connection: semantic.Connection{Kind: "postgres", Secret: "crm_readonly"},
 			want:       "ATTACH '' AS conn_crm (TYPE postgres, READ_ONLY, SECRET crm_readonly)",
 		},
 		"mysql_uri": {
-			engine:     "mysql",
-			connection: semantic.Connection{Type: "mysql", Options: map[string]any{"connection_string": "host=localhost database=sales"}},
+			connection: semantic.Connection{Kind: "mysql", Options: map[string]any{"connection_string": "host=localhost database=sales"}},
 			want:       "ATTACH 'host=localhost database=sales' AS conn_crm (TYPE mysql, READ_ONLY)",
 		},
 		"sqlite_path": {
-			engine:     "sqlite",
-			connection: semantic.Connection{Type: "sqlite", Options: map[string]any{"path": "/tmp/source.sqlite"}},
+			connection: semantic.Connection{Kind: "sqlite", Options: map[string]any{"path": "/tmp/source.sqlite"}},
 			want:       "ATTACH '/tmp/source.sqlite' AS conn_crm (TYPE sqlite, READ_ONLY)",
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			stmt, err := compileDatabaseAttach("crm", tc.engine, tc.connection)
+			stmt, err := compileDatabaseAttach("crm", tc.connection)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -168,18 +152,85 @@ func TestCompileDatabaseAttach(t *testing.T) {
 func TestRequiredExtensions(t *testing.T) {
 	model := &semantic.Model{
 		Connections: map[string]semantic.Connection{
-			"lake": {Type: "s3"},
-			"crm":  {Type: "postgres"},
+			"lake":  {Kind: "s3"},
+			"azure": {Kind: "azure_blob"},
+			"crm":   {Kind: "postgres"},
 		},
 		Sources: map[string]semantic.Source{
-			"events":   {Type: "file", Format: "parquet", Location: "s3://bucket/events/*.parquet", Connection: "lake"},
-			"budget":   {Type: "file", Format: "excel", Location: "budget.xlsx"},
-			"orders":   {Type: "lakehouse", Format: "delta", Location: "az://warehouse/orders"},
-			"accounts": {Type: "database", Engine: "postgres", Connection: "crm", Object: "public.accounts"},
+			"events":   {Format: "parquet", Location: "s3://bucket/events/*.parquet", Connection: "lake"},
+			"budget":   {Format: "excel", Location: "budget.xlsx", Connection: "lake"},
+			"orders":   {Format: "delta", Location: "az://warehouse/orders", Connection: "azure"},
+			"accounts": {Connection: "crm", Object: "public.accounts"},
 		},
 	}
 	if got := strings.Join(requiredExtensions(model), ","); got != "azure,delta,excel,httpfs,postgres" {
 		t.Fatalf("required extensions = %q, want azure,delta,excel,httpfs,postgres", got)
+	}
+}
+
+func TestDuckDBMetricsResolvesSourcePlans(t *testing.T) {
+	dir := t.TempDir()
+	model := &semantic.Model{
+		Name:              "test",
+		DefaultConnection: "local_files",
+		Connections: map[string]semantic.Connection{
+			"local_files": {
+				Kind: "local",
+				Root: "fixtures",
+				Defaults: semantic.ConnectionDefaults{
+					Options: map[string]any{"header": true},
+				},
+			},
+			"prod_lake": {Kind: "s3", Scope: "s3://analytics-prod/"},
+			"azure":     {Kind: "azure_blob", Scope: "az://warehouse/"},
+		},
+		Sources: map[string]semantic.Source{
+			"orders": {Location: "orders.csv"},
+			"events": {Connection: "prod_lake", Location: "events/*", Format: "parquet"},
+			"delta":  {Connection: "azure", Location: "tables/orders", Format: "delta"},
+		},
+		Cache: semantic.Cache{Tables: map[string]semantic.CacheTable{
+			"orders_cache": {SQL: "SELECT * FROM raw.orders"},
+		}},
+		Datasets: map[string]semantic.Dataset{
+			"orders": {Source: "orders_cache"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	metrics := &DuckDBMetrics{dataDir: dir}
+
+	relation, err := metrics.sourceRelation(model, model.Sources["orders"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLocal := "SELECT * FROM read_csv('" + sqlString(filepath.Join(dir, "fixtures", "orders.csv")) + "', header = true)"
+	if relation != wantLocal {
+		t.Fatalf("local relation = %q, want %q", relation, wantLocal)
+	}
+
+	relation, err = metrics.sourceRelation(model, model.Sources["events"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "SELECT * FROM read_parquet('s3://analytics-prod/events/*')"; relation != want {
+		t.Fatalf("remote relation = %q, want %q", relation, want)
+	}
+
+	relation, err = metrics.sourceRelation(model, model.Sources["delta"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "SELECT * FROM delta_scan('az://warehouse/tables/orders')"; relation != want {
+		t.Fatalf("delta relation = %q, want %q", relation, want)
+	}
+
+	bad := model.Sources["events"]
+	bad.Location = "s3://other-bucket/events/*"
+	_, err = metrics.sourceRelation(model, bad)
+	if err == nil || !strings.Contains(err.Error(), "outside connection") {
+		t.Fatalf("mismatched remote location error = %v, want outside connection", err)
 	}
 }
 
@@ -196,16 +247,22 @@ func TestDuckDBMetricsRegistersCSVAndQuerySources(t *testing.T) {
 	runtime := &modelRuntime{
 		db: db,
 		model: &semantic.Model{
-			Name: "test",
+			Name:              "test",
+			DefaultConnection: "local_files",
+			Connections: map[string]semantic.Connection{
+				"local_files": {
+					Kind:     "local",
+					Defaults: semantic.ConnectionDefaults{Format: "csv", Options: map[string]any{"header": true}},
+				},
+			},
 			Sources: map[string]semantic.Source{
 				"orders": {
-					Type:     "file",
-					Format:   "csv",
-					Location: "orders.csv",
-					Options:  map[string]any{"header": true},
+					Format:     "csv",
+					Location:   "orders.csv",
+					Connection: "local_files",
+					Options:    map[string]any{"header": true},
 				},
 				"targets": {
-					Type:  "query",
 					Query: "SELECT 'o1' AS order_id, 100::DOUBLE AS target",
 				},
 			},
@@ -276,10 +333,10 @@ func TestDuckDBMetricsRegistersDatabaseSourceTwice(t *testing.T) {
 		model: &semantic.Model{
 			Name: "test",
 			Connections: map[string]semantic.Connection{
-				"crm": {Type: "sqlite", Options: map[string]any{"path": sourcePath}},
+				"crm": {Kind: "sqlite", Options: map[string]any{"path": sourcePath}},
 			},
 			Sources: map[string]semantic.Source{
-				"accounts": {Type: "database", Engine: "sqlite", Connection: "crm", Object: "accounts"},
+				"accounts": {Connection: "crm", Object: "accounts"},
 			},
 			Cache: semantic.Cache{Tables: map[string]semantic.CacheTable{
 				"accounts": {SQL: "SELECT * FROM raw.accounts"},
@@ -305,12 +362,39 @@ func TestDuckDBMetricsRegistersDatabaseSourceTwice(t *testing.T) {
 
 func TestDuckDBMetricsValidateFilesIgnoresRemoteAndQuerySources(t *testing.T) {
 	metrics := &DuckDBMetrics{dataDir: t.TempDir()}
-	runtime := &modelRuntime{model: &semantic.Model{Sources: map[string]semantic.Source{
-		"events":  {Type: "file", Format: "parquet", Location: "s3://bucket/events/*.parquet"},
-		"targets": {Type: "query", Query: "SELECT 1 AS id"},
-	}}}
+	runtime := &modelRuntime{model: &semantic.Model{
+		Connections: map[string]semantic.Connection{
+			"lake": {Kind: "s3"},
+		},
+		Sources: map[string]semantic.Source{
+			"events":  {Format: "parquet", Location: "s3://bucket/events/*.parquet", Connection: "lake"},
+			"targets": {Query: "SELECT 1 AS id"},
+		},
+	}}
 	if err := metrics.validateFiles(runtime); err != nil {
 		t.Fatalf("validate files = %v, want nil", err)
+	}
+}
+
+func TestDuckDBMetricsValidateFilesUsesLocalConnectionRoot(t *testing.T) {
+	dir := t.TempDir()
+	model := &semantic.Model{
+		Connections: map[string]semantic.Connection{
+			"local_files": {Kind: "local", Root: "fixtures"},
+		},
+		Sources: map[string]semantic.Source{
+			"orders": {Format: "csv", Location: "orders.csv", Connection: "local_files"},
+		},
+	}
+	metrics := &DuckDBMetrics{dataDir: dir}
+	err := metrics.validateFiles(&modelRuntime{model: model})
+	var missing *MissingDataError
+	if !errors.As(err, &missing) {
+		t.Fatalf("validate files error = %v, want MissingDataError", err)
+	}
+	want := filepath.Join(dir, "fixtures", "orders.csv")
+	if len(missing.Missing) != 1 || missing.Missing[0] != want {
+		t.Fatalf("missing files = %#v, want %q", missing.Missing, want)
 	}
 }
 

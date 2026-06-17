@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"regexp"
@@ -13,22 +14,29 @@ import (
 var semanticIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 type Model struct {
-	Name           string                `yaml:"name"`
-	Title          string                `yaml:"title"`
-	Description    string                `yaml:"description"`
-	Connections    map[string]Connection `yaml:"connections"`
-	SourceDefaults Source                `yaml:"source_defaults"`
-	Sources        map[string]Source     `yaml:"sources"`
-	Cache          Cache                 `yaml:"cache"`
-	Datasets       map[string]Dataset    `yaml:"datasets"`
-	Relationships  []Relationship        `yaml:"relationships"`
+	Name              string                `yaml:"name"`
+	Title             string                `yaml:"title"`
+	Description       string                `yaml:"description"`
+	DefaultConnection string                `yaml:"default_connection"`
+	Connections       map[string]Connection `yaml:"connections"`
+	Sources           map[string]Source     `yaml:"sources"`
+	Cache             Cache                 `yaml:"cache"`
+	Datasets          map[string]Dataset    `yaml:"datasets"`
+	Relationships     []Relationship        `yaml:"relationships"`
 }
 
 type Connection struct {
-	Type    string         `yaml:"type"`
-	Secret  string         `yaml:"secret"`
-	Scope   string         `yaml:"scope"`
-	Auth    ConnectionAuth `yaml:"auth"`
+	Kind     string             `yaml:"kind"`
+	Root     string             `yaml:"root"`
+	Secret   string             `yaml:"secret"`
+	Scope    string             `yaml:"scope"`
+	Auth     ConnectionAuth     `yaml:"auth"`
+	Options  map[string]any     `yaml:"options"`
+	Defaults ConnectionDefaults `yaml:"defaults"`
+}
+
+type ConnectionDefaults struct {
+	Format  string         `yaml:"format"`
 	Options map[string]any `yaml:"options"`
 }
 
@@ -41,28 +49,12 @@ type ConnectionAuth struct {
 }
 
 type Source struct {
-	Type       string         `yaml:"type"`
 	Format     string         `yaml:"format"`
 	Location   string         `yaml:"location"`
 	Connection string         `yaml:"connection"`
-	Engine     string         `yaml:"engine"`
 	Object     string         `yaml:"object"`
 	Query      string         `yaml:"query"`
 	Options    map[string]any `yaml:"options"`
-}
-
-func (s *Source) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind == yaml.ScalarNode && value.Tag == "!!str" {
-		s.Location = value.Value
-		return nil
-	}
-	type source Source
-	var decoded source
-	if err := value.Decode(&decoded); err != nil {
-		return err
-	}
-	*s = Source(decoded)
-	return nil
 }
 
 type Cache struct {
@@ -113,12 +105,14 @@ type Relationship struct {
 }
 
 func Load(path string) (*Model, error) {
-	bytes, err := os.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	var model Model
-	if err := yaml.Unmarshal(bytes, &model); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&model); err != nil {
 		return nil, err
 	}
 	if err := model.Validate(); err != nil {
@@ -128,7 +122,6 @@ func Load(path string) (*Model, error) {
 }
 
 func (m *Model) Validate() error {
-	m.applySourceDefaults()
 	if m.Name == "" {
 		return fmt.Errorf("semantic model name is required")
 	}
@@ -143,10 +136,23 @@ func (m *Model) Validate() error {
 			return err
 		}
 	}
+	if m.DefaultConnection != "" {
+		if err := validateSemanticIdentifier(m.DefaultConnection); err != nil {
+			return fmt.Errorf("default_connection %q is invalid: %w", m.DefaultConnection, err)
+		}
+		if _, ok := m.Connections[m.DefaultConnection]; !ok {
+			return fmt.Errorf("default_connection %q references unknown connection", m.DefaultConnection)
+		}
+	}
 	for name, source := range m.Sources {
-		if err := source.Validate(name, m.Connections); err != nil {
+		resolved, err := m.resolveSource(source)
+		if err != nil {
+			return fmt.Errorf("source %q: %w", name, err)
+		}
+		if err := resolved.Validate(name, m.Connections); err != nil {
 			return err
 		}
+		m.Sources[name] = resolved
 	}
 	for name, table := range m.Cache.Tables {
 		if table.SQL == "" {
@@ -177,48 +183,47 @@ func (m *Model) Validate() error {
 	return nil
 }
 
-func (m *Model) applySourceDefaults() {
-	if len(m.Sources) == 0 {
-		return
-	}
-	for name, source := range m.Sources {
-		m.Sources[name] = applySourceDefault(source, m.SourceDefaults)
-	}
-}
-
-func applySourceDefault(source, defaults Source) Source {
-	if source.Type == "" {
-		source.Type = defaults.Type
-	}
-	if source.Format == "" {
-		source.Format = defaults.Format
-	}
-	if source.Location == "" {
-		source.Location = defaults.Location
-	}
-	if source.Connection == "" {
-		source.Connection = defaults.Connection
-	}
-	if source.Engine == "" {
-		source.Engine = defaults.Engine
-	}
-	if source.Object == "" {
-		source.Object = defaults.Object
-	}
-	if source.Query == "" {
-		source.Query = defaults.Query
-	}
-	if len(defaults.Options) > 0 {
-		options := make(map[string]any, len(defaults.Options)+len(source.Options))
-		for key, value := range defaults.Options {
-			options[key] = value
+func (m *Model) resolveSource(source Source) (Source, error) {
+	switch source.Kind() {
+	case "query":
+		return source, nil
+	case "location", "database":
+		if source.Connection == "" {
+			source.Connection = m.DefaultConnection
 		}
-		for key, value := range source.Options {
-			options[key] = value
+		if source.Connection == "" {
+			return source, fmt.Errorf("requires connection")
 		}
-		source.Options = options
+		connection, ok := m.Connections[source.Connection]
+		if !ok {
+			return source, fmt.Errorf("references unknown connection %q", source.Connection)
+		}
+		if source.Location != "" {
+			if source.Format == "" {
+				source.Format = connection.Defaults.Format
+			}
+			if len(connection.Defaults.Options) > 0 {
+				options := make(map[string]any, len(connection.Defaults.Options)+len(source.Options))
+				for key, value := range connection.Defaults.Options {
+					options[key] = value
+				}
+				for key, value := range source.Options {
+					options[key] = value
+				}
+				source.Options = options
+			}
+			if source.Format == "" {
+				format, ok := inferSourceFormat(source.Location)
+				if !ok {
+					return source, fmt.Errorf("location %q requires format", source.Location)
+				}
+				source.Format = format
+			}
+		}
+		return source, nil
+	default:
+		return source, nil
 	}
-	return source
 }
 
 func LoadMetricView(path string, model *Model) (*MetricView, error) {
@@ -274,65 +279,62 @@ func (v *MetricView) Validate(model *Model) error {
 	return nil
 }
 
-func (m *Model) SourceFiles() map[string]string {
-	files := make(map[string]string, len(m.Sources))
-	for name, source := range m.Sources {
-		if source.Type == "file" && isLocalLocation(source.Location) {
-			files[name] = source.Location
-		}
-	}
-	return files
-}
-
 func (s Source) Validate(name string, connections map[string]Connection) error {
 	if err := validateSemanticIdentifier(name); err != nil {
 		return fmt.Errorf("source %q has invalid name: %w", name, err)
-	}
-	if s.Type == "" {
-		return fmt.Errorf("source %q requires type", name)
 	}
 	for key := range s.Options {
 		if err := validateSemanticIdentifier(key); err != nil {
 			return fmt.Errorf("source %q option %q is invalid: %w", name, key, err)
 		}
 	}
-	switch s.Type {
-	case "file":
-		if s.Format == "" || s.Location == "" {
-			return fmt.Errorf("source %q type file requires format and location", name)
+	switch s.Kind() {
+	case "location":
+		if s.Connection == "" {
+			return fmt.Errorf("source %q requires connection", name)
 		}
-		if !supportsFileFormat(s.Format) {
-			return fmt.Errorf("source %q has unsupported file format %q", name, s.Format)
-		}
-	case "lakehouse":
-		if s.Format == "" || s.Location == "" {
-			return fmt.Errorf("source %q type lakehouse requires format and location", name)
-		}
-		if !supportsLakehouseFormat(s.Format) {
-			return fmt.Errorf("source %q has unsupported lakehouse format %q", name, s.Format)
-		}
-	case "database":
-		if s.Engine == "" || s.Connection == "" || s.Object == "" {
-			return fmt.Errorf("source %q type database requires engine, connection, and object", name)
-		}
-		if !supportsDatabaseEngine(s.Engine) {
-			return fmt.Errorf("source %q has unsupported database engine %q", name, s.Engine)
-		}
-	case "query":
-		if s.Query == "" {
-			return fmt.Errorf("source %q type query requires query", name)
-		}
-	default:
-		return fmt.Errorf("source %q has unsupported type %q", name, s.Type)
-	}
-	if s.Connection != "" {
 		connection, ok := connections[s.Connection]
 		if !ok {
 			return fmt.Errorf("source %q references unknown connection %q", name, s.Connection)
 		}
-		if s.Type == "database" && connection.Type != s.Engine {
-			return fmt.Errorf("source %q database engine %q does not match connection %q type %q", name, s.Engine, s.Connection, connection.Type)
+		if !supportsLocationConnection(connection.Kind) {
+			return fmt.Errorf("source %q location cannot use %s connection %q", name, connection.Kind, s.Connection)
 		}
+		if connection.Kind == "local" && !isLocalLocation(s.Location) {
+			return fmt.Errorf("source %q local connection %q cannot use remote location %q", name, s.Connection, s.Location)
+		}
+		if isRemoteConnection(connection.Kind) && isLocalLocation(s.Location) && connection.Scope == "" {
+			return fmt.Errorf("source %q remote connection %q requires scope for relative location %q", name, s.Connection, s.Location)
+		}
+		if s.Format == "" {
+			return fmt.Errorf("source %q location requires format", name)
+		}
+		if !supportsSourceFormat(s.Format) {
+			return fmt.Errorf("source %q has unsupported format %q", name, s.Format)
+		}
+	case "database":
+		if s.Connection == "" {
+			return fmt.Errorf("source %q database object requires connection", name)
+		}
+		if s.Format != "" || len(s.Options) > 0 {
+			return fmt.Errorf("source %q database object cannot set format or options", name)
+		}
+		connection, ok := connections[s.Connection]
+		if !ok {
+			return fmt.Errorf("source %q references unknown connection %q", name, s.Connection)
+		}
+		if !supportsDatabaseConnection(connection.Kind) {
+			return fmt.Errorf("source %q object cannot use %s connection %q", name, connection.Kind, s.Connection)
+		}
+	case "query":
+		if s.Query == "" {
+			return fmt.Errorf("source %q query requires query", name)
+		}
+		if s.Connection != "" || s.Location != "" || s.Object != "" || s.Format != "" || len(s.Options) > 0 {
+			return fmt.Errorf("source %q query cannot set connection, location, object, format, or options", name)
+		}
+	default:
+		return fmt.Errorf("source %q requires exactly one of location, object, or query", name)
 	}
 	return nil
 }
@@ -341,11 +343,11 @@ func (c Connection) Validate(name string) error {
 	if err := validateSemanticIdentifier(name); err != nil {
 		return fmt.Errorf("connection %q has invalid name: %w", name, err)
 	}
-	if c.Type == "" {
-		return fmt.Errorf("connection %q requires type", name)
+	if c.Kind == "" {
+		return fmt.Errorf("connection %q requires kind", name)
 	}
-	if !supportsConnectionType(c.Type) {
-		return fmt.Errorf("connection %q has unsupported type %q", name, c.Type)
+	if !supportsConnectionKind(c.Kind) {
+		return fmt.Errorf("connection %q has unsupported kind %q", name, c.Kind)
 	}
 	if c.Secret != "" {
 		if err := validateSemanticIdentifier(c.Secret); err != nil {
@@ -365,37 +367,65 @@ func (c Connection) Validate(name string) error {
 			return fmt.Errorf("connection %q has unsupported option %q", name, key)
 		}
 	}
+	if c.Defaults.Format != "" && !supportsSourceFormat(c.Defaults.Format) {
+		return fmt.Errorf("connection %q has unsupported default format %q", name, c.Defaults.Format)
+	}
+	for key := range c.Defaults.Options {
+		if err := validateSemanticIdentifier(key); err != nil {
+			return fmt.Errorf("connection %q default option %q is invalid: %w", name, key, err)
+		}
+	}
 	return nil
 }
 
 func (s Source) Description() string {
-	switch s.Type {
-	case "file":
+	switch s.Kind() {
+	case "location":
+		if supportsLakehouseFormat(s.Format) {
+			return s.Format + " table: " + s.Location
+		}
 		return s.Format + " file: " + s.Location
-	case "lakehouse":
-		return s.Format + " table: " + s.Location
 	case "database":
-		return s.Engine + " table: " + s.Object
+		return "database object: " + s.Object
 	case "query":
 		return "trusted query source"
 	default:
-		return s.Type
+		return "source"
 	}
 }
 
 func (s Source) Role() string {
-	switch s.Type {
-	case "file":
-		return s.Format
-	case "lakehouse":
+	switch s.Kind() {
+	case "location":
 		return s.Format
 	case "database":
-		return s.Engine
+		return "database"
 	case "query":
 		return "query"
 	default:
-		return s.Type
+		return "source"
 	}
+}
+
+func (s Source) Kind() string {
+	count := 0
+	kind := ""
+	if s.Location != "" {
+		count++
+		kind = "location"
+	}
+	if s.Object != "" {
+		count++
+		kind = "database"
+	}
+	if s.Query != "" {
+		count++
+		kind = "query"
+	}
+	if count != 1 {
+		return ""
+	}
+	return kind
 }
 
 func isLocalLocation(location string) bool {
@@ -407,9 +437,9 @@ func isLocalLocation(location string) bool {
 	return !strings.Contains(location, "://")
 }
 
-func supportsConnectionType(connectionType string) bool {
-	switch connectionType {
-	case "s3", "r2", "gcs", "azure", "http", "postgres", "mysql", "sqlite":
+func supportsConnectionKind(kind string) bool {
+	switch kind {
+	case "local", "s3", "r2", "gcs", "http", "azure_blob", "postgres", "mysql", "sqlite":
 		return true
 	default:
 		return false
@@ -459,13 +489,55 @@ func supportsLakehouseFormat(format string) bool {
 	}
 }
 
-func supportsDatabaseEngine(engine string) bool {
-	switch engine {
+func supportsSourceFormat(format string) bool {
+	return supportsFileFormat(format) || supportsLakehouseFormat(format)
+}
+
+func supportsLocationConnection(kind string) bool {
+	switch kind {
+	case "local", "s3", "r2", "gcs", "http", "azure_blob":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportsDatabaseConnection(kind string) bool {
+	switch kind {
 	case "postgres", "mysql", "sqlite":
 		return true
 	default:
 		return false
 	}
+}
+
+func isRemoteConnection(kind string) bool {
+	return supportsLocationConnection(kind) && kind != "local"
+}
+
+func inferSourceFormat(location string) (string, bool) {
+	switch strings.ToLower(filepathExt(location)) {
+	case ".csv":
+		return "csv", true
+	case ".json", ".jsonl":
+		return "json", true
+	case ".parquet":
+		return "parquet", true
+	case ".xlsx":
+		return "excel", true
+	default:
+		return "", false
+	}
+}
+
+func filepathExt(location string) string {
+	if index := strings.LastIndexAny(location, `/\`); index >= 0 {
+		location = location[index+1:]
+	}
+	if index := strings.LastIndex(location, "."); index >= 0 {
+		return location[index:]
+	}
+	return ""
 }
 
 func (m *Model) CacheTableNames() []string {

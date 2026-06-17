@@ -100,11 +100,17 @@ func TestLoadOlistModel(t *testing.T) {
 	if len(model.Sources) != 7 {
 		t.Fatalf("source count = %d, want 7", len(model.Sources))
 	}
-	if got := model.Sources["orders"].Type; got != "file" {
-		t.Fatalf("orders source type = %q, want file", got)
+	if got := model.DefaultConnection; got != "olist" {
+		t.Fatalf("default connection = %q, want olist", got)
+	}
+	if got := model.Connections["olist"].Kind; got != "local" {
+		t.Fatalf("olist connection kind = %q, want local", got)
 	}
 	if got := model.Sources["orders"].Format; got != "csv" {
 		t.Fatalf("orders source format = %q, want csv", got)
+	}
+	if got := model.Sources["orders"].Connection; got != "olist" {
+		t.Fatalf("orders source connection = %q, want olist", got)
 	}
 	if got := model.Sources["orders"].Location; got != "olist_orders_dataset.csv" {
 		t.Fatalf("orders source location = %q, want olist_orders_dataset.csv", got)
@@ -119,48 +125,48 @@ func TestLoadOlistModel(t *testing.T) {
 
 func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 	model := minimalSourceModel()
+	model.DefaultConnection = "local_files"
 	model.Connections = map[string]Connection{
+		"local_files": {
+			Kind: "local",
+			Defaults: ConnectionDefaults{
+				Format:  "csv",
+				Options: map[string]any{"header": true},
+			},
+		},
 		"prod_lake": {
-			Type:  "s3",
+			Kind:  "s3",
 			Scope: "s3://analytics-prod/",
 			Auth:  ConnectionAuth{Method: "credential_chain", Profile: "analytics"},
 		},
 		"azure_lake": {
-			Type: "azure",
+			Kind: "azure_blob",
 			Auth: ConnectionAuth{Method: "credential_chain", Account: "mystorageaccount"},
 		},
 		"crm": {
-			Type:   "postgres",
+			Kind:   "postgres",
 			Secret: "crm_readonly",
 		},
 	}
 	model.Sources = map[string]Source{
 		"orders": {
-			Type:     "file",
-			Format:   "csv",
 			Location: "olist_orders_dataset.csv",
-			Options:  map[string]any{"header": true},
 		},
 		"sales_events": {
-			Type:       "file",
 			Format:     "parquet",
-			Location:   "s3://analytics-prod/events/*.parquet",
+			Location:   "events/*",
 			Connection: "prod_lake",
 		},
 		"delta_orders": {
-			Type:       "lakehouse",
 			Format:     "delta",
 			Location:   "az://warehouse/tables/orders",
 			Connection: "azure_lake",
 		},
 		"crm_accounts": {
-			Type:       "database",
-			Engine:     "postgres",
 			Connection: "crm",
 			Object:     "public.accounts",
 		},
 		"custom": {
-			Type:  "query",
 			Query: "SELECT 1 AS id",
 		},
 	}
@@ -168,124 +174,94 @@ func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 	if err := model.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
-}
-
-func TestModelValidateAppliesSourceDefaults(t *testing.T) {
-	model := minimalSourceModel()
-	model.SourceDefaults = Source{
-		Type:    "file",
-		Format:  "csv",
-		Options: map[string]any{"header": true, "sample_size": 1000},
-	}
-	model.Sources = map[string]Source{
-		"orders":   {Location: "orders.csv"},
-		"products": {Location: "products.csv", Options: map[string]any{"sample_size": 2000}},
-	}
-
-	if err := model.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v, want nil", err)
-	}
-	if got := model.Sources["orders"].Type; got != "file" {
-		t.Fatalf("orders source type = %q, want file", got)
-	}
 	if got := model.Sources["orders"].Format; got != "csv" {
 		t.Fatalf("orders source format = %q, want csv", got)
 	}
 	if got := model.Sources["orders"].Options["header"]; got != true {
 		t.Fatalf("orders header option = %#v, want true", got)
 	}
-	if got := model.Sources["products"].Options["sample_size"]; got != 2000 {
-		t.Fatalf("products sample_size option = %#v, want 2000", got)
-	}
 }
 
-func TestLoadModelAcceptsScalarSourceLocations(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "model.yaml")
-	content := strings.ReplaceAll(`name: test
-title: Test
-source_defaults:
-  type: file
-  format: csv
-  options:
-    header: true
-sources:
-  orders: orders.csv
-cache:
-  tables:
-    orders_cache:
-      sql: SELECT * FROM raw.orders
-datasets:
-  orders:
-    source: orders_cache
-`, "\t", "  ")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
+func TestModelValidateInfersFileFormats(t *testing.T) {
+	cases := map[string]struct {
+		location string
+		want     string
+	}{
+		"csv":     {location: "orders.csv", want: "csv"},
+		"json":    {location: "orders.json", want: "json"},
+		"jsonl":   {location: "orders.jsonl", want: "json"},
+		"parquet": {location: "orders.parquet", want: "parquet"},
+		"excel":   {location: "orders.xlsx", want: "excel"},
 	}
-
-	model, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := model.Sources["orders"]
-	if source.Type != "file" || source.Format != "csv" || source.Location != "orders.csv" {
-		t.Fatalf("orders source = %#v, want csv file orders.csv", source)
-	}
-	if got := source.Options["header"]; got != true {
-		t.Fatalf("orders header option = %#v, want true", got)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			model := minimalSourceModel()
+			model.Connections["local_files"] = Connection{Kind: "local"}
+			model.Sources = map[string]Source{"orders": {Location: tc.location}}
+			if err := model.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			if got := model.Sources["orders"].Format; got != tc.want {
+				t.Fatalf("format = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestModelValidateRejectsInvalidSources(t *testing.T) {
 	cases := map[string]struct {
-		source   Source
-		contains string
+		source    Source
+		contains  string
+		noDefault bool
 	}{
-		"missing_type": {
-			source:   Source{Format: "csv", Location: "orders.csv"},
-			contains: "requires type",
+		"missing_source_shape": {
+			source:   Source{Format: "csv"},
+			contains: "exactly one of location, object, or query",
 		},
-		"file_missing_format": {
-			source:   Source{Type: "file", Location: "orders.csv"},
-			contains: "requires format and location",
+		"multiple_source_shapes": {
+			source:   Source{Location: "orders.csv", Object: "public.orders"},
+			contains: "exactly one of location, object, or query",
 		},
-		"file_bad_format": {
-			source:   Source{Type: "file", Format: "orc", Location: "orders.orc"},
-			contains: "unsupported file format",
+		"location_bad_format": {
+			source:   Source{Format: "orc", Location: "orders.orc", Connection: "local_files"},
+			contains: "unsupported format",
 		},
-		"lakehouse_bad_format": {
-			source:   Source{Type: "lakehouse", Format: "hudi", Location: "s3://bucket/table"},
-			contains: "unsupported lakehouse format",
+		"ambiguous_location_missing_format": {
+			source:   Source{Location: "events/*", Connection: "local_files"},
+			contains: "requires format",
 		},
-		"database_missing_fields": {
-			source:   Source{Type: "database", Engine: "postgres", Connection: "crm"},
-			contains: "requires engine, connection, and object",
+		"database_missing_connection": {
+			source:    Source{Object: "public.accounts"},
+			contains:  "requires connection",
+			noDefault: true,
 		},
-		"database_bad_engine": {
-			source:   Source{Type: "database", Engine: "oracle", Connection: "crm", Object: "public.accounts"},
-			contains: "unsupported database engine",
-		},
-		"query_missing_query": {
-			source:   Source{Type: "query"},
-			contains: "requires query",
+		"database_wrong_connection_kind": {
+			source:   Source{Connection: "local_files", Object: "public.accounts"},
+			contains: "object cannot use local connection",
 		},
 		"unknown_connection": {
-			source:   Source{Type: "file", Format: "parquet", Location: "s3://bucket/*.parquet", Connection: "missing"},
+			source:   Source{Format: "parquet", Location: "s3://bucket/*.parquet", Connection: "missing"},
 			contains: "unknown connection",
 		},
-		"database_connection_type_mismatch": {
-			source:   Source{Type: "database", Engine: "postgres", Connection: "crm", Object: "public.accounts"},
-			contains: "does not match connection",
+		"query_with_connection": {
+			source:   Source{Query: "SELECT 1", Connection: "crm"},
+			contains: "query cannot set",
 		},
 		"bad_source_option_key": {
-			source:   Source{Type: "file", Format: "csv", Location: "orders.csv", Options: map[string]any{"bad-key": true}},
+			source:   Source{Format: "csv", Location: "orders.csv", Connection: "local_files", Options: map[string]any{"bad-key": true}},
 			contains: "option",
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			model := minimalSourceModel()
-			model.Connections = map[string]Connection{"crm": {Type: "mysql"}}
+			if tc.noDefault {
+				model.DefaultConnection = ""
+			}
+			model.Connections = map[string]Connection{
+				"local_files": {Kind: "local"},
+				"crm":         {Kind: "mysql"},
+			}
 			model.Sources = map[string]Source{"orders": tc.source}
 			assertModelValidateError(t, model, tc.contains)
 		})
@@ -298,20 +274,24 @@ func TestModelValidateRejectsInvalidConnections(t *testing.T) {
 		contains   string
 	}{
 		"bad_auth_method": {
-			connection: Connection{Type: "s3", Auth: ConnectionAuth{Method: "shell"}},
+			connection: Connection{Kind: "s3", Auth: ConnectionAuth{Method: "shell"}},
 			contains:   "unsupported auth method",
 		},
 		"bad_auth_param": {
-			connection: Connection{Type: "s3", Auth: ConnectionAuth{Method: "config", Params: map[string]any{"bad-key": "value"}}},
+			connection: Connection{Kind: "s3", Auth: ConnectionAuth{Method: "config", Params: map[string]any{"bad-key": "value"}}},
 			contains:   "auth param",
 		},
 		"bad_attach_option": {
-			connection: Connection{Type: "postgres", Options: map[string]any{"password": "secret"}},
+			connection: Connection{Kind: "postgres", Options: map[string]any{"password": "secret"}},
 			contains:   "unsupported option",
 		},
 		"bad_secret_name": {
-			connection: Connection{Type: "postgres", Secret: "bad-secret"},
+			connection: Connection{Kind: "postgres", Secret: "bad-secret"},
 			contains:   "secret",
+		},
+		"bad_default_option": {
+			connection: Connection{Kind: "local", Defaults: ConnectionDefaults{Format: "csv", Options: map[string]any{"bad-key": true}}},
+			contains:   "default option",
 		},
 	}
 	for name, tc := range cases {
@@ -319,9 +299,65 @@ func TestModelValidateRejectsInvalidConnections(t *testing.T) {
 			model := minimalSourceModel()
 			model.Connections = map[string]Connection{"crm": tc.connection}
 			model.Sources = map[string]Source{
-				"orders": {Type: "file", Format: "csv", Location: "orders.csv"},
+				"orders": {Format: "csv", Location: "orders.csv", Connection: "crm"},
 			}
 			assertModelValidateError(t, model, tc.contains)
+		})
+	}
+}
+
+func TestLoadModelRejectsRemovedSourceFields(t *testing.T) {
+	cases := map[string]string{
+		"source_defaults": `
+source_defaults:
+  format: csv
+`,
+		"source_type": `
+sources:
+  orders:
+    type: file
+    location: orders.csv
+`,
+		"source_engine": `
+sources:
+  orders:
+    engine: postgres
+    object: public.orders
+`,
+		"scalar_source": `
+sources:
+  orders: orders.csv
+`,
+	}
+	for name, fragment := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "model.yaml")
+			content := strings.ReplaceAll(`name: test
+title: Test
+default_connection: local_files
+connections:
+  local_files:
+    kind: local
+    defaults:
+      format: csv
+sources:
+  products:
+    location: products.csv
+cache:
+  tables:
+    orders_cache:
+      sql: SELECT * FROM raw.orders
+datasets:
+  orders:
+    source: orders_cache
+`+fragment, "\t", "  ")
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil {
+				t.Fatal("Load() error = nil, want removed field rejection")
+			}
 		})
 	}
 }
@@ -894,11 +930,18 @@ func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
 
 func minimalSourceModel() *Model {
 	return &Model{
-		Name:        "test",
-		Title:       "Test",
-		Description: "Test semantic model",
+		Name:              "test",
+		Title:             "Test",
+		Description:       "Test semantic model",
+		DefaultConnection: "local_files",
+		Connections: map[string]Connection{
+			"local_files": {
+				Kind:     "local",
+				Defaults: ConnectionDefaults{Format: "csv"},
+			},
+		},
 		Sources: map[string]Source{
-			"orders": {Type: "file", Format: "csv", Location: "orders.csv"},
+			"orders": {Location: "orders.csv"},
 		},
 		Cache: Cache{Tables: map[string]CacheTable{
 			"orders_cache": {SQL: "SELECT * FROM raw.orders"},

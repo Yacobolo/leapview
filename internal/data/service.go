@@ -661,8 +661,19 @@ func (m *DuckDBMetrics) RefreshCache(ctx context.Context, modelID string) error 
 
 func (m *DuckDBMetrics) validateFiles(runtime *modelRuntime) error {
 	var missing []string
-	for _, file := range runtime.model.SourceFiles() {
-		if _, err := os.Stat(filepath.Join(m.dataDir, file)); errors.Is(err, os.ErrNotExist) {
+	for name, source := range runtime.model.Sources {
+		if source.Location == "" {
+			continue
+		}
+		connection := runtime.model.Connections[source.Connection]
+		if connection.Kind != "local" {
+			continue
+		}
+		file, err := m.resolveSourceLocation(runtime.model, source)
+		if err != nil {
+			return fmt.Errorf("resolving local source %s: %w", name, err)
+		}
+		if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
 			missing = append(missing, file)
 		} else if err != nil {
 			return err
@@ -692,7 +703,7 @@ func (m *DuckDBMetrics) registerSourceViews(ctx context.Context, runtime *modelR
 		if err := validateIdentifier(name); err != nil {
 			return err
 		}
-		relation, err := m.sourceRelation(source)
+		relation, err := m.sourceRelation(runtime.model, source)
 		if err != nil {
 			return fmt.Errorf("compiling source %s: %w", name, err)
 		}
@@ -1774,15 +1785,13 @@ func modelGraph(model *semantic.Model, metricViews map[string]*semantic.MetricVi
 
 	for _, name := range sortedKeys(model.Sources) {
 		source := model.Sources[name]
+		sourceKind := source.Kind()
 		meta := []dashboard.ModelMeta{
-			{Label: "Type", Value: source.Type},
+			{Label: "Kind", Value: sourceKind},
 			{Label: "Schema", Value: "raw"},
 		}
 		if source.Format != "" {
 			meta = append(meta, dashboard.ModelMeta{Label: "Format", Value: source.Format})
-		}
-		if source.Engine != "" {
-			meta = append(meta, dashboard.ModelMeta{Label: "Engine", Value: source.Engine})
 		}
 		if source.Location != "" {
 			meta = append(meta, dashboard.ModelMeta{Label: "Location", Value: source.Location})
@@ -1792,6 +1801,9 @@ func modelGraph(model *semantic.Model, metricViews map[string]*semantic.MetricVi
 		}
 		if source.Connection != "" {
 			meta = append(meta, dashboard.ModelMeta{Label: "Connection", Value: source.Connection})
+			if connection, ok := model.Connections[source.Connection]; ok {
+				meta = append(meta, dashboard.ModelMeta{Label: "Connection Kind", Value: connection.Kind})
+			}
 		}
 		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
 			ID:     nodeID("source", name),

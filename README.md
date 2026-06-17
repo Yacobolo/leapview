@@ -46,20 +46,27 @@ go run ./cmd/libredash
 
 ## Source Model
 
-Semantic model YAML declares user-facing `sources`, optional `source_defaults`, and optional named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. A scalar source value is shorthand for `location`.
+Semantic model YAML declares user-facing `sources` and named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. Each source is an object with exactly one of `location`, `object`, or `query`.
 
 Local CSV:
 
 ```yaml
-source_defaults:
-  type: file
-  format: csv
-  options:
-    header: true
+default_connection: olist
+
+connections:
+  olist:
+    kind: local
+    defaults:
+      format: csv
+      options:
+        header: true
 
 sources:
-  orders: olist_orders_dataset.csv
-  order_items: olist_order_items_dataset.csv
+  orders:
+    location: olist_orders_dataset.csv
+
+  order_items:
+    location: olist_order_items_dataset.csv
 ```
 
 S3 Parquet with credential-chain auth:
@@ -67,7 +74,7 @@ S3 Parquet with credential-chain auth:
 ```yaml
 connections:
   prod_lake:
-    type: s3
+    kind: s3
     scope: s3://analytics-prod/
     auth:
       method: credential_chain
@@ -75,13 +82,11 @@ connections:
       params:
         region: us-east-1
 
-source_defaults:
-  type: file
-  format: parquet
-  connection: prod_lake
-
 sources:
-  sales_events: s3://analytics-prod/events/*.parquet
+  sales_events:
+    connection: prod_lake
+    location: events/*
+    format: parquet
 ```
 
 Azure Delta Lake:
@@ -89,17 +94,17 @@ Azure Delta Lake:
 ```yaml
 connections:
   azure_lake:
-    type: azure
+    kind: azure_blob
+    scope: az://warehouse/
     auth:
       method: credential_chain
       account: mystorageaccount
 
 sources:
   delta_orders:
-    type: lakehouse
-    format: delta
-    location: az://warehouse/tables/orders
     connection: azure_lake
+    location: tables/orders
+    format: delta
 ```
 
 Postgres table via a DuckDB secret:
@@ -107,13 +112,11 @@ Postgres table via a DuckDB secret:
 ```yaml
 connections:
   crm:
-    type: postgres
+    kind: postgres
     secret: crm_readonly
 
 sources:
   crm_accounts:
-    type: database
-    engine: postgres
     connection: crm
     object: public.accounts
 ```
@@ -123,12 +126,11 @@ Trusted query source:
 ```yaml
 sources:
   custom:
-    type: query
     query: |
       SELECT * FROM future_scan_function('...')
 ```
 
-`query` sources are trusted workspace code. Treat them like application SQL, not end-user input.
+For file locations, LibreDash infers `format` from clear extensions such as `.csv`, `.json`, `.jsonl`, `.parquet`, and `.xlsx`. Set `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. `query` sources are trusted workspace code. Treat them like application SQL, not end-user input.
 
 ## Deploy
 
