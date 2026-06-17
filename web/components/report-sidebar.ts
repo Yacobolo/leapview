@@ -303,14 +303,13 @@ class ReportSidebar extends LitElement {
     :host([data-collapsed]) .hover-title {
       position: absolute;
       z-index: 40;
-      left: calc(var(--ld-report-sidebar-width) - 1px);
+      left: 5px;
       min-height: 28px;
       max-width: 12rem;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 0 9px 0 8px;
-      border-left: 1px solid color-mix(in srgb, var(--borderColor-muted), transparent 36%);
+      padding: 0 9px 0 0;
       border-right: 2px solid var(--ld-accent);
       background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 56%);
       color: var(--fgColor-default);
@@ -319,10 +318,28 @@ class ReportSidebar extends LitElement {
       line-height: var(--ld-line-height-none);
       pointer-events: none;
       transform: translateY(-50%);
+      transform-origin: left center;
+      animation: rail-title-fold-out 120ms var(--ld-ease-out);
       white-space: nowrap;
     }
 
+    @keyframes rail-title-fold-out {
+      from {
+        opacity: 0;
+        transform: translateY(-50%) scaleX(0.72);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(-50%) scaleX(1);
+      }
+    }
+
     .hover-title-index {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
       color: var(--fgColor-muted);
       font-weight: var(--ld-font-weight-850);
     }
@@ -400,7 +417,7 @@ class ReportSidebar extends LitElement {
         class="page-link"
         href=${page.href}
         aria-current=${active ? 'page' : 'false'}
-        title=${title}
+        aria-label=${title}
         @mouseenter=${(event: MouseEvent) => this.showHoverTitle(event, title, index + 1)}
         @mouseleave=${this.hideHoverTitle}
         @focus=${(event: FocusEvent) => this.showHoverTitle(event, title, index + 1)}
