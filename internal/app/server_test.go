@@ -486,7 +486,7 @@ func TestRefreshCacheCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestChartSelectCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[]},"runtime":{"clientId":"test-client"},"chartCommand":{"visualId":"orders","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"table":"orders","block":"all","start":0,"count":200}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"visualSelections":[]},"runtime":{"clientId":"test-client"},"visualCommand":{"visualId":"orders","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"table":"orders","block":"all","start":0,"count":200}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/chart-select", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -507,7 +507,7 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 		{
 			name: "chart select",
 			path: "/commands/chart-select",
-			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"visualSelections":[]},"chartCommand":{"visualId":"ops_pipeline","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"block":"all","start":0,"count":200}}`,
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"visualSelections":[]},"visualCommand":{"visualId":"ops_pipeline","field":"status","value":"delivered","label":"delivered"},"tableCommand":{"block":"all","start":0,"count":200}}`,
 		},
 		{
 			name: "clear selection",

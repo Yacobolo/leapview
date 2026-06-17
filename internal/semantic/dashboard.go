@@ -41,6 +41,11 @@ type FilterDefinition struct {
 	OperatorURLParam string         `yaml:"operator_url_param" json:"operatorURLParam,omitempty"`
 }
 
+type FilterConfig struct {
+	ID string `json:"id"`
+	FilterDefinition
+}
+
 type FilterOption struct {
 	Value string `yaml:"value" json:"value"`
 	Label string `yaml:"label" json:"label"`
@@ -1051,6 +1056,18 @@ func (d *Dashboard) FiltersForPage(pageID string) map[string]FilterDefinition {
 		}
 	}
 	return filters
+}
+
+func (d *Dashboard) FilterConfigForPage(pageID string) []FilterConfig {
+	config := []FilterConfig{}
+	for _, name := range d.PageFilterIDs(pageID) {
+		filter, ok := d.Filters[name]
+		if !ok {
+			continue
+		}
+		config = append(config, FilterConfig{ID: name, FilterDefinition: filter})
+	}
+	return config
 }
 
 func (d *Dashboard) PageFilterIDs(pageID string) []string {

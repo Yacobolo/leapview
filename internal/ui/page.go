@@ -489,12 +489,12 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 			"modelId":     model.Name,
 		},
 		"csrfToken":     csrfToken,
-		"filterConfig":  report.FiltersForPage(activePage.ID),
+		"filterConfig":  report.FilterConfigForPage(activePage.ID),
 		"filters":       initialFilters,
 		"urlParams":     report.URLParamsFromFiltersForPage(activePage.ID, initialFilters),
 		"urlParamShape": report.URLParamShapeForPage(activePage.ID),
 		"filterOptions": map[string]any{},
-		"chartCommand": map[string]any{
+		"visualCommand": map[string]any{
 			"visualId": "",
 			"field":    "",
 			"value":    "",
@@ -749,7 +749,7 @@ func filterCard(pageID, filterID string, report semantic.Dashboard, filters dash
 	return h.Article(h.Class("visual-card filter-visual-card"),
 		g.El("ld-filter-card",
 			g.Attr("filter-id", filterID),
-			g.Attr("config", jsonString(report.FiltersForPage(pageID))),
+			g.Attr("config", jsonString(report.FilterConfigForPage(pageID))),
 			g.Attr("filters", jsonString(filters)),
 			g.Attr("options", "{}"),
 			g.Attr("data-attr:config", "$filterConfig"),
@@ -856,8 +856,7 @@ func filtersPane(report semantic.Dashboard, pageID string, action string) g.Node
 	tableReset := tableResetExpression()
 	return h.Div(h.Class("filters-pane"),
 		g.El("ld-filter-panel",
-			g.Attr("config", jsonString(report.FiltersForPage(pageID))),
-			g.Attr("filter-order", jsonString(report.PageFilterIDs(pageID))),
+			g.Attr("config", jsonString(report.FilterConfigForPage(pageID))),
 			g.Attr("data-attr:filters", "$filters"),
 			g.Attr("data-attr:options", "$filterOptions"),
 			g.Attr("data-attr:loading", "$status.loading"),
@@ -884,7 +883,7 @@ func chartPanel(visualID string) g.Node {
 		g.El("ld-echart",
 			g.Attr("visual-id", visualID),
 			g.Attr("data-attr:chart", "$"+signal),
-			g.Attr("data-on:ld-chart-select", "$chartCommand = evt.detail; "+postAction("/commands/chart-select")),
+			g.Attr("data-on:ld-chart-select", "$visualCommand = evt.detail; "+postAction("/commands/chart-select")),
 			g.Attr("data-on:ld-chart-clear-selection", "$filters.visualSelections = []; "+postAction("/commands/clear-selection")),
 		),
 	)

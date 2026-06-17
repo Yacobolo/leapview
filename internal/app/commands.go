@@ -36,7 +36,7 @@ func (s *Server) chartSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	dashboardID := s.dashboardID(r, signals)
 	pageID := pageIDFromRequest(r, signals)
-	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters).ToggleSelection(signals.ChartCommand)
+	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters).ToggleSelection(signals.VisualCommand)
 	filters = s.normalizeFilters(dashboardID, pageID, filters)
 	request := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand).Reset()
 	clientID := clientStreamID(r, signals, dashboardID, pageID)

@@ -80,13 +80,13 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	if !strings.Contains(showcase, `"tables":{}`) {
 		t.Fatalf("showcase page should seed no tables:\n%s", showcase)
 	}
-	if !strings.Contains(showcase, `"filterConfig":{"state"`) {
+	if !strings.Contains(showcase, `"filterConfig":[{"id":"state"`) {
 		t.Fatalf("showcase page did not seed active page filter config:\n%s", showcase)
 	}
 	if !strings.Contains(showcase, `"controls":{"state"`) {
 		t.Fatalf("showcase page did not seed active page filter controls:\n%s", showcase)
 	}
-	if strings.Contains(showcase, `"category":{"type":"text"`) || strings.Contains(showcase, `"category":""`) {
+	if strings.Contains(showcase, `"id":"category"`) || strings.Contains(showcase, `"category":""`) {
 		t.Fatalf("showcase page seeded off-page category filter:\n%s", showcase)
 	}
 

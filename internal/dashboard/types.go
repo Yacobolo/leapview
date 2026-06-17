@@ -1,10 +1,10 @@
 package dashboard
 
 type Signals struct {
-	Filters      Filters      `json:"filters"`
-	Runtime      Runtime      `json:"runtime"`
-	TableCommand TableRequest `json:"tableCommand"`
-	ChartCommand ChartCommand `json:"chartCommand"`
+	Filters       Filters       `json:"filters"`
+	Runtime       Runtime       `json:"runtime"`
+	TableCommand  TableRequest  `json:"tableCommand"`
+	VisualCommand VisualCommand `json:"visualCommand"`
 }
 
 type Catalog struct {
@@ -236,7 +236,7 @@ type VisualSelection struct {
 	Order    int      `json:"order"`
 }
 
-type ChartCommand struct {
+type VisualCommand struct {
 	VisualID string `json:"visualId"`
 	Field    string `json:"field"`
 	Value    string `json:"value"`
@@ -244,11 +244,11 @@ type ChartCommand struct {
 	Mode     string `json:"mode"`
 }
 
-func (c ChartCommand) IsEmpty() bool {
+func (c VisualCommand) IsEmpty() bool {
 	return c.VisualID == "" || c.Field == "" || c.Value == ""
 }
 
-func (f Filters) ToggleSelection(command ChartCommand) Filters {
+func (f Filters) ToggleSelection(command VisualCommand) Filters {
 	f = f.WithDefaults()
 	if command.IsEmpty() {
 		return f

@@ -21,6 +21,9 @@ export type FilterDefinition = {
   operatorURLParam?: string
 }
 
+export type FilterConfigItem = FilterDefinition & { id: string }
+export type FilterConfig = FilterConfigItem[]
+
 export type FilterDefault = {
   preset?: string
   from?: string
@@ -60,6 +63,18 @@ export type FiltersSignal = {
 
 export const emptyFilters: FiltersSignal = { controls: {}, visualSelections: [] }
 
+export function filterConfigEntries(config: FilterConfig): Array<[string, FilterDefinition]> {
+  return config.map((definition) => [definition.id, definition])
+}
+
+export function filterConfigMap(config: FilterConfig): Record<string, FilterDefinition> {
+  const mapped: Record<string, FilterDefinition> = {}
+  for (const definition of config) {
+    mapped[definition.id] = definition
+  }
+  return mapped
+}
+
 export function defaultControl(definition: FilterDefinition): FilterControl {
   switch (definition.type) {
     case 'date_range':
@@ -73,13 +88,13 @@ export function defaultControl(definition: FilterDefinition): FilterControl {
   }
 }
 
-export function filtersFromURLParams(config: Record<string, FilterDefinition>, filters: FiltersSignal, params: URLParamsShape): FiltersSignal {
+export function filtersFromURLParams(config: FilterConfig, filters: FiltersSignal, params: URLParamsShape): FiltersSignal {
   const next: FiltersSignal = {
     controls: { ...(filters.controls ?? {}) },
     visualSelections: [...(filters.visualSelections ?? [])],
   }
 
-  for (const [name, definition] of Object.entries(config)) {
+  for (const [name, definition] of filterConfigEntries(config)) {
     const base = defaultControl(definition)
     const current = next.controls[name] ?? base
     switch (definition.type) {
@@ -111,10 +126,10 @@ export function filtersFromURLParams(config: Record<string, FilterDefinition>, f
   return next
 }
 
-export function filtersToURLParams(config: Record<string, FilterDefinition>, filters: FiltersSignal): URLParamsShape {
+export function filtersToURLParams(config: FilterConfig, filters: FiltersSignal): URLParamsShape {
   const params: URLParamsShape = {}
 
-  for (const [name, definition] of Object.entries(config)) {
+  for (const [name, definition] of filterConfigEntries(config)) {
     const control = filters.controls?.[name] ?? defaultControl(definition)
     const base = defaultControl(definition)
     switch (definition.type) {
