@@ -98,7 +98,7 @@
   --spacing-32: var(--base-size-128);
   --spacing-40: 10rem;
   --spacing-action: 2rem;
-  --spacing-card: 23.75rem;
+  --spacing-card: 21rem;
   --spacing-control-md: var(--control-medium-size);
   --spacing-control-xs: var(--control-xsmall-size);
   --spacing-control-xl: var(--control-xlarge-size);
@@ -113,7 +113,7 @@
   --spacing-stat: 3.5rem;
 
   --container-*: initial;
-  --container-card: 23.75rem;
+  --container-card: 21rem;
   --container-inspector: calc(100vw - var(--base-size-32));
   --container-login-panel: 24.125rem;
 
@@ -155,7 +155,7 @@
   --grid-template-columns-report-dashboard: minmax(0, 1fr) auto;
   --grid-template-columns-filter-closed: minmax(0, 1fr);
   --grid-template-columns-filter-dock: minmax(0, 1fr);
-  --grid-template-columns-catalog-grid: repeat(auto-fill, minmax(20rem, 23.75rem));
+  --grid-template-columns-catalog-grid: repeat(auto-fill, minmax(18rem, 21rem));
   --grid-template-columns-login-button: 1.375rem minmax(0, 1fr);
   --grid-template-columns-metric-workspace: minmax(0, 1fr) 18rem;
   --grid-template-columns-metric-workspace-collapsed: minmax(0, 1fr) 3rem;
