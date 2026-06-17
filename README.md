@@ -44,6 +44,89 @@ go run ./cmd/libredash
 - Lit chart components bind to signal paths such as `charts.revenue`.
 - The bundled `datastar-inspector` web component shows live Datastar signals in the browser.
 
+## Source Model
+
+Semantic model YAML declares user-facing `sources` and optional named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract.
+
+Local CSV:
+
+```yaml
+sources:
+  orders:
+    type: file
+    format: csv
+    location: olist_orders_dataset.csv
+    options:
+      header: true
+```
+
+S3 Parquet with credential-chain auth:
+
+```yaml
+connections:
+  prod_lake:
+    type: s3
+    scope: s3://analytics-prod/
+    auth:
+      method: credential_chain
+      profile: analytics
+      params:
+        region: us-east-1
+
+sources:
+  sales_events:
+    type: file
+    format: parquet
+    location: s3://analytics-prod/events/*.parquet
+    connection: prod_lake
+```
+
+Azure Delta Lake:
+
+```yaml
+connections:
+  azure_lake:
+    type: azure
+    auth:
+      method: credential_chain
+      account: mystorageaccount
+
+sources:
+  delta_orders:
+    type: lakehouse
+    format: delta
+    location: az://warehouse/tables/orders
+    connection: azure_lake
+```
+
+Postgres table via a DuckDB secret:
+
+```yaml
+connections:
+  crm:
+    type: postgres
+    secret: crm_readonly
+
+sources:
+  crm_accounts:
+    type: database
+    engine: postgres
+    connection: crm
+    object: public.accounts
+```
+
+Trusted query source:
+
+```yaml
+sources:
+  custom:
+    type: query
+    query: |
+      SELECT * FROM future_scan_function('...')
+```
+
+`query` sources are trusted workspace code. Treat them like application SQL, not end-user input.
+
 ## Deploy
 
 Production mode serves the active deployed BI-as-code bundle from `.libredash` by default:

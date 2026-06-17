@@ -100,11 +100,163 @@ func TestLoadOlistModel(t *testing.T) {
 	if len(model.Sources) != 7 {
 		t.Fatalf("source count = %d, want 7", len(model.Sources))
 	}
+	if got := model.Sources["orders"].Type; got != "file" {
+		t.Fatalf("orders source type = %q, want file", got)
+	}
+	if got := model.Sources["orders"].Format; got != "csv" {
+		t.Fatalf("orders source format = %q, want csv", got)
+	}
+	if got := model.Sources["orders"].Location; got != "olist_orders_dataset.csv" {
+		t.Fatalf("orders source location = %q, want olist_orders_dataset.csv", got)
+	}
 	if got := model.Datasets["orders"].Source; got != "orders_enriched" {
 		t.Fatalf("orders dataset source = %q, want orders_enriched", got)
 	}
 	if len(model.Relationships) != 6 {
 		t.Fatalf("relationship count = %d, want 6", len(model.Relationships))
+	}
+}
+
+func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
+	model := minimalSourceModel()
+	model.Connections = map[string]Connection{
+		"prod_lake": {
+			Type:  "s3",
+			Scope: "s3://analytics-prod/",
+			Auth:  ConnectionAuth{Method: "credential_chain", Profile: "analytics"},
+		},
+		"azure_lake": {
+			Type: "azure",
+			Auth: ConnectionAuth{Method: "credential_chain", Account: "mystorageaccount"},
+		},
+		"crm": {
+			Type:   "postgres",
+			Secret: "crm_readonly",
+		},
+	}
+	model.Sources = map[string]Source{
+		"orders": {
+			Type:     "file",
+			Format:   "csv",
+			Location: "olist_orders_dataset.csv",
+			Options:  map[string]any{"header": true},
+		},
+		"sales_events": {
+			Type:       "file",
+			Format:     "parquet",
+			Location:   "s3://analytics-prod/events/*.parquet",
+			Connection: "prod_lake",
+		},
+		"delta_orders": {
+			Type:       "lakehouse",
+			Format:     "delta",
+			Location:   "az://warehouse/tables/orders",
+			Connection: "azure_lake",
+		},
+		"crm_accounts": {
+			Type:       "database",
+			Engine:     "postgres",
+			Connection: "crm",
+			Object:     "public.accounts",
+		},
+		"custom": {
+			Type:  "query",
+			Query: "SELECT 1 AS id",
+		},
+	}
+
+	if err := model.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+}
+
+func TestModelValidateRejectsInvalidSources(t *testing.T) {
+	cases := map[string]struct {
+		source   Source
+		contains string
+	}{
+		"missing_type": {
+			source:   Source{Format: "csv", Location: "orders.csv"},
+			contains: "requires type",
+		},
+		"file_missing_format": {
+			source:   Source{Type: "file", Location: "orders.csv"},
+			contains: "requires format and location",
+		},
+		"file_bad_format": {
+			source:   Source{Type: "file", Format: "orc", Location: "orders.orc"},
+			contains: "unsupported file format",
+		},
+		"lakehouse_bad_format": {
+			source:   Source{Type: "lakehouse", Format: "hudi", Location: "s3://bucket/table"},
+			contains: "unsupported lakehouse format",
+		},
+		"database_missing_fields": {
+			source:   Source{Type: "database", Engine: "postgres", Connection: "crm"},
+			contains: "requires engine, connection, and object",
+		},
+		"database_bad_engine": {
+			source:   Source{Type: "database", Engine: "oracle", Connection: "crm", Object: "public.accounts"},
+			contains: "unsupported database engine",
+		},
+		"query_missing_query": {
+			source:   Source{Type: "query"},
+			contains: "requires query",
+		},
+		"unknown_connection": {
+			source:   Source{Type: "file", Format: "parquet", Location: "s3://bucket/*.parquet", Connection: "missing"},
+			contains: "unknown connection",
+		},
+		"database_connection_type_mismatch": {
+			source:   Source{Type: "database", Engine: "postgres", Connection: "crm", Object: "public.accounts"},
+			contains: "does not match connection",
+		},
+		"bad_source_option_key": {
+			source:   Source{Type: "file", Format: "csv", Location: "orders.csv", Options: map[string]any{"bad-key": true}},
+			contains: "option",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			model := minimalSourceModel()
+			model.Connections = map[string]Connection{"crm": {Type: "mysql"}}
+			model.Sources = map[string]Source{"orders": tc.source}
+			assertModelValidateError(t, model, tc.contains)
+		})
+	}
+}
+
+func TestModelValidateRejectsInvalidConnections(t *testing.T) {
+	cases := map[string]struct {
+		connection Connection
+		contains   string
+	}{
+		"bad_auth_method": {
+			connection: Connection{Type: "s3", Auth: ConnectionAuth{Method: "shell"}},
+			contains:   "unsupported auth method",
+		},
+		"bad_auth_param": {
+			connection: Connection{Type: "s3", Auth: ConnectionAuth{Method: "config", Params: map[string]any{"bad-key": "value"}}},
+			contains:   "auth param",
+		},
+		"bad_attach_option": {
+			connection: Connection{Type: "postgres", Options: map[string]any{"password": "secret"}},
+			contains:   "unsupported option",
+		},
+		"bad_secret_name": {
+			connection: Connection{Type: "postgres", Secret: "bad-secret"},
+			contains:   "secret",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			model := minimalSourceModel()
+			model.Connections = map[string]Connection{"crm": tc.connection}
+			model.Sources = map[string]Source{
+				"orders": {Type: "file", Format: "csv", Location: "orders.csv"},
+			}
+			assertModelValidateError(t, model, tc.contains)
+		})
 	}
 }
 
@@ -672,6 +824,23 @@ func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
 		t.Fatal(err)
 	}
 	return report
+}
+
+func minimalSourceModel() *Model {
+	return &Model{
+		Name:        "test",
+		Title:       "Test",
+		Description: "Test semantic model",
+		Sources: map[string]Source{
+			"orders": {Type: "file", Format: "csv", Location: "orders.csv"},
+		},
+		Cache: Cache{Tables: map[string]CacheTable{
+			"orders_cache": {SQL: "SELECT * FROM raw.orders"},
+		}},
+		Datasets: map[string]Dataset{
+			"orders": {Source: "orders_cache"},
+		},
+	}
 }
 
 func assertModelValidateError(t *testing.T, model *Model, contains string) {

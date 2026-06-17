@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -10,7 +11,308 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/semantic"
 )
+
+func TestCompileSourceRelation(t *testing.T) {
+	cases := map[string]struct {
+		location string
+		source   semantic.Source
+		want     string
+	}{
+		"csv": {
+			location: "/data/orders.csv",
+			source:   semantic.Source{Type: "file", Format: "csv", Options: map[string]any{"header": true, "sample_size": 1000}},
+			want:     "SELECT * FROM read_csv('/data/orders.csv', header = true, sample_size = 1000)",
+		},
+		"json": {
+			location: "/data/orders.json",
+			source:   semantic.Source{Type: "file", Format: "json", Options: map[string]any{"format": "array"}},
+			want:     "SELECT * FROM read_json('/data/orders.json', format = 'array')",
+		},
+		"parquet": {
+			location: "s3://bucket/orders/*.parquet",
+			source:   semantic.Source{Type: "file", Format: "parquet", Options: map[string]any{"union_by_name": true}},
+			want:     "SELECT * FROM read_parquet('s3://bucket/orders/*.parquet', union_by_name = true)",
+		},
+		"excel": {
+			location: "/data/budget.xlsx",
+			source:   semantic.Source{Type: "file", Format: "excel", Options: map[string]any{"sheet": "FY2026"}},
+			want:     "SELECT * FROM read_xlsx('/data/budget.xlsx', sheet = 'FY2026')",
+		},
+		"delta": {
+			location: "az://warehouse/orders",
+			source:   semantic.Source{Type: "lakehouse", Format: "delta"},
+			want:     "SELECT * FROM delta_scan('az://warehouse/orders')",
+		},
+		"iceberg": {
+			location: "s3://warehouse/orders/metadata/v1.metadata.json",
+			source:   semantic.Source{Type: "lakehouse", Format: "iceberg", Options: map[string]any{"allow_moved_paths": true}},
+			want:     "SELECT * FROM iceberg_scan('s3://warehouse/orders/metadata/v1.metadata.json', allow_moved_paths = true)",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			relation, err := compileSourceRelation(tc.location, tc.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if relation != tc.want {
+				t.Fatalf("relation = %q, want %q", relation, tc.want)
+			}
+		})
+	}
+
+	var relation string
+	var err error
+	relation, err = compileSourceRelation("", semantic.Source{
+		Type:       "database",
+		Engine:     "postgres",
+		Connection: "crm",
+		Object:     "public.accounts",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "SELECT * FROM conn_crm.public.accounts"; relation != want {
+		t.Fatalf("database relation = %q, want %q", relation, want)
+	}
+
+	relation, err = compileSourceRelation("", semantic.Source{Type: "query", Query: "SELECT 1 AS id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relation != "SELECT 1 AS id" {
+		t.Fatalf("query relation = %q, want trusted query passthrough", relation)
+	}
+
+	_, err = compileSourceRelation("/data/orders.csv", semantic.Source{Type: "file", Format: "csv", Options: map[string]any{"bad-key": true}})
+	if err == nil || !strings.Contains(err.Error(), "invalid source option") {
+		t.Fatalf("invalid option error = %v, want invalid source option", err)
+	}
+}
+
+func TestCompileConnectionSecret(t *testing.T) {
+	stmt, ok, err := compileConnectionSecret("prod_lake", semantic.Connection{
+		Type:  "s3",
+		Scope: "s3://analytics-prod/",
+		Auth:  semantic.ConnectionAuth{Method: "credential_chain", Profile: "analytics", Params: map[string]any{"region": "us-east-1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("secret ok = false, want true")
+	}
+	want := "CREATE OR REPLACE SECRET libredash_prod_lake (TYPE s3, PROVIDER credential_chain, PROFILE 'analytics', REGION 'us-east-1', SCOPE 's3://analytics-prod/')"
+	if stmt != want {
+		t.Fatalf("s3 secret = %q, want %q", stmt, want)
+	}
+
+	stmt, ok, err = compileConnectionSecret("azure_lake", semantic.Connection{
+		Type: "azure",
+		Auth: semantic.ConnectionAuth{Method: "credential_chain", Account: "mystorageaccount"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "CREATE OR REPLACE SECRET libredash_azure_lake (TYPE azure, PROVIDER credential_chain, ACCOUNT_NAME 'mystorageaccount')"
+	if !ok || stmt != want {
+		t.Fatalf("azure secret = %q ok=%v, want %q ok=true", stmt, ok, want)
+	}
+
+	stmt, ok, err = compileConnectionSecret("crm", semantic.Connection{Type: "postgres", Secret: "crm_readonly"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok || stmt != "" {
+		t.Fatalf("named secret compile = %q ok=%v, want empty ok=false", stmt, ok)
+	}
+}
+
+func TestCompileDatabaseAttach(t *testing.T) {
+	cases := map[string]struct {
+		engine     string
+		connection semantic.Connection
+		want       string
+	}{
+		"postgres_existing_secret": {
+			engine:     "postgres",
+			connection: semantic.Connection{Type: "postgres", Secret: "crm_readonly"},
+			want:       "ATTACH '' AS conn_crm (TYPE postgres, READ_ONLY, SECRET crm_readonly)",
+		},
+		"mysql_uri": {
+			engine:     "mysql",
+			connection: semantic.Connection{Type: "mysql", Options: map[string]any{"connection_string": "host=localhost database=sales"}},
+			want:       "ATTACH 'host=localhost database=sales' AS conn_crm (TYPE mysql, READ_ONLY)",
+		},
+		"sqlite_path": {
+			engine:     "sqlite",
+			connection: semantic.Connection{Type: "sqlite", Options: map[string]any{"path": "/tmp/source.sqlite"}},
+			want:       "ATTACH '/tmp/source.sqlite' AS conn_crm (TYPE sqlite, READ_ONLY)",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			stmt, err := compileDatabaseAttach("crm", tc.engine, tc.connection)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stmt != tc.want {
+				t.Fatalf("attach = %q, want %q", stmt, tc.want)
+			}
+		})
+	}
+}
+
+func TestRequiredExtensions(t *testing.T) {
+	model := &semantic.Model{
+		Connections: map[string]semantic.Connection{
+			"lake": {Type: "s3"},
+			"crm":  {Type: "postgres"},
+		},
+		Sources: map[string]semantic.Source{
+			"events":   {Type: "file", Format: "parquet", Location: "s3://bucket/events/*.parquet", Connection: "lake"},
+			"budget":   {Type: "file", Format: "excel", Location: "budget.xlsx"},
+			"orders":   {Type: "lakehouse", Format: "delta", Location: "az://warehouse/orders"},
+			"accounts": {Type: "database", Engine: "postgres", Connection: "crm", Object: "public.accounts"},
+		},
+	}
+	if got := strings.Join(requiredExtensions(model), ","); got != "azure,delta,excel,httpfs,postgres" {
+		t.Fatalf("required extensions = %q, want azure,delta,excel,httpfs,postgres", got)
+	}
+}
+
+func TestDuckDBMetricsRegistersCSVAndQuerySources(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "orders.csv", "order_id,revenue\no1,10.50\no2,20.25\n")
+	db, err := sql.Open("duckdb", filepath.Join(dir, "test.duckdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	metrics := &DuckDBMetrics{dataDir: dir}
+	runtime := &modelRuntime{
+		db: db,
+		model: &semantic.Model{
+			Name: "test",
+			Sources: map[string]semantic.Source{
+				"orders": {
+					Type:     "file",
+					Format:   "csv",
+					Location: "orders.csv",
+					Options:  map[string]any{"header": true},
+				},
+				"targets": {
+					Type:  "query",
+					Query: "SELECT 'o1' AS order_id, 100::DOUBLE AS target",
+				},
+			},
+			Cache: semantic.Cache{Tables: map[string]semantic.CacheTable{
+				"joined": {
+					SQL: `
+						SELECT o.order_id, try_cast(o.revenue AS DOUBLE) AS revenue, t.target
+						FROM raw.orders o
+						LEFT JOIN raw.targets t ON t.order_id = o.order_id
+					`,
+				},
+			}},
+		},
+	}
+	if err := metrics.registerSourceViews(context.Background(), runtime); err != nil {
+		t.Fatalf("register sources: %v", err)
+	}
+	if err := metrics.materializeCache(context.Background(), runtime); err != nil {
+		t.Fatalf("materialize cache: %v", err)
+	}
+
+	var total float64
+	if err := db.QueryRowContext(context.Background(), "SELECT SUM(revenue) FROM cache.joined").Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if total != 30.75 {
+		t.Fatalf("total revenue = %v, want 30.75", total)
+	}
+	var target float64
+	if err := db.QueryRowContext(context.Background(), "SELECT target FROM cache.joined WHERE order_id = 'o1'").Scan(&target); err != nil {
+		t.Fatal(err)
+	}
+	if target != 100 {
+		t.Fatalf("target = %v, want 100", target)
+	}
+}
+
+func TestDuckDBMetricsRegistersDatabaseSourceTwice(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.sqlite")
+	db, err := sql.Open("duckdb", filepath.Join(dir, "test.duckdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(context.Background(), "INSTALL sqlite"); err != nil {
+		t.Skipf("sqlite extension unavailable: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(), "LOAD sqlite"); err != nil {
+		t.Skipf("sqlite extension unavailable: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(), "ATTACH '"+sqlString(sourcePath)+"' AS seed (TYPE sqlite)"); err != nil {
+		t.Fatalf("attach seed sqlite: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(), "CREATE TABLE seed.accounts (id INTEGER, name VARCHAR)"); err != nil {
+		t.Fatalf("create seed table: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(), "INSERT INTO seed.accounts VALUES (1, 'Acme')"); err != nil {
+		t.Fatalf("insert seed table: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(), "DETACH seed"); err != nil {
+		t.Fatalf("detach seed sqlite: %v", err)
+	}
+
+	metrics := &DuckDBMetrics{dataDir: dir}
+	runtime := &modelRuntime{
+		db: db,
+		model: &semantic.Model{
+			Name: "test",
+			Connections: map[string]semantic.Connection{
+				"crm": {Type: "sqlite", Options: map[string]any{"path": sourcePath}},
+			},
+			Sources: map[string]semantic.Source{
+				"accounts": {Type: "database", Engine: "sqlite", Connection: "crm", Object: "accounts"},
+			},
+			Cache: semantic.Cache{Tables: map[string]semantic.CacheTable{
+				"accounts": {SQL: "SELECT * FROM raw.accounts"},
+			}},
+		},
+	}
+	for i := 0; i < 2; i++ {
+		if err := metrics.registerSourceViews(context.Background(), runtime); err != nil {
+			t.Fatalf("register sources pass %d: %v", i+1, err)
+		}
+	}
+	if err := metrics.materializeCache(context.Background(), runtime); err != nil {
+		t.Fatalf("materialize cache: %v", err)
+	}
+	var name string
+	if err := db.QueryRowContext(context.Background(), "SELECT name FROM cache.accounts WHERE id = 1").Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Acme" {
+		t.Fatalf("name = %q, want Acme", name)
+	}
+}
+
+func TestDuckDBMetricsValidateFilesIgnoresRemoteAndQuerySources(t *testing.T) {
+	metrics := &DuckDBMetrics{dataDir: t.TempDir()}
+	runtime := &modelRuntime{model: &semantic.Model{Sources: map[string]semantic.Source{
+		"events":  {Type: "file", Format: "parquet", Location: "s3://bucket/events/*.parquet"},
+		"targets": {Type: "query", Query: "SELECT 1 AS id"},
+	}}}
+	if err := metrics.validateFiles(runtime); err != nil {
+		t.Fatalf("validate files = %v, want nil", err)
+	}
+}
 
 func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	dir := t.TempDir()

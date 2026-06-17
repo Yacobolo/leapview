@@ -37,7 +37,7 @@ func ExtractAssets(workspaceID, deploymentID string, workspace *semantic.Workspa
 		}
 		edge(catalogID, modelID, "contains")
 		for sourceName, source := range model.Sources {
-			id, err := add("source", modelEntry.ID+"."+sourceName, modelID, sourceName, source.File, source)
+			id, err := add("source", modelEntry.ID+"."+sourceName, modelID, sourceName, source.Description(), source)
 			if err != nil {
 				return nil, nil, err
 			}

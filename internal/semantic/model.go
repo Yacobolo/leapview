@@ -3,23 +3,51 @@ package semantic
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+var semanticIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 type Model struct {
-	Name          string             `yaml:"name"`
-	Title         string             `yaml:"title"`
-	Description   string             `yaml:"description"`
-	Sources       map[string]Source  `yaml:"sources"`
-	Cache         Cache              `yaml:"cache"`
-	Datasets      map[string]Dataset `yaml:"datasets"`
-	Relationships []Relationship     `yaml:"relationships"`
+	Name          string                `yaml:"name"`
+	Title         string                `yaml:"title"`
+	Description   string                `yaml:"description"`
+	Connections   map[string]Connection `yaml:"connections"`
+	Sources       map[string]Source     `yaml:"sources"`
+	Cache         Cache                 `yaml:"cache"`
+	Datasets      map[string]Dataset    `yaml:"datasets"`
+	Relationships []Relationship        `yaml:"relationships"`
+}
+
+type Connection struct {
+	Type    string         `yaml:"type"`
+	Secret  string         `yaml:"secret"`
+	Scope   string         `yaml:"scope"`
+	Auth    ConnectionAuth `yaml:"auth"`
+	Options map[string]any `yaml:"options"`
+}
+
+type ConnectionAuth struct {
+	Method  string         `yaml:"method"`
+	Profile string         `yaml:"profile"`
+	Chain   string         `yaml:"chain"`
+	Account string         `yaml:"account"`
+	Params  map[string]any `yaml:"params"`
 }
 
 type Source struct {
-	File string `yaml:"file"`
+	Type       string         `yaml:"type"`
+	Format     string         `yaml:"format"`
+	Location   string         `yaml:"location"`
+	Connection string         `yaml:"connection"`
+	Engine     string         `yaml:"engine"`
+	Object     string         `yaml:"object"`
+	Query      string         `yaml:"query"`
+	Options    map[string]any `yaml:"options"`
 }
 
 type Cache struct {
@@ -94,9 +122,14 @@ func (m *Model) Validate() error {
 	if len(m.Cache.Tables) == 0 {
 		return fmt.Errorf("semantic model %q has no cache tables", m.Name)
 	}
+	for name, connection := range m.Connections {
+		if err := connection.Validate(name); err != nil {
+			return err
+		}
+	}
 	for name, source := range m.Sources {
-		if source.File == "" {
-			return fmt.Errorf("source %q is missing file", name)
+		if err := source.Validate(name, m.Connections); err != nil {
+			return err
 		}
 	}
 	for name, table := range m.Cache.Tables {
@@ -184,9 +217,195 @@ func (v *MetricView) Validate(model *Model) error {
 func (m *Model) SourceFiles() map[string]string {
 	files := make(map[string]string, len(m.Sources))
 	for name, source := range m.Sources {
-		files[name] = source.File
+		if source.Type == "file" && isLocalLocation(source.Location) {
+			files[name] = source.Location
+		}
 	}
 	return files
+}
+
+func (s Source) Validate(name string, connections map[string]Connection) error {
+	if err := validateSemanticIdentifier(name); err != nil {
+		return fmt.Errorf("source %q has invalid name: %w", name, err)
+	}
+	if s.Type == "" {
+		return fmt.Errorf("source %q requires type", name)
+	}
+	for key := range s.Options {
+		if err := validateSemanticIdentifier(key); err != nil {
+			return fmt.Errorf("source %q option %q is invalid: %w", name, key, err)
+		}
+	}
+	switch s.Type {
+	case "file":
+		if s.Format == "" || s.Location == "" {
+			return fmt.Errorf("source %q type file requires format and location", name)
+		}
+		if !supportsFileFormat(s.Format) {
+			return fmt.Errorf("source %q has unsupported file format %q", name, s.Format)
+		}
+	case "lakehouse":
+		if s.Format == "" || s.Location == "" {
+			return fmt.Errorf("source %q type lakehouse requires format and location", name)
+		}
+		if !supportsLakehouseFormat(s.Format) {
+			return fmt.Errorf("source %q has unsupported lakehouse format %q", name, s.Format)
+		}
+	case "database":
+		if s.Engine == "" || s.Connection == "" || s.Object == "" {
+			return fmt.Errorf("source %q type database requires engine, connection, and object", name)
+		}
+		if !supportsDatabaseEngine(s.Engine) {
+			return fmt.Errorf("source %q has unsupported database engine %q", name, s.Engine)
+		}
+	case "query":
+		if s.Query == "" {
+			return fmt.Errorf("source %q type query requires query", name)
+		}
+	default:
+		return fmt.Errorf("source %q has unsupported type %q", name, s.Type)
+	}
+	if s.Connection != "" {
+		connection, ok := connections[s.Connection]
+		if !ok {
+			return fmt.Errorf("source %q references unknown connection %q", name, s.Connection)
+		}
+		if s.Type == "database" && connection.Type != s.Engine {
+			return fmt.Errorf("source %q database engine %q does not match connection %q type %q", name, s.Engine, s.Connection, connection.Type)
+		}
+	}
+	return nil
+}
+
+func (c Connection) Validate(name string) error {
+	if err := validateSemanticIdentifier(name); err != nil {
+		return fmt.Errorf("connection %q has invalid name: %w", name, err)
+	}
+	if c.Type == "" {
+		return fmt.Errorf("connection %q requires type", name)
+	}
+	if !supportsConnectionType(c.Type) {
+		return fmt.Errorf("connection %q has unsupported type %q", name, c.Type)
+	}
+	if c.Secret != "" {
+		if err := validateSemanticIdentifier(c.Secret); err != nil {
+			return fmt.Errorf("connection %q secret %q is invalid: %w", name, c.Secret, err)
+		}
+	}
+	if c.Auth.Method != "" && !supportsAuthMethod(c.Auth.Method) {
+		return fmt.Errorf("connection %q has unsupported auth method %q", name, c.Auth.Method)
+	}
+	for key := range c.Auth.Params {
+		if err := validateSemanticIdentifier(key); err != nil {
+			return fmt.Errorf("connection %q auth param %q is invalid: %w", name, key, err)
+		}
+	}
+	for key := range c.Options {
+		if !supportsConnectionOption(key) {
+			return fmt.Errorf("connection %q has unsupported option %q", name, key)
+		}
+	}
+	return nil
+}
+
+func (s Source) Description() string {
+	switch s.Type {
+	case "file":
+		return s.Format + " file: " + s.Location
+	case "lakehouse":
+		return s.Format + " table: " + s.Location
+	case "database":
+		return s.Engine + " table: " + s.Object
+	case "query":
+		return "trusted query source"
+	default:
+		return s.Type
+	}
+}
+
+func (s Source) Role() string {
+	switch s.Type {
+	case "file":
+		return s.Format
+	case "lakehouse":
+		return s.Format
+	case "database":
+		return s.Engine
+	case "query":
+		return "query"
+	default:
+		return s.Type
+	}
+}
+
+func isLocalLocation(location string) bool {
+	for _, prefix := range []string{"s3://", "r2://", "gcs://", "gs://", "az://", "azure://", "abfss://", "http://", "https://", "file://"} {
+		if strings.HasPrefix(location, prefix) {
+			return false
+		}
+	}
+	return !strings.Contains(location, "://")
+}
+
+func supportsConnectionType(connectionType string) bool {
+	switch connectionType {
+	case "s3", "r2", "gcs", "azure", "http", "postgres", "mysql", "sqlite":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportsAuthMethod(method string) bool {
+	switch method {
+	case "credential_chain", "config":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportsConnectionOption(option string) bool {
+	switch option {
+	case "connection_string", "uri", "path", "database":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateSemanticIdentifier(value string) error {
+	if !semanticIdentifierPattern.MatchString(value) {
+		return fmt.Errorf("must match %s", semanticIdentifierPattern.String())
+	}
+	return nil
+}
+
+func supportsFileFormat(format string) bool {
+	switch format {
+	case "csv", "json", "parquet", "excel":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportsLakehouseFormat(format string) bool {
+	switch format {
+	case "delta", "iceberg":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportsDatabaseEngine(engine string) bool {
+	switch engine {
+	case "postgres", "mysql", "sqlite":
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Model) CacheTableNames() []string {

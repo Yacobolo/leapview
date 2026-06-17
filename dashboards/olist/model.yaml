@@ -4,19 +4,47 @@ description: Brazilian ecommerce semantic model backed by DuckDB import tables.
 
 sources:
   orders:
-    file: olist_orders_dataset.csv
+    type: file
+    format: csv
+    location: olist_orders_dataset.csv
+    options:
+      header: true
   order_items:
-    file: olist_order_items_dataset.csv
+    type: file
+    format: csv
+    location: olist_order_items_dataset.csv
+    options:
+      header: true
   payments:
-    file: olist_order_payments_dataset.csv
+    type: file
+    format: csv
+    location: olist_order_payments_dataset.csv
+    options:
+      header: true
   products:
-    file: olist_products_dataset.csv
+    type: file
+    format: csv
+    location: olist_products_dataset.csv
+    options:
+      header: true
   customers:
-    file: olist_customers_dataset.csv
+    type: file
+    format: csv
+    location: olist_customers_dataset.csv
+    options:
+      header: true
   reviews:
-    file: olist_order_reviews_dataset.csv
+    type: file
+    format: csv
+    location: olist_order_reviews_dataset.csv
+    options:
+      header: true
   translations:
-    file: product_category_name_translation.csv
+    type: file
+    format: csv
+    location: product_category_name_translation.csv
+    options:
+      header: true
 
 cache:
   tables:
