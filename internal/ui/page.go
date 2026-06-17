@@ -751,7 +751,7 @@ func reportPageHeaderDetail(pages []dashboard.Page, activePage dashboard.Page) s
 	title := displayLabel(activePage.Title, activePage.ID)
 	for index, page := range pages {
 		if page.ID == activePage.ID {
-			return formatReportPageNumber(index, len(pages)) + " " + title
+			return formatReportPageNumber(index, len(pages)) + ". " + title
 		}
 	}
 	return title

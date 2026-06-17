@@ -254,7 +254,7 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 		t.Fatalf("report header still rendered page tabs:\n%s", body)
 	}
 	decoded := html.UnescapeString(body)
-	if !strings.Contains(decoded, `2 Operations`) {
+	if !strings.Contains(decoded, `2. Operations`) {
 		t.Fatalf("report header did not include numbered active page title:\n%s", decoded)
 	}
 	if !strings.Contains(decoded, `"visuals":{"ops_pipeline"`) {
