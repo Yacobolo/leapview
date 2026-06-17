@@ -84,7 +84,7 @@ class ReportCanvas extends LitElement {
       background: var(--report-page-bg, transparent);
     }
 
-    ::slotted(.canvas-visual) {
+    ::slotted([data-canvas-visual]) {
       position: absolute;
       display: block;
       min-width: 0;
@@ -93,7 +93,7 @@ class ReportCanvas extends LitElement {
       box-sizing: border-box;
     }
 
-    ::slotted(.canvas-filter-visual) {
+    ::slotted([data-canvas-filter-visual]) {
       overflow: visible;
       z-index: 5;
     }

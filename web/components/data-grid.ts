@@ -1,13 +1,5 @@
 import { LitElement, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
-import {
-  TableController,
-  createCoreRowModel,
-  createSortedRowModel,
-  flexRender,
-  type ColumnDef,
-  type SortingState,
-} from '@tanstack/lit-table'
 
 type GridCellTone = 'default' | 'accent' | 'success' | 'attention' | 'muted'
 
@@ -27,6 +19,7 @@ type GridColumn = {
 }
 
 type GridRow = Record<string, unknown>
+type GridSort = { id: string; desc: boolean }
 
 type Grid = {
   columns?: GridColumn[]
@@ -40,10 +33,6 @@ const emptyGrid: Required<Grid> = {
   rows: [],
   empty: 'No rows to show.',
   minWidth: '0',
-}
-
-function applyUpdater<T>(updater: unknown, current: T): T {
-  return typeof updater === 'function' ? (updater as (old: T) => T)(current) : updater as T
 }
 
 function cellLabel(value: unknown): string {
@@ -68,10 +57,10 @@ function sortValue(value: unknown): string | number {
 }
 
 class DataGrid extends LitElement {
-  @property({ type: Object }) grid: Grid | null = null
+  @property({ attribute: false }) grid: Grid | null = null
+  @property({ attribute: 'grid' }) gridAttribute = ''
   @property({ attribute: 'data-grid' }) dataGrid = '{}'
-  @state() private sorting: SortingState = []
-  private tableController = new TableController<GridRow>(this)
+  @state() private sorting: GridSort[] = []
 
   createRenderRoot(): HTMLElement {
     return this
@@ -79,66 +68,48 @@ class DataGrid extends LitElement {
 
   render() {
     const grid = this.resolvedGrid
-    const columns: ColumnDef<GridRow, unknown>[] = grid.columns.map((column) => ({
-      id: column.id,
-      accessorFn: (row) => row[column.id],
-      header: column.header,
-      cell: (info) => this.renderCell(column, info.getValue(), info.row.original),
-      sortingFn: (left, right, columnID) => {
-        const leftValue = sortValue(left.original[columnID])
-        const rightValue = sortValue(right.original[columnID])
-        if (typeof leftValue === 'number' && typeof rightValue === 'number') return leftValue - rightValue
-        return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true })
-      },
-      meta: column,
-    }))
-    const table = this.tableController.table({
-      data: grid.rows,
-      columns,
-      state: { sorting: this.sorting },
-      onSortingChange: (updater) => {
-        this.sorting = applyUpdater(updater, this.sorting)
-      },
-      getCoreRowModel: createCoreRowModel(),
-      getSortedRowModel: createSortedRowModel(),
-    })
+    const rows = this.sortedRows(grid.rows)
 
     if (grid.rows.length === 0) {
-      return html`<div class="data-grid-empty">${grid.empty}</div>`
+      return html`
+        <style>
+          ${dataGridStyles}
+        </style>
+        <div class="data-grid-empty">${grid.empty}</div>
+      `
     }
 
     return html`
+      <style>
+        ${dataGridStyles}
+      </style>
       <div class="data-grid-wrap">
         <table class="data-grid" style=${grid.minWidth ? `min-width: ${grid.minWidth}` : ''}>
           <thead>
-            ${table.getHeaderGroups().map((headerGroup) => html`
-              <tr>
-                ${headerGroup.headers.map((header) => {
-                  const column = header.column.columnDef.meta as GridColumn | undefined
-                  const direction = header.column.getIsSorted()
-                  return html`
-                    <th style=${column?.width ? `width: ${column.width}` : ''} class=${column?.align === 'right' ? 'is-right' : ''}>
-                      <button
-                        type="button"
-                        class="data-grid-sort"
-                        @click=${header.column.getToggleSortingHandler()}
-                        aria-label=${`Sort by ${cellLabel(header.column.columnDef.header)}`}
-                      >
-                        <span>${flexRender(header.column.columnDef.header, header.getContext())}</span>
-                        <span class="data-grid-sort-indicator" aria-hidden="true">${direction === 'asc' ? '^' : direction === 'desc' ? 'v' : ''}</span>
-                      </button>
-                    </th>
-                  `
-                })}
-              </tr>
-            `)}
+            <tr>
+              ${grid.columns.map((column) => {
+                const direction = this.sortDirection(column.id)
+                return html`
+                  <th style=${column.width ? `width: ${column.width}` : ''} class=${column.align === 'right' ? 'is-right' : ''}>
+                    <button
+                      type="button"
+                      class="data-grid-sort"
+                      @click=${() => this.toggleSort(column.id)}
+                      aria-label=${`Sort by ${column.header}`}
+                    >
+                      <span>${column.header}</span>
+                      <span class="data-grid-sort-indicator" aria-hidden="true">${direction === 'asc' ? '^' : direction === 'desc' ? 'v' : ''}</span>
+                    </button>
+                  </th>
+                `
+              })}
+            </tr>
           </thead>
           <tbody>
-            ${table.getRowModel().rows.map((row) => html`
+            ${rows.map((row) => html`
               <tr>
-                ${row.getVisibleCells().map((cell) => {
-                  const column = cell.column.columnDef.meta as GridColumn | undefined
-                  return html`<td class=${column?.align === 'right' ? 'is-right' : ''}>${flexRender(cell.column.columnDef.cell, cell.getContext())}</td>`
+                ${grid.columns.map((column) => {
+                  return html`<td class=${column.align === 'right' ? 'is-right' : ''}>${this.renderCell(column, row[column.id], row)}</td>`
                 })}
               </tr>
             `)}
@@ -150,8 +121,7 @@ class DataGrid extends LitElement {
 
   private get resolvedGrid(): Required<Grid> {
     if (this.grid) return normalizeGrid(this.grid)
-    const gridAttribute = this.getAttribute('grid')
-    for (const source of [this.dataGrid, gridAttribute]) {
+    for (const source of [this.gridAttribute, this.dataGrid]) {
       if (!source) continue
       try {
         return normalizeGrid(JSON.parse(source) as Grid)
@@ -185,6 +155,38 @@ class DataGrid extends LitElement {
         return html`<span>${label}</span>`
     }
   }
+
+  private sortDirection(columnID: string): false | 'asc' | 'desc' {
+    const sort = this.sorting.find((item) => item.id === columnID)
+    if (!sort) return false
+    return sort.desc ? 'desc' : 'asc'
+  }
+
+  private toggleSort(columnID: string): void {
+    const direction = this.sortDirection(columnID)
+    if (!direction) {
+      this.sorting = [{ id: columnID, desc: false }]
+      return
+    }
+    if (direction === 'asc') {
+      this.sorting = [{ id: columnID, desc: true }]
+      return
+    }
+    this.sorting = []
+  }
+
+  private sortedRows(rows: GridRow[]): GridRow[] {
+    const sort = this.sorting[0]
+    if (!sort) return rows
+    return [...rows].sort((left, right) => {
+      const leftValue = sortValue(left[sort.id])
+      const rightValue = sortValue(right[sort.id])
+      const result = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true })
+      return sort.desc ? -result : result
+    })
+  }
 }
 
 function normalizeGrid(grid: Grid): Required<Grid> {
@@ -195,5 +197,208 @@ function normalizeGrid(grid: Grid): Required<Grid> {
     minWidth: grid.minWidth ?? emptyGrid.minWidth,
   }
 }
+
+const dataGridStyles = `
+  ld-data-grid {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  ld-data-grid .data-grid-wrap {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  ld-data-grid .data-grid {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  ld-data-grid .data-grid th,
+  ld-data-grid .data-grid td {
+    border-bottom: 1px solid color-mix(in srgb, var(--borderColor-muted), transparent 28%);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  ld-data-grid .data-grid th {
+    background: transparent;
+    color: var(--fgColor-muted);
+    font-size: 0.6rem;
+    font-weight: 850;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  ld-data-grid .data-grid td {
+    color: var(--fgColor-default);
+    font-size: 0.78rem;
+    line-height: 1.4;
+    font-weight: 600;
+  }
+
+  ld-data-grid .data-grid th.is-right,
+  ld-data-grid .data-grid td.is-right {
+    text-align: right;
+  }
+
+  ld-data-grid .data-grid tr:last-child td {
+    border-bottom: 0;
+  }
+
+  ld-data-grid .data-grid tbody tr {
+    transition: background-color 0.12s ease;
+  }
+
+  ld-data-grid .data-grid tbody tr:hover {
+    background: color-mix(in srgb, var(--bgColor-muted), transparent 58%);
+  }
+
+  ld-data-grid .data-grid-sort {
+    display: inline-flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    text-transform: inherit;
+  }
+
+  ld-data-grid .data-grid-sort:hover,
+  ld-data-grid .data-grid-sort:focus-visible {
+    color: var(--fgColor-default);
+    outline: 0;
+  }
+
+  ld-data-grid .data-grid-sort-indicator {
+    min-width: 8px;
+    color: var(--fgColor-accent);
+    text-align: right;
+  }
+
+  ld-data-grid .grid-code,
+  ld-data-grid .grid-expression {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  ld-data-grid .grid-code {
+    display: inline-flex;
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--fgColor-default);
+    padding: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  ld-data-grid .grid-expression {
+    display: block;
+    overflow: hidden;
+    color: var(--fgColor-default);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.76rem;
+    font-weight: 650;
+  }
+
+  ld-data-grid .grid-badge {
+    display: inline-flex;
+    min-height: 22px;
+    align-items: center;
+    gap: 5px;
+    border-radius: var(--borderRadius-full);
+    padding: 0 8px;
+    font-size: 0.66rem;
+    font-weight: 850;
+  }
+
+  ld-data-grid .grid-badge-success {
+    border: 1px solid color-mix(in srgb, var(--fgColor-success), transparent 64%);
+    background: color-mix(in srgb, var(--fgColor-success), transparent 91%);
+    color: var(--fgColor-default);
+  }
+
+  ld-data-grid .grid-badge-accent {
+    border: 1px solid color-mix(in srgb, var(--fgColor-accent), transparent 64%);
+    background: color-mix(in srgb, var(--fgColor-accent), transparent 91%);
+    color: var(--fgColor-default);
+  }
+
+  ld-data-grid .grid-badge-attention {
+    border: 1px solid color-mix(in srgb, var(--fgColor-attention), transparent 64%);
+    background: color-mix(in srgb, var(--fgColor-attention), transparent 91%);
+    color: var(--fgColor-default);
+  }
+
+  ld-data-grid .grid-badge-muted,
+  ld-data-grid .grid-badge-default {
+    border: 1px solid var(--borderColor-muted);
+    background: var(--bgColor-muted);
+    color: var(--fgColor-muted);
+  }
+
+  ld-data-grid .grid-number {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ld-data-grid .grid-link {
+    color: var(--fgColor-accent);
+    font-weight: 850;
+    text-decoration: none;
+  }
+
+  ld-data-grid .grid-link:hover,
+  ld-data-grid .grid-link:focus-visible {
+    text-decoration: underline;
+    outline: 0;
+  }
+
+  ld-data-grid .grid-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  ld-data-grid .grid-tags span {
+    display: inline-flex;
+    min-height: 21px;
+    align-items: center;
+    border: 1px solid var(--borderColor-muted);
+    border-radius: var(--borderRadius-full);
+    background: var(--bgColor-muted);
+    color: var(--fgColor-muted);
+    padding: 0 7px;
+    font-size: 0.64rem;
+    font-weight: 850;
+    text-transform: uppercase;
+  }
+
+  ld-data-grid .grid-muted,
+  ld-data-grid .data-grid-empty {
+    color: var(--fgColor-muted);
+  }
+
+  ld-data-grid .data-grid-empty {
+    border-top: 1px solid var(--borderColor-default);
+    padding: 16px 0 0;
+    font-size: 0.78rem;
+    font-weight: 650;
+  }
+`
 
 customElements.define('ld-data-grid', DataGrid)

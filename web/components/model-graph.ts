@@ -1,4 +1,4 @@
-import { LitElement, css, html } from 'lit'
+import { LitElement, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -48,233 +48,9 @@ class ModelGraph extends LitElement {
   private root?: Root
   private mount?: HTMLDivElement
 
-  static styles = css``
-
   createRenderRoot(): HTMLElement {
     return this
   }
-
-  /*
-   * The component renders in light DOM so React Flow's generated stylesheet can
-   * style its internal DOM. Component-specific selectors live in app.input.css.
-   */
-  static unusedShadowStyles = css`
-    :host {
-      display: block;
-      min-height: 0;
-      height: 100%;
-    }
-
-    .shell {
-      display: grid;
-      height: 100%;
-      min-height: 620px;
-      grid-template-columns: minmax(0, 1fr) 280px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 8px;
-      background: var(--bgColor-default);
-      box-shadow: var(--shadow-resting-medium);
-      overflow: hidden;
-    }
-
-    .flow {
-      min-width: 0;
-      min-height: 0;
-      background:
-        linear-gradient(var(--bgColor-default), var(--bgColor-default)),
-        radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fgColor-muted), transparent 86%) 1px, transparent 0);
-      background-size: auto, 18px 18px;
-    }
-
-    .inspector {
-      border-left: 1px solid var(--borderColor-default);
-      background: var(--bgColor-muted);
-      padding: 12px;
-      overflow: auto;
-    }
-
-    .inspector h2 {
-      margin: 0 0 4px;
-      font-size: 0.95rem;
-      line-height: 1.15;
-    }
-
-    .kind {
-      margin: 0 0 12px;
-      color: var(--fgColor-muted);
-      font-size: 0.68rem;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-
-    .detail {
-      display: grid;
-      gap: 8px;
-    }
-
-    .detail-row {
-      display: grid;
-      gap: 2px;
-      border-bottom: 1px solid var(--borderColor-muted);
-      padding-bottom: 7px;
-      font-size: 0.74rem;
-    }
-
-    .detail-row span:first-child {
-      color: var(--fgColor-muted);
-      font-size: 0.62rem;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-
-    .fields {
-      display: grid;
-      gap: 4px;
-      margin-top: 10px;
-    }
-
-    .field {
-      display: flex;
-      min-width: 0;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
-      background: var(--bgColor-default);
-      padding: 5px 7px;
-      font-size: 0.72rem;
-      font-weight: 750;
-    }
-
-    .field code {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-family: inherit;
-    }
-
-    .field span {
-      color: var(--fgColor-muted);
-      font-size: 0.62rem;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-
-    .empty {
-      color: var(--fgColor-muted);
-      font-size: 0.78rem;
-      line-height: 1.45;
-    }
-
-    .node-card {
-      width: 214px;
-      border: 1px solid var(--node-border);
-      border-radius: 6px;
-      background: var(--bgColor-default);
-      box-shadow: var(--shadow-resting-small);
-      color: var(--fgColor-default);
-      overflow: hidden;
-    }
-
-    .node-card.selected {
-      outline: 2px solid var(--fgColor-accent);
-      outline-offset: 2px;
-    }
-
-    .node-head {
-      border-left: 4px solid var(--node-accent);
-      background: var(--node-bg);
-      padding: 8px 9px 7px;
-    }
-
-    .node-kind {
-      color: var(--fgColor-muted);
-      font-size: 0.58rem;
-      font-weight: 950;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-
-    .node-title {
-      overflow: hidden;
-      margin-top: 2px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.82rem;
-      font-weight: 900;
-      line-height: 1.15;
-    }
-
-    .node-fields {
-      display: grid;
-      gap: 1px;
-      padding: 6px 8px 8px;
-    }
-
-    .node-field {
-      display: flex;
-      min-width: 0;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      border-bottom: 1px solid var(--borderColor-muted);
-      padding: 3px 0;
-      font-size: 0.66rem;
-      font-weight: 750;
-    }
-
-    .node-field:last-child {
-      border-bottom: 0;
-    }
-
-    .node-field code {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-family: inherit;
-    }
-
-    .node-field span {
-      color: var(--fgColor-muted);
-      font-size: 0.56rem;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-
-    .react-flow {
-      color: var(--fgColor-default);
-    }
-
-    .react-flow__attribution {
-      display: none;
-    }
-
-    .react-flow__controls,
-    .react-flow__minimap {
-      border: 1px solid var(--borderColor-default);
-      background: var(--bgColor-default);
-      box-shadow: var(--shadow-resting-small);
-    }
-
-    .react-flow__controls-button {
-      border-bottom-color: var(--borderColor-muted);
-      background: var(--bgColor-default);
-      color: var(--fgColor-default);
-    }
-
-    @media (max-width: 980px) {
-      .shell {
-        grid-template-columns: 1fr;
-      }
-
-      .inspector {
-        max-height: 260px;
-        border-top: 1px solid var(--borderColor-default);
-        border-left: 0;
-      }
-    }
-  `
 
   firstUpdated(): void {
     this.mount = this.renderRoot.querySelector('.flow') as HTMLDivElement | null ?? undefined
@@ -299,6 +75,9 @@ class ModelGraph extends LitElement {
     const graph = this.graph
     const selected = graph.nodes.find((node) => node.id === this.selectedID) ?? graph.nodes[0]
     return html`
+      <style>
+        ${modelGraphStyles}
+      </style>
       <section class="shell">
         <div class="flow"></div>
         <aside class="inspector" aria-label="Model details">
@@ -378,6 +157,225 @@ class ModelGraph extends LitElement {
     }
   }
 }
+
+const modelGraphStyles = `
+  ld-model-graph {
+    display: block;
+    min-height: 0;
+    height: 100%;
+    width: 100%;
+  }
+
+  ld-model-graph .shell {
+    display: grid;
+    height: 100%;
+    min-height: 620px;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    border: 1px solid var(--borderColor-default);
+    border-radius: var(--borderRadius-default);
+    background: var(--bgColor-default);
+    box-shadow: var(--shadow-resting-medium);
+    overflow: hidden;
+  }
+
+  ld-model-graph .flow {
+    min-width: 0;
+    min-height: 0;
+    background:
+      linear-gradient(var(--bgColor-default), var(--bgColor-default)),
+      radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fgColor-muted), transparent 86%) 1px, transparent 0);
+    background-size: auto, 18px 18px;
+  }
+
+  ld-model-graph .inspector {
+    border-left: 1px solid var(--borderColor-default);
+    background: var(--bgColor-muted);
+    padding: 12px;
+    overflow: auto;
+  }
+
+  ld-model-graph .inspector h2 {
+    margin: 0 0 4px;
+    font-size: 0.95rem;
+    line-height: 1.15;
+  }
+
+  ld-model-graph .kind {
+    margin: 0 0 12px;
+    color: var(--fgColor-muted);
+    font-size: 0.68rem;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  ld-model-graph .detail {
+    display: grid;
+    gap: 8px;
+  }
+
+  ld-model-graph .detail-row {
+    display: grid;
+    gap: 2px;
+    border-bottom: 1px solid var(--borderColor-muted);
+    padding-bottom: 7px;
+    font-size: 0.74rem;
+  }
+
+  ld-model-graph .detail-row span:first-child {
+    color: var(--fgColor-muted);
+    font-size: 0.62rem;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  ld-model-graph .fields {
+    display: grid;
+    gap: 4px;
+    margin-top: 10px;
+  }
+
+  ld-model-graph .field {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid var(--borderColor-default);
+    border-radius: var(--borderRadius-small);
+    background: var(--bgColor-default);
+    padding: 5px 7px;
+    font-size: 0.72rem;
+    font-weight: 750;
+  }
+
+  ld-model-graph .field code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: inherit;
+  }
+
+  ld-model-graph .field span {
+    color: var(--fgColor-muted);
+    font-size: 0.62rem;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  ld-model-graph .empty {
+    color: var(--fgColor-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  ld-model-graph .node-card {
+    width: 214px;
+    border: 1px solid var(--node-border);
+    border-radius: var(--borderRadius-default);
+    background: var(--bgColor-default);
+    box-shadow: var(--shadow-resting-small);
+    color: var(--fgColor-default);
+    overflow: hidden;
+  }
+
+  ld-model-graph .node-card.selected {
+    outline: 2px solid var(--fgColor-accent);
+    outline-offset: 2px;
+  }
+
+  ld-model-graph .node-head {
+    border-left: 4px solid var(--node-accent);
+    background: var(--node-bg);
+    padding: 8px 9px 7px;
+  }
+
+  ld-model-graph .node-kind {
+    color: var(--fgColor-muted);
+    font-size: 0.58rem;
+    font-weight: 950;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  ld-model-graph .node-title {
+    overflow: hidden;
+    margin-top: 2px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.15;
+  }
+
+  ld-model-graph .node-fields {
+    display: grid;
+    gap: 1px;
+    padding: 6px 8px 8px;
+  }
+
+  ld-model-graph .node-field {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid var(--borderColor-muted);
+    padding: 3px 0;
+    font-size: 0.66rem;
+    font-weight: 750;
+  }
+
+  ld-model-graph .node-field:last-child {
+    border-bottom: 0;
+  }
+
+  ld-model-graph .node-field code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: inherit;
+  }
+
+  ld-model-graph .node-field span {
+    color: var(--fgColor-muted);
+    font-size: 0.56rem;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  ld-model-graph .react-flow {
+    color: var(--fgColor-default);
+  }
+
+  ld-model-graph .react-flow__attribution {
+    display: none;
+  }
+
+  ld-model-graph .react-flow__controls,
+  ld-model-graph .react-flow__minimap {
+    border: 1px solid var(--borderColor-default);
+    background: var(--bgColor-default);
+    box-shadow: var(--shadow-resting-small);
+  }
+
+  ld-model-graph .react-flow__controls-button {
+    border-bottom-color: var(--borderColor-muted);
+    background: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+
+  @media (max-width: 980px) {
+    ld-model-graph .shell {
+      grid-template-columns: 1fr;
+    }
+
+    ld-model-graph .inspector {
+      max-height: 260px;
+      border-top: 1px solid var(--borderColor-default);
+      border-left: 0;
+    }
+  }
+`
 
 function toFlowNode(node: ModelGraphNode, selectedID: string, nodes: ModelGraphNode[]): Node {
   const { x, y } = positionFor(node, nodes)
