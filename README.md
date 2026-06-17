@@ -46,18 +46,20 @@ go run ./cmd/libredash
 
 ## Source Model
 
-Semantic model YAML declares user-facing `sources` and optional named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract.
+Semantic model YAML declares user-facing `sources`, optional `source_defaults`, and optional named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. A scalar source value is shorthand for `location`.
 
 Local CSV:
 
 ```yaml
+source_defaults:
+  type: file
+  format: csv
+  options:
+    header: true
+
 sources:
-  orders:
-    type: file
-    format: csv
-    location: olist_orders_dataset.csv
-    options:
-      header: true
+  orders: olist_orders_dataset.csv
+  order_items: olist_order_items_dataset.csv
 ```
 
 S3 Parquet with credential-chain auth:
@@ -73,12 +75,13 @@ connections:
       params:
         region: us-east-1
 
+source_defaults:
+  type: file
+  format: parquet
+  connection: prod_lake
+
 sources:
-  sales_events:
-    type: file
-    format: parquet
-    location: s3://analytics-prod/events/*.parquet
-    connection: prod_lake
+  sales_events: s3://analytics-prod/events/*.parquet
 ```
 
 Azure Delta Lake:

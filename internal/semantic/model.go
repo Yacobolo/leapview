@@ -13,14 +13,15 @@ import (
 var semanticIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 type Model struct {
-	Name          string                `yaml:"name"`
-	Title         string                `yaml:"title"`
-	Description   string                `yaml:"description"`
-	Connections   map[string]Connection `yaml:"connections"`
-	Sources       map[string]Source     `yaml:"sources"`
-	Cache         Cache                 `yaml:"cache"`
-	Datasets      map[string]Dataset    `yaml:"datasets"`
-	Relationships []Relationship        `yaml:"relationships"`
+	Name           string                `yaml:"name"`
+	Title          string                `yaml:"title"`
+	Description    string                `yaml:"description"`
+	Connections    map[string]Connection `yaml:"connections"`
+	SourceDefaults Source                `yaml:"source_defaults"`
+	Sources        map[string]Source     `yaml:"sources"`
+	Cache          Cache                 `yaml:"cache"`
+	Datasets       map[string]Dataset    `yaml:"datasets"`
+	Relationships  []Relationship        `yaml:"relationships"`
 }
 
 type Connection struct {
@@ -48,6 +49,20 @@ type Source struct {
 	Object     string         `yaml:"object"`
 	Query      string         `yaml:"query"`
 	Options    map[string]any `yaml:"options"`
+}
+
+func (s *Source) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode && value.Tag == "!!str" {
+		s.Location = value.Value
+		return nil
+	}
+	type source Source
+	var decoded source
+	if err := value.Decode(&decoded); err != nil {
+		return err
+	}
+	*s = Source(decoded)
+	return nil
 }
 
 type Cache struct {
@@ -113,6 +128,7 @@ func Load(path string) (*Model, error) {
 }
 
 func (m *Model) Validate() error {
+	m.applySourceDefaults()
 	if m.Name == "" {
 		return fmt.Errorf("semantic model name is required")
 	}
@@ -159,6 +175,50 @@ func (m *Model) Validate() error {
 		seenRelationships[relationship.ID] = struct{}{}
 	}
 	return nil
+}
+
+func (m *Model) applySourceDefaults() {
+	if len(m.Sources) == 0 {
+		return
+	}
+	for name, source := range m.Sources {
+		m.Sources[name] = applySourceDefault(source, m.SourceDefaults)
+	}
+}
+
+func applySourceDefault(source, defaults Source) Source {
+	if source.Type == "" {
+		source.Type = defaults.Type
+	}
+	if source.Format == "" {
+		source.Format = defaults.Format
+	}
+	if source.Location == "" {
+		source.Location = defaults.Location
+	}
+	if source.Connection == "" {
+		source.Connection = defaults.Connection
+	}
+	if source.Engine == "" {
+		source.Engine = defaults.Engine
+	}
+	if source.Object == "" {
+		source.Object = defaults.Object
+	}
+	if source.Query == "" {
+		source.Query = defaults.Query
+	}
+	if len(defaults.Options) > 0 {
+		options := make(map[string]any, len(defaults.Options)+len(source.Options))
+		for key, value := range defaults.Options {
+			options[key] = value
+		}
+		for key, value := range source.Options {
+			options[key] = value
+		}
+		source.Options = options
+	}
+	return source
 }
 
 func LoadMetricView(path string, model *Model) (*MetricView, error) {

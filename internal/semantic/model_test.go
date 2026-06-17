@@ -170,6 +170,72 @@ func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 	}
 }
 
+func TestModelValidateAppliesSourceDefaults(t *testing.T) {
+	model := minimalSourceModel()
+	model.SourceDefaults = Source{
+		Type:    "file",
+		Format:  "csv",
+		Options: map[string]any{"header": true, "sample_size": 1000},
+	}
+	model.Sources = map[string]Source{
+		"orders":   {Location: "orders.csv"},
+		"products": {Location: "products.csv", Options: map[string]any{"sample_size": 2000}},
+	}
+
+	if err := model.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+	if got := model.Sources["orders"].Type; got != "file" {
+		t.Fatalf("orders source type = %q, want file", got)
+	}
+	if got := model.Sources["orders"].Format; got != "csv" {
+		t.Fatalf("orders source format = %q, want csv", got)
+	}
+	if got := model.Sources["orders"].Options["header"]; got != true {
+		t.Fatalf("orders header option = %#v, want true", got)
+	}
+	if got := model.Sources["products"].Options["sample_size"]; got != 2000 {
+		t.Fatalf("products sample_size option = %#v, want 2000", got)
+	}
+}
+
+func TestLoadModelAcceptsScalarSourceLocations(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.yaml")
+	content := strings.ReplaceAll(`name: test
+title: Test
+source_defaults:
+  type: file
+  format: csv
+  options:
+    header: true
+sources:
+  orders: orders.csv
+cache:
+  tables:
+    orders_cache:
+      sql: SELECT * FROM raw.orders
+datasets:
+  orders:
+    source: orders_cache
+`, "\t", "  ")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	model, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := model.Sources["orders"]
+	if source.Type != "file" || source.Format != "csv" || source.Location != "orders.csv" {
+		t.Fatalf("orders source = %#v, want csv file orders.csv", source)
+	}
+	if got := source.Options["header"]; got != true {
+		t.Fatalf("orders header option = %#v, want true", got)
+	}
+}
+
 func TestModelValidateRejectsInvalidSources(t *testing.T) {
 	cases := map[string]struct {
 		source   Source
