@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -652,8 +653,8 @@ relogios_presentes,watches_gifts
 	if got := views[0].DimensionCount; got != 7 {
 		t.Fatalf("metric view dimension count = %d, want 7", got)
 	}
-	if got := views[0].MeasureCount; got != 5 {
-		t.Fatalf("metric view measure count = %d, want 5", got)
+	if got := views[0].MeasureCount; got != 13 {
+		t.Fatalf("metric view measure count = %d, want 13", got)
 	}
 	if got := views[0].DashboardCount; got != 1 {
 		t.Fatalf("metric view dashboard count = %d, want 1", got)
@@ -690,7 +691,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("model graph missing dataset to metrics view edge: %#v", graph.Edges)
 	}
 
-	patch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
+	patch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 		"state":         {Type: "multi_select", Operator: "in", Values: []string{"SP"}},
 		"purchase_date": {Type: "date_range", Preset: "2018"},
 	}})
@@ -701,110 +702,226 @@ relogios_presentes,watches_gifts
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error: %s", patch.Status.Error)
 	}
-	if got := patch.KPIs[0].Value; got != "1" {
-		t.Fatalf("orders KPI = %q, want 1", got)
+	assertVisualKeys(t, patch, overviewVisualKeys())
+	if got := datumInt(patch.Visuals["total_orders"].Data[0], "value"); got != 1 {
+		t.Fatalf("orders KPI value = %d, want 1", got)
 	}
-	if len(patch.Charts["revenue"].Data) != 1 {
-		t.Fatalf("revenue points = %d, want 1", len(patch.Charts["revenue"].Data))
+	if got := patch.Visuals["total_orders"].Kind; got != "kpi" {
+		t.Fatalf("orders KPI kind = %q, want kpi", got)
 	}
-	if got := patch.Charts["revenue"].Type; got != "area" {
+	if got := patch.Visuals["total_orders"].Type; got != "kpi" {
+		t.Fatalf("orders KPI type = %q, want kpi", got)
+	}
+	if got := patch.Visuals["total_orders"].Title; got != "Orders" {
+		t.Fatalf("orders KPI title = %q, want Orders", got)
+	}
+	if len(patch.Visuals["revenue"].Data) != 1 {
+		t.Fatalf("revenue points = %d, want 1", len(patch.Visuals["revenue"].Data))
+	}
+	if got := patch.Visuals["revenue"].Type; got != "area" {
 		t.Fatalf("revenue chart type = %q, want area", got)
 	}
-	if got := patch.Charts["revenue"].Version; got != 3 {
+	if got := patch.Visuals["revenue"].Version; got != 3 {
 		t.Fatalf("revenue chart version = %d, want 3", got)
 	}
-	if got := patch.Charts["revenue"].Kind; got != "chart" {
+	if got := patch.Visuals["revenue"].Kind; got != "chart" {
 		t.Fatalf("revenue chart kind = %q, want chart", got)
 	}
-	if got := patch.Charts["revenue"].Shape; got != "category_value" {
+	if got := patch.Visuals["revenue"].Shape; got != "category_value" {
 		t.Fatalf("revenue chart shape = %q, want category_value", got)
 	}
-	if got := patch.Charts["revenue"].Renderer; got != "echarts" {
+	if got := patch.Visuals["revenue"].Renderer; got != "echarts" {
 		t.Fatalf("revenue chart renderer = %q, want echarts", got)
 	}
-	if got := patch.Charts["revenue"].Measures[0]; got != "revenue" {
+	if got := patch.Visuals["revenue"].Measures[0]; got != "revenue" {
 		t.Fatalf("revenue chart measure = %q, want revenue", got)
 	}
-	if got := patch.Charts["orders"].Type; got != "donut" {
+	if got := patch.Visuals["orders"].Type; got != "donut" {
 		t.Fatalf("orders chart type = %q, want donut", got)
 	}
-	if got := patch.Charts["orders_by_month_status"].Shape; got != "category_series_value" {
-		t.Fatalf("multi-series chart shape = %q, want category_series_value", got)
-	}
-	if got := patch.Charts["orders_by_month_status"].Options["stacked"]; got != true {
-		t.Fatalf("multi-series chart stacked option = %v, want true", got)
-	}
-	if got := datumString(patch.Charts["categories"].Data[0], "label"); got != "health_beauty" {
+	if got := datumString(patch.Visuals["categories"].Data[0], "label"); got != "health_beauty" {
 		t.Fatalf("top category = %q, want health_beauty", got)
 	}
 	if got := len(patch.FilterOptions["state"]); got != 2 {
 		t.Fatalf("state filter options = %d, want 2", got)
 	}
+	if _, ok := patch.Filters.Controls["category"]; ok {
+		t.Fatalf("overview patch included off-page category filter: %#v", patch.Filters.Controls)
+	}
 
-	selectedPatch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{
+	selectedFilters := dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{
 			{VisualID: "orders", Field: "status", Operator: "in", Values: []string{"delivered"}},
 		},
-	})
+	}
+	selectedPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", selectedFilters)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := selectedPatch.KPIs[0].Value; got != "2" {
-		t.Fatalf("selected orders KPI = %q, want 2", got)
+	if got := datumInt(selectedPatch.Visuals["total_orders"].Data[0], "value"); got != 2 {
+		t.Fatalf("selected orders KPI value = %d, want 2", got)
 	}
-	if len(selectedPatch.Charts["orders"].Data) != 2 {
-		t.Fatalf("orders chart points with self-selection = %d, want 2", len(selectedPatch.Charts["orders"].Data))
+	if len(selectedPatch.Visuals["orders"].Data) != 2 {
+		t.Fatalf("orders chart points with self-selection = %d, want 2", len(selectedPatch.Visuals["orders"].Data))
 	}
-	if !pointSelected(selectedPatch.Charts["orders"].Data, "delivered") {
-		t.Fatalf("orders chart did not mark delivered as selected: %#v", selectedPatch.Charts["orders"].Data)
+	if !pointSelected(selectedPatch.Visuals["orders"].Data, "delivered") {
+		t.Fatalf("orders chart did not mark delivered as selected: %#v", selectedPatch.Visuals["orders"].Data)
 	}
-	if got := datumString(selectedPatch.Charts["categories"].Data[0], "label"); got != "health_beauty" {
+	if got := datumString(selectedPatch.Visuals["categories"].Data[0], "label"); got != "health_beauty" {
 		t.Fatalf("category chart under status selection = %q, want health_beauty", got)
 	}
-	if got := datumString(selectedPatch.Charts["revenue"].Data[0], "series"); got != "" {
+	if got := datumString(selectedPatch.Visuals["revenue"].Data[0], "series"); got != "" {
 		t.Fatalf("single-series chart row series = %q, want empty", got)
 	}
-	if got := datumString(selectedPatch.Charts["orders_by_month_status"].Data[0], "series"); got == "" {
+
+	columnPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-column", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, columnPatch, []string{"orders_by_month_column", "orders_by_month_status", "orders_by_month_status_grouped"})
+	if got := columnPatch.Visuals["orders_by_month_status"].Shape; got != "category_series_value" {
+		t.Fatalf("multi-series chart shape = %q, want category_series_value", got)
+	}
+	if got := columnPatch.Visuals["orders_by_month_status"].Options["stacked"]; got != true {
+		t.Fatalf("multi-series chart stacked option = %v, want true", got)
+	}
+	if got := datumString(columnPatch.Visuals["orders_by_month_status"].Data[0], "series"); got == "" {
 		t.Fatal("multi-series chart row series is empty")
 	}
-	if len(selectedPatch.Charts["orders_by_month_status"].Data) != 2 {
-		t.Fatalf("non-target multi-series chart points under status selection = %d, want 2", len(selectedPatch.Charts["orders_by_month_status"].Data))
+	if len(columnPatch.Visuals["orders_by_month_status"].Data) != 2 {
+		t.Fatalf("non-target multi-series chart points under status selection = %d, want 2", len(columnPatch.Visuals["orders_by_month_status"].Data))
 	}
-	if got := selectedPatch.Charts["revenue_orders_combo"].Shape; got != "category_multi_measure" {
+
+	boxplotPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-boxplot", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, boxplotPatch, []string{"delivery_distribution", "review_distribution", "revenue_distribution"})
+	if len(boxplotPatch.Visuals["revenue_distribution"].Data) == 0 {
+		t.Fatal("revenue distribution payload is empty")
+	}
+
+	funnelPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-funnel", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, funnelPatch, []string{"delivery_funnel", "status_funnel", "status_funnel_left"})
+
+	piePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-pie", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
+		"category": {Type: "text", Operator: "contains", Value: "health"},
+		"state":    {Type: "multi_select", Operator: "in", Values: []string{"SP"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, piePatch, []string{"category_pie_inside", "status_pie", "status_pie_rose"})
+	if _, ok := piePatch.Filters.Controls["category"]; ok {
+		t.Fatalf("pie patch included off-page category filter: %#v", piePatch.Filters.Controls)
+	}
+	if _, ok := piePatch.FilterOptions["category"]; ok {
+		t.Fatalf("pie patch included off-page category options: %#v", piePatch.FilterOptions)
+	}
+	if got := len(piePatch.FilterOptions["state"]); got != 2 {
+		t.Fatalf("pie state filter options = %d, want 2", got)
+	}
+
+	emptyPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, emptyPagePatch, overviewVisualKeys())
+
+	unknownPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "missing", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, unknownPagePatch, overviewVisualKeys())
+
+	for chartType, visualKeys := range chartShowcaseMatrix() {
+		pagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-"+chartType, dashboard.Filters{})
+		if err != nil {
+			t.Fatalf("query chart-%s: %v", chartType, err)
+		}
+		assertVisualKeys(t, pagePatch, visualKeys)
+	}
+	candlestickPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-candlestick", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candlestickPatch.Visuals["revenue_candlestick"].Data) == 0 {
+		t.Fatal("revenue candlestick payload is empty")
+	}
+
+	comboPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-combo", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, comboPatch, []string{"review_delivery_combo", "revenue_orders_combo", "revenue_orders_dual_axis_combo"})
+	if got := comboPatch.Visuals["revenue_orders_combo"].Shape; got != "category_multi_measure" {
 		t.Fatalf("combo chart shape = %q, want category_multi_measure", got)
 	}
-	if !hasDatumValue(selectedPatch.Charts["revenue_orders_combo"].Data, "series", "Revenue") || !hasDatumValue(selectedPatch.Charts["revenue_orders_combo"].Data, "series", "Orders") {
-		t.Fatalf("combo chart rows missing expected measure series: %#v", selectedPatch.Charts["revenue_orders_combo"].Data)
+	if !hasDatumValue(comboPatch.Visuals["revenue_orders_combo"].Data, "series", "Revenue") || !hasDatumValue(comboPatch.Visuals["revenue_orders_combo"].Data, "series", "Orders") {
+		t.Fatalf("combo chart rows missing expected measure series: %#v", comboPatch.Visuals["revenue_orders_combo"].Data)
 	}
-	if got := selectedPatch.Charts["revenue_waterfall"].Shape; got != "category_delta" {
+
+	waterfallPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-waterfall", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, waterfallPatch, []string{"orders_waterfall", "revenue_waterfall", "revenue_waterfall_labeled"})
+	if got := waterfallPatch.Visuals["revenue_waterfall"].Shape; got != "category_delta" {
 		t.Fatalf("waterfall chart shape = %q, want category_delta", got)
 	}
-	if _, ok := selectedPatch.Charts["revenue_waterfall"].Data[0]["start"]; !ok {
-		t.Fatalf("waterfall row missing start/end: %#v", selectedPatch.Charts["revenue_waterfall"].Data[0])
+	if _, ok := waterfallPatch.Visuals["revenue_waterfall"].Data[0]["start"]; !ok {
+		t.Fatalf("waterfall row missing start/end: %#v", waterfallPatch.Visuals["revenue_waterfall"].Data[0])
 	}
-	if got := selectedPatch.Charts["delivery_histogram"].Shape; got != "binned_measure" {
+
+	histogramPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-histogram", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, histogramPatch, []string{"delivery_histogram", "review_histogram", "revenue_histogram"})
+	if got := histogramPatch.Visuals["delivery_histogram"].Shape; got != "binned_measure" {
 		t.Fatalf("histogram chart shape = %q, want binned_measure", got)
 	}
-	if _, ok := selectedPatch.Charts["delivery_histogram"].Data[0]["binStart"]; !ok {
-		t.Fatalf("histogram row missing bin metadata: %#v", selectedPatch.Charts["delivery_histogram"].Data[0])
+	if _, ok := histogramPatch.Visuals["delivery_histogram"].Data[0]["binStart"]; !ok {
+		t.Fatalf("histogram row missing bin metadata: %#v", histogramPatch.Visuals["delivery_histogram"].Data[0])
 	}
-	if got := selectedPatch.Charts["state_order_map"].Shape; got != "geo" {
+
+	mapPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-map", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, mapPatch, []string{"state_order_map", "state_revenue_map", "state_revenue_map_labeled"})
+	if got := mapPatch.Visuals["state_order_map"].Shape; got != "geo" {
 		t.Fatalf("map chart shape = %q, want geo", got)
 	}
-	if !hasDatumValue(selectedPatch.Charts["state_order_map"].Data, "name", "SP") {
-		t.Fatalf("map chart rows missing SP: %#v", selectedPatch.Charts["state_order_map"].Data)
+	if !hasDatumValue(mapPatch.Visuals["state_order_map"].Data, "name", "SP") {
+		t.Fatalf("map chart rows missing SP: %#v", mapPatch.Visuals["state_order_map"].Data)
 	}
-	if got := selectedPatch.Charts["status_delivery_graph"].Type; got != "graph" {
+
+	graphPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-graph", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, graphPatch, []string{"category_status_graph", "category_status_graph_circular", "status_delivery_graph"})
+	if got := graphPatch.Visuals["status_delivery_graph"].Type; got != "graph" {
 		t.Fatalf("graph visual type = %q, want graph", got)
 	}
-	if !hasDatumValue(selectedPatch.Charts["status_delivery_graph"].Data, "source", "delivered") {
-		t.Fatalf("graph rows missing delivered source: %#v", selectedPatch.Charts["status_delivery_graph"].Data)
+	if !hasDatumValue(graphPatch.Visuals["status_delivery_graph"].Data, "source", "delivered") {
+		t.Fatalf("graph rows missing delivered source: %#v", graphPatch.Visuals["status_delivery_graph"].Data)
 	}
-	if got := selectedPatch.Charts["category_status_sunburst"].Shape; got != "hierarchy" {
+
+	sunburstPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-sunburst", selectedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, sunburstPatch, []string{"category_state_status_sunburst", "category_status_sunburst", "state_status_sunburst"})
+	if got := sunburstPatch.Visuals["category_status_sunburst"].Shape; got != "hierarchy" {
 		t.Fatalf("hierarchy chart shape = %q, want hierarchy", got)
 	}
-	if !hasHierarchyPathValue(selectedPatch.Charts["category_status_sunburst"].Data, "health_beauty") {
-		t.Fatalf("hierarchy rows missing health_beauty path: %#v", selectedPatch.Charts["category_status_sunburst"].Data)
+	if !hasHierarchyPathValue(sunburstPatch.Visuals["category_status_sunburst"].Data, "health_beauty") {
+		t.Fatalf("hierarchy rows missing health_beauty path: %#v", sunburstPatch.Visuals["category_status_sunburst"].Data)
 	}
 
 	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
@@ -958,25 +1075,25 @@ relogios_presentes,watches_gifts
 			want: "2",
 		},
 		{
-			name: "category contains",
+			name: "off-page category contains ignored",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "contains", Value: "watch"},
 			}},
-			want: "1",
+			want: "2",
 		},
 		{
-			name: "category equals",
+			name: "off-page category equals ignored",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "equals", Value: "health_beauty"},
 			}},
-			want: "1",
+			want: "2",
 		},
 		{
-			name: "category not contains",
+			name: "off-page category not contains ignored",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "not_contains", Value: "health"},
 			}},
-			want: "1",
+			want: "2",
 		},
 		{
 			name: "custom date range",
@@ -993,8 +1110,8 @@ relogios_presentes,watches_gifts
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := patch.KPIs[0].Value; got != tt.want {
-				t.Fatalf("orders KPI = %q, want %s", got, tt.want)
+			if got := fmt.Sprint(datumInt(patch.Visuals["total_orders"].Data[0], "value")); got != tt.want {
+				t.Fatalf("orders KPI value = %q, want %s", got, tt.want)
 			}
 		})
 	}
@@ -1008,6 +1125,50 @@ func pointSelected(points []dashboard.Datum, label string) bool {
 		}
 	}
 	return false
+}
+
+func overviewVisualKeys() []string {
+	return []string{"aov_kpi", "categories", "delivery", "orders", "revenue", "revenue_kpi", "review_kpi", "total_orders"}
+}
+
+func chartShowcaseMatrix() map[string][]string {
+	return map[string][]string{
+		"line":        {"revenue_line", "revenue_line_status", "revenue_line_step"},
+		"area":        {"revenue", "revenue_area_status", "revenue_area_smooth"},
+		"bar":         {"categories", "delivery", "categories_by_status_bar"},
+		"column":      {"orders_by_month_column", "orders_by_month_status", "orders_by_month_status_grouped"},
+		"pie":         {"status_pie", "status_pie_rose", "category_pie_inside"},
+		"donut":       {"orders", "category_donut", "orders_donut_center"},
+		"scatter":     {"delivery_scatter", "delivery_scatter_status", "delivery_scatter_labeled"},
+		"funnel":      {"status_funnel", "delivery_funnel", "status_funnel_left"},
+		"treemap":     {"category_treemap", "state_treemap", "category_treemap_roam"},
+		"gauge":       {"total_orders_gauge", "review_gauge", "review_gauge_thresholds"},
+		"heatmap":     {"state_status_heatmap", "category_status_heatmap", "category_status_heatmap_labels"},
+		"sankey":      {"status_delivery_flow", "category_status_flow", "category_status_flow_spacious"},
+		"graph":       {"status_delivery_graph", "category_status_graph", "category_status_graph_circular"},
+		"map":         {"state_order_map", "state_revenue_map", "state_revenue_map_labeled"},
+		"candlestick": {"delivery_candlestick", "revenue_candlestick"},
+		"boxplot":     {"delivery_distribution", "review_distribution", "revenue_distribution"},
+		"combo":       {"revenue_orders_combo", "review_delivery_combo", "revenue_orders_dual_axis_combo"},
+		"waterfall":   {"revenue_waterfall", "orders_waterfall", "revenue_waterfall_labeled"},
+		"histogram":   {"delivery_histogram", "revenue_histogram", "review_histogram"},
+		"radar":       {"status_radar", "delivery_radar", "state_radar"},
+		"tree":        {"state_status_tree", "category_status_tree", "category_state_status_tree"},
+		"sunburst":    {"category_status_sunburst", "state_status_sunburst", "category_state_status_sunburst"},
+	}
+}
+
+func assertVisualKeys(t *testing.T, patch dashboard.Patch, want []string) {
+	t.Helper()
+	got := make([]string, 0, len(patch.Visuals))
+	for key := range patch.Visuals {
+		got = append(got, key)
+	}
+	sort.Strings(got)
+	sort.Strings(want)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("visual keys = %#v, want %#v; status error = %q", got, want, patch.Status.Error)
+	}
 }
 
 func hasDatumValue(rows []dashboard.Datum, key string, value string) bool {
@@ -1079,6 +1240,25 @@ func datumString(row dashboard.Datum, key string) string {
 		return ""
 	}
 	return fmt.Sprint(value)
+}
+
+func datumInt(row dashboard.Datum, key string) int {
+	value, ok := row[key]
+	if !ok || value == nil {
+		return 0
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		var out int
+		_, _ = fmt.Sscan(fmt.Sprint(value), &out)
+		return out
+	}
 }
 
 func writeFixture(t *testing.T, dir, name, content string) {

@@ -27,6 +27,14 @@ func staticAsset(path string) string {
 	return path + "?v=dev"
 }
 
+func inspectorScript() g.Node {
+	return h.Script(h.Type("module"), h.Src(staticAsset("/static/datastar-inspector.js")))
+}
+
+func inspectorElement() g.Node {
+	return g.El("datastar-inspector")
+}
+
 func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
@@ -34,6 +42,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 	action := updateAction(report.ID, activePage.ID)
 	initAction := "window.DatastarURLSync && window.DatastarURLSync.bindPopstate($urlParamShape); " + action
 	tableReset := tableResetExpression()
+	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters)
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash",
 		Language: "en",
@@ -60,7 +69,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/charts.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/table.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/visual-modal.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/datastar-inspector.js"))),
+			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		},
 		Body: []g.Node{
@@ -84,7 +93,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 							h.Div(h.Class("report-canvas-shell"),
 								renderPageCanvas(activePage, report, initialFilters, action),
 							),
-							filtersDock(report, action),
+							filtersDock(report, activePage.ID, action),
 						),
 						g.El("ld-report-footer",
 							h.Aria("label", "Report view controls"),
@@ -93,7 +102,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 					),
 				),
 				g.El("ld-visual-modal"),
-				g.El("datastar-inspector"),
+				inspectorElement(),
 			),
 		},
 	})
@@ -118,6 +127,7 @@ func LoginPage() g.Node {
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/login.js"))),
+			inspectorScript(),
 		},
 		Body: []g.Node{
 			h.Main(h.Class("login-screen"), h.Aria("label", "LibreDash login"),
@@ -137,6 +147,7 @@ func LoginPage() g.Node {
 						h.Span(g.Text("Sign in with Azure Active Directory")),
 					),
 				),
+				inspectorElement(),
 			),
 		},
 	})
@@ -159,6 +170,7 @@ func CatalogPage(catalog dashboard.Catalog) g.Node {
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
+			inspectorScript(),
 		},
 		Body: []g.Node{
 			h.Main(h.Class("report-app"),
@@ -176,6 +188,7 @@ func CatalogPage(catalog dashboard.Catalog) g.Node {
 						),
 					),
 				),
+				inspectorElement(),
 			),
 		},
 	})
@@ -198,6 +211,7 @@ func ModelsPage(catalog dashboard.Catalog) g.Node {
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
+			inspectorScript(),
 		},
 		Body: []g.Node{
 			h.Main(h.Class("report-app"),
@@ -215,6 +229,7 @@ func ModelsPage(catalog dashboard.Catalog) g.Node {
 						),
 					),
 				),
+				inspectorElement(),
 			),
 		},
 	})
@@ -237,6 +252,7 @@ func MetricViewsPage(catalog dashboard.Catalog, views []dashboard.MetricViewSumm
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
+			inspectorScript(),
 		},
 		Body: []g.Node{
 			h.Main(h.Class("report-app"),
@@ -254,6 +270,7 @@ func MetricViewsPage(catalog dashboard.Catalog, views []dashboard.MetricViewSumm
 						),
 					),
 				),
+				inspectorElement(),
 			),
 		},
 	})
@@ -644,6 +661,7 @@ func MetricViewPage(catalog dashboard.Catalog, view dashboard.MetricViewDetail, 
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/data-grid.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/detail-rail.js"))),
 			g.If(activeSection == "usage", h.Script(h.Type("module"), h.Src(staticAsset("/static/metric-usage-graph.js")))),
+			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		},
 		Body: []g.Node{
@@ -664,6 +682,7 @@ func MetricViewPage(catalog dashboard.Catalog, view dashboard.MetricViewDetail, 
 						),
 					),
 				),
+				inspectorElement(),
 			),
 		},
 	})
@@ -688,6 +707,7 @@ func ModelPage(catalog dashboard.Catalog, model dashboard.ModelGraph) g.Node {
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/model-graph.js"))),
+			inspectorScript(),
 		},
 		Body: []g.Node{
 			h.Main(
@@ -707,6 +727,7 @@ func ModelPage(catalog dashboard.Catalog, model dashboard.ModelGraph) g.Node {
 						),
 					),
 				),
+				inspectorElement(),
 			),
 		},
 	})
@@ -897,7 +918,7 @@ func jsonString(value any) string {
 }
 
 func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page, initialFilters dashboard.Filters) map[string]any {
-	tableRequest := defaultTableRequest(report)
+	tableRequest := defaultTableRequest(report, activePage)
 	initialFilters = initialFilters.WithDefaults()
 	return map[string]any{
 		"runtime": map[string]any{
@@ -907,12 +928,12 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 			"modelId":     model.Name,
 		},
 		"csrfToken":     csrfToken,
-		"filterConfig":  report.Filters,
+		"filterConfig":  report.FilterConfigForPage(activePage.ID),
 		"filters":       initialFilters,
-		"urlParams":     report.URLParamsFromFilters(initialFilters),
-		"urlParamShape": report.URLParamShape(),
+		"urlParams":     report.URLParamsFromFiltersForPage(activePage.ID, initialFilters),
+		"urlParamShape": report.URLParamShapeForPage(activePage.ID),
 		"filterOptions": map[string]any{},
-		"chartCommand": map[string]any{
+		"visualCommand": map[string]any{
 			"visualId": "",
 			"field":    "",
 			"value":    "",
@@ -930,9 +951,8 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 				"direction": tableRequest.Sort.Direction,
 			},
 		},
-		"tables": tableSignals(report, tableRequest),
-		"charts": chartSignals(report),
-		"kpis":   []any{},
+		"tables":  tableSignals(report, activePage, tableRequest),
+		"visuals": visualSignals(report, model, activePage),
 		"status": map[string]any{
 			"loading":       false,
 			"error":         "",
@@ -943,32 +963,29 @@ func initialSignals(dataDir, clientID, csrfToken string, report semantic.Dashboa
 	}
 }
 
-func defaultTableRequest(report semantic.Dashboard) dashboard.TableRequest {
+func defaultTableRequest(report semantic.Dashboard, page dashboard.Page) dashboard.TableRequest {
 	request := dashboard.TableRequest{Block: "all", Start: 0, Count: dashboard.TableChunkSize}
-	if table, ok := report.Tables["orders"]; ok && table.KindOrDefault() == "data_table" {
-		request.Table = "orders"
-		request.Sort = table.DefaultSort
-	} else {
-		for _, name := range sortedKeys(report.Tables) {
-			table := report.Tables[name]
-			if table.KindOrDefault() != "data_table" {
-				continue
-			}
+	for _, name := range pageTableIDs(page) {
+		table, ok := report.Tables[name]
+		if !ok {
+			continue
+		}
+		if table.KindOrDefault() == "data_table" {
 			request.Table = name
 			request.Sort = table.DefaultSort
 			break
 		}
 	}
-	if request.Table == "" {
-		return dashboard.DefaultTableRequest()
-	}
 	return request
 }
 
-func tableSignals(report semantic.Dashboard, request dashboard.TableRequest) map[string]any {
+func tableSignals(report semantic.Dashboard, page dashboard.Page, request dashboard.TableRequest) map[string]any {
 	tables := map[string]any{}
-	for _, name := range sortedKeys(report.Tables) {
-		table := report.Tables[name]
+	for _, name := range pageTableIDs(page) {
+		table, ok := report.Tables[name]
+		if !ok {
+			continue
+		}
 		tables[name] = map[string]any{
 			"kind":          table.KindOrDefault(),
 			"title":         table.Title,
@@ -1002,24 +1019,69 @@ func tableResetExpression() string {
 	return "$tableCommand.block = 'all'; $tableCommand.start = 0; $tableCommand.count = " + count + "; $tableCommand.resetVersion = ($tableCommand.resetVersion || 0) + 1; "
 }
 
-func chartSignals(report semantic.Dashboard) map[string]any {
-	charts := map[string]any{}
-	for _, id := range sortedKeys(report.Visuals) {
-		visual := report.Visuals[id]
+func visualSignals(report semantic.Dashboard, model *semantic.Model, page dashboard.Page) map[string]any {
+	visuals := map[string]any{}
+	for _, id := range pageVisualIDs(page) {
+		visual, ok := report.Visuals[id]
+		if !ok {
+			continue
+		}
 		measureName := ""
 		unit := ""
-		if len(visual.Query.Measures) > 0 {
+		format := ""
+		title := visual.Title
+		if model != nil && len(visual.Query.Measures) > 0 {
 			measureName = visual.Query.Measures[0]
 		}
-		charts[id] = chartSignal(id, visual, unit, measureName)
+		if title == "" {
+			title = measureName
+		}
+		visuals[id] = visualSignal(id, visual, title, unit, format, measureName)
 	}
-	return charts
+	return visuals
 }
 
-func chartSignal(id string, visual semantic.Visual, unit, measure string) map[string]any {
+func pageVisualIDs(page dashboard.Page) []string {
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Visual == "" {
+			continue
+		}
+		if _, ok := seen[item.Visual]; ok {
+			continue
+		}
+		seen[item.Visual] = struct{}{}
+		ids = append(ids, item.Visual)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func pageTableIDs(page dashboard.Page) []string {
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Table == "" {
+			continue
+		}
+		if _, ok := seen[item.Table]; ok {
+			continue
+		}
+		seen[item.Table] = struct{}{}
+		ids = append(ids, item.Table)
+	}
+	return ids
+}
+
+func visualSignal(id string, visual semantic.Visual, title, unit, format, measure string) map[string]any {
 	seriesList := []string{}
 	if visual.Query.Series != "" {
 		seriesList = append(seriesList, visual.Query.Series)
+	}
+	visualType := visual.Type
+	if visualType == "" && visual.KindOrDefault() == "kpi" {
+		visualType = "kpi"
 	}
 	signal := map[string]any{
 		"version":         3,
@@ -1027,9 +1089,10 @@ func chartSignal(id string, visual semantic.Visual, unit, measure string) map[st
 		"kind":            visual.KindOrDefault(),
 		"shape":           visual.ShapeOrDefault(),
 		"renderer":        visual.RendererOrDefault(),
-		"type":            visual.Type,
-		"title":           visual.Title,
+		"type":            visualType,
+		"title":           title,
 		"unit":            unit,
+		"format":          format,
 		"field":           visual.Interaction.Field,
 		"dimensions":      visual.Query.Dimensions,
 		"measure":         measure,
@@ -1082,7 +1145,7 @@ func renderPageCanvas(page dashboard.Page, report semantic.Dashboard, filters da
 		g.Attr("height", strconv.Itoa(page.Canvas.Height)),
 	}
 	for _, visual := range page.PlacedVisuals() {
-		nodes = append(nodes, renderPageVisual(visual, report, filters, action))
+		nodes = append(nodes, renderPageVisual(page.ID, visual, report, filters, action))
 	}
 	return g.El("ld-report-canvas", nodes...)
 }
@@ -1091,19 +1154,15 @@ func formatCanvasNumber(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
+func renderPageVisual(pageID string, visual dashboard.PageVisual, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
 	switch visual.Kind {
 	case "header":
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, reportHeader(visual))
-	case "kpi_strip":
-		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height,
-			h.Div(h.Class("kpi-band"),
-				g.El("ld-kpi-strip", g.Attr("data-attr:items", "$kpis")),
-			),
-		)
+	case "kpi_card":
+		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height, kpiCard(visual.Visual))
 	case "filter_card":
 		return canvasFilterVisual(visual.X, visual.Y, visual.Width, visual.Height,
-			filterCard(visual.Filter, report, filters, action),
+			filterCard(pageID, visual.Filter, report, filters, action),
 		)
 	case "line_chart", "area_chart", "bar_chart", "column_chart", "pie_chart", "donut_chart", "scatter_chart", "funnel_chart", "treemap_chart", "gauge_chart", "heatmap_chart", "sankey_chart", "graph_chart", "map_chart", "candlestick_chart", "boxplot_chart", "combo_chart", "waterfall_chart", "histogram_chart", "radar_chart", "tree_chart", "sunburst_chart":
 		return canvasVisual(visual.X, visual.Y, visual.Width, visual.Height,
@@ -1116,12 +1175,12 @@ func renderPageVisual(visual dashboard.PageVisual, report semantic.Dashboard, fi
 	}
 }
 
-func filterCard(filterID string, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
+func filterCard(pageID, filterID string, report semantic.Dashboard, filters dashboard.Filters, action string) g.Node {
 	tableReset := tableResetExpression()
 	return h.Article(h.Class("visual-card filter-visual-card"),
 		g.El("ld-filter-card",
 			g.Attr("filter-id", filterID),
-			g.Attr("config", jsonString(report.Filters)),
+			g.Attr("config", jsonString(report.FilterConfigForPage(pageID))),
 			g.Attr("filters", jsonString(filters)),
 			g.Attr("options", "{}"),
 			g.Attr("data-attr:config", "$filterConfig"),
@@ -1213,22 +1272,22 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 	)
 }
 
-func filtersDock(report semantic.Dashboard, action string) g.Node {
+func filtersDock(report semantic.Dashboard, pageID string, action string) g.Node {
 	return h.Details(h.Class("filters-dock"), h.Aria("label", "Report filters"),
 		h.Summary(h.Class("filters-dock-rail"), h.Title("Toggle filters"),
 			lucide.SlidersHorizontal(iconAttrs()),
 			h.Span(h.Class("filters-rail-label"), g.Text("Filters")),
 			h.Span(h.Class("sr-only"), g.Text("Toggle filters")),
 		),
-		filtersPane(report, action),
+		filtersPane(report, pageID, action),
 	)
 }
 
-func filtersPane(report semantic.Dashboard, action string) g.Node {
+func filtersPane(report semantic.Dashboard, pageID string, action string) g.Node {
 	tableReset := tableResetExpression()
 	return h.Div(h.Class("filters-pane"),
 		g.El("ld-filter-panel",
-			g.Attr("config", jsonString(report.Filters)),
+			g.Attr("config", jsonString(report.FilterConfigForPage(pageID))),
 			g.Attr("data-attr:filters", "$filters"),
 			g.Attr("data-attr:options", "$filterOptions"),
 			g.Attr("data-attr:loading", "$status.loading"),
@@ -1250,13 +1309,22 @@ func sortedKeys[T any](items map[string]T) []string {
 }
 
 func chartPanel(visualID string) g.Node {
-	signal := "charts." + visualID
+	signal := "visuals." + visualID
 	return h.Article(h.Class("visual-card"),
 		g.El("ld-echart",
 			g.Attr("visual-id", visualID),
 			g.Attr("data-attr:chart", "$"+signal),
-			g.Attr("data-on:ld-chart-select", "$chartCommand = evt.detail; "+postAction("/commands/chart-select")),
+			g.Attr("data-on:ld-chart-select", "$visualCommand = evt.detail; "+postAction("/commands/chart-select")),
 			g.Attr("data-on:ld-chart-clear-selection", "$filters.visualSelections = []; "+postAction("/commands/clear-selection")),
+		),
+	)
+}
+
+func kpiCard(visualID string) g.Node {
+	return h.Article(h.Class("visual-card"),
+		g.El("ld-kpi-card",
+			g.Attr("visual-id", visualID),
+			g.Attr("data-attr:visual", "$visuals."+visualID),
 		),
 	)
 }

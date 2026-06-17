@@ -17,7 +17,6 @@ type Dashboard struct {
 	Description string                      `yaml:"description"`
 	MetricViews []string                    `yaml:"metrics_views"`
 	Filters     map[string]FilterDefinition `yaml:"filters"`
-	KPIs        map[string]KPI              `yaml:"kpis"`
 	Visuals     map[string]Visual           `yaml:"visuals"`
 	Tables      map[string]TableVisual      `yaml:"tables"`
 	Pages       []dashboard.Page            `yaml:"pages"`
@@ -40,6 +39,11 @@ type FilterDefinition struct {
 	FromURLParam     string         `yaml:"from_url_param" json:"fromURLParam,omitempty"`
 	ToURLParam       string         `yaml:"to_url_param" json:"toURLParam,omitempty"`
 	OperatorURLParam string         `yaml:"operator_url_param" json:"operatorURLParam,omitempty"`
+}
+
+type FilterConfig struct {
+	ID string `json:"id"`
+	FilterDefinition
 }
 
 type FilterOption struct {
@@ -67,14 +71,6 @@ type FilterPreset struct {
 type FilterValues struct {
 	Source string `yaml:"source" json:"source,omitempty"`
 	Limit  int    `yaml:"limit" json:"limit,omitempty"`
-}
-
-type KPI struct {
-	Title      string `yaml:"title"`
-	MetricView string `yaml:"metrics_view"`
-	Measure    string `yaml:"measure"`
-	Note       string `yaml:"note"`
-	Tone       string `yaml:"tone"`
 }
 
 type Visual struct {
@@ -189,6 +185,9 @@ func (v Visual) ShapeOrDefault() string {
 	if v.Shape != "" {
 		return v.Shape
 	}
+	if v.KindOrDefault() == "kpi" {
+		return "single_value"
+	}
 	switch v.Type {
 	case "combo":
 		return "category_multi_measure"
@@ -224,6 +223,9 @@ func (v Visual) RendererOrDefault() string {
 	if v.Renderer != "" {
 		return v.Renderer
 	}
+	if v.KindOrDefault() == "kpi" {
+		return "html"
+	}
 	return "echarts"
 }
 
@@ -254,6 +256,9 @@ func LoadDashboard(path string, metricViews map[string]*MetricView) (*Dashboard,
 	if err := rejectLegacyVisualStacked(bytes); err != nil {
 		return nil, err
 	}
+	if err := rejectLegacyKPIs(bytes); err != nil {
+		return nil, err
+	}
 	if err := report.Validate(metricViews); err != nil {
 		return nil, err
 	}
@@ -282,6 +287,21 @@ func rejectLegacyVisualStacked(bytes []byte) error {
 		if mappingValue(visualNode, "stacked") != nil {
 			return fmt.Errorf("visual %q uses legacy top-level stacked; use options.stacked", name)
 		}
+	}
+	return nil
+}
+
+func rejectLegacyKPIs(bytes []byte) error {
+	var node yaml.Node
+	if err := yaml.Unmarshal(bytes, &node); err != nil {
+		return err
+	}
+	root := mappingNode(&node)
+	if root == nil {
+		return nil
+	}
+	if mappingValue(root, "kpis") != nil {
+		return fmt.Errorf("dashboard uses legacy kpis; define KPI cards as visuals with kind kpi")
 	}
 	return nil
 }
@@ -329,9 +349,6 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 			return fmt.Errorf("dashboard %q metrics views must use one semantic model", d.ID)
 		}
 		allowedViews[viewName] = view
-	}
-	if len(d.KPIs) == 0 {
-		return fmt.Errorf("dashboard %q requires kpis", d.ID)
 	}
 	if len(d.Visuals) == 0 {
 		return fmt.Errorf("dashboard %q requires visuals", d.ID)
@@ -409,27 +426,15 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 	if err := d.validateFilterURLParams(); err != nil {
 		return err
 	}
-	for name, kpi := range d.KPIs {
-		if kpi.Title == "" || kpi.MetricView == "" || kpi.Measure == "" {
-			return fmt.Errorf("kpi %q requires title, metrics_view, and measure", name)
-		}
-		view, ok := allowedViews[kpi.MetricView]
-		if !ok {
-			return fmt.Errorf("kpi %q references unknown metrics view %q", name, kpi.MetricView)
-		}
-		if _, ok := view.Measures[kpi.Measure]; !ok {
-			return fmt.Errorf("kpi %q references unknown measure %q", name, kpi.Measure)
-		}
-	}
 	for name, visual := range d.Visuals {
-		if visual.Title == "" || visual.MetricView == "" || visual.Type == "" {
+		kind := visual.KindOrDefault()
+		if visual.MetricView == "" || (kind != "kpi" && visual.Title == "") || (kind != "kpi" && visual.Type == "") {
 			return fmt.Errorf("visual %q requires title, metrics_view, and type", name)
 		}
 		view, ok := allowedViews[visual.MetricView]
 		if !ok {
 			return fmt.Errorf("visual %q references unknown metrics view %q", name, visual.MetricView)
 		}
-		kind := visual.KindOrDefault()
 		shape := visual.ShapeOrDefault()
 		renderer := visual.RendererOrDefault()
 		if !supportsVisualKind(kind) {
@@ -438,13 +443,13 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 		if !supportsVisualShape(shape) {
 			return fmt.Errorf("visual %q has unsupported shape %q", name, shape)
 		}
-		if !supportsRenderer(renderer) {
+		if kind != "kpi" && !supportsRenderer(renderer) {
 			return fmt.Errorf("visual %q has unsupported renderer %q", name, renderer)
 		}
-		if !rendererSupportsType(renderer, visual.Type) {
+		if kind != "kpi" && !rendererSupportsType(renderer, visual.Type) {
 			return fmt.Errorf("visual %q renderer %q does not support type %q", name, renderer, visual.Type)
 		}
-		if !rendererSupportsShapeType(renderer, shape, visual.Type) {
+		if kind != "kpi" && !rendererSupportsShapeType(renderer, shape, visual.Type) {
 			return fmt.Errorf("visual %q renderer %q type %q does not support shape %q", name, renderer, visual.Type, shape)
 		}
 		if err := validateVisualQueryShape(name, visual); err != nil {
@@ -573,7 +578,7 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 				return err
 			}
 			switch visual.Kind {
-			case "header", "kpi_strip":
+			case "header":
 			case "filter_card":
 				if visual.Filter == "" {
 					return fmt.Errorf("page %q visual %q requires filter", page.ID, visual.ID)
@@ -581,12 +586,27 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 				if _, ok := d.Filters[visual.Filter]; !ok {
 					return fmt.Errorf("page %q references unknown filter %q", page.ID, visual.Filter)
 				}
+			case "kpi_card":
+				if visual.Visual == "" {
+					return fmt.Errorf("page %q visual %q requires visual", page.ID, visual.ID)
+				}
+				target, ok := d.Visuals[visual.Visual]
+				if !ok {
+					return fmt.Errorf("page %q references unknown visual %q", page.ID, visual.Visual)
+				}
+				if target.KindOrDefault() != "kpi" {
+					return fmt.Errorf("page %q visual %q requires a kpi visual", page.ID, visual.ID)
+				}
 			case "line_chart", "area_chart", "bar_chart", "column_chart", "pie_chart", "donut_chart", "scatter_chart", "funnel_chart", "treemap_chart", "gauge_chart", "heatmap_chart", "sankey_chart", "graph_chart", "map_chart", "candlestick_chart", "boxplot_chart", "combo_chart", "waterfall_chart", "histogram_chart", "radar_chart", "tree_chart", "sunburst_chart":
 				if visual.Visual == "" {
 					return fmt.Errorf("page %q visual %q requires visual", page.ID, visual.ID)
 				}
-				if _, ok := d.Visuals[visual.Visual]; !ok {
+				target, ok := d.Visuals[visual.Visual]
+				if !ok {
 					return fmt.Errorf("page %q references unknown visual %q", page.ID, visual.Visual)
+				}
+				if target.KindOrDefault() == "kpi" {
+					return fmt.Errorf("page %q visual %q requires a chart visual", page.ID, visual.ID)
 				}
 			case "table":
 				if visual.Table == "" {
@@ -618,6 +638,21 @@ func validatePlacement(page dashboard.Page, visual dashboard.PageVisual) error {
 }
 
 func validateVisualQueryShape(name string, visual Visual) error {
+	if visual.KindOrDefault() == "kpi" {
+		if visual.ShapeOrDefault() != "single_value" {
+			return fmt.Errorf("visual %q kind kpi requires shape single_value", name)
+		}
+		if len(visual.Query.Measures) != 1 {
+			return fmt.Errorf("visual %q kind kpi requires exactly one query measure", name)
+		}
+		if len(visual.Query.Dimensions) != 0 {
+			return fmt.Errorf("visual %q kind kpi does not support query dimensions", name)
+		}
+		if visual.Query.Series != "" {
+			return fmt.Errorf("visual %q kind kpi does not support series", name)
+		}
+		return nil
+	}
 	shape := visual.ShapeOrDefault()
 	switch shape {
 	case "ohlc":
@@ -784,11 +819,23 @@ func (d *Dashboard) validateFilterURLParams() error {
 }
 
 func (d *Dashboard) DefaultFilters() dashboard.Filters {
+	return d.defaultFiltersForNames(sortedFilterNames(d.Filters))
+}
+
+func (d *Dashboard) DefaultFiltersForPage(pageID string) dashboard.Filters {
+	return d.defaultFiltersForNames(d.PageFilterIDs(pageID))
+}
+
+func (d *Dashboard) defaultFiltersForNames(names []string) dashboard.Filters {
 	filters := dashboard.Filters{
 		Controls:         map[string]dashboard.FilterControl{},
 		VisualSelections: []dashboard.VisualSelection{},
 	}
-	for name, filter := range d.Filters {
+	for _, name := range names {
+		filter, ok := d.Filters[name]
+		if !ok {
+			continue
+		}
 		control := dashboard.FilterControl{Type: filter.Type}
 		switch filter.Type {
 		case "date_range":
@@ -811,8 +858,16 @@ func (d *Dashboard) DefaultFilters() dashboard.Filters {
 }
 
 func (d *Dashboard) FiltersFromURL(values url.Values) dashboard.Filters {
-	filters := d.DefaultFilters()
-	for _, name := range sortedFilterNames(d.Filters) {
+	return d.filtersFromURLForNames(sortedFilterNames(d.Filters), values)
+}
+
+func (d *Dashboard) FiltersFromURLForPage(pageID string, values url.Values) dashboard.Filters {
+	return d.filtersFromURLForNames(d.PageFilterIDs(pageID), values)
+}
+
+func (d *Dashboard) filtersFromURLForNames(names []string, values url.Values) dashboard.Filters {
+	filters := d.defaultFiltersForNames(names)
+	for _, name := range names {
 		filter := d.Filters[name]
 		control := filters.Controls[name]
 		switch filter.Type {
@@ -877,8 +932,16 @@ func (d *Dashboard) hasPreset(filter FilterDefinition, preset string) bool {
 }
 
 func (d *Dashboard) URLParamShape() map[string]any {
+	return d.urlParamShapeForNames(sortedFilterNames(d.Filters))
+}
+
+func (d *Dashboard) URLParamShapeForPage(pageID string) map[string]any {
+	return d.urlParamShapeForNames(d.PageFilterIDs(pageID))
+}
+
+func (d *Dashboard) urlParamShapeForNames(names []string) map[string]any {
 	shape := map[string]any{}
-	for _, name := range sortedFilterNames(d.Filters) {
+	for _, name := range names {
 		filter := d.Filters[name]
 		switch filter.Type {
 		case "date_range":
@@ -898,10 +961,18 @@ func (d *Dashboard) URLParamShape() map[string]any {
 }
 
 func (d *Dashboard) URLParamsFromFilters(filters dashboard.Filters) map[string]any {
+	return d.urlParamsFromFiltersForNames(sortedFilterNames(d.Filters), filters)
+}
+
+func (d *Dashboard) URLParamsFromFiltersForPage(pageID string, filters dashboard.Filters) map[string]any {
+	return d.urlParamsFromFiltersForNames(d.PageFilterIDs(pageID), filters)
+}
+
+func (d *Dashboard) urlParamsFromFiltersForNames(names []string, filters dashboard.Filters) map[string]any {
 	params := map[string]any{}
-	defaults := d.DefaultFilters()
+	defaults := d.defaultFiltersForNames(names)
 	filters = filters.WithDefaults()
-	for _, name := range sortedFilterNames(d.Filters) {
+	for _, name := range names {
 		filter := d.Filters[name]
 		control, ok := filters.Controls[name]
 		if !ok {
@@ -936,6 +1007,124 @@ func (d *Dashboard) URLParamsFromFilters(filters dashboard.Filters) map[string]a
 		}
 	}
 	return params
+}
+
+func (d *Dashboard) NormalizeFiltersForPage(pageID string, filters dashboard.Filters) dashboard.Filters {
+	names := d.PageFilterIDs(pageID)
+	defaults := d.defaultFiltersForNames(names)
+	activeFilters := map[string]struct{}{}
+	for _, name := range names {
+		activeFilters[name] = struct{}{}
+	}
+
+	filters = filters.WithDefaults()
+	for name, control := range filters.Controls {
+		if _, ok := activeFilters[name]; !ok {
+			continue
+		}
+		filter := d.Filters[name]
+		base := defaults.Controls[name]
+		if control.Type == "" {
+			control.Type = filter.Type
+		}
+		switch filter.Type {
+		case "date_range":
+			if control.Preset == "" && control.From == "" && control.To == "" {
+				control.Preset = base.Preset
+			}
+		case "multi_select":
+			if control.Operator == "" {
+				control.Operator = base.Operator
+			}
+			if control.Values == nil {
+				control.Values = []string{}
+			}
+		case "text":
+			if control.Operator == "" {
+				control.Operator = base.Operator
+			}
+		}
+		defaults.Controls[name] = control
+	}
+
+	activeVisuals := d.pageVisualIDSet(pageID)
+	defaults.VisualSelections = make([]dashboard.VisualSelection, 0, len(filters.VisualSelections))
+	for _, selection := range filters.VisualSelections {
+		if _, ok := activeVisuals[selection.VisualID]; ok {
+			defaults.VisualSelections = append(defaults.VisualSelections, selection)
+		}
+	}
+	return defaults.WithDefaults()
+}
+
+func (d *Dashboard) FiltersForPage(pageID string) map[string]FilterDefinition {
+	filters := map[string]FilterDefinition{}
+	for _, name := range d.PageFilterIDs(pageID) {
+		if filter, ok := d.Filters[name]; ok {
+			filters[name] = filter
+		}
+	}
+	return filters
+}
+
+func (d *Dashboard) FilterConfigForPage(pageID string) []FilterConfig {
+	config := []FilterConfig{}
+	for _, name := range d.PageFilterIDs(pageID) {
+		filter, ok := d.Filters[name]
+		if !ok {
+			continue
+		}
+		config = append(config, FilterConfig{ID: name, FilterDefinition: filter})
+	}
+	return config
+}
+
+func (d *Dashboard) PageFilterIDs(pageID string) []string {
+	page, ok := d.PageOrDefault(pageID)
+	if !ok {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Kind != "filter_card" || item.Filter == "" {
+			continue
+		}
+		if _, ok := seen[item.Filter]; ok {
+			continue
+		}
+		seen[item.Filter] = struct{}{}
+		ids = append(ids, item.Filter)
+	}
+	return ids
+}
+
+func (d *Dashboard) PageOrDefault(pageID string) (dashboard.Page, bool) {
+	if d == nil || len(d.Pages) == 0 {
+		return dashboard.Page{}, false
+	}
+	if pageID != "" {
+		for _, page := range d.Pages {
+			if page.ID == pageID {
+				return page.WithDefaults(), true
+			}
+		}
+	}
+	return d.Pages[0].WithDefaults(), true
+}
+
+func (d *Dashboard) pageVisualIDSet(pageID string) map[string]struct{} {
+	page, ok := d.PageOrDefault(pageID)
+	if !ok {
+		return map[string]struct{}{}
+	}
+	ids := map[string]struct{}{}
+	for _, item := range page.Visuals {
+		if item.Visual != "" {
+			ids[item.Visual] = struct{}{}
+		}
+	}
+	return ids
 }
 
 func addStringShape(shape map[string]any, param string) {

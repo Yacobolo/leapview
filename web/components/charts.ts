@@ -6,7 +6,7 @@ import { visualMenuIcon } from './visual-menu-icons'
 import './chart/echarts-renderer'
 import { chartRenderer } from './chart/registry'
 import type { ChartDatum, ChartPayload, ChartType, VisualAction } from './chart/types'
-import { chartColumns, chartRows, normalizeShape, normalizeType, stylesFor } from './chart/utils'
+import { chartColumns, chartRows, formatValue, normalizeShape, normalizeType, numberValue, stringValue, stylesFor } from './chart/utils'
 
 const chartStyles = css`
   :host {
@@ -286,6 +286,7 @@ class EChartVisual extends LitElement {
       type,
       title: chart.title || this.chartTitle,
       unit: chart.unit ?? this.unit,
+      format: chart.format ?? '',
       field: chart.field || this.field,
       dimensions: chart.dimensions ?? [],
       measure: chart.measure ?? '',
@@ -354,29 +355,27 @@ function selectionValueForEvent(payload: ChartPayload, event: echarts.ECElementE
   return String(event.name || data.name || '')
 }
 
-class KPIStrip extends LitElement {
-  @property({ type: Array }) items: Array<{ label: string; value: string; note: string; tone: string }> = []
+class KPICard extends LitElement {
+  @property({ type: Object }) visual: ChartPayload | null = null
+  @property({ type: String, attribute: 'visual-id' }) visualId = ''
 
   static styles = css`
     :host {
       display: block;
     }
 
-    .strip {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
     .kpi {
+      display: grid;
+      height: 100%;
+      min-height: 0;
       position: relative;
-      min-height: 104px;
       border: 1px solid var(--borderColor-default);
       border-radius: 6px;
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       box-shadow: var(--shadow-resting-small);
       padding: 12px 14px 12px 16px;
       overflow: hidden;
+      align-content: center;
     }
 
     .kpi::before {
@@ -425,35 +424,45 @@ class KPIStrip extends LitElement {
       background: var(--borderColor-muted);
     }
 
-    @media (max-width: 760px) {
-      .strip {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
-
-    @media (max-width: 440px) {
-      .strip {
-        grid-template-columns: 1fr;
-      }
-    }
   `
 
   render() {
-    const kpis = this.items ?? []
+    const payload = this.payload
+    const point = payload.data?.[0] ?? {}
+    const tone = String(payload.options?.tone || 'neutral')
+    const note = String(payload.options?.note || '')
     return html`
-      <section class="strip" aria-label="Key metrics">
-        ${(kpis.length ? kpis : [{ label: 'Orders', value: '-', note: 'Waiting for stream', tone: 'neutral' }]).map(
-          (item) => html`
-            <article class="kpi ${item.tone ?? 'neutral'}">
-              <div class="label">${item.label}</div>
-              <div class="value">${item.value}</div>
-              <div class="note">${item.note}</div>
-            </article>
-          `,
-        )}
-      </section>
+      <article class="kpi ${tone}">
+        <div class="label">${payload.title || stringValue(point, 'label') || 'Metric'}</div>
+        <div class="value">${formatKPIValue(numberValue(point, 'value'), payload.format, payload.unit)}</div>
+        <div class="note">${note}</div>
+      </article>
     `
   }
+
+  private get payload(): ChartPayload {
+    return {
+      version: this.visual?.version ?? 3,
+      id: this.visual?.id || this.visualId,
+      kind: this.visual?.kind || 'kpi',
+      shape: this.visual?.shape || 'single_value',
+      renderer: this.visual?.renderer || 'html',
+      type: this.visual?.type || 'kpi',
+      title: this.visual?.title || '',
+      unit: this.visual?.unit || '',
+      format: this.visual?.format || '',
+      options: this.visual?.options ?? {},
+      data: this.visual?.data ?? [],
+    }
+  }
+}
+
+function formatKPIValue(value: number, format?: string, unit?: string): string {
+  if (!Number.isFinite(value)) return '-'
+  if (format === 'currency') return formatValue(value, unit || 'R$')
+  if (format === 'integer') return formatValue(value, unit)
+  if (format === 'decimal') return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return formatValue(value, unit)
 }
 
 class LegacyLineChart extends EChartVisual {}
@@ -462,4 +471,4 @@ class LegacyBarChart extends EChartVisual {}
 if (!customElements.get('ld-echart')) customElements.define('ld-echart', EChartVisual)
 if (!customElements.get('ld-line-chart')) customElements.define('ld-line-chart', LegacyLineChart)
 if (!customElements.get('ld-bar-chart')) customElements.define('ld-bar-chart', LegacyBarChart)
-if (!customElements.get('ld-kpi-strip')) customElements.define('ld-kpi-strip', KPIStrip)
+if (!customElements.get('ld-kpi-card')) customElements.define('ld-kpi-card', KPICard)

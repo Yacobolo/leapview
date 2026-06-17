@@ -27,7 +27,9 @@ type queryMetrics interface {
 	DefaultFilters(dashboardID string) dashboard.Filters
 	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest
 	QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error)
+	QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error)
 	QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
+	QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
 	RefreshCache(ctx context.Context, modelID string) error
 	DataDir() string
 	Pages(dashboardID string) []dashboard.Page
@@ -185,7 +187,7 @@ func (s *Server) renderPage(w http.ResponseWriter, r *http.Request, dashboardID,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	initialFilters := report.FiltersFromURL(r.URL.Query())
+	initialFilters := report.FiltersFromURLForPage(activePage.ID, r.URL.Query())
 	csrfToken := ""
 	if s.auth != nil {
 		csrfToken = csrf.Token(r)
@@ -222,8 +224,9 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dashboardID := s.dashboardID(r, signals)
-	filters := s.normalizeFilters(dashboardID, signals.Filters)
-	clientID := clientStreamID(r, signals, dashboardID, pageIDFromRequest(r, signals))
+	pageID := pageIDFromRequest(r, signals)
+	filters := s.normalizeFilters(dashboardID, pageID, signals.Filters)
+	clientID := clientStreamID(r, signals, dashboardID, pageID)
 	tableRequest := s.metrics.NormalizeTableRequest(dashboardID, signals.TableCommand)
 
 	sse := datastar.NewSSE(w, r)
@@ -238,7 +241,7 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
-	patch, err := s.metrics.QueryDashboard(r.Context(), dashboardID, filters)
+	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, pageID, filters)
 	if err != nil {
 		patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 	}
@@ -246,7 +249,7 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 	if err := sse.MarshalAndPatchSignals(patch); err != nil {
 		return
 	}
-	if err := sse.MarshalAndPatchSignals(s.tablesPatch(r.Context(), dashboardID, filters, tableRequest)); err != nil {
+	if err := sse.MarshalAndPatchSignals(s.tablesPatch(r.Context(), dashboardID, pageID, filters, tableRequest)); err != nil {
 		return
 	}
 
@@ -262,14 +265,14 @@ func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-ticker.C:
-			patch, err := s.metrics.QueryDashboard(r.Context(), dashboardID, filters)
+			patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, pageID, filters)
 			if err != nil {
 				patch = dashboard.EmptyPatch(filters, s.metrics.DataDir(), err)
 			}
 			if err := sse.MarshalAndPatchSignals(patch); err != nil {
 				return
 			}
-			if err := sse.MarshalAndPatchSignals(s.tablesPatch(r.Context(), dashboardID, filters, tableRequest)); err != nil {
+			if err := sse.MarshalAndPatchSignals(s.tablesPatch(r.Context(), dashboardID, pageID, filters, tableRequest)); err != nil {
 				return
 			}
 		}
@@ -281,8 +284,7 @@ func dashboardPatch(patch dashboard.Patch) signalPatch {
 		"filters":       patch.Filters,
 		"filterOptions": patch.FilterOptions,
 		"status":        patch.Status,
-		"kpis":          patch.KPIs,
-		"charts":        patch.Charts,
+		"visuals":       patch.Visuals,
 	}
 }
 
