@@ -2,22 +2,30 @@ import type { ChartDatum, ChartPayload, ChartShape, ChartTokens, ChartType } fro
 
 export function stylesFor(element: HTMLElement): ChartTokens {
   const styles = getComputedStyle(element)
-  const value = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback
+  const token = (...names: string[]) => {
+    for (const name of names) {
+      const resolved = styles.getPropertyValue(name).trim()
+      if (resolved) return resolved
+    }
+    return ''
+  }
+  const value = (...names: string[]) => token(...names) || 'currentColor'
+  const chart1 = value('--ld-chart-1', '--fgColor-accent')
   return {
-    text: value('--fgColor-default', '#1f2328'),
-    muted: value('--fgColor-muted', '#59636e'),
-    border: value('--borderColor-default', '#d0d7de'),
-    grid: value('--ld-chart-grid', value('--borderColor-muted', '#d8dee4')),
-    surface: value('--report-chart-surface', value('--card-bgColor', value('--bgColor-default', '#ffffff'))),
-    fill: value('--ld-chart-1-muted', 'rgba(84, 174, 255, .35)'),
-    dimmed: value('--borderColor-muted', '#d8dee4'),
+    text: value('--fgColor-default'),
+    muted: value('--fgColor-muted'),
+    border: value('--borderColor-default'),
+    grid: value('--ld-chart-grid', '--borderColor-muted'),
+    surface: value('--report-chart-surface', '--card-bgColor', '--bgColor-default'),
+    fill: token('--ld-chart-1-muted') || colorWithAlpha(chart1, 0.35),
+    dimmed: value('--borderColor-muted'),
     palette: [
-      value('--ld-chart-1', '#0969da'),
-      value('--ld-chart-2', '#1a7f37'),
-      value('--ld-chart-3', '#8250df'),
-      value('--ld-chart-4', '#cf222e'),
-      value('--ld-chart-5', '#116329'),
-      value('--ld-chart-6', '#bf3989'),
+      chart1,
+      value('--ld-chart-2', '--fgColor-success'),
+      value('--ld-chart-3', '--fgColor-done'),
+      value('--ld-chart-4', '--fgColor-danger'),
+      value('--ld-chart-5', '--fgColor-success'),
+      value('--ld-chart-6', '--fgColor-sponsors'),
     ],
   }
 }

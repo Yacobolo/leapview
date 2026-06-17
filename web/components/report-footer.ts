@@ -29,7 +29,7 @@ class ReportFooter extends LitElement {
       display: block;
       min-width: 0;
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
     }
 
     footer {
@@ -39,7 +39,7 @@ class ReportFooter extends LitElement {
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      border-top: 1px solid var(--borderColor-muted);
+      border-top: var(--ld-border-muted);
       box-sizing: border-box;
       padding: 0 18px;
     }
@@ -50,8 +50,8 @@ class ReportFooter extends LitElement {
       align-items: center;
       gap: 7px;
       color: var(--fgColor-muted);
-      font-size: 0.66rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
       white-space: nowrap;
     }
 
@@ -59,7 +59,7 @@ class ReportFooter extends LitElement {
       width: 7px;
       height: 7px;
       flex: 0 0 auto;
-      border-radius: 999px;
+      border-radius: var(--ld-radius-full);
       background: var(--fgColor-success);
     }
 

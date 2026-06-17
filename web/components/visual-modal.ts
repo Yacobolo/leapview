@@ -33,7 +33,7 @@ class VisualModal extends LitElement {
   static styles = css`
     :host {
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
     }
 
     .backdrop {
@@ -42,8 +42,8 @@ class VisualModal extends LitElement {
       z-index: 80;
       display: grid;
       place-items: center;
-      background: rgb(1 4 9 / 56%);
-      padding: 28px;
+      background: var(--ld-modal-backdrop);
+      padding: var(--base-size-28);
     }
 
     .dialog {
@@ -52,10 +52,10 @@ class VisualModal extends LitElement {
       max-height: min(760px, calc(100vh - 56px));
       min-height: 420px;
       grid-template-rows: auto minmax(0, 1fr);
-      border: 1px solid var(--borderColor-default);
-      border-radius: 7px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-panel);
       background: var(--overlay-bgColor, var(--bgColor-default));
-      box-shadow: var(--shadow-floating-large, 0 18px 48px rgb(0 0 0 / 35%));
+      box-shadow: var(--ld-shadow-floating-lg);
       overflow: hidden;
     }
 
@@ -64,9 +64,9 @@ class VisualModal extends LitElement {
       min-width: 0;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
-      border-bottom: 1px solid var(--borderColor-default);
-      padding: 10px 12px 9px;
+      gap: var(--ld-space-lg);
+      border-bottom: var(--ld-border-default);
+      padding: var(--ld-space-md) var(--ld-space-lg);
     }
 
     .title {
@@ -74,11 +74,11 @@ class VisualModal extends LitElement {
     }
 
     .eyebrow {
-      margin: 0 0 3px;
+      margin: 0 0 var(--borderRadius-small);
       color: var(--fgColor-muted);
-      font-size: 0.62rem;
-      font-weight: 900;
-      line-height: 1;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
+      line-height: var(--ld-line-height-none);
       text-transform: uppercase;
     }
 
@@ -87,29 +87,29 @@ class VisualModal extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 1rem;
-      font-weight: 850;
-      line-height: 1.1;
+      font-size: var(--ld-font-size-body-lg);
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-compact);
     }
 
     .actions {
       display: flex;
       flex: 0 0 auto;
       align-items: center;
-      gap: 6px;
+      gap: var(--ld-space-sm);
     }
 
     button {
-      min-height: 28px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 5px;
+      min-height: var(--ld-control-small);
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       cursor: pointer;
-      padding: 0 9px;
+      padding: 0 var(--ld-space-md);
       font: inherit;
-      font-size: 0.72rem;
-      font-weight: 800;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-800);
     }
 
     button:hover,
@@ -119,10 +119,10 @@ class VisualModal extends LitElement {
     }
 
     .close {
-      width: 30px;
+      width: calc(var(--ld-control-small) + var(--base-size-2));
       padding: 0;
-      font-size: 1rem;
-      line-height: 1;
+      font-size: var(--ld-font-size-body-lg);
+      line-height: var(--ld-line-height-none);
     }
 
     .body {
@@ -145,11 +145,11 @@ class VisualModal extends LitElement {
     }
 
     .data-summary {
-      border-bottom: 1px solid var(--borderColor-default);
+      border-bottom: var(--ld-border-default);
       color: var(--fgColor-muted);
-      padding: 8px 10px;
-      font-size: 0.72rem;
-      font-weight: 800;
+      padding: var(--ld-space-md) var(--ld-space-lg);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-800);
     }
 
     .data-scroll {
@@ -160,14 +160,14 @@ class VisualModal extends LitElement {
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.76rem;
+      font-size: var(--ld-font-size-body-md);
     }
 
     th,
     td {
-      max-width: 340px;
-      border-bottom: 1px solid var(--borderColor-muted);
-      padding: 7px 9px;
+      max-width: 21.25rem;
+      border-bottom: var(--ld-border-muted);
+      padding: var(--ld-space-md) var(--ld-space-lg);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -180,8 +180,8 @@ class VisualModal extends LitElement {
       z-index: 1;
       background: var(--bgColor-muted);
       color: var(--fgColor-muted);
-      font-size: 0.66rem;
-      font-weight: 900;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
       text-transform: uppercase;
     }
 
@@ -196,22 +196,22 @@ class VisualModal extends LitElement {
       height: 100%;
       place-items: center;
       color: var(--fgColor-muted);
-      font-weight: 850;
+      font-weight: var(--ld-font-weight-850);
     }
 
     .notice {
       position: fixed;
-      right: 18px;
-      bottom: 50px;
+      right: calc(var(--base-size-16) + var(--base-size-2));
+      bottom: calc(var(--base-size-48) + var(--base-size-2));
       z-index: 90;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 999px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-full);
       background: var(--overlay-bgColor, var(--bgColor-default));
-      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      box-shadow: var(--ld-shadow-floating-sm);
       color: var(--fgColor-default);
-      padding: 7px 11px;
-      font-size: 0.72rem;
-      font-weight: 850;
+      padding: var(--ld-space-md) var(--ld-space-lg);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
     }
   `
 

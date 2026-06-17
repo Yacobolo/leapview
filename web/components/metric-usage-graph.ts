@@ -1,4 +1,4 @@
-import { LitElement, css, html } from 'lit'
+import { LitElement, html } from 'lit'
 import { property } from 'lit/decorators.js'
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -40,8 +40,6 @@ class MetricUsageGraph extends LitElement {
   private root?: Root
   private mount?: HTMLDivElement
 
-  static styles = css``
-
   createRenderRoot(): HTMLElement {
     return this
   }
@@ -64,7 +62,12 @@ class MetricUsageGraph extends LitElement {
   }
 
   render() {
-    return html`<div class="metric-usage-flow" aria-label="Metric usage lineage"></div>`
+    return html`
+      <style>
+        ${metricUsageGraphStyles}
+      </style>
+      <div class="metric-usage-flow" aria-label="Metric usage lineage"></div>
+    `
   }
 
   private renderFlow(): void {
@@ -111,6 +114,76 @@ class MetricUsageGraph extends LitElement {
     }
   }
 }
+
+const metricUsageGraphStyles = `
+  ld-metric-usage-graph .metric-usage-flow {
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    background:
+      linear-gradient(var(--bgColor-default), var(--bgColor-default)),
+      radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fgColor-muted), transparent 87%) 1px, transparent 0);
+    background-size: auto, 18px 18px;
+  }
+
+  ld-metric-usage-graph .react-flow {
+    color: var(--fgColor-default);
+  }
+
+  ld-metric-usage-graph .react-flow__attribution {
+    display: none;
+  }
+
+  ld-metric-usage-graph .react-flow__controls {
+    border: var(--ld-border-default);
+    background: var(--bgColor-default);
+    box-shadow: var(--shadow-resting-small);
+  }
+
+  ld-metric-usage-graph .react-flow__controls-button {
+    border-bottom-color: var(--borderColor-muted);
+    background: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+
+  ld-metric-usage-graph .metric-usage-node {
+    width: 190px;
+    border: 1px solid var(--usage-node-border);
+    border-left: 4px solid var(--usage-node-accent);
+    border-radius: var(--borderRadius-default);
+    background: var(--usage-node-bg);
+    box-shadow: var(--shadow-resting-small);
+    color: var(--fgColor-default);
+    padding: 9px 10px;
+  }
+
+  ld-metric-usage-graph .metric-usage-node-kind {
+    color: var(--fgColor-muted);
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-950);
+    text-transform: uppercase;
+  }
+
+  ld-metric-usage-graph .metric-usage-node-title {
+    overflow: hidden;
+    margin-top: 3px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--ld-font-size-body-md);
+    font-weight: var(--ld-font-weight-900);
+    line-height: var(--ld-line-height-tight);
+  }
+
+  ld-metric-usage-graph .metric-usage-node-meta {
+    overflow: hidden;
+    margin-top: 5px;
+    color: var(--fgColor-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--ld-font-size-caption);
+    font-weight: var(--ld-font-weight-750);
+  }
+`
 
 function toFlowNode(node: UsageNode, nodes: UsageNode[]): Node {
   const { x, y } = positionFor(node, nodes)
