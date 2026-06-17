@@ -116,7 +116,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 						workspaceHeader(
 							"",
 							report.Title,
-							activePage.Title,
+							reportPageHeaderDetail(pages, activePage),
 							reportActions(model.Name, report.ID),
 						),
 						h.Div(h.Class("grid min-h-0 min-w-0 grid-cols-report-dashboard items-stretch overflow-hidden max-sm:grid-cols-1 max-sm:overflow-auto"),
@@ -745,6 +745,27 @@ func defaultPage() dashboard.Page {
 		Canvas: dashboard.PageCanvas{Width: 1366, Height: 940},
 		Grid:   dashboard.PageGrid{Columns: 12, RowHeight: 48, Gap: 16, Padding: 16},
 	}
+}
+
+func reportPageHeaderDetail(pages []dashboard.Page, activePage dashboard.Page) string {
+	title := displayLabel(activePage.Title, activePage.ID)
+	for index, page := range pages {
+		if page.ID == activePage.ID {
+			return formatReportPageNumber(index, len(pages)) + " " + title
+		}
+	}
+	return title
+}
+
+func formatReportPageNumber(index, pageCount int) string {
+	pageNumber := strconv.Itoa(index + 1)
+	if pageCount >= 10 {
+		width := len(strconv.Itoa(pageCount))
+		if len(pageNumber) < width {
+			return strings.Repeat("0", width-len(pageNumber)) + pageNumber
+		}
+	}
+	return pageNumber
 }
 
 func modelStats(stats dashboard.ModelStats) g.Node {
