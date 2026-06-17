@@ -180,7 +180,7 @@ class ReportSidebar extends LitElement {
       background: var(--ld-accent);
     }
 
-    .page-dot {
+    .page-index {
       display: none;
     }
 
@@ -215,37 +215,28 @@ class ReportSidebar extends LitElement {
       padding-inline: 0;
     }
 
-    :host([data-collapsed]) .page-dot {
+    :host([data-collapsed]) .page-index {
       display: grid;
       width: 24px;
       height: 24px;
       place-items: center;
-    }
-
-    :host([data-collapsed]) .page-dot::before {
-      content: '';
-      display: block;
-      width: 6px;
-      height: 6px;
-      border: 1px solid var(--fgColor-muted);
       border-radius: var(--ld-radius-full);
+      color: var(--fgColor-muted);
       background: transparent;
-      opacity: 0.74;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-none);
     }
 
-    :host([data-collapsed]) .page-link:hover .page-dot::before,
-    :host([data-collapsed]) .page-link:focus-visible .page-dot::before {
-      border-color: var(--fgColor-default);
-      background: var(--fgColor-muted);
-      opacity: 1;
+    :host([data-collapsed]) .page-link:hover .page-index,
+    :host([data-collapsed]) .page-link:focus-visible .page-index {
+      color: var(--fgColor-default);
+      background: var(--bgColor-muted);
     }
 
-    :host([data-collapsed]) .page-link[aria-current='page'] .page-dot::before {
-      width: 7px;
-      height: 7px;
-      border-color: var(--fgColor-accent);
+    :host([data-collapsed]) .page-link[aria-current='page'] .page-index {
+      color: var(--fgColor-onEmphasis);
       background: var(--fgColor-accent);
-      opacity: 1;
     }
 
     :host([data-collapsed]) .page-link {
@@ -301,18 +292,18 @@ class ReportSidebar extends LitElement {
 
         <nav aria-label="Report pages">
           <span class="rail-label" aria-hidden="true">Pages</span>
-          ${pages.map((page) => this.renderPageLink(page))}
+          ${pages.map((page, index) => this.renderPageLink(page, index))}
         </nav>
       </aside>
     `
   }
 
-  private renderPageLink(page: ReportPage) {
+  private renderPageLink(page: ReportPage, index: number) {
     const active = Boolean(page.active || page.id === this.config.pageId)
     const title = page.title || page.id
     return html`
       <a class="page-link" href=${page.href} aria-current=${active ? 'page' : 'false'} title=${title}>
-        <span class="page-dot" aria-hidden="true"></span>
+        <span class="page-index" aria-hidden="true">${index + 1}</span>
         <span class="link-text">${title}</span>
       </a>
     `
