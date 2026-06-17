@@ -84,7 +84,7 @@ class ReportCanvas extends LitElement {
       background: var(--report-page-bg, transparent);
     }
 
-    ::slotted(.canvas-visual) {
+    ::slotted([data-canvas-visual]) {
       position: absolute;
       display: block;
       min-width: 0;
@@ -93,7 +93,7 @@ class ReportCanvas extends LitElement {
       box-sizing: border-box;
     }
 
-    ::slotted(.canvas-filter-visual) {
+    ::slotted([data-canvas-filter-visual]) {
       overflow: visible;
       z-index: 5;
     }
@@ -266,7 +266,7 @@ class ReportZoom extends LitElement {
     :host {
       display: inline-block;
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
     }
 
     .zoom {
@@ -282,7 +282,7 @@ class ReportZoom extends LitElement {
       height: 28px;
       place-items: center;
       border: 0;
-      border-radius: 5px;
+      border-radius: var(--ld-radius-default);
       background: transparent;
       color: var(--fgColor-muted);
       cursor: pointer;
@@ -323,7 +323,7 @@ class ReportZoom extends LitElement {
 
     input::-webkit-slider-runnable-track {
       height: 4px;
-      border-radius: 999px;
+      border-radius: var(--ld-radius-full);
       background: var(--borderColor-muted);
     }
 
@@ -332,22 +332,22 @@ class ReportZoom extends LitElement {
       width: 12px;
       height: 12px;
       margin-top: -4px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 999px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-full);
       background: var(--fgColor-muted);
     }
 
     input::-moz-range-track {
       height: 4px;
-      border-radius: 999px;
+      border-radius: var(--ld-radius-full);
       background: var(--borderColor-muted);
     }
 
     input::-moz-range-thumb {
       width: 12px;
       height: 12px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 999px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-full);
       background: var(--fgColor-muted);
     }
 
@@ -356,12 +356,12 @@ class ReportZoom extends LitElement {
     }
 
     input:focus-visible::-webkit-slider-thumb {
-      outline: 2px solid var(--borderColor-accent-muted);
+      outline: var(--ld-border-width-focus) solid var(--borderColor-accent-muted);
       outline-offset: 2px;
     }
 
     input:focus-visible::-moz-range-thumb {
-      outline: 2px solid var(--borderColor-accent-muted);
+      outline: var(--ld-border-width-focus) solid var(--borderColor-accent-muted);
       outline-offset: 2px;
     }
 
@@ -370,15 +370,15 @@ class ReportZoom extends LitElement {
       min-width: 0;
       margin-inline: 6px;
       padding-inline: 10px;
-      border-inline: 1px solid var(--borderColor-muted);
+      border-inline: var(--ld-border-muted);
     }
 
     .percent {
       min-width: 38px;
       color: var(--fgColor-muted);
       text-align: center;
-      font-size: 0.7rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
       white-space: nowrap;
     }
 

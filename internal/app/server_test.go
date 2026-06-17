@@ -382,8 +382,14 @@ func TestLoginRouteRendersAzureADLogin(t *testing.T) {
 	if !strings.Contains(body, `Sign in with Azure Active Directory`) {
 		t.Fatalf("login page did not render Azure AD button:\n%s", body)
 	}
-	if !strings.Contains(body, `/static/login.js`) {
-		t.Fatalf("login page did not include login asset:\n%s", body)
+	if !strings.Contains(body, `data-init__delay`) {
+		t.Fatalf("login page did not include lazy background init:\n%s", body)
+	}
+	if !strings.Contains(body, `libredash-login-background-init`) {
+		t.Fatalf("login page did not dispatch login background init event:\n%s", body)
+	}
+	if !strings.Contains(body, `/static/topology-background.js`) {
+		t.Fatalf("login page did not include lazy topology background asset:\n%s", body)
 	}
 }
 
@@ -462,17 +468,18 @@ func TestMetricViewMeasuresRouteRendersMeasuresTab(t *testing.T) {
 	for _, want := range []string{
 		`Orders Metrics`,
 		`href="/models/test"`,
-		`<code>orders</code>`,
-		`<code>purchase_timestamp</code>`,
+		`>orders</code>`,
+		`>purchase_timestamp</code>`,
 		`href="/metrics/orders/measures"`,
 		`href="/metrics/orders/dimensions"`,
 		`href="/metrics/orders/usage"`,
 		`aria-current="page"`,
 		`/static/detail-rail.js`,
-		`<ld-detail-rail class="metric-workspace">`,
+		`data-detail-rail`,
+		`data-metric-info-sidebar`,
 		`data-signals=`,
 		`metricGrid`,
-		`<ld-data-grid data-attr:grid="$metricGrid"></ld-data-grid>`,
+		`data-attr:grid="$metricGrid"`,
 		`Revenue`,
 		`SUM(e.revenue)`,
 	} {
@@ -507,7 +514,7 @@ func TestMetricViewDimensionsRouteRendersDimensionsTab(t *testing.T) {
 		`Delivery speed`,
 		`e.delivery_bucket IS NOT NULL`,
 		`metricGrid`,
-		`<ld-data-grid data-attr:grid="$metricGrid"></ld-data-grid>`,
+		`data-attr:grid="$metricGrid"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metric view dimensions tab missing %q:\n%s", want, body)
@@ -534,9 +541,9 @@ func TestMetricViewUsageRouteRendersUsageTab(t *testing.T) {
 		`aria-current="page"`,
 		`data-signals=`,
 		`metricUsageGraph`,
-		`<ld-metric-usage-graph data-attr:graph="$metricUsageGraph"></ld-metric-usage-graph>`,
+		`<ld-metric-usage-graph class="block h-metric-usage min-h-0 rounded-default border border-outline-muted bg-surface" data-attr:graph="$metricUsageGraph"></ld-metric-usage-graph>`,
 		`metricGrid`,
-		`<ld-data-grid data-attr:grid="$metricGrid"></ld-data-grid>`,
+		`data-attr:grid="$metricGrid"`,
 		`Dashboard`,
 		`Tags`,
 		`/dashboards/executive-sales`,

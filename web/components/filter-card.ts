@@ -21,7 +21,7 @@ const filterCardStyles = css`
       display: block;
       height: 100%;
       color: var(--fgColor-default);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--fontStack-system);
     }
 
     .card {
@@ -42,9 +42,9 @@ const filterCardStyles = css`
       color: var(--fgColor-muted);
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 0.58rem;
-      font-weight: 900;
-      line-height: 1;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
+      line-height: var(--ld-line-height-none);
       text-transform: uppercase;
     }
 
@@ -68,16 +68,16 @@ const filterCardStyles = css`
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 0.82rem;
-      font-weight: 850;
-      line-height: 1.15;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-tight);
     }
 
     .chevron {
       flex: 0 0 auto;
       color: var(--fgColor-muted);
-      font-size: 0.68rem;
-      font-weight: 900;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-900);
     }
 
     .popover {
@@ -88,10 +88,10 @@ const filterCardStyles = css`
       display: grid;
       width: min(260px, max(100%, 220px));
       gap: 7px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 6px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
       background: var(--overlay-bgColor, var(--bgColor-default));
-      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 18%));
+      box-shadow: var(--ld-shadow-floating-sm);
       padding: 8px;
     }
 
@@ -106,13 +106,13 @@ const filterCardStyles = css`
       width: 100%;
       min-width: 0;
       min-height: 27px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       padding: 0 7px;
-      font-size: 0.68rem;
-      font-weight: 650;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-650);
       outline-offset: 2px;
       box-sizing: border-box;
     }
@@ -120,7 +120,7 @@ const filterCardStyles = css`
     input:focus,
     select:focus,
     button:focus-visible {
-      outline: 2px solid var(--ld-accent);
+      outline: var(--ld-border-width-focus) solid var(--ld-accent);
     }
 
     .chips {
@@ -132,14 +132,14 @@ const filterCardStyles = css`
     .chip,
     .action {
       min-height: 27px;
-      border: 1px solid var(--borderColor-default);
-      border-radius: 4px;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       cursor: pointer;
       padding: 0 7px;
-      font-size: 0.64rem;
-      font-weight: 850;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
     }
 
     .chip.custom {
@@ -180,11 +180,11 @@ const filterCardStyles = css`
       min-width: 0;
       align-items: center;
       gap: 6px;
-      border-radius: 4px;
+      border-radius: var(--ld-radius-tight);
       padding: 4px;
       color: var(--fgColor-default);
-      font-size: 0.68rem;
-      font-weight: 750;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-750);
     }
 
     .check:hover {
@@ -200,8 +200,8 @@ const filterCardStyles = css`
 
     .empty {
       color: var(--fgColor-muted);
-      font-size: 0.66rem;
-      font-weight: 750;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-750);
       padding: 4px;
     }
   `
