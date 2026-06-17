@@ -74,59 +74,6 @@ cache:
 datasets:
   orders:
     source: orders_enriched
-    dimensions:
-      purchase_month:
-        label: Purchase month
-        expr: purchase_month
-      purchase_timestamp:
-        label: Purchase timestamp
-        expr: purchase_timestamp
-      purchase_date:
-        label: Purchase date
-        expr: purchase_date
-      status:
-        label: Status
-        expr: status
-      state:
-        label: State
-        expr: state
-      category:
-        label: Category
-        expr: category
-      delivery_bucket:
-        label: Delivery speed
-        expr: delivery_bucket
-        where: delivery_bucket IS NOT NULL
-        order_expr: MIN(e.delivery_days)
-    measures:
-      order_count:
-        label: Orders
-        aggregate: count_distinct
-        column: order_id
-        unit: orders
-        format: integer
-      revenue:
-        label: Revenue
-        aggregate: sum
-        column: revenue
-        unit: R$
-        format: currency
-      aov:
-        label: AOV
-        aggregate: expression
-        expression: CASE WHEN COUNT(DISTINCT e.order_id) = 0 THEN 0 ELSE SUM(e.revenue) / COUNT(DISTINCT e.order_id) END
-        unit: R$
-        format: currency
-      review_score:
-        label: Review
-        aggregate: avg
-        column: review_score
-        format: decimal
-      delivery_days:
-        label: Delivery days
-        aggregate: avg
-        column: delivery_days
-        format: decimal
 
 relationships:
   - id: orders_customers

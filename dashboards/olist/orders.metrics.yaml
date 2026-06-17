@@ -1,0 +1,56 @@
+id: orders
+title: Orders Metrics
+description: Governed order metrics and dimensions for the Olist commerce model.
+semantic_model: olist
+dataset: orders
+timeseries: purchase_timestamp
+
+dimensions:
+  purchase_month:
+    label: Purchase month
+    expr: e.purchase_month
+  purchase_timestamp:
+    label: Purchase timestamp
+    expr: e.purchase_timestamp
+  purchase_date:
+    label: Purchase date
+    expr: e.purchase_date
+  status:
+    label: Status
+    expr: e.status
+  state:
+    label: State
+    expr: e.state
+  category:
+    label: Category
+    expr: e.category
+  delivery_bucket:
+    label: Delivery speed
+    expr: e.delivery_bucket
+    where: e.delivery_bucket IS NOT NULL
+    order_expr: MIN(e.delivery_days)
+
+measures:
+  order_count:
+    label: Orders
+    expression: COUNT(DISTINCT e.order_id)
+    unit: orders
+    format: integer
+  revenue:
+    label: Revenue
+    expression: SUM(e.revenue)
+    unit: R$
+    format: currency
+  aov:
+    label: AOV
+    expression: SUM(e.revenue) / NULLIF(COUNT(DISTINCT e.order_id), 0)
+    unit: R$
+    format: currency
+  review_score:
+    label: Review
+    expression: AVG(e.review_score)
+    format: decimal
+  delivery_days:
+    label: Delivery days
+    expression: AVG(e.delivery_days)
+    format: decimal
