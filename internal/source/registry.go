@@ -36,6 +36,9 @@ type Connection struct {
 	AllowsPath         bool
 	RequiresPath       bool
 	AllowedOptions     []string
+	AuthKeys           []string
+	RequiredAuthSets   [][]string
+	AllowNoAuth        bool
 	AttachKind         string
 }
 
@@ -121,43 +124,54 @@ var connections = map[string]Connection{
 	"local": {
 		Kind:             "local",
 		AllowsPathSource: true,
+		AllowNoAuth:      true,
 	},
 	"s3": {
 		Kind:              "s3",
 		SecretType:        "s3",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
+		AuthKeys:          []string{"access_key_id", "secret_access_key", "session_token", "region", "endpoint", "url_style", "use_ssl"},
+		RequiredAuthSets:  [][]string{{"access_key_id", "secret_access_key"}},
 	},
 	"r2": {
 		Kind:              "r2",
 		SecretType:        "r2",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
+		AuthKeys:          []string{"access_key_id", "secret_access_key", "account_id", "region"},
+		RequiredAuthSets:  [][]string{{"access_key_id", "secret_access_key", "account_id"}},
 	},
 	"gcs": {
 		Kind:              "gcs",
 		SecretType:        "gcs",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
+		AuthKeys:          []string{"access_key_id", "secret_access_key", "endpoint"},
+		RequiredAuthSets:  [][]string{{"access_key_id", "secret_access_key"}},
 	},
 	"http": {
 		Kind:              "http",
 		SecretType:        "http",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
+		AllowNoAuth:       true,
 	},
 	"azure_blob": {
 		Kind:              "azure_blob",
 		SecretType:        "azure",
 		RequiredExtension: "azure",
 		AllowsPathSource:  true,
+		AuthKeys:          []string{"connection_string", "account_name", "tenant_id", "client_id", "client_secret"},
+		RequiredAuthSets:  [][]string{{"connection_string"}, {"account_name", "tenant_id", "client_id", "client_secret"}},
 	},
 	"postgres": {
 		Kind:               "postgres",
 		SecretType:         "postgres",
 		RequiredExtension:  "postgres",
 		AllowsObjectSource: true,
-		AllowedOptions:     []string{"connection_string", "uri", "path", "database"},
+		AuthKeys:           []string{"connection_string"},
+		RequiredAuthSets:   [][]string{{"connection_string"}},
 		AttachKind:         AttachDatabase,
 	},
 	"mysql": {
@@ -165,7 +179,8 @@ var connections = map[string]Connection{
 		SecretType:         "mysql",
 		RequiredExtension:  "mysql",
 		AllowsObjectSource: true,
-		AllowedOptions:     []string{"connection_string", "uri", "path", "database"},
+		AuthKeys:           []string{"connection_string"},
+		RequiredAuthSets:   [][]string{{"connection_string"}},
 		AttachKind:         AttachDatabase,
 	},
 	"sqlite": {
@@ -173,7 +188,10 @@ var connections = map[string]Connection{
 		SecretType:         "sqlite",
 		RequiredExtension:  "sqlite",
 		AllowsObjectSource: true,
-		AllowedOptions:     []string{"connection_string", "uri", "path", "database"},
+		AllowedOptions:     []string{"path"},
+		AuthKeys:           []string{"path"},
+		RequiredAuthSets:   [][]string{{"path"}},
+		AllowNoAuth:        true,
 		AttachKind:         AttachDatabase,
 	},
 	"ducklake": {
@@ -184,6 +202,9 @@ var connections = map[string]Connection{
 		AllowsPath:         true,
 		RequiresPath:       true,
 		AllowedOptions:     []string{"data_path"},
+		AuthKeys:           []string{"access_key_id", "secret_access_key", "session_token", "region", "endpoint", "url_style", "use_ssl", "account_id", "connection_string", "account_name", "tenant_id", "client_id", "client_secret"},
+		RequiredAuthSets:   [][]string{{"access_key_id", "secret_access_key"}, {"connection_string"}, {"account_name", "tenant_id", "client_id", "client_secret"}},
+		AllowNoAuth:        true,
 		AttachKind:         AttachDuckLake,
 	},
 }

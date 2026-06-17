@@ -305,7 +305,7 @@ func compileSourceSecretStatements(model *semantic.Model) ([]string, error) {
 			continue
 		}
 		connection := model.Connections[source.Connection]
-		if connection.Secret != "" || connection.Auth.Method == "" && len(connection.Auth.Params) == 0 && connection.Auth.Profile == "" && connection.Auth.Chain == "" && connection.Auth.Account == "" && connection.Scope == "" {
+		if len(connection.Auth) == 0 {
 			continue
 		}
 		stmt, ok, err := compileTypedConnectionSecret(source.Connection+"_"+format.SourceSecretType, connection, format.SourceSecretType)
@@ -329,46 +329,73 @@ func compileConnectionSecret(name string, connection semantic.Connection) (strin
 	if !ok || connectionSpec.SecretType == "" {
 		return "", false, nil
 	}
+	if connectionSpec.AttachKind == sourcereg.AttachDatabase {
+		return "", false, nil
+	}
 	return compileTypedConnectionSecret(name, connection, connectionSpec.SecretType)
 }
 
 func compileTypedConnectionSecret(name string, connection semantic.Connection, secretType string) (string, bool, error) {
-	if connection.Secret != "" {
+	if len(connection.Auth) == 0 {
 		return "", false, nil
 	}
-	if connection.Auth.Method == "" && len(connection.Auth.Params) == 0 && connection.Auth.Profile == "" && connection.Auth.Chain == "" && connection.Auth.Account == "" && connection.Scope == "" {
-		return "", false, nil
-	}
-	secret, err := connectionSecretName(name, connection)
+	secret, err := connectionSecretName(name)
 	if err != nil {
 		return "", false, err
 	}
-	parts := []string{"TYPE " + secretType}
-	if connection.Auth.Method != "" {
-		if err := validateIdentifier(connection.Auth.Method); err != nil {
-			return "", false, fmt.Errorf("invalid auth method %q: %w", connection.Auth.Method, err)
-		}
-		parts = append(parts, "PROVIDER "+connection.Auth.Method)
-	}
-	if connection.Auth.Profile != "" {
-		parts = append(parts, "PROFILE '"+sqlString(connection.Auth.Profile)+"'")
-	}
-	if connection.Auth.Chain != "" {
-		parts = append(parts, "CHAIN '"+sqlString(connection.Auth.Chain)+"'")
-	}
-	if connection.Auth.Account != "" {
-		parts = append(parts, "ACCOUNT_NAME '"+sqlString(connection.Auth.Account)+"'")
-	}
-	for _, key := range sortedKeys(connection.Auth.Params) {
+	parts := []string{"TYPE " + secretType, "PROVIDER " + duckDBSecretProvider(secretType, connection.Auth)}
+	for _, key := range sortedKeys(connection.Auth) {
 		if err := validateIdentifier(key); err != nil {
 			return "", false, fmt.Errorf("invalid auth param %q: %w", key, err)
 		}
-		parts = append(parts, strings.ToUpper(key)+" "+sqlLiteral(connection.Auth.Params[key]))
+		parts = append(parts, duckDBAuthParameter(key)+" "+sqlLiteral(connection.Auth[key]))
 	}
 	if connection.Scope != "" {
 		parts = append(parts, "SCOPE '"+sqlString(connection.Scope)+"'")
 	}
 	return fmt.Sprintf("CREATE OR REPLACE SECRET %s (%s)", secret, strings.Join(parts, ", ")), true, nil
+}
+
+func duckDBSecretProvider(secretType string, auth semantic.ConnectionAuth) string {
+	if secretType == "azure" {
+		if _, hasTenant := auth["tenant_id"]; hasTenant {
+			if _, hasClient := auth["client_id"]; hasClient {
+				if _, hasSecret := auth["client_secret"]; hasSecret {
+					return "service_principal"
+				}
+			}
+		}
+	}
+	return "config"
+}
+
+func duckDBAuthParameter(key string) string {
+	switch key {
+	case "access_key_id":
+		return "KEY_ID"
+	case "secret_access_key":
+		return "SECRET"
+	case "account_name":
+		return "ACCOUNT_NAME"
+	case "account_id":
+		return "ACCOUNT_ID"
+	case "client_id":
+		return "CLIENT_ID"
+	case "client_secret":
+		return "CLIENT_SECRET"
+	case "connection_string":
+		return "CONNECTION_STRING"
+	case "session_token":
+		return "SESSION_TOKEN"
+	case "tenant_id":
+		return "TENANT_ID"
+	case "url_style":
+		return "URL_STYLE"
+	case "use_ssl":
+		return "USE_SSL"
+	default:
+		return strings.ToUpper(key)
+	}
 }
 
 func (m *DuckDBMetrics) compileObjectAttach(model *semantic.Model, connectionName string, connection semantic.Connection) (string, error) {
@@ -448,29 +475,23 @@ func (m *DuckDBMetrics) resolvePathInConnectionScope(_ *semantic.Model, connecti
 }
 
 func databaseAttachSecret(connectionName string, connection semantic.Connection) (string, bool, error) {
-	if connection.Secret != "" {
-		if err := validateIdentifier(connection.Secret); err != nil {
-			return "", false, fmt.Errorf("invalid connection secret %q: %w", connection.Secret, err)
-		}
-		return connection.Secret, true, nil
-	}
-	if connection.Auth.Method == "" && len(connection.Auth.Params) == 0 && connection.Auth.Profile == "" && connection.Auth.Chain == "" && connection.Auth.Account == "" {
+	if len(connection.Auth) == 0 {
 		return "", false, nil
 	}
-	secret, err := connectionSecretName(connectionName, connection)
+	if _, ok := connection.Auth["connection_string"]; ok {
+		return "", false, nil
+	}
+	if _, ok := connection.Auth["path"]; ok {
+		return "", false, nil
+	}
+	secret, err := connectionSecretName(connectionName)
 	if err != nil {
 		return "", false, err
 	}
 	return secret, true, nil
 }
 
-func connectionSecretName(name string, connection semantic.Connection) (string, error) {
-	if connection.Secret != "" {
-		if err := validateIdentifier(connection.Secret); err != nil {
-			return "", fmt.Errorf("invalid connection secret %q: %w", connection.Secret, err)
-		}
-		return connection.Secret, nil
-	}
+func connectionSecretName(name string) (string, error) {
 	if err := validateIdentifier(name); err != nil {
 		return "", fmt.Errorf("invalid connection %q: %w", name, err)
 	}
@@ -484,8 +505,19 @@ func connectionStringOption(connection semantic.Connection) (string, error) {
 			return "", fmt.Errorf("unsupported database connection option %q", key)
 		}
 	}
-	for _, key := range []string{"connection_string", "uri", "path", "database"} {
-		if value, ok := connection.Options[key]; ok {
+	if len(connection.Auth) > 0 {
+		if value, ok := connection.Auth["connection_string"]; ok {
+			return fmt.Sprint(value), nil
+		}
+		if connection.Kind == "sqlite" {
+			if value, ok := connection.Auth["path"]; ok {
+				return fmt.Sprint(value), nil
+			}
+		}
+		return "", nil
+	}
+	if connection.Kind == "sqlite" {
+		if value, ok := connection.Options["path"]; ok {
 			return fmt.Sprint(value), nil
 		}
 	}

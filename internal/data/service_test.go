@@ -95,7 +95,11 @@ func TestCompileConnectionSecret(t *testing.T) {
 	stmt, ok, err := compileConnectionSecret("prod_lake", semantic.Connection{
 		Kind:  "s3",
 		Scope: "s3://analytics-prod/",
-		Auth:  semantic.ConnectionAuth{Method: "credential_chain", Profile: "analytics", Params: map[string]any{"region": "us-east-1"}},
+		Auth: semantic.ConnectionAuth{
+			"access_key_id":     "key",
+			"secret_access_key": "secret",
+			"region":            "us-east-1",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,41 +107,65 @@ func TestCompileConnectionSecret(t *testing.T) {
 	if !ok {
 		t.Fatal("secret ok = false, want true")
 	}
-	want := "CREATE OR REPLACE SECRET libredash_prod_lake (TYPE s3, PROVIDER credential_chain, PROFILE 'analytics', REGION 'us-east-1', SCOPE 's3://analytics-prod/')"
+	want := "CREATE OR REPLACE SECRET libredash_prod_lake (TYPE s3, PROVIDER config, KEY_ID 'key', REGION 'us-east-1', SECRET 'secret', SCOPE 's3://analytics-prod/')"
 	if stmt != want {
 		t.Fatalf("s3 secret = %q, want %q", stmt, want)
 	}
 
 	stmt, ok, err = compileConnectionSecret("azure_lake", semantic.Connection{
 		Kind: "azure_blob",
-		Auth: semantic.ConnectionAuth{Method: "credential_chain", Account: "mystorageaccount"},
+		Auth: semantic.ConnectionAuth{"connection_string": "DefaultEndpointsProtocol=https;AccountName=mystorageaccount"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET libredash_azure_lake (TYPE azure, PROVIDER credential_chain, ACCOUNT_NAME 'mystorageaccount')"
+	want = "CREATE OR REPLACE SECRET libredash_azure_lake (TYPE azure, PROVIDER config, CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=mystorageaccount')"
 	if !ok || stmt != want {
 		t.Fatalf("azure secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
 
-	stmt, ok, err = compileConnectionSecret("crm", semantic.Connection{Kind: "postgres", Secret: "crm_readonly"})
+	stmt, ok, err = compileConnectionSecret("azure_lake", semantic.Connection{
+		Kind: "azure_blob",
+		Auth: semantic.ConnectionAuth{
+			"account_name":  "mystorageaccount",
+			"tenant_id":     "tenant",
+			"client_id":     "client",
+			"client_secret": "secret",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "CREATE OR REPLACE SECRET libredash_azure_lake (TYPE azure, PROVIDER service_principal, ACCOUNT_NAME 'mystorageaccount', CLIENT_ID 'client', CLIENT_SECRET 'secret', TENANT_ID 'tenant')"
+	if !ok || stmt != want {
+		t.Fatalf("azure service principal secret = %q ok=%v, want %q ok=true", stmt, ok, want)
+	}
+
+	stmt, ok, err = compileConnectionSecret("crm", semantic.Connection{
+		Kind: "postgres",
+		Auth: semantic.ConnectionAuth{"connection_string": "postgres://crm"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok || stmt != "" {
-		t.Fatalf("named secret compile = %q ok=%v, want empty ok=false", stmt, ok)
+		t.Fatalf("postgres secret = %q ok=%v, want empty ok=false", stmt, ok)
 	}
 
 	stmt, ok, err = compileConnectionSecret("lakehouse", semantic.Connection{
 		Kind:  "ducklake",
 		Path:  "metadata.ducklake",
 		Scope: "s3://analytics-prod/ducklake/",
-		Auth:  semantic.ConnectionAuth{Method: "credential_chain"},
+		Auth: semantic.ConnectionAuth{
+			"access_key_id":     "key",
+			"secret_access_key": "secret",
+			"region":            "us-east-1",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET libredash_lakehouse (TYPE ducklake, PROVIDER credential_chain, SCOPE 's3://analytics-prod/ducklake/')"
+	want = "CREATE OR REPLACE SECRET libredash_lakehouse (TYPE ducklake, PROVIDER config, KEY_ID 'key', REGION 'us-east-1', SECRET 'secret', SCOPE 's3://analytics-prod/ducklake/')"
 	if !ok || stmt != want {
 		t.Fatalf("ducklake secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
@@ -149,24 +177,26 @@ func TestCompileSourceSecretStatements(t *testing.T) {
 			"prod_lake": {
 				Kind:  "s3",
 				Scope: "s3://analytics-prod/",
-				Auth:  semantic.ConnectionAuth{Method: "credential_chain", Profile: "analytics"},
+				Auth: semantic.ConnectionAuth{
+					"access_key_id":     "key",
+					"secret_access_key": "secret",
+				},
 			},
-			"existing": {
-				Kind:   "s3",
-				Secret: "existing_lance_secret",
+			"public": {
+				Kind: "http",
 			},
 		},
 		Sources: map[string]semantic.Source{
 			"embeddings": {Connection: "prod_lake", Path: "vectors/products.lance", Format: "lance"},
 			"orders":     {Connection: "prod_lake", Path: "orders.parquet", Format: "parquet"},
-			"named":      {Connection: "existing", Path: "named/products.lance", Format: "lance"},
+			"public":     {Connection: "public", Path: "https://example.com/products.lance", Format: "lance"},
 		},
 	}
 	statements, err := compileSourceSecretStatements(model)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"CREATE OR REPLACE SECRET libredash_prod_lake_lance (TYPE lance, PROVIDER credential_chain, PROFILE 'analytics', SCOPE 's3://analytics-prod/')"}
+	want := []string{"CREATE OR REPLACE SECRET libredash_prod_lake_lance (TYPE lance, PROVIDER config, KEY_ID 'key', SECRET 'secret', SCOPE 's3://analytics-prod/')"}
 	if fmt.Sprint(statements) != fmt.Sprint(want) {
 		t.Fatalf("lance secrets = %#v, want %#v", statements, want)
 	}
@@ -177,16 +207,20 @@ func TestCompileDatabaseAttach(t *testing.T) {
 		connection semantic.Connection
 		want       string
 	}{
-		"postgres_existing_secret": {
-			connection: semantic.Connection{Kind: "postgres", Secret: "crm_readonly"},
-			want:       "ATTACH '' AS conn_crm (TYPE postgres, READ_ONLY, SECRET crm_readonly)",
+		"postgres_auth": {
+			connection: semantic.Connection{Kind: "postgres", Auth: semantic.ConnectionAuth{"connection_string": "postgres://crm"}},
+			want:       "ATTACH 'postgres://crm' AS conn_crm (TYPE postgres, READ_ONLY)",
 		},
-		"mysql_uri": {
-			connection: semantic.Connection{Kind: "mysql", Options: map[string]any{"connection_string": "host=localhost database=sales"}},
-			want:       "ATTACH 'host=localhost database=sales' AS conn_crm (TYPE mysql, READ_ONLY)",
+		"mysql_auth": {
+			connection: semantic.Connection{Kind: "mysql", Auth: semantic.ConnectionAuth{"connection_string": "mysql://sales"}},
+			want:       "ATTACH 'mysql://sales' AS conn_crm (TYPE mysql, READ_ONLY)",
 		},
-		"sqlite_path": {
+		"sqlite_option_path": {
 			connection: semantic.Connection{Kind: "sqlite", Options: map[string]any{"path": "/tmp/source.sqlite"}},
+			want:       "ATTACH '/tmp/source.sqlite' AS conn_crm (TYPE sqlite, READ_ONLY)",
+		},
+		"sqlite_auth_path": {
+			connection: semantic.Connection{Kind: "sqlite", Auth: semantic.ConnectionAuth{"path": "/tmp/source.sqlite"}},
 			want:       "ATTACH '/tmp/source.sqlite' AS conn_crm (TYPE sqlite, READ_ONLY)",
 		},
 	}
@@ -274,9 +308,9 @@ func TestDuckDBMetricsResolvesSourcePlans(t *testing.T) {
 					Options: map[string]any{"header": true},
 				},
 			},
-			"prod_lake": {Kind: "s3", Scope: "s3://analytics-prod/"},
-			"azure":     {Kind: "azure_blob", Scope: "az://warehouse/"},
-			"vectors":   {Kind: "s3", Scope: "s3://analytics-prod/"},
+			"prod_lake": {Kind: "s3", Scope: "s3://analytics-prod/", Auth: semantic.ConnectionAuth{"access_key_id": "key", "secret_access_key": "secret"}},
+			"azure":     {Kind: "azure_blob", Scope: "az://warehouse/", Auth: semantic.ConnectionAuth{"connection_string": "DefaultEndpointsProtocol=https;AccountName=warehouse"}},
+			"vectors":   {Kind: "s3", Scope: "s3://analytics-prod/", Auth: semantic.ConnectionAuth{"access_key_id": "key", "secret_access_key": "secret"}},
 		},
 		Sources: map[string]semantic.Source{
 			"orders":     {Path: "orders.csv"},

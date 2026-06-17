@@ -68,6 +68,26 @@ func TestRegistrySpecializedCapabilities(t *testing.T) {
 	}
 }
 
+func TestRegistryConnectionAuthPolicy(t *testing.T) {
+	s3, _ := LookupConnection("s3")
+	if !contains(s3.AuthKeys, "access_key_id") || !contains(s3.AuthKeys, "secret_access_key") {
+		t.Fatalf("s3 auth keys = %#v, want access key fields", s3.AuthKeys)
+	}
+	if len(s3.RequiredAuthSets) != 1 || len(s3.RequiredAuthSets[0]) != 2 {
+		t.Fatalf("s3 required auth sets = %#v, want key pair", s3.RequiredAuthSets)
+	}
+
+	azure, _ := LookupConnection("azure_blob")
+	if len(azure.RequiredAuthSets) != 2 {
+		t.Fatalf("azure required auth sets = %#v, want connection string or service principal", azure.RequiredAuthSets)
+	}
+
+	local, _ := LookupConnection("local")
+	if !local.AllowNoAuth || len(local.AuthKeys) != 0 {
+		t.Fatalf("local auth policy = %#v, want no-auth only", local)
+	}
+}
+
 func TestPathHelpers(t *testing.T) {
 	if !IsLocalPath("orders.csv") {
 		t.Fatal("orders.csv should be local")
@@ -90,4 +110,13 @@ func TestPathHelpers(t *testing.T) {
 	if extension, ok := StorageExtension("https://example.com/data.parquet"); !ok || extension != "httpfs" {
 		t.Fatalf("StorageExtension https = %q, %v", extension, ok)
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

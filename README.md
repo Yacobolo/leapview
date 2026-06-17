@@ -68,7 +68,7 @@ sources:
     path: olist_order_items_dataset.csv
 ```
 
-S3 Parquet with credential-chain auth:
+S3 Parquet with LibreDash-managed auth:
 
 ```yaml
 connections:
@@ -76,10 +76,9 @@ connections:
     kind: s3
     scope: s3://analytics-prod/
     auth:
-      method: credential_chain
-      profile: analytics
-      params:
-        region: us-east-1
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      region: ${AWS_REGION}
 
 sources:
   sales_events:
@@ -96,8 +95,7 @@ connections:
     kind: azure_blob
     scope: az://warehouse/
     auth:
-      method: credential_chain
-      account: mystorageaccount
+      connection_string: ${AZURE_STORAGE_CONNECTION_STRING}
 
 sources:
   delta_orders:
@@ -106,13 +104,14 @@ sources:
     format: delta
 ```
 
-Postgres table via a DuckDB secret:
+Postgres table:
 
 ```yaml
 connections:
   crm:
     kind: postgres
-    secret: crm_readonly
+    auth:
+      connection_string: ${CRM_DATABASE_URL}
 
 sources:
   crm_accounts:
@@ -128,7 +127,9 @@ connections:
     kind: s3
     scope: s3://analytics-prod/
     auth:
-      method: credential_chain
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      region: ${AWS_REGION}
 
 sources:
   product_embeddings:
@@ -145,7 +146,9 @@ connections:
     scope: s3://analytics-prod/ducklake/
     path: metadata.ducklake
     auth:
-      method: credential_chain
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      region: ${AWS_REGION}
     options:
       data_path: data
 
@@ -154,6 +157,8 @@ sources:
     connection: lakehouse
     object: main.orders
 ```
+
+LibreDash owns the credential contract. Connection `auth` fields are resolved from `${ENV_VAR}` references or literal config values, validated by connection kind, and compiled into temporary DuckDB secrets internally. External secret managers such as Infisical should inject environment variables before `libredash serve` starts.
 
 For file and table paths, LibreDash infers `format` from clear extensions such as `.csv`, `.csv.gz`, `.json`, `.jsonl`, `.ndjson`, `.parquet`, `.xlsx`, `.txt`, `.blob`, `.vortex`, and `.lance`. Set source-level `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. Advanced DuckDB integrations should be modeled explicitly before being exposed in source YAML.
 

@@ -136,15 +136,19 @@ func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 		"prod_lake": {
 			Kind:  "s3",
 			Scope: "s3://analytics-prod/",
-			Auth:  ConnectionAuth{Method: "credential_chain", Profile: "analytics"},
+			Auth: ConnectionAuth{
+				"access_key_id":     "key",
+				"secret_access_key": "secret",
+				"region":            "us-east-1",
+			},
 		},
 		"azure_lake": {
 			Kind: "azure_blob",
-			Auth: ConnectionAuth{Method: "credential_chain", Account: "mystorageaccount"},
+			Auth: ConnectionAuth{"connection_string": "DefaultEndpointsProtocol=https;AccountName=mystorageaccount"},
 		},
 		"crm": {
-			Kind:   "postgres",
-			Secret: "crm_readonly",
+			Kind: "postgres",
+			Auth: ConnectionAuth{"connection_string": "postgres://crm"},
 		},
 		"lakehouse": {
 			Kind: "ducklake",
@@ -188,6 +192,45 @@ func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 	if got := model.Sources["orders"].Options["header"]; got != true {
 		t.Fatalf("orders header option = %#v, want true", got)
 	}
+}
+
+func TestModelValidateResolvesConnectionAuthEnv(t *testing.T) {
+	t.Setenv("LIBREDASH_TEST_S3_KEY", "env-key")
+	t.Setenv("LIBREDASH_TEST_S3_SECRET", "env-secret")
+	model := minimalSourceModel()
+	model.Connections["prod_lake"] = Connection{
+		Kind:  "s3",
+		Scope: "s3://analytics-prod/",
+		Auth: ConnectionAuth{
+			"access_key_id":     "${LIBREDASH_TEST_S3_KEY}",
+			"secret_access_key": "${LIBREDASH_TEST_S3_SECRET}",
+		},
+	}
+	model.Sources = map[string]Source{
+		"orders": {Connection: "prod_lake", Path: "orders.parquet"},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := model.Connections["prod_lake"].Auth["access_key_id"]; got != "env-key" {
+		t.Fatalf("resolved access key = %#v, want env-key", got)
+	}
+}
+
+func TestModelValidateRejectsMissingConnectionAuthEnv(t *testing.T) {
+	model := minimalSourceModel()
+	model.Connections["prod_lake"] = Connection{
+		Kind:  "s3",
+		Scope: "s3://analytics-prod/",
+		Auth: ConnectionAuth{
+			"access_key_id":     "${LIBREDASH_TEST_MISSING_KEY}",
+			"secret_access_key": "secret",
+		},
+	}
+	model.Sources = map[string]Source{
+		"orders": {Connection: "prod_lake", Path: "orders.parquet"},
+	}
+	assertModelValidateError(t, model, "missing environment variable")
 }
 
 func TestModelValidateInfersFileFormats(t *testing.T) {
@@ -278,7 +321,7 @@ func TestModelValidateRejectsInvalidSources(t *testing.T) {
 			}
 			model.Connections = map[string]Connection{
 				"local_files": {Kind: "local"},
-				"crm":         {Kind: "mysql"},
+				"crm":         {Kind: "mysql", Auth: ConnectionAuth{"connection_string": "mysql://crm"}},
 				"lakehouse":   {Kind: "ducklake", Path: "metadata.ducklake"},
 			}
 			model.Sources = map[string]Source{"orders": tc.source}
@@ -293,20 +336,20 @@ func TestModelValidateRejectsInvalidConnections(t *testing.T) {
 		contains   string
 	}{
 		"bad_auth_method": {
-			connection: Connection{Kind: "s3", Auth: ConnectionAuth{Method: "shell"}},
-			contains:   "unsupported auth method",
+			connection: Connection{Kind: "s3", Auth: ConnectionAuth{"method": "credential_chain"}},
+			contains:   "unsupported auth key",
 		},
 		"bad_auth_param": {
-			connection: Connection{Kind: "s3", Auth: ConnectionAuth{Method: "config", Params: map[string]any{"bad-key": "value"}}},
-			contains:   "auth param",
+			connection: Connection{Kind: "s3", Auth: ConnectionAuth{"bad-key": "value"}},
+			contains:   "auth key",
 		},
 		"bad_attach_option": {
-			connection: Connection{Kind: "postgres", Options: map[string]any{"password": "secret"}},
+			connection: Connection{Kind: "postgres", Auth: ConnectionAuth{"connection_string": "postgres://crm"}, Options: map[string]any{"password": "secret"}},
 			contains:   "unsupported option",
 		},
-		"bad_secret_name": {
-			connection: Connection{Kind: "postgres", Secret: "bad-secret"},
-			contains:   "secret",
+		"missing_required_auth": {
+			connection: Connection{Kind: "s3", Auth: ConnectionAuth{"access_key_id": "key"}},
+			contains:   "missing required credentials",
 		},
 		"bad_default_option": {
 			connection: Connection{Kind: "local", Defaults: ConnectionDefaults{Options: map[string]any{"bad-key": true}}},
@@ -321,7 +364,7 @@ func TestModelValidateRejectsInvalidConnections(t *testing.T) {
 			contains:   "unsupported option",
 		},
 		"non_ducklake_path": {
-			connection: Connection{Kind: "s3", Path: "s3://bucket/"},
+			connection: Connection{Kind: "s3", Path: "s3://bucket/", Auth: ConnectionAuth{"access_key_id": "key", "secret_access_key": "secret"}},
 			contains:   "path is only supported for path-backed connections",
 		},
 	}
@@ -361,6 +404,27 @@ connections:
     kind: local
     defaults:
       format: csv
+`,
+		"connection_secret": `
+connections:
+  crm:
+    kind: postgres
+    secret: crm_readonly
+`,
+		"auth_method": `
+connections:
+  prod_lake:
+    kind: s3
+    auth:
+      method: credential_chain
+`,
+		"auth_params": `
+connections:
+  prod_lake:
+    kind: s3
+    auth:
+      params:
+        region: us-east-1
 `,
 		"source_query": `
 sources:

@@ -11,7 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var semanticIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var (
+	semanticIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	envReferencePattern       = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
+)
 
 type Model struct {
 	Name              string                `yaml:"name"`
@@ -29,7 +32,6 @@ type Connection struct {
 	Kind     string             `yaml:"kind"`
 	Path     string             `yaml:"path"`
 	Root     string             `yaml:"root"`
-	Secret   string             `yaml:"secret"`
 	Scope    string             `yaml:"scope"`
 	Auth     ConnectionAuth     `yaml:"auth"`
 	Options  map[string]any     `yaml:"options"`
@@ -40,13 +42,7 @@ type ConnectionDefaults struct {
 	Options map[string]any `yaml:"options"`
 }
 
-type ConnectionAuth struct {
-	Method  string         `yaml:"method"`
-	Profile string         `yaml:"profile"`
-	Chain   string         `yaml:"chain"`
-	Account string         `yaml:"account"`
-	Params  map[string]any `yaml:"params"`
-}
+type ConnectionAuth map[string]any
 
 type Source struct {
 	Format     string         `yaml:"format"`
@@ -131,9 +127,11 @@ func (m *Model) Validate() error {
 		return fmt.Errorf("semantic model %q has no cache tables", m.Name)
 	}
 	for name, connection := range m.Connections {
-		if err := connection.Validate(name); err != nil {
+		resolved, err := connection.Validate(name)
+		if err != nil {
 			return err
 		}
+		m.Connections[name] = resolved
 	}
 	if m.DefaultConnection != "" {
 		if err := validateSemanticIdentifier(m.DefaultConnection); err != nil {
@@ -332,48 +330,40 @@ func (s Source) Validate(name string, connections map[string]Connection) error {
 	return nil
 }
 
-func (c Connection) Validate(name string) error {
+func (c Connection) Validate(name string) (Connection, error) {
 	if err := validateSemanticIdentifier(name); err != nil {
-		return fmt.Errorf("connection %q has invalid name: %w", name, err)
+		return c, fmt.Errorf("connection %q has invalid name: %w", name, err)
 	}
 	if c.Kind == "" {
-		return fmt.Errorf("connection %q requires kind", name)
+		return c, fmt.Errorf("connection %q requires kind", name)
 	}
 	connectionSpec, ok := sourcereg.LookupConnection(c.Kind)
 	if !ok {
-		return fmt.Errorf("connection %q has unsupported kind %q", name, c.Kind)
+		return c, fmt.Errorf("connection %q has unsupported kind %q", name, c.Kind)
 	}
 	if connectionSpec.RequiresPath {
 		if c.Path == "" {
-			return fmt.Errorf("connection %q %s requires path", name, c.Kind)
+			return c, fmt.Errorf("connection %q %s requires path", name, c.Kind)
 		}
 	} else if c.Path != "" && !connectionSpec.AllowsPath {
-		return fmt.Errorf("connection %q path is only supported for path-backed connections", name)
+		return c, fmt.Errorf("connection %q path is only supported for path-backed connections", name)
 	}
-	if c.Secret != "" {
-		if err := validateSemanticIdentifier(c.Secret); err != nil {
-			return fmt.Errorf("connection %q secret %q is invalid: %w", name, c.Secret, err)
-		}
+	auth, err := validateConnectionAuth(name, c, connectionSpec)
+	if err != nil {
+		return c, err
 	}
-	if c.Auth.Method != "" && !supportsAuthMethod(c.Auth.Method) {
-		return fmt.Errorf("connection %q has unsupported auth method %q", name, c.Auth.Method)
-	}
-	for key := range c.Auth.Params {
-		if err := validateSemanticIdentifier(key); err != nil {
-			return fmt.Errorf("connection %q auth param %q is invalid: %w", name, key, err)
-		}
-	}
+	c.Auth = auth
 	for key := range c.Options {
 		if !connectionAllowsOption(connectionSpec, key) {
-			return fmt.Errorf("connection %q has unsupported option %q", name, key)
+			return c, fmt.Errorf("connection %q has unsupported option %q", name, key)
 		}
 	}
 	for key := range c.Defaults.Options {
 		if err := validateSemanticIdentifier(key); err != nil {
-			return fmt.Errorf("connection %q default option %q is invalid: %w", name, key, err)
+			return c, fmt.Errorf("connection %q default option %q is invalid: %w", name, key, err)
 		}
 	}
-	return nil
+	return c, nil
 }
 
 func (s Source) Description() string {
@@ -418,20 +408,108 @@ func (s Source) Kind() string {
 	return kind
 }
 
-func supportsAuthMethod(method string) bool {
-	switch method {
-	case "credential_chain", "config":
-		return true
-	default:
-		return false
-	}
-}
-
 func connectionAllowsOption(connection sourcereg.Connection, option string) bool {
 	for _, allowed := range connection.AllowedOptions {
 		if option == allowed {
 			return true
 		}
+	}
+	return false
+}
+
+func validateConnectionAuth(name string, connection Connection, spec sourcereg.Connection) (ConnectionAuth, error) {
+	if len(connection.Auth) == 0 {
+		if connection.Kind == "ducklake" && duckLakeNeedsAuth(connection) {
+			return nil, fmt.Errorf("connection %q ducklake remote path requires auth", name)
+		}
+		if connection.Kind == "sqlite" && connection.Options["path"] != nil {
+			return nil, nil
+		}
+		if spec.AllowNoAuth {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("connection %q %s requires auth", name, connection.Kind)
+	}
+	resolved := make(ConnectionAuth, len(connection.Auth))
+	for key, value := range connection.Auth {
+		if err := validateSemanticIdentifier(key); err != nil {
+			return nil, fmt.Errorf("connection %q auth key %q is invalid: %w", name, key, err)
+		}
+		if !connectionAllowsAuthKey(spec, key) {
+			return nil, fmt.Errorf("connection %q has unsupported auth key %q", name, key)
+		}
+		resolvedValue, err := resolveAuthValue(name, key, value)
+		if err != nil {
+			return nil, err
+		}
+		resolved[key] = resolvedValue
+	}
+	if !connectionHasRequiredAuth(resolved, spec.RequiredAuthSets) {
+		return nil, fmt.Errorf("connection %q %s auth is missing required credentials", name, connection.Kind)
+	}
+	return resolved, nil
+}
+
+func connectionAllowsAuthKey(connection sourcereg.Connection, key string) bool {
+	for _, allowed := range connection.AuthKeys {
+		if key == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func connectionHasRequiredAuth(auth ConnectionAuth, requiredSets [][]string) bool {
+	if len(requiredSets) == 0 {
+		return true
+	}
+	for _, required := range requiredSets {
+		missing := false
+		for _, key := range required {
+			value, ok := auth[key]
+			if !ok || fmt.Sprint(value) == "" {
+				missing = true
+				break
+			}
+		}
+		if !missing {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveAuthValue(connectionName, key string, value any) (any, error) {
+	switch typed := value.(type) {
+	case string:
+		if matches := envReferencePattern.FindStringSubmatch(typed); matches != nil {
+			envName := matches[1]
+			resolved, ok := os.LookupEnv(envName)
+			if !ok || resolved == "" {
+				return nil, fmt.Errorf("connection %q auth key %q references missing environment variable %s", connectionName, key, envName)
+			}
+			return resolved, nil
+		}
+		if typed == "" {
+			return nil, fmt.Errorf("connection %q auth key %q cannot be empty", connectionName, key)
+		}
+		return typed, nil
+	case bool, int, int64, float64:
+		return typed, nil
+	default:
+		return nil, fmt.Errorf("connection %q auth key %q has unsupported value type %T", connectionName, key, value)
+	}
+}
+
+func duckLakeNeedsAuth(connection Connection) bool {
+	if connection.Scope != "" && !sourcereg.IsLocalPath(connection.Scope) {
+		return true
+	}
+	if connection.Path != "" && !sourcereg.IsLocalPath(connection.Path) {
+		return true
+	}
+	if dataPath, ok := connection.Options["data_path"]; ok && !sourcereg.IsLocalPath(fmt.Sprint(dataPath)) {
+		return true
 	}
 	return false
 }
