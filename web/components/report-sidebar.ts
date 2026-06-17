@@ -1,4 +1,4 @@
-import { LitElement, css, html, svg as svgTemplate } from 'lit'
+import { LitElement, css, html, svg as svgTemplate, type PropertyValues } from 'lit'
 import { property, state } from 'lit/decorators.js'
 
 type ReportPage = {
@@ -14,6 +14,13 @@ type ReportSidebarConfig = {
   pageId?: string
   pageTitle?: string
   pages?: ReportPage[]
+}
+
+type HoverTitle = {
+  index: string
+  title: string
+  top: number
+  active: boolean
 }
 
 const defaultConfig: ReportSidebarConfig = {
@@ -38,13 +45,16 @@ const configConverter = {
 class ReportSidebar extends LitElement {
   @property({ attribute: 'config', converter: configConverter }) config: ReportSidebarConfig = defaultConfig
   @state() private collapsed = storedCollapsed()
+  @state() private hoverTitle?: HoverTitle
 
   static styles = css`
     :host {
       --ld-report-sidebar-width: 144px;
       display: block;
       width: var(--ld-report-sidebar-width);
-      min-height: 100svh;
+      height: 100svh;
+      min-height: 0;
+      overflow: hidden;
       color: var(--fgColor-default);
       font-family: var(--fontStack-system);
       transition: width 180ms var(--ld-ease-out);
@@ -52,6 +62,12 @@ class ReportSidebar extends LitElement {
 
     :host([data-collapsed]) {
       --ld-report-sidebar-width: 38px;
+      z-index: 30;
+      overflow: visible;
+    }
+
+    :host([data-collapsed]) aside {
+      overflow: visible;
     }
 
     aside {
@@ -59,8 +75,11 @@ class ReportSidebar extends LitElement {
       top: 0;
       display: grid;
       width: var(--ld-report-sidebar-width);
-      min-height: 100svh;
+      height: 100svh;
+      min-height: 0;
+      max-height: 100svh;
       grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
       border-right: 1px solid color-mix(in srgb, var(--borderColor-muted), transparent 36%);
       background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 56%);
       transition: width 180ms var(--ld-ease-out);
@@ -135,8 +154,29 @@ class ReportSidebar extends LitElement {
       gap: 2px;
       min-width: 0;
       min-height: 0;
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       padding: 7px 5px;
+      scrollbar-gutter: stable;
+      scrollbar-color: color-mix(in srgb, var(--fgColor-muted), transparent 42%) transparent;
+      scrollbar-width: thin;
+    }
+
+    nav::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    nav::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    nav::-webkit-scrollbar-thumb {
+      border-radius: var(--ld-radius-full);
+      background: color-mix(in srgb, var(--fgColor-muted), transparent 42%);
+    }
+
+    nav::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--fgColor-muted), transparent 20%);
     }
 
     a {
@@ -146,15 +186,16 @@ class ReportSidebar extends LitElement {
     .page-link {
       position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      min-height: 30px;
+      grid-template-columns: 24px minmax(0, 1fr);
+      min-height: 29px;
       align-items: center;
+      gap: 6px;
       border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-default);
-      color: var(--fgColor-muted);
+      color: color-mix(in srgb, var(--fgColor-muted), transparent 8%);
       padding: 0 9px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-800);
+      font-weight: var(--ld-font-weight-760);
     }
 
     .page-link:hover,
@@ -166,7 +207,7 @@ class ReportSidebar extends LitElement {
 
     .page-link[aria-current='page'] {
       border-color: transparent;
-      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 30%);
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 42%);
       color: var(--fgColor-default);
     }
 
@@ -180,8 +221,22 @@ class ReportSidebar extends LitElement {
       background: var(--ld-accent);
     }
 
-    .page-dot {
-      display: none;
+    .page-index {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      color: color-mix(in srgb, var(--fgColor-muted), transparent 24%);
+      font-size: var(--ld-font-size-caption);
+      font-variant-numeric: tabular-nums;
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-none);
+    }
+
+    .page-link:hover .page-index,
+    .page-link:focus-visible .page-index,
+    .page-link[aria-current='page'] .page-index {
+      color: var(--fgColor-default);
     }
 
     .link-text {
@@ -189,6 +244,12 @@ class ReportSidebar extends LitElement {
       min-width: 0;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .page-link:hover .link-text,
+    .page-link:focus-visible .link-text,
+    .page-link[aria-current='page'] .link-text {
+      font-weight: var(--ld-font-weight-850);
     }
 
     :host([data-collapsed]) header {
@@ -209,51 +270,118 @@ class ReportSidebar extends LitElement {
       margin-left: 0;
     }
 
+    :host([data-collapsed]) nav {
+      scrollbar-gutter: auto;
+      scrollbar-width: none;
+    }
+
+    :host([data-collapsed]) nav::-webkit-scrollbar {
+      display: none;
+      width: 0;
+    }
+
     :host([data-collapsed]) .page-link {
       grid-template-columns: 24px;
       justify-content: center;
       padding-inline: 0;
     }
 
-    :host([data-collapsed]) .page-dot {
+    :host([data-collapsed]) .page-index {
+      background: transparent;
+    }
+
+    :host([data-collapsed]) .page-link:hover .page-index,
+    :host([data-collapsed]) .page-link:focus-visible .page-index {
+      color: var(--fgColor-default);
+    }
+
+    :host([data-collapsed]) .page-link[aria-current='page'] .page-index {
+      color: var(--fgColor-default);
+    }
+
+    :host([data-collapsed]) .page-link {
+      min-height: 29px;
+    }
+
+    :host([data-collapsed]) .page-link[aria-current='page']::before {
+      content: '';
+      inset-block: 7px;
+      left: 0;
+      width: 2px;
+    }
+
+    .hover-title {
+      display: none;
+    }
+
+    :host([data-collapsed]) .hover-title {
+      position: absolute;
+      z-index: 40;
+      left: 7px;
+      min-height: 29px;
+      max-width: 12rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 9px 0 0;
+      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 56%);
+      color: var(--fgColor-default);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
+      line-height: var(--ld-line-height-none);
+      pointer-events: none;
+      transform: translateY(-50%);
+      animation: rail-title-fade-in 90ms var(--ld-ease-out);
+      white-space: nowrap;
+    }
+
+    :host([data-collapsed]) .hover-title[data-active]::before {
+      content: '';
+      position: absolute;
+      inset-block: 7px;
+      left: -2px;
+      width: 2px;
+      border-radius: var(--ld-radius-full);
+      background: var(--ld-accent);
+    }
+
+    @keyframes rail-title-fade-in {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    .hover-title-index {
       display: grid;
       width: 24px;
       height: 24px;
       place-items: center;
+      color: var(--fgColor-default);
+      font-variant-numeric: tabular-nums;
+      font-weight: var(--ld-font-weight-850);
     }
 
-    :host([data-collapsed]) .page-dot::before {
-      content: '';
-      display: block;
-      width: 6px;
-      height: 6px;
-      border: 1px solid var(--fgColor-muted);
-      border-radius: var(--ld-radius-full);
-      background: transparent;
-      opacity: 0.74;
+    .hover-title-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      animation: rail-title-name-fold-out 120ms var(--ld-ease-out);
+      transform-origin: left center;
     }
 
-    :host([data-collapsed]) .page-link:hover .page-dot::before,
-    :host([data-collapsed]) .page-link:focus-visible .page-dot::before {
-      border-color: var(--fgColor-default);
-      background: var(--fgColor-muted);
-      opacity: 1;
-    }
+    @keyframes rail-title-name-fold-out {
+      from {
+        opacity: 0;
+        transform: translateX(-4px) scaleX(0.86);
+      }
 
-    :host([data-collapsed]) .page-link[aria-current='page'] .page-dot::before {
-      width: 7px;
-      height: 7px;
-      border-color: var(--fgColor-accent);
-      background: var(--fgColor-accent);
-      opacity: 1;
-    }
-
-    :host([data-collapsed]) .page-link {
-      min-height: 28px;
-    }
-
-    :host([data-collapsed]) .page-link[aria-current='page']::before {
-      content: none;
+      to {
+        opacity: 1;
+        transform: translateX(0) scaleX(1);
+      }
     }
 
     .rail-label {
@@ -275,8 +403,11 @@ class ReportSidebar extends LitElement {
     }
   `
 
-  updated(): void {
+  updated(changed: PropertyValues<this>): void {
     this.toggleAttribute('data-collapsed', this.collapsed)
+    if (changed.has('config') || changed.has('collapsed')) {
+      this.scrollActivePageIntoView()
+    }
   }
 
   render() {
@@ -299,20 +430,40 @@ class ReportSidebar extends LitElement {
           </div>
         </header>
 
-        <nav aria-label="Report pages">
+        <nav aria-label="Report pages" @scroll=${this.hideHoverTitle}>
           <span class="rail-label" aria-hidden="true">Pages</span>
-          ${pages.map((page) => this.renderPageLink(page))}
+          ${pages.map((page, index) => this.renderPageLink(page, index, pages.length))}
         </nav>
+        ${this.collapsed && this.hoverTitle ? html`
+          <div
+            class="hover-title"
+            style=${`top:${this.hoverTitle.top}px`}
+            ?data-active=${this.hoverTitle.active}
+          >
+            <span class="hover-title-index" aria-hidden="true">${this.hoverTitle.index}</span>
+            <span class="hover-title-name">${this.hoverTitle.title}</span>
+          </div>
+        ` : null}
       </aside>
     `
   }
 
-  private renderPageLink(page: ReportPage) {
+  private renderPageLink(page: ReportPage, index: number, pageCount: number) {
     const active = Boolean(page.active || page.id === this.config.pageId)
+    const pageNumber = formatPageNumber(index, pageCount)
     const title = page.title || page.id
     return html`
-      <a class="page-link" href=${page.href} aria-current=${active ? 'page' : 'false'} title=${title}>
-        <span class="page-dot" aria-hidden="true"></span>
+      <a
+        class="page-link"
+        href=${page.href}
+        aria-current=${active ? 'page' : 'false'}
+        aria-label=${title}
+        @mouseenter=${(event: MouseEvent) => this.showHoverTitle(event, title, pageNumber, active)}
+        @mouseleave=${this.hideHoverTitle}
+        @focus=${(event: FocusEvent) => this.showHoverTitle(event, title, pageNumber, active)}
+        @blur=${this.hideHoverTitle}
+      >
+        <span class="page-index" aria-hidden="true">${pageNumber}</span>
         <span class="link-text">${title}</span>
       </a>
     `
@@ -326,6 +477,32 @@ class ReportSidebar extends LitElement {
       // Session state still updates when storage is unavailable.
     }
   }
+
+  private scrollActivePageIntoView(): void {
+    requestAnimationFrame(() => {
+      const active = this.renderRoot.querySelector<HTMLElement>('.page-link[aria-current="page"]')
+      active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+  }
+
+  private showHoverTitle(event: MouseEvent | FocusEvent, title: string, index: string, active: boolean): void {
+    if (!this.collapsed) return
+    const target = event.currentTarget
+    const aside = this.renderRoot.querySelector<HTMLElement>('aside')
+    if (!(target instanceof HTMLElement) || !aside) return
+    const targetRect = target.getBoundingClientRect()
+    const asideRect = aside.getBoundingClientRect()
+    this.hoverTitle = {
+      index,
+      title,
+      top: targetRect.top - asideRect.top + targetRect.height / 2,
+      active,
+    }
+  }
+
+  private hideHoverTitle = (): void => {
+    this.hoverTitle = undefined
+  }
 }
 
 function storedCollapsed(): boolean {
@@ -334,6 +511,11 @@ function storedCollapsed(): boolean {
   } catch {
     return false
   }
+}
+
+function formatPageNumber(index: number, pageCount: number): string {
+  const pageNumber = String(index + 1)
+  return pageCount >= 10 ? pageNumber.padStart(2, '0') : pageNumber
 }
 
 function icon(name: 'chevron-left' | 'chevron-right') {
