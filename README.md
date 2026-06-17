@@ -22,7 +22,7 @@ python3 scripts/bootstrap_olist.py
 go run ./cmd/libredash
 ```
 
-By default, the bootstrap script copies CSVs into `.data/olist`. To use a different location:
+By default, the bootstrap script copies CSVs into `.data/olist`. To use a different path:
 
 ```sh
 export LIBREDASH_DATA_DIR=/path/to/olist-csvs
@@ -43,6 +43,124 @@ go run ./cmd/libredash
 - Dashboard YAML owns pages, filters, KPIs, visuals, tables, and interactions over metrics views.
 - Lit chart components bind to signal paths such as `charts.revenue`.
 - The bundled `datastar-inspector` web component shows live Datastar signals in the browser.
+
+## Source Model
+
+Semantic model YAML declares user-facing `sources` and named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. Each source is an object with exactly one of `path` or `object`.
+
+Local CSV:
+
+```yaml
+default_connection: olist
+
+connections:
+  olist:
+    kind: local
+    defaults:
+      options:
+        header: true
+
+sources:
+  orders:
+    path: olist_orders_dataset.csv
+
+  order_items:
+    path: olist_order_items_dataset.csv
+```
+
+S3 Parquet with LibreDash-managed auth:
+
+```yaml
+connections:
+  prod_lake:
+    kind: s3
+    scope: s3://analytics-prod/
+    auth:
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      region: ${AWS_REGION}
+
+sources:
+  sales_events:
+    connection: prod_lake
+    path: events/*
+    format: parquet
+```
+
+Azure Delta Lake:
+
+```yaml
+connections:
+  azure_lake:
+    kind: azure_blob
+    scope: az://warehouse/
+    auth:
+      connection_string: ${AZURE_STORAGE_CONNECTION_STRING}
+
+sources:
+  delta_orders:
+    connection: azure_lake
+    path: tables/orders
+    format: delta
+```
+
+Postgres table:
+
+```yaml
+connections:
+  crm:
+    kind: postgres
+    auth:
+      connection_string: ${CRM_DATABASE_URL}
+
+sources:
+  crm_accounts:
+    connection: crm
+    object: public.accounts
+```
+
+Lance dataset:
+
+```yaml
+connections:
+  prod_lake:
+    kind: s3
+    scope: s3://analytics-prod/
+    auth:
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      region: ${AWS_REGION}
+
+sources:
+  product_embeddings:
+    connection: prod_lake
+    path: vectors/products.lance
+```
+
+DuckLake catalog:
+
+```yaml
+connections:
+  lakehouse:
+    kind: ducklake
+    scope: s3://analytics-prod/ducklake/
+    path: metadata.ducklake
+    auth:
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      region: ${AWS_REGION}
+    options:
+      data_path: data
+
+sources:
+  lake_orders:
+    connection: lakehouse
+    object: main.orders
+```
+
+LibreDash owns the credential contract. Connection `auth` fields are resolved from `${ENV_VAR}` references or literal config values, validated by connection kind, and compiled into temporary DuckDB secrets internally. External secret managers such as Infisical should inject environment variables before `libredash serve` starts.
+
+For file and table paths, LibreDash infers `format` from clear extensions such as `.csv`, `.csv.gz`, `.json`, `.jsonl`, `.ndjson`, `.parquet`, `.xlsx`, `.txt`, `.blob`, `.vortex`, and `.lance`. Set source-level `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. Advanced DuckDB integrations should be modeled explicitly before being exposed in source YAML.
 
 ## Deploy
 

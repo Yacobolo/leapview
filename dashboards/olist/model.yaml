@@ -2,21 +2,30 @@ name: olist
 title: Olist Commerce Semantic Model
 description: Brazilian ecommerce semantic model backed by DuckDB import tables.
 
+default_connection: olist
+
+connections:
+  olist:
+    kind: local
+    defaults:
+      options:
+        header: true
+
 sources:
   orders:
-    file: olist_orders_dataset.csv
+    path: olist_orders_dataset.csv
   order_items:
-    file: olist_order_items_dataset.csv
+    path: olist_order_items_dataset.csv
   payments:
-    file: olist_order_payments_dataset.csv
+    path: olist_order_payments_dataset.csv
   products:
-    file: olist_products_dataset.csv
+    path: olist_products_dataset.csv
   customers:
-    file: olist_customers_dataset.csv
+    path: olist_customers_dataset.csv
   reviews:
-    file: olist_order_reviews_dataset.csv
+    path: olist_order_reviews_dataset.csv
   translations:
-    file: product_category_name_translation.csv
+    path: product_category_name_translation.csv
 
 cache:
   tables:
