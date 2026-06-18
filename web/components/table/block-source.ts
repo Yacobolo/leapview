@@ -3,9 +3,11 @@ import {
   defaultChunkSize,
   defaultRowHeight,
   defaultSort,
+  defaultTableStyle,
   type BlockID,
   type TableBlock,
   type TableSignal,
+  type TableStyle,
   type TableSort,
 } from './types'
 
@@ -21,6 +23,7 @@ export const emptyTable: TableSignal = {
   version: 2,
   kind: 'data_table',
   title: 'Orders',
+  style: defaultTableStyle,
   columns: [],
   totalRows: 0,
   availableRows: 0,
@@ -56,6 +59,7 @@ export function normalizeTable(value: Partial<TableSignal>): TableSignal {
     ...value,
     version: 2,
     kind: value.kind === 'matrix_table' || value.kind === 'pivot_table' ? value.kind : 'data_table',
+    style: normalizeStyle(value.style),
     totalRows: positiveNumber(value.totalRows, 0),
     availableRows: positiveNumber(value.availableRows, positiveNumber(value.totalRows, 0)),
     rowCap: positiveNumber(value.rowCap, 10000),
@@ -71,6 +75,16 @@ export function normalizeTable(value: Partial<TableSignal>): TableSignal {
     },
     loadingBlock: value.loadingBlock ?? '',
     error: value.error ?? '',
+  }
+}
+
+export function normalizeStyle(style: Partial<TableStyle> | undefined): TableStyle {
+  const density = style?.density === 'compact' || style?.density === 'spacious' ? style.density : defaultTableStyle.density
+  const grid = style?.grid === 'none' || style?.grid === 'columns' || style?.grid === 'full' ? style.grid : defaultTableStyle.grid
+  return {
+    density,
+    grid,
+    zebra: typeof style?.zebra === 'boolean' ? style.zebra : defaultTableStyle.zebra,
   }
 }
 

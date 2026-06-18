@@ -1002,23 +1002,199 @@ tables:
     columns:
       - key: order_id
         label: Order
+        width: 240
+        format: text
       - key: purchase_date
         label: Purchased
+        width: 126
+        format: text
       - key: status
         label: Status
+        width: 128
+        format: text
       - key: state
         label: State
+        width: 78
+        format: text
       - key: category
         label: Category
+        width: 210
+        format: text
       - key: revenue
         label: Revenue
         align: right
+        width: 130
+        format: currency
       - key: review_score
         label: Review
         align: right
+        width: 104
+        format: decimal
       - key: delivery_days
         label: Delivery
         align: right
+        width: 108
+        format: days
+  orders_compact:
+    kind: data_table
+    title: Orders compact
+    metrics_view: orders
+    style: { density: compact, zebra: false, grid: rows }
+    default_sort:
+      key: purchase_date
+      direction: desc
+    columns:
+      - key: order_id
+        label: Order
+        width: 200
+        format: text
+      - key: status
+        label: Status
+        width: 116
+        format: text
+      - key: state
+        label: State
+        width: 70
+        format: text
+      - key: revenue
+        label: Revenue
+        align: right
+        width: 116
+        format: currency
+      - key: review_score
+        label: Review
+        align: right
+        width: 92
+        format: decimal
+  orders_spacious:
+    kind: data_table
+    title: Orders spacious
+    metrics_view: orders
+    style: { density: spacious, zebra: true, grid: rows }
+    default_sort:
+      key: purchase_date
+      direction: desc
+    columns:
+      - key: order_id
+        label: Order
+        width: 250
+        format: text
+      - key: purchase_date
+        label: Purchased
+        width: 136
+        format: text
+      - key: category
+        label: Category
+        width: 230
+        format: text
+      - key: revenue
+        label: Revenue
+        align: right
+        width: 140
+        format: currency
+      - key: delivery_days
+        label: Delivery
+        align: right
+        width: 116
+        format: days
+  orders_full_grid:
+    kind: data_table
+    title: Orders full grid
+    metrics_view: orders
+    style: { density: comfortable, zebra: true, grid: full }
+    default_sort:
+      key: revenue
+      direction: desc
+    columns:
+      - key: order_id
+        label: Order
+        width: 220
+        format: text
+      - key: status
+        label: Status
+        width: 122
+        format: text
+      - key: state
+        label: State
+        width: 76
+        format: text
+      - key: category
+        label: Category
+        width: 190
+        format: text
+      - key: revenue
+        label: Revenue
+        align: right
+        width: 128
+        format: currency
+      - key: delivery_days
+        label: Delivery
+        align: right
+        width: 110
+        format: days
+  orders_conditional:
+    kind: data_table
+    title: Orders conditional formatting
+    metrics_view: orders
+    style: { density: comfortable, zebra: true, grid: full }
+    default_sort:
+      key: revenue
+      direction: desc
+    columns:
+      - key: order_id
+        label: Order
+        width: 212
+        format: text
+      - key: status
+        label: Status
+        width: 132
+        format: text
+        formatting:
+          - kind: badge
+            values:
+              delivered: success
+              shipped: accent
+              invoiced: muted
+              processing: accent
+              approved: accent
+              unavailable: warning
+              canceled: danger
+      - key: revenue
+        label: Revenue
+        align: right
+        width: 136
+        format: currency
+        formatting:
+          - kind: data_bar
+            min: 0
+            max: 500
+            color: accent
+      - key: review_score
+        label: Review
+        align: right
+        width: 102
+        format: decimal
+        formatting:
+          - kind: text_color
+            min: 4
+            color: success
+          - kind: text_color
+            max: 2.99
+            color: danger
+          - kind: text_color
+            min: 3
+            max: 3.99
+            color: warning
+      - key: delivery_days
+        label: Delivery
+        align: right
+        width: 112
+        format: days
+        formatting:
+          - kind: background_scale
+            min: 0
+            max: 30
+            high_color: danger
   state_status_matrix:
     kind: matrix_table
     title: State status matrix
@@ -1036,6 +1212,63 @@ tables:
     rows: [category]
     columns: [status]
     measures: [order_count]
+    default_sort:
+      key: category
+      direction: asc
+  state_status_matrix_formatted:
+    kind: matrix_table
+    title: State/category matrix formatted
+    metrics_view: orders
+    style: { density: comfortable, zebra: true, grid: full }
+    rows: [state, category]
+    measures: [order_count, revenue]
+    columns:
+      - key: state
+        label: State
+        width: 76
+        format: text
+      - key: category
+        label: Category
+        width: 190
+        format: text
+      - key: order_count
+        label: Orders
+        group: Measures
+        width: 120
+        format: integer
+      - key: revenue
+        label: Revenue
+        group: Measures
+        width: 132
+        format: currency
+    measure_formatting:
+      order_count:
+        - kind: data_bar
+          min: 0
+          max: 250
+          color: accent
+      revenue:
+        - kind: data_bar
+          min: 0
+          max: 20000
+          color: success
+    default_sort:
+      key: state
+      direction: asc
+  category_status_pivot_heat:
+    kind: pivot_table
+    title: Category status pivot heat
+    metrics_view: orders
+    style: { density: compact, zebra: true, grid: full }
+    rows: [category]
+    columns: [status]
+    measures: [order_count]
+    measure_formatting:
+      order_count:
+        - kind: background_scale
+          min: 0
+          max: 200
+          high_color: accent
     default_sort:
       key: category
       direction: asc
@@ -1670,7 +1903,7 @@ pages:
     description: Detail, matrix, and pivot table variations
     canvas:
       width: 1366
-      height: 1248
+      height: 2560
     grid:
       columns: 12
       row_height: 48
@@ -1688,12 +1921,36 @@ pages:
       - id: orders-table
         kind: table
         table: orders
-        placement: { col: 1, row: 2, col_span: 12, row_span: 8 }
+        placement: { col: 1, row: 2, col_span: 12, row_span: 7 }
+      - id: orders-compact
+        kind: table
+        table: orders_compact
+        placement: { col: 1, row: 9, col_span: 6, row_span: 6 }
+      - id: orders-spacious
+        kind: table
+        table: orders_spacious
+        placement: { col: 7, row: 9, col_span: 6, row_span: 6 }
+      - id: orders-full-grid
+        kind: table
+        table: orders_full_grid
+        placement: { col: 1, row: 15, col_span: 6, row_span: 7 }
+      - id: orders-conditional
+        kind: table
+        table: orders_conditional
+        placement: { col: 7, row: 15, col_span: 6, row_span: 7 }
       - id: state-status-matrix
         kind: table
         table: state_status_matrix
-        placement: { col: 1, row: 10, col_span: 6, row_span: 7 }
+        placement: { col: 1, row: 22, col_span: 6, row_span: 7 }
       - id: category-status-pivot
         kind: table
         table: category_status_pivot
-        placement: { col: 7, row: 10, col_span: 6, row_span: 7 }
+        placement: { col: 7, row: 22, col_span: 6, row_span: 7 }
+      - id: state-status-matrix-formatted
+        kind: table
+        table: state_status_matrix_formatted
+        placement: { col: 1, row: 29, col_span: 6, row_span: 8 }
+      - id: category-status-pivot-heat
+        kind: table
+        table: category_status_pivot_heat
+        placement: { col: 7, row: 29, col_span: 6, row_span: 8 }

@@ -1012,9 +1012,11 @@ func tableSignals(report semantic.Dashboard, page dashboard.Page, request dashbo
 		if !ok {
 			continue
 		}
+		style := table.Style.WithDefaults()
 		tables[name] = map[string]any{
 			"kind":          table.KindOrDefault(),
 			"title":         table.Title,
+			"style":         style,
 			"columns":       table.Columns,
 			"version":       2,
 			"totalRows":     0,
@@ -1022,7 +1024,7 @@ func tableSignals(report semantic.Dashboard, page dashboard.Page, request dashbo
 			"isCapped":      false,
 			"rowCap":        dashboard.TableInteractiveRowCap,
 			"chunkSize":     dashboard.TableChunkSize,
-			"rowHeight":     dashboard.TableRowHeight,
+			"rowHeight":     style.RowHeight(),
 			"resetVersion":  request.ResetVersion,
 			"sort": map[string]any{
 				"key":       table.DefaultSort.Key,

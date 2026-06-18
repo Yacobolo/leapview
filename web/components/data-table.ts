@@ -42,12 +42,20 @@ import {
   type TableBlock,
   type TableBlockCommand,
   type TableColumn,
+  type TableFormattingRule,
   type TableRow,
   type TableSignal,
   type TanStackTableRow,
   type VisualAction,
   type VisibleRowSlot,
 } from './table/types'
+
+type ResizeDrag = {
+  columnKey: string
+  startClientX: number
+  startSize: number
+  minSize: number
+}
 
 const dataTableFeatures = tableFeatures({
   columnPinningFeature,
@@ -61,6 +69,8 @@ const dataTableFeatures = tableFeatures({
 const groupHeaderHeight = 26
 
 function defaultColumnSize(column: TableColumn): number {
+  const configuredWidth = Number(column.width)
+  if (Number.isFinite(configuredWidth) && configuredWidth > 0) return configuredWidth
   const widths: Record<string, number> = {
     order_id: 240,
     purchase_date: 126,
@@ -74,6 +84,67 @@ function defaultColumnSize(column: TableColumn): number {
   if (widths[column.key]) return widths[column.key]
   if (column.align === 'right') return 120
   return 140
+}
+
+function tableTone(value: string | undefined, fallback = 'accent'): string {
+  const normalized = String(value || fallback).toLowerCase().replace(/[^a-z0-9_-]/g, '')
+  return normalized || fallback
+}
+
+function toneColor(value: string | undefined, fallback = 'accent'): string {
+  switch (tableTone(value, fallback)) {
+    case 'success':
+    case 'green':
+      return 'var(--fgColor-success)'
+    case 'danger':
+    case 'red':
+      return 'var(--fgColor-danger)'
+    case 'warning':
+    case 'yellow':
+      return 'var(--fgColor-attention)'
+    case 'muted':
+    case 'gray':
+      return 'var(--fgColor-muted)'
+    default:
+      return 'var(--fgColor-accent)'
+  }
+}
+
+function numericValue(value: unknown): number | null {
+  const next = Number(value)
+  return Number.isFinite(next) ? next : null
+}
+
+function ruleMatches(value: unknown, rule: TableFormattingRule): boolean {
+  const next = numericValue(value)
+  if (next === null) return false
+  if (typeof rule.min === 'number' && next < rule.min) return false
+  if (typeof rule.max === 'number' && next > rule.max) return false
+  return true
+}
+
+function scalePercent(value: unknown, rule: TableFormattingRule): number {
+  const next = numericValue(value)
+  if (next === null) return 0
+  const min = typeof rule.min === 'number' ? rule.min : 0
+  const max = typeof rule.max === 'number' && rule.max > min ? rule.max : Math.max(min + 1, next)
+  return Math.max(0, Math.min(100, ((next - min) / (max - min)) * 100))
+}
+
+function badgeRule(column: TableColumn): TableFormattingRule | undefined {
+  return column.formatting?.find((rule) => rule.kind === 'badge')
+}
+
+function dataBarRule(column: TableColumn): TableFormattingRule | undefined {
+  return column.formatting?.find((rule) => rule.kind === 'data_bar')
+}
+
+function backgroundRule(value: unknown, column: TableColumn): TableFormattingRule | undefined {
+  return column.formatting?.find((rule) => rule.kind === 'background_scale' && ruleMatches(value, rule))
+}
+
+function textColorRule(value: unknown, column: TableColumn): TableFormattingRule | undefined {
+  return column.formatting?.find((rule) => rule.kind === 'text_color' && ruleMatches(value, rule))
 }
 
 function applyUpdater<T>(updater: unknown, current: T): T {
@@ -134,6 +205,7 @@ class DataTable extends LitElement {
     columnSizing: { state: true },
     rowSelection: { state: true },
     hoveredRowId: { state: true },
+    resizeGuideX: { state: true },
   }
 
   tableId = 'orders'
@@ -146,6 +218,7 @@ class DataTable extends LitElement {
   private columnSizing: ColumnSizingState = {}
   private rowSelection: RowSelectionState = {}
   private hoveredRowId = ''
+  private resizeGuideX = -1
   private lastResetVersion = -1
   private shouldResetScroll = false
   private requestSeq = 0
@@ -157,6 +230,8 @@ class DataTable extends LitElement {
   private blockCache: Record<BlockID, TableBlock> = emptyBlocks()
   private bodyViewportRef: Ref<HTMLDivElement> = createRef()
   private resizeObserver?: ResizeObserver
+  private resizeGuideFrame = 0
+  private resizeDrag?: ResizeDrag
   private tableController = new TableController<typeof dataTableFeatures, TanStackTableRow>(this)
   private handleOutsidePointerDown = (event: PointerEvent) => {
     const details = this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')
@@ -166,6 +241,12 @@ class DataTable extends LitElement {
   private handleDocumentKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return
     this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')?.removeAttribute('open')
+  }
+  private handleResizeGuideMove = (event: MouseEvent | TouchEvent) => {
+    this.scheduleResizeGuideUpdate(event)
+  }
+  private handleResizeGuideEnd = () => {
+    this.clearResizeGuide()
   }
 
   static styles = css`
@@ -522,15 +603,10 @@ class DataTable extends LitElement {
     }
 
     button.header-button:hover,
-    button.header-button:focus-visible,
-    .sorted button.header-button {
+    button.header-button:focus-visible {
       background: color-mix(in srgb, var(--fgColor-accent), transparent 92%);
       color: var(--fgColor-default);
       outline: 0;
-    }
-
-    .sorted button.header-button {
-      border-bottom-color: var(--fgColor-accent);
     }
 
     .sort {
@@ -623,18 +699,34 @@ class DataTable extends LitElement {
       background: var(--borderColor-muted);
     }
 
+    .resize-guide {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: var(--ld-resize-guide-x, -9999px);
+      z-index: 45;
+      width: 0;
+      border-left: 2px solid var(--fgColor-accent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--fgColor-accent), transparent 74%);
+      pointer-events: none;
+    }
+
     .row {
       position: absolute;
       inset-inline: 0;
       z-index: 1;
       height: var(--ld-row-height, 34px);
-      border-bottom: var(--ld-border-muted);
       background: var(--report-chart-surface, var(--card-bgColor, var(--bgColor-default)));
       color: var(--fgColor-default);
     }
 
-    .row:nth-child(even) {
-      background: color-mix(in srgb, var(--report-table-stripe, var(--bgColor-muted)), var(--report-chart-surface, var(--bgColor-default)) 45%);
+    .zebra .row:nth-child(even) {
+      background: color-mix(in srgb, var(--report-table-stripe, var(--bgColor-neutral-muted)), var(--report-chart-surface, var(--bgColor-default)) 18%);
+    }
+
+    .grid-rows .row,
+    .grid-full .row {
+      border-bottom: var(--ld-border-muted);
     }
 
     .row:hover {
@@ -663,7 +755,6 @@ class DataTable extends LitElement {
       align-items: center;
       min-width: 0;
       border: 0;
-      border-right: var(--ld-border-muted);
       background: transparent;
       color: inherit;
       cursor: default;
@@ -672,6 +763,21 @@ class DataTable extends LitElement {
       font-size: var(--ld-font-size-body-md);
       font-weight: var(--base-text-weight-semibold);
       text-align: left;
+    }
+
+    .density-compact .cell {
+      padding: 0 7px;
+      font-size: var(--ld-font-size-caption);
+    }
+
+    .density-spacious .cell {
+      padding: 0 12px;
+      font-size: var(--ld-font-size-body-lg);
+    }
+
+    .grid-columns .cell,
+    .grid-full .cell {
+      border-right: var(--ld-border-muted);
     }
 
     .cell:last-child {
@@ -686,6 +792,72 @@ class DataTable extends LitElement {
 
     .skeleton-cell {
       cursor: default;
+    }
+
+    .cell.has-background {
+      background: color-mix(in srgb, var(--ld-cell-bg-color), transparent var(--ld-cell-bg-fade, 78%));
+    }
+
+    .cell.has-data-bar {
+      position: relative;
+      isolation: isolate;
+    }
+
+    .cell-data-bar {
+      position: absolute;
+      inset-block: 5px;
+      left: 6px;
+      z-index: -1;
+      width: var(--ld-cell-bar-width, 0%);
+      border-radius: var(--ld-radius-tight);
+      background: color-mix(in srgb, var(--ld-cell-bar-color, var(--fgColor-accent)), transparent 74%);
+    }
+
+    .cell-badge {
+      display: inline-flex;
+      max-width: 100%;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border: 1px solid currentColor;
+      border-radius: var(--ld-radius-full);
+      padding: 1px 7px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-850);
+      line-height: 1.45;
+    }
+
+    .cell-badge.tone-success {
+      background: var(--bgColor-success-muted);
+      color: var(--fgColor-success);
+    }
+
+    .cell-badge.tone-danger {
+      background: var(--bgColor-danger-muted);
+      color: var(--fgColor-danger);
+    }
+
+    .cell-badge.tone-warning {
+      background: var(--bgColor-attention-muted);
+      color: var(--fgColor-attention);
+    }
+
+    .cell-badge.tone-muted {
+      background: var(--bgColor-muted);
+      color: var(--fgColor-muted);
+    }
+
+    .cell-badge.tone-accent,
+    .cell-badge.tone-blue {
+      background: var(--bgColor-accent-muted);
+      color: var(--fgColor-accent);
+    }
+
+    .grid-none .grid-lines,
+    .grid-rows .grid-lines {
+      display: none;
     }
 
     .skeleton-line {
@@ -814,6 +986,7 @@ class DataTable extends LitElement {
     document.removeEventListener('keydown', this.handleDocumentKeyDown)
     this.resizeObserver?.disconnect()
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame)
+    this.clearResizeGuide()
     this.clearJumpTimer()
     super.disconnectedCallback()
   }
@@ -911,18 +1084,15 @@ class DataTable extends LitElement {
   }
 
   private columnPixelWidths(columns: TableColumn[]): number[] {
-    const widths: Record<string, number> = {
-      __select: 34,
-      order_id: 240,
-      purchase_date: 126,
-      status: 128,
-      state: 78,
-      category: 210,
-      revenue: 130,
-      review_score: 104,
-      delivery_days: 108,
-    }
-    return columns.map((column) => Math.max(44, this.columnSizing[column.key] ?? widths[column.key] ?? defaultColumnSize(column)))
+    return columns.map((column) => this.columnPixelWidth(column))
+  }
+
+  private columnPixelWidth(column: TableColumn): number {
+    return Math.max(this.minColumnSize(column), this.columnSizing[column.key] ?? defaultColumnSize(column) ?? 140)
+  }
+
+  private minColumnSize(column: TableColumn): number {
+    return column.key === 'order_id' || column.key === 'category' ? 160 : 64
   }
 
   private tanstackRowsForSlots(slots: VisibleRowSlot[]): TanStackTableRow[] {
@@ -962,7 +1132,7 @@ class DataTable extends LitElement {
       header: column.label,
       cell: (info: any) => formatCell(info.getValue(), column),
       size: defaultColumnSize(column),
-      minSize: column.key === 'order_id' || column.key === 'category' ? 160 : 64,
+      minSize: this.minColumnSize(column),
       enableResizing: true,
       meta: { align: column.align, column },
     })) as Array<ColumnDef<TanStackTableRow, unknown>>
@@ -1056,6 +1226,65 @@ class DataTable extends LitElement {
     return `--ld-pin-left:${Math.max(0, Number(offset) || 0)}px`
   }
 
+  private beginColumnResize(event: MouseEvent | TouchEvent, header: any): void {
+    event.preventDefault()
+    event.stopPropagation()
+    const clientX = this.resizeClientX(event)
+    const column = header.column.columnDef.meta?.column as TableColumn | undefined
+    if (clientX === null || !column) return
+    this.resizeDrag = {
+      columnKey: column.key,
+      startClientX: clientX,
+      startSize: this.columnPixelWidth(column),
+      minSize: this.minColumnSize(column),
+    }
+    this.scheduleResizeGuideUpdate(event)
+    document.addEventListener('mousemove', this.handleResizeGuideMove)
+    document.addEventListener('mouseup', this.handleResizeGuideEnd, { once: true })
+    document.addEventListener('touchmove', this.handleResizeGuideMove, { passive: true })
+    document.addEventListener('touchend', this.handleResizeGuideEnd, { once: true })
+    document.addEventListener('touchcancel', this.handleResizeGuideEnd, { once: true })
+  }
+
+  private scheduleResizeGuideUpdate(event: MouseEvent | TouchEvent): void {
+    const clientX = this.resizeClientX(event)
+    if (clientX === null) return
+    if (this.resizeGuideFrame) cancelAnimationFrame(this.resizeGuideFrame)
+    this.resizeGuideFrame = requestAnimationFrame(() => {
+      this.resizeGuideFrame = 0
+      const plane = this.renderRoot.querySelector<HTMLElement>('.table-plane')
+      if (!plane) return
+      const rect = plane.getBoundingClientRect()
+      const scaleX = rect.width > 0 && plane.offsetWidth > 0 ? rect.width / plane.offsetWidth : 1
+      const localX = scaleX > 0 ? (clientX - rect.left) / scaleX : clientX - rect.left
+      this.resizeGuideX = Math.max(0, Math.min(plane.scrollWidth, localX))
+      if (this.resizeDrag) {
+        const delta = scaleX > 0 ? (clientX - this.resizeDrag.startClientX) / scaleX : clientX - this.resizeDrag.startClientX
+        const nextSize = Math.max(this.resizeDrag.minSize, Math.round(this.resizeDrag.startSize + delta))
+        this.columnSizing = { ...this.columnSizing, [this.resizeDrag.columnKey]: nextSize }
+      }
+    })
+  }
+
+  private resizeClientX(event: MouseEvent | TouchEvent): number | null {
+    if ('touches' in event) {
+      return event.touches[0]?.clientX ?? event.changedTouches[0]?.clientX ?? null
+    }
+    return event.clientX
+  }
+
+  private clearResizeGuide(): void {
+    document.removeEventListener('mousemove', this.handleResizeGuideMove)
+    document.removeEventListener('mouseup', this.handleResizeGuideEnd)
+    document.removeEventListener('touchmove', this.handleResizeGuideMove)
+    document.removeEventListener('touchend', this.handleResizeGuideEnd)
+    document.removeEventListener('touchcancel', this.handleResizeGuideEnd)
+    if (this.resizeGuideFrame) cancelAnimationFrame(this.resizeGuideFrame)
+    this.resizeGuideFrame = 0
+    this.resizeDrag = undefined
+    this.resizeGuideX = -1
+  }
+
   private renderGroupHeaderRows(headers: any[], force = false) {
     const groupHeaders = this.groupHeaderSegments(headers, force)
     if (!groupHeaders.length) return nothing
@@ -1094,9 +1323,9 @@ class DataTable extends LitElement {
               </button>
               ${header.column.getCanResize?.() ? html`
                 <span
-                  class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
-                  @mousedown=${header.getResizeHandler?.()}
-                  @touchstart=${header.getResizeHandler?.()}
+                  class=${`column-resizer ${this.resizeDrag?.columnKey === column.key ? 'resizing' : ''}`}
+                  @mousedown=${(event: MouseEvent) => this.beginColumnResize(event, header)}
+                  @touchstart=${(event: TouchEvent) => this.beginColumnResize(event, header)}
                 ></span>
               ` : nothing}
             </div>
@@ -1131,6 +1360,51 @@ class DataTable extends LitElement {
     `
   }
 
+  private cellStyle(row: TableRow, column: TableColumn, pinnedColumn: any): string {
+    const styles = [this.pinnedCellStyle(pinnedColumn)].filter(Boolean)
+    const value = row[column.key]
+    const background = backgroundRule(value, column)
+    if (background) {
+      const percent = scalePercent(value, background)
+      const color = toneColor(background.highColor || background.background || background.color, 'warning')
+      styles.push(`--ld-cell-bg-color:${color}`)
+      styles.push(`--ld-cell-bg-fade:${Math.max(66, 92 - Math.round(percent * 0.22))}%`)
+    }
+    const text = textColorRule(value, column)
+    if (text?.color) styles.push(`color:${toneColor(text.color)}`)
+    const bar = dataBarRule(column)
+    if (bar) {
+      styles.push(`--ld-cell-bar-width:${scalePercent(value, bar)}%`)
+      styles.push(`--ld-cell-bar-color:${toneColor(bar.color || bar.highColor || 'accent')}`)
+    }
+    return styles.join(';')
+  }
+
+  private cellClass(column: TableColumn, cellKey: string, row: TableRow, pinnedColumn: any): string {
+    const value = row[column.key]
+    return [
+      'cell',
+      column.align === 'right' ? 'right' : '',
+      column.role === 'row_header' ? 'row-header' : '',
+      this.pinnedCellClass(pinnedColumn),
+      cellKey === this.selectedCellKey ? 'active' : '',
+      backgroundRule(value, column) ? 'has-background' : '',
+      dataBarRule(column) ? 'has-data-bar' : '',
+    ].filter(Boolean).join(' ')
+  }
+
+  private renderCellValue(row: TableRow, column: TableColumn, formatted: unknown) {
+    const value = row[column.key]
+    const badge = badgeRule(column)
+    if (badge?.values) {
+      const tone = badge.values[String(value)] ?? badge.values[String(value).toLowerCase()]
+      if (tone) {
+        return html`<span class=${`cell-badge tone-${tableTone(tone)}`}>${formatted}</span>`
+      }
+    }
+    return html`${formatted}`
+  }
+
   private renderRowSegment(cells: any[], row: TableRow, index: number, key: string) {
     const selected = key === this.selectedRowId
     const hovered = key === this.hoveredRowId
@@ -1148,18 +1422,20 @@ class DataTable extends LitElement {
           const column = cell.column.columnDef.meta?.column ?? this.columns.find((item) => item.key === cell.column.id)
           if (!column) return nothing
           const cellKey = `${key}:${cell.column.id}`
+          const formatted = flexRender(cell.column.columnDef.cell, cell.getContext())
           return html`
             <button
-              class=${`cell ${column.align === 'right' ? 'right' : ''} ${column.role === 'row_header' ? 'row-header' : ''} ${this.pinnedCellClass(cell.column)} ${cellKey === this.selectedCellKey ? 'active' : ''}`}
+              class=${this.cellClass(column, cellKey, row, cell.column)}
               role="cell"
               title=${String(row[cell.column.id] ?? '')}
-              style=${this.pinnedCellStyle(cell.column)}
+              style=${this.cellStyle(row, column, cell.column)}
               @click=${(event: Event) => {
                 event.stopPropagation()
                 this.selectCell(row, column, index)
               }}
             >
-              <span class="cell-value">${flexRender(cell.column.columnDef.cell, cell.getContext())}</span>
+              ${dataBarRule(column) ? html`<span class="cell-data-bar" aria-hidden="true"></span>` : nothing}
+              <span class="cell-value">${this.renderCellValue(row, column, formatted)}</span>
             </button>
           `
         })}
@@ -1189,9 +1465,16 @@ class DataTable extends LitElement {
       `--ld-group-head-height:${groupHeaderHeight}px`,
       `--ld-head-top:${hasGroupHeaderRow ? groupHeaderHeight : 0}px`,
     ].join(';')
+    const style = this.table.style
+    const shellClass = [
+      'shell',
+      `density-${style.density}`,
+      `grid-${style.grid}`,
+      style.zebra ? 'zebra' : '',
+    ].filter(Boolean).join(' ')
 
     return html`
-      <section class="shell" style=${shellStyle}>
+      <section class=${shellClass} style=${shellStyle}>
         <div class="toolbar">
           <div>
             <h2>${this.table?.title ?? 'Orders'}</h2>
@@ -1232,6 +1515,7 @@ class DataTable extends LitElement {
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
           <div class="table-scrollport" ${ref(this.bodyViewportRef)} @scroll=${this.handleScroll}>
             <div class="table-plane">
+              ${this.resizeGuideX >= 0 ? html`<span class="resize-guide" style=${`--ld-resize-guide-x:${this.resizeGuideX}px`}></span>` : nothing}
               ${this.renderGroupHeaderRows(headers)}
               ${this.renderHeaderRow(headers)}
               ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`

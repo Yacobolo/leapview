@@ -24,7 +24,7 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 			"off_page_chart": {Title: "Off Page", Type: "bar", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}},
 		},
 		Tables: map[string]semantic.TableVisual{
-			"orders":   {Title: "Orders", MetricView: "orders", Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
+			"orders":   {Title: "Orders", MetricView: "orders", Style: dashboard.TableStyle{Density: "compact", Grid: "full"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order", Width: 220, Format: "text"}}},
 			"matrix":   {Title: "Matrix", Kind: "matrix_table", MetricView: "orders", Columns: []dashboard.TableColumn{{Key: "status", Label: "Status"}}},
 			"pivot":    {Title: "Pivot", Kind: "pivot_table", MetricView: "orders", Columns: []dashboard.TableColumn{{Key: "status", Label: "Status"}}},
 			"off_page": {Title: "Off Page", MetricView: "orders", Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
@@ -89,6 +89,9 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	tables := renderPageForTest(t, report, model, report.Pages[1])
 	if !strings.Contains(tables, `"orders":{"availableRows"`) || !strings.Contains(tables, `"matrix":{"availableRows"`) || !strings.Contains(tables, `"pivot":{"availableRows"`) {
 		t.Fatalf("tables page did not seed its three tables:\n%s", tables)
+	}
+	if !strings.Contains(tables, `"style":{"density":"compact"`) || !strings.Contains(tables, `"rowHeight":28`) || !strings.Contains(tables, `"width":220`) {
+		t.Fatalf("tables page did not seed table style and column display metadata:\n%s", tables)
 	}
 	if strings.Contains(tables, `"off_page"`) {
 		t.Fatalf("tables page seeded off-page table:\n%s", tables)

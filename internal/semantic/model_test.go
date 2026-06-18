@@ -529,6 +529,19 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Tables["category_status_pivot"].ColumnDims[0]; got != "status" {
 		t.Fatalf("category_status_pivot column dimension = %q, want status", got)
 	}
+	if got := report.Tables["orders_compact"].Style.RowHeight(); got != 28 {
+		t.Fatalf("orders_compact row height = %d, want 28", got)
+	}
+	conditional := report.Tables["orders_conditional"]
+	if !hasTableColumnFormatting(conditional.Columns, "status", "badge") {
+		t.Fatalf("orders_conditional status column missing badge formatting: %#v", conditional.Columns)
+	}
+	if !hasTableColumnFormatting(conditional.Columns, "revenue", "data_bar") {
+		t.Fatalf("orders_conditional revenue column missing data bar formatting: %#v", conditional.Columns)
+	}
+	if len(report.Tables["category_status_pivot_heat"].MeasureFormatting["order_count"]) == 0 {
+		t.Fatalf("category_status_pivot_heat missing order_count measure formatting")
+	}
 	if len(report.Pages) != 24 {
 		t.Fatalf("page count = %d, want 24", len(report.Pages))
 	}
@@ -552,8 +565,8 @@ func TestLoadOlistDashboard(t *testing.T) {
 			tableVisualCount++
 		}
 	}
-	if tableVisualCount != 3 {
-		t.Fatalf("tables page table visual count = %d, want 3", tableVisualCount)
+	if tableVisualCount != 9 {
+		t.Fatalf("tables page table visual count = %d, want 9", tableVisualCount)
 	}
 	page := report.Pages[0].WithDefaults()
 	if page.Grid.Columns != 12 || page.Grid.RowHeight != 48 {
@@ -633,13 +646,23 @@ func TestOlistDashboardChartShowcaseContract(t *testing.T) {
 	if !ok {
 		t.Fatal("tables showcase page missing")
 	}
-	gotTables := make([]string, 0, 3)
+	gotTables := make([]string, 0, 9)
 	for _, pageVisual := range tablePage.Visuals {
 		if pageVisual.Kind == "table" {
 			gotTables = append(gotTables, pageVisual.Table)
 		}
 	}
-	wantTables := []string{"category_status_pivot", "orders", "state_status_matrix"}
+	wantTables := []string{
+		"category_status_pivot",
+		"category_status_pivot_heat",
+		"orders",
+		"orders_compact",
+		"orders_conditional",
+		"orders_full_grid",
+		"orders_spacious",
+		"state_status_matrix",
+		"state_status_matrix_formatted",
+	}
 	sort.Strings(gotTables)
 	if !reflect.DeepEqual(gotTables, wantTables) {
 		t.Fatalf("tables showcase tables = %#v, want %#v", gotTables, wantTables)
@@ -1292,6 +1315,20 @@ func chartPageVisualIDs(page dashboard.Page) []string {
 		}
 	}
 	return visualIDs
+}
+
+func hasTableColumnFormatting(columns []dashboard.TableColumn, key, kind string) bool {
+	for _, column := range columns {
+		if column.Key != key {
+			continue
+		}
+		for _, rule := range column.Formatting {
+			if rule.Kind == kind {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func assertModelValidateError(t *testing.T, model *Model, contains string) {

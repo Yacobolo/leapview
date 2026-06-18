@@ -15,6 +15,26 @@ export interface TableColumn {
   group?: string
   measure?: string
   columnValue?: string
+  width?: number
+  format?: 'text' | 'integer' | 'decimal' | 'currency' | 'days'
+  formatting?: TableFormattingRule[]
+}
+
+export interface TableFormattingRule {
+  kind: 'badge' | 'text_color' | 'background_scale' | 'data_bar'
+  values?: Record<string, string>
+  min?: number
+  max?: number
+  color?: string
+  background?: string
+  lowColor?: string
+  highColor?: string
+}
+
+export interface TableStyle {
+  density: 'compact' | 'comfortable' | 'spacious'
+  zebra: boolean
+  grid: 'none' | 'rows' | 'columns' | 'full'
 }
 
 export type TableRow = Record<string, unknown>
@@ -31,6 +51,7 @@ export interface TableSignal {
   version: number
   kind: TableKind
   title: string
+  style: TableStyle
   columns: TableColumn[]
   totalRows: number
   availableRows: number
@@ -74,3 +95,4 @@ export const blockIDs: BlockID[] = ['a', 'b', 'c']
 export const defaultChunkSize = 50
 export const defaultRowHeight = 34
 export const defaultSort: TableSort = { key: 'purchase_date', direction: 'desc' }
+export const defaultTableStyle: TableStyle = { density: 'comfortable', zebra: true, grid: 'rows' }
