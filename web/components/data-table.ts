@@ -50,6 +50,13 @@ import {
   type VisibleRowSlot,
 } from './table/types'
 
+type ResizeDrag = {
+  columnKey: string
+  startClientX: number
+  startSize: number
+  minSize: number
+}
+
 const dataTableFeatures = tableFeatures({
   columnPinningFeature,
   columnResizingFeature,
@@ -198,6 +205,7 @@ class DataTable extends LitElement {
     columnSizing: { state: true },
     rowSelection: { state: true },
     hoveredRowId: { state: true },
+    resizeGuideX: { state: true },
   }
 
   tableId = 'orders'
@@ -210,6 +218,7 @@ class DataTable extends LitElement {
   private columnSizing: ColumnSizingState = {}
   private rowSelection: RowSelectionState = {}
   private hoveredRowId = ''
+  private resizeGuideX = -1
   private lastResetVersion = -1
   private shouldResetScroll = false
   private requestSeq = 0
@@ -221,6 +230,8 @@ class DataTable extends LitElement {
   private blockCache: Record<BlockID, TableBlock> = emptyBlocks()
   private bodyViewportRef: Ref<HTMLDivElement> = createRef()
   private resizeObserver?: ResizeObserver
+  private resizeGuideFrame = 0
+  private resizeDrag?: ResizeDrag
   private tableController = new TableController<typeof dataTableFeatures, TanStackTableRow>(this)
   private handleOutsidePointerDown = (event: PointerEvent) => {
     const details = this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')
@@ -230,6 +241,12 @@ class DataTable extends LitElement {
   private handleDocumentKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return
     this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')?.removeAttribute('open')
+  }
+  private handleResizeGuideMove = (event: MouseEvent | TouchEvent) => {
+    this.scheduleResizeGuideUpdate(event)
+  }
+  private handleResizeGuideEnd = () => {
+    this.clearResizeGuide()
   }
 
   static styles = css`
@@ -687,6 +704,18 @@ class DataTable extends LitElement {
       background: var(--borderColor-muted);
     }
 
+    .resize-guide {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: var(--ld-resize-guide-x, -9999px);
+      z-index: 45;
+      width: 0;
+      border-left: 2px solid var(--fgColor-accent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--fgColor-accent), transparent 74%);
+      pointer-events: none;
+    }
+
     .row {
       position: absolute;
       inset-inline: 0;
@@ -962,6 +991,7 @@ class DataTable extends LitElement {
     document.removeEventListener('keydown', this.handleDocumentKeyDown)
     this.resizeObserver?.disconnect()
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame)
+    this.clearResizeGuide()
     this.clearJumpTimer()
     super.disconnectedCallback()
   }
@@ -1059,18 +1089,15 @@ class DataTable extends LitElement {
   }
 
   private columnPixelWidths(columns: TableColumn[]): number[] {
-    const widths: Record<string, number> = {
-      __select: 34,
-      order_id: 240,
-      purchase_date: 126,
-      status: 128,
-      state: 78,
-      category: 210,
-      revenue: 130,
-      review_score: 104,
-      delivery_days: 108,
-    }
-    return columns.map((column) => Math.max(44, this.columnSizing[column.key] ?? defaultColumnSize(column) ?? widths[column.key] ?? 140))
+    return columns.map((column) => this.columnPixelWidth(column))
+  }
+
+  private columnPixelWidth(column: TableColumn): number {
+    return Math.max(this.minColumnSize(column), this.columnSizing[column.key] ?? defaultColumnSize(column) ?? 140)
+  }
+
+  private minColumnSize(column: TableColumn): number {
+    return column.key === 'order_id' || column.key === 'category' ? 160 : 64
   }
 
   private tanstackRowsForSlots(slots: VisibleRowSlot[]): TanStackTableRow[] {
@@ -1110,7 +1137,7 @@ class DataTable extends LitElement {
       header: column.label,
       cell: (info: any) => formatCell(info.getValue(), column),
       size: defaultColumnSize(column),
-      minSize: column.key === 'order_id' || column.key === 'category' ? 160 : 64,
+      minSize: this.minColumnSize(column),
       enableResizing: true,
       meta: { align: column.align, column },
     })) as Array<ColumnDef<TanStackTableRow, unknown>>
@@ -1204,6 +1231,65 @@ class DataTable extends LitElement {
     return `--ld-pin-left:${Math.max(0, Number(offset) || 0)}px`
   }
 
+  private beginColumnResize(event: MouseEvent | TouchEvent, header: any): void {
+    event.preventDefault()
+    event.stopPropagation()
+    const clientX = this.resizeClientX(event)
+    const column = header.column.columnDef.meta?.column as TableColumn | undefined
+    if (clientX === null || !column) return
+    this.resizeDrag = {
+      columnKey: column.key,
+      startClientX: clientX,
+      startSize: this.columnPixelWidth(column),
+      minSize: this.minColumnSize(column),
+    }
+    this.scheduleResizeGuideUpdate(event)
+    document.addEventListener('mousemove', this.handleResizeGuideMove)
+    document.addEventListener('mouseup', this.handleResizeGuideEnd, { once: true })
+    document.addEventListener('touchmove', this.handleResizeGuideMove, { passive: true })
+    document.addEventListener('touchend', this.handleResizeGuideEnd, { once: true })
+    document.addEventListener('touchcancel', this.handleResizeGuideEnd, { once: true })
+  }
+
+  private scheduleResizeGuideUpdate(event: MouseEvent | TouchEvent): void {
+    const clientX = this.resizeClientX(event)
+    if (clientX === null) return
+    if (this.resizeGuideFrame) cancelAnimationFrame(this.resizeGuideFrame)
+    this.resizeGuideFrame = requestAnimationFrame(() => {
+      this.resizeGuideFrame = 0
+      const plane = this.renderRoot.querySelector<HTMLElement>('.table-plane')
+      if (!plane) return
+      const rect = plane.getBoundingClientRect()
+      const scaleX = rect.width > 0 && plane.offsetWidth > 0 ? rect.width / plane.offsetWidth : 1
+      const localX = scaleX > 0 ? (clientX - rect.left) / scaleX : clientX - rect.left
+      this.resizeGuideX = Math.max(0, Math.min(plane.scrollWidth, localX))
+      if (this.resizeDrag) {
+        const delta = scaleX > 0 ? (clientX - this.resizeDrag.startClientX) / scaleX : clientX - this.resizeDrag.startClientX
+        const nextSize = Math.max(this.resizeDrag.minSize, Math.round(this.resizeDrag.startSize + delta))
+        this.columnSizing = { ...this.columnSizing, [this.resizeDrag.columnKey]: nextSize }
+      }
+    })
+  }
+
+  private resizeClientX(event: MouseEvent | TouchEvent): number | null {
+    if ('touches' in event) {
+      return event.touches[0]?.clientX ?? event.changedTouches[0]?.clientX ?? null
+    }
+    return event.clientX
+  }
+
+  private clearResizeGuide(): void {
+    document.removeEventListener('mousemove', this.handleResizeGuideMove)
+    document.removeEventListener('mouseup', this.handleResizeGuideEnd)
+    document.removeEventListener('touchmove', this.handleResizeGuideMove)
+    document.removeEventListener('touchend', this.handleResizeGuideEnd)
+    document.removeEventListener('touchcancel', this.handleResizeGuideEnd)
+    if (this.resizeGuideFrame) cancelAnimationFrame(this.resizeGuideFrame)
+    this.resizeGuideFrame = 0
+    this.resizeDrag = undefined
+    this.resizeGuideX = -1
+  }
+
   private renderGroupHeaderRows(headers: any[], force = false) {
     const groupHeaders = this.groupHeaderSegments(headers, force)
     if (!groupHeaders.length) return nothing
@@ -1242,9 +1328,9 @@ class DataTable extends LitElement {
               </button>
               ${header.column.getCanResize?.() ? html`
                 <span
-                  class=${`column-resizer ${header.column.getIsResizing?.() ? 'resizing' : ''}`}
-                  @mousedown=${header.getResizeHandler?.()}
-                  @touchstart=${header.getResizeHandler?.()}
+                  class=${`column-resizer ${this.resizeDrag?.columnKey === column.key ? 'resizing' : ''}`}
+                  @mousedown=${(event: MouseEvent) => this.beginColumnResize(event, header)}
+                  @touchstart=${(event: TouchEvent) => this.beginColumnResize(event, header)}
                 ></span>
               ` : nothing}
             </div>
@@ -1434,6 +1520,7 @@ class DataTable extends LitElement {
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
           <div class="table-scrollport" ${ref(this.bodyViewportRef)} @scroll=${this.handleScroll}>
             <div class="table-plane">
+              ${this.resizeGuideX >= 0 ? html`<span class="resize-guide" style=${`--ld-resize-guide-x:${this.resizeGuideX}px`}></span>` : nothing}
               ${this.renderGroupHeaderRows(headers)}
               ${this.renderHeaderRow(headers)}
               ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
