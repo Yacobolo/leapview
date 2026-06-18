@@ -1175,6 +1175,7 @@ class DataTable extends LitElement {
     const columnModels = allTableColumns(tanstack)
     const tanstackRows = new Map((tanstack.getRowModel?.().rows ?? []).map((row: any) => [row.id, row]))
     const totalHeight = this.availableRows * this.rowHeight
+    const hasGroupHeaderRow = headers.some((header: any) => header.column.columnDef.meta?.column?.group)
     const rowRange = this.rowRangeText()
     const selectedText = this.selectedRowId ? '1 row selected' : 'No selection'
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading
@@ -1186,7 +1187,7 @@ class DataTable extends LitElement {
       `--ld-table-width:${tableWidth}px`,
       `--ld-row-height:${this.rowHeight}px`,
       `--ld-group-head-height:${groupHeaderHeight}px`,
-      `--ld-head-top:${groupHeaderHeight}px`,
+      `--ld-head-top:${hasGroupHeaderRow ? groupHeaderHeight : 0}px`,
     ].join(';')
 
     return html`
@@ -1231,7 +1232,7 @@ class DataTable extends LitElement {
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
           <div class="table-scrollport" ${ref(this.bodyViewportRef)} @scroll=${this.handleScroll}>
             <div class="table-plane">
-              ${this.renderGroupHeaderRows(headers, true)}
+              ${this.renderGroupHeaderRows(headers)}
               ${this.renderHeaderRow(headers)}
               ${this.availableRows === 0 && !loading ? html`<div class="empty">Waiting for table data</div>` : html`
                 <div class="canvas" role="rowgroup" style=${`height:${totalHeight}px`}>
