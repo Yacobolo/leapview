@@ -809,23 +809,31 @@ func sidebarConfigForCatalog(catalog dashboard.Catalog) map[string]any {
 }
 
 func sidebarConfigForModels(catalog dashboard.Catalog) map[string]any {
-	return sidebarConfig(catalog, "models", "", workspaceDisplayTitle(catalog), "Semantic Models", "Catalog", "", "", false)
+	return sidebarConfig(catalog, "workspaces", "", workspaceDisplayTitle(catalog), "Semantic Models", "Catalog", "", "", false)
 }
 
 func sidebarConfigForMetrics(catalog dashboard.Catalog) map[string]any {
-	return sidebarConfig(catalog, "metrics", "", workspaceDisplayTitle(catalog), "Metric Views", "Catalog", "", "", false)
+	return sidebarConfig(catalog, "workspaces", "", workspaceDisplayTitle(catalog), "Metric Views", "Catalog", "", "", false)
 }
 
 func sidebarConfigForMetricView(catalog dashboard.Catalog, view dashboard.MetricViewDetail) map[string]any {
-	return sidebarConfig(catalog, "metrics", "", workspaceDisplayTitle(catalog), "Metric view", view.Title, view.SemanticModel, view.ModelTitle, false)
+	return sidebarConfig(catalog, "workspaces", "", workspaceDisplayTitle(catalog), "Metric view", view.Title, view.SemanticModel, view.ModelTitle, false)
 }
 
 func sidebarConfigForReport(catalog dashboard.Catalog, report semantic.Dashboard, model *semantic.Model, activePage dashboard.Page) map[string]any {
-	return sidebarConfig(catalog, "dashboards", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, model.Name, model.Title, true)
+	return sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, model.Name, model.Title, true)
 }
 
 func sidebarConfigForModel(catalog dashboard.Catalog, model dashboard.ModelGraph) map[string]any {
-	return sidebarConfig(catalog, "models", "", workspaceDisplayTitle(catalog), "Semantic model", model.Title, model.Name, model.Title, false)
+	return sidebarConfig(catalog, "workspaces", "", workspaceDisplayTitle(catalog), "Semantic model", model.Title, model.Name, model.Title, false)
+}
+
+func sidebarConfigForWorkspace(catalog dashboard.Catalog, active, roleLabel string) map[string]any {
+	config := sidebarConfig(catalog, active, "", workspaceDisplayTitle(catalog), "Workspace", "Published assets", "", "", false)
+	if roleLabel != "" {
+		config["userRole"] = roleLabel
+	}
+	return config
 }
 
 func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, compact bool) map[string]any {
@@ -843,21 +851,18 @@ func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitl
 }
 
 func sidebarGroups(catalog dashboard.Catalog) []map[string]any {
+	workspaceID := catalog.Workspace.ID
+	if strings.TrimSpace(workspaceID) == "" {
+		workspaceID = "libredash"
+	}
 	return []map[string]any{
 		{
 			"label": "Navigation",
 			"items": []map[string]any{
-				{"id": "dashboards", "label": "Dashboards", "href": "/", "icon": "dashboard", "meta": "Reports and models"},
-				{"id": "metrics", "label": "Metric Views", "href": "/metrics", "icon": "data", "meta": "Business metrics"},
-				{"id": "models", "label": "Semantic Models", "href": "/models", "icon": "model", "meta": "Reusable data models"},
-			},
-		},
-		{
-			"label": "Data",
-			"items": []map[string]any{
-				{"id": "data:sources", "label": "Sources", "href": "/", "icon": "data", "meta": "Coming soon", "disabled": true},
-				{"id": "data:cache", "label": "DuckDB Cache", "href": "/", "icon": "cache", "meta": "Import mode", "disabled": true},
-				{"id": "settings", "label": "Settings", "href": "/", "icon": "settings", "meta": "Coming soon", "disabled": true},
+				{"id": "dashboards", "label": "Dashboards", "href": "/", "icon": "dashboard", "meta": "Reports"},
+				{"id": "workspaces", "label": "Workspaces", "href": "/workspaces", "icon": "catalog", "meta": "Published assets"},
+				{"id": "connections", "label": "Connections", "href": "/connections", "icon": "data", "meta": "Data access"},
+				{"id": "settings", "label": "Settings", "href": "/workspaces/" + workspaceID + "/permissions", "icon": "settings", "meta": "Permissions"},
 			},
 		},
 	}

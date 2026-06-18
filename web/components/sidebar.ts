@@ -23,6 +23,7 @@ type SidebarConfig = {
   modelTitle?: string
   modelId?: string
   dashboardId?: string
+  userRole?: string
   compact?: boolean
   groups: NavGroup[]
 }
@@ -573,7 +574,7 @@ class LibreDashSidebar extends LitElement {
             <span class="avatar" aria-hidden="true">JN</span>
             <span class="user-text">
               <strong class="user-name">Jacob Nielsen</strong>
-              <span class="user-role">Local workspace</span>
+              <span class="user-role">${this.config.userRole ?? 'Local workspace'}</span>
             </span>
           </div>
           <div class="actions">
