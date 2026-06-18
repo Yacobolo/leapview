@@ -445,6 +445,39 @@ const (
 	TableMaxRequestCount   = 1000
 )
 
+type TableStyle struct {
+	Density string `json:"density" yaml:"density"`
+	Zebra   *bool  `json:"zebra" yaml:"zebra"`
+	Grid    string `json:"grid" yaml:"grid"`
+}
+
+func (s TableStyle) WithDefaults() TableStyle {
+	if s.Density != "compact" && s.Density != "spacious" {
+		s.Density = "comfortable"
+	}
+	if s.Zebra == nil {
+		zebra := true
+		s.Zebra = &zebra
+	}
+	switch s.Grid {
+	case "none", "columns", "full":
+	default:
+		s.Grid = "rows"
+	}
+	return s
+}
+
+func (s TableStyle) RowHeight() int {
+	switch s.WithDefaults().Density {
+	case "compact":
+		return 28
+	case "spacious":
+		return 42
+	default:
+		return TableRowHeight
+	}
+}
+
 func DefaultTableRequest() TableRequest {
 	return TableRequest{
 		Table: "orders",
@@ -505,6 +538,7 @@ type Table struct {
 	Version       int                   `json:"version"`
 	Kind          string                `json:"kind"`
 	Title         string                `json:"title"`
+	Style         TableStyle            `json:"style"`
 	Columns       []TableColumn         `json:"columns"`
 	TotalRows     int                   `json:"totalRows"`
 	AvailableRows int                   `json:"availableRows"`
@@ -528,13 +562,27 @@ type TableBlock struct {
 }
 
 type TableColumn struct {
-	Key         string `json:"key"`
-	Label       string `json:"label"`
-	Align       string `json:"align,omitempty"`
-	Role        string `json:"role,omitempty"`
-	Group       string `json:"group,omitempty"`
-	Measure     string `json:"measure,omitempty"`
-	ColumnValue string `json:"columnValue,omitempty"`
+	Key         string                `json:"key" yaml:"key"`
+	Label       string                `json:"label" yaml:"label"`
+	Align       string                `json:"align,omitempty" yaml:"align,omitempty"`
+	Role        string                `json:"role,omitempty" yaml:"role,omitempty"`
+	Group       string                `json:"group,omitempty" yaml:"group,omitempty"`
+	Measure     string                `json:"measure,omitempty" yaml:"measure,omitempty"`
+	ColumnValue string                `json:"columnValue,omitempty" yaml:"column_value,omitempty"`
+	Width       int                   `json:"width,omitempty" yaml:"width,omitempty"`
+	Format      string                `json:"format,omitempty" yaml:"format,omitempty"`
+	Formatting  []TableFormattingRule `json:"formatting,omitempty" yaml:"formatting,omitempty"`
+}
+
+type TableFormattingRule struct {
+	Kind       string            `json:"kind" yaml:"kind"`
+	Values     map[string]string `json:"values,omitempty" yaml:"values,omitempty"`
+	Min        *float64          `json:"min,omitempty" yaml:"min,omitempty"`
+	Max        *float64          `json:"max,omitempty" yaml:"max,omitempty"`
+	Color      string            `json:"color,omitempty" yaml:"color,omitempty"`
+	Background string            `json:"background,omitempty" yaml:"background,omitempty"`
+	LowColor   string            `json:"lowColor,omitempty" yaml:"low_color,omitempty"`
+	HighColor  string            `json:"highColor,omitempty" yaml:"high_color,omitempty"`
 }
 
 func OrdersTableColumns() []TableColumn {
@@ -560,13 +608,14 @@ func EmptyTable(request TableRequest, err error) Table {
 		Version:       2,
 		Kind:          "data_table",
 		Title:         "Orders",
+		Style:         TableStyle{}.WithDefaults(),
 		Columns:       OrdersTableColumns(),
 		TotalRows:     0,
 		AvailableRows: 0,
 		IsCapped:      false,
 		RowCap:        TableInteractiveRowCap,
 		ChunkSize:     TableChunkSize,
-		RowHeight:     TableRowHeight,
+		RowHeight:     TableStyle{}.RowHeight(),
 		ResetVersion:  request.ResetVersion,
 		Sort:          request.Sort,
 		Blocks:        emptyTableBlocks(),

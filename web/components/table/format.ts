@@ -2,19 +2,30 @@ import type { TableColumn, TableRow } from './types'
 
 export function formatCell(value: unknown, column: TableColumn): string {
   if (value === null || value === undefined || value === '') return '-'
-  if ((column.key === 'revenue' || column.measure === 'revenue') && Number.isFinite(Number(value))) {
+  const format = column.format || inferredFormat(column)
+  if (format === 'currency' && Number.isFinite(Number(value))) {
     return `R$ ${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
   }
-  if (column.key === 'review_score' && Number.isFinite(Number(value))) {
+  if (format === 'integer' && Number.isFinite(Number(value))) {
+    return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })
+  }
+  if (format === 'decimal' && Number.isFinite(Number(value))) {
     return Number(value).toFixed(2)
   }
-  if (column.key === 'delivery_days' && Number.isFinite(Number(value))) {
+  if (format === 'days' && Number.isFinite(Number(value))) {
     return `${Number(value)}d`
   }
   if (Number.isFinite(Number(value)) && column.align === 'right') {
     return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
   }
   return String(value)
+}
+
+function inferredFormat(column: TableColumn): string {
+  if (column.key === 'revenue' || column.measure === 'revenue') return 'currency'
+  if (column.key === 'review_score') return 'decimal'
+  if (column.key === 'delivery_days') return 'days'
+  return ''
 }
 
 export function defaultDirection(column: TableColumn): 'asc' | 'desc' {

@@ -111,24 +111,28 @@ type InteractionTargets struct {
 }
 
 type TableVisual struct {
-	Kind        string                  `yaml:"kind"`
-	Title       string                  `yaml:"title"`
-	MetricView  string                  `yaml:"metrics_view"`
-	DefaultSort dashboard.TableSort     `yaml:"default_sort"`
-	Columns     []dashboard.TableColumn `yaml:"columns"`
-	Rows        []string                `yaml:"rows"`
-	Measures    []string                `yaml:"measures"`
-	ColumnDims  []string                `yaml:"-"`
+	Kind              string                                     `yaml:"kind"`
+	Title             string                                     `yaml:"title"`
+	MetricView        string                                     `yaml:"metrics_view"`
+	DefaultSort       dashboard.TableSort                        `yaml:"default_sort"`
+	Style             dashboard.TableStyle                       `yaml:"style"`
+	Columns           []dashboard.TableColumn                    `yaml:"columns"`
+	Rows              []string                                   `yaml:"rows"`
+	Measures          []string                                   `yaml:"measures"`
+	MeasureFormatting map[string][]dashboard.TableFormattingRule `yaml:"measure_formatting"`
+	ColumnDims        []string                                   `yaml:"-"`
 }
 
 func (t *TableVisual) UnmarshalYAML(value *yaml.Node) error {
 	type rawTableVisual struct {
-		Kind        string              `yaml:"kind"`
-		Title       string              `yaml:"title"`
-		MetricView  string              `yaml:"metrics_view"`
-		DefaultSort dashboard.TableSort `yaml:"default_sort"`
-		Rows        []string            `yaml:"rows"`
-		Measures    []string            `yaml:"measures"`
+		Kind              string                                     `yaml:"kind"`
+		Title             string                                     `yaml:"title"`
+		MetricView        string                                     `yaml:"metrics_view"`
+		DefaultSort       dashboard.TableSort                        `yaml:"default_sort"`
+		Style             dashboard.TableStyle                       `yaml:"style"`
+		Rows              []string                                   `yaml:"rows"`
+		Measures          []string                                   `yaml:"measures"`
+		MeasureFormatting map[string][]dashboard.TableFormattingRule `yaml:"measure_formatting"`
 	}
 	var raw rawTableVisual
 	if err := value.Decode(&raw); err != nil {
@@ -138,8 +142,10 @@ func (t *TableVisual) UnmarshalYAML(value *yaml.Node) error {
 	t.Title = raw.Title
 	t.MetricView = raw.MetricView
 	t.DefaultSort = raw.DefaultSort
+	t.Style = raw.Style
 	t.Rows = raw.Rows
 	t.Measures = raw.Measures
+	t.MeasureFormatting = raw.MeasureFormatting
 
 	columnsNode := mappingValue(value, "columns")
 	if columnsNode == nil {
@@ -506,9 +512,27 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 		if table.Title == "" || table.MetricView == "" {
 			return fmt.Errorf("table %q requires title and metrics_view", name)
 		}
+		if err := validateTableStyle(name, table.Style); err != nil {
+			return err
+		}
+		for _, column := range table.Columns {
+			if err := validateTableColumn(name, column); err != nil {
+				return err
+			}
+		}
 		view, ok := allowedViews[table.MetricView]
 		if !ok {
 			return fmt.Errorf("table %q references unknown metrics view %q", name, table.MetricView)
+		}
+		for measure, rules := range table.MeasureFormatting {
+			if _, ok := view.Measures[measure]; !ok {
+				return fmt.Errorf("table %q measure_formatting references unknown measure %q", name, measure)
+			}
+			for _, rule := range rules {
+				if err := validateTableFormattingRule(name, measure, rule); err != nil {
+					return err
+				}
+			}
 		}
 		switch table.KindOrDefault() {
 		case "data_table":
@@ -619,6 +643,43 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 				return fmt.Errorf("page %q visual %q has unsupported kind %q", page.ID, visual.ID, visual.Kind)
 			}
 		}
+	}
+	return nil
+}
+
+func validateTableStyle(name string, style dashboard.TableStyle) error {
+	switch style.Density {
+	case "", "compact", "comfortable", "spacious":
+	default:
+		return fmt.Errorf("table %q has unsupported density %q", name, style.Density)
+	}
+	switch style.Grid {
+	case "", "none", "rows", "columns", "full":
+	default:
+		return fmt.Errorf("table %q has unsupported grid %q", name, style.Grid)
+	}
+	return nil
+}
+
+func validateTableColumn(tableName string, column dashboard.TableColumn) error {
+	switch column.Format {
+	case "", "text", "integer", "decimal", "currency", "days":
+	default:
+		return fmt.Errorf("table %q column %q has unsupported format %q", tableName, column.Key, column.Format)
+	}
+	for _, rule := range column.Formatting {
+		if err := validateTableFormattingRule(tableName, column.Key, rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTableFormattingRule(tableName, field string, rule dashboard.TableFormattingRule) error {
+	switch rule.Kind {
+	case "badge", "text_color", "background_scale", "data_bar":
+	default:
+		return fmt.Errorf("table %q column %q has unsupported formatting kind %q", tableName, field, rule.Kind)
 	}
 	return nil
 }

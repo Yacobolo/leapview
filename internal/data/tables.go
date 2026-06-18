@@ -76,17 +76,19 @@ func (m *DuckDBMetrics) queryAggregateTable(ctx context.Context, runtime *modelR
 		rows = rows[:dashboard.TableInteractiveRowCap]
 	}
 	chunkSize := max(dashboard.TableChunkSize, len(rows))
+	style := table.Style.WithDefaults()
 	return dashboard.Table{
 		Version:       2,
 		Kind:          table.KindOrDefault(),
 		Title:         table.Title,
+		Style:         style,
 		Columns:       columns,
 		TotalRows:     totalRows,
 		AvailableRows: len(rows),
 		IsCapped:      isCapped,
 		RowCap:        dashboard.TableInteractiveRowCap,
 		ChunkSize:     chunkSize,
-		RowHeight:     dashboard.TableRowHeight,
+		RowHeight:     style.RowHeight(),
 		ResetVersion:  request.ResetVersion,
 		Sort:          request.Sort,
 		Blocks: map[string]dashboard.TableBlock{
@@ -115,7 +117,8 @@ func (m *DuckDBMetrics) matrixTableRows(ctx context.Context, runtime *modelRunti
 		dimension := metricView.Dimensions[dimensionName]
 		selects = append(selects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), dimensionName))
 		groupBy = append(groupBy, dimensionName)
-		columns = append(columns, dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header"})
+		column := dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header", Format: "text"}
+		columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, dimensionName)))
 	}
 	for _, measureName := range table.Measures {
 		measure := metricView.Measures[measureName]
@@ -124,7 +127,8 @@ func (m *DuckDBMetrics) matrixTableRows(ctx context.Context, runtime *modelRunti
 			return nil, nil, err
 		}
 		selects = append(selects, fmt.Sprintf("%s AS %s", expr, measureName))
-		columns = append(columns, dashboard.TableColumn{Key: measureName, Label: measureLabel(measureName, measure), Align: "right", Role: "measure", Measure: measureName})
+		column := dashboard.TableColumn{Key: measureName, Label: measureLabel(measureName, measure), Align: "right", Role: "measure", Measure: measureName, Format: tableMeasureFormat(measure), Formatting: tableMeasureFormatting(table, measureName)}
+		columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, measureName)))
 	}
 	where, args := m.filterWhere("e", runtime, report, table.MetricView, filters, "table", request.Table)
 	orderBy := strings.Join(groupBy, ", ")
@@ -164,7 +168,8 @@ func (m *DuckDBMetrics) crossTabTableRows(ctx context.Context, runtime *modelRun
 		dimension := metricView.Dimensions[dimensionName]
 		rowSelects = append(rowSelects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), dimensionName))
 		groupBy = append(groupBy, dimensionName)
-		baseColumns = append(baseColumns, dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header"})
+		column := dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header", Format: "text"}
+		baseColumns = append(baseColumns, mergeTableColumn(column, tableColumnOverride(table, dimensionName)))
 	}
 	columnDimensionName := table.ColumnDims[0]
 	columnDimension := metricView.Dimensions[columnDimensionName]
@@ -240,7 +245,7 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 				columnKey = uniqueTableColumnKey(candidate, usedKeys)
 				columnKeys[columnIdentity] = columnKey
 				usedKeys[columnKey] = columnKey
-				columns = append(columns, dashboard.TableColumn{
+				column := dashboard.TableColumn{
 					Key:         columnKey,
 					Label:       columnLabel,
 					Align:       "right",
@@ -248,7 +253,10 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 					Group:       groupLabel,
 					Measure:     measureName,
 					ColumnValue: label,
-				})
+					Format:      tableMeasureFormat(measure),
+					Formatting:  tableMeasureFormatting(table, measureName),
+				}
+				columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, measureName)))
 			}
 			row[columnKey] = raw[measureName]
 		}
@@ -366,6 +374,53 @@ func dimensionLabel(name string, dimension semantic.MetricDimension) string {
 		return dimension.Label
 	}
 	return name
+}
+
+func tableMeasureFormat(measure semantic.MetricMeasure) string {
+	switch measure.Format {
+	case "integer", "decimal", "currency":
+		return measure.Format
+	default:
+		return "decimal"
+	}
+}
+
+func tableMeasureFormatting(table semantic.TableVisual, measure string) []dashboard.TableFormattingRule {
+	if len(table.MeasureFormatting[measure]) == 0 {
+		return nil
+	}
+	return append([]dashboard.TableFormattingRule{}, table.MeasureFormatting[measure]...)
+}
+
+func tableColumnOverride(table semantic.TableVisual, key string) dashboard.TableColumn {
+	for _, column := range table.Columns {
+		if column.Key == key {
+			return column
+		}
+	}
+	return dashboard.TableColumn{}
+}
+
+func mergeTableColumn(column, override dashboard.TableColumn) dashboard.TableColumn {
+	if override.Label != "" {
+		column.Label = override.Label
+	}
+	if override.Align != "" {
+		column.Align = override.Align
+	}
+	if override.Group != "" {
+		column.Group = override.Group
+	}
+	if override.Width > 0 {
+		column.Width = override.Width
+	}
+	if override.Format != "" {
+		column.Format = override.Format
+	}
+	if len(override.Formatting) > 0 {
+		column.Formatting = append([]dashboard.TableFormattingRule{}, override.Formatting...)
+	}
+	return column
 }
 
 func sanitizeTableKey(value string) string {

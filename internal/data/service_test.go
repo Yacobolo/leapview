@@ -953,6 +953,27 @@ relogios_presentes,watches_gifts
 	if got := table.Blocks["a"].Sort; got.Key != "revenue" || got.Direction != "asc" {
 		t.Fatalf("single block sort = %#v, want revenue asc", got)
 	}
+	if got := table.Columns[5].Format; got != "currency" {
+		t.Fatalf("orders revenue format = %q, want currency", got)
+	}
+
+	conditionalTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
+		Table: "orders_conditional",
+		Block: "all",
+		Count: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := conditionalTable.Style.Grid; got != "full" {
+		t.Fatalf("conditional table grid = %q, want full", got)
+	}
+	if conditionalTable.RowHeight != dashboard.TableRowHeight {
+		t.Fatalf("conditional table row height = %d, want %d", conditionalTable.RowHeight, dashboard.TableRowHeight)
+	}
+	if !tableColumnHasFormatting(conditionalTable.Columns, "status", "badge") {
+		t.Fatalf("conditional table status column missing badge formatting: %#v", conditionalTable.Columns)
+	}
 
 	filteredTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{
@@ -1018,6 +1039,37 @@ relogios_presentes,watches_gifts
 	}
 	if got := pivotTable.Columns[1].Group; got != "Orders" {
 		t.Fatalf("pivot first value column group = %q, want Orders", got)
+	}
+
+	formattedMatrix, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
+		Table: "state_status_matrix_formatted",
+		Block: "all",
+		Count: 10,
+		Sort:  dashboard.TableSort{Key: "state", Direction: "asc"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if formattedMatrix.RowHeight != dashboard.TableRowHeight {
+		t.Fatalf("formatted matrix row height = %d, want %d", formattedMatrix.RowHeight, dashboard.TableRowHeight)
+	}
+	if !tableColumnHasFormatting(formattedMatrix.Columns, "revenue", "data_bar") {
+		t.Fatalf("formatted matrix revenue column missing data bar formatting: %#v", formattedMatrix.Columns)
+	}
+
+	heatPivot, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
+		Table: "category_status_pivot_heat",
+		Block: "all",
+		Count: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if heatPivot.RowHeight != 28 {
+		t.Fatalf("heat pivot row height = %d, want 28", heatPivot.RowHeight)
+	}
+	if !tableHasAnyFormatting(heatPivot.Columns, "background_scale") {
+		t.Fatalf("heat pivot generated columns missing background scale formatting: %#v", heatPivot.Columns)
 	}
 
 	if err := metrics.RefreshCache(context.Background(), "olist"); err != nil {
@@ -1193,6 +1245,31 @@ func tableRowsHaveKey(rows []map[string]any, key string) bool {
 	for _, row := range rows {
 		if _, ok := row[key]; ok {
 			return true
+		}
+	}
+	return false
+}
+
+func tableColumnHasFormatting(columns []dashboard.TableColumn, key, kind string) bool {
+	for _, column := range columns {
+		if column.Key != key {
+			continue
+		}
+		for _, rule := range column.Formatting {
+			if rule.Kind == kind {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func tableHasAnyFormatting(columns []dashboard.TableColumn, kind string) bool {
+	for _, column := range columns {
+		for _, rule := range column.Formatting {
+			if rule.Kind == kind {
+				return true
+			}
 		}
 	}
 	return false

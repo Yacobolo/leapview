@@ -562,17 +562,19 @@ func (m *DuckDBMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID 
 		return dashboard.EmptyTable(request, err), nil
 	}
 
+	style := tableModel.Style.WithDefaults()
 	return dashboard.Table{
 		Version:       2,
 		Kind:          tableModel.KindOrDefault(),
 		Title:         tableModel.Title,
+		Style:         style,
 		Columns:       tableModel.Columns,
 		TotalRows:     totalRows,
 		AvailableRows: availableRows,
 		IsCapped:      totalRows > availableRows,
 		RowCap:        dashboard.TableInteractiveRowCap,
 		ChunkSize:     dashboard.TableChunkSize,
-		RowHeight:     dashboard.TableRowHeight,
+		RowHeight:     style.RowHeight(),
 		ResetVersion:  request.ResetVersion,
 		Sort:          request.Sort,
 		Blocks:        blocks,
