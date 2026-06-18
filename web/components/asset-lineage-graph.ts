@@ -82,8 +82,8 @@ class AssetLineageGraph extends LitElement {
         edges: graph.edges.map(toFlowEdge),
         nodeTypes: { lineageNode: LineageNodeComponent },
         fitView: true,
-        fitViewOptions: { padding: 0.2 },
-        minZoom: 0.5,
+        fitViewOptions: { padding: 0.12 },
+        minZoom: 0.15,
         maxZoom: 1.35,
         nodesDraggable: false,
         nodesConnectable: false,
@@ -239,18 +239,44 @@ function toFlowEdge(edge: LineageEdge): Edge {
 }
 
 function positionFor(node: LineageNode, nodes: LineageNode[]): { x: number; y: number } {
+  if (isDashboardDataLineage(nodes)) return dashboardDataPositionFor(node, nodes)
+
   const side = node.side ?? 'downstream'
   const sideNodes = nodes.filter((candidate) => (candidate.side ?? 'downstream') === side)
   const index = Math.max(0, sideNodes.findIndex((candidate) => candidate.id === node.id))
-  const y = Math.max(16, index * 118)
+  const y = Math.max(48, index * 118 + 48)
   switch (side) {
     case 'upstream':
-      return { x: 0, y }
+      return { x: 96, y }
     case 'selected':
-      return { x: 280, y: Math.max(64, y) }
+      return { x: 384, y: Math.max(96, y) }
     default:
-      return { x: 560, y }
+      return { x: 672, y }
   }
+}
+
+function isDashboardDataLineage(nodes: LineageNode[]): boolean {
+  return nodes.some((node) => node.selected && node.kind === 'dashboard')
+}
+
+function dashboardDataPositionFor(node: LineageNode, nodes: LineageNode[]): { x: number; y: number } {
+  if (node.selected) return { x: 1440, y: 300 }
+
+  const xByKind: Record<string, number> = {
+    connection: 96,
+    source: 336,
+    cache_table: 576,
+    dataset: 816,
+    semantic_model: 1056,
+    metric_view: 1200,
+  }
+  const x = xByKind[node.kind] ?? 576
+  if (node.kind !== 'source') return { x, y: 300 }
+
+  const sources = nodes.filter((candidate) => candidate.kind === 'source').sort((left, right) => left.label.localeCompare(right.label))
+  const index = Math.max(0, sources.findIndex((candidate) => candidate.id === node.id))
+  const y = 60 + index * 92
+  return { x, y }
 }
 
 function LineageNodeComponent({ data }: { data: LineageNode }) {

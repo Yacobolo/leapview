@@ -69,7 +69,7 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace api.WorkspaceRespon
 			assetHeader(workspace, asset, assets),
 			h.Div(h.Class(metricContentColumnClass),
 				assetDetailTabs(workspace.ID, asset.ID, activeSection, lineage.Count),
-				h.Div(h.Class("min-h-0 overflow-auto px-4 py-4"),
+				h.Div(h.Class(assetDetailBodyClass(activeSection)),
 					g.If(activeSection == "details",
 						assetDetailsSection(workspace, asset, assets),
 					),
@@ -321,6 +321,13 @@ func assetDetailTabs(workspaceID, assetID, activeSection string, relatedCount in
 	)
 }
 
+func assetDetailBodyClass(activeSection string) string {
+	if activeSection == "lineage" {
+		return "min-h-0 overflow-auto"
+	}
+	return "min-h-0 overflow-auto px-4 py-4"
+}
+
 func assetDetailTabLink(href string, active bool, label string, meta g.Node) g.Node {
 	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-850 no-underline transition-colors duration-fast"
 	if active {
@@ -389,14 +396,12 @@ type assetLineageEdge struct {
 }
 
 func assetLineageSection(lineage assetLineageModel) g.Node {
-	return h.Section(h.ID("lineage"), h.Class("grid content-start gap-5"), h.Aria("label", "Asset lineage"),
-		h.Div(h.Class("flex min-h-control-xl items-center gap-2 border-b border-outline-variant"),
-			h.H2(h.Class("m-0 text-body-sm font-850 text-fg-default"), g.Text("Lineage")),
-			metricTabCount(lineage.Count),
+	return h.Section(h.ID("lineage"), h.Class("grid content-start"), h.Aria("label", "Asset lineage"),
+		g.El("ld-asset-lineage-graph", h.Class("block h-min-model-graph min-h-0 border-b border-outline-muted bg-surface"), g.Attr("data-graph", jsonString(lineage.Graph))),
+		h.Div(h.Class("grid content-start gap-5 px-4 py-4"),
+			definitionGrid("Uses", lineage.Uses),
+			definitionGrid("Used by", lineage.UsedBy),
 		),
-		g.El("ld-asset-lineage-graph", h.Class("block h-metric-usage min-h-0 rounded-default border border-outline-muted bg-surface"), g.Attr("data-graph", jsonString(lineage.Graph))),
-		definitionGrid("Uses", lineage.Uses),
-		definitionGrid("Used by", lineage.UsedBy),
 	)
 }
 
