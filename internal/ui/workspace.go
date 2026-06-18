@@ -82,13 +82,13 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace api.WorkspaceRespon
 }
 
 func assetHeader(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) g.Node {
-	if asset.Type == "metric_view" {
-		return assetBreadcrumbHeader(workspace, asset, assets)
+	if asset.Type == "metric_view" || asset.Type == "dashboard" {
+		return assetBreadcrumbHeader(workspace, asset)
 	}
 	return workspaceHeader(assetTypeLabel(asset.Type), assetTitle(asset), asset.Description, assetActions(workspace.ID, asset))
 }
 
-func assetBreadcrumbHeader(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) g.Node {
+func assetBreadcrumbHeader(workspace api.WorkspaceResponse, asset api.AssetResponse) g.Node {
 	return h.Header(h.Class("grid min-w-0 grid-cols-workspace-header items-center gap-2 border-b border-outline-muted px-4 py-2.5"),
 		h.Nav(h.Class("min-w-0"), h.Aria("label", "Breadcrumb"),
 			h.Ol(h.Class("flex min-w-0 flex-wrap items-center gap-1.5 text-body-sm font-760 leading-snug"),
@@ -529,9 +529,13 @@ func workspaceAssetSectionHref(workspaceID, assetID, section string) string {
 
 func assetDetailsSection(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) g.Node {
 	return h.Section(h.ID("details"), h.Class("grid content-start gap-6"), h.Aria("label", "Asset details"),
-		g.If(asset.Type != "metric_view", assetIdentityStrip(workspace, asset, assets)),
+		g.If(!assetUsesStructuredDetails(asset.Type), assetIdentityStrip(workspace, asset, assets)),
 		g.Group(assetDetailsNodes(workspace, asset, assets)),
 	)
+}
+
+func assetUsesStructuredDetails(typ string) bool {
+	return typ == "metric_view" || typ == "dashboard"
 }
 
 func assetDetailsNodes(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) []g.Node {
@@ -833,15 +837,132 @@ func metricViewDimensionsGrid(parent api.AssetResponse, dimensions []api.AssetRe
 }
 
 func dashboardAssetDetails(asset api.AssetResponse, assets []api.AssetResponse) []g.Node {
+	pages := childrenByType(asset.ID, "page", assets)
+	filters := childrenByType(asset.ID, "filter", assets)
+	visuals := childrenByType(asset.ID, "visual", assets)
+	tables := childrenByType(asset.ID, "table", assets)
 	return []g.Node{
 		definitionStats("Overview", []definitionFact{
+			{Label: "Type", Value: assetTypeLabel(asset.Type)},
+			{Label: "Key", Value: asset.Key, Code: true},
 			{Label: "Metric views", Value: strings.Join(stringSlice(metaValue(asset.Meta, "MetricViews", "metrics_views")), ", ")},
 			{Label: "Tags", Value: strings.Join(stringSlice(metaValue(asset.Meta, "Tags", "tags")), ", ")},
-			{Label: "Pages", Value: fmt.Sprint(len(childrenByType(asset.ID, "page", assets)))},
-			{Label: "Filters", Value: fmt.Sprint(len(childrenByType(asset.ID, "filter", assets)))},
-			{Label: "Visuals", Value: fmt.Sprint(len(childrenByType(asset.ID, "visual", assets)))},
-			{Label: "Tables", Value: fmt.Sprint(len(childrenByType(asset.ID, "table", assets)))},
+			{Label: "Description", Value: asset.Description, Wide: true},
 		}),
+		definitionGrid(fmt.Sprintf("Pages (%d)", len(pages)), dashboardPagesGrid(asset, pages)),
+		definitionGrid(fmt.Sprintf("Filters (%d)", len(filters)), dashboardFiltersGrid(asset, filters)),
+		definitionGrid(fmt.Sprintf("Visuals (%d)", len(visuals)), dashboardVisualsGrid(asset, visuals)),
+		definitionGrid(fmt.Sprintf("Tables (%d)", len(tables)), dashboardTablesGrid(asset, tables)),
+	}
+}
+
+func dashboardPagesGrid(parent api.AssetResponse, pages []api.AssetResponse) metricGrid {
+	rows := make([]map[string]any, 0, len(pages))
+	for _, page := range pages {
+		key := assetChildName(parent, page)
+		rows = append(rows, map[string]any{
+			"page":        assetTitle(page),
+			"pageHref":    workspaceAssetSectionHref(parent.WorkspaceID, page.ID, "details"),
+			"key":         key,
+			"description": emptyDash(page.Description),
+			"runtime":     "Open",
+			"runtimeHref": "/dashboards/" + parent.Key + "/pages/" + key,
+		})
+	}
+	return metricGrid{
+		Columns: []metricGridColumn{
+			{ID: "page", Header: "Page", Kind: "link", HrefKey: "pageHref", Width: "220px"},
+			{ID: "key", Header: "Key", Kind: "code", Width: "190px"},
+			{ID: "description", Header: "Description"},
+			{ID: "runtime", Header: "Runtime", Kind: "link", HrefKey: "runtimeHref", Width: "110px"},
+		},
+		Rows:     rows,
+		Empty:    "No pages are defined for this dashboard.",
+		MinWidth: "860px",
+	}
+}
+
+func dashboardFiltersGrid(parent api.AssetResponse, filters []api.AssetResponse) metricGrid {
+	sortAssetChildren(parent, filters)
+	rows := make([]map[string]any, 0, len(filters))
+	for _, filter := range filters {
+		rows = append(rows, map[string]any{
+			"filter":     assetTitle(filter),
+			"filterHref": workspaceAssetSectionHref(parent.WorkspaceID, filter.ID, "details"),
+			"key":        assetChildName(parent, filter),
+			"metricView": emptyDash(metaString(filter.Meta, "MetricView", "metric_view", "metrics_view")),
+			"dimension":  emptyDash(metaString(filter.Meta, "Dimension", "dimension")),
+			"type":       emptyDash(metaString(filter.Meta, "Type", "type", "Kind", "kind")),
+		})
+	}
+	return metricGrid{
+		Columns: []metricGridColumn{
+			{ID: "filter", Header: "Filter", Kind: "link", HrefKey: "filterHref", Width: "190px"},
+			{ID: "key", Header: "Key", Kind: "code", Width: "160px"},
+			{ID: "metricView", Header: "Metric view", Kind: "code", Width: "150px"},
+			{ID: "dimension", Header: "Dimension", Kind: "code", Width: "180px"},
+			{ID: "type", Header: "Type", Width: "120px"},
+		},
+		Rows:     rows,
+		Empty:    "No filters are defined for this dashboard.",
+		MinWidth: "820px",
+	}
+}
+
+func dashboardVisualsGrid(parent api.AssetResponse, visuals []api.AssetResponse) metricGrid {
+	sortAssetChildren(parent, visuals)
+	rows := make([]map[string]any, 0, len(visuals))
+	for _, visual := range visuals {
+		query := metaMap(visual.Meta, "Query", "query")
+		rows = append(rows, map[string]any{
+			"visual":     assetTitle(visual),
+			"visualHref": workspaceAssetSectionHref(parent.WorkspaceID, visual.ID, "details"),
+			"key":        assetChildName(parent, visual),
+			"metricView": emptyDash(metaString(visual.Meta, "MetricView", "metric_view", "metrics_view")),
+			"type":       emptyDash(firstNonEmpty(metaString(visual.Meta, "Shape", "shape"), metaString(visual.Meta, "Type", "type"), metaString(visual.Meta, "Kind", "kind"))),
+			"measures":   emptyDash(strings.Join(stringSlice(metaValue(query, "Measures", "measures")), ", ")),
+			"dimensions": emptyDash(strings.Join(stringSlice(metaValue(query, "Dimensions", "dimensions")), ", ")),
+		})
+	}
+	return metricGrid{
+		Columns: []metricGridColumn{
+			{ID: "visual", Header: "Visual", Kind: "link", HrefKey: "visualHref", Width: "230px"},
+			{ID: "key", Header: "Key", Kind: "code", Width: "180px"},
+			{ID: "metricView", Header: "Metric view", Kind: "code", Width: "140px"},
+			{ID: "type", Header: "Type", Width: "120px"},
+			{ID: "measures", Header: "Measures", Kind: "expression", Width: "220px"},
+			{ID: "dimensions", Header: "Dimensions", Kind: "expression"},
+		},
+		Rows:     rows,
+		Empty:    "No visuals are defined for this dashboard.",
+		MinWidth: "1040px",
+	}
+}
+
+func dashboardTablesGrid(parent api.AssetResponse, tables []api.AssetResponse) metricGrid {
+	sortAssetChildren(parent, tables)
+	rows := make([]map[string]any, 0, len(tables))
+	for _, table := range tables {
+		rows = append(rows, map[string]any{
+			"table":      assetTitle(table),
+			"tableHref":  workspaceAssetSectionHref(parent.WorkspaceID, table.ID, "details"),
+			"key":        assetChildName(parent, table),
+			"metricView": emptyDash(metaString(table.Meta, "MetricView", "metric_view", "metrics_view")),
+			"rows":       emptyDash(strings.Join(stringSlice(metaValue(table.Meta, "Rows", "rows")), ", ")),
+			"measures":   emptyDash(strings.Join(stringSlice(metaValue(table.Meta, "Measures", "measures")), ", ")),
+		})
+	}
+	return metricGrid{
+		Columns: []metricGridColumn{
+			{ID: "table", Header: "Table", Kind: "link", HrefKey: "tableHref", Width: "220px"},
+			{ID: "key", Header: "Key", Kind: "code", Width: "170px"},
+			{ID: "metricView", Header: "Metric view", Kind: "code", Width: "140px"},
+			{ID: "rows", Header: "Rows", Kind: "expression", Width: "280px"},
+			{ID: "measures", Header: "Measures", Kind: "expression"},
+		},
+		Rows:     rows,
+		Empty:    "No tables are defined for this dashboard.",
+		MinWidth: "920px",
 	}
 }
 
@@ -1228,6 +1349,10 @@ func childrenByType(parentID, typ string, assets []api.AssetResponse) []api.Asse
 }
 
 func metricChildName(parent, child api.AssetResponse) string {
+	return assetChildName(parent, child)
+}
+
+func assetChildName(parent, child api.AssetResponse) string {
 	prefix := parent.Key + "."
 	if strings.HasPrefix(child.Key, prefix) {
 		return strings.TrimPrefix(child.Key, prefix)
@@ -1236,6 +1361,17 @@ func metricChildName(parent, child api.AssetResponse) string {
 		return child.Key
 	}
 	return assetTitle(child)
+}
+
+func sortAssetChildren(parent api.AssetResponse, children []api.AssetResponse) {
+	sort.Slice(children, func(i, j int) bool {
+		left := assetChildName(parent, children[i])
+		right := assetChildName(parent, children[j])
+		if left == right {
+			return assetTitle(children[i]) < assetTitle(children[j])
+		}
+		return left < right
+	})
 }
 
 func childHref(workspaceID string, asset api.AssetResponse) string {
