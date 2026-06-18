@@ -39,7 +39,6 @@ type LineageEdge = {
 
 class AssetLineageGraph extends LitElement {
   @property({ type: Object }) graph: LineageGraph | null = null
-  @property({ attribute: 'data-graph' }) dataGraph = '{}'
   private root?: Root
   private mount?: HTMLDivElement
 
@@ -56,7 +55,7 @@ class AssetLineageGraph extends LitElement {
   }
 
   updated(changed: Map<string, unknown>): void {
-    if (changed.has('graph') || changed.has('dataGraph')) this.renderFlow()
+    if (changed.has('graph')) this.renderFlow()
   }
 
   disconnectedCallback(): void {
@@ -106,15 +105,7 @@ class AssetLineageGraph extends LitElement {
         edges: this.graph.edges ?? [],
       }
     }
-    try {
-      const parsed = JSON.parse(this.dataGraph) as LineageGraph
-      return {
-        nodes: parsed.nodes ?? [],
-        edges: parsed.edges ?? [],
-      }
-    } catch {
-      return { nodes: [], edges: [] }
-    }
+    return { nodes: [], edges: [] }
   }
 }
 

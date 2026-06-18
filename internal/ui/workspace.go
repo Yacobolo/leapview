@@ -11,6 +11,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	lucide "github.com/eduardolat/gomponents-lucide"
 	g "maragu.dev/gomponents"
+	ds "maragu.dev/gomponents-datastar"
 	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
@@ -22,7 +23,7 @@ const (
 )
 
 func WorkspacesPage(catalog dashboard.Catalog, workspaces []api.WorkspaceResponse, roleLabel string) g.Node {
-	return workspaceDocument("LibreDash Workspaces", catalog, "workspaces", roleLabel,
+	return workspaceDocument("LibreDash Workspaces", catalog, "workspaces", roleLabel, nil,
 		h.Section(h.Class(catalogMainClass), h.Aria("label", "LibreDash workspaces"),
 			workspaceHeader("", "Workspaces", "View published BI workspaces. Authoring lives in Git.", nil),
 			h.Div(h.Class("grid grid-cols-catalog-grid items-start justify-start gap-4"),
@@ -33,7 +34,7 @@ func WorkspacesPage(catalog dashboard.Catalog, workspaces []api.WorkspaceRespons
 }
 
 func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, assets []api.AssetResponse, activeType, query, roleLabel string) g.Node {
-	return workspaceDocument(workspace.Title, catalog, "workspaces", roleLabel,
+	return workspaceDocument(workspace.Title, catalog, "workspaces", roleLabel, nil,
 		h.Section(h.Class(workspaceMainClass), h.Aria("label", "Workspace assets"),
 			workspaceHeader(
 				"Workspace",
@@ -64,7 +65,7 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace api.WorkspaceRespon
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/asset-lineage-graph.js"))),
 		)
 	}
-	return workspaceDocument(asset.Title, catalog, "workspaces", roleLabel,
+	return workspaceDocument(asset.Title, catalog, "workspaces", roleLabel, workspaceAssetSignals(asset, assets, lineage, activeSection),
 		h.Section(h.Class(metricMainClass), h.Aria("label", "Workspace asset detail"),
 			assetHeader(workspace, asset, assets),
 			h.Div(h.Class(metricContentColumnClass),
@@ -131,7 +132,7 @@ func assetBreadcrumbCurrent(asset api.AssetResponse) g.Node {
 }
 
 func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, bindings []api.RoleBindingResponse, roles []api.RoleResponse, csrfToken, roleLabel string) g.Node {
-	return workspaceDocument("Workspace permissions", catalog, "settings", roleLabel,
+	return workspaceDocument("Workspace permissions", catalog, "settings", roleLabel, nil,
 		h.Section(h.Class(catalogMainClass), h.Aria("label", "Workspace permissions"),
 			workspaceHeader("Workspace", workspace.Title, "Assign workspace roles. BI assets remain authored in Git.", nil),
 			h.Div(h.Class("grid max-w-workspace-detail grid-cols-workspace-detail gap-4 max-lg:grid-cols-1"),
@@ -166,11 +167,15 @@ func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace api.Workspace
 	)
 }
 
-func workspaceDocument(title string, catalog dashboard.Catalog, active, roleLabel string, content g.Node, extraHead ...g.Node) g.Node {
+func workspaceDocument(title string, catalog dashboard.Catalog, active, roleLabel string, signals map[string]any, content g.Node, extraHead ...g.Node) g.Node {
+	if signals == nil {
+		signals = map[string]any{}
+	}
 	head := []g.Node{
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/detail-rail.js"))),
 		inspectorScript(),
+		h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 	}
 	head = append(head, extraHead...)
 	return c.HTML5(c.HTML5Props{
@@ -184,6 +189,7 @@ func workspaceDocument(title string, catalog dashboard.Catalog, active, roleLabe
 		Head: pageHead(head...),
 		Body: []g.Node{
 			h.Main(h.Class(appRootClass),
+				ds.Signals(signals),
 				h.Div(h.Class(appShellClass),
 					sidebar(sidebarConfigForWorkspace(catalog, active, roleLabel)),
 					content,
@@ -397,12 +403,46 @@ type assetLineageEdge struct {
 
 func assetLineageSection(lineage assetLineageModel) g.Node {
 	return h.Section(h.ID("lineage"), h.Class("grid content-start"), h.Aria("label", "Asset lineage"),
-		g.El("ld-asset-lineage-graph", h.Class("block h-min-model-graph min-h-0 border-b border-outline-muted bg-surface"), g.Attr("data-graph", jsonString(lineage.Graph))),
+		g.El("ld-asset-lineage-graph", h.Class("block h-min-model-graph min-h-0 border-b border-outline-muted bg-surface"), g.Attr("data-attr:graph", "$assetLineageGraph")),
 		h.Div(h.Class("grid content-start gap-5 px-4 py-4"),
-			definitionGrid("Uses", lineage.Uses),
-			definitionGrid("Used by", lineage.UsedBy),
+			definitionSignalGrid("Uses", "assetLineageUsesGrid"),
+			definitionSignalGrid("Used by", "assetLineageUsedByGrid"),
 		),
 	)
+}
+
+func workspaceAssetSignals(asset api.AssetResponse, assets []api.AssetResponse, lineage assetLineageModel, activeSection string) map[string]any {
+	signals := map[string]any{}
+	if activeSection == "details" {
+		for key, grid := range workspaceAssetDetailGridSignals(asset, assets) {
+			signals[key] = grid
+		}
+	}
+	if activeSection == "lineage" {
+		signals["assetLineageGraph"] = lineage.Graph
+		signals["assetLineageUsesGrid"] = lineage.Uses
+		signals["assetLineageUsedByGrid"] = lineage.UsedBy
+	}
+	return signals
+}
+
+func workspaceAssetDetailGridSignals(asset api.AssetResponse, assets []api.AssetResponse) map[string]metricGrid {
+	switch asset.Type {
+	case "metric_view":
+		return map[string]metricGrid{
+			"assetDetailsMeasuresGrid":   metricViewMeasuresGrid(asset, childrenByType(asset.ID, "measure", assets)),
+			"assetDetailsDimensionsGrid": metricViewDimensionsGrid(asset, childrenByType(asset.ID, "dimension", assets)),
+		}
+	case "dashboard":
+		return map[string]metricGrid{
+			"assetDetailsPagesGrid":   dashboardPagesGrid(asset, childrenByType(asset.ID, "page", assets)),
+			"assetDetailsFiltersGrid": dashboardFiltersGrid(asset, childrenByType(asset.ID, "filter", assets)),
+			"assetDetailsVisualsGrid": dashboardVisualsGrid(asset, childrenByType(asset.ID, "visual", assets)),
+			"assetDetailsTablesGrid":  dashboardTablesGrid(asset, childrenByType(asset.ID, "table", assets)),
+		}
+	default:
+		return map[string]metricGrid{}
+	}
 }
 
 func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) assetLineageModel {
@@ -990,8 +1030,8 @@ func metricViewAssetDetails(asset api.AssetResponse, assets []api.AssetResponse)
 			{Label: "Timeseries", Value: metaString(asset.Meta, "Timeseries", "timeseries")},
 			{Label: "Description", Value: asset.Description, Wide: true},
 		}),
-		definitionGrid(fmt.Sprintf("Measures (%d)", len(measures)), metricViewMeasuresGrid(asset, measures)),
-		definitionGrid(fmt.Sprintf("Dimensions (%d)", len(dimensions)), metricViewDimensionsGrid(asset, dimensions)),
+		definitionSignalGrid(fmt.Sprintf("Measures (%d)", len(measures)), "assetDetailsMeasuresGrid"),
+		definitionSignalGrid(fmt.Sprintf("Dimensions (%d)", len(dimensions)), "assetDetailsDimensionsGrid"),
 	}
 }
 
@@ -1068,10 +1108,10 @@ func dashboardAssetDetails(asset api.AssetResponse, assets []api.AssetResponse) 
 			{Label: "Tags", Value: strings.Join(stringSlice(metaValue(asset.Meta, "Tags", "tags")), ", ")},
 			{Label: "Description", Value: asset.Description, Wide: true},
 		}),
-		definitionGrid(fmt.Sprintf("Pages (%d)", len(pages)), dashboardPagesGrid(asset, pages)),
-		definitionGrid(fmt.Sprintf("Filters (%d)", len(filters)), dashboardFiltersGrid(asset, filters)),
-		definitionGrid(fmt.Sprintf("Visuals (%d)", len(visuals)), dashboardVisualsGrid(asset, visuals)),
-		definitionGrid(fmt.Sprintf("Tables (%d)", len(tables)), dashboardTablesGrid(asset, tables)),
+		definitionSignalGrid(fmt.Sprintf("Pages (%d)", len(pages)), "assetDetailsPagesGrid"),
+		definitionSignalGrid(fmt.Sprintf("Filters (%d)", len(filters)), "assetDetailsFiltersGrid"),
+		definitionSignalGrid(fmt.Sprintf("Visuals (%d)", len(visuals)), "assetDetailsVisualsGrid"),
+		definitionSignalGrid(fmt.Sprintf("Tables (%d)", len(tables)), "assetDetailsTablesGrid"),
 	}
 }
 
@@ -1304,10 +1344,10 @@ func definitionStatValueClass(fact definitionFact, code bool) string {
 	return "min-w-0 truncate text-title-xs font-850 leading-tight text-fg-default"
 }
 
-func definitionGrid(title string, grid metricGrid) g.Node {
+func definitionSignalGrid(title, signal string) g.Node {
 	return h.Section(h.Class("grid min-w-0 content-start gap-3 border-b border-outline-muted pb-5 last:border-b-0"), h.Aria("label", title),
 		h.H2(h.Class("m-0 text-body-sm font-850 text-fg-default"), g.Text(title)),
-		g.El("ld-data-grid", g.Attr("data-grid", jsonString(grid))),
+		g.El("ld-data-grid", g.Attr("data-attr:grid", "$"+signal)),
 	)
 }
 

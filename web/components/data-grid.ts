@@ -59,7 +59,6 @@ function sortValue(value: unknown): string | number {
 class DataGrid extends LitElement {
   @property({ attribute: false }) grid: Grid | null = null
   @property({ attribute: 'grid' }) gridAttribute = ''
-  @property({ attribute: 'data-grid' }) dataGrid = '{}'
   @state() private sorting: GridSort[] = []
 
   createRenderRoot(): HTMLElement {
@@ -121,10 +120,9 @@ class DataGrid extends LitElement {
 
   private get resolvedGrid(): Required<Grid> {
     if (this.grid) return normalizeGrid(this.grid)
-    for (const source of [this.gridAttribute, this.dataGrid]) {
-      if (!source) continue
+    if (this.gridAttribute) {
       try {
-        return normalizeGrid(JSON.parse(source) as Grid)
+        return normalizeGrid(JSON.parse(this.gridAttribute) as Grid)
       } catch {
         // Datastar sets the property in normal operation. Attribute parsing is only a fallback.
       }

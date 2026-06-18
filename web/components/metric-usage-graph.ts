@@ -36,7 +36,6 @@ type UsageEdge = {
 
 class MetricUsageGraph extends LitElement {
   @property({ type: Object }) graph: UsageGraph | null = null
-  @property({ attribute: 'data-graph' }) dataGraph = '{}'
   private root?: Root
   private mount?: HTMLDivElement
 
@@ -53,7 +52,7 @@ class MetricUsageGraph extends LitElement {
   }
 
   updated(changed: Map<string, unknown>): void {
-    if (changed.has('graph') || changed.has('dataGraph')) this.renderFlow()
+    if (changed.has('graph')) this.renderFlow()
   }
 
   disconnectedCallback(): void {
@@ -103,15 +102,7 @@ class MetricUsageGraph extends LitElement {
         edges: this.graph.edges ?? [],
       }
     }
-    try {
-      const parsed = JSON.parse(this.dataGraph) as UsageGraph
-      return {
-        nodes: parsed.nodes ?? [],
-        edges: parsed.edges ?? [],
-      }
-    } catch {
-      return { nodes: [], edges: [] }
-    }
+    return { nodes: [], edges: [] }
   }
 }
 
