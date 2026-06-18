@@ -603,15 +603,10 @@ class DataTable extends LitElement {
     }
 
     button.header-button:hover,
-    button.header-button:focus-visible,
-    .sorted button.header-button {
+    button.header-button:focus-visible {
       background: color-mix(in srgb, var(--fgColor-accent), transparent 92%);
       color: var(--fgColor-default);
       outline: 0;
-    }
-
-    .sorted button.header-button {
-      border-bottom-color: var(--fgColor-accent);
     }
 
     .sort {
