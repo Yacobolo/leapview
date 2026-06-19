@@ -51,3 +51,24 @@ type RoleBindingUpsertRequest struct {
 	DisplayName string `json:"displayName"`
 	Role        string `json:"role"`
 }
+
+type WorkspaceAccessResponse struct {
+	Workspace WorkspaceResponse     `json:"workspace"`
+	Roles     []RoleResponse        `json:"roles"`
+	Bindings  []RoleBindingResponse `json:"bindings"`
+	CanManage bool                  `json:"canManage"`
+	Status    WorkspaceAccessStatus `json:"status"`
+}
+
+type WorkspaceAccessStatus struct {
+	Loading bool   `json:"loading"`
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
+
+type WorkspaceAccessCommand struct {
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	Role        string `json:"role"`
+	PrincipalID string `json:"principalId"`
+}

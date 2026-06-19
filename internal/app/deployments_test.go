@@ -370,6 +370,140 @@ func TestWorkspaceRoleBindingAPIUpsertsPrincipalRole(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "owner@example.com", DisplayName: "Owner"})
+	if err != nil {
+		t.Fatalf("upsert owner: %v", err)
+	}
+	if err := store.BindRole(ctx, "test", owner.ID, "owner"); err != nil {
+		t.Fatalf("bind owner: %v", err)
+	}
+	token, err := store.CreateAPIToken(ctx, owner.ID, "test")
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","displayName":"Analyst","role":"viewer"}}`
+	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upsert status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"event: datastar-patch-signals", "workspaceAccess", "analyst@example.com", "Access updated."} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("workspace access upsert did not patch %q:\n%s", want, body)
+		}
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/workspaces/test/role-bindings", nil)
+	listReq.Header.Set("Authorization", "Bearer "+token)
+	listReq.Header.Set("Accept", "application/json")
+	listRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", listRec.Code, listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), `"email":"analyst@example.com"`) {
+		t.Fatalf("role binding missing after command:\n%s", listRec.Body.String())
+	}
+
+	removeSignals := `{"workspaceAccessCommand":{"principalId":"` + platform.PrincipalIDForEmail("analyst@example.com") + `"}}`
+	removeReq := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/remove", bytes.NewBufferString(removeSignals))
+	removeReq.Header.Set("Authorization", "Bearer "+token)
+	removeRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(removeRec, removeReq)
+	if removeRec.Code != http.StatusOK {
+		t.Fatalf("remove status = %d body=%s", removeRec.Code, removeRec.Body.String())
+	}
+	if !strings.Contains(removeRec.Body.String(), "Access removed.") {
+		t.Fatalf("workspace access remove did not patch success:\n%s", removeRec.Body.String())
+	}
+
+	removedListReq := httptest.NewRequest(http.MethodGet, "/api/workspaces/test/role-bindings", nil)
+	removedListReq.Header.Set("Authorization", "Bearer "+token)
+	removedListReq.Header.Set("Accept", "application/json")
+	removedListRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(removedListRec, removedListReq)
+	if strings.Contains(removedListRec.Body.String(), `"email":"analyst@example.com"`) {
+		t.Fatalf("role binding remained after remove command:\n%s", removedListRec.Body.String())
+	}
+}
+
+func TestWorkspaceAccessCommandRejectsViewer(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	viewer, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "viewer@example.com", DisplayName: "Viewer"})
+	if err != nil {
+		t.Fatalf("upsert viewer: %v", err)
+	}
+	if err := store.BindRole(ctx, "test", viewer.ID, "viewer"); err != nil {
+		t.Fatalf("bind viewer: %v", err)
+	}
+	token, err := store.CreateAPIToken(ctx, viewer.ID, "test")
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","displayName":"Analyst","role":"viewer"}}`
+	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestWorkspaceAccessCommandPatchesInvalidInput(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "owner@example.com", DisplayName: "Owner"})
+	if err != nil {
+		t.Fatalf("upsert owner: %v", err)
+	}
+	if err := store.BindRole(ctx, "test", owner.ID, "owner"); err != nil {
+		t.Fatalf("bind owner: %v", err)
+	}
+	token, err := store.CreateAPIToken(ctx, owner.ID, "test")
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	signals := `{"workspaceAccessCommand":{"email":"","displayName":"Analyst","role":"viewer"}}`
+	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("invalid status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "email is required") {
+		t.Fatalf("invalid access command did not patch validation error:\n%s", body)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/workspaces/test/role-bindings", nil)
+	listReq.Header.Set("Authorization", "Bearer "+token)
+	listReq.Header.Set("Accept", "application/json")
+	listRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(listRec, listReq)
+	if strings.Contains(listRec.Body.String(), "Analyst") {
+		t.Fatalf("invalid command changed bindings:\n%s", listRec.Body.String())
+	}
+}
+
 func testStore(t *testing.T) *platform.Store {
 	t.Helper()
 	store, err := platform.Open(context.Background(), filepath.Join(t.TempDir(), "libredash.db"))

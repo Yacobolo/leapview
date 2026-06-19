@@ -198,7 +198,7 @@ func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 	visibleAssets := []api.AssetResponse{assets[0], assets[5], assets[8]}
 
 	var out strings.Builder
-	err := WorkspacePage(catalog, workspace, visibleAssets, "", "", "Owner").Render(&out)
+	err := WorkspacePage(catalog, workspace, visibleAssets, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,6 +217,66 @@ func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("workspace asset rows did not render token-backed icon style %q:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, []api.AssetResponse{assets[0]}, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		`/static/workspace-access-control.js?v=dev`,
+		`<ld-workspace-access-control data-attr:access="$workspaceAccess"`,
+		`data-on:ld-workspace-access-upsert=`,
+		`data-on:ld-workspace-access-remove=`,
+		`workspaceAccess`,
+		`workspaceAccessCommand`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("workspace access control did not render %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAccessControlDoesNotRenderForViewers(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, []api.AssetResponse{assets[0]}, "", "", "Viewer", testWorkspaceAccess(workspace, false), "").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, notWant := range []string{
+		`/static/workspace-access-control.js?v=dev`,
+		`<ld-workspace-access-control`,
+		`data-on:ld-workspace-access-upsert=`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("workspace access control rendered for viewer %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func testWorkspaceAccess(workspace api.WorkspaceResponse, canManage bool) api.WorkspaceAccessResponse {
+	return api.WorkspaceAccessResponse{
+		Workspace: workspace,
+		Roles: []api.RoleResponse{
+			{Name: "viewer"},
+			{Name: "editor"},
+			{Name: "admin"},
+		},
+		Bindings: []api.RoleBindingResponse{
+			{PrincipalID: "principal_1", WorkspaceID: workspace.ID, Email: "owner@example.com", DisplayName: "Owner", Role: "owner"},
+		},
+		CanManage: canManage,
 	}
 }
 

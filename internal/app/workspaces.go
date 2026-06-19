@@ -13,6 +13,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
+	"github.com/starfederation/datastar-go/datastar"
 )
 
 type workspaceAssetProvider interface {
@@ -41,9 +42,11 @@ func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
 	}
 	filtered := filterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))
 	workspace := s.workspaceResponse(r, workspaceID)
+	canManage := s.canManageWorkspaceAccess(r, workspaceID)
+	access := s.workspaceAccessResponse(r, workspace, canManage, api.WorkspaceAccessStatus{})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.WorkspacePage(s.metrics.Catalog(), workspace, filtered, r.URL.Query().Get("type"), r.URL.Query().Get("q"), s.currentRoleLabel(r)).Render(w); err != nil {
+	if err := ui.WorkspacePage(s.metrics.Catalog(), workspace, filtered, r.URL.Query().Get("type"), r.URL.Query().Get("q"), s.currentRoleLabel(r), access, csrfToken(r, s.auth)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -150,6 +153,52 @@ func (s *Server) removeWorkspacePermission(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	http.Redirect(w, r, "/workspaces/"+workspaceID+"/permissions", http.StatusFound)
+}
+
+type workspaceAccessSignalPayload struct {
+	WorkspaceAccessCommand api.WorkspaceAccessCommand `json:"workspaceAccessCommand"`
+}
+
+func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
+	signals := workspaceAccessSignalPayload{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	status := api.WorkspaceAccessStatus{Message: "Access updated."}
+	if s.store == nil {
+		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
+	} else if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, signals.WorkspaceAccessCommand.Email, signals.WorkspaceAccessCommand.DisplayName, signals.WorkspaceAccessCommand.Role); err != nil {
+		status = api.WorkspaceAccessStatus{Error: err.Error()}
+	}
+	s.patchWorkspaceAccess(w, r, workspaceID, status)
+}
+
+func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
+	signals := workspaceAccessSignalPayload{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	status := api.WorkspaceAccessStatus{Message: "Access removed."}
+	if s.store == nil {
+		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
+	} else if err := s.store.RemovePrincipalRoles(r.Context(), workspaceID, signals.WorkspaceAccessCommand.PrincipalID); err != nil {
+		status = api.WorkspaceAccessStatus{Error: err.Error()}
+	}
+	s.patchWorkspaceAccess(w, r, workspaceID, status)
+}
+
+func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceID string, status api.WorkspaceAccessStatus) {
+	workspace := s.workspaceResponse(r, workspaceID)
+	access := s.workspaceAccessResponse(r, workspace, true, status)
+	sse := datastar.NewSSE(w, r)
+	_ = sse.MarshalAndPatchSignals(map[string]any{
+		"workspaceAccess":        access,
+		"workspaceAccessCommand": api.WorkspaceAccessCommand{},
+	})
 }
 
 func (s *Server) apiWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -295,7 +344,7 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 
 func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]api.RoleBindingResponse, []api.RoleResponse, error) {
 	if s.store == nil {
-		return nil, nil, nil
+		return nil, defaultWorkspaceRoles(), nil
 	}
 	bindingRows, err := s.store.Queries().ListRoleBindingsByWorkspace(r.Context(), workspaceID)
 	if err != nil {
@@ -314,6 +363,48 @@ func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]ap
 		roles = append(roles, roleDTO(row))
 	}
 	return bindings, roles, nil
+}
+
+func (s *Server) workspaceAccessResponse(r *http.Request, workspace api.WorkspaceResponse, canManage bool, status api.WorkspaceAccessStatus) api.WorkspaceAccessResponse {
+	bindings, roles, err := s.roleBindingsAndRoles(r, workspace.ID)
+	if err != nil && status.Error == "" {
+		status.Error = err.Error()
+	}
+	return api.WorkspaceAccessResponse{
+		Workspace: workspace,
+		Roles:     roles,
+		Bindings:  bindings,
+		CanManage: canManage,
+		Status:    status,
+	}
+}
+
+func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) bool {
+	if s.auth == nil {
+		return true
+	}
+	if s.store == nil {
+		return false
+	}
+	principal, ok := s.auth.Principal(r)
+	if !ok {
+		return false
+	}
+	if principal.DevBypass {
+		return true
+	}
+	allowed, err := s.store.HasPermission(r.Context(), workspaceID, principal.ID, platform.PermissionRBACManage)
+	return err == nil && allowed
+}
+
+func defaultWorkspaceRoles() []api.RoleResponse {
+	return []api.RoleResponse{
+		{Name: "viewer"},
+		{Name: "editor"},
+		{Name: "deployer"},
+		{Name: "admin"},
+		{Name: "owner"},
+	}
 }
 
 func workspaceDTO(row platformdb.Workspace) api.WorkspaceResponse {

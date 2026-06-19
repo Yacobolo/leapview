@@ -33,14 +33,18 @@ func WorkspacesPage(catalog dashboard.Catalog, workspaces []api.WorkspaceRespons
 	)
 }
 
-func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, assets []api.AssetResponse, activeType, query, roleLabel string) g.Node {
-	return workspaceDocument(workspace.Title, catalog, "workspaces", roleLabel, nil,
+func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, assets []api.AssetResponse, activeType, query, roleLabel string, access api.WorkspaceAccessResponse, csrfToken string) g.Node {
+	extraHead := []g.Node{}
+	if access.CanManage {
+		extraHead = append(extraHead, h.Script(h.Type("module"), h.Src(staticAsset("/static/workspace-access-control.js"))))
+	}
+	return workspaceDocument(workspace.Title, catalog, "workspaces", roleLabel, workspacePageSignals(access, csrfToken),
 		h.Section(h.Class(workspaceMainClass), h.Aria("label", "Workspace assets"),
 			workspaceHeader(
 				"Workspace",
 				workspace.Title,
 				workspace.Description,
-				h.A(h.Class(metricActionButtonClass), h.Href("/workspaces/"+workspace.ID+"/permissions"), h.Title("Workspace permissions"), h.Aria("label", "Workspace permissions"), lucide.Shield(metricActionIconAttrs()...)),
+				workspaceAccessControl(workspace.ID, access.CanManage),
 			),
 			assetToolbar(workspace.ID, activeType, query),
 			h.Div(h.Class(workspacePanelClass),
@@ -48,6 +52,28 @@ func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, a
 				g.If(len(assets) > 0, assetTable(workspace.ID, assets)),
 			),
 		),
+		extraHead...,
+	)
+}
+
+func workspacePageSignals(access api.WorkspaceAccessResponse, csrfToken string) map[string]any {
+	return map[string]any{
+		"csrfToken":              csrfToken,
+		"workspaceAccess":        access,
+		"workspaceAccessCommand": api.WorkspaceAccessCommand{},
+	}
+}
+
+func workspaceAccessControl(workspaceID string, canManage bool) g.Node {
+	if !canManage {
+		return nil
+	}
+	upsert := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccessCommand = evt.detail; " + postAction("/workspaces/"+workspaceID+"/access/upsert")
+	remove := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccessCommand = evt.detail; " + postAction("/workspaces/"+workspaceID+"/access/remove")
+	return g.El("ld-workspace-access-control",
+		g.Attr("data-attr:access", "$workspaceAccess"),
+		g.Attr("data-on:ld-workspace-access-upsert", upsert),
+		g.Attr("data-on:ld-workspace-access-remove", remove),
 	)
 }
 
