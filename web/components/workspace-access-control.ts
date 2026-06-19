@@ -129,7 +129,7 @@ class WorkspaceAccessControl extends LitElement {
 
     .dialog {
       display: grid;
-      width: min(36rem, calc(100vw - var(--base-size-32)));
+      width: min(38rem, calc(100vw - var(--base-size-32)));
       max-height: calc(100vh - var(--base-size-64));
       grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
@@ -200,19 +200,15 @@ class WorkspaceAccessControl extends LitElement {
 
     .body {
       display: grid;
-      gap: var(--base-size-16);
+      gap: var(--base-size-20);
       min-height: 0;
       overflow: auto;
-      padding: var(--base-size-16);
+      padding: var(--base-size-16) var(--base-size-20) var(--base-size-20);
     }
 
     .card {
       display: grid;
-      gap: var(--base-size-12);
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel-muted);
-      padding: var(--base-size-12);
+      gap: var(--base-size-8);
     }
 
     .section-title {
@@ -227,6 +223,11 @@ class WorkspaceAccessControl extends LitElement {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(8rem, auto) auto;
       gap: var(--base-size-8);
+      align-items: end;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel-muted);
+      padding: var(--base-size-8);
     }
 
     label {
@@ -242,7 +243,7 @@ class WorkspaceAccessControl extends LitElement {
 
     .field-shell {
       display: flex;
-      min-height: var(--ld-control-large);
+      min-height: var(--ld-control-medium);
       min-width: 0;
       align-items: center;
       gap: var(--base-size-8);
@@ -343,14 +344,14 @@ class WorkspaceAccessControl extends LitElement {
     }
 
     .toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem);
+      align-items: end;
       gap: var(--base-size-12);
     }
 
     .search {
-      width: min(18rem, 100%);
+      width: 100%;
     }
 
     .list {
@@ -421,13 +422,14 @@ class WorkspaceAccessControl extends LitElement {
     }
 
     .empty {
-      border: 1px dashed var(--ld-line-muted);
+      border: var(--ld-border-muted);
       border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel-muted);
+      background: var(--ld-bg-panel);
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-body-sm);
       font-weight: var(--ld-font-weight-medium);
-      padding: var(--base-size-16);
+      padding: var(--base-size-24) var(--base-size-16);
+      text-align: center;
     }
 
     @media (max-width: 44rem) {
@@ -442,7 +444,8 @@ class WorkspaceAccessControl extends LitElement {
       }
 
       .form,
-      .row {
+      .row,
+      .toolbar {
         grid-template-columns: minmax(0, 1fr);
       }
 
@@ -471,8 +474,8 @@ class WorkspaceAccessControl extends LitElement {
 
     return html`
       <button class="trigger" type="button" aria-haspopup="dialog" aria-expanded=${String(this.open)} @click=${this.openDialog}>
-        ${shieldIcon()}
-        <span>Access</span>
+        ${usersIcon()}
+        <span>Manage access</span>
       </button>
       ${this.open ? this.renderModal(access) : nothing}
     `
@@ -747,8 +750,8 @@ function roleLabel(role: string): string {
   return role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-function shieldIcon() {
-  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"></path></svg></span>`
+function usersIcon() {
+  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg></span>`
 }
 
 function xIcon() {
