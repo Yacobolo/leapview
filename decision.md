@@ -137,6 +137,36 @@ LibreDash should force one good path:
 
 Transformations should be light, local, and in service of the semantic model. Heavy ETL, orchestration, and warehouse modeling should live upstream.
 
+## Why Metric Views Instead Of Direct Semantic Model Queries?
+
+Power BI visuals query the semantic model directly, but that works because Power BI has a rich semantic evaluation engine: DAX filter context, relationship filter propagation, active and inactive relationships, bidirectional filtering, cardinality handling, time intelligence, calculation semantics, perspectives, row-level security, and mature safeguards.
+
+LibreDash should preserve the familiar mental model of a semantic model with measures, dimensions, relationships, and visuals. However, dashboards should not query the entire semantic model directly. They should query metric views.
+
+Direct semantic model querying would be powerful, but it would make every visual query responsible for resolving:
+
+- Base grain.
+- Relationship paths.
+- Filter propagation.
+- Fanout safety.
+- Multi-fact ambiguity.
+- Measure validity under grouping and filtering.
+- Time field and grain behavior.
+
+Those rules are possible to implement, but they substantially increase engine complexity and make plausible-but-wrong numbers easier to produce.
+
+Metric views are the deliberate simplification. A metric view is a curated query surface over the semantic model. It declares one base table, one clear grain, exposed dimensions, exposed measures, default time behavior, and safe relationship paths. Visuals still use semantic fields, but only through a metric view that defines where those fields are valid.
+
+This is less free-form than Power BI, but it gives LibreDash a safer and more predictable BI-as-code contract:
+
+```text
+semantic model = authored business graph
+metric view    = safe report/query surface
+visual         = renderer/query consumer
+```
+
+LibreDash may later add a direct semantic explorer for modeling, debugging, or governed ad hoc analysis. That should be a separate experience from dashboard YAML. Dashboard visuals should continue to query metric views only.
+
 ## Core Concepts
 
 ### Source

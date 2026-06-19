@@ -117,8 +117,8 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.Sources["orders"].Path; got != "olist_orders_dataset.csv" {
 		t.Fatalf("orders source path = %q, want olist_orders_dataset.csv", got)
 	}
-	if got := model.Datasets["orders"].Source; got != "orders_enriched" {
-		t.Fatalf("orders dataset source = %q, want orders_enriched", got)
+	if got := model.Tables["orders"].Kind; got != "fact" {
+		t.Fatalf("orders table kind = %q, want fact", got)
 	}
 	if len(model.Relationships) != 6 {
 		t.Fatalf("relationship count = %d, want 6", len(model.Relationships))
@@ -490,7 +490,7 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Visuals["orders"].Type; got != "donut" {
 		t.Fatalf("orders visual type = %q, want donut", got)
 	}
-	if got := report.Visuals["orders_by_month_status"].Query.Series; got != "status" {
+	if got := report.Visuals["orders_by_month_status"].Query.Series.Field; got != "orders.status" {
 		t.Fatalf("multi-series visual series = %q, want status", got)
 	}
 	if got := report.Visuals["revenue"].KindOrDefault(); got != "chart" {
@@ -526,8 +526,8 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if got := report.Tables["state_status_matrix"].KindOrDefault(); got != "matrix_table" {
 		t.Fatalf("state_status_matrix table kind = %q, want matrix_table", got)
 	}
-	if got := report.Tables["category_status_pivot"].ColumnDims[0]; got != "status" {
-		t.Fatalf("category_status_pivot column dimension = %q, want status", got)
+	if got := report.Tables["category_status_pivot"].ColumnDims[0]; got != "orders.status" {
+		t.Fatalf("category_status_pivot column dimension = %q, want orders.status", got)
 	}
 	if got := report.Tables["orders_compact"].Style.RowHeight(); got != 28 {
 		t.Fatalf("orders_compact row height = %d, want 28", got)
@@ -539,7 +539,7 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if !hasTableColumnFormatting(conditional.Columns, "revenue", "data_bar") {
 		t.Fatalf("orders_conditional revenue column missing data bar formatting: %#v", conditional.Columns)
 	}
-	if len(report.Tables["category_status_pivot_heat"].MeasureFormatting["order_count"]) == 0 {
+	if len(report.Tables["category_status_pivot_heat"].MeasureFormatting["orders.order_count"]) == 0 {
 		t.Fatalf("category_status_pivot_heat missing order_count measure formatting")
 	}
 	if len(report.Pages) != 24 {
@@ -858,7 +858,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "heatmap",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"state", "status"}, Measures: []string{"order_count"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("state", "status"), Measures: fieldRefs("order_count")},
 		},
 		"sankey": {
 			Title:      "Flow",
@@ -866,7 +866,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "sankey",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"status", "delivery_bucket"}, Measures: []string{"order_count"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("status", "delivery_bucket"), Measures: fieldRefs("order_count")},
 		},
 		"geo": {
 			Title:      "Map",
@@ -875,7 +875,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Type:       "map",
 			MetricView: "orders",
 			Options:    map[string]any{"map": "brazil_states"},
-			Query:      VisualQuery{Dimensions: []string{"state"}, Measures: []string{"order_count"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("state"), Measures: fieldRefs("order_count")},
 		},
 		"boxplot": {
 			Title:      "Distribution",
@@ -883,7 +883,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "boxplot",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"delivery_bucket"}, Measures: []string{"delivery_days"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("delivery_bucket"), Measures: fieldRefs("delivery_days")},
 		},
 		"combo": {
 			Title:      "Combo",
@@ -891,7 +891,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "combo",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"purchase_month"}, Measures: []string{"revenue", "order_count"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("purchase_month"), Measures: fieldRefs("revenue", "order_count")},
 		},
 		"waterfall": {
 			Title:      "Waterfall",
@@ -899,7 +899,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "waterfall",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"purchase_month"}, Measures: []string{"revenue"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("purchase_month"), Measures: fieldRefs("revenue")},
 		},
 		"histogram": {
 			Title:      "Histogram",
@@ -907,7 +907,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "histogram",
 			MetricView: "orders",
-			Query:      VisualQuery{Measures: []string{"delivery_days"}},
+			Query:      VisualQuery{Measures: fieldRefs("delivery_days")},
 		},
 		"radar": {
 			Title:      "Radar",
@@ -915,7 +915,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "radar",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("status"), Measures: fieldRefs("order_count")},
 		},
 		"tree": {
 			Title:      "Tree",
@@ -923,7 +923,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "tree",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"state", "status"}, Measures: []string{"order_count"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("state", "status"), Measures: fieldRefs("order_count")},
 		},
 		"sunburst": {
 			Title:      "Sunburst",
@@ -931,7 +931,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 			Renderer:   "echarts",
 			Type:       "sunburst",
 			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: []string{"category", "status"}, Measures: []string{"order_count"}},
+			Query:      VisualQuery{Dimensions: fieldRefs("category", "status"), Measures: fieldRefs("order_count")},
 		},
 	}
 	for name, visual := range cases {
@@ -948,13 +948,13 @@ func TestDashboardValidateRejectsAdvancedShapeMismatch(t *testing.T) {
 	report := loadOlistDashboard(t, model)
 
 	visual := report.Visuals["revenue_orders_combo"]
-	visual.Query.Measures = []string{"revenue"}
+	visual.Query.Measures = fieldRefs("revenue")
 	report.Visuals["revenue_orders_combo"] = visual
 	assertDashboardValidateError(t, report, model, "at least two query measures")
 
 	report = loadOlistDashboard(t, model)
 	visual = report.Visuals["delivery_histogram"]
-	visual.Query.Dimensions = []string{"status"}
+	visual.Query.Dimensions = fieldRefs("status")
 	report.Visuals["delivery_histogram"] = visual
 	assertDashboardValidateError(t, report, model, "does not support query dimensions")
 }
@@ -995,20 +995,20 @@ func TestDashboardValidateRejectsNonObjectRendererOptions(t *testing.T) {
 	assertDashboardValidateError(t, report, model, "must be an object")
 }
 
-func TestValidateRejectsUnknownDatasetSource(t *testing.T) {
+func TestValidateRejectsUnknownModelTableSource(t *testing.T) {
 	model := loadOlistModel(t)
-	dataset := model.Datasets["orders"]
-	dataset.Source = "missing_cache"
-	model.Datasets["orders"] = dataset
+	table := model.Tables["customers"]
+	table.Source = "missing_source"
+	model.Tables["customers"] = table
 
-	assertModelValidateError(t, model, "unknown cache table")
+	assertModelValidateError(t, model, "unknown source")
 }
 
 func TestDashboardValidateRejectsUnknownVisualDimension(t *testing.T) {
 	model := loadOlistModel(t)
 	report := loadOlistDashboard(t, model)
 	visual := report.Visuals["revenue"]
-	visual.Query.Dimensions = []string{"missing_dimension"}
+	visual.Query.Dimensions = fieldRefs("missing_dimension")
 	report.Visuals["revenue"] = visual
 
 	assertDashboardValidateError(t, report, model, "unknown dimension")
@@ -1029,7 +1029,7 @@ func TestDashboardValidateRejectsSeriesOnUnsupportedChart(t *testing.T) {
 	report := loadOlistDashboard(t, model)
 	visual := report.Visuals["orders"]
 	visual.Shape = "category_value"
-	visual.Query.Series = "status"
+	visual.Query.Series = FieldRef{Field: "status"}
 	report.Visuals["orders"] = visual
 
 	assertDashboardValidateError(t, report, model, "does not support series")
@@ -1271,13 +1271,22 @@ func minimalSourceModel() *Model {
 		Sources: map[string]Source{
 			"orders": {Path: "orders.csv"},
 		},
-		Cache: Cache{Tables: map[string]CacheTable{
-			"orders_cache": {SQL: "SELECT * FROM raw.orders"},
-		}},
-		Datasets: map[string]Dataset{
-			"orders": {Source: "orders_cache"},
+		Tables: map[string]ModelTable{
+			"orders": {
+				Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+				Dimensions: map[string]MetricDimension{"order_id": {Expr: "order_id"}},
+				Measures:   map[string]MetricMeasure{"order_count": {Label: "Orders", Expression: "COUNT(*)"}},
+			},
 		},
 	}
+}
+
+func fieldRefs(fields ...string) []FieldRef {
+	refs := make([]FieldRef, len(fields))
+	for i, field := range fields {
+		refs[i] = FieldRef{Field: field}
+	}
+	return refs
 }
 
 func chartShowcaseMatrix() map[string][]string {

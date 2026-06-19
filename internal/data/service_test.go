@@ -319,11 +319,12 @@ func TestDuckDBMetricsResolvesSourcePlans(t *testing.T) {
 			"delta":      {Connection: "azure", Path: "tables/orders", Format: "delta"},
 			"embeddings": {Connection: "vectors", Path: "vectors/products.lance"},
 		},
-		Cache: semantic.Cache{Tables: map[string]semantic.CacheTable{
-			"orders_cache": {SQL: "SELECT * FROM raw.orders"},
-		}},
-		Datasets: map[string]semantic.Dataset{
-			"orders": {Source: "orders_cache"},
+		Tables: map[string]semantic.ModelTable{
+			"orders": {
+				Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+				Dimensions: map[string]semantic.MetricDimension{"order_id": {Expr: "order_id"}},
+				Measures:   map[string]semantic.MetricMeasure{"orders": {Label: "Orders", Expression: "COUNT(*)"}},
+			},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -399,16 +400,18 @@ func TestDuckDBMetricsRegistersCSVSources(t *testing.T) {
 					Connection: "local_files",
 				},
 			},
-			Cache: semantic.Cache{Tables: map[string]semantic.CacheTable{
+			Tables: map[string]semantic.ModelTable{
 				"orders": {
-					SQL: `
+					Kind: "fact",
+					Transform: semantic.ModelTransform{SQL: `
 						SELECT order_id, try_cast(revenue AS DOUBLE) AS revenue
 						FROM raw.orders
-					`,
+					`},
+					PrimaryKey: "order_id",
+					Grain:      "order_id",
+					Dimensions: map[string]semantic.MetricDimension{"order_id": {Expr: "order_id"}},
+					Measures:   map[string]semantic.MetricMeasure{"revenue": {Label: "Revenue", Expression: "SUM(orders.revenue)"}},
 				},
-			}},
-			Datasets: map[string]semantic.Dataset{
-				"orders": {Source: "orders"},
 			},
 		},
 	}
@@ -418,12 +421,12 @@ func TestDuckDBMetricsRegistersCSVSources(t *testing.T) {
 	if err := metrics.registerSourceViews(context.Background(), runtime); err != nil {
 		t.Fatalf("register sources: %v", err)
 	}
-	if err := metrics.materializeCache(context.Background(), runtime); err != nil {
-		t.Fatalf("materialize cache: %v", err)
+	if err := metrics.materializeModelTables(context.Background(), runtime); err != nil {
+		t.Fatalf("materialize model tables: %v", err)
 	}
 
 	var total float64
-	if err := db.QueryRowContext(context.Background(), "SELECT SUM(revenue) FROM cache.orders").Scan(&total); err != nil {
+	if err := db.QueryRowContext(context.Background(), "SELECT SUM(revenue) FROM model.orders").Scan(&total); err != nil {
 		t.Fatal(err)
 	}
 	if total != 30.75 {
@@ -469,9 +472,12 @@ func TestDuckDBMetricsRegistersDatabaseSourceTwice(t *testing.T) {
 			Sources: map[string]semantic.Source{
 				"accounts": {Connection: "crm", Object: "accounts"},
 			},
-			Cache: semantic.Cache{Tables: map[string]semantic.CacheTable{
-				"accounts": {SQL: "SELECT * FROM raw.accounts"},
-			}},
+			Tables: map[string]semantic.ModelTable{
+				"accounts": {
+					Kind: "dimension", Source: "accounts", PrimaryKey: "id", Grain: "id",
+					Dimensions: map[string]semantic.MetricDimension{"id": {Expr: "id"}, "name": {Expr: "name"}},
+				},
+			},
 		},
 	}
 	for i := 0; i < 2; i++ {
@@ -479,11 +485,11 @@ func TestDuckDBMetricsRegistersDatabaseSourceTwice(t *testing.T) {
 			t.Fatalf("register sources pass %d: %v", i+1, err)
 		}
 	}
-	if err := metrics.materializeCache(context.Background(), runtime); err != nil {
-		t.Fatalf("materialize cache: %v", err)
+	if err := metrics.materializeModelTables(context.Background(), runtime); err != nil {
+		t.Fatalf("materialize model tables: %v", err)
 	}
 	var name string
-	if err := db.QueryRowContext(context.Background(), "SELECT name FROM cache.accounts WHERE id = 1").Scan(&name); err != nil {
+	if err := db.QueryRowContext(context.Background(), "SELECT name FROM model.accounts WHERE id = 1").Scan(&name); err != nil {
 		t.Fatal(err)
 	}
 	if name != "Acme" {
@@ -664,16 +670,16 @@ relogios_presentes,watches_gifts
 	if !ok {
 		t.Fatal("metric view orders not found")
 	}
-	if got := view.Dataset; got != "orders" {
-		t.Fatalf("metric view dataset = %q, want orders", got)
+	if got := view.BaseTable; got != "orders" {
+		t.Fatalf("metric view base table = %q, want orders", got)
 	}
-	if got := view.Timeseries; got != "purchase_timestamp" {
-		t.Fatalf("metric view timeseries = %q, want purchase_timestamp", got)
+	if got := view.Timeseries; got != "orders.purchase_timestamp" {
+		t.Fatalf("metric view timeseries = %q, want orders.purchase_timestamp", got)
 	}
-	if !hasMetricDimension(view.Dimensions, "category", "e.category") {
+	if !hasMetricDimension(view.Dimensions, "orders.category", "category") {
 		t.Fatalf("metric view dimensions missing category: %#v", view.Dimensions)
 	}
-	if !hasMetricMeasure(view.Measures, "revenue", "SUM(e.revenue)") {
+	if !hasMetricMeasure(view.Measures, "orders.revenue", "SUM(orders.revenue)") {
 		t.Fatalf("metric view measures missing revenue: %#v", view.Measures)
 	}
 	if len(view.Dashboards) != 1 || view.Dashboards[0].ID != "executive-sales" {
@@ -687,8 +693,8 @@ relogios_presentes,watches_gifts
 	if !hasModelNode(graph.Nodes, "metrics_view:orders") {
 		t.Fatalf("model graph missing metrics view node: %#v", graph.Nodes)
 	}
-	if !hasModelEdge(graph.Edges, "dataset:orders", "metrics_view:orders") {
-		t.Fatalf("model graph missing dataset to metrics view edge: %#v", graph.Edges)
+	if !hasModelEdge(graph.Edges, "model_table:orders", "metrics_view:orders") {
+		t.Fatalf("model graph missing model table to metrics view edge: %#v", graph.Edges)
 	}
 
 	patch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", dashboard.Filters{Controls: map[string]dashboard.FilterControl{

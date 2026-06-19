@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 
 	sourcereg "github.com/Yacobolo/libredash/internal/source"
 	"gopkg.in/yaml.v3"
@@ -23,8 +24,7 @@ type Model struct {
 	DefaultConnection string                `yaml:"default_connection"`
 	Connections       map[string]Connection `yaml:"connections"`
 	Sources           map[string]Source     `yaml:"sources"`
-	Cache             Cache                 `yaml:"cache"`
-	Datasets          map[string]Dataset    `yaml:"datasets"`
+	Tables            map[string]ModelTable `yaml:"tables"`
 	Relationships     []Relationship        `yaml:"relationships"`
 }
 
@@ -52,17 +52,19 @@ type Source struct {
 	Options    map[string]any `yaml:"options"`
 }
 
-type Cache struct {
-	Tables map[string]CacheTable `yaml:"tables"`
+type ModelTable struct {
+	Kind        string                     `yaml:"kind"`
+	Source      string                     `yaml:"source"`
+	Transform   ModelTransform             `yaml:"transform"`
+	PrimaryKey  string                     `yaml:"primary_key"`
+	Grain       string                     `yaml:"grain"`
+	Dimensions  map[string]MetricDimension `yaml:"dimensions"`
+	Measures    map[string]MetricMeasure   `yaml:"measures"`
+	Description string                     `yaml:"description"`
 }
 
-type CacheTable struct {
-	Description string `yaml:"description"`
-	SQL         string `yaml:"sql"`
-}
-
-type Dataset struct {
-	Source string `yaml:"source"`
+type ModelTransform struct {
+	SQL string `yaml:"sql"`
 }
 
 type MetricView struct {
@@ -70,20 +72,36 @@ type MetricView struct {
 	Title         string                     `yaml:"title"`
 	Description   string                     `yaml:"description"`
 	SemanticModel string                     `yaml:"semantic_model"`
-	Dataset       string                     `yaml:"dataset"`
-	Timeseries    string                     `yaml:"timeseries"`
-	Dimensions    map[string]MetricDimension `yaml:"dimensions"`
-	Measures      map[string]MetricMeasure   `yaml:"measures"`
+	BaseTable     string                     `yaml:"base_table"`
+	Grain         string                     `yaml:"grain"`
+	Time          ViewTime                   `yaml:"time"`
+	DimensionRefs []string                   `yaml:"dimensions"`
+	MeasureRefs   []string                   `yaml:"measures"`
+	Dimensions    map[string]MetricDimension `yaml:"-"`
+	Measures      map[string]MetricMeasure   `yaml:"-"`
+}
+
+type ViewTime struct {
+	DefaultField  string   `yaml:"default_field"`
+	AllowedGrains []string `yaml:"allowed_grains"`
 }
 
 type MetricDimension struct {
-	Label     string `yaml:"label"`
-	Expr      string `yaml:"expr"`
-	Where     string `yaml:"where"`
-	OrderExpr string `yaml:"order_expr"`
+	Field      string `yaml:"-"`
+	Table      string `yaml:"-"`
+	Name       string `yaml:"-"`
+	Label      string `yaml:"label"`
+	Expr       string `yaml:"expr"`
+	Expression string `yaml:"expression"`
+	Where      string `yaml:"where"`
+	OrderExpr  string `yaml:"order_expr"`
+	Type       string `yaml:"type"`
 }
 
 type MetricMeasure struct {
+	Field       string `yaml:"-"`
+	Table       string `yaml:"-"`
+	Name        string `yaml:"-"`
 	Label       string `yaml:"label"`
 	Description string `yaml:"description"`
 	Expression  string `yaml:"expression"`
@@ -123,9 +141,6 @@ func (m *Model) Validate() error {
 	if len(m.Sources) == 0 {
 		return fmt.Errorf("semantic model %q has no sources", m.Name)
 	}
-	if len(m.Cache.Tables) == 0 {
-		return fmt.Errorf("semantic model %q has no cache tables", m.Name)
-	}
 	for name, connection := range m.Connections {
 		resolved, err := connection.Validate(name)
 		if err != nil {
@@ -151,20 +166,45 @@ func (m *Model) Validate() error {
 		}
 		m.Sources[name] = resolved
 	}
-	for name, table := range m.Cache.Tables {
-		if table.SQL == "" {
-			return fmt.Errorf("cache table %q is missing sql", name)
-		}
+	if len(m.Tables) == 0 {
+		return fmt.Errorf("semantic model %q has no model tables", m.Name)
 	}
-	if len(m.Datasets) == 0 {
-		return fmt.Errorf("semantic model %q has no datasets", m.Name)
-	}
-	for name, dataset := range m.Datasets {
-		if dataset.Source == "" {
-			return fmt.Errorf("dataset %q requires source", name)
+	for name, table := range m.Tables {
+		if err := validateSemanticIdentifier(name); err != nil {
+			return fmt.Errorf("model table %q has invalid name: %w", name, err)
 		}
-		if _, ok := m.Cache.Tables[dataset.Source]; !ok {
-			return fmt.Errorf("dataset %q references unknown cache table %q", name, dataset.Source)
+		if table.Kind == "" {
+			return fmt.Errorf("model table %q requires kind", name)
+		}
+		if (table.Source == "") == (table.Transform.SQL == "") {
+			return fmt.Errorf("model table %q requires exactly one of source or transform.sql", name)
+		}
+		if table.Source != "" {
+			if _, ok := m.Sources[table.Source]; !ok {
+				return fmt.Errorf("model table %q references unknown source %q", name, table.Source)
+			}
+		}
+		if table.PrimaryKey == "" {
+			return fmt.Errorf("model table %q requires primary_key", name)
+		}
+		if table.Grain == "" {
+			return fmt.Errorf("model table %q requires grain", name)
+		}
+		for field, dimension := range table.Dimensions {
+			if err := validateSemanticIdentifier(field); err != nil {
+				return fmt.Errorf("model table %q dimension %q is invalid: %w", name, field, err)
+			}
+			if dimension.SQLExpression() == "" {
+				return fmt.Errorf("model table %q dimension %q requires expr", name, field)
+			}
+		}
+		for field, measure := range table.Measures {
+			if err := validateSemanticIdentifier(field); err != nil {
+				return fmt.Errorf("model table %q measure %q is invalid: %w", name, field, err)
+			}
+			if measure.Label == "" || strings.TrimSpace(measure.Expression) == "" {
+				return fmt.Errorf("model table %q measure %q requires label and expression", name, field)
+			}
 		}
 	}
 	seenRelationships := map[string]struct{}{}
@@ -234,8 +274,8 @@ func LoadMetricView(path string, model *Model) (*MetricView, error) {
 }
 
 func (v *MetricView) Validate(model *Model) error {
-	if v.ID == "" || v.Title == "" || v.SemanticModel == "" || v.Dataset == "" {
-		return fmt.Errorf("metrics view requires id, title, semantic_model, and dataset")
+	if v.ID == "" || v.Title == "" || v.SemanticModel == "" || v.BaseTable == "" {
+		return fmt.Errorf("metrics view requires id, title, semantic_model, and base_table")
 	}
 	if model == nil {
 		return fmt.Errorf("metrics view %q requires semantic model %q", v.ID, v.SemanticModel)
@@ -243,32 +283,159 @@ func (v *MetricView) Validate(model *Model) error {
 	if v.SemanticModel != model.Name {
 		return fmt.Errorf("metrics view %q semantic_model %q does not match model %q", v.ID, v.SemanticModel, model.Name)
 	}
-	if _, ok := model.Datasets[v.Dataset]; !ok {
-		return fmt.Errorf("metrics view %q references unknown dataset %q", v.ID, v.Dataset)
+	base, ok := model.Tables[v.BaseTable]
+	if !ok {
+		return fmt.Errorf("metrics view %q references unknown base table %q", v.ID, v.BaseTable)
 	}
-	if v.Timeseries == "" {
-		return fmt.Errorf("metrics view %q requires timeseries", v.ID)
+	if v.Grain == "" {
+		v.Grain = base.Grain
 	}
-	if len(v.Dimensions) == 0 {
+	if v.Grain == "" {
+		return fmt.Errorf("metrics view %q requires grain", v.ID)
+	}
+	if v.Time.DefaultField == "" {
+		return fmt.Errorf("metrics view %q requires time.default_field", v.ID)
+	}
+	if len(v.DimensionRefs) == 0 {
 		return fmt.Errorf("metrics view %q requires dimensions", v.ID)
 	}
-	if len(v.Measures) == 0 {
+	if len(v.MeasureRefs) == 0 {
 		return fmt.Errorf("metrics view %q requires measures", v.ID)
 	}
-	if _, ok := v.Dimensions[v.Timeseries]; !ok {
-		return fmt.Errorf("metrics view %q timeseries %q is not a dimension", v.ID, v.Timeseries)
-	}
-	for name, dimension := range v.Dimensions {
-		if dimension.Expr == "" {
-			return fmt.Errorf("metrics view %q dimension %q requires expr", v.ID, name)
+	v.Dimensions = map[string]MetricDimension{}
+	for _, ref := range v.DimensionRefs {
+		dimension, err := model.ResolveDimension(ref)
+		if err != nil {
+			return fmt.Errorf("metrics view %q dimension %q: %w", v.ID, ref, err)
 		}
+		v.Dimensions[ref] = dimension
 	}
-	for name, measure := range v.Measures {
-		if measure.Label == "" || measure.Expression == "" {
-			return fmt.Errorf("metrics view %q measure %q requires label and expression", v.ID, name)
+	v.Measures = map[string]MetricMeasure{}
+	for _, ref := range v.MeasureRefs {
+		measure, err := model.ResolveMeasure(ref)
+		if err != nil {
+			return fmt.Errorf("metrics view %q measure %q: %w", v.ID, ref, err)
 		}
+		if measure.Table != v.BaseTable {
+			return fmt.Errorf("metrics view %q measure %q is owned by %q, want base table %q", v.ID, ref, measure.Table, v.BaseTable)
+		}
+		v.Measures[ref] = measure
+	}
+	if _, ok := v.Dimensions[v.Time.DefaultField]; !ok {
+		return fmt.Errorf("metrics view %q time.default_field %q is not an exposed dimension", v.ID, v.Time.DefaultField)
 	}
 	return nil
+}
+
+func (m *Model) ResolveDimension(ref string) (MetricDimension, error) {
+	tableName, fieldName, err := splitSemanticField(ref)
+	if err != nil {
+		return MetricDimension{}, err
+	}
+	table, ok := m.Tables[tableName]
+	if !ok {
+		return MetricDimension{}, fmt.Errorf("unknown table %q", tableName)
+	}
+	dimension, ok := table.Dimensions[fieldName]
+	if !ok {
+		return MetricDimension{}, fmt.Errorf("unknown dimension %q", fieldName)
+	}
+	dimension.Field = ref
+	dimension.Table = tableName
+	dimension.Name = fieldName
+	return dimension, nil
+}
+
+func (m *Model) ResolveMeasure(ref string) (MetricMeasure, error) {
+	tableName, fieldName, err := splitSemanticField(ref)
+	if err != nil {
+		return MetricMeasure{}, err
+	}
+	table, ok := m.Tables[tableName]
+	if !ok {
+		return MetricMeasure{}, fmt.Errorf("unknown table %q", tableName)
+	}
+	measure, ok := table.Measures[fieldName]
+	if !ok {
+		return MetricMeasure{}, fmt.Errorf("unknown measure %q", fieldName)
+	}
+	measure.Field = ref
+	measure.Table = tableName
+	measure.Name = fieldName
+	return measure, nil
+}
+
+func (m *Model) ResolveField(ref string) (MetricDimension, MetricMeasure, string, error) {
+	if dimension, err := m.ResolveDimension(ref); err == nil {
+		return dimension, MetricMeasure{}, "dimension", nil
+	}
+	if measure, err := m.ResolveMeasure(ref); err == nil {
+		return MetricDimension{}, measure, "measure", nil
+	}
+	return MetricDimension{}, MetricMeasure{}, "", fmt.Errorf("unknown field %q", ref)
+}
+
+func (v *MetricView) ResolveDimensionRef(ref string) (string, MetricDimension, error) {
+	if dimension, ok := v.Dimensions[ref]; ok {
+		return ref, dimension, nil
+	}
+	field, err := resolveShortField(ref, v.Dimensions)
+	if err != nil {
+		return "", MetricDimension{}, err
+	}
+	return field, v.Dimensions[field], nil
+}
+
+func (v *MetricView) ResolveMeasureRef(ref string) (string, MetricMeasure, error) {
+	if measure, ok := v.Measures[ref]; ok {
+		return ref, measure, nil
+	}
+	field, err := resolveShortField(ref, v.Measures)
+	if err != nil {
+		return "", MetricMeasure{}, err
+	}
+	return field, v.Measures[field], nil
+}
+
+func resolveShortField[T any](ref string, fields map[string]T) (string, error) {
+	if strings.Contains(ref, ".") {
+		return "", fmt.Errorf("field %q is not exposed", ref)
+	}
+	match := ""
+	suffix := "." + ref
+	for field := range fields {
+		if strings.HasSuffix(field, suffix) {
+			if match != "" {
+				return "", fmt.Errorf("field %q is ambiguous; use a qualified field", ref)
+			}
+			match = field
+		}
+	}
+	if match == "" {
+		return "", fmt.Errorf("field %q is not exposed", ref)
+	}
+	return match, nil
+}
+
+func splitSemanticField(ref string) (string, string, error) {
+	parts := strings.Split(ref, ".")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("field %q must be qualified as table.field", ref)
+	}
+	if err := validateSemanticIdentifier(parts[0]); err != nil {
+		return "", "", fmt.Errorf("table %q is invalid: %w", parts[0], err)
+	}
+	if err := validateSemanticIdentifier(parts[1]); err != nil {
+		return "", "", fmt.Errorf("field %q is invalid: %w", parts[1], err)
+	}
+	return parts[0], parts[1], nil
+}
+
+func (d MetricDimension) SQLExpression() string {
+	if strings.TrimSpace(d.Expr) != "" {
+		return d.Expr
+	}
+	return d.Expression
 }
 
 func (s Source) Validate(name string, connections map[string]Connection) error {
@@ -521,9 +688,9 @@ func validateSemanticIdentifier(value string) error {
 	return nil
 }
 
-func (m *Model) CacheTableNames() []string {
-	names := make([]string, 0, len(m.Cache.Tables))
-	for name := range m.Cache.Tables {
+func (m *Model) TableNames() []string {
+	names := make([]string, 0, len(m.Tables))
+	for name := range m.Tables {
 		names = append(names, name)
 	}
 	sort.Strings(names)

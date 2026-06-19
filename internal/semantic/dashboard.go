@@ -87,11 +87,41 @@ type Visual struct {
 }
 
 type VisualQuery struct {
-	Dimensions []string `yaml:"dimensions"`
-	Series     string   `yaml:"series"`
-	Measures   []string `yaml:"measures"`
-	Sort       []Sort   `yaml:"sort"`
-	Limit      int      `yaml:"limit"`
+	MetricView string     `yaml:"metric_view"`
+	Dimensions []FieldRef `yaml:"dimensions"`
+	Series     FieldRef   `yaml:"series"`
+	Measures   []FieldRef `yaml:"measures"`
+	Time       QueryTime  `yaml:"time"`
+	Sort       []Sort     `yaml:"sort"`
+	Limit      int        `yaml:"limit"`
+}
+
+type FieldRef struct {
+	Field string `yaml:"field" json:"field"`
+	Alias string `yaml:"alias,omitempty" json:"alias,omitempty"`
+}
+
+type QueryTime struct {
+	Field string `yaml:"field" json:"field"`
+	Grain string `yaml:"grain" json:"grain"`
+	Alias string `yaml:"alias,omitempty" json:"alias,omitempty"`
+}
+
+func (f *FieldRef) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		f.Field = value.Value
+		return nil
+	case yaml.MappingNode:
+		type raw FieldRef
+		return value.Decode((*raw)(f))
+	default:
+		return fmt.Errorf("field ref must be a scalar or mapping")
+	}
+}
+
+func (f FieldRef) IsZero() bool {
+	return f.Field == ""
 }
 
 type Sort struct {
@@ -219,7 +249,7 @@ func (v Visual) ShapeOrDefault() string {
 	if v.Type == "gauge" {
 		return "single_value"
 	}
-	if v.Query.Series != "" {
+	if !v.Query.Series.IsZero() {
 		return "category_series_value"
 	}
 	return "category_value"
@@ -370,9 +400,12 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 		if !ok {
 			return fmt.Errorf("filter %q references unknown metrics view %q", name, filter.MetricView)
 		}
-		if _, ok := view.Dimensions[filter.Dimension]; !ok {
+		field, _, err := view.ResolveDimensionRef(filter.Dimension)
+		if err != nil {
 			return fmt.Errorf("filter %q references unknown dimension %q", name, filter.Dimension)
 		}
+		filter.Dimension = field
+		d.Filters[name] = filter
 		switch filter.Type {
 		case "date_range":
 			if filter.URLParam == "" || filter.FromURLParam == "" || filter.ToURLParam == "" {
@@ -434,8 +467,11 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 	}
 	for name, visual := range d.Visuals {
 		kind := visual.KindOrDefault()
+		if visual.Query.MetricView != "" {
+			visual.MetricView = visual.Query.MetricView
+		}
 		if visual.MetricView == "" || (kind != "kpi" && visual.Title == "") || (kind != "kpi" && visual.Type == "") {
-			return fmt.Errorf("visual %q requires title, metrics_view, and type", name)
+			return fmt.Errorf("visual %q requires title, query.metric_view, and type", name)
 		}
 		view, ok := allowedViews[visual.MetricView]
 		if !ok {
@@ -464,15 +500,19 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 		if err := validateRendererOptions(name, visual.RendererOptions); err != nil {
 			return err
 		}
-		for _, dimension := range visual.Query.Dimensions {
-			if _, ok := view.Dimensions[dimension]; !ok {
-				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension)
+		for index, dimension := range visual.Query.Dimensions {
+			field, _, err := view.ResolveDimensionRef(dimension.Field)
+			if err != nil {
+				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension.Field)
 			}
+			visual.Query.Dimensions[index].Field = field
 		}
-		if visual.Query.Series != "" {
-			if _, ok := view.Dimensions[visual.Query.Series]; !ok {
-				return fmt.Errorf("visual %q references unknown series dimension %q", name, visual.Query.Series)
+		if !visual.Query.Series.IsZero() {
+			field, _, err := view.ResolveDimensionRef(visual.Query.Series.Field)
+			if err != nil {
+				return fmt.Errorf("visual %q references unknown series dimension %q", name, visual.Query.Series.Field)
 			}
+			visual.Query.Series.Field = field
 			if !supportsSeries(shape) {
 				return fmt.Errorf("visual %q shape %q does not support series", name, shape)
 			}
@@ -480,33 +520,40 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 				return fmt.Errorf("visual %q renderer %q type %q does not support series", name, renderer, visual.Type)
 			}
 		}
-		for _, measure := range visual.Query.Measures {
-			if _, ok := view.Measures[measure]; !ok {
-				return fmt.Errorf("visual %q references unknown measure %q", name, measure)
+		for index, measure := range visual.Query.Measures {
+			field, _, err := view.ResolveMeasureRef(measure.Field)
+			if err != nil {
+				return fmt.Errorf("visual %q references unknown measure %q", name, measure.Field)
 			}
+			visual.Query.Measures[index].Field = field
 		}
 		if shape == "geo" {
 			if mapName, ok := visual.Options["map"].(string); !ok || strings.TrimSpace(mapName) == "" {
 				return fmt.Errorf("visual %q shape geo requires options.map", name)
 			}
 		}
-		for _, sort := range visual.Query.Sort {
+		for index, sort := range visual.Query.Sort {
 			if sort.Field == "" && sort.Expr == "" {
 				return fmt.Errorf("visual %q has sort missing field or expr", name)
 			}
-			if sort.Field != "" && sort.Field != "value" && sort.Field != visual.Query.Series {
-				if _, ok := view.Dimensions[sort.Field]; !ok {
-					if _, ok := view.Measures[sort.Field]; !ok {
-						return fmt.Errorf("visual %q sort references unknown field %q", name, sort.Field)
-					}
+			if sort.Field != "" && sort.Field != "value" && sort.Field != visual.Query.Series.Field {
+				if field, _, err := view.ResolveDimensionRef(sort.Field); err == nil {
+					visual.Query.Sort[index].Field = field
+				} else if field, _, err := view.ResolveMeasureRef(sort.Field); err == nil {
+					visual.Query.Sort[index].Field = field
+				} else {
+					return fmt.Errorf("visual %q sort references unknown field %q", name, sort.Field)
 				}
 			}
 		}
 		if visual.Interaction.Field != "" {
-			if _, ok := view.Dimensions[visual.Interaction.Field]; !ok {
+			field, _, err := view.ResolveDimensionRef(visual.Interaction.Field)
+			if err != nil {
 				return fmt.Errorf("visual %q interaction references unknown field %q", name, visual.Interaction.Field)
 			}
+			visual.Interaction.Field = field
 		}
+		d.Visuals[name] = visual
 	}
 	for name, table := range d.Tables {
 		if table.Title == "" || table.MetricView == "" {
@@ -515,14 +562,15 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 		if err := validateTableStyle(name, table.Style); err != nil {
 			return err
 		}
+		view, ok := allowedViews[table.MetricView]
+		if !ok {
+			return fmt.Errorf("table %q references unknown metrics view %q", name, table.MetricView)
+		}
+		normalizeTableFormatting(view, &table)
 		for _, column := range table.Columns {
 			if err := validateTableColumn(name, column); err != nil {
 				return err
 			}
-		}
-		view, ok := allowedViews[table.MetricView]
-		if !ok {
-			return fmt.Errorf("table %q references unknown metrics view %q", name, table.MetricView)
 		}
 		for measure, rules := range table.MeasureFormatting {
 			if _, ok := view.Measures[measure]; !ok {
@@ -547,12 +595,13 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 				return fmt.Errorf("table %q kind matrix_table supports at most one column dimension", name)
 			}
 			for _, dimension := range append(append([]string{}, table.Rows...), table.ColumnDims...) {
-				if _, ok := view.Dimensions[dimension]; !ok {
+				if _, _, err := view.ResolveDimensionRef(dimension); err != nil {
 					return fmt.Errorf("table %q references unknown dimension %q", name, dimension)
 				}
 			}
+			normalizeTableFields(view, &table)
 			for _, measure := range table.Measures {
-				if _, ok := view.Measures[measure]; !ok {
+				if _, _, err := view.ResolveMeasureRef(measure); err != nil {
 					return fmt.Errorf("table %q references unknown measure %q", name, measure)
 				}
 			}
@@ -561,16 +610,18 @@ func (d *Dashboard) Validate(metricViews map[string]*MetricView) error {
 				return fmt.Errorf("table %q kind pivot_table requires rows, one column dimension, and one measure", name)
 			}
 			for _, dimension := range append(append([]string{}, table.Rows...), table.ColumnDims...) {
-				if _, ok := view.Dimensions[dimension]; !ok {
+				if _, _, err := view.ResolveDimensionRef(dimension); err != nil {
 					return fmt.Errorf("table %q references unknown dimension %q", name, dimension)
 				}
 			}
-			if _, ok := view.Measures[table.Measures[0]]; !ok {
+			normalizeTableFields(view, &table)
+			if _, _, err := view.ResolveMeasureRef(table.Measures[0]); err != nil {
 				return fmt.Errorf("table %q references unknown measure %q", name, table.Measures[0])
 			}
 		default:
 			return fmt.Errorf("table %q has unsupported kind %q", name, table.Kind)
 		}
+		d.Tables[name] = table
 	}
 	for name, visual := range d.Visuals {
 		for _, target := range visual.Interaction.Targets.Visuals {
@@ -675,6 +726,39 @@ func validateTableColumn(tableName string, column dashboard.TableColumn) error {
 	return nil
 }
 
+func normalizeTableFields(view *MetricView, table *TableVisual) {
+	for index, dimension := range table.Rows {
+		if field, _, err := view.ResolveDimensionRef(dimension); err == nil {
+			table.Rows[index] = field
+		}
+	}
+	for index, dimension := range table.ColumnDims {
+		if field, _, err := view.ResolveDimensionRef(dimension); err == nil {
+			table.ColumnDims[index] = field
+		}
+	}
+	for index, measure := range table.Measures {
+		if field, _, err := view.ResolveMeasureRef(measure); err == nil {
+			table.Measures[index] = field
+		}
+	}
+}
+
+func normalizeTableFormatting(view *MetricView, table *TableVisual) {
+	if len(table.MeasureFormatting) == 0 {
+		return
+	}
+	next := map[string][]dashboard.TableFormattingRule{}
+	for measure, rules := range table.MeasureFormatting {
+		field := measure
+		if resolved, _, err := view.ResolveMeasureRef(measure); err == nil {
+			field = resolved
+		}
+		next[field] = rules
+	}
+	table.MeasureFormatting = next
+}
+
 func validateTableFormattingRule(tableName, field string, rule dashboard.TableFormattingRule) error {
 	switch rule.Kind {
 	case "badge", "text_color", "background_scale", "data_bar":
@@ -709,7 +793,7 @@ func validateVisualQueryShape(name string, visual Visual) error {
 		if len(visual.Query.Dimensions) != 0 {
 			return fmt.Errorf("visual %q kind kpi does not support query dimensions", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q kind kpi does not support series", name)
 		}
 		return nil
@@ -737,84 +821,84 @@ func validateVisualQueryShape(name string, visual Visual) error {
 		if len(visual.Query.Dimensions) != 1 {
 			return fmt.Errorf("visual %q shape category_value requires exactly one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_value does not support series", name)
 		}
 	case "category_series_value":
 		if len(visual.Query.Dimensions) != 1 {
 			return fmt.Errorf("visual %q shape category_series_value requires exactly one query dimension", name)
 		}
-		if visual.Query.Series == "" {
+		if visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_series_value requires query series", name)
 		}
 	case "category_multi_measure":
 		if len(visual.Query.Dimensions) != 1 {
 			return fmt.Errorf("visual %q shape category_multi_measure requires exactly one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_multi_measure does not support series", name)
 		}
 	case "category_delta":
 		if len(visual.Query.Dimensions) != 1 {
 			return fmt.Errorf("visual %q shape category_delta requires exactly one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_delta does not support series", name)
 		}
 	case "binned_measure":
 		if len(visual.Query.Dimensions) != 0 {
 			return fmt.Errorf("visual %q shape binned_measure does not support query dimensions", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape binned_measure does not support series", name)
 		}
 	case "hierarchy":
 		if len(visual.Query.Dimensions) == 0 {
 			return fmt.Errorf("visual %q shape hierarchy requires at least one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape hierarchy does not support series", name)
 		}
 	case "single_value":
 		if len(visual.Query.Dimensions) > 1 {
 			return fmt.Errorf("visual %q shape single_value supports at most one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape single_value does not support series", name)
 		}
 	case "matrix":
 		if len(visual.Query.Dimensions) != 2 {
 			return fmt.Errorf("visual %q shape matrix requires exactly two query dimensions", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape matrix does not support series", name)
 		}
 	case "graph":
 		if len(visual.Query.Dimensions) != 2 {
 			return fmt.Errorf("visual %q shape graph requires exactly two query dimensions", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape graph does not support series", name)
 		}
 	case "geo":
 		if len(visual.Query.Dimensions) != 1 {
 			return fmt.Errorf("visual %q shape geo requires exactly one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape geo does not support series", name)
 		}
 	case "ohlc":
 		if len(visual.Query.Dimensions) != 1 {
 			return fmt.Errorf("visual %q shape ohlc requires exactly one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape ohlc does not support series", name)
 		}
 	case "distribution":
 		if len(visual.Query.Dimensions) != 1 {
 			return fmt.Errorf("visual %q shape distribution requires exactly one query dimension", name)
 		}
-		if visual.Query.Series != "" {
+		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape distribution does not support series", name)
 		}
 	}

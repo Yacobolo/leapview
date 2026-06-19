@@ -115,19 +115,21 @@ func (m *DuckDBMetrics) matrixTableRows(ctx context.Context, runtime *modelRunti
 	groupBy := make([]string, 0, len(table.Rows))
 	for _, dimensionName := range table.Rows {
 		dimension := metricView.Dimensions[dimensionName]
-		selects = append(selects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), dimensionName))
-		groupBy = append(groupBy, dimensionName)
-		column := dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header", Format: "text"}
+		key := displayField(dimensionName)
+		selects = append(selects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), key))
+		groupBy = append(groupBy, key)
+		column := dashboard.TableColumn{Key: key, Label: dimensionLabel(key, dimension), Role: "row_header", Format: "text"}
 		columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, dimensionName)))
 	}
 	for _, measureName := range table.Measures {
 		measure := metricView.Measures[measureName]
+		key := displayField(measureName)
 		expr, err := measureAggregateExpr(measure)
 		if err != nil {
 			return nil, nil, err
 		}
-		selects = append(selects, fmt.Sprintf("%s AS %s", expr, measureName))
-		column := dashboard.TableColumn{Key: measureName, Label: measureLabel(measureName, measure), Align: "right", Role: "measure", Measure: measureName, Format: tableMeasureFormat(measure), Formatting: tableMeasureFormatting(table, measureName)}
+		selects = append(selects, fmt.Sprintf("%s AS %s", modelTableExpr(expr, metricView.BaseTable, "e"), key))
+		column := dashboard.TableColumn{Key: key, Label: measureLabel(key, measure), Align: "right", Role: "measure", Measure: key, Format: tableMeasureFormat(measure), Formatting: tableMeasureFormatting(table, measureName)}
 		columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, measureName)))
 	}
 	where, args := m.filterWhere("e", runtime, report, table.MetricView, filters, "table", request.Table)
@@ -166,9 +168,10 @@ func (m *DuckDBMetrics) crossTabTableRows(ctx context.Context, runtime *modelRun
 	baseColumns := make([]dashboard.TableColumn, 0, len(table.Rows))
 	for _, dimensionName := range table.Rows {
 		dimension := metricView.Dimensions[dimensionName]
-		rowSelects = append(rowSelects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), dimensionName))
-		groupBy = append(groupBy, dimensionName)
-		column := dashboard.TableColumn{Key: dimensionName, Label: dimensionLabel(dimensionName, dimension), Role: "row_header", Format: "text"}
+		key := displayField(dimensionName)
+		rowSelects = append(rowSelects, fmt.Sprintf("%s AS %s", dimensionExpression(dimension, "e"), key))
+		groupBy = append(groupBy, key)
+		column := dashboard.TableColumn{Key: key, Label: dimensionLabel(key, dimension), Role: "row_header", Format: "text"}
 		baseColumns = append(baseColumns, mergeTableColumn(column, tableColumnOverride(table, dimensionName)))
 	}
 	columnDimensionName := table.ColumnDims[0]
@@ -180,8 +183,9 @@ func (m *DuckDBMetrics) crossTabTableRows(ctx context.Context, runtime *modelRun
 		if err != nil {
 			return nil, nil, err
 		}
-		valueSelects = append(valueSelects, fmt.Sprintf("%s AS %s", measureExpr, measureName))
-		valueColumns = append(valueColumns, measureName)
+		key := displayField(measureName)
+		valueSelects = append(valueSelects, fmt.Sprintf("%s AS %s", modelTableExpr(measureExpr, metricView.BaseTable, "e"), key))
+		valueColumns = append(valueColumns, key)
 	}
 	groupBy = append(groupBy, "pivot_label")
 	where, args := m.filterWhere("e", runtime, report, table.MetricView, filters, "table", request.Table)
@@ -193,7 +197,7 @@ GROUP BY %s
 ORDER BY %s
 LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "e"), strings.Join(valueSelects, ", "), source, where, strings.Join(groupBy, ", "), strings.Join(groupBy, ", "))
 	args = append(args, dashboard.TableInteractiveRowCap+1)
-	rawRows, err := m.queryTableDatums(ctx, runtime, query, append(append(append([]string{}, table.Rows...), "pivot_label"), valueColumns...), args...)
+	rawRows, err := m.queryTableDatums(ctx, runtime, query, append(append(append([]string{}, displayFields(table.Rows)...), "pivot_label"), valueColumns...), args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -209,14 +213,15 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 	for _, raw := range rawRows {
 		rowKeyParts := make([]string, 0, len(table.Rows))
 		for _, dimension := range table.Rows {
-			rowKeyParts = append(rowKeyParts, fmt.Sprint(raw[dimension]))
+			rowKeyParts = append(rowKeyParts, fmt.Sprint(raw[displayField(dimension)]))
 		}
 		resultKey := strings.Join(rowKeyParts, "\x00")
 		row, exists := resultByKey[resultKey]
 		if !exists {
 			row = map[string]any{}
 			for _, dimension := range table.Rows {
-				row[dimension] = raw[dimension]
+				key := displayField(dimension)
+				row[key] = raw[key]
 			}
 			resultByKey[resultKey] = row
 			order = append(order, resultKey)
@@ -224,7 +229,7 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 		label := fmt.Sprint(raw["pivot_label"])
 		groupLabel := label
 		if pivotMode {
-			groupLabel = measureLabel(table.Measures[0], metricView.Measures[table.Measures[0]])
+			groupLabel = measureLabel(displayField(table.Measures[0]), metricView.Measures[table.Measures[0]])
 		}
 		pivotKey, exists := pivotKeys[label]
 		if !exists {
@@ -233,13 +238,14 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 		}
 		for _, measureName := range table.Measures {
 			measure := metricView.Measures[measureName]
+			measureKey := displayField(measureName)
 			columnIdentity := label + "\x00" + measureName
 			columnKey, columnExists := columnKeys[columnIdentity]
 			candidate := "pivot_" + pivotKey
 			columnLabel := label
 			if !pivotMode || len(table.Measures) > 1 {
-				candidate += "__" + sanitizeTableKey(measureName)
-				columnLabel = measureLabel(measureName, measure)
+				candidate += "__" + sanitizeTableKey(measureKey)
+				columnLabel = measureLabel(measureKey, measure)
 			}
 			if !columnExists {
 				columnKey = uniqueTableColumnKey(candidate, usedKeys)
@@ -251,7 +257,7 @@ LIMIT ?`, strings.Join(rowSelects, ", "), dimensionExpression(columnDimension, "
 					Align:       "right",
 					Role:        "measure",
 					Group:       groupLabel,
-					Measure:     measureName,
+					Measure:     measureKey,
 					ColumnValue: label,
 					Format:      tableMeasureFormat(measure),
 					Formatting:  tableMeasureFormatting(table, measureName),

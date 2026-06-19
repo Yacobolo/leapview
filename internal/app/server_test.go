@@ -13,6 +13,14 @@ import (
 	"github.com/Yacobolo/libredash/internal/semantic"
 )
 
+func fieldRefs(fields ...string) []semantic.FieldRef {
+	refs := make([]semantic.FieldRef, len(fields))
+	for i, field := range fields {
+		refs[i] = semantic.FieldRef{Field: field}
+	}
+	return refs
+}
+
 type fakeMetrics struct{}
 
 type canceledTableMetrics struct {
@@ -47,7 +55,7 @@ func (fakeMetrics) MetricViews() []dashboard.MetricViewSummary {
 			Description:    "Fixture metrics view",
 			SemanticModel:  "test",
 			ModelTitle:     "Test Model",
-			Dataset:        "orders",
+			BaseTable:      "orders",
 			Timeseries:     "purchase_timestamp",
 			DimensionCount: 2,
 			MeasureCount:   2,
@@ -67,7 +75,7 @@ func (fakeMetrics) MetricView(id string) (dashboard.MetricViewDetail, bool) {
 			Description:    "Fixture metrics view",
 			SemanticModel:  "test",
 			ModelTitle:     "Test Model",
-			Dataset:        "orders",
+			BaseTable:      "orders",
 			Timeseries:     "purchase_timestamp",
 			DimensionCount: 2,
 			MeasureCount:   2,
@@ -115,8 +123,8 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 				"category": {Type: "text", Label: "Category", MetricView: "orders", Dimension: "status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
 			},
 			Visuals: map[string]semantic.Visual{
-				"orders":       {Title: "Orders", Type: "donut", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
-				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: []string{"status"}, Measures: []string{"order_count"}}, Interaction: semantic.Interaction{Field: "status"}},
+				"orders":       {Title: "Orders", Type: "donut", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: fieldRefs("status"), Measures: fieldRefs("order_count")}, Interaction: semantic.Interaction{Field: "status"}},
+				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", MetricView: "orders", Query: semantic.VisualQuery{Dimensions: fieldRefs("status"), Measures: fieldRefs("order_count")}, Interaction: semantic.Interaction{Field: "status"}},
 			},
 			Tables: map[string]semantic.TableVisual{
 				"orders": {Title: "Orders", MetricView: "orders", DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
@@ -125,9 +133,11 @@ func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Mod
 		}, &semantic.Model{
 			Name:  "test",
 			Title: "Test Model",
-			Datasets: map[string]semantic.Dataset{
+			Tables: map[string]semantic.ModelTable{
 				"orders": {
-					Source: "orders_enriched",
+					Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+					Dimensions: map[string]semantic.MetricDimension{"order_id": {Expr: "order_id"}},
+					Measures:   map[string]semantic.MetricMeasure{"order_count": {Label: "Orders", Expression: "COUNT(*)"}},
 				},
 			},
 		}, true
@@ -184,11 +194,10 @@ func (fakeMetrics) ModelGraph(modelID string) (dashboard.ModelGraph, bool) {
 	return dashboard.ModelGraph{
 		Name:  "test",
 		Title: "Test Model",
-		Stats: dashboard.ModelStats{Sources: 1, CacheTables: 1, Relationships: 1},
+		Stats: dashboard.ModelStats{Sources: 1, ModelTables: 1, Relationships: 1},
 		Nodes: []dashboard.ModelNode{
 			{ID: "source:orders", Label: "orders", Kind: "source"},
-			{ID: "cache:orders_enriched", Label: "orders_enriched", Kind: "cache"},
-			{ID: "dataset:orders", Label: "orders", Kind: "dataset"},
+			{ID: "model_table:orders", Label: "orders", Kind: "model_table"},
 			{ID: "metrics_view:orders", Label: "Orders Metrics", Kind: "metrics_view"},
 		},
 		Edges: []dashboard.ModelEdge{

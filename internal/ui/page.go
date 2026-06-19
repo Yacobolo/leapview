@@ -331,7 +331,7 @@ func metricViewCard(view dashboard.MetricViewSummary) g.Node {
 			h.P(h.Class(cardDescriptionClass), g.Text(view.Description)),
 		),
 		h.Div(h.Class("mt-4 flex flex-wrap gap-2"),
-			h.Span(h.Class(tagClass), g.Text(view.Dataset)),
+			h.Span(h.Class(tagClass), g.Text(view.BaseTable)),
 			h.Span(h.Class(tagClass), g.Text(view.Timeseries)),
 		),
 		h.Footer(h.Class(cardFooterClass),
@@ -387,7 +387,7 @@ func metricViewInfoSidebar(view dashboard.MetricViewDetail) g.Node {
 		h.Div(h.Class("grid content-start overflow-auto"), g.Attr("data-metric-info-body", ""),
 			h.Div(h.Class("grid content-start"),
 				metricInfoItem("Model context", h.A(h.Class("inline-flex min-w-0 items-center gap-2 text-fg-accent no-underline hover:underline"), h.Href("/models/"+view.SemanticModel), lucide.Box(metricInfoIconAttrs()...), h.Span(h.Class("truncate"), g.Text(view.ModelTitle)))),
-				metricInfoItem("Source dataset", h.Span(h.Class("inline-flex min-w-0 items-center gap-2"), lucide.Table2(metricInfoIconAttrs()...), h.Code(h.Class("truncate font-mono"), g.Text(view.Dataset)))),
+				metricInfoItem("Base table", h.Span(h.Class("inline-flex min-w-0 items-center gap-2"), lucide.Table2(metricInfoIconAttrs()...), h.Code(h.Class("truncate font-mono"), g.Text(view.BaseTable)))),
 				metricInfoItem("Primary timeseries", h.Span(h.Class("inline-flex min-w-0 items-center gap-2"), lucide.Calendar(metricInfoIconAttrs()...), h.Code(h.Class("truncate font-mono"), g.Text(view.Timeseries)))),
 			),
 		),
@@ -568,12 +568,12 @@ func metricUsageGraph(view dashboard.MetricViewDetail) any {
 	}
 	nodes := []graphNode{
 		{ID: "model", Label: view.ModelTitle, Kind: "model", Meta: view.SemanticModel},
-		{ID: "dataset", Label: view.Dataset, Kind: "dataset", Meta: "semantic dataset"},
+		{ID: "model_table", Label: view.BaseTable, Kind: "model_table", Meta: "model table"},
 		{ID: "metrics_view", Label: view.Title, Kind: "metrics_view", Meta: "metric contract"},
 	}
 	edges := []graphEdge{
-		{ID: "model_dataset", Source: "model", Target: "dataset", Label: "defines", Kind: "semantic"},
-		{ID: "dataset_metric_view", Source: "dataset", Target: "metrics_view", Label: "powers", Kind: "semantic"},
+		{ID: "model_table_edge", Source: "model", Target: "model_table", Label: "defines", Kind: "semantic"},
+		{ID: "metric_view_edge", Source: "model_table", Target: "metrics_view", Label: "exposes", Kind: "semantic"},
 	}
 	for _, report := range view.Dashboards {
 		nodeID := "dashboard:" + report.ID
@@ -771,7 +771,7 @@ func formatReportPageNumber(index, pageCount int) string {
 func modelStats(stats dashboard.ModelStats) g.Node {
 	return h.Div(h.Class("model-stats"),
 		modelStat("Sources", stats.Sources),
-		modelStat("Cache", stats.CacheTables),
+		modelStat("Tables", stats.ModelTables),
 		modelStat("Metrics", stats.Metrics),
 		modelStat("Visuals", stats.Visuals),
 		modelStat("Relations", stats.Relationships),
@@ -1059,7 +1059,7 @@ func visualSignals(report semantic.Dashboard, model *semantic.Model, page dashbo
 		format := ""
 		title := visual.Title
 		if model != nil && len(visual.Query.Measures) > 0 {
-			measureName = visual.Query.Measures[0]
+			measureName = displayField(visual.Query.Measures[0].Field)
 		}
 		if title == "" {
 			title = measureName
@@ -1104,8 +1104,8 @@ func pageTableIDs(page dashboard.Page) []string {
 
 func visualSignal(id string, visual semantic.Visual, title, unit, format, measure string) map[string]any {
 	seriesList := []string{}
-	if visual.Query.Series != "" {
-		seriesList = append(seriesList, visual.Query.Series)
+	if !visual.Query.Series.IsZero() {
+		seriesList = append(seriesList, displayField(visual.Query.Series.Field))
 	}
 	visualType := visual.Type
 	if visualType == "" && visual.KindOrDefault() == "kpi" {
@@ -1122,9 +1122,9 @@ func visualSignal(id string, visual semantic.Visual, title, unit, format, measur
 		"unit":            unit,
 		"format":          format,
 		"field":           visual.Interaction.Field,
-		"dimensions":      visual.Query.Dimensions,
+		"dimensions":      displayFieldRefs(visual.Query.Dimensions),
 		"measure":         measure,
-		"measures":        visual.Query.Measures,
+		"measures":        displayFieldRefs(visual.Query.Measures),
 		"series":          seriesList,
 		"options":         visual.CoreOptions(),
 		"rendererOptions": map[string]any{},
@@ -1135,6 +1135,19 @@ func visualSignal(id string, visual semantic.Visual, title, unit, format, measur
 		signal["rendererOptions"] = visual.RendererOptions
 	}
 	return signal
+}
+
+func displayFieldRefs(refs []semantic.FieldRef) []string {
+	fields := make([]string, len(refs))
+	for i, ref := range refs {
+		fields[i] = displayField(ref.Field)
+	}
+	return fields
+}
+
+func displayField(field string) string {
+	parts := strings.Split(field, ".")
+	return parts[len(parts)-1]
 }
 
 func iconAttrs() g.Node {
