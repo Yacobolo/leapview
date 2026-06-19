@@ -36,13 +36,23 @@ func TestPackValidateAndExtractAssets(t *testing.T) {
 	for _, asset := range validation.Assets {
 		types[asset.Type] = true
 	}
-	for _, typ := range []string{"catalog", "semantic_model", "metric_view", "dashboard", "page", "visual", "filter", "table", "model_table", "measure", "dimension", "source"} {
+	for _, typ := range []string{"catalog", "semantic_model", "metric_view", "dashboard", "page", "visual", "filter", "table", "model_table", "measure", "dimension", "source", "connection"} {
 		if !types[typ] {
 			t.Fatalf("missing asset type %q", typ)
 		}
 	}
 	if len(validation.Edges) == 0 {
 		t.Fatal("expected lineage edges")
+	}
+	hasSourceConnectionEdge := false
+	for _, edge := range validation.Edges {
+		if edge.Type == "uses_connection" {
+			hasSourceConnectionEdge = true
+			break
+		}
+	}
+	if !hasSourceConnectionEdge {
+		t.Fatal("expected source to connection lineage edge")
 	}
 }
 
