@@ -70,6 +70,9 @@ func TestDuckDBMetricsTableInteractiveCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if table.Error != "" {
+		t.Fatalf("table error = %q", table.Error)
+	}
 	if table.TotalRows != rows {
 		t.Fatalf("total rows = %d, want %d", table.TotalRows, rows)
 	}
@@ -502,6 +505,9 @@ relogios_presentes,watches_gifts
 	if !tableRowsHaveKey(matrixTable.Blocks["a"].Rows, "pivot_delivered__order_count") {
 		t.Fatalf("matrix rows missing delivered order count: %#v", matrixTable.Blocks["a"].Rows)
 	}
+	if !tableRowsHaveValue(matrixTable.Blocks["a"].Rows, "pivot_delivered__order_count") {
+		t.Fatalf("matrix rows missing delivered order count values: %#v", matrixTable.Blocks["a"].Rows)
+	}
 
 	pivotTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
 		Table:      "category_status_pivot",
@@ -523,6 +529,9 @@ relogios_presentes,watches_gifts
 	}
 	if got := pivotTable.Columns[1].Group; got != "Orders" {
 		t.Fatalf("pivot first value column group = %q, want Orders", got)
+	}
+	if !tableRowsHaveValue(pivotTable.Blocks["a"].Rows, "pivot_delivered") {
+		t.Fatalf("pivot rows missing delivered values: %#v", pivotTable.Blocks["a"].Rows)
 	}
 
 	formattedMatrix, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
@@ -554,6 +563,9 @@ relogios_presentes,watches_gifts
 	}
 	if !tableHasAnyFormatting(heatPivot.Columns, "background_scale") {
 		t.Fatalf("heat pivot generated columns missing background scale formatting: %#v", heatPivot.Columns)
+	}
+	if !tableRowsHaveValue(heatPivot.Blocks["a"].Rows, "pivot_delivered") {
+		t.Fatalf("heat pivot rows missing delivered values: %#v", heatPivot.Blocks["a"].Rows)
 	}
 
 	if err := metrics.RefreshMaterializations(context.Background(), "olist"); err != nil {

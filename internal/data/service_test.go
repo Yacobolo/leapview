@@ -92,6 +92,16 @@ func tableRowsHaveKey(rows []map[string]any, key string) bool {
 	return false
 }
 
+func tableRowsHaveValue(rows []map[string]any, key string) bool {
+	for _, row := range rows {
+		value, ok := row[key]
+		if ok && value != nil && fmt.Sprint(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func tableColumnHasFormatting(columns []dashboard.TableColumn, key, kind string) bool {
 	for _, column := range columns {
 		if column.Key != key {

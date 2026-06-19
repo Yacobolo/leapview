@@ -260,7 +260,7 @@ func (m *DuckDBMetrics) crossTabTableRows(ctx context.Context, runtime *modelRun
 				}
 				columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, measureName)))
 			}
-			row[columnKey] = raw[measureName]
+			row[columnKey] = raw[measureKey]
 		}
 	}
 	result := make([]map[string]any, 0, len(order))
@@ -504,7 +504,10 @@ func (m *DuckDBMetrics) tableRows(ctx context.Context, runtime *modelRuntime, re
 	if direction == "" {
 		direction = "desc"
 	}
-	sorts := []semanticquery.Sort{{Field: sortKey, Direction: direction}}
+	sorts := []semanticquery.Sort{}
+	if sortKey != "" {
+		sorts = append(sorts, semanticquery.Sort{Field: sortKey, Direction: direction})
+	}
 	if sortKey != "order_id" && tableHasQueryAlias(table.DataColumns, "order_id") {
 		sorts = append(sorts, semanticquery.Sort{Field: "order_id", Direction: "asc"})
 	}
@@ -527,15 +530,19 @@ func tableSortKey(table semantic.TableVisual, key string) string {
 	if key == "" {
 		key = table.DefaultSort.Key
 	}
-	for _, column := range table.Columns {
-		if column.Key == key {
-			return column.Key
-		}
+	if tableHasQueryAlias(table.DataColumns, key) {
+		return key
 	}
-	if table.DefaultSort.Key != "" {
+	if tableHasQueryAlias(table.DataColumns, table.DefaultSort.Key) {
 		return table.DefaultSort.Key
 	}
-	return "order_id"
+	if tableHasQueryAlias(table.DataColumns, "order_id") {
+		return "order_id"
+	}
+	if len(table.DataColumns) > 0 {
+		return table.DataColumns[0].Alias
+	}
+	return ""
 }
 
 func tableHasQueryAlias(columns []semantic.FieldRef, alias string) bool {
