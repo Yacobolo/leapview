@@ -207,6 +207,17 @@ var connections = map[string]Connection{
 		AllowNoAuth:        true,
 		AttachKind:         AttachDuckLake,
 	},
+	"quack": {
+		Kind:               "quack",
+		SecretType:         "quack",
+		RequiredExtension:  "quack",
+		AllowsObjectSource: true,
+		AllowsPath:         true,
+		RequiresPath:       true,
+		AllowedOptions:     []string{"disable_ssl"},
+		AuthKeys:           []string{"token"},
+		RequiredAuthSets:   [][]string{{"token"}},
+	},
 }
 
 func LookupFormat(name string) (Format, bool) {
