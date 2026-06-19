@@ -65,14 +65,14 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace api.WorkspaceRespon
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/asset-lineage-graph.js"))),
 		)
 	}
-	return workspaceDocument(asset.Title, catalog, "workspaces", roleLabel, workspaceAssetSignals(asset, assets, lineage, activeSection),
+	return workspaceDocument(asset.Title, catalog, "workspaces", roleLabel, workspaceAssetSignals(workspace, asset, assets, edges, lineage, activeSection),
 		h.Section(h.Class(metricMainClass), h.Aria("label", "Workspace asset detail"),
-			assetHeader(workspace, asset, assets),
+			assetBreadcrumbHeader(workspace, asset),
 			h.Div(h.Class(metricContentColumnClass),
 				assetDetailTabs(workspace.ID, asset.ID, activeSection, lineage.Count),
 				h.Div(h.Class(assetDetailBodyClass(activeSection)),
 					g.If(activeSection == "details",
-						assetDetailsSection(workspace, asset, assets),
+						assetDetailsSection(workspace, asset, assets, edges),
 					),
 					g.If(activeSection == "lineage", assetLineageSection(lineage)),
 				),
@@ -80,13 +80,6 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace api.WorkspaceRespon
 		),
 		extraHead...,
 	)
-}
-
-func assetHeader(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) g.Node {
-	if asset.Type == "metric_view" || asset.Type == "dashboard" {
-		return assetBreadcrumbHeader(workspace, asset)
-	}
-	return workspaceHeader(assetTypeLabel(asset.Type), assetTitle(asset), asset.Description, assetActions(workspace.ID, asset))
 }
 
 func assetBreadcrumbHeader(workspace api.WorkspaceResponse, asset api.AssetResponse) g.Node {
@@ -411,10 +404,10 @@ func assetLineageSection(lineage assetLineageModel) g.Node {
 	)
 }
 
-func workspaceAssetSignals(asset api.AssetResponse, assets []api.AssetResponse, lineage assetLineageModel, activeSection string) map[string]any {
+func workspaceAssetSignals(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse, lineage assetLineageModel, activeSection string) map[string]any {
 	signals := map[string]any{}
 	if activeSection == "details" {
-		for key, grid := range workspaceAssetDetailGridSignals(asset, assets) {
+		for key, grid := range workspaceAssetDetailGridSignals(workspace, asset, assets, edges) {
 			signals[key] = grid
 		}
 	}
@@ -426,23 +419,15 @@ func workspaceAssetSignals(asset api.AssetResponse, assets []api.AssetResponse, 
 	return signals
 }
 
-func workspaceAssetDetailGridSignals(asset api.AssetResponse, assets []api.AssetResponse) map[string]metricGrid {
-	switch asset.Type {
-	case "metric_view":
-		return map[string]metricGrid{
-			"assetDetailsMeasuresGrid":   metricViewMeasuresGrid(asset, childrenByType(asset.ID, "measure", assets)),
-			"assetDetailsDimensionsGrid": metricViewDimensionsGrid(asset, childrenByType(asset.ID, "dimension", assets)),
+func workspaceAssetDetailGridSignals(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) map[string]metricGrid {
+	signals := map[string]metricGrid{}
+	for _, section := range assetDetailModelForAsset(workspace, asset, assets, edges).Sections {
+		if section.Signal == "" {
+			continue
 		}
-	case "dashboard":
-		return map[string]metricGrid{
-			"assetDetailsPagesGrid":   dashboardPagesGrid(asset, childrenByType(asset.ID, "page", assets)),
-			"assetDetailsFiltersGrid": dashboardFiltersGrid(asset, childrenByType(asset.ID, "filter", assets)),
-			"assetDetailsVisualsGrid": dashboardVisualsGrid(asset, childrenByType(asset.ID, "visual", assets)),
-			"assetDetailsTablesGrid":  dashboardTablesGrid(asset, childrenByType(asset.ID, "table", assets)),
-		}
-	default:
-		return map[string]metricGrid{}
+		signals[section.Signal] = section.Grid
 	}
+	return signals
 }
 
 func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) assetLineageModel {
@@ -786,65 +771,101 @@ func workspaceAssetSectionHref(workspaceID, assetID, section string) string {
 	return "/workspaces/" + workspaceID + "/assets/" + assetID + "/" + section
 }
 
-func assetDetailsSection(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) g.Node {
+type assetDetailModel struct {
+	Overview []definitionFact
+	Sections []assetDetailSection
+}
+
+type assetDetailSection struct {
+	Title  string
+	Signal string
+	Grid   metricGrid
+	Facts  []definitionFact
+}
+
+func assetDetailsSection(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) g.Node {
+	model := assetDetailModelForAsset(workspace, asset, assets, edges)
 	return h.Section(h.ID("details"), h.Class("grid content-start gap-6"), h.Aria("label", "Asset details"),
-		g.If(!assetUsesStructuredDetails(asset.Type), assetIdentityStrip(workspace, asset, assets)),
-		g.Group(assetDetailsNodes(workspace, asset, assets)),
+		definitionStats("Overview", model.Overview),
+		g.Map(model.Sections, assetDetailSectionNode),
 	)
 }
 
-func assetUsesStructuredDetails(typ string) bool {
-	return typ == "metric_view" || typ == "dashboard"
+func assetDetailSectionNode(section assetDetailSection) g.Node {
+	if section.Signal != "" {
+		return definitionSignalGrid(section.Title, section.Signal)
+	}
+	return definitionFacts(section.Title, section.Facts)
 }
 
-func assetDetailsNodes(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) []g.Node {
+func assetDetailModelForAsset(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) assetDetailModel {
+	model := assetDetailModel{
+		Overview: commonAssetOverviewFacts(asset, assets, shouldShowParentFact(asset.Type)),
+	}
 	switch asset.Type {
 	case "semantic_model":
-		return semanticModelDetails(asset)
+		semanticModelDetailModel(&model, workspace, asset, assets, edges)
 	case "metric_view":
-		return metricViewAssetDetails(asset, assets)
+		metricViewDetailModel(&model, asset, assets)
 	case "dashboard":
-		return dashboardAssetDetails(asset, assets)
+		dashboardDetailModel(&model, asset, assets)
 	case "connection":
-		return connectionAssetDetails(asset)
+		model.Overview = append(model.Overview, connectionFacts(asset)...)
 	case "source":
-		return sourceAssetDetails(asset)
+		model.Overview = append(model.Overview, sourceFacts(asset)...)
 	case "measure":
-		return metricLeafDefinition("Measure", asset)
+		model.Overview = append(model.Overview, metricLeafFacts(asset)...)
 	case "dimension":
-		return metricLeafDefinition("Dimension", asset)
-	case "page", "visual", "table", "filter", "cache_table", "dataset":
-		return compactAssetDetails(asset)
+		model.Overview = append(model.Overview, metricLeafFacts(asset)...)
 	default:
-		return rawFallbackDetails(asset)
+		model.Overview = append(model.Overview, metaFacts(asset.Meta)...)
 	}
+	return model
 }
 
-func assetIdentityStrip(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) g.Node {
+func commonAssetOverviewFacts(asset api.AssetResponse, assets []api.AssetResponse, includeParent bool) []definitionFact {
 	facts := []definitionFact{
 		{Label: "Type", Value: assetTypeLabel(asset.Type)},
 		{Label: "Key", Value: asset.Key, Code: true},
-		{Label: "Workspace", Value: workspace.Title},
-		{Label: "Parent", Value: assetParentTitle(asset.ParentID, assets)},
-		{Label: "Source", Value: "Published from Git/YAML"},
 	}
-	filtered := make([]definitionFact, 0, len(facts))
-	for _, fact := range facts {
-		if strings.TrimSpace(fact.Value) != "" {
-			filtered = append(filtered, fact)
-		}
+	if includeParent {
+		facts = append(facts, definitionFact{Label: "Parent", Value: assetParentTitle(asset.ParentID, assets)})
 	}
-	return h.Section(h.Class("border-b border-outline-muted pb-4"), h.Aria("label", "Identity"),
-		h.H2(h.Class("sr-only"), g.Text("Identity")),
-		h.Div(h.Class("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-body-sm"),
-			g.Map(filtered, func(fact definitionFact) g.Node {
-				return h.Div(h.Class("inline-flex min-w-0 items-baseline gap-1.5 border-r border-outline-muted pr-3 last:border-r-0 last:pr-0"),
-					h.Span(h.Class("text-caption font-900 uppercase leading-none text-fg-muted"), g.Text(fact.Label)),
-					g.If(fact.Code, h.Code(h.Class("min-w-0 truncate font-mono text-body-sm font-760 text-fg-default"), g.Text(fact.Value))),
-					g.If(!fact.Code, h.Span(h.Class("min-w-0 truncate text-body-sm font-760 text-fg-default"), g.Text(fact.Value))),
-				)
-			}),
-		),
+	facts = append(facts, definitionFact{Label: "Description", Value: asset.Description, Wide: true})
+	return facts
+}
+
+func shouldShowParentFact(typ string) bool {
+	switch typ {
+	case "catalog", "dashboard", "metric_view", "semantic_model":
+		return false
+	default:
+		return true
+	}
+}
+
+func semanticModelDetailModel(model *assetDetailModel, workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) {
+	meta := asset.Meta
+	connections := sortedMapKeys(metaMap(meta, "Connections", "connections"))
+	sources := sortedMapKeys(metaMap(meta, "Sources", "sources"))
+	cacheTables := sortedMapKeys(metaMap(metaMap(meta, "Cache", "cache"), "Tables", "tables"))
+	datasets := sortedMapKeys(metaMap(meta, "Datasets", "datasets"))
+	relationships := metaSlice(meta, "Relationships", "relationships")
+
+	model.Overview = append(model.Overview,
+		definitionFact{Label: "Default connection", Value: metaString(meta, "DefaultConnection", "default_connection")},
+		definitionFact{Label: "Connections", Value: fmt.Sprint(len(connections))},
+		definitionFact{Label: "Sources", Value: fmt.Sprint(len(sources))},
+		definitionFact{Label: "Cache tables", Value: fmt.Sprint(len(cacheTables))},
+		definitionFact{Label: "Datasets", Value: fmt.Sprint(len(datasets))},
+		definitionFact{Label: "Relationships", Value: fmt.Sprint(len(relationships))},
+	)
+	model.Sections = append(model.Sections,
+		assetDetailSection{Title: fmt.Sprintf("Connections (%d)", len(connections)), Signal: "assetDetailsSemanticConnectionsGrid", Grid: semanticConnectionsGrid(workspace.ID, asset, assets, meta)},
+		assetDetailSection{Title: fmt.Sprintf("Sources (%d)", len(sources)), Signal: "assetDetailsSemanticSourcesGrid", Grid: semanticSourcesGrid(workspace.ID, asset, assets, meta)},
+		assetDetailSection{Title: fmt.Sprintf("Cache tables (%d)", len(cacheTables)), Signal: "assetDetailsSemanticCacheTablesGrid", Grid: semanticCacheGrid(workspace.ID, asset, assets, edges, meta)},
+		assetDetailSection{Title: fmt.Sprintf("Datasets (%d)", len(datasets)), Signal: "assetDetailsSemanticDatasetsGrid", Grid: semanticDatasetsGrid(workspace.ID, asset, assets, meta)},
+		assetDetailSection{Title: fmt.Sprintf("Relationships (%d)", len(relationships)), Signal: "assetDetailsSemanticRelationshipsGrid", Grid: semanticRelationshipsGrid(meta)},
 	)
 }
 
@@ -1014,25 +1035,22 @@ func semanticRelationshipsGrid(meta map[string]any) metricGrid {
 	}
 }
 
-func metricViewAssetDetails(asset api.AssetResponse, assets []api.AssetResponse) []g.Node {
+func metricViewDetailModel(model *assetDetailModel, asset api.AssetResponse, assets []api.AssetResponse) {
 	measures := childrenByType(asset.ID, "measure", assets)
 	dimensions := childrenByType(asset.ID, "dimension", assets)
 	semanticModel := assetParentTitle(asset.ParentID, assets)
 	if semanticModel == "" {
 		semanticModel = metaString(asset.Meta, "SemanticModel", "semantic_model")
 	}
-	return []g.Node{
-		definitionStats("Overview", []definitionFact{
-			{Label: "Type", Value: assetTypeLabel(asset.Type)},
-			{Label: "Key", Value: asset.Key, Code: true},
-			{Label: "Semantic model", Value: semanticModel},
-			{Label: "Dataset", Value: metaString(asset.Meta, "Dataset", "dataset")},
-			{Label: "Timeseries", Value: metaString(asset.Meta, "Timeseries", "timeseries")},
-			{Label: "Description", Value: asset.Description, Wide: true},
-		}),
-		definitionSignalGrid(fmt.Sprintf("Measures (%d)", len(measures)), "assetDetailsMeasuresGrid"),
-		definitionSignalGrid(fmt.Sprintf("Dimensions (%d)", len(dimensions)), "assetDetailsDimensionsGrid"),
-	}
+	model.Overview = append(model.Overview,
+		definitionFact{Label: "Semantic model", Value: semanticModel},
+		definitionFact{Label: "Dataset", Value: metaString(asset.Meta, "Dataset", "dataset")},
+		definitionFact{Label: "Timeseries", Value: metaString(asset.Meta, "Timeseries", "timeseries")},
+	)
+	model.Sections = append(model.Sections,
+		assetDetailSection{Title: fmt.Sprintf("Measures (%d)", len(measures)), Signal: "assetDetailsMeasuresGrid", Grid: metricViewMeasuresGrid(asset, measures)},
+		assetDetailSection{Title: fmt.Sprintf("Dimensions (%d)", len(dimensions)), Signal: "assetDetailsDimensionsGrid", Grid: metricViewDimensionsGrid(asset, dimensions)},
+	)
 }
 
 func metricViewMeasuresGrid(parent api.AssetResponse, measures []api.AssetResponse) metricGrid {
@@ -1095,24 +1113,21 @@ func metricViewDimensionsGrid(parent api.AssetResponse, dimensions []api.AssetRe
 	}
 }
 
-func dashboardAssetDetails(asset api.AssetResponse, assets []api.AssetResponse) []g.Node {
+func dashboardDetailModel(model *assetDetailModel, asset api.AssetResponse, assets []api.AssetResponse) {
 	pages := childrenByType(asset.ID, "page", assets)
 	filters := childrenByType(asset.ID, "filter", assets)
 	visuals := childrenByType(asset.ID, "visual", assets)
 	tables := childrenByType(asset.ID, "table", assets)
-	return []g.Node{
-		definitionStats("Overview", []definitionFact{
-			{Label: "Type", Value: assetTypeLabel(asset.Type)},
-			{Label: "Key", Value: asset.Key, Code: true},
-			{Label: "Metric views", Value: strings.Join(stringSlice(metaValue(asset.Meta, "MetricViews", "metrics_views")), ", ")},
-			{Label: "Tags", Value: strings.Join(stringSlice(metaValue(asset.Meta, "Tags", "tags")), ", ")},
-			{Label: "Description", Value: asset.Description, Wide: true},
-		}),
-		definitionSignalGrid(fmt.Sprintf("Pages (%d)", len(pages)), "assetDetailsPagesGrid"),
-		definitionSignalGrid(fmt.Sprintf("Filters (%d)", len(filters)), "assetDetailsFiltersGrid"),
-		definitionSignalGrid(fmt.Sprintf("Visuals (%d)", len(visuals)), "assetDetailsVisualsGrid"),
-		definitionSignalGrid(fmt.Sprintf("Tables (%d)", len(tables)), "assetDetailsTablesGrid"),
-	}
+	model.Overview = append(model.Overview,
+		definitionFact{Label: "Metric views", Value: strings.Join(stringSlice(metaValue(asset.Meta, "MetricViews", "metrics_views")), ", ")},
+		definitionFact{Label: "Tags", Value: strings.Join(stringSlice(metaValue(asset.Meta, "Tags", "tags")), ", ")},
+	)
+	model.Sections = append(model.Sections,
+		assetDetailSection{Title: fmt.Sprintf("Pages (%d)", len(pages)), Signal: "assetDetailsPagesGrid", Grid: dashboardPagesGrid(asset, pages)},
+		assetDetailSection{Title: fmt.Sprintf("Filters (%d)", len(filters)), Signal: "assetDetailsFiltersGrid", Grid: dashboardFiltersGrid(asset, filters)},
+		assetDetailSection{Title: fmt.Sprintf("Visuals (%d)", len(visuals)), Signal: "assetDetailsVisualsGrid", Grid: dashboardVisualsGrid(asset, visuals)},
+		assetDetailSection{Title: fmt.Sprintf("Tables (%d)", len(tables)), Signal: "assetDetailsTablesGrid", Grid: dashboardTablesGrid(asset, tables)},
+	)
 }
 
 func dashboardPagesGrid(parent api.AssetResponse, pages []api.AssetResponse) metricGrid {
@@ -1225,50 +1240,35 @@ func dashboardTablesGrid(parent api.AssetResponse, tables []api.AssetResponse) m
 	}
 }
 
-func connectionAssetDetails(asset api.AssetResponse) []g.Node {
-	return []g.Node{
-		definitionFacts("Connection", []definitionFact{
-			{Label: "Kind", Value: metaString(asset.Meta, "Kind", "kind")},
-			{Label: "Scope", Value: metaString(asset.Meta, "Scope", "scope")},
-			{Label: "Root", Value: metaString(asset.Meta, "Root", "root")},
-			{Label: "Path", Value: metaString(asset.Meta, "Path", "path")},
-			{Label: "Credentials", Value: boolLabel(metaBool(asset.Meta, "credentials_configured"))},
-			{Label: "Options", Value: compactJSON(metaValue(asset.Meta, "Options", "options"))},
-		}),
+func connectionFacts(asset api.AssetResponse) []definitionFact {
+	return []definitionFact{
+		{Label: "Kind", Value: metaString(asset.Meta, "Kind", "kind")},
+		{Label: "Scope", Value: metaString(asset.Meta, "Scope", "scope")},
+		{Label: "Root", Value: metaString(asset.Meta, "Root", "root")},
+		{Label: "Path", Value: metaString(asset.Meta, "Path", "path")},
+		{Label: "Credentials", Value: boolLabel(metaBool(asset.Meta, "credentials_configured"))},
+		{Label: "Options", Value: compactJSON(metaValue(asset.Meta, "Options", "options"))},
 	}
 }
 
-func sourceAssetDetails(asset api.AssetResponse) []g.Node {
-	return []g.Node{
-		definitionFacts("Source", []definitionFact{
-			{Label: "Connection", Value: metaString(asset.Meta, "Connection", "connection")},
-			{Label: "Format", Value: metaString(asset.Meta, "Format", "format")},
-			{Label: "Path", Value: metaString(asset.Meta, "Path", "path")},
-			{Label: "Object", Value: metaString(asset.Meta, "Object", "object")},
-			{Label: "Options", Value: compactJSON(metaValue(asset.Meta, "Options", "options"))},
-		}),
+func sourceFacts(asset api.AssetResponse) []definitionFact {
+	return []definitionFact{
+		{Label: "Connection", Value: metaString(asset.Meta, "Connection", "connection")},
+		{Label: "Format", Value: metaString(asset.Meta, "Format", "format")},
+		{Label: "Path", Value: metaString(asset.Meta, "Path", "path")},
+		{Label: "Object", Value: metaString(asset.Meta, "Object", "object")},
+		{Label: "Options", Value: compactJSON(metaValue(asset.Meta, "Options", "options"))},
 	}
 }
 
-func metricLeafDefinition(label string, asset api.AssetResponse) []g.Node {
+func metricLeafFacts(asset api.AssetResponse) []definitionFact {
 	facts := []definitionFact{}
 	for _, key := range []string{"Expression", "expression", "Expr", "expr", "Where", "where", "OrderExpr", "order_expr", "Unit", "unit", "Format", "format"} {
 		if value := metaString(asset.Meta, key); strings.TrimSpace(value) != "" {
 			facts = append(facts, definitionFact{Label: labelFromKey(key), Value: value, Code: strings.Contains(strings.ToLower(key), "expr") || strings.EqualFold(key, "expression")})
 		}
 	}
-	return []g.Node{definitionFacts(label, facts)}
-}
-
-func compactAssetDetails(asset api.AssetResponse) []g.Node {
-	return []g.Node{definitionFacts(assetTypeLabel(asset.Type), metaFacts(asset.Meta))}
-}
-
-func rawFallbackDetails(asset api.AssetResponse) []g.Node {
-	if len(asset.Meta) == 0 {
-		return []g.Node{emptyState("No YAML-derived definition metadata is available for this asset.")}
-	}
-	return []g.Node{definitionFacts("Details", metaFacts(asset.Meta))}
+	return facts
 }
 
 type definitionFact struct {
