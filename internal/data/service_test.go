@@ -13,6 +13,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/semantic"
+	sourcereg "github.com/Yacobolo/libredash/internal/source"
 )
 
 func TestCompileSourceRelation(t *testing.T) {
@@ -73,7 +74,12 @@ func TestCompileSourceRelation(t *testing.T) {
 		})
 	}
 
-	relation, err := compileSourceRelation(sourcePlan{kind: "object", connection: "crm", object: "public.accounts"})
+	relation, err := compileSourceRelation(sourcePlan{
+		kind:           "object",
+		connection:     "crm",
+		connectionSpec: sourcereg.Connection{ObjectRelation: sourcereg.ObjectRelationAttach},
+		object:         "public.accounts",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,12 +88,14 @@ func TestCompileSourceRelation(t *testing.T) {
 	}
 
 	relation, err = compileSourceRelation(sourcePlan{
-		kind:              "object",
-		connection:        "remote_quack",
-		connectionKind:    "quack",
-		connectionPath:    "quack:quack.example.com:443",
-		connectionOptions: map[string]any{"disable_ssl": true},
-		object:            "information_schema.schemata",
+		kind:       "object",
+		connection: "remote_quack",
+		connectionConfig: semantic.Connection{
+			Path:    "quack:quack.example.com:443",
+			Options: map[string]any{"disable_ssl": true},
+		},
+		connectionSpec: sourcereg.Connection{ObjectRelation: sourcereg.ObjectRelationQuackQuery},
+		object:         "information_schema.schemata",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -100,10 +108,12 @@ func TestCompileSourceRelation(t *testing.T) {
 		t.Fatalf("quack relation contains token: %q", relation)
 	}
 	relation, err = compileSourceRelation(sourcePlan{
-		kind:           "object",
-		connection:     "remote_quack",
-		connectionKind: "quack",
-		connectionPath: "quack:quack.example.com:443",
+		kind:       "object",
+		connection: "remote_quack",
+		connectionConfig: semantic.Connection{
+			Path: "quack:quack.example.com:443",
+		},
+		connectionSpec: sourcereg.Connection{ObjectRelation: sourcereg.ObjectRelationQuackQuery},
 		object:         "information_schema.schemata",
 	})
 	if err != nil {

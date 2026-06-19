@@ -58,8 +58,13 @@ func TestRegistrySpecializedCapabilities(t *testing.T) {
 	}
 
 	ducklake, _ := LookupConnection("ducklake")
-	if ducklake.AttachKind != AttachDuckLake || !ducklake.AllowsObjectSource || !ducklake.RequiresPath {
+	if ducklake.AttachKind != AttachDuckLake || ducklake.ObjectRelation != ObjectRelationAttach || !ducklake.AllowsObjectSource || !ducklake.RequiresPath {
 		t.Fatalf("ducklake registry = %#v, want object attach with required path", ducklake)
+	}
+
+	postgres, _ := LookupConnection("postgres")
+	if postgres.AttachKind != AttachDatabase || postgres.ObjectRelation != ObjectRelationAttach || !postgres.AllowsObjectSource {
+		t.Fatalf("postgres registry = %#v, want database object attach", postgres)
 	}
 
 	s3, _ := LookupConnection("s3")
@@ -68,7 +73,7 @@ func TestRegistrySpecializedCapabilities(t *testing.T) {
 	}
 
 	quack, _ := LookupConnection("quack")
-	if quack.RequiredExtension != "quack" || quack.SecretType != "quack" || !quack.AllowsObjectSource || quack.AllowsPathSource {
+	if quack.RequiredExtension != "quack" || quack.SecretType != "quack" || quack.ObjectRelation != ObjectRelationQuackQuery || !quack.AllowsObjectSource || quack.AllowsPathSource {
 		t.Fatalf("quack registry = %#v, want quack object source", quack)
 	}
 }

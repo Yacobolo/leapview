@@ -61,7 +61,7 @@ func (m *DuckDBMetrics) prepareSourceRuntime(ctx context.Context, runtime *model
 		if !ok {
 			return fmt.Errorf("unsupported connection kind %q", connection.Kind)
 		}
-		if connectionSpec.AttachKind == "" {
+		if !connectionRequiresObjectAttach(connectionSpec) {
 			continue
 		}
 		stmt, err := m.compileObjectAttach(runtime.model, source.Connection, connection)
@@ -80,15 +80,14 @@ func (m *DuckDBMetrics) prepareSourceRuntime(ctx context.Context, runtime *model
 }
 
 type sourcePlan struct {
-	kind              string
-	format            string
-	path              string
-	connection        string
-	connectionKind    string
-	connectionPath    string
-	connectionOptions map[string]any
-	object            string
-	options           map[string]any
+	kind             string
+	format           string
+	path             string
+	connection       string
+	connectionConfig semantic.Connection
+	connectionSpec   sourcereg.Connection
+	object           string
+	options          map[string]any
 }
 
 func (m *DuckDBMetrics) sourceRelation(model *semantic.Model, source semantic.Source) (string, error) {
@@ -108,9 +107,10 @@ func (m *DuckDBMetrics) resolveSourcePlan(model *semantic.Model, source semantic
 		options:    source.Options,
 	}
 	if connection, ok := model.Connections[source.Connection]; ok {
-		plan.connectionKind = connection.Kind
-		plan.connectionPath = connection.Path
-		plan.connectionOptions = connection.Options
+		plan.connectionConfig = connection
+		if spec, ok := sourcereg.LookupConnection(connection.Kind); ok {
+			plan.connectionSpec = spec
+		}
 	}
 	if source.Path == "" {
 		return plan, nil
@@ -174,17 +174,25 @@ func compileSourceRelation(plan sourcePlan) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if plan.connectionKind == "quack" {
-			return quackQueryRelation(plan.connectionPath, object, plan.connectionOptions)
+		switch plan.connectionSpec.ObjectRelation {
+		case sourcereg.ObjectRelationAttach:
+			alias, err := databaseAlias(plan.connection)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("SELECT * FROM %s.%s", alias, object), nil
+		case sourcereg.ObjectRelationQuackQuery:
+			return quackQueryRelation(plan.connectionConfig.Path, object, plan.connectionConfig.Options)
+		default:
+			return "", fmt.Errorf("unsupported object relation mode %q", plan.connectionSpec.ObjectRelation)
 		}
-		alias, err := databaseAlias(plan.connection)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("SELECT * FROM %s.%s", alias, object), nil
 	default:
 		return "", fmt.Errorf("unsupported source kind %q", plan.kind)
 	}
+}
+
+func connectionRequiresObjectAttach(connection sourcereg.Connection) bool {
+	return connection.ObjectRelation == sourcereg.ObjectRelationAttach
 }
 
 func quackQueryRelation(uri, object string, options map[string]any) (string, error) {
