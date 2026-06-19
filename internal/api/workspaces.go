@@ -68,7 +68,6 @@ type WorkspaceAccessStatus struct {
 
 type WorkspaceAccessCommand struct {
 	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
 	Role        string `json:"role"`
 	PrincipalID string `json:"principalId"`
 }

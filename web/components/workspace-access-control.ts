@@ -33,7 +33,6 @@ type WorkspaceAccess = {
 
 type AccessCommand = {
   email?: string
-  displayName?: string
   role?: string
   principalId?: string
 }
@@ -57,14 +56,15 @@ const focusableSelector = [
 class WorkspaceAccessControl extends LitElement {
   @property({ attribute: false }) access: WorkspaceAccess | null = null
   @property({ attribute: 'access' }) accessAttribute = ''
+  @property({ attribute: 'search' }) searchAttribute = ''
 
   @state() private open = false
   @state() private email = ''
-  @state() private displayName = ''
   @state() private selectedRole = 'viewer'
   @state() private query = ''
 
   private previousFocus: HTMLElement | null = null
+  private searchTimer: number | null = null
 
   static styles = css`
     :host {
@@ -129,7 +129,7 @@ class WorkspaceAccessControl extends LitElement {
 
     .dialog {
       display: grid;
-      width: min(34rem, calc(100vw - var(--base-size-32)));
+      width: min(36rem, calc(100vw - var(--base-size-32)));
       max-height: calc(100vh - var(--base-size-64));
       grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
@@ -199,20 +199,20 @@ class WorkspaceAccessControl extends LitElement {
     }
 
     .body {
+      display: grid;
+      gap: var(--base-size-16);
       min-height: 0;
       overflow: auto;
       padding: var(--base-size-16);
     }
 
-    .section {
+    .card {
       display: grid;
       gap: var(--base-size-12);
-    }
-
-    .section + .section {
-      margin-top: var(--base-size-20);
-      border-top: var(--ld-border-muted);
-      padding-top: var(--base-size-16);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel-muted);
+      padding: var(--base-size-12);
     }
 
     .section-title {
@@ -225,7 +225,7 @@ class WorkspaceAccessControl extends LitElement {
 
     .form {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(8rem, auto) auto;
+      grid-template-columns: minmax(0, 1fr) minmax(8rem, auto) auto;
       gap: var(--base-size-8);
     }
 
@@ -240,6 +240,28 @@ class WorkspaceAccessControl extends LitElement {
       text-transform: uppercase;
     }
 
+    .field-shell {
+      display: flex;
+      min-height: var(--ld-control-large);
+      min-width: 0;
+      align-items: center;
+      gap: var(--base-size-8);
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
+      padding: 0 var(--base-size-10);
+      transition:
+        background-color var(--ld-transition-fast),
+        border-color var(--ld-transition-fast);
+    }
+
+    .field-shell:focus-within,
+    .field-shell:hover {
+      border-color: var(--ld-line-accent);
+      background: var(--ld-bg-control-hover);
+    }
+
     input,
     select {
       min-height: var(--ld-control-medium);
@@ -252,6 +274,15 @@ class WorkspaceAccessControl extends LitElement {
       font-weight: var(--ld-font-weight-medium);
       line-height: var(--ld-line-height-snug);
       padding: 0 var(--base-size-8);
+    }
+
+    .field-shell input {
+      min-height: auto;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      outline: 0;
     }
 
     input::placeholder {
@@ -324,7 +355,10 @@ class WorkspaceAccessControl extends LitElement {
 
     .list {
       display: grid;
-      border-top: var(--ld-border-muted);
+      overflow: hidden;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
     }
 
     .row {
@@ -333,11 +367,35 @@ class WorkspaceAccessControl extends LitElement {
       align-items: center;
       gap: var(--base-size-12);
       border-bottom: var(--ld-border-muted);
-      padding: var(--base-size-10) 0;
+      padding: var(--base-size-10) var(--base-size-12);
     }
 
     .person {
+      display: grid;
+      grid-template-columns: var(--base-size-32) minmax(0, 1fr);
+      align-items: center;
+      gap: var(--base-size-8);
       min-width: 0;
+    }
+
+    .principal-copy {
+      min-width: 0;
+    }
+
+    .avatar {
+      display: inline-flex;
+      width: var(--base-size-28);
+      height: var(--base-size-28);
+      align-items: center;
+      justify-content: center;
+      border: var(--ld-border-muted);
+      border-radius: 999px;
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-strong);
+      line-height: 1;
+      text-transform: uppercase;
     }
 
     .name {
@@ -400,8 +458,10 @@ class WorkspaceAccessControl extends LitElement {
       const status = this.resolvedAccess.status
       if (status?.message && !status.error && !status.loading) {
         this.email = ''
-        this.displayName = ''
       }
+    }
+    if (changed.has('searchAttribute') && this.searchAttribute !== this.query) {
+      this.query = this.searchAttribute
     }
   }
 
@@ -439,32 +499,24 @@ class WorkspaceAccessControl extends LitElement {
             </button>
           </header>
           <div class="body">
-            <section class="section" aria-label="Add workspace access">
+            <section class="card" aria-label="Add workspace access">
               <h3 class="section-title">Assign role</h3>
               ${status.error ? html`<div class="status status-error" role="alert">${status.error}</div>` : nothing}
               ${status.message && !status.error ? html`<div class="status status-message" role="status">${status.message}</div>` : nothing}
               <form class="form" @submit=${this.handleSubmit}>
                 <label>
-                  Email
-                  <input
-                    type="email"
-                    autocomplete="email"
-                    placeholder="person@example.com"
-                    .value=${this.email}
-                    ?disabled=${status.loading}
-                    @input=${(event: Event) => { this.email = (event.currentTarget as HTMLInputElement).value }}
-                  >
-                </label>
-                <label>
-                  Display name
-                  <input
-                    type="text"
-                    autocomplete="name"
-                    placeholder="Optional"
-                    .value=${this.displayName}
-                    ?disabled=${status.loading}
-                    @input=${(event: Event) => { this.displayName = (event.currentTarget as HTMLInputElement).value }}
-                  >
+                  Principal
+                  <span class="field-shell">
+                    ${mailIcon()}
+                    <input
+                      type="email"
+                      autocomplete="email"
+                      placeholder="person@example.com"
+                      .value=${this.email}
+                      ?disabled=${status.loading}
+                      @input=${(event: Event) => { this.email = (event.currentTarget as HTMLInputElement).value }}
+                    >
+                  </span>
                 </label>
                 <label>
                   Role
@@ -481,16 +533,18 @@ class WorkspaceAccessControl extends LitElement {
                 </button>
               </form>
             </section>
-            <section class="section" aria-label="Current workspace access">
+            <section class="card" aria-label="Current workspace access">
               <div class="toolbar">
-                <h3 class="section-title">Current access</h3>
-                <input
-                  class="search"
-                  type="search"
-                  placeholder="Search access..."
-                  .value=${this.query}
-                  @input=${(event: Event) => { this.query = (event.currentTarget as HTMLInputElement).value }}
-                >
+                <h3 class="section-title">People with access</h3>
+                <span class="field-shell search">
+                  ${searchIcon()}
+                  <input
+                    type="search"
+                    placeholder="Search principals..."
+                    .value=${this.query}
+                    @input=${this.handleSearchInput}
+                  >
+                </span>
               </div>
               ${this.renderBindings(access)}
             </section>
@@ -510,8 +564,11 @@ class WorkspaceAccessControl extends LitElement {
         ${rows.map((binding) => html`
           <div class="row">
             <div class="person">
-              <p class="name">${displayLabel(binding)}</p>
-              <p class="email">${binding.email}</p>
+              <span class="avatar" aria-hidden="true">${principalInitial(binding)}</span>
+              <span class="principal-copy">
+                <p class="name">${displayLabel(binding)}</p>
+                <p class="email">${binding.email}</p>
+              </span>
             </div>
             <select
               aria-label=${`Role for ${displayLabel(binding)}`}
@@ -562,8 +619,20 @@ class WorkspaceAccessControl extends LitElement {
     const query = this.query.trim().toLowerCase()
     if (!query) return bindings
     return bindings.filter((binding) => {
-      return `${binding.displayName ?? ''} ${binding.email} ${binding.role}`.toLowerCase().includes(query)
+      return `${binding.email} ${binding.role}`.toLowerCase().includes(query)
     })
+  }
+
+  private readonly handleSearchInput = (event: Event): void => {
+    this.query = (event.currentTarget as HTMLInputElement).value
+    if (this.searchTimer !== null) window.clearTimeout(this.searchTimer)
+    this.searchTimer = window.setTimeout(() => {
+      this.dispatchEvent(new CustomEvent('ld-workspace-access-search', {
+        bubbles: true,
+        composed: true,
+        detail: { search: this.query },
+      }))
+    }, 200)
   }
 
   private readonly openDialog = (): void => {
@@ -577,6 +646,10 @@ class WorkspaceAccessControl extends LitElement {
 
   private readonly closeDialog = (): void => {
     this.open = false
+    if (this.searchTimer !== null) {
+      window.clearTimeout(this.searchTimer)
+      this.searchTimer = null
+    }
     window.setTimeout(() => {
       if (this.previousFocus?.isConnected) this.previousFocus.focus()
       this.previousFocus = null
@@ -617,7 +690,6 @@ class WorkspaceAccessControl extends LitElement {
     event.preventDefault()
     const command: AccessCommand = {
       email: this.email.trim(),
-      displayName: this.displayName.trim(),
       role: this.selectedRole,
     }
     if (!command.email || !command.role) return
@@ -635,7 +707,6 @@ class WorkspaceAccessControl extends LitElement {
       composed: true,
       detail: {
         email: binding.email,
-        displayName: binding.displayName,
         role,
       },
     }))
@@ -664,7 +735,12 @@ function normalizeAccess(access: WorkspaceAccess): WorkspaceAccess {
 }
 
 function displayLabel(binding: Binding): string {
-  return binding.displayName?.trim() || binding.email || 'Principal'
+  return binding.email || 'Principal'
+}
+
+function principalInitial(binding: Binding): string {
+  const label = displayLabel(binding).trim()
+  return label ? label[0] : '?'
 }
 
 function roleLabel(role: string): string {
@@ -681,6 +757,14 @@ function xIcon() {
 
 function trashIcon() {
   return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span>`
+}
+
+function searchIcon() {
+  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg></span>`
+}
+
+function mailIcon() {
+  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path><rect x="2" y="4" width="20" height="16" rx="2"></rect></svg></span>`
 }
 
 customElements.define('ld-workspace-access-control', WorkspaceAccessControl)

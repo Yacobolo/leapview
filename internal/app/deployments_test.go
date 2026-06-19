@@ -387,7 +387,7 @@ func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","displayName":"Analyst","role":"viewer"}}`
+	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","role":"viewer"}}`
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -453,7 +453,7 @@ func TestWorkspaceAccessCommandRejectsViewer(t *testing.T) {
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","displayName":"Analyst","role":"viewer"}}`
+	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","role":"viewer"}}`
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -481,7 +481,7 @@ func TestWorkspaceAccessCommandPatchesInvalidInput(t *testing.T) {
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	signals := `{"workspaceAccessCommand":{"email":"","displayName":"Analyst","role":"viewer"}}`
+	signals := `{"workspaceAccessCommand":{"email":"","role":"viewer"}}`
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -499,7 +499,7 @@ func TestWorkspaceAccessCommandPatchesInvalidInput(t *testing.T) {
 	listReq.Header.Set("Accept", "application/json")
 	listRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(listRec, listReq)
-	if strings.Contains(listRec.Body.String(), "Analyst") {
+	if strings.Contains(listRec.Body.String(), "analyst@example.com") {
 		t.Fatalf("invalid command changed bindings:\n%s", listRec.Body.String())
 	}
 }

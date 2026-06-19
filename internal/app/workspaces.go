@@ -169,7 +169,7 @@ func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	status := api.WorkspaceAccessStatus{Message: "Access updated."}
 	if s.store == nil {
 		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
-	} else if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, signals.WorkspaceAccessCommand.Email, signals.WorkspaceAccessCommand.DisplayName, signals.WorkspaceAccessCommand.Role); err != nil {
+	} else if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, signals.WorkspaceAccessCommand.Email, "", signals.WorkspaceAccessCommand.Role); err != nil {
 		status = api.WorkspaceAccessStatus{Error: err.Error()}
 	}
 	s.patchWorkspaceAccess(w, r, workspaceID, status)

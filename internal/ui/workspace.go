@@ -61,6 +61,7 @@ func workspacePageSignals(access api.WorkspaceAccessResponse, csrfToken string) 
 		"csrfToken":              csrfToken,
 		"workspaceAccess":        access,
 		"workspaceAccessCommand": api.WorkspaceAccessCommand{},
+		"workspaceAccessSearch":  "",
 	}
 }
 
@@ -72,6 +73,8 @@ func workspaceAccessControl(workspaceID string, canManage bool) g.Node {
 	remove := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccessCommand = evt.detail; " + postAction("/workspaces/"+workspaceID+"/access/remove")
 	return g.El("ld-workspace-access-control",
 		g.Attr("data-attr:access", "$workspaceAccess"),
+		g.Attr("data-attr:search", "$workspaceAccessSearch"),
+		g.Attr("data-on:ld-workspace-access-search__debounce.200ms", "$workspaceAccessSearch = evt.detail.search"),
 		g.Attr("data-on:ld-workspace-access-upsert", upsert),
 		g.Attr("data-on:ld-workspace-access-remove", remove),
 	)
