@@ -57,7 +57,7 @@ class FilterPanel extends LitElement {
   static styles = css`
     :host {
       display: block;
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       font-family: var(--fontStack-system);
     }
 
@@ -95,8 +95,8 @@ class FilterPanel extends LitElement {
     .count {
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-full);
-      background: var(--bgColor-muted);
-      color: var(--fgColor-muted);
+      background: var(--ld-bg-panel-muted);
+      color: var(--ld-fg-muted);
       padding: 2px 6px;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
@@ -111,8 +111,8 @@ class FilterPanel extends LitElement {
       place-items: center;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-tight);
-      background: var(--control-bgColor-rest);
-      color: var(--fgColor-muted);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
       cursor: pointer;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
@@ -120,7 +120,7 @@ class FilterPanel extends LitElement {
     }
 
     .close:hover {
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
     }
 
     .card {
@@ -128,7 +128,7 @@ class FilterPanel extends LitElement {
       gap: 6px;
       border: var(--ld-border-muted);
       border-radius: var(--ld-radius-default);
-      background: color-mix(in srgb, var(--report-panel, var(--bgColor-default)), transparent 18%);
+      background: color-mix(in srgb, var(--ld-bg-panel), transparent 18%);
       padding: 8px;
     }
 
@@ -141,7 +141,7 @@ class FilterPanel extends LitElement {
 
     h3 {
       margin: 0;
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
@@ -157,8 +157,8 @@ class FilterPanel extends LitElement {
     .reset {
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-tight);
-      background: var(--bgColor-default);
-      color: var(--fgColor-muted);
+      background: var(--ld-bg-page);
+      color: var(--ld-fg-muted);
       cursor: pointer;
       padding: 3px 6px;
       font-size: var(--ld-font-size-caption);
@@ -202,8 +202,8 @@ class FilterPanel extends LitElement {
     .popover-action {
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-tight);
-      background: var(--control-bgColor-rest);
-      color: var(--fgColor-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-default);
       cursor: pointer;
       font-weight: var(--ld-font-weight-strong);
     }
@@ -224,8 +224,8 @@ class FilterPanel extends LitElement {
 
     .preset[aria-pressed='true'] {
       border-color: var(--ld-accent);
-      background: color-mix(in srgb, var(--ld-accent) 20%, var(--control-bgColor-rest));
-      color: var(--fgColor-default);
+      background: color-mix(in srgb, var(--ld-accent) 20%, var(--ld-bg-control));
+      color: var(--ld-fg-default);
     }
 
     .date-trigger {
@@ -255,7 +255,7 @@ class FilterPanel extends LitElement {
       gap: 7px;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
-      background: var(--overlay-bgColor, var(--bgColor-default));
+      background: var(--ld-bg-overlay);
       box-shadow: var(--ld-shadow-floating-sm);
       padding: 8px;
     }
@@ -268,7 +268,7 @@ class FilterPanel extends LitElement {
     }
 
     .calendar-title {
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
     }
@@ -287,7 +287,7 @@ class FilterPanel extends LitElement {
     }
 
     .weekday {
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       text-align: center;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
@@ -300,12 +300,12 @@ class FilterPanel extends LitElement {
       padding: 0;
       border-color: transparent;
       background: transparent;
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       font-size: var(--ld-font-size-caption);
     }
 
     .day.outside {
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       opacity: 0.45;
     }
 
@@ -316,7 +316,7 @@ class FilterPanel extends LitElement {
     .day.selected {
       border-color: var(--ld-accent);
       background: var(--ld-accent);
-      color: var(--button-primary-fgColor-rest);
+      color: var(--ld-accent-fg);
     }
 
     .date-row {
@@ -328,7 +328,7 @@ class FilterPanel extends LitElement {
     .date-field {
       display: grid;
       gap: 3px;
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
@@ -347,9 +347,9 @@ class FilterPanel extends LitElement {
     }
 
     .popover-action.primary {
-      border-color: var(--button-primary-bgColor-rest);
-      background: var(--button-primary-bgColor-rest);
-      color: var(--button-primary-fgColor-rest);
+      border-color: var(--ld-accent);
+      background: var(--ld-accent);
+      color: var(--ld-accent-fg);
     }
 
     input,
@@ -359,8 +359,8 @@ class FilterPanel extends LitElement {
       min-height: 25px;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-tight);
-      background: var(--control-bgColor-rest);
-      color: var(--fgColor-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-default);
       padding: 0 7px;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-regular);
@@ -386,13 +386,13 @@ class FilterPanel extends LitElement {
       gap: 6px;
       border-radius: var(--ld-radius-tight);
       padding: 3px 4px;
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
     }
 
     label.check:hover {
-      background: var(--bgColor-muted);
+      background: var(--ld-bg-panel-muted);
     }
 
     label.check input {
@@ -403,7 +403,7 @@ class FilterPanel extends LitElement {
     }
 
     .empty {
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
       padding: 4px;
@@ -420,8 +420,8 @@ class FilterPanel extends LitElement {
       overflow: hidden;
       border: var(--ld-border-muted);
       border-radius: var(--ld-radius-full);
-      background: var(--bgColor-muted);
-      color: var(--fgColor-muted);
+      background: var(--ld-bg-panel-muted);
+      color: var(--ld-fg-muted);
       padding: 2px 6px;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -431,7 +431,7 @@ class FilterPanel extends LitElement {
 
     .summary {
       min-height: 24px;
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
     }
@@ -444,10 +444,10 @@ class FilterPanel extends LitElement {
       min-height: 27px;
       width: 100%;
       cursor: pointer;
-      border: 1px solid var(--button-primary-bgColor-rest);
+      border: 1px solid var(--ld-accent);
       border-radius: var(--ld-radius-tight);
-      background: var(--button-primary-bgColor-rest);
-      color: var(--button-primary-fgColor-rest);
+      background: var(--ld-accent);
+      color: var(--ld-accent-fg);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
     }

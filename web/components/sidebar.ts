@@ -98,7 +98,7 @@ class LibreDashSidebar extends LitElement {
       display: block;
       width: var(--ld-sidebar-width);
       min-height: 100svh;
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       font-family: var(--fontStack-system);
       transition: width 180ms var(--ld-ease-out);
     }
@@ -114,7 +114,7 @@ class LibreDashSidebar extends LitElement {
       width: var(--ld-sidebar-width);
       min-height: 100svh;
       grid-template-rows: auto minmax(0, 1fr) auto;
-      background: color-mix(in srgb, var(--bgColor-default), var(--bgColor-muted) 26%);
+      background: var(--ld-sidebar-bg);
       transition: width 180ms var(--ld-ease-out);
     }
 
@@ -134,7 +134,7 @@ class LibreDashSidebar extends LitElement {
     .name {
       overflow: hidden;
       min-width: 0;
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-body-lg);
@@ -152,16 +152,16 @@ class LibreDashSidebar extends LitElement {
       border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-default);
       background: transparent;
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       cursor: pointer;
       padding: 0;
     }
 
     .collapse-button:hover,
     .collapse-button:focus-visible {
-      border-color: var(--borderColor-muted);
-      background: var(--bgColor-muted);
-      color: var(--fgColor-default);
+      border-color: var(--ld-line-muted);
+      background: var(--ld-bg-panel-muted);
+      color: var(--ld-fg-default);
       outline: 0;
     }
 
@@ -171,8 +171,8 @@ class LibreDashSidebar extends LitElement {
     }
 
     .collapse-button:disabled:hover {
-      border-color: var(--borderColor-default);
-      color: var(--fgColor-muted);
+      border-color: var(--ld-line-default);
+      color: var(--ld-fg-muted);
     }
 
     nav {
@@ -204,7 +204,7 @@ class LibreDashSidebar extends LitElement {
       gap: 8px;
       border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-default);
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       padding: 0 9px;
       text-decoration: none;
       font-size: var(--ld-font-size-body-md);
@@ -228,15 +228,15 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item:hover,
     .nav-item:focus-visible {
-      background: var(--bgColor-muted);
-      color: var(--fgColor-default);
+      background: var(--ld-bg-panel-muted);
+      color: var(--ld-fg-default);
       outline: 0;
     }
 
     .nav-item[aria-current='page'] {
       border-color: transparent;
-      background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 36%);
-      color: var(--fgColor-default);
+      background: var(--ld-bg-hover);
+      color: var(--ld-fg-default);
     }
 
     .nav-item[aria-current='page']::before {
@@ -264,8 +264,8 @@ class LibreDashSidebar extends LitElement {
     }
 
     .nav-item[aria-current='page'] .nav-icon {
-      background: color-mix(in srgb, var(--fgColor-muted), transparent 88%);
-      color: var(--fgColor-default);
+      background: color-mix(in srgb, var(--ld-fg-muted), transparent 88%);
+      color: var(--ld-fg-default);
     }
 
     svg {
@@ -295,12 +295,12 @@ class LibreDashSidebar extends LitElement {
       align-items: center;
       gap: 8px;
       border-radius: var(--ld-radius-default);
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       padding: 0 7px;
     }
 
     .user-card:hover {
-      background: var(--bgColor-muted);
+      background: var(--ld-bg-panel-muted);
     }
 
     .avatar {
@@ -309,8 +309,8 @@ class LibreDashSidebar extends LitElement {
       height: 24px;
       place-items: center;
       border-radius: 50%;
-      background: color-mix(in srgb, var(--fgColor-muted), transparent 78%);
-      color: var(--fgColor-default);
+      background: color-mix(in srgb, var(--ld-fg-muted), transparent 78%);
+      color: var(--ld-fg-default);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
@@ -335,7 +335,7 @@ class LibreDashSidebar extends LitElement {
     }
 
     .user-role {
-      color: var(--fgColor-muted);
+      color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
     }
@@ -358,7 +358,7 @@ class LibreDashSidebar extends LitElement {
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
       background: transparent;
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
       cursor: pointer;
       padding: 0;
       font-size: var(--ld-font-size-caption);
@@ -367,16 +367,16 @@ class LibreDashSidebar extends LitElement {
 
     .theme-button:hover,
     .theme-button:focus-visible {
-      border-color: var(--borderColor-muted);
-      background: var(--bgColor-muted);
-      color: var(--fgColor-default);
+      border-color: var(--ld-line-muted);
+      background: var(--ld-bg-panel-muted);
+      color: var(--ld-fg-default);
       outline: 0;
     }
 
     .theme-button {
-      border-color: var(--borderColor-default);
+      border-color: var(--ld-line-default);
       background: transparent;
-      color: var(--fgColor-default);
+      color: var(--ld-fg-default);
     }
 
     :host([data-collapsed]) .brand {

@@ -112,13 +112,13 @@ const metricUsageGraphStyles = `
     min-height: 0;
     min-width: 0;
     background:
-      linear-gradient(var(--bgColor-default), var(--bgColor-default)),
-      radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fgColor-muted), transparent 87%) 1px, transparent 0);
+      linear-gradient(var(--ld-bg-page), var(--ld-bg-page)),
+      radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--ld-fg-muted), transparent 87%) 1px, transparent 0);
     background-size: auto, 18px 18px;
   }
 
   ld-metric-usage-graph .react-flow {
-    color: var(--fgColor-default);
+    color: var(--ld-fg-default);
   }
 
   ld-metric-usage-graph .react-flow__attribution {
@@ -127,14 +127,14 @@ const metricUsageGraphStyles = `
 
   ld-metric-usage-graph .react-flow__controls {
     border: var(--ld-border-default);
-    background: var(--bgColor-default);
+    background: var(--ld-bg-panel);
     box-shadow: var(--shadow-resting-small);
   }
 
   ld-metric-usage-graph .react-flow__controls-button {
-    border-bottom-color: var(--borderColor-muted);
-    background: var(--bgColor-default);
-    color: var(--fgColor-default);
+    border-bottom-color: var(--ld-line-muted);
+    background: var(--ld-bg-panel);
+    color: var(--ld-fg-default);
   }
 
   ld-metric-usage-graph .metric-usage-node {
@@ -144,12 +144,12 @@ const metricUsageGraphStyles = `
     border-radius: var(--borderRadius-default);
     background: var(--usage-node-bg);
     box-shadow: var(--shadow-resting-small);
-    color: var(--fgColor-default);
+    color: var(--ld-fg-default);
     padding: 9px 10px;
   }
 
   ld-metric-usage-graph .metric-usage-node-kind {
-    color: var(--fgColor-muted);
+    color: var(--ld-fg-muted);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
@@ -168,7 +168,7 @@ const metricUsageGraphStyles = `
   ld-metric-usage-graph .metric-usage-node-meta {
     overflow: hidden;
     margin-top: 5px;
-    color: var(--fgColor-muted);
+    color: var(--ld-fg-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-caption);
@@ -196,16 +196,16 @@ function toFlowEdge(edge: UsageEdge): Edge {
     label: edge.label ?? '',
     markerEnd: { type: MarkerType.ArrowClosed },
     style: {
-      stroke: edge.kind === 'usage' ? 'var(--fgColor-attention)' : 'var(--borderColor-accent-emphasis)',
+      stroke: edge.kind === 'usage' ? 'var(--ld-fg-warning)' : 'var(--ld-line-accent)',
       strokeWidth: edge.kind === 'usage' ? 1.8 : 1.4,
     },
     labelStyle: {
-      fill: 'var(--fgColor-muted)',
+      fill: 'var(--ld-fg-muted)',
       fontSize: 10,
       fontWeight: 500,
     },
     labelBgStyle: {
-      fill: 'var(--bgColor-default)',
+      fill: 'var(--ld-bg-page)',
       fillOpacity: 0.92,
     },
   }
@@ -242,10 +242,10 @@ function UsageNodeComponent({ data }: { data: UsageNode }) {
 
 function nodeStyle(kind: string): Record<string, string> {
   const palette: Record<string, [string, string, string]> = {
-    model: ['var(--data-blue-color-muted)', 'var(--data-blue-color-emphasis)', 'var(--borderColor-accent-muted)'],
-    dataset: ['var(--data-auburn-color-muted)', 'var(--data-auburn-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    metrics_view: ['var(--data-yellow-color-muted)', 'var(--data-yellow-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    dashboard: ['var(--data-purple-color-muted)', 'var(--data-purple-color-emphasis)', 'var(--borderColor-accent-muted)'],
+    model: ['var(--ld-asset-semantic-model-bg)', 'var(--ld-asset-semantic-model-accent)', 'var(--ld-asset-semantic-model-border)'],
+    dataset: ['var(--ld-asset-dataset-bg)', 'var(--ld-asset-dataset-accent)', 'var(--ld-asset-dataset-border)'],
+    metrics_view: ['var(--ld-asset-metric-view-bg)', 'var(--ld-asset-metric-view-accent)', 'var(--ld-asset-metric-view-border)'],
+    dashboard: ['var(--ld-asset-dashboard-bg)', 'var(--ld-asset-dashboard-accent)', 'var(--ld-asset-dashboard-border)'],
   }
   const [bg, accent, border] = palette[kind] ?? palette.model
   return {

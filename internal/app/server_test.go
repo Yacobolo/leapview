@@ -550,7 +550,7 @@ func TestMetricViewUsageRouteRendersUsageTab(t *testing.T) {
 		`aria-current="page"`,
 		`data-signals=`,
 		`metricUsageGraph`,
-		`<ld-metric-usage-graph class="block h-metric-usage min-h-0 rounded-default border border-outline-muted bg-surface" data-attr:graph="$metricUsageGraph"></ld-metric-usage-graph>`,
+		`<ld-metric-usage-graph class="block h-metric-usage min-h-0 rounded-default border border-outline-muted bg-panel" data-attr:graph="$metricUsageGraph"></ld-metric-usage-graph>`,
 		`metricGrid`,
 		`data-attr:grid="$metricGrid"`,
 		`Dashboard`,

@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	workspaceMainClass  = "grid min-w-0 min-h-svh content-start gap-3 bg-report-workspace px-4 py-4 max-sm:min-h-0 max-sm:p-3"
-	workspacePanelClass = "grid min-w-0 rounded-default border border-outline-muted bg-surface"
+	workspaceMainClass  = "grid min-w-0 min-h-svh content-start gap-3 bg-app px-4 py-4 max-sm:min-h-0 max-sm:p-3"
+	workspacePanelClass = "grid min-w-0 rounded-default border border-outline-muted bg-panel"
 	assetRowClass       = "grid min-w-0 grid-cols-asset-row items-center gap-3 border-b border-outline-muted px-3 py-2 last:border-b-0 hover:bg-control-hover"
 )
 
@@ -116,7 +116,7 @@ func assetBreadcrumbCurrent(asset api.AssetResponse) g.Node {
 	}
 	return h.Li(h.Class("min-w-0"),
 		h.H1(h.Class("m-0 inline-flex min-w-0 items-center gap-2 text-title-sm font-semibold leading-snug text-fg-default"),
-			h.Span(h.Class("inline-flex size-5 shrink-0 items-center justify-center text-fg-muted"), h.Aria("hidden", "true"),
+			h.Span(h.Class("inline-flex size-5 shrink-0 items-center justify-center text-icon-muted"), h.Aria("hidden", "true"),
 				icon(assetIconAttrs()...),
 			),
 			h.Span(h.Class("min-w-0 truncate"), g.Text(assetTitle(asset))),
@@ -137,7 +137,7 @@ func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace api.Workspace
 						formInput("Display name", "displayName", "Optional", ""),
 						h.Label(h.Class("grid gap-1 text-caption font-medium uppercase text-fg-muted"),
 							g.Text("Role"),
-							h.Select(h.Name("role"), h.Class("min-h-control-md rounded-small border border-outline-variant bg-container px-2 text-body-sm font-medium text-fg-default"),
+							h.Select(h.Name("role"), h.Class("min-h-control-md rounded-small border border-outline-variant bg-control px-2 text-body-sm font-medium text-fg-default"),
 								g.Map(roles, func(role api.RoleResponse) g.Node {
 									return h.Option(h.Value(role.Name), g.Text(role.Name))
 								}),
@@ -226,9 +226,9 @@ func assetToolbar(workspaceID, activeType, query string) g.Node {
 	if activeType == "connection" {
 		types = append(types, "connection")
 	}
-	return h.Div(h.Class("grid min-w-0 gap-3 border-b border-outline-variant bg-report-workspace px-3 pt-3"), g.Attr("data-workspace-asset-toolbar", ""),
+	return h.Div(h.Class("grid min-w-0 gap-3 border-b border-outline-variant bg-app px-3 pt-3"), g.Attr("data-workspace-asset-toolbar", ""),
 		h.Form(h.Method("get"), h.Action("/workspaces/"+workspaceID), h.Class("flex min-w-0 max-w-workspace-search items-center gap-2"),
-			h.Input(h.Type("search"), h.Name("q"), h.Value(query), h.Placeholder("Search workspace assets..."), h.Class("min-h-control-md w-full rounded-small border border-outline-variant bg-container px-3 text-body-sm font-medium text-fg-default placeholder:text-fg-muted")),
+			h.Input(h.Type("search"), h.Name("q"), h.Value(query), h.Placeholder("Search workspace assets..."), h.Class("min-h-control-md w-full rounded-small border border-outline-variant bg-control px-3 text-body-sm font-medium text-fg-default placeholder:text-fg-muted")),
 			g.If(activeType != "", h.Input(h.Type("hidden"), h.Name("type"), h.Value(activeType))),
 			h.Button(h.Type("submit"), h.Class(metricActionButtonClass), h.Title("Search"), h.Aria("label", "Search"), lucide.Search(metricActionIconAttrs()...)),
 		),
@@ -314,7 +314,7 @@ func assetActions(workspaceID string, asset api.AssetResponse) g.Node {
 }
 
 func assetDetailTabs(workspaceID, assetID, activeSection string, relatedCount int) g.Node {
-	return h.Nav(h.Class("flex min-w-0 gap-6 border-b border-outline-variant bg-report-workspace px-3"), h.Aria("label", "Workspace asset sections"),
+	return h.Nav(h.Class("flex min-w-0 gap-6 border-b border-outline-variant bg-app px-3"), h.Aria("label", "Workspace asset sections"),
 		assetDetailTabLink(workspaceAssetSectionHref(workspaceID, assetID, "details"), activeSection == "details", "Details", nil),
 		assetDetailTabLink(workspaceAssetSectionHref(workspaceID, assetID, "lineage"), activeSection == "lineage", "Lineage", metricTabCount(relatedCount)),
 	)
@@ -396,7 +396,7 @@ type assetLineageEdge struct {
 
 func assetLineageSection(lineage assetLineageModel) g.Node {
 	return h.Section(h.ID("lineage"), h.Class("grid content-start"), h.Aria("label", "Asset lineage"),
-		g.El("ld-asset-lineage-graph", h.Class("block h-min-model-graph min-h-0 border-b border-outline-muted bg-surface"), g.Attr("data-attr:graph", "$assetLineageGraph")),
+		g.El("ld-asset-lineage-graph", h.Class("block h-min-model-graph min-h-0 border-b border-outline-muted bg-panel"), g.Attr("data-attr:graph", "$assetLineageGraph")),
 		h.Div(h.Class("grid content-start gap-5 px-4 py-4"),
 			definitionSignalGrid("Uses", "assetLineageUsesGrid"),
 			definitionSignalGrid("Used by", "assetLineageUsedByGrid"),
@@ -1681,12 +1681,12 @@ func roleBindingRow(workspaceID string, binding api.RoleBindingResponse, csrfTok
 func formInput(label, name, placeholder, value string) g.Node {
 	return h.Label(h.Class("grid gap-1 text-caption font-medium uppercase text-fg-muted"),
 		g.Text(label),
-		h.Input(h.Type("text"), h.Name(name), h.Value(value), h.Placeholder(placeholder), h.Class("min-h-control-md rounded-small border border-outline-variant bg-container px-2 text-body-sm font-medium text-fg-default placeholder:text-fg-muted")),
+		h.Input(h.Type("text"), h.Name(name), h.Value(value), h.Placeholder(placeholder), h.Class("min-h-control-md rounded-small border border-outline-variant bg-control px-2 text-body-sm font-medium text-fg-default placeholder:text-fg-muted")),
 	)
 }
 
 func emptyState(message string) g.Node {
-	return h.Div(h.Class("rounded-small border border-dashed border-outline-muted bg-container-low px-3 py-4 text-body-sm font-medium text-fg-muted"), g.Text(message))
+	return h.Div(h.Class("rounded-small border border-dashed border-outline-muted bg-panel-muted px-3 py-4 text-body-sm font-medium text-fg-muted"), g.Text(message))
 }
 
 func assetTitle(asset api.AssetResponse) string {

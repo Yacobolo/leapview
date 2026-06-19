@@ -34,7 +34,7 @@ func assetTypeIcon(typ string) g.Node {
 		icon = lucide.Component
 	}
 	return h.Span(
-		h.Class("inline-flex size-8 shrink-0 items-center justify-center rounded-small text-fg-muted"),
+		h.Class("inline-flex size-8 shrink-0 items-center justify-center rounded-small text-icon-muted"),
 		g.Attr("aria-hidden", "true"),
 		icon(assetIconAttrs()...),
 	)

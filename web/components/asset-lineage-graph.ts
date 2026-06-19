@@ -115,13 +115,13 @@ const assetLineageGraphStyles = `
     min-height: 0;
     min-width: 0;
     background:
-      linear-gradient(var(--bgColor-default), var(--bgColor-default)),
-      radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fgColor-muted), transparent 87%) 1px, transparent 0);
+      linear-gradient(var(--ld-bg-page), var(--ld-bg-page)),
+      radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--ld-fg-muted), transparent 87%) 1px, transparent 0);
     background-size: auto, 18px 18px;
   }
 
   ld-asset-lineage-graph .react-flow {
-    color: var(--fgColor-default);
+    color: var(--ld-fg-default);
   }
 
   ld-asset-lineage-graph .react-flow__attribution {
@@ -130,14 +130,14 @@ const assetLineageGraphStyles = `
 
   ld-asset-lineage-graph .react-flow__controls {
     border: var(--ld-border-default);
-    background: var(--bgColor-default);
+    background: var(--ld-bg-panel);
     box-shadow: var(--shadow-resting-small);
   }
 
   ld-asset-lineage-graph .react-flow__controls-button {
-    border-bottom-color: var(--borderColor-muted);
-    background: var(--bgColor-default);
-    color: var(--fgColor-default);
+    border-bottom-color: var(--ld-line-muted);
+    background: var(--ld-bg-panel);
+    color: var(--ld-fg-default);
   }
 
   ld-asset-lineage-graph .asset-lineage-node {
@@ -147,17 +147,17 @@ const assetLineageGraphStyles = `
     border-radius: var(--borderRadius-default);
     background: var(--lineage-node-bg);
     box-shadow: var(--shadow-resting-small);
-    color: var(--fgColor-default);
+    color: var(--ld-fg-default);
     padding: 9px 10px;
   }
 
   ld-asset-lineage-graph .asset-lineage-node-selected {
-    border-color: var(--borderColor-accent-emphasis);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--borderColor-accent-emphasis), transparent 28%), var(--shadow-resting-small);
+    border-color: var(--ld-line-accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ld-line-accent), transparent 28%), var(--shadow-resting-small);
   }
 
   ld-asset-lineage-graph .asset-lineage-node-kind {
-    color: var(--fgColor-muted);
+    color: var(--ld-fg-muted);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
@@ -167,7 +167,7 @@ const assetLineageGraphStyles = `
     display: block;
     overflow: hidden;
     margin-top: 3px;
-    color: var(--fgColor-default);
+    color: var(--ld-fg-default);
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
@@ -178,7 +178,7 @@ const assetLineageGraphStyles = `
 
   ld-asset-lineage-graph .asset-lineage-node-title[href]:hover,
   ld-asset-lineage-graph .asset-lineage-node-title[href]:focus-visible {
-    color: var(--fgColor-accent);
+    color: var(--ld-fg-link);
     outline: 0;
     text-decoration: underline;
   }
@@ -186,7 +186,7 @@ const assetLineageGraphStyles = `
   ld-asset-lineage-graph .asset-lineage-node-meta {
     overflow: hidden;
     margin-top: 5px;
-    color: var(--fgColor-muted);
+    color: var(--ld-fg-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-caption);
@@ -218,12 +218,12 @@ function toFlowEdge(edge: LineageEdge): Edge {
       strokeWidth: 1.5,
     },
     labelStyle: {
-      fill: 'var(--fgColor-muted)',
+      fill: 'var(--ld-fg-muted)',
       fontSize: 10,
       fontWeight: 500,
     },
     labelBgStyle: {
-      fill: 'var(--bgColor-default)',
+      fill: 'var(--ld-bg-page)',
       fillOpacity: 0.92,
     },
   }
@@ -288,34 +288,34 @@ function LineageNodeComponent({ data }: { data: LineageNode }) {
 
 function nodeStyle(node: LineageNode): Record<string, string> {
   const palette: Record<string, [string, string, string]> = {
-    cache_table: ['var(--data-auburn-color-muted)', 'var(--data-auburn-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    catalog: ['var(--data-pink-color-muted)', 'var(--data-pink-color-emphasis)', 'var(--borderColor-accent-muted)'],
-    connection: ['var(--data-gray-color-muted)', 'var(--data-gray-color-emphasis)', 'var(--borderColor-muted)'],
-    dashboard: ['var(--data-purple-color-muted)', 'var(--data-purple-color-emphasis)', 'var(--borderColor-accent-muted)'],
-    dataset: ['var(--data-auburn-color-muted)', 'var(--data-auburn-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    dimension: ['var(--data-lemon-color-muted)', 'var(--data-lemon-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    filter: ['var(--data-pine-color-muted)', 'var(--data-pine-color-emphasis)', 'var(--borderColor-success-muted)'],
-    measure: ['var(--data-green-color-muted)', 'var(--data-green-color-emphasis)', 'var(--borderColor-success-muted)'],
-    metric_view: ['var(--data-yellow-color-muted)', 'var(--data-yellow-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    page: ['var(--data-coral-color-muted)', 'var(--data-coral-color-emphasis)', 'var(--borderColor-danger-muted)'],
-    semantic_model: ['var(--data-blue-color-muted)', 'var(--data-blue-color-emphasis)', 'var(--borderColor-accent-muted)'],
-    source: ['var(--data-teal-color-muted)', 'var(--data-teal-color-emphasis)', 'var(--borderColor-accent-muted)'],
-    table: ['var(--data-olive-color-muted)', 'var(--data-olive-color-emphasis)', 'var(--borderColor-success-muted)'],
-    visual: ['var(--data-red-color-muted)', 'var(--data-red-color-emphasis)', 'var(--borderColor-danger-muted)'],
+    cache_table: ['var(--ld-asset-cache-table-bg)', 'var(--ld-asset-cache-table-accent)', 'var(--ld-asset-cache-table-border)'],
+    catalog: ['var(--ld-asset-catalog-bg)', 'var(--ld-asset-catalog-accent)', 'var(--ld-asset-catalog-border)'],
+    connection: ['var(--ld-asset-connection-bg)', 'var(--ld-asset-connection-accent)', 'var(--ld-asset-connection-border)'],
+    dashboard: ['var(--ld-asset-dashboard-bg)', 'var(--ld-asset-dashboard-accent)', 'var(--ld-asset-dashboard-border)'],
+    dataset: ['var(--ld-asset-dataset-bg)', 'var(--ld-asset-dataset-accent)', 'var(--ld-asset-dataset-border)'],
+    dimension: ['var(--ld-asset-dimension-bg)', 'var(--ld-asset-dimension-accent)', 'var(--ld-asset-dimension-border)'],
+    filter: ['var(--ld-asset-filter-bg)', 'var(--ld-asset-filter-accent)', 'var(--ld-asset-filter-border)'],
+    measure: ['var(--ld-asset-measure-bg)', 'var(--ld-asset-measure-accent)', 'var(--ld-asset-measure-border)'],
+    metric_view: ['var(--ld-asset-metric-view-bg)', 'var(--ld-asset-metric-view-accent)', 'var(--ld-asset-metric-view-border)'],
+    page: ['var(--ld-asset-page-bg)', 'var(--ld-asset-page-accent)', 'var(--ld-asset-page-border)'],
+    semantic_model: ['var(--ld-asset-semantic-model-bg)', 'var(--ld-asset-semantic-model-accent)', 'var(--ld-asset-semantic-model-border)'],
+    source: ['var(--ld-asset-source-bg)', 'var(--ld-asset-source-accent)', 'var(--ld-asset-source-border)'],
+    table: ['var(--ld-asset-table-bg)', 'var(--ld-asset-table-accent)', 'var(--ld-asset-table-border)'],
+    visual: ['var(--ld-asset-visual-bg)', 'var(--ld-asset-visual-accent)', 'var(--ld-asset-visual-border)'],
   }
   const [bg, accent, border] = palette[node.kind] ?? palette.semantic_model
   return {
     '--lineage-node-bg': bg,
-    '--lineage-node-accent': node.selected ? 'var(--borderColor-accent-emphasis)' : accent,
+    '--lineage-node-accent': node.selected ? 'var(--ld-line-accent)' : accent,
     '--lineage-node-border': border,
   } as Record<string, string>
 }
 
 function edgeStroke(kind: string): string {
-  if (kind.startsWith('uses')) return 'var(--borderColor-accent-emphasis)'
-  if (kind.startsWith('reads')) return 'var(--fgColor-attention)'
-  if (kind.startsWith('filters')) return 'var(--fgColor-success)'
-  return 'var(--borderColor-muted)'
+  if (kind.startsWith('uses')) return 'var(--ld-line-accent)'
+  if (kind.startsWith('reads')) return 'var(--ld-fg-warning)'
+  if (kind.startsWith('filters')) return 'var(--ld-fg-success)'
+  return 'var(--ld-line-muted)'
 }
 
 function kindLabel(kind: string): string {

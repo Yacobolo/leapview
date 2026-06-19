@@ -29,28 +29,28 @@ func staticAsset(path string) string {
 }
 
 const (
-	appRootClass               = "min-h-svh bg-report-workspace text-fg-default"
-	appShellClass              = "grid min-h-svh grid-cols-app-shell bg-report-workspace max-sm:grid-cols-1"
-	reportShellClass           = "grid min-h-svh grid-cols-report-shell bg-report-workspace max-sm:grid-cols-1"
-	appMainClass               = "grid min-w-0 min-h-svh grid-rows-app-main bg-report-workspace"
+	appRootClass               = "min-h-svh bg-app text-fg-default"
+	appShellClass              = "grid min-h-svh grid-cols-app-shell bg-app max-sm:grid-cols-1"
+	reportShellClass           = "grid min-h-svh grid-cols-report-shell bg-app max-sm:grid-cols-1"
+	appMainClass               = "grid min-w-0 min-h-svh grid-rows-app-main bg-app"
 	catalogMainClass           = appMainClass + " gap-3 px-4 py-4 max-sm:min-h-0 max-sm:p-3"
 	reportMainClass            = appMainClass + " h-svh min-h-0 overflow-hidden"
-	metricMainClass            = "grid h-svh min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-report-workspace"
+	metricMainClass            = "grid h-svh min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-app"
 	modelMainClass             = appMainClass + " gap-3 px-4 py-4 max-sm:min-h-0 max-sm:p-3"
-	cardClass                  = "grid min-h-min-card max-w-card grid-rows-card rounded-default border border-outline-variant bg-surface p-4 shadow-resting-sm"
+	cardClass                  = "grid min-h-min-card max-w-card grid-rows-card rounded-default border border-outline-variant bg-panel p-4 shadow-resting-sm"
 	cardTitleClass             = "m-0 mt-1 text-body-md leading-snug font-semibold text-fg-default"
 	cardDescriptionClass       = "m-0 mt-2 text-body-sm leading-relaxed font-normal text-fg-muted"
 	cardFooterClass            = "mt-4 flex items-center justify-between gap-3 border-t border-outline-muted pt-3 text-caption font-medium text-fg-muted"
 	eyebrowClass               = "m-0 mb-1 text-caption leading-tight font-medium uppercase text-fg-muted"
-	visualCardClass            = "h-full min-h-0 w-full overflow-hidden rounded-default border border-outline-variant bg-report-panel"
+	visualCardClass            = "h-full min-h-0 w-full overflow-hidden rounded-default border border-outline-variant bg-panel"
 	actionButtonClass          = "inline-flex size-action min-h-action items-center justify-center rounded-default border border-outline-variant bg-transparent p-0 text-fg-default hover:bg-control-hover focus-visible:bg-control-hover focus-visible:outline-0 disabled:cursor-not-allowed disabled:opacity-disabled"
 	metricActionButtonClass    = "inline-flex size-8 items-center justify-center rounded-small border border-transparent bg-transparent p-0 text-fg-muted no-underline transition-colors duration-fast hover:border-outline-muted hover:bg-control-hover hover:text-fg-default focus-visible:border-outline-accent focus-visible:bg-control-hover focus-visible:text-fg-default focus-visible:outline-0"
 	primaryLinkButtonClass     = "inline-flex min-h-control-xs items-center justify-center gap-1.5 rounded-small bg-button-primary px-2.5 text-caption font-semibold text-on-primary no-underline hover:bg-button-primary-hover focus-visible:bg-button-primary-hover focus-visible:outline-0"
-	tagClass                   = "rounded-full border border-outline-muted bg-container-low px-2 py-0.5 text-caption font-medium uppercase text-fg-muted"
+	tagClass                   = "rounded-full border border-outline-muted bg-panel-muted px-2 py-0.5 text-caption font-medium uppercase text-fg-muted"
 	metricContractSectionClass = "grid min-h-0 gap-3 overflow-hidden bg-transparent"
-	metricWorkspaceClass       = "grid min-h-0 min-w-0 grid-cols-metric-workspace overflow-hidden bg-report-workspace data-[rail-collapsed]:grid-cols-metric-workspace-collapsed max-md:grid-cols-1"
+	metricWorkspaceClass       = "grid min-h-0 min-w-0 grid-cols-metric-workspace overflow-hidden bg-app data-[rail-collapsed]:grid-cols-metric-workspace-collapsed max-md:grid-cols-1"
 	metricContentColumnClass   = "grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
-	metricInfoSidebarClass     = "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-outline-variant bg-report-workspace max-md:border-l-0 max-md:border-t"
+	metricInfoSidebarClass     = "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-outline-variant bg-app max-md:border-l-0 max-md:border-t"
 )
 
 func inspectorScript() g.Node {
@@ -402,7 +402,7 @@ func metricInfoItem(label string, value g.Node) g.Node {
 }
 
 func metricTabCount(count int) g.Node {
-	return h.Span(h.Class("inline-flex min-w-4 items-center justify-center rounded-full bg-container-low px-1.5 py-px text-caption font-medium leading-none text-fg-muted"), g.Text(strconv.Itoa(count)))
+	return h.Span(h.Class("inline-flex min-w-4 items-center justify-center rounded-full bg-panel-muted px-1.5 py-px text-caption font-medium leading-none text-fg-muted"), g.Text(strconv.Itoa(count)))
 }
 
 func pluralize(label string, count int) string {
@@ -463,7 +463,7 @@ func metricViewMeasures() g.Node {
 
 func metricViewDashboards() g.Node {
 	return h.Section(h.ID("usage"), h.Class(metricContractSectionClass+" metric-contract-section-usage"),
-		g.El("ld-metric-usage-graph", h.Class("block h-metric-usage min-h-0 rounded-default border border-outline-muted bg-surface"), g.Attr("data-attr:graph", "$metricUsageGraph")),
+		g.El("ld-metric-usage-graph", h.Class("block h-metric-usage min-h-0 rounded-default border border-outline-muted bg-panel"), g.Attr("data-attr:graph", "$metricUsageGraph")),
 		g.El("ld-data-grid", g.Attr("data-attr:grid", "$metricGrid")),
 	)
 }
@@ -595,7 +595,7 @@ func metricUsageGraph(view dashboard.MetricViewDetail) any {
 }
 
 func metricTabs(view dashboard.MetricViewDetail, activeSection string) g.Node {
-	return h.Nav(h.Class("flex min-w-0 gap-6 overflow-x-auto border-b border-outline-variant bg-report-workspace px-3"), h.Aria("label", "Metric view sections"),
+	return h.Nav(h.Class("flex min-w-0 gap-6 overflow-x-auto border-b border-outline-variant bg-app px-3"), h.Aria("label", "Metric view sections"),
 		metricTabLink(view.ID, "measures", activeSection, "Measures", metricTabCount(view.MeasureCount)),
 		metricTabLink(view.ID, "dimensions", activeSection, "Dimensions", metricTabCount(view.DimensionCount)),
 		metricTabLink(view.ID, "usage", activeSection, "Usage", metricTabCount(view.DashboardCount)),
@@ -727,7 +727,7 @@ func ModelPage(catalog dashboard.Catalog, model dashboard.ModelGraph) g.Node {
 							model.Name,
 							modelStats(model.Stats),
 						),
-						h.Div(h.Class("grid min-h-model-graph min-w-0 flex-1 overflow-hidden rounded-default border border-outline-variant bg-surface shadow-resting-md"),
+						h.Div(h.Class("grid min-h-model-graph min-w-0 flex-1 overflow-hidden rounded-default border border-outline-variant bg-panel shadow-resting-md"),
 							g.El("ld-model-graph", h.Class("block min-h-0 w-full"), g.Attr("data-model", modelGraphJSON(model))),
 						),
 					),
@@ -1151,7 +1151,7 @@ func buttonIconAttrs() []g.Node {
 }
 
 func metricInfoIconAttrs() []g.Node {
-	return []g.Node{g.Attr("aria-hidden", "true"), h.Class("size-4 shrink-0 text-fg-muted"), h.Style("stroke-width: 1.75")}
+	return []g.Node{g.Attr("aria-hidden", "true"), h.Class("size-4 shrink-0 text-icon-muted"), h.Style("stroke-width: 1.75")}
 }
 
 func metricActionIconAttrs() []g.Node {
@@ -1253,7 +1253,7 @@ func filterCardFallback(filterID string, report semantic.Dashboard, filters dash
 		return nil
 	}
 	control := filters.Controls[filterID]
-	return h.Div(h.Class("grid h-full min-h-0 content-center gap-1 rounded-default bg-report-panel p-3 text-body-sm"),
+	return h.Div(h.Class("grid h-full min-h-0 content-center gap-1 rounded-default bg-panel p-3 text-body-sm"),
 		h.Span(h.Class("text-caption font-medium uppercase leading-tight text-fg-muted"), g.Text(definition.Label)),
 		h.Span(h.Class("truncate text-body-sm font-semibold text-fg-default"), g.Text(filterCardSummary(definition, control))),
 	)
@@ -1327,7 +1327,7 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 }
 
 func filtersDock(report semantic.Dashboard, pageID string, action string) g.Node {
-	return h.Details(h.Class("group grid min-h-0 w-full border-l border-outline-variant bg-report-panel-subtle transition-[width,background-color] duration-normal ease-ld sm:w-filter-closed"), h.Aria("label", "Report filters"), g.Attr("data-filter-dock", ""),
+	return h.Details(h.Class("group grid min-h-0 w-full border-l border-outline-variant bg-panel-muted transition-[width,background-color] duration-normal ease-ld sm:w-filter-closed"), h.Aria("label", "Report filters"), g.Attr("data-filter-dock", ""),
 		h.Summary(h.Class("flex min-h-control-xl cursor-pointer list-none items-center justify-center gap-2 border-b border-outline-variant px-2 text-caption font-medium uppercase text-fg-muted marker:hidden transition-colors duration-fast hover:text-fg-default focus-visible:text-fg-default focus-visible:outline-0 sm:flex sm:h-full sm:w-filter-closed sm:flex-col sm:justify-start sm:border-b-0 sm:px-0 sm:py-4"), h.Title("Toggle filters"), g.Attr("data-filter-summary", ""),
 			lucide.SlidersHorizontal(filterDockIconAttrs()...),
 			h.Span(h.Class("sm:[writing-mode:vertical-rl]"), g.Text("Filters")),
@@ -1339,7 +1339,7 @@ func filtersDock(report semantic.Dashboard, pageID string, action string) g.Node
 
 func filtersPane(report semantic.Dashboard, pageID string, action string) g.Node {
 	tableReset := tableResetExpression()
-	return h.Div(h.Class("min-h-0 w-full overflow-auto border-t border-outline-variant bg-report-workspace p-3 sm:hidden sm:w-filter-dock sm:border-l sm:border-t-0"), g.Attr("data-filter-pane", ""),
+	return h.Div(h.Class("min-h-0 w-full overflow-auto border-t border-outline-variant bg-app p-3 sm:hidden sm:w-filter-dock sm:border-l sm:border-t-0"), g.Attr("data-filter-pane", ""),
 		g.El("ld-filter-panel",
 			g.Attr("config", jsonString(report.FilterConfigForPage(pageID))),
 			g.Attr("data-attr:filters", "$filters"),
