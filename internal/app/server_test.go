@@ -198,12 +198,12 @@ func (fakeMetrics) ModelGraph(modelID string) (dashboard.ModelGraph, bool) {
 		Nodes: []dashboard.ModelNode{
 			{ID: "source:orders", Label: "orders", Kind: "source"},
 			{ID: "model_table:orders", Label: "orders", Kind: "model_table"},
-			{ID: "metrics_view:orders", Label: "Orders Metrics", Kind: "metrics_view"},
+			{ID: "metric_view:orders", Label: "Orders Metrics", Kind: "metric_view"},
 		},
 		Edges: []dashboard.ModelEdge{
-			{ID: "orders_cache", Source: "source:orders", Target: "cache:orders_enriched", Kind: "materialization"},
-			{ID: "orders_dataset", Source: "cache:orders_enriched", Target: "dataset:orders", Kind: "dataset"},
-			{ID: "orders_metrics", Source: "dataset:orders", Target: "metrics_view:orders", Kind: "metrics"},
+			{ID: "orders_materialization", Source: "source:orders", Target: "materialization:orders", Kind: "materialization"},
+			{ID: "orders_model_table", Source: "materialization:orders", Target: "model_table:orders", Kind: "model_table"},
+			{ID: "orders_metric_view", Source: "model_table:orders", Target: "metric_view:orders", Kind: "metric_view"},
 		},
 	}, true
 }
@@ -696,7 +696,7 @@ func (canceledTableMetrics) QueryTablePage(_ context.Context, _ string, _ string
 	return dashboard.EmptyTable(request, context.Canceled), nil
 }
 
-func (fakeMetrics) RefreshCache(_ context.Context, _ string) error {
+func (fakeMetrics) RefreshMaterializations(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -749,9 +749,9 @@ func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
 	}
 }
 
-func TestRefreshCacheCommandAcceptsDatastarSignals(t *testing.T) {
+func TestRefreshMaterializationsCommandAcceptsDatastarSignals(t *testing.T) {
 	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":0,"count":50}}`)
-	req := httptest.NewRequest(http.MethodPost, "/commands/refresh-cache", body)
+	req := httptest.NewRequest(http.MethodPost, "/commands/refresh-materializations", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -797,8 +797,8 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,
 		},
 		{
-			name: "refresh cache",
-			path: "/commands/refresh-cache",
+			name: "refresh materializations",
+			path: "/commands/refresh-materializations",
 			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations","modelId":"test"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":0,"count":50}}`,
 		},
 	}

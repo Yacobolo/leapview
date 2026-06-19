@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func (m *DuckDBMetrics) RefreshCache(ctx context.Context, modelID string) error {
+func (m *DuckDBMetrics) RefreshMaterializations(ctx context.Context, modelID string) error {
 	runtime, ok := m.runtimes[modelID]
 	if !ok {
 		return fmt.Errorf("unknown semantic model %q", modelID)

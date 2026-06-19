@@ -646,7 +646,7 @@ relogios_presentes,watches_gifts
 	}
 	defer metrics.Close()
 	if _, err := os.Stat(filepath.Join(dir, "libredash-olist.duckdb")); err != nil {
-		t.Fatalf("expected DuckDB cache file: %v", err)
+		t.Fatalf("expected DuckDB materialization file: %v", err)
 	}
 
 	views := metrics.MetricViews()
@@ -690,11 +690,11 @@ relogios_presentes,watches_gifts
 	if !ok {
 		t.Fatal("model graph olist not found")
 	}
-	if !hasModelNode(graph.Nodes, "metrics_view:orders") {
-		t.Fatalf("model graph missing metrics view node: %#v", graph.Nodes)
+	if !hasModelNode(graph.Nodes, "metric_view:orders") {
+		t.Fatalf("model graph missing metric view node: %#v", graph.Nodes)
 	}
-	if !hasModelEdge(graph.Edges, "model_table:orders", "metrics_view:orders") {
-		t.Fatalf("model graph missing model table to metrics view edge: %#v", graph.Edges)
+	if !hasModelEdge(graph.Edges, "model_table:orders", "metric_view:orders") {
+		t.Fatalf("model graph missing model table to metric view edge: %#v", graph.Edges)
 	}
 
 	patch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
@@ -1078,8 +1078,8 @@ relogios_presentes,watches_gifts
 		t.Fatalf("heat pivot generated columns missing background scale formatting: %#v", heatPivot.Columns)
 	}
 
-	if err := metrics.RefreshCache(context.Background(), "olist"); err != nil {
-		t.Fatalf("refresh cache: %v", err)
+	if err := metrics.RefreshMaterializations(context.Background(), "olist"); err != nil {
+		t.Fatalf("refresh materializations: %v", err)
 	}
 }
 

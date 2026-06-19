@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/semantic"
@@ -39,14 +40,23 @@ func joinSQL(base string, aliases map[string]tableAlias) (string, error) {
 		return "", err
 	}
 	parts := []string{"model." + baseIdent + " t0"}
+	joinAliases := make([]tableAlias, 0, len(aliases)-1)
 	for table, alias := range aliases {
-		if table == base {
+		if table != base {
+			joinAliases = append(joinAliases, alias)
+		}
+	}
+	sort.Slice(joinAliases, func(i, j int) bool {
+		if len(joinAliases[i].Path) != len(joinAliases[j].Path) {
+			return len(joinAliases[i].Path) < len(joinAliases[j].Path)
+		}
+		return joinAliases[i].Alias < joinAliases[j].Alias
+	})
+	for _, alias := range joinAliases {
+		if len(alias.Path) == 0 {
 			continue
 		}
-		if len(alias.Path) != 1 {
-			return "", fmt.Errorf("unsupported relationship path to %q", table)
-		}
-		relationship := alias.Path[0]
+		relationship := alias.Path[len(alias.Path)-1]
 		fromTable, fromField, err := splitField(relationship.From)
 		if err != nil {
 			return "", err
@@ -55,18 +65,29 @@ func joinSQL(base string, aliases map[string]tableAlias) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		rightIdent, err := quoteIdent(table)
+		rightIdent, err := quoteIdent(alias.Table)
 		if err != nil {
 			return "", err
 		}
-		leftAlias := aliases[fromTable].Alias
-		rightAlias := aliases[toTable].Alias
-		if relationship.Cardinality == "one_to_one" && toTable == base {
-			leftAlias = aliases[toTable].Alias
-			rightAlias = aliases[fromTable].Alias
+		leftTable := fromTable
+		rightTable := toTable
+		if alias.Table == fromTable && relationship.Cardinality == "one_to_one" {
+			leftTable = toTable
+			rightTable = fromTable
 			fromField, toField = toField, fromField
 		}
-		parts = append(parts, fmt.Sprintf("LEFT JOIN model.%s %s ON %s.%s = %s.%s", rightIdent, alias.Alias, leftAlias, fromField, rightAlias, toField))
+		left, ok := aliases[leftTable]
+		if !ok {
+			return "", fmt.Errorf("missing relationship alias for %q", leftTable)
+		}
+		right, ok := aliases[rightTable]
+		if !ok {
+			return "", fmt.Errorf("missing relationship alias for %q", rightTable)
+		}
+		if right.Table != alias.Table {
+			return "", fmt.Errorf("relationship path to %q ends at %q", alias.Table, right.Table)
+		}
+		parts = append(parts, fmt.Sprintf("LEFT JOIN model.%s %s ON %s.%s = %s.%s", rightIdent, alias.Alias, left.Alias, fromField, right.Alias, toField))
 	}
 	return strings.Join(parts, "\n"), nil
 }

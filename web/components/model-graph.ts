@@ -420,11 +420,11 @@ function positionFor(node: ModelGraphNode, nodes: ModelGraphNode[]): { x: number
   switch (kind) {
     case 'source':
       return { x: 0, y: index * 116 }
-    case 'cache':
+    case 'materialization':
       return { x: 300, y: 292 + index * 128 }
-    case 'dataset':
+    case 'model_table':
       return { x: 560, y: 292 + index * 128 }
-    case 'metrics_view':
+    case 'metric_view':
       return { x: 820, y: index * 128 }
     case 'metric':
       return { x: 1040, y: index * 116 }
@@ -475,9 +475,9 @@ function ModelNodeComponent({ data }: { data: ModelGraphNode & { selected?: bool
 function nodeStyle(kind: string): Record<string, string> {
   const palette: Record<string, [string, string, string]> = {
     source: ['var(--data-blue-color-muted)', 'var(--data-blue-color-emphasis)', 'var(--borderColor-default)'],
-    cache: ['var(--data-green-color-muted)', 'var(--data-green-color-emphasis)', 'var(--borderColor-success-muted)'],
-    dataset: ['var(--data-auburn-color-muted)', 'var(--data-auburn-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    metrics_view: ['var(--data-yellow-color-muted)', 'var(--data-yellow-color-emphasis)', 'var(--borderColor-attention-muted)'],
+    materialization: ['var(--data-green-color-muted)', 'var(--data-green-color-emphasis)', 'var(--borderColor-success-muted)'],
+    model_table: ['var(--data-auburn-color-muted)', 'var(--data-auburn-color-emphasis)', 'var(--borderColor-attention-muted)'],
+    metric_view: ['var(--data-yellow-color-muted)', 'var(--data-yellow-color-emphasis)', 'var(--borderColor-attention-muted)'],
     metric: ['var(--data-yellow-color-muted)', 'var(--data-yellow-color-emphasis)', 'var(--borderColor-attention-muted)'],
     visual: ['var(--data-purple-color-muted)', 'var(--data-purple-color-emphasis)', 'var(--borderColor-accent-muted)'],
     report_table: ['var(--data-coral-color-muted)', 'var(--data-coral-color-emphasis)', 'var(--borderColor-default)'],
@@ -492,11 +492,11 @@ function nodeStyle(kind: string): Record<string, string> {
 
 function nodeColor(kind: string): string {
   switch (kind) {
-    case 'cache':
+    case 'materialization':
       return 'var(--data-green-color-emphasis)'
-    case 'dataset':
+    case 'model_table':
       return 'var(--data-auburn-color-emphasis)'
-    case 'metrics_view':
+    case 'metric_view':
       return 'var(--data-yellow-color-emphasis)'
     case 'metric':
       return 'var(--data-yellow-color-emphasis)'
@@ -513,12 +513,12 @@ function kindLabel(kind: string): string {
   switch (kind) {
     case 'source':
       return 'Source table'
-    case 'cache':
-      return 'DuckDB cache'
-    case 'dataset':
-      return 'Semantic dataset'
-    case 'metrics_view':
-      return 'Metrics view'
+    case 'materialization':
+      return 'Materialization'
+    case 'model_table':
+      return 'Model table'
+    case 'metric_view':
+      return 'Metric view'
     case 'metric':
       return 'Metric'
     case 'visual':

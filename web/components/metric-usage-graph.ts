@@ -225,9 +225,9 @@ function positionFor(node: UsageNode, nodes: UsageNode[]): { x: number; y: numbe
   switch (node.kind) {
     case 'model':
       return { x: 0, y: 92 }
-    case 'dataset':
+    case 'model_table':
       return { x: 250, y: 92 }
-    case 'metrics_view':
+    case 'metric_view':
       return { x: 500, y: 92 }
     case 'dashboard':
       return { x: 760, y: Math.max(18, index * 118) }
@@ -252,8 +252,8 @@ function UsageNodeComponent({ data }: { data: UsageNode }) {
 function nodeStyle(kind: string): Record<string, string> {
   const palette: Record<string, [string, string, string]> = {
     model: ['var(--data-blue-color-muted)', 'var(--data-blue-color-emphasis)', 'var(--borderColor-accent-muted)'],
-    dataset: ['var(--data-auburn-color-muted)', 'var(--data-auburn-color-emphasis)', 'var(--borderColor-attention-muted)'],
-    metrics_view: ['var(--data-yellow-color-muted)', 'var(--data-yellow-color-emphasis)', 'var(--borderColor-attention-muted)'],
+    model_table: ['var(--data-auburn-color-muted)', 'var(--data-auburn-color-emphasis)', 'var(--borderColor-attention-muted)'],
+    metric_view: ['var(--data-yellow-color-muted)', 'var(--data-yellow-color-emphasis)', 'var(--borderColor-attention-muted)'],
     dashboard: ['var(--data-purple-color-muted)', 'var(--data-purple-color-emphasis)', 'var(--borderColor-accent-muted)'],
   }
   const [bg, accent, border] = palette[kind] ?? palette.model
@@ -268,10 +268,10 @@ function kindLabel(kind: string): string {
   switch (kind) {
     case 'model':
       return 'Semantic model'
-    case 'dataset':
-      return 'Dataset'
-    case 'metrics_view':
-      return 'Metrics view'
+    case 'model_table':
+      return 'Model table'
+    case 'metric_view':
+      return 'Metric view'
     case 'dashboard':
       return 'Dashboard'
     default:

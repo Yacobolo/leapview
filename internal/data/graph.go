@@ -109,9 +109,9 @@ func modelGraph(model *semantic.Model, metricViews map[string]*semantic.MetricVi
 			fields = append(fields, dashboard.ModelField{Name: measure, Role: "measure"})
 		}
 		graph.Nodes = append(graph.Nodes, dashboard.ModelNode{
-			ID:          nodeID("metrics_view", name),
+			ID:          nodeID("metric_view", name),
 			Label:       view.Title,
-			Kind:        "metrics_view",
+			Kind:        "metric_view",
 			Schema:      "metrics",
 			Description: view.Description,
 			Fields:      fields,
@@ -123,10 +123,10 @@ func modelGraph(model *semantic.Model, metricViews map[string]*semantic.MetricVi
 			},
 		})
 		graph.Edges = append(graph.Edges, dashboard.ModelEdge{
-			ID:     "metrics_view_" + name + "_from_" + view.BaseTable,
+			ID:     "metric_view_" + name + "_from_" + view.BaseTable,
 			Source: nodeID("model_table", view.BaseTable),
-			Target: nodeID("metrics_view", name),
-			Label:  "metrics view",
+			Target: nodeID("metric_view", name),
+			Label:  "metric view",
 			Kind:   "metrics",
 		})
 	}

@@ -73,7 +73,7 @@ visuals:
         alias: revenue
       metric_view: orders
     options:
-      note: Cached payment value
+      note: Payment value
       tone: green
   aov_kpi:
     kind: kpi

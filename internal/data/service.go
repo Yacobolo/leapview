@@ -101,7 +101,7 @@ func NewDuckDBMetricsFromCatalog(dataDir, catalogPath, duckDBDir string) (*DuckD
 			db.Close()
 			return nil, err
 		}
-		if err := metrics.RefreshCache(context.Background(), modelID); err != nil {
+		if err := metrics.RefreshMaterializations(context.Background(), modelID); err != nil {
 			db.Close()
 			return nil, err
 		}

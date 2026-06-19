@@ -569,11 +569,11 @@ func metricUsageGraph(view dashboard.MetricViewDetail) any {
 	nodes := []graphNode{
 		{ID: "model", Label: view.ModelTitle, Kind: "model", Meta: view.SemanticModel},
 		{ID: "model_table", Label: view.BaseTable, Kind: "model_table", Meta: "model table"},
-		{ID: "metrics_view", Label: view.Title, Kind: "metrics_view", Meta: "metric contract"},
+		{ID: "metric_view", Label: view.Title, Kind: "metric_view", Meta: "metric contract"},
 	}
 	edges := []graphEdge{
 		{ID: "model_table_edge", Source: "model", Target: "model_table", Label: "defines", Kind: "semantic"},
-		{ID: "metric_view_edge", Source: "model_table", Target: "metrics_view", Label: "exposes", Kind: "semantic"},
+		{ID: "metric_view_edge", Source: "model_table", Target: "metric_view", Label: "exposes", Kind: "semantic"},
 	}
 	for _, report := range view.Dashboards {
 		nodeID := "dashboard:" + report.ID
@@ -584,8 +584,8 @@ func metricUsageGraph(view dashboard.MetricViewDetail) any {
 			Meta:  strconv.Itoa(report.PageCount) + " " + pluralize("page", report.PageCount),
 		})
 		edges = append(edges, graphEdge{
-			ID:     "metrics_view_" + report.ID,
-			Source: "metrics_view",
+			ID:     "metric_view_" + report.ID,
+			Source: "metric_view",
 			Target: nodeID,
 			Label:  "used by",
 			Kind:   "usage",
@@ -929,7 +929,7 @@ func reportActions(modelID, dashboardID string) g.Node {
 			h.Title("Refresh model materializations"),
 			h.Aria("label", "Refresh model materializations"),
 			g.Attr("data-attr:disabled", "$status.loading"),
-			g.Attr("data-on:click", postAction("/commands/refresh-cache?model="+modelID+"&dashboard="+dashboardID)),
+			g.Attr("data-on:click", postAction("/commands/refresh-materializations?model="+modelID+"&dashboard="+dashboardID)),
 			lucide.RefreshCw(buttonIconAttrs()...),
 		),
 	)

@@ -59,11 +59,15 @@ func (p *Planner) Plan(request Request) (Plan, error) {
 	selects := []string{}
 	groupBy := []string{}
 	columns := []string{}
+	columnSet := map[string]bool{}
 	if request.Time.Field != "" {
 		dimension := view.Dimensions[request.Time.Field]
-		alias := request.Time.Alias
-		if alias == "" {
-			alias = fieldAlias(request.Time.Field)
+		alias, err := outputAlias(Field{Field: request.Time.Field, Alias: request.Time.Alias})
+		if err != nil {
+			return Plan{}, err
+		}
+		if err := addOutputColumn(columnSet, alias); err != nil {
+			return Plan{}, err
 		}
 		expr := dimensionExpr(dimension, aliases)
 		if request.Time.Grain != "" {
@@ -79,9 +83,12 @@ func (p *Planner) Plan(request Request) (Plan, error) {
 	for _, item := range request.Dimensions {
 		field, _, _ := view.ResolveDimensionRef(item.Field)
 		dimension := view.Dimensions[field]
-		alias := item.Alias
-		if alias == "" {
-			alias = fieldAlias(field)
+		alias, err := outputAlias(Field{Field: field, Alias: item.Alias})
+		if err != nil {
+			return Plan{}, err
+		}
+		if err := addOutputColumn(columnSet, alias); err != nil {
+			return Plan{}, err
 		}
 		selects = append(selects, dimensionExpr(dimension, aliases)+" AS "+alias)
 		groupBy = append(groupBy, alias)
@@ -90,9 +97,12 @@ func (p *Planner) Plan(request Request) (Plan, error) {
 	for _, item := range request.Measures {
 		field, _, _ := view.ResolveMeasureRef(item.Field)
 		measure := view.Measures[field]
-		alias := item.Alias
-		if alias == "" {
-			alias = fieldAlias(field)
+		alias, err := outputAlias(Field{Field: field, Alias: item.Alias})
+		if err != nil {
+			return Plan{}, err
+		}
+		if err := addOutputColumn(columnSet, alias); err != nil {
+			return Plan{}, err
 		}
 		selects = append(selects, measureExpr(measure, aliases)+" AS "+alias)
 		columns = append(columns, alias)
@@ -118,13 +128,9 @@ func (p *Planner) Plan(request Request) (Plan, error) {
 		sql.WriteString(strings.Join(groupBy, ", "))
 	}
 	if len(request.Sort) > 0 {
-		parts := make([]string, 0, len(request.Sort))
-		for _, sort := range request.Sort {
-			direction := "ASC"
-			if strings.EqualFold(sort.Direction, "desc") {
-				direction = "DESC"
-			}
-			parts = append(parts, fieldAlias(sort.Field)+" "+direction)
+		parts, err := sortSQL(request.Sort, columnSet)
+		if err != nil {
+			return Plan{}, err
 		}
 		sql.WriteString("\nORDER BY ")
 		sql.WriteString(strings.Join(parts, ", "))
@@ -175,15 +181,28 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 	}
 	selects := []string{}
 	columns := []string{}
+	columnSet := map[string]bool{}
 	for _, item := range request.Dimensions {
 		field, _, _ := view.ResolveDimensionRef(item.Field)
-		alias := outputAlias(item)
+		alias, err := outputAlias(Field{Field: field, Alias: item.Alias})
+		if err != nil {
+			return Plan{}, err
+		}
+		if err := addOutputColumn(columnSet, alias); err != nil {
+			return Plan{}, err
+		}
 		selects = append(selects, dimensionExpr(view.Dimensions[field], aliases)+" AS "+alias)
 		columns = append(columns, alias)
 	}
 	for _, item := range request.Measures {
 		field, _, _ := view.ResolveMeasureRef(item.Field)
-		alias := outputAlias(item)
+		alias, err := outputAlias(Field{Field: field, Alias: item.Alias})
+		if err != nil {
+			return Plan{}, err
+		}
+		if err := addOutputColumn(columnSet, alias); err != nil {
+			return Plan{}, err
+		}
 		expr, err := rawMeasureExpr(view.Measures[field], aliases)
 		if err != nil {
 			return Plan{}, err
@@ -205,7 +224,9 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 	sql.WriteString(from)
 	sql.WriteString("\nWHERE ")
 	sql.WriteString(strings.Join(whereParts, " AND "))
-	writeOrderLimitOffset(&sql, request.Sort, request.Limit, request.Offset)
+	if err := writeOrderLimitOffset(&sql, request.Sort, columnSet, request.Limit, request.Offset); err != nil {
+		return Plan{}, err
+	}
 	return Plan{SQL: sql.String(), Args: args, Columns: columns}, nil
 }
 
@@ -247,10 +268,17 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 	}
 	selects := []string{}
 	columns := []string{}
+	columnSet := map[string]bool{}
 	dimensionFields := []string{}
 	for _, item := range request.Dimensions {
 		field, _, _ := view.ResolveDimensionRef(item.Field)
-		alias := outputAlias(item)
+		alias, err := outputAlias(Field{Field: field, Alias: item.Alias})
+		if err != nil {
+			return Plan{}, err
+		}
+		if err := addOutputColumn(columnSet, alias); err != nil {
+			return Plan{}, err
+		}
 		selects = append(selects, dimensionExpr(view.Dimensions[field], aliases)+" AS "+alias)
 		columns = append(columns, alias)
 		dimensionFields = append(dimensionFields, field)
@@ -262,6 +290,12 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 	valueAlias := request.Measure.Alias
 	if valueAlias == "" {
 		valueAlias = "value"
+	}
+	if _, err := quoteIdent(valueAlias); err != nil {
+		return Plan{}, err
+	}
+	if err := addOutputColumn(columnSet, valueAlias); err != nil {
+		return Plan{}, err
 	}
 	selects = append(selects, "CAST("+rawExpr+" AS DOUBLE) AS "+valueAlias)
 	columns = append(columns, valueAlias)
@@ -282,7 +316,9 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 	sql.WriteString(from)
 	sql.WriteString("\nWHERE ")
 	sql.WriteString(strings.Join(whereParts, " AND "))
-	writeOrderLimitOffset(&sql, request.Sort, request.Limit, 0)
+	if err := writeOrderLimitOffset(&sql, request.Sort, columnSet, request.Limit, 0); err != nil {
+		return Plan{}, err
+	}
 	return Plan{SQL: sql.String(), Args: args, Columns: columns}, nil
 }
 
@@ -350,22 +386,57 @@ func fieldAlias(field string) string {
 	return parts[len(parts)-1]
 }
 
-func outputAlias(field Field) string {
+func outputAlias(field Field) (string, error) {
 	if field.Alias != "" {
-		return field.Alias
+		if _, err := quoteIdent(field.Alias); err != nil {
+			return "", err
+		}
+		return field.Alias, nil
 	}
-	return fieldAlias(field.Field)
+	alias := fieldAlias(field.Field)
+	if _, err := quoteIdent(alias); err != nil {
+		return "", err
+	}
+	return alias, nil
 }
 
-func writeOrderLimitOffset(sql *strings.Builder, sorts []Sort, limit, offset int) {
+func addOutputColumn(columns map[string]bool, alias string) error {
+	if columns[alias] {
+		return fmt.Errorf("duplicate output alias %q", alias)
+	}
+	columns[alias] = true
+	return nil
+}
+
+func sortSQL(sorts []Sort, columns map[string]bool) ([]string, error) {
+	parts := make([]string, 0, len(sorts))
+	for _, sort := range sorts {
+		field, err := quoteIdent(sort.Field)
+		if err != nil {
+			return nil, err
+		}
+		if !columns[field] {
+			return nil, fmt.Errorf("sort field %q is not a selected output alias", sort.Field)
+		}
+		direction := "ASC"
+		switch {
+		case sort.Direction == "" || strings.EqualFold(sort.Direction, "asc"):
+			direction = "ASC"
+		case strings.EqualFold(sort.Direction, "desc"):
+			direction = "DESC"
+		default:
+			return nil, fmt.Errorf("unsupported sort direction %q", sort.Direction)
+		}
+		parts = append(parts, field+" "+direction)
+	}
+	return parts, nil
+}
+
+func writeOrderLimitOffset(sql *strings.Builder, sorts []Sort, columns map[string]bool, limit, offset int) error {
 	if len(sorts) > 0 {
-		parts := make([]string, 0, len(sorts))
-		for _, sort := range sorts {
-			direction := "ASC"
-			if strings.EqualFold(sort.Direction, "desc") {
-				direction = "DESC"
-			}
-			parts = append(parts, fieldAlias(sort.Field)+" "+direction)
+		parts, err := sortSQL(sorts, columns)
+		if err != nil {
+			return err
 		}
 		sql.WriteString("\nORDER BY ")
 		sql.WriteString(strings.Join(parts, ", "))
@@ -376,4 +447,5 @@ func writeOrderLimitOffset(sql *strings.Builder, sorts []Sort, limit, offset int
 	if offset > 0 {
 		sql.WriteString(fmt.Sprintf("\nOFFSET %d", offset))
 	}
+	return nil
 }
