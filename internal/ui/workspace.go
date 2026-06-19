@@ -85,7 +85,7 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace api.WorkspaceRespon
 func assetBreadcrumbHeader(workspace api.WorkspaceResponse, asset api.AssetResponse) g.Node {
 	return h.Header(h.Class("grid min-w-0 grid-cols-workspace-header items-center gap-2 border-b border-outline-muted px-4 py-2.5"),
 		h.Nav(h.Class("min-w-0"), h.Aria("label", "Breadcrumb"),
-			h.Ol(h.Class("flex min-w-0 flex-wrap items-center gap-1.5 text-body-sm font-760 leading-snug"),
+			h.Ol(h.Class("flex min-w-0 flex-wrap items-center gap-1.5 text-body-sm font-medium leading-snug"),
 				breadcrumbLink("Workspaces", "/workspaces"),
 				breadcrumbSeparator(),
 				breadcrumbLink(workspace.Title, "/workspaces/"+workspace.ID),
@@ -115,7 +115,7 @@ func assetBreadcrumbCurrent(asset api.AssetResponse) g.Node {
 		icon = lucide.Component
 	}
 	return h.Li(h.Class("min-w-0"),
-		h.H1(h.Class("m-0 inline-flex min-w-0 items-center gap-2 text-title-sm font-850 leading-snug text-fg-default"),
+		h.H1(h.Class("m-0 inline-flex min-w-0 items-center gap-2 text-title-sm font-semibold leading-snug text-fg-default"),
 			h.Span(h.Class("inline-flex size-5 shrink-0 items-center justify-center text-fg-muted"), h.Aria("hidden", "true"),
 				icon(assetIconAttrs()...),
 			),
@@ -130,14 +130,14 @@ func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace api.Workspace
 			workspaceHeader("Workspace", workspace.Title, "Assign workspace roles. BI assets remain authored in Git.", nil),
 			h.Div(h.Class("grid max-w-workspace-detail grid-cols-workspace-detail gap-4 max-lg:grid-cols-1"),
 				h.Section(h.Class(workspacePanelClass+" content-start p-4"),
-					h.H2(h.Class("m-0 text-body-md font-850 text-fg-default"), g.Text("Assign role")),
+					h.H2(h.Class("m-0 text-body-md font-semibold text-fg-default"), g.Text("Assign role")),
 					h.Form(h.Method("post"), h.Action("/workspaces/"+workspace.ID+"/permissions"), h.Class("mt-4 grid gap-3"),
 						g.If(csrfToken != "", h.Input(h.Type("hidden"), h.Name("gorilla.csrf.Token"), h.Value(csrfToken))),
 						formInput("Email", "email", "person@example.com", ""),
 						formInput("Display name", "displayName", "Optional", ""),
-						h.Label(h.Class("grid gap-1 text-caption font-850 uppercase text-fg-muted"),
+						h.Label(h.Class("grid gap-1 text-caption font-medium uppercase text-fg-muted"),
 							g.Text("Role"),
-							h.Select(h.Name("role"), h.Class("min-h-control-md rounded-small border border-outline-variant bg-container px-2 text-body-sm font-720 text-fg-default"),
+							h.Select(h.Name("role"), h.Class("min-h-control-md rounded-small border border-outline-variant bg-container px-2 text-body-sm font-medium text-fg-default"),
 								g.Map(roles, func(role api.RoleResponse) g.Node {
 									return h.Option(h.Value(role.Name), g.Text(role.Name))
 								}),
@@ -147,7 +147,7 @@ func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace api.Workspace
 					),
 				),
 				h.Section(h.Class(workspacePanelClass+" content-start p-4"),
-					h.H2(h.Class("m-0 text-body-md font-850 text-fg-default"), g.Text("Current access")),
+					h.H2(h.Class("m-0 text-body-md font-semibold text-fg-default"), g.Text("Current access")),
 					g.If(len(bindings) == 0, emptyState("No role bindings yet.")),
 					h.Div(h.Class("mt-3 grid"),
 						g.Map(bindings, func(binding api.RoleBindingResponse) g.Node {
@@ -228,7 +228,7 @@ func assetToolbar(workspaceID, activeType, query string) g.Node {
 	}
 	return h.Div(h.Class("grid min-w-0 gap-3 border-b border-outline-variant bg-report-workspace px-3 pt-3"), g.Attr("data-workspace-asset-toolbar", ""),
 		h.Form(h.Method("get"), h.Action("/workspaces/"+workspaceID), h.Class("flex min-w-0 max-w-workspace-search items-center gap-2"),
-			h.Input(h.Type("search"), h.Name("q"), h.Value(query), h.Placeholder("Search workspace assets..."), h.Class("min-h-control-md w-full rounded-small border border-outline-variant bg-container px-3 text-body-sm font-720 text-fg-default placeholder:text-fg-muted")),
+			h.Input(h.Type("search"), h.Name("q"), h.Value(query), h.Placeholder("Search workspace assets..."), h.Class("min-h-control-md w-full rounded-small border border-outline-variant bg-container px-3 text-body-sm font-medium text-fg-default placeholder:text-fg-muted")),
 			g.If(activeType != "", h.Input(h.Type("hidden"), h.Name("type"), h.Value(activeType))),
 			h.Button(h.Type("submit"), h.Class(metricActionButtonClass), h.Title("Search"), h.Aria("label", "Search"), lucide.Search(metricActionIconAttrs()...)),
 		),
@@ -245,9 +245,9 @@ func assetToolbar(workspaceID, activeType, query string) g.Node {
 }
 
 func assetTabLink(workspaceID, typ, activeType, query, label string) g.Node {
-	className := "relative -mb-px inline-flex min-h-control-xl items-center whitespace-nowrap border-b-2 px-1 text-body-sm font-850 no-underline transition-colors duration-fast"
+	className := "relative -mb-px inline-flex min-h-control-xl items-center whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-fast"
 	if typ == activeType {
-		className += " border-fg-accent text-fg-default"
+		className += " border-fg-accent font-semibold text-fg-default"
 	} else {
 		className += " border-transparent text-fg-muted hover:border-outline-muted hover:text-fg-default"
 	}
@@ -294,11 +294,11 @@ func assetRow(workspaceID string, asset api.AssetResponse) g.Node {
 	return h.Article(h.Class(assetRowClass),
 		assetTypeIcon(asset.Type),
 		h.Div(h.Class("min-w-0"),
-			h.P(h.Class("m-0 text-caption font-900 uppercase text-fg-muted"), g.Text(assetTypeLabel(asset.Type))),
-			h.A(h.Class("mt-0.5 block truncate text-body-sm font-850 text-fg-default no-underline hover:underline"), h.Href(detailHref), g.Text(assetTitle(asset))),
-			g.If(asset.Description != "", h.P(h.Class("m-0 mt-1 truncate text-caption font-650 text-fg-muted"), g.Text(asset.Description))),
+			h.P(h.Class("m-0 text-caption font-medium uppercase text-fg-muted"), g.Text(assetTypeLabel(asset.Type))),
+			h.A(h.Class("mt-0.5 block truncate text-body-sm font-semibold text-fg-default no-underline hover:underline"), h.Href(detailHref), g.Text(assetTitle(asset))),
+			g.If(asset.Description != "", h.P(h.Class("m-0 mt-1 truncate text-caption font-normal text-fg-muted"), g.Text(asset.Description))),
 		),
-		h.Code(h.Class("truncate text-caption font-720 text-fg-muted"), g.Text(asset.Key)),
+		h.Code(h.Class("truncate text-caption font-medium text-fg-muted"), g.Text(asset.Key)),
 		h.Div(h.Class("inline-flex justify-end gap-2"),
 			h.A(h.Class(metricActionButtonClass), h.Href(detailHref), h.Title("View details"), h.Aria("label", "View details"), lucide.FileText(metricActionIconAttrs()...)),
 			h.A(h.Class(metricActionButtonClass), h.Href(openHref), h.Title("Open asset"), h.Aria("label", "Open asset"), lucide.ExternalLink(metricActionIconAttrs()...)),
@@ -328,9 +328,9 @@ func assetDetailBodyClass(activeSection string) string {
 }
 
 func assetDetailTabLink(href string, active bool, label string, meta g.Node) g.Node {
-	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-850 no-underline transition-colors duration-fast"
+	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-fast"
 	if active {
-		className += " border-fg-accent text-fg-default"
+		className += " border-fg-accent font-semibold text-fg-default"
 	} else {
 		className += " border-transparent text-fg-muted hover:border-outline-muted hover:text-fg-default"
 	}
@@ -340,7 +340,7 @@ func assetDetailTabLink(href string, active bool, label string, meta g.Node) g.N
 func assetDetailSidebar(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) g.Node {
 	return h.Aside(h.Class(metricInfoSidebarClass), h.Aria("label", "Asset details"), g.Attr("data-metric-info-sidebar", ""),
 		h.Div(h.Class("flex min-h-control-xl items-center justify-between gap-2 border-b border-outline-muted px-4 py-2"), g.Attr("data-metric-info-header", ""),
-			h.H2(h.Class("m-0 flex min-w-0 items-center gap-2 truncate text-body-sm font-850 text-fg-default"), assetTypeIcon(asset.Type), h.Span(g.Text("Details"))),
+			h.H2(h.Class("m-0 flex min-w-0 items-center gap-2 truncate text-body-sm font-semibold text-fg-default"), assetTypeIcon(asset.Type), h.Span(g.Text("Details"))),
 		),
 		h.Div(h.Class("grid content-start overflow-auto"), g.Attr("data-metric-info-body", ""),
 			h.Div(h.Class("grid content-start"),
@@ -1287,14 +1287,14 @@ func definitionFacts(title string, facts []definitionFact) g.Node {
 		filtered = append(filtered, fact)
 	}
 	return h.Section(h.Class("grid min-w-0 content-start gap-3 border-b border-outline-muted pb-5 last:border-b-0"), h.Aria("label", title),
-		h.H2(h.Class("m-0 text-body-sm font-850 text-fg-default"), g.Text(title)),
+		h.H2(h.Class("m-0 text-body-sm font-semibold text-fg-default"), g.Text(title)),
 		g.If(len(filtered) == 0, emptyState("No details are available.")),
 		g.If(len(filtered) > 0, h.Div(h.Class("grid min-w-0 grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-5 gap-y-3"),
 			g.Map(filtered, func(fact definitionFact) g.Node {
 				return h.Div(h.Class("grid min-w-0 gap-1"),
-					h.Span(h.Class("text-caption font-900 uppercase leading-none text-fg-muted"), g.Text(fact.Label)),
-					g.If(fact.Code, h.Code(h.Class("min-w-0 truncate font-mono text-body-sm font-720 text-fg-default"), g.Text(fact.Value))),
-					g.If(!fact.Code, h.Span(h.Class("min-w-0 truncate text-body-sm font-720 text-fg-default"), g.Text(fact.Value))),
+					h.Span(h.Class("text-caption font-medium uppercase leading-none text-fg-muted"), g.Text(fact.Label)),
+					g.If(fact.Code, h.Code(h.Class("min-w-0 truncate font-mono text-body-sm font-medium text-fg-default"), g.Text(fact.Value))),
+					g.If(!fact.Code, h.Span(h.Class("min-w-0 truncate text-body-sm font-medium text-fg-default"), g.Text(fact.Value))),
 				)
 			}),
 		)),
@@ -1310,12 +1310,12 @@ func definitionStats(title string, facts []definitionFact) g.Node {
 		filtered = append(filtered, fact)
 	}
 	return h.Section(h.Class("grid min-w-0 content-start gap-3 border-b border-outline-muted pb-5 last:border-b-0"), h.Aria("label", title),
-		h.H2(h.Class("m-0 text-body-sm font-850 text-fg-default"), g.Text(title)),
+		h.H2(h.Class("m-0 text-body-sm font-semibold text-fg-default"), g.Text(title)),
 		g.If(len(filtered) == 0, emptyState("No details are available.")),
 		g.If(len(filtered) > 0, h.Div(h.Class("grid min-w-0 grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4"),
 			g.Map(filtered, func(fact definitionFact) g.Node {
 				return h.Div(h.Class(definitionStatItemClass(fact)),
-					h.Span(h.Class("text-caption font-900 uppercase leading-none text-fg-muted"), g.Text(fact.Label)),
+					h.Span(h.Class("text-caption font-medium uppercase leading-none text-fg-muted"), g.Text(fact.Label)),
 					g.If(fact.Code, h.Code(h.Class(definitionStatValueClass(fact, true)), g.Text(fact.Value))),
 					g.If(!fact.Code, h.Span(h.Class(definitionStatValueClass(fact, false)), g.Text(fact.Value))),
 				)
@@ -1334,19 +1334,19 @@ func definitionStatItemClass(fact definitionFact) string {
 func definitionStatValueClass(fact definitionFact, code bool) string {
 	if fact.Wide {
 		if code {
-			return "min-w-0 whitespace-pre-wrap font-mono text-body-sm font-650 leading-snug text-fg-default"
+			return "min-w-0 whitespace-pre-wrap font-mono text-body-sm font-normal leading-snug text-fg-default"
 		}
-		return "min-w-0 text-body-sm font-650 leading-snug text-fg-default"
+		return "min-w-0 text-body-sm font-normal leading-snug text-fg-default"
 	}
 	if code {
-		return "min-w-0 truncate font-mono text-title-xs font-850 leading-tight text-fg-default"
+		return "min-w-0 truncate font-mono text-body-sm font-medium leading-normal text-fg-default"
 	}
-	return "min-w-0 truncate text-title-xs font-850 leading-tight text-fg-default"
+	return "min-w-0 truncate text-body-sm font-medium leading-normal text-fg-default"
 }
 
 func definitionSignalGrid(title, signal string) g.Node {
 	return h.Section(h.Class("grid min-w-0 content-start gap-3 border-b border-outline-muted pb-5 last:border-b-0"), h.Aria("label", title),
-		h.H2(h.Class("m-0 text-body-sm font-850 text-fg-default"), g.Text(title)),
+		h.H2(h.Class("m-0 text-body-sm font-semibold text-fg-default"), g.Text(title)),
 		g.El("ld-data-grid", g.Attr("data-attr:grid", "$"+signal)),
 	)
 }
@@ -1666,8 +1666,8 @@ func dependentAssetNames(assetID, edgeType string, assets []api.AssetResponse, e
 func roleBindingRow(workspaceID string, binding api.RoleBindingResponse, csrfToken string) g.Node {
 	return h.Div(h.Class("grid grid-cols-role-row items-center gap-3 border-b border-outline-muted py-2 last:border-b-0"),
 		h.Div(h.Class("min-w-0"),
-			h.P(h.Class("m-0 truncate text-body-sm font-850 text-fg-default"), g.Text(displayLabel(binding.DisplayName, binding.Email))),
-			h.P(h.Class("m-0 mt-0.5 truncate text-caption font-650 text-fg-muted"), g.Text(binding.Email)),
+			h.P(h.Class("m-0 truncate text-body-sm font-semibold text-fg-default"), g.Text(displayLabel(binding.DisplayName, binding.Email))),
+			h.P(h.Class("m-0 mt-0.5 truncate text-caption font-normal text-fg-muted"), g.Text(binding.Email)),
 		),
 		h.Span(h.Class(tagClass), g.Text(binding.Role)),
 		h.Form(h.Method("post"), h.Action("/workspaces/"+workspaceID+"/permissions/remove"), h.Class("justify-self-end"),
@@ -1679,14 +1679,14 @@ func roleBindingRow(workspaceID string, binding api.RoleBindingResponse, csrfTok
 }
 
 func formInput(label, name, placeholder, value string) g.Node {
-	return h.Label(h.Class("grid gap-1 text-caption font-850 uppercase text-fg-muted"),
+	return h.Label(h.Class("grid gap-1 text-caption font-medium uppercase text-fg-muted"),
 		g.Text(label),
-		h.Input(h.Type("text"), h.Name(name), h.Value(value), h.Placeholder(placeholder), h.Class("min-h-control-md rounded-small border border-outline-variant bg-container px-2 text-body-sm font-720 text-fg-default placeholder:text-fg-muted")),
+		h.Input(h.Type("text"), h.Name(name), h.Value(value), h.Placeholder(placeholder), h.Class("min-h-control-md rounded-small border border-outline-variant bg-container px-2 text-body-sm font-medium text-fg-default placeholder:text-fg-muted")),
 	)
 }
 
 func emptyState(message string) g.Node {
-	return h.Div(h.Class("rounded-small border border-dashed border-outline-muted bg-container-low px-3 py-4 text-body-sm font-720 text-fg-muted"), g.Text(message))
+	return h.Div(h.Class("rounded-small border border-dashed border-outline-muted bg-container-low px-3 py-4 text-body-sm font-medium text-fg-muted"), g.Text(message))
 }
 
 func assetTitle(asset api.AssetResponse) string {

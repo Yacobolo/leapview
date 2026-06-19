@@ -115,7 +115,7 @@ class ReportSidebar extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-950);
+      font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       text-transform: uppercase;
     }
@@ -195,7 +195,7 @@ class ReportSidebar extends LitElement {
       color: color-mix(in srgb, var(--fgColor-muted), transparent 8%);
       padding: 0 9px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-760);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .page-link:hover,
@@ -229,7 +229,7 @@ class ReportSidebar extends LitElement {
       color: color-mix(in srgb, var(--fgColor-muted), transparent 24%);
       font-size: var(--ld-font-size-caption);
       font-variant-numeric: tabular-nums;
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
     }
 
@@ -249,7 +249,7 @@ class ReportSidebar extends LitElement {
     .page-link:hover .link-text,
     .page-link:focus-visible .link-text,
     .page-link[aria-current='page'] .link-text {
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     :host([data-collapsed]) header {
@@ -327,7 +327,7 @@ class ReportSidebar extends LitElement {
       background: color-mix(in srgb, var(--bgColor-muted), var(--bgColor-default) 56%);
       color: var(--fgColor-default);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
       pointer-events: none;
       transform: translateY(-50%);
@@ -362,7 +362,7 @@ class ReportSidebar extends LitElement {
       place-items: center;
       color: var(--fgColor-default);
       font-variant-numeric: tabular-nums;
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .hover-title-name {
@@ -393,7 +393,7 @@ class ReportSidebar extends LitElement {
       margin: 8px auto 10px;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-950);
+      font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       line-height: var(--ld-line-height-none);
       text-orientation: mixed;

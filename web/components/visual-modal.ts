@@ -77,7 +77,7 @@ class VisualModal extends LitElement {
       margin: 0 0 var(--borderRadius-small);
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
       text-transform: uppercase;
     }
@@ -88,7 +88,7 @@ class VisualModal extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-body-lg);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-compact);
     }
 
@@ -109,7 +109,7 @@ class VisualModal extends LitElement {
       padding: 0 var(--ld-space-md);
       font: inherit;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-800);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     button:hover,
@@ -149,7 +149,7 @@ class VisualModal extends LitElement {
       color: var(--fgColor-muted);
       padding: var(--ld-space-md) var(--ld-space-lg);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-800);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .data-scroll {
@@ -181,7 +181,7 @@ class VisualModal extends LitElement {
       background: var(--bgColor-muted);
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
     }
 
@@ -196,7 +196,7 @@ class VisualModal extends LitElement {
       height: 100%;
       place-items: center;
       color: var(--fgColor-muted);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .notice {
@@ -211,7 +211,7 @@ class VisualModal extends LitElement {
       color: var(--fgColor-default);
       padding: var(--ld-space-md) var(--ld-space-lg);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
   `
 

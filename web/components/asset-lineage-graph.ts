@@ -159,7 +159,7 @@ const assetLineageGraphStyles = `
   ld-asset-lineage-graph .asset-lineage-node-kind {
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-950);
+    font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
   }
 
@@ -171,7 +171,7 @@ const assetLineageGraphStyles = `
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     line-height: var(--ld-line-height-tight);
     text-decoration: none;
   }
@@ -190,7 +190,7 @@ const assetLineageGraphStyles = `
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-750);
+    font-weight: var(--ld-font-weight-medium);
   }
 `
 
@@ -220,7 +220,7 @@ function toFlowEdge(edge: LineageEdge): Edge {
     labelStyle: {
       fill: 'var(--fgColor-muted)',
       fontSize: 10,
-      fontWeight: 800,
+      fontWeight: 500,
     },
     labelBgStyle: {
       fill: 'var(--bgColor-default)',

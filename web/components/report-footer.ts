@@ -51,7 +51,7 @@ class ReportFooter extends LitElement {
       gap: 7px;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       white-space: nowrap;
     }
 

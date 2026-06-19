@@ -43,7 +43,7 @@ const filterCardStyles = css`
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
       text-transform: uppercase;
     }
@@ -69,7 +69,7 @@ const filterCardStyles = css`
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-tight);
     }
 
@@ -77,7 +77,7 @@ const filterCardStyles = css`
       flex: 0 0 auto;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .popover {
@@ -112,7 +112,7 @@ const filterCardStyles = css`
       color: var(--fgColor-default);
       padding: 0 7px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-650);
+      font-weight: var(--ld-font-weight-regular);
       outline-offset: 2px;
       box-sizing: border-box;
     }
@@ -139,7 +139,7 @@ const filterCardStyles = css`
       cursor: pointer;
       padding: 0 7px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .chip.custom {
@@ -184,7 +184,7 @@ const filterCardStyles = css`
       padding: 4px;
       color: var(--fgColor-default);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-750);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .check:hover {
@@ -201,7 +201,7 @@ const filterCardStyles = css`
     .empty {
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-750);
+      font-weight: var(--ld-font-weight-medium);
       padding: 4px;
     }
   `

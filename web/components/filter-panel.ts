@@ -88,7 +88,7 @@ class FilterPanel extends LitElement {
     h2 {
       margin: 0;
       font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-tight);
     }
 
@@ -99,7 +99,7 @@ class FilterPanel extends LitElement {
       color: var(--fgColor-muted);
       padding: 2px 6px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
       white-space: nowrap;
     }
@@ -115,7 +115,7 @@ class FilterPanel extends LitElement {
       color: var(--fgColor-muted);
       cursor: pointer;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
     }
 
@@ -143,7 +143,7 @@ class FilterPanel extends LitElement {
       margin: 0;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
     }
 
@@ -162,7 +162,7 @@ class FilterPanel extends LitElement {
       cursor: pointer;
       padding: 3px 6px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .clear:disabled,
@@ -205,7 +205,7 @@ class FilterPanel extends LitElement {
       background: var(--control-bgColor-rest);
       color: var(--fgColor-default);
       cursor: pointer;
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .preset {
@@ -270,7 +270,7 @@ class FilterPanel extends LitElement {
     .calendar-title {
       color: var(--fgColor-default);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .calendar-nav {
@@ -290,7 +290,7 @@ class FilterPanel extends LitElement {
       color: var(--fgColor-muted);
       text-align: center;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
     }
 
@@ -330,7 +330,7 @@ class FilterPanel extends LitElement {
       gap: 3px;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
     }
 
@@ -363,7 +363,7 @@ class FilterPanel extends LitElement {
       color: var(--fgColor-default);
       padding: 0 7px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-650);
+      font-weight: var(--ld-font-weight-regular);
       outline-offset: 2px;
     }
 
@@ -388,7 +388,7 @@ class FilterPanel extends LitElement {
       padding: 3px 4px;
       color: var(--fgColor-default);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-700);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     label.check:hover {
@@ -405,7 +405,7 @@ class FilterPanel extends LitElement {
     .empty {
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-750);
+      font-weight: var(--ld-font-weight-medium);
       padding: 4px;
     }
 
@@ -426,14 +426,14 @@ class FilterPanel extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .summary {
       min-height: 24px;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-800);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .refresh {
@@ -449,7 +449,7 @@ class FilterPanel extends LitElement {
       background: var(--button-primary-bgColor-rest);
       color: var(--button-primary-fgColor-rest);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
   `
 

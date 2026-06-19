@@ -378,7 +378,7 @@ class ReportZoom extends LitElement {
       color: var(--fgColor-muted);
       text-align: center;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       white-space: nowrap;
     }
 

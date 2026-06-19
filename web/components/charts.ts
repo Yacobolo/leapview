@@ -41,7 +41,7 @@ const chartStyles = css`
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
-    font-weight: var(--ld-font-weight-850);
+    font-weight: var(--ld-font-weight-strong);
     letter-spacing: 0;
     line-height: var(--ld-line-height-compact);
   }
@@ -50,7 +50,7 @@ const chartStyles = css`
     flex: 0 0 auto;
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
   }
 
@@ -76,7 +76,7 @@ const chartStyles = css`
     color: var(--fgColor-muted);
     cursor: pointer;
     font-size: var(--ld-font-size-body-lg);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     line-height: var(--ld-line-height-none);
     list-style: none;
   }
@@ -121,7 +121,7 @@ const chartStyles = css`
     padding: 0 8px;
     font: inherit;
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-750);
+    font-weight: var(--ld-font-weight-medium);
     text-align: left;
   }
 
@@ -171,7 +171,7 @@ const chartStyles = css`
     border: 1px dashed var(--borderColor-default);
     background: var(--report-panel-subtle, var(--bgColor-muted));
     color: var(--fgColor-muted);
-    font-weight: var(--ld-font-weight-800);
+    font-weight: var(--ld-font-weight-medium);
   }
 `
 
@@ -391,14 +391,14 @@ class KPICard extends LitElement {
     .label {
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
     }
 
     .value {
       margin: 8px 0 4px;
       font-size: var(--ld-font-size-display);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
       letter-spacing: 0;
     }
@@ -406,7 +406,7 @@ class KPICard extends LitElement {
     .note {
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-700);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .green::before {

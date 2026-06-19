@@ -230,7 +230,7 @@ const dataGridStyles = `
     background: transparent;
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-850);
+    font-weight: var(--ld-font-weight-medium);
     letter-spacing: 0.03em;
     text-transform: uppercase;
   }
@@ -239,7 +239,7 @@ const dataGridStyles = `
     color: var(--fgColor-default);
     font-size: var(--ld-font-size-body-md);
     line-height: var(--ld-line-height-normal);
-    font-weight: var(--base-text-weight-semibold);
+    font-weight: var(--ld-font-weight-regular);
   }
 
   ld-data-grid .data-grid th.is-right,
@@ -303,7 +303,7 @@ const dataGridStyles = `
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
-    font-weight: var(--ld-font-weight-700);
+    font-weight: var(--ld-font-weight-medium);
   }
 
   ld-data-grid .grid-expression {
@@ -313,7 +313,7 @@ const dataGridStyles = `
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
-    font-weight: var(--ld-font-weight-650);
+    font-weight: var(--ld-font-weight-regular);
   }
 
   ld-data-grid .grid-badge {
@@ -324,7 +324,7 @@ const dataGridStyles = `
     border-radius: var(--borderRadius-full);
     padding: 0 7px;
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-850);
+    font-weight: var(--ld-font-weight-medium);
   }
 
   ld-data-grid .grid-badge-success {
@@ -358,7 +358,7 @@ const dataGridStyles = `
 
   ld-data-grid .grid-link {
     color: var(--fgColor-accent);
-    font-weight: var(--ld-font-weight-850);
+    font-weight: var(--ld-font-weight-medium);
     text-decoration: none;
   }
 
@@ -384,7 +384,7 @@ const dataGridStyles = `
     color: var(--fgColor-muted);
     padding: 0 7px;
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-850);
+    font-weight: var(--ld-font-weight-medium);
     text-transform: uppercase;
   }
 
@@ -398,7 +398,7 @@ const dataGridStyles = `
     border-bottom: var(--ld-border-muted);
     padding: 18px 0;
     font-size: var(--ld-font-size-body-md);
-    font-weight: var(--ld-font-weight-650);
+    font-weight: var(--ld-font-weight-regular);
   }
 `
 

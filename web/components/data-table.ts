@@ -306,7 +306,7 @@ class DataTable extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       line-height: var(--ld-line-height-compact);
     }
@@ -328,7 +328,7 @@ class DataTable extends LitElement {
       color: var(--fgColor-muted);
       cursor: pointer;
       font-size: var(--ld-font-size-body-lg);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-none);
       list-style: none;
     }
@@ -373,7 +373,7 @@ class DataTable extends LitElement {
       padding: 0 8px;
       font: inherit;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-750);
+      font-weight: var(--ld-font-weight-medium);
       text-align: left;
     }
 
@@ -419,7 +419,7 @@ class DataTable extends LitElement {
       padding: 2px 6px;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
     }
 
@@ -432,7 +432,7 @@ class DataTable extends LitElement {
       cursor: pointer;
       padding: 0 6px;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-750);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .column-menu label:hover {
@@ -449,7 +449,7 @@ class DataTable extends LitElement {
       color: var(--fgColor-danger);
       padding: 9px 12px;
       font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .head,
@@ -482,7 +482,7 @@ class DataTable extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       text-transform: uppercase;
     }
@@ -596,7 +596,7 @@ class DataTable extends LitElement {
       padding: 0 9px;
       font: inherit;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-900);
+      font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       text-align: left;
       text-transform: uppercase;
@@ -761,7 +761,7 @@ class DataTable extends LitElement {
       font: inherit;
       padding: 0 9px;
       font-size: var(--ld-font-size-body-md);
-      font-weight: var(--base-text-weight-semibold);
+      font-weight: var(--ld-font-weight-strong);
       text-align: left;
     }
 
@@ -825,7 +825,7 @@ class DataTable extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       line-height: 1.45;
     }
 
@@ -892,7 +892,7 @@ class DataTable extends LitElement {
       place-items: center;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-body-lg);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     .loading {
@@ -925,7 +925,7 @@ class DataTable extends LitElement {
       padding: 6px 10px;
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-750);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .footer span {
@@ -943,7 +943,7 @@ class DataTable extends LitElement {
 
     .footer strong {
       color: var(--fgColor-default);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
     }
 
     @keyframes load {

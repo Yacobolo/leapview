@@ -138,7 +138,7 @@ class LibreDashSidebar extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-body-lg);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
     }
 
@@ -208,7 +208,7 @@ class LibreDashSidebar extends LitElement {
       padding: 0 9px;
       text-decoration: none;
       font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-760);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .nav-text {
@@ -223,7 +223,7 @@ class LibreDashSidebar extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-800);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .nav-item:hover,
@@ -312,7 +312,7 @@ class LibreDashSidebar extends LitElement {
       background: color-mix(in srgb, var(--fgColor-muted), transparent 78%);
       color: var(--fgColor-default);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-850);
+      font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
     }
 
@@ -331,13 +331,13 @@ class LibreDashSidebar extends LitElement {
 
     .user-name {
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-820);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .user-role {
       color: var(--fgColor-muted);
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-720);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .actions {
@@ -362,7 +362,7 @@ class LibreDashSidebar extends LitElement {
       cursor: pointer;
       padding: 0;
       font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-820);
+      font-weight: var(--ld-font-weight-medium);
     }
 
     .theme-button:hover,

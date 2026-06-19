@@ -204,7 +204,7 @@ const modelGraphStyles = `
     margin: 0 0 12px;
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
   }
 
@@ -224,7 +224,7 @@ const modelGraphStyles = `
   ld-model-graph .detail-row span:first-child {
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
   }
 
@@ -245,7 +245,7 @@ const modelGraphStyles = `
     background: var(--bgColor-default);
     padding: 5px 7px;
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-750);
+    font-weight: var(--ld-font-weight-medium);
   }
 
   ld-model-graph .field code {
@@ -258,7 +258,7 @@ const modelGraphStyles = `
   ld-model-graph .field span {
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
   }
 
@@ -292,7 +292,7 @@ const modelGraphStyles = `
   ld-model-graph .node-kind {
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-950);
+    font-weight: var(--ld-font-weight-strong);
     letter-spacing: 0;
     text-transform: uppercase;
   }
@@ -303,7 +303,7 @@ const modelGraphStyles = `
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     line-height: var(--ld-line-height-tight);
   }
 
@@ -322,7 +322,7 @@ const modelGraphStyles = `
     border-bottom: var(--ld-border-muted);
     padding: 3px 0;
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-750);
+    font-weight: var(--ld-font-weight-medium);
   }
 
   ld-model-graph .node-field:last-child {
@@ -339,7 +339,7 @@ const modelGraphStyles = `
   ld-model-graph .node-field span {
     color: var(--fgColor-muted);
     font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-900);
+    font-weight: var(--ld-font-weight-strong);
     text-transform: uppercase;
   }
 
@@ -405,7 +405,7 @@ function toFlowEdge(edge: ModelGraphEdge): Edge {
     labelStyle: {
       fill: 'var(--fgColor-muted)',
       fontSize: 10,
-      fontWeight: 800,
+      fontWeight: 500,
     },
     labelBgStyle: {
       fill: 'var(--bgColor-default)',
