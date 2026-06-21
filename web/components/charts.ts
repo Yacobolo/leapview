@@ -144,7 +144,7 @@ const chartStyles = css`
 
   .menu button:disabled {
     cursor: default;
-    opacity: 0.48;
+    opacity: var(--opacity-disabled);
   }
 
   .menu button:disabled:hover {

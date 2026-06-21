@@ -142,18 +142,18 @@ const assetLineageGraphStyles = `
 
   ld-asset-lineage-graph .asset-lineage-node {
     width: 200px;
-    border: 1px solid var(--lineage-node-border);
-    border-left: 4px solid var(--lineage-node-accent);
+    border: var(--borderWidth-default) solid var(--lineage-node-border);
+    border-left: var(--borderWidth-thicker) solid var(--lineage-node-accent);
     border-radius: var(--borderRadius-default);
     background: var(--lineage-node-bg);
     box-shadow: var(--shadow-resting-small);
     color: var(--ld-fg-default);
-    padding: 9px 10px;
+    padding: var(--base-size-8) var(--base-size-12);
   }
 
   ld-asset-lineage-graph .asset-lineage-node-selected {
     border-color: var(--ld-line-accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ld-line-accent), transparent 28%), var(--shadow-resting-small);
+    box-shadow: 0 0 0 var(--borderWidth-default) color-mix(in srgb, var(--ld-line-accent), transparent 28%), var(--shadow-resting-small);
   }
 
   ld-asset-lineage-graph .asset-lineage-node-kind {
@@ -166,7 +166,7 @@ const assetLineageGraphStyles = `
   ld-asset-lineage-graph .asset-lineage-node-title {
     display: block;
     overflow: hidden;
-    margin-top: 3px;
+    margin-top: var(--base-size-4);
     color: var(--ld-fg-default);
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -185,7 +185,7 @@ const assetLineageGraphStyles = `
 
   ld-asset-lineage-graph .asset-lineage-node-meta {
     overflow: hidden;
-    margin-top: 5px;
+    margin-top: var(--base-size-6);
     color: var(--ld-fg-muted);
     text-overflow: ellipsis;
     white-space: nowrap;

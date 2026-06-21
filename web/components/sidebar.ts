@@ -251,7 +251,7 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item.disabled {
       cursor: not-allowed;
-      opacity: 0.48;
+      opacity: var(--opacity-disabled);
     }
 
     .nav-icon {

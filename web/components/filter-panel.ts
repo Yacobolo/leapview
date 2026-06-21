@@ -174,7 +174,7 @@ class FilterPanel extends LitElement {
     .day:disabled,
     .popover-action:disabled {
       cursor: default;
-      opacity: 0.55;
+      opacity: var(--opacity-disabled);
     }
 
     .input-row {

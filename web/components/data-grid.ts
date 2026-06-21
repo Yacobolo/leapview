@@ -220,8 +220,8 @@ const dataGridStyles = `
 
   ld-data-grid .data-grid th,
   ld-data-grid .data-grid td {
-    border-bottom: 1px solid color-mix(in srgb, var(--ld-line-muted), transparent 28%);
-    padding: 10px 10px;
+    border-bottom: var(--borderWidth-default) solid color-mix(in srgb, var(--ld-line-muted), transparent 28%);
+    padding: var(--base-size-8);
     text-align: left;
     vertical-align: top;
   }
@@ -265,7 +265,7 @@ const dataGridStyles = `
     min-width: 0;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
+    gap: var(--base-size-6);
     border: 0;
     background: transparent;
     color: inherit;
@@ -284,7 +284,7 @@ const dataGridStyles = `
   }
 
   ld-data-grid .data-grid-sort-indicator {
-    min-width: 8px;
+    min-width: var(--base-size-8);
     color: var(--ld-fg-link);
     text-align: right;
   }
@@ -318,29 +318,29 @@ const dataGridStyles = `
 
   ld-data-grid .grid-badge {
     display: inline-flex;
-    min-height: 20px;
+    min-height: var(--base-size-20);
     align-items: center;
-    gap: 5px;
+    gap: var(--base-size-4);
     border-radius: var(--borderRadius-full);
-    padding: 0 7px;
+    padding: 0 var(--base-size-8);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-medium);
   }
 
   ld-data-grid .grid-badge-success {
-    border: 1px solid var(--ld-line-success-muted);
+    border: var(--borderWidth-default) solid var(--ld-line-success-muted);
     background: var(--ld-bg-success-muted);
     color: var(--ld-fg-default);
   }
 
   ld-data-grid .grid-badge-accent {
-    border: 1px solid var(--ld-line-accent-muted);
+    border: var(--borderWidth-default) solid var(--ld-line-accent-muted);
     background: var(--ld-bg-accent-muted);
     color: var(--ld-fg-default);
   }
 
   ld-data-grid .grid-badge-attention {
-    border: 1px solid var(--ld-line-warning-muted);
+    border: var(--borderWidth-default) solid var(--ld-line-warning-muted);
     background: var(--ld-bg-warning-muted);
     color: var(--ld-fg-default);
   }
@@ -371,18 +371,18 @@ const dataGridStyles = `
   ld-data-grid .grid-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: var(--base-size-4);
   }
 
   ld-data-grid .grid-tags span {
     display: inline-flex;
-    min-height: 21px;
+    min-height: var(--base-size-20);
     align-items: center;
     border: var(--ld-border-muted);
     border-radius: var(--borderRadius-full);
     background: var(--ld-bg-panel-muted);
     color: var(--ld-fg-muted);
-    padding: 0 7px;
+    padding: 0 var(--base-size-8);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-medium);
     text-transform: uppercase;
@@ -396,7 +396,7 @@ const dataGridStyles = `
   ld-data-grid .data-grid-empty {
     border-top: var(--ld-border-muted);
     border-bottom: var(--ld-border-muted);
-    padding: 18px 0;
+    padding: var(--base-size-20) 0;
     font-size: var(--ld-font-size-body-md);
     font-weight: var(--ld-font-weight-regular);
   }
