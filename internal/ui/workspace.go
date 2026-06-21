@@ -245,7 +245,7 @@ func assetToolbar(workspaceID, activeType, query string) g.Node {
 }
 
 func assetTabLink(workspaceID, typ, activeType, query, label string) g.Node {
-	className := "relative -mb-px inline-flex min-h-control-xl items-center whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-fast"
+	className := "relative -mb-px inline-flex min-h-control-xl items-center whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-micro ease-hover"
 	if typ == activeType {
 		className += " border-fg-accent font-semibold text-fg-default"
 	} else {
@@ -328,7 +328,7 @@ func assetDetailBodyClass(activeSection string) string {
 }
 
 func assetDetailTabLink(href string, active bool, label string, meta g.Node) g.Node {
-	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-fast"
+	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-micro ease-hover"
 	if active {
 		className += " border-fg-accent font-semibold text-fg-default"
 	} else {

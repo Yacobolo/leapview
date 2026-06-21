@@ -270,31 +270,35 @@ class DataTable extends LitElement {
 
     .toolbar {
       position: relative;
-      z-index: 40;
+      z-index: var(--zIndex-sticky);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      min-height: 34px;
+      gap: var(--base-size-8);
+      min-height: calc(var(--control-small-size) + var(--base-size-6));
       border-bottom: var(--ld-border-default);
       background: var(--ld-chart-surface);
-      padding: 6px 8px 5px 10px;
+      padding:
+        var(--base-size-6)
+        var(--base-size-8)
+        var(--base-size-4)
+        var(--control-small-paddingInline-normal);
     }
 
     .toolbar::after {
       content: '';
       position: absolute;
       inset-inline: 0;
-      bottom: -2px;
-      z-index: 1;
-      height: 3px;
+      bottom: var(--base-size-negative-2);
+      z-index: calc(var(--zIndex-default) + 1);
+      height: var(--base-size-4);
       background: inherit;
       pointer-events: none;
     }
 
     .toolbar > div {
       position: relative;
-      z-index: 2;
+      z-index: calc(var(--zIndex-default) + 2);
       flex: 1 1 auto;
       min-width: 0;
     }
@@ -313,14 +317,14 @@ class DataTable extends LitElement {
 
     .visual-options {
       position: relative;
-      z-index: 2;
+      z-index: calc(var(--zIndex-default) + 2);
       flex: 0 0 auto;
     }
 
     .visual-options summary {
       display: grid;
-      width: 24px;
-      height: 24px;
+      width: var(--control-xsmall-size);
+      height: var(--control-xsmall-size);
       place-items: center;
       border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-tight);
@@ -348,29 +352,29 @@ class DataTable extends LitElement {
 
     .menu {
       position: absolute;
-      top: calc(100% + 4px);
+      top: calc(100% + var(--base-size-4));
       right: 0;
-      z-index: 30;
+      z-index: var(--zIndex-dropdown);
       display: grid;
-      width: 176px;
+      width: calc(var(--overlay-width-xsmall) - var(--base-size-16));
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
       background: var(--ld-bg-overlay);
-      box-shadow: var(--ld-shadow-floating-sm);
-      padding: 4px;
+      box-shadow: var(--shadow-floating-small);
+      padding: var(--base-size-4);
     }
 
     .menu button {
       display: flex;
       align-items: center;
-      gap: 8px;
-      min-height: 27px;
+      gap: var(--base-size-8);
+      min-height: var(--control-small-size);
       border: 0;
       border-radius: var(--ld-radius-tight);
       background: transparent;
       color: var(--ld-fg-default);
       cursor: pointer;
-      padding: 0 8px;
+      padding: 0 var(--control-xsmall-paddingInline-normal);
       font: inherit;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
@@ -379,8 +383,8 @@ class DataTable extends LitElement {
 
     .menu svg {
       flex: 0 0 auto;
-      width: 14px;
-      height: 14px;
+      width: var(--base-size-16);
+      height: var(--base-size-16);
       fill: none;
       stroke: currentColor;
       stroke-linecap: round;
@@ -396,7 +400,7 @@ class DataTable extends LitElement {
 
     .menu button:disabled {
       cursor: default;
-      opacity: 0.48;
+      opacity: var(--opacity-disabled);
     }
 
     .menu button:disabled:hover {
@@ -404,19 +408,19 @@ class DataTable extends LitElement {
     }
 
     .menu-divider {
-      height: 1px;
-      margin: 4px 2px;
+      height: var(--borderWidth-default);
+      margin: var(--base-size-4) var(--base-size-2);
       background: var(--ld-line-muted);
     }
 
     .column-menu {
       display: grid;
-      gap: 3px;
-      padding: 2px;
+      gap: var(--base-size-4);
+      padding: var(--base-size-2);
     }
 
     .column-menu > span {
-      padding: 2px 6px;
+      padding: var(--base-size-2) var(--base-size-6);
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
@@ -426,11 +430,11 @@ class DataTable extends LitElement {
     .column-menu label {
       display: flex;
       align-items: center;
-      gap: 7px;
-      min-height: 24px;
+      gap: var(--base-size-8);
+      min-height: var(--control-xsmall-size);
       border-radius: var(--ld-radius-tight);
       cursor: pointer;
-      padding: 0 6px;
+      padding: 0 var(--base-size-6);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
     }
@@ -447,7 +451,7 @@ class DataTable extends LitElement {
       border-bottom: var(--ld-border-danger);
       background: var(--ld-bg-danger-muted);
       color: var(--ld-fg-danger);
-      padding: 9px 12px;
+      padding: var(--base-size-8) var(--base-size-12);
       font-size: var(--ld-font-size-body-md);
       font-weight: var(--ld-font-weight-strong);
     }
@@ -464,7 +468,7 @@ class DataTable extends LitElement {
     .group-head {
       position: sticky;
       top: 0;
-      z-index: 30;
+      z-index: calc(var(--zIndex-sticky) + 2);
       border-bottom: var(--ld-border-default);
       background: color-mix(in srgb, var(--ld-bg-panel-muted), var(--ld-chart-surface) 34%);
       color: var(--ld-fg-muted);
@@ -478,7 +482,7 @@ class DataTable extends LitElement {
       overflow: hidden;
       border-right: var(--ld-border-default);
       background: inherit;
-      padding: 0 9px;
+      padding: 0 var(--base-size-8);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
@@ -499,7 +503,7 @@ class DataTable extends LitElement {
     .head {
       position: sticky;
       top: var(--ld-head-top, 0px);
-      z-index: 28;
+      z-index: calc(var(--zIndex-sticky) + 1);
       border-bottom: var(--ld-border-emphasis);
       background: var(--ld-bg-panel-muted);
       color: var(--ld-fg-muted);
@@ -542,7 +546,7 @@ class DataTable extends LitElement {
       position: absolute;
       inset-block: 0;
       left: 100%;
-      z-index: 1;
+      z-index: calc(var(--zIndex-default) + 1);
       width: 10px;
       border-left: 1px solid var(--ld-line-default);
       background: inherit;
@@ -550,24 +554,24 @@ class DataTable extends LitElement {
     }
 
     .header-cell.pinned-left {
-      z-index: 36;
+      z-index: calc(var(--zIndex-sticky) + 4);
       background: var(--ld-bg-panel-muted);
     }
 
     .group-cell.pinned-left {
-      z-index: 38;
+      z-index: calc(var(--zIndex-sticky) + 5);
       background: color-mix(in srgb, var(--ld-bg-panel-muted), var(--ld-chart-surface) 34%);
     }
 
     .cell.pinned-left {
-      z-index: 12;
+      z-index: calc(var(--zIndex-default) + 2);
     }
 
     .header-cell.pinned-left > .header-button,
     .cell.pinned-left > *,
     .group-cell.pinned-left > * {
       position: relative;
-      z-index: 2;
+      z-index: calc(var(--zIndex-default) + 2);
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -585,15 +589,15 @@ class DataTable extends LitElement {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: var(--base-size-8);
       width: 100%;
-      min-height: 34px;
+      min-height: calc(var(--control-small-size) + var(--base-size-6));
       border: 0;
       border-bottom: var(--borderWidth-thick) solid transparent;
       background: transparent;
       color: inherit;
       cursor: pointer;
-      padding: 0 9px;
+      padding: 0 var(--base-size-8);
       font: inherit;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
@@ -611,7 +615,7 @@ class DataTable extends LitElement {
 
     .sort {
       display: inline-grid;
-      min-width: 18px;
+      min-width: var(--base-size-20);
       place-items: center;
       color: var(--ld-fg-link);
       font-size: var(--ld-font-size-body-md);
@@ -626,7 +630,7 @@ class DataTable extends LitElement {
       position: absolute;
       inset-block: 5px;
       right: -3px;
-      z-index: 3;
+      z-index: calc(var(--zIndex-default) + 3);
       width: 6px;
       cursor: col-resize;
     }
@@ -704,7 +708,7 @@ class DataTable extends LitElement {
       top: 0;
       bottom: 0;
       left: var(--ld-resize-guide-x, -9999px);
-      z-index: 45;
+      z-index: var(--zIndex-overlay);
       width: 0;
       border-left: 2px solid var(--ld-fg-link);
       box-shadow: 0 0 0 1px color-mix(in srgb, var(--ld-fg-link), transparent 74%);
@@ -759,19 +763,19 @@ class DataTable extends LitElement {
       color: inherit;
       cursor: default;
       font: inherit;
-      padding: 0 9px;
+      padding: 0 var(--base-size-8);
       font-size: var(--ld-font-size-body-md);
       font-weight: var(--ld-font-weight-strong);
       text-align: left;
     }
 
     .density-compact .cell {
-      padding: 0 7px;
+      padding: 0 var(--base-size-6);
       font-size: var(--ld-font-size-caption);
     }
 
     .density-spacious .cell {
-      padding: 0 12px;
+      padding: 0 var(--base-size-12);
       font-size: var(--ld-font-size-body-lg);
     }
 
@@ -786,7 +790,7 @@ class DataTable extends LitElement {
 
     .cell.active {
       outline: var(--ld-border-width-focus) solid var(--ld-fg-link);
-      outline-offset: -2px;
+      outline-offset: var(--base-size-negative-2);
       background: color-mix(in srgb, var(--ld-fg-link), transparent 88%);
     }
 
@@ -807,7 +811,7 @@ class DataTable extends LitElement {
       position: absolute;
       inset-block: 5px;
       left: 6px;
-      z-index: -1;
+      z-index: var(--zIndex-behind);
       width: var(--ld-cell-bar-width, 0%);
       border-radius: var(--ld-radius-tight);
       background: color-mix(in srgb, var(--ld-cell-bar-color, var(--ld-fg-link)), transparent 74%);
@@ -873,7 +877,7 @@ class DataTable extends LitElement {
         var(--ld-bg-panel-muted) 90%
       );
       background-size: 220% 100%;
-      animation: shimmer 1.15s ease-in-out infinite;
+      animation: shimmer var(--base-duration-1000) var(--motion-easing-move) infinite;
       opacity: 0.78;
     }
 
@@ -899,8 +903,8 @@ class DataTable extends LitElement {
       position: absolute;
       inset-inline: 0;
       top: 0;
-      z-index: 2;
-      height: 3px;
+      z-index: var(--zIndex-sticky);
+      height: var(--base-size-4);
       overflow: hidden;
       background: var(--ld-bg-accent-muted);
     }
@@ -911,18 +915,18 @@ class DataTable extends LitElement {
       width: 34%;
       height: 100%;
       background: var(--ld-fg-link);
-      animation: load 900ms ease-in-out infinite;
+      animation: load var(--base-duration-900) var(--motion-easing-move) infinite;
     }
 
     .footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      min-height: 34px;
+      gap: var(--base-size-8);
+      min-height: calc(var(--control-small-size) + var(--base-size-6));
       border-top: var(--ld-border-default);
       background: var(--ld-bg-panel-muted);
-      padding: 6px 10px;
+      padding: var(--base-size-6) var(--control-small-paddingInline-normal);
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);

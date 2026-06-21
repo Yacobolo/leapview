@@ -30,10 +30,10 @@ const filterCardStyles = css`
       height: 100%;
       min-width: 0;
       align-content: center;
-      gap: 4px;
+      gap: var(--base-size-4);
       border: 0;
       background: transparent;
-      padding: 8px 10px;
+      padding: var(--base-size-8) calc(var(--base-size-8) + var(--base-size-2));
       box-sizing: border-box;
     }
 
@@ -53,7 +53,7 @@ const filterCardStyles = css`
       min-width: 0;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: var(--base-size-8);
       border: 0;
       background: transparent;
       color: var(--ld-fg-default);
@@ -82,17 +82,17 @@ const filterCardStyles = css`
 
     .popover {
       position: absolute;
-      top: calc(100% + 6px);
+      top: calc(100% + var(--base-size-6));
       left: 0;
-      z-index: 30;
+      z-index: var(--zIndex-dropdown);
       display: grid;
       width: min(260px, max(100%, 220px));
-      gap: 7px;
+      gap: var(--base-size-6);
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
       background: var(--ld-bg-overlay);
-      box-shadow: var(--ld-shadow-floating-sm);
-      padding: 8px;
+      box-shadow: var(--shadow-floating-small);
+      padding: var(--base-size-8);
     }
 
     button,
@@ -105,15 +105,15 @@ const filterCardStyles = css`
     select {
       width: 100%;
       min-width: 0;
-      min-height: 27px;
+      min-height: var(--control-small-size);
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-tight);
       background: var(--ld-bg-control);
       color: var(--ld-fg-default);
-      padding: 0 7px;
+      padding: 0 var(--control-xsmall-paddingInline-normal);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-regular);
-      outline-offset: 2px;
+      outline-offset: var(--base-size-2);
       box-sizing: border-box;
     }
 
@@ -126,18 +126,18 @@ const filterCardStyles = css`
     .chips {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 4px;
+      gap: var(--base-size-4);
     }
 
     .chip,
     .action {
-      min-height: 27px;
+      min-height: var(--control-small-size);
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-tight);
       background: var(--ld-bg-control);
       color: var(--ld-fg-default);
       cursor: pointer;
-      padding: 0 7px;
+      padding: 0 var(--control-xsmall-paddingInline-normal);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
     }
@@ -155,7 +155,7 @@ const filterCardStyles = css`
     .actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: var(--base-size-6);
     }
 
     .actions.three {
@@ -171,7 +171,7 @@ const filterCardStyles = css`
     .checks {
       display: grid;
       max-height: 152px;
-      gap: 2px;
+      gap: var(--base-size-2);
       overflow: auto;
     }
 
@@ -179,9 +179,9 @@ const filterCardStyles = css`
       display: flex;
       min-width: 0;
       align-items: center;
-      gap: 6px;
+      gap: var(--base-size-6);
       border-radius: var(--ld-radius-tight);
-      padding: 4px;
+      padding: var(--base-size-4);
       color: var(--ld-fg-default);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
@@ -192,8 +192,8 @@ const filterCardStyles = css`
     }
 
     .check input {
-      width: 13px;
-      height: 13px;
+      width: var(--base-size-12);
+      height: var(--base-size-12);
       min-height: 0;
       accent-color: var(--ld-accent);
     }
@@ -202,7 +202,7 @@ const filterCardStyles = css`
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
-      padding: 4px;
+      padding: var(--base-size-4);
     }
   `
 

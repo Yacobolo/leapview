@@ -252,7 +252,7 @@ const dataGridStyles = `
   }
 
   ld-data-grid .data-grid tbody tr {
-    transition: background-color 0.12s ease;
+    transition: background-color var(--motion-transition-hover);
   }
 
   ld-data-grid .data-grid tbody tr:hover {

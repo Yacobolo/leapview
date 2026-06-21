@@ -43,8 +43,8 @@ const (
 	cardFooterClass            = "mt-4 flex items-center justify-between gap-3 border-t border-outline-muted pt-3 text-caption font-medium text-fg-muted"
 	eyebrowClass               = "m-0 mb-1 text-caption leading-tight font-medium uppercase text-fg-muted"
 	visualCardClass            = "h-full min-h-0 w-full overflow-hidden rounded-default border border-outline-variant bg-panel"
-	actionButtonClass          = "inline-flex size-action min-h-action items-center justify-center rounded-default border border-outline-variant bg-transparent p-0 text-fg-default hover:bg-control-hover focus-visible:bg-control-hover focus-visible:outline-0 disabled:cursor-not-allowed disabled:opacity-disabled"
-	metricActionButtonClass    = "inline-flex size-8 items-center justify-center rounded-small border border-transparent bg-transparent p-0 text-fg-muted no-underline transition-colors duration-fast hover:border-outline-muted hover:bg-control-hover hover:text-fg-default focus-visible:border-outline-accent focus-visible:bg-control-hover focus-visible:text-fg-default focus-visible:outline-0"
+	actionButtonClass          = "inline-flex size-action min-h-action items-center justify-center rounded-default border border-outline-variant bg-transparent p-0 text-fg-default hover:bg-control-hover focus-visible:bg-control-hover focus-visible:outline-0 disabled:cursor-not-allowed disabled:border-control-border-disabled disabled:bg-control-disabled disabled:text-control-fg-disabled"
+	metricActionButtonClass    = "inline-flex size-8 items-center justify-center rounded-small border border-transparent bg-transparent p-0 text-fg-muted no-underline transition-colors duration-micro ease-hover hover:border-outline-muted hover:bg-control-hover hover:text-fg-default focus-visible:border-outline-accent focus-visible:bg-control-hover focus-visible:text-fg-default focus-visible:outline-0"
 	primaryLinkButtonClass     = "inline-flex min-h-control-xs items-center justify-center gap-1.5 rounded-small bg-button-primary px-2.5 text-caption font-semibold text-on-primary no-underline hover:bg-button-primary-hover focus-visible:bg-button-primary-hover focus-visible:outline-0"
 	tagClass                   = "rounded-full border border-outline-muted bg-panel-muted px-2 py-0.5 text-caption font-medium uppercase text-fg-muted"
 	metricContractSectionClass = "grid min-h-0 gap-3 overflow-hidden bg-transparent"
@@ -166,13 +166,13 @@ func LoginPage() g.Node {
 					g.Attr("data-module-src", staticAsset("/static/topology-background.js")),
 					ds.Init("document.dispatchEvent(new CustomEvent('libredash-login-background-init'))", ds.ModifierDelay, ds.Duration(900*time.Millisecond)),
 				),
-				h.Div(h.Class("pointer-events-none absolute inset-0 z-10 bg-app/80"), h.Aria("hidden", "true")),
-				h.Button(h.Type("button"), h.Class("absolute right-4 top-4 z-20 inline-grid size-8 appearance-none place-items-center rounded-default border border-outline-variant bg-control text-fg-muted shadow-resting-sm hover:bg-control-hover hover:text-fg-default focus-visible:border-outline-accent focus-visible:bg-control-hover focus-visible:text-fg-default focus-visible:outline-0 max-sm:right-3 max-sm:top-3"), g.Attr("data-theme-toggle", ""),
+				h.Div(h.Class("pointer-events-none absolute inset-0 z-overlay bg-app/80"), h.Aria("hidden", "true")),
+				h.Button(h.Type("button"), h.Class("absolute right-4 top-4 z-modal inline-grid size-8 appearance-none place-items-center rounded-default border border-outline-variant bg-control text-fg-muted shadow-resting-sm hover:bg-control-hover hover:text-fg-default focus-visible:border-outline-accent focus-visible:bg-control-hover focus-visible:text-fg-default focus-visible:outline-0 max-sm:right-3 max-sm:top-3"), g.Attr("data-theme-toggle", ""),
 					lucide.Monitor(loginThemeIconAttrs("system")...),
 					lucide.Sun(loginThemeIconAttrs("light")...),
 					lucide.Moon(loginThemeIconAttrs("dark")...),
 				),
-				h.Section(h.Class("relative z-20 grid w-full max-w-login-panel justify-items-center gap-5 rounded-default border border-outline-variant bg-panel p-6 text-center shadow-resting-md max-sm:px-5 max-sm:py-6"),
+				h.Section(h.Class("relative z-modal grid w-full max-w-login-panel justify-items-center gap-5 rounded-default border border-outline-variant bg-panel p-6 text-center shadow-resting-md max-sm:px-5 max-sm:py-6"),
 					h.Div(h.Class("grid justify-items-center"), h.Aria("hidden", "true"),
 						h.H1(h.Class("m-0 text-title-md font-semibold leading-snug text-fg-default"), g.Text("LibreDash")),
 					),
@@ -603,7 +603,7 @@ func metricTabs(view dashboard.MetricViewDetail, activeSection string) g.Node {
 }
 
 func metricTabLink(viewID, section, activeSection, label string, meta g.Node) g.Node {
-	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-fast"
+	className := "relative -mb-px inline-flex min-h-control-xl items-center gap-2 whitespace-nowrap border-b-2 px-1 text-body-sm font-medium no-underline transition-colors duration-micro ease-hover"
 	if section == activeSection {
 		className += " border-fg-accent font-semibold text-fg-default"
 	} else {
@@ -1342,8 +1342,8 @@ func reportHeader(visual dashboard.PageVisual) g.Node {
 }
 
 func filtersDock(report semantic.Dashboard, pageID string, action string) g.Node {
-	return h.Details(h.Class("group grid min-h-0 w-full border-l border-outline-variant bg-panel-muted transition-[width,background-color] duration-normal ease-ld sm:w-filter-closed"), h.Aria("label", "Report filters"), g.Attr("data-filter-dock", ""),
-		h.Summary(h.Class("flex min-h-control-xl cursor-pointer list-none items-center justify-center gap-2 border-b border-outline-variant px-2 text-caption font-medium uppercase text-fg-muted marker:hidden transition-colors duration-fast hover:text-fg-default focus-visible:text-fg-default focus-visible:outline-0 sm:flex sm:h-full sm:w-filter-closed sm:flex-col sm:justify-start sm:border-b-0 sm:px-0 sm:py-4"), h.Title("Toggle filters"), g.Attr("data-filter-summary", ""),
+	return h.Details(h.Class("group grid min-h-0 w-full border-l border-outline-variant bg-panel-muted transition-[width,background-color] duration-short ease-move sm:w-filter-closed"), h.Aria("label", "Report filters"), g.Attr("data-filter-dock", ""),
+		h.Summary(h.Class("flex min-h-control-xl cursor-pointer list-none items-center justify-center gap-2 border-b border-outline-variant px-2 text-caption font-medium uppercase text-fg-muted marker:hidden transition-colors duration-micro ease-hover hover:text-fg-default focus-visible:text-fg-default focus-visible:outline-0 sm:flex sm:h-full sm:w-filter-closed sm:flex-col sm:justify-start sm:border-b-0 sm:px-0 sm:py-4"), h.Title("Toggle filters"), g.Attr("data-filter-summary", ""),
 			lucide.SlidersHorizontal(filterDockIconAttrs()...),
 			h.Span(h.Class("sm:[writing-mode:vertical-rl]"), g.Text("Filters")),
 			h.Span(h.Class("sr-only"), g.Text("Toggle filters")),
