@@ -159,7 +159,15 @@ func (a *Agent) runLoop(ctx context.Context, run *runState) (RunResult, error) {
 			Usage:        resp.Usage,
 		}
 		a.appendTranscript(assistant)
-		_ = run.emit(ctx, Event{Type: EventTypeMessageEnd, Severity: SeverityInfo, TurnID: turnID, MessageID: assistant.ID, FinishReason: finish, Usage: resp.Usage})
+		_ = run.emit(ctx, Event{
+			Type:             EventTypeMessageEnd,
+			Severity:         SeverityInfo,
+			TurnID:           turnID,
+			MessageID:        assistant.ID,
+			FinishReason:     finish,
+			Usage:            resp.Usage,
+			ProviderMetadata: cloneMetadata(resp.ProviderMetadata),
+		})
 		result.FinalMessage = assistant
 
 		if finish == FinishReasonTruncated {
@@ -207,7 +215,7 @@ func (a *Agent) completeTurn(ctx context.Context, run *runState, turnID string, 
 	_ = run.emit(ctx, Event{Type: EventTypeModelRequest, Severity: SeverityDebug, TurnID: turnID})
 	resp, err := a.def.Model.Complete(ctx, req, eventModelStream{run: run, turnID: turnID})
 	if err != nil {
-		if !retried && isContextLengthError(err) && a.def.Compaction.Enabled {
+		if !retried && isContextLengthError(err) {
 			_ = run.emit(ctx, Event{Type: EventTypeModelRetry, Severity: SeverityWarn, TurnID: turnID, Error: agentErrorPtr(ErrorCodeLimit, "model context limit reached", err)})
 			_ = a.maybeCompact(ctx, run, true)
 			if a.estimateModelInputTokens(a.snapshotTranscript()) > a.def.Limits.HardInputLimitTokens {
@@ -218,7 +226,14 @@ func (a *Agent) completeTurn(ctx context.Context, run *runState, turnID string, 
 		return ModelResponse{}, NewError(ErrorCodeModel, "model request failed", err)
 	}
 	resp.FinishReason = NormalizeFinishReason(resp.FinishReason)
-	_ = run.emit(ctx, Event{Type: EventTypeModelResponse, Severity: SeverityDebug, TurnID: turnID, FinishReason: resp.FinishReason, Usage: resp.Usage})
+	_ = run.emit(ctx, Event{
+		Type:             EventTypeModelResponse,
+		Severity:         SeverityDebug,
+		TurnID:           turnID,
+		FinishReason:     resp.FinishReason,
+		Usage:            resp.Usage,
+		ProviderMetadata: cloneMetadata(resp.ProviderMetadata),
+	})
 	return resp, nil
 }
 
@@ -261,8 +276,11 @@ func (a *Agent) estimateModelInputTokens(transcript []Message) int {
 	for _, tool := range a.toolSpecs {
 		total += estimateTokens(tool.Name) + estimateTokens(tool.Description) + len(tool.InputSchema)/4 + 1
 	}
-	total += a.def.Limits.ReserveOutputTokens
 	return total
+}
+
+func (a *Agent) estimateModelRequestTokens(transcript []Message) int {
+	return a.estimateModelInputTokens(transcript) + a.def.Limits.ReserveOutputTokens
 }
 
 func (a *Agent) appendTranscript(messages ...Message) {

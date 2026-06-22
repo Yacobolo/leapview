@@ -81,3 +81,14 @@ type ToolSpec struct {
 type noopModelStream struct{}
 
 func (noopModelStream) Delta(context.Context, string) error { return nil }
+
+func cloneMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(metadata))
+	for k, v := range metadata {
+		out[k] = v
+	}
+	return out
+}

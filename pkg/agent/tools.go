@@ -188,6 +188,9 @@ func (a *Agent) runOneTool(ctx context.Context, call ToolCall, tool *compiledToo
 		ToolName:   call.Name,
 		IsError:    toolResult.IsError,
 	}
+	if toolResult.Fatal {
+		result.fatal = NewError(ErrorCodeTool, "fatal tool result", nil)
+	}
 	return result
 }
 

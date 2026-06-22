@@ -38,9 +38,6 @@ func TestNewAppliesDefaultsAndValidatesDefinition(t *testing.T) {
 	if a.def.Limits.ToolTimeout != 30*time.Second {
 		t.Fatalf("ToolTimeout = %s, want 30s", a.def.Limits.ToolTimeout)
 	}
-	if !a.def.Compaction.Enabled {
-		t.Fatal("compaction should default to enabled")
-	}
 	if a.def.Compaction.KeepLastTurns != 8 {
 		t.Fatalf("KeepLastTurns = %d, want 8", a.def.Compaction.KeepLastTurns)
 	}
@@ -333,5 +330,36 @@ func TestIsCode(t *testing.T) {
 	err := NewError(ErrorCodeModel, "bad model", errors.New("boom"))
 	if !IsCode(err, ErrorCodeModel) {
 		t.Fatal("IsCode did not match AgentError")
+	}
+}
+
+type failingEvents struct {
+	events []Event
+}
+
+func (f *failingEvents) Emit(ctx context.Context, event Event) error {
+	f.events = append(f.events, event)
+	return errors.New("event sink down")
+}
+
+func TestEventSinkErrorsAreBestEffort(t *testing.T) {
+	events := &failingEvents{}
+	model := &fakeModel{responses: []ModelResponse{{Content: "ok", FinishReason: FinishReasonStop}}}
+	a := mustAgent(t, Definition{
+		Name:         "test",
+		SystemPrompt: "x",
+		Model:        model,
+		Events:       events,
+	})
+
+	result, err := a.Prompt(context.Background(), PromptRequest{Input: "go"})
+	if err != nil {
+		t.Fatalf("Prompt returned error: %v", err)
+	}
+	if result.StopReason != StopReasonCompleted {
+		t.Fatalf("StopReason = %s, want completed", result.StopReason)
+	}
+	if len(events.events) == 0 {
+		t.Fatal("event sink was not called")
 	}
 }

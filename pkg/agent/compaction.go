@@ -6,7 +6,6 @@ import (
 )
 
 type CompactionConfig struct {
-	Enabled       bool
 	KeepLastTurns int
 	TriggerRatio  float64
 	SystemPrompt  string
@@ -22,19 +21,12 @@ func defaultCompaction(c CompactionConfig) CompactionConfig {
 	if c.SystemPrompt == "" {
 		c.SystemPrompt = defaultSummaryPrompt
 	}
-	c.Enabled = true
 	return c
 }
 
 const defaultSummaryPrompt = `Summarize the older conversation for future agent turns. Preserve user goals, decisions, relevant tool results, pending tasks, IDs, names, paths, entities, important failures, and corrections. Exclude irrelevant small talk and duplicate raw tool output.`
 
 func (a *Agent) maybeCompact(ctx context.Context, run *runState, force bool) error {
-	if !a.def.Compaction.Enabled {
-		return nil
-	}
-	if run.compacted && !force {
-		return nil
-	}
 	if !force && !a.shouldCompact() {
 		return nil
 	}
@@ -73,13 +65,12 @@ func (a *Agent) maybeCompact(ctx context.Context, run *runState, force bool) err
 	a.mu.Lock()
 	a.transcript = next
 	a.mu.Unlock()
-	run.compacted = true
 	_ = run.emit(ctx, Event{Type: EventTypeCompactionEnd, Severity: SeverityInfo, Usage: resp.Usage})
 	return nil
 }
 
 func (a *Agent) shouldCompact() bool {
-	estimate := a.estimateModelInputTokens(a.snapshotTranscript())
+	estimate := a.estimateModelRequestTokens(a.snapshotTranscript())
 	threshold := int(float64(a.def.Limits.ContextWindowTokens) * a.def.Compaction.TriggerRatio)
 	return estimate >= threshold
 }

@@ -145,6 +145,8 @@ Default limits:
 - `ReserveOutputTokens`: 4096
 - `HardInputLimitTokens`: `ContextWindowTokens - ReserveOutputTokens`
 
+Context trigger estimates include `ReserveOutputTokens`. Hard input-limit checks compare only estimated input tokens against `HardInputLimitTokens` so the reserve is not counted twice.
+
 ### Stop Reasons and Finish Reasons
 
 The harness should normalize provider-specific finish reasons and expose stable stop reasons to callers and events.
@@ -270,7 +272,9 @@ type ToolHandler interface {
 Errors should be classified as:
 
 - Tool-visible error: append a failed tool result and let the model react.
-- Runtime fatal error: abort the run because the harness cannot continue safely.
+- Runtime fatal error: append the tool result or tool error, then abort the run because the harness cannot continue safely.
+
+A handler can mark a successful `ToolResult` as fatal when the returned result should be visible in transcript but the loop must stop. A handler can also return a fatal tool error when execution failed in a way that should stop the run.
 
 ### Tool Validation and Error Results
 
@@ -399,7 +403,7 @@ Event requirements:
 - Usage events include token/cost data when available.
 - Events are emitted in causal order: run start, turn start, model deltas/end, tool starts/ends, turn end, optional compaction, run end.
 - Tool completion events may reflect actual completion order, but tool-result messages are appended in assistant tool-call order.
-- Event emission semantics must be explicit in implementation. Prefer synchronous `Emit(ctx, event) error` at harness boundaries and a narrow buffered delta path for provider streaming so subscribers do not block provider reads indefinitely.
+- Event emission is best-effort. The harness calls `Emit(ctx, event)` synchronously at harness boundaries, but sink errors must not break agent execution. Provider streaming should still use a narrow delta path so subscribers do not block provider reads indefinitely.
 
 LibreDash can bridge these events to Datastar SSE patches.
 
@@ -444,8 +448,6 @@ Illustrative shape:
 
 ```go
 type CompactionConfig struct {
-	Enabled bool
-
 	// Number of recent complete turns kept verbatim.
 	KeepLastTurns int
 
@@ -459,7 +461,7 @@ type CompactionConfig struct {
 
 Default behavior:
 
-- Enabled by default.
+- Always enabled in V1.
 - Keep the last 8 complete turns.
 - Trigger when estimated input reaches 70% of the configured context window.
 - Use the main model for summarization.
@@ -474,7 +476,7 @@ Compaction triggers:
 - Post-turn: after a completed turn, compact if the same estimated context reaches the trigger.
 - Context-overflow retry: if the provider rejects a turn model request for context length, run compaction once, rebuild the request, and retry once. Do not apply this retry to compaction requests, malformed requests, authentication errors, rate limits, or arbitrary provider failures.
 
-If proactive compaction cannot make the request fit under `HardInputLimitTokens`, the harness should stop with `context_limit` instead of dropping the active user message or splitting an assistant tool-call block from its tool results.
+If proactive compaction cannot make estimated input tokens fit under `HardInputLimitTokens`, the harness should stop with `context_limit` instead of dropping the active user message or splitting an assistant tool-call block from its tool results.
 
 The summary prompt should ask the model to preserve:
 

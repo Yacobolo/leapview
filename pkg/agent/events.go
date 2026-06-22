@@ -7,6 +7,8 @@ import (
 )
 
 type EventSink interface {
+	// Emit receives best-effort lifecycle events. Returned errors are ignored by
+	// the harness so observability sinks cannot break agent execution.
 	Emit(ctx context.Context, event Event) error
 }
 
@@ -68,6 +70,8 @@ type Event struct {
 	Usage         Usage
 	Provider      string
 	Model         string
+
+	ProviderMetadata map[string]any
 }
 
 type runState struct {
@@ -75,7 +79,6 @@ type runState struct {
 	runID         string
 	correlationID string
 	seq           atomic.Int64
-	compacted     bool
 }
 
 func (r *runState) emit(ctx context.Context, event Event) error {

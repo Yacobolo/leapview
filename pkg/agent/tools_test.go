@@ -225,6 +225,73 @@ func TestToolExecutionIsBoundedParallelAndOrdered(t *testing.T) {
 	}
 }
 
+func TestToolFatalResultStopsRunAfterAppendingResult(t *testing.T) {
+	model := &fakeModel{responses: []ModelResponse{
+		{ToolCalls: []ToolCall{{ID: "call_1", Name: "fatal", Arguments: json.RawMessage(`{}`)}}, FinishReason: FinishReasonToolCalls},
+		{Content: "should not call", FinishReason: FinishReasonStop},
+	}}
+	a := mustAgent(t, Definition{
+		Name:         "test",
+		SystemPrompt: "x",
+		Model:        model,
+		Tools: []ToolDefinition{{
+			Name:        "fatal",
+			Description: "fatal",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+			Handler: ToolHandlerFunc(func(context.Context, ToolCall) (ToolResult, error) {
+				return ToolResult{Content: map[string]any{"error": "stop"}, Fatal: true}, nil
+			}),
+		}},
+	})
+
+	result, err := a.Prompt(context.Background(), PromptRequest{Input: "go"})
+	if err != nil {
+		t.Fatalf("Prompt returned error: %v", err)
+	}
+	if result.StopReason != StopReasonFatalToolError {
+		t.Fatalf("StopReason = %s, want fatal_tool_error", result.StopReason)
+	}
+	if len(model.requests) != 1 {
+		t.Fatalf("model calls = %d, want 1", len(model.requests))
+	}
+	tool := onlyToolMessage(t, a.Transcript())
+	if tool.ToolCallID != "call_1" || !strings.Contains(tool.Content, "stop") {
+		t.Fatalf("tool result = %#v, want appended fatal result", tool)
+	}
+}
+
+func TestFatalToolErrorStopsRunAfterAppendingErrorResult(t *testing.T) {
+	model := &fakeModel{responses: []ModelResponse{
+		{ToolCalls: []ToolCall{{ID: "call_1", Name: "fatal", Arguments: json.RawMessage(`{}`)}}, FinishReason: FinishReasonToolCalls},
+		{Content: "should not call", FinishReason: FinishReasonStop},
+	}}
+	a := mustAgent(t, Definition{
+		Name:         "test",
+		SystemPrompt: "x",
+		Model:        model,
+		Tools: []ToolDefinition{{
+			Name:        "fatal",
+			Description: "fatal",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+			Handler: ToolHandlerFunc(func(context.Context, ToolCall) (ToolResult, error) {
+				return ToolResult{}, FatalToolError(errors.New("stop now"))
+			}),
+		}},
+	})
+
+	result, err := a.Prompt(context.Background(), PromptRequest{Input: "go"})
+	if err != nil {
+		t.Fatalf("Prompt returned error: %v", err)
+	}
+	if result.StopReason != StopReasonFatalToolError {
+		t.Fatalf("StopReason = %s, want fatal_tool_error", result.StopReason)
+	}
+	tool := onlyToolMessage(t, a.Transcript())
+	if !tool.IsError || !strings.Contains(tool.Content, "tool_execution_failed") {
+		t.Fatalf("tool result = %#v, want execution error", tool)
+	}
+}
+
 func onlyToolMessage(t *testing.T, messages []Message) Message {
 	t.Helper()
 	for _, message := range messages {
