@@ -1757,6 +1757,10 @@ func assetTypeLabel(typ string) string {
 		return "Metric view"
 	case "cache_table":
 		return "Materialization"
+	case "dataset":
+		// Compatibility-only deployment/API type. User-facing workspace pages use
+		// "Model table" as the semantic vocabulary.
+		return "Model table"
 	case "model_table":
 		return "Model table"
 	default:

@@ -250,7 +250,7 @@ func (s *Server) apiWorkspaceAssets(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, filterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q")))
+	writeJSON(w, http.StatusOK, filterAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q")))
 }
 
 func (s *Server) apiWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request) {
@@ -639,15 +639,23 @@ func filterAssets(assets []api.AssetResponse, typ, query string) []api.AssetResp
 
 func filterWorkspaceAssets(assets []api.AssetResponse, typ, query string) []api.AssetResponse {
 	typ = strings.TrimSpace(typ)
-	query = strings.TrimSpace(query)
-	if typ != "" || query != "" {
-		return filterAssets(assets, typ, query)
+	query = strings.ToLower(strings.TrimSpace(query))
+	if typ != "" && !isWorkspaceLandingAsset(typ) {
+		return nil
 	}
 	out := make([]api.AssetResponse, 0, len(assets))
 	for _, asset := range assets {
-		if isWorkspaceLandingAsset(asset.Type) {
-			out = append(out, asset)
+		if !isWorkspaceLandingAsset(asset.Type) {
+			continue
 		}
+		if typ != "" && asset.Type != typ {
+			continue
+		}
+		haystack := strings.ToLower(asset.Type + " " + asset.Key + " " + asset.Title + " " + asset.Description)
+		if query != "" && !strings.Contains(haystack, query) {
+			continue
+		}
+		out = append(out, asset)
 	}
 	return out
 }

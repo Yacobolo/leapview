@@ -292,6 +292,74 @@ func TestWorkspacePageDefaultsToTopLevelAssets(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAssetSearchStaysWorkspaceFacing(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	seedActiveDeployment(t, store, "test")
+	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test?q=orders_enriched", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, notWant := range []string{"Cache table", "Dataset", `>orders_enriched<`} {
+		if strings.Contains(rec.Body.String(), notWant) {
+			t.Fatalf("workspace search rendered internal asset vocabulary %q:\n%s", notWant, rec.Body.String())
+		}
+	}
+}
+
+func TestWorkspaceConnectionFilterRedirectsToGlobalConnections(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	seedActiveDeployment(t, store, "test")
+	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test?type=connection&q=olist", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusFound, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/connections?q=olist" {
+		t.Fatalf("Location = %q, want /connections?q=olist", got)
+	}
+}
+
+func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	seedActiveDeployment(t, store, "test")
+	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/connections?q=olist", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"Connections", "Global", "data-connection-toolbar", "local connection"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("connections page missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `data-workspace-asset-toolbar`) {
+		t.Fatalf("connections page rendered workspace asset toolbar:\n%s", body)
+	}
+}
+
 func TestWorkspacePermissionsRejectViewer(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()

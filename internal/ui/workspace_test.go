@@ -47,6 +47,15 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 	}
 }
 
+func TestLegacyAssetTypesUseCurrentProductVocabulary(t *testing.T) {
+	if got := assetTypeLabel("dataset"); got != "Model table" {
+		t.Fatalf("dataset label = %q, want Model table", got)
+	}
+	if got := assetTypeLabel("cache_table"); got != "Materialization" {
+		t.Fatalf("cache_table label = %q, want Materialization", got)
+	}
+}
+
 func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 	byType := map[string]api.AssetResponse{}
