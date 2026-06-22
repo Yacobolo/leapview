@@ -233,16 +233,25 @@ func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
 	for _, want := range []string{
 		`/static/workspace-access-control.js?v=dev`,
 		`<ld-workspace-access-control data-attr:access="$workspaceAccess"`,
-		`data-attr:search="$workspaceAccessSearch"`,
+		`data-attr:search="$workspaceAccess.search"`,
 		`data-on:ld-workspace-access-search__debounce.200ms=`,
 		`data-on:ld-workspace-access-upsert=`,
 		`data-on:ld-workspace-access-remove=`,
 		`workspaceAccess`,
-		`workspaceAccessCommand`,
-		`workspaceAccessSearch`,
+		`command`,
+		`search`,
+		`csrfToken`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("workspace access control did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		`workspaceAccessCommand`,
+		`workspaceAccessSearch`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("workspace access control rendered root-level access signal %q:\n%s", notWant, rendered)
 		}
 	}
 }

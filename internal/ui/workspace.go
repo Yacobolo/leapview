@@ -58,10 +58,23 @@ func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, a
 
 func workspacePageSignals(access api.WorkspaceAccessResponse, csrfToken string) map[string]any {
 	return map[string]any{
-		"csrfToken":              csrfToken,
-		"workspaceAccess":        access,
-		"workspaceAccessCommand": api.WorkspaceAccessCommand{},
-		"workspaceAccessSearch":  "",
+		"workspaceAccess": WorkspaceAccessSignals(access, csrfToken),
+	}
+}
+
+type workspaceAccessSignalState struct {
+	api.WorkspaceAccessResponse
+	CSRFToken string                     `json:"csrfToken"`
+	Command   api.WorkspaceAccessCommand `json:"command"`
+	Search    string                     `json:"search"`
+}
+
+func WorkspaceAccessSignals(access api.WorkspaceAccessResponse, csrfToken string) workspaceAccessSignalState {
+	return workspaceAccessSignalState{
+		WorkspaceAccessResponse: access,
+		CSRFToken:               csrfToken,
+		Command:                 api.WorkspaceAccessCommand{},
+		Search:                  "",
 	}
 }
 
@@ -69,12 +82,12 @@ func workspaceAccessControl(workspaceID string, canManage bool) g.Node {
 	if !canManage {
 		return nil
 	}
-	upsert := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccessCommand = evt.detail; " + postAction("/workspaces/"+workspaceID+"/access/upsert")
-	remove := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccessCommand = evt.detail; " + postAction("/workspaces/"+workspaceID+"/access/remove")
+	upsert := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + postActionWithCSRFSignal("/workspaces/"+workspaceID+"/access/upsert", "$workspaceAccess.csrfToken")
+	remove := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + postActionWithCSRFSignal("/workspaces/"+workspaceID+"/access/remove", "$workspaceAccess.csrfToken")
 	return g.El("ld-workspace-access-control",
 		g.Attr("data-attr:access", "$workspaceAccess"),
-		g.Attr("data-attr:search", "$workspaceAccessSearch"),
-		g.Attr("data-on:ld-workspace-access-search__debounce.200ms", "$workspaceAccessSearch = evt.detail.search"),
+		g.Attr("data-attr:search", "$workspaceAccess.search"),
+		g.Attr("data-on:ld-workspace-access-search__debounce.200ms", "$workspaceAccess.search = evt.detail.search"),
 		g.Attr("data-on:ld-workspace-access-upsert", upsert),
 		g.Attr("data-on:ld-workspace-access-remove", remove),
 	)

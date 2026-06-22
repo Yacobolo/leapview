@@ -156,7 +156,18 @@ func (s *Server) removeWorkspacePermission(w http.ResponseWriter, r *http.Reques
 }
 
 type workspaceAccessSignalPayload struct {
+	WorkspaceAccess struct {
+		Command api.WorkspaceAccessCommand `json:"command"`
+	} `json:"workspaceAccess"`
 	WorkspaceAccessCommand api.WorkspaceAccessCommand `json:"workspaceAccessCommand"`
+}
+
+func (signals workspaceAccessSignalPayload) command() api.WorkspaceAccessCommand {
+	command := signals.WorkspaceAccess.Command
+	if command.Email == "" && command.Role == "" && command.PrincipalID == "" {
+		command = signals.WorkspaceAccessCommand
+	}
+	return command
 }
 
 func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
@@ -166,10 +177,11 @@ func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	command := signals.command()
 	status := api.WorkspaceAccessStatus{Message: "Access updated."}
 	if s.store == nil {
 		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
-	} else if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, signals.WorkspaceAccessCommand.Email, "", signals.WorkspaceAccessCommand.Role); err != nil {
+	} else if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, command.Email, "", command.Role); err != nil {
 		status = api.WorkspaceAccessStatus{Error: err.Error()}
 	}
 	s.patchWorkspaceAccess(w, r, workspaceID, status)
@@ -182,10 +194,11 @@ func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	command := signals.command()
 	status := api.WorkspaceAccessStatus{Message: "Access removed."}
 	if s.store == nil {
 		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
-	} else if err := s.store.RemovePrincipalRoles(r.Context(), workspaceID, signals.WorkspaceAccessCommand.PrincipalID); err != nil {
+	} else if err := s.store.RemovePrincipalRoles(r.Context(), workspaceID, command.PrincipalID); err != nil {
 		status = api.WorkspaceAccessStatus{Error: err.Error()}
 	}
 	s.patchWorkspaceAccess(w, r, workspaceID, status)
@@ -196,8 +209,7 @@ func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, wo
 	access := s.workspaceAccessResponse(r, workspace, true, status)
 	sse := datastar.NewSSE(w, r)
 	_ = sse.MarshalAndPatchSignals(map[string]any{
-		"workspaceAccess":        access,
-		"workspaceAccessCommand": api.WorkspaceAccessCommand{},
+		"workspaceAccess": ui.WorkspaceAccessSignals(access, csrfToken(r, s.auth)),
 	})
 }
 

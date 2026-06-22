@@ -387,7 +387,7 @@ func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","role":"viewer"}}`
+	signals := `{"workspaceAccess":{"command":{"email":"analyst@example.com","role":"viewer"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -414,7 +414,7 @@ func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 		t.Fatalf("role binding missing after command:\n%s", listRec.Body.String())
 	}
 
-	removeSignals := `{"workspaceAccessCommand":{"principalId":"` + platform.PrincipalIDForEmail("analyst@example.com") + `"}}`
+	removeSignals := `{"workspaceAccess":{"command":{"principalId":"` + platform.PrincipalIDForEmail("analyst@example.com") + `"}}}`
 	removeReq := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/remove", bytes.NewBufferString(removeSignals))
 	removeReq.Header.Set("Authorization", "Bearer "+token)
 	removeRec := httptest.NewRecorder()
@@ -453,7 +453,7 @@ func TestWorkspaceAccessCommandRejectsViewer(t *testing.T) {
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	signals := `{"workspaceAccessCommand":{"email":"analyst@example.com","role":"viewer"}}`
+	signals := `{"workspaceAccess":{"command":{"email":"analyst@example.com","role":"viewer"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -481,7 +481,7 @@ func TestWorkspaceAccessCommandPatchesInvalidInput(t *testing.T) {
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	signals := `{"workspaceAccessCommand":{"email":"","role":"viewer"}}`
+	signals := `{"workspaceAccess":{"command":{"email":"","role":"viewer"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/upsert", bytes.NewBufferString(signals))
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()

@@ -84,16 +84,16 @@ class WorkspaceAccessControl extends LitElement {
       min-height: var(--ld-control-medium);
       align-items: center;
       justify-content: center;
-      gap: var(--ld-space-sm);
-      border: var(--ld-border-transparent);
+      gap: var(--base-size-6);
+      border: var(--ld-border-muted);
       border-radius: var(--ld-radius-default);
-      background: transparent;
-      color: var(--ld-fg-muted);
+      background: var(--ld-bg-panel);
+      color: var(--ld-fg-default);
       cursor: pointer;
       font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-medium);
+      font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-tight);
-      padding: 0 var(--ld-space-lg);
+      padding: 0 var(--base-size-10);
       transition:
         color var(--ld-transition-fast),
         background-color var(--ld-transition-fast),
@@ -102,7 +102,7 @@ class WorkspaceAccessControl extends LitElement {
 
     .trigger:hover,
     .trigger:focus-visible {
-      border-color: var(--ld-line-muted);
+      border-color: var(--ld-line-default);
       background: var(--ld-bg-control-hover);
       color: var(--ld-fg-default);
       outline: 0;
@@ -122,7 +122,7 @@ class WorkspaceAccessControl extends LitElement {
       inset: 0;
       z-index: calc(var(--z-index-inspector) - 1);
       display: grid;
-      place-items: start center;
+      place-items: center;
       background: var(--ld-modal-backdrop);
       padding: var(--base-size-32) var(--base-size-16);
     }
@@ -142,7 +142,7 @@ class WorkspaceAccessControl extends LitElement {
     .header,
     .footer {
       border-bottom: var(--ld-border-muted);
-      padding: var(--base-size-16);
+      padding: var(--base-size-16) var(--base-size-20);
     }
 
     .header {
@@ -200,15 +200,15 @@ class WorkspaceAccessControl extends LitElement {
 
     .body {
       display: grid;
-      gap: var(--base-size-20);
+      gap: var(--base-size-24);
       min-height: 0;
       overflow: auto;
-      padding: var(--base-size-16) var(--base-size-20) var(--base-size-20);
+      padding: var(--base-size-20);
     }
 
     .card {
       display: grid;
-      gap: var(--base-size-8);
+      gap: var(--base-size-10);
     }
 
     .section-title {
@@ -219,26 +219,11 @@ class WorkspaceAccessControl extends LitElement {
       line-height: var(--ld-line-height-snug);
     }
 
-    .form {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(8rem, auto) auto;
-      gap: var(--base-size-8);
-      align-items: end;
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel-muted);
-      padding: var(--base-size-8);
-    }
-
-    label {
-      display: grid;
-      min-width: 0;
-      gap: var(--base-size-4);
+    .label {
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
       line-height: var(--ld-line-height-tight);
-      text-transform: uppercase;
     }
 
     .field-shell {
@@ -263,6 +248,39 @@ class WorkspaceAccessControl extends LitElement {
       background: var(--ld-bg-control-hover);
     }
 
+    .composer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--base-size-8);
+      align-items: center;
+    }
+
+    .composer-shell {
+      min-height: var(--ld-control-medium);
+      border-radius: var(--ld-radius-tight);
+      padding: var(--base-size-4) var(--base-size-6) var(--base-size-4) var(--base-size-12);
+    }
+
+    .composer-shell input {
+      flex: 1 1 12rem;
+    }
+
+    .composer-role {
+      width: auto;
+      min-width: 7rem;
+      flex: 0 0 auto;
+      border: 0;
+      border-left: var(--ld-border-muted);
+      border-radius: 0;
+      background: transparent;
+      color: var(--ld-fg-default);
+      padding-left: var(--base-size-12);
+    }
+
+    .composer-role:focus {
+      outline-offset: var(--base-size-2);
+    }
+
     input,
     select {
       min-height: var(--ld-control-medium);
@@ -277,13 +295,18 @@ class WorkspaceAccessControl extends LitElement {
       padding: 0 var(--base-size-8);
     }
 
-    .field-shell input {
+    .field-shell input,
+    .field-shell select {
       min-height: auto;
       border: 0;
       border-radius: 0;
       background: transparent;
       padding: 0;
       outline: 0;
+    }
+
+    .field-shell input {
+      flex: 1 1 auto;
     }
 
     input::placeholder {
@@ -298,17 +321,17 @@ class WorkspaceAccessControl extends LitElement {
     }
 
     .submit {
-      align-self: end;
       min-height: var(--ld-control-medium);
+      min-width: var(--base-size-80);
       border: 0;
-      border-radius: var(--ld-radius-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--button-primary-bgColor-rest);
       color: var(--button-primary-fgColor-rest);
       cursor: pointer;
       font-size: var(--ld-font-size-body-sm);
       font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-tight);
-      padding: 0 var(--base-size-12);
+      padding: 0 var(--base-size-16);
     }
 
     .submit:hover,
@@ -346,7 +369,7 @@ class WorkspaceAccessControl extends LitElement {
     .toolbar {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem);
-      align-items: end;
+      align-items: center;
       gap: var(--base-size-12);
     }
 
@@ -358,7 +381,7 @@ class WorkspaceAccessControl extends LitElement {
       display: grid;
       overflow: hidden;
       border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--ld-bg-panel);
     }
 
@@ -423,12 +446,12 @@ class WorkspaceAccessControl extends LitElement {
 
     .empty {
       border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-default);
+      border-radius: var(--ld-radius-tight);
       background: var(--ld-bg-panel);
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-body-sm);
       font-weight: var(--ld-font-weight-medium);
-      padding: var(--base-size-24) var(--base-size-16);
+      padding: var(--base-size-20) var(--base-size-16);
       text-align: center;
     }
 
@@ -443,14 +466,27 @@ class WorkspaceAccessControl extends LitElement {
         max-height: calc(100vh - var(--base-size-16));
       }
 
-      .form,
+      .composer,
       .row,
       .toolbar {
         grid-template-columns: minmax(0, 1fr);
       }
 
+      .composer-shell {
+        align-items: stretch;
+        flex-wrap: wrap;
+        padding: var(--base-size-8);
+      }
+
+      .composer-role {
+        min-width: 100%;
+        border-top: var(--ld-border-muted);
+        border-left: 0;
+        padding-left: var(--base-size-8);
+      }
+
       .submit {
-        justify-self: start;
+        justify-self: stretch;
       }
     }
   `
@@ -503,34 +539,31 @@ class WorkspaceAccessControl extends LitElement {
           </header>
           <div class="body">
             <section class="card" aria-label="Add workspace access">
-              <h3 class="section-title">Assign role</h3>
+              <div class="label">Add people by email</div>
               ${status.error ? html`<div class="status status-error" role="alert">${status.error}</div>` : nothing}
               ${status.message && !status.error ? html`<div class="status status-message" role="status">${status.message}</div>` : nothing}
-              <form class="form" @submit=${this.handleSubmit}>
-                <label>
-                  Principal
-                  <span class="field-shell">
-                    ${mailIcon()}
-                    <input
-                      type="email"
-                      autocomplete="email"
-                      placeholder="person@example.com"
-                      .value=${this.email}
-                      ?disabled=${status.loading}
-                      @input=${(event: Event) => { this.email = (event.currentTarget as HTMLInputElement).value }}
-                    >
-                  </span>
-                </label>
-                <label>
-                  Role
+              <form class="composer" @submit=${this.handleSubmit}>
+                <span class="field-shell composer-shell">
+                  ${mailIcon()}
+                  <input
+                    type="email"
+                    autocomplete="email"
+                    placeholder="Search by email..."
+                    aria-label="Email principal"
+                    .value=${this.email}
+                    ?disabled=${status.loading}
+                    @input=${(event: Event) => { this.email = (event.currentTarget as HTMLInputElement).value }}
+                  >
                   <select
+                    class="composer-role"
+                    aria-label="Role to assign"
                     .value=${this.selectedRole}
                     ?disabled=${status.loading}
                     @change=${(event: Event) => { this.selectedRole = (event.currentTarget as HTMLSelectElement).value }}
                   >
                     ${this.roles.map((role) => html`<option value=${role.name}>${roleLabel(role.name)}</option>`)}
                   </select>
-                </label>
+                </span>
                 <button class="submit" type="submit" ?disabled=${status.loading || !this.email.trim() || !this.selectedRole}>
                   ${status.loading ? 'Saving' : 'Assign'}
                 </button>
