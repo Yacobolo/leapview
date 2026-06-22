@@ -1,6 +1,7 @@
 package agentapp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -21,6 +22,11 @@ import (
 var (
 	ErrDisabled = errors.New("agent is not configured")
 	ErrBusy     = errors.New("agent conversation already has a running turn")
+)
+
+const (
+	maxToolArgumentsPreviewBytes = 2000
+	maxToolResultPreviewBytes    = 4000
 )
 
 func IsBusy(err error) bool {
@@ -506,6 +512,8 @@ func transcriptFromMessages(conversationID string, messages []platformdb.AgentMe
 					Name:           call.Name,
 					Title:          toolTitle(call.Name),
 					Status:         "running",
+					InputJSON:      formatToolCallPreview(call),
+					ArgumentsJSON:  formatJSONPreview(string(call.Arguments), maxToolArgumentsPreviewBytes),
 					ConversationID: conversationID,
 					RunID:          runID,
 					CreatedAt:      message.CreatedAt,
@@ -520,6 +528,8 @@ func transcriptFromMessages(conversationID string, messages []platformdb.AgentMe
 				Title:          toolTitle(message.ToolName),
 				Status:         "complete",
 				Summary:        toolSummary(message.ContentText),
+				ResultSummary:  toolSummary(message.ContentText),
+				ResultJSON:     formatJSONPreview(message.ContentText, maxToolResultPreviewBytes),
 				ConversationID: conversationID,
 				RunID:          runID,
 				CreatedAt:      message.CreatedAt,
@@ -528,6 +538,7 @@ func transcriptFromMessages(conversationID string, messages []platformdb.AgentMe
 				item.Status = "error"
 				item.Error = toolErrorSummary(message.ContentText)
 				item.Summary = ""
+				item.ResultSummary = ""
 			}
 			if idx, ok := toolIndex[message.ToolCallID]; ok {
 				items[idx] = mergeToolTranscriptItem(items[idx], item)
@@ -540,8 +551,9 @@ func transcriptFromMessages(conversationID string, messages []platformdb.AgentMe
 }
 
 type transcriptToolCall struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
 }
 
 func toolCallsFromContentJSON(raw string) []transcriptToolCall {
@@ -558,8 +570,16 @@ func mergeToolTranscriptItem(started, finished api.AgentChatTranscriptItem) api.
 	started.ID = finished.ID
 	started.Status = finished.Status
 	started.Summary = finished.Summary
+	started.ResultSummary = finished.ResultSummary
+	started.ResultJSON = finished.ResultJSON
 	started.Error = finished.Error
 	started.RunID = finished.RunID
+	if started.InputJSON == "" {
+		started.InputJSON = finished.InputJSON
+	}
+	if started.ArgumentsJSON == "" {
+		started.ArgumentsJSON = finished.ArgumentsJSON
+	}
 	if started.Name == "" {
 		started.Name = finished.Name
 	}
@@ -582,6 +602,38 @@ func toolTitle(name string) string {
 		parts[i] = strings.ToUpper(part[:1]) + part[1:]
 	}
 	return strings.Join(parts, " ")
+}
+
+func formatToolCallPreview(call transcriptToolCall) string {
+	payload := struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}{
+		Name:      call.Name,
+		Arguments: "{}",
+	}
+	if len(call.Arguments) > 0 && json.Valid(call.Arguments) {
+		payload.Arguments = string(call.Arguments)
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return formatJSONPreview(string(raw), maxToolArgumentsPreviewBytes)
+}
+
+func formatJSONPreview(raw string, limit int) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || limit <= 0 {
+		return ""
+	}
+	var indented bytes.Buffer
+	if json.Valid([]byte(raw)) {
+		if err := json.Indent(&indented, []byte(raw), "", "  "); err == nil {
+			raw = indented.String()
+		}
+	}
+	return truncateDisplayText(raw, limit)
 }
 
 func toolSummary(raw string) string {

@@ -70,6 +70,10 @@ type AgentChatTranscriptItem struct {
 	Title          string `json:"title,omitempty"`
 	Status         string `json:"status,omitempty"`
 	Summary        string `json:"summary,omitempty"`
+	ResultSummary  string `json:"resultSummary,omitempty"`
+	InputJSON      string `json:"inputJson,omitempty"`
+	ArgumentsJSON  string `json:"argumentsJson,omitempty"`
+	ResultJSON     string `json:"resultJson,omitempty"`
 	Error          string `json:"error,omitempty"`
 	ConversationID string `json:"conversationId,omitempty"`
 	RunID          string `json:"runId,omitempty"`

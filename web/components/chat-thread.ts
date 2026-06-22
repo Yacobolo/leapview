@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing, svg as svgTemplate } from 'lit'
-import { property } from 'lit/decorators.js'
+import { property, state } from 'lit/decorators.js'
 import { unsafeHTML } from 'lit/directives/unsafe-html.js'
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
@@ -20,6 +20,10 @@ type ChatTranscriptItem = {
   title?: string
   status?: 'running' | 'complete' | 'error' | 'streaming' | string
   summary?: string
+  resultSummary?: string
+  inputJson?: string
+  argumentsJson?: string
+  resultJson?: string
   error?: string
   conversationId?: string
   runId?: string
@@ -55,6 +59,7 @@ class ChatThread extends LitElement {
   @property({ attribute: 'transcript', converter: jsonConverter<ChatTranscriptItem[]>([]) }) transcriptAttribute: ChatTranscriptItem[] = []
   @property({ attribute: 'status', converter: jsonConverter<ChatStatus>({}) }) status: ChatStatus = {}
   @property({ attribute: 'conversation-id' }) conversationId = ''
+  @state() private expandedToolCalls = new Set<string>()
 
   static styles = css`
     :host {
@@ -228,8 +233,8 @@ class ChatThread extends LitElement {
     }
 
     .user .bubble {
-      border-color: var(--ld-line-accent-muted);
-      background: var(--ld-bg-accent-muted);
+      border-color: var(--ld-line-muted);
+      background: var(--ld-bg-panel-muted);
     }
 
     .message.error .bubble {
@@ -237,21 +242,32 @@ class ChatThread extends LitElement {
       background: var(--ld-bg-danger-muted);
     }
 
-    .activity {
-      display: flex;
+    .tool-call {
+      display: grid;
+      width: fit-content;
+      max-width: 100%;
+      margin-block: var(--ld-chat-agent-tool-gap);
+      gap: var(--ld-space-sm);
+    }
+
+    .tool-trigger {
+      display: inline-flex;
       width: fit-content;
       max-width: 100%;
       align-items: center;
       gap: var(--ld-chat-activity-gap);
-      margin-block: var(--ld-chat-agent-tool-gap);
-      border: var(--ld-border-transparent);
-      border-radius: var(--ld-radius-full);
-      background: var(--ld-bg-panel-subtle);
-      padding: var(--ld-chat-activity-padding-block) var(--ld-chat-activity-padding-inline);
+      border: 0;
+      border-radius: var(--ld-radius-tight);
+      background: transparent;
+      padding: var(--ld-space-2xs) 0;
       color: var(--ld-fg-muted);
+      cursor: pointer;
+      font: inherit;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
       line-height: var(--ld-line-height-snug);
+      text-align: left;
+      transition: color var(--ld-transition-fast);
     }
 
     .tool-icon {
@@ -259,7 +275,7 @@ class ChatThread extends LitElement {
       width: var(--ld-chat-activity-icon-size);
       height: var(--ld-chat-activity-icon-size);
       flex: 0 0 var(--ld-chat-activity-icon-size);
-      color: var(--ld-fg-muted);
+      color: currentColor;
     }
 
     .tool-icon svg {
@@ -273,13 +289,31 @@ class ChatThread extends LitElement {
       stroke-linejoin: round;
     }
 
-    .activity.running .tool-icon {
+    .tool-call.running .tool-trigger {
       color: var(--ld-fg-warning);
+    }
+
+    .tool-call.running .tool-icon {
       animation: pulse 1.1s ease-in-out infinite;
     }
 
-    .activity.error .tool-icon {
+    .tool-call.error .tool-trigger {
       color: var(--ld-fg-danger);
+    }
+
+    .tool-trigger:hover,
+    .tool-trigger:focus-visible {
+      color: var(--ld-fg-default);
+    }
+
+    .tool-call.error .tool-trigger:hover,
+    .tool-call.error .tool-trigger:focus-visible {
+      color: var(--ld-fg-danger);
+    }
+
+    .tool-trigger:focus-visible {
+      outline: var(--ld-border-width-focus) solid var(--ld-line-emphasis);
+      outline-offset: var(--ld-space-xs);
     }
 
     .activity-text {
@@ -289,9 +323,91 @@ class ChatThread extends LitElement {
       white-space: nowrap;
     }
 
-    .activity-detail {
+    .tool-chevron {
+      display: inline-flex;
+      width: var(--ld-chat-activity-icon-size);
+      height: var(--ld-chat-activity-icon-size);
+      flex: 0 0 var(--ld-chat-activity-icon-size);
+      opacity: 0;
+      transform: translateX(calc(-1 * var(--ld-space-xs)));
+      transition:
+        opacity var(--ld-transition-fast),
+        transform var(--ld-transition-fast);
+    }
+
+    .tool-chevron svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .tool-trigger:hover .tool-chevron,
+    .tool-trigger:focus-visible .tool-chevron,
+    .tool-trigger[aria-expanded='true'] .tool-chevron {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    .tool-trigger[aria-expanded='true'] .tool-chevron {
+      transform: rotate(90deg);
+    }
+
+    .tool-details {
+      display: grid;
+      max-width: min(42rem, 100%);
+      gap: var(--ld-space-md);
+      border-left: var(--ld-border-width-focus) solid var(--ld-line-muted);
+      padding-left: var(--ld-space-lg);
       color: var(--ld-fg-muted);
-      font-weight: var(--ld-font-weight-regular);
+      font-size: var(--ld-font-size-caption);
+      animation: tool-details-open var(--ld-transition-normal);
+      transform-origin: top left;
+    }
+
+    .tool-detail-block {
+      display: grid;
+      gap: var(--ld-space-xs);
+    }
+
+    .tool-detail-label {
+      color: var(--ld-fg-muted);
+      font-weight: var(--ld-font-weight-medium);
+    }
+
+    .tool-detail-block pre {
+      max-height: var(--ld-chat-tool-max-height);
+      max-width: 100%;
+      overflow: auto;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      margin: 0;
+      padding: var(--ld-chat-pre-padding-block) var(--ld-chat-pre-padding-inline);
+      color: var(--ld-fg-default);
+      font-family: var(--fontStack-monospace);
+      font-size: var(--ld-font-size-caption);
+      line-height: var(--ld-line-height-snug);
+      white-space: pre-wrap;
+    }
+
+    .tool-error {
+      color: var(--ld-fg-danger);
+    }
+
+    @keyframes tool-details-open {
+      from {
+        opacity: 0;
+        transform: translateY(calc(-1 * var(--ld-chat-tool-disclosure-offset)));
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     @keyframes pulse {
@@ -380,15 +496,58 @@ class ChatThread extends LitElement {
   private renderTool(item: ChatTranscriptItem) {
     const status = item.status || 'running'
     const label = toolCallLabel(item)
+    const key = toolCallKey(item)
+    const detailsID = toolDetailsID(key)
+    const expanded = this.expandedToolCalls.has(key)
     return html`
       <div
-        class=${['activity', status === 'running' ? 'running' : '', status === 'complete' ? 'done' : '', status === 'error' ? 'error' : ''].filter(Boolean).join(' ')}
+        class=${['tool-call', status === 'running' ? 'running' : '', status === 'complete' ? 'done' : '', status === 'error' ? 'error' : ''].filter(Boolean).join(' ')}
         title=${`${label}: ${statusLabel(status)}`}
       >
-        <span class="tool-icon" aria-hidden="true">${toolIcon(item.name)}</span>
-        <span class="activity-text">${label}</span>
+        <button
+          class="tool-trigger"
+          type="button"
+          aria-expanded=${expanded ? 'true' : 'false'}
+          aria-controls=${detailsID}
+          @click=${() => this.toggleToolCall(key)}
+        >
+          <span class="tool-icon" aria-hidden="true">${toolIcon(item.name)}</span>
+          <span class="activity-text">${label}</span>
+          <span class="tool-chevron" aria-hidden="true">${chevronRightIcon()}</span>
+        </button>
+        ${expanded ? this.renderToolDetails(item, detailsID) : nothing}
       </div>
     `
+  }
+
+  private renderToolDetails(item: ChatTranscriptItem, detailsID: string) {
+    const status = item.status || 'running'
+    return html`
+      <div class="tool-details" id=${detailsID}>
+        ${item.inputJson || item.argumentsJson ? this.renderToolJSON('Input', item.inputJson || item.argumentsJson || '') : nothing}
+        ${item.resultJson ? this.renderToolJSON(status === 'error' ? 'Error result' : 'Result', item.resultJson) : nothing}
+        ${!item.resultJson && item.error ? html`<div class="tool-error">${item.error}</div>` : nothing}
+      </div>
+    `
+  }
+
+  private renderToolJSON(label: string, value: string) {
+    return html`
+      <div class="tool-detail-block">
+        <div class="tool-detail-label">${label}</div>
+        <pre><code>${value}</code></pre>
+      </div>
+    `
+  }
+
+  private toggleToolCall(key: string) {
+    const next = new Set(this.expandedToolCalls)
+    if (next.has(key)) {
+      next.delete(key)
+    } else {
+      next.add(key)
+    }
+    this.expandedToolCalls = next
   }
 
 }
@@ -455,6 +614,18 @@ function toolIcon(name = '') {
 
 function lucideIcon(content: unknown) {
   return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`
+}
+
+function chevronRightIcon() {
+  return lucideIcon(svgTemplate`<path d="m9 18 6-6-6-6"></path>`)
+}
+
+function toolCallKey(item: ChatTranscriptItem): string {
+  return item.toolCallId || item.id || `${item.name || 'tool'}:${item.createdAt || ''}`
+}
+
+function toolDetailsID(key: string): string {
+  return `tool-details-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
 }
 
 function statusLabel(status: string): string {
