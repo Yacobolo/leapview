@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/ui"
+	"github.com/go-chi/chi/v5"
 	"github.com/starfederation/datastar-go/datastar"
 )
 
@@ -18,7 +20,47 @@ type chatSignals struct {
 
 func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	scope := s.chatScope(r)
-	signal := s.chatSignal(r.Context(), scope, "", "", false)
+	if s.agent == nil || !s.agent.Enabled() || scope.PrincipalID == "" {
+		s.renderChat(w, r, s.chatSignal(r.Context(), scope, "", "", false))
+		return
+	}
+	conversations, err := s.agent.ListConversations(r.Context(), scope)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(conversations) == 0 {
+		http.Redirect(w, r, "/chat/new", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/chat/"+conversations[0].ID, http.StatusFound)
+}
+
+func (s *Server) chatNew(w http.ResponseWriter, r *http.Request) {
+	scope := s.chatScope(r)
+	s.renderChat(w, r, s.chatSignal(r.Context(), scope, "", "", false))
+}
+
+func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
+	scope := s.chatScope(r)
+	conversationID := strings.TrimSpace(chi.URLParam(r, "conversation"))
+	if s.agent == nil || !s.agent.Enabled() {
+		s.renderChat(w, r, s.chatSignal(r.Context(), scope, "", "", false))
+		return
+	}
+	if scope.PrincipalID == "" {
+		http.Error(w, "chat requires an authenticated principal", http.StatusUnauthorized)
+		return
+	}
+	events, err := s.agent.ConversationEvents(r.Context(), scope, conversationID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	s.renderChat(w, r, s.chatSignalWith(scope, conversationID, events, "", false))
+}
+
+func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, signal api.AgentChatSignal) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if err := ui.ChatPage(s.metrics.Catalog(), csrfToken(r, s.auth), s.currentRoleLabel(r), signal).Render(w); err != nil {
@@ -42,6 +84,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conversationID := strings.TrimSpace(signals.Agent.ActiveConversationID)
+	createdConversation := false
 	if conversationID == "" {
 		conversation, err := service.CreateConversation(r.Context(), scope, "New conversation")
 		if err != nil {
@@ -49,26 +92,19 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		conversationID = conversation.ID
+		createdConversation = true
 	}
 
 	sse := datastar.NewSSE(w, r)
 	events := append([]api.AgentEventEnvelope{}, signals.Agent.Events...)
-	pending := api.AgentEventEnvelope{
-		ID:             "pending:user",
-		ConversationID: conversationID,
-		Type:           "message_appended",
-		Severity:       "info",
-		Payload: map[string]any{"message": map[string]any{
-			"role":    platform.AgentMessageRoleUser,
-			"content": input,
-		}},
+	if createdConversation {
+		_ = sse.ReplaceURL(url.URL{Path: "/chat/" + conversationID})
 	}
-	events = append(events, pending)
-	_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(scope, conversationID, events, "", true)})
 
+	streamActiveID := strings.TrimSpace(signals.Agent.ActiveConversationID)
 	emit := func(event api.AgentEventEnvelope) {
 		events = append(events, event)
-		_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(scope, conversationID, events, "", true)})
+		_ = sse.MarshalAndPatchSignals(map[string]any{"agent": chatSignalFromClient(signals.Agent, streamActiveID, events, "", true, true)})
 	}
 	result, err := service.Prompt(r.Context(), agentapp.PromptInput{
 		Scope:          scope,
@@ -91,28 +127,29 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 	_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(scope, conversationID, events, statusErr, false)})
 }
 
-func (s *Server) chatSelectConversation(w http.ResponseWriter, r *http.Request) {
-	service, scope, ok := s.chatService(w, r)
-	if !ok {
-		return
+func chatSignalFromClient(base api.AgentChatSignal, activeID string, events []api.AgentEventEnvelope, statusErr string, running, enabled bool) api.AgentChatSignal {
+	if !enabled && statusErr == "" {
+		statusErr = "Agent is not configured"
 	}
-	signals := chatSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	conversations := base.Conversations
+	if conversations == nil {
+		conversations = []api.AgentConversationResponse{}
 	}
-	conversationID := strings.TrimSpace(signals.Agent.ActiveConversationID)
-	if conversationID == "" {
-		http.Error(w, "conversation id is required", http.StatusBadRequest)
-		return
+	return api.AgentChatSignal{
+		Conversations:        conversations,
+		ActiveConversationID: activeID,
+		Events:               events,
+		Status: api.AgentChatStatus{
+			Enabled: enabled,
+			Running: running,
+			Error:   statusErr,
+		},
+		Composer: api.AgentComposerSignal{
+			Value:       "",
+			Disabled:    !enabled || running,
+			Placeholder: chatPlaceholder(enabled, running),
+		},
 	}
-	events, err := service.ConversationEvents(r.Context(), scope, conversationID)
-	if err != nil {
-		http.Error(w, err.Error(), statusForNotFound(err))
-		return
-	}
-	sse := datastar.NewSSE(w, r)
-	_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(scope, conversationID, events, "", false)})
 }
 
 func (s *Server) chatService(w http.ResponseWriter, r *http.Request) (*agentapp.Service, agentapp.Scope, bool) {

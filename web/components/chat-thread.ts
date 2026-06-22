@@ -310,11 +310,13 @@ class ChatThread extends LitElement {
     return html`
       <article class=${['message', role, message.isError ? 'error' : ''].filter(Boolean).join(' ')}>
         <div class="label">${label}</div>
-        <div class=${['bubble', renderMarkdown ? 'markdown' : 'plain'].join(' ')}>
-          ${renderMarkdown ? unsafeHTML(renderMarkdownHTML(message.content || '-')) : message.content || '-'}
-        </div>
+        ${this.renderBubble(message.content || '-', renderMarkdown)}
       </article>
     `
+  }
+
+  private renderBubble(content: string, renderMarkdown: boolean) {
+    return html`<div class=${['bubble', renderMarkdown ? 'markdown' : 'plain'].join(' ')}>${renderMarkdown ? unsafeHTML(renderMarkdownHTML(content)) : content}</div>`
   }
 
   private renderActivity(activity: ToolActivity) {
@@ -325,6 +327,7 @@ class ChatThread extends LitElement {
       </div>
     `
   }
+
 }
 
 function messagesFromEvents(events: ChatEvent[]): ChatMessage[] {

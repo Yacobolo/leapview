@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -38,7 +39,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 		t.Fatalf("create token: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
+	req := httptest.NewRequest(http.MethodGet, "/chat/new", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -54,11 +55,11 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 		`<ld-chat-composer`,
 		`&#34;compact&#34;:true`,
 		`data-attr:config=`,
-		`data-on:ld-sub-sidebar-select`,
 		`data-attr:events="$agent.events"`,
+		`data-attr:pending="$agentTurnPending || $agent.status.running"`,
+		`data-indicator="agentTurnPending"`,
 		`data-on:ld-chat-submit`,
 		`/chat/turns`,
-		`/chat/conversations/select`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat page missing %q:\n%s", want, body)
@@ -69,6 +70,9 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	}
 	if strings.Contains(body, `<ld-chat-conversation-sidebar`) {
 		t.Fatalf("chat page still rendered chat-specific conversation sidebar:\n%s", body)
+	}
+	if strings.Contains(body, `data-on:ld-sub-sidebar-select`) || strings.Contains(body, `/chat/conversations/select`) {
+		t.Fatalf("chat page should use conversation URLs instead of select POST:\n%s", body)
 	}
 }
 
@@ -86,6 +90,130 @@ func TestChatPageDisabledState(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, `<ld-chat-thread`) || !strings.Contains(body, `Agent is not configured`) {
 		t.Fatalf("disabled chat page did not render usable disabled state:\n%s", body)
+	}
+}
+
+func TestChatRootRedirectsToNewWhenNoConversations(t *testing.T) {
+	store := testStore(t)
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	ctx := context.Background()
+	_, token := chatPrincipalAndToken(t, ctx, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/chat/new" {
+		t.Fatalf("status=%d location=%q body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+}
+
+func TestChatRootRedirectsToLatestConversation(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	principal, token := chatPrincipalAndToken(t, ctx, store)
+	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	old, err := service.CreateConversation(ctx, scope, "Old")
+	if err != nil {
+		t.Fatalf("create old: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	latest, err := service.CreateConversation(ctx, scope, "Latest")
+	if err != nil {
+		t.Fatalf("create latest: %v", err)
+	}
+	if old.ID == latest.ID {
+		t.Fatal("conversation IDs unexpectedly equal")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/chat/"+latest.ID {
+		t.Fatalf("status=%d location=%q body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+}
+
+func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	principal, token := chatPrincipalAndToken(t, ctx, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/chat/new", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`href: &#39;/chat/new&#39;`, `title: &#39;New chat&#39;`, `activeId: $agent.activeConversationId`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("draft chat page missing %q:\n%s", want, body)
+		}
+	}
+	conversations, err := store.ListAgentConversations(ctx, "test", principal.ID)
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if len(conversations) != 0 {
+		t.Fatalf("draft route created conversations: %#v", conversations)
+	}
+}
+
+func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	owner, token := chatPrincipalAndToken(t, ctx, store)
+	other, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "other@example.com", DisplayName: "Other"})
+	if err != nil {
+		t.Fatalf("upsert other: %v", err)
+	}
+	if err := store.BindRole(ctx, "test", other.ID, "viewer"); err != nil {
+		t.Fatalf("bind other: %v", err)
+	}
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	owned, err := service.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Owned")
+	if err != nil {
+		t.Fatalf("create owned: %v", err)
+	}
+	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+		WorkspaceID:    "test",
+		PrincipalID:    owner.ID,
+		ConversationID: owned.ID,
+		Role:           platform.AgentMessageRoleUser,
+		ContentText:    "hello",
+	}); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	hidden, err := service.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: other.ID}, "Hidden")
+	if err != nil {
+		t.Fatalf("create hidden: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/chat/"+owned.ID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "message_appended") || !strings.Contains(rec.Body.String(), "hello") {
+		t.Fatalf("owned route status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	hiddenReq := httptest.NewRequest(http.MethodGet, "/chat/"+hidden.ID, nil)
+	hiddenReq.Header.Set("Authorization", "Bearer "+token)
+	hiddenRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(hiddenRec, hiddenReq)
+	if hiddenRec.Code != http.StatusNotFound {
+		t.Fatalf("hidden route status=%d body=%s", hiddenRec.Code, hiddenRec.Body.String())
 	}
 }
 
@@ -126,52 +254,50 @@ func TestChatTurnStreamsDatastarSignalsAndPersistsEvents(t *testing.T) {
 	if len(conversations) != 1 {
 		t.Fatalf("conversations = %#v", conversations)
 	}
+	firstPatch := firstDatastarPatchSignals(body)
+	if !strings.Contains(firstPatch, `"conversations":[]`) {
+		t.Fatalf("first streaming patch should preserve the existing conversation rail:\n%s", firstPatch)
+	}
+	if strings.Contains(firstPatch, `"title":"New conversation"`) {
+		t.Fatalf("first streaming patch refreshed the draft conversation into the rail:\n%s", firstPatch)
+	}
+	for _, want := range []string{"window.history.replaceState", "/chat/" + conversations[0].ID} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("draft turn response missing URL replacement %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "pending:user") {
+		t.Fatalf("turn response emitted an optimistic pending message:\n%s", body)
+	}
 }
 
-func TestChatConversationSelectStreamsEventsAndRejectsOtherPrincipal(t *testing.T) {
+func TestChatTurnWithActiveConversationDoesNotReplaceURL(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	owner, token := chatPrincipalAndToken(t, ctx, store)
-	other, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "other@example.com", DisplayName: "Other"})
-	if err != nil {
-		t.Fatalf("upsert other: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", other.ID, "viewer"); err != nil {
-		t.Fatalf("bind other: %v", err)
-	}
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"Still here."},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`)
+	}))
+	defer modelServer.Close()
 	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
 	owned, err := service.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Owned")
 	if err != nil {
 		t.Fatalf("create owned: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
-		WorkspaceID:    "test",
-		PrincipalID:    owner.ID,
-		ConversationID: owned.ID,
-		Role:           platform.AgentMessageRoleUser,
-		ContentText:    "hello",
-	}); err != nil {
-		t.Fatalf("append message: %v", err)
-	}
-	hidden, err := service.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: other.ID}, "Hidden")
-	if err != nil {
-		t.Fatalf("create hidden: %v", err)
-	}
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
-	req := chatSignalsRequest(http.MethodPost, "/chat/conversations/select", token, map[string]any{"agent": map[string]any{"activeConversationId": owned.ID}})
+	req := chatSignalsRequest(http.MethodPost, "/chat/turns", token, map[string]any{"agent": map[string]any{
+		"activeConversationId": owned.ID,
+		"composer":             map[string]any{"value": "Continue"},
+	}})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "message_appended") || !strings.Contains(rec.Body.String(), "hello") {
-		t.Fatalf("select owned status=%d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-
-	hiddenReq := chatSignalsRequest(http.MethodPost, "/chat/conversations/select", token, map[string]any{"agent": map[string]any{"activeConversationId": hidden.ID}})
-	hiddenRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(hiddenRec, hiddenReq)
-	if hiddenRec.Code != http.StatusNotFound {
-		t.Fatalf("select hidden status=%d body=%s", hiddenRec.Code, hiddenRec.Body.String())
+	if strings.Contains(rec.Body.String(), "window.history.replaceState") {
+		t.Fatalf("active conversation turn should not replace URL:\n%s", rec.Body.String())
 	}
 }
 
@@ -202,4 +328,17 @@ func chatSignalsRequest(method, path, token string, signals map[string]any) *htt
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	return req
+}
+
+func firstDatastarPatchSignals(body string) string {
+	const marker = "event: datastar-patch-signals"
+	start := strings.Index(body, marker)
+	if start == -1 {
+		return ""
+	}
+	rest := body[start:]
+	if end := strings.Index(rest, "\n\n"); end != -1 {
+		return rest[:end]
+	}
+	return rest
 }

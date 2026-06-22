@@ -4,6 +4,7 @@ import { property, state } from 'lit/decorators.js'
 class ChatComposer extends LitElement {
   @property({ type: String }) value = ''
   @property({ type: Boolean, reflect: true }) disabled = false
+  @property({ type: Boolean, reflect: true }) pending = false
   @property({ type: String }) placeholder = 'Ask about dashboards, metrics, or models...'
   @state() private draft = ''
 
@@ -44,20 +45,62 @@ class ChatComposer extends LitElement {
     }
 
     button {
+      display: inline-flex;
       min-height: 44px;
+      min-width: 72px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
       align-self: end;
-      border: 0;
+      border: 1px solid var(--ld-accent);
       border-radius: var(--ld-radius-default);
-      background: var(--ld-button-primary-bg, var(--ld-fg-accent));
-      color: var(--ld-button-primary-fg, var(--ld-bg-panel));
+      background: var(--ld-accent);
+      color: var(--ld-accent-fg);
       cursor: pointer;
       font: inherit;
       font-size: var(--ld-font-size-body-sm);
       font-weight: var(--ld-font-weight-strong);
       padding: 0 14px;
+      box-shadow: var(--shadow-resting-small);
+      transition:
+        background var(--duration-fast) var(--ease-ld),
+        border-color var(--duration-fast) var(--ease-ld),
+        color var(--duration-fast) var(--ease-ld);
     }
 
-    button:disabled,
+    button:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--ld-accent), var(--ld-bg-panel) 10%);
+    }
+
+    button:focus-visible {
+      outline: var(--ld-border-width-focus) solid var(--ld-line-accent);
+      outline-offset: var(--outline-offset-focus);
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+      border-top-color: currentColor;
+      border-radius: 999px;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    button:disabled {
+      border-color: var(--ld-line-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
+      cursor: not-allowed;
+      opacity: 1;
+      box-shadow: none;
+    }
+
     textarea:disabled {
       cursor: not-allowed;
       opacity: var(--ld-opacity-disabled, 0.55);
@@ -95,7 +138,9 @@ class ChatComposer extends LitElement {
           @input=${this.input}
           @keydown=${this.keydown}
         ></textarea>
-        <button type="submit" ?disabled=${this.disabled || this.draft.trim() === ''}>Send</button>
+        <button type="submit" ?disabled=${this.disabled || this.pending || this.draft.trim() === ''}>
+          ${this.pending ? html`<span class="spinner" aria-hidden="true"></span><span>Sending</span>` : 'Send'}
+        </button>
       </form>
     `
   }
@@ -117,7 +162,7 @@ class ChatComposer extends LitElement {
 
   private dispatchSubmit() {
     const input = this.draft.trim()
-    if (this.disabled || input === '') return
+    if (this.disabled || this.pending || input === '') return
     this.dispatchEvent(new CustomEvent('ld-chat-submit', {
       bubbles: true,
       composed: true,

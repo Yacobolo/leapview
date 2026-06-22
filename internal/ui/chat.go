@@ -35,7 +35,6 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api
 					g.El("ld-sub-sidebar",
 						h.Class("block min-h-0 border-r border-outline-variant bg-app max-md:hidden"),
 						g.Attr("data-attr:config", chatSubSidebarConfigExpression()),
-						g.Attr("data-on:ld-sub-sidebar-select", "$agent.activeConversationId = evt.detail.id; "+postAction("/chat/conversations/select")),
 					),
 					h.Section(h.Class("grid h-svh min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-app"), h.Aria("label", "LibreDash chat"),
 						workspaceHeader("Agent", "Chat", "Ask read-only questions about dashboards, metric views, and semantic models.", nil),
@@ -50,8 +49,10 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api
 								),
 								g.El("ld-chat-composer",
 									h.Class("block border-t border-outline-variant bg-app"),
+									g.Attr("data-indicator", "agentTurnPending"),
 									g.Attr("data-attr:value", "$agent.composer.value"),
-									g.Attr("data-attr:disabled", "$agent.status.running || $agent.composer.disabled"),
+									g.Attr("data-attr:disabled", "$agentTurnPending || $agent.status.running || $agent.composer.disabled"),
+									g.Attr("data-attr:pending", "$agentTurnPending || $agent.status.running"),
 									g.Attr("data-attr:placeholder", "$agent.composer.placeholder"),
 									g.Attr("data-on:ld-chat-submit", "$agent.composer.value = evt.detail.input; "+postAction("/chat/turns")),
 								),
@@ -80,11 +81,15 @@ storageKey: 'libredash-chat-conversations-collapsed',
 activeId: $agent.activeConversationId,
 emptyText: 'No conversations yet.',
 disabled: ($agent.status && $agent.status.running) || false,
-items: ($agent.conversations || []).map((conversation) => ({
+items: [
+{id: 'new', title: 'New chat', href: '/chat/new', active: !$agent.activeConversationId},
+...($agent.conversations || []).map((conversation) => ({
 id: conversation.id,
 title: conversation.title || 'Conversation',
 meta: conversation.updatedAt || '',
+href: '/chat/' + encodeURIComponent(conversation.id),
 active: conversation.id === $agent.activeConversationId
 }))
+]
 })`
 }
