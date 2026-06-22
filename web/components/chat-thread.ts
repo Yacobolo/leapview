@@ -10,31 +10,20 @@ type ChatStatus = {
   error?: string
 }
 
-type ChatEvent = {
+type ChatTranscriptItem = {
   id: string
+  kind: 'user' | 'assistant' | 'tool' | 'error' | 'summary' | string
+  text?: string
+  markdown?: string
+  toolCallId?: string
+  name?: string
+  title?: string
+  status?: 'running' | 'complete' | 'error' | 'streaming' | string
+  summary?: string
+  error?: string
   conversationId?: string
   runId?: string
-  seq?: number
-  type: string
-  severity?: string
   createdAt?: string
-  payload?: Record<string, unknown>
-}
-
-type ChatMessage = {
-  id: string
-  seq?: number
-  role: string
-  content: string
-  toolName?: string
-  isError?: boolean
-}
-
-type ToolActivity = {
-  id: string
-  label: string
-  done: boolean
-  error: boolean
 }
 
 const markdown = new MarkdownIt({
@@ -58,8 +47,8 @@ const jsonConverter = <T,>(fallback: T) => ({
 })
 
 class ChatThread extends LitElement {
-  @property({ attribute: false }) events: ChatEvent[] = []
-  @property({ attribute: 'events', converter: jsonConverter<ChatEvent[]>([]) }) eventsAttribute: ChatEvent[] = []
+  @property({ attribute: false }) transcript: ChatTranscriptItem[] = []
+  @property({ attribute: 'transcript', converter: jsonConverter<ChatTranscriptItem[]>([]) }) transcriptAttribute: ChatTranscriptItem[] = []
   @property({ attribute: 'status', converter: jsonConverter<ChatStatus>({}) }) status: ChatStatus = {}
   @property({ attribute: 'conversation-id' }) conversationId = ''
 
@@ -138,8 +127,8 @@ class ChatThread extends LitElement {
     }
 
     .message.assistant,
-    .message.tool,
-    .message.summary {
+    .message.summary,
+    .message.error {
       justify-self: start;
     }
 
@@ -225,14 +214,6 @@ class ChatThread extends LitElement {
       background: var(--ld-bg-accent-muted);
     }
 
-    .tool .bubble {
-      max-height: var(--ld-chat-tool-max-height);
-      overflow: auto;
-      font-family: var(--fontStack-monospace);
-      font-size: var(--ld-font-size-caption);
-      color: var(--ld-fg-muted);
-    }
-
     .message.error .bubble {
       border-color: var(--ld-line-danger-muted);
       background: var(--ld-bg-danger-muted);
@@ -265,8 +246,34 @@ class ChatThread extends LitElement {
       background: var(--ld-fg-success);
     }
 
+    .activity.running .dot {
+      animation: pulse 1.1s ease-in-out infinite;
+    }
+
     .activity.error .dot {
       background: var(--ld-fg-danger);
+    }
+
+    .activity-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .activity-detail {
+      color: var(--ld-fg-subtle);
+      font-weight: var(--ld-font-weight-regular);
+    }
+
+    @keyframes pulse {
+      0%,
+      100% {
+        opacity: 0.45;
+      }
+      50% {
+        opacity: 1;
+      }
     }
 
     @media (max-width: 720px) {
@@ -277,40 +284,48 @@ class ChatThread extends LitElement {
   `
 
   render() {
-    const events = this.resolvedEvents
-    const messages = messagesFromEvents(events)
-    const activities = activitiesFromEvents(events)
-    const streaming = streamingText(events, messages)
+    const transcript = this.resolvedTranscript
 
     return html`
       <div class="thread">
         <div class="scroll">
           <div class="stack">
             ${this.status.error ? html`<div class="alert">${this.status.error}</div>` : nothing}
-            ${messages.length === 0 && !streaming && activities.length === 0
+            ${transcript.length === 0
               ? html`<div class="empty">Start a conversation from the composer.</div>`
               : nothing}
-            ${messages.map((message) => this.renderMessage(message))}
-            ${activities.map((activity) => this.renderActivity(activity))}
-            ${streaming ? this.renderMessage({ id: 'streaming', role: 'assistant', content: streaming }) : nothing}
+            ${transcript.map((item) => this.renderItem(item))}
           </div>
         </div>
       </div>
     `
   }
 
-  private get resolvedEvents(): ChatEvent[] {
-    return Array.isArray(this.events) && this.events.length > 0 ? this.events : this.eventsAttribute
+  private get resolvedTranscript(): ChatTranscriptItem[] {
+    return Array.isArray(this.transcript) && this.transcript.length > 0 ? this.transcript : this.transcriptAttribute
   }
 
-  private renderMessage(message: ChatMessage) {
-    const role = message.role || 'assistant'
-    const label = message.toolName || roleLabel(role)
-    const renderMarkdown = role === 'assistant' || role === 'summary'
+  private renderItem(item: ChatTranscriptItem) {
+    switch (item.kind) {
+      case 'tool':
+        return this.renderTool(item)
+      case 'user':
+        return this.renderMessage('user', 'You', item.text || '-')
+      case 'error':
+        return this.renderMessage('error', 'Error', item.text || item.error || '-', false, true)
+      case 'summary':
+        return this.renderMessage('summary', 'Summary', item.markdown || item.text || '-', true)
+      case 'assistant':
+      default:
+        return this.renderMessage('assistant', 'LibreDash', item.markdown || item.text || '-', true)
+    }
+  }
+
+  private renderMessage(role: string, label: string, content: string, renderMarkdown = false, error = false) {
     return html`
-      <article class=${['message', role, message.isError ? 'error' : ''].filter(Boolean).join(' ')}>
+      <article class=${['message', role, error ? 'error' : ''].filter(Boolean).join(' ')}>
         <div class="label">${label}</div>
-        ${this.renderBubble(message.content || '-', renderMarkdown)}
+        ${this.renderBubble(content, renderMarkdown)}
       </article>
     `
   }
@@ -319,61 +334,17 @@ class ChatThread extends LitElement {
     return html`<div class=${['bubble', renderMarkdown ? 'markdown' : 'plain'].join(' ')}>${renderMarkdown ? unsafeHTML(renderMarkdownHTML(content)) : content}</div>`
   }
 
-  private renderActivity(activity: ToolActivity) {
+  private renderTool(item: ChatTranscriptItem) {
+    const status = item.status || 'running'
+    const detail = item.error || item.summary || statusLabel(status)
     return html`
-      <div class=${['activity', activity.done ? 'done' : '', activity.error ? 'error' : ''].filter(Boolean).join(' ')}>
+      <div class=${['activity', status === 'running' ? 'running' : '', status === 'complete' ? 'done' : '', status === 'error' ? 'error' : ''].filter(Boolean).join(' ')}>
         <span class="dot" aria-hidden="true"></span>
-        <span>${activity.label}</span>
+        <span class="activity-text">${item.title || item.name || 'Tool'}${detail ? html` <span class="activity-detail">${detail}</span>` : nothing}</span>
       </div>
     `
   }
 
-}
-
-function messagesFromEvents(events: ChatEvent[]): ChatMessage[] {
-  const out: ChatMessage[] = []
-  for (const event of events) {
-    if (event.type !== 'message_appended') continue
-    const message = asRecord(event.payload?.message)
-    out.push({
-      id: String(message.id ?? event.id),
-      seq: Number(event.seq ?? 0),
-      role: String(message.role ?? 'assistant'),
-      content: String(message.content ?? ''),
-      toolName: String(message.tool_name || ''),
-      isError: Boolean(message.is_error),
-    })
-  }
-  return out.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
-}
-
-function activitiesFromEvents(events: ChatEvent[]): ToolActivity[] {
-  const activities = new Map<string, ToolActivity>()
-  for (const event of events) {
-    if (event.type !== 'tool_start' && event.type !== 'tool_end') continue
-    const id = String(event.payload?.tool_call_id || event.id)
-    const name = String(event.payload?.tool_name || 'tool')
-    const existing = activities.get(id) ?? { id, label: `Running ${name}`, done: false, error: false }
-    if (event.type === 'tool_end') {
-      existing.label = `Finished ${name}`
-      existing.done = true
-      existing.error = event.severity === 'error'
-    }
-    activities.set(id, existing)
-  }
-  return [...activities.values()]
-}
-
-function streamingText(events: ChatEvent[], messages: ChatMessage[]): string {
-  if (messages.some((message) => message.role === 'assistant' && message.content.trim() !== '')) return ''
-  return events
-    .filter((event) => event.type === 'message_delta')
-    .map((event) => String(event.payload?.delta ?? ''))
-    .join('')
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
 }
 
 function renderMarkdownHTML(value: string): string {
@@ -382,16 +353,16 @@ function renderMarkdownHTML(value: string): string {
   })
 }
 
-function roleLabel(role: string): string {
-  switch (role) {
-    case 'user':
-      return 'You'
-    case 'tool':
-      return 'Tool'
-    case 'summary':
-      return 'Summary'
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'complete':
+      return 'Complete'
+    case 'error':
+      return 'Failed'
+    case 'streaming':
+      return 'Streaming'
     default:
-      return 'LibreDash'
+      return 'Running'
   }
 }
 

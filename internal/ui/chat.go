@@ -42,7 +42,7 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api
 							h.Div(h.Class("grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-app"),
 								g.El("ld-chat-thread",
 									h.Class("block min-h-0 min-w-0 overflow-hidden"),
-									g.Attr("data-attr:events", "$agent.events"),
+									g.Attr("data-attr:transcript", "$agent.transcript"),
 									g.Attr("data-attr:status", "$agent.status"),
 									g.Attr("data-attr:conversation-id", "$agent.activeConversationId"),
 									g.Text(signal.Status.Error),

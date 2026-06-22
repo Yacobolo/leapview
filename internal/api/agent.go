@@ -55,9 +55,25 @@ type AgentEventResponse struct {
 type AgentChatSignal struct {
 	Conversations        []AgentConversationResponse `json:"conversations"`
 	ActiveConversationID string                      `json:"activeConversationId"`
-	Events               []AgentEventEnvelope        `json:"events"`
+	Transcript           []AgentChatTranscriptItem   `json:"transcript"`
 	Status               AgentChatStatus             `json:"status"`
 	Composer             AgentComposerSignal         `json:"composer"`
+}
+
+type AgentChatTranscriptItem struct {
+	ID             string `json:"id"`
+	Kind           string `json:"kind"`
+	Text           string `json:"text,omitempty"`
+	Markdown       string `json:"markdown,omitempty"`
+	ToolCallID     string `json:"toolCallId,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Title          string `json:"title,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Summary        string `json:"summary,omitempty"`
+	Error          string `json:"error,omitempty"`
+	ConversationID string `json:"conversationId,omitempty"`
+	RunID          string `json:"runId,omitempty"`
+	CreatedAt      string `json:"createdAt,omitempty"`
 }
 
 type AgentChatStatus struct {

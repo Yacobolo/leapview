@@ -126,6 +126,88 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 	}
 }
 
+func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
+	ctx := context.Background()
+	store := openAgentAppStore(t, ctx)
+	defer store.Close()
+	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"})
+	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	conversation, err := service.CreateConversation(ctx, scope, "Transcript")
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+		WorkspaceID:    "test",
+		PrincipalID:    principal.ID,
+		ConversationID: conversation.ID,
+		Role:           platform.AgentMessageRoleUser,
+		ContentText:    "hello",
+	}); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+		WorkspaceID:    "test",
+		PrincipalID:    principal.ID,
+		ConversationID: conversation.ID,
+		Role:           platform.AgentMessageRoleSummary,
+		ContentText:    "internal summary",
+	}); err != nil {
+		t.Fatalf("append summary: %v", err)
+	}
+	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+		WorkspaceID:    "test",
+		PrincipalID:    principal.ID,
+		ConversationID: conversation.ID,
+		Role:           platform.AgentMessageRoleAssistant,
+		ContentJSON:    `{"tool_calls":[{"id":"call_1","name":"list_dashboards"}]}`,
+	}); err != nil {
+		t.Fatalf("append assistant tool call: %v", err)
+	}
+	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+		WorkspaceID:    "test",
+		PrincipalID:    principal.ID,
+		ConversationID: conversation.ID,
+		Role:           platform.AgentMessageRoleTool,
+		ContentText:    `{"summary":"Found 2 dashboards"}`,
+		ToolCallID:     "call_1",
+		ToolName:       "list_dashboards",
+	}); err != nil {
+		t.Fatalf("append tool: %v", err)
+	}
+	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+		WorkspaceID:    "test",
+		PrincipalID:    principal.ID,
+		ConversationID: conversation.ID,
+		Role:           platform.AgentMessageRoleAssistant,
+		ContentText:    "I found **two** dashboards.",
+	}); err != nil {
+		t.Fatalf("append assistant answer: %v", err)
+	}
+
+	transcript, err := service.ConversationTranscript(ctx, scope, conversation.ID)
+	if err != nil {
+		t.Fatalf("conversation transcript: %v", err)
+	}
+	if len(transcript) != 3 {
+		t.Fatalf("transcript len = %d, want user/tool/assistant: %#v", len(transcript), transcript)
+	}
+	if transcript[0].Kind != "user" || transcript[0].Text != "hello" {
+		t.Fatalf("user item = %#v", transcript[0])
+	}
+	if transcript[1].Kind != "tool" || transcript[1].ToolCallID != "call_1" || transcript[1].Status != "complete" || transcript[1].Summary != "Found 2 dashboards" {
+		t.Fatalf("tool item = %#v", transcript[1])
+	}
+	if transcript[2].Kind != "assistant" || !strings.Contains(transcript[2].Markdown, "two") {
+		t.Fatalf("assistant item = %#v", transcript[2])
+	}
+	for _, item := range transcript {
+		if strings.Contains(item.Text+item.Markdown+item.Summary, "internal summary") {
+			t.Fatalf("summary leaked into transcript: %#v", transcript)
+		}
+	}
+}
+
 func TestServiceRejectsConcurrentConversationTurns(t *testing.T) {
 	ctx := context.Background()
 	store := openAgentAppStore(t, ctx)

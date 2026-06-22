@@ -55,7 +55,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 		`<ld-chat-composer`,
 		`&#34;compact&#34;:true`,
 		`data-attr:config=`,
-		`data-attr:events="$agent.events"`,
+		`data-attr:transcript="$agent.transcript"`,
 		`data-attr:pending="$agentTurnPending || $agent.status.running"`,
 		`data-indicator="agentTurnPending"`,
 		`data-on:ld-chat-submit`,
@@ -73,6 +73,9 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	}
 	if strings.Contains(body, `data-on:ld-sub-sidebar-select`) || strings.Contains(body, `/chat/conversations/select`) {
 		t.Fatalf("chat page should use conversation URLs instead of select POST:\n%s", body)
+	}
+	if strings.Contains(body, `data-attr:events`) || strings.Contains(body, `$agent.events`) {
+		t.Fatalf("chat page should not feed raw events to the chat thread:\n%s", body)
 	}
 }
 
@@ -204,7 +207,7 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "message_appended") || !strings.Contains(rec.Body.String(), "hello") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `&#34;kind&#34;:&#34;user&#34;`) || !strings.Contains(rec.Body.String(), "hello") {
 		t.Fatalf("owned route status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
@@ -242,9 +245,14 @@ func TestChatTurnStreamsDatastarSignalsAndPersistsEvents(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"event: datastar-patch-signals", "message_delta", "message_appended", "Executive Sales", "agent_end"} {
+	for _, want := range []string{"event: datastar-patch-signals", `"transcript"`, `"kind":"tool"`, `"status":"running"`, `"status":"complete"`, "Executive Sales"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("turn response missing %q:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{`"events"`, "message_delta", "message_appended", "agent_end"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("turn response leaked raw event %q:\n%s", unwanted, body)
 		}
 	}
 	conversations, err := store.ListAgentConversations(ctx, "test", principal.ID)

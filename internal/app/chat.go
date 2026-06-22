@@ -10,6 +10,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/ui"
+	"github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/go-chi/chi/v5"
 	"github.com/starfederation/datastar-go/datastar"
 )
@@ -52,12 +53,12 @@ func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "chat requires an authenticated principal", http.StatusUnauthorized)
 		return
 	}
-	events, err := s.agent.ConversationEvents(r.Context(), scope, conversationID)
+	transcript, err := s.agent.ConversationTranscript(r.Context(), scope, conversationID)
 	if err != nil {
 		http.Error(w, err.Error(), statusForNotFound(err))
 		return
 	}
-	s.renderChat(w, r, s.chatSignalWith(scope, conversationID, events, "", false))
+	s.renderChat(w, r, s.chatSignalWith(scope, conversationID, transcript, "", false))
 }
 
 func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, signal api.AgentChatSignal) {
@@ -95,16 +96,21 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		createdConversation = true
 	}
 
+	transcript, err := service.ConversationTranscript(r.Context(), scope, conversationID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	transcript = appendServerUserTranscript(transcript, conversationID, input)
 	sse := datastar.NewSSE(w, r)
-	events := append([]api.AgentEventEnvelope{}, signals.Agent.Events...)
 	if createdConversation {
 		_ = sse.ReplaceURL(url.URL{Path: "/chat/" + conversationID})
 	}
 
 	streamActiveID := strings.TrimSpace(signals.Agent.ActiveConversationID)
 	emit := func(event api.AgentEventEnvelope) {
-		events = append(events, event)
-		_ = sse.MarshalAndPatchSignals(map[string]any{"agent": chatSignalFromClient(signals.Agent, streamActiveID, events, "", true, true)})
+		transcript = applyLiveTranscriptEvent(transcript, conversationID, event)
+		_ = sse.MarshalAndPatchSignals(map[string]any{"agent": chatSignalFromClient(signals.Agent, streamActiveID, transcript, "", true, true)})
 	}
 	result, err := service.Prompt(r.Context(), agentapp.PromptInput{
 		Scope:          scope,
@@ -120,14 +126,14 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if result.RunID != "" {
-		if refreshed, refreshErr := service.ConversationEvents(r.Context(), scope, conversationID); refreshErr == nil {
-			events = refreshed
+		if refreshed, refreshErr := service.ConversationTranscript(r.Context(), scope, conversationID); refreshErr == nil {
+			transcript = refreshed
 		}
 	}
-	_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(scope, conversationID, events, statusErr, false)})
+	_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(scope, conversationID, transcript, statusErr, false)})
 }
 
-func chatSignalFromClient(base api.AgentChatSignal, activeID string, events []api.AgentEventEnvelope, statusErr string, running, enabled bool) api.AgentChatSignal {
+func chatSignalFromClient(base api.AgentChatSignal, activeID string, transcript []api.AgentChatTranscriptItem, statusErr string, running, enabled bool) api.AgentChatSignal {
 	if !enabled && statusErr == "" {
 		statusErr = "Agent is not configured"
 	}
@@ -138,7 +144,7 @@ func chatSignalFromClient(base api.AgentChatSignal, activeID string, events []ap
 	return api.AgentChatSignal{
 		Conversations:        conversations,
 		ActiveConversationID: activeID,
-		Events:               events,
+		Transcript:           transcript,
 		Status: api.AgentChatStatus{
 			Enabled: enabled,
 			Running: running,
@@ -179,16 +185,16 @@ func (s *Server) chatScope(r *http.Request) agentapp.Scope {
 }
 
 func (s *Server) chatSignal(ctx context.Context, scope agentapp.Scope, activeID, statusErr string, running bool) api.AgentChatSignal {
-	events := []api.AgentEventEnvelope{}
+	transcript := []api.AgentChatTranscriptItem{}
 	if activeID != "" && s.agent != nil && scope.PrincipalID != "" {
-		if loaded, err := s.agent.ConversationEvents(ctx, scope, activeID); err == nil {
-			events = loaded
+		if loaded, err := s.agent.ConversationTranscript(ctx, scope, activeID); err == nil {
+			transcript = loaded
 		}
 	}
-	return s.chatSignalWith(scope, activeID, events, statusErr, running)
+	return s.chatSignalWith(scope, activeID, transcript, statusErr, running)
 }
 
-func (s *Server) chatSignalWith(scope agentapp.Scope, activeID string, events []api.AgentEventEnvelope, statusErr string, running bool) api.AgentChatSignal {
+func (s *Server) chatSignalWith(scope agentapp.Scope, activeID string, transcript []api.AgentChatTranscriptItem, statusErr string, running bool) api.AgentChatSignal {
 	conversations := []api.AgentConversationResponse{}
 	if s.agent != nil && scope.PrincipalID != "" {
 		if rows, err := s.agent.ListConversations(context.Background(), scope); err == nil {
@@ -204,7 +210,7 @@ func (s *Server) chatSignalWith(scope agentapp.Scope, activeID string, events []
 	return api.AgentChatSignal{
 		Conversations:        conversations,
 		ActiveConversationID: activeID,
-		Events:               events,
+		Transcript:           transcript,
 		Status: api.AgentChatStatus{
 			Enabled: enabled,
 			Running: running,
@@ -216,6 +222,128 @@ func (s *Server) chatSignalWith(scope agentapp.Scope, activeID string, events []
 			Placeholder: chatPlaceholder(enabled, running),
 		},
 	}
+}
+
+func appendServerUserTranscript(transcript []api.AgentChatTranscriptItem, conversationID, input string) []api.AgentChatTranscriptItem {
+	if strings.TrimSpace(input) == "" {
+		return transcript
+	}
+	next := append([]api.AgentChatTranscriptItem{}, transcript...)
+	next = append(next, api.AgentChatTranscriptItem{
+		ID:             "live:user",
+		Kind:           "user",
+		Text:           input,
+		ConversationID: conversationID,
+	})
+	return next
+}
+
+func applyLiveTranscriptEvent(transcript []api.AgentChatTranscriptItem, conversationID string, event api.AgentEventEnvelope) []api.AgentChatTranscriptItem {
+	next := append([]api.AgentChatTranscriptItem{}, transcript...)
+	switch event.Type {
+	case string(agent.EventTypeMessageDelta):
+		delta := stringPayload(event.Payload, "delta")
+		if delta == "" {
+			return next
+		}
+		for i := len(next) - 1; i >= 0; i-- {
+			if next[i].Kind == "assistant" && next[i].Status == "streaming" && next[i].RunID == event.RunID {
+				next[i].Markdown += delta
+				return next
+			}
+		}
+		return append(next, api.AgentChatTranscriptItem{
+			ID:             "live:assistant:" + event.RunID,
+			Kind:           "assistant",
+			Markdown:       delta,
+			Status:         "streaming",
+			ConversationID: conversationID,
+			RunID:          event.RunID,
+			CreatedAt:      event.CreatedAt,
+		})
+	case string(agent.EventTypeToolStart):
+		callID := stringPayload(event.Payload, "tool_call_id")
+		name := stringPayload(event.Payload, "tool_name")
+		if callID == "" {
+			return next
+		}
+		if idx := transcriptToolIndex(next, callID); idx >= 0 {
+			next[idx].Status = "running"
+			return next
+		}
+		return append(next, api.AgentChatTranscriptItem{
+			ID:             "live:tool:" + callID,
+			Kind:           "tool",
+			ToolCallID:     callID,
+			Name:           name,
+			Title:          liveToolTitle(name),
+			Status:         "running",
+			ConversationID: conversationID,
+			RunID:          event.RunID,
+			CreatedAt:      event.CreatedAt,
+		})
+	case string(agent.EventTypeToolEnd):
+		callID := stringPayload(event.Payload, "tool_call_id")
+		if callID == "" {
+			return next
+		}
+		idx := transcriptToolIndex(next, callID)
+		if idx < 0 {
+			name := stringPayload(event.Payload, "tool_name")
+			next = append(next, api.AgentChatTranscriptItem{
+				ID:             "live:tool:" + callID,
+				Kind:           "tool",
+				ToolCallID:     callID,
+				Name:           name,
+				Title:          liveToolTitle(name),
+				ConversationID: conversationID,
+				RunID:          event.RunID,
+				CreatedAt:      event.CreatedAt,
+			})
+			idx = len(next) - 1
+		}
+		if event.Severity == string(agent.SeverityError) || event.Severity == string(agent.SeverityWarn) {
+			next[idx].Status = "error"
+			next[idx].Error = "Tool failed"
+			return next
+		}
+		next[idx].Status = "complete"
+		return next
+	default:
+		return next
+	}
+}
+
+func transcriptToolIndex(transcript []api.AgentChatTranscriptItem, callID string) int {
+	for i := range transcript {
+		if transcript[i].Kind == "tool" && transcript[i].ToolCallID == callID {
+			return i
+		}
+	}
+	return -1
+}
+
+func stringPayload(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	value, _ := payload[key].(string)
+	return value
+}
+
+func liveToolTitle(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "Tool"
+	}
+	parts := strings.Fields(strings.ReplaceAll(name, "_", " "))
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		parts[i] = strings.ToUpper(part[:1]) + part[1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 func chatPlaceholder(enabled, running bool) string {
