@@ -60,6 +60,7 @@ class ChatThread extends LitElement {
   @property({ attribute: 'status', converter: jsonConverter<ChatStatus>({}) }) status: ChatStatus = {}
   @property({ attribute: 'conversation-id' }) conversationId = ''
   @state() private expandedToolCalls = new Set<string>()
+  private scrollFrame = 0
 
   static styles = css`
     :host {
@@ -445,8 +446,34 @@ class ChatThread extends LitElement {
     `
   }
 
+  protected firstUpdated() {
+    this.scheduleScrollToBottom()
+  }
+
+  protected updated(changed: Map<string, unknown>) {
+    if (changed.has('transcript') || changed.has('transcriptAttribute') || changed.has('status') || changed.has('conversationId')) {
+      this.scheduleScrollToBottom()
+    }
+  }
+
+  disconnectedCallback() {
+    if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame)
+    this.scrollFrame = 0
+    super.disconnectedCallback()
+  }
+
   private get resolvedTranscript(): ChatTranscriptItem[] {
     return Array.isArray(this.transcript) && this.transcript.length > 0 ? this.transcript : this.transcriptAttribute
+  }
+
+  private scheduleScrollToBottom() {
+    if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame)
+    this.scrollFrame = requestAnimationFrame(() => {
+      this.scrollFrame = 0
+      const scroll = this.renderRoot.querySelector<HTMLElement>('.scroll')
+      if (!scroll) return
+      scroll.scrollTop = scroll.scrollHeight
+    })
   }
 
   private renderUnit(unit: ChatRenderUnit) {

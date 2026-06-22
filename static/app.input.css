@@ -336,10 +336,10 @@
     --ld-icon-md: var(--base-size-24);
     --ld-chat-thread-padding: var(--base-size-20);
     --ld-chat-thread-padding-compact: var(--ld-space-lg);
-    --ld-chat-stack-width: 55rem;
+    --ld-chat-stack-width: 45rem;
     --ld-chat-stack-gap: var(--base-size-32);
     --ld-chat-empty-min-height: 16.25rem;
-    --ld-chat-message-width: 47.5rem;
+    --ld-chat-message-width: var(--ld-chat-stack-width);
     --ld-chat-message-gap: var(--ld-space-xs);
     --ld-chat-agent-turn-gap: var(--ld-space-lg);
     --ld-chat-agent-item-gap: var(--ld-space-md);

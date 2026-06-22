@@ -16,10 +16,33 @@ class ChatComposer extends LitElement {
     }
 
     form {
+      width: min(100%, var(--ld-chat-stack-width));
+      margin-inline: auto;
+      padding: var(--ld-space-md) var(--ld-space-lg);
+    }
+
+    .composer {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: var(--ld-space-md);
-      padding: var(--ld-space-md) var(--ld-space-lg);
+      align-items: end;
+      gap: var(--ld-space-sm);
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
+      padding: var(--ld-space-sm);
+      transition:
+        border-color var(--ld-transition-fast),
+        box-shadow var(--ld-transition-fast);
+    }
+
+    .composer:focus-within {
+      border-color: var(--ld-line-accent-muted);
+      box-shadow: 0 0 0 2px var(--ld-bg-accent-muted);
+    }
+
+    .composer.is-disabled {
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
     }
 
     textarea {
@@ -28,20 +51,19 @@ class ChatComposer extends LitElement {
       max-height: 160px;
       width: 100%;
       resize: vertical;
-      border: var(--ld-border-default);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel);
+      border: 0;
+      border-radius: calc(var(--ld-radius-default) - var(--ld-space-2xs));
+      background: transparent;
       color: var(--ld-fg-default);
       font: inherit;
       font-size: var(--ld-font-size-body-sm);
       line-height: var(--ld-line-height-normal);
-      padding: var(--ld-space-md) var(--ld-space-lg);
+      padding: var(--ld-space-sm) var(--ld-space-md);
       outline: 0;
     }
 
-    textarea:focus {
-      border-color: var(--ld-line-accent-muted);
-      box-shadow: 0 0 0 2px var(--ld-bg-accent-muted);
+    textarea::placeholder {
+      color: var(--ld-fg-muted);
     }
 
     button {
@@ -74,7 +96,7 @@ class ChatComposer extends LitElement {
 
     button:focus-visible {
       outline: var(--ld-border-width-focus) solid var(--ld-line-accent);
-      outline-offset: var(--outline-offset-focus);
+      outline-offset: var(--ld-space-xs);
     }
 
     .spinner {
@@ -103,11 +125,12 @@ class ChatComposer extends LitElement {
 
     textarea:disabled {
       cursor: not-allowed;
-      opacity: var(--ld-opacity-disabled, 0.55);
+      color: var(--ld-fg-muted);
+      opacity: 1;
     }
 
     @media (max-width: 560px) {
-      form {
+      .composer {
         grid-template-columns: 1fr;
       }
       button {
@@ -128,19 +151,22 @@ class ChatComposer extends LitElement {
   }
 
   render() {
+    const blocked = this.disabled || this.pending
     return html`
       <form @submit=${this.submit}>
-        <textarea
-          .value=${this.draft}
-          ?disabled=${this.disabled}
-          placeholder=${this.placeholder}
-          rows="2"
-          @input=${this.input}
-          @keydown=${this.keydown}
-        ></textarea>
-        <button type="submit" ?disabled=${this.disabled || this.pending || this.draft.trim() === ''}>
-          ${this.pending ? html`<span class="spinner" aria-hidden="true"></span><span>Sending</span>` : 'Send'}
-        </button>
+        <div class=${['composer', blocked ? 'is-disabled' : ''].filter(Boolean).join(' ')}>
+          <textarea
+            .value=${this.draft}
+            ?disabled=${this.disabled}
+            placeholder=${this.placeholder}
+            rows="2"
+            @input=${this.input}
+            @keydown=${this.keydown}
+          ></textarea>
+          <button type="submit" ?disabled=${this.disabled || this.pending || this.draft.trim() === ''}>
+            ${this.pending ? html`<span class="spinner" aria-hidden="true"></span><span>Sending</span>` : 'Send'}
+          </button>
+        </div>
       </form>
     `
   }
