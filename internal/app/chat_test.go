@@ -49,12 +49,12 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	for _, want := range []string{
 		`/static/chat.js`,
 		`data-signals=`,
-		`<ld-chat-conversation-sidebar`,
+		`<ld-sub-sidebar`,
 		`<ld-chat-thread`,
 		`<ld-chat-composer`,
-		`data-attr:conversations="$agent.conversations"`,
-		`data-attr:active-conversation-id="$agent.activeConversationId"`,
-		`data-on:ld-chat-conversation-select`,
+		`&#34;compact&#34;:true`,
+		`data-attr:config=`,
+		`data-on:ld-sub-sidebar-select`,
 		`data-attr:events="$agent.events"`,
 		`data-on:ld-chat-submit`,
 		`/chat/turns`,
@@ -66,6 +66,9 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	}
 	if strings.Contains(body, `aria-label="Agent conversations"`) {
 		t.Fatalf("chat page should render the conversation web component instead of the static rail:\n%s", body)
+	}
+	if strings.Contains(body, `<ld-chat-conversation-sidebar`) {
+		t.Fatalf("chat page still rendered chat-specific conversation sidebar:\n%s", body)
 	}
 }
 

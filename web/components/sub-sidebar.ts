@@ -1,19 +1,30 @@
 import { LitElement, css, html, svg as svgTemplate, type PropertyValues } from 'lit'
 import { property, state } from 'lit/decorators.js'
 
-type ReportPage = {
+type SubSidebarItem = {
   id: string
-  title: string
-  href: string
+  title?: string
+  meta?: string
+  href?: string
   active?: boolean
+  disabled?: boolean
 }
 
-type ReportSidebarConfig = {
-  dashboardId?: string
-  dashboardTitle?: string
-  pageId?: string
-  pageTitle?: string
-  pages?: ReportPage[]
+type SubSidebarConfig = {
+  label?: string
+  railLabel?: string
+  ariaLabel?: string
+  storageKey?: string
+  activeId?: string
+  emptyText?: string
+  disabled?: boolean
+  items?: SubSidebarItem[]
+}
+
+type ResolvedConfig = Required<Pick<SubSidebarConfig, 'label' | 'railLabel' | 'ariaLabel' | 'storageKey' | 'emptyText'>> & {
+  activeId: string
+  disabled: boolean
+  items: SubSidebarItem[]
 }
 
 type HoverTitle = {
@@ -23,36 +34,44 @@ type HoverTitle = {
   active: boolean
 }
 
-const defaultConfig: ReportSidebarConfig = {
-  pageTitle: 'Page',
-  pages: [],
+const defaultConfig: ResolvedConfig = {
+  label: 'Items',
+  railLabel: 'Items',
+  ariaLabel: 'Sub navigation',
+  storageKey: 'libredash-sub-sidebar-collapsed',
+  activeId: '',
+  emptyText: 'No items.',
+  disabled: false,
+  items: [],
 }
 
 const configConverter = {
-  fromAttribute(value: string | null): ReportSidebarConfig {
-    if (!value) return defaultConfig
+  fromAttribute(value: string | null): SubSidebarConfig {
+    if (!value) return {}
     try {
-      return { ...defaultConfig, ...JSON.parse(value) } as ReportSidebarConfig
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as SubSidebarConfig : {}
     } catch {
-      return defaultConfig
+      return {}
     }
   },
-  toAttribute(value: ReportSidebarConfig): string {
-    return JSON.stringify(value ?? defaultConfig)
+  toAttribute(value: SubSidebarConfig): string {
+    return JSON.stringify(value ?? {})
   },
 }
 
-class ReportSidebar extends LitElement {
-  @property({ attribute: 'config', converter: configConverter }) config: ReportSidebarConfig = defaultConfig
-  @state() private collapsed = storedCollapsed()
+class SubSidebar extends LitElement {
+  @property({ attribute: 'config', converter: configConverter }) config: SubSidebarConfig = {}
+  @state() private collapsed = storedCollapsed(defaultConfig.storageKey)
   @state() private hoverTitle?: HoverTitle
+  private loadedStorageKey = defaultConfig.storageKey
 
   static styles = css`
     :host {
-      --ld-report-sidebar-width: 144px;
+      --ld-sub-sidebar-width: 144px;
       display: block;
-      width: var(--ld-report-sidebar-width);
-      height: 100svh;
+      width: var(--ld-sub-sidebar-width);
+      height: 100%;
       min-height: 0;
       overflow: hidden;
       color: var(--ld-fg-default);
@@ -61,12 +80,8 @@ class ReportSidebar extends LitElement {
     }
 
     :host([data-collapsed]) {
-      --ld-report-sidebar-width: 38px;
+      --ld-sub-sidebar-width: 38px;
       z-index: 30;
-      overflow: visible;
-    }
-
-    :host([data-collapsed]) aside {
       overflow: visible;
     }
 
@@ -74,8 +89,8 @@ class ReportSidebar extends LitElement {
       position: sticky;
       top: 0;
       display: grid;
-      width: var(--ld-report-sidebar-width);
-      height: 100svh;
+      width: var(--ld-sub-sidebar-width);
+      height: 100%;
       min-height: 0;
       max-height: 100svh;
       grid-template-rows: auto minmax(0, 1fr);
@@ -83,6 +98,10 @@ class ReportSidebar extends LitElement {
       border-right: 1px solid color-mix(in srgb, var(--ld-line-muted), transparent 36%);
       background: var(--ld-report-rail-bg);
       transition: width 180ms var(--ld-ease-out);
+    }
+
+    :host([data-collapsed]) aside {
+      overflow: visible;
     }
 
     header {
@@ -99,30 +118,15 @@ class ReportSidebar extends LitElement {
       justify-content: space-between;
     }
 
-    .collapse svg {
-      width: 14px;
-      height: 14px;
-      fill: none;
-      stroke: currentColor;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      stroke-width: 2;
-    }
-
     .section-title {
       overflow: hidden;
-      color: var(--ld-fg-muted);
+      color: var(--ld-fg-default);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       text-transform: uppercase;
-    }
-
-    .section-title {
-      color: var(--ld-fg-default);
-      font-size: var(--ld-font-size-caption);
     }
 
     .collapse {
@@ -146,6 +150,16 @@ class ReportSidebar extends LitElement {
       background: var(--ld-bg-control-hover);
       color: var(--ld-fg-default);
       outline: 0;
+    }
+
+    .collapse svg {
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
     }
 
     nav {
@@ -183,35 +197,40 @@ class ReportSidebar extends LitElement {
       text-decoration: none;
     }
 
-    .page-link {
+    .item-link {
       position: relative;
       display: grid;
-      grid-template-columns: 24px minmax(0, 1fr);
+      width: 100%;
       min-height: 29px;
+      grid-template-columns: 24px minmax(0, 1fr);
       align-items: center;
       gap: 6px;
       border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-default);
+      background: transparent;
       color: color-mix(in srgb, var(--ld-fg-muted), transparent 8%);
+      cursor: pointer;
       padding: 0 9px;
+      text-align: left;
+      font: inherit;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-medium);
     }
 
-    .page-link:hover,
-    .page-link:focus-visible {
+    .item-link:hover,
+    .item-link:focus-visible {
       background: var(--ld-bg-hover);
       color: var(--ld-fg-default);
       outline: 0;
     }
 
-    .page-link[aria-current='page'] {
+    .item-link[aria-current='page'] {
       border-color: transparent;
       background: var(--ld-bg-hover);
       color: var(--ld-fg-default);
     }
 
-    .page-link[aria-current='page']::before {
+    .item-link[aria-current='page']::before {
       content: '';
       position: absolute;
       inset-block: 7px;
@@ -221,7 +240,12 @@ class ReportSidebar extends LitElement {
       background: var(--ld-accent);
     }
 
-    .page-index {
+    .item-link:disabled {
+      cursor: default;
+      opacity: 0.72;
+    }
+
+    .item-index {
       display: grid;
       width: 24px;
       height: 24px;
@@ -233,23 +257,49 @@ class ReportSidebar extends LitElement {
       line-height: var(--ld-line-height-none);
     }
 
-    .page-link:hover .page-index,
-    .page-link:focus-visible .page-index,
-    .page-link[aria-current='page'] .page-index {
+    .item-link:hover .item-index,
+    .item-link:focus-visible .item-index,
+    .item-link[aria-current='page'] .item-index {
       color: var(--ld-fg-default);
     }
 
-    .link-text {
+    .item-text {
+      display: grid;
+      min-width: 0;
+      gap: 1px;
+    }
+
+    .item-title,
+    .item-meta {
       overflow: hidden;
       min-width: 0;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .page-link:hover .link-text,
-    .page-link:focus-visible .link-text,
-    .page-link[aria-current='page'] .link-text {
+    .item-title {
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-medium);
+      line-height: var(--ld-line-height-tight);
+    }
+
+    .item-link:hover .item-title,
+    .item-link:focus-visible .item-title,
+    .item-link[aria-current='page'] .item-title {
       font-weight: var(--ld-font-weight-strong);
+    }
+
+    .item-meta {
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      line-height: var(--ld-line-height-none);
+    }
+
+    .empty {
+      padding: 8px 9px;
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      line-height: var(--ld-line-height-relaxed);
     }
 
     :host([data-collapsed]) header {
@@ -257,7 +307,8 @@ class ReportSidebar extends LitElement {
     }
 
     :host([data-collapsed]) .section-title,
-    :host([data-collapsed]) .link-text {
+    :host([data-collapsed]) .item-text,
+    :host([data-collapsed]) .empty {
       display: none;
     }
 
@@ -280,31 +331,19 @@ class ReportSidebar extends LitElement {
       width: 0;
     }
 
-    :host([data-collapsed]) .page-link {
+    :host([data-collapsed]) .item-link {
       grid-template-columns: 24px;
       justify-content: center;
       padding-inline: 0;
     }
 
-    :host([data-collapsed]) .page-index {
-      background: transparent;
-    }
-
-    :host([data-collapsed]) .page-link:hover .page-index,
-    :host([data-collapsed]) .page-link:focus-visible .page-index {
+    :host([data-collapsed]) .item-link:hover .item-index,
+    :host([data-collapsed]) .item-link:focus-visible .item-index,
+    :host([data-collapsed]) .item-link[aria-current='page'] .item-index {
       color: var(--ld-fg-default);
     }
 
-    :host([data-collapsed]) .page-link[aria-current='page'] .page-index {
-      color: var(--ld-fg-default);
-    }
-
-    :host([data-collapsed]) .page-link {
-      min-height: 29px;
-    }
-
-    :host([data-collapsed]) .page-link[aria-current='page']::before {
-      content: '';
+    :host([data-collapsed]) .item-link[aria-current='page']::before {
       inset-block: 7px;
       left: 0;
       width: 2px;
@@ -319,7 +358,7 @@ class ReportSidebar extends LitElement {
       z-index: 40;
       left: 7px;
       min-height: 29px;
-      max-width: 12rem;
+      max-width: 14rem;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -345,16 +384,6 @@ class ReportSidebar extends LitElement {
       background: var(--ld-accent);
     }
 
-    @keyframes rail-title-fade-in {
-      from {
-        opacity: 0;
-      }
-
-      to {
-        opacity: 1;
-      }
-    }
-
     .hover-title-index {
       display: grid;
       width: 24px;
@@ -370,18 +399,6 @@ class ReportSidebar extends LitElement {
       text-overflow: ellipsis;
       animation: rail-title-name-fold-out 120ms var(--ld-ease-out);
       transform-origin: left center;
-    }
-
-    @keyframes rail-title-name-fold-out {
-      from {
-        opacity: 0;
-        transform: translateX(-4px) scaleX(0.86);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateX(0) scaleX(1);
-      }
     }
 
     .rail-label {
@@ -401,38 +418,65 @@ class ReportSidebar extends LitElement {
       transform: rotate(180deg);
       writing-mode: vertical-rl;
     }
+
+    @keyframes rail-title-fade-in {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes rail-title-name-fold-out {
+      from {
+        opacity: 0;
+        transform: translateX(-4px) scaleX(0.86);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0) scaleX(1);
+      }
+    }
   `
 
   updated(changed: PropertyValues<this>): void {
+    const config = this.resolvedConfig
+    if (changed.has('config')) {
+      this.syncCollapsedStorage(config.storageKey)
+    }
     this.toggleAttribute('data-collapsed', this.collapsed)
     if (changed.has('config') || changed.has('collapsed')) {
-      this.scrollActivePageIntoView()
+      this.scrollActiveItemIntoView()
     }
   }
 
   render() {
-    const pages = this.config.pages ?? []
+    const config = this.resolvedConfig
     return html`
-      <aside aria-label="Report pages">
+      <aside aria-label=${config.ariaLabel}>
         <header>
           <div class="top-row">
-            <strong class="section-title">Pages</strong>
+            <strong class="section-title">${config.label}</strong>
             <button
               class="collapse"
               type="button"
-              aria-label=${this.collapsed ? 'Expand report pages' : 'Collapse report pages'}
+              aria-label=${this.collapsed ? `Expand ${config.label}` : `Collapse ${config.label}`}
               aria-pressed=${String(this.collapsed)}
-              title=${this.collapsed ? 'Expand report pages' : 'Collapse report pages'}
-              @click=${this.toggleCollapsed}
+              title=${this.collapsed ? `Expand ${config.label}` : `Collapse ${config.label}`}
+              @click=${() => this.toggleCollapsed(config.storageKey)}
             >
               ${icon(this.collapsed ? 'chevron-right' : 'chevron-left')}
             </button>
           </div>
         </header>
 
-        <nav aria-label="Report pages" @scroll=${this.hideHoverTitle}>
-          <span class="rail-label" aria-hidden="true">Pages</span>
-          ${pages.map((page, index) => this.renderPageLink(page, index, pages.length))}
+        <nav aria-label=${config.ariaLabel} @scroll=${this.hideHoverTitle}>
+          <span class="rail-label" aria-hidden="true">${config.railLabel}</span>
+          ${config.items.length === 0 ? html`<div class="empty">${config.emptyText}</div>` : null}
+          ${config.items.map((item, index) => this.renderItem(config, item, index, config.items.length))}
         </nav>
         ${this.collapsed && this.hoverTitle ? html`
           <div
@@ -448,39 +492,101 @@ class ReportSidebar extends LitElement {
     `
   }
 
-  private renderPageLink(page: ReportPage, index: number, pageCount: number) {
-    const active = Boolean(page.active || page.id === this.config.pageId)
-    const pageNumber = formatPageNumber(index, pageCount)
-    const title = page.title || page.id
+  private get resolvedConfig(): ResolvedConfig {
+    const label = cleanText(this.config.label) || defaultConfig.label
+    return {
+      label,
+      railLabel: cleanText(this.config.railLabel) || label,
+      ariaLabel: cleanText(this.config.ariaLabel) || label,
+      storageKey: cleanText(this.config.storageKey) || defaultConfig.storageKey,
+      activeId: cleanText(this.config.activeId),
+      emptyText: cleanText(this.config.emptyText) || defaultConfig.emptyText,
+      disabled: Boolean(this.config.disabled),
+      items: Array.isArray(this.config.items) ? this.config.items.filter((item) => cleanText(item.id) !== '') : [],
+    }
+  }
+
+  private renderItem(config: ResolvedConfig, item: SubSidebarItem, index: number, count: number) {
+    const active = Boolean(item.active || item.id === config.activeId)
+    const indexLabel = formatItemNumber(index, count)
+    const title = cleanText(item.title) || item.id
+    const disabled = Boolean(config.disabled || item.disabled)
+    const content = html`
+      <span class="item-index" aria-hidden="true">${indexLabel}</span>
+      <span class="item-text">
+        <span class="item-title">${title}</span>
+        ${cleanText(item.meta) ? html`<span class="item-meta">${item.meta}</span>` : null}
+      </span>
+    `
+    const listeners = {
+      mouseenter: (event: MouseEvent) => this.showHoverTitle(event, title, indexLabel, active),
+      mouseleave: this.hideHoverTitle,
+      focus: (event: FocusEvent) => this.showHoverTitle(event, title, indexLabel, active),
+      blur: this.hideHoverTitle,
+    }
+
+    if (item.href) {
+      return html`
+        <a
+          class="item-link"
+          href=${item.href}
+          aria-current=${active ? 'page' : 'false'}
+          aria-label=${title}
+          @mouseenter=${listeners.mouseenter}
+          @mouseleave=${listeners.mouseleave}
+          @focus=${listeners.focus}
+          @blur=${listeners.blur}
+        >
+          ${content}
+        </a>
+      `
+    }
+
     return html`
-      <a
-        class="page-link"
-        href=${page.href}
+      <button
+        class="item-link"
+        type="button"
         aria-current=${active ? 'page' : 'false'}
         aria-label=${title}
-        @mouseenter=${(event: MouseEvent) => this.showHoverTitle(event, title, pageNumber, active)}
-        @mouseleave=${this.hideHoverTitle}
-        @focus=${(event: FocusEvent) => this.showHoverTitle(event, title, pageNumber, active)}
-        @blur=${this.hideHoverTitle}
+        ?disabled=${disabled}
+        @click=${() => this.selectItem(item.id, disabled)}
+        @mouseenter=${listeners.mouseenter}
+        @mouseleave=${listeners.mouseleave}
+        @focus=${listeners.focus}
+        @blur=${listeners.blur}
       >
-        <span class="page-index" aria-hidden="true">${pageNumber}</span>
-        <span class="link-text">${title}</span>
-      </a>
+        ${content}
+      </button>
     `
   }
 
-  private toggleCollapsed = () => {
+  private selectItem(id: string, disabled: boolean): void {
+    if (!id || disabled) return
+    this.dispatchEvent(new CustomEvent('ld-sub-sidebar-select', {
+      bubbles: true,
+      composed: true,
+      detail: { id },
+    }))
+  }
+
+  private toggleCollapsed(storageKey: string): void {
     this.collapsed = !this.collapsed
     try {
-      localStorage.setItem('libredash-report-sidebar-collapsed', String(this.collapsed))
+      localStorage.setItem(storageKey, String(this.collapsed))
     } catch {
       // Session state still updates when storage is unavailable.
     }
   }
 
-  private scrollActivePageIntoView(): void {
+  private syncCollapsedStorage(storageKey: string): void {
+    if (storageKey === this.loadedStorageKey) return
+    this.loadedStorageKey = storageKey
+    this.collapsed = storedCollapsed(storageKey)
+  }
+
+  private scrollActiveItemIntoView(): void {
     requestAnimationFrame(() => {
-      const active = this.renderRoot.querySelector<HTMLElement>('.page-link[aria-current="page"]')
+      const active = this.renderRoot.querySelector<HTMLElement>('.item-link[aria-current="page"]')
       active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     })
   }
@@ -505,17 +611,21 @@ class ReportSidebar extends LitElement {
   }
 }
 
-function storedCollapsed(): boolean {
+function storedCollapsed(storageKey: string): boolean {
   try {
-    return localStorage.getItem('libredash-report-sidebar-collapsed') === 'true'
+    return localStorage.getItem(storageKey) === 'true'
   } catch {
     return false
   }
 }
 
-function formatPageNumber(index: number, pageCount: number): string {
-  const pageNumber = String(index + 1)
-  return pageCount >= 10 ? pageNumber.padStart(2, '0') : pageNumber
+function formatItemNumber(index: number, count: number): string {
+  const number = String(index + 1)
+  return count >= 10 ? number.padStart(2, '0') : number
+}
+
+function cleanText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function icon(name: 'chevron-left' | 'chevron-right') {
@@ -531,4 +641,6 @@ function iconSvg(content: unknown) {
   return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`
 }
 
-customElements.define('ld-report-sidebar', ReportSidebar)
+if (!customElements.get('ld-sub-sidebar')) {
+  customElements.define('ld-sub-sidebar', SubSidebar)
+}

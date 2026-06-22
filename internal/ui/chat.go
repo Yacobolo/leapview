@@ -30,18 +30,16 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api
 					"csrfToken": csrfToken,
 					"agent":     signal,
 				}),
-				h.Div(h.Class(appShellClass),
-					sidebar(sidebarConfigForWorkspace(catalog, "chat", roleLabel)),
+				h.Div(h.Class(reportShellClass),
+					sidebar(sidebarConfigForChat(catalog, roleLabel)),
+					g.El("ld-sub-sidebar",
+						h.Class("block min-h-0 border-r border-outline-variant bg-app max-md:hidden"),
+						g.Attr("data-attr:config", chatSubSidebarConfigExpression()),
+						g.Attr("data-on:ld-sub-sidebar-select", "$agent.activeConversationId = evt.detail.id; "+postAction("/chat/conversations/select")),
+					),
 					h.Section(h.Class("grid h-svh min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-app"), h.Aria("label", "LibreDash chat"),
 						workspaceHeader("Agent", "Chat", "Ask read-only questions about dashboards, metric views, and semantic models.", nil),
-						h.Div(h.Class("grid min-h-0 min-w-0 grid-cols-[auto_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1"),
-							g.El("ld-chat-conversation-sidebar",
-								h.Class("block min-h-0 border-r border-outline-variant bg-app max-md:hidden"),
-								g.Attr("data-attr:conversations", "$agent.conversations"),
-								g.Attr("data-attr:active-conversation-id", "$agent.activeConversationId"),
-								g.Attr("data-attr:status", "$agent.status"),
-								g.Attr("data-on:ld-chat-conversation-select", "$agent.activeConversationId = evt.detail.conversationId; "+postAction("/chat/conversations/select")),
-							),
+						h.Div(h.Class("grid min-h-0 min-w-0 overflow-hidden bg-app"),
 							h.Div(h.Class("grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-app"),
 								g.El("ld-chat-thread",
 									h.Class("block min-h-0 min-w-0 overflow-hidden"),
@@ -65,4 +63,28 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api
 			),
 		},
 	})
+}
+
+func sidebarConfigForChat(catalog dashboard.Catalog, roleLabel string) map[string]any {
+	config := sidebarConfigForWorkspace(catalog, "chat", roleLabel)
+	config["compact"] = true
+	return config
+}
+
+func chatSubSidebarConfigExpression() string {
+	return `JSON.stringify({
+label: 'Conversations',
+railLabel: 'Chats',
+ariaLabel: 'Chat conversations',
+storageKey: 'libredash-chat-conversations-collapsed',
+activeId: $agent.activeConversationId,
+emptyText: 'No conversations yet.',
+disabled: ($agent.status && $agent.status.running) || false,
+items: ($agent.conversations || []).map((conversation) => ({
+id: conversation.id,
+title: conversation.title || 'Conversation',
+meta: conversation.updatedAt || '',
+active: conversation.id === $agent.activeConversationId
+}))
+})`
 }

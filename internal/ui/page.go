@@ -90,7 +90,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 		Head: pageHead(
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/sidebar.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/report-sidebar.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/sub-sidebar.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/filter-dock.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/filter-panel.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/filter-card.js"))),
@@ -893,10 +893,10 @@ func workspaceDisplayTitle(catalog dashboard.Catalog) string {
 }
 
 func reportSidebar(config map[string]any) g.Node {
-	return g.El("ld-report-sidebar", h.Class("border-l border-outline-variant max-sm:border-l-0 max-sm:border-t"), g.Attr("config", jsonString(config)))
+	return g.El("ld-sub-sidebar", h.Class("border-l border-outline-variant max-sm:border-l-0 max-sm:border-t"), g.Attr("config", jsonString(config)))
 }
 
-func reportSidebarConfig(report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page, activePage dashboard.Page) map[string]any {
+func reportSidebarConfig(report semantic.Dashboard, _ *semantic.Model, pages []dashboard.Page, activePage dashboard.Page) map[string]any {
 	items := make([]map[string]any, 0, len(pages))
 	for _, page := range pages {
 		items = append(items, map[string]any{
@@ -907,14 +907,12 @@ func reportSidebarConfig(report semantic.Dashboard, model *semantic.Model, pages
 		})
 	}
 	return map[string]any{
-		"dashboardId":    report.ID,
-		"dashboardTitle": report.Title,
-		"pageId":         activePage.ID,
-		"pageTitle":      activePage.Title,
-		"modelId":        model.Name,
-		"modelTitle":     model.Title,
-		"modelHref":      "/models/" + model.Name,
-		"pages":          items,
+		"label":      "Pages",
+		"railLabel":  "Pages",
+		"ariaLabel":  "Report pages",
+		"storageKey": "libredash-report-sidebar-collapsed",
+		"activeId":   activePage.ID,
+		"items":      items,
 	}
 }
 

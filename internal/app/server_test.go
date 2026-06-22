@@ -250,8 +250,11 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `<ld-report-sidebar`) {
-		t.Fatalf("report page did not render report sidebar:\n%s", body)
+	if !strings.Contains(body, `<ld-sub-sidebar`) {
+		t.Fatalf("report page did not render sub sidebar:\n%s", body)
+	}
+	if strings.Contains(body, `<ld-report-sidebar`) {
+		t.Fatalf("report page still rendered report sidebar:\n%s", body)
 	}
 	if !strings.Contains(body, `&#34;compact&#34;:true`) {
 		t.Fatalf("report page did not compact the primary sidebar:\n%s", body)
@@ -379,8 +382,8 @@ func TestHomeRouteRendersDashboardCatalog(t *testing.T) {
 	if !strings.Contains(body, `Workspaces`) || !strings.Contains(body, `/workspaces`) {
 		t.Fatalf("home sidebar missing workspace navigation:\n%s", body)
 	}
-	if strings.Contains(body, `<ld-report-sidebar`) {
-		t.Fatalf("dashboard catalog should not render report sidebar:\n%s", body)
+	if strings.Contains(body, `<ld-sub-sidebar`) {
+		t.Fatalf("dashboard catalog should not render sub sidebar:\n%s", body)
 	}
 }
 
@@ -430,8 +433,8 @@ func TestModelsRouteRendersSemanticModelCatalog(t *testing.T) {
 	if !strings.Contains(body, `href="/models/test"`) {
 		t.Fatalf("models catalog missing model link:\n%s", body)
 	}
-	if strings.Contains(body, `<ld-report-sidebar`) {
-		t.Fatalf("models catalog should not render report sidebar:\n%s", body)
+	if strings.Contains(body, `<ld-sub-sidebar`) {
+		t.Fatalf("models catalog should not render sub sidebar:\n%s", body)
 	}
 }
 
@@ -656,8 +659,8 @@ func TestModelRouteRendersSemanticModelGraph(t *testing.T) {
 	if !strings.Contains(body, `Test Model`) {
 		t.Fatalf("body does not include model title:\n%s", body)
 	}
-	if strings.Contains(body, `<ld-report-sidebar`) {
-		t.Fatalf("model page should not render report sidebar:\n%s", body)
+	if strings.Contains(body, `<ld-sub-sidebar`) {
+		t.Fatalf("model page should not render sub sidebar:\n%s", body)
 	}
 }
 
