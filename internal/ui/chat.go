@@ -73,7 +73,7 @@ func sidebarConfigForChat(catalog dashboard.Catalog, roleLabel string) map[strin
 
 func chatSubSidebarConfigExpression() string {
 	return `JSON.stringify({
-label: 'Conversations',
+label: 'Chats',
 railLabel: 'Chats',
 ariaLabel: 'Chat conversations',
 storageKey: 'libredash-chat-conversations-collapsed',
