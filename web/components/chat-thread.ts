@@ -1,5 +1,8 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property } from 'lit/decorators.js'
+import { unsafeHTML } from 'lit/directives/unsafe-html.js'
+import DOMPurify from 'dompurify'
+import MarkdownIt from 'markdown-it'
 
 type ChatStatus = {
   enabled?: boolean
@@ -20,6 +23,7 @@ type ChatEvent = {
 
 type ChatMessage = {
   id: string
+  seq?: number
   role: string
   content: string
   toolName?: string
@@ -32,6 +36,12 @@ type ToolActivity = {
   done: boolean
   error: boolean
 }
+
+const markdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: false,
+})
 
 const jsonConverter = <T,>(fallback: T) => ({
   fromAttribute(value: string | null): T {
@@ -133,8 +143,68 @@ class ChatThread extends LitElement {
       padding: 10px 12px;
       font-size: var(--ld-font-size-body-sm);
       line-height: var(--ld-line-height-relaxed);
-      white-space: pre-wrap;
       overflow-wrap: anywhere;
+    }
+
+    .bubble.plain {
+      white-space: pre-wrap;
+    }
+
+    .bubble.markdown {
+      display: block;
+    }
+
+    .bubble.markdown :is(p, ul, ol, pre, blockquote) {
+      margin-block: 0 10px;
+    }
+
+    .bubble.markdown :is(p, ul, ol, pre, blockquote):last-child {
+      margin-bottom: 0;
+    }
+
+    .bubble.markdown ul,
+    .bubble.markdown ol {
+      padding-left: 20px;
+    }
+
+    .bubble.markdown li + li {
+      margin-top: 2px;
+    }
+
+    .bubble.markdown code {
+      border-radius: calc(var(--ld-radius-default) - 2px);
+      background: var(--ld-bg-control);
+      padding: 1px 4px;
+      font-family: var(--fontStack-monospace);
+      font-size: 0.92em;
+    }
+
+    .bubble.markdown pre {
+      max-width: 100%;
+      overflow: auto;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      padding: 9px 10px;
+    }
+
+    .bubble.markdown pre code {
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      font-size: var(--ld-font-size-caption);
+    }
+
+    .bubble.markdown blockquote {
+      border-left: 2px solid var(--ld-line-muted);
+      padding-left: 10px;
+      color: var(--ld-fg-muted);
+    }
+
+    .bubble.markdown a {
+      color: var(--ld-fg-accent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
     }
 
     .user .bubble {
@@ -223,10 +293,13 @@ class ChatThread extends LitElement {
   private renderMessage(message: ChatMessage) {
     const role = message.role || 'assistant'
     const label = message.toolName || roleLabel(role)
+    const renderMarkdown = role === 'assistant' || role === 'summary'
     return html`
       <article class=${['message', role, message.isError ? 'error' : ''].filter(Boolean).join(' ')}>
         <div class="label">${label}</div>
-        <div class="bubble">${message.content || '-'}</div>
+        <div class=${['bubble', renderMarkdown ? 'markdown' : 'plain'].join(' ')}>
+          ${renderMarkdown ? unsafeHTML(renderMarkdownHTML(message.content || '-')) : message.content || '-'}
+        </div>
       </article>
     `
   }
@@ -248,13 +321,14 @@ function messagesFromEvents(events: ChatEvent[]): ChatMessage[] {
     const message = asRecord(event.payload?.message)
     out.push({
       id: String(message.id ?? event.id),
+      seq: Number(event.seq ?? 0),
       role: String(message.role ?? 'assistant'),
       content: String(message.content ?? ''),
       toolName: String(message.tool_name || ''),
       isError: Boolean(message.is_error),
     })
   }
-  return out
+  return out.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
 }
 
 function activitiesFromEvents(events: ChatEvent[]): ToolActivity[] {
@@ -284,6 +358,12 @@ function streamingText(events: ChatEvent[], messages: ChatMessage[]): string {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+}
+
+function renderMarkdownHTML(value: string): string {
+  return DOMPurify.sanitize(markdown.render(value), {
+    USE_PROFILES: { html: true },
+  })
 }
 
 function roleLabel(role: string): string {

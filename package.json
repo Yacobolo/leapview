@@ -34,6 +34,7 @@
     "@tanstack/lit-table": "^9.0.0-beta.12",
     "@tanstack/lit-virtual": "^3.13.29",
     "@tanstack/table-core": "^9.0.0-beta.12",
+    "@types/markdown-it": "^14.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@xyflow/react": "^12.11.0",
@@ -45,6 +46,8 @@
     "tailwindcss": "4.3.1"
   },
   "dependencies": {
+    "dompurify": "^3.4.11",
+    "markdown-it": "^14.2.0",
     "p5": "^1.11.13"
   }
 }

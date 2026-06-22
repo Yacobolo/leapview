@@ -49,15 +49,23 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	for _, want := range []string{
 		`/static/chat.js`,
 		`data-signals=`,
+		`<ld-chat-conversation-sidebar`,
 		`<ld-chat-thread`,
 		`<ld-chat-composer`,
+		`data-attr:conversations="$agent.conversations"`,
+		`data-attr:active-conversation-id="$agent.activeConversationId"`,
+		`data-on:ld-chat-conversation-select`,
 		`data-attr:events="$agent.events"`,
 		`data-on:ld-chat-submit`,
 		`/chat/turns`,
+		`/chat/conversations/select`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat page missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, `aria-label="Agent conversations"`) {
+		t.Fatalf("chat page should render the conversation web component instead of the static rail:\n%s", body)
 	}
 }
 

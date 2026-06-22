@@ -34,8 +34,14 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api
 					sidebar(sidebarConfigForWorkspace(catalog, "chat", roleLabel)),
 					h.Section(h.Class("grid h-svh min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-app"), h.Aria("label", "LibreDash chat"),
 						workspaceHeader("Agent", "Chat", "Ask read-only questions about dashboards, metric views, and semantic models.", nil),
-						h.Div(h.Class("grid min-h-0 min-w-0 grid-cols-[260px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1"),
-							chatConversationRail(signal.Conversations, signal.ActiveConversationID),
+						h.Div(h.Class("grid min-h-0 min-w-0 grid-cols-[auto_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1"),
+							g.El("ld-chat-conversation-sidebar",
+								h.Class("block min-h-0 border-r border-outline-variant bg-app max-md:hidden"),
+								g.Attr("data-attr:conversations", "$agent.conversations"),
+								g.Attr("data-attr:active-conversation-id", "$agent.activeConversationId"),
+								g.Attr("data-attr:status", "$agent.status"),
+								g.Attr("data-on:ld-chat-conversation-select", "$agent.activeConversationId = evt.detail.conversationId; "+postAction("/chat/conversations/select")),
+							),
 							h.Div(h.Class("grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-app"),
 								g.El("ld-chat-thread",
 									h.Class("block min-h-0 min-w-0 overflow-hidden"),
@@ -59,30 +65,4 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api
 			),
 		},
 	})
-}
-
-func chatConversationRail(conversations []api.AgentConversationResponse, activeID string) g.Node {
-	return h.Aside(h.Class("grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] border-r border-outline-variant bg-app max-md:hidden"), h.Aria("label", "Agent conversations"),
-		h.Div(h.Class("border-b border-outline-variant px-3 py-3"),
-			h.H2(h.Class("m-0 text-body-sm font-semibold text-fg-default"), g.Text("Conversations")),
-		),
-		h.Div(h.Class("min-h-0 overflow-auto p-2"),
-			g.If(len(conversations) == 0, h.P(h.Class("m-0 px-2 py-2 text-body-sm text-fg-muted"), g.Text("No conversations yet."))),
-			g.Map(conversations, func(conversation api.AgentConversationResponse) g.Node {
-				className := "mb-1 grid w-full min-w-0 rounded-default border px-2 py-2 text-left text-body-sm text-fg-default"
-				if conversation.ID == activeID {
-					className += " border-outline-accent bg-accent-muted"
-				} else {
-					className += " border-transparent bg-transparent hover:border-outline-muted hover:bg-control-hover"
-				}
-				return h.Button(
-					h.Type("button"),
-					h.Class(className),
-					g.Attr("data-on:click", "$agent.activeConversationId = '"+conversation.ID+"'; "+postAction("/chat/conversations/select")),
-					h.Span(h.Class("truncate font-medium"), g.Text(conversation.Title)),
-					h.Span(h.Class("truncate text-caption text-fg-muted"), g.Text(conversation.UpdatedAt)),
-				)
-			}),
-		),
-	)
 }
