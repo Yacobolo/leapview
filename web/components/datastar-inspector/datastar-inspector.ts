@@ -68,7 +68,7 @@ export class DatastarInspector extends LitElement {
       position: fixed;
       right: 16px;
       bottom: 16px;
-      z-index: 99999;
+      z-index: var(--zIndex-popover);
       display: grid;
       width: 38px;
       height: 38px;
@@ -85,7 +85,10 @@ export class DatastarInspector extends LitElement {
       letter-spacing: 0;
       line-height: 1;
       box-shadow: 0 10px 28px rgb(0 0 0 / 38%), 0 0 0 1px rgb(255 255 255 / 8%) inset;
-      transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+      transition:
+        transform var(--motion-transition-hover),
+        box-shadow var(--motion-transition-hover),
+        filter var(--motion-transition-hover);
     }
 
     .toggle:hover,
@@ -97,7 +100,7 @@ export class DatastarInspector extends LitElement {
     }
 
     .toggle[data-unseen] {
-      animation: ds-pulse 1.2s ease-in-out infinite;
+      animation: ds-pulse var(--base-duration-1000) var(--motion-easing-move) infinite;
     }
 
     @keyframes ds-pulse {
@@ -115,7 +118,7 @@ export class DatastarInspector extends LitElement {
       position: fixed;
       right: 16px;
       bottom: 16px;
-      z-index: 99999;
+      z-index: var(--zIndex-popover);
       display: flex;
       width: min(384px, calc(100vw - 32px));
       height: min(512px, calc(100vh - 32px));

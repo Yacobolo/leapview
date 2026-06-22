@@ -190,18 +190,18 @@ const modelGraphStyles = `
   ld-model-graph .inspector {
     border-left: var(--ld-border-default);
     background: var(--ld-bg-panel-muted);
-    padding: 12px;
+    padding: var(--base-size-12);
     overflow: auto;
   }
 
   ld-model-graph .inspector h2 {
-    margin: 0 0 4px;
+    margin: 0 0 var(--base-size-4);
     font-size: var(--ld-font-size-body-lg);
     line-height: var(--ld-line-height-tight);
   }
 
   ld-model-graph .kind {
-    margin: 0 0 12px;
+    margin: 0 0 var(--base-size-12);
     color: var(--ld-fg-muted);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-strong);
@@ -210,14 +210,14 @@ const modelGraphStyles = `
 
   ld-model-graph .detail {
     display: grid;
-    gap: 8px;
+    gap: var(--base-size-8);
   }
 
   ld-model-graph .detail-row {
     display: grid;
-    gap: 2px;
+    gap: var(--base-size-2);
     border-bottom: var(--ld-border-muted);
-    padding-bottom: 7px;
+    padding-bottom: var(--base-size-8);
     font-size: var(--ld-font-size-caption);
   }
 
@@ -230,8 +230,8 @@ const modelGraphStyles = `
 
   ld-model-graph .fields {
     display: grid;
-    gap: 4px;
-    margin-top: 10px;
+    gap: var(--base-size-4);
+    margin-top: var(--base-size-8);
   }
 
   ld-model-graph .field {
@@ -239,11 +239,11 @@ const modelGraphStyles = `
     min-width: 0;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--base-size-8);
     border: var(--ld-border-default);
     border-radius: var(--borderRadius-small);
     background: var(--ld-bg-panel);
-    padding: 5px 7px;
+    padding: var(--base-size-4) var(--base-size-8);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-medium);
   }
@@ -270,7 +270,7 @@ const modelGraphStyles = `
 
   ld-model-graph .node-card {
     width: 214px;
-    border: 1px solid var(--node-border);
+    border: var(--borderWidth-default) solid var(--node-border);
     border-radius: var(--borderRadius-default);
     background: var(--ld-bg-panel);
     box-shadow: var(--shadow-resting-small);
@@ -280,13 +280,13 @@ const modelGraphStyles = `
 
   ld-model-graph .node-card.selected {
     outline: var(--ld-border-width-focus) solid var(--ld-fg-link);
-    outline-offset: 2px;
+    outline-offset: var(--base-size-2);
   }
 
   ld-model-graph .node-head {
-    border-left: 4px solid var(--node-accent);
+    border-left: var(--borderWidth-thicker) solid var(--node-accent);
     background: var(--node-bg);
-    padding: 8px 9px 7px;
+    padding: var(--base-size-8) var(--base-size-8) var(--base-size-6);
   }
 
   ld-model-graph .node-kind {
@@ -299,7 +299,7 @@ const modelGraphStyles = `
 
   ld-model-graph .node-title {
     overflow: hidden;
-    margin-top: 2px;
+    margin-top: var(--base-size-2);
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
@@ -309,8 +309,8 @@ const modelGraphStyles = `
 
   ld-model-graph .node-fields {
     display: grid;
-    gap: 1px;
-    padding: 6px 8px 8px;
+    gap: var(--borderWidth-default);
+    padding: var(--base-size-6) var(--base-size-8) var(--base-size-8);
   }
 
   ld-model-graph .node-field {
@@ -318,9 +318,9 @@ const modelGraphStyles = `
     min-width: 0;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--base-size-8);
     border-bottom: var(--ld-border-muted);
-    padding: 3px 0;
+    padding: var(--base-size-4) 0;
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-medium);
   }

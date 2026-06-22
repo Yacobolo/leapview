@@ -2,16 +2,21 @@
 
 /* size/typography */
 @import '@primer/primitives/dist/css/base/size/size.css';
+@import '@primer/primitives/dist/css/base/size/z-index.css';
 @import '@primer/primitives/dist/css/base/typography/typography.css';
 @import '@primer/primitives/dist/css/functional/size/border.css';
 @import '@primer/primitives/dist/css/functional/size/breakpoints.css';
 @import '@primer/primitives/dist/css/functional/size/radius.css';
 @import '@primer/primitives/dist/css/functional/size/size.css';
+@import '@primer/primitives/dist/css/functional/size/size-fine.css';
+@import '@primer/primitives/dist/css/functional/size/size-coarse.css';
 @import '@primer/primitives/dist/css/functional/size/viewport.css';
+@import '@primer/primitives/dist/css/functional/size/z-index.css';
 @import '@primer/primitives/dist/css/functional/typography/typography.css';
 
 /* motion */
 @import '@primer/primitives/dist/css/base/motion/motion.css';
+@import '@primer/primitives/dist/css/functional/motion/motion.css';
 
 /* spacing */
 @import '@primer/primitives/dist/css/functional/spacing/space.css';
@@ -52,6 +57,7 @@
   --text-body-sm: var(--ld-text-body-sm-size);
   --text-body-md: var(--ld-text-body-md-size);
   --text-body-lg: var(--ld-text-body-lg-size);
+  --text-subtitle: var(--ld-text-subtitle-size);
   --text-title-sm: var(--ld-text-title-sm-size);
   --text-title-md: var(--ld-text-title-md-size);
   --text-title-lg: var(--ld-text-title-lg-size);
@@ -97,9 +103,21 @@
   --spacing-40: 10rem;
   --spacing-action: 2rem;
   --spacing-card: 21rem;
+  --spacing-control-target: var(--control-minTarget-auto);
+  --spacing-control-sm: var(--control-small-size);
   --spacing-control-md: var(--control-medium-size);
   --spacing-control-xs: var(--control-xsmall-size);
+  --spacing-control-lg: var(--control-large-size);
   --spacing-control-xl: var(--control-xlarge-size);
+  --spacing-control-stack-sm-condensed: var(--controlStack-small-gap-condensed);
+  --spacing-control-stack-sm-auto: var(--controlStack-small-gap-auto);
+  --spacing-control-stack-sm-spacious: var(--controlStack-small-gap-spacious);
+  --spacing-control-stack-md-condensed: var(--controlStack-medium-gap-condensed);
+  --spacing-control-stack-md-auto: var(--controlStack-medium-gap-auto);
+  --spacing-control-stack-md-spacious: var(--controlStack-medium-gap-spacious);
+  --spacing-control-stack-lg-condensed: var(--controlStack-large-gap-condensed);
+  --spacing-control-stack-lg-auto: var(--controlStack-large-gap-auto);
+  --spacing-control-stack-lg-spacious: var(--controlStack-large-gap-spacious);
   --spacing-filter-closed: var(--base-size-32);
   --spacing-filter-dock: 14.75rem;
   --spacing-inspector-panel: 32rem;
@@ -109,6 +127,12 @@
   --spacing-min-card: 13.125rem;
   --spacing-min-model-graph: 38.75rem;
   --spacing-stat: 3.5rem;
+  --spacing-stack-condensed: var(--stack-gap-condensed);
+  --spacing-stack-normal: var(--stack-gap-normal);
+  --spacing-stack-spacious: var(--stack-gap-spacious);
+  --spacing-stack-padding-condensed: var(--stack-padding-condensed);
+  --spacing-stack-padding-normal: var(--stack-padding-normal);
+  --spacing-stack-padding-spacious: var(--stack-padding-spacious);
 
   --container-*: initial;
   --container-card: 21rem;
@@ -125,20 +149,33 @@
   --radius-full: var(--borderRadius-full);
 
   --shadow-*: initial;
+  --shadow-resting-xs: var(--shadow-resting-xsmall);
   --shadow-resting-sm: var(--shadow-resting-small);
   --shadow-resting-md: var(--shadow-resting-medium);
   --shadow-floating: var(--shadow-floating-small);
+  --shadow-floating-sm: var(--shadow-floating-small);
+  --shadow-floating-md: var(--shadow-floating-medium);
+  --shadow-floating-lg: var(--shadow-floating-large);
+  --shadow-floating-xl: var(--shadow-floating-xlarge);
 
   --ease-*: initial;
   --ease-ld: var(--base-easing-easeOut);
-  --ease-linear: var(--base-easing-linear);
+  --ease-linear: var(--motion-easing-linear);
   --ease-in: var(--base-easing-easeIn);
   --ease-in-out: var(--base-easing-easeInOut);
+  --ease-hover: var(--motion-easing-hover);
+  --ease-enter: var(--motion-easing-enter);
+  --ease-exit: var(--motion-easing-exit);
+  --ease-move: var(--motion-easing-move);
 
   --duration-*: initial;
   --duration-fast: var(--base-duration-100);
   --duration-normal: var(--base-duration-200);
   --duration-slow: var(--base-duration-300);
+  --duration-micro: var(--motion-duration-micro);
+  --duration-short: var(--motion-duration-short);
+  --duration-medium: var(--motion-duration-medium);
+  --duration-long: var(--motion-duration-long);
 
   --breakpoint-*: initial;
   --breakpoint-xs: 20rem;
@@ -168,7 +205,16 @@
   --z-index-sidebar: 20;
   --z-index-report-sidebar: 19;
   --z-index-inspector: 99999;
+  --z-index-behind: var(--zIndex-behind);
+  --z-index-default: var(--zIndex-default);
+  --z-index-sticky: var(--zIndex-sticky);
+  --z-index-dropdown: var(--zIndex-dropdown);
+  --z-index-overlay: var(--zIndex-overlay);
+  --z-index-modal: var(--zIndex-modal);
+  --z-index-popover: var(--zIndex-popover);
+  --z-index-skip-link: var(--zIndex-skipLink);
 
+  /* Legacy disabled opacity token; prefer Primer disabled color tokens for new UI. */
   --opacity-disabled: 0.62;
   --outline-offset-focus: var(--focus-outline-offset);
 }
@@ -217,6 +263,23 @@
   --color-control: var(--ld-bg-control);
   --color-control-hover: var(--ld-bg-control-hover);
   --color-control-active: var(--ld-bg-control-active);
+  --color-control-rest: var(--control-bgColor-rest);
+  --color-control-disabled: var(--control-bgColor-disabled);
+  --color-control-selected: var(--control-bgColor-selected);
+  --color-control-border-default: var(--control-borderColor-rest);
+  --color-control-border-disabled: var(--control-borderColor-disabled);
+  --color-control-border-emphasis: var(--control-borderColor-emphasis);
+  --color-control-border-success: var(--control-borderColor-success);
+  --color-control-border-warning: var(--control-borderColor-warning);
+  --color-control-border-danger: var(--control-borderColor-danger);
+  --color-control-fg-default: var(--control-fgColor-rest);
+  --color-control-fg-disabled: var(--control-fgColor-disabled);
+  --color-control-fg-placeholder: var(--control-fgColor-placeholder);
+  --color-control-fg-icon: var(--control-iconColor-rest);
+  --color-bg-disabled: var(--bgColor-disabled);
+  --color-fg-disabled: var(--fgColor-disabled);
+  --color-selection: var(--selection-bgColor);
+  --color-overlay-backdrop: var(--overlay-backdrop-bgColor);
   --color-button-primary: var(--button-primary-bgColor-rest);
   --color-button-primary-hover: var(--button-primary-bgColor-hover);
   --color-button-primary-active: var(--button-primary-bgColor-active);
@@ -278,12 +341,14 @@
     --ld-text-body-sm-size: var(--text-body-size-small);
     --ld-text-body-md-size: var(--text-body-size-medium);
     --ld-text-body-lg-size: var(--text-body-size-large);
+    --ld-text-subtitle-size: var(--text-subtitle-size);
     --ld-text-title-sm-size: var(--text-title-size-small);
     --ld-text-title-md-size: var(--text-title-size-medium);
     --ld-text-title-lg-size: var(--text-title-size-large);
     --ld-text-display-size: var(--text-display-size);
     --ld-text-page-title: var(--text-title-shorthand-small);
     --ld-text-section-title: var(--text-body-shorthand-medium);
+    --ld-text-subtitle: var(--text-subtitle-shorthand);
     --ld-text-body: var(--text-body-shorthand-medium);
     --ld-text-body-small: var(--text-body-shorthand-small);
     --ld-text-caption: var(--text-caption-shorthand);
@@ -293,6 +358,7 @@
     --ld-font-size-body-sm: var(--ld-text-body-sm-size);
     --ld-font-size-body-md: var(--ld-text-body-md-size);
     --ld-font-size-body-lg: var(--ld-text-body-lg-size);
+    --ld-font-size-subtitle: var(--ld-text-subtitle-size);
     --ld-font-size-title-sm: var(--ld-text-title-sm-size);
     --ld-font-size-title-md: var(--ld-text-title-md-size);
     --ld-font-size-title-lg: var(--ld-text-title-lg-size);
@@ -309,8 +375,8 @@
     --ld-line-height-relaxed: var(--base-text-lineHeight-relaxed);
     --ld-line-height-loose: var(--base-text-lineHeight-loose);
     --ld-ease-out: var(--base-easing-easeOut);
-    --ld-transition-fast: var(--base-duration-100) var(--ld-ease-out);
-    --ld-transition-normal: var(--base-duration-200) var(--ld-ease-out);
+    --ld-transition-fast: var(--motion-transition-hover);
+    --ld-transition-normal: var(--motion-transition-stateChange);
     --ld-border-default: var(--border-default);
     --ld-border-muted: var(--border-muted);
     --ld-border-emphasis: var(--border-emphasis);
@@ -332,6 +398,9 @@
     --ld-control-compact: var(--control-xsmall-size);
     --ld-control-small: var(--control-small-size);
     --ld-control-medium: var(--control-medium-size);
+    --ld-control-large: var(--control-large-size);
+    --ld-control-xlarge: var(--control-xlarge-size);
+    --ld-control-min-target: var(--control-minTarget-auto);
     --ld-icon-sm: var(--base-size-16);
     --ld-icon-md: var(--base-size-24);
     --ld-shadow-floating-sm: var(--shadow-floating-small);
@@ -498,4 +567,8 @@
       transition-duration: 0.001ms !important;
     }
   }
+}
+
+@utility shadow-inset {
+  box-shadow: var(--shadow-inset);
 }

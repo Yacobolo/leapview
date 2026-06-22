@@ -139,13 +139,13 @@ const metricUsageGraphStyles = `
 
   ld-metric-usage-graph .metric-usage-node {
     width: 190px;
-    border: 1px solid var(--usage-node-border);
-    border-left: 4px solid var(--usage-node-accent);
+    border: var(--borderWidth-default) solid var(--usage-node-border);
+    border-left: var(--borderWidth-thicker) solid var(--usage-node-accent);
     border-radius: var(--borderRadius-default);
     background: var(--usage-node-bg);
     box-shadow: var(--shadow-resting-small);
     color: var(--ld-fg-default);
-    padding: 9px 10px;
+    padding: var(--base-size-8) var(--base-size-12);
   }
 
   ld-metric-usage-graph .metric-usage-node-kind {
@@ -157,7 +157,7 @@ const metricUsageGraphStyles = `
 
   ld-metric-usage-graph .metric-usage-node-title {
     overflow: hidden;
-    margin-top: 3px;
+    margin-top: var(--base-size-4);
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--ld-font-size-body-md);
@@ -167,7 +167,7 @@ const metricUsageGraphStyles = `
 
   ld-metric-usage-graph .metric-usage-node-meta {
     overflow: hidden;
-    margin-top: 5px;
+    margin-top: var(--base-size-6);
     color: var(--ld-fg-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
