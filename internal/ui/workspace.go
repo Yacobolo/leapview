@@ -18,8 +18,8 @@ import (
 
 const (
 	workspaceMainClass  = "grid min-w-0 min-h-svh content-start gap-3 bg-app px-4 py-4 max-sm:min-h-0 max-sm:p-3"
-	workspacePanelClass = "grid min-w-0 rounded-default border border-outline-muted bg-panel"
-	assetRowClass       = "grid min-w-0 grid-cols-asset-row items-center gap-3 border-b border-outline-muted px-3 py-2 last:border-b-0 hover:bg-control-hover"
+	workspacePanelClass = "min-w-0 overflow-hidden rounded-default border border-outline-muted bg-panel"
+	assetRowClass       = "border-b border-outline-muted last:border-b-0 hover:bg-control-hover"
 )
 
 func WorkspacesPage(catalog dashboard.Catalog, workspaces []api.WorkspaceResponse, roleLabel string) g.Node {
@@ -33,23 +33,63 @@ func WorkspacesPage(catalog dashboard.Catalog, workspaces []api.WorkspaceRespons
 	)
 }
 
-func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, assets []api.AssetResponse, activeType, query, roleLabel string) g.Node {
-	return workspaceDocument(workspace.Title, catalog, "workspaces", roleLabel, nil,
+func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, assets []api.AssetResponse, activeType, query, roleLabel string, access api.WorkspaceAccessResponse, csrfToken string) g.Node {
+	extraHead := []g.Node{}
+	if access.CanManage {
+		extraHead = append(extraHead, h.Script(h.Type("module"), h.Src(staticAsset("/static/workspace-access-control.js"))))
+	}
+	return workspaceDocument(workspace.Title, catalog, "workspaces", roleLabel, workspacePageSignals(access, csrfToken),
 		h.Section(h.Class(workspaceMainClass), h.Aria("label", "Workspace assets"),
 			workspaceHeader(
 				"Workspace",
 				workspace.Title,
 				workspace.Description,
-				h.A(h.Class(metricActionButtonClass), h.Href("/workspaces/"+workspace.ID+"/permissions"), h.Title("Workspace permissions"), h.Aria("label", "Workspace permissions"), lucide.Shield(metricActionIconAttrs()...)),
+				workspaceAccessControl(workspace.ID, access.CanManage),
 			),
 			assetToolbar(workspace.ID, activeType, query),
 			h.Div(h.Class(workspacePanelClass),
-				g.If(len(assets) == 0, emptyState("No assets match this view.")),
-				g.Map(assets, func(asset api.AssetResponse) g.Node {
-					return assetRow(workspace.ID, asset)
-				}),
+				g.If(len(assets) == 0, h.Div(h.Class("p-3"), emptyState("No assets match this view."))),
+				g.If(len(assets) > 0, assetTable(workspace.ID, assets)),
 			),
 		),
+		extraHead...,
+	)
+}
+
+func workspacePageSignals(access api.WorkspaceAccessResponse, csrfToken string) map[string]any {
+	return map[string]any{
+		"workspaceAccess": WorkspaceAccessSignals(access, csrfToken),
+	}
+}
+
+type workspaceAccessSignalState struct {
+	api.WorkspaceAccessResponse
+	CSRFToken string                     `json:"csrfToken"`
+	Command   api.WorkspaceAccessCommand `json:"command"`
+	Search    string                     `json:"search"`
+}
+
+func WorkspaceAccessSignals(access api.WorkspaceAccessResponse, csrfToken string) workspaceAccessSignalState {
+	return workspaceAccessSignalState{
+		WorkspaceAccessResponse: access,
+		CSRFToken:               csrfToken,
+		Command:                 api.WorkspaceAccessCommand{},
+		Search:                  "",
+	}
+}
+
+func workspaceAccessControl(workspaceID string, canManage bool) g.Node {
+	if !canManage {
+		return nil
+	}
+	upsert := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + postActionWithCSRFSignal("/workspaces/"+workspaceID+"/access/upsert", "$workspaceAccess.csrfToken")
+	remove := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + postActionWithCSRFSignal("/workspaces/"+workspaceID+"/access/remove", "$workspaceAccess.csrfToken")
+	return g.El("ld-workspace-access-control",
+		g.Attr("data-attr:access", "$workspaceAccess"),
+		g.Attr("data-attr:search", "$workspaceAccess.search"),
+		g.Attr("data-on:ld-workspace-access-search__debounce.200ms", "$workspaceAccess.search = evt.detail.search"),
+		g.Attr("data-on:ld-workspace-access-upsert", upsert),
+		g.Attr("data-on:ld-workspace-access-remove", remove),
 	)
 }
 
@@ -110,15 +150,9 @@ func breadcrumbSeparator() g.Node {
 }
 
 func assetBreadcrumbCurrent(asset api.AssetResponse) g.Node {
-	icon := assetIconByType[asset.Type]
-	if icon == nil {
-		icon = lucide.Component
-	}
 	return h.Li(h.Class("min-w-0"),
 		h.H1(h.Class("m-0 inline-flex min-w-0 items-center gap-2 text-title-sm font-semibold leading-snug text-fg-default"),
-			h.Span(h.Class("inline-flex size-5 shrink-0 items-center justify-center text-icon-muted"), h.Aria("hidden", "true"),
-				icon(assetIconAttrs()...),
-			),
+			assetTypeInlineIcon(asset.Type),
 			h.Span(h.Class("min-w-0 truncate"), g.Text(assetTitle(asset))),
 		),
 	)
@@ -284,24 +318,79 @@ func normalizeWorkspaceAssetSection(section string) string {
 	return "details"
 }
 
-func assetRow(workspaceID string, asset api.AssetResponse) g.Node {
+func assetTable(workspaceID string, assets []api.AssetResponse) g.Node {
+	assetIndex := map[string]api.AssetResponse{}
+	for _, asset := range assets {
+		assetIndex[asset.ID] = asset
+	}
+	return h.Div(h.Class("min-w-0 overflow-x-auto"),
+		h.Table(h.Class("w-full border-collapse text-left"),
+			h.THead(h.Class("border-b border-outline-muted bg-panel-muted"),
+				h.Tr(
+					assetHeaderCell("Name", ""),
+					assetHeaderCell("Type", "w-40"),
+					assetHeaderCell("Key", "w-56 max-md:hidden"),
+					assetHeaderCell("Parent", "w-48 max-lg:hidden"),
+					assetHeaderCell("Actions", "w-24 text-right"),
+				),
+			),
+			h.TBody(
+				g.Map(assets, func(asset api.AssetResponse) g.Node {
+					return assetRow(workspaceID, asset, assetIndex)
+				}),
+			),
+		),
+	)
+}
+
+func assetHeaderCell(label, className string) g.Node {
+	classes := strings.TrimSpace("px-3 py-2 text-caption font-medium uppercase text-fg-muted " + className)
+	return h.Th(h.Class(classes), g.Attr("scope", "col"), g.Text(label))
+}
+
+func assetCell(className string, children ...g.Node) g.Node {
+	classes := strings.TrimSpace("px-3 py-2 align-middle " + className)
+	nodes := append([]g.Node{h.Class(classes)}, children...)
+	return h.Td(nodes...)
+}
+
+func assetRow(workspaceID string, asset api.AssetResponse, assetIndex map[string]api.AssetResponse) g.Node {
 	detailHref := workspaceAssetSectionHref(workspaceID, asset.ID, "details")
 	openHref := detailHref
 	if asset.Href != "" {
 		openHref = asset.Href
 	}
-	return h.Article(h.Class(assetRowClass),
-		assetTypeIcon(asset.Type),
-		h.Div(h.Class("min-w-0"),
-			h.P(h.Class("m-0 text-caption font-medium uppercase text-fg-muted"), g.Text(assetTypeLabel(asset.Type))),
-			h.A(h.Class("mt-0.5 block truncate text-body-sm font-semibold text-fg-default no-underline hover:underline"), h.Href(detailHref), g.Text(assetTitle(asset))),
-			g.If(asset.Description != "", h.P(h.Class("m-0 mt-1 truncate text-caption font-normal text-fg-muted"), g.Text(asset.Description))),
+	return h.Tr(h.Class(assetRowClass),
+		assetCell("min-w-0",
+			h.Div(h.Class("flex min-w-0 items-center gap-3"),
+				assetTypeIcon(asset.Type),
+				h.Div(h.Class("min-w-0"),
+					h.A(h.Class("block truncate text-body-sm font-semibold text-fg-default no-underline hover:underline"), h.Href(detailHref), g.Text(assetTitle(asset))),
+					g.If(asset.Description != "", h.P(h.Class("m-0 mt-1 truncate text-caption font-normal text-fg-muted"), g.Text(asset.Description))),
+				),
+			),
 		),
-		h.Code(h.Class("truncate text-caption font-medium text-fg-muted"), g.Text(asset.Key)),
-		h.Div(h.Class("inline-flex justify-end gap-2"),
-			h.A(h.Class(metricActionButtonClass), h.Href(detailHref), h.Title("View details"), h.Aria("label", "View details"), lucide.FileText(metricActionIconAttrs()...)),
-			h.A(h.Class(metricActionButtonClass), h.Href(openHref), h.Title("Open asset"), h.Aria("label", "Open asset"), lucide.ExternalLink(metricActionIconAttrs()...)),
+		assetCell("w-40 text-body-sm font-medium text-fg-muted", h.Span(g.Text(assetTypeLabel(asset.Type)))),
+		assetCell("w-56 max-md:hidden", h.Code(h.Class("block truncate text-caption font-medium text-fg-muted"), g.Text(asset.Key))),
+		assetCell("w-48 max-lg:hidden", assetParentTableLink(workspaceID, asset, assetIndex)),
+		assetCell("w-24",
+			h.Div(h.Class("inline-flex w-full justify-end gap-2"),
+				h.A(h.Class(metricActionButtonClass), h.Href(detailHref), h.Title("View details"), h.Aria("label", "View details"), lucide.FileText(metricActionIconAttrs()...)),
+				h.A(h.Class(metricActionButtonClass), h.Href(openHref), h.Title("Open asset"), h.Aria("label", "Open asset"), lucide.ExternalLink(metricActionIconAttrs()...)),
+			),
 		),
+	)
+}
+
+func assetParentTableLink(workspaceID string, asset api.AssetResponse, assetIndex map[string]api.AssetResponse) g.Node {
+	parent, ok := assetIndex[asset.ParentID]
+	if !ok {
+		return h.Span(h.Class("text-caption font-medium text-fg-muted"), g.Text(emptyDash("")))
+	}
+	return h.A(
+		h.Class("block truncate text-body-sm font-medium text-fg-accent no-underline hover:underline"),
+		h.Href(workspaceAssetSectionHref(workspaceID, parent.ID, "details")),
+		g.Text(assetTitle(parent)),
 	)
 }
 

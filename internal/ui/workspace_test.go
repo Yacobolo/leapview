@@ -172,7 +172,9 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForMetricView(t *testing.T) {
 func TestWorkspaceAssetRowsUseDetailLinksForModelAndMetricAssets(t *testing.T) {
 	workspace, _, assets, _ := testWorkspaceAssetFixtures()
 	byType := map[string]api.AssetResponse{}
+	byID := map[string]api.AssetResponse{}
 	for _, asset := range assets {
+		byID[asset.ID] = asset
 		if _, ok := byType[asset.Type]; !ok {
 			byType[asset.Type] = asset
 		}
@@ -180,7 +182,7 @@ func TestWorkspaceAssetRowsUseDetailLinksForModelAndMetricAssets(t *testing.T) {
 
 	for _, typ := range []string{"semantic_model", "metric_view"} {
 		var out strings.Builder
-		if err := assetRow(workspace.ID, byType[typ]).Render(&out); err != nil {
+		if err := assetRow(workspace.ID, byType[typ], byID).Render(&out); err != nil {
 			t.Fatal(err)
 		}
 		rendered := html.UnescapeString(out.String())
@@ -190,6 +192,105 @@ func TestWorkspaceAssetRowsUseDetailLinksForModelAndMetricAssets(t *testing.T) {
 		if !strings.Contains(rendered, "/workspaces/libredash/assets/"+byType[typ].ID+"/details") {
 			t.Fatalf("%s asset row did not link to canonical details:\n%s", typ, rendered)
 		}
+	}
+}
+
+func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+	visibleAssets := []api.AssetResponse{assets[0], assets[5], assets[8]}
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, visibleAssets, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted" scope="col">Name</th>`,
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-40" scope="col">Type</th>`,
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-56 max-md:hidden" scope="col">Key</th>`,
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-48 max-lg:hidden" scope="col">Parent</th>`,
+		"background-color: var(--ld-asset-semantic-model-bg); border-color: var(--ld-asset-semantic-model-border); color: var(--ld-asset-semantic-model-accent)",
+		"background-color: var(--ld-asset-metric-view-bg); border-color: var(--ld-asset-metric-view-border); color: var(--ld-asset-metric-view-accent)",
+		"background-color: var(--ld-asset-dashboard-bg); border-color: var(--ld-asset-dashboard-border); color: var(--ld-asset-dashboard-accent)",
+		`href="/workspaces/libredash/assets/model/details">Olist Commerce</a>`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("workspace asset rows did not render token-backed icon style %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, []api.AssetResponse{assets[0]}, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		`/static/workspace-access-control.js?v=dev`,
+		`<ld-workspace-access-control data-attr:access="$workspaceAccess"`,
+		`data-attr:search="$workspaceAccess.search"`,
+		`data-on:ld-workspace-access-search__debounce.200ms=`,
+		`data-on:ld-workspace-access-upsert=`,
+		`data-on:ld-workspace-access-remove=`,
+		`workspaceAccess`,
+		`command`,
+		`search`,
+		`csrfToken`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("workspace access control did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		`workspaceAccessCommand`,
+		`workspaceAccessSearch`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("workspace access control rendered root-level access signal %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAccessControlDoesNotRenderForViewers(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, []api.AssetResponse{assets[0]}, "", "", "Viewer", testWorkspaceAccess(workspace, false), "").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, notWant := range []string{
+		`/static/workspace-access-control.js?v=dev`,
+		`<ld-workspace-access-control`,
+		`data-on:ld-workspace-access-upsert=`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("workspace access control rendered for viewer %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func testWorkspaceAccess(workspace api.WorkspaceResponse, canManage bool) api.WorkspaceAccessResponse {
+	return api.WorkspaceAccessResponse{
+		Workspace: workspace,
+		Roles: []api.RoleResponse{
+			{Name: "viewer"},
+			{Name: "editor"},
+			{Name: "admin"},
+		},
+		Bindings: []api.RoleBindingResponse{
+			{PrincipalID: "principal_1", WorkspaceID: workspace.ID, Email: "owner@example.com", DisplayName: "Owner", Role: "owner"},
+		},
+		CanManage: canManage,
 	}
 }
 
