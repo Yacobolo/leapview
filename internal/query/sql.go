@@ -107,11 +107,11 @@ func dimensionWhereExpr(dimension semantic.MetricDimension, aliases map[string]t
 
 func measureExpr(measure semantic.MetricMeasure, aliases map[string]tableAlias) string {
 	alias := aliases[measure.Table].Alias
-	return applyAliases(measure.Expression, aliases, alias)
+	return applyAliases(measure.SQLExpression(), aliases, alias)
 }
 
 func rawMeasureExpr(measure semantic.MetricMeasure, aliases map[string]tableAlias) (string, error) {
-	expr := strings.TrimSpace(measure.Expression)
+	expr := strings.TrimSpace(measure.SQLExpression())
 	if expr == "" {
 		return "", fmt.Errorf("measure %q is missing expression", measure.Label)
 	}

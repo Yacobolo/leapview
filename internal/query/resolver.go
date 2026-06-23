@@ -10,7 +10,6 @@ import (
 
 type Planner struct {
 	Model *semantic.Model
-	Views map[string]*semantic.MetricView
 }
 
 type tableAlias struct {
@@ -19,22 +18,116 @@ type tableAlias struct {
 	Path  []semantic.Relationship
 }
 
-func NewPlanner(model *semantic.Model, views map[string]*semantic.MetricView) *Planner {
-	return &Planner{Model: model, Views: views}
+func NewPlanner(model *semantic.Model) *Planner {
+	return &Planner{Model: model}
 }
 
-func (p *Planner) metricView(id string) (*semantic.MetricView, error) {
-	view, ok := p.Views[id]
-	if !ok {
-		return nil, fmt.Errorf("unknown metric view %q", id)
-	}
-	if view.SemanticModel != p.Model.Name {
-		return nil, fmt.Errorf("metric view %q belongs to model %q, want %q", id, view.SemanticModel, p.Model.Name)
-	}
-	return view, nil
+func (p *Planner) queryView(request Request) (*semantic.QueryScope, error) {
+	return p.semanticView(request.Table, request.Dimensions, request.Measures, request.Filters, request.Time.Field)
 }
 
-func (p *Planner) aliases(view *semantic.MetricView, fields []string) (map[string]tableAlias, error) {
+func (p *Planner) rowView(request RowRequest) (*semantic.QueryScope, error) {
+	if request.Table == "" && len(request.Measures) == 0 {
+		return nil, fmt.Errorf("row query requires table when no measure is selected")
+	}
+	return p.semanticView(request.Table, request.Dimensions, request.Measures, request.Filters, "")
+}
+
+func (p *Planner) rawValueView(request RawValueRequest) (*semantic.QueryScope, error) {
+	measures := []Field{}
+	if request.Measure.Field != "" {
+		measures = append(measures, request.Measure)
+	}
+	return p.semanticView(request.Table, request.Dimensions, measures, request.Filters, "")
+}
+
+func (p *Planner) countView(request CountRequest) (*semantic.QueryScope, error) {
+	if request.Table == "" {
+		return nil, fmt.Errorf("count query requires table")
+	}
+	return p.semanticView(request.Table, nil, nil, request.Filters, "")
+}
+
+func (p *Planner) semanticView(table string, dimensions []Field, measures []Field, filters []Filter, timeField string) (*semantic.QueryScope, error) {
+	if p.Model == nil {
+		return nil, fmt.Errorf("semantic model is required")
+	}
+	baseTable := table
+	grain := ""
+	resolvedMeasures := map[string]semantic.MetricMeasure{}
+	for _, item := range measures {
+		measure := item.Measure
+		if strings.TrimSpace(measure.SQLExpression()) == "" {
+			var err error
+			measure, err = p.Model.ResolveMeasure(item.Field)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			measure.Field = defaultString(measure.Field, item.Field)
+			measure.Name = defaultString(measure.Name, item.Field)
+		}
+		if measure.Table == "" {
+			return nil, fmt.Errorf("measure %q has no base table", item.Field)
+		}
+		if baseTable == "" {
+			baseTable = measure.Table
+			grain = measure.Grain
+		}
+		if measure.Table != baseTable || (grain != "" && measure.Grain != "" && measure.Grain != grain) {
+			return nil, fmt.Errorf("cross-fact measures are not supported")
+		}
+		if grain == "" {
+			grain = measure.Grain
+		}
+		resolvedMeasures[item.Field] = measure
+	}
+	if baseTable == "" {
+		return nil, fmt.Errorf("query requires a base table")
+	}
+	if _, ok := p.Model.Tables[baseTable]; !ok {
+		return nil, fmt.Errorf("unknown table %q", baseTable)
+	}
+	resolvedDimensions := map[string]semantic.MetricDimension{}
+	for _, item := range dimensions {
+		dimension, err := p.Model.ResolveDimension(item.Field)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.relationshipPath(baseTable, dimension.Table); err != nil {
+			return nil, err
+		}
+		resolvedDimensions[item.Field] = dimension
+	}
+	for _, filter := range filters {
+		dimension, err := p.Model.ResolveDimension(filter.Field)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.relationshipPath(baseTable, dimension.Table); err != nil {
+			return nil, err
+		}
+		resolvedDimensions[filter.Field] = dimension
+	}
+	if timeField != "" {
+		dimension, err := p.Model.ResolveDimension(timeField)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.relationshipPath(baseTable, dimension.Table); err != nil {
+			return nil, err
+		}
+		resolvedDimensions[timeField] = dimension
+	}
+	return &semantic.QueryScope{
+		BaseTable:  baseTable,
+		Grain:      grain,
+		Dimensions: resolvedDimensions,
+		Measures:   resolvedMeasures,
+	}, nil
+}
+
+func (p *Planner) aliases(view *semantic.QueryScope, fields []string) (map[string]tableAlias, error) {
 	aliases := map[string]tableAlias{
 		view.BaseTable: {Table: view.BaseTable, Alias: "t0"},
 	}
@@ -139,6 +232,13 @@ func safeEdgeFrom(table string, relationship semantic.Relationship) (relationshi
 		return relationshipEdge{Table: fromTable, Relationship: relationship}, true
 	}
 	return relationshipEdge{}, false
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
 }
 
 func pathTables(base string, path []semantic.Relationship) []tablePath {

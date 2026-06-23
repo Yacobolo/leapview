@@ -2,26 +2,8 @@ package semantic
 
 import (
 	"fmt"
-	"os"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
-
-func LoadMetricView(path string, model *Model) (*MetricView, error) {
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var view MetricView
-	if err := yaml.Unmarshal(bytes, &view); err != nil {
-		return nil, err
-	}
-	if err := view.Validate(model); err != nil {
-		return nil, err
-	}
-	return &view, nil
-}
 
 func (m *Model) ResolveDimension(ref string) (MetricDimension, error) {
 	tableName, fieldName, err := splitSemanticField(ref)
@@ -34,7 +16,13 @@ func (m *Model) ResolveDimension(ref string) (MetricDimension, error) {
 	}
 	dimension, ok := table.Dimensions[fieldName]
 	if !ok {
-		return MetricDimension{}, fmt.Errorf("unknown dimension %q", fieldName)
+		if len(table.Dimensions) > 0 {
+			return MetricDimension{}, fmt.Errorf("unknown dimension %q", fieldName)
+		}
+		if err := validateSemanticIdentifier(fieldName); err != nil {
+			return MetricDimension{}, fmt.Errorf("unknown dimension %q", fieldName)
+		}
+		dimension = MetricDimension{Expr: fieldName}
 	}
 	dimension.Field = ref
 	dimension.Table = tableName
@@ -43,6 +31,14 @@ func (m *Model) ResolveDimension(ref string) (MetricDimension, error) {
 }
 
 func (m *Model) ResolveMeasure(ref string) (MetricMeasure, error) {
+	if !strings.Contains(ref, ".") {
+		if measure, ok := m.Measures[ref]; ok {
+			measure.Field = ref
+			measure.Name = ref
+			return measure, nil
+		}
+		return MetricMeasure{}, fmt.Errorf("unknown measure %q", ref)
+	}
 	tableName, fieldName, err := splitSemanticField(ref)
 	if err != nil {
 		return MetricMeasure{}, err
@@ -56,7 +52,7 @@ func (m *Model) ResolveMeasure(ref string) (MetricMeasure, error) {
 		return MetricMeasure{}, fmt.Errorf("unknown measure %q", fieldName)
 	}
 	measure.Field = ref
-	measure.Table = tableName
+	measure.Table = defaultString(measure.Table, tableName)
 	measure.Name = fieldName
 	return measure, nil
 }
@@ -71,15 +67,15 @@ func (m *Model) ResolveField(ref string) (MetricDimension, MetricMeasure, string
 	return MetricDimension{}, MetricMeasure{}, "", fmt.Errorf("unknown field %q", ref)
 }
 
-func (v *MetricView) ResolveDimensionRef(ref string) (string, MetricDimension, error) {
-	if dimension, ok := v.Dimensions[ref]; ok {
+func (s *QueryScope) ResolveDimensionRef(ref string) (string, MetricDimension, error) {
+	if dimension, ok := s.Dimensions[ref]; ok {
 		return ref, dimension, nil
 	}
 	return "", MetricDimension{}, fmt.Errorf("field %q is not exposed", ref)
 }
 
-func (v *MetricView) ResolveMeasureRef(ref string) (string, MetricMeasure, error) {
-	if measure, ok := v.Measures[ref]; ok {
+func (s *QueryScope) ResolveMeasureRef(ref string) (string, MetricMeasure, error) {
+	if measure, ok := s.Measures[ref]; ok {
 		return ref, measure, nil
 	}
 	return "", MetricMeasure{}, fmt.Errorf("field %q is not exposed", ref)
@@ -104,4 +100,11 @@ func (d MetricDimension) SQLExpression() string {
 		return d.Expr
 	}
 	return d.Expression
+}
+
+func (m MetricMeasure) SQLExpression() string {
+	if strings.TrimSpace(m.Expression) != "" {
+		return m.Expression
+	}
+	return m.Expr
 }

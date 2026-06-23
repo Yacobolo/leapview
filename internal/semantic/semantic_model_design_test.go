@@ -14,9 +14,6 @@ func TestSemanticModelDesignWorkspaceContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadWorkspace() error = %v, want semantic-model-first workspace to load", err)
 	}
-	if len(workspace.Catalog.MetricViews) != 0 {
-		t.Fatalf("metric view catalog entries = %d, want 0 for semantic-model-first contract", len(workspace.Catalog.MetricViews))
-	}
 	model := workspace.Models["olist"]
 	if model == nil {
 		t.Fatal("semantic model olist was not loaded")

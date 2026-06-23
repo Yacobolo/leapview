@@ -7,15 +7,15 @@ import (
 	"github.com/Yacobolo/libredash/internal/semantic"
 )
 
-func TestSemanticModelPlannerNamedMeasureWithoutMetricView(t *testing.T) {
-	planner := NewPlanner(testModel(), testViews())
+func TestSemanticModelPlannerNamedMeasure(t *testing.T) {
+	planner := NewPlanner(testModel())
 
 	plan, err := planner.Plan(Request{
 		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
 		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
 	})
 	if err != nil {
-		t.Fatalf("Plan() error = %v, want semantic-model query without metric view", err)
+		t.Fatalf("Plan() error = %v, want semantic-model query", err)
 	}
 	if !strings.Contains(plan.SQL, "SUM(t0.revenue) AS revenue") {
 		t.Fatalf("plan SQL missing semantic measure:\n%s", plan.SQL)
@@ -25,15 +25,15 @@ func TestSemanticModelPlannerNamedMeasureWithoutMetricView(t *testing.T) {
 	}
 }
 
-func TestSemanticModelPlannerAliasedMeasureWithoutMetricView(t *testing.T) {
-	planner := NewPlanner(testModel(), testViews())
+func TestSemanticModelPlannerAliasedMeasure(t *testing.T) {
+	planner := NewPlanner(testModel())
 
 	plan, err := planner.Plan(Request{
 		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
 		Measures:   []Field{{Field: "order_count", Alias: "orders"}},
 	})
 	if err != nil {
-		t.Fatalf("Plan() error = %v, want aliased semantic-model measure without metric view", err)
+		t.Fatalf("Plan() error = %v, want aliased semantic-model measure", err)
 	}
 	if !strings.Contains(plan.SQL, "COUNT(DISTINCT t0.order_id) AS orders") {
 		t.Fatalf("plan SQL missing aliased order count measure:\n%s", plan.SQL)
@@ -41,7 +41,7 @@ func TestSemanticModelPlannerAliasedMeasureWithoutMetricView(t *testing.T) {
 }
 
 func TestSemanticModelPlannerRowQueryRequiresTableWithoutMeasures(t *testing.T) {
-	planner := NewPlanner(testModel(), testViews())
+	planner := NewPlanner(testModel())
 
 	_, err := planner.PlanRows(RowRequest{
 		Dimensions: []Field{{Field: "orders.order_id", Alias: "order_id"}},
@@ -53,7 +53,7 @@ func TestSemanticModelPlannerRowQueryRequiresTableWithoutMeasures(t *testing.T) 
 }
 
 func TestSemanticModelPlannerRejectsCrossFactMeasures(t *testing.T) {
-	planner := NewPlanner(testModel(), testViews())
+	planner := NewPlanner(testModel())
 
 	_, err := planner.Plan(Request{
 		Measures: []Field{
@@ -66,7 +66,7 @@ func TestSemanticModelPlannerRejectsCrossFactMeasures(t *testing.T) {
 	}
 }
 
-func TestSemanticModelPlannerRejectsUnsafeDimensionPathWithoutMetricView(t *testing.T) {
+func TestSemanticModelPlannerRejectsUnsafeDimensionPath(t *testing.T) {
 	model := testModel()
 	model.Sources["items"] = semantic.Source{Path: "items.csv", Format: "csv", Connection: "local"}
 	model.Tables["items"] = semantic.ModelTable{
@@ -79,7 +79,7 @@ func TestSemanticModelPlannerRejectsUnsafeDimensionPathWithoutMetricView(t *test
 	model.Relationships = append(model.Relationships, semantic.Relationship{
 		ID: "orders_items", From: "orders.order_id", To: "items.order_id", Cardinality: "one_to_many", Active: true,
 	})
-	planner := NewPlanner(model, testViews())
+	planner := NewPlanner(model)
 
 	_, err := planner.Plan(Request{
 		Dimensions: []Field{{Field: "items.category", Alias: "category"}},

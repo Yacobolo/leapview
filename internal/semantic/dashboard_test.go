@@ -14,7 +14,7 @@ import (
 
 func TestLoadOlistDashboard(t *testing.T) {
 	model := loadOlistModel(t)
-	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), loadOlistMetricViews(t, model))
+	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), map[string]*Model{"olist": model})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,8 +22,8 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if report.ID != "executive-sales" {
 		t.Fatalf("dashboard id = %q, want executive-sales", report.ID)
 	}
-	if got := report.Visuals["revenue"].MetricView; got != "orders" {
-		t.Fatalf("revenue visual dataset = %q, want orders", got)
+	if got := report.SemanticModel; got != "olist" {
+		t.Fatalf("dashboard semantic model = %q, want olist", got)
 	}
 	if got := report.Visuals["orders"].Type; got != "donut" {
 		t.Fatalf("orders visual type = %q, want donut", got)
@@ -77,7 +77,7 @@ func TestLoadOlistDashboard(t *testing.T) {
 	if !hasTableColumnFormatting(conditional.Columns, "revenue", "data_bar") {
 		t.Fatalf("orders_conditional revenue column missing data bar formatting: %#v", conditional.Columns)
 	}
-	if len(report.Tables["category_status_pivot_heat"].MeasureFormatting["orders.order_count"]) == 0 {
+	if len(report.Tables["category_status_pivot_heat"].MeasureFormatting["order_count"]) == 0 {
 		t.Fatalf("category_status_pivot_heat missing order_count measure formatting")
 	}
 	if len(report.Pages) != 24 {
@@ -252,7 +252,7 @@ func TestDashboardValidateAcceptsV3VisualMetadata(t *testing.T) {
 	}
 	report.Visuals["revenue"] = visual
 
-	if err := report.Validate(loadOlistMetricViews(t, model)); err != nil {
+	if err := report.Validate(map[string]*Model{"olist": model}); err != nil {
 		t.Fatalf("validate v3 visual: %v", err)
 	}
 }
@@ -293,27 +293,27 @@ func TestLoadDashboardRejectsLegacyTopLevelStacked(t *testing.T) {
 	path := filepath.Join(dir, "dashboard.yaml")
 	content := strings.ReplaceAll(`id: executive-sales
 title: Executive Sales Dashboard
-metric_views: [orders]
+semantic_model: olist
 filters: {}
 visuals:
   total_orders:
     kind: kpi
     shape: single_value
-    metrics_view: orders
     query:
-      measures: [order_count]
+      measures: {order_count:}
   revenue:
     title: Revenue
     type: area
     stacked: true
-    metrics_view: orders
     query:
-      dimensions: [purchase_month]
-      measures: [revenue]
+      dimensions: {purchase_month: orders.purchase_month}
+      measures: {revenue:}
 tables:
   orders:
     title: Orders
-    metrics_view: orders
+    query:
+      table: orders
+      fields: [orders.order_id]
     columns:
       - key: order_id
         label: Order
@@ -329,7 +329,7 @@ pages:
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadDashboard(path, loadOlistMetricViews(t, model))
+	_, err := LoadDashboard(path, map[string]*Model{"olist": model})
 	if err == nil || !strings.Contains(err.Error(), "legacy top-level stacked") {
 		t.Fatalf("LoadDashboard error = %v, want legacy stacked rejection", err)
 	}
@@ -369,7 +369,7 @@ pages:
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadDashboard(path, loadOlistMetricViews(t, model))
+	_, err := LoadDashboard(path, map[string]*Model{"olist": model})
 	if err == nil || !strings.Contains(err.Error(), "legacy kpis") {
 		t.Fatalf("LoadDashboard error = %v, want legacy kpis rejection", err)
 	}
@@ -411,92 +411,81 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 
 	cases := map[string]Visual{
 		"heatmap": {
-			Title:      "Heatmap",
-			Shape:      "matrix",
-			Renderer:   "echarts",
-			Type:       "heatmap",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("state", "status"), Measures: fieldRefs("order_count")},
+			Title:    "Heatmap",
+			Shape:    "matrix",
+			Renderer: "echarts",
+			Type:     "heatmap",
+			Query:    VisualQuery{Dimensions: fieldRefs("state", "status"), Measures: measureRefs("order_count")},
 		},
 		"sankey": {
-			Title:      "Flow",
-			Shape:      "graph",
-			Renderer:   "echarts",
-			Type:       "sankey",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("status", "delivery_bucket"), Measures: fieldRefs("order_count")},
+			Title:    "Flow",
+			Shape:    "graph",
+			Renderer: "echarts",
+			Type:     "sankey",
+			Query:    VisualQuery{Dimensions: fieldRefs("status", "delivery_bucket"), Measures: measureRefs("order_count")},
 		},
 		"geo": {
-			Title:      "Map",
-			Shape:      "geo",
-			Renderer:   "echarts",
-			Type:       "map",
-			MetricView: "orders",
-			Options:    map[string]any{"map": "brazil_states"},
-			Query:      VisualQuery{Dimensions: fieldRefs("state"), Measures: fieldRefs("order_count")},
+			Title:    "Map",
+			Shape:    "geo",
+			Renderer: "echarts",
+			Type:     "map",
+			Options:  map[string]any{"map": "brazil_states"},
+			Query:    VisualQuery{Dimensions: fieldRefs("state"), Measures: measureRefs("order_count")},
 		},
 		"boxplot": {
-			Title:      "Distribution",
-			Shape:      "distribution",
-			Renderer:   "echarts",
-			Type:       "boxplot",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("delivery_bucket"), Measures: fieldRefs("delivery_days")},
+			Title:    "Distribution",
+			Shape:    "distribution",
+			Renderer: "echarts",
+			Type:     "boxplot",
+			Query:    VisualQuery{Dimensions: fieldRefs("delivery_bucket"), Measures: measureRefs("delivery_days")},
 		},
 		"combo": {
-			Title:      "Combo",
-			Shape:      "category_multi_measure",
-			Renderer:   "echarts",
-			Type:       "combo",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("purchase_month"), Measures: fieldRefs("revenue", "order_count")},
+			Title:    "Combo",
+			Shape:    "category_multi_measure",
+			Renderer: "echarts",
+			Type:     "combo",
+			Query:    VisualQuery{Dimensions: fieldRefs("purchase_month"), Measures: measureRefs("revenue", "order_count")},
 		},
 		"waterfall": {
-			Title:      "Waterfall",
-			Shape:      "category_delta",
-			Renderer:   "echarts",
-			Type:       "waterfall",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("purchase_month"), Measures: fieldRefs("revenue")},
+			Title:    "Waterfall",
+			Shape:    "category_delta",
+			Renderer: "echarts",
+			Type:     "waterfall",
+			Query:    VisualQuery{Dimensions: fieldRefs("purchase_month"), Measures: measureRefs("revenue")},
 		},
 		"histogram": {
-			Title:      "Histogram",
-			Shape:      "binned_measure",
-			Renderer:   "echarts",
-			Type:       "histogram",
-			MetricView: "orders",
-			Query:      VisualQuery{Measures: fieldRefs("delivery_days")},
+			Title:    "Histogram",
+			Shape:    "binned_measure",
+			Renderer: "echarts",
+			Type:     "histogram",
+			Query:    VisualQuery{Measures: measureRefs("delivery_days")},
 		},
 		"radar": {
-			Title:      "Radar",
-			Shape:      "category_value",
-			Renderer:   "echarts",
-			Type:       "radar",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("status"), Measures: fieldRefs("order_count")},
+			Title:    "Radar",
+			Shape:    "category_value",
+			Renderer: "echarts",
+			Type:     "radar",
+			Query:    VisualQuery{Dimensions: fieldRefs("status"), Measures: measureRefs("order_count")},
 		},
 		"tree": {
-			Title:      "Tree",
-			Shape:      "hierarchy",
-			Renderer:   "echarts",
-			Type:       "tree",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("state", "status"), Measures: fieldRefs("order_count")},
+			Title:    "Tree",
+			Shape:    "hierarchy",
+			Renderer: "echarts",
+			Type:     "tree",
+			Query:    VisualQuery{Dimensions: fieldRefs("state", "status"), Measures: measureRefs("order_count")},
 		},
 		"sunburst": {
-			Title:      "Sunburst",
-			Shape:      "hierarchy",
-			Renderer:   "echarts",
-			Type:       "sunburst",
-			MetricView: "orders",
-			Query:      VisualQuery{Dimensions: fieldRefs("category", "status"), Measures: fieldRefs("order_count")},
+			Title:    "Sunburst",
+			Shape:    "hierarchy",
+			Renderer: "echarts",
+			Type:     "sunburst",
+			Query:    VisualQuery{Dimensions: fieldRefs("category", "status"), Measures: measureRefs("order_count")},
 		},
 	}
 	for name, visual := range cases {
-		visual.Query.MetricView = "orders"
 		report.Visuals = map[string]Visual{name: visual}
 		report.Pages = []dashboard.Page{{ID: "overview", Title: "Overview", Visuals: []dashboard.PageVisual{{ID: name, Kind: visual.Type + "_chart", Visual: name, Placement: dashboard.PagePlacement{Col: 1, Row: 1, ColSpan: 1, RowSpan: 1}}}}}
-		if err := report.Validate(loadOlistMetricViews(t, model)); err != nil {
+		if err := report.Validate(map[string]*Model{"olist": model}); err != nil {
 			t.Fatalf("validate advanced shape %s: %v", name, err)
 		}
 	}
@@ -507,7 +496,7 @@ func TestDashboardValidateRejectsAdvancedShapeMismatch(t *testing.T) {
 	report := loadOlistDashboard(t, model)
 
 	visual := report.Visuals["revenue_orders_combo"]
-	visual.Query.Measures = fieldRefs("revenue")
+	visual.Query.Measures = measureRefs("revenue")
 	report.Visuals["revenue_orders_combo"] = visual
 	assertDashboardValidateError(t, report, model, "at least two query measures")
 
@@ -556,9 +545,11 @@ func TestDashboardValidateRejectsNonObjectRendererOptions(t *testing.T) {
 
 func TestValidateRejectsUnknownModelTableSource(t *testing.T) {
 	model := loadOlistModel(t)
-	table := model.Tables["customers"]
-	table.Source = "missing_source"
-	model.Tables["customers"] = table
+	semanticModel := model.SemanticModels["olist"]
+	table := semanticModel.Tables["customers"]
+	table.Model = "missing_source"
+	semanticModel.Tables["customers"] = table
+	model.SemanticModels["olist"] = semanticModel
 
 	assertModelValidateError(t, model, "unknown source")
 }

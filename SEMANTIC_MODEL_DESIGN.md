@@ -130,7 +130,7 @@ visuals:
       y: revenue
 ```
 
-Dashboards do not reference SQL joins, source files, physical cache tables, or internal materialization names.
+Dashboards do not reference SQL joins, source files, or generated physical serving names.
 
 ### Inline Queries
 
@@ -233,8 +233,7 @@ Use these names in product language:
 
 Avoid these as primary user-facing concepts:
 
-- Dataset
-- Cache table
 - OBT
+- Generated serving table
 
-Those are implementation or compatibility terms. If physical optimization is shown, call it a materialization.
+Those are implementation terms. If physical optimization is shown, call it a materialization.

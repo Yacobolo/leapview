@@ -34,30 +34,30 @@ func validateTableColumn(tableName string, column dashboard.TableColumn) error {
 	return nil
 }
 
-func normalizeTableFields(name string, view *MetricView, table *TableVisual) error {
+func normalizeTableFields(name string, model *Model, table *TableVisual) error {
 	table.Rows = make([]string, len(table.Query.Rows))
 	for index, dimension := range table.Query.Rows {
-		field, _, err := view.ResolveDimensionRef(dimension.Field)
+		item, err := model.ResolveDimension(dimension.Field)
 		if err != nil {
 			return fmt.Errorf("table %q query.rows references unknown dimension %q", name, dimension.Field)
 		}
-		table.Rows[index] = field
+		table.Rows[index] = item.Field
 	}
 	table.ColumnDims = make([]string, len(table.Query.Columns))
 	for index, dimension := range table.Query.Columns {
-		field, _, err := view.ResolveDimensionRef(dimension.Field)
+		item, err := model.ResolveDimension(dimension.Field)
 		if err != nil {
 			return fmt.Errorf("table %q query.columns references unknown dimension %q", name, dimension.Field)
 		}
-		table.ColumnDims[index] = field
+		table.ColumnDims[index] = item.Field
 	}
 	table.Measures = make([]string, len(table.Query.Measures))
 	for index, measure := range table.Query.Measures {
-		field, _, err := view.ResolveMeasureRef(measure.Field)
+		item, err := model.ResolveMeasure(measure.Field)
 		if err != nil {
 			return fmt.Errorf("table %q query.measures references unknown measure %q", name, measure.Field)
 		}
-		table.Measures[index] = field
+		table.Measures[index] = item.Field
 	}
 	return nil
 }
@@ -71,15 +71,15 @@ func tableHasQueryAlias(columns []FieldRef, alias string) bool {
 	return false
 }
 
-func normalizeTableFormatting(view *MetricView, table *TableVisual) {
+func normalizeTableFormatting(model *Model, table *TableVisual) {
 	if len(table.MeasureFormatting) == 0 {
 		return
 	}
 	next := map[string][]dashboard.TableFormattingRule{}
 	for measure, rules := range table.MeasureFormatting {
 		field := measure
-		if resolved, _, err := view.ResolveMeasureRef(measure); err == nil {
-			field = resolved
+		if resolved, err := model.ResolveMeasure(measure); err == nil {
+			field = resolved.Name
 		}
 		next[field] = rules
 	}

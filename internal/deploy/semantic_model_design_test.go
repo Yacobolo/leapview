@@ -107,7 +107,11 @@ models:
 semantic_models:
   olist:
     tables:
-      orders: {model: orders, primary_key: order_id}
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          status: {expr: status}
     measures:
       defaults: {table: orders, grain: order_id}
       revenue: {expr: SUM(orders.revenue), format: currency}
@@ -122,6 +126,8 @@ visuals:
     title: Revenue
     type: bar
     query:
+      dimensions:
+        status: orders.status
       measures:
         revenue:
 tables: {}

@@ -33,11 +33,11 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.Sources["orders"].Path; got != "olist_orders_dataset.csv" {
 		t.Fatalf("orders source path = %q, want olist_orders_dataset.csv", got)
 	}
-	if got := model.Tables["orders"].Kind; got != "fact" {
-		t.Fatalf("orders table kind = %q, want fact", got)
+	if _, ok := model.Tables["orders"]; !ok {
+		t.Fatal("orders model table missing")
 	}
-	if len(model.Relationships) != 6 {
-		t.Fatalf("relationship count = %d, want 6", len(model.Relationships))
+	if len(model.Relationships) != 1 {
+		t.Fatalf("relationship count = %d, want 1", len(model.Relationships))
 	}
 }
 
@@ -476,18 +476,9 @@ func loadOlistModel(t *testing.T) *Model {
 	return model
 }
 
-func loadOlistMetricViews(t *testing.T, model *Model) map[string]*MetricView {
-	t.Helper()
-	view, err := LoadMetricView(filepath.Join("..", "..", "dashboards", "olist", "orders.metrics.yaml"), model)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return map[string]*MetricView{view.ID: view}
-}
-
 func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
 	t.Helper()
-	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), loadOlistMetricViews(t, model))
+	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), map[string]*Model{"olist": model})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,6 +521,14 @@ func fieldRefs(fields ...string) []FieldRef {
 			}
 		}
 		refs[i] = FieldRef{Field: qualified, Alias: displayFieldName(qualified)}
+	}
+	return refs
+}
+
+func measureRefs(fields ...string) []FieldRef {
+	refs := make([]FieldRef, len(fields))
+	for i, field := range fields {
+		refs[i] = FieldRef{Field: field, Alias: displayFieldName(field)}
 	}
 	return refs
 }
@@ -603,7 +602,7 @@ func assertModelValidateError(t *testing.T, model *Model, contains string) {
 
 func assertDashboardValidateError(t *testing.T, report *Dashboard, model *Model, contains string) {
 	t.Helper()
-	err := report.Validate(loadOlistMetricViews(t, model))
+	err := report.Validate(map[string]*Model{"olist": model})
 	if err == nil {
 		t.Fatalf("Validate() error = nil, want %q", contains)
 	}

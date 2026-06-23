@@ -37,10 +37,10 @@ c2,RJ
 		t.Fatalf("status error = %q", patch.Status.Error)
 	}
 	rows := patch.Visuals["revenue_by_state"].Data
-	if !hasSemanticDesignDatum(rows, "state", "SP", "revenue", 125) {
+	if !hasSemanticDesignDatum(rows, "label", "SP", "value", 125) {
 		t.Fatalf("rows missing SP revenue 125: %#v", rows)
 	}
-	if !hasSemanticDesignDatum(rows, "state", "RJ", "revenue", 50) {
+	if !hasSemanticDesignDatum(rows, "label", "RJ", "value", 50) {
 		t.Fatalf("rows missing RJ revenue 50: %#v", rows)
 	}
 }

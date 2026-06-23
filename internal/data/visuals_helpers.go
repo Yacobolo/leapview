@@ -14,11 +14,15 @@ import (
 )
 
 func visualSemanticFilters(ctx context.Context, m *DuckDBMetrics, runtime *modelRuntime, report *semantic.Dashboard, visual semantic.Visual, filters dashboard.Filters, visualID string) ([]semanticquery.Filter, error) {
-	return m.semanticFilters(ctx, runtime, report, visual.MetricView, filters, "visual", visualID)
+	return m.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
 }
 
 func fieldRef(field string, alias string) semanticquery.Field {
 	return semanticquery.Field{Field: field, Alias: alias}
+}
+
+func queryFieldRef(ref semantic.FieldRef, alias string) semanticquery.Field {
+	return semanticquery.Field{Field: ref.Field, Alias: alias, Measure: ref.Measure}
 }
 
 func queryDimensionFields(dimensions []semantic.FieldRef) []string {

@@ -1,8 +1,11 @@
 package query
 
+import "github.com/Yacobolo/libredash/internal/semantic"
+
 type Field struct {
-	Field string
-	Alias string
+	Field   string
+	Alias   string
+	Measure semantic.MetricMeasure
 }
 
 type Time struct {
@@ -23,7 +26,7 @@ type Sort struct {
 }
 
 type Request struct {
-	MetricView string
+	Table      string
 	Dimensions []Field
 	Measures   []Field
 	Time       Time
@@ -33,7 +36,7 @@ type Request struct {
 }
 
 type RowRequest struct {
-	MetricView string
+	Table      string
 	Dimensions []Field
 	Measures   []Field
 	Filters    []Filter
@@ -43,7 +46,7 @@ type RowRequest struct {
 }
 
 type RawValueRequest struct {
-	MetricView string
+	Table      string
 	Dimensions []Field
 	Measure    Field
 	Filters    []Filter
@@ -52,8 +55,8 @@ type RawValueRequest struct {
 }
 
 type CountRequest struct {
-	MetricView string
-	Filters    []Filter
+	Table   string
+	Filters []Filter
 }
 
 type Plan struct {
