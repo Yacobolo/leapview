@@ -744,6 +744,68 @@ func TestDashboardValidateRejectsInvalidDatePreset(t *testing.T) {
 	assertDashboardValidateError(t, report, model, "requires both from and to")
 }
 
+func TestDashboardValidateRejectsDuplicateDatePreset(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["purchase_date"]
+	filter.Presets = append(filter.Presets, filter.Presets[0])
+	report.Filters["purchase_date"] = filter
+
+	assertDashboardValidateError(t, report, model, "duplicate preset")
+}
+
+func TestDashboardValidateRejectsNegativeRelativeDatePreset(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["purchase_date"]
+	filter.Presets = append(filter.Presets, FilterPreset{Value: "future", Label: "Future", RelativeDays: -7})
+	report.Filters["purchase_date"] = filter
+
+	assertDashboardValidateError(t, report, model, "negative relative_days")
+}
+
+func TestDashboardValidateRejectsUnknownDefaultDatePreset(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["purchase_date"]
+	filter.Default.Preset = "missing"
+	report.Filters["purchase_date"] = filter
+
+	assertDashboardValidateError(t, report, model, "default preset")
+}
+
+func TestDashboardValidateRejectsUnsupportedFilterValuesSource(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["state"]
+	filter.Values.Source = "static"
+	report.Filters["state"] = filter
+
+	assertDashboardValidateError(t, report, model, "unsupported values.source")
+}
+
+func TestDashboardValidateRejectsTextOperatorURLParamWithoutValueParam(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["category"]
+	filter.URLParam = ""
+	filter.OperatorURLParam = "category_op"
+	report.Filters["category"] = filter
+
+	assertDashboardValidateError(t, report, model, "operator_url_param requires url_param")
+}
+
+func TestDashboardValidateRejectsDefaultTextOperatorOutsideAllowedSet(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	filter := report.Filters["category"]
+	filter.DefaultOperator = "starts_with"
+	filter.Operators = []string{"contains", "equals"}
+	report.Filters["category"] = filter
+
+	assertDashboardValidateError(t, report, model, "default_operator")
+}
+
 func TestDashboardValidateRejectsInvalidPagePlacement(t *testing.T) {
 	model := loadOlistModel(t)
 	report := loadOlistDashboard(t, model)
@@ -787,6 +849,16 @@ func TestDashboardValidateRejectsDuplicateFilterURLParamWithinFilter(t *testing.
 	report.Filters["category"] = filter
 
 	assertDashboardValidateError(t, report, model, "duplicates")
+}
+
+func TestDashboardValidateRejectsDataTableWithoutQueryTable(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	table := report.Tables["orders"]
+	table.Query.Table = ""
+	report.Tables["orders"] = table
+
+	assertDashboardValidateError(t, report, model, "kind data_table requires query.table")
 }
 
 func TestDashboardFiltersFromURL(t *testing.T) {

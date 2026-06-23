@@ -322,15 +322,18 @@ func (m *DuckDBMetrics) hierarchyData(ctx context.Context, runtime *modelRuntime
 }
 
 func (m *DuckDBMetrics) singleValueData(ctx context.Context, runtime *modelRuntime, report *semantic.Dashboard, visualID string, visual semantic.Visual, filters dashboard.Filters) ([]dashboard.Datum, error) {
-	measureName := visual.Query.Measures[0].Field
+	measureRef := visual.Query.Measures[0]
+	measureName := measureRef.Field
 	title := visual.Title
 	if title == "" {
 		if measure, err := runtime.model.ResolveMeasure(measureName); err == nil {
 			title = measure.Label
+		} else if measureRef.Measure.Label != "" {
+			title = measureRef.Measure.Label
 		}
 	}
 	if title == "" {
-		title = measureName
+		title = defaultString(measureName, measureRef.Alias)
 	}
 	queryFilters, err := m.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
 	if err != nil {
@@ -346,7 +349,7 @@ func (m *DuckDBMetrics) singleValueData(ctx context.Context, runtime *modelRunti
 	}
 	data, err := m.querySemanticDatums(ctx, runtime, semanticquery.Request{
 		Dimensions: dimensions,
-		Measures:   []semanticquery.Field{fieldRef(measureName, "value")},
+		Measures:   []semanticquery.Field{queryFieldRef(measureRef, "value")},
 		Filters:    queryFilters,
 		Sort:       sorts,
 		Limit:      visual.Query.Limit,

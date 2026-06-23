@@ -101,25 +101,51 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*Model) err
 			if len(filter.Presets) == 0 {
 				return fmt.Errorf("filter %q date_range requires presets", name)
 			}
+			presets := map[string]struct{}{}
 			for _, preset := range filter.Presets {
 				if preset.Value == "" || preset.Label == "" {
 					return fmt.Errorf("filter %q date_range preset requires value and label", name)
 				}
+				if _, exists := presets[preset.Value]; exists {
+					return fmt.Errorf("filter %q date_range has duplicate preset %q", name, preset.Value)
+				}
+				presets[preset.Value] = struct{}{}
 				if (preset.From == "") != (preset.To == "") {
 					return fmt.Errorf("filter %q date_range preset %q requires both from and to", name, preset.Value)
+				}
+				if preset.RelativeDays < 0 {
+					return fmt.Errorf("filter %q date_range preset %q has negative relative_days", name, preset.Value)
+				}
+			}
+			if filter.Default.Preset != "" {
+				if _, ok := presets[filter.Default.Preset]; !ok {
+					return fmt.Errorf("filter %q date_range default preset %q is not defined", name, filter.Default.Preset)
 				}
 			}
 		case "multi_select":
 			if filter.Operator != "in" {
 				return fmt.Errorf("filter %q has unsupported operator %q", name, filter.Operator)
 			}
+			if filter.Values.Source != "" && filter.Values.Source != "distinct" {
+				return fmt.Errorf("filter %q has unsupported values.source %q", name, filter.Values.Source)
+			}
 		case "text":
 			if len(filter.Operators) == 0 {
 				return fmt.Errorf("filter %q text requires operators", name)
 			}
+			operators := map[string]struct{}{}
 			for _, operator := range filter.Operators {
 				if !supportedTextOperator(operator) {
 					return fmt.Errorf("filter %q has unsupported operator %q", name, operator)
+				}
+				operators[operator] = struct{}{}
+			}
+			if filter.OperatorURLParam != "" && filter.URLParam == "" {
+				return fmt.Errorf("filter %q text operator_url_param requires url_param", name)
+			}
+			if filter.DefaultOperator != "" {
+				if _, ok := operators[filter.DefaultOperator]; !ok {
+					return fmt.Errorf("filter %q default_operator %q is not in operators", name, filter.DefaultOperator)
 				}
 			}
 		default:
@@ -231,9 +257,6 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*Model) err
 				return err
 			}
 		}
-		if table.Query.Table == "" && len(table.Query.Measures) == 0 {
-			return fmt.Errorf("table %q query.table is required when no measures are selected", name)
-		}
 		for measure, rules := range table.MeasureFormatting {
 			if _, err := model.ResolveMeasure(measure); err != nil {
 				return fmt.Errorf("table %q measure_formatting references unknown measure %q", name, measure)
@@ -246,6 +269,9 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*Model) err
 		}
 		switch table.KindOrDefault() {
 		case "data_table":
+			if table.Query.Table == "" {
+				return fmt.Errorf("table %q kind data_table requires query.table", name)
+			}
 			if err := normalizeDataTableFields(name, model, &table); err != nil {
 				return err
 			}
