@@ -9,37 +9,15 @@ func (m *Model) SafeRelationshipPath(base, target string) ([]Relationship, error
 	if base == target {
 		return nil, nil
 	}
-	frontier := []relationshipPathCandidate{{Table: base, Visited: map[string]bool{base: true}}}
-	for len(frontier) > 0 {
-		next := []relationshipPathCandidate{}
-		matches := [][]Relationship{}
-		for _, candidate := range frontier {
-			for _, edge := range m.safeEdgesFrom(candidate.Table) {
-				if candidate.Visited[edge.Table] {
-					continue
-				}
-				path := append(append([]Relationship{}, candidate.Path...), edge.Relationship)
-				if edge.Table == target {
-					matches = append(matches, path)
-					continue
-				}
-				visited := map[string]bool{}
-				for table, value := range candidate.Visited {
-					visited[table] = value
-				}
-				visited[edge.Table] = true
-				next = append(next, relationshipPathCandidate{Table: edge.Table, Path: path, Visited: visited})
-			}
-		}
-		if len(matches) > 1 {
-			return nil, fmt.Errorf("ambiguous relationship path from %q to %q", base, target)
-		}
-		if len(matches) == 1 {
-			return matches[0], nil
-		}
-		frontier = next
+	matches := m.safeRelationshipPaths(base, target)
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("no safe relationship path from %q to %q", base, target)
+	case 1:
+		return matches[0], nil
+	default:
+		return nil, fmt.Errorf("ambiguous relationship path from %q to %q", base, target)
 	}
-	return nil, fmt.Errorf("no safe relationship path from %q to %q", base, target)
 }
 
 func (m *Model) CanReachField(baseTable, field string) error {
@@ -72,6 +50,37 @@ func (m *Model) safeEdgesFrom(table string) []relationshipEdge {
 		return edges[i].Relationship.To < edges[j].Relationship.To
 	})
 	return edges
+}
+
+func (m *Model) safeRelationshipPaths(base, target string) [][]Relationship {
+	matches := [][]Relationship{}
+	var walk func(candidate relationshipPathCandidate)
+	walk = func(candidate relationshipPathCandidate) {
+		if len(matches) > 1 {
+			return
+		}
+		for _, edge := range m.safeEdgesFrom(candidate.Table) {
+			if len(matches) > 1 {
+				return
+			}
+			if candidate.Visited[edge.Table] {
+				continue
+			}
+			path := append(append([]Relationship{}, candidate.Path...), edge.Relationship)
+			if edge.Table == target {
+				matches = append(matches, path)
+				continue
+			}
+			visited := map[string]bool{}
+			for table, value := range candidate.Visited {
+				visited[table] = value
+			}
+			visited[edge.Table] = true
+			walk(relationshipPathCandidate{Table: edge.Table, Path: path, Visited: visited})
+		}
+	}
+	walk(relationshipPathCandidate{Table: base, Visited: map[string]bool{base: true}})
+	return matches
 }
 
 func semanticSafeEdgeFrom(table string, relationship Relationship) (relationshipEdge, bool) {

@@ -132,23 +132,6 @@ func (p *Planner) semanticView(table string, dimensions []Field, measures []Fiel
 	}, nil
 }
 
-func InlineMeasureFromSemantic(measure semantic.MetricMeasure) InlineMeasure {
-	return InlineMeasure{
-		Field:       measure.Field,
-		Name:        measure.Name,
-		Label:       measure.Label,
-		Description: measure.Description,
-		Expr:        measure.Expr,
-		Expression:  measure.Expression,
-		Table:       measure.Table,
-		Grain:       measure.Grain,
-		Time:        measure.Time,
-		Grains:      append([]string{}, measure.Grains...),
-		Unit:        measure.Unit,
-		Format:      measure.Format,
-	}
-}
-
 func ResolvedMeasureFromSemantic(measure semantic.MetricMeasure) ResolvedMeasure {
 	return ResolvedMeasure{
 		Field:       measure.Field,

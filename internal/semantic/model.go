@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -322,8 +321,6 @@ func (file modelFile) compile() (*Model, error) {
 	return model, nil
 }
 
-var modelSQLRelationRefPattern = regexp.MustCompile(`\b(source|raw)\.([A-Za-z_][A-Za-z0-9_]*)\b`)
-
 func (m *Model) modelTableSourceDependencies(tableName string, table ModelTable) ([]string, error) {
 	sql := strings.TrimSpace(table.Transform.SQL)
 	if sql == "" {
@@ -383,23 +380,166 @@ func modelSQLSourceRefs(sql string) ([]string, []string) {
 	if sql == "" {
 		return nil, nil
 	}
-	matches := modelSQLRelationRefPattern.FindAllStringSubmatch(sql, -1)
 	sourceSeen := map[string]struct{}{}
 	rawSeen := map[string]struct{}{}
-	for _, match := range matches {
-		if len(match) < 3 {
-			continue
-		}
-		switch match[1] {
+	for _, ref := range scanSQLRelationRefs(sql) {
+		switch ref.Namespace {
 		case "source":
-			sourceSeen[match[2]] = struct{}{}
+			sourceSeen[ref.Name] = struct{}{}
 		case "raw":
-			rawSeen[match[2]] = struct{}{}
+			rawSeen[ref.Name] = struct{}{}
 		}
 	}
 	sourceRefs := sortedStringSet(sourceSeen)
 	rawRefs := sortedStringSet(rawSeen)
 	return sourceRefs, rawRefs
+}
+
+type sqlRelationRef struct {
+	Namespace string
+	Name      string
+}
+
+func scanSQLRelationRefs(sql string) []sqlRelationRef {
+	refs := []sqlRelationRef{}
+	for index := 0; index < len(sql); {
+		switch sql[index] {
+		case '\'':
+			index = skipSQLSingleQuoted(sql, index)
+			continue
+		case '"':
+			namespace, next, ok := readSQLIdentifier(sql, index)
+			if !ok {
+				index++
+				continue
+			}
+			if ref, ok := readSQLRelationRef(sql, namespace, next); ok {
+				refs = append(refs, ref)
+				index = next
+				continue
+			}
+			index = next
+			continue
+		case '-':
+			if index+1 < len(sql) && sql[index+1] == '-' {
+				index = skipSQLLineComment(sql, index+2)
+				continue
+			}
+		case '/':
+			if index+1 < len(sql) && sql[index+1] == '*' {
+				index = skipSQLBlockComment(sql, index+2)
+				continue
+			}
+		}
+		if isSQLIdentifierStart(sql[index]) {
+			namespace, next, _ := readSQLIdentifier(sql, index)
+			if ref, ok := readSQLRelationRef(sql, namespace, next); ok {
+				refs = append(refs, ref)
+				index = next
+				continue
+			}
+			index = next
+			continue
+		}
+		index++
+	}
+	return refs
+}
+
+func readSQLRelationRef(sql string, namespace string, next int) (sqlRelationRef, bool) {
+	normalized := strings.ToLower(namespace)
+	if normalized != "source" && normalized != "raw" {
+		return sqlRelationRef{}, false
+	}
+	dot := skipSQLSpaces(sql, next)
+	if dot >= len(sql) || sql[dot] != '.' {
+		return sqlRelationRef{}, false
+	}
+	nameStart := skipSQLSpaces(sql, dot+1)
+	name, _, ok := readSQLIdentifier(sql, nameStart)
+	if !ok {
+		return sqlRelationRef{}, false
+	}
+	return sqlRelationRef{Namespace: normalized, Name: name}, true
+}
+
+func readSQLIdentifier(sql string, index int) (string, int, bool) {
+	if index >= len(sql) {
+		return "", index, false
+	}
+	if sql[index] == '"' {
+		var builder strings.Builder
+		for cursor := index + 1; cursor < len(sql); cursor++ {
+			if sql[cursor] == '"' {
+				if cursor+1 < len(sql) && sql[cursor+1] == '"' {
+					builder.WriteByte('"')
+					cursor++
+					continue
+				}
+				return builder.String(), cursor + 1, true
+			}
+			builder.WriteByte(sql[cursor])
+		}
+		return "", len(sql), false
+	}
+	if !isSQLIdentifierStart(sql[index]) {
+		return "", index, false
+	}
+	cursor := index + 1
+	for cursor < len(sql) && isSQLIdentifierPart(sql[cursor]) {
+		cursor++
+	}
+	return sql[index:cursor], cursor, true
+}
+
+func skipSQLSingleQuoted(sql string, index int) int {
+	for cursor := index + 1; cursor < len(sql); cursor++ {
+		if sql[cursor] == '\'' {
+			if cursor+1 < len(sql) && sql[cursor+1] == '\'' {
+				cursor++
+				continue
+			}
+			return cursor + 1
+		}
+	}
+	return len(sql)
+}
+
+func skipSQLLineComment(sql string, index int) int {
+	for index < len(sql) && sql[index] != '\n' && sql[index] != '\r' {
+		index++
+	}
+	return index
+}
+
+func skipSQLBlockComment(sql string, index int) int {
+	for index+1 < len(sql) {
+		if sql[index] == '*' && sql[index+1] == '/' {
+			return index + 2
+		}
+		index++
+	}
+	return len(sql)
+}
+
+func skipSQLSpaces(sql string, index int) int {
+	for index < len(sql) {
+		switch sql[index] {
+		case ' ', '\n', '\r', '\t', '\f':
+			index++
+		default:
+			return index
+		}
+	}
+	return index
+}
+
+func isSQLIdentifierStart(char byte) bool {
+	return char == '_' || (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')
+}
+
+func isSQLIdentifierPart(char byte) bool {
+	return isSQLIdentifierStart(char) || (char >= '0' && char <= '9')
 }
 
 func sortedStringSet(values map[string]struct{}) []string {
@@ -457,8 +597,24 @@ func (m *Model) validateConnectedMeasureGraph(relationshipTables map[string]stru
 		}
 		baseTables[measure.Table] = struct{}{}
 	}
+	tableNames := m.TableNames()
+	if len(baseTables) == 0 {
+		if len(tableNames) == 0 {
+			return nil
+		}
+		root := tableNames[0]
+		for _, targetTable := range tableNames {
+			if targetTable == root {
+				continue
+			}
+			if _, err := m.SafeRelationshipPath(root, targetTable); err != nil {
+				return fmt.Errorf("semantic model requires a connected relationship graph: %w", err)
+			}
+		}
+		return nil
+	}
 	for baseTable := range baseTables {
-		for targetTable := range relationshipTables {
+		for _, targetTable := range tableNames {
 			if targetTable == baseTable {
 				continue
 			}

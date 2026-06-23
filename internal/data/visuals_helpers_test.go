@@ -1,12 +1,14 @@
-package query
+package data
 
 import (
 	"reflect"
 	"testing"
+
+	"github.com/Yacobolo/libredash/internal/semantic"
 )
 
-func TestResolvedMeasureFromInlinePreservesFields(t *testing.T) {
-	measure := InlineMeasure{
+func TestQueryInlineMeasurePreservesSemanticFields(t *testing.T) {
+	measure := semantic.MetricMeasure{
 		Field:       "one_off_orders",
 		Name:        "one_off_orders",
 		Label:       "One-off orders",
@@ -21,12 +23,12 @@ func TestResolvedMeasureFromInlinePreservesFields(t *testing.T) {
 		Format:      "integer",
 	}
 
-	got := ResolvedMeasureFromInline("fallback", measure)
+	got := queryInlineMeasure(measure)
 
 	if got.Field != measure.Field || got.Name != measure.Name || got.Label != measure.Label || got.Description != measure.Description {
 		t.Fatalf("identity fields = %#v, want copied from %#v", got, measure)
 	}
-	if got.Expression != measure.Expression || got.Table != measure.Table || got.Grain != measure.Grain || got.Time != measure.Time {
+	if got.Expr != measure.Expr || got.Expression != measure.Expression || got.Table != measure.Table || got.Grain != measure.Grain || got.Time != measure.Time {
 		t.Fatalf("definition fields = %#v, want copied from %#v", got, measure)
 	}
 	if !reflect.DeepEqual(got.Grains, measure.Grains) || got.Unit != measure.Unit || got.Format != measure.Format {

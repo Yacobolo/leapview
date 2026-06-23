@@ -25,7 +25,24 @@ func queryFieldRef(ref semantic.FieldRef, alias string) semanticquery.Field {
 	return semanticquery.Field{
 		Field:   ref.Field,
 		Alias:   alias,
-		Measure: semanticquery.InlineMeasureFromSemantic(ref.Measure),
+		Measure: queryInlineMeasure(ref.Measure),
+	}
+}
+
+func queryInlineMeasure(measure semantic.MetricMeasure) semanticquery.InlineMeasure {
+	return semanticquery.InlineMeasure{
+		Field:       measure.Field,
+		Name:        measure.Name,
+		Label:       measure.Label,
+		Description: measure.Description,
+		Expr:        measure.Expr,
+		Expression:  measure.Expression,
+		Table:       measure.Table,
+		Grain:       measure.Grain,
+		Time:        measure.Time,
+		Grains:      append([]string{}, measure.Grains...),
+		Unit:        measure.Unit,
+		Format:      measure.Format,
 	}
 }
 

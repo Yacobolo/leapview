@@ -3,6 +3,7 @@ package semantic
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -421,6 +422,55 @@ semantic_models:
 	}
 }
 
+func TestSemanticModelDesignSQLModelWithQuotedSourceReferenceSucceeds(t *testing.T) {
+	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
+sources:
+  olist_orders:
+    connection: olist
+    path: orders.csv
+    format: csv
+  olist_customers:
+    connection: olist
+    path: customers.csv
+    format: csv
+models:
+  orders:
+    sources: [olist_orders]
+    transform:
+      sql: SELECT order_id, customer_id FROM "source"."olist_orders"
+  customers:
+    source: olist_customers
+semantic_models:
+  olist:
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+          customer_id: {expr: customer_id}
+      customers:
+        model: customers
+        primary_key: customer_id
+        fields:
+          customer_id: {expr: customer_id}
+          state: {expr: state}
+    relationships:
+      - from: orders.customer_id
+        to: customers.customer_id
+        cardinality: many_to_one
+        active: true
+    measures:
+      defaults: {table: orders, grain: order_id}
+      order_count: {expr: COUNT(DISTINCT orders.order_id)}
+      revenue: {expr: COUNT(DISTINCT orders.order_id)}
+`)
+
+	if _, err := LoadWorkspace(catalogPath); err != nil {
+		t.Fatalf("LoadWorkspace() error = %v, want quoted source reference to load", err)
+	}
+}
+
 func TestSemanticModelDesignSQLModelRejectsRawNamespace(t *testing.T) {
 	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
 sources:
@@ -450,6 +500,53 @@ semantic_models:
 	_, err := LoadWorkspace(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "model SQL must reference sources through source.<name>; raw.<name> is internal") {
 		t.Fatalf("LoadWorkspace() error = %v, want raw namespace rejection", err)
+	}
+}
+
+func TestSemanticModelDesignSQLModelRejectsQuotedRawNamespace(t *testing.T) {
+	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
+sources:
+  olist_orders:
+    connection: olist
+    path: orders.csv
+    format: csv
+models:
+  orders:
+    sources: [olist_orders]
+    transform:
+      sql: SELECT order_id FROM "raw"."olist_orders"
+semantic_models:
+  olist:
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+    measures:
+      defaults: {table: orders, grain: order_id}
+      order_count: {expr: COUNT(DISTINCT orders.order_id)}
+      revenue: {expr: COUNT(DISTINCT orders.order_id)}
+`)
+
+	_, err := LoadWorkspace(catalogPath)
+	if err == nil || !strings.Contains(err.Error(), "model SQL must reference sources through source.<name>; raw.<name> is internal") {
+		t.Fatalf("LoadWorkspace() error = %v, want quoted raw namespace rejection", err)
+	}
+}
+
+func TestSemanticModelDesignSQLScannerIgnoresCommentsAndStrings(t *testing.T) {
+	sourceRefs, rawRefs := modelSQLSourceRefs(`
+		-- raw.orders and source.fake are comments
+		SELECT 'raw.orders', 'source.fake', order_id
+		FROM source.olist_orders
+		/* raw.other is also a comment */
+	`)
+	if !reflect.DeepEqual(sourceRefs, []string{"olist_orders"}) {
+		t.Fatalf("source refs = %#v, want only executable source ref", sourceRefs)
+	}
+	if len(rawRefs) != 0 {
+		t.Fatalf("raw refs = %#v, want comments and strings ignored", rawRefs)
 	}
 }
 
@@ -485,6 +582,87 @@ semantic_models:
 	_, err := LoadWorkspace(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "do not match declared sources") {
 		t.Fatalf("LoadWorkspace() error = %v, want SQL source mismatch rejection", err)
+	}
+}
+
+func TestSemanticModelDesignRejectsIsolatedSemanticTable(t *testing.T) {
+	catalogPath := writeSemanticModelDesignWorkspaceWithSemanticFragment(t, `
+semantic_models:
+  olist:
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+          customer_id: {expr: customer_id}
+      customers:
+        model: customers
+        primary_key: customer_id
+        fields:
+          customer_id: {expr: customer_id}
+          state: {expr: state}
+      items:
+        model: items
+        primary_key: item_id
+        fields:
+          item_id: {expr: item_id}
+    relationships:
+      - from: orders.customer_id
+        to: customers.customer_id
+        cardinality: many_to_one
+        active: true
+    measures:
+      defaults: {table: orders, grain: order_id}
+      revenue: {expr: SUM(orders.revenue)}
+`)
+
+	_, err := LoadWorkspace(catalogPath)
+	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
+		t.Fatalf("LoadWorkspace() error = %v, want isolated table rejection", err)
+	}
+}
+
+func TestSemanticModelDesignRejectsDisconnectedNoMeasureModel(t *testing.T) {
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.yaml")
+	mustWriteFile(t, modelPath, `
+name: inventory
+connections:
+  local:
+    kind: local
+sources:
+  products:
+    connection: local
+    path: products.csv
+    format: csv
+  warehouses:
+    connection: local
+    path: warehouses.csv
+    format: csv
+models:
+  products:
+    source: products
+  warehouses:
+    source: warehouses
+semantic_models:
+  inventory:
+    tables:
+      products:
+        model: products
+        primary_key: product_id
+        fields:
+          product_id: {expr: product_id}
+      warehouses:
+        model: warehouses
+        primary_key: warehouse_id
+        fields:
+          warehouse_id: {expr: warehouse_id}
+`)
+
+	_, err := Load(modelPath)
+	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
+		t.Fatalf("Load() error = %v, want disconnected no-measure model rejection", err)
 	}
 }
 
@@ -573,6 +751,47 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
     measures:
       defaults: {table: orders, grain: order_id}
       revenue: {expr: SUM(orders.revenue)}
+`,
+			want: "ambiguous relationship path",
+		},
+		"ambiguous_different_lengths": {
+			fragment: `
+	semantic_models:
+	  olist:
+	    tables:
+	      orders:
+	        model: orders
+	        primary_key: order_id
+	        fields:
+	          customer_id: {expr: customer_id}
+	          item_id: {expr: item_id}
+	      items:
+	        model: items
+	        primary_key: item_id
+	        fields:
+	          item_id: {expr: item_id}
+	          customer_id: {expr: customer_id}
+	      customers:
+	        model: customers
+	        primary_key: customer_id
+	        fields:
+	          customer_id: {expr: customer_id}
+	    relationships:
+	      - from: orders.customer_id
+	        to: customers.customer_id
+	        cardinality: many_to_one
+	        active: true
+	      - from: orders.item_id
+	        to: items.item_id
+	        cardinality: many_to_one
+	        active: true
+	      - from: items.customer_id
+	        to: customers.customer_id
+	        cardinality: many_to_one
+	        active: true
+	    measures:
+	      defaults: {table: orders, grain: order_id}
+	      revenue: {expr: SUM(orders.revenue)}
 `,
 			want: "ambiguous relationship path",
 		},
