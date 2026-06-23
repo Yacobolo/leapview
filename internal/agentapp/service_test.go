@@ -27,7 +27,7 @@ func TestReadOnlyToolsExposeWorkspaceFactsAndBoundRows(t *testing.T) {
 		t.Fatalf("list_dashboards output = %s", list)
 	}
 	describe := runTool(t, tools, "describe_metric_view", `{"metric_view_id":"orders"}`)
-	if !strings.Contains(describe, "order_count") {
+	if !strings.Contains(describe, "executive-sales") || !strings.Contains(describe, "Orders Metrics") {
 		t.Fatalf("describe_metric_view output = %s", describe)
 	}
 	table := runTool(t, tools, "query_table", `{"dashboard_id":"executive-sales","page_id":"overview","table_id":"orders","count":500}`)
@@ -480,29 +480,6 @@ func (fakeAgentMetrics) Catalog() dashboard.Catalog {
 			{ID: "executive-sales", Title: "Executive Sales", Description: "Sales dashboard", MetricViews: []string{"orders"}, PageCount: 1},
 		},
 	}
-}
-
-func (fakeAgentMetrics) MetricViews() []dashboard.MetricViewSummary {
-	return []dashboard.MetricViewSummary{{ID: "orders", Title: "Orders Metrics", SemanticModel: "test", BaseTable: "orders", DimensionCount: 1, MeasureCount: 1}}
-}
-
-func (fakeAgentMetrics) MetricView(id string) (dashboard.MetricViewDetail, bool) {
-	if id != "orders" {
-		return dashboard.MetricViewDetail{}, false
-	}
-	return dashboard.MetricViewDetail{
-		MetricViewSummary: dashboard.MetricViewSummary{ID: "orders", Title: "Orders Metrics", SemanticModel: "test", BaseTable: "orders"},
-		Dimensions:        []dashboard.MetricViewDimension{{Name: "status", Label: "Status"}},
-		Measures:          []dashboard.MetricViewMeasure{{Name: "order_count", Label: "Orders", Expression: "COUNT(*)"}},
-		Dashboards:        []dashboard.MetricViewDashboard{{ID: "executive-sales", Title: "Executive Sales"}},
-	}, true
-}
-
-func (fakeAgentMetrics) ModelGraph(id string) (dashboard.ModelGraph, bool) {
-	if id != "test" {
-		return dashboard.ModelGraph{}, false
-	}
-	return dashboard.ModelGraph{Name: "test", Title: "Test Model", Stats: dashboard.ModelStats{ModelTables: 1}, Nodes: []dashboard.ModelNode{{ID: "model_table:orders", Label: "orders"}}}, true
 }
 
 func (fakeAgentMetrics) Report(id string) (semantic.Dashboard, *semantic.Model, bool) {

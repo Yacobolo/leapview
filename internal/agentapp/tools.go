@@ -14,9 +14,6 @@ const maxAgentRows = 50
 
 type Metrics interface {
 	Catalog() dashboard.Catalog
-	MetricViews() []dashboard.MetricViewSummary
-	MetricView(id string) (dashboard.MetricViewDetail, bool)
-	ModelGraph(modelID string) (dashboard.ModelGraph, bool)
 	Report(dashboardID string) (semantic.Dashboard, *semantic.Model, bool)
 	Pages(dashboardID string) []dashboard.Page
 	DefaultFilters(dashboardID string) dashboard.Filters
@@ -58,12 +55,12 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 			Description: "List metric views available in the current workspace.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 			Handler: s.tool(func(ctx context.Context, _ json.RawMessage) (any, error) {
-				return map[string]any{"metric_views": s.metrics.MetricViews()}, nil
+				return map[string]any{"metric_views": s.metrics.Catalog().MetricViews}, nil
 			}),
 		},
 		{
 			Name:        "describe_metric_view",
-			Description: "Describe dimensions, measures, and dashboard usage for a metric view.",
+			Description: "Describe a metric view catalog entry and where dashboards use it.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"metric_view_id":{"type":"string"}},"required":["metric_view_id"],"additionalProperties":false}`),
 			Handler: s.tool(func(ctx context.Context, raw json.RawMessage) (any, error) {
 				var input struct {
@@ -72,16 +69,24 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 				if err := json.Unmarshal(raw, &input); err != nil {
 					return nil, err
 				}
-				view, ok := s.metrics.MetricView(input.MetricViewID)
+				view, ok := metricViewSummary(s.metrics.Catalog(), input.MetricViewID)
 				if !ok {
 					return nil, fmt.Errorf("metric view %q not found", input.MetricViewID)
 				}
-				return view, nil
+				return map[string]any{
+					"metric_view": view,
+					"usage":       metricViewUsage(s.metrics, input.MetricViewID),
+					"detail_tools": map[string]string{
+						"dashboard": "describe_dashboard",
+						"page_data": "query_dashboard_page",
+						"table":     "query_table",
+					},
+				}, nil
 			}),
 		},
 		{
 			Name:        "describe_model",
-			Description: "Describe a semantic model graph by model ID.",
+			Description: "Describe a semantic model summary, its model tables, metric views, and dashboard usage.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"model_id":{"type":"string"}},"required":["model_id"],"additionalProperties":false}`),
 			Handler: s.tool(func(ctx context.Context, raw json.RawMessage) (any, error) {
 				var input struct {
@@ -90,11 +95,11 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 				if err := json.Unmarshal(raw, &input); err != nil {
 					return nil, err
 				}
-				graph, ok := s.metrics.ModelGraph(input.ModelID)
+				model, ok := modelDescription(s.metrics, input.ModelID)
 				if !ok {
 					return nil, fmt.Errorf("model %q not found", input.ModelID)
 				}
-				return graph, nil
+				return model, nil
 			}),
 		},
 		{
@@ -197,6 +202,139 @@ func modelSummary(model *semantic.Model) map[string]any {
 		"id":    model.Name,
 		"title": model.Title,
 	}
+}
+
+func metricViewSummary(catalog dashboard.Catalog, id string) (dashboard.CatalogMetricView, bool) {
+	for _, view := range catalog.MetricViews {
+		if view.ID == id {
+			return view, true
+		}
+	}
+	return dashboard.CatalogMetricView{}, false
+}
+
+func metricViewUsage(metrics Metrics, id string) []map[string]any {
+	catalog := metrics.Catalog()
+	usage := make([]map[string]any, 0)
+	for _, dashboardSummary := range catalog.Dashboards {
+		report, _, ok := metrics.Report(dashboardSummary.ID)
+		if !ok || !containsString(report.MetricViews, id) {
+			continue
+		}
+		visuals, tables, filters := 0, 0, 0
+		for _, visual := range report.Visuals {
+			if visual.MetricView == id || visual.Query.MetricView == id {
+				visuals++
+			}
+		}
+		for _, table := range report.Tables {
+			if table.MetricView == id || table.Query.MetricView == id {
+				tables++
+			}
+		}
+		for _, filter := range report.Filters {
+			if filter.MetricView == id {
+				filters++
+			}
+		}
+		usage = append(usage, map[string]any{
+			"dashboard_id":    report.ID,
+			"dashboard_title": report.Title,
+			"visuals":         visuals,
+			"tables":          tables,
+			"filters":         filters,
+			"pages":           len(metrics.Pages(report.ID)),
+		})
+	}
+	return usage
+}
+
+func modelDescription(metrics Metrics, id string) (map[string]any, bool) {
+	catalog := metrics.Catalog()
+	var catalogModel dashboard.CatalogModel
+	for _, model := range catalog.Models {
+		if model.ID == id {
+			catalogModel = model
+			break
+		}
+	}
+	if catalogModel.ID == "" {
+		return nil, false
+	}
+
+	out := map[string]any{
+		"id":           catalogModel.ID,
+		"title":        catalogModel.Title,
+		"description":  catalogModel.Description,
+		"metric_views": metricViewsForModel(catalog, id),
+		"dashboards":   dashboardsForModel(metrics, id),
+	}
+	if model := semanticModelForID(metrics, id); model != nil {
+		out["counts"] = map[string]int{
+			"sources":       len(model.Sources),
+			"model_tables":  len(model.Tables),
+			"relationships": len(model.Relationships),
+		}
+		tables := make([]map[string]any, 0, len(model.Tables))
+		for tableID, table := range model.Tables {
+			tables = append(tables, map[string]any{
+				"id":          tableID,
+				"kind":        table.Kind,
+				"source":      table.Source,
+				"description": table.Description,
+				"dimensions":  len(table.Dimensions),
+				"measures":    len(table.Measures),
+			})
+		}
+		out["tables"] = tables
+	}
+	return out, true
+}
+
+func metricViewsForModel(catalog dashboard.Catalog, modelID string) []dashboard.CatalogMetricView {
+	out := make([]dashboard.CatalogMetricView, 0)
+	for _, view := range catalog.MetricViews {
+		if view.SemanticModel == modelID {
+			out = append(out, view)
+		}
+	}
+	return out
+}
+
+func dashboardsForModel(metrics Metrics, modelID string) []map[string]any {
+	out := make([]map[string]any, 0)
+	for _, dashboardSummary := range metrics.Catalog().Dashboards {
+		report, model, ok := metrics.Report(dashboardSummary.ID)
+		if !ok || model == nil || model.Name != modelID {
+			continue
+		}
+		out = append(out, map[string]any{
+			"id":           report.ID,
+			"title":        report.Title,
+			"metric_views": report.MetricViews,
+			"pages":        len(metrics.Pages(report.ID)),
+		})
+	}
+	return out
+}
+
+func semanticModelForID(metrics Metrics, modelID string) *semantic.Model {
+	for _, dashboardSummary := range metrics.Catalog().Dashboards {
+		_, model, ok := metrics.Report(dashboardSummary.ID)
+		if ok && model != nil && model.Name == modelID {
+			return model
+		}
+	}
+	return nil
+}
+
+func containsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 type dashboardManifestSummary struct {

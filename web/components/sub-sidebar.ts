@@ -83,12 +83,12 @@ class SubSidebar extends LitElement {
       overflow: hidden;
       color: var(--ld-fg-default);
       font-family: var(--fontStack-system);
-      transition: width 180ms var(--ld-ease-out);
+      transition: width var(--motion-transition-stateChange);
     }
 
     :host([data-collapsed]) {
       --ld-sub-sidebar-width: 38px;
-      z-index: 30;
+      z-index: var(--zIndex-sticky);
       overflow: visible;
     }
 
@@ -104,7 +104,7 @@ class SubSidebar extends LitElement {
       overflow: hidden;
       border-right: 1px solid color-mix(in srgb, var(--ld-line-muted), transparent 36%);
       background: var(--ld-report-rail-bg);
-      transition: width 180ms var(--ld-ease-out);
+      transition: width var(--motion-transition-stateChange);
     }
 
     :host([data-collapsed]) aside {
@@ -114,14 +114,14 @@ class SubSidebar extends LitElement {
     header {
       display: grid;
       min-width: 0;
-      padding: 10px 8px;
+      padding: var(--base-size-8);
     }
 
     .top-row {
       display: flex;
       min-width: 0;
       align-items: center;
-      gap: 6px;
+      gap: var(--base-size-6);
       justify-content: space-between;
     }
 
@@ -138,8 +138,8 @@ class SubSidebar extends LitElement {
 
     .collapse {
       display: grid;
-      width: 24px;
-      height: 24px;
+      width: var(--control-xsmall-size);
+      height: var(--control-xsmall-size);
       flex: 0 0 auto;
       place-items: center;
       margin-left: auto;
@@ -154,7 +154,7 @@ class SubSidebar extends LitElement {
     .collapse:hover,
     .collapse:focus-visible {
       border-color: var(--ld-line-muted);
-      background: var(--ld-bg-control-hover);
+      background: var(--control-bgColor-hover);
       color: var(--ld-fg-default);
       outline: 0;
     }
@@ -176,19 +176,19 @@ class SubSidebar extends LitElement {
     nav {
       display: grid;
       align-content: start;
-      gap: 2px;
+      gap: var(--base-size-2);
       min-width: 0;
       min-height: 0;
       overflow-x: hidden;
       overflow-y: auto;
-      padding: 7px 5px;
+      padding: var(--base-size-8) var(--base-size-4);
       scrollbar-gutter: stable;
       scrollbar-color: var(--ld-scrollbar-thumb) transparent;
       scrollbar-width: thin;
     }
 
     nav::-webkit-scrollbar {
-      width: 6px;
+      width: var(--base-size-6);
     }
 
     nav::-webkit-scrollbar-track {
@@ -212,16 +212,16 @@ class SubSidebar extends LitElement {
       position: relative;
       display: grid;
       width: 100%;
-      min-height: 29px;
-      grid-template-columns: 24px minmax(0, 1fr);
+      grid-template-columns: var(--control-xsmall-size) minmax(0, 1fr);
+      min-height: calc(var(--control-small-size) + var(--base-size-2));
       align-items: center;
-      gap: 6px;
+      gap: var(--base-size-6);
       border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-default);
       background: transparent;
       color: color-mix(in srgb, var(--ld-fg-muted), transparent 8%);
       cursor: pointer;
-      padding: 0 9px;
+      padding: 0 var(--control-xsmall-paddingInline-normal);
       text-align: left;
       font: inherit;
       font-size: var(--ld-font-size-caption);
@@ -249,9 +249,9 @@ class SubSidebar extends LitElement {
     .item-link[aria-current='page']::before {
       content: '';
       position: absolute;
-      inset-block: 7px;
+      inset-block: var(--base-size-8);
       left: 0;
-      width: 2px;
+      width: var(--base-size-2);
       border-radius: var(--ld-radius-full);
       background: var(--ld-accent);
     }
@@ -263,8 +263,8 @@ class SubSidebar extends LitElement {
 
     .item-index {
       display: grid;
-      width: 24px;
-      height: 24px;
+      width: var(--control-xsmall-size);
+      height: var(--control-xsmall-size);
       place-items: center;
       color: color-mix(in srgb, var(--ld-fg-muted), transparent 24%);
       font-size: var(--ld-font-size-caption);
@@ -336,7 +336,7 @@ class SubSidebar extends LitElement {
     }
 
     :host([data-collapsed]) header {
-      padding: 8px 5px 6px;
+      padding: var(--base-size-8) var(--base-size-4) var(--base-size-6);
     }
 
     :host([data-collapsed]) .section-title,
@@ -365,8 +365,9 @@ class SubSidebar extends LitElement {
     }
 
     :host([data-collapsed]) .item-link {
-      grid-template-columns: 24px;
+      grid-template-columns: var(--control-xsmall-size);
       justify-content: center;
+      min-height: calc(var(--control-small-size) + var(--base-size-2));
       padding-inline: 0;
     }
 
@@ -377,9 +378,9 @@ class SubSidebar extends LitElement {
     }
 
     :host([data-collapsed]) .item-link[aria-current='page']::before {
-      inset-block: 7px;
+      inset-block: var(--base-size-8);
       left: 0;
-      width: 2px;
+      width: var(--base-size-2);
     }
 
     .hover-title {
@@ -388,14 +389,14 @@ class SubSidebar extends LitElement {
 
     :host([data-collapsed]) .hover-title {
       position: absolute;
-      z-index: 40;
-      left: 7px;
-      min-height: 29px;
-      max-width: 14rem;
+      z-index: var(--zIndex-popover);
+      left: var(--base-size-8);
+      min-height: calc(var(--control-small-size) + var(--base-size-2));
+      max-width: 12rem;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 0 9px 0 0;
+      gap: var(--base-size-6);
+      padding: 0 var(--control-xsmall-paddingInline-normal) 0 0;
       background: var(--ld-report-rail-bg);
       color: var(--ld-fg-default);
       font-size: var(--ld-font-size-caption);
@@ -403,24 +404,24 @@ class SubSidebar extends LitElement {
       line-height: var(--ld-line-height-none);
       pointer-events: none;
       transform: translateY(-50%);
-      animation: rail-title-fade-in 90ms var(--ld-ease-out);
+      animation: rail-title-fade-in var(--motion-duration-micro) var(--motion-easing-enter);
       white-space: nowrap;
     }
 
     :host([data-collapsed]) .hover-title[data-active]::before {
       content: '';
       position: absolute;
-      inset-block: 7px;
-      left: -2px;
-      width: 2px;
+      inset-block: var(--base-size-8);
+      left: var(--base-size-negative-2);
+      width: var(--base-size-2);
       border-radius: var(--ld-radius-full);
       background: var(--ld-accent);
     }
 
     .hover-title-index {
       display: grid;
-      width: 24px;
-      height: 24px;
+      width: var(--control-xsmall-size);
+      height: var(--control-xsmall-size);
       place-items: center;
       color: var(--ld-fg-default);
       font-variant-numeric: tabular-nums;
@@ -430,7 +431,7 @@ class SubSidebar extends LitElement {
     .hover-title-name {
       overflow: hidden;
       text-overflow: ellipsis;
-      animation: rail-title-name-fold-out 120ms var(--ld-ease-out);
+      animation: rail-title-name-fold-out var(--motion-duration-short) var(--motion-easing-enter);
       transform-origin: left center;
     }
 
@@ -440,7 +441,7 @@ class SubSidebar extends LitElement {
 
     :host([data-collapsed]) .rail-label {
       display: block;
-      margin: 8px auto 10px;
+      margin: var(--base-size-8) auto;
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);

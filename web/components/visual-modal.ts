@@ -39,7 +39,7 @@ class VisualModal extends LitElement {
     .backdrop {
       position: fixed;
       inset: 0;
-      z-index: 80;
+      z-index: var(--zIndex-modal);
       display: grid;
       place-items: center;
       background: var(--ld-modal-backdrop);
@@ -55,7 +55,7 @@ class VisualModal extends LitElement {
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-panel);
       background: var(--ld-bg-overlay);
-      box-shadow: var(--ld-shadow-floating-lg);
+      box-shadow: var(--shadow-floating-large);
       overflow: hidden;
     }
 
@@ -114,7 +114,7 @@ class VisualModal extends LitElement {
 
     button:hover,
     button:focus-visible {
-      background: var(--ld-bg-control-hover);
+      background: var(--control-bgColor-hover);
       outline: 0;
     }
 
@@ -203,11 +203,11 @@ class VisualModal extends LitElement {
       position: fixed;
       right: calc(var(--base-size-16) + var(--base-size-2));
       bottom: calc(var(--base-size-48) + var(--base-size-2));
-      z-index: 90;
+      z-index: var(--zIndex-popover);
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-full);
       background: var(--ld-bg-overlay);
-      box-shadow: var(--ld-shadow-floating-sm);
+      box-shadow: var(--shadow-floating-small);
       color: var(--ld-fg-default);
       padding: var(--ld-space-md) var(--ld-space-lg);
       font-size: var(--ld-font-size-caption);

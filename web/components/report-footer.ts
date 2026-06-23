@@ -34,21 +34,21 @@ class ReportFooter extends LitElement {
 
     footer {
       display: flex;
-      min-height: 32px;
-      height: 32px;
+      min-height: var(--control-medium-size);
+      height: var(--control-medium-size);
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: var(--base-size-12);
       border-top: var(--ld-border-muted);
       box-sizing: border-box;
-      padding: 0 18px;
+      padding: 0 calc(var(--base-size-16) + var(--base-size-2));
     }
 
     .status {
       display: inline-flex;
       min-width: 0;
       align-items: center;
-      gap: 7px;
+      gap: var(--base-size-8);
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
@@ -56,8 +56,8 @@ class ReportFooter extends LitElement {
     }
 
     .dot {
-      width: 7px;
-      height: 7px;
+      width: var(--base-size-6);
+      height: var(--base-size-6);
       flex: 0 0 auto;
       border-radius: var(--ld-radius-full);
       background: var(--ld-fg-success);
@@ -78,12 +78,12 @@ class ReportFooter extends LitElement {
     @media (max-width: 560px) {
       footer {
         height: auto;
-        min-height: 32px;
+        min-height: var(--control-medium-size);
         align-items: flex-start;
         flex-direction: column;
-        gap: 8px;
-        padding-block: 8px;
-        padding-inline: 12px;
+        gap: var(--base-size-8);
+        padding-block: var(--base-size-8);
+        padding-inline: var(--base-size-12);
       }
     }
   `

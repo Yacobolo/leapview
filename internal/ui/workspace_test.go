@@ -31,13 +31,11 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 		"Default connection",
 		"Connections (1)",
 		"Sources (1)",
-		"Cache tables (1)",
-		"Datasets (1)",
+		"Model tables (1)",
 		"Relationships (1)",
 		`data-attr:grid="$assetDetailsSemanticConnectionsGrid"`,
 		`data-attr:grid="$assetDetailsSemanticSourcesGrid"`,
-		`data-attr:grid="$assetDetailsSemanticCacheTablesGrid"`,
-		`data-attr:grid="$assetDetailsSemanticDatasetsGrid"`,
+		`data-attr:grid="$assetDetailsSemanticModelTablesGrid"`,
 		`data-attr:grid="$assetDetailsSemanticRelationshipsGrid"`,
 	} {
 		if !strings.Contains(rendered, want) {
@@ -46,6 +44,15 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 	}
 	if strings.Contains(rendered, "Published from Git/YAML") {
 		t.Fatalf("semantic model details rendered hardcoded publication source:\n%s", rendered)
+	}
+}
+
+func TestLegacyAssetTypesUseCurrentProductVocabulary(t *testing.T) {
+	if got := assetTypeLabel("dataset"); got != "Model table" {
+		t.Fatalf("dataset label = %q, want Model table", got)
+	}
+	if got := assetTypeLabel("cache_table"); got != "Materialization" {
+		t.Fatalf("cache_table label = %q, want Materialization", got)
 	}
 }
 
@@ -62,8 +69,7 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	for _, key := range []string{
 		"assetDetailsSemanticConnectionsGrid",
 		"assetDetailsSemanticSourcesGrid",
-		"assetDetailsSemanticCacheTablesGrid",
-		"assetDetailsSemanticDatasetsGrid",
+		"assetDetailsSemanticModelTablesGrid",
 		"assetDetailsSemanticRelationshipsGrid",
 	} {
 		if _, ok := semanticSignals[key]; !ok {
@@ -130,6 +136,176 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForLeafAsset(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAssetDetailsRenderSharedShapeForMetricView(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	var metric api.AssetResponse
+	for _, asset := range assets {
+		if asset.Type == "metric_view" {
+			metric = asset
+			break
+		}
+	}
+
+	var out strings.Builder
+	err := WorkspaceAssetPage(catalog, workspace, metric, assets, edges, "details", "Owner").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		"Breadcrumb",
+		"Orders Metrics",
+		"Overview",
+		"Base table",
+		"orders",
+		"Timeseries",
+		"purchase_timestamp",
+		"Measures (1)",
+		"Dimensions (1)",
+		`data-attr:grid="$assetDetailsMeasuresGrid"`,
+		`data-attr:grid="$assetDetailsDimensionsGrid"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("metric view details did not render %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, `/metrics`) || strings.Contains(rendered, `/models`) {
+		t.Fatalf("metric view details rendered removed legacy link:\n%s", rendered)
+	}
+}
+
+func TestWorkspaceAssetRowsUseDetailLinksForModelAndMetricAssets(t *testing.T) {
+	workspace, _, assets, _ := testWorkspaceAssetFixtures()
+	byType := map[string]api.AssetResponse{}
+	byID := map[string]api.AssetResponse{}
+	for _, asset := range assets {
+		byID[asset.ID] = asset
+		if _, ok := byType[asset.Type]; !ok {
+			byType[asset.Type] = asset
+		}
+	}
+
+	for _, typ := range []string{"semantic_model", "metric_view"} {
+		var out strings.Builder
+		if err := assetRow(workspace.ID, byType[typ], byID).Render(&out); err != nil {
+			t.Fatal(err)
+		}
+		rendered := html.UnescapeString(out.String())
+		if strings.Contains(rendered, `/models`) || strings.Contains(rendered, `/metrics`) {
+			t.Fatalf("%s asset row rendered removed legacy link:\n%s", typ, rendered)
+		}
+		if !strings.Contains(rendered, "/workspaces/libredash/assets/"+byType[typ].ID+"/details") {
+			t.Fatalf("%s asset row did not link to canonical details:\n%s", typ, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+	byType := map[string]api.AssetResponse{}
+	for _, asset := range assets {
+		if _, ok := byType[asset.Type]; !ok {
+			byType[asset.Type] = asset
+		}
+	}
+	visibleAssets := []api.AssetResponse{byType["semantic_model"], byType["metric_view"], byType["dashboard"]}
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, visibleAssets, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted" scope="col">Name</th>`,
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-40" scope="col">Type</th>`,
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-56 max-md:hidden" scope="col">Key</th>`,
+		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-48 max-lg:hidden" scope="col">Parent</th>`,
+		"background-color: var(--ld-asset-semantic-model-bg); border-color: var(--ld-asset-semantic-model-border); color: var(--ld-asset-semantic-model-accent)",
+		"background-color: var(--ld-asset-metric-view-bg); border-color: var(--ld-asset-metric-view-border); color: var(--ld-asset-metric-view-accent)",
+		"background-color: var(--ld-asset-dashboard-bg); border-color: var(--ld-asset-dashboard-border); color: var(--ld-asset-dashboard-accent)",
+		`href="/workspaces/libredash/assets/model/details">Olist Commerce</a>`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("workspace asset rows did not render token-backed icon style %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, []api.AssetResponse{assets[0]}, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		`/static/workspace-access-control.js?v=dev`,
+		`<ld-workspace-access-control data-attr:access="$workspaceAccess"`,
+		`data-attr:search="$workspaceAccess.search"`,
+		`data-on:ld-workspace-access-search__debounce.200ms=`,
+		`data-on:ld-workspace-access-upsert=`,
+		`data-on:ld-workspace-access-remove=`,
+		`workspaceAccess`,
+		`command`,
+		`search`,
+		`csrfToken`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("workspace access control did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		`workspaceAccessCommand`,
+		`workspaceAccessSearch`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("workspace access control rendered root-level access signal %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAccessControlDoesNotRenderForViewers(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, []api.AssetResponse{assets[0]}, "", "", "Viewer", testWorkspaceAccess(workspace, false), "").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, notWant := range []string{
+		`/static/workspace-access-control.js?v=dev`,
+		`<ld-workspace-access-control`,
+		`data-on:ld-workspace-access-upsert=`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("workspace access control rendered for viewer %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func testWorkspaceAccess(workspace api.WorkspaceResponse, canManage bool) api.WorkspaceAccessResponse {
+	return api.WorkspaceAccessResponse{
+		Workspace: workspace,
+		Roles: []api.RoleResponse{
+			{Name: "viewer"},
+			{Name: "editor"},
+			{Name: "admin"},
+		},
+		Bindings: []api.RoleBindingResponse{
+			{PrincipalID: "principal_1", WorkspaceID: workspace.ID, Email: "owner@example.com", DisplayName: "Owner", Role: "owner"},
+		},
+		CanManage: canManage,
+	}
+}
+
 func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []api.AssetResponse, []api.AssetEdgeResponse) {
 	workspace := api.WorkspaceResponse{ID: "libredash", Title: "LibreDash Workspace", Description: "Local BI workspace."}
 	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
@@ -149,20 +325,22 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 				"Sources": map[string]any{
 					"orders": map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"},
 				},
-				"Cache": map[string]any{
-					"Tables": map[string]any{"orders_enriched": map[string]any{"Description": "One row per order.", "SQL": "select * from raw.orders"}},
-				},
-				"Datasets": map[string]any{
-					"orders": map[string]any{"Source": "orders_enriched"},
+				"Tables": map[string]any{
+					"orders": map[string]any{
+						"Kind":        "fact",
+						"Source":      "orders",
+						"PrimaryKey":  "order_id",
+						"Grain":       "order_id",
+						"Description": "One row per order.",
+					},
 				},
 				"Relationships": []any{map[string]any{"ID": "orders_customers", "From": "raw.orders.customer_id", "To": "raw.customers.customer_id", "Cardinality": "many_to_one", "Active": true}},
 			},
 		},
 		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "model", Title: "Olist connection", Meta: map[string]any{"Kind": "local", "credentials_configured": false}},
 		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "model", Title: "orders", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"}},
-		{ID: "cache", WorkspaceID: workspace.ID, Type: "cache_table", Key: "olist.orders_enriched", ParentID: "model", Title: "orders_enriched"},
-		{ID: "dataset", WorkspaceID: workspace.ID, Type: "dataset", Key: "olist.orders", ParentID: "model", Title: "orders"},
-		{ID: "metric", WorkspaceID: workspace.ID, Type: "metric_view", Key: "orders", ParentID: "model", Title: "Orders Metrics", Description: "Order metrics.", Meta: map[string]any{"Dataset": "orders", "Timeseries": "purchase_timestamp"}},
+		{ID: "model-table", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "model", Title: "orders"},
+		{ID: "metric", WorkspaceID: workspace.ID, Type: "metric_view", Key: "orders", ParentID: "model", Title: "Orders Metrics", Description: "Order metrics.", Meta: map[string]any{"BaseTable": "orders", "Timeseries": "purchase_timestamp"}},
 		{ID: "measure", WorkspaceID: workspace.ID, Type: "measure", Key: "orders.revenue", ParentID: "metric", Title: "Revenue", Meta: map[string]any{"Expression": "SUM(revenue)", "Format": "currency"}},
 		{ID: "dimension", WorkspaceID: workspace.ID, Type: "dimension", Key: "orders.state", ParentID: "metric", Title: "State", Meta: map[string]any{"Expr": "customer_state"}},
 		{ID: "dashboard", WorkspaceID: workspace.ID, Type: "dashboard", Key: "executive-sales", Title: "Executive Sales Dashboard", Description: "Sales overview.", Href: "/dashboards/executive-sales", Meta: map[string]any{"MetricViews": []any{"orders"}, "Tags": []any{"sales"}}},
@@ -173,9 +351,8 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 	}
 	edges := []api.AssetEdgeResponse{
 		{ID: "model-metric", FromAssetID: "model", ToAssetID: "metric", Type: "contains"},
-		{ID: "metric-dataset", FromAssetID: "metric", ToAssetID: "dataset", Type: "uses_dataset"},
-		{ID: "dataset-cache", FromAssetID: "dataset", ToAssetID: "cache", Type: "uses_cache_table"},
-		{ID: "cache-source", FromAssetID: "cache", ToAssetID: "source", Type: "reads_source"},
+		{ID: "metric-model-table", FromAssetID: "metric", ToAssetID: "model-table", Type: "uses_model_table"},
+		{ID: "model-table-source", FromAssetID: "model-table", ToAssetID: "source", Type: "reads_source"},
 		{ID: "source-connection", FromAssetID: "source", ToAssetID: "connection", Type: "uses_connection"},
 		{ID: "dashboard-metric", FromAssetID: "dashboard", ToAssetID: "metric", Type: "uses_metric_view"},
 	}

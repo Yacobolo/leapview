@@ -27,11 +27,11 @@ const chartStyles = css`
 
   header {
     display: flex;
-    min-height: 34px;
+    min-height: calc(var(--control-medium-size) + var(--base-size-2));
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 6px 8px 5px 10px;
+    gap: var(--base-size-8);
+    padding: var(--control-medium-paddingBlock) var(--control-medium-paddingInline-normal);
   }
 
   h2 {
@@ -58,7 +58,7 @@ const chartStyles = css`
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 8px;
+    gap: var(--base-size-8);
   }
 
   .options {
@@ -68,8 +68,8 @@ const chartStyles = css`
 
   .options summary {
     display: grid;
-    width: 24px;
-    height: 24px;
+    width: var(--control-xsmall-size);
+    height: var(--control-xsmall-size);
     place-items: center;
     border: var(--ld-border-transparent);
     border-radius: var(--ld-radius-tight);
@@ -96,29 +96,29 @@ const chartStyles = css`
 
   .menu {
     position: absolute;
-    top: calc(100% + 4px);
+    top: calc(100% + var(--base-size-4));
     right: 0;
-    z-index: 30;
+    z-index: var(--zIndex-dropdown);
     display: grid;
-    width: 176px;
+    width: calc(var(--overlay-width-xsmall) - var(--base-size-16));
     border: var(--ld-border-default);
     border-radius: var(--ld-radius-default);
     background: var(--ld-bg-overlay);
-    box-shadow: var(--ld-shadow-floating-sm);
-    padding: 4px;
+    box-shadow: var(--shadow-floating-small);
+    padding: var(--base-size-4);
   }
 
   .menu button {
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-height: 27px;
+    gap: var(--base-size-8);
+    min-height: var(--control-small-size);
     border: 0;
     border-radius: var(--ld-radius-tight);
     background: transparent;
     color: var(--ld-fg-default);
     cursor: pointer;
-    padding: 0 8px;
+    padding: 0 var(--control-xsmall-paddingInline-normal);
     font: inherit;
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-medium);
@@ -127,8 +127,8 @@ const chartStyles = css`
 
   .menu svg {
     flex: 0 0 auto;
-    width: 14px;
-    height: 14px;
+    width: var(--base-size-16);
+    height: var(--base-size-16);
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
@@ -144,7 +144,7 @@ const chartStyles = css`
 
   .menu button:disabled {
     cursor: default;
-    opacity: 0.48;
+    opacity: var(--opacity-disabled);
   }
 
   .menu button:disabled:hover {

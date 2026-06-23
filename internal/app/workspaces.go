@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/api"
@@ -13,6 +14,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
+	"github.com/starfederation/datastar-go/datastar"
 )
 
 type workspaceAssetProvider interface {
@@ -33,6 +35,14 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("type") == "connection" {
+		target := "/connections"
+		if query := strings.TrimSpace(r.URL.Query().Get("q")); query != "" {
+			target += "?q=" + url.QueryEscape(query)
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
 	if err != nil {
@@ -41,15 +51,29 @@ func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
 	}
 	filtered := filterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))
 	workspace := s.workspaceResponse(r, workspaceID)
+	canManage := s.canManageWorkspaceAccess(r, workspaceID)
+	access := s.workspaceAccessResponse(r, workspace, canManage, api.WorkspaceAccessStatus{})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.WorkspacePage(s.metrics.Catalog(), workspace, filtered, r.URL.Query().Get("type"), r.URL.Query().Get("q"), s.currentRoleLabel(r)).Render(w); err != nil {
+	if err := ui.WorkspacePage(s.metrics.Catalog(), workspace, filtered, r.URL.Query().Get("type"), r.URL.Query().Get("q"), s.currentRoleLabel(r), access, csrfToken(r, s.auth)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/workspaces/"+s.workspaceID("")+"?type=connection", http.StatusFound)
+	workspaceID := s.workspaceID("")
+	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	connections := filterAssets(assets, "connection", r.URL.Query().Get("q"))
+	workspace := s.workspaceResponse(r, workspaceID)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if err := ui.ConnectionsPage(s.metrics.Catalog(), workspace, connections, r.URL.Query().Get("q"), s.currentRoleLabel(r)).Render(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) workspaceAsset(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +176,64 @@ func (s *Server) removeWorkspacePermission(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, "/workspaces/"+workspaceID+"/permissions", http.StatusFound)
 }
 
+type workspaceAccessSignalPayload struct {
+	WorkspaceAccess struct {
+		Command api.WorkspaceAccessCommand `json:"command"`
+	} `json:"workspaceAccess"`
+	WorkspaceAccessCommand api.WorkspaceAccessCommand `json:"workspaceAccessCommand"`
+}
+
+func (signals workspaceAccessSignalPayload) command() api.WorkspaceAccessCommand {
+	command := signals.WorkspaceAccess.Command
+	if command.Email == "" && command.Role == "" && command.PrincipalID == "" {
+		command = signals.WorkspaceAccessCommand
+	}
+	return command
+}
+
+func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
+	signals := workspaceAccessSignalPayload{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	command := signals.command()
+	status := api.WorkspaceAccessStatus{Message: "Access updated."}
+	if s.store == nil {
+		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
+	} else if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, command.Email, "", command.Role); err != nil {
+		status = api.WorkspaceAccessStatus{Error: err.Error()}
+	}
+	s.patchWorkspaceAccess(w, r, workspaceID, status)
+}
+
+func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
+	signals := workspaceAccessSignalPayload{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	command := signals.command()
+	status := api.WorkspaceAccessStatus{Message: "Access removed."}
+	if s.store == nil {
+		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
+	} else if err := s.store.RemovePrincipalRoles(r.Context(), workspaceID, command.PrincipalID); err != nil {
+		status = api.WorkspaceAccessStatus{Error: err.Error()}
+	}
+	s.patchWorkspaceAccess(w, r, workspaceID, status)
+}
+
+func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceID string, status api.WorkspaceAccessStatus) {
+	workspace := s.workspaceResponse(r, workspaceID)
+	access := s.workspaceAccessResponse(r, workspace, true, status)
+	sse := datastar.NewSSE(w, r)
+	_ = sse.MarshalAndPatchSignals(map[string]any{
+		"workspaceAccess": ui.WorkspaceAccessSignals(access, csrfToken(r, s.auth)),
+	})
+}
+
 func (s *Server) apiWorkspaces(w http.ResponseWriter, r *http.Request) {
 	workspaces, err := s.workspaceList(r)
 	if err != nil {
@@ -168,7 +250,7 @@ func (s *Server) apiWorkspaceAssets(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, filterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q")))
+	writeJSON(w, http.StatusOK, filterAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q")))
 }
 
 func (s *Server) apiWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request) {
@@ -295,7 +377,7 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 
 func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]api.RoleBindingResponse, []api.RoleResponse, error) {
 	if s.store == nil {
-		return nil, nil, nil
+		return nil, defaultWorkspaceRoles(), nil
 	}
 	bindingRows, err := s.store.Queries().ListRoleBindingsByWorkspace(r.Context(), workspaceID)
 	if err != nil {
@@ -314,6 +396,48 @@ func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]ap
 		roles = append(roles, roleDTO(row))
 	}
 	return bindings, roles, nil
+}
+
+func (s *Server) workspaceAccessResponse(r *http.Request, workspace api.WorkspaceResponse, canManage bool, status api.WorkspaceAccessStatus) api.WorkspaceAccessResponse {
+	bindings, roles, err := s.roleBindingsAndRoles(r, workspace.ID)
+	if err != nil && status.Error == "" {
+		status.Error = err.Error()
+	}
+	return api.WorkspaceAccessResponse{
+		Workspace: workspace,
+		Roles:     roles,
+		Bindings:  bindings,
+		CanManage: canManage,
+		Status:    status,
+	}
+}
+
+func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) bool {
+	if s.auth == nil {
+		return true
+	}
+	if s.store == nil {
+		return false
+	}
+	principal, ok := s.auth.Principal(r)
+	if !ok {
+		return false
+	}
+	if principal.DevBypass {
+		return true
+	}
+	allowed, err := s.store.HasPermission(r.Context(), workspaceID, principal.ID, platform.PermissionRBACManage)
+	return err == nil && allowed
+}
+
+func defaultWorkspaceRoles() []api.RoleResponse {
+	return []api.RoleResponse{
+		{Name: "viewer"},
+		{Name: "editor"},
+		{Name: "deployer"},
+		{Name: "admin"},
+		{Name: "owner"},
+	}
 }
 
 func workspaceDTO(row platformdb.Workspace) api.WorkspaceResponse {
@@ -427,7 +551,7 @@ func safeAssetMeta(assetType, raw string) map[string]any {
 	case "source":
 		return pickMeta(content, "format", "Format", "path", "Path", "connection", "Connection", "object", "Object", "options", "Options")
 	case "metric_view":
-		return pickMeta(content, "semantic_model", "SemanticModel", "dataset", "Dataset", "timeseries", "Timeseries")
+		return pickMeta(content, "semantic_model", "SemanticModel", "base_table", "BaseTable", "timeseries", "Timeseries")
 	case "measure":
 		return pickMeta(content, "expression", "Expression", "unit", "Unit", "format", "Format")
 	case "dimension":
@@ -488,10 +612,6 @@ func assetHref(assetType, key string) string {
 	switch assetType {
 	case "dashboard":
 		return "/dashboards/" + key
-	case "semantic_model":
-		return "/models/" + key
-	case "metric_view":
-		return "/metrics/" + key + "/measures"
 	default:
 		return ""
 	}
@@ -519,15 +639,23 @@ func filterAssets(assets []api.AssetResponse, typ, query string) []api.AssetResp
 
 func filterWorkspaceAssets(assets []api.AssetResponse, typ, query string) []api.AssetResponse {
 	typ = strings.TrimSpace(typ)
-	query = strings.TrimSpace(query)
-	if typ != "" || query != "" {
-		return filterAssets(assets, typ, query)
+	query = strings.ToLower(strings.TrimSpace(query))
+	if typ != "" && !isWorkspaceLandingAsset(typ) {
+		return nil
 	}
 	out := make([]api.AssetResponse, 0, len(assets))
 	for _, asset := range assets {
-		if isWorkspaceLandingAsset(asset.Type) {
-			out = append(out, asset)
+		if !isWorkspaceLandingAsset(asset.Type) {
+			continue
 		}
+		if typ != "" && asset.Type != typ {
+			continue
+		}
+		haystack := strings.ToLower(asset.Type + " " + asset.Key + " " + asset.Title + " " + asset.Description)
+		if query != "" && !strings.Contains(haystack, query) {
+			continue
+		}
+		out = append(out, asset)
 	}
 	return out
 }
@@ -547,10 +675,10 @@ func fallbackAssets(catalog dashboard.Catalog, workspaceID string) []api.AssetRe
 		assets = append(assets, api.AssetResponse{ID: "dashboard:" + report.ID, WorkspaceID: workspaceID, Type: "dashboard", Key: report.ID, Title: report.Title, Description: report.Description, Href: "/dashboards/" + report.ID})
 	}
 	for _, model := range catalog.Models {
-		assets = append(assets, api.AssetResponse{ID: "semantic_model:" + model.ID, WorkspaceID: workspaceID, Type: "semantic_model", Key: model.ID, Title: model.Title, Description: model.Description, Href: "/models/" + model.ID})
+		assets = append(assets, api.AssetResponse{ID: "semantic_model:" + model.ID, WorkspaceID: workspaceID, Type: "semantic_model", Key: model.ID, Title: model.Title, Description: model.Description})
 	}
 	for _, view := range catalog.MetricViews {
-		assets = append(assets, api.AssetResponse{ID: "metric_view:" + view.ID, WorkspaceID: workspaceID, Type: "metric_view", Key: view.ID, Title: view.Title, Description: view.Description, Href: "/metrics/" + view.ID + "/measures"})
+		assets = append(assets, api.AssetResponse{ID: "metric_view:" + view.ID, WorkspaceID: workspaceID, Type: "metric_view", Key: view.ID, Title: view.Title, Description: view.Description})
 	}
 	return assets
 }
