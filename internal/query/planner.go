@@ -49,7 +49,7 @@ func (p *Planner) Plan(request Request) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	from, err := joinSQL(view.BaseTable, aliases)
+	from, err := joinSQL(p.Model, view.BaseTable, aliases)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -173,7 +173,7 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	from, err := joinSQL(view.BaseTable, aliases)
+	from, err := joinSQL(p.Model, view.BaseTable, aliases)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -260,7 +260,7 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	from, err := joinSQL(view.BaseTable, aliases)
+	from, err := joinSQL(p.Model, view.BaseTable, aliases)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -337,7 +337,7 @@ func (p *Planner) PlanCount(request CountRequest) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	from, err := joinSQL(view.BaseTable, aliases)
+	from, err := joinSQL(p.Model, view.BaseTable, aliases)
 	if err != nil {
 		return Plan{}, err
 	}

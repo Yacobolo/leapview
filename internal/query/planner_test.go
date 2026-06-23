@@ -38,6 +38,42 @@ func TestPlannerSafeManyToOneDimensionJoin(t *testing.T) {
 	}
 }
 
+func TestPlannerRelationshipJoinUsesSemanticEndpointExpression(t *testing.T) {
+	model := testModel()
+	orders := model.Tables["orders"]
+	orders.Dimensions["customer_id"] = semantic.MetricDimension{Expr: "raw_customer_id"}
+	model.Tables["orders"] = orders
+
+	plan, err := NewPlanner(model).Plan(Request{
+		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
+		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.raw_customer_id = t1.customer_id") {
+		t.Fatalf("plan SQL should join through semantic endpoint expression:\n%s", plan.SQL)
+	}
+}
+
+func TestPlannerRelationshipJoinFallsBackToPhysicalPrimaryKey(t *testing.T) {
+	model := testModel()
+	customers := model.Tables["customers"]
+	delete(customers.Dimensions, "customer_id")
+	model.Tables["customers"] = customers
+
+	plan, err := NewPlanner(model).Plan(Request{
+		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
+		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
+		t.Fatalf("plan SQL should join through physical primary key fallback:\n%s", plan.SQL)
+	}
+}
+
 func TestPlannerTimeGrain(t *testing.T) {
 	plan, err := NewPlanner(testModel()).Plan(Request{
 		Time:     Time{Field: "orders.purchase_timestamp", Grain: "month", Alias: "month"},

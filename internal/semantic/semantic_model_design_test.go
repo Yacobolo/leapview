@@ -693,6 +693,38 @@ semantic_models:
 	}
 }
 
+func TestSemanticModelDesignSQLModelRejectsUnqualifiedExternalRelation(t *testing.T) {
+	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
+sources:
+  olist_orders:
+    connection: olist
+    path: orders.csv
+    format: csv
+models:
+  orders:
+    sources: [olist_orders]
+    transform:
+      sql: SELECT o.order_id FROM source.olist_orders o JOIN leaked_table l ON l.order_id = o.order_id
+semantic_models:
+  olist:
+    base_table: orders
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+    measures:
+      defaults: {table: orders, grain: order_id}
+      order_count: {expr: COUNT(DISTINCT orders.order_id)}
+`)
+
+	_, err := LoadWorkspace(catalogPath)
+	if err == nil || !strings.Contains(err.Error(), `found unqualified relation "leaked_table"`) {
+		t.Fatalf("LoadWorkspace() error = %v, want hidden unqualified relation rejection", err)
+	}
+}
+
 func TestSemanticModelDesignSQLModelRejectsMissingSourceRefs(t *testing.T) {
 	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
 sources:
@@ -722,6 +754,80 @@ semantic_models:
 	_, err := LoadWorkspace(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "do not match declared sources") {
 		t.Fatalf("LoadWorkspace() error = %v, want missing source reference rejection", err)
+	}
+}
+
+func TestSemanticModelDesignSQLModelAllowsCTERelation(t *testing.T) {
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.yaml")
+	if err := os.WriteFile(modelPath, []byte(`
+name: olist
+connections:
+  olist: {kind: local}
+sources:
+  olist_orders:
+    connection: olist
+    path: orders.csv
+    format: csv
+models:
+  orders:
+    sources: [olist_orders]
+    transform:
+      sql: |
+        WITH cleaned AS (
+          SELECT order_id FROM source.olist_orders
+        )
+        SELECT order_id FROM cleaned
+semantic_models:
+  olist:
+    base_table: orders
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+    measures:
+      defaults: {table: orders, grain: order_id}
+      order_count: {expr: COUNT(DISTINCT orders.order_id)}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(modelPath); err != nil {
+		t.Fatalf("Load() error = %v, want CTE relation to load", err)
+	}
+}
+
+func TestSemanticModelDesignSQLModelRejectsNonQuerySQL(t *testing.T) {
+	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
+sources:
+  olist_orders:
+    connection: olist
+    path: orders.csv
+    format: csv
+models:
+  orders:
+    sources: [olist_orders]
+    transform:
+      sql: UPDATE source.olist_orders SET order_id = order_id
+semantic_models:
+  olist:
+    base_table: orders
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+    measures:
+      defaults: {table: orders, grain: order_id}
+      order_count: {expr: COUNT(DISTINCT orders.order_id)}
+`)
+
+	_, err := LoadWorkspace(catalogPath)
+	if err == nil || !strings.Contains(err.Error(), "must be a read-only SELECT or WITH query") {
+		t.Fatalf("LoadWorkspace() error = %v, want non-query SQL rejection", err)
 	}
 }
 

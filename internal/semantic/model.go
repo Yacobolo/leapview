@@ -341,6 +341,9 @@ func (m *Model) modelTableSourceDependencies(tableName string, table ModelTable)
 		if len(table.Sources) == 0 {
 			return nil, fmt.Errorf("model table %q uses transform.sql and requires sources", tableName)
 		}
+		if err := validateModelSQLQuery(tableName, sql); err != nil {
+			return nil, err
+		}
 	} else if table.Source == "" {
 		return nil, fmt.Errorf("model table %q requires source or transform.sql", tableName)
 	}
@@ -369,7 +372,7 @@ func (m *Model) modelTableSourceDependencies(tableName string, table ModelTable)
 		return nil, fmt.Errorf("model table %q model SQL must reference sources through source.<name>; raw.<name> is internal", tableName)
 	}
 	if len(unqualifiedRefs) > 0 {
-		return nil, fmt.Errorf("model table %q SQL must reference sources through source.<name>; found unqualified source reference %q", tableName, unqualifiedRefs[0])
+		return nil, fmt.Errorf("model table %q SQL must reference sources through source.<name>; found unqualified relation %q", tableName, unqualifiedRefs[0])
 	}
 	for _, source := range inferred {
 		if _, ok := m.Sources[source]; !ok {
@@ -401,9 +404,7 @@ func (m *Model) modelSQLSourceRefs(sql string) ([]string, []string, []string) {
 		case "raw":
 			rawSeen[ref.Name] = struct{}{}
 		case "":
-			if _, ok := m.Sources[ref.Name]; ok {
-				unqualifiedSeen[ref.Name] = struct{}{}
-			}
+			unqualifiedSeen[ref.Name] = struct{}{}
 		}
 	}
 	sourceRefs := sortedStringSet(sourceSeen)
@@ -412,13 +413,22 @@ func (m *Model) modelSQLSourceRefs(sql string) ([]string, []string, []string) {
 	return sourceRefs, rawRefs, unqualifiedRefs
 }
 
-type sqlRelationRef struct {
-	Namespace string
-	Name      string
+func validateModelSQLQuery(tableName string, sql string) error {
+	keyword, _, ok := firstSQLKeyword(sql)
+	if !ok || (keyword != "select" && keyword != "with") {
+		return fmt.Errorf("model table %q transform.sql must be a read-only SELECT or WITH query", tableName)
+	}
+	if keyword == "with" {
+		start := scanSQLCTEs(sql, map[string]struct{}{}, &[]sqlRelationRef{})
+		nextKeyword, _, ok := firstSQLKeyword(sql[start:])
+		if !ok || nextKeyword != "select" {
+			return fmt.Errorf("model table %q transform.sql must be a read-only SELECT or WITH query", tableName)
+		}
+	}
+	return nil
 }
 
-func scanSQLRelationRefs(sql string) []sqlRelationRef {
-	refs := []sqlRelationRef{}
+func firstSQLKeyword(sql string) (string, int, bool) {
 	for index := 0; index < len(sql); {
 		switch sql[index] {
 		case '\'':
@@ -437,8 +447,49 @@ func scanSQLRelationRefs(sql string) []sqlRelationRef {
 		}
 		if isSQLIdentifierStart(sql[index]) {
 			keyword, next, _ := readSQLIdentifier(sql, index)
+			return strings.ToLower(keyword), next, true
+		}
+		index++
+	}
+	return "", len(sql), false
+}
+
+type sqlRelationRef struct {
+	Namespace string
+	Name      string
+}
+
+func scanSQLRelationRefs(sql string) []sqlRelationRef {
+	return scanSQLRelationRefsWithLocals(sql, nil)
+}
+
+func scanSQLRelationRefsWithLocals(sql string, locals map[string]struct{}) []sqlRelationRef {
+	refs := []sqlRelationRef{}
+	localRefs := map[string]struct{}{}
+	for name := range locals {
+		localRefs[strings.ToLower(name)] = struct{}{}
+	}
+	start := scanSQLCTEs(sql, localRefs, &refs)
+	for index := start; index < len(sql); {
+		switch sql[index] {
+		case '\'':
+			index = skipSQLSingleQuoted(sql, index)
+			continue
+		case '-':
+			if index+1 < len(sql) && sql[index+1] == '-' {
+				index = skipSQLLineComment(sql, index+2)
+				continue
+			}
+		case '/':
+			if index+1 < len(sql) && sql[index+1] == '*' {
+				index = skipSQLBlockComment(sql, index+2)
+				continue
+			}
+		}
+		if isSQLIdentifierStart(sql[index]) {
+			keyword, next, _ := readSQLIdentifier(sql, index)
 			if relationKeyword(strings.ToLower(keyword)) {
-				relationRefs, relationNext := readSQLRelationList(sql, next)
+				relationRefs, relationNext := readSQLRelationList(sql, next, localRefs)
 				refs = append(refs, relationRefs...)
 				index = relationNext
 				continue
@@ -451,16 +502,54 @@ func scanSQLRelationRefs(sql string) []sqlRelationRef {
 	return refs
 }
 
+func scanSQLCTEs(sql string, locals map[string]struct{}, refs *[]sqlRelationRef) int {
+	keyword, next, ok := firstSQLKeyword(sql)
+	if !ok || keyword != "with" {
+		return 0
+	}
+	index := skipSQLSpaces(sql, next)
+	if recursive, afterRecursive, ok := readSQLIdentifier(sql, index); ok && strings.EqualFold(recursive, "recursive") {
+		index = skipSQLSpaces(sql, afterRecursive)
+	}
+	for {
+		name, afterName, ok := readSQLIdentifier(sql, index)
+		if !ok {
+			return index
+		}
+		locals[strings.ToLower(name)] = struct{}{}
+		index = skipSQLSpaces(sql, afterName)
+		if index < len(sql) && sql[index] == '(' {
+			index = skipSQLBalanced(sql, index)
+			index = skipSQLSpaces(sql, index)
+		}
+		asKeyword, afterAS, ok := readSQLIdentifier(sql, index)
+		if !ok || !strings.EqualFold(asKeyword, "as") {
+			return index
+		}
+		index = skipSQLSpaces(sql, afterAS)
+		if index >= len(sql) || sql[index] != '(' {
+			return index
+		}
+		inside, afterBody := readSQLBalancedContent(sql, index)
+		*refs = append(*refs, scanSQLRelationRefsWithLocals(inside, locals)...)
+		index = skipSQLSpaces(sql, afterBody)
+		if index >= len(sql) || sql[index] != ',' {
+			return index
+		}
+		index = skipSQLSpaces(sql, index+1)
+	}
+}
+
 func relationKeyword(keyword string) bool {
 	switch keyword {
-	case "from", "join", "update", "using":
+	case "from", "join":
 		return true
 	default:
 		return false
 	}
 }
 
-func readSQLRelationList(sql string, index int) ([]sqlRelationRef, int) {
+func readSQLRelationList(sql string, index int, locals map[string]struct{}) ([]sqlRelationRef, int) {
 	refs := []sqlRelationRef{}
 	for {
 		index = skipSQLSpaces(sql, index)
@@ -469,11 +558,11 @@ func readSQLRelationList(sql string, index int) ([]sqlRelationRef, int) {
 		}
 		if sql[index] == '(' {
 			inside, next := readSQLBalancedContent(sql, index)
-			refs = append(refs, scanSQLRelationRefs(inside)...)
+			refs = append(refs, scanSQLRelationRefsWithLocals(inside, locals)...)
 			index = next
 			return refs, index
 		}
-		ref, next, ok := readSQLRelationRef(sql, index)
+		ref, next, ok := readSQLRelationRef(sql, index, locals)
 		if !ok {
 			return refs, index
 		}
@@ -487,7 +576,7 @@ func readSQLRelationList(sql string, index int) ([]sqlRelationRef, int) {
 	}
 }
 
-func readSQLRelationRef(sql string, index int) (sqlRelationRef, int, bool) {
+func readSQLRelationRef(sql string, index int, locals map[string]struct{}) (sqlRelationRef, int, bool) {
 	first, next, ok := readSQLIdentifier(sql, index)
 	if !ok {
 		return sqlRelationRef{}, index, false
@@ -504,6 +593,9 @@ func readSQLRelationRef(sql string, index int) (sqlRelationRef, int, bool) {
 			return sqlRelationRef{Namespace: namespace, Name: name}, afterName, true
 		}
 		return sqlRelationRef{Name: name}, afterName, true
+	}
+	if _, ok := locals[strings.ToLower(first)]; ok {
+		return sqlRelationRef{Namespace: "local", Name: first}, next, true
 	}
 	return sqlRelationRef{Name: first}, next, true
 }

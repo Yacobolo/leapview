@@ -72,6 +72,7 @@ Semantic models expose model tables, fields, safe relationships, and SQL aggrega
 ```yaml
 semantic_models:
   olist:
+    base_table: orders
     tables:
       orders:
         model: orders
@@ -100,6 +101,8 @@ semantic_models:
         expression: SUM(orders.revenue)
         format: currency
 ```
+
+`base_table` is the required semantic-model root; every table in the model must be reachable from it through one safe active relationship path.
 
 Local CSV:
 
