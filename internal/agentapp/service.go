@@ -9,8 +9,6 @@ import (
 	"sync"
 
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -35,7 +33,7 @@ type Scope struct {
 
 type Service struct {
 	metrics Metrics
-	store   *platform.Store
+	repo    Repository
 	config  Config
 	model   agent.Model
 
@@ -43,10 +41,10 @@ type Service struct {
 	running map[string]struct{}
 }
 
-func NewService(metrics Metrics, store *platform.Store, config Config) *Service {
+func NewService(metrics Metrics, repo Repository, config Config) *Service {
 	return &Service{
 		metrics: metrics,
-		store:   store,
+		repo:    repo,
 		config:  config,
 		model:   NewOpenAIModel(config, http.DefaultClient),
 		running: map[string]struct{}{},
@@ -57,11 +55,11 @@ func (s *Service) Enabled() bool {
 	return s != nil && s.config.Enabled()
 }
 
-func (s *Service) CreateConversation(ctx context.Context, scope Scope, title string) (platformdb.AgentConversation, error) {
-	if s.store == nil {
-		return platformdb.AgentConversation{}, fmt.Errorf("agent store is required")
+func (s *Service) CreateConversation(ctx context.Context, scope Scope, title string) (Conversation, error) {
+	if s.repo == nil {
+		return Conversation{}, fmt.Errorf("agent store is required")
 	}
-	return s.store.CreateAgentConversation(ctx, platform.AgentConversationInput{
+	return s.repo.CreateConversation(ctx, ConversationInput{
 		WorkspaceID:  scope.WorkspaceID,
 		PrincipalID:  scope.PrincipalID,
 		Title:        title,
@@ -69,23 +67,23 @@ func (s *Service) CreateConversation(ctx context.Context, scope Scope, title str
 	})
 }
 
-func (s *Service) ListConversations(ctx context.Context, scope Scope) ([]platformdb.AgentConversation, error) {
-	return s.store.ListAgentConversations(ctx, scope.WorkspaceID, scope.PrincipalID)
+func (s *Service) ListConversations(ctx context.Context, scope Scope) ([]Conversation, error) {
+	return s.repo.ListConversations(ctx, scope.WorkspaceID, scope.PrincipalID)
 }
 
-func (s *Service) ListMessages(ctx context.Context, scope Scope, conversationID string) ([]platformdb.AgentMessage, error) {
-	return s.store.ListAgentMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+func (s *Service) ListMessages(ctx context.Context, scope Scope, conversationID string) ([]Message, error) {
+	return s.repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 }
 
-func (s *Service) ListEvents(ctx context.Context, scope Scope, runID string) ([]platformdb.AgentEvent, error) {
-	return s.store.ListAgentEvents(ctx, scope.WorkspaceID, scope.PrincipalID, runID)
+func (s *Service) ListEvents(ctx context.Context, scope Scope, runID string) ([]Event, error) {
+	return s.repo.ListEvents(ctx, scope.WorkspaceID, scope.PrincipalID, runID)
 }
 
 func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversationID string) ([]api.AgentEventEnvelope, error) {
-	if _, err := s.store.GetAgentConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
+	if _, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
 		return nil, err
 	}
-	messages, err := s.store.ListAgentMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	messages, err := s.repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -93,12 +91,12 @@ func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversat
 	for _, message := range messages {
 		events = append(events, messageEnvelope(conversationID, message))
 	}
-	runs, err := s.store.ListAgentRuns(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	runs, err := s.repo.ListRuns(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 	if err != nil {
 		return nil, err
 	}
 	for _, run := range runs {
-		runEvents, err := s.store.ListAgentEvents(ctx, scope.WorkspaceID, scope.PrincipalID, run.ID)
+		runEvents, err := s.repo.ListEvents(ctx, scope.WorkspaceID, scope.PrincipalID, run.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -116,10 +114,10 @@ func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversat
 }
 
 func (s *Service) ConversationTranscript(ctx context.Context, scope Scope, conversationID string) ([]api.AgentChatTranscriptItem, error) {
-	if _, err := s.store.GetAgentConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
+	if _, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
 		return nil, err
 	}
-	messages, err := s.store.ListAgentMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	messages, err := s.repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 	if err != nil {
 		return nil, err
 	}

@@ -7,13 +7,11 @@ import (
 	"sync"
 
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
 type storeEventSink struct {
-	store          *platform.Store
+	repo           Repository
 	scope          Scope
 	conversationID string
 	runID          string
@@ -30,7 +28,7 @@ func (s *storeEventSink) Emit(ctx context.Context, event agent.Event) error {
 		s.usage.TotalTokens += event.Usage.TotalTokens
 		s.mu.Unlock()
 	}
-	row, err := s.store.AppendAgentEvent(ctx, platform.AgentEventInput{
+	row, err := s.repo.AppendEvent(ctx, EventInput{
 		WorkspaceID: s.scope.WorkspaceID,
 		PrincipalID: s.scope.PrincipalID,
 		RunID:       s.runID,
@@ -86,7 +84,7 @@ func eventPayload(raw string) map[string]any {
 	return payload
 }
 
-func eventEnvelope(conversationID string, row platformdb.AgentEvent) api.AgentEventEnvelope {
+func eventEnvelope(conversationID string, row Event) api.AgentEventEnvelope {
 	return api.AgentEventEnvelope{
 		ID:             row.ID,
 		ConversationID: conversationID,
@@ -95,19 +93,15 @@ func eventEnvelope(conversationID string, row platformdb.AgentEvent) api.AgentEv
 		Type:           row.EventType,
 		Severity:       row.Severity,
 		CreatedAt:      row.CreatedAt,
-		Payload:        eventPayload(row.PayloadJson),
+		Payload:        eventPayload(row.PayloadJSON),
 	}
 }
 
-func messageEnvelope(conversationID string, row platformdb.AgentMessage) api.AgentEventEnvelope {
-	runID := ""
-	if row.RunID.Valid {
-		runID = row.RunID.String
-	}
+func messageEnvelope(conversationID string, row Message) api.AgentEventEnvelope {
 	return api.AgentEventEnvelope{
 		ID:             "message:" + row.ID,
 		ConversationID: conversationID,
-		RunID:          runID,
+		RunID:          row.RunID,
 		Seq:            row.Seq,
 		Type:           "message_appended",
 		Severity:       "info",
@@ -117,7 +111,7 @@ func messageEnvelope(conversationID string, row platformdb.AgentMessage) api.Age
 				"id":           row.ID,
 				"role":         row.Role,
 				"content":      row.ContentText,
-				"content_json": eventPayload(row.ContentJson),
+				"content_json": eventPayload(row.ContentJSON),
 				"tool_call_id": row.ToolCallID,
 				"tool_name":    row.ToolName,
 				"is_error":     row.IsError,

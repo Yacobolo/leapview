@@ -608,7 +608,7 @@ semantic_models:
 
 func TestSemanticModelDesignSQLScannerIgnoresCommentsAndStrings(t *testing.T) {
 	model := &Model{Sources: map[string]Source{"olist_orders": {}, "order_id": {}}}
-	sourceRefs, rawRefs, unqualifiedRefs := model.modelSQLSourceRefs(`
+	sourceRefs, rawRefs, unqualifiedRefs := model.SQLSourceRefs(`
 		-- raw.orders and source.fake are comments
 		SELECT 'raw.orders', 'source.fake', source.order_id
 		FROM source.olist_orders

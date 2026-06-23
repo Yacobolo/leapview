@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,8 +15,6 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
-	"github.com/Yacobolo/libredash/internal/semantic"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -175,7 +175,7 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 	}))
 	defer modelServer.Close()
 
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Dashboards")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -240,7 +240,7 @@ func TestServiceGenerateConversationTitleUsesNoToolsAndSavesCleanTitle(t *testin
 	defer modelServer.Close()
 
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, scope, "")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -292,7 +292,7 @@ func TestServiceGenerateConversationTitleFallsBackWhenModelReturnsEmptyContent(t
 	defer modelServer.Close()
 
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, scope, "")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -327,7 +327,7 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 		http.Error(w, "provider down", http.StatusBadGateway)
 	}))
 	defer modelServer.Close()
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 
 	titled, err := service.CreateConversation(ctx, scope, "Manual title")
 	if err != nil {
@@ -355,7 +355,7 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 			t.Fatalf("append user message: %v", err)
 		}
 	}
-	if updated, err := service.GenerateConversationTitle(ctx, scope, multi.ID); err != nil || updated.Title != platform.AgentConversationDefaultTitle {
+	if updated, err := service.GenerateConversationTitle(ctx, scope, multi.ID); err != nil || updated.Title != ConversationDefaultTitle {
 		t.Fatalf("multi-user title changed or errored: updated=%#v err=%v", updated, err)
 	}
 	if calls.Load() != 0 {
@@ -388,7 +388,7 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 	store := openAgentAppStore(t, ctx)
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", Model: "fake-model"})
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "Transcript")
 	if err != nil {
@@ -489,7 +489,7 @@ func TestServiceRejectsConcurrentConversationTurns(t *testing.T) {
 	}))
 	defer modelServer.Close()
 
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Dashboards")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -526,44 +526,44 @@ func (fakeAgentMetrics) Catalog() dashboard.Catalog {
 	}
 }
 
-func (fakeAgentMetrics) Report(id string) (semantic.Dashboard, *semantic.Model, bool) {
+func (fakeAgentMetrics) Report(id string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
 	if id != "executive-sales" {
-		return semantic.Dashboard{}, nil, false
+		return reportdef.Dashboard{}, nil, false
 	}
-	return semantic.Dashboard{
+	return reportdef.Dashboard{
 		ID:            "executive-sales",
 		Title:         "Executive Sales",
 		Description:   "Sales dashboard",
 		SemanticModel: "test",
-		Visuals: map[string]semantic.Visual{
-			"orders": {Title: "Orders", Query: semantic.VisualQuery{Measures: []semantic.FieldRef{{Field: "order_count"}}}},
+		Visuals: map[string]reportdef.Visual{
+			"orders": {Title: "Orders", Query: reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}}},
 		},
-		Tables: map[string]semantic.TableVisual{
-			"orders": {Title: "Orders", Query: semantic.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}},
+		Tables: map[string]reportdef.TableVisual{
+			"orders": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}},
 		},
 		Pages: []dashboard.Page{{ID: "overview", Title: "Overview", Visuals: []dashboard.PageVisual{{ID: "orders", Visual: "orders"}, {ID: "orders-table", Table: "orders"}}}},
 	}, fakeSemanticModel(), true
 }
 
-func fakeSemanticModel() *semantic.Model {
-	return &semantic.Model{
+func fakeSemanticModel() *semanticmodel.Model {
+	return &semanticmodel.Model{
 		Name:      "test",
 		Title:     "Test Model",
 		BaseTable: "orders",
-		Sources: map[string]semantic.Source{
+		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv"},
 		},
-		Tables: map[string]semantic.ModelTable{
+		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Kind:       "fact",
 				Source:     "orders",
 				PrimaryKey: "order_id",
-				Dimensions: map[string]semantic.MetricDimension{
+				Dimensions: map[string]semanticmodel.MetricDimension{
 					"order_id": {Expr: "order_id"},
 				},
 			},
 		},
-		Measures: map[string]semantic.MetricMeasure{
+		Measures: map[string]semanticmodel.MetricMeasure{
 			"order_count": {Table: "orders", Grain: "order_id", Expression: "COUNT(DISTINCT orders.order_id)"},
 		},
 	}
@@ -612,33 +612,33 @@ type largeDashboardMetrics struct {
 	fakeAgentMetrics
 }
 
-func (largeDashboardMetrics) Report(id string) (semantic.Dashboard, *semantic.Model, bool) {
+func (largeDashboardMetrics) Report(id string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
 	if id != "executive-sales" {
-		return semantic.Dashboard{}, nil, false
+		return reportdef.Dashboard{}, nil, false
 	}
 	report, model, _ := fakeAgentMetrics{}.Report(id)
 	report.Pages = make([]dashboard.Page, 0, 24)
-	report.Visuals = map[string]semantic.Visual{}
-	report.Tables = map[string]semantic.TableVisual{}
+	report.Visuals = map[string]reportdef.Visual{}
+	report.Tables = map[string]reportdef.TableVisual{}
 	for pageIndex := 1; pageIndex <= 24; pageIndex++ {
 		chartID := fmt.Sprintf("chart_%02d", pageIndex)
 		kpiID := fmt.Sprintf("kpi_%02d", pageIndex)
 		tableID := fmt.Sprintf("table_%02d", pageIndex)
-		report.Visuals[chartID] = semantic.Visual{
+		report.Visuals[chartID] = reportdef.Visual{
 			Title:           fmt.Sprintf("Chart %02d", pageIndex),
 			Type:            "bar",
-			Query:           semantic.VisualQuery{Measures: []semantic.FieldRef{{Field: "order_count"}}},
+			Query:           reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}},
 			RendererOptions: map[string]any{"large": largeDashboardPayloadMarker + strings.Repeat("x", 4096)},
 		}
-		report.Visuals[kpiID] = semantic.Visual{
+		report.Visuals[kpiID] = reportdef.Visual{
 			Title:   fmt.Sprintf("KPI %02d", pageIndex),
 			Kind:    "kpi",
-			Query:   semantic.VisualQuery{Measures: []semantic.FieldRef{{Field: "order_count"}}},
+			Query:   reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}},
 			Options: map[string]any{"large": largeDashboardPayloadMarker + strings.Repeat("y", 4096)},
 		}
-		report.Tables[tableID] = semantic.TableVisual{
+		report.Tables[tableID] = reportdef.TableVisual{
 			Title: fmt.Sprintf("Table %02d", pageIndex),
-			Query: semantic.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}},
+			Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}},
 			Columns: []dashboard.TableColumn{{
 				Key:   largeDashboardPayloadMarker + strings.Repeat("z", 4096),
 				Label: "Large Column",
@@ -697,7 +697,7 @@ func openAgentAppStore(t *testing.T, ctx context.Context) *platform.Store {
 	return store
 }
 
-func createAgentAppPrincipal(t *testing.T, ctx context.Context, store *platform.Store, email string) platformdb.Principal {
+func createAgentAppPrincipal(t *testing.T, ctx context.Context, store *platform.Store, email string) testPrincipal {
 	t.Helper()
 	principal, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: email, DisplayName: email})
 	if err != nil {
@@ -706,5 +706,147 @@ func createAgentAppPrincipal(t *testing.T, ctx context.Context, store *platform.
 	if err := store.BindRole(ctx, "test", principal.ID, "viewer"); err != nil {
 		t.Fatalf("bind role: %v", err)
 	}
-	return principal
+	return testPrincipal{ID: principal.ID}
+}
+
+type testPrincipal struct {
+	ID string
+}
+
+type testAgentRepo struct {
+	store *platform.Store
+}
+
+func (r testAgentRepo) CreateConversation(ctx context.Context, input ConversationInput) (Conversation, error) {
+	row, err := r.store.CreateAgentConversation(ctx, platform.AgentConversationInput(input))
+	if err != nil {
+		return Conversation{}, err
+	}
+	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
+}
+
+func (r testAgentRepo) ListConversations(ctx context.Context, workspaceID, principalID string) ([]Conversation, error) {
+	rows, err := r.store.ListAgentConversations(ctx, workspaceID, principalID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Conversation, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt))
+	}
+	return out, nil
+}
+
+func (r testAgentRepo) GetConversation(ctx context.Context, workspaceID, principalID, conversationID string) (Conversation, error) {
+	row, err := r.store.GetAgentConversation(ctx, workspaceID, principalID, conversationID)
+	if err != nil {
+		return Conversation{}, err
+	}
+	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
+}
+
+func (r testAgentRepo) UpdateDefaultConversationTitle(ctx context.Context, workspaceID, principalID, conversationID, title string) (Conversation, error) {
+	row, err := r.store.UpdateDefaultAgentConversationTitle(ctx, workspaceID, principalID, conversationID, title)
+	if err != nil {
+		return Conversation{}, err
+	}
+	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
+}
+
+func (r testAgentRepo) UpdateConversationTranscript(ctx context.Context, workspaceID, principalID, conversationID, transcriptJSON string) (Conversation, error) {
+	row, err := r.store.UpdateAgentConversationTranscript(ctx, workspaceID, principalID, conversationID, transcriptJSON)
+	if err != nil {
+		return Conversation{}, err
+	}
+	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
+}
+
+func (r testAgentRepo) AppendMessage(ctx context.Context, input MessageInput) (Message, error) {
+	row, err := r.store.AppendAgentMessage(ctx, platform.AgentMessageInput(input))
+	if err != nil {
+		return Message{}, err
+	}
+	message := Message{ID: row.ID, ConversationID: row.ConversationID, Seq: row.Seq, Role: row.Role, ContentText: row.ContentText, ContentJSON: row.ContentJson, ToolCallID: row.ToolCallID, ToolName: row.ToolName, IsError: row.IsError, CreatedAt: row.CreatedAt}
+	if row.RunID.Valid {
+		message.RunID = row.RunID.String
+	}
+	return message, nil
+}
+
+func (r testAgentRepo) ListMessages(ctx context.Context, workspaceID, principalID, conversationID string) ([]Message, error) {
+	rows, err := r.store.ListAgentMessages(ctx, workspaceID, principalID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Message, 0, len(rows))
+	for _, row := range rows {
+		message := Message{ID: row.ID, ConversationID: row.ConversationID, Seq: row.Seq, Role: row.Role, ContentText: row.ContentText, ContentJSON: row.ContentJson, ToolCallID: row.ToolCallID, ToolName: row.ToolName, IsError: row.IsError, CreatedAt: row.CreatedAt}
+		if row.RunID.Valid {
+			message.RunID = row.RunID.String
+		}
+		out = append(out, message)
+	}
+	return out, nil
+}
+
+func (r testAgentRepo) CreateRun(ctx context.Context, input RunInput) (Run, error) {
+	row, err := r.store.CreateAgentRun(ctx, platform.AgentRunInput(input))
+	if err != nil {
+		return Run{}, err
+	}
+	return Run{ID: row.ID, Status: row.Status, Model: row.Model, CreatedAt: row.StartedAt}, nil
+}
+
+func (r testAgentRepo) FinishRun(ctx context.Context, input RunFinish) (Run, error) {
+	row, err := r.store.FinishAgentRun(ctx, platform.AgentRunFinish(input))
+	if err != nil {
+		return Run{}, err
+	}
+	return Run{ID: row.ID, Status: row.Status, Model: row.Model, CreatedAt: row.StartedAt}, nil
+}
+
+func (r testAgentRepo) ListRuns(ctx context.Context, workspaceID, principalID, conversationID string) ([]Run, error) {
+	rows, err := r.store.ListAgentRuns(ctx, workspaceID, principalID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Run, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, Run{ID: row.ID, Status: row.Status, Model: row.Model, CreatedAt: row.StartedAt})
+	}
+	return out, nil
+}
+
+func (r testAgentRepo) AppendEvent(ctx context.Context, input EventInput) (Event, error) {
+	row, err := r.store.AppendAgentEvent(ctx, platform.AgentEventInput(input))
+	if err != nil {
+		return Event{}, err
+	}
+	return Event{ID: row.ID, RunID: row.RunID, Seq: row.Seq, EventType: row.EventType, Severity: row.Severity, PayloadJSON: row.PayloadJson, CreatedAt: row.CreatedAt}, nil
+}
+
+func (r testAgentRepo) ListEvents(ctx context.Context, workspaceID, principalID, runID string) ([]Event, error) {
+	rows, err := r.store.ListAgentEvents(ctx, workspaceID, principalID, runID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Event, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, Event{ID: row.ID, RunID: row.RunID, Seq: row.Seq, EventType: row.EventType, Severity: row.Severity, PayloadJSON: row.PayloadJson, CreatedAt: row.CreatedAt})
+	}
+	return out, nil
+}
+
+func testConversation(id, workspaceID, principalID, title, status, metadataJSON, transcriptJSON, createdAt, updatedAt string) Conversation {
+	return Conversation{
+		ID:             id,
+		WorkspaceID:    workspaceID,
+		PrincipalID:    principalID,
+		Title:          title,
+		Status:         status,
+		MetadataJSON:   metadataJSON,
+		TranscriptJSON: transcriptJSON,
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
+	}
 }

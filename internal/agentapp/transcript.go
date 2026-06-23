@@ -7,30 +7,24 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
-func transcriptFromMessages(conversationID string, messages []platformdb.AgentMessage) []api.AgentChatTranscriptItem {
+func transcriptFromMessages(conversationID string, messages []Message) []api.AgentChatTranscriptItem {
 	items := make([]api.AgentChatTranscriptItem, 0, len(messages))
 	toolIndex := map[string]int{}
 	for _, message := range messages {
-		runID := ""
-		if message.RunID.Valid {
-			runID = message.RunID.String
-		}
 		switch message.Role {
-		case platform.AgentMessageRoleUser:
+		case MessageRoleUser:
 			items = append(items, api.AgentChatTranscriptItem{
 				ID:             message.ID,
 				Kind:           "user",
 				Text:           message.ContentText,
 				ConversationID: conversationID,
-				RunID:          runID,
+				RunID:          message.RunID,
 				CreatedAt:      message.CreatedAt,
 			})
-		case platform.AgentMessageRoleAssistant:
+		case MessageRoleAssistant:
 			if strings.TrimSpace(message.ContentText) != "" {
 				items = append(items, api.AgentChatTranscriptItem{
 					ID:             message.ID,
@@ -38,11 +32,11 @@ func transcriptFromMessages(conversationID string, messages []platformdb.AgentMe
 					Markdown:       message.ContentText,
 					Status:         "complete",
 					ConversationID: conversationID,
-					RunID:          runID,
+					RunID:          message.RunID,
 					CreatedAt:      message.CreatedAt,
 				})
 			}
-			for _, call := range toolCallsFromContentJSON(message.ContentJson) {
+			for _, call := range toolCallsFromContentJSON(message.ContentJSON) {
 				if call.ID == "" {
 					continue
 				}
@@ -57,11 +51,11 @@ func transcriptFromMessages(conversationID string, messages []platformdb.AgentMe
 					InputJSON:      formatToolCallPreview(call),
 					ArgumentsJSON:  formatJSONPreview(string(call.Arguments), maxToolArgumentsPreviewBytes),
 					ConversationID: conversationID,
-					RunID:          runID,
+					RunID:          message.RunID,
 					CreatedAt:      message.CreatedAt,
 				})
 			}
-		case platform.AgentMessageRoleTool:
+		case MessageRoleTool:
 			item := api.AgentChatTranscriptItem{
 				ID:             message.ID,
 				Kind:           "tool",
@@ -73,7 +67,7 @@ func transcriptFromMessages(conversationID string, messages []platformdb.AgentMe
 				ResultSummary:  toolSummary(message.ContentText),
 				ResultJSON:     formatJSONPreview(message.ContentText, maxToolResultPreviewBytes),
 				ConversationID: conversationID,
-				RunID:          runID,
+				RunID:          message.RunID,
 				CreatedAt:      message.CreatedAt,
 			}
 			if message.IsError {
@@ -231,13 +225,13 @@ func truncateDisplayText(value string, limit int) string {
 func platformRole(role agent.Role) string {
 	switch role {
 	case agent.RoleUser:
-		return platform.AgentMessageRoleUser
+		return MessageRoleUser
 	case agent.RoleAssistant:
-		return platform.AgentMessageRoleAssistant
+		return MessageRoleAssistant
 	case agent.RoleTool:
-		return platform.AgentMessageRoleTool
+		return MessageRoleTool
 	case agent.RoleSummary:
-		return platform.AgentMessageRoleSummary
+		return MessageRoleSummary
 	default:
 		return string(role)
 	}

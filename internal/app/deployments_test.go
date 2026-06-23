@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/deploy"
+	"github.com/Yacobolo/libredash/internal/deployment"
+	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
+	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
-	"github.com/Yacobolo/libredash/internal/runtime"
 	"github.com/Yacobolo/libredash/internal/semantic"
+	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 	"github.com/gorilla/csrf"
 )
 
@@ -33,18 +35,22 @@ func (r *fakeReloader) Reload(context.Context) error {
 	return nil
 }
 
-func (r *fakeReloader) PrepareDeployment(context.Context, string) (*runtime.Prepared, error) {
+func (r *fakeReloader) PrepareDeployment(context.Context, string) (deployment.PreparedRuntime, error) {
 	r.prepareCalls++
 	if r.prepareErr != nil {
 		return nil, r.prepareErr
 	}
-	return &runtime.Prepared{}, nil
+	return fakePreparedRuntime{}, nil
 }
 
-func (r *fakeReloader) CommitPrepared(*runtime.Prepared) error {
+func (r *fakeReloader) CommitPrepared(deployment.PreparedRuntime) error {
 	r.commitCalls++
 	return nil
 }
+
+type fakePreparedRuntime struct{}
+
+func (fakePreparedRuntime) Close() error { return nil }
 
 func TestDeploymentAPIRequiresAuthentication(t *testing.T) {
 	store := testStore(t)
@@ -198,7 +204,7 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	}
 
 	var bundle bytes.Buffer
-	if _, _, err := deploy.PackCatalog(filepath.Join("..", "..", "dashboards", "catalog.yaml"), &bundle); err != nil {
+	if _, _, err := deploymentfs.PackCatalog(filepath.Join("..", "..", "dashboards", "catalog.yaml"), &bundle); err != nil {
 		t.Fatalf("pack catalog: %v", err)
 	}
 	uploadReq := httptest.NewRequest(http.MethodPut, "/api/deployments/"+created.ID+"/artifact", bytes.NewReader(bundle.Bytes()))
@@ -239,18 +245,19 @@ func TestDeploymentActivationPrepareFailureLeavesDeploymentInactive(t *testing.T
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	ctx := context.Background()
-	deployment, err := store.CreateDeployment(ctx, "test", "tester")
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	created, err := deploymentRepo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}
-	if err := store.ValidateDeployment(ctx, deployment.ID, "digest", "{}", zeroArtifact(deployment.ID, "test"), nil, nil); err != nil {
+	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, deployment.Validation{Digest: "digest", ManifestJSON: "{}"}, zeroArtifact(created.ID, "test")); err != nil {
 		t.Fatalf("validate deployment: %v", err)
 	}
 	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
 	reloader := &fakeReloader{prepareErr: errors.New("runtime load failed")}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/deployments/"+deployment.ID+"/activate", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/deployments/"+string(created.ID)+"/activate", nil)
 	req.Header.Set("Authorization", "Bearer dev")
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
@@ -259,11 +266,11 @@ func TestDeploymentActivationPrepareFailureLeavesDeploymentInactive(t *testing.T
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
-	after, err := store.Queries().GetDeployment(ctx, deployment.ID)
+	after, err := deploymentRepo.ByID(ctx, deployment.ID(created.ID))
 	if err != nil {
 		t.Fatalf("get deployment: %v", err)
 	}
-	if after.Status != "validated" {
+	if after.Status != deployment.StatusValidated {
 		t.Fatalf("status = %q, want validated", after.Status)
 	}
 	if reloader.commitCalls != 0 {
@@ -619,34 +626,75 @@ func testStore(t *testing.T) *platform.Store {
 func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID string) {
 	t.Helper()
 	ctx := context.Background()
-	deployment, err := store.CreateDeployment(ctx, workspaceID, "tester")
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	created, err := deploymentRepo.Create(ctx, deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), CreatedBy: "tester"})
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}
-	workspace, err := semantic.LoadWorkspace(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
+	workspaceDef, err := semantic.LoadWorkspace(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
 	if err != nil {
 		t.Fatalf("load workspace: %v", err)
 	}
-	assets, edges, err := deploy.ExtractAssets(workspaceID, deployment.ID, workspace)
+	graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(created.ID), workspaceDef)
 	if err != nil {
 		t.Fatalf("extract assets: %v", err)
 	}
-	if err := store.ValidateDeployment(ctx, deployment.ID, "digest-"+deployment.ID, "{}", zeroArtifact(deployment.ID, workspaceID), assets, edges); err != nil {
+	validation := deployment.Validation{
+		Digest:       "digest-" + string(created.ID),
+		ManifestJSON: "{}",
+		Assets:       deploymentAssets(graph.Assets),
+		Edges:        deploymentEdges(graph.Edges),
+	}
+	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, workspaceID)); err != nil {
 		t.Fatalf("validate deployment: %v", err)
 	}
-	if err := store.ActivateDeployment(ctx, workspaceID, deployment.ID); err != nil {
+	if _, err := deploymentRepo.Activate(ctx, deployment.WorkspaceID(workspaceID), created.ID); err != nil {
 		t.Fatalf("activate deployment: %v", err)
 	}
 }
 
-func zeroArtifact(deploymentID, workspaceID string) platformdb.InsertDeploymentArtifactParams {
-	return platformdb.InsertDeploymentArtifactParams{
-		ID:           "artifact_" + deploymentID,
+func zeroArtifact(deploymentID deployment.ID, workspaceID string) deployment.Artifact {
+	return deployment.Artifact{
+		ID:           "artifact_" + string(deploymentID),
 		DeploymentID: deploymentID,
-		WorkspaceID:  workspaceID,
+		WorkspaceID:  deployment.WorkspaceID(workspaceID),
 		Digest:       "digest",
 		Format:       "tar.gz",
 		Path:         "artifact.tar.gz",
-		ManifestJson: "{}",
+		ManifestJSON: "{}",
 	}
+}
+
+func deploymentAssets(rows []workspace.Asset) []deployment.Asset {
+	assets := make([]deployment.Asset, 0, len(rows))
+	for _, row := range rows {
+		assets = append(assets, deployment.Asset{
+			ID:           string(row.ID),
+			WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
+			DeploymentID: deployment.ID(row.DeploymentID),
+			Type:         string(row.Type),
+			Key:          row.Key,
+			ParentID:     string(row.ParentID),
+			Title:        row.Title,
+			Description:  row.Description,
+			ContentJSON:  row.ContentJSON,
+			ContentHash:  row.ContentHash,
+		})
+	}
+	return assets
+}
+
+func deploymentEdges(rows []workspace.AssetEdge) []deployment.AssetEdge {
+	edges := make([]deployment.AssetEdge, 0, len(rows))
+	for _, row := range rows {
+		edges = append(edges, deployment.AssetEdge{
+			ID:           string(row.ID),
+			WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
+			DeploymentID: deployment.ID(row.DeploymentID),
+			FromAssetID:  string(row.FromAssetID),
+			ToAssetID:    string(row.ToAssetID),
+			Type:         string(row.Type),
+		})
+	}
+	return edges
 }

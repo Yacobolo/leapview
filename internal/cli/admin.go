@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -25,13 +28,15 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			if email == "" {
 				email = "admin@localhost"
 			}
-			if err := store.EnsureWorkspace(ctx, platform.WorkspaceInput{ID: opts.workspaceID, Title: opts.workspaceID}); err != nil {
+			workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
+			if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(opts.workspaceID), Title: opts.workspaceID}); err != nil {
 				return err
 			}
 			if err := store.BootstrapAdmin(ctx, opts.workspaceID, email); err != nil {
 				return err
 			}
-			principal, err := store.Queries().GetPrincipal(ctx, platform.PrincipalIDForEmail(email))
+			accessRepo := accesssqlite.NewRepository(store.SQLDB())
+			principal, err := accessRepo.PrincipalByID(ctx, platform.PrincipalIDForEmail(email))
 			if err != nil {
 				return err
 			}

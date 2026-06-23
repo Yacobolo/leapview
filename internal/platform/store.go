@@ -117,8 +117,8 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) Queries() *db.Queries {
-	return s.q
+func (s *Store) SQLDB() *sql.DB {
+	return s.db
 }
 
 func (s *Store) migrate(ctx context.Context) error {

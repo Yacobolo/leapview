@@ -10,9 +10,13 @@ import (
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
-	"github.com/Yacobolo/libredash/internal/data"
+	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
+	"github.com/Yacobolo/libredash/internal/deployment"
+	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
-	"github.com/Yacobolo/libredash/internal/runtime"
+	"github.com/Yacobolo/libredash/internal/runtimehost"
+	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +56,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 				return err
 			}
 		}
-		metrics, err := data.NewDuckDBMetrics(dataDir)
+		metrics, err := dashboardruntime.New(dataDir, dashboardDataRuntimeFactory{})
 		if err != nil {
 			return fmt.Errorf("initializing DuckDB metrics: %w", err)
 		}
@@ -79,13 +83,19 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	defer store.Close()
-	if err := store.EnsureWorkspace(ctx, platform.WorkspaceInput{ID: opts.workspaceID, Title: opts.workspaceID}); err != nil {
+	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
+	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(opts.workspaceID), Title: opts.workspaceID}); err != nil {
 		return err
 	}
 	if err := store.BootstrapAdmin(ctx, opts.workspaceID, cfg.BootstrapEmail); err != nil {
 		return err
 	}
-	manager := runtime.NewManager(store, opts.workspaceID, dataDir, cfg.DuckDBDirPath(), cfg.RuntimeDir())
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	manager := runtimehost.NewManagerWithFactory(deploymentRepo, deployment.WorkspaceID(opts.workspaceID), dataDir, deploymentRuntimeFactory{
+		dataDir:    dataDir,
+		duckDBDir:  cfg.DuckDBDirPath(),
+		runtimeDir: cfg.RuntimeDir(),
+	})
 	if err := manager.Reload(ctx); err != nil {
 		return err
 	}
@@ -105,7 +115,9 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	rateLimits.Enabled = cfg.RateLimitingEnabled()
 	server := app.NewWithOptions(manager, app.Options{
 		Store:              store,
-		Agent:              agentapp.NewService(manager, store, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
+		DeploymentRepo:     deploymentRepo,
+		WorkspaceRepo:      workspaceRepo,
+		Agent:              agentapp.NewService(manager, app.NewAgentRepository(store), agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
 		Auth:               auth,
 		Reloader:           manager,
 		ArtifactDir:        cfg.ArtifactDir(),

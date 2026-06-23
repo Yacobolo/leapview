@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 )
 
 func (s *Server) generateConversationTitleAsync(scope agentapp.Scope, conversationID, clientID string) {
@@ -20,7 +21,7 @@ func (s *Server) generateConversationTitleAsync(scope agentapp.Scope, conversati
 			s.logger.DebugContext(ctx, "agent title generation failed", "conversation_id", conversationID, "error", err)
 		}
 		s.clearChatTitlePending(conversationID)
-		s.broker.publish(chatStreamID(scope, clientID), signalPatch{
+		s.broker.Publish(chatStreamID(scope, clientID), dashboardstream.Patch{
 			"agent": map[string]any{
 				"conversations": s.chatConversations(ctx, scope),
 			},
