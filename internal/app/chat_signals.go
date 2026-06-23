@@ -38,11 +38,11 @@ func (s *Server) chatSignal(ctx context.Context, scope agentapp.Scope, activeID,
 			transcript = loaded
 		}
 	}
-	return s.chatSignalWith(scope, activeID, transcript, statusErr, running)
+	return s.chatSignalWith(ctx, scope, activeID, transcript, statusErr, running)
 }
 
-func (s *Server) chatSignalWith(scope agentapp.Scope, activeID string, transcript []api.AgentChatTranscriptItem, statusErr string, running bool) api.AgentChatSignal {
-	conversations := s.chatConversations(scope)
+func (s *Server) chatSignalWith(ctx context.Context, scope agentapp.Scope, activeID string, transcript []api.AgentChatTranscriptItem, statusErr string, running bool) api.AgentChatSignal {
+	conversations := s.chatConversations(ctx, scope)
 	enabled := s.agent != nil && s.agent.Enabled()
 	if !enabled && statusErr == "" {
 		statusErr = "Agent is not configured"
@@ -64,12 +64,12 @@ func (s *Server) chatSignalWith(scope agentapp.Scope, activeID string, transcrip
 	}
 }
 
-func (s *Server) chatConversations(scope agentapp.Scope) []api.AgentConversationResponse {
+func (s *Server) chatConversations(ctx context.Context, scope agentapp.Scope) []api.AgentConversationResponse {
 	conversations := []api.AgentConversationResponse{}
 	if s.agent == nil || scope.PrincipalID == "" {
 		return conversations
 	}
-	rows, err := s.agent.ListConversations(context.Background(), scope)
+	rows, err := s.agent.ListConversations(ctx, scope)
 	if err != nil {
 		return conversations
 	}

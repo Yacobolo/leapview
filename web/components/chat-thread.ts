@@ -618,25 +618,20 @@ function titleFromToolName(name: string): string {
     .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
+const toolIconContent: Record<string, unknown> = {
+  list_dashboards: svgTemplate`<rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect>`,
+  describe_dashboard: svgTemplate`<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h6"></path>`,
+  list_metric_views: svgTemplate`<path d="M3 3v18h18"></path><path d="M7 16v-5"></path><path d="M12 16V7"></path><path d="M17 16v-3"></path>`,
+  describe_metric_view: svgTemplate`<path d="M3 3v18h18"></path><path d="M7 16v-5"></path><path d="M12 16V7"></path><path d="M17 16v-3"></path><path d="m17 7 4-4"></path><path d="M17 3h4v4"></path>`,
+  describe_model: svgTemplate`<path d="m21 16-9 5-9-5V8l9-5 9 5v8Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path>`,
+  query_dashboard_page: svgTemplate`<rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path>`,
+  query_table: svgTemplate`<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M3 9h18"></path><path d="M9 21V9"></path><path d="M15 3h6v6"></path><path d="m15 9 6-6"></path>`,
+}
+
+const defaultToolIconContent = svgTemplate`<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.6 6.6a2 2 0 0 1-2.8-2.8l6.6-6.6a6 6 0 0 1 7.9-7.9l-4 4Z"></path>`
+
 function toolIcon(name = '') {
-  switch (name) {
-    case 'list_dashboards':
-      return lucideIcon(svgTemplate`<rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect>`)
-    case 'describe_dashboard':
-      return lucideIcon(svgTemplate`<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h6"></path>`)
-    case 'list_metric_views':
-      return lucideIcon(svgTemplate`<path d="M3 3v18h18"></path><path d="M7 16v-5"></path><path d="M12 16V7"></path><path d="M17 16v-3"></path>`)
-    case 'describe_metric_view':
-      return lucideIcon(svgTemplate`<path d="M3 3v18h18"></path><path d="M7 16v-5"></path><path d="M12 16V7"></path><path d="M17 16v-3"></path><path d="m17 7 4-4"></path><path d="M17 3h4v4"></path>`)
-    case 'describe_model':
-      return lucideIcon(svgTemplate`<path d="m21 16-9 5-9-5V8l9-5 9 5v8Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path>`)
-    case 'query_dashboard_page':
-      return lucideIcon(svgTemplate`<rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path>`)
-    case 'query_table':
-      return lucideIcon(svgTemplate`<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M3 9h18"></path><path d="M9 21V9"></path><path d="M15 3h6v6"></path><path d="m15 9 6-6"></path>`)
-    default:
-      return lucideIcon(svgTemplate`<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.6 6.6a2 2 0 0 1-2.8-2.8l6.6-6.6a6 6 0 0 1 7.9-7.9l-4 4Z"></path>`)
-  }
+  return lucideIcon(toolIconContent[name] ?? defaultToolIconContent)
 }
 
 function lucideIcon(content: unknown) {

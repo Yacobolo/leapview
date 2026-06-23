@@ -66,7 +66,7 @@ func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.queueMissingChatTitle(r.Context(), scope, conversationID, chatClientID(r))
-	s.renderChat(w, r, s.chatSignalWith(scope, conversationID, transcript, "", false))
+	s.renderChat(w, r, s.chatSignalWith(r.Context(), scope, conversationID, transcript, "", false))
 }
 
 func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, signal api.AgentChatSignal) {
@@ -94,8 +94,12 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "input is required", http.StatusBadRequest)
 		return
 	}
-	streamConversations := s.chatConversations(scope)
-	conversationID := strings.TrimSpace(signals.Agent.ActiveConversationID)
+	s.runChatTurn(w, r, service, scope, clientID, strings.TrimSpace(signals.Agent.ActiveConversationID), input)
+}
+
+func (s *Server) runChatTurn(w http.ResponseWriter, r *http.Request, service *agentapp.Service, scope agentapp.Scope, clientID, activeConversationID, input string) {
+	streamConversations := s.chatConversations(r.Context(), scope)
+	conversationID := strings.TrimSpace(activeConversationID)
 	createdConversation := false
 	if conversationID == "" {
 		conversation, err := service.CreateConversation(r.Context(), scope, "New conversation")
@@ -118,7 +122,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		_ = sse.ReplaceURL(url.URL{Path: "/chat/" + conversationID})
 	}
 
-	streamActiveID := strings.TrimSpace(signals.Agent.ActiveConversationID)
+	streamActiveID := strings.TrimSpace(activeConversationID)
 	emit := func(event api.AgentEventEnvelope) {
 		transcript = applyLiveTranscriptEvent(transcript, conversationID, event)
 		_ = sse.MarshalAndPatchSignals(map[string]any{"agent": chatSignalWithConversations(streamConversations, streamActiveID, transcript, "", true, true)})
@@ -145,7 +149,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 	if shouldGenerateTitle {
 		s.markChatTitlePending(conversationID)
 	}
-	_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(scope, conversationID, transcript, statusErr, false)})
+	_ = sse.MarshalAndPatchSignals(map[string]any{"agent": s.chatSignalWith(r.Context(), scope, conversationID, transcript, statusErr, false)})
 	if shouldGenerateTitle {
 		s.generateConversationTitleAsync(scope, conversationID, clientID)
 	}

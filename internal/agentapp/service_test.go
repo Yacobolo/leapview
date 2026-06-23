@@ -40,6 +40,57 @@ func TestReadOnlyToolsExposeWorkspaceFactsAndBoundRows(t *testing.T) {
 	}
 }
 
+func TestReadOnlyToolPayloadShapesStayStable(t *testing.T) {
+	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
+
+	var dashboards struct {
+		Dashboards []dashboard.CatalogDashboard `json:"dashboards"`
+	}
+	if err := json.Unmarshal([]byte(runTool(t, tools, "list_dashboards", `{}`)), &dashboards); err != nil {
+		t.Fatalf("decode dashboards: %v", err)
+	}
+	if len(dashboards.Dashboards) != 1 || dashboards.Dashboards[0].ID != "executive-sales" {
+		t.Fatalf("dashboards payload = %#v", dashboards)
+	}
+
+	var metricView struct {
+		MetricView dashboard.CatalogMetricView `json:"metric_view"`
+		Usage      []struct {
+			DashboardID string `json:"dashboard_id"`
+			Pages       int    `json:"pages"`
+		} `json:"usage"`
+		DetailTools map[string]string `json:"detail_tools"`
+	}
+	if err := json.Unmarshal([]byte(runTool(t, tools, "describe_metric_view", `{"metric_view_id":"orders"}`)), &metricView); err != nil {
+		t.Fatalf("decode metric view: %v", err)
+	}
+	if metricView.MetricView.ID != "orders" || len(metricView.Usage) != 1 || metricView.Usage[0].DashboardID != "executive-sales" || metricView.DetailTools["table"] != "query_table" {
+		t.Fatalf("metric view payload = %#v", metricView)
+	}
+
+	var model struct {
+		ID          string                        `json:"id"`
+		MetricViews []dashboard.CatalogMetricView `json:"metric_views"`
+		Dashboards  []struct {
+			ID          string   `json:"id"`
+			MetricViews []string `json:"metric_views"`
+			Pages       int      `json:"pages"`
+		} `json:"dashboards"`
+		Counts *struct {
+			Sources       int `json:"sources"`
+			ModelTables   int `json:"model_tables"`
+			Relationships int `json:"relationships"`
+		} `json:"counts"`
+	}
+	if err := json.Unmarshal([]byte(runTool(t, tools, "describe_model", `{"model_id":"test"}`)), &model); err != nil {
+		t.Fatalf("decode model: %v", err)
+	}
+	if model.ID != "test" || len(model.MetricViews) != 1 || len(model.Dashboards) != 1 || model.Dashboards[0].ID != "executive-sales" || model.Counts == nil {
+		t.Fatalf("model payload = %#v", model)
+	}
+}
+
 func TestDescribeDashboardReturnsCompactManifest(t *testing.T) {
 	service := NewService(largeDashboardMetrics{}, nil, Config{APIKey: "key", Model: "model"})
 	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})

@@ -22,7 +22,7 @@ func (s *Server) generateConversationTitleAsync(scope agentapp.Scope, conversati
 		s.clearChatTitlePending(conversationID)
 		s.broker.publish(chatStreamID(scope, clientID), signalPatch{
 			"agent": map[string]any{
-				"conversations": s.chatConversations(scope),
+				"conversations": s.chatConversations(ctx, scope),
 			},
 		})
 	}()

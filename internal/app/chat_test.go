@@ -175,6 +175,26 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 	}
 }
 
+func TestChatSignalConversationListUsesCallerContext(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	principal, _ := chatPrincipalAndToken(t, ctx, store)
+	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	if _, err := service.CreateConversation(ctx, scope, "Visible only with live context"); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	signal := server.chatSignalWith(canceled, scope, "", nil, "", false)
+	if len(signal.Conversations) != 0 {
+		t.Fatalf("canceled context should prevent conversation loading, got %#v", signal.Conversations)
+	}
+}
+
 func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
