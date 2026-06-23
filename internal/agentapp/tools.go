@@ -37,7 +37,7 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 		},
 		{
 			Name:        "describe_dashboard",
-			Description: "Describe a dashboard, its pages, metric views, visuals, and tables.",
+			Description: "Return a compact dashboard manifest with page/component references. Use query_dashboard_page or describe_metric_view for details.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"dashboard_id":{"type":"string"}},"required":["dashboard_id"],"additionalProperties":false}`),
 			Handler: s.tool(func(ctx context.Context, raw json.RawMessage) (any, error) {
 				var input struct {
@@ -50,16 +50,7 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 				if !ok {
 					return nil, fmt.Errorf("dashboard %q not found", input.DashboardID)
 				}
-				return map[string]any{
-					"id":           report.ID,
-					"title":        report.Title,
-					"description":  report.Description,
-					"metric_views": report.MetricViews,
-					"model":        modelSummary(model),
-					"pages":        s.metrics.Pages(input.DashboardID),
-					"visuals":      report.Visuals,
-					"tables":       report.Tables,
-				}, nil
+				return dashboardManifest(report, model, s.metrics.Pages(input.DashboardID)), nil
 			}),
 		},
 		{
@@ -205,5 +196,104 @@ func modelSummary(model *semantic.Model) map[string]any {
 	return map[string]any{
 		"id":    model.Name,
 		"title": model.Title,
+	}
+}
+
+type dashboardManifestSummary struct {
+	ID          string                  `json:"id"`
+	Title       string                  `json:"title"`
+	Description string                  `json:"description,omitempty"`
+	MetricViews []string                `json:"metric_views"`
+	Model       map[string]any          `json:"model,omitempty"`
+	Counts      dashboardManifestCounts `json:"counts"`
+	Pages       []dashboardManifestPage `json:"pages"`
+	DetailTools map[string]string       `json:"detail_tools"`
+}
+
+type dashboardManifestCounts struct {
+	Pages   int `json:"pages"`
+	Visuals int `json:"visuals"`
+	Tables  int `json:"tables"`
+	Filters int `json:"filters"`
+}
+
+type dashboardManifestPage struct {
+	ID          string                       `json:"id"`
+	Title       string                       `json:"title"`
+	Description string                       `json:"description,omitempty"`
+	Components  []dashboardManifestComponent `json:"components"`
+}
+
+type dashboardManifestComponent struct {
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	Ref   string `json:"ref"`
+	Title string `json:"title,omitempty"`
+}
+
+func dashboardManifest(report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page) dashboardManifestSummary {
+	if pages == nil {
+		pages = report.Pages
+	}
+	out := dashboardManifestSummary{
+		ID:          report.ID,
+		Title:       report.Title,
+		Description: report.Description,
+		MetricViews: report.MetricViews,
+		Model:       modelSummary(model),
+		Counts: dashboardManifestCounts{
+			Pages:   len(pages),
+			Visuals: len(report.Visuals),
+			Tables:  len(report.Tables),
+			Filters: len(report.Filters),
+		},
+		Pages: make([]dashboardManifestPage, 0, len(pages)),
+		DetailTools: map[string]string{
+			"metric_view": "describe_metric_view",
+			"page_data":   "query_dashboard_page",
+			"table_data":  "query_table",
+		},
+	}
+	for _, page := range pages {
+		pageSummary := dashboardManifestPage{
+			ID:          page.ID,
+			Title:       page.Title,
+			Description: page.Description,
+			Components:  make([]dashboardManifestComponent, 0, len(page.Visuals)),
+		}
+		for _, component := range page.Visuals {
+			pageSummary.Components = append(pageSummary.Components, dashboardComponentSummary(component, report))
+		}
+		out.Pages = append(out.Pages, pageSummary)
+	}
+	return out
+}
+
+func dashboardComponentSummary(component dashboard.PageVisual, report semantic.Dashboard) dashboardManifestComponent {
+	switch {
+	case component.Visual != "":
+		title := component.Title
+		if title == "" {
+			title = report.Visuals[component.Visual].Title
+		}
+		return dashboardManifestComponent{ID: component.ID, Kind: "visual", Ref: component.Visual, Title: title}
+	case component.Table != "":
+		title := component.Title
+		if title == "" {
+			title = report.Tables[component.Table].Title
+		}
+		return dashboardManifestComponent{ID: component.ID, Kind: "table", Ref: component.Table, Title: title}
+	case component.Filter != "":
+		title := component.Title
+		if title == "" {
+			title = report.Filters[component.Filter].Label
+		}
+		return dashboardManifestComponent{ID: component.ID, Kind: "filter", Ref: component.Filter, Title: title}
+	default:
+		kind := component.Kind
+		if kind == "" {
+			kind = "component"
+		}
+		return dashboardManifestComponent{ID: component.ID, Kind: kind, Title: component.Title}
 	}
 }

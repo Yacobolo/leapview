@@ -3,6 +3,7 @@ package agentapp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,54 @@ func TestReadOnlyToolsExposeWorkspaceFactsAndBoundRows(t *testing.T) {
 	}
 	if len(tableOut.Blocks["a"].Rows) != 50 {
 		t.Fatalf("query_table rows were not capped to 50: %s", table)
+	}
+}
+
+func TestDescribeDashboardReturnsCompactManifest(t *testing.T) {
+	service := NewService(largeDashboardMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
+
+	output := runTool(t, tools, "describe_dashboard", `{"dashboard_id":"executive-sales"}`)
+	if len(output) > 16*1024 {
+		t.Fatalf("describe_dashboard output = %d bytes, want compact manifest under 16KiB", len(output))
+	}
+	if strings.Contains(output, largeDashboardPayloadMarker) {
+		t.Fatalf("describe_dashboard leaked full visual/table definitions: %s", output[:min(len(output), 512)])
+	}
+
+	var got struct {
+		ID     string `json:"id"`
+		Counts struct {
+			Pages   int `json:"pages"`
+			Visuals int `json:"visuals"`
+			Tables  int `json:"tables"`
+		} `json:"counts"`
+		Pages []struct {
+			ID         string `json:"id"`
+			Title      string `json:"title"`
+			Components []struct {
+				ID    string `json:"id"`
+				Kind  string `json:"kind"`
+				Ref   string `json:"ref"`
+				Title string `json:"title"`
+			} `json:"components"`
+		} `json:"pages"`
+		DetailTools map[string]string `json:"detail_tools"`
+	}
+	if err := json.Unmarshal([]byte(output), &got); err != nil {
+		t.Fatalf("decode describe_dashboard output: %v\n%s", err, output)
+	}
+	if got.ID != "executive-sales" || got.Counts.Pages != 24 || got.Counts.Visuals != 48 || got.Counts.Tables != 24 {
+		t.Fatalf("manifest counts = %#v", got)
+	}
+	if len(got.Pages) != 24 || len(got.Pages[0].Components) != 3 {
+		t.Fatalf("pages/components = %#v", got.Pages[:min(len(got.Pages), 2)])
+	}
+	if got.Pages[0].Components[0].Kind != "visual" || got.Pages[0].Components[0].Ref == "" || got.Pages[0].Components[0].Title == "" {
+		t.Fatalf("visual component summary = %#v", got.Pages[0].Components[0])
+	}
+	if got.DetailTools["page_data"] != "query_dashboard_page" || got.DetailTools["metric_view"] != "describe_metric_view" {
+		t.Fatalf("detail tools = %#v", got.DetailTools)
 	}
 }
 
@@ -510,6 +559,65 @@ func (fakeAgentMetrics) QueryTablePage(_ context.Context, dashboardID, pageID st
 		AvailableRows: len(rows),
 		Blocks:        map[string]dashboard.TableBlock{"a": {Rows: rows}},
 	}, nil
+}
+
+const largeDashboardPayloadMarker = "payload that must not appear in compact dashboard manifest"
+
+type largeDashboardMetrics struct {
+	fakeAgentMetrics
+}
+
+func (largeDashboardMetrics) Report(id string) (semantic.Dashboard, *semantic.Model, bool) {
+	if id != "executive-sales" {
+		return semantic.Dashboard{}, nil, false
+	}
+	report, model, _ := fakeAgentMetrics{}.Report(id)
+	report.Pages = make([]dashboard.Page, 0, 24)
+	report.Visuals = map[string]semantic.Visual{}
+	report.Tables = map[string]semantic.TableVisual{}
+	for pageIndex := 1; pageIndex <= 24; pageIndex++ {
+		chartID := fmt.Sprintf("chart_%02d", pageIndex)
+		kpiID := fmt.Sprintf("kpi_%02d", pageIndex)
+		tableID := fmt.Sprintf("table_%02d", pageIndex)
+		report.Visuals[chartID] = semantic.Visual{
+			Title:           fmt.Sprintf("Chart %02d", pageIndex),
+			Type:            "bar",
+			Query:           semantic.VisualQuery{MetricView: "orders"},
+			RendererOptions: map[string]any{"large": largeDashboardPayloadMarker + strings.Repeat("x", 4096)},
+		}
+		report.Visuals[kpiID] = semantic.Visual{
+			Title:   fmt.Sprintf("KPI %02d", pageIndex),
+			Kind:    "kpi",
+			Query:   semantic.VisualQuery{MetricView: "orders"},
+			Options: map[string]any{"large": largeDashboardPayloadMarker + strings.Repeat("y", 4096)},
+		}
+		report.Tables[tableID] = semantic.TableVisual{
+			Title: fmt.Sprintf("Table %02d", pageIndex),
+			Query: semantic.TableQuery{MetricView: "orders"},
+			Columns: []dashboard.TableColumn{{
+				Key:   largeDashboardPayloadMarker + strings.Repeat("z", 4096),
+				Label: "Large Column",
+			}},
+		}
+		report.Pages = append(report.Pages, dashboard.Page{
+			ID:    fmt.Sprintf("page_%02d", pageIndex),
+			Title: fmt.Sprintf("Page %02d", pageIndex),
+			Visuals: []dashboard.PageVisual{
+				{ID: chartID, Visual: chartID},
+				{ID: kpiID, Visual: kpiID},
+				{ID: tableID, Table: tableID},
+			},
+		})
+	}
+	return report, model, true
+}
+
+func (largeDashboardMetrics) Pages(id string) []dashboard.Page {
+	report, _, ok := largeDashboardMetrics{}.Report(id)
+	if !ok {
+		return nil
+	}
+	return report.Pages
 }
 
 func runTool(t *testing.T, tools []agent.ToolDefinition, name, args string) string {
