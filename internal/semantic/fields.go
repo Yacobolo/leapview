@@ -67,20 +67,6 @@ func (m *Model) ResolveField(ref string) (MetricDimension, MetricMeasure, string
 	return MetricDimension{}, MetricMeasure{}, "", fmt.Errorf("unknown field %q", ref)
 }
 
-func (s *QueryScope) ResolveDimensionRef(ref string) (string, MetricDimension, error) {
-	if dimension, ok := s.Dimensions[ref]; ok {
-		return ref, dimension, nil
-	}
-	return "", MetricDimension{}, fmt.Errorf("field %q is not exposed", ref)
-}
-
-func (s *QueryScope) ResolveMeasureRef(ref string) (string, MetricMeasure, error) {
-	if measure, ok := s.Measures[ref]; ok {
-		return ref, measure, nil
-	}
-	return "", MetricMeasure{}, fmt.Errorf("field %q is not exposed", ref)
-}
-
 func splitSemanticField(ref string) (string, string, error) {
 	parts := strings.Split(ref, ".")
 	if len(parts) != 2 {

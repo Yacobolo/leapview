@@ -481,7 +481,7 @@ func TestDuckDBMetricsRegistersCSVSources(t *testing.T) {
 					Sources: []string{"orders"},
 					Transform: semantic.ModelTransform{SQL: `
 						SELECT order_id, try_cast(revenue AS DOUBLE) AS revenue
-						FROM raw.orders
+						FROM source.orders
 					`},
 					PrimaryKey: "order_id",
 					Grain:      "order_id",

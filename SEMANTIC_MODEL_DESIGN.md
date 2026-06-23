@@ -51,7 +51,7 @@ models:
     source: olist_customers
 ```
 
-Use `source` for direct one-source tables and `sources` for SQL-backed tables that read one or more sources. LibreDash can infer simple `source.<name>` SQL references, but explicit `sources` metadata is the canonical lineage contract. LibreDash is not a transformation framework. Heavy ETL and long model chains belong upstream.
+Use `source` for direct one-source tables and `sources` for SQL-backed tables that read one or more sources. Authored SQL must reference inputs with `source.<name>`; `raw.<name>` is an internal runtime detail. LibreDash can infer simple `source.<name>` SQL references, but explicit `sources` metadata is the canonical lineage contract. LibreDash is not a transformation framework. Heavy ETL and long model chains belong upstream.
 
 ### Semantic Models
 
@@ -79,6 +79,8 @@ semantic_models:
 ```
 
 The semantic model owns table identity, relationships, and measures.
+
+For v1, one semantic model is one connected, safe relationship graph. Unrelated fact islands should be authored as separate semantic models, not packed into one model.
 
 ### Measures
 
@@ -218,6 +220,8 @@ tables:
 - Dimensions may come from related tables through active many-to-one or one-to-one paths.
 - One-to-many, many-to-many, circular, ambiguous, inactive, or missing paths are rejected for dashboard queries.
 - Cross-fact measures are not supported in v1.
+- One semantic model must be one connected relationship graph for its measure base tables.
+- Unrelated subject areas belong in separate semantic models.
 - Unsafe analysis requires a new model at the correct grain or an explicit future view.
 
 ## Naming

@@ -48,21 +48,21 @@ models:
       sql: |
         WITH revenue AS (
           SELECT order_id, SUM(try_cast(payment_value AS DOUBLE)) AS revenue
-          FROM raw.payments
+          FROM source.payments
           GROUP BY order_id
         ),
         review AS (
           SELECT order_id, AVG(try_cast(review_score AS DOUBLE)) AS review_score
-          FROM raw.reviews
+          FROM source.reviews
           GROUP BY order_id
         ),
         category AS (
           SELECT
             oi.order_id,
             MIN(COALESCE(t.product_category_name_english, p.product_category_name, 'uncategorized')) AS category
-          FROM raw.order_items oi
-          LEFT JOIN raw.products p ON p.product_id = oi.product_id
-          LEFT JOIN raw.translations t ON t.product_category_name = p.product_category_name
+          FROM source.order_items oi
+          LEFT JOIN source.products p ON p.product_id = oi.product_id
+          LEFT JOIN source.translations t ON t.product_category_name = p.product_category_name
           GROUP BY oi.order_id
         )
         SELECT
@@ -87,7 +87,7 @@ models:
             WHEN datediff('day', CAST(o.order_purchase_timestamp AS TIMESTAMP), CAST(o.order_delivered_customer_date AS TIMESTAMP)) <= 30 THEN '15-30 days'
             ELSE '31+ days'
           END AS delivery_bucket
-        FROM raw.orders o
+        FROM source.orders o
         LEFT JOIN revenue ON revenue.order_id = o.order_id
         LEFT JOIN review ON review.order_id = o.order_id
         LEFT JOIN category ON category.order_id = o.order_id

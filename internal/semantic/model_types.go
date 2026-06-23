@@ -96,13 +96,6 @@ type SemanticMeasureDefaults struct {
 	Grains []string `yaml:"grains"`
 }
 
-type QueryScope struct {
-	BaseTable  string
-	Grain      string
-	Dimensions map[string]MetricDimension
-	Measures   map[string]MetricMeasure
-}
-
 type MetricDimension struct {
 	Field      string `yaml:"-"`
 	Table      string `yaml:"-"`

@@ -28,6 +28,28 @@ func (m InlineMeasure) SQLExpression() string {
 	return m.Expr
 }
 
+type ResolvedMeasure struct {
+	Field       string
+	Name        string
+	Label       string
+	Description string
+	Expr        string
+	Expression  string
+	Table       string
+	Grain       string
+	Time        string
+	Grains      []string
+	Unit        string
+	Format      string
+}
+
+func (m ResolvedMeasure) SQLExpression() string {
+	if m.Expression != "" {
+		return m.Expression
+	}
+	return m.Expr
+}
+
 type Time struct {
 	Field string
 	Grain string

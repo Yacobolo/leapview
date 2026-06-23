@@ -236,8 +236,108 @@ semantic_models:
 `)
 
 	_, err := LoadWorkspace(catalogPath)
-	if err == nil || !strings.Contains(err.Error(), "unsafe relationship path") {
-		t.Fatalf("LoadWorkspace() error = %v, want measure-specific unsafe path rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
+		t.Fatalf("LoadWorkspace() error = %v, want measure-specific connected graph rejection", err)
+	}
+}
+
+func TestSemanticModelDesignAllowsUnrelatedFactsInSeparateSemanticModels(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "catalog.yaml"), `
+workspace:
+  id: libredash
+  title: LibreDash Workspace
+semantic_models:
+  - id: orders
+    title: Orders
+    path: orders-model.yaml
+  - id: refunds
+    title: Refunds
+    path: refunds-model.yaml
+dashboards:
+  - id: sales
+    title: Sales
+    path: dashboard.yaml
+`)
+	mustWriteFile(t, filepath.Join(dir, "orders-model.yaml"), `
+name: orders
+title: Orders
+connections:
+  local:
+    kind: local
+sources:
+  orders:
+    connection: local
+    path: orders.csv
+    format: csv
+models:
+  orders:
+    source: orders
+semantic_models:
+  orders:
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+          revenue: {expr: revenue}
+    measures:
+      defaults: {table: orders, grain: order_id}
+      revenue: {expr: SUM(orders.revenue)}
+`)
+	mustWriteFile(t, filepath.Join(dir, "refunds-model.yaml"), `
+name: refunds
+title: Refunds
+connections:
+  local:
+    kind: local
+sources:
+  refunds:
+    connection: local
+    path: refunds.csv
+    format: csv
+models:
+  refunds:
+    source: refunds
+semantic_models:
+  refunds:
+    tables:
+      refunds:
+        model: refunds
+        primary_key: refund_id
+        fields:
+          refund_id: {expr: refund_id}
+          amount: {expr: amount}
+    measures:
+      defaults: {table: refunds, grain: refund_id}
+      refund_amount: {expr: SUM(refunds.amount)}
+`)
+	mustWriteFile(t, filepath.Join(dir, "dashboard.yaml"), `
+id: sales
+title: Sales
+semantic_model: orders
+filters: {}
+visuals:
+  revenue:
+    title: Revenue
+    kind: kpi
+    query:
+      measures:
+        revenue:
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals: []
+`)
+
+	workspace, err := LoadWorkspace(filepath.Join(dir, "catalog.yaml"))
+	if err != nil {
+		t.Fatalf("LoadWorkspace() error = %v, want unrelated facts split by semantic model to load", err)
+	}
+	if workspace.Models["orders"] == nil || workspace.Models["refunds"] == nil {
+		t.Fatalf("workspace models = %#v, want orders and refunds semantic models", workspace.Models)
 	}
 }
 
@@ -321,6 +421,38 @@ semantic_models:
 	}
 }
 
+func TestSemanticModelDesignSQLModelRejectsRawNamespace(t *testing.T) {
+	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
+sources:
+  olist_orders:
+    connection: olist
+    path: orders.csv
+    format: csv
+models:
+  orders:
+    sources: [olist_orders]
+    transform:
+      sql: SELECT order_id FROM raw.olist_orders
+semantic_models:
+  olist:
+    tables:
+      orders:
+        model: orders
+        primary_key: order_id
+        fields:
+          order_id: {expr: order_id}
+    measures:
+      defaults: {table: orders, grain: order_id}
+      order_count: {expr: COUNT(DISTINCT orders.order_id)}
+      revenue: {expr: COUNT(DISTINCT orders.order_id)}
+`)
+
+	_, err := LoadWorkspace(catalogPath)
+	if err == nil || !strings.Contains(err.Error(), "model SQL must reference sources through source.<name>; raw.<name> is internal") {
+		t.Fatalf("LoadWorkspace() error = %v, want raw namespace rejection", err)
+	}
+}
+
 func TestSemanticModelDesignSQLModelSourceMismatchFails(t *testing.T) {
 	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
 sources:
@@ -357,8 +489,12 @@ semantic_models:
 }
 
 func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testing.T) {
-	tests := map[string]string{
-		"one_to_many": `
+	tests := map[string]struct {
+		fragment string
+		want     string
+	}{
+		"one_to_many": {
+			fragment: `
 	semantic_models:
 	  olist:
 	    tables:
@@ -381,7 +517,10 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
       defaults: {table: orders, grain: order_id}
       revenue: {expr: SUM(orders.revenue)}
 `,
-		"inactive": `
+			want: "unsafe relationship path",
+		},
+		"inactive": {
+			fragment: `
 	semantic_models:
 	  olist:
 	    tables:
@@ -404,7 +543,10 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
       defaults: {table: orders, grain: order_id}
       revenue: {expr: SUM(orders.revenue)}
 `,
-		"ambiguous": `
+			want: "unsafe relationship path",
+		},
+		"ambiguous": {
+			fragment: `
 	semantic_models:
 	  olist:
 	    tables:
@@ -432,13 +574,15 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
       defaults: {table: orders, grain: order_id}
       revenue: {expr: SUM(orders.revenue)}
 `,
+			want: "ambiguous relationship path",
+		},
 	}
-	for name, semanticFragment := range tests {
+	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			catalogPath := writeSemanticModelDesignWorkspaceWithSemanticFragment(t, semanticFragment)
+			catalogPath := writeSemanticModelDesignWorkspaceWithSemanticFragment(t, tt.fragment)
 			_, err := LoadWorkspace(catalogPath)
-			if err == nil || !strings.Contains(err.Error(), "unsafe relationship path") {
-				t.Fatalf("LoadWorkspace() error = %v, want unsafe relationship path rejection", err)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("LoadWorkspace() error = %v, want %q rejection", err, tt.want)
 			}
 		})
 	}

@@ -123,6 +123,8 @@ LibreDash should force a safe default path:
 9. One-to-many, many-to-many, circular, ambiguous, inactive, or missing paths are rejected for dashboard queries.
 10. Cross-fact measures are rejected in v1.
 11. Row/detail queries without measures must declare a table.
+12. Authored model SQL uses `source.<name>` only; `raw.<name>` is internal runtime plumbing.
+13. One semantic model is one connected relationship graph; unrelated subject areas belong in separate semantic models.
 
 ## Why This Shape
 

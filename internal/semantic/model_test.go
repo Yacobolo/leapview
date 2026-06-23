@@ -452,7 +452,7 @@ sources:
 cache:
   tables:
     orders_cache:
-      sql: SELECT * FROM raw.orders
+      sql: SELECT * FROM source.orders
 datasets:
   orders:
     source: orders_cache

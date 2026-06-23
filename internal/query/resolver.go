@@ -17,22 +17,29 @@ type tableAlias struct {
 	Path  []semantic.Relationship
 }
 
+type queryView struct {
+	BaseTable  string
+	Grain      string
+	Dimensions map[string]semantic.MetricDimension
+	Measures   map[string]ResolvedMeasure
+}
+
 func NewPlanner(model *semantic.Model) *Planner {
 	return &Planner{Model: model}
 }
 
-func (p *Planner) queryView(request Request) (*semantic.QueryScope, error) {
+func (p *Planner) queryView(request Request) (*queryView, error) {
 	return p.semanticView(request.Table, request.Dimensions, request.Measures, request.Filters, request.Time.Field)
 }
 
-func (p *Planner) rowView(request RowRequest) (*semantic.QueryScope, error) {
+func (p *Planner) rowView(request RowRequest) (*queryView, error) {
 	if request.Table == "" && len(request.Measures) == 0 {
 		return nil, fmt.Errorf("row query requires table when no measure is selected")
 	}
 	return p.semanticView(request.Table, request.Dimensions, request.Measures, request.Filters, "")
 }
 
-func (p *Planner) rawValueView(request RawValueRequest) (*semantic.QueryScope, error) {
+func (p *Planner) rawValueView(request RawValueRequest) (*queryView, error) {
 	measures := []Field{}
 	if request.Measure.Field != "" {
 		measures = append(measures, request.Measure)
@@ -40,30 +47,30 @@ func (p *Planner) rawValueView(request RawValueRequest) (*semantic.QueryScope, e
 	return p.semanticView(request.Table, request.Dimensions, measures, request.Filters, "")
 }
 
-func (p *Planner) countView(request CountRequest) (*semantic.QueryScope, error) {
+func (p *Planner) countView(request CountRequest) (*queryView, error) {
 	if request.Table == "" {
 		return nil, fmt.Errorf("count query requires table")
 	}
 	return p.semanticView(request.Table, nil, nil, request.Filters, "")
 }
 
-func (p *Planner) semanticView(table string, dimensions []Field, measures []Field, filters []Filter, timeField string) (*semantic.QueryScope, error) {
+func (p *Planner) semanticView(table string, dimensions []Field, measures []Field, filters []Filter, timeField string) (*queryView, error) {
 	if p.Model == nil {
 		return nil, fmt.Errorf("semantic model is required")
 	}
 	baseTable := table
 	grain := ""
-	resolvedMeasures := map[string]semantic.MetricMeasure{}
+	resolvedMeasures := map[string]ResolvedMeasure{}
 	for _, item := range measures {
-		measure := semantic.MetricMeasure{}
+		measure := ResolvedMeasure{}
 		if strings.TrimSpace(item.Measure.SQLExpression()) == "" {
-			var err error
-			measure, err = p.Model.ResolveMeasure(item.Field)
+			semanticMeasure, err := p.Model.ResolveMeasure(item.Field)
 			if err != nil {
 				return nil, err
 			}
+			measure = ResolvedMeasureFromSemantic(semanticMeasure)
 		} else {
-			measure = semanticMeasureFromInline(item.Field, item.Measure)
+			measure = ResolvedMeasureFromInline(item.Field, item.Measure)
 		}
 		if measure.Table == "" {
 			return nil, fmt.Errorf("measure %q has no base table", item.Field)
@@ -117,7 +124,7 @@ func (p *Planner) semanticView(table string, dimensions []Field, measures []Fiel
 		}
 		resolvedDimensions[timeField] = dimension
 	}
-	return &semantic.QueryScope{
+	return &queryView{
 		BaseTable:  baseTable,
 		Grain:      grain,
 		Dimensions: resolvedDimensions,
@@ -125,8 +132,42 @@ func (p *Planner) semanticView(table string, dimensions []Field, measures []Fiel
 	}, nil
 }
 
-func semanticMeasureFromInline(field string, measure InlineMeasure) semantic.MetricMeasure {
-	return semantic.MetricMeasure{
+func InlineMeasureFromSemantic(measure semantic.MetricMeasure) InlineMeasure {
+	return InlineMeasure{
+		Field:       measure.Field,
+		Name:        measure.Name,
+		Label:       measure.Label,
+		Description: measure.Description,
+		Expr:        measure.Expr,
+		Expression:  measure.Expression,
+		Table:       measure.Table,
+		Grain:       measure.Grain,
+		Time:        measure.Time,
+		Grains:      append([]string{}, measure.Grains...),
+		Unit:        measure.Unit,
+		Format:      measure.Format,
+	}
+}
+
+func ResolvedMeasureFromSemantic(measure semantic.MetricMeasure) ResolvedMeasure {
+	return ResolvedMeasure{
+		Field:       measure.Field,
+		Name:        measure.Name,
+		Label:       measure.Label,
+		Description: measure.Description,
+		Expr:        measure.Expr,
+		Expression:  measure.Expression,
+		Table:       measure.Table,
+		Grain:       measure.Grain,
+		Time:        measure.Time,
+		Grains:      append([]string{}, measure.Grains...),
+		Unit:        measure.Unit,
+		Format:      measure.Format,
+	}
+}
+
+func ResolvedMeasureFromInline(field string, measure InlineMeasure) ResolvedMeasure {
+	return ResolvedMeasure{
 		Field:       defaultString(measure.Field, field),
 		Name:        defaultString(measure.Name, field),
 		Label:       measure.Label,
@@ -142,7 +183,21 @@ func semanticMeasureFromInline(field string, measure InlineMeasure) semantic.Met
 	}
 }
 
-func (p *Planner) aliases(view *semantic.QueryScope, fields []string) (map[string]tableAlias, error) {
+func (s *queryView) ResolveDimensionRef(ref string) (string, semantic.MetricDimension, error) {
+	if dimension, ok := s.Dimensions[ref]; ok {
+		return ref, dimension, nil
+	}
+	return "", semantic.MetricDimension{}, fmt.Errorf("field %q is not exposed", ref)
+}
+
+func (s *queryView) ResolveMeasureRef(ref string) (string, ResolvedMeasure, error) {
+	if measure, ok := s.Measures[ref]; ok {
+		return ref, measure, nil
+	}
+	return "", ResolvedMeasure{}, fmt.Errorf("field %q is not exposed", ref)
+}
+
+func (p *Planner) aliases(view *queryView, fields []string) (map[string]tableAlias, error) {
 	aliases := map[string]tableAlias{
 		view.BaseTable: {Table: view.BaseTable, Alias: "t0"},
 	}

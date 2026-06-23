@@ -322,7 +322,7 @@ func (file modelFile) compile() (*Model, error) {
 	return model, nil
 }
 
-var modelSQLSourceRefPattern = regexp.MustCompile(`\bsource\.([A-Za-z_][A-Za-z0-9_]*)\b`)
+var modelSQLRelationRefPattern = regexp.MustCompile(`\b(source|raw)\.([A-Za-z_][A-Za-z0-9_]*)\b`)
 
 func (m *Model) modelTableSourceDependencies(tableName string, table ModelTable) ([]string, error) {
 	sql := strings.TrimSpace(table.Transform.SQL)
@@ -359,7 +359,10 @@ func (m *Model) modelTableSourceDependencies(tableName string, table ModelTable)
 			return nil, err
 		}
 	}
-	inferred := modelSQLSourceRefs(sql)
+	inferred, rawRefs := modelSQLSourceRefs(sql)
+	if len(rawRefs) > 0 {
+		return nil, fmt.Errorf("model table %q model SQL must reference sources through source.<name>; raw.<name> is internal", tableName)
+	}
 	for _, source := range inferred {
 		if _, ok := m.Sources[source]; !ok {
 			return nil, fmt.Errorf("model table %q SQL references unknown source %q", tableName, source)
@@ -376,21 +379,33 @@ func (m *Model) modelTableSourceDependencies(tableName string, table ModelTable)
 	return result, nil
 }
 
-func modelSQLSourceRefs(sql string) []string {
+func modelSQLSourceRefs(sql string) ([]string, []string) {
 	if sql == "" {
-		return nil
+		return nil, nil
 	}
-	matches := modelSQLSourceRefPattern.FindAllStringSubmatch(sql, -1)
-	seen := map[string]struct{}{}
+	matches := modelSQLRelationRefPattern.FindAllStringSubmatch(sql, -1)
+	sourceSeen := map[string]struct{}{}
+	rawSeen := map[string]struct{}{}
 	for _, match := range matches {
-		if len(match) < 2 {
+		if len(match) < 3 {
 			continue
 		}
-		seen[match[1]] = struct{}{}
+		switch match[1] {
+		case "source":
+			sourceSeen[match[2]] = struct{}{}
+		case "raw":
+			rawSeen[match[2]] = struct{}{}
+		}
 	}
-	result := make([]string, 0, len(seen))
-	for source := range seen {
-		result = append(result, source)
+	sourceRefs := sortedStringSet(sourceSeen)
+	rawRefs := sortedStringSet(rawSeen)
+	return sourceRefs, rawRefs
+}
+
+func sortedStringSet(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
 	}
 	sort.Strings(result)
 	return result
@@ -428,6 +443,10 @@ func (m *Model) validateSemanticGraph() error {
 		relationshipTables[fromTable] = struct{}{}
 		relationshipTables[toTable] = struct{}{}
 	}
+	return m.validateConnectedMeasureGraph(relationshipTables)
+}
+
+func (m *Model) validateConnectedMeasureGraph(relationshipTables map[string]struct{}) error {
 	baseTables := map[string]struct{}{}
 	for name, measure := range m.Measures {
 		if measure.Table == "" {
@@ -444,7 +463,7 @@ func (m *Model) validateSemanticGraph() error {
 				continue
 			}
 			if _, err := m.SafeRelationshipPath(baseTable, targetTable); err != nil {
-				return fmt.Errorf("unsafe relationship path: %w", err)
+				return fmt.Errorf("semantic model requires a connected relationship graph: %w", err)
 			}
 		}
 	}

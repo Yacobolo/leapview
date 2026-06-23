@@ -3,8 +3,6 @@ package query
 import (
 	"fmt"
 	"strings"
-
-	"github.com/Yacobolo/libredash/internal/semantic"
 )
 
 func (p *Planner) Plan(request Request) (Plan, error) {
@@ -351,7 +349,7 @@ func (p *Planner) PlanCount(request CountRequest) (Plan, error) {
 	return Plan{SQL: sql, Args: args, Columns: []string{"value"}}, nil
 }
 
-func (p *Planner) whereParts(view *semantic.QueryScope, aliases map[string]tableAlias, filters []Filter) ([]string, []any, error) {
+func (p *Planner) whereParts(view *queryView, aliases map[string]tableAlias, filters []Filter) ([]string, []any, error) {
 	whereParts := []string{"1 = 1"}
 	args := []any{}
 	for _, filter := range filters {
