@@ -88,7 +88,7 @@ Suggested ownership:
 - `deployment`: bundle lifecycle, upload, validation, artifact storage, activation, rollback.
 - `access`: principals, roles, permissions, authorization decisions.
 - `analytics`: semantic model loading, source/model resolution, semantic relationship validation, query planning, DuckDB execution, materialization.
-- `dashboard`: report pages, filters, visuals, BI tables, commands, signal payloads, and direct queries over semantic models.
+- `dashboard`: report pages, filters, visuals, BI tables, interaction commands, page state, and typed query intents for analytics.
 - `agent`: conversations, runs, tools, transcripts, model interaction.
 
 Existing packages such as `semantic`, `query`, `dashboard`, and `data` already contain useful concepts. Refactors should preserve good domain language while moving responsibilities toward the capability map above.
@@ -112,6 +112,65 @@ Storage ownership:
 
 - SQLite is the control-plane store for application metadata such as workspaces, deployments, assets, roles, sessions, and agent conversations.
 - DuckDB is the analytical engine for imported/cache data, semantic query execution, dashboard data, and materializations.
+
+Capability sub-boundaries should make the semantic-model-first core explicit:
+
+```text
+analytics/
+  model/        semantic model contracts, fields, relationships, measures
+  query/        semantic query requests, planning, path safety, SQL plans
+  materialize/  refresh and cache/materialization behavior
+  duckdb/       DuckDB execution adapter
+
+dashboard/
+  report/       dashboard/page/filter/visual/table contracts
+  stream/       page snapshots and SSE/update flow
+  command/      filter, selection, table-window, and refresh command handling
+  datastar/     signal decoding, patch keys, SSE serialization
+  http/         route handlers
+
+workspace/
+  catalog/      catalog discovery and workspace identity
+  compiler/     cross-contract loading, normalization, and validation
+```
+
+`analytics` is the only owner of semantic query planning, semantic model validation, materialization, and DuckDB execution. `dashboard` may describe what data a page needs, but it should call analytics through typed semantic query ports instead of planning or executing semantic queries itself.
+
+## Workspace Compiler
+
+LibreDash is dashboards-as-code, so authored YAML contracts need a clear compilation boundary.
+
+The long-term target is:
+
+```text
+workspace/catalog + analytics/model + dashboard/report
+        -> workspace/compiler
+        -> normalized runtime workspace
+```
+
+The compiler owns cross-contract validation and normalization:
+
+- Catalog entries resolve to semantic models and dashboards.
+- Dashboard `semantic_model` references resolve to loaded semantic models.
+- Dashboard fields, measures, filters, tables, and visuals resolve against the semantic model.
+- Legacy product vocabulary such as metric views is rejected at the boundary.
+- The compiler produces a runtime workspace that dashboard, analytics, deployment, workspace UI, and agent tools can consume without re-parsing YAML.
+
+Capability packages own their local contracts and validation. The compiler owns validation that spans multiple contracts. Deployment validation should call the compiler instead of importing semantic/dashboard internals directly.
+
+The compiler also owns workspace lineage in workspace terms. Deployment can persist a versioned asset graph produced by the compiler, the control-plane store can store it, and workspace UI/API can present it. Deployment should not build lineage by walking semantic/dashboard internals itself.
+
+## Source and Connector Boundaries
+
+Source and connection support crosses product contracts, security, and runtime execution, so the boundary must stay explicit:
+
+- `analytics/model` owns authored source and connection contracts.
+- A connector registry owns supported connection/source kinds, formats, option schemas, and capability metadata.
+- Credential and environment resolution belongs to infrastructure adapters, not authored domain structs.
+- Path-scope and object-scope validation belongs at the compiler/runtime boundary before execution.
+- DuckDB scan, secret, attach, and extension statements belong in `analytics/duckdb`.
+
+Authored YAML should describe what source to read and under which governed connection. It should not expose DuckDB secret plumbing, internal `raw.*` relations, or runtime scan implementation details.
 
 ## Package Shape
 
@@ -313,6 +372,48 @@ agent/openai           model API adapter
 
 Adapters may import external libraries and generated code. They should hide those details behind capability ports.
 
+Gomponents renderers are also edge adapters. Prefer colocating renderers with the capability HTTP/UI adapter when they are capability-specific. A shared `internal/ui` package may exist, but it must stay render-only:
+
+- No workflow orchestration.
+- No storage access.
+- No semantic query planning.
+- No cross-contract validation.
+- No mutation of domain state.
+
+## Control-Plane Infrastructure
+
+SQLite/sqlc is control-plane infrastructure, not a product capability.
+
+Long-term rules:
+
+- Generated sqlc code should be private to SQLite adapter packages or a narrow `platform/sqlite` infrastructure package.
+- `platform.Store` should not expose raw `Queries()` to handlers, services, runtime managers, or domain code.
+- `access` owns roles, permissions, and authorization decisions.
+- `deployment`, `workspace`, `access`, and `agent` each get capability-shaped repositories over the SQLite control plane.
+- Composition code may wire SQLite implementations into use cases, but business workflows should not depend on sqlc row types or transaction types.
+
+`platform` can remain as low-level infrastructure, migrations, or shared SQLite setup. It should not be the place where workspace, deployment, access, sessions, assets, and agent business workflows accumulate.
+
+## Active Runtime Host
+
+The active workspace runtime lifecycle needs a small explicit owner. It should not be absorbed wholesale by deployment, analytics, dashboard, or composition code.
+
+Long-term responsibilities:
+
+- Track the active deployment/runtime for a workspace.
+- Prepare a candidate runtime before activation is committed.
+- Atomically swap the active runtime after deployment activation succeeds.
+- Close replaced runtimes safely.
+- Expose typed runtime ports to dashboard and agent use cases.
+
+Boundary rules:
+
+- Deployment requests activation through a runtime host port.
+- Analytics prepares executable engines and query/materialization services.
+- Dashboard queries through typed analytics ports exposed by the active runtime.
+- Composition wires the runtime host, deployment repositories, artifact store, and analytics runtime factory.
+- The runtime host must not own deployment status transitions, semantic query planning, dashboard patch construction, or sqlc persistence.
+
 ## Composition Root
 
 `internal/app` or a future `internal/server` package should become the composition root.
@@ -347,6 +448,22 @@ Handlers should not own business workflows such as deployment activation, worksp
 
 Datastar-specific logic should live in adapter code near dashboard/workspace capabilities rather than leaking across domain or analytics code.
 
+Dashboard domain code should own:
+
+- `PageState`
+- `PageSnapshot`
+- `FilterState`
+- `VisualSelection`
+- Table window and chart selection command intents
+- Typed analytics query intents
+
+`dashboard/datastar` should own:
+
+- JSON signal decoding.
+- Datastar patch keys.
+- SSE serialization.
+- Compatibility with client-side signal shape.
+
 Dashboard streaming services must:
 
 - Accept `context.Context` and stop promptly on cancellation.
@@ -355,6 +472,18 @@ Dashboard streaming services must:
 - Keep cache invalidation and refresh behavior explicit.
 - Treat Datastar as serialization and transport, not as business state.
 - Keep patch shape ownership in dashboard/datastar adapter code.
+
+## Visual Renderer Plugins
+
+Dashboard/Go code owns renderer-neutral visual intent:
+
+- Visual kind and shape.
+- Encodings and semantic fields.
+- Safe core visual options.
+- Validated renderer-specific option bags.
+- Data payloads shaped by analytics results.
+
+Web renderer plugins adapt those shapes to concrete libraries such as ECharts. Renderer plugins should not own semantic query planning, dashboard filter behavior, or backend data contracts. Future renderers should plug into the same renderer-neutral visual shape contracts rather than creating dashboard-specific query paths.
 
 ## Repositories
 
@@ -379,6 +508,24 @@ agent/sqlite.ConversationRepository
 ```
 
 Repository implementations may use sqlc. Domain and application code should not.
+
+## Deployment Boundaries
+
+Deployment owns the lifecycle of published workspace artifacts:
+
+- Bundle envelope and manifest.
+- Artifact identity and digest.
+- Deployment status transitions.
+- Upload, validation, activation, rollback, and failure marking.
+
+Deployment should not walk semantic/dashboard internals directly. It should depend on ports:
+
+- A workspace compiler/validator for contract validation.
+- An asset graph extractor for workspace lineage assets.
+- An analytics runtime factory for preparing a runtime from a compiled artifact.
+- Capability repositories for deployment and artifact persistence.
+
+Runtime activation should prepare analytics runtime through a port and commit deployment state through deployment repositories. It should not construct DuckDB services or call sqlc queries directly.
 
 ## Scaling Laws
 
@@ -590,12 +737,13 @@ Flow:
 ```text
 dashboard/http.UpdatesHandler
     -> dashboard/stream.Service
-        -> analytics.QueryEngine
+        -> dashboard.QueryIntent
+        -> analytics/query.Engine
     <- dashboard.PageSnapshot
     -> dashboard/datastar.Patch
 ```
 
-Dashboard code owns report-page behavior. Analytics code owns query planning and execution. Datastar code owns signal translation.
+Dashboard code owns report-page behavior, filter state, selections, table windows, and page snapshots. Analytics code owns semantic query planning and execution. Datastar code owns signal translation.
 
 ## Migration Guidance
 
@@ -608,11 +756,21 @@ Architecture should improve through focused moves:
 5. Add use-case tests with fakes.
 6. Repeat for the next workflow.
 
-Good first candidates:
+Primary migration target:
+
+- Retire `internal/data/DuckDBMetrics` as the cross-cutting runtime object. Split it into:
+  - `analytics/duckdb` for DuckDB connections and execution.
+  - `analytics/materialize` for model materialization refresh.
+  - `analytics/query` for semantic query planning/execution ports.
+  - `dashboard/stream` or `dashboard/runtime` for page snapshots, table windows, and command orchestration.
+  - `workspace/catalog` and `workspace/compiler` for catalog/workspace loading and normalized runtime workspace construction.
+
+Other good candidates:
 
 - Deployment activation and validation.
 - Workspace asset listing and access view shaping.
 - RBAC grant/revoke/authorize workflows.
 - Dashboard command handling and update streaming.
+- Extracting sqlc access behind capability repositories and removing raw `Queries()` calls outside adapters/composition.
 
 The architecture is successful when a developer can understand and test one capability without loading the whole application into their head.
