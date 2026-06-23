@@ -56,6 +56,19 @@ func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, a
 	)
 }
 
+func ConnectionsPage(catalog dashboard.Catalog, workspaceID string, assets []api.AssetResponse, query, roleLabel string) g.Node {
+	return workspaceDocument("Connections", catalog, "connections", roleLabel, nil,
+		h.Section(h.Class(workspaceMainClass), h.Aria("label", "Global connections"),
+			workspaceHeader("Global", "Connections", "Read-only connection assets used by published semantic models.", nil),
+			connectionToolbar(query),
+			h.Div(h.Class(workspacePanelClass),
+				g.If(len(assets) == 0, h.Div(h.Class("p-3"), emptyState("No connections match this view."))),
+				g.If(len(assets) > 0, assetTable(workspaceID, assets)),
+			),
+		),
+	)
+}
+
 func workspacePageSignals(access api.WorkspaceAccessResponse, csrfToken string) map[string]any {
 	return map[string]any{
 		"workspaceAccess": WorkspaceAccessSignals(access, csrfToken),
@@ -270,6 +283,15 @@ func assetToolbar(workspaceID, activeType, query string, assets []api.AssetRespo
 				}
 				return assetTabLink(workspaceID, typ, activeType, query, label)
 			}),
+		),
+	)
+}
+
+func connectionToolbar(query string) g.Node {
+	return h.Div(h.Class("grid min-w-0 gap-3 border-b border-outline-variant bg-app px-3 pt-3"), g.Attr("data-connection-toolbar", ""),
+		h.Form(h.Method("get"), h.Action("/connections"), h.Class("flex min-w-0 max-w-workspace-search items-center gap-2"),
+			h.Input(h.Type("search"), h.Name("q"), h.Value(query), h.Placeholder("Search connections..."), h.Class("min-h-control-md w-full rounded-small border border-outline-variant bg-control px-3 text-body-sm font-medium text-fg-default placeholder:text-fg-muted")),
+			h.Button(h.Type("submit"), h.Class(metricActionButtonClass), h.Title("Search"), h.Aria("label", "Search"), lucide.Search(metricActionIconAttrs()...)),
 		),
 	)
 }

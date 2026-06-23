@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/api"
@@ -35,6 +36,10 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	if r.URL.Query().Get("type") == "connection" {
+		http.Redirect(w, r, connectionsHref(r.URL.Query().Get("q")), http.StatusFound)
+		return
+	}
 	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
 	if err != nil {
 		http.Error(w, err.Error(), statusForNotFound(err))
@@ -52,7 +57,18 @@ func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/workspaces/"+s.workspaceID("")+"?type=connection", http.StatusFound)
+	workspaceID := s.workspaceID("")
+	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	filtered := filterAssets(assets, "connection", r.URL.Query().Get("q"))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if err := ui.ConnectionsPage(s.metrics.Catalog(), workspaceID, filtered, r.URL.Query().Get("q"), s.currentRoleLabel(r)).Render(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) workspaceAsset(w http.ResponseWriter, r *http.Request) {
@@ -629,6 +645,16 @@ func filterWorkspaceAssets(assets []api.AssetResponse, typ, query string) []api.
 		}
 	}
 	return out
+}
+
+func connectionsHref(query string) string {
+	href := "/connections"
+	if strings.TrimSpace(query) == "" {
+		return href
+	}
+	values := url.Values{}
+	values.Set("q", query)
+	return href + "?" + values.Encode()
 }
 
 func isWorkspaceLandingAsset(typ string) bool {

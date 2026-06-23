@@ -66,7 +66,7 @@ func TestPackValidateAndExtractAssets(t *testing.T) {
 		t.Fatal("expected source to connection lineage edge")
 	}
 	if !hasMetricModelTableEdge {
-		t.Fatal("expected metric view to model table lineage edge")
+		t.Fatal("expected semantic model to model table lineage edge")
 	}
 	if !hasModelTableSourceEdge {
 		t.Fatal("expected model table to source lineage edge")

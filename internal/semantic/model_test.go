@@ -41,9 +41,10 @@ func TestLoadOlistModel(t *testing.T) {
 	}
 }
 
-func TestMetricViewRejectsMeasureOutsideBaseTable(t *testing.T) {
+func TestModelValidateRejectsMeasureOnUnreachableTable(t *testing.T) {
 	model := minimalSourceModel()
 	model.Sources["customers"] = Source{Path: "customers.csv"}
+	model.Measures = map[string]MetricMeasure{}
 	model.Tables["customers"] = ModelTable{
 		Kind:       "dimension",
 		Source:     "customers",
@@ -57,22 +58,14 @@ func TestMetricViewRejectsMeasureOutsideBaseTable(t *testing.T) {
 			"customer_count": {Label: "Customers", Expression: "COUNT(DISTINCT customers.customer_id)"},
 		},
 	}
-	if err := model.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v, want nil", err)
+	model.Measures["customer_count"] = MetricMeasure{
+		Table:      "customers",
+		Grain:      "customer_id",
+		Expression: "COUNT(DISTINCT customers.customer_id)",
 	}
-	view := &MetricView{
-		ID:            "orders",
-		Title:         "Orders",
-		SemanticModel: "test",
-		BaseTable:     "orders",
-		Grain:         "order_id",
-		Time:          ViewTime{DefaultField: "orders.order_id"},
-		DimensionRefs: []string{"orders.order_id", "customers.state"},
-		MeasureRefs:   []string{"orders.order_count", "customers.customer_count"},
-	}
-	err := view.Validate(model)
-	if err == nil || !strings.Contains(err.Error(), `is owned by "customers", want base table "orders"`) {
-		t.Fatalf("Validate() error = %v, want non-base measure rejection", err)
+	err := model.Validate()
+	if err == nil || !strings.Contains(err.Error(), `no safe relationship path from "orders" to "customers"`) {
+		t.Fatalf("Validate() error = %v, want unreachable measure table rejection", err)
 	}
 }
 
