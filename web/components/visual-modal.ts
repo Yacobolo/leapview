@@ -1,5 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { state } from 'lit/decorators.js'
+import { X } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 
 type VisualActionName = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
 
@@ -121,8 +123,11 @@ class VisualModal extends LitElement {
     .close {
       width: calc(var(--ld-control-small) + var(--base-size-2));
       padding: 0;
-      font-size: var(--ld-font-size-body-lg);
-      line-height: var(--ld-line-height-none);
+    }
+
+    .close svg {
+      width: var(--base-size-16);
+      height: var(--base-size-16);
     }
 
     .body {
@@ -246,7 +251,7 @@ class VisualModal extends LitElement {
             <div class="actions">
               <button type="button" @click=${() => this.copy(detail)}>Copy</button>
               <button type="button" @click=${() => this.exportCSV(detail)}>Export CSV</button>
-              <button class="close" type="button" aria-label="Close visual modal" @click=${this.close}>×</button>
+              <button class="close" type="button" aria-label="Close visual modal" @click=${this.close}>${lucideIcon(X)}</button>
             </div>
           </header>
           <div class="body">

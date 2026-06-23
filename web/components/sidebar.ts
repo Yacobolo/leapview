@@ -1,5 +1,22 @@
-import { LitElement, css, html, svg as svgTemplate } from 'lit'
+import { LitElement, css, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import {
+  Activity,
+  Database,
+  Layers,
+  LayoutDashboard,
+  MessagesSquare,
+  Monitor,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plug,
+  Settings,
+  Sun,
+  TableProperties,
+  type IconNode,
+} from 'lucide'
+import { lucideIcon } from './lucide-icons'
 
 type NavItem = {
   id: string
@@ -643,38 +660,23 @@ class LibreDashSidebar extends LitElement {
 }
 
 function icon(name: IconName) {
-  switch (name) {
-    case 'catalog':
-      return iconSvg(svgTemplate`<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect>`)
-    case 'dashboard':
-      return iconSvg(svgTemplate`<path d="M3 3v18h18"></path><path d="M8 17V9"></path><path d="M13 17V5"></path><path d="M18 17v-6"></path>`)
-    case 'chat':
-      return iconSvg(svgTemplate`<path d="M21 12a8 8 0 0 1-8 8H7l-4 3 1.5-5A8 8 0 1 1 21 12Z"></path><path d="M8 11h8"></path><path d="M8 15h5"></path>`)
-    case 'model':
-      return iconSvg(svgTemplate`<ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path>`)
-    case 'data':
-      return iconSvg(svgTemplate`<path d="M3 4h18"></path><path d="M3 10h18"></path><path d="M3 16h18"></path><path d="M8 4v16"></path><path d="M16 4v16"></path>`)
-    case 'cache':
-      return iconSvg(svgTemplate`<path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path><path d="M7 4v16"></path><path d="M17 4v16"></path>`)
-    case 'settings':
-      return iconSvg(svgTemplate`<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 .9-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .9 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5.9Z"></path>`)
-    case 'system':
-      return iconSvg(svgTemplate`<rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M8 8h8"></path><path d="M8 12h5"></path>`)
-    case 'sun':
-      return iconSvg(svgTemplate`<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.9 4.9 1.4 1.4"></path><path d="m17.7 17.7 1.4 1.4"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.3 17.7-1.4 1.4"></path><path d="m19.1 4.9-1.4 1.4"></path>`)
-    case 'moon':
-      return iconSvg(svgTemplate`<path d="M20.9 13.4A8 8 0 0 1 10.6 3.1 8.9 8.9 0 1 0 20.9 13.4Z"></path>`)
-    case 'activity':
-      return iconSvg(svgTemplate`<path d="M22 12h-4l-3 8L9 4l-3 8H2"></path>`)
-    case 'collapse':
-      return iconSvg(svgTemplate`<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path><path d="m16 10-2 2 2 2"></path>`)
-    case 'expand':
-      return iconSvg(svgTemplate`<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path><path d="m14 10 2 2-2 2"></path>`)
+  const icons: Record<IconName, IconNode> = {
+    catalog: Layers,
+    dashboard: LayoutDashboard,
+    chat: MessagesSquare,
+    model: Database,
+    data: Plug,
+    cache: TableProperties,
+    settings: Settings,
+    system: Monitor,
+    sun: Sun,
+    moon: Moon,
+    activity: Activity,
+    collapse: PanelLeftClose,
+    expand: PanelLeftOpen,
   }
-}
 
-function iconSvg(content: unknown) {
-  return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`
+  return lucideIcon(icons[name])
 }
 
 function storedCollapsed(): boolean {

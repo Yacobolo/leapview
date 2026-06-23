@@ -1,5 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { createRef, ref, type Ref } from 'lit/directives/ref.js'
+import { EllipsisVertical } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 import {
   TableController,
   callMemoOrStaticFn,
@@ -339,6 +341,11 @@ class DataTable extends LitElement {
 
     .visual-options summary::-webkit-details-marker {
       display: none;
+    }
+
+    .visual-options summary svg {
+      width: var(--base-size-16);
+      height: var(--base-size-16);
     }
 
     .visual-options summary:hover,
@@ -1484,7 +1491,7 @@ class DataTable extends LitElement {
             <h2>${this.table?.title ?? 'Orders'}</h2>
           </div>
           <details class="visual-options">
-            <summary aria-label="Visual options" title="Visual options">⋮</summary>
+            <summary aria-label="Visual options" title="Visual options">${lucideIcon(EllipsisVertical)}</summary>
             <div class="menu" role="menu">
               <button type="button" role="menuitem" @click=${() => this.runAction('focus')}>${visualMenuIcon('focus')}<span>Focus mode</span></button>
               <button type="button" role="menuitem" @click=${() => this.runAction('show-data')}>${visualMenuIcon('show-data')}<span>Show data</span></button>

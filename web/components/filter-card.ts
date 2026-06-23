@@ -1,4 +1,6 @@
 import { css, html, nothing, render as renderLit } from 'lit'
+import { ChevronDown } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 import {
   defaultControl,
   emptyFilters,
@@ -76,8 +78,12 @@ const filterCardStyles = css`
     .chevron {
       flex: 0 0 auto;
       color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-strong);
+    }
+
+    .chevron svg {
+      display: block;
+      width: var(--base-size-16);
+      height: var(--base-size-16);
     }
 
     .popover {
@@ -239,7 +245,7 @@ class FilterCard extends HTMLElement {
         <div class="label">${definition.label}</div>
         <button class="trigger" type="button" ?disabled=${this.isLoading()} aria-expanded=${String(this.open)} @click=${() => this.toggle(definition, control)}>
           <span class="value">${this.summary(definition, control)}</span>
-          <span class="chevron" aria-hidden="true">▾</span>
+          <span class="chevron" aria-hidden="true">${lucideIcon(ChevronDown)}</span>
         </button>
         ${this.open ? this.renderPopover(definition, control) : nothing}
       </section>

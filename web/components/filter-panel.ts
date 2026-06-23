@@ -1,5 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 import {
   defaultControl,
   emptyFilters,
@@ -121,6 +123,13 @@ class FilterPanel extends LitElement {
 
     .close:hover {
       color: var(--ld-fg-default);
+    }
+
+    .close svg,
+    .date-trigger svg,
+    .calendar-nav svg {
+      width: var(--base-size-16);
+      height: var(--base-size-16);
     }
 
     .card {
@@ -463,7 +472,7 @@ class FilterPanel extends LitElement {
             <h2>Filters</h2>
             <span class="count">${activeCount} active</span>
           </div>
-          <button class="close" type="button" aria-label="Collapse filters" title="Collapse filters" @click=${this.close}>x</button>
+          <button class="close" type="button" aria-label="Collapse filters" title="Collapse filters" @click=${this.close}>${lucideIcon(X)}</button>
         </header>
         ${entries.map(([name, definition]) => this.renderFilter(name, definition))}
         ${this.renderVisualSelections()}
@@ -508,7 +517,7 @@ class FilterPanel extends LitElement {
           @click=${() => this.toggleDatePopover(name, definition, control)}
         >
           <span>${dateSummary(definition, control)}</span>
-          <span aria-hidden="true">▾</span>
+          ${lucideIcon(ChevronDown)}
         </button>
         <div class="preset-row" role="group" aria-label=${definition.label}>
           ${presets.map((item) => html`
@@ -536,9 +545,9 @@ class FilterPanel extends LitElement {
     return html`
       <div class="date-popover" @keydown=${(event: KeyboardEvent) => this.handleDatePopoverKey(name, event)}>
         <div class="calendar-head">
-          <button class="calendar-nav" type="button" aria-label="Previous month" @click=${() => this.shiftDraftMonth(-1)}>‹</button>
+          <button class="calendar-nav" type="button" aria-label="Previous month" @click=${() => this.shiftDraftMonth(-1)}>${lucideIcon(ChevronLeft)}</button>
           <div class="calendar-title">${monthTitle(month)}</div>
-          <button class="calendar-nav" type="button" aria-label="Next month" @click=${() => this.shiftDraftMonth(1)}>›</button>
+          <button class="calendar-nav" type="button" aria-label="Next month" @click=${() => this.shiftDraftMonth(1)}>${lucideIcon(ChevronRight)}</button>
         </div>
         <div class="calendar-grid">
           ${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) => html`<div class="weekday">${day}</div>`)}

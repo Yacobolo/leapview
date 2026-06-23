@@ -1,5 +1,7 @@
-import { LitElement, css, html, svg as svgTemplate, type PropertyValues } from 'lit'
+import { LitElement, css, html, type PropertyValues } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { ChevronLeft, ChevronRight, type IconNode } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 
 type SubSidebarItem = {
   id: string
@@ -682,16 +684,12 @@ function cleanText(value: unknown): string {
 }
 
 function icon(name: 'chevron-left' | 'chevron-right') {
-  switch (name) {
-    case 'chevron-left':
-      return iconSvg(svgTemplate`<path d="m15 18-6-6 6-6"></path>`)
-    case 'chevron-right':
-      return iconSvg(svgTemplate`<path d="m9 18 6-6-6-6"></path>`)
+  const icons: Record<'chevron-left' | 'chevron-right', IconNode> = {
+    'chevron-left': ChevronLeft,
+    'chevron-right': ChevronRight,
   }
-}
 
-function iconSvg(content: unknown) {
-  return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`
+  return lucideIcon(icons[name])
 }
 
 if (!customElements.get('ld-sub-sidebar')) {
