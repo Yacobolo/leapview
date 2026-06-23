@@ -1,5 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { Mail, Search, Trash2, Users, X } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 
 type Workspace = {
   id?: string
@@ -784,23 +786,23 @@ function roleLabel(role: string): string {
 }
 
 function usersIcon() {
-  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg></span>`
+  return html`<span class="icon" aria-hidden="true">${lucideIcon(Users, { size: 16 })}</span>`
 }
 
 function xIcon() {
-  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></span>`
+  return html`<span class="icon" aria-hidden="true">${lucideIcon(X, { size: 16 })}</span>`
 }
 
 function trashIcon() {
-  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span>`
+  return html`<span class="icon" aria-hidden="true">${lucideIcon(Trash2, { size: 16 })}</span>`
 }
 
 function searchIcon() {
-  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg></span>`
+  return html`<span class="icon" aria-hidden="true">${lucideIcon(Search, { size: 16 })}</span>`
 }
 
 function mailIcon() {
-  return html`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path><rect x="2" y="4" width="20" height="16" rx="2"></rect></svg></span>`
+  return html`<span class="icon" aria-hidden="true">${lucideIcon(Mail, { size: 16 })}</span>`
 }
 
 customElements.define('ld-workspace-access-control', WorkspaceAccessControl)

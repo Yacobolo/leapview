@@ -1,5 +1,7 @@
 import { LitElement, css, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { Send } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 
 class ChatComposer extends LitElement {
   @property({ type: String }) value = ''
@@ -69,7 +71,7 @@ class ChatComposer extends LitElement {
     button {
       display: inline-flex;
       min-height: 40px;
-      min-width: 68px;
+      min-width: 40px;
       align-items: center;
       justify-content: center;
       gap: 8px;
@@ -82,12 +84,17 @@ class ChatComposer extends LitElement {
       font: inherit;
       font-size: var(--ld-font-size-body-sm);
       font-weight: var(--ld-font-weight-strong);
-      padding: 0 var(--ld-space-lg);
+      padding: 0;
       box-shadow: var(--shadow-resting-small);
       transition:
         background var(--duration-fast) var(--ease-ld),
         border-color var(--duration-fast) var(--ease-ld),
         color var(--duration-fast) var(--ease-ld);
+    }
+
+    button svg {
+      width: 18px;
+      height: 18px;
     }
 
     button:hover:not(:disabled) {
@@ -163,8 +170,13 @@ class ChatComposer extends LitElement {
             @input=${this.input}
             @keydown=${this.keydown}
           ></textarea>
-          <button type="submit" ?disabled=${this.disabled || this.pending || this.draft.trim() === ''}>
-            ${this.pending ? html`<span class="spinner" aria-hidden="true"></span><span>Sending</span>` : 'Send'}
+          <button
+            type="submit"
+            aria-label=${this.pending ? 'Sending' : 'Send'}
+            title="Send"
+            ?disabled=${this.disabled || this.pending || this.draft.trim() === ''}
+          >
+            ${this.pending ? html`<span class="spinner" aria-hidden="true"></span>` : lucideIcon(Send)}
           </button>
         </div>
       </form>

@@ -6,7 +6,9 @@
  */
 import { LitElement, css, html, nothing } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
+import { ChevronDown, ChevronRight, X } from 'lucide'
 
+import { lucideIcon } from '../lucide-icons'
 import type { InspectorState, SignalObject } from './types.js'
 import {
   countSignals,
@@ -270,9 +272,15 @@ export class DatastarInspector extends LitElement {
     }
 
     .chevron {
-      display: inline-block;
+      display: inline-grid;
       width: 16px;
+      place-items: center;
       text-align: center;
+    }
+
+    .chevron svg {
+      width: 14px;
+      height: 14px;
     }
 
     .count {
@@ -511,9 +519,9 @@ export class DatastarInspector extends LitElement {
           @input=${this.handleFilterInput}
         />
         ${hasFilter
-          ? html`<button class="icon-button" @click=${this.clearFilter} aria-label="Clear filter">&times;</button>`
+          ? html`<button class="icon-button" @click=${this.clearFilter} aria-label="Clear filter">${lucideIcon(X, { size: 14 })}</button>`
           : nothing}
-        <button class="icon-button" @click=${this.close} aria-label="Close">&times;</button>
+        <button class="icon-button" @click=${this.close} aria-label="Close">${lucideIcon(X, { size: 14 })}</button>
       </div>
     `
   }
@@ -569,7 +577,7 @@ export class DatastarInspector extends LitElement {
           aria-label=${expanded ? `Collapse ${key}` : `Expand ${key}`}
           @click=${() => this.togglePath(path)}
         >
-          <span class="chevron">${expanded ? '▾' : '▸'}</span>
+          <span class="chevron">${lucideIcon(expanded ? ChevronDown : ChevronRight, { size: 14 })}</span>
           <span class="key">${key}</span>
           <span class="count">${marker}</span>
         </button>

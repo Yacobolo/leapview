@@ -384,7 +384,7 @@ func sidebarGroups(catalog dashboard.Catalog) []map[string]any {
 			"label": "Navigation",
 			"items": []map[string]any{
 				{"id": "dashboards", "label": "Dashboards", "href": "/", "icon": "dashboard", "meta": "Reports"},
-				{"id": "chat", "label": "Chat", "href": "/chat", "icon": "chat", "meta": "Agent interface"},
+				{"id": "chat", "label": "Chats", "href": "/chat", "icon": "chat", "meta": "Agent interface"},
 				{"id": "workspaces", "label": "Workspaces", "href": "/workspaces", "icon": "catalog", "meta": "Published assets"},
 				{"id": "connections", "label": "Connections", "href": "/connections", "icon": "data", "meta": "Data access"},
 				{"id": "settings", "label": "Settings", "href": "/workspaces/" + workspaceID + "/permissions", "icon": "settings", "meta": "Permissions"},

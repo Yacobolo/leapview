@@ -2,6 +2,8 @@ import { LitElement, css, html } from 'lit'
 import { property } from 'lit/decorators.js'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
+import { EllipsisVertical } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 import { visualMenuIcon } from './visual-menu-icons'
 import './chart/echarts-renderer'
 import { chartRenderer } from './chart/registry'
@@ -83,6 +85,11 @@ const chartStyles = css`
 
   .options summary::-webkit-details-marker {
     display: none;
+  }
+
+  .options summary svg {
+    width: var(--base-size-16);
+    height: var(--base-size-16);
   }
 
   .options summary:hover,
@@ -241,7 +248,7 @@ class EChartVisual extends LitElement {
             <span class="unit">${payload.unit ?? ''}</span>
           </div>
           <details class="options">
-            <summary aria-label="Visual options" title="Visual options">⋮</summary>
+            <summary aria-label="Visual options" title="Visual options">${lucideIcon(EllipsisVertical)}</summary>
             <div class="menu" role="menu">
               <button type="button" role="menuitem" @click=${() => this.runAction('focus')}>${visualMenuIcon('focus')}<span>Focus mode</span></button>
               <button type="button" role="menuitem" @click=${() => this.runAction('show-data')}>${visualMenuIcon('show-data')}<span>Show data</span></button>

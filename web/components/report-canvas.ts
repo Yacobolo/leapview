@@ -1,5 +1,7 @@
-import { LitElement, css, html, svg as svgTemplate } from 'lit'
+import { LitElement, css, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { Maximize2, Minus, Plus, type IconNode } from 'lucide'
+import { lucideIcon } from './lucide-icons'
 
 type VisualElement = HTMLElement & {
   dataset: DOMStringMap
@@ -501,12 +503,11 @@ function clampScroll(value: number, max: number): number {
 }
 
 function zoomIcon(name: 'fit-page' | 'minus' | 'plus') {
-  switch (name) {
-    case 'fit-page':
-      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path></svg>`
-    case 'minus':
-      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>`
-    case 'plus':
-      return svgTemplate`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>`
+  const icons: Record<'fit-page' | 'minus' | 'plus', IconNode> = {
+    'fit-page': Maximize2,
+    minus: Minus,
+    plus: Plus,
   }
+
+  return lucideIcon(icons[name])
 }
