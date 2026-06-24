@@ -26,6 +26,7 @@ type LineageNode = {
   meta?: string
   href?: string
   side?: 'upstream' | 'selected' | 'downstream'
+  rank?: number
   selected?: boolean
 }
 
@@ -207,6 +208,7 @@ function toFlowNode(node: LineageNode, nodes: LineageNode[]): Node {
 }
 
 function toFlowEdge(edge: LineageEdge): Edge {
+  const context = edge.kind === 'contains'
   return {
     id: edge.id,
     source: edge.source,
@@ -215,10 +217,11 @@ function toFlowEdge(edge: LineageEdge): Edge {
     markerEnd: { type: MarkerType.ArrowClosed },
     style: {
       stroke: edgeStroke(edge.kind),
-      strokeWidth: 1.5,
+      strokeWidth: context ? 1.2 : 1.6,
+      strokeDasharray: context ? '5 5' : undefined,
     },
     labelStyle: {
-      fill: 'var(--ld-fg-muted)',
+      fill: context ? 'color-mix(in srgb, var(--ld-fg-muted), transparent 12%)' : 'var(--ld-fg-muted)',
       fontSize: 10,
       fontWeight: 500,
     },
@@ -230,43 +233,29 @@ function toFlowEdge(edge: LineageEdge): Edge {
 }
 
 function positionFor(node: LineageNode, nodes: LineageNode[]): { x: number; y: number } {
-  if (isDashboardDataLineage(nodes)) return dashboardDataPositionFor(node, nodes)
-
-  const side = node.side ?? 'downstream'
-  const sideNodes = nodes.filter((candidate) => (candidate.side ?? 'downstream') === side)
-  const index = Math.max(0, sideNodes.findIndex((candidate) => candidate.id === node.id))
-  const y = Math.max(48, index * 118 + 48)
-  switch (side) {
-    case 'upstream':
-      return { x: 96, y }
-    case 'selected':
-      return { x: 384, y: Math.max(96, y) }
-    default:
-      return { x: 672, y }
+  const ranks = Array.from(new Set(nodes.map(nodeRank))).sort((left, right) => left - right)
+  const rank = nodeRank(node)
+  const rankIndex = Math.max(0, ranks.indexOf(rank))
+  const rankNodes = nodes
+    .filter((candidate) => nodeRank(candidate) === rank)
+    .sort((left, right) => nodeSortKey(left).localeCompare(nodeSortKey(right)))
+  const index = Math.max(0, rankNodes.findIndex((candidate) => candidate.id === node.id))
+  const centeredOffset = (index - (rankNodes.length - 1) / 2) * 124
+  return {
+    x: 96 + rankIndex * 260,
+    y: Math.max(48, 240 + centeredOffset),
   }
 }
 
-function isDashboardDataLineage(nodes: LineageNode[]): boolean {
-  return nodes.some((node) => node.selected && node.kind === 'dashboard')
+function nodeRank(node: LineageNode): number {
+  if (typeof node.rank === 'number' && Number.isFinite(node.rank)) return node.rank
+  if (node.selected || node.side === 'selected') return 0
+  if (node.side === 'upstream') return -1
+  return 1
 }
 
-function dashboardDataPositionFor(node: LineageNode, nodes: LineageNode[]): { x: number; y: number } {
-  if (node.selected) return { x: 1440, y: 300 }
-
-  const xByKind: Record<string, number> = {
-    connection: 96,
-    source: 336,
-    model_table: 576,
-    semantic_model: 816,
-    measure: 1200,
-  }
-  const x = xByKind[node.kind] ?? 576
-  if (node.kind !== 'source') return { x, y: 300 }
-
-  const sources = nodes.filter((candidate) => candidate.kind === 'source').sort((left, right) => left.label.localeCompare(right.label))
-  const index = Math.max(0, sources.findIndex((candidate) => candidate.id === node.id))
-  const y = 60 + index * 92
-  return { x, y }
+function nodeSortKey(node: LineageNode): string {
+  return `${node.kind}:${node.label}:${node.id}`
 }
 
 function LineageNodeComponent({ data }: { data: LineageNode }) {
@@ -295,7 +284,10 @@ function nodeStyle(node: LineageNode): Record<string, string> {
     measure: ['var(--ld-asset-measure-bg)', 'var(--ld-asset-measure-accent)', 'var(--ld-asset-measure-border)'],
     model_table: ['var(--ld-asset-model-table-bg)', 'var(--ld-asset-model-table-accent)', 'var(--ld-asset-model-table-border)'],
     page: ['var(--ld-asset-page-bg)', 'var(--ld-asset-page-accent)', 'var(--ld-asset-page-border)'],
+    page_item: ['var(--ld-asset-page-bg)', 'var(--ld-asset-page-accent)', 'var(--ld-asset-page-border)'],
+    relationship: ['var(--ld-asset-dimension-bg)', 'var(--ld-asset-dimension-accent)', 'var(--ld-asset-dimension-border)'],
     semantic_model: ['var(--ld-asset-semantic-model-bg)', 'var(--ld-asset-semantic-model-accent)', 'var(--ld-asset-semantic-model-border)'],
+    semantic_table: ['var(--ld-asset-model-table-bg)', 'var(--ld-asset-model-table-accent)', 'var(--ld-asset-model-table-border)'],
     source: ['var(--ld-asset-source-bg)', 'var(--ld-asset-source-accent)', 'var(--ld-asset-source-border)'],
     table: ['var(--ld-asset-table-bg)', 'var(--ld-asset-table-accent)', 'var(--ld-asset-table-border)'],
     visual: ['var(--ld-asset-visual-bg)', 'var(--ld-asset-visual-accent)', 'var(--ld-asset-visual-border)'],
@@ -309,6 +301,7 @@ function nodeStyle(node: LineageNode): Record<string, string> {
 }
 
 function edgeStroke(kind: string): string {
+  if (kind === 'contains') return 'var(--ld-line-muted)'
   if (kind.startsWith('uses')) return 'var(--ld-line-accent)'
   if (kind.startsWith('reads')) return 'var(--ld-fg-warning)'
   if (kind.startsWith('filters')) return 'var(--ld-fg-success)'
@@ -319,8 +312,12 @@ function kindLabel(kind: string): string {
   switch (kind) {
     case 'model_table':
       return 'Model table'
+    case 'page_item':
+      return 'Page item'
     case 'semantic_model':
       return 'Semantic model'
+    case 'semantic_table':
+      return 'Semantic table'
     default:
       return kind.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase())
   }

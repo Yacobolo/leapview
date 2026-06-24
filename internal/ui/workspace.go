@@ -472,6 +472,7 @@ type assetLineageNode struct {
 	Meta     string `json:"meta,omitempty"`
 	Href     string `json:"href,omitempty"`
 	Side     string `json:"side"`
+	Rank     int    `json:"rank"`
 	Selected bool   `json:"selected,omitempty"`
 }
 
@@ -520,108 +521,46 @@ func workspaceAssetDetailGridSignals(workspace api.WorkspaceResponse, asset api.
 }
 
 func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) assetLineageModel {
-	if selected.Type == "dashboard" {
-		return dashboardAssetLineage(workspaceID, selected, assets, edges)
-	}
-	byID := map[string]api.AssetResponse{}
-	for _, asset := range assets {
-		byID[asset.ID] = asset
-	}
-	graph := assetLineageGraph{
-		Nodes: []assetLineageNode{lineageNode(workspaceID, selected, "selected", true)},
-	}
-	usesRows := []map[string]any{}
-	usedByRows := []map[string]any{}
-	seenNodes := map[string]struct{}{selected.ID: {}}
-	relations := make([]api.AssetEdgeResponse, 0)
-	for _, edge := range edges {
-		if edge.FromAssetID == selected.ID || edge.ToAssetID == selected.ID {
-			relations = append(relations, edge)
-		}
-	}
-	sort.Slice(relations, func(i, j int) bool {
-		left := relationSortKey(selected.ID, relations[i], byID)
-		right := relationSortKey(selected.ID, relations[j], byID)
-		return left < right
-	})
-	for _, edge := range relations {
-		from, fromOK := byID[edge.FromAssetID]
-		to, toOK := byID[edge.ToAssetID]
-		if !fromOK || !toOK {
-			continue
-		}
-		if _, ok := seenNodes[from.ID]; !ok {
-			graph.Nodes = append(graph.Nodes, lineageNode(workspaceID, from, "upstream", false))
-			seenNodes[from.ID] = struct{}{}
-		}
-		if _, ok := seenNodes[to.ID]; !ok {
-			graph.Nodes = append(graph.Nodes, lineageNode(workspaceID, to, "downstream", false))
-			seenNodes[to.ID] = struct{}{}
-		}
-		graph.Edges = append(graph.Edges, assetLineageEdge{
-			ID:     edge.ID,
-			Source: edge.FromAssetID,
-			Target: edge.ToAssetID,
-			Label:  labelFromKey(edge.Type),
-			Kind:   edge.Type,
-		})
-		if edge.ToAssetID == selected.ID {
-			usesRows = append(usesRows, lineageTableRow(workspaceID, edge, from))
-		} else {
-			usedByRows = append(usedByRows, lineageTableRow(workspaceID, edge, to))
-		}
-	}
-	sortLineageRows(usesRows)
-	sortLineageRows(usedByRows)
-	return assetLineageModel{
-		Count:  len(usesRows) + len(usedByRows),
-		Graph:  graph,
-		Uses:   lineageTable(usesRows, "This asset does not reference other assets."),
-		UsedBy: lineageTable(usedByRows, "No assets reference this asset."),
-	}
-}
-
-type dashboardLineageRow struct {
-	Depth int
-	Row   map[string]any
-}
-
-func dashboardAssetLineage(workspaceID string, selected api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) assetLineageModel {
 	byID := assetsByID(assets)
 	outgoing := edgesByFromAsset(edges)
 	incoming := edgesByToAsset(edges)
 	graph := assetLineageGraph{
-		Nodes: []assetLineageNode{lineageNode(workspaceID, selected, "selected", true)},
+		Nodes: []assetLineageNode{lineageNode(workspaceID, selected, 0, true)},
 	}
-	seenNodes := map[string]struct{}{selected.ID: {}}
-	seenEdges := map[string]struct{}{}
-	seenRows := map[string]struct{}{}
-	rows := []dashboardLineageRow{}
+	usesRows := []map[string]any{}
+	usedByRows := []map[string]any{}
 
-	addNode := func(asset api.AssetResponse) {
+	nodeIndex := map[string]int{selected.ID: 0}
+	seenEdges := map[string]struct{}{}
+	seenUseRows := map[string]struct{}{}
+	seenUsedByRows := map[string]struct{}{}
+
+	addNode := func(asset api.AssetResponse, rank int, selected bool) {
 		if asset.ID == "" {
 			return
 		}
-		if _, ok := seenNodes[asset.ID]; ok {
+		if existing, ok := nodeIndex[asset.ID]; ok {
+			node := graph.Nodes[existing]
+			if !node.Selected && absInt(rank) < absInt(node.Rank) {
+				node.Rank = rank
+				node.Side = lineageSideForRank(rank)
+				graph.Nodes[existing] = node
+			}
 			return
 		}
-		graph.Nodes = append(graph.Nodes, lineageNode(workspaceID, asset, "upstream", false))
-		seenNodes[asset.ID] = struct{}{}
+		nodeIndex[asset.ID] = len(graph.Nodes)
+		graph.Nodes = append(graph.Nodes, lineageNode(workspaceID, asset, rank, selected))
 	}
 	addEdge := func(edge api.AssetEdgeResponse) {
 		if edge.FromAssetID == "" || edge.ToAssetID == "" {
 			return
 		}
-		key := edge.FromAssetID + "|" + edge.ToAssetID + "|" + edge.Type
+		key := lineageEdgeKey(edge)
 		if _, ok := seenEdges[key]; ok {
 			return
 		}
-		id := edge.ID
-		if id == "" {
-			id = key
-		}
 		graph.Edges = append(graph.Edges, assetLineageEdge{
-			ID:     id,
+			ID:     key,
 			Source: edge.FromAssetID,
 			Target: edge.ToAssetID,
 			Label:  labelFromKey(edge.Type),
@@ -629,73 +568,98 @@ func dashboardAssetLineage(workspaceID string, selected api.AssetResponse, asset
 		})
 		seenEdges[key] = struct{}{}
 	}
-	addRow := func(depth int, relation string, asset api.AssetResponse) {
-		if asset.ID == "" {
-			return
-		}
-		if _, ok := seenRows[asset.ID]; ok {
-			return
-		}
-		rows = append(rows, dashboardLineageRow{
-			Depth: depth,
-			Row:   lineageTableRowForAsset(workspaceID, relation, asset),
-		})
-		seenRows[asset.ID] = struct{}{}
-	}
-	addAsset := func(depth int, relation string, asset api.AssetResponse) {
-		addNode(asset)
-		addRow(depth, relation, asset)
-	}
 
-	for _, dataEdge := range outgoing[selected.ID] {
-		if dataEdge.Type != "uses_semantic_model" && dataEdge.Type != "uses_model_table" && dataEdge.Type != "uses_measure" {
-			continue
+	var walkUpstream func(assetID string, depth int, visiting map[string]struct{})
+	walkUpstream = func(assetID string, depth int, visiting map[string]struct{}) {
+		if _, ok := visiting[assetID]; ok {
+			return
 		}
-		asset, ok := byID[dataEdge.ToAssetID]
-		if !ok {
-			continue
-		}
-		addAsset(1, labelFromKey(dataEdge.Type), asset)
-		addEdge(dataEdge)
-		if asset.Type != "model_table" {
-			continue
-		}
-		for _, sourceEdge := range outgoing[asset.ID] {
-			if sourceEdge.Type != "reads_source" {
+		visiting[assetID] = struct{}{}
+		defer delete(visiting, assetID)
+		for _, edge := range sortedLineageEdges(outgoing[assetID], byID) {
+			if !isLineageDependencyEdge(edge) {
 				continue
 			}
-			source, ok := byID[sourceEdge.ToAssetID]
-			if !ok || source.Type != "source" {
+			asset, ok := byID[edge.ToAssetID]
+			if !ok {
 				continue
 			}
-			addAsset(2, labelFromKey(sourceEdge.Type), source)
-			addEdge(sourceEdge)
-			for _, connectionEdge := range outgoing[source.ID] {
-				if connectionEdge.Type != "uses_connection" {
-					continue
-				}
-				connection, ok := byID[connectionEdge.ToAssetID]
-				if !ok || connection.Type != "connection" {
-					continue
-				}
-				addAsset(3, labelFromKey(connectionEdge.Type), connection)
-				addEdge(connectionEdge)
+			addNode(asset, -depth, false)
+			addEdge(edge)
+			key := lineageRelationRowKey(edge.Type, edge.ToAssetID)
+			if _, ok := seenUseRows[key]; !ok {
+				usesRows = append(usesRows, lineageTableRow(workspaceID, edge, asset))
+				seenUseRows[key] = struct{}{}
 			}
+			walkUpstream(asset.ID, depth+1, visiting)
 		}
 	}
 
-	sortDashboardLineageRows(rows)
-	useRows := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		useRows = append(useRows, row.Row)
+	var walkDownstream func(assetID string, depth int, visiting map[string]struct{})
+	walkDownstream = func(assetID string, depth int, visiting map[string]struct{}) {
+		if _, ok := visiting[assetID]; ok {
+			return
+		}
+		visiting[assetID] = struct{}{}
+		defer delete(visiting, assetID)
+		for _, edge := range sortedLineageEdges(incoming[assetID], byID) {
+			if !isLineageDependencyEdge(edge) {
+				continue
+			}
+			asset, ok := byID[edge.FromAssetID]
+			if !ok {
+				continue
+			}
+			addNode(asset, depth, false)
+			addEdge(edge)
+			key := lineageRelationRowKey(edge.Type, edge.FromAssetID)
+			if _, ok := seenUsedByRows[key]; !ok {
+				usedByRows = append(usedByRows, lineageTableRow(workspaceID, edge, asset))
+				seenUsedByRows[key] = struct{}{}
+			}
+			walkDownstream(asset.ID, depth+1, visiting)
+		}
 	}
-	usedByRows := dashboardUsedByRows(workspaceID, selected, byID, incoming)
+
+	for _, rootID := range lineageDependencyRootIDs(selected, outgoing, byID) {
+		if rootID != selected.ID {
+			addNode(byID[rootID], 1, false)
+		}
+		walkUpstream(rootID, 1, map[string]struct{}{})
+	}
+	walkDownstream(selected.ID, 1, map[string]struct{}{})
+	addContainsContext(selected.ID, &graph, nodeIndex, byID, edges, addNode, addEdge)
+
+	if len(usesRows)+len(usedByRows) == 0 {
+		for _, edge := range sortedLineageEdges(outgoing[selected.ID], byID) {
+			if !isContainsEdge(edge) {
+				continue
+			}
+			asset, ok := byID[edge.ToAssetID]
+			if ok {
+				usesRows = append(usesRows, lineageTableRow(workspaceID, edge, asset))
+			}
+		}
+		for _, edge := range sortedLineageEdges(incoming[selected.ID], byID) {
+			if !isContainsEdge(edge) {
+				continue
+			}
+			asset, ok := byID[edge.FromAssetID]
+			if ok {
+				usedByRows = append(usedByRows, lineageTableRow(workspaceID, edge, asset))
+			}
+		}
+	}
+
+	sortLineageNodes(graph.Nodes)
+	sortLineageGraphEdges(graph.Edges)
+	sortLineageRows(usesRows)
 	sortLineageRows(usedByRows)
 	return assetLineageModel{
-		Count:  len(useRows) + len(usedByRows),
+		Count:  len(usesRows) + len(usedByRows),
 		Graph:  graph,
-		Uses:   lineageTable(useRows, "This dashboard does not reference data assets."),
-		UsedBy: lineageTable(usedByRows, "No assets reference this dashboard."),
+		Uses:   lineageTable(usesRows, "This asset does not reference other assets."),
+		UsedBy: lineageTable(usedByRows, "No assets reference this asset."),
 	}
 }
 
@@ -713,39 +677,6 @@ func edgesByToAsset(edges []api.AssetEdgeResponse) map[string][]api.AssetEdgeRes
 		out[edge.ToAssetID] = append(out[edge.ToAssetID], edge)
 	}
 	return out
-}
-
-func dashboardUsedByRows(workspaceID string, selected api.AssetResponse, assets map[string]api.AssetResponse, incoming map[string][]api.AssetEdgeResponse) []map[string]any {
-	rows := []map[string]any{}
-	for _, edge := range incoming[selected.ID] {
-		asset, ok := assets[edge.FromAssetID]
-		if !ok || asset.Type == "catalog" {
-			continue
-		}
-		rows = append(rows, lineageTableRow(workspaceID, edge, asset))
-	}
-	return rows
-}
-
-func lineageTableRowForAsset(workspaceID, relation string, asset api.AssetResponse) map[string]any {
-	return map[string]any{
-		"relation":  relation,
-		"asset":     assetTitle(asset),
-		"assetHref": lineageAssetHref(workspaceID, asset),
-		"type":      assetTypeLabel(asset.Type),
-		"key":       asset.Key,
-	}
-}
-
-func sortDashboardLineageRows(rows []dashboardLineageRow) {
-	sort.Slice(rows, func(i, j int) bool {
-		left := rows[i]
-		right := rows[j]
-		if left.Depth != right.Depth {
-			return left.Depth < right.Depth
-		}
-		return fmt.Sprint(left.Row["type"], left.Row["asset"], left.Row["key"]) < fmt.Sprint(right.Row["type"], right.Row["asset"], right.Row["key"])
-	})
 }
 
 func sortLineageRows(rows []map[string]any) {
@@ -778,34 +709,176 @@ func lineageTable(rows []map[string]any, empty string) metricGrid {
 	}
 }
 
-func lineageNode(workspaceID string, asset api.AssetResponse, side string, selected bool) assetLineageNode {
+func lineageNode(workspaceID string, asset api.AssetResponse, rank int, selected bool) assetLineageNode {
 	return assetLineageNode{
 		ID:       asset.ID,
 		Label:    assetTitle(asset),
 		Kind:     asset.Type,
 		Meta:     asset.Key,
 		Href:     lineageAssetHref(workspaceID, asset),
-		Side:     side,
+		Side:     lineageSideForRank(rank),
+		Rank:     rank,
 		Selected: selected,
 	}
 }
 
-func relationSortKey(selectedID string, edge api.AssetEdgeResponse, assets map[string]api.AssetResponse) string {
-	direction := "out"
-	peerID := edge.ToAssetID
-	if edge.ToAssetID == selectedID {
-		direction = "in"
-		peerID = edge.FromAssetID
+func lineageSideForRank(rank int) string {
+	switch {
+	case rank < 0:
+		return "upstream"
+	case rank > 0:
+		return "downstream"
+	default:
+		return "selected"
 	}
-	peer := assets[peerID]
-	return direction + ":" + edge.Type + ":" + peer.Type + ":" + assetTitle(peer)
 }
 
-func lineagePeerType(selectedID string, edge api.AssetEdgeResponse, from, to api.AssetResponse) string {
-	if edge.ToAssetID == selectedID {
-		return from.Type
+func lineageDependencyRootIDs(selected api.AssetResponse, outgoing map[string][]api.AssetEdgeResponse, assets map[string]api.AssetResponse) []string {
+	rootIDs := []string{selected.ID}
+	if !isRollupLineageAsset(selected.Type) {
+		return rootIDs
 	}
-	return to.Type
+	seen := map[string]struct{}{selected.ID: {}}
+	var walk func(string)
+	walk = func(assetID string) {
+		for _, edge := range sortedLineageEdges(outgoing[assetID], assets) {
+			if !isContainsEdge(edge) {
+				continue
+			}
+			if _, ok := seen[edge.ToAssetID]; ok {
+				continue
+			}
+			if _, ok := assets[edge.ToAssetID]; !ok {
+				continue
+			}
+			seen[edge.ToAssetID] = struct{}{}
+			rootIDs = append(rootIDs, edge.ToAssetID)
+			walk(edge.ToAssetID)
+		}
+	}
+	walk(selected.ID)
+	return rootIDs
+}
+
+func isRollupLineageAsset(typ string) bool {
+	switch typ {
+	case "dashboard", "page", "semantic_model":
+		return true
+	default:
+		return false
+	}
+}
+
+func addContainsContext(selectedID string, graph *assetLineageGraph, nodeIndex map[string]int, assets map[string]api.AssetResponse, edges []api.AssetEdgeResponse, addNode func(api.AssetResponse, int, bool), addEdge func(api.AssetEdgeResponse)) {
+	containsEdges := make([]api.AssetEdgeResponse, 0)
+	for _, edge := range edges {
+		if isContainsEdge(edge) {
+			containsEdges = append(containsEdges, edge)
+		}
+	}
+	containsEdges = sortedLineageEdges(containsEdges, assets)
+	for _, edge := range containsEdges {
+		fromIndex, fromOK := nodeIndex[edge.FromAssetID]
+		toIndex, toOK := nodeIndex[edge.ToAssetID]
+		if !fromOK && !toOK {
+			continue
+		}
+		if fromOK && toOK {
+			addEdge(edge)
+			continue
+		}
+		if fromOK && edge.FromAssetID == selectedID {
+			asset, ok := assets[edge.ToAssetID]
+			if !ok {
+				continue
+			}
+			addNode(asset, graph.Nodes[fromIndex].Rank+1, false)
+			addEdge(edge)
+			continue
+		}
+		if toOK {
+			asset, ok := assets[edge.FromAssetID]
+			if !ok {
+				continue
+			}
+			addNode(asset, graph.Nodes[toIndex].Rank-1, false)
+			addEdge(edge)
+		}
+	}
+}
+
+func isLineageDependencyEdge(edge api.AssetEdgeResponse) bool {
+	return !isContainsEdge(edge)
+}
+
+func isContainsEdge(edge api.AssetEdgeResponse) bool {
+	return edge.Type == "contains"
+}
+
+func lineageEdgeKey(edge api.AssetEdgeResponse) string {
+	if edge.ID != "" {
+		return edge.ID
+	}
+	return edge.FromAssetID + "|" + edge.ToAssetID + "|" + edge.Type
+}
+
+func lineageRelationRowKey(edgeType, peerID string) string {
+	return edgeType + "|" + peerID
+}
+
+func sortedLineageEdges(edges []api.AssetEdgeResponse, assets map[string]api.AssetResponse) []api.AssetEdgeResponse {
+	out := append([]api.AssetEdgeResponse(nil), edges...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return lineageEdgeSortKey(out[i], assets) < lineageEdgeSortKey(out[j], assets)
+	})
+	return out
+}
+
+func lineageEdgeSortKey(edge api.AssetEdgeResponse, assets map[string]api.AssetResponse) string {
+	from := assets[edge.FromAssetID]
+	to := assets[edge.ToAssetID]
+	return edge.Type + ":" + assetTitle(from) + ":" + assetTitle(to) + ":" + lineageEdgeKey(edge)
+}
+
+func sortLineageNodes(nodes []assetLineageNode) {
+	sort.SliceStable(nodes, func(i, j int) bool {
+		left := nodes[i]
+		right := nodes[j]
+		if left.Rank != right.Rank {
+			return left.Rank < right.Rank
+		}
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.Label != right.Label {
+			return left.Label < right.Label
+		}
+		return left.ID < right.ID
+	})
+}
+
+func sortLineageGraphEdges(edges []assetLineageEdge) {
+	sort.SliceStable(edges, func(i, j int) bool {
+		left := edges[i]
+		right := edges[j]
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.Source != right.Source {
+			return left.Source < right.Source
+		}
+		if left.Target != right.Target {
+			return left.Target < right.Target
+		}
+		return left.ID < right.ID
+	})
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func lineageAssetHref(workspaceID string, asset api.AssetResponse) string {
@@ -912,7 +985,7 @@ func semanticModelDetailModel(model *assetDetailModel, workspace api.WorkspaceRe
 		assetDetailSection{Title: fmt.Sprintf("Model tables (%d)", len(modelTables)), Signal: "assetDetailsSemanticModelTablesGrid", Grid: semanticModelTablesGrid(workspace.ID, asset, assets, edges, meta)},
 		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", fields), Signal: "assetDetailsSemanticFieldsGrid", Grid: semanticFieldsGrid(workspace.ID, asset, assets, meta)},
 		assetDetailSection{Title: fmt.Sprintf("Measures (%d)", len(measures)), Signal: "assetDetailsSemanticMeasuresGrid", Grid: semanticMeasuresGrid(workspace.ID, asset, assets, meta)},
-		assetDetailSection{Title: fmt.Sprintf("Relationships (%d)", len(relationships)), Signal: "assetDetailsSemanticRelationshipsGrid", Grid: semanticRelationshipsGrid(meta)},
+		assetDetailSection{Title: fmt.Sprintf("Relationships (%d)", len(relationships)), Signal: "assetDetailsSemanticRelationshipsGrid", Grid: semanticRelationshipsGrid(workspace.ID, asset, assets, meta)},
 	)
 }
 
@@ -942,7 +1015,7 @@ func semanticConnectionsGrid(workspaceID string, parent api.AssetResponse, asset
 	rows := make([]map[string]any, 0, len(connections))
 	for _, name := range sortedMapKeys(connections) {
 		connection := asMap(connections[name])
-		child := childAssetByName(parent.ID, "connection", name, assets)
+		child := semanticAssetByName(parent.Key, "connection", name, assets)
 		rows = append(rows, map[string]any{
 			"name":        name,
 			"nameHref":    childHref(workspaceID, child),
@@ -969,7 +1042,7 @@ func semanticSourcesGrid(workspaceID string, parent api.AssetResponse, assets []
 	rows := make([]map[string]any, 0, len(sources))
 	for _, name := range sortedMapKeys(sources) {
 		source := asMap(sources[name])
-		child := childAssetByName(parent.ID, "source", name, assets)
+		child := semanticAssetByName(parent.Key, "source", name, assets)
 		rows = append(rows, map[string]any{
 			"name":       name,
 			"nameHref":   childHref(workspaceID, child),
@@ -996,7 +1069,7 @@ func semanticModelTablesGrid(workspaceID string, parent api.AssetResponse, asset
 	rows := make([]map[string]any, 0, len(tables))
 	for _, name := range sortedMapKeys(tables) {
 		table := asMap(tables[name])
-		child := childAssetByName(parent.ID, "model_table", name, assets)
+		child := semanticAssetByName(parent.Key, "model_table", name, assets)
 		sourceName := metaString(table, "Source", "source")
 		rows = append(rows, map[string]any{
 			"name":        name,
@@ -1087,13 +1160,16 @@ func semanticMeasuresGrid(workspaceID string, parent api.AssetResponse, assets [
 	}
 }
 
-func semanticRelationshipsGrid(meta map[string]any) metricGrid {
+func semanticRelationshipsGrid(workspaceID string, parent api.AssetResponse, assets []api.AssetResponse, meta map[string]any) metricGrid {
 	relationships := metaSlice(meta, "Relationships", "relationships")
 	rows := make([]map[string]any, 0, len(relationships))
 	for _, item := range relationships {
 		relationship := asMap(item)
+		id := metaString(relationship, "ID", "id")
+		child := semanticAssetByName(parent.Key, "relationship", id, assets)
 		rows = append(rows, map[string]any{
-			"id":          metaString(relationship, "ID", "id"),
+			"id":          id,
+			"idHref":      childHref(workspaceID, child),
 			"from":        metaString(relationship, "From", "from"),
 			"to":          metaString(relationship, "To", "to"),
 			"cardinality": metricGridBadgeValue(metaString(relationship, "Cardinality", "cardinality"), "muted"),
@@ -1102,7 +1178,7 @@ func semanticRelationshipsGrid(meta map[string]any) metricGrid {
 	}
 	return metricGrid{
 		Columns: []metricGridColumn{
-			{ID: "id", Header: "ID", Kind: "code", Width: "190px"},
+			{ID: "id", Header: "ID", Kind: "link", HrefKey: "idHref", Width: "190px"},
 			{ID: "from", Header: "From", Kind: "code", Width: "240px"},
 			{ID: "to", Header: "To", Kind: "code", Width: "240px"},
 			{ID: "cardinality", Header: "Cardinality", Kind: "badge", Width: "140px"},
@@ -1594,6 +1670,22 @@ func childAssetByName(parentID, typ, name string, assets []api.AssetResponse) ap
 	return api.AssetResponse{}
 }
 
+func semanticAssetByName(modelKey, typ, name string, assets []api.AssetResponse) api.AssetResponse {
+	key := modelKey + "." + name
+	if asset := assetByTypeKey(typ, key, assets); asset.ID != "" {
+		return asset
+	}
+	for _, asset := range assets {
+		if asset.Type != typ {
+			continue
+		}
+		if asset.Title == name || asset.Key == name || strings.HasSuffix(asset.Key, "."+name) {
+			return asset
+		}
+	}
+	return api.AssetResponse{}
+}
+
 func assetByTypeKey(typ, key string, assets []api.AssetResponse) api.AssetResponse {
 	for _, asset := range assets {
 		if asset.Type == typ && asset.Key == key {
@@ -1703,13 +1795,41 @@ func assetTypeLabel(typ string) string {
 	switch typ {
 	case "semantic_model":
 		return "Semantic model"
+	case "semantic_table":
+		return "Semantic table"
 	case "model_table":
 		return "Model table"
+	case "page_item":
+		return "Page item"
 	default:
 		return strings.Title(strings.ReplaceAll(typ, "_", " "))
 	}
 }
 
 func labelFromKey(key string) string {
+	switch key {
+	case "reads_source":
+		return "Reads source"
+	case "uses_connection":
+		return "Uses connection"
+	case "uses_field":
+		return "Uses field"
+	case "filters_field":
+		return "Filters field"
+	case "uses_filter":
+		return "Uses filter"
+	case "uses_model_table":
+		return "Uses model table"
+	case "uses_measure":
+		return "Uses measure"
+	case "uses_semantic_model":
+		return "Uses semantic model"
+	case "uses_semantic_table":
+		return "Uses semantic table"
+	case "uses_table":
+		return "Uses table"
+	case "uses_visual":
+		return "Uses visual"
+	}
 	return strings.Title(strings.ReplaceAll(key, "_", " "))
 }

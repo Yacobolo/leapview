@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"html"
 	"strings"
 	"testing"
@@ -11,7 +12,7 @@ import (
 
 func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
-	asset := assets[0]
+	asset := testAssetByID(t, assets, "model")
 
 	var out strings.Builder
 	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner").Render(&out)
@@ -89,6 +90,103 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	}
 }
 
+func TestAssetLineageProjectsRecursiveDependenciesAndContext(t *testing.T) {
+	workspace, _, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "page-item")
+
+	lineage := assetLineage(workspace.ID, asset, assets, edges)
+
+	assertLineageNodeKinds(t, lineage.Graph, []string{
+		"connection",
+		"field",
+		"measure",
+		"model_table",
+		"page",
+		"page_item",
+		"semantic_table",
+		"source",
+		"table",
+		"visual",
+	})
+	assertLineageEdgeKinds(t, lineage.Graph, []string{
+		"contains",
+		"reads_source",
+		"uses_connection",
+		"uses_field",
+		"uses_filter",
+		"uses_measure",
+		"uses_model_table",
+		"uses_semantic_table",
+		"uses_table",
+		"uses_visual",
+	})
+	assertGridRelations(t, lineage.Uses, []string{
+		"Reads source",
+		"Uses connection",
+		"Uses field",
+		"Uses filter",
+		"Uses measure",
+		"Uses model table",
+		"Uses semantic table",
+		"Uses table",
+		"Uses visual",
+	})
+	assertGridRelations(t, lineage.UsedBy, nil)
+	if gridHasRelation(lineage.Uses, "Contains") || gridHasRelation(lineage.UsedBy, "Contains") {
+		t.Fatalf("dependency grids included contains edges: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
+	}
+	if lineage.Count != 10 {
+		t.Fatalf("lineage count included context edges, got %d", lineage.Count)
+	}
+}
+
+func TestAssetLineageProjectsRecursiveConsumers(t *testing.T) {
+	workspace, _, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "semantic-table")
+
+	lineage := assetLineage(workspace.ID, asset, assets, edges)
+
+	assertLineageNodeKinds(t, lineage.Graph, []string{
+		"connection",
+		"field",
+		"model_table",
+		"page",
+		"page_item",
+		"semantic_model",
+		"semantic_table",
+		"source",
+		"table",
+		"visual",
+	})
+	assertGridRelations(t, lineage.Uses, []string{
+		"Reads source",
+		"Uses connection",
+		"Uses model table",
+	})
+	assertGridRelations(t, lineage.UsedBy, []string{
+		"Uses semantic table",
+		"Uses table",
+		"Uses visual",
+	})
+	if gridHasRelation(lineage.Uses, "Contains") || gridHasRelation(lineage.UsedBy, "Contains") {
+		t.Fatalf("consumer/dependency grids included contains edges: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
+	}
+}
+
+func TestAssetLineageFallsBackToContainsWhenNoDependenciesExist(t *testing.T) {
+	workspace, _, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "catalog")
+
+	lineage := assetLineage(workspace.ID, asset, assets, edges)
+
+	assertLineageEdgeKinds(t, lineage.Graph, []string{"contains"})
+	assertGridRelations(t, lineage.Uses, []string{"Contains"})
+	assertGridRelations(t, lineage.UsedBy, nil)
+	if lineage.Count != 5 {
+		t.Fatalf("contains fallback should count direct hierarchy context, got %d", lineage.Count)
+	}
+}
+
 func TestWorkspaceAssetDetailsRenderSharedShapeForLeafAsset(t *testing.T) {
 	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
 	var connection api.AssetResponse
@@ -113,7 +211,7 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForLeafAsset(t *testing.T) {
 		"Type",
 		"Connection",
 		"Parent",
-		"Olist Commerce",
+		"LibreDash Workspace",
 		"Kind",
 		"Credentials",
 	} {
@@ -154,7 +252,11 @@ func TestWorkspaceAssetRowsUseDetailLinksForModelAndMetricAssets(t *testing.T) {
 
 func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
-	visibleAssets := []api.AssetResponse{assets[0], assets[5], assets[6]}
+	visibleAssets := []api.AssetResponse{
+		testAssetByID(t, assets, "model"),
+		testAssetByID(t, assets, "measure"),
+		testAssetByID(t, assets, "dashboard"),
+	}
 
 	var out strings.Builder
 	err := WorkspacePage(catalog, workspace, visibleAssets, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
@@ -251,15 +353,82 @@ func testWorkspaceAccess(workspace api.WorkspaceResponse, canManage bool) api.Wo
 	}
 }
 
+func testAssetByID(t *testing.T, assets []api.AssetResponse, id string) api.AssetResponse {
+	t.Helper()
+	for _, asset := range assets {
+		if asset.ID == id {
+			return asset
+		}
+	}
+	t.Fatalf("asset %q not found", id)
+	return api.AssetResponse{}
+}
+
+func assertLineageNodeKinds(t *testing.T, graph assetLineageGraph, expected []string) {
+	t.Helper()
+	got := map[string]struct{}{}
+	for _, node := range graph.Nodes {
+		got[node.Kind] = struct{}{}
+	}
+	for _, kind := range expected {
+		if _, ok := got[kind]; !ok {
+			t.Fatalf("lineage graph missing node kind %q: %#v", kind, graph.Nodes)
+		}
+	}
+}
+
+func assertLineageEdgeKinds(t *testing.T, graph assetLineageGraph, expected []string) {
+	t.Helper()
+	got := map[string]struct{}{}
+	for _, edge := range graph.Edges {
+		got[edge.Kind] = struct{}{}
+	}
+	for _, kind := range expected {
+		if _, ok := got[kind]; !ok {
+			t.Fatalf("lineage graph missing edge kind %q: %#v", kind, graph.Edges)
+		}
+	}
+}
+
+func assertGridRelations(t *testing.T, grid metricGrid, expected []string) {
+	t.Helper()
+	if len(expected) == 0 {
+		if len(grid.Rows) != 0 {
+			t.Fatalf("expected no relations, got rows %#v", grid.Rows)
+		}
+		return
+	}
+	got := map[string]struct{}{}
+	for _, row := range grid.Rows {
+		got[fmt.Sprint(row["relation"])] = struct{}{}
+	}
+	for _, relation := range expected {
+		if _, ok := got[relation]; !ok {
+			t.Fatalf("grid missing relation %q: %#v", relation, grid.Rows)
+		}
+	}
+}
+
+func gridHasRelation(grid metricGrid, relation string) bool {
+	for _, row := range grid.Rows {
+		if fmt.Sprint(row["relation"]) == relation {
+			return true
+		}
+	}
+	return false
+}
+
 func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []api.AssetResponse, []api.AssetEdgeResponse) {
 	workspace := api.WorkspaceResponse{ID: "libredash", Title: "LibreDash Workspace", Description: "Local BI workspace."}
 	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
 	assets := []api.AssetResponse{
+		{ID: "catalog", WorkspaceID: workspace.ID, Type: "catalog", Key: workspace.ID, Title: workspace.Title, Description: workspace.Description},
 		{
 			ID:          "model",
 			WorkspaceID: workspace.ID,
 			Type:        "semantic_model",
 			Key:         "olist",
+			ParentID:    "catalog",
 			Title:       "Olist Commerce",
 			Description: "Brazilian ecommerce model.",
 			Meta: map[string]any{
@@ -286,26 +455,49 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 				"Relationships": []any{map[string]any{"ID": "orders_customers", "From": "orders.customer_id", "To": "customers.customer_id", "Cardinality": "many_to_one", "Active": true}},
 			},
 		},
-		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "model", Title: "Olist connection", Meta: map[string]any{"Kind": "local", "credentials_configured": false}},
-		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "model", Title: "orders", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"}},
-		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "model", Title: "orders", Meta: map[string]any{"Source": "orders", "PrimaryKey": "order_id"}},
-		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "table-model", Title: "State", Meta: map[string]any{"Expr": "state"}},
+		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "catalog", Title: "Olist connection", Meta: map[string]any{"Kind": "local", "credentials_configured": false}},
+		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"}},
+		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{"Source": "orders", "PrimaryKey": "order_id"}},
+		{ID: "semantic-table", WorkspaceID: workspace.ID, Type: "semantic_table", Key: "olist.orders", ParentID: "model", Title: "Orders semantic table", Meta: map[string]any{"Table": "orders"}},
+		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "semantic-table", Title: "State", Meta: map[string]any{"Expr": "state"}},
 		{ID: "measure", WorkspaceID: workspace.ID, Type: "measure", Key: "olist.revenue", ParentID: "model", Title: "Revenue", Meta: map[string]any{"Table": "orders", "Expression": "SUM(orders.revenue)", "Format": "currency"}},
-		{ID: "dashboard", WorkspaceID: workspace.ID, Type: "dashboard", Key: "executive-sales", Title: "Executive Sales Dashboard", Description: "Sales overview.", Href: "/dashboards/executive-sales", Meta: map[string]any{"SemanticModel": "olist", "Tags": []any{"sales"}}},
+		{ID: "relationship", WorkspaceID: workspace.ID, Type: "relationship", Key: "olist.orders_customers", ParentID: "model", Title: "Orders to customers", Meta: map[string]any{"From": "orders.customer_id", "To": "customers.customer_id"}},
+		{ID: "dashboard", WorkspaceID: workspace.ID, Type: "dashboard", Key: "executive-sales", ParentID: "catalog", Title: "Executive Sales Dashboard", Description: "Sales overview.", Href: "/dashboards/executive-sales", Meta: map[string]any{"SemanticModel": "olist", "Tags": []any{"sales"}}},
 		{ID: "page", WorkspaceID: workspace.ID, Type: "page", Key: "executive-sales.overview", ParentID: "dashboard", Title: "Overview"},
+		{ID: "page-item", WorkspaceID: workspace.ID, Type: "page_item", Key: "executive-sales.overview.revenue", ParentID: "page", Title: "Revenue tile"},
 		{ID: "filter", WorkspaceID: workspace.ID, Type: "filter", Key: "executive-sales.state", ParentID: "dashboard", Title: "State", Meta: map[string]any{"Field": "orders.state", "Type": "multi_select"}},
 		{ID: "visual", WorkspaceID: workspace.ID, Type: "visual", Key: "executive-sales.revenue", ParentID: "dashboard", Title: "Revenue by month", Meta: map[string]any{"Type": "line"}},
 		{ID: "table", WorkspaceID: workspace.ID, Type: "table", Key: "executive-sales.orders", ParentID: "dashboard", Title: "Orders", Meta: map[string]any{"Table": "orders"}},
 	}
 	edges := []api.AssetEdgeResponse{
-		{ID: "model-table", FromAssetID: "model", ToAssetID: "table-model", Type: "contains"},
+		{ID: "catalog-model", FromAssetID: "catalog", ToAssetID: "model", Type: "contains"},
+		{ID: "catalog-connection", FromAssetID: "catalog", ToAssetID: "connection", Type: "contains"},
+		{ID: "catalog-source", FromAssetID: "catalog", ToAssetID: "source", Type: "contains"},
+		{ID: "catalog-model-table", FromAssetID: "catalog", ToAssetID: "table-model", Type: "contains"},
+		{ID: "catalog-dashboard", FromAssetID: "catalog", ToAssetID: "dashboard", Type: "contains"},
+		{ID: "model-semantic-table", FromAssetID: "model", ToAssetID: "semantic-table", Type: "contains"},
 		{ID: "model-measure", FromAssetID: "model", ToAssetID: "measure", Type: "contains"},
-		{ID: "table-field", FromAssetID: "table-model", ToAssetID: "field", Type: "contains"},
+		{ID: "model-relationship", FromAssetID: "model", ToAssetID: "relationship", Type: "contains"},
+		{ID: "semantic-table-field", FromAssetID: "semantic-table", ToAssetID: "field", Type: "contains"},
 		{ID: "table-source", FromAssetID: "table-model", ToAssetID: "source", Type: "reads_source"},
 		{ID: "source-connection", FromAssetID: "source", ToAssetID: "connection", Type: "uses_connection"},
+		{ID: "semantic-table-model-table", FromAssetID: "semantic-table", ToAssetID: "table-model", Type: "uses_model_table"},
+		{ID: "measure-semantic-table", FromAssetID: "measure", ToAssetID: "semantic-table", Type: "uses_semantic_table"},
+		{ID: "measure-field", FromAssetID: "measure", ToAssetID: "field", Type: "uses_field"},
 		{ID: "dashboard-model", FromAssetID: "dashboard", ToAssetID: "model", Type: "uses_semantic_model"},
-		{ID: "dashboard-table", FromAssetID: "dashboard", ToAssetID: "table-model", Type: "uses_model_table"},
-		{ID: "dashboard-measure", FromAssetID: "dashboard", ToAssetID: "measure", Type: "uses_measure"},
+		{ID: "dashboard-page", FromAssetID: "dashboard", ToAssetID: "page", Type: "contains"},
+		{ID: "dashboard-filter", FromAssetID: "dashboard", ToAssetID: "filter", Type: "contains"},
+		{ID: "dashboard-visual", FromAssetID: "dashboard", ToAssetID: "visual", Type: "contains"},
+		{ID: "dashboard-table", FromAssetID: "dashboard", ToAssetID: "table", Type: "contains"},
+		{ID: "page-item-edge", FromAssetID: "page", ToAssetID: "page-item", Type: "contains"},
+		{ID: "page-item-visual", FromAssetID: "page-item", ToAssetID: "visual", Type: "uses_visual"},
+		{ID: "page-item-table", FromAssetID: "page-item", ToAssetID: "table", Type: "uses_table"},
+		{ID: "page-item-filter", FromAssetID: "page-item", ToAssetID: "filter", Type: "uses_filter"},
+		{ID: "visual-measure", FromAssetID: "visual", ToAssetID: "measure", Type: "uses_measure"},
+		{ID: "visual-field", FromAssetID: "visual", ToAssetID: "field", Type: "uses_field"},
+		{ID: "table-semantic-table", FromAssetID: "table", ToAssetID: "semantic-table", Type: "uses_semantic_table"},
+		{ID: "table-field", FromAssetID: "table", ToAssetID: "field", Type: "uses_field"},
+		{ID: "filter-field", FromAssetID: "filter", ToAssetID: "field", Type: "filters_field"},
 	}
 	return workspace, catalog, assets, edges
 }

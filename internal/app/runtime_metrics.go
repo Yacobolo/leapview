@@ -8,6 +8,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 type runtimeProvider interface {
@@ -25,6 +26,10 @@ type catalogRuntime interface {
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
 	Pages(dashboardID string) []dashboard.Page
+}
+
+type workspaceAssetRuntime interface {
+	WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool)
 }
 
 type reportRuntime interface {
@@ -141,6 +146,18 @@ func (m runtimeMetrics) Pages(dashboardID string) []dashboard.Page {
 		return nil
 	}
 	return runtime.Pages(dashboardID)
+}
+
+func (m runtimeMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	runtime, err := m.active()
+	if err != nil {
+		return nil, nil, false
+	}
+	port, ok := runtime.(workspaceAssetRuntime)
+	if !ok {
+		return nil, nil, false
+	}
+	return port.WorkspaceAssets(workspaceID, deploymentID)
 }
 
 func (m runtimeMetrics) catalogRuntime() (catalogRuntime, error) {

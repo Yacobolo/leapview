@@ -395,6 +395,13 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 		}
 		return nil, nil, nil
 	}
+	if staleActiveLineageGraph(graph) {
+		if refreshed, ok := s.workspaceGraphFromRuntime(workspaceID, string(activeGraphDeploymentID(graph))); ok && !staleActiveLineageGraph(refreshed) {
+			if err := repo.ReplaceActiveDeploymentGraph(r.Context(), workspace.WorkspaceID(workspaceID), refreshed); err == nil {
+				graph = refreshed
+			}
+		}
+	}
 	assets := make([]api.AssetResponse, 0, len(graph.Assets))
 	for _, row := range graph.Assets {
 		assets = append(assets, assetDTOFromWorkspace(row))
@@ -406,21 +413,140 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 	return assets, edges, nil
 }
 
-func (s *Server) workspaceAssetsFromRuntime(workspaceID string) ([]api.AssetResponse, []api.AssetEdgeResponse, bool) {
+func activeGraphDeploymentID(graph workspace.AssetGraph) workspace.DeploymentID {
+	for _, asset := range graph.Assets {
+		if asset.DeploymentID != "" {
+			return asset.DeploymentID
+		}
+	}
+	for _, edge := range graph.Edges {
+		if edge.DeploymentID != "" {
+			return edge.DeploymentID
+		}
+	}
+	return ""
+}
+
+func staleActiveLineageGraph(graph workspace.AssetGraph) bool {
+	hasLegacyModel := false
+	hasSemanticTable := false
+	hasRelationship := false
+	hasPageItem := false
+	hasRelationshipDefinition := false
+	hasPageItemDefinition := false
+	assets := map[workspace.AssetID]workspace.Asset{}
+	for _, asset := range graph.Assets {
+		assets[asset.ID] = asset
+		switch asset.Type {
+		case "semantic_model", "dashboard":
+			hasLegacyModel = true
+		case "semantic_table":
+			hasSemanticTable = true
+		case "relationship":
+			hasRelationship = true
+		case "page_item":
+			hasPageItem = true
+		}
+		if asset.Type == "semantic_model" && assetContentHasItems(asset.ContentJSON, "Relationships", "relationships") {
+			hasRelationshipDefinition = true
+		}
+		if asset.Type == "dashboard" && dashboardContentHasPageItems(asset.ContentJSON) {
+			hasPageItemDefinition = true
+		}
+	}
+	if !hasLegacyModel {
+		return false
+	}
+	if !hasSemanticTable {
+		return true
+	}
+	if hasRelationshipDefinition && !hasRelationship {
+		return true
+	}
+	if hasPageItemDefinition && !hasPageItem {
+		return true
+	}
+	for _, edge := range graph.Edges {
+		from := assets[edge.FromAssetID]
+		if from.Type != "dashboard" {
+			continue
+		}
+		switch edge.Type {
+		case workspace.AssetEdgeUsesField, workspace.AssetEdgeUsesMeasure, workspace.AssetEdgeUsesModelTable:
+			return true
+		}
+	}
+	return false
+}
+
+func assetContentHasItems(raw string, keys ...string) bool {
+	var content map[string]any
+	if err := json.Unmarshal([]byte(raw), &content); err != nil {
+		return false
+	}
+	for _, key := range keys {
+		switch value := content[key].(type) {
+		case []any:
+			if len(value) > 0 {
+				return true
+			}
+		case map[string]any:
+			if len(value) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func dashboardContentHasPageItems(raw string) bool {
+	var content map[string]any
+	if err := json.Unmarshal([]byte(raw), &content); err != nil {
+		return false
+	}
+	for _, key := range []string{"Pages", "pages"} {
+		pages, ok := content[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range pages {
+			page, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, key := range []string{"Visuals", "visuals", "Items", "items"} {
+				if items, ok := page[key].([]any); ok && len(items) > 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (s *Server) workspaceGraphFromRuntime(workspaceID, deploymentID string) (workspace.AssetGraph, bool) {
 	provider, ok := s.metrics.(workspaceAssetProvider)
+	if !ok || deploymentID == "" {
+		return workspace.AssetGraph{}, false
+	}
+	assets, edges, ok := provider.WorkspaceAssets(workspaceID, deploymentID)
+	if !ok {
+		return workspace.AssetGraph{}, false
+	}
+	return workspace.AssetGraph{Assets: assets, Edges: edges}, true
+}
+
+func (s *Server) workspaceAssetsFromRuntime(workspaceID string) ([]api.AssetResponse, []api.AssetEdgeResponse, bool) {
+	graph, ok := s.workspaceGraphFromRuntime(workspaceID, "local")
 	if !ok {
 		return nil, nil, false
 	}
-	assetRows, edgeRows, ok := provider.WorkspaceAssets(workspaceID, "local")
-	if !ok {
-		return nil, nil, false
-	}
-	assets := make([]api.AssetResponse, 0, len(assetRows))
-	for _, row := range assetRows {
+	assets := make([]api.AssetResponse, 0, len(graph.Assets))
+	for _, row := range graph.Assets {
 		assets = append(assets, assetDTOFromWorkspace(row))
 	}
-	edges := make([]api.AssetEdgeResponse, 0, len(edgeRows))
-	for _, row := range edgeRows {
+	edges := make([]api.AssetEdgeResponse, 0, len(graph.Edges))
+	for _, row := range graph.Edges {
 		edges = append(edges, assetEdgeDTOFromWorkspace(row))
 	}
 	return assets, edges, true

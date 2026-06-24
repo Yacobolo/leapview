@@ -22,4 +22,5 @@ type Repository interface {
 	List(ctx context.Context) ([]Summary, error)
 	ByID(ctx context.Context, id WorkspaceID) (Summary, error)
 	ActiveDeploymentGraph(ctx context.Context, id WorkspaceID) (AssetGraph, bool, error)
+	ReplaceActiveDeploymentGraph(ctx context.Context, id WorkspaceID, graph AssetGraph) error
 }
