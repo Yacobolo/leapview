@@ -122,22 +122,17 @@ func (file modelFile) compile() (*model.Model, error) {
 		return nil, fmt.Errorf("semantic model %q requires models", file.Name)
 	}
 	tables := map[string]model.Table{}
-	for tableName, tableRef := range spec.Tables {
+	for _, tableName := range spec.Tables {
 		if err := validateSemanticIdentifier(tableName); err != nil {
 			return nil, fmt.Errorf("semantic model table %q is invalid: %w", tableName, err)
 		}
-		modelName := tableRef.Model
-		if modelName == "" {
-			modelName = tableName
-		}
-		modelTable, ok := file.Models[modelName]
+		modelTable, ok := file.Models[tableName]
 		if !ok {
-			return nil, fmt.Errorf("semantic model table %q references unknown model %q", tableName, modelName)
+			return nil, fmt.Errorf("semantic model table %q references unknown model", tableName)
 		}
 		if modelTable.SQL != "" && modelTable.Transform.SQL == "" {
 			modelTable.Transform.SQL = modelTable.SQL
 		}
-		modelTable.PrimaryKey = tableRef.PrimaryKey
 		modelTable.Kind = defaultString(modelTable.Kind, "model")
 		if modelTable.Grain == "" {
 			modelTable.Grain = modelTable.PrimaryKey
@@ -145,12 +140,9 @@ func (file modelFile) compile() (*model.Model, error) {
 		if modelTable.Dimensions == nil {
 			modelTable.Dimensions = map[string]model.MetricDimension{}
 		}
-		for field, dimension := range tableRef.Fields {
+		for field, dimension := range modelTable.Dimensions {
 			if err := validateSemanticIdentifier(field); err != nil {
 				return nil, fmt.Errorf("semantic model table %q field %q is invalid: %w", tableName, field, err)
-			}
-			if dimension.Expr == "" && dimension.Expression == "" {
-				dimension.Expr = field
 			}
 			dimension.Table = tableName
 			dimension.Name = field

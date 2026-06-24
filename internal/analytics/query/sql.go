@@ -99,11 +99,7 @@ func dimensionExpr(dimension semanticmodel.MetricDimension, aliases map[string]t
 }
 
 func dimensionWhereExpr(dimension semanticmodel.MetricDimension, aliases map[string]tableAlias) string {
-	if strings.TrimSpace(dimension.Where) == "" {
-		return ""
-	}
-	alias := aliases[dimension.Table].Alias
-	return applyAliases(dimension.Where, aliases, alias)
+	return ""
 }
 
 func measureExpr(measure ResolvedMeasure, aliases map[string]tableAlias) string {

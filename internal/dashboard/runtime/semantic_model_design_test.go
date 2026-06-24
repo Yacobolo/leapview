@@ -87,26 +87,24 @@ sources:
 models:
   orders:
     source: olist_orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      customer_id: {label: Customer ID}
+      purchase_timestamp: {label: Purchase timestamp}
+      revenue: {label: Revenue}
   customers:
     source: olist_customers
+    primary_key: customer_id
+    fields:
+      customer_id: {label: Customer ID}
+      state: {label: State}
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          customer_id: {expr: customer_id}
-          purchase_timestamp: {expr: purchase_timestamp, type: time}
-          revenue: {expr: revenue, type: number}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
-          state: {expr: state}
+      - orders
+      - customers
     relationships:
       - from: orders.customer_id
         to: customers.customer_id

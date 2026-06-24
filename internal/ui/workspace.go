@@ -1311,7 +1311,7 @@ func assetDetailModelForAsset(workspace api.WorkspaceResponse, asset api.AssetRe
 	case "connection":
 		connectionDetailModel(&model, workspace, asset, assets, edges)
 	case "source":
-		model.Overview = append(model.Overview, sourceFacts(asset)...)
+		sourceDetailModel(&model, asset)
 	case "measure":
 		model.Overview = append(model.Overview, metricLeafFacts(asset)...)
 	case "field":
@@ -1504,7 +1504,7 @@ func modelTableDetailModel(model *assetDetailModel, workspace api.WorkspaceRespo
 		definitionFact{Label: "Mode", Value: mode},
 	)
 	model.Sections = append(model.Sections,
-		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", len(fields)), Signal: "assetDetailsModelTableFieldsGrid", Grid: modelTableFieldsGrid(workspace.ID, modelKey, tableName, fields, assets)},
+		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", len(fields)), Signal: "assetDetailsModelTableFieldsGrid", Grid: modelTableFieldsGrid(workspace.ID, modelKey, tableName, fields, metaMap(asset.Meta, "Schema", "schema"), assets)},
 	)
 	if sql := modelTableSQL(asset.Meta); sql != "" {
 		model.Sections = append(model.Sections, assetDetailSection{Title: "SQL", Lang: "sql", Code: sql})
@@ -1521,6 +1521,17 @@ func modelTableKeyParts(asset api.AssetResponse) (string, string) {
 
 func modelTableFields(meta map[string]any) map[string]any {
 	return metaMap(meta, "Dimensions", "dimensions", "Fields", "fields")
+}
+
+func sourceDetailModel(model *assetDetailModel, asset api.AssetResponse) {
+	fields := metaMap(asset.Meta, "Fields", "fields")
+	schema := metaMap(asset.Meta, "Schema", "schema")
+	columns := modelTableSchemaColumns(fields, schema)
+	model.Overview = append(model.Overview, sourceFacts(asset)...)
+	model.Overview = append(model.Overview, definitionFact{Label: "Fields", Value: fmt.Sprint(len(columns))})
+	model.Sections = append(model.Sections,
+		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", len(columns)), Signal: "assetDetailsSourceFieldsGrid", Grid: sourceFieldsGrid(fields, schema)},
+	)
 }
 
 func modelTableSourceNames(meta map[string]any) []string {
@@ -1547,26 +1558,86 @@ func modelTableSQL(meta map[string]any) string {
 	)
 }
 
-func modelTableFieldsGrid(workspaceID, modelKey, tableName string, fields map[string]any, assets []api.AssetResponse) metricGrid {
-	rows := make([]map[string]any, 0, len(fields))
-	for _, name := range sortedMapKeys(fields) {
+func modelTableFieldsGrid(workspaceID, modelKey, tableName string, fields, schema map[string]any, assets []api.AssetResponse) metricGrid {
+	schemaColumns := modelTableSchemaColumns(fields, schema)
+	rows := make([]map[string]any, 0, len(schemaColumns))
+	for _, column := range schemaColumns {
+		name := metaString(column, "Name", "name")
 		field := asMap(fields[name])
 		child := assetByTypeKey("field", modelKey+"."+tableName+"."+name, assets)
+		key := ""
+		if metaBool(column, "PrimaryKey", "primaryKey") {
+			key = "Primary key"
+		}
 		rows = append(rows, map[string]any{
-			"name":     name,
-			"nameHref": childHref(workspaceID, child),
-			"type":     metricGridBadgeValue(metaString(field, "Type", "type"), "muted"),
+			"name":          name,
+			"nameHref":      childHref(workspaceID, child),
+			"label":         firstNonEmpty(metaString(field, "Label", "label"), labelFromKey(name)),
+			"physical_type": metricGridBadgeValue(metaString(column, "PhysicalType", "physicalType"), "muted"),
+			"nullable":      nullableLabel(column, "Nullable", "nullable"),
+			"key":           key,
+			"description":   emptyDash(metaString(field, "Description", "description")),
 		})
 	}
 	return metricGrid{
 		Columns: []metricGridColumn{
 			{ID: "name", Header: "Name", Kind: "link", HrefKey: "nameHref", Width: "170px"},
-			{ID: "type", Header: "Type", Kind: "badge", Width: "110px"},
+			{ID: "label", Header: "Label", Width: "180px"},
+			{ID: "physical_type", Header: "Physical type", Kind: "badge", Width: "140px"},
+			{ID: "nullable", Header: "Nullable", Width: "100px"},
+			{ID: "key", Header: "Key", Width: "130px"},
+			{ID: "description", Header: "Description"},
 		},
 		Rows:     rows,
-		Empty:    "No fields are defined for this model table.",
-		MinWidth: "420px",
+		Empty:    "No schema is available for this model table.",
+		MinWidth: "900px",
 	}
+}
+
+func sourceFieldsGrid(fields, schema map[string]any) metricGrid {
+	schemaColumns := modelTableSchemaColumns(fields, schema)
+	rows := make([]map[string]any, 0, len(schemaColumns))
+	for _, column := range schemaColumns {
+		name := metaString(column, "Name", "name")
+		field := asMap(fields[name])
+		rows = append(rows, map[string]any{
+			"name":          name,
+			"description":   emptyDash(metaString(field, "Description", "description")),
+			"physical_type": metricGridBadgeValue(metaString(column, "PhysicalType", "physicalType"), "muted"),
+			"nullable":      nullableLabel(column, "Nullable", "nullable"),
+		})
+	}
+	return metricGrid{
+		Columns: []metricGridColumn{
+			{ID: "name", Header: "Name", Kind: "code", Width: "170px"},
+			{ID: "description", Header: "Description"},
+			{ID: "physical_type", Header: "Physical type", Kind: "badge", Width: "140px"},
+			{ID: "nullable", Header: "Nullable", Width: "100px"},
+		},
+		Rows:     rows,
+		Empty:    "No schema is available for this source.",
+		MinWidth: "900px",
+	}
+}
+
+func modelTableSchemaColumns(fields map[string]any, schema map[string]any) []map[string]any {
+	if schema != nil {
+		if raw := metaSlice(schema, "Columns", "columns"); len(raw) > 0 {
+			columns := make([]map[string]any, 0, len(raw))
+			for _, item := range raw {
+				columns = append(columns, asMap(item))
+			}
+			sort.Slice(columns, func(i, j int) bool {
+				return metaInt(columns[i], "Ordinal", "ordinal") < metaInt(columns[j], "Ordinal", "ordinal")
+			})
+			return columns
+		}
+	}
+	columns := make([]map[string]any, 0, len(fields))
+	for _, name := range sortedMapKeys(fields) {
+		columns = append(columns, map[string]any{"name": name})
+	}
+	return columns
 }
 
 func semanticFieldsGrid(workspaceID string, parent api.AssetResponse, assets []api.AssetResponse, meta map[string]any) metricGrid {
@@ -2128,6 +2199,17 @@ func metaBool(meta map[string]any, keys ...string) bool {
 	}
 }
 
+func metaInt(meta map[string]any, keys ...string) int {
+	switch typed := metaValue(meta, keys...).(type) {
+	case int:
+		return typed
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
+}
+
 func sortedMapKeys(values map[string]any) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -2174,6 +2256,25 @@ func boolLabel(value bool) string {
 		return "Yes"
 	}
 	return "No"
+}
+
+func nullableLabel(meta map[string]any, keys ...string) string {
+	value := metaValue(meta, keys...)
+	if value == nil {
+		return "-"
+	}
+	switch typed := value.(type) {
+	case bool:
+		return boolLabel(typed)
+	case string:
+		if strings.EqualFold(typed, "true") || strings.EqualFold(typed, "yes") {
+			return "Yes"
+		}
+		if strings.EqualFold(typed, "false") || strings.EqualFold(typed, "no") {
+			return "No"
+		}
+	}
+	return "-"
 }
 
 func firstNonEmpty(values ...string) string {

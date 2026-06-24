@@ -20,16 +20,10 @@ type modelFile struct {
 }
 
 type semanticModelSpec struct {
-	BaseTable     string                        `yaml:"base_table"`
-	Tables        map[string]semanticModelTable `yaml:"tables"`
-	Relationships []model.Relationship          `yaml:"relationships"`
-	Measures      semanticModelMeasures         `yaml:"measures"`
-}
-
-type semanticModelTable struct {
-	Model      string                           `yaml:"model"`
-	PrimaryKey string                           `yaml:"primary_key"`
-	Fields     map[string]model.MetricDimension `yaml:"fields"`
+	BaseTable     string                `yaml:"base_table"`
+	Tables        []string              `yaml:"tables"`
+	Relationships []model.Relationship  `yaml:"relationships"`
+	Measures      semanticModelMeasures `yaml:"measures"`
 }
 
 type semanticModelMeasures struct {

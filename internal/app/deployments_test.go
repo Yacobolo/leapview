@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,6 +41,11 @@ type runtimeAssetMetrics struct {
 
 type emptyPageRuntimeAssetMetrics struct {
 	fakeMetrics
+}
+
+type dataDirMetrics struct {
+	fakeMetrics
+	dataDir string
 }
 
 type testRuntimeProvider struct {
@@ -92,6 +98,10 @@ func (emptyPageRuntimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID st
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), catalog.ID, dashboard.ID, workspace.AssetEdgeContains),
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), dashboard.ID, model.ID, workspace.AssetEdgeUsesSemanticModel),
 	}, true
+}
+
+func (m dataDirMetrics) DataDir() string {
+	return m.dataDir
 }
 
 func (p testRuntimeProvider) Active() (runtimehost.Runtime, error) {
@@ -439,8 +449,10 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	store := testStore(t)
 	reloader := &fakeReloader{}
 	artifactDir := t.TempDir()
+	dataDir := t.TempDir()
+	writeMinimalOlistFixture(t, dataDir)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "test"})
+	server := NewWithOptions(dataDirMetrics{dataDir: dataDir}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "test"})
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/deployments", bytes.NewBufferString(`{"title":"Test"}`))
 	createReq.Header.Set("Authorization", "Bearer dev")
@@ -640,7 +652,7 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Connections", "Global", "data-connection-toolbar", "local connection"} {
+	for _, want := range []string{"Connections", "Global", "data-connection-toolbar", "Local CSV files for the Olist ecommerce demo dataset."} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("connections page missing %q:\n%s", want, body)
 		}
@@ -750,10 +762,10 @@ func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testi
 }
 
 func TestStaleActiveLineageGraphDetectsPartialCleanGraphs(t *testing.T) {
+	workspaceID := workspace.WorkspaceID("test")
+	deploymentID := workspace.DeploymentID("dep_test")
 	graph := func(modelContent, dashboardContent any, includeRelationship, includePageItem bool, rollupEdge workspace.AssetEdgeType) workspace.AssetGraph {
 		t.Helper()
-		workspaceID := workspace.WorkspaceID("test")
-		deploymentID := workspace.DeploymentID("dep_test")
 		catalog := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeCatalog, "test", "", "Catalog", map[string]any{})
 		model := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", modelContent)
 		semanticTable := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticTable, "olist.orders", model.ID, "Orders", map[string]any{})
@@ -791,8 +803,63 @@ func TestStaleActiveLineageGraphDetectsPartialCleanGraphs(t *testing.T) {
 	if !staleActiveLineageGraph(graph(map[string]any{}, map[string]any{}, true, true, workspace.AssetEdgeUsesMeasure)) {
 		t.Fatal("persisted dashboard rollup dependency edges should be stale")
 	}
+	sourceWithGeneratedDescription := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", "", "customers", map[string]any{
+		"Format": "csv",
+		"Path":   "olist_customers_dataset.csv",
+	})
+	sourceWithGeneratedDescription.Description = "csv file: olist_customers_dataset.csv"
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{sourceWithGeneratedDescription}}) {
+		t.Fatal("source asset with legacy generated description should be stale")
+	}
+	connectionWithGeneratedDescription := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeConnection, "olist.olist", "", "olist", map[string]any{
+		"Kind": "local",
+	})
+	connectionWithGeneratedDescription.Description = "local connection"
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{connectionWithGeneratedDescription}}) {
+		t.Fatal("connection asset with legacy generated description should be stale")
+	}
 	if staleActiveLineageGraph(graph(map[string]any{}, map[string]any{}, true, false, "")) {
 		t.Fatal("clean graph without relationships or page placements should not be stale")
+	}
+	currentVersionAsset := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.orders", "", "orders", map[string]any{
+		"Fields": map[string]any{"order_id": map[string]any{"Label": "Order ID"}},
+		"Schema": map[string]any{"Columns": []any{map[string]any{"Name": "order_id"}}},
+	})
+	currentVersionAsset.ContentVersion = workspace.CurrentAssetContentVersion
+	if staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{currentVersionAsset}}) {
+		t.Fatal("asset with current content version should not be stale")
+	}
+	oldVersionAsset := currentVersionAsset
+	oldVersionAsset.ContentVersion = workspace.CurrentAssetContentVersion - 1
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{oldVersionAsset}}) {
+		t.Fatal("asset with old content version should be stale")
+	}
+	authoredSource := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", "", "customers", map[string]any{})
+	authoredSource.ContentVersion = workspace.CurrentAssetContentVersion
+	authoredSource.Description = "Raw customer records with customer geography."
+	if staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{authoredSource}}) {
+		t.Fatal("source asset with authored description should not be stale")
+	}
+	sourceWithOldContentVersion := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.orders", "", "orders", map[string]any{
+		"Schema": map[string]any{"Columns": []any{map[string]any{"Name": "order_id"}}},
+	})
+	sourceWithOldContentVersion.ContentVersion = workspace.CurrentAssetContentVersion - 1
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{sourceWithOldContentVersion}}) {
+		t.Fatal("source asset with old content version should be stale")
+	}
+	sourceWithFieldsWithoutSchema := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.orders", "", "orders", map[string]any{
+		"Fields": map[string]any{"order_id": map[string]any{"Label": "Order ID"}},
+	})
+	sourceWithFieldsWithoutSchema.ContentVersion = workspace.CurrentAssetContentVersion
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{sourceWithFieldsWithoutSchema}}) {
+		t.Fatal("source asset with field docs and no schema should be stale")
+	}
+	modelTableWithFieldsWithoutSchema := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeModelTable, "olist.orders", "", "orders", map[string]any{
+		"Dimensions": map[string]any{"order_id": map[string]any{"Label": "Order ID"}},
+	})
+	modelTableWithFieldsWithoutSchema.ContentVersion = workspace.CurrentAssetContentVersion
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{modelTableWithFieldsWithoutSchema}}) {
+		t.Fatal("model table asset with field docs and no schema should be stale")
 	}
 }
 
@@ -813,7 +880,12 @@ func TestReconcileActiveLineageGraphReplacesStaleGraphFromActiveRuntime(t *testi
 	catalog := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeCatalog, "test", "", "Catalog", map[string]any{})
 	model := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", map[string]any{})
 	dashboard := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeDashboard, "sales", catalog.ID, "Sales", map[string]any{})
-	staleAssets := []workspace.Asset{catalog, model, dashboard}
+	staleSource := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", catalog.ID, "customers", map[string]any{
+		"Format": "csv",
+		"Path":   "olist_customers_dataset.csv",
+	})
+	staleSource.Description = "csv file: olist_customers_dataset.csv"
+	staleAssets := []workspace.Asset{catalog, model, dashboard, staleSource}
 	staleEdges := []workspace.AssetEdge{
 		workspace.NewAssetEdge(workspaceID, deploymentID, catalog.ID, model.ID, workspace.AssetEdgeContains),
 		workspace.NewAssetEdge(workspaceID, deploymentID, catalog.ID, dashboard.ID, workspace.AssetEdgeContains),
@@ -822,6 +894,13 @@ func TestReconcileActiveLineageGraphReplacesStaleGraphFromActiveRuntime(t *testi
 	if !ok {
 		t.Fatal("runtime graph unavailable")
 	}
+	cleanSource := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", cleanAssets[0].ID, "customers", map[string]any{
+		"Format": "csv",
+		"Path":   "olist_customers_dataset.csv",
+	})
+	cleanSource.ContentVersion = workspace.CurrentAssetContentVersion
+	cleanSource.Description = "Raw customer records with customer geography."
+	cleanAssets = append(cleanAssets, cleanSource)
 	validation := deployment.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
@@ -851,6 +930,10 @@ func TestReconcileActiveLineageGraphReplacesStaleGraphFromActiveRuntime(t *testi
 	}
 	if !graphHasAssetType(graph, workspace.AssetTypeSemanticTable) {
 		t.Fatalf("reconciled graph missing semantic table asset: %#v", graph.Assets)
+	}
+	source := graphAssetByTypeAndKey(t, graph, workspace.AssetTypeSource, "olist.customers")
+	if source.Description != "Raw customer records with customer geography." {
+		t.Fatalf("source description = %q, want authored runtime description", source.Description)
 	}
 	active, err := deploymentRepo.ByID(ctx, created.ID)
 	if err != nil {
@@ -929,6 +1012,17 @@ func graphHasAssetType(graph workspace.AssetGraph, typ workspace.AssetType) bool
 		}
 	}
 	return false
+}
+
+func graphAssetByTypeAndKey(t *testing.T, graph workspace.AssetGraph, typ workspace.AssetType, key string) workspace.Asset {
+	t.Helper()
+	for _, asset := range graph.Assets {
+		if asset.Type == typ && asset.Key == key {
+			return asset
+		}
+	}
+	t.Fatalf("graph missing asset %s %q", typ, key)
+	return workspace.Asset{}
 }
 
 func TestWorkspacePermissionsRejectViewer(t *testing.T) {
@@ -1334,20 +1428,61 @@ func zeroArtifact(deploymentID deployment.ID, workspaceID string) deployment.Art
 	}
 }
 
+func writeMinimalOlistFixture(t *testing.T, dir string) {
+	t.Helper()
+
+	writeCSVFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_approved_at,order_delivered_carrier_date,order_delivered_customer_date,order_estimated_delivery_date
+o1,c1,delivered,2018-01-10 10:00:00,2018-01-10 11:00:00,2018-01-11 10:00:00,2018-01-14 10:00:00,2018-01-20 10:00:00
+o2,c2,shipped,2017-06-10 10:00:00,2017-06-10 11:00:00,2017-06-12 10:00:00,2017-06-20 10:00:00,2017-06-25 10:00:00
+`)
+	writeCSVFixture(t, dir, "olist_order_items_dataset.csv", `order_id,order_item_id,product_id,seller_id,shipping_limit_date,price,freight_value
+o1,1,p1,s1,2018-01-12 10:00:00,100.00,10.00
+o2,1,p2,s2,2017-06-15 10:00:00,50.00,5.00
+`)
+	writeCSVFixture(t, dir, "olist_order_payments_dataset.csv", `order_id,payment_sequential,payment_type,payment_installments,payment_value
+o1,1,credit_card,1,110.00
+o2,1,boleto,1,55.00
+`)
+	writeCSVFixture(t, dir, "olist_products_dataset.csv", `product_id,product_category_name,product_name_lenght,product_description_lenght,product_photos_qty,product_weight_g,product_length_cm,product_height_cm,product_width_cm
+p1,beleza_saude,10,20,1,500,20,10,15
+p2,relogios_presentes,12,22,1,700,25,12,16
+`)
+	writeCSVFixture(t, dir, "olist_customers_dataset.csv", `customer_id,customer_unique_id,customer_zip_code_prefix,customer_city,customer_state
+c1,u1,01000,sao paulo,SP
+c2,u2,20000,rio de janeiro,RJ
+`)
+	writeCSVFixture(t, dir, "olist_order_reviews_dataset.csv", `review_id,order_id,review_score,review_comment_title,review_comment_message,review_creation_date,review_answer_timestamp
+r1,o1,5,great,fast,2018-01-15,2018-01-16
+r2,o2,3,ok,slow,2017-06-21,2017-06-22
+`)
+	writeCSVFixture(t, dir, "product_category_name_translation.csv", `product_category_name,product_category_name_english
+beleza_saude,health_beauty
+relogios_presentes,watches_gifts
+`)
+}
+
+func writeCSVFixture(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatalf("write fixture %s: %v", name, err)
+	}
+}
+
 func deploymentAssets(rows []workspace.Asset) []deployment.Asset {
 	assets := make([]deployment.Asset, 0, len(rows))
 	for _, row := range rows {
 		assets = append(assets, deployment.Asset{
-			ID:           string(row.ID),
-			WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
-			DeploymentID: deployment.ID(row.DeploymentID),
-			Type:         string(row.Type),
-			Key:          row.Key,
-			ParentID:     string(row.ParentID),
-			Title:        row.Title,
-			Description:  row.Description,
-			ContentJSON:  row.ContentJSON,
-			ContentHash:  row.ContentHash,
+			ID:             string(row.ID),
+			WorkspaceID:    deployment.WorkspaceID(row.WorkspaceID),
+			DeploymentID:   deployment.ID(row.DeploymentID),
+			Type:           string(row.Type),
+			Key:            row.Key,
+			ParentID:       string(row.ParentID),
+			Title:          row.Title,
+			Description:    row.Description,
+			ContentJSON:    row.ContentJSON,
+			ContentHash:    row.ContentHash,
+			ContentVersion: row.ContentVersion,
 		})
 	}
 	return assets

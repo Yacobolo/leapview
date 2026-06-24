@@ -216,15 +216,15 @@ sources:
 models:
   orders:
     source: orders
+    primary_key: order_id
+    fields:
+      status: {label: Status}
+      revenue: {label: Revenue}
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          status: {expr: status}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       revenue: {expr: SUM(orders.revenue), format: currency}

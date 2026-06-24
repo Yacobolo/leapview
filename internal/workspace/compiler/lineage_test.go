@@ -48,6 +48,62 @@ func TestExtractLineageCleanOwnership(t *testing.T) {
 	requireLineageEdge(t, graph, page, pageTable, workspace.AssetEdgeContains)
 }
 
+func TestExtractLineageUsesAuthoredDescriptions(t *testing.T) {
+	compiled := compileLineageWorkspace(t)
+	graph := compiled.Workspace.Graph
+
+	cases := []struct {
+		typ         workspace.AssetType
+		key         string
+		description string
+	}{
+		{workspace.AssetTypeConnection, "olist.olist", "Local CSV files for the Olist demo workspace."},
+		{workspace.AssetTypeSource, "olist.orders", "Raw order lifecycle events from the Olist dataset."},
+		{workspace.AssetTypeModelTable, "olist.orders", "Order-grain model table for sales analysis."},
+		{workspace.AssetTypeSemanticTable, "olist.orders", "Order-grain model table for sales analysis."},
+		{workspace.AssetTypeField, "olist.orders.revenue", "Order revenue after payment aggregation."},
+		{workspace.AssetTypeRelationship, "olist.orders_customers", "Links each order to the purchasing customer."},
+		{workspace.AssetTypeMeasure, "olist.revenue", "Total order revenue."},
+		{workspace.AssetTypeFilter, "sales.status", "Filters dashboard content by order status."},
+		{workspace.AssetTypeVisual, "sales.revenue_by_status", "Compares revenue across order statuses."},
+		{workspace.AssetTypeTable, "sales.order_rows", "Detailed order rows for auditing sales records."},
+		{workspace.AssetTypePage, "sales.overview", "Executive sales summary."},
+		{workspace.AssetTypePageItem, "sales.overview.revenue_card", "Revenue chart placement on the overview page."},
+	}
+	for _, tc := range cases {
+		asset := requireLineageAsset(t, graph, tc.typ, tc.key)
+		if asset.Description != tc.description {
+			t.Fatalf("%s %q description = %q, want %q", tc.typ, tc.key, asset.Description, tc.description)
+		}
+	}
+}
+
+func TestExtractLineageLeavesMissingDescriptionsBlank(t *testing.T) {
+	dir := t.TempDir()
+	writeCompilerFixture(t, filepath.Join(dir, "catalog.yaml"), validCompilerCatalogYAML())
+	writeCompilerFixture(t, filepath.Join(dir, "model.yaml"), validCompilerModelYAML())
+	writeCompilerFixture(t, filepath.Join(dir, "dashboard.yaml"), validCompilerDashboardYAML())
+
+	compiled, err := Compile(filepath.Join(dir, "catalog.yaml"), Options{WorkspaceID: "libredash", DeploymentID: "dep_test"})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	graph := compiled.Workspace.Graph
+	for _, tc := range []struct {
+		typ workspace.AssetType
+		key string
+	}{
+		{workspace.AssetTypeConnection, "olist.olist"},
+		{workspace.AssetTypeSource, "olist.orders"},
+		{workspace.AssetTypeVisual, "sales.revenue"},
+	} {
+		asset := requireLineageAsset(t, graph, tc.typ, tc.key)
+		if asset.Description != "" {
+			t.Fatalf("%s %q description = %q, want blank", tc.typ, tc.key, asset.Description)
+		}
+	}
+}
+
 func TestExtractLineageCleanDependencies(t *testing.T) {
 	compiled := compileLineageWorkspace(t)
 	graph := compiled.Workspace.Graph
@@ -124,22 +180,22 @@ sources:
 models:
   orders:
     source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      customer_id: {label: Customer ID}
   customers:
     source: customers
+    primary_key: customer_id
+    fields:
+      customer_id: {label: Customer ID}
+      state: {label: State}
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          customer_id: {expr: customer_id}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          state: {expr: customer_state}
+      - orders
+      - customers
     relationships:
       - id: order_customer
         from: orders.customer_id
@@ -175,47 +231,53 @@ title: Olist
 connections:
   olist:
     kind: local
+    description: Local CSV files for the Olist demo workspace.
 sources:
   orders:
     connection: olist
     path: orders.csv
     format: csv
+    description: Raw order lifecycle events from the Olist dataset.
   customers:
     connection: olist
     path: customers.csv
     format: csv
+    description: Raw customer profile records from the Olist dataset.
 models:
   orders:
     source: orders
+    description: Order-grain model table for sales analysis.
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      customer_id: {label: Customer ID}
+      status: {label: Status}
+      revenue: {label: Revenue, description: Order revenue after payment aggregation.}
   customers:
-    source: customers
+    sources: [customers]
+    description: Customer lookup model table for geographic slicing.
+    transform:
+      sql: SELECT customer_id, customer_state AS state FROM source.customers
+    primary_key: customer_id
+    fields:
+      customer_id: {label: Customer ID}
+      state: {label: State}
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          customer_id: {expr: customer_id}
-          status: {expr: status}
-          revenue: {expr: revenue}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
-          state: {expr: customer_state}
+      - orders
+      - customers
     relationships:
       - id: orders_customers
+        description: Links each order to the purchasing customer.
         from: orders.customer_id
         to: customers.customer_id
         cardinality: many_to_one
         active: true
     measures:
       defaults: {table: orders, grain: order_id}
-      revenue: {expr: SUM(orders.revenue), format: currency}
+      revenue: {expr: SUM(orders.revenue), description: Total order revenue., format: currency}
 `)
 	writeCompilerFixture(t, filepath.Join(dir, "dashboard.yaml"), `
 id: sales
@@ -225,12 +287,14 @@ filters:
   status:
     type: multi_select
     label: Status
+    description: Filters dashboard content by order status.
     url_param: status
     operator: in
     field: orders.status
 visuals:
   revenue_by_status:
     title: Revenue by status
+    description: Compares revenue across order statuses.
     type: bar
     query:
       dimensions:
@@ -240,6 +304,7 @@ visuals:
 tables:
   order_rows:
     title: Order rows
+    description: Detailed order rows for auditing sales records.
     query:
       table: orders
       fields:
@@ -248,18 +313,22 @@ tables:
 pages:
   - id: overview
     title: Overview
+    description: Executive sales summary.
     visuals:
       - id: status_card
         kind: filter_card
         filter: status
+        description: Status filter placement on the overview page.
         placement: {col: 1, row: 1, col_span: 3, row_span: 2}
       - id: revenue_card
         kind: bar_chart
         visual: revenue_by_status
+        description: Revenue chart placement on the overview page.
         placement: {col: 4, row: 1, col_span: 5, row_span: 4}
       - id: orders_table
         kind: table
         table: order_rows
+        description: Order table placement on the overview page.
         placement: {col: 1, row: 5, col_span: 8, row_span: 4}
 `)
 

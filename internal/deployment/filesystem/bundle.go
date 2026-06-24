@@ -3,6 +3,7 @@ package filesystem
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"sort"
 	"strings"
 
+	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
+	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -33,6 +36,11 @@ type ManifestFile struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
+}
+
+type ValidateOptions struct {
+	DataDir   string
+	DuckDBDir string
 }
 
 func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
@@ -126,6 +134,10 @@ func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
 }
 
 func ValidateArtifact(path string, workspaceID deployment.WorkspaceID, deploymentID deployment.ID) (deployment.Validation, error) {
+	return ValidateArtifactWithOptions(path, workspaceID, deploymentID, ValidateOptions{})
+}
+
+func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID, deploymentID deployment.ID, options ValidateOptions) (deployment.Validation, error) {
 	digest, err := fileDigest(path)
 	if err != nil {
 		return deployment.Validation{}, err
@@ -160,19 +172,32 @@ func ValidateArtifact(path string, workspaceID deployment.WorkspaceID, deploymen
 		os.RemoveAll(root)
 		return deployment.Validation{}, err
 	}
+	if options.DataDir != "" {
+		if err := discoverSchemasForDefinition(context.Background(), compiled.Definition, options); err != nil {
+			os.RemoveAll(root)
+			return deployment.Validation{}, err
+		}
+		graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), compiled.Definition)
+		if err != nil {
+			os.RemoveAll(root)
+			return deployment.Validation{}, err
+		}
+		compiled.Workspace.Graph = graph
+	}
 	assets := make([]deployment.Asset, 0, len(compiled.Workspace.Graph.Assets))
 	for _, asset := range compiled.Workspace.Graph.Assets {
 		assets = append(assets, deployment.Asset{
-			ID:           string(asset.ID),
-			WorkspaceID:  deployment.WorkspaceID(asset.WorkspaceID),
-			DeploymentID: deployment.ID(asset.DeploymentID),
-			Type:         string(asset.Type),
-			Key:          asset.Key,
-			ParentID:     string(asset.ParentID),
-			Title:        asset.Title,
-			Description:  asset.Description,
-			ContentJSON:  asset.ContentJSON,
-			ContentHash:  asset.ContentHash,
+			ID:             string(asset.ID),
+			WorkspaceID:    deployment.WorkspaceID(asset.WorkspaceID),
+			DeploymentID:   deployment.ID(asset.DeploymentID),
+			Type:           string(asset.Type),
+			Key:            asset.Key,
+			ParentID:       string(asset.ParentID),
+			Title:          asset.Title,
+			Description:    asset.Description,
+			ContentJSON:    asset.ContentJSON,
+			ContentHash:    asset.ContentHash,
+			ContentVersion: asset.ContentVersion,
 		})
 	}
 	edges := make([]deployment.AssetEdge, 0, len(compiled.Workspace.Graph.Edges))
@@ -198,6 +223,47 @@ func ValidateArtifact(path string, workspaceID deployment.WorkspaceID, deploymen
 		Assets:       assets,
 		Edges:        edges,
 	}, nil
+}
+
+func discoverSchemasForDefinition(ctx context.Context, definition *workspace.Definition, options ValidateOptions) error {
+	duckDBRoot := options.DuckDBDir
+	removeDuckDBRoot := false
+	if duckDBRoot == "" {
+		var err error
+		duckDBRoot, err = os.MkdirTemp("", "libredash-schema-*")
+		if err != nil {
+			return err
+		}
+		removeDuckDBRoot = true
+	}
+	if removeDuckDBRoot {
+		defer os.RemoveAll(duckDBRoot)
+	}
+	for _, entry := range definition.Catalog.SemanticModels {
+		model := definition.Models[entry.ID]
+		dbDir := filepath.Join(duckDBRoot, entry.ID)
+		dbPath := analyticsmaterialize.DatabasePath(dbDir, entry.ID)
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+			return err
+		}
+		db, err := analyticsduckdb.Open(ctx, dbPath)
+		if err != nil {
+			return err
+		}
+		sources := analyticsduckdb.NewSourceRuntime(db, options.DataDir)
+		if _, err := analyticsmaterialize.Refresh(ctx, db, sources, model); err != nil {
+			db.Close()
+			return err
+		}
+		if err := analyticsduckdb.DiscoverSchemas(ctx, db, model); err != nil {
+			db.Close()
+			return err
+		}
+		if err := db.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ExtractArtifact(path, dest string) error {

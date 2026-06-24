@@ -176,13 +176,45 @@ func TestWorkspaceAssetDetailsRenderDirectSourceModelTableWithoutSQL(t *testing.
 	}
 }
 
+func TestWorkspaceAssetDetailsRenderSourceSchema(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "source")
+
+	var out strings.Builder
+	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		"Overview",
+		"Fields (2)",
+		`data-attr:grid="$assetDetailsSourceFieldsGrid"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("source details did not render %q:\n%s", want, rendered)
+		}
+	}
+	signals := workspaceAssetSignals(workspace, asset, assets, edges, assetLineage(workspace.ID, asset, assets, edges), "details")
+	grid := signalMetricGrid(t, signals, "assetDetailsSourceFieldsGrid")
+	assertGridHeaders(t, grid, []string{"Name", "Description", "Physical type", "Nullable"})
+	if len(grid.Rows) != 2 {
+		t.Fatalf("source field rows = %#v, want 2 rows", grid.Rows)
+	}
+	state := grid.Rows[1]
+	if state["name"] != "customer_id" || fmt.Sprint(state["description"]) != "Raw customer identifier." {
+		t.Fatalf("unexpected source field row: %#v", state)
+	}
+}
+
 func TestWorkspaceAssetDetailSignalsIncludeModelTableDefinition(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 
 	directAsset := testAssetByID(t, assets, "table-model")
 	directSignals := workspaceAssetSignals(workspace, directAsset, assets, edges, assetLineage(workspace.ID, directAsset, assets, edges), "details")
 	directFields := signalMetricGrid(t, directSignals, "assetDetailsModelTableFieldsGrid")
-	assertGridHeaders(t, directFields, []string{"Name", "Type"})
+	assertGridHeaders(t, directFields, []string{"Name", "Label", "Physical type", "Nullable", "Key", "Description"})
 	assertGridMissingHeaders(t, directFields, []string{"Expression", "Filter", "Order", "Model table", "Measures"})
 	if _, ok := directSignals["assetDetailsModelTableDefinitionGrid"]; ok {
 		t.Fatalf("direct source model table seeded source definition grid: %#v", directSignals)
@@ -198,6 +230,33 @@ func TestWorkspaceAssetDetailSignalsIncludeModelTableDefinition(t *testing.T) {
 	}
 	if _, ok := transformSignals["assetDetailsModelTableMeasuresGrid"]; ok {
 		t.Fatalf("model table details seeded measures grid: %#v", transformSignals)
+	}
+}
+
+func TestWorkspaceAssetDetailsRenderUnknownNullableAsDash(t *testing.T) {
+	workspace, _, assets, edges := testWorkspaceAssetFixtures()
+
+	source := testAssetByID(t, assets, "source-payments")
+	source.Meta["Fields"] = map[string]any{
+		"order_id": map[string]any{"Description": "Raw order identifier."},
+	}
+	signals := workspaceAssetSignals(workspace, source, assets, edges, assetLineage(workspace.ID, source, assets, edges), "details")
+	sourceGrid := signalMetricGrid(t, signals, "assetDetailsSourceFieldsGrid")
+	if len(sourceGrid.Rows) != 1 {
+		t.Fatalf("source fallback rows = %#v, want 1", sourceGrid.Rows)
+	}
+	if got := fmt.Sprint(sourceGrid.Rows[0]["nullable"]); got != "-" {
+		t.Fatalf("source fallback nullable = %q, want -", got)
+	}
+
+	modelTable := testAssetByID(t, assets, "table-model")
+	modelTable.Meta["Schema"] = map[string]any{"columns": []any{
+		map[string]any{"name": "order_id", "ordinal": float64(1), "physicalType": "VARCHAR", "primaryKey": true},
+	}}
+	signals = workspaceAssetSignals(workspace, modelTable, assets, edges, assetLineage(workspace.ID, modelTable, assets, edges), "details")
+	modelGrid := signalMetricGrid(t, signals, "assetDetailsModelTableFieldsGrid")
+	if got := fmt.Sprint(modelGrid.Rows[0]["nullable"]); got != "-" {
+		t.Fatalf("model table missing nullable = %q, want -", got)
 	}
 }
 
@@ -929,16 +988,32 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 			},
 		},
 		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "catalog", Title: "Olist connection", Meta: map[string]any{"Kind": "local", "credentials_configured": false}},
-		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"}},
+		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{
+			"Connection": "olist",
+			"Format":     "csv",
+			"Path":       "orders.csv",
+			"Fields": map[string]any{
+				"order_id":    map[string]any{"Description": "Raw order identifier."},
+				"customer_id": map[string]any{"Description": "Raw customer identifier."},
+			},
+			"Schema": map[string]any{"columns": []any{
+				map[string]any{"name": "order_id", "ordinal": float64(1), "physicalType": "VARCHAR", "nullable": false},
+				map[string]any{"name": "customer_id", "ordinal": float64(2), "physicalType": "VARCHAR", "nullable": true},
+			}},
+		}},
 		{ID: "source-payments", WorkspaceID: workspace.ID, Type: "source", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "payments.csv"}},
 		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{
 			"Source":     "orders",
 			"PrimaryKey": "order_id",
 			"Grain":      "order_id",
 			"Dimensions": map[string]any{
-				"order_id": map[string]any{"Expr": "order_id"},
-				"state":    map[string]any{"Expr": "state"},
+				"order_id": map[string]any{"Label": "Order ID"},
+				"state":    map[string]any{"Label": "State"},
 			},
+			"Schema": map[string]any{"columns": []any{
+				map[string]any{"name": "order_id", "ordinal": float64(1), "physicalType": "VARCHAR", "nullable": false, "primaryKey": true},
+				map[string]any{"name": "state", "ordinal": float64(2), "physicalType": "VARCHAR", "nullable": true},
+			}},
 		}},
 		{ID: "table-transform", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{
 			"Sources":            []any{"payments"},
@@ -947,12 +1022,16 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 			"Grain":              "order_id",
 			"Transform":          map[string]any{"SQL": "SELECT order_id, SUM(payment_value) AS revenue FROM source.payments GROUP BY order_id"},
 			"Dimensions": map[string]any{
-				"order_id": map[string]any{"Expr": "order_id"},
-				"revenue":  map[string]any{"Expr": "revenue", "Type": "number"},
+				"order_id": map[string]any{"Label": "Order ID"},
+				"revenue":  map[string]any{"Label": "Revenue"},
 			},
+			"Schema": map[string]any{"columns": []any{
+				map[string]any{"name": "order_id", "ordinal": float64(1), "physicalType": "VARCHAR", "nullable": false, "primaryKey": true},
+				map[string]any{"name": "revenue", "ordinal": float64(2), "physicalType": "DOUBLE", "nullable": true},
+			}},
 		}},
 		{ID: "semantic-table", WorkspaceID: workspace.ID, Type: "semantic_table", Key: "olist.orders", ParentID: "model", Title: "Orders semantic table", Meta: map[string]any{"Table": "orders"}},
-		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "semantic-table", Title: "State", Meta: map[string]any{"Expr": "state"}},
+		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "semantic-table", Title: "State", Meta: map[string]any{"Label": "State"}},
 		{ID: "measure", WorkspaceID: workspace.ID, Type: "measure", Key: "olist.revenue", ParentID: "model", Title: "Revenue", Meta: map[string]any{"Table": "orders", "Expression": "SUM(orders.revenue)", "Format": "currency"}},
 		{ID: "relationship", WorkspaceID: workspace.ID, Type: "relationship", Key: "olist.orders_customers", ParentID: "model", Title: "Orders to customers", Meta: map[string]any{"From": "orders.customer_id", "To": "customers.customer_id"}},
 		{ID: "dashboard", WorkspaceID: workspace.ID, Type: "dashboard", Key: "executive-sales", ParentID: "catalog", Title: "Executive Sales Dashboard", Description: "Sales overview.", Href: "/dashboards/executive-sales", Meta: map[string]any{"SemanticModel": "olist", "Tags": []any{"sales"}}},

@@ -129,20 +129,21 @@ func (p PagePlacement) IsZero() bool {
 }
 
 type PageVisual struct {
-	ID        string        `json:"id" yaml:"id"`
-	Kind      string        `json:"kind" yaml:"kind"`
-	Visual    string        `json:"visual,omitempty" yaml:"visual"`
-	Table     string        `json:"table,omitempty" yaml:"table"`
-	Filter    string        `json:"filter,omitempty" yaml:"filter"`
-	Placement PagePlacement `json:"placement" yaml:"placement"`
-	X         float64       `json:"x" yaml:"-"`
-	Y         float64       `json:"y" yaml:"-"`
-	Width     float64       `json:"width" yaml:"-"`
-	Height    float64       `json:"height" yaml:"-"`
-	Eyebrow   string        `json:"eyebrow,omitempty" yaml:"eyebrow"`
-	Title     string        `json:"title,omitempty" yaml:"title"`
-	Subtitle  string        `json:"subtitle,omitempty" yaml:"subtitle"`
-	Badges    []string      `json:"badges,omitempty" yaml:"badges"`
+	ID          string        `json:"id" yaml:"id"`
+	Kind        string        `json:"kind" yaml:"kind"`
+	Visual      string        `json:"visual,omitempty" yaml:"visual"`
+	Table       string        `json:"table,omitempty" yaml:"table"`
+	Filter      string        `json:"filter,omitempty" yaml:"filter"`
+	Description string        `json:"description,omitempty" yaml:"description"`
+	Placement   PagePlacement `json:"placement" yaml:"placement"`
+	X           float64       `json:"x" yaml:"-"`
+	Y           float64       `json:"y" yaml:"-"`
+	Width       float64       `json:"width" yaml:"-"`
+	Height      float64       `json:"height" yaml:"-"`
+	Eyebrow     string        `json:"eyebrow,omitempty" yaml:"eyebrow"`
+	Title       string        `json:"title,omitempty" yaml:"title"`
+	Subtitle    string        `json:"subtitle,omitempty" yaml:"subtitle"`
+	Badges      []string      `json:"badges,omitempty" yaml:"badges"`
 }
 
 type Filters struct {
