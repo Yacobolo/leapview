@@ -9,6 +9,13 @@ tasks:
     cmds:
       - ./scripts/dev-server.sh start
 
+  dev:quack:
+    desc: Start the managed LibreDash dev server with the local Quack profile
+    deps:
+      - build
+    cmds:
+      - ./scripts/dev-profile.sh quack start
+
   bootstrap:
     desc: Download/sync Olist CSVs if missing
     cmds:
@@ -19,15 +26,30 @@ tasks:
     cmds:
       - ./scripts/dev-server.sh stop
 
+  dev:quack:stop:
+    desc: Stop the managed LibreDash dev server with the local Quack profile
+    cmds:
+      - ./scripts/dev-profile.sh quack stop
+
   dev:status:
     desc: Show managed LibreDash dev server status
     cmds:
       - ./scripts/dev-server.sh status
 
+  dev:quack:status:
+    desc: Show managed LibreDash dev server status with the local Quack profile
+    cmds:
+      - ./scripts/dev-profile.sh quack status
+
   dev:logs:
     desc: Tail managed LibreDash dev server logs
     cmds:
       - ./scripts/dev-server.sh logs
+
+  dev:quack:logs:
+    desc: Tail managed LibreDash dev server logs with the local Quack profile
+    cmds:
+      - ./scripts/dev-profile.sh quack logs
 
   build:
     desc: Build browser assets

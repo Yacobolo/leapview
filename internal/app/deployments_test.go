@@ -33,6 +33,27 @@ type fakeReloader struct {
 	prepareErr   error
 }
 
+type runtimeAssetMetrics struct {
+	fakeMetrics
+}
+
+func (runtimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	connection, err := workspace.NewAsset(
+		workspace.WorkspaceID(workspaceID),
+		workspace.DeploymentID(deploymentID),
+		workspace.AssetTypeConnection,
+		"quack.remote_quack",
+		"",
+		"remote_quack",
+		"Runtime connection",
+		map[string]any{"Kind": "quack"},
+	)
+	if err != nil {
+		return nil, nil, false
+	}
+	return []workspace.Asset{connection}, nil, true
+}
+
 func (r *fakeReloader) Reload(context.Context) error {
 	r.prepareCalls++
 	r.commitCalls++
@@ -390,6 +411,28 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 	}
 	if strings.Contains(body, `data-workspace-asset-toolbar`) {
 		t.Fatalf("connections page rendered workspace asset toolbar:\n%s", body)
+	}
+}
+
+func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	auth := NewAuth(accesssqlite.NewRepository(store.SQLDB()), "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(runtimeAssetMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/connections", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"Connections", "remote_quack", "Runtime connection"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("connections page missing runtime asset %q:\n%s", want, body)
+		}
 	}
 }
 
