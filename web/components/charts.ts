@@ -1,13 +1,11 @@
 import { LitElement, css, html } from 'lit'
 import { property } from 'lit/decorators.js'
-import * as echarts from 'echarts'
-import type { ECharts } from 'echarts'
 import { EllipsisVertical } from 'lucide'
 import { lucideIcon } from './lucide-icons'
 import { visualMenuIcon } from './visual-menu-icons'
-import './chart/echarts-renderer'
+import './chart/renderers'
 import { chartRenderer } from './chart/registry'
-import type { ChartDatum, ChartPayload, ChartType, VisualAction } from './chart/types'
+import type { ChartDatum, ChartPayload, ChartRendererHandle, ChartType, VisualAction } from './chart/types'
 import { chartColumns, chartRows, formatValue, normalizeShape, normalizeType, numberValue, stringValue, stylesFor } from './chart/utils'
 
 const chartStyles = css`
@@ -182,7 +180,7 @@ const chartStyles = css`
   }
 `
 
-class EChartVisual extends LitElement {
+class ChartVisual extends LitElement {
   @property({ type: Object }) chart: ChartPayload | null = null
   @property({ type: Array }) data: ChartDatum[] = []
   @property({ type: String, attribute: 'chart-title' }) chartTitle = 'Chart'
@@ -194,7 +192,8 @@ class EChartVisual extends LitElement {
 
   static styles = chartStyles
 
-  private instance?: ECharts
+  private rendererHandle?: ChartRendererHandle
+  private rendererName = ''
   private observer?: ResizeObserver
   private handleOutsidePointerDown = (event: PointerEvent) => {
     const details = this.renderRoot.querySelector<HTMLDetailsElement>('.options')
@@ -208,19 +207,12 @@ class EChartVisual extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback()
-    this.observer = new ResizeObserver(() => this.instance?.resize())
+    this.observer = new ResizeObserver(() => this.rendererHandle?.resize())
     document.addEventListener('pointerdown', this.handleOutsidePointerDown)
     document.addEventListener('keydown', this.handleDocumentKeyDown)
   }
 
   firstUpdated(): void {
-    const canvas = this.renderRoot.querySelector('.canvas') as HTMLDivElement | null
-    if (!canvas) return
-    this.instance = echarts.init(canvas, null, { renderer: 'canvas' })
-    this.instance.on('click', (event) => {
-      const label = selectionValueForEvent(this.payload, event)
-      if (label) this.selectLabel(label)
-    })
     this.observer?.observe(this)
     this.renderChart()
   }
@@ -233,7 +225,7 @@ class EChartVisual extends LitElement {
     document.removeEventListener('pointerdown', this.handleOutsidePointerDown)
     document.removeEventListener('keydown', this.handleDocumentKeyDown)
     this.observer?.disconnect()
-    this.instance?.dispose()
+    this.rendererHandle?.dispose()
     super.disconnectedCallback()
   }
 
@@ -265,20 +257,34 @@ class EChartVisual extends LitElement {
   }
 
   private renderChart(): void {
-    if (!this.instance) return
     const payload = this.payload
     const data = payload.data ?? []
     if (data.length === 0) {
-      this.instance.clear()
+      this.rendererHandle?.clear()
       return
     }
-    const renderer = chartRenderer(payload.renderer)
+    const renderer = this.ensureRenderer(payload.renderer)
     if (!renderer) {
-      this.instance.clear()
+      this.rendererHandle?.clear()
       return
     }
-    this.instance.setOption(renderer.buildOption(payload, stylesFor(this)), true)
-    this.instance.resize()
+    renderer.update(payload, stylesFor(this))
+  }
+
+  private ensureRenderer(name: string | undefined): ChartRendererHandle | undefined {
+    const nextName = name || 'echarts'
+    if (this.rendererHandle && this.rendererName === nextName) return this.rendererHandle
+    this.rendererHandle?.dispose()
+    this.rendererHandle = undefined
+    this.rendererName = ''
+
+    const canvas = this.renderRoot.querySelector('.canvas') as HTMLDivElement | null
+    const renderer = chartRenderer(nextName)
+    if (!canvas || !renderer) return undefined
+
+    this.rendererHandle = renderer.mount(canvas, { selectLabel: (label) => this.selectLabel(label) })
+    this.rendererName = nextName
+    return this.rendererHandle
   }
 
   private get payload(): ChartPayload {
@@ -351,15 +357,6 @@ class EChartVisual extends LitElement {
   private hasSelection(payload: ChartPayload): boolean {
     return Boolean(payload.selection?.length || payload.data?.some((row) => row.selected))
   }
-}
-
-function selectionValueForEvent(payload: ChartPayload, event: echarts.ECElementEvent): string {
-  const shape = normalizeShape(payload.shape, payload.type, Boolean(payload.series?.length))
-  const data = (event.data ?? {}) as Record<string, unknown>
-  if (shape === 'matrix') return String(data.name || event.name || '')
-  if (shape === 'geo') return String(data.name || event.name || '')
-  if (shape === 'graph') return String(event.name || data.source || '')
-  return String(event.name || data.name || '')
 }
 
 class KPICard extends LitElement {
@@ -473,10 +470,10 @@ function formatKPIValue(value: number, format?: string, unit?: string): string {
   return formatValue(value, unit)
 }
 
-class LegacyLineChart extends EChartVisual {}
-class LegacyBarChart extends EChartVisual {}
+class LegacyLineChart extends ChartVisual {}
+class LegacyBarChart extends ChartVisual {}
 
-if (!customElements.get('ld-echart')) customElements.define('ld-echart', EChartVisual)
+if (!customElements.get('ld-echart')) customElements.define('ld-echart', ChartVisual)
 if (!customElements.get('ld-line-chart')) customElements.define('ld-line-chart', LegacyLineChart)
 if (!customElements.get('ld-bar-chart')) customElements.define('ld-bar-chart', LegacyBarChart)
 if (!customElements.get('ld-kpi-card')) customElements.define('ld-kpi-card', KPICard)

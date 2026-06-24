@@ -19,7 +19,7 @@ import (
 func TestAgentAPIReportsDisabledWhenProviderMissing(t *testing.T) {
 	store := testStore(t)
 	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{}), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/test/agent/conversations", nil)
 	rec := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	agentService := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 
 	createReq := authedJSONRequest(http.MethodPost, "/api/workspaces/test/agent/conversations", token, `{"title":"Ask"}`)
@@ -118,7 +118,7 @@ func TestAgentAPIRejectsConcurrentTurnsForConversation(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	agentService := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 	conversation, err := agentService.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Ask")
 	if err != nil {

@@ -9,14 +9,15 @@ import (
 	"testing"
 	"time"
 
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	"github.com/Yacobolo/libredash/internal/semantic"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
 
-func fieldRefs(fields ...string) []semantic.FieldRef {
-	refs := make([]semantic.FieldRef, len(fields))
+func fieldRefs(fields ...string) []reportdef.FieldRef {
+	refs := make([]reportdef.FieldRef, len(fields))
 	for i, field := range fields {
-		refs[i] = semantic.FieldRef{Field: field}
+		refs[i] = reportdef.FieldRef{Field: field}
 	}
 	return refs
 }
@@ -59,36 +60,36 @@ func (fakeMetrics) DataDir() string {
 	return ".data/olist"
 }
 
-func (fakeMetrics) Report(dashboardID string) (semantic.Dashboard, *semantic.Model, bool) {
+func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
 	if dashboardID != "executive-sales" {
-		return semantic.Dashboard{}, nil, false
+		return reportdef.Dashboard{}, nil, false
 	}
-	return semantic.Dashboard{
+	return reportdef.Dashboard{
 			ID:            "executive-sales",
 			Title:         "Executive Sales Dashboard",
 			SemanticModel: "test",
-			Filters: map[string]semantic.FilterDefinition{
-				"state":    {Type: "multi_select", Label: "State", Dimension: "orders.status", URLParam: "state", Operator: "in", Values: semantic.FilterValues{Source: "distinct", Limit: 50}},
+			Filters: map[string]reportdef.FilterDefinition{
+				"state":    {Type: "multi_select", Label: "State", Dimension: "orders.status", URLParam: "state", Operator: "in", Values: reportdef.FilterValues{Source: "distinct", Limit: 50}},
 				"category": {Type: "text", Label: "Category", Dimension: "orders.status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
 			},
-			Visuals: map[string]semantic.Visual{
-				"orders":       {Title: "Orders", Type: "donut", Query: semantic.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: semantic.Interaction{Field: "orders.status"}},
-				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", Query: semantic.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: semantic.Interaction{Field: "orders.status"}},
+			Visuals: map[string]reportdef.Visual{
+				"orders":       {Title: "Orders", Type: "donut", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: reportdef.Interaction{Field: "orders.status"}},
+				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: reportdef.Interaction{Field: "orders.status"}},
 			},
-			Tables: map[string]semantic.TableVisual{
-				"orders": {Title: "Orders", Query: semantic.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
+			Tables: map[string]reportdef.TableVisual{
+				"orders": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
 			},
 			Pages: fakeMetrics{}.Pages(dashboardID),
-		}, &semantic.Model{
+		}, &semanticmodel.Model{
 			Name:  "test",
 			Title: "Test Model",
-			Tables: map[string]semantic.ModelTable{
+			Tables: map[string]semanticmodel.Table{
 				"orders": {
 					Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
-					Dimensions: map[string]semantic.MetricDimension{"order_id": {Expr: "order_id"}, "status": {Expr: "status"}},
+					Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}, "status": {Expr: "status"}},
 				},
 			},
-			Measures: map[string]semantic.MetricMeasure{"order_count": {Table: "orders", Grain: "order_id", Label: "Orders", Expression: "COUNT(*)"}},
+			Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Table: "orders", Grain: "order_id", Label: "Orders", Expression: "COUNT(*)"}},
 		}, true
 }
 
@@ -602,7 +603,7 @@ func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
 
 func TestTableWindowCommandDoesNotPublishCanceledQueries(t *testing.T) {
 	server := New(canceledTableMetrics{})
-	updates, unsubscribe := server.broker.subscribe("test-client:executive-sales:overview")
+	updates, unsubscribe := server.broker.Subscribe("test-client:executive-sales:overview")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"overview"},"tableCommand":{"table":"orders","block":"all","start":400,"count":50,"requestSeq":42}}`)

@@ -12,13 +12,14 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
+	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/platform"
 )
 
 func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	store := testStore(t)
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
 	unauthReq := httptest.NewRequest(http.MethodGet, "/chat", nil)
 	unauthRec := httptest.NewRecorder()
@@ -86,7 +87,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 func TestChatPageDisabledState(t *testing.T) {
 	store := testStore(t)
 	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{}), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
 	rec := httptest.NewRecorder()
@@ -103,7 +104,7 @@ func TestChatPageDisabledState(t *testing.T) {
 func TestChatRootRedirectsToNewWhenNoConversations(t *testing.T) {
 	store := testStore(t)
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 	ctx := context.Background()
 	_, token := chatPrincipalAndToken(t, ctx, store)
 
@@ -120,7 +121,7 @@ func TestChatRootRedirectsToLatestConversation(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	service := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
@@ -150,7 +151,7 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 
 	req := httptest.NewRequest(http.MethodGet, "/chat/new", nil)
@@ -179,7 +180,7 @@ func TestChatSignalConversationListUsesCallerContext(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	service := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
 	principal, _ := chatPrincipalAndToken(t, ctx, store)
 	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
@@ -207,7 +208,7 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 		t.Fatalf("bind other: %v", err)
 	}
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	service := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
 	owned, err := service.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Owned")
 	if err != nil {
@@ -253,7 +254,7 @@ func TestChatConversationRouteQueuesMissingTitleRepair(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
 	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: owner.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "")
@@ -295,7 +296,7 @@ func TestChatConversationRouteSkipsTitleRepairForManualAndMultiUserTitles(t *tes
 	}))
 	defer modelServer.Close()
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
 	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: owner.ID}
 	manual, err := service.CreateConversation(ctx, scope, "Manual title")
@@ -354,7 +355,7 @@ func TestChatTurnStreamsDatastarSignalsAndPersistsEvents(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	agentService := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 
 	signals := map[string]any{
@@ -428,13 +429,13 @@ func TestChatTurnWithActiveConversationDoesNotReplaceURL(t *testing.T) {
 		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"Still here."},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`)
 	}))
 	defer modelServer.Close()
-	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	service := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
 	owned, err := service.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Owned")
 	if err != nil {
 		t.Fatalf("create owned: %v", err)
 	}
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
 	req := chatSignalsRequest(http.MethodPost, "/chat/turns", token, map[string]any{"agent": map[string]any{
 		"activeConversationId": owned.ID,
@@ -455,7 +456,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	store := testStore(t)
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agentapp.NewService(fakeMetrics{}, store, agentapp.Config{APIKey: "key", Model: "fake-model"})
+	service := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
 	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	key := chatStreamID(scope, "client-test")
@@ -471,7 +472,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 		server.Routes().ServeHTTP(rec, req)
 	}()
 	waitForBrokerSubscription(t, server, key)
-	server.broker.publish(key, signalPatch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
+	server.broker.Publish(key, dashboardstream.Patch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
 	time.Sleep(25 * time.Millisecond)
 	cancel()
 	<-done
@@ -504,9 +505,7 @@ func waitForBrokerSubscription(t *testing.T, server *Server, key string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		server.broker.mu.Lock()
-		count := len(server.broker.clients[key])
-		server.broker.mu.Unlock()
+		count := server.broker.SubscriberCount(key)
 		if count > 0 {
 			return
 		}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
+	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/go-chi/chi/v5"
@@ -70,7 +71,7 @@ func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, signal api.AgentChatSignal) {
-	_ = ensureClientID(w, r)
+	_ = lddatastar.EnsureClientID(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if err := ui.ChatPage(s.metrics.Catalog(), csrfToken(r, s.auth), s.currentRoleLabel(r), signal).Render(w); err != nil {
@@ -161,7 +162,7 @@ func (s *Server) chatUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := s.broker.subscribe(chatStreamID(scope, chatClientID(r)))
+	updates, unsubscribe := s.broker.Subscribe(chatStreamID(scope, chatClientID(r)))
 	defer unsubscribe()
 	for {
 		select {

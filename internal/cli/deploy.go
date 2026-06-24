@@ -12,7 +12,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/deploy"
+	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
 	"github.com/spf13/cobra"
 )
 
@@ -75,7 +75,7 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	var buf bytes.Buffer
-	manifest, digest, err := deploy.PackCatalog(opts.catalog, &buf)
+	manifest, digest, err := deploymentfs.PackCatalog(opts.catalog, &buf)
 	if err != nil {
 		return err
 	}

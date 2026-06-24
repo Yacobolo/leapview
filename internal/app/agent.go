@@ -11,7 +11,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -152,7 +151,7 @@ func platformPrincipalInput(principal Principal) platform.PrincipalInput {
 	return platform.PrincipalInput{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}
 }
 
-func agentConversationDTO(row platformdb.AgentConversation) api.AgentConversationResponse {
+func agentConversationDTO(row agentapp.Conversation) api.AgentConversationResponse {
 	out := api.AgentConversationResponse{
 		ID:          row.ID,
 		WorkspaceID: row.WorkspaceID,
@@ -162,24 +161,18 @@ func agentConversationDTO(row platformdb.AgentConversation) api.AgentConversatio
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 	}
-	if row.ArchivedAt.Valid {
-		out.ArchivedAt = row.ArchivedAt.String
-	}
+	out.ArchivedAt = row.ArchivedAt
 	return out
 }
 
-func agentMessageDTO(row platformdb.AgentMessage) api.AgentMessageResponse {
-	runID := ""
-	if row.RunID.Valid {
-		runID = row.RunID.String
-	}
+func agentMessageDTO(row agentapp.Message) api.AgentMessageResponse {
 	return api.AgentMessageResponse{
 		ID:          row.ID,
-		RunID:       runID,
+		RunID:       row.RunID,
 		Seq:         row.Seq,
 		Role:        row.Role,
 		ContentText: row.ContentText,
-		ContentJSON: row.ContentJson,
+		ContentJSON: row.ContentJSON,
 		ToolCallID:  row.ToolCallID,
 		ToolName:    row.ToolName,
 		IsError:     row.IsError,
@@ -187,14 +180,14 @@ func agentMessageDTO(row platformdb.AgentMessage) api.AgentMessageResponse {
 	}
 }
 
-func agentEventDTO(row platformdb.AgentEvent) api.AgentEventResponse {
+func agentEventDTO(row agentapp.Event) api.AgentEventResponse {
 	return api.AgentEventResponse{
 		ID:          row.ID,
 		RunID:       row.RunID,
 		Seq:         row.Seq,
 		EventType:   row.EventType,
 		Severity:    row.Severity,
-		PayloadJSON: row.PayloadJson,
+		PayloadJSON: row.PayloadJSON,
 		CreatedAt:   row.CreatedAt,
 	}
 }

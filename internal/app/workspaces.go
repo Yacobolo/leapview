@@ -1,25 +1,28 @@
 package app
 
 import (
-	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/internal/ui"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 	"github.com/starfederation/datastar-go/datastar"
 )
 
 type workspaceAssetProvider interface {
-	WorkspaceAssets(workspaceID, deploymentID string) ([]platform.Asset, []platform.AssetEdge, bool)
+	WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool)
 }
+
+var errWorkspaceRBACNotConfigured = errors.New("Workspace RBAC store is not configured.")
 
 func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 	workspaces, err := s.workspaceList(r)
@@ -151,7 +154,16 @@ func (s *Server) updateWorkspacePermission(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, r.FormValue("email"), r.FormValue("displayName"), r.FormValue("role")); err != nil {
+	repo, err := s.accessRepository()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if repo == nil {
+		http.Error(w, errWorkspaceRBACNotConfigured.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: r.FormValue("email"), DisplayName: r.FormValue("displayName"), Role: r.FormValue("role")}); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -164,7 +176,16 @@ func (s *Server) removeWorkspacePermission(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.store.RemovePrincipalRoles(r.Context(), workspaceID, r.FormValue("principalId")); err != nil {
+	repo, err := s.accessRepository()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if repo == nil {
+		http.Error(w, errWorkspaceRBACNotConfigured.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := repo.RemovePrincipalRoles(r.Context(), workspaceID, r.FormValue("principalId")); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -195,9 +216,12 @@ func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	command := signals.command()
 	status := api.WorkspaceAccessStatus{Message: "Access updated."}
-	if s.store == nil {
-		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
-	} else if _, err := s.store.SetPrincipalRole(r.Context(), workspaceID, command.Email, "", command.Role); err != nil {
+	repo, err := s.accessRepository()
+	if err != nil {
+		status = api.WorkspaceAccessStatus{Error: err.Error()}
+	} else if repo == nil {
+		status = api.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+	} else if _, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: command.Email, Role: command.Role}); err != nil {
 		status = api.WorkspaceAccessStatus{Error: err.Error()}
 	}
 	s.patchWorkspaceAccess(w, r, workspaceID, status)
@@ -212,9 +236,12 @@ func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	command := signals.command()
 	status := api.WorkspaceAccessStatus{Message: "Access removed."}
-	if s.store == nil {
-		status = api.WorkspaceAccessStatus{Error: "Workspace RBAC store is not configured."}
-	} else if err := s.store.RemovePrincipalRoles(r.Context(), workspaceID, command.PrincipalID); err != nil {
+	repo, err := s.accessRepository()
+	if err != nil {
+		status = api.WorkspaceAccessStatus{Error: err.Error()}
+	} else if repo == nil {
+		status = api.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+	} else if err := repo.RemovePrincipalRoles(r.Context(), workspaceID, command.PrincipalID); err != nil {
 		status = api.WorkspaceAccessStatus{Error: err.Error()}
 	}
 	s.patchWorkspaceAccess(w, r, workspaceID, status)
@@ -283,7 +310,16 @@ func (s *Server) apiUpsertRoleBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	principal, err := s.store.SetPrincipalRole(r.Context(), workspaceID, input.Email, input.DisplayName, input.Role)
+	repo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if repo == nil {
+		writeJSONError(w, errWorkspaceRBACNotConfigured, http.StatusInternalServerError)
+		return
+	}
+	principal, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: input.Email, DisplayName: input.DisplayName, Role: input.Role})
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -293,7 +329,16 @@ func (s *Server) apiUpsertRoleBinding(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiDeleteRoleBinding(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	if err := s.store.RemovePrincipalRoles(r.Context(), workspaceID, chi.URLParam(r, "principal")); err != nil {
+	repo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if repo == nil {
+		writeJSONError(w, errWorkspaceRBACNotConfigured, http.StatusInternalServerError)
+		return
+	}
+	if err := repo.RemovePrincipalRoles(r.Context(), workspaceID, chi.URLParam(r, "principal")); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
@@ -301,10 +346,14 @@ func (s *Server) apiDeleteRoleBinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) workspaceList(r *http.Request) ([]api.WorkspaceResponse, error) {
-	if s.store == nil {
+	repo, err := s.workspaceRepository()
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
 		return []api.WorkspaceResponse{catalogWorkspaceResponse(s.metrics.Catalog())}, nil
 	}
-	rows, err := s.store.Queries().ListWorkspaces(r.Context())
+	rows, err := repo.List(r.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -316,8 +365,8 @@ func (s *Server) workspaceList(r *http.Request) ([]api.WorkspaceResponse, error)
 }
 
 func (s *Server) workspaceResponse(r *http.Request, workspaceID string) api.WorkspaceResponse {
-	if s.store != nil {
-		if row, err := s.store.Queries().GetWorkspace(r.Context(), workspaceID); err == nil {
+	if repo, _ := s.workspaceRepository(); repo != nil {
+		if row, err := repo.ByID(r.Context(), workspace.WorkspaceID(workspaceID)); err == nil {
 			return workspaceDTO(row)
 		}
 	}
@@ -333,52 +382,52 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 			if ok {
 				assets := make([]api.AssetResponse, 0, len(assetRows))
 				for _, row := range assetRows {
-					assets = append(assets, assetDTOFromPlatform(row))
+					assets = append(assets, assetDTOFromWorkspace(row))
 				}
 				edges := make([]api.AssetEdgeResponse, 0, len(edgeRows))
 				for _, row := range edgeRows {
-					edges = append(edges, assetEdgeDTOFromPlatform(row))
+					edges = append(edges, assetEdgeDTOFromWorkspace(row))
 				}
 				return assets, edges, nil
 			}
 		}
 		return fallbackAssets(s.metrics.Catalog(), workspaceID), nil, nil
 	}
-	deployment, err := s.store.Queries().GetActiveDeployment(r.Context(), workspaceID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil, nil
-		}
-		return nil, nil, err
-	}
-	assetRows, err := s.store.Queries().ListAssetsByDeployment(r.Context(), deployment.ID)
+	repo, err := s.workspaceRepository()
 	if err != nil {
 		return nil, nil, err
 	}
-	edgeRows, err := s.store.Queries().ListAssetEdgesByDeployment(r.Context(), deployment.ID)
+	graph, ok, err := repo.ActiveDeploymentGraph(r.Context(), workspace.WorkspaceID(workspaceID))
 	if err != nil {
 		return nil, nil, err
 	}
-	assets := make([]api.AssetResponse, 0, len(assetRows))
-	for _, row := range assetRows {
-		assets = append(assets, assetDTO(row))
+	if !ok {
+		return nil, nil, nil
 	}
-	edges := make([]api.AssetEdgeResponse, 0, len(edgeRows))
-	for _, row := range edgeRows {
-		edges = append(edges, assetEdgeDTO(row))
+	assets := make([]api.AssetResponse, 0, len(graph.Assets))
+	for _, row := range graph.Assets {
+		assets = append(assets, assetDTOFromWorkspace(row))
+	}
+	edges := make([]api.AssetEdgeResponse, 0, len(graph.Edges))
+	for _, row := range graph.Edges {
+		edges = append(edges, assetEdgeDTOFromWorkspace(row))
 	}
 	return assets, edges, nil
 }
 
 func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]api.RoleBindingResponse, []api.RoleResponse, error) {
-	if s.store == nil {
-		return nil, defaultWorkspaceRoles(), nil
-	}
-	bindingRows, err := s.store.Queries().ListRoleBindingsByWorkspace(r.Context(), workspaceID)
+	repo, err := s.accessRepository()
 	if err != nil {
 		return nil, nil, err
 	}
-	roleRows, err := s.store.Queries().ListRoles(r.Context())
+	if repo == nil {
+		return nil, defaultWorkspaceRoles(), nil
+	}
+	bindingRows, err := repo.ListRoleBindings(r.Context(), workspaceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	roleRows, err := repo.ListRoles(r.Context())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -411,7 +460,8 @@ func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) b
 	if s.auth == nil {
 		return true
 	}
-	if s.store == nil {
+	repo, err := s.accessRepository()
+	if err != nil || repo == nil {
 		return false
 	}
 	principal, ok := s.auth.Principal(r)
@@ -421,7 +471,7 @@ func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) b
 	if principal.DevBypass {
 		return true
 	}
-	allowed, err := s.store.HasPermission(r.Context(), workspaceID, principal.ID, platform.PermissionRBACManage)
+	allowed, err := repo.HasPermission(r.Context(), workspaceID, principal.ID, platform.PermissionRBACManage)
 	return err == nil && allowed
 }
 
@@ -435,13 +485,13 @@ func defaultWorkspaceRoles() []api.RoleResponse {
 	}
 }
 
-func workspaceDTO(row platformdb.Workspace) api.WorkspaceResponse {
+func workspaceDTO(row workspace.Summary) api.WorkspaceResponse {
 	activeDeploymentID := ""
-	if row.ActiveDeploymentID.Valid {
-		activeDeploymentID = row.ActiveDeploymentID.String
+	if row.ActiveDeploymentID != "" {
+		activeDeploymentID = string(row.ActiveDeploymentID)
 	}
 	return api.WorkspaceResponse{
-		ID:                 row.ID,
+		ID:                 string(row.ID),
 		Title:              row.Title,
 		Description:        row.Description,
 		ActiveDeploymentID: activeDeploymentID,
@@ -458,79 +508,46 @@ func catalogWorkspaceResponse(catalog dashboard.Catalog) api.WorkspaceResponse {
 	}
 }
 
-func assetDTO(row platformdb.Asset) api.AssetResponse {
-	parentID := ""
-	if row.ParentAssetID.Valid {
-		parentID = row.ParentAssetID.String
-	}
-	meta := safeAssetMeta(row.AssetType, row.ContentJson)
+func assetDTOFromWorkspace(row workspace.Asset) api.AssetResponse {
 	return api.AssetResponse{
-		ID:           row.ID,
-		WorkspaceID:  row.WorkspaceID,
-		DeploymentID: row.DeploymentID,
-		Type:         row.AssetType,
-		Key:          row.AssetKey,
-		ParentID:     parentID,
-		Title:        row.Title,
-		Description:  row.Description,
-		Meta:         meta,
-		Href:         assetHref(row.AssetType, row.AssetKey),
-	}
-}
-
-func assetDTOFromPlatform(row platform.Asset) api.AssetResponse {
-	return api.AssetResponse{
-		ID:           row.ID,
-		WorkspaceID:  row.WorkspaceID,
-		DeploymentID: row.DeploymentID,
-		Type:         row.Type,
+		ID:           string(row.ID),
+		WorkspaceID:  string(row.WorkspaceID),
+		DeploymentID: string(row.DeploymentID),
+		Type:         string(row.Type),
 		Key:          row.Key,
-		ParentID:     row.ParentID,
+		ParentID:     string(row.ParentID),
 		Title:        row.Title,
 		Description:  row.Description,
-		Meta:         safeAssetMeta(row.Type, row.ContentJSON),
-		Href:         assetHref(row.Type, row.Key),
+		Meta:         safeAssetMeta(string(row.Type), row.ContentJSON),
+		Href:         assetHref(string(row.Type), row.Key),
 	}
 }
 
-func assetEdgeDTO(row platformdb.AssetEdge) api.AssetEdgeResponse {
+func assetEdgeDTOFromWorkspace(row workspace.AssetEdge) api.AssetEdgeResponse {
 	return api.AssetEdgeResponse{
-		ID:           row.ID,
-		WorkspaceID:  row.WorkspaceID,
-		DeploymentID: row.DeploymentID,
-		FromAssetID:  row.FromAssetID,
-		ToAssetID:    row.ToAssetID,
-		Type:         row.EdgeType,
+		ID:           string(row.ID),
+		WorkspaceID:  string(row.WorkspaceID),
+		DeploymentID: string(row.DeploymentID),
+		FromAssetID:  string(row.FromAssetID),
+		ToAssetID:    string(row.ToAssetID),
+		Type:         string(row.Type),
 	}
 }
 
-func assetEdgeDTOFromPlatform(row platform.AssetEdge) api.AssetEdgeResponse {
-	return api.AssetEdgeResponse{
-		ID:           row.ID,
-		WorkspaceID:  row.WorkspaceID,
-		DeploymentID: row.DeploymentID,
-		FromAssetID:  row.FromAssetID,
-		ToAssetID:    row.ToAssetID,
-		Type:         row.Type,
-	}
-}
-
-func roleBindingDTO(row platformdb.ListRoleBindingsByWorkspaceRow) api.RoleBindingResponse {
+func roleBindingDTO(row access.RoleBinding) api.RoleBindingResponse {
 	return api.RoleBindingResponse{
 		ID:          row.ID,
 		WorkspaceID: row.WorkspaceID,
-		PrincipalID: nullString(row.PrincipalID),
-		Email:       nullString(row.Email),
-		DisplayName: nullString(row.DisplayName),
-		Role:        row.RoleName,
+		PrincipalID: row.PrincipalID,
+		Email:       row.Email,
+		DisplayName: row.DisplayName,
+		Role:        row.Role,
 		CreatedAt:   row.CreatedAt,
 	}
 }
 
-func roleDTO(row platformdb.Role) api.RoleResponse {
-	var permissions []string
-	_ = json.Unmarshal([]byte(row.PermissionsJson), &permissions)
-	return api.RoleResponse{Name: row.Name, Permissions: permissions}
+func roleDTO(row access.Role) api.RoleResponse {
+	return api.RoleResponse{Name: row.Name, Permissions: row.Permissions}
 }
 
 func safeAssetMeta(assetType, raw string) map[string]any {
@@ -677,13 +694,6 @@ func fallbackAssets(catalog dashboard.Catalog, workspaceID string) []api.AssetRe
 	return assets
 }
 
-func nullString(value sql.NullString) string {
-	if value.Valid {
-		return value.String
-	}
-	return ""
-}
-
 func csrfToken(r *http.Request, auth *Auth) string {
 	if auth == nil {
 		return ""
@@ -702,16 +712,17 @@ func (s *Server) currentRoleLabel(r *http.Request) string {
 	if principal.DevBypass {
 		return "Developer access"
 	}
-	if s.store == nil {
+	repo, err := s.accessRepository()
+	if err != nil || repo == nil {
 		return "Workspace access"
 	}
-	rows, err := s.store.Queries().ListRoleBindingsByWorkspace(r.Context(), s.workspaceID(""))
+	rows, err := repo.ListRoleBindings(r.Context(), s.workspaceID(""))
 	if err != nil {
 		return "Workspace access"
 	}
 	for _, row := range rows {
-		if row.PrincipalID.Valid && row.PrincipalID.String == principal.ID {
-			return row.RoleName
+		if row.PrincipalID == principal.ID {
+			return row.Role
 		}
 	}
 	return "Workspace access"

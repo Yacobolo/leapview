@@ -4,24 +4,34 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/deploy"
+	"github.com/Yacobolo/libredash/internal/deployment"
+	"github.com/Yacobolo/libredash/internal/deployment/activate"
+	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
+	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
+	"github.com/Yacobolo/libredash/internal/deployment/validate"
 	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
-	"github.com/Yacobolo/libredash/internal/runtime"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/go-chi/chi/v5"
 )
 
 type runtimeReloader interface {
 	Reload(ctx context.Context) error
-	PrepareDeployment(ctx context.Context, deploymentID string) (*runtime.Prepared, error)
-	CommitPrepared(prepared *runtime.Prepared) error
+	PrepareDeployment(ctx context.Context, deploymentID string) (deployment.PreparedRuntime, error)
+	CommitPrepared(prepared deployment.PreparedRuntime) error
+}
+
+type deploymentRepository interface {
+	validate.Repository
+	activate.Repository
+	Create(ctx context.Context, input deployment.CreateInput) (deployment.Deployment, error)
+	List(ctx context.Context, workspaceID deployment.WorkspaceID) ([]deployment.Deployment, error)
 }
 
 func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +40,21 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&input)
 	}
 	workspaceID := s.workspaceID(input.WorkspaceID)
-	if err := s.store.EnsureWorkspace(r.Context(), platform.WorkspaceInput{ID: workspaceID, Title: firstNonEmpty(input.Title, workspaceID), Description: input.Description}); err != nil {
+	workspaceRepo, err := s.workspaceRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if workspaceRepo == nil {
+		writeJSONError(w, fmt.Errorf("workspace repository is not configured"), http.StatusInternalServerError)
+		return
+	}
+	if err := workspaceRepo.Ensure(r.Context(), workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: firstNonEmpty(input.Title, workspaceID), Description: input.Description}); err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	repo, err := s.deploymentRepository()
+	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
@@ -40,7 +64,7 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
 			createdBy = principal.ID
 		}
 	}
-	deployment, err := s.store.CreateDeployment(r.Context(), workspaceID, createdBy)
+	deployment, err := repo.Create(r.Context(), deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), CreatedBy: createdBy})
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
@@ -50,7 +74,12 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) uploadDeploymentArtifact(w http.ResponseWriter, r *http.Request) {
 	deploymentID := chi.URLParam(r, "deployment")
-	deployment, err := s.store.Queries().GetDeployment(r.Context(), deploymentID)
+	repo, err := s.deploymentRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	deployment, err := repo.ByID(r.Context(), deployment.ID(deploymentID))
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
@@ -59,7 +88,8 @@ func (s *Server) uploadDeploymentArtifact(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	path := filepath.Join(s.artifactDir, deployment.ID+".upload.tar.gz")
+	artifactStore := deploymentfs.NewArtifactStore(s.artifactDir)
+	path := artifactStore.UploadPath(deployment.ID)
 	out, err := os.Create(path)
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -80,79 +110,44 @@ func (s *Server) uploadDeploymentArtifact(w http.ResponseWriter, r *http.Request
 
 func (s *Server) validateDeployment(w http.ResponseWriter, r *http.Request) {
 	deploymentID := chi.URLParam(r, "deployment")
-	deployment, err := s.store.Queries().GetDeployment(r.Context(), deploymentID)
+	repo, err := s.deploymentRepository()
 	if err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
-		return
-	}
-	uploadPath := filepath.Join(s.artifactDir, deployment.ID+".upload.tar.gz")
-	validation, err := deploy.ValidateArtifact(uploadPath, deployment.WorkspaceID, deployment.ID)
-	if err != nil {
-		_ = s.store.MarkDeploymentFailed(r.Context(), deployment.ID, err)
-		writeJSONError(w, err, http.StatusBadRequest)
-		return
-	}
-	defer os.RemoveAll(validation.RootDir)
-	finalPath := filepath.Join(s.artifactDir, validation.Digest+".tar.gz")
-	if err := os.Rename(uploadPath, finalPath); err != nil {
-		if copyErr := copyFile(uploadPath, finalPath); copyErr != nil {
-			writeJSONError(w, copyErr, http.StatusInternalServerError)
-			return
-		}
-		_ = os.Remove(uploadPath)
-	}
-	if err := s.store.ValidateDeployment(r.Context(), deployment.ID, validation.Digest, validation.ManifestJSON, platformdb.InsertDeploymentArtifactParams{
-		ID:           "artifact_" + deployment.ID,
-		DeploymentID: deployment.ID,
-		WorkspaceID:  deployment.WorkspaceID,
-		Digest:       validation.Digest,
-		Format:       deploy.BundleFormat,
-		Path:         finalPath,
-		ManifestJson: validation.ManifestJSON,
-		SizeBytes:    fileSize(finalPath),
-	}, validation.Assets, validation.Edges); err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	deployment, _ = s.store.Queries().GetDeployment(r.Context(), deployment.ID)
+	service := validate.NewService(repo, deploymentfs.NewArtifactStore(s.artifactDir), deploymentfs.Validator{})
+	deployment, err := service.Validate(r.Context(), deployment.ID(deploymentID))
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
 	writeJSON(w, http.StatusOK, deploymentDTO(deployment))
 }
 
 func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 	deploymentID := chi.URLParam(r, "deployment")
-	deployment, err := s.store.Queries().GetDeployment(r.Context(), deploymentID)
+	repo, err := s.deploymentRepository()
 	if err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
+		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	var prepared *runtime.Prepared
-	if s.reloader != nil {
-		prepared, err = s.reloader.PrepareDeployment(r.Context(), deployment.ID)
-		if err != nil {
-			writeJSONError(w, err, http.StatusInternalServerError)
-			return
-		}
-	}
-	if err := s.store.ActivateDeployment(r.Context(), deployment.WorkspaceID, deployment.ID); err != nil {
-		if prepared != nil {
-			_ = prepared.Close()
-		}
-		writeJSONError(w, err, http.StatusBadRequest)
+	service := activate.NewService(repo, s.reloader)
+	deployment, err := service.Activate(r.Context(), deployment.ID(deploymentID))
+	if err != nil {
+		writeJSONError(w, err, statusForActivationError(err))
 		return
 	}
-	if prepared != nil {
-		if err := s.reloader.CommitPrepared(prepared); err != nil {
-			writeJSONError(w, err, http.StatusInternalServerError)
-			return
-		}
-	}
-	deployment, _ = s.store.Queries().GetDeployment(r.Context(), deployment.ID)
 	writeJSON(w, http.StatusOK, deploymentDTO(deployment))
 }
 
 func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(r.URL.Query().Get("workspace"))
-	rows, err := s.store.Queries().ListDeployments(r.Context(), workspaceID)
+	repo, err := s.deploymentRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	rows, err := repo.List(r.Context(), deployment.WorkspaceID(workspaceID))
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
@@ -165,7 +160,12 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getDeployment(w http.ResponseWriter, r *http.Request) {
-	deployment, err := s.store.Queries().GetDeployment(r.Context(), chi.URLParam(r, "deployment"))
+	repo, err := s.deploymentRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	deployment, err := repo.ByID(r.Context(), deployment.ID(chi.URLParam(r, "deployment")))
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
@@ -187,18 +187,27 @@ func (s *Server) workspaceID(candidate string) string {
 	return platform.DefaultWorkspaceID
 }
 
-func deploymentDTO(row platformdb.Deployment) api.DeploymentResponse {
+func (s *Server) deploymentRepository() (deploymentRepository, error) {
+	if s.deploymentRepo != nil {
+		return s.deploymentRepo, nil
+	}
+	if s.store == nil {
+		return nil, fmt.Errorf("deployment repository is not configured")
+	}
+	s.deploymentRepo = deploymentsqlite.NewRepository(s.store.SQLDB())
+	return s.deploymentRepo, nil
+}
+
+func deploymentDTO(row deployment.Deployment) api.DeploymentResponse {
 	out := api.DeploymentResponse{
-		ID:          row.ID,
-		WorkspaceID: row.WorkspaceID,
-		Status:      row.Status,
+		ID:          string(row.ID),
+		WorkspaceID: string(row.WorkspaceID),
+		Status:      string(row.Status),
 		Digest:      row.Digest,
 		CreatedAt:   row.CreatedAt,
 		Error:       row.Error,
 	}
-	if row.ActivatedAt.Valid {
-		out.ActivatedAt = row.ActivatedAt.String
-	}
+	out.ActivatedAt = row.ActivatedAt
 	return out
 }
 
@@ -213,8 +222,18 @@ func writeJSONError(w http.ResponseWriter, err error, status int) {
 }
 
 func statusForNotFound(err error) int {
-	if err == sql.ErrNoRows {
+	if err == sql.ErrNoRows || errors.Is(err, deployment.ErrNotFound) {
 		return http.StatusNotFound
+	}
+	return http.StatusInternalServerError
+}
+
+func statusForActivationError(err error) int {
+	if errors.Is(err, deployment.ErrNotFound) {
+		return http.StatusNotFound
+	}
+	if errors.Is(err, activate.ErrInvalidStatus) {
+		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
 }
@@ -226,32 +245,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func fileSize(path string) int64 {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	return info.Size()
-}
-
-func copyFile(source, target string) error {
-	in, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(target)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return fmt.Errorf("closing %s: %w", target, err)
-	}
-	return nil
 }

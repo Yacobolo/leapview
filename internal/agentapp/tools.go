@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	"github.com/Yacobolo/libredash/internal/semantic"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -14,7 +15,7 @@ const maxAgentRows = 50
 
 type Metrics interface {
 	Catalog() dashboard.Catalog
-	Report(dashboardID string) (semantic.Dashboard, *semantic.Model, bool)
+	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
 	Pages(dashboardID string) []dashboard.Page
 	DefaultFilters(dashboardID string) dashboard.Filters
 	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest
@@ -181,7 +182,7 @@ type modelRef struct {
 	Title string `json:"title"`
 }
 
-func modelSummary(model *semantic.Model) *modelRef {
+func modelSummary(model *semanticmodel.Model) *modelRef {
 	if model == nil {
 		return nil
 	}
@@ -283,7 +284,7 @@ func dashboardsForModel(metrics Metrics, modelID string) []modelDashboardUsage {
 	return out
 }
 
-func semanticModelForID(metrics Metrics, modelID string) *semantic.Model {
+func semanticModelForID(metrics Metrics, modelID string) *semanticmodel.Model {
 	for _, dashboardSummary := range metrics.Catalog().Dashboards {
 		_, model, ok := metrics.Report(dashboardSummary.ID)
 		if ok && model != nil && model.Name == modelID {
@@ -325,7 +326,7 @@ type dashboardManifestComponent struct {
 	Title string `json:"title,omitempty"`
 }
 
-func dashboardManifest(report semantic.Dashboard, model *semantic.Model, pages []dashboard.Page) dashboardManifestSummary {
+func dashboardManifest(report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page) dashboardManifestSummary {
 	if pages == nil {
 		pages = report.Pages
 	}
@@ -363,7 +364,7 @@ func dashboardManifest(report semantic.Dashboard, model *semantic.Model, pages [
 	return out
 }
 
-func dashboardComponentSummary(component dashboard.PageVisual, report semantic.Dashboard) dashboardManifestComponent {
+func dashboardComponentSummary(component dashboard.PageVisual, report reportdef.Dashboard) dashboardManifestComponent {
 	switch {
 	case component.Visual != "":
 		title := component.Title

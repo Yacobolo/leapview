@@ -1,5 +1,3 @@
-import type { EChartsOption } from 'echarts'
-
 export type ChartType =
   | 'line'
   | 'area'
@@ -64,8 +62,19 @@ export type ChartPayload = {
 
 export type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
 
+export type ChartRendererContext = {
+  selectLabel(label: string): void
+}
+
+export type ChartRendererHandle = {
+  update(payload: ChartPayload, tokens: ChartTokens): void
+  resize(): void
+  clear(): void
+  dispose(): void
+}
+
 export type ChartRenderer = {
-  buildOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption
+  mount(container: HTMLElement, context: ChartRendererContext): ChartRendererHandle
 }
 
 export type ChartTokens = {

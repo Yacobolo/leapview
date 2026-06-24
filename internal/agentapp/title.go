@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/platform"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -24,33 +22,33 @@ const modelRequestPurposeTitle agent.ModelRequestPurpose = "title_generation"
 var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>\s*`)
 
 func (s *Service) ConversationNeedsGeneratedTitle(ctx context.Context, scope Scope, conversationID string) (bool, error) {
-	conversation, err := s.store.GetAgentConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	conversation, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 	if err != nil {
 		return false, err
 	}
 	if !isDefaultConversationTitle(conversation.Title) {
 		return false, nil
 	}
-	_, ok, err := firstUserPromptForTitle(ctx, s.store, scope, conversationID)
+	_, ok, err := firstUserPromptForTitle(ctx, s.repo, scope, conversationID)
 	return ok, err
 }
 
 // GenerateConversationTitle is best-effort metadata: failures never block the chat turn.
-func (s *Service) GenerateConversationTitle(ctx context.Context, scope Scope, conversationID string) (platformdb.AgentConversation, error) {
+func (s *Service) GenerateConversationTitle(ctx context.Context, scope Scope, conversationID string) (Conversation, error) {
 	if !s.Enabled() {
-		return platformdb.AgentConversation{}, ErrDisabled
+		return Conversation{}, ErrDisabled
 	}
-	if s.store == nil {
-		return platformdb.AgentConversation{}, fmt.Errorf("agent store is required")
+	if s.repo == nil {
+		return Conversation{}, fmt.Errorf("agent store is required")
 	}
-	conversation, err := s.store.GetAgentConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	conversation, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 	if err != nil {
-		return platformdb.AgentConversation{}, err
+		return Conversation{}, err
 	}
 	if !isDefaultConversationTitle(conversation.Title) {
 		return conversation, nil
 	}
-	firstPrompt, ok, err := firstUserPromptForTitle(ctx, s.store, scope, conversationID)
+	firstPrompt, ok, err := firstUserPromptForTitle(ctx, s.repo, scope, conversationID)
 	if err != nil {
 		return conversation, err
 	}
@@ -79,14 +77,14 @@ func (s *Service) GenerateConversationTitle(ctx context.Context, scope Scope, co
 		return conversation, nil
 	}
 
-	latest, err := s.store.GetAgentConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	latest, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 	if err != nil {
 		return conversation, err
 	}
 	if !isDefaultConversationTitle(latest.Title) {
 		return latest, nil
 	}
-	updated, err := s.store.UpdateDefaultAgentConversationTitle(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, title)
+	updated, err := s.repo.UpdateDefaultConversationTitle(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, title)
 	if errors.Is(err, sql.ErrNoRows) {
 		return latest, nil
 	}
@@ -96,15 +94,15 @@ func (s *Service) GenerateConversationTitle(ctx context.Context, scope Scope, co
 	return updated, nil
 }
 
-func firstUserPromptForTitle(ctx context.Context, store *platform.Store, scope Scope, conversationID string) (string, bool, error) {
-	messages, err := store.ListAgentMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+func firstUserPromptForTitle(ctx context.Context, repo Repository, scope Scope, conversationID string) (string, bool, error) {
+	messages, err := repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
 	if err != nil {
 		return "", false, err
 	}
 	userCount := 0
 	firstPrompt := ""
 	for _, message := range messages {
-		if message.Role != platform.AgentMessageRoleUser {
+		if message.Role != MessageRoleUser {
 			continue
 		}
 		userCount++
@@ -119,7 +117,7 @@ func firstUserPromptForTitle(ctx context.Context, store *platform.Store, scope S
 }
 
 func isDefaultConversationTitle(title string) bool {
-	return strings.TrimSpace(title) == platform.AgentConversationDefaultTitle
+	return strings.TrimSpace(title) == ConversationDefaultTitle
 }
 
 func cleanGeneratedTitle(text string) string {

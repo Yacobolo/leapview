@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -31,7 +30,7 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 	if !s.Enabled() {
 		return PromptResult{}, ErrDisabled
 	}
-	if s.store == nil {
+	if s.repo == nil {
 		return PromptResult{}, fmt.Errorf("agent store is required")
 	}
 	if err := s.acquire(input.ConversationID); err != nil {
@@ -39,16 +38,16 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 	}
 	defer s.release(input.ConversationID)
 
-	conversation, err := s.store.GetAgentConversation(ctx, input.Scope.WorkspaceID, input.Scope.PrincipalID, input.ConversationID)
+	conversation, err := s.repo.GetConversation(ctx, input.Scope.WorkspaceID, input.Scope.PrincipalID, input.ConversationID)
 	if err != nil {
 		return PromptResult{}, err
 	}
-	initial, err := decodeTranscript(conversation.TranscriptJson)
+	initial, err := decodeTranscript(conversation.TranscriptJSON)
 	if err != nil {
 		return PromptResult{}, err
 	}
 	runID := newID("run")
-	run, err := s.store.CreateAgentRun(ctx, platform.AgentRunInput{
+	run, err := s.repo.CreateRun(ctx, RunInput{
 		WorkspaceID:    input.Scope.WorkspaceID,
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
@@ -59,7 +58,7 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 	if err != nil {
 		return PromptResult{}, err
 	}
-	sink := &storeEventSink{store: s.store, scope: input.Scope, conversationID: input.ConversationID, runID: run.ID, onEvent: input.OnEvent}
+	sink := &storeEventSink{repo: s.repo, scope: input.Scope, conversationID: input.ConversationID, runID: run.ID, onEvent: input.OnEvent}
 	def := agent.Definition{
 		Name:              "libredash-readonly",
 		SystemPrompt:      systemPrompt(),
@@ -71,7 +70,7 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 	}
 	harness, err := agent.New(def)
 	if err != nil {
-		_ = s.finishRun(ctx, input, run.ID, platform.AgentRunStatusFailed, "", sink.usage, err)
+		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", sink.usage, err)
 		return PromptResult{}, err
 	}
 	result, promptErr := harness.Prompt(ctx, agent.PromptRequest{Input: input.Input, CorrelationID: input.CorrelationID})
@@ -82,11 +81,11 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 	if err := s.persistTranscript(ctx, input, transcript); err != nil && promptErr == nil {
 		promptErr = err
 	}
-	status := platform.AgentRunStatusCompleted
+	status := RunStatusCompleted
 	if promptErr != nil {
-		status = platform.AgentRunStatusFailed
+		status = RunStatusFailed
 		if errors.Is(promptErr, context.Canceled) {
-			status = platform.AgentRunStatusCanceled
+			status = RunStatusCanceled
 		}
 	}
 	if err := s.finishRun(ctx, input, run.ID, status, result.StopReason, sink.usage, promptErr); err != nil && promptErr == nil {
@@ -144,7 +143,7 @@ func (s *Service) appendMessage(ctx context.Context, input PromptInput, runID st
 	if message.Role == agent.RoleSystem {
 		return nil
 	}
-	row, err := s.store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	row, err := s.repo.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    input.Scope.WorkspaceID,
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
@@ -167,7 +166,7 @@ func (s *Service) persistTranscript(ctx context.Context, input PromptInput, tran
 	if err != nil {
 		return err
 	}
-	_, err = s.store.UpdateAgentConversationTranscript(ctx, input.Scope.WorkspaceID, input.Scope.PrincipalID, input.ConversationID, string(bytes))
+	_, err = s.repo.UpdateConversationTranscript(ctx, input.Scope.WorkspaceID, input.Scope.PrincipalID, input.ConversationID, string(bytes))
 	return err
 }
 
@@ -176,7 +175,7 @@ func (s *Service) finishRun(ctx context.Context, input PromptInput, runID, statu
 	if runErr != nil {
 		errText = runErr.Error()
 	}
-	_, err := s.store.FinishAgentRun(ctx, platform.AgentRunFinish{
+	_, err := s.repo.FinishRun(ctx, RunFinish{
 		WorkspaceID:    input.Scope.WorkspaceID,
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,

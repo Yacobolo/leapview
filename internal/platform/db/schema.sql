@@ -214,6 +214,8 @@ CREATE TABLE IF NOT EXISTS agent_events (
 
 CREATE INDEX IF NOT EXISTS deployments_workspace_created_idx ON deployments(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS assets_deployment_type_idx ON assets(deployment_id, asset_type);
+CREATE UNIQUE INDEX IF NOT EXISTS asset_edges_unique_idx
+  ON asset_edges(deployment_id, from_asset_id, to_asset_id, edge_type);
 CREATE INDEX IF NOT EXISTS role_bindings_principal_idx ON role_bindings(workspace_id, principal_id);
 CREATE UNIQUE INDEX IF NOT EXISTS role_bindings_principal_unique_idx
   ON role_bindings(workspace_id, role_id, principal_id)
