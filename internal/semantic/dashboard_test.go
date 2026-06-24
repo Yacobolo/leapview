@@ -232,10 +232,62 @@ func TestExplicitFilterTargetRejectsIncompatibleTarget(t *testing.T) {
 		DefaultOperator: "contains",
 		Operators:       []string{"contains"},
 		URLParam:        "product",
-		Targets:         InteractionTargets{Visuals: []string{"revenue"}},
+		Targets:         FilterTargets{Visuals: []string{"revenue"}},
 	}
 
 	assertDashboardValidateError(t, report, model, "cannot apply to visual")
+}
+
+func TestFilterTargetsPreserveYAMLTargetsBehavior(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dashboard.yaml")
+	content := `id: test
+title: Test
+semantic_model: olist
+filters:
+  state:
+    type: multi_select
+    label: State
+    field: customers.state
+    operator: in
+    url_param: state
+    targets:
+      visuals: [revenue]
+      tables: [orders_table]
+visuals:
+  revenue:
+    kind: kpi
+    query:
+      measures:
+        revenue:
+tables:
+  orders_table:
+    title: Orders
+    query:
+      table: orders
+      fields: [orders.order_id]
+pages:
+- id: overview
+  title: Overview
+  visuals: []
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := semantic.LoadDashboard(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := report.Filters["state"].Targets
+	if targets.IsEmpty() {
+		t.Fatal("targets unexpectedly empty")
+	}
+	if !targets.Contains("visual", "revenue") || !targets.Contains("table", "orders_table") {
+		t.Fatalf("targets = %#v, want revenue visual and orders_table table", targets)
+	}
+	if targets.Contains("visual", "orders_table") {
+		t.Fatalf("targets matched wrong kind: %#v", targets)
+	}
 }
 
 func TestOlistDashboardChartShowcaseContract(t *testing.T) {
@@ -480,52 +532,6 @@ pages:
 	}
 }
 
-func TestLoadDashboardRejectsLegacyInteractionField(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "dashboard.yaml")
-	content := `id: test
-title: Test
-semantic_model: olist
-visuals:
-  orders:
-    title: Orders
-    type: bar
-    query:
-      dimensions:
-        status: orders.status
-      measures:
-        order_count:
-    interaction:
-      field: orders.status
-      targets:
-        visuals:
-        - revenue
-  revenue:
-    title: Revenue
-    type: bar
-    query:
-      dimensions:
-        status: orders.status
-      measures:
-        revenue:
-pages:
-- id: overview
-  title: Overview
-  visuals:
-  - id: orders
-    kind: bar_chart
-    visual: orders
-    placement: {col: 1, row: 1, col_span: 1, row_span: 1}
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := semantic.LoadDashboard(path)
-	if err == nil || !strings.Contains(err.Error(), "interaction.field is not supported") {
-		t.Fatalf("LoadDashboard error = %v, want legacy interaction.field rejection", err)
-	}
-}
-
 func TestLoadDashboardRejectsUnknownSelectionKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dashboard.yaml")
@@ -763,6 +769,26 @@ func TestDashboardValidateRejectsUnknownInteractionTarget(t *testing.T) {
 	report.Visuals["orders"] = visual
 
 	assertDashboardValidateError(t, report, model, "unknown target")
+}
+
+func TestDashboardValidateRejectsUnknownPointSelectionValueKey(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["orders"]
+	visual.Interaction.PointSelection.Mappings[0].Value = "missing_key"
+	report.Visuals["orders"] = visual
+
+	assertDashboardValidateError(t, report, model, "unknown value key")
+}
+
+func TestDashboardValidateRejectsUnknownPointSelectionLabelKey(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["orders"]
+	visual.Interaction.PointSelection.Mappings[0].Label = "missing_key"
+	report.Visuals["orders"] = visual
+
+	assertDashboardValidateError(t, report, model, "unknown label key")
 }
 
 func TestDashboardValidateRejectsSeriesOnUnsupportedChart(t *testing.T) {

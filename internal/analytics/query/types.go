@@ -60,6 +60,11 @@ type Filter struct {
 	Field    string
 	Operator string
 	Values   []any
+	Groups   []FilterGroup
+}
+
+type FilterGroup struct {
+	Filters []Filter
 }
 
 type Sort struct {

@@ -250,19 +250,26 @@ func firstInteractionField(interaction dashboard.InteractionConfig) string {
 }
 
 func selectedValues(filters dashboard.Filters, sourceKind, sourceID, field string) []string {
+	seen := map[string]bool{}
+	values := []string{}
 	for _, selection := range filters.Selections {
 		if selection.SourceKind != sourceKind || selection.SourceID != sourceID {
 			continue
 		}
-		for _, mapping := range selection.Mappings {
-			if field == "" || mapping.Field == field {
-				values := make([]string, len(mapping.Values))
-				copy(values, mapping.Values)
-				return values
+		for _, entry := range selection.Entries {
+			for _, mapping := range entry.Mappings {
+				if field != "" && mapping.Field != field {
+					continue
+				}
+				if seen[mapping.Value] {
+					continue
+				}
+				seen[mapping.Value] = true
+				values = append(values, mapping.Value)
 			}
 		}
 	}
-	return []string{}
+	return values
 }
 
 func markSelected(data []dashboard.Datum, key string, values []string) {

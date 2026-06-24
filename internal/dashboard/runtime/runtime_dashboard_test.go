@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -599,6 +600,79 @@ relogios_presentes,watches_gifts
 	}
 }
 
+func TestServiceInteractionSelectionPreservesCompositeTuples(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_delivered_customer_date
+o1,c1,delivered,2018-01-10 10:00:00,2018-01-14 10:00:00
+o2,c2,delivered,2018-01-11 10:00:00,2018-01-15 10:00:00
+o3,c3,shipped,2018-01-12 10:00:00,2018-01-16 10:00:00
+o4,c4,shipped,2018-01-13 10:00:00,2018-01-17 10:00:00
+`)
+	writeFixture(t, dir, "olist_order_items_dataset.csv", `order_id,order_item_id,product_id,price,freight_value
+o1,1,p1,100.00,10.00
+o2,1,p2,150.00,15.00
+o3,1,p1,50.00,5.00
+o4,1,p2,200.00,20.00
+`)
+	writeFixture(t, dir, "olist_order_payments_dataset.csv", `order_id,payment_value
+o1,110.00
+o2,165.00
+o3,55.00
+o4,220.00
+`)
+	writeFixture(t, dir, "olist_products_dataset.csv", `product_id,product_category_name
+p1,beleza_saude
+p2,relogios_presentes
+`)
+	writeFixture(t, dir, "olist_customers_dataset.csv", `customer_id,customer_state
+c1,SP
+c2,SP
+c3,RJ
+c4,RJ
+`)
+	writeFixture(t, dir, "olist_order_reviews_dataset.csv", `review_id,order_id,review_score
+r1,o1,5
+r2,o2,4
+r3,o3,3
+r4,o4,4
+`)
+	writeFixture(t, dir, "product_category_name_translation.csv", `product_category_name,product_category_name_english
+beleza_saude,health_beauty
+relogios_presentes,watches_gifts
+`)
+
+	metrics, err := New(dir, testDataRuntimeFactory{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metrics.Close()
+
+	filters := dashboard.Filters{
+		Selections: []dashboard.InteractionSelection{
+			compositeInteractionSelection("visual", "orders", "point_selection",
+				map[string]string{"orders.status": "delivered", "orders.category": "health_beauty"},
+				map[string]string{"orders.status": "shipped", "orders.category": "watches_gifts"},
+			),
+		},
+	}
+	patch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", filters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.Status.Error != "" {
+		t.Fatalf("unexpected status error: %s", patch.Status.Error)
+	}
+	if got := categoryRevenue(patch.Visuals["categories"].Data, "health_beauty"); got != 110 {
+		t.Fatalf("health_beauty revenue = %v, want 110", got)
+	}
+	if got := categoryRevenue(patch.Visuals["categories"].Data, "watches_gifts"); got != 220 {
+		t.Fatalf("watches_gifts revenue = %v, want 220", got)
+	}
+	if got := categoryRevenueTotal(patch.Visuals["categories"].Data); got != 330 {
+		t.Fatalf("category revenue total = %v, want 330 without cross-matched tuples", got)
+	}
+}
+
 func TestServicePowerFilters(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_delivered_customer_date
@@ -692,18 +766,75 @@ relogios_presentes,watches_gifts
 }
 
 func interactionSelection(sourceKind, sourceID, interactionKind, field string, values ...string) dashboard.InteractionSelection {
+	entries := make([]dashboard.InteractionSelectionEntry, 0, len(values))
+	for _, value := range values {
+		entries = append(entries, dashboard.InteractionSelectionEntry{
+			Mappings: []dashboard.InteractionSelectionMapping{{
+				Field: field,
+				Value: value,
+				Label: value,
+			}},
+			Label: value,
+		})
+	}
 	return dashboard.InteractionSelection{
 		ID:              sourceKind + ":" + sourceID + ":" + interactionKind,
 		SourceKind:      sourceKind,
 		SourceID:        sourceID,
 		InteractionKind: interactionKind,
 		Mode:            "multi",
-		Mappings: []dashboard.InteractionSelectionMapping{{
-			Field:  field,
-			Values: append([]string{}, values...),
-			Label:  strings.Join(values, ", "),
-		}},
+		Entries:         entries,
+		Label:           strings.Join(values, ", "),
 	}
+}
+
+func compositeInteractionSelection(sourceKind, sourceID, interactionKind string, tuples ...map[string]string) dashboard.InteractionSelection {
+	entries := make([]dashboard.InteractionSelectionEntry, 0, len(tuples))
+	for _, tuple := range tuples {
+		fields := make([]string, 0, len(tuple))
+		for field := range tuple {
+			fields = append(fields, field)
+		}
+		sort.Strings(fields)
+		entry := dashboard.InteractionSelectionEntry{}
+		labels := make([]string, 0, len(fields))
+		for _, field := range fields {
+			value := tuple[field]
+			entry.Mappings = append(entry.Mappings, dashboard.InteractionSelectionMapping{
+				Field: field,
+				Value: value,
+				Label: value,
+			})
+			labels = append(labels, value)
+		}
+		entry.Label = strings.Join(labels, ", ")
+		entries = append(entries, entry)
+	}
+	return dashboard.InteractionSelection{
+		ID:              sourceKind + ":" + sourceID + ":" + interactionKind,
+		SourceKind:      sourceKind,
+		SourceID:        sourceID,
+		InteractionKind: interactionKind,
+		Mode:            "multi",
+		Entries:         entries,
+	}
+}
+
+func categoryRevenue(data []dashboard.Datum, label string) float64 {
+	for _, row := range data {
+		if datumString(row, "label") == label {
+			return datumFloat(row["value"])
+		}
+	}
+	return 0
+}
+
+func categoryRevenueTotal(data []dashboard.Datum) float64 {
+	var total float64
+	for _, row := range data {
+		total += datumFloat(row["value"])
+	}
+	return total
 }
 
 func removeString(values []string, value string) []string {

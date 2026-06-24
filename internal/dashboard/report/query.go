@@ -31,6 +31,11 @@ type QueryFilter struct {
 	Field    string
 	Operator string
 	Values   []any
+	Groups   []QueryFilterGroup
+}
+
+type QueryFilterGroup struct {
+	Filters []QueryFilter
 }
 
 type QuerySort struct {
@@ -229,7 +234,16 @@ func queryFilters(filters []QueryFilter) []semanticquery.Filter {
 			Field:    filter.Field,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
+			Groups:   queryFilterGroups(filter.Groups),
 		}
+	}
+	return result
+}
+
+func queryFilterGroups(groups []QueryFilterGroup) []semanticquery.FilterGroup {
+	result := make([]semanticquery.FilterGroup, len(groups))
+	for i, group := range groups {
+		result[i] = semanticquery.FilterGroup{Filters: queryFilters(group.Filters)}
 	}
 	return result
 }

@@ -4,6 +4,7 @@ import { EllipsisVertical } from 'lucide'
 import { lucideIcon } from './lucide-icons'
 import { visualMenuIcon } from './visual-menu-icons'
 import './chart/renderers'
+import { chartInteractionDetailForDatum } from './chart/interactions'
 import { chartRenderer } from './chart/registry'
 import type { ChartDatum, ChartPayload, ChartRendererHandle, ChartType, VisualAction } from './chart/types'
 import { chartColumns, chartRows, formatValue, normalizeShape, normalizeType, numberValue, stringValue, stylesFor } from './chart/utils'
@@ -282,7 +283,7 @@ class ChartVisual extends LitElement {
     const renderer = chartRenderer(nextName)
     if (!canvas || !renderer) return undefined
 
-    this.rendererHandle = renderer.mount(canvas, { selectLabel: (label) => this.selectLabel(label) })
+    this.rendererHandle = renderer.mount(canvas, { selectDatum: (datum, index) => this.selectDatum(datum, index) })
     this.rendererName = nextName
     return this.rendererHandle
   }
@@ -313,30 +314,15 @@ class ChartVisual extends LitElement {
     }
   }
 
-  private selectLabel(label: string): void {
+  private selectDatum(datum: ChartDatum, _index: number): void {
     const payload = this.payload
-    const interaction = payload.interaction
-    const mappings = interaction?.mappings ?? []
-    if (!payload.id || mappings.length === 0 || !label) return
-    const selectedRow = (payload.data ?? []).find((row) => mappings.some((mapping) => String(row[mapping.value]) === label))
-    if (!selectedRow) return
+    const detail = chartInteractionDetailForDatum(payload, datum)
+    if (!detail) return
     this.dispatchEvent(
       new CustomEvent('ld-interaction-select', {
         bubbles: true,
         composed: true,
-        detail: {
-          sourceKind: 'visual',
-          sourceId: payload.id,
-          interactionKind: interaction?.kind || 'point_selection',
-          action: 'set',
-          mode: interaction?.mode || 'multi',
-          toggle: interaction?.toggle !== false,
-          mappings: mappings.map((mapping) => ({
-            field: mapping.field,
-            value: String(selectedRow[mapping.value] ?? ''),
-            label: String(selectedRow[mapping.label || mapping.value] ?? selectedRow[mapping.value] ?? ''),
-          })),
-        },
+        detail,
       }),
     )
   }

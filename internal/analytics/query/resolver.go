@@ -104,15 +104,15 @@ func (p *Planner) semanticView(table string, dimensions []Field, measures []Fiel
 		}
 		resolvedDimensions[item.Field] = dimension
 	}
-	for _, filter := range filters {
-		dimension, err := p.Model.ResolveDimension(filter.Field)
+	for _, field := range filterRefs(filters) {
+		dimension, err := p.Model.ResolveDimension(field)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := p.relationshipPath(baseTable, dimension.Table); err != nil {
 			return nil, err
 		}
-		resolvedDimensions[filter.Field] = dimension
+		resolvedDimensions[field] = dimension
 	}
 	if timeField != "" {
 		dimension, err := p.Model.ResolveDimension(timeField)
@@ -130,6 +130,19 @@ func (p *Planner) semanticView(table string, dimensions []Field, measures []Fiel
 		Dimensions: resolvedDimensions,
 		Measures:   resolvedMeasures,
 	}, nil
+}
+
+func filterRefs(filters []Filter) []string {
+	fields := []string{}
+	for _, filter := range filters {
+		if filter.Field != "" {
+			fields = append(fields, filter.Field)
+		}
+		for _, group := range filter.Groups {
+			fields = append(fields, filterRefs(group.Filters)...)
+		}
+	}
+	return fields
 }
 
 func resolvedMeasureFromSemantic(measure semanticmodel.MetricMeasure) ResolvedMeasure {

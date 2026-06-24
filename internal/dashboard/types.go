@@ -178,20 +178,25 @@ func (f Filters) WithDefaults() Filters {
 }
 
 type InteractionSelection struct {
-	ID              string                        `json:"id"`
-	SourceKind      string                        `json:"sourceKind"`
-	SourceID        string                        `json:"sourceId"`
-	InteractionKind string                        `json:"interactionKind"`
-	Mode            string                        `json:"mode"`
-	Mappings        []InteractionSelectionMapping `json:"mappings"`
-	Label           string                        `json:"label"`
-	Order           int                           `json:"order"`
+	ID              string                      `json:"id"`
+	SourceKind      string                      `json:"sourceKind"`
+	SourceID        string                      `json:"sourceId"`
+	InteractionKind string                      `json:"interactionKind"`
+	Mode            string                      `json:"mode"`
+	Entries         []InteractionSelectionEntry `json:"entries"`
+	Label           string                      `json:"label"`
+	Order           int                         `json:"order"`
+}
+
+type InteractionSelectionEntry struct {
+	Mappings []InteractionSelectionMapping `json:"mappings"`
+	Label    string                        `json:"label,omitempty"`
 }
 
 type InteractionSelectionMapping struct {
-	Field  string   `json:"field"`
-	Values []string `json:"values"`
-	Label  string   `json:"label,omitempty"`
+	Field string `json:"field"`
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"`
 }
 
 type InteractionCommand struct {
@@ -254,9 +259,9 @@ func (f Filters) ApplyInteraction(command InteractionCommand) Filters {
 			}
 			selection.ID = selectionID
 			selection.Mode = mode
-			selection.Mappings = updateSelectionMappings(selection.Mappings, command.Mappings, mode, command.Toggle)
-			selection.Label = interactionSelectionLabel(selection.Mappings)
-			if len(selection.Mappings) > 0 {
+			selection.Entries = updateSelectionEntries(selection.Entries, command.Mappings, mode, command.Toggle)
+			selection.Label = interactionSelectionLabel(selection.Entries)
+			if len(selection.Entries) > 0 {
 				next = append(next, selection)
 			}
 			continue
@@ -265,16 +270,16 @@ func (f Filters) ApplyInteraction(command InteractionCommand) Filters {
 	}
 
 	if !changed && command.Action != "clear" {
-		mappings := updateSelectionMappings(nil, command.Mappings, mode, false)
-		if len(mappings) > 0 {
+		entries := updateSelectionEntries(nil, command.Mappings, mode, false)
+		if len(entries) > 0 {
 			next = append(next, InteractionSelection{
 				ID:              selectionID,
 				SourceKind:      command.SourceKind,
 				SourceID:        command.SourceID,
 				InteractionKind: command.InteractionKind,
 				Mode:            mode,
-				Mappings:        mappings,
-				Label:           interactionSelectionLabel(mappings),
+				Entries:         entries,
+				Label:           interactionSelectionLabel(entries),
 				Order:           maxOrder + 1,
 			})
 		}
@@ -284,104 +289,113 @@ func (f Filters) ApplyInteraction(command InteractionCommand) Filters {
 	return f
 }
 
-func updateSelectionMappings(existing []InteractionSelectionMapping, incoming []InteractionCommandMapping, mode string, toggle bool) []InteractionSelectionMapping {
+func updateSelectionEntries(existing []InteractionSelectionEntry, incoming []InteractionCommandMapping, mode string, toggle bool) []InteractionSelectionEntry {
+	entry := interactionSelectionEntry(incoming)
+	if len(entry.Mappings) == 0 {
+		return nil
+	}
 	if mode != "multi" {
-		if toggle && selectionMappingsContain(existing, incoming) {
+		if toggle && selectionEntriesContain(existing, entry) {
 			return nil
 		}
-		mappings := make([]InteractionSelectionMapping, 0, len(incoming))
-		for _, mapping := range incoming {
-			mappings = append(mappings, InteractionSelectionMapping{
-				Field:  mapping.Field,
-				Values: []string{mapping.Value},
-				Label:  defaultString(mapping.Label, mapping.Value),
-			})
-		}
-		return mappings
+		return []InteractionSelectionEntry{entry}
 	}
 
-	byField := map[string]InteractionSelectionMapping{}
-	for _, mapping := range existing {
-		byField[mapping.Field] = InteractionSelectionMapping{
-			Field:  mapping.Field,
-			Values: append([]string{}, mapping.Values...),
-			Label:  mapping.Label,
-		}
-	}
-	for _, mapping := range incoming {
-		current := byField[mapping.Field]
-		current.Field = mapping.Field
-		values := current.Values
-		if toggle {
-			var removed bool
-			values, removed = toggleValue(values, mapping.Value)
-			if !removed && mapping.Label != "" {
-				current.Label = mapping.Label
-			}
-		} else if !containsString(values, mapping.Value) {
-			values = append(values, mapping.Value)
-			if mapping.Label != "" {
-				current.Label = mapping.Label
+	out := make([]InteractionSelectionEntry, 0, len(existing)+1)
+	found := false
+	for _, existingEntry := range existing {
+		if selectionEntriesEqual(existingEntry, entry) {
+			found = true
+			if toggle {
+				continue
 			}
 		}
-		current.Values = values
-		if len(current.Values) == 0 {
-			delete(byField, mapping.Field)
-			continue
-		}
-		if current.Label == "" {
-			current.Label = joinValues(current.Values)
-		}
-		byField[mapping.Field] = current
+		out = append(out, copySelectionEntry(existingEntry))
 	}
-
-	out := make([]InteractionSelectionMapping, 0, len(byField))
-	for _, incoming := range incoming {
-		if mapping, ok := byField[incoming.Field]; ok {
-			out = append(out, mapping)
-			delete(byField, incoming.Field)
-		}
-	}
-	for _, mapping := range existing {
-		if item, ok := byField[mapping.Field]; ok {
-			out = append(out, item)
-			delete(byField, mapping.Field)
-		}
+	if !found {
+		out = append(out, entry)
 	}
 	return out
 }
 
-func selectionMappingsContain(existing []InteractionSelectionMapping, incoming []InteractionCommandMapping) bool {
-	if len(existing) == 0 || len(incoming) == 0 {
+func interactionSelectionEntry(incoming []InteractionCommandMapping) InteractionSelectionEntry {
+	mappings := make([]InteractionSelectionMapping, 0, len(incoming))
+	for _, mapping := range incoming {
+		mappings = append(mappings, InteractionSelectionMapping{
+			Field: mapping.Field,
+			Value: mapping.Value,
+			Label: defaultString(mapping.Label, mapping.Value),
+		})
+	}
+	entry := InteractionSelectionEntry{Mappings: mappings}
+	entry.Label = interactionEntryLabel(entry)
+	return entry
+}
+
+func selectionEntriesContain(existing []InteractionSelectionEntry, incoming InteractionSelectionEntry) bool {
+	for _, entry := range existing {
+		if selectionEntriesEqual(entry, incoming) {
+			return true
+		}
+	}
+	return false
+}
+
+func selectionEntriesEqual(left, right InteractionSelectionEntry) bool {
+	if len(left.Mappings) != len(right.Mappings) {
 		return false
 	}
-	for _, item := range incoming {
-		found := false
-		for _, mapping := range existing {
-			if mapping.Field == item.Field && containsString(mapping.Values, item.Value) {
-				found = true
-				break
-			}
-		}
-		if !found {
+	values := make(map[string]int, len(left.Mappings))
+	for _, mapping := range left.Mappings {
+		values[selectionMappingKey(mapping)]++
+	}
+	for _, mapping := range right.Mappings {
+		key := selectionMappingKey(mapping)
+		if values[key] == 0 {
 			return false
 		}
+		values[key]--
 	}
 	return true
 }
 
-func interactionSelectionLabel(mappings []InteractionSelectionMapping) string {
-	if len(mappings) == 0 {
+func selectionMappingKey(mapping InteractionSelectionMapping) string {
+	return mapping.Field + "\x00" + mapping.Value
+}
+
+func copySelectionEntry(entry InteractionSelectionEntry) InteractionSelectionEntry {
+	out := InteractionSelectionEntry{
+		Mappings: make([]InteractionSelectionMapping, len(entry.Mappings)),
+		Label:    entry.Label,
+	}
+	copy(out.Mappings, entry.Mappings)
+	return out
+}
+
+func interactionSelectionLabel(entries []InteractionSelectionEntry) string {
+	if len(entries) == 0 {
 		return ""
 	}
-	labels := make([]string, 0, len(mappings))
-	for _, mapping := range mappings {
+	labels := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		label := entry.Label
+		if label == "" {
+			label = interactionEntryLabel(entry)
+		}
+		labels = append(labels, label)
+	}
+	return joinValues(labels)
+}
+
+func interactionEntryLabel(entry InteractionSelectionEntry) string {
+	if len(entry.Mappings) == 0 {
+		return ""
+	}
+	labels := make([]string, 0, len(entry.Mappings))
+	for _, mapping := range entry.Mappings {
 		label := mapping.Label
 		if label == "" {
-			label = joinValues(mapping.Values)
-		}
-		if label == "" {
-			label = selectionLabel(mapping.Field, mapping.Values)
+			label = selectionLabel(mapping.Field, []string{mapping.Value})
 		}
 		labels = append(labels, label)
 	}
@@ -393,31 +407,6 @@ func defaultString(value, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func containsString(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
-}
-
-func toggleValue(values []string, value string) ([]string, bool) {
-	next := make([]string, 0, len(values)+1)
-	removed := false
-	for _, existing := range values {
-		if existing == value {
-			removed = true
-			continue
-		}
-		next = append(next, existing)
-	}
-	if !removed {
-		next = append(next, value)
-	}
-	return next, removed
 }
 
 func selectionLabel(field string, values []string) string {

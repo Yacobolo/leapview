@@ -1,5 +1,7 @@
 import type { ChartDatum, ChartPayload, ChartShape, ChartTokens, ChartType } from './types'
 
+export const libreDashPayloadRowIndexKey = '__libredashPayloadRowIndex'
+
 export function stylesFor(element: HTMLElement): ChartTokens {
   const styles = getComputedStyle(element)
   const token = (...names: string[]) => {
@@ -170,6 +172,16 @@ export function numberValue(row: ChartDatum | undefined, key: string): number {
 
 export function booleanValue(row: ChartDatum | undefined, key: string): boolean {
   return row?.[key] === true
+}
+
+export function withPayloadRowIndex<T extends Record<string, unknown>>(item: T, index: number): T {
+  return { ...item, [libreDashPayloadRowIndexKey]: index } as T
+}
+
+export function payloadRowIndexFromData(data: unknown): number | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const index = (data as Record<string, unknown>)[libreDashPayloadRowIndexKey]
+  return typeof index === 'number' && Number.isInteger(index) && index >= 0 ? index : undefined
 }
 
 export function colorWithAlpha(color: string, alpha: number): string {

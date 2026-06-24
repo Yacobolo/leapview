@@ -104,6 +104,38 @@ func TestPlannerFilters(t *testing.T) {
 	}
 }
 
+func TestPlannerGroupedFiltersUseOROfANDPredicates(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
+		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
+		Filters: []Filter{{
+			Groups: []FilterGroup{
+				{Filters: []Filter{
+					{Field: "orders.order_id", Operator: "equals", Values: []any{"o1"}},
+					{Field: "customers.state", Operator: "equals", Values: []any{"SP"}},
+				}},
+				{Filters: []Filter{
+					{Field: "orders.order_id", Operator: "equals", Values: []any{"o2"}},
+					{Field: "customers.state", Operator: "equals", Values: []any{"RJ"}},
+				}},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "((t0.order_id = ? AND t1.customer_state = ?) OR (t0.order_id = ? AND t1.customer_state = ?))"
+	if !strings.Contains(plan.SQL, want) {
+		t.Fatalf("plan SQL missing grouped tuple predicate %q:\n%s", want, plan.SQL)
+	}
+	if got := len(plan.Args); got != 4 {
+		t.Fatalf("args = %#v, want four filter args", plan.Args)
+	}
+	if plan.Args[0] != "o1" || plan.Args[1] != "SP" || plan.Args[2] != "o2" || plan.Args[3] != "RJ" {
+		t.Fatalf("args = %#v, want [o1 SP o2 RJ]", plan.Args)
+	}
+}
+
 func TestPlannerRowQueryWithRelatedDimension(t *testing.T) {
 	plan, err := NewPlanner(testModel()).PlanRows(RowRequest{
 		Table: "orders",

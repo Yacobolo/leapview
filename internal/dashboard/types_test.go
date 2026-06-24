@@ -57,8 +57,8 @@ func TestTableRequestResetRequestsInitialBlocks(t *testing.T) {
 func TestApplyInteractionReplacesOnlySourceSelection(t *testing.T) {
 	filters := Filters{
 		Selections: []InteractionSelection{
-			interactionSelectionFixture("visual", "orders", "point_selection", "orders.status", "delivered"),
-			interactionSelectionFixture("table", "orders_table", "row_selection", "orders.order_id", "o1"),
+			interactionSelectionFixture("visual", "orders", "point_selection", entryFixture("orders.status", "delivered")),
+			interactionSelectionFixture("table", "orders_table", "row_selection", entryFixture("orders.order_id", "o1")),
 		},
 	}
 
@@ -86,8 +86,8 @@ func TestApplyInteractionReplacesOnlySourceSelection(t *testing.T) {
 func TestApplyInteractionClearsOnlySourceSelection(t *testing.T) {
 	filters := Filters{
 		Selections: []InteractionSelection{
-			interactionSelectionFixture("visual", "orders", "point_selection", "orders.status", "delivered"),
-			interactionSelectionFixture("table", "orders_table", "row_selection", "orders.order_id", "o1"),
+			interactionSelectionFixture("visual", "orders", "point_selection", entryFixture("orders.status", "delivered")),
+			interactionSelectionFixture("table", "orders_table", "row_selection", entryFixture("orders.order_id", "o1")),
 		},
 	}
 
@@ -106,18 +106,104 @@ func TestApplyInteractionClearsOnlySourceSelection(t *testing.T) {
 	}
 }
 
-func interactionSelectionFixture(sourceKind, sourceID, interactionKind, field string, values ...string) InteractionSelection {
+func TestApplyInteractionStoresSingleSelectionAsFullTupleEntry(t *testing.T) {
+	next := Filters{}.ApplyInteraction(InteractionCommand{
+		SourceKind:      "visual",
+		SourceID:        "state_status",
+		InteractionKind: "point_selection",
+		Action:          "set",
+		Mode:            "single",
+		Toggle:          true,
+		Mappings: []InteractionCommandMapping{
+			{Field: "customers.state", Value: "SP", Label: "Sao Paulo"},
+			{Field: "orders.status", Value: "delivered", Label: "Delivered"},
+		},
+	})
+
+	if len(next.Selections) != 1 {
+		t.Fatalf("selection count = %d, want 1: %#v", len(next.Selections), next.Selections)
+	}
+	selection := next.Selections[0]
+	if len(selection.Entries) != 1 {
+		t.Fatalf("entry count = %d, want 1: %#v", len(selection.Entries), selection.Entries)
+	}
+	entry := selection.Entries[0]
+	if len(entry.Mappings) != 2 {
+		t.Fatalf("entry mappings = %#v, want two tuple mappings", entry.Mappings)
+	}
+	if entry.Mappings[0].Field != "customers.state" || entry.Mappings[0].Value != "SP" {
+		t.Fatalf("first tuple mapping = %#v, want customers.state=SP", entry.Mappings[0])
+	}
+	if entry.Mappings[1].Field != "orders.status" || entry.Mappings[1].Value != "delivered" {
+		t.Fatalf("second tuple mapping = %#v, want orders.status=delivered", entry.Mappings[1])
+	}
+}
+
+func TestApplyInteractionMultiTogglesExactTupleEntries(t *testing.T) {
+	filters := Filters{}
+	first := []InteractionCommandMapping{
+		{Field: "customers.state", Value: "SP", Label: "SP"},
+		{Field: "orders.status", Value: "delivered", Label: "Delivered"},
+	}
+	second := []InteractionCommandMapping{
+		{Field: "customers.state", Value: "RJ", Label: "RJ"},
+		{Field: "orders.status", Value: "shipped", Label: "Shipped"},
+	}
+
+	filters = filters.ApplyInteraction(interactionCommandFixture(first))
+	filters = filters.ApplyInteraction(interactionCommandFixture(second))
+
+	if len(filters.Selections) != 1 || len(filters.Selections[0].Entries) != 2 {
+		t.Fatalf("selections = %#v, want one selection with two tuple entries", filters.Selections)
+	}
+	if got := selectionEntryValues(filters.Selections[0], "customers.state"); len(got) != 2 || got[0] != "SP" || got[1] != "RJ" {
+		t.Fatalf("state tuple values = %#v, want [SP RJ]", got)
+	}
+
+	filters = filters.ApplyInteraction(interactionCommandFixture(first))
+	if len(filters.Selections) != 1 || len(filters.Selections[0].Entries) != 1 {
+		t.Fatalf("after exact tuple toggle selections = %#v, want one remaining tuple", filters.Selections)
+	}
+	remaining := filters.Selections[0].Entries[0]
+	if got := tupleValue(remaining, "customers.state"); got != "RJ" {
+		t.Fatalf("remaining tuple state = %q, want RJ", got)
+	}
+	if got := tupleValue(remaining, "orders.status"); got != "shipped" {
+		t.Fatalf("remaining tuple status = %q, want shipped", got)
+	}
+}
+
+func interactionCommandFixture(mappings []InteractionCommandMapping) InteractionCommand {
+	return InteractionCommand{
+		SourceKind:      "visual",
+		SourceID:        "state_status",
+		InteractionKind: "point_selection",
+		Action:          "set",
+		Mode:            "multi",
+		Toggle:          true,
+		Mappings:        mappings,
+	}
+}
+
+func interactionSelectionFixture(sourceKind, sourceID, interactionKind string, entries ...InteractionSelectionEntry) InteractionSelection {
 	return InteractionSelection{
 		ID:              sourceKind + ":" + sourceID + ":" + interactionKind,
 		SourceKind:      sourceKind,
 		SourceID:        sourceID,
 		InteractionKind: interactionKind,
 		Mode:            "single",
+		Entries:         append([]InteractionSelectionEntry{}, entries...),
+	}
+}
+
+func entryFixture(field, value string) InteractionSelectionEntry {
+	return InteractionSelectionEntry{
 		Mappings: []InteractionSelectionMapping{{
-			Field:  field,
-			Values: append([]string{}, values...),
-			Label:  values[0],
+			Field: field,
+			Value: value,
+			Label: value,
 		}},
+		Label: value,
 	}
 }
 
@@ -126,11 +212,28 @@ func selectionValues(filters Filters, sourceKind, sourceID, field string) []stri
 		if selection.SourceKind != sourceKind || selection.SourceID != sourceID {
 			continue
 		}
-		for _, mapping := range selection.Mappings {
+		return selectionEntryValues(selection, field)
+	}
+	return nil
+}
+
+func selectionEntryValues(selection InteractionSelection, field string) []string {
+	values := []string{}
+	for _, entry := range selection.Entries {
+		for _, mapping := range entry.Mappings {
 			if mapping.Field == field {
-				return mapping.Values
+				values = append(values, mapping.Value)
 			}
 		}
 	}
-	return nil
+	return values
+}
+
+func tupleValue(entry InteractionSelectionEntry, field string) string {
+	for _, mapping := range entry.Mappings {
+		if mapping.Field == field {
+			return mapping.Value
+		}
+	}
+	return ""
 }

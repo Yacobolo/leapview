@@ -37,13 +37,11 @@ func (p *Planner) Plan(request Request) (Plan, error) {
 		}
 		fieldSet = append(fieldSet, resolved.Table+"."+resolved.Name)
 	}
-	for _, filter := range request.Filters {
-		field, _, err := view.ResolveDimensionRef(filter.Field)
-		if err != nil {
-			return Plan{}, err
-		}
-		fieldSet = append(fieldSet, field)
+	filterFields, err := filterFieldSet(view, request.Filters)
+	if err != nil {
+		return Plan{}, err
 	}
+	fieldSet = append(fieldSet, filterFields...)
 
 	aliases, err := p.aliases(view, fieldSet)
 	if err != nil {
@@ -162,13 +160,11 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 		}
 		fieldSet = append(fieldSet, resolved.Table+"."+resolved.Name)
 	}
-	for _, filter := range request.Filters {
-		field, _, err := view.ResolveDimensionRef(filter.Field)
-		if err != nil {
-			return Plan{}, err
-		}
-		fieldSet = append(fieldSet, field)
+	filterFields, err := filterFieldSet(view, request.Filters)
+	if err != nil {
+		return Plan{}, err
 	}
+	fieldSet = append(fieldSet, filterFields...)
 	aliases, err := p.aliases(view, fieldSet)
 	if err != nil {
 		return Plan{}, err
@@ -249,13 +245,11 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 		return Plan{}, fmt.Errorf("measure %q is not owned by base table %q", measureField, view.BaseTable)
 	}
 	fieldSet = append(fieldSet, measure.Table+"."+measure.Name)
-	for _, filter := range request.Filters {
-		field, _, err := view.ResolveDimensionRef(filter.Field)
-		if err != nil {
-			return Plan{}, err
-		}
-		fieldSet = append(fieldSet, field)
+	filterFields, err := filterFieldSet(view, request.Filters)
+	if err != nil {
+		return Plan{}, err
 	}
+	fieldSet = append(fieldSet, filterFields...)
 	aliases, err := p.aliases(view, fieldSet)
 	if err != nil {
 		return Plan{}, err
@@ -326,13 +320,11 @@ func (p *Planner) PlanCount(request CountRequest) (Plan, error) {
 		return Plan{}, err
 	}
 	fieldSet := []string{}
-	for _, filter := range request.Filters {
-		field, _, err := view.ResolveDimensionRef(filter.Field)
-		if err != nil {
-			return Plan{}, err
-		}
-		fieldSet = append(fieldSet, field)
+	filterFields, err := filterFieldSet(view, request.Filters)
+	if err != nil {
+		return Plan{}, err
 	}
+	fieldSet = append(fieldSet, filterFields...)
 	aliases, err := p.aliases(view, fieldSet)
 	if err != nil {
 		return Plan{}, err
@@ -353,9 +345,7 @@ func (p *Planner) whereParts(view *queryView, aliases map[string]tableAlias, fil
 	whereParts := []string{"1 = 1"}
 	args := []any{}
 	for _, filter := range filters {
-		field, _, _ := view.ResolveDimensionRef(filter.Field)
-		expr := dimensionExpr(view.Dimensions[field], aliases)
-		part, partArgs, err := filterSQL(expr, filter)
+		part, partArgs, err := p.filterPart(view, aliases, filter)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -365,6 +355,71 @@ func (p *Planner) whereParts(view *queryView, aliases map[string]tableAlias, fil
 		}
 	}
 	return whereParts, args, nil
+}
+
+func (p *Planner) filterPart(view *queryView, aliases map[string]tableAlias, filter Filter) (string, []any, error) {
+	if len(filter.Groups) > 0 {
+		parts := []string{}
+		args := []any{}
+		for _, group := range filter.Groups {
+			groupParts := []string{}
+			for _, child := range group.Filters {
+				part, partArgs, err := p.filterPart(view, aliases, child)
+				if err != nil {
+					return "", nil, err
+				}
+				if part == "" {
+					continue
+				}
+				groupParts = append(groupParts, part)
+				args = append(args, partArgs...)
+			}
+			if len(groupParts) > 0 {
+				parts = append(parts, "("+strings.Join(groupParts, " AND ")+")")
+			}
+		}
+		if len(parts) == 0 {
+			return "", nil, nil
+		}
+		return "(" + strings.Join(parts, " OR ") + ")", args, nil
+	}
+	if filter.Field == "" {
+		return "", nil, nil
+	}
+	field, _, _ := view.ResolveDimensionRef(filter.Field)
+	expr := dimensionExpr(view.Dimensions[field], aliases)
+	return filterSQL(expr, filter)
+}
+
+func filterFieldSet(view *queryView, filters []Filter) ([]string, error) {
+	fields := []string{}
+	for _, filter := range filters {
+		items, err := filterFields(view, filter)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, items...)
+	}
+	return fields, nil
+}
+
+func filterFields(view *queryView, filter Filter) ([]string, error) {
+	fields := []string{}
+	if filter.Field != "" {
+		field, _, err := view.ResolveDimensionRef(filter.Field)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, field)
+	}
+	for _, group := range filter.Groups {
+		items, err := filterFieldSet(view, group.Filters)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, items...)
+	}
+	return fields, nil
 }
 
 func allowedTimeGrain(grain string) bool {

@@ -53,7 +53,10 @@ export type FilterControl = {
 
 export type InteractionSelection = {
   label?: string
-  mappings?: Array<{ field?: string; values?: string[]; label?: string }>
+  entries?: Array<{
+    label?: string
+    mappings?: Array<{ field?: string; value?: string; label?: string }>
+  }>
 }
 
 export type FiltersSignal = {

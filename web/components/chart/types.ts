@@ -78,7 +78,7 @@ export type ChartPayload = {
 export type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
 
 export type ChartRendererContext = {
-  selectLabel(label: string): void
+  selectDatum(datum: ChartDatum, index: number): void
 }
 
 export type ChartRendererHandle = {

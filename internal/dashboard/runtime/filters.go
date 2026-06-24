@@ -94,25 +94,36 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 		}
 	}
 	for _, selection := range filters.Selections {
-		if selection.SourceKind == "" || selection.SourceID == "" || len(selection.Mappings) == 0 {
+		if selection.SourceKind == "" || selection.SourceID == "" || len(selection.Entries) == 0 {
 			continue
 		}
 		if !targetsInteractionSelection(report, selection, targetKind, targetID) {
 			continue
 		}
-		for _, mapping := range selection.Mappings {
-			if len(mapping.Values) == 0 {
-				continue
+		groups := make([]reportdef.QueryFilterGroup, 0, len(selection.Entries))
+		for _, entry := range selection.Entries {
+			group := reportdef.QueryFilterGroup{}
+			for _, mapping := range entry.Mappings {
+				if mapping.Value == "" {
+					continue
+				}
+				dimension, err := runtime.model.ResolveDimension(mapping.Field)
+				if err != nil {
+					continue
+				}
+				group.Filters = append(group.Filters, reportdef.QueryFilter{Field: dimension.Field, Operator: "equals", Values: []any{mapping.Value}})
 			}
-			dimension, err := runtime.model.ResolveDimension(mapping.Field)
-			if err != nil {
-				continue
+			if len(group.Filters) > 0 {
+				groups = append(groups, group)
 			}
-			values := make([]any, len(mapping.Values))
-			for i, value := range mapping.Values {
-				values[i] = value
-			}
-			result = append(result, reportdef.QueryFilter{Field: dimension.Field, Operator: "in", Values: values})
+		}
+		switch len(groups) {
+		case 0:
+			continue
+		case 1:
+			result = append(result, groups[0].Filters...)
+		default:
+			result = append(result, reportdef.QueryFilter{Groups: groups})
 		}
 	}
 	return result, nil
