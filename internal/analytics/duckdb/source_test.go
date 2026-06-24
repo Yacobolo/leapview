@@ -9,9 +9,127 @@ import (
 	"strings"
 	"testing"
 
+	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	_ "github.com/duckdb/duckdb-go/v2"
 )
+
+func TestDiscoverSchemasCapturesSourceAndModelColumns(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "orders.csv"), []byte("order_id,revenue\n1,10.5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(ctx, filepath.Join(dir, "test.duckdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	model := &semanticmodel.Model{
+		Name:              "olist",
+		DefaultConnection: "local",
+		Connections:       map[string]semanticmodel.Connection{"local": {Kind: "local"}},
+		Sources: map[string]semanticmodel.Source{"orders": {
+			Connection: "local",
+			Path:       "orders.csv",
+			Format:     "csv",
+			Fields: map[string]semanticmodel.MetricDimension{
+				"order_id": {Label: "Order ID", Description: "Raw order identifier."},
+			},
+		}},
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Grain:      "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+		},
+		BaseTable: "orders",
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := analyticsmaterialize.Refresh(ctx, db, NewSourceRuntime(db, dir), model); err != nil {
+		t.Fatal(err)
+	}
+	if err := DiscoverSchemas(ctx, db, model); err != nil {
+		t.Fatal(err)
+	}
+	if got := model.Sources["orders"].Schema.Columns; len(got) != 2 || got[0].Name != "order_id" || got[0].Ordinal != 1 {
+		t.Fatalf("source schema = %#v, want ordered source columns", got)
+	}
+	if got := model.Sources["orders"].Fields["order_id"].Description; got != "Raw order identifier." {
+		t.Fatalf("source field description = %q, want docs preserved", got)
+	}
+	columns := model.Tables["orders"].Schema.Columns
+	if len(columns) != 2 {
+		t.Fatalf("model schema column count = %d, want 2: %#v", len(columns), columns)
+	}
+	if columns[0].Name != "order_id" || columns[0].PhysicalType == "" || !columns[0].PrimaryKey {
+		t.Fatalf("model order_id column = %#v, want physical type and primary key marker", columns[0])
+	}
+	if columns[1].Name != "revenue" || columns[1].PhysicalType == "" {
+		t.Fatalf("model revenue column = %#v, want physical type", columns[1])
+	}
+}
+
+func TestDiscoverSchemasRejectsMissingDocumentedSourceField(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "orders.csv"), []byte("order_id,revenue\n1,10.5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(ctx, filepath.Join(dir, "test.duckdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	model := &semanticmodel.Model{
+		Name:              "olist",
+		DefaultConnection: "local",
+		Connections:       map[string]semanticmodel.Connection{"local": {Kind: "local"}},
+		Sources: map[string]semanticmodel.Source{"orders": {
+			Connection: "local",
+			Path:       "orders.csv",
+			Format:     "csv",
+			Fields: map[string]semanticmodel.MetricDimension{
+				"missing": {Label: "Missing"},
+			},
+		}},
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Grain:      "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+		},
+		BaseTable: "orders",
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := analyticsmaterialize.Refresh(ctx, db, NewSourceRuntime(db, dir), model); err != nil {
+		t.Fatal(err)
+	}
+	err = DiscoverSchemas(ctx, db, model)
+	if err == nil || !strings.Contains(err.Error(), `source "orders" field "missing" is not in discovered schema`) {
+		t.Fatalf("DiscoverSchemas() error = %v, want missing source field validation", err)
+	}
+}
 
 func TestCompileSourceRelation(t *testing.T) {
 	cases := map[string]struct {

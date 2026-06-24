@@ -37,6 +37,18 @@ func (m *Model) Validate() error {
 		if err := resolved.Validate(name, m.Connections); err != nil {
 			return err
 		}
+		for field, dimension := range resolved.Fields {
+			if err := validateSemanticIdentifier(field); err != nil {
+				return fmt.Errorf("source %q field %q is invalid: %w", name, field, err)
+			}
+			dimension.Field = name + "." + field
+			dimension.Table = name
+			dimension.Name = field
+			if dimension.Label == "" {
+				dimension.Label = titleFromIdentifier(field)
+			}
+			resolved.Fields[field] = dimension
+		}
 		m.Sources[name] = resolved
 	}
 	if len(m.Tables) == 0 {
@@ -79,11 +91,15 @@ func (m *Model) Validate() error {
 		}
 		for field, dimension := range table.Dimensions {
 			if err := validateSemanticIdentifier(field); err != nil {
-				return fmt.Errorf("model table %q dimension %q is invalid: %w", name, field, err)
+				return fmt.Errorf("model table %q field %q is invalid: %w", name, field, err)
 			}
-			if dimension.SQLExpression() == "" {
-				return fmt.Errorf("model table %q dimension %q requires expr", name, field)
+			dimension.Field = name + "." + field
+			dimension.Table = name
+			dimension.Name = field
+			if dimension.Label == "" {
+				dimension.Label = titleFromIdentifier(field)
 			}
+			table.Dimensions[field] = dimension
 		}
 		for field, measure := range table.Measures {
 			if err := validateSemanticIdentifier(field); err != nil {
@@ -648,9 +664,6 @@ func (m *Model) validateRelationshipEndpoint(role string, endpoint string) (stri
 	if !ok {
 		return "", fmt.Errorf("relationship %s %q references unknown table %q", role, endpoint, tableName)
 	}
-	if fieldName == table.PrimaryKey {
-		return tableName, nil
-	}
 	if _, ok := table.Dimensions[fieldName]; !ok {
 		return "", fmt.Errorf("relationship %s %q references unknown field %q on table %q", role, endpoint, fieldName, tableName)
 	}
@@ -815,20 +828,6 @@ func (c Connection) Validate(name string) (Connection, error) {
 		}
 	}
 	return c, nil
-}
-
-func (s Source) Description() string {
-	switch s.Kind() {
-	case KindPath:
-		if formatSpec, ok := LookupFormat(s.Format); ok && formatSpec.TableLike {
-			return s.Format + " table: " + s.Path
-		}
-		return s.Format + " file: " + s.Path
-	case KindObject:
-		return "object: " + s.Object
-	default:
-		return "source"
-	}
 }
 
 func (s Source) Role() string {

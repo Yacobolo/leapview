@@ -43,6 +43,41 @@ func TestLoadOlistModel(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsLegacyFieldTransformKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.yaml")
+	if err := os.WriteFile(path, []byte(`
+name: olist
+connections:
+  local: {kind: local}
+sources:
+  orders:
+    connection: local
+    path: orders.csv
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      order_id:
+        expr: order_id
+semantic_models:
+  olist:
+    base_table: orders
+    tables:
+      - orders
+    measures:
+      defaults: {table: orders, grain: order_id}
+      order_count: {expr: COUNT(DISTINCT orders.order_id)}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := semantic.Load(path)
+	if err == nil || !strings.Contains(err.Error(), "field expr not found") {
+		t.Fatalf("semantic.Load() error = %v, want legacy expr rejection", err)
+	}
+}
+
 func TestModelValidateRejectsMeasureOnUnreachableTable(t *testing.T) {
 	model := minimalSourceModel()
 	model.Sources["customers"] = Source{Path: "customers.csv"}

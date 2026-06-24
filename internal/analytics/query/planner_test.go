@@ -33,34 +33,13 @@ func TestPlannerSafeManyToOneDimensionJoin(t *testing.T) {
 	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
 		t.Fatalf("plan SQL missing customer join:\n%s", plan.SQL)
 	}
-	if !strings.Contains(plan.SQL, "t1.customer_state AS state") {
+	if !strings.Contains(plan.SQL, "t1.state AS state") {
 		t.Fatalf("plan SQL missing related dimension:\n%s", plan.SQL)
 	}
 }
 
-func TestPlannerRelationshipJoinUsesSemanticEndpointExpression(t *testing.T) {
+func TestPlannerRelationshipJoinUsesIdentityEndpointColumns(t *testing.T) {
 	model := testModel()
-	orders := model.Tables["orders"]
-	orders.Dimensions["customer_id"] = semanticmodel.MetricDimension{Expr: "raw_customer_id"}
-	model.Tables["orders"] = orders
-
-	plan, err := NewPlanner(model).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.raw_customer_id = t1.customer_id") {
-		t.Fatalf("plan SQL should join through semantic endpoint expression:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerRelationshipJoinFallsBackToPhysicalPrimaryKey(t *testing.T) {
-	model := testModel()
-	customers := model.Tables["customers"]
-	delete(customers.Dimensions, "customer_id")
-	model.Tables["customers"] = customers
 
 	plan, err := NewPlanner(model).Plan(Request{
 		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
@@ -70,7 +49,22 @@ func TestPlannerRelationshipJoinFallsBackToPhysicalPrimaryKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
-		t.Fatalf("plan SQL should join through physical primary key fallback:\n%s", plan.SQL)
+		t.Fatalf("plan SQL should join through identity endpoint columns:\n%s", plan.SQL)
+	}
+}
+
+func TestPlannerRelationshipJoinRejectsMissingEndpointField(t *testing.T) {
+	model := testModel()
+	customers := model.Tables["customers"]
+	delete(customers.Dimensions, "customer_id")
+	model.Tables["customers"] = customers
+
+	_, err := NewPlanner(model).Plan(Request{
+		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
+		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown relationship endpoint field") {
+		t.Fatalf("Plan() error = %v, want missing relationship endpoint field rejection", err)
 	}
 }
 
@@ -96,7 +90,7 @@ func TestPlannerFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.SQL, "t1.customer_state IN (?, ?)") {
+	if !strings.Contains(plan.SQL, "t1.state IN (?, ?)") {
 		t.Fatalf("plan SQL missing semantic filter:\n%s", plan.SQL)
 	}
 	if len(plan.Args) != 2 {
@@ -124,7 +118,7 @@ func TestPlannerGroupedFiltersUseOROfANDPredicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "((t0.order_id = ? AND t1.customer_state = ?) OR (t0.order_id = ? AND t1.customer_state = ?))"
+	want := "((t0.order_id = ? AND t1.state = ?) OR (t0.order_id = ? AND t1.state = ?))"
 	if !strings.Contains(plan.SQL, want) {
 		t.Fatalf("plan SQL missing grouped tuple predicate %q:\n%s", want, plan.SQL)
 	}
@@ -153,7 +147,7 @@ func TestPlannerRowQueryWithRelatedDimension(t *testing.T) {
 	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
 		t.Fatalf("row plan SQL missing customer join:\n%s", plan.SQL)
 	}
-	if !strings.Contains(plan.SQL, "t0.order_id AS order_id") || !strings.Contains(plan.SQL, "t1.customer_state AS state") {
+	if !strings.Contains(plan.SQL, "t0.order_id AS order_id") || !strings.Contains(plan.SQL, "t1.state AS state") {
 		t.Fatalf("row plan SQL missing selected dimensions:\n%s", plan.SQL)
 	}
 	if !strings.Contains(plan.SQL, "t0.revenue AS revenue") {
@@ -170,10 +164,10 @@ func TestPlannerRawValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.SQL, "t1.customer_state AS label") || !strings.Contains(plan.SQL, "CAST(t0.revenue AS DOUBLE) AS value") {
+	if !strings.Contains(plan.SQL, "t1.state AS label") || !strings.Contains(plan.SQL, "CAST(t0.revenue AS DOUBLE) AS value") {
 		t.Fatalf("raw value plan SQL missing fields:\n%s", plan.SQL)
 	}
-	if !strings.Contains(plan.SQL, "t1.customer_state = ?") {
+	if !strings.Contains(plan.SQL, "t1.state = ?") {
 		t.Fatalf("raw value plan SQL missing filter:\n%s", plan.SQL)
 	}
 }
@@ -317,7 +311,7 @@ func TestPlannerRejectsUnknownFields(t *testing.T) {
 		field string
 		want  string
 	}{
-		{field: "orders.missing", want: "unknown dimension"},
+		{field: "orders.missing", want: "unknown field"},
 		{field: "missing.state", want: "unknown table"},
 	} {
 		_, err := planner.Plan(Request{

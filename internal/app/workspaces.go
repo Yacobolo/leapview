@@ -489,6 +489,12 @@ func staleActiveLineageGraph(graph workspace.AssetGraph) bool {
 	assets := map[workspace.AssetID]workspace.Asset{}
 	for _, asset := range graph.Assets {
 		assets[asset.ID] = asset
+		if assetHasLegacyGeneratedDescription(asset) {
+			return true
+		}
+		if assetHasStaleSourceMetadata(asset) {
+			return true
+		}
 		switch asset.Type {
 		case "semantic_model", "dashboard":
 			hasLegacyModel = true
@@ -529,6 +535,71 @@ func staleActiveLineageGraph(graph workspace.AssetGraph) bool {
 		}
 	}
 	return false
+}
+
+func assetHasStaleSourceMetadata(asset workspace.Asset) bool {
+	if asset.Type != workspace.AssetTypeSource {
+		return false
+	}
+	var content map[string]any
+	if err := json.Unmarshal([]byte(asset.ContentJSON), &content); err != nil {
+		return false
+	}
+	if !assetContentHasItems(asset.ContentJSON, "Schema", "schema") {
+		return assetContentHasItems(asset.ContentJSON, "Fields", "fields")
+	}
+	if _, ok := content["AssetVersion"]; ok {
+		return false
+	}
+	if _, ok := content["assetVersion"]; ok {
+		return false
+	}
+	return true
+}
+
+func assetHasLegacyGeneratedDescription(asset workspace.Asset) bool {
+	description := strings.TrimSpace(asset.Description)
+	if description == "" {
+		return false
+	}
+	switch asset.Type {
+	case workspace.AssetTypeConnection:
+		var content map[string]any
+		if err := json.Unmarshal([]byte(asset.ContentJSON), &content); err != nil {
+			return false
+		}
+		kind, _ := content["Kind"].(string)
+		if kind == "" {
+			kind, _ = content["kind"].(string)
+		}
+		return kind != "" && description == kind+" connection"
+	case workspace.AssetTypeSource:
+		var content map[string]any
+		if err := json.Unmarshal([]byte(asset.ContentJSON), &content); err != nil {
+			return false
+		}
+		format, _ := content["Format"].(string)
+		if format == "" {
+			format, _ = content["format"].(string)
+		}
+		path, _ := content["Path"].(string)
+		if path == "" {
+			path, _ = content["path"].(string)
+		}
+		object, _ := content["Object"].(string)
+		if object == "" {
+			object, _ = content["object"].(string)
+		}
+		if object != "" && description == "object: "+object {
+			return true
+		}
+		if format == "" || path == "" {
+			return false
+		}
+		return description == format+" file: "+path || description == format+" table: "+path
+	default:
+		return false
+	}
 }
 
 func assetContentHasItems(raw string, keys ...string) bool {
@@ -750,7 +821,7 @@ func safeAssetMeta(assetType, raw string) map[string]any {
 	case "connection":
 		content["credentials_configured"] = authConfigured
 	case "source":
-		return pickMeta(content, "format", "Format", "path", "Path", "connection", "Connection", "object", "Object", "options", "Options")
+		return pickMeta(content, "format", "Format", "path", "Path", "connection", "Connection", "object", "Object", "options", "Options", "fields", "Fields", "schema", "Schema")
 	case "model_table":
 		return pickMeta(content,
 			"source", "Source",
@@ -762,6 +833,7 @@ func safeAssetMeta(assetType, raw string) map[string]any {
 			"grain", "Grain",
 			"dimensions", "Dimensions",
 			"fields", "Fields",
+			"schema", "Schema",
 		)
 	case "measure":
 		return pickMeta(content, "expression", "Expression", "unit", "Unit", "format", "Format")

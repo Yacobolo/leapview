@@ -37,6 +37,10 @@ type Database interface {
 	Path() string
 }
 
+type schemaDiscoverer interface {
+	DiscoverSchemas(context.Context, *semanticmodel.Model) error
+}
+
 func OpenRuntime(ctx context.Context, config RuntimeConfig) (*Runtime, error) {
 	if config.Model == nil {
 		return nil, fmt.Errorf("semantic model is required")
@@ -85,6 +89,11 @@ func (r *Runtime) Refresh(ctx context.Context) error {
 	lastRefresh, err := Refresh(ctx, r.db, r.sources, r.model)
 	if err != nil {
 		return err
+	}
+	if discoverer, ok := r.db.(schemaDiscoverer); ok {
+		if err := discoverer.DiscoverSchemas(ctx, r.model); err != nil {
+			return err
+		}
 	}
 	r.lastRefresh = lastRefresh
 	return nil

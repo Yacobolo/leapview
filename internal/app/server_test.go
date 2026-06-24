@@ -57,7 +57,7 @@ func (fakeMetrics) ModelIDForDashboard(dashboardID string) string {
 }
 
 func (fakeMetrics) DataDir() string {
-	return ".data/olist"
+	return "../../.data/olist"
 }
 
 func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
