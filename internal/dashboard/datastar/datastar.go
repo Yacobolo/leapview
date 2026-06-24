@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/command"
+	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	ds "github.com/starfederation/datastar-go/datastar"
 )
 
@@ -14,6 +16,18 @@ const ClientIDCookieName = "ld_client_id"
 
 func ReadSignals(r *http.Request, signals *dashboard.Signals) error {
 	return ds.ReadSignals(r, signals)
+}
+
+type SignalWriter struct {
+	sse *ds.ServerSentEventGenerator
+}
+
+func NewSignalWriter(w http.ResponseWriter, r *http.Request) SignalWriter {
+	return SignalWriter{sse: ds.NewSSE(w, r)}
+}
+
+func (w SignalWriter) Patch(patch map[string]any) error {
+	return w.sse.MarshalAndPatchSignals(patch)
 }
 
 func EnsureClientID(w http.ResponseWriter, r *http.Request) string {
@@ -103,6 +117,28 @@ func LoadingPatch(dataDir string) map[string]any {
 			"error":         "",
 			"dataDirectory": dataDir,
 		},
+	}
+}
+
+func CommandEventPatch(event command.Event) map[string]any {
+	switch event.Type {
+	case command.EventLoading:
+		return LoadingPatch(event.DataDir)
+	case command.EventDashboard:
+		return DashboardPatch(event.Patch)
+	case command.EventTables:
+		return TablesPatch(event.Tables)
+	case command.EventTable:
+		return TablePatch(event.TableName, event.Table)
+	default:
+		return map[string]any{}
+	}
+}
+
+func SnapshotPatches(snapshot dashboardstream.Snapshot) []map[string]any {
+	return []map[string]any{
+		DashboardPatch(snapshot.Patch),
+		TablesPatch(snapshot.Tables),
 	}
 }
 

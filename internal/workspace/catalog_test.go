@@ -1,4 +1,4 @@
-package semantic
+package workspace
 
 import (
 	"os"
@@ -7,30 +7,24 @@ import (
 	"testing"
 )
 
-func TestLoadWorkspaceCatalog(t *testing.T) {
-	workspace, err := LoadWorkspace(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
+func TestLoadCatalog(t *testing.T) {
+	catalog, _, err := LoadCatalog(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(workspace.Catalog.SemanticModels) != 1 {
-		t.Fatalf("model catalog count = %d, want 1", len(workspace.Catalog.SemanticModels))
+	if len(catalog.SemanticModels) != 1 {
+		t.Fatalf("model catalog count = %d, want 1", len(catalog.SemanticModels))
 	}
-	if len(workspace.Catalog.Dashboards) != 1 {
-		t.Fatalf("dashboard catalog count = %d, want 1", len(workspace.Catalog.Dashboards))
+	if len(catalog.Dashboards) != 1 {
+		t.Fatalf("dashboard catalog count = %d, want 1", len(catalog.Dashboards))
 	}
-	if got := workspace.Catalog.Workspace.Title; got != "LibreDash Workspace" {
+	if got := catalog.Workspace.Title; got != "LibreDash Workspace" {
 		t.Fatalf("workspace title = %q, want LibreDash Workspace", got)
-	}
-	if _, ok := workspace.Models["olist"]; !ok {
-		t.Fatal("workspace missing olist model")
-	}
-	if _, ok := workspace.Dashboards["executive-sales"]; !ok {
-		t.Fatal("workspace missing executive-sales dashboard")
 	}
 }
 
-func TestLoadWorkspaceRejectsLegacyMetricViewsKey(t *testing.T) {
+func TestLoadCatalogRejectsLegacyMetricViewsKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "catalog.yaml")
 	content := `workspace:
@@ -43,9 +37,9 @@ dashboards: []
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadWorkspace(path)
+	_, _, err := LoadCatalog(path)
 	if err == nil || !strings.Contains(err.Error(), "legacy metric views") {
-		t.Fatalf("LoadWorkspace error = %v, want legacy metrics_views rejection", err)
+		t.Fatalf("LoadCatalog error = %v, want legacy metrics_views rejection", err)
 	}
 }
 
@@ -76,4 +70,15 @@ func TestCatalogValidateRejectsMissingPath(t *testing.T) {
 	}
 
 	assertCatalogValidateError(t, catalog, baseDir, "missing.yaml")
+}
+
+func assertCatalogValidateError(t *testing.T, catalog Catalog, baseDir, contains string) {
+	t.Helper()
+	err := catalog.Validate(baseDir)
+	if err == nil {
+		t.Fatalf("Validate() error = nil, want %q", contains)
+	}
+	if !strings.Contains(err.Error(), contains) {
+		t.Fatalf("Validate() error = %q, want containing %q", err.Error(), contains)
+	}
 }

@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -141,14 +141,14 @@ func (s *Server) agentRequest(w http.ResponseWriter, r *http.Request) (*agentapp
 		WorkspaceID: s.workspaceID(chi.URLParam(r, "workspace")),
 		PrincipalID: principal.ID,
 	}
-	if principal.DevBypass && s.store != nil {
-		_, _ = s.store.UpsertPrincipal(r.Context(), platformPrincipalInput(principal))
+	if principal.DevBypass {
+		_ = s.upsertAuthenticatedPrincipal(r.Context(), principal)
 	}
 	return s.agent, scope, true
 }
 
-func platformPrincipalInput(principal Principal) platform.PrincipalInput {
-	return platform.PrincipalInput{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}
+func accessPrincipalInput(principal Principal) access.PrincipalInput {
+	return access.PrincipalInput{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}
 }
 
 func agentConversationDTO(row agentapp.Conversation) api.AgentConversationResponse {

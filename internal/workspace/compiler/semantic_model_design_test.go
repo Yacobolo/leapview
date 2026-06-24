@@ -1,4 +1,4 @@
-package semantic
+package compiler
 
 import (
 	"os"
@@ -6,14 +6,17 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	"github.com/Yacobolo/libredash/internal/semantic"
 )
 
 func TestSemanticModelDesignWorkspaceContract(t *testing.T) {
 	catalogPath := writeSemanticModelDesignWorkspace(t)
 
-	workspace, err := LoadWorkspace(catalogPath)
+	workspace, err := CompileDefinition(catalogPath)
 	if err != nil {
-		t.Fatalf("LoadWorkspace() error = %v, want semantic-model-first workspace to load", err)
+		t.Fatalf("CompileDefinition() error = %v, want semantic-model-first workspace to load", err)
 	}
 	model := workspace.Models["olist"]
 	if model == nil {
@@ -33,9 +36,9 @@ func TestSemanticModelDesignWorkspaceContract(t *testing.T) {
 func TestSemanticModelDesignMeasureDefaultsAndOwnership(t *testing.T) {
 	catalogPath := writeSemanticModelDesignWorkspace(t)
 
-	workspace, err := LoadWorkspace(catalogPath)
+	workspace, err := CompileDefinition(catalogPath)
 	if err != nil {
-		t.Fatalf("LoadWorkspace() error = %v, want semantic model measures to load", err)
+		t.Fatalf("CompileDefinition() error = %v, want semantic model measures to load", err)
 	}
 	model := workspace.Models["olist"]
 	if model == nil {
@@ -77,9 +80,9 @@ semantic_models:
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "requires base_table") {
-		t.Fatalf("LoadWorkspace() error = %v, want missing base_table rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want missing base_table rejection", err)
 	}
 }
 
@@ -107,9 +110,9 @@ semantic_models:
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), `base_table "missing" references unknown table`) {
-		t.Fatalf("LoadWorkspace() error = %v, want unknown base_table rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want unknown base_table rejection", err)
 	}
 }
 
@@ -125,9 +128,9 @@ sources:
         expr: SUM(revenue)
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "sources do not define business semantics") {
-		t.Fatalf("LoadWorkspace() error = %v, want raw source semantics rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want raw source semantics rejection", err)
 	}
 }
 
@@ -146,9 +149,9 @@ semantic_models:
       count: {expr: COUNT(DISTINCT missing.id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), `references unknown model "missing"`) {
-		t.Fatalf("LoadWorkspace() error = %v, want missing model rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want missing model rejection", err)
 	}
 }
 
@@ -181,8 +184,8 @@ semantic_models:
       revenue: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	if _, err := LoadWorkspace(catalogPath); err != nil {
-		t.Fatalf("LoadWorkspace() error = %v, want explicit passthrough model to load", err)
+	if _, err := CompileDefinition(catalogPath); err != nil {
+		t.Fatalf("CompileDefinition() error = %v, want explicit passthrough model to load", err)
 	}
 }
 
@@ -235,9 +238,9 @@ semantic_models:
 	for name, semanticFragment := range tests {
 		t.Run(name, func(t *testing.T) {
 			catalogPath := writeSemanticModelDesignWorkspaceWithSemanticFragment(t, semanticFragment)
-			_, err := LoadWorkspace(catalogPath)
+			_, err := CompileDefinition(catalogPath)
 			if err == nil || !strings.Contains(err.Error(), "relationship") {
-				t.Fatalf("LoadWorkspace() error = %v, want relationship endpoint rejection", err)
+				t.Fatalf("CompileDefinition() error = %v, want relationship endpoint rejection", err)
 			}
 		})
 	}
@@ -300,9 +303,9 @@ semantic_models:
         expr: SUM(refunds.amount)
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
-		t.Fatalf("LoadWorkspace() error = %v, want measure-specific connected graph rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want measure-specific connected graph rejection", err)
 	}
 }
 
@@ -399,9 +402,9 @@ pages:
     visuals: []
 `)
 
-	workspace, err := LoadWorkspace(filepath.Join(dir, "catalog.yaml"))
+	workspace, err := CompileDefinition(filepath.Join(dir, "catalog.yaml"))
 	if err != nil {
-		t.Fatalf("LoadWorkspace() error = %v, want unrelated facts split by semantic model to load", err)
+		t.Fatalf("CompileDefinition() error = %v, want unrelated facts split by semantic model to load", err)
 	}
 	if workspace.Models["orders"] == nil || workspace.Models["refunds"] == nil {
 		t.Fatalf("workspace models = %#v, want orders and refunds semantic models", workspace.Models)
@@ -434,9 +437,9 @@ semantic_models:
       revenue: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "requires sources") {
-		t.Fatalf("LoadWorkspace() error = %v, want SQL sources rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want SQL sources rejection", err)
 	}
 }
 
@@ -485,8 +488,8 @@ semantic_models:
       revenue: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	if _, err := LoadWorkspace(catalogPath); err != nil {
-		t.Fatalf("LoadWorkspace() error = %v, want SQL model with explicit sources to load", err)
+	if _, err := CompileDefinition(catalogPath); err != nil {
+		t.Fatalf("CompileDefinition() error = %v, want SQL model with explicit sources to load", err)
 	}
 }
 
@@ -535,8 +538,8 @@ semantic_models:
       revenue: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	if _, err := LoadWorkspace(catalogPath); err != nil {
-		t.Fatalf("LoadWorkspace() error = %v, want quoted source reference to load", err)
+	if _, err := CompileDefinition(catalogPath); err != nil {
+		t.Fatalf("CompileDefinition() error = %v, want quoted source reference to load", err)
 	}
 }
 
@@ -567,9 +570,9 @@ semantic_models:
       revenue: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "model SQL must reference sources through source.<name>; raw.<name> is internal") {
-		t.Fatalf("LoadWorkspace() error = %v, want raw namespace rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want raw namespace rejection", err)
 	}
 }
 
@@ -600,14 +603,14 @@ semantic_models:
       revenue: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "model SQL must reference sources through source.<name>; raw.<name> is internal") {
-		t.Fatalf("LoadWorkspace() error = %v, want quoted raw namespace rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want quoted raw namespace rejection", err)
 	}
 }
 
 func TestSemanticModelDesignSQLScannerIgnoresCommentsAndStrings(t *testing.T) {
-	model := &Model{Sources: map[string]Source{"olist_orders": {}, "order_id": {}}}
+	model := &semanticmodel.Model{Sources: map[string]semanticmodel.Source{"olist_orders": {}, "order_id": {}}}
 	sourceRefs, rawRefs, unqualifiedRefs := model.SQLSourceRefs(`
 		-- raw.orders and source.fake are comments
 		SELECT 'raw.orders', 'source.fake', source.order_id
@@ -655,9 +658,9 @@ semantic_models:
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "do not match declared sources") {
-		t.Fatalf("LoadWorkspace() error = %v, want SQL source mismatch rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want SQL source mismatch rejection", err)
 	}
 }
 
@@ -687,9 +690,9 @@ semantic_models:
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "SQL must reference sources through source.<name>") {
-		t.Fatalf("LoadWorkspace() error = %v, want unqualified source rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want unqualified source rejection", err)
 	}
 }
 
@@ -719,9 +722,9 @@ semantic_models:
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), `found unqualified relation "leaked_table"`) {
-		t.Fatalf("LoadWorkspace() error = %v, want hidden unqualified relation rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want hidden unqualified relation rejection", err)
 	}
 }
 
@@ -751,9 +754,9 @@ semantic_models:
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "do not match declared sources") {
-		t.Fatalf("LoadWorkspace() error = %v, want missing source reference rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want missing source reference rejection", err)
 	}
 }
 
@@ -794,8 +797,8 @@ semantic_models:
 		t.Fatal(err)
 	}
 
-	if _, err := Load(modelPath); err != nil {
-		t.Fatalf("Load() error = %v, want CTE relation to load", err)
+	if _, err := semantic.Load(modelPath); err != nil {
+		t.Fatalf("semantic.Load() error = %v, want CTE relation to load", err)
 	}
 }
 
@@ -825,9 +828,9 @@ semantic_models:
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "must be a read-only SELECT or WITH query") {
-		t.Fatalf("LoadWorkspace() error = %v, want non-query SQL rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want non-query SQL rejection", err)
 	}
 }
 
@@ -864,8 +867,8 @@ semantic_models:
 		t.Fatal(err)
 	}
 
-	if _, err := Load(modelPath); err != nil {
-		t.Fatalf("Load() error = %v, want subquery source reference to load", err)
+	if _, err := semantic.Load(modelPath); err != nil {
+		t.Fatalf("semantic.Load() error = %v, want subquery source reference to load", err)
 	}
 }
 
@@ -902,9 +905,9 @@ semantic_models:
       revenue: {expr: SUM(orders.revenue)}
 `)
 
-	_, err := LoadWorkspace(catalogPath)
+	_, err := CompileDefinition(catalogPath)
 	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
-		t.Fatalf("LoadWorkspace() error = %v, want isolated table rejection", err)
+		t.Fatalf("CompileDefinition() error = %v, want isolated table rejection", err)
 	}
 }
 
@@ -946,9 +949,9 @@ semantic_models:
           warehouse_id: {expr: warehouse_id}
 `)
 
-	_, err := Load(modelPath)
+	_, err := semantic.Load(modelPath)
 	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
-		t.Fatalf("Load() error = %v, want disconnected no-measure model rejection", err)
+		t.Fatalf("semantic.Load() error = %v, want disconnected no-measure model rejection", err)
 	}
 }
 
@@ -1089,9 +1092,9 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			catalogPath := writeSemanticModelDesignWorkspaceWithSemanticFragment(t, tt.fragment)
-			_, err := LoadWorkspace(catalogPath)
+			_, err := CompileDefinition(catalogPath)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("LoadWorkspace() error = %v, want %q rejection", err, tt.want)
+				t.Fatalf("CompileDefinition() error = %v, want %q rejection", err, tt.want)
 			}
 		})
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/go-chi/chi/v5"
@@ -471,17 +470,17 @@ func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) b
 	if principal.DevBypass {
 		return true
 	}
-	allowed, err := repo.HasPermission(r.Context(), workspaceID, principal.ID, platform.PermissionRBACManage)
+	allowed, err := repo.HasPermission(r.Context(), workspaceID, principal.ID, access.PermissionRBACManage)
 	return err == nil && allowed
 }
 
 func defaultWorkspaceRoles() []api.RoleResponse {
 	return []api.RoleResponse{
-		{Name: "viewer"},
-		{Name: "editor"},
-		{Name: "deployer"},
-		{Name: "admin"},
-		{Name: "owner"},
+		{Name: access.RoleViewer},
+		{Name: access.RoleEditor},
+		{Name: access.RoleDeployer},
+		{Name: access.RoleAdmin},
+		{Name: access.RoleOwner},
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	materializeruntime "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
@@ -11,7 +12,7 @@ import (
 type testDataRuntimeFactory struct{}
 
 func (testDataRuntimeFactory) OpenDashboardDataRuntime(ctx context.Context, config DataRuntimeConfig) (DataRuntime, error) {
-	runtime, err := materializeruntime.OpenRuntime(ctx, materializeruntime.RuntimeConfig{
+	runtime, err := analyticsduckdb.OpenMaterializeRuntime(ctx, materializeruntime.RuntimeConfig{
 		ModelID: config.ModelID,
 		Model:   config.Model,
 		DataDir: config.DataDir,

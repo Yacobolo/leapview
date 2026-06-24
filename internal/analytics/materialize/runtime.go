@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 )
@@ -17,41 +16,52 @@ type RuntimeConfig struct {
 	Model   *semanticmodel.Model
 	DataDir string
 	DBDir   string
+
+	Database Database
+	Sources  SourceRegistrar
+	Resolver SourcePathResolver
 }
 
 type Runtime struct {
-	model               *semanticmodel.Model
-	dataDir             string
-	db                  *analyticsduckdb.Database
-	queries             *semanticquery.Service
-	attachedConnections map[string]struct{}
-	lastRefresh         time.Time
+	model       *semanticmodel.Model
+	db          Database
+	sources     SourceRegistrar
+	queries     *semanticquery.Service
+	lastRefresh time.Time
+}
+
+type Database interface {
+	Executor
+	semanticquery.Executor
+	Close() error
+	Path() string
 }
 
 func OpenRuntime(ctx context.Context, config RuntimeConfig) (*Runtime, error) {
 	if config.Model == nil {
 		return nil, fmt.Errorf("semantic model is required")
 	}
-	if err := ValidateFiles(config.Model, config.DataDir); err != nil {
-		return nil, err
+	if config.Database == nil {
+		return nil, fmt.Errorf("materialization database is required")
 	}
-	dbPath := DatabasePath(config.DBDir, config.ModelID)
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, err
+	if config.Sources == nil {
+		return nil, fmt.Errorf("source registrar is required")
 	}
-	db, err := analyticsduckdb.Open(ctx, dbPath)
-	if err != nil {
+	resolver := config.Resolver
+	if resolver == nil {
+		resolver = defaultSourcePathResolver{}
+	}
+	if err := ValidateFilesWithResolver(config.Model, config.DataDir, resolver); err != nil {
 		return nil, err
 	}
 	runtime := &Runtime{
-		model:               config.Model,
-		dataDir:             config.DataDir,
-		db:                  db,
-		queries:             semanticquery.NewService(semanticquery.NewPlanner(config.Model), db),
-		attachedConnections: map[string]struct{}{},
+		model:   config.Model,
+		db:      config.Database,
+		sources: config.Sources,
+		queries: semanticquery.NewService(semanticquery.NewPlanner(config.Model), config.Database),
 	}
 	if err := runtime.Refresh(ctx); err != nil {
-		db.Close()
+		config.Database.Close()
 		return nil, err
 	}
 	return runtime, nil
@@ -72,7 +82,7 @@ func (r *Runtime) Close() error {
 }
 
 func (r *Runtime) Refresh(ctx context.Context) error {
-	lastRefresh, err := Refresh(ctx, r.db.SQLDB(), r.model, r.dataDir, r.attachedConnections)
+	lastRefresh, err := Refresh(ctx, r.db, r.sources, r.model)
 	if err != nil {
 		return err
 	}

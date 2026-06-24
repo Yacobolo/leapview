@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -32,15 +33,15 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(opts.workspaceID), Title: opts.workspaceID}); err != nil {
 				return err
 			}
-			if err := store.BootstrapAdmin(ctx, opts.workspaceID, email); err != nil {
+			accessRepo := accesssqlite.NewRepository(store.SQLDB())
+			if err := accessRepo.BootstrapAdmin(ctx, opts.workspaceID, email); err != nil {
 				return err
 			}
-			accessRepo := accesssqlite.NewRepository(store.SQLDB())
-			principal, err := accessRepo.PrincipalByID(ctx, platform.PrincipalIDForEmail(email))
+			principal, err := accessRepo.PrincipalByID(ctx, access.PrincipalIDForEmail(email))
 			if err != nil {
 				return err
 			}
-			token, err := store.CreateAPIToken(ctx, principal.ID, "bootstrap")
+			token, err := accessRepo.CreateAPIToken(ctx, principal.ID, "bootstrap")
 			if err != nil {
 				return err
 			}

@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
-	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/deployment"
 )
 
@@ -20,16 +17,6 @@ type DeploymentRepository interface {
 
 type Runtime interface {
 	Close() error
-	Catalog() dashboard.Catalog
-	DefaultDashboardID() string
-	ModelIDForDashboard(dashboardID string) string
-	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
-	DefaultFilters(dashboardID string) dashboard.Filters
-	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest
-	QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error)
-	QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
-	RefreshMaterializations(ctx context.Context, modelID string) error
-	Pages(dashboardID string) []dashboard.Page
 }
 
 type RuntimeFactory interface {
@@ -155,112 +142,22 @@ func (m *Manager) CommitPrepared(candidate deployment.PreparedRuntime) error {
 
 func (m *Manager) Close() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.current == nil {
+	current := m.current
+	m.current = nil
+	m.activeDeployment = ""
+	m.activeDigest = ""
+	m.mu.Unlock()
+	if current == nil {
 		return nil
 	}
-	return m.current.Close()
+	return current.Close()
 }
 
-func (m *Manager) runtime() (Runtime, error) {
+func (m *Manager) Active() (Runtime, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if m.current == nil {
 		return nil, fmt.Errorf("no active LibreDash deployment")
 	}
 	return m.current, nil
-}
-
-func (m *Manager) Catalog() dashboard.Catalog {
-	runtime, err := m.runtime()
-	if err != nil {
-		return dashboard.Catalog{
-			Workspace: dashboard.CatalogWorkspace{ID: string(m.workspaceID), Title: "LibreDash Workspace", Description: "No active deployment."},
-		}
-	}
-	return runtime.Catalog()
-}
-
-func (m *Manager) DefaultDashboardID() string {
-	runtime, err := m.runtime()
-	if err != nil {
-		return ""
-	}
-	return runtime.DefaultDashboardID()
-}
-
-func (m *Manager) ModelIDForDashboard(dashboardID string) string {
-	runtime, err := m.runtime()
-	if err != nil {
-		return ""
-	}
-	return runtime.ModelIDForDashboard(dashboardID)
-}
-
-func (m *Manager) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
-	runtime, err := m.runtime()
-	if err != nil {
-		return reportdef.Dashboard{}, nil, false
-	}
-	return runtime.Report(dashboardID)
-}
-
-func (m *Manager) DefaultFilters(dashboardID string) dashboard.Filters {
-	runtime, err := m.runtime()
-	if err != nil {
-		return dashboard.Filters{}.WithDefaults()
-	}
-	return runtime.DefaultFilters(dashboardID)
-}
-
-func (m *Manager) NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest {
-	runtime, err := m.runtime()
-	if err != nil {
-		return request.WithDefaults()
-	}
-	return runtime.NormalizeTableRequest(dashboardID, request)
-}
-
-func (m *Manager) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
-	return m.QueryDashboardPage(ctx, dashboardID, "", filters)
-}
-
-func (m *Manager) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
-	runtime, err := m.runtime()
-	if err != nil {
-		return dashboard.EmptyPatch(filters.WithDefaults(), m.dataDir, err), nil
-	}
-	return runtime.QueryDashboardPage(ctx, dashboardID, pageID, filters)
-}
-
-func (m *Manager) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
-	return m.QueryTablePage(ctx, dashboardID, "", filters, request)
-}
-
-func (m *Manager) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
-	runtime, err := m.runtime()
-	if err != nil {
-		return dashboard.EmptyTable(request.WithDefaults(), err), nil
-	}
-	return runtime.QueryTablePage(ctx, dashboardID, pageID, filters, request)
-}
-
-func (m *Manager) RefreshMaterializations(ctx context.Context, modelID string) error {
-	runtime, err := m.runtime()
-	if err != nil {
-		return err
-	}
-	return runtime.RefreshMaterializations(ctx, modelID)
-}
-
-func (m *Manager) DataDir() string {
-	return m.dataDir
-}
-
-func (m *Manager) Pages(dashboardID string) []dashboard.Page {
-	runtime, err := m.runtime()
-	if err != nil {
-		return nil
-	}
-	return runtime.Pages(dashboardID)
 }

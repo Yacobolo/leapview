@@ -4,16 +4,11 @@ import (
 	"bytes"
 	"os"
 
-	"github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
 	"gopkg.in/yaml.v3"
 )
 
-func LoadDashboard(path string, models map[string]*model.Model) (*report.Dashboard, error) {
-	return LoadDashboardWithModels(path, models)
-}
-
-func LoadDashboardWithModels(path string, models map[string]*model.Model) (*report.Dashboard, error) {
+func LoadDashboard(path string) (*report.Dashboard, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -36,7 +31,7 @@ func LoadDashboardWithModels(path string, models map[string]*model.Model) (*repo
 	if err := decoder.Decode(&dashboard); err != nil {
 		return nil, err
 	}
-	if err := dashboard.ValidateWithModels(models); err != nil {
+	if err := dashboard.ValidateContract(); err != nil {
 		return nil, err
 	}
 	return &dashboard, nil

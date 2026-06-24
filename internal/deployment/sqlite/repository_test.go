@@ -8,12 +8,14 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
 
 func TestRepositorySaveValidatedCommitsDeploymentGraph(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)
-	if err := store.EnsureWorkspace(ctx, platform.WorkspaceInput{ID: "test", Title: "Test"}); err != nil {
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
 	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
@@ -42,7 +44,7 @@ func TestRepositorySaveValidatedCommitsDeploymentGraph(t *testing.T) {
 func TestRepositorySaveValidatedRollsBackOnDuplicateEdge(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)
-	if err := store.EnsureWorkspace(ctx, platform.WorkspaceInput{ID: "test", Title: "Test"}); err != nil {
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
 	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})

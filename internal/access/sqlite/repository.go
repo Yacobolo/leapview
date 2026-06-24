@@ -7,12 +7,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/platform"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 )
 
@@ -32,8 +32,26 @@ func (r *Repository) PrincipalByID(ctx context.Context, id string) (access.Princ
 	return mapPrincipal(row), nil
 }
 
+func (r *Repository) UpsertPrincipal(ctx context.Context, input access.PrincipalInput) (access.Principal, error) {
+	if strings.TrimSpace(input.ID) == "" {
+		input.ID = newID("principal")
+	}
+	if err := r.q.UpsertPrincipal(ctx, platformdb.UpsertPrincipalParams{
+		ID:          input.ID,
+		Email:       input.Email,
+		DisplayName: input.DisplayName,
+	}); err != nil {
+		return access.Principal{}, err
+	}
+	row, err := r.q.GetPrincipal(ctx, input.ID)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	return mapPrincipal(row), nil
+}
+
 func (r *Repository) SetPrincipalRole(ctx context.Context, input access.PrincipalRoleInput) (access.Principal, error) {
-	email := normalizeEmail(input.Email)
+	email := access.NormalizeEmail(input.Email)
 	if email == "" {
 		return access.Principal{}, fmt.Errorf("email is required")
 	}
@@ -44,15 +62,11 @@ func (r *Repository) SetPrincipalRole(ctx context.Context, input access.Principa
 	if err != nil {
 		return access.Principal{}, err
 	}
-	principalID := platform.PrincipalIDForEmail(email)
-	if err := r.q.UpsertPrincipal(ctx, platformdb.UpsertPrincipalParams{
-		ID:          principalID,
+	principal, err := r.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          access.PrincipalIDForEmail(email),
 		Email:       email,
 		DisplayName: firstNonEmpty(strings.TrimSpace(input.DisplayName), email),
-	}); err != nil {
-		return access.Principal{}, err
-	}
-	principal, err := r.q.GetPrincipal(ctx, principalID)
+	})
 	if err != nil {
 		return access.Principal{}, err
 	}
@@ -70,7 +84,7 @@ func (r *Repository) SetPrincipalRole(ctx context.Context, input access.Principa
 	}); err != nil {
 		return access.Principal{}, err
 	}
-	return mapPrincipal(principal), nil
+	return principal, nil
 }
 
 func (r *Repository) RemovePrincipalRoles(ctx context.Context, workspaceID, principalID string) error {
@@ -142,6 +156,146 @@ func (r *Repository) HasPermission(ctx context.Context, workspaceID, principalID
 	return false, nil
 }
 
+func (r *Repository) BootstrapAdmin(ctx context.Context, workspaceID, email string) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil
+	}
+	principal, err := r.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          access.PrincipalIDForEmail(email),
+		Email:       email,
+		DisplayName: email,
+	})
+	if err != nil {
+		return err
+	}
+	role, err := r.q.GetRoleByName(ctx, access.RoleOwner)
+	if err != nil {
+		return err
+	}
+	return r.q.InsertRoleBinding(ctx, platformdb.InsertRoleBindingParams{
+		ID:          newID("rolebinding"),
+		WorkspaceID: workspaceID,
+		RoleID:      role.ID,
+		PrincipalID: sql.NullString{String: principal.ID, Valid: principal.ID != ""},
+	})
+}
+
+func (r *Repository) ResolveExternalPrincipal(ctx context.Context, input access.ExternalIdentityInput) (access.Principal, error) {
+	input.Email = access.NormalizeEmail(input.Email)
+	if input.Provider == "" || input.Subject == "" {
+		return access.Principal{}, fmt.Errorf("external identity requires provider and subject")
+	}
+	identity, err := r.q.GetExternalIdentity(ctx, platformdb.GetExternalIdentityParams{
+		Provider: input.Provider,
+		TenantID: input.TenantID,
+		Subject:  input.Subject,
+	})
+	if err == nil {
+		return r.UpsertPrincipal(ctx, access.PrincipalInput{
+			ID:          identity.PrincipalID,
+			Email:       input.Email,
+			DisplayName: input.DisplayName,
+		})
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return access.Principal{}, err
+	}
+
+	var principal access.Principal
+	if input.Email != "" {
+		row, err := r.q.GetPrincipalByEmail(ctx, input.Email)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return access.Principal{}, err
+		}
+		if err == nil {
+			principal = mapPrincipal(row)
+		}
+	}
+	if principal.ID == "" {
+		principal, err = r.UpsertPrincipal(ctx, access.PrincipalInput{
+			ID:          "external_" + stableID(input.Provider+"|"+input.TenantID+"|"+input.Subject),
+			Email:       input.Email,
+			DisplayName: input.DisplayName,
+		})
+		if err != nil {
+			return access.Principal{}, err
+		}
+	} else {
+		principal, err = r.UpsertPrincipal(ctx, access.PrincipalInput{
+			ID:          principal.ID,
+			Email:       input.Email,
+			DisplayName: input.DisplayName,
+		})
+		if err != nil {
+			return access.Principal{}, err
+		}
+	}
+
+	if err := r.q.UpsertExternalIdentity(ctx, platformdb.UpsertExternalIdentityParams{
+		ID:          "identity_" + stableID(input.Provider+"|"+input.TenantID+"|"+input.Subject),
+		PrincipalID: principal.ID,
+		Provider:    input.Provider,
+		TenantID:    input.TenantID,
+		Subject:     input.Subject,
+		Email:       input.Email,
+	}); err != nil {
+		return access.Principal{}, err
+	}
+	return principal, nil
+}
+
+func (r *Repository) CreateSession(ctx context.Context, principalID string, ttl time.Duration) (string, error) {
+	token := newSecret()
+	expires := time.Now().Add(ttl).UTC().Format(time.RFC3339)
+	return token, r.q.CreateSession(ctx, platformdb.CreateSessionParams{
+		ID:          newID("session"),
+		PrincipalID: principalID,
+		TokenHash:   tokenHash(token),
+		ExpiresAt:   expires,
+	})
+}
+
+func (r *Repository) PrincipalForToken(ctx context.Context, token string) (access.Principal, error) {
+	session, err := r.q.GetSessionByTokenHash(ctx, tokenHash(token))
+	if err != nil {
+		return access.Principal{}, err
+	}
+	_ = r.q.TouchSession(ctx, session.ID)
+	row, err := r.q.GetPrincipal(ctx, session.PrincipalID)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	return mapPrincipal(row), nil
+}
+
+func (r *Repository) DeleteSession(ctx context.Context, token string) error {
+	return r.q.DeleteSessionByTokenHash(ctx, tokenHash(token))
+}
+
+func (r *Repository) CreateAPIToken(ctx context.Context, principalID, name string) (string, error) {
+	token := newSecret()
+	return token, r.q.CreateAPIToken(ctx, platformdb.CreateAPITokenParams{
+		ID:          newID("token"),
+		PrincipalID: principalID,
+		Name:        name,
+		TokenHash:   tokenHash(token),
+	})
+}
+
+func (r *Repository) PrincipalForAPIToken(ctx context.Context, token string) (access.Principal, error) {
+	apiToken, err := r.q.GetAPITokenByHash(ctx, tokenHash(token))
+	if err != nil {
+		return access.Principal{}, err
+	}
+	_ = r.q.TouchAPIToken(ctx, apiToken.ID)
+	row, err := r.q.GetPrincipal(ctx, apiToken.PrincipalID)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	return mapPrincipal(row), nil
+}
+
 func mapPrincipal(row platformdb.Principal) access.Principal {
 	return access.Principal{
 		ID:          row.ID,
@@ -168,10 +322,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
 func newID(prefix string) string {
 	return prefix + "_" + newSecret()[:24]
 }
@@ -183,4 +333,14 @@ func newSecret() string {
 		return hex.EncodeToString(sum[:])
 	}
 	return hex.EncodeToString(b[:])
+}
+
+func stableID(value string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(value)))
+	return hex.EncodeToString(sum[:])[:32]
+}
+
+func tokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

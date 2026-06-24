@@ -1,13 +1,16 @@
 package http
 
 import (
+	"context"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	nethttp "net/http"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/libredash/internal/dashboard/ui"
 	"github.com/go-chi/chi/v5"
 )
@@ -15,13 +18,22 @@ import (
 type Metrics interface {
 	Catalog() dashboard.Catalog
 	DataDir() string
+	DefaultDashboardID() string
+	DefaultFilters(dashboardID string) dashboard.Filters
+	ModelIDForDashboard(dashboardID string) string
+	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest
 	Pages(dashboardID string) []dashboard.Page
+	QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error)
+	QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
 	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
+	RefreshMaterializations(ctx context.Context, modelID string) error
 }
 
 type Handler struct {
-	Metrics   Metrics
-	CSRFToken func(r *nethttp.Request) string
+	Metrics        Metrics
+	Broker         *stream.Broker
+	TickerInterval time.Duration
+	CSRFToken      func(r *nethttp.Request) string
 }
 
 func (h Handler) Dashboard(w nethttp.ResponseWriter, r *nethttp.Request) {

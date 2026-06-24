@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"fmt"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"math"
@@ -12,10 +11,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
-
-func visualSemanticFilters(ctx context.Context, m *Service, runtime *modelRuntime, report *reportdef.Dashboard, visual reportdef.Visual, filters dashboard.Filters, visualID string) ([]reportdef.QueryFilter, error) {
-	return m.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
-}
 
 func fieldRef(field string, alias string) reportdef.QueryField {
 	return reportdef.QueryField{Field: field, Alias: alias}

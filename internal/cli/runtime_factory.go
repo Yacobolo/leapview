@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
@@ -40,7 +41,7 @@ func (f deploymentRuntimeFactory) Prepare(_ context.Context, input runtimehost.R
 type dashboardDataRuntimeFactory struct{}
 
 func (dashboardDataRuntimeFactory) OpenDashboardDataRuntime(ctx context.Context, config dashboardruntime.DataRuntimeConfig) (dashboardruntime.DataRuntime, error) {
-	runtime, err := analyticsmaterialize.OpenRuntime(ctx, analyticsmaterialize.RuntimeConfig{
+	runtime, err := analyticsduckdb.OpenMaterializeRuntime(ctx, analyticsmaterialize.RuntimeConfig{
 		ModelID: config.ModelID,
 		Model:   config.Model,
 		DataDir: config.DataDir,

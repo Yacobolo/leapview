@@ -3,10 +3,20 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
+type MaterializationService struct {
+	mu       *sync.RWMutex
+	runtimes map[string]*modelRuntime
+}
+
 func (m *Service) RefreshMaterializations(ctx context.Context, modelID string) error {
-	runtime, ok := m.runtimes[modelID]
+	return m.materializations.RefreshMaterializations(ctx, modelID)
+}
+
+func (s *MaterializationService) RefreshMaterializations(ctx context.Context, modelID string) error {
+	runtime, ok := s.runtimes[modelID]
 	if !ok {
 		return fmt.Errorf("unknown semantic model %q", modelID)
 	}
@@ -17,8 +27,8 @@ func (m *Service) RefreshMaterializations(ctx context.Context, modelID string) e
 		return fmt.Errorf("dashboard data runtime is not initialized")
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	return runtime.data.Refresh(ctx)
 }

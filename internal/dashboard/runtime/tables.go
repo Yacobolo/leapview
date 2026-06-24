@@ -12,7 +12,7 @@ import (
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
 
-func (m *Service) tableBlocks(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, availableRows int) (map[string]dashboard.TableBlock, error) {
+func (s *TableQueryService) tableBlocks(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, availableRows int) (map[string]dashboard.TableBlock, error) {
 	blocks := map[string]dashboard.TableBlock{}
 	count := request.Count
 	if count <= 0 {
@@ -24,7 +24,7 @@ func (m *Service) tableBlocks(ctx context.Context, runtime *modelRuntime, report
 	if request.Block == "all" {
 		starts := initialBlockStarts(request.Start, count, availableRows)
 		for block, start := range starts {
-			rows, err := m.tableRows(ctx, runtime, report, table, filters, request, start, count, availableRows)
+			rows, err := s.tableRows(ctx, runtime, report, table, filters, request, start, count, availableRows)
 			if err != nil {
 				return nil, err
 			}
@@ -40,7 +40,7 @@ func (m *Service) tableBlocks(ctx context.Context, runtime *modelRuntime, report
 	}
 
 	start := clampTableStart(request.Start, availableRows)
-	rows, err := m.tableRows(ctx, runtime, report, table, filters, request, start, count, availableRows)
+	rows, err := s.tableRows(ctx, runtime, report, table, filters, request, start, count, availableRows)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (m *Service) tableBlocks(ctx context.Context, runtime *modelRuntime, report
 	return blocks, nil
 }
 
-func (m *Service) queryAggregateTable(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, request dashboard.TableRequest, table reportdef.TableVisual, filters dashboard.Filters) (dashboard.Table, error) {
+func (s *TableQueryService) queryAggregateTable(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, request dashboard.TableRequest, table reportdef.TableVisual, filters dashboard.Filters) (dashboard.Table, error) {
 	var (
 		columns []dashboard.TableColumn
 		rows    []map[string]any
@@ -62,9 +62,9 @@ func (m *Service) queryAggregateTable(ctx context.Context, runtime *modelRuntime
 	)
 	switch table.KindOrDefault() {
 	case "matrix_table":
-		columns, rows, err = m.matrixTableRows(ctx, runtime, report, table, filters, request)
+		columns, rows, err = s.matrixTableRows(ctx, runtime, report, table, filters, request)
 	case "pivot_table":
-		columns, rows, err = m.pivotTableRows(ctx, runtime, report, table, filters, request)
+		columns, rows, err = s.pivotTableRows(ctx, runtime, report, table, filters, request)
 	default:
 		err = fmt.Errorf("unsupported aggregate table kind %q", table.KindOrDefault())
 	}
@@ -102,9 +102,9 @@ func (m *Service) queryAggregateTable(ctx context.Context, runtime *modelRuntime
 	}, nil
 }
 
-func (m *Service) matrixTableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, error) {
+func (s *TableQueryService) matrixTableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, error) {
 	if len(table.ColumnDims) == 1 {
-		return m.crossTabTableRows(ctx, runtime, report, table, filters, request, false)
+		return s.crossTabTableRows(ctx, runtime, report, table, filters, request, false)
 	}
 	columns := make([]dashboard.TableColumn, 0, len(table.Rows)+len(table.Measures))
 	dimensions := make([]reportdef.QueryField, 0, len(table.Rows))
@@ -123,7 +123,7 @@ func (m *Service) matrixTableRows(ctx context.Context, runtime *modelRuntime, re
 		column := dashboard.TableColumn{Key: key, Label: measureLabel(key, measure), Align: "right", Role: "measure", Measure: key, Format: tableMeasureFormat(measure), Formatting: tableMeasureFormatting(table, measureName)}
 		columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, measureName)))
 	}
-	queryFilters, err := m.semanticFilters(ctx, runtime, report, filters, "table", request.Table)
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "table", request.Table)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -147,11 +147,11 @@ func (m *Service) matrixTableRows(ctx context.Context, runtime *modelRuntime, re
 	return columns, tableRowsFromAnalytics(rows), nil
 }
 
-func (m *Service) pivotTableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, error) {
-	return m.crossTabTableRows(ctx, runtime, report, table, filters, request, true)
+func (s *TableQueryService) pivotTableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, error) {
+	return s.crossTabTableRows(ctx, runtime, report, table, filters, request, true)
 }
 
-func (m *Service) crossTabTableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, pivotMode bool) ([]dashboard.TableColumn, []map[string]any, error) {
+func (s *TableQueryService) crossTabTableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, pivotMode bool) ([]dashboard.TableColumn, []map[string]any, error) {
 	dimensions := make([]reportdef.QueryField, 0, len(table.Rows)+1)
 	baseColumns := make([]dashboard.TableColumn, 0, len(table.Rows))
 	for _, dimensionName := range table.Rows {
@@ -170,7 +170,7 @@ func (m *Service) crossTabTableRows(ctx context.Context, runtime *modelRuntime, 
 		measures = append(measures, fieldRef(measureName, key))
 		valueColumns = append(valueColumns, key)
 	}
-	queryFilters, err := m.semanticFilters(ctx, runtime, report, filters, "table", request.Table)
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "table", request.Table)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -457,7 +457,7 @@ func clampTableStart(start, availableRows int) int {
 	return start
 }
 
-func (m *Service) tableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, start, count, availableRows int) ([]map[string]any, error) {
+func (s *TableQueryService) tableRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table reportdef.TableVisual, filters dashboard.Filters, request dashboard.TableRequest, start, count, availableRows int) ([]map[string]any, error) {
 	if count <= 0 || start >= availableRows {
 		return []map[string]any{}, nil
 	}
@@ -473,7 +473,7 @@ func (m *Service) tableRows(ctx context.Context, runtime *modelRuntime, report *
 		}
 		measures = append(measures, fieldRef(column.Field, column.Alias))
 	}
-	queryFilters, err := m.semanticFilters(ctx, runtime, report, filters, "table", request.Table)
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "table", request.Table)
 	if err != nil {
 		return nil, err
 	}
