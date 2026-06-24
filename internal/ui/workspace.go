@@ -539,6 +539,9 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 		if asset.ID == "" {
 			return
 		}
+		if !selected && isLineageHiddenContextAsset(asset) {
+			return
+		}
 		if existing, ok := nodeIndex[asset.ID]; ok {
 			node := graph.Nodes[existing]
 			if !node.Selected && absInt(rank) < absInt(node.Rank) {
@@ -553,6 +556,12 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 	}
 	addEdge := func(edge api.AssetEdgeResponse) {
 		if edge.FromAssetID == "" || edge.ToAssetID == "" {
+			return
+		}
+		if _, ok := nodeIndex[edge.FromAssetID]; !ok {
+			return
+		}
+		if _, ok := nodeIndex[edge.ToAssetID]; !ok {
 			return
 		}
 		key := lineageEdgeKey(edge)
@@ -758,6 +767,10 @@ func lineageDependencyRootIDs(selected api.AssetResponse, outgoing map[string][]
 	}
 	walk(selected.ID)
 	return rootIDs
+}
+
+func isLineageHiddenContextAsset(asset api.AssetResponse) bool {
+	return asset.Type == "catalog"
 }
 
 func isRollupLineageAsset(typ string) bool {
