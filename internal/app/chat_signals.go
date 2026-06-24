@@ -5,25 +5,26 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
+	"github.com/Yacobolo/libredash/internal/ui"
 )
 
-func chatSignalWithConversations(conversations []api.AgentConversationResponse, activeID string, transcript []api.AgentChatTranscriptItem, statusErr string, running, enabled bool) api.AgentChatSignal {
+func chatSignalWithConversations(conversations []api.AgentConversationResponse, activeID string, transcript []agentapp.ChatTranscriptItem, statusErr string, running, enabled bool) ui.ChatSignal {
 	if !enabled && statusErr == "" {
 		statusErr = "Agent is not configured"
 	}
 	if conversations == nil {
 		conversations = []api.AgentConversationResponse{}
 	}
-	return api.AgentChatSignal{
+	return ui.ChatSignal{
 		Conversations:        conversations,
 		ActiveConversationID: activeID,
 		Transcript:           transcript,
-		Status: api.AgentChatStatus{
+		Status: ui.ChatStatus{
 			Enabled: enabled,
 			Running: running,
 			Error:   statusErr,
 		},
-		Composer: api.AgentComposerSignal{
+		Composer: ui.ComposerSignal{
 			Value:       "",
 			Disabled:    !enabled || running,
 			Placeholder: chatPlaceholder(enabled, running),
@@ -31,8 +32,8 @@ func chatSignalWithConversations(conversations []api.AgentConversationResponse, 
 	}
 }
 
-func (s *Server) chatSignal(ctx context.Context, scope agentapp.Scope, activeID, statusErr string, running bool) api.AgentChatSignal {
-	transcript := []api.AgentChatTranscriptItem{}
+func (s *Server) chatSignal(ctx context.Context, scope agentapp.Scope, activeID, statusErr string, running bool) ui.ChatSignal {
+	transcript := []agentapp.ChatTranscriptItem{}
 	if activeID != "" && s.agent != nil && scope.PrincipalID != "" {
 		if loaded, err := s.agent.ConversationTranscript(ctx, scope, activeID); err == nil {
 			transcript = loaded
@@ -41,22 +42,22 @@ func (s *Server) chatSignal(ctx context.Context, scope agentapp.Scope, activeID,
 	return s.chatSignalWith(ctx, scope, activeID, transcript, statusErr, running)
 }
 
-func (s *Server) chatSignalWith(ctx context.Context, scope agentapp.Scope, activeID string, transcript []api.AgentChatTranscriptItem, statusErr string, running bool) api.AgentChatSignal {
+func (s *Server) chatSignalWith(ctx context.Context, scope agentapp.Scope, activeID string, transcript []agentapp.ChatTranscriptItem, statusErr string, running bool) ui.ChatSignal {
 	conversations := s.chatConversations(ctx, scope)
 	enabled := s.agent != nil && s.agent.Enabled()
 	if !enabled && statusErr == "" {
 		statusErr = "Agent is not configured"
 	}
-	return api.AgentChatSignal{
+	return ui.ChatSignal{
 		Conversations:        conversations,
 		ActiveConversationID: activeID,
 		Transcript:           transcript,
-		Status: api.AgentChatStatus{
+		Status: ui.ChatStatus{
 			Enabled: enabled,
 			Running: running,
 			Error:   statusErr,
 		},
-		Composer: api.AgentComposerSignal{
+		Composer: ui.ComposerSignal{
 			Value:       "",
 			Disabled:    !enabled || running,
 			Placeholder: chatPlaceholder(enabled, running),

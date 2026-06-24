@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	g "maragu.dev/gomponents"
 	ds "maragu.dev/gomponents-datastar"
@@ -9,7 +8,7 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal api.AgentChatSignal) g.Node {
+func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal ChatSignal) g.Node {
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash Chat",
 		Language: "en",

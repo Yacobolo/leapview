@@ -269,15 +269,8 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-type apiErrorResponse struct {
-	Code      int            `json:"code"`
-	Message   string         `json:"message"`
-	Details   map[string]any `json:"details"`
-	RequestID string         `json:"requestId"`
-}
-
 func writeJSONError(w http.ResponseWriter, err error, status int) {
-	writeJSON(w, status, apiErrorResponse{
+	writeJSON(w, status, api.ErrorResponse{
 		Code:      status,
 		Message:   err.Error(),
 		Details:   map[string]any{},

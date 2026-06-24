@@ -8,7 +8,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -123,7 +122,7 @@ func (s *Service) ListRunEventsPage(ctx context.Context, scope Scope, conversati
 	return s.repo.ListEventsPage(ctx, scope.WorkspaceID, scope.PrincipalID, runID, normalizePage(page))
 }
 
-func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversationID string) ([]api.AgentEventEnvelope, error) {
+func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversationID string) ([]EventEnvelope, error) {
 	if _, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
 		return nil, err
 	}
@@ -131,7 +130,7 @@ func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversat
 	if err != nil {
 		return nil, err
 	}
-	events := make([]api.AgentEventEnvelope, 0, len(messages))
+	events := make([]EventEnvelope, 0, len(messages))
 	for _, message := range messages {
 		events = append(events, messageEnvelope(conversationID, message))
 	}
@@ -164,7 +163,7 @@ func normalizePage(page Page) Page {
 	return page
 }
 
-func (s *Service) ConversationTranscript(ctx context.Context, scope Scope, conversationID string) ([]api.AgentChatTranscriptItem, error) {
+func (s *Service) ConversationTranscript(ctx context.Context, scope Scope, conversationID string) ([]ChatTranscriptItem, error) {
 	if _, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
 		return nil, err
 	}

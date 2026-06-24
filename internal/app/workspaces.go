@@ -50,7 +50,7 @@ func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
 	filtered := filterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))
 	workspace := s.workspaceResponse(r, workspaceID)
 	canManage := s.canManageWorkspaceAccess(r, workspaceID)
-	access := s.workspaceAccessResponse(r, workspace, canManage, api.WorkspaceAccessStatus{})
+	access := s.workspaceAccessResponse(r, workspace, canManage, ui.WorkspaceAccessStatus{})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if err := ui.WorkspacePage(s.metrics.Catalog(), workspace, filtered, r.URL.Query().Get("type"), r.URL.Query().Get("q"), s.currentRoleLabel(r), access, csrfToken(r, s.auth)).Render(w); err != nil {
@@ -245,12 +245,12 @@ func (s *Server) removeWorkspacePermission(w http.ResponseWriter, r *http.Reques
 
 type workspaceAccessSignalPayload struct {
 	WorkspaceAccess struct {
-		Command api.WorkspaceAccessCommand `json:"command"`
+		Command ui.WorkspaceAccessCommand `json:"command"`
 	} `json:"workspaceAccess"`
-	WorkspaceAccessCommand api.WorkspaceAccessCommand `json:"workspaceAccessCommand"`
+	WorkspaceAccessCommand ui.WorkspaceAccessCommand `json:"workspaceAccessCommand"`
 }
 
-func (signals workspaceAccessSignalPayload) command() api.WorkspaceAccessCommand {
+func (signals workspaceAccessSignalPayload) command() ui.WorkspaceAccessCommand {
 	command := signals.WorkspaceAccess.Command
 	if command.Email == "" && command.Role == "" && command.PrincipalID == "" {
 		command = signals.WorkspaceAccessCommand
@@ -266,14 +266,14 @@ func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	command := signals.command()
-	status := api.WorkspaceAccessStatus{Message: "Access updated."}
+	status := ui.WorkspaceAccessStatus{Message: "Access updated."}
 	repo, err := s.accessRepository()
 	if err != nil {
-		status = api.WorkspaceAccessStatus{Error: err.Error()}
+		status = ui.WorkspaceAccessStatus{Error: err.Error()}
 	} else if repo == nil {
-		status = api.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+		status = ui.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
 	} else if _, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: command.Email, Role: command.Role}); err != nil {
-		status = api.WorkspaceAccessStatus{Error: err.Error()}
+		status = ui.WorkspaceAccessStatus{Error: err.Error()}
 	}
 	s.patchWorkspaceAccess(w, r, workspaceID, status)
 }
@@ -286,19 +286,19 @@ func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	command := signals.command()
-	status := api.WorkspaceAccessStatus{Message: "Access removed."}
+	status := ui.WorkspaceAccessStatus{Message: "Access removed."}
 	repo, err := s.accessRepository()
 	if err != nil {
-		status = api.WorkspaceAccessStatus{Error: err.Error()}
+		status = ui.WorkspaceAccessStatus{Error: err.Error()}
 	} else if repo == nil {
-		status = api.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+		status = ui.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
 	} else if err := repo.RemovePrincipalRoles(r.Context(), workspaceID, command.PrincipalID); err != nil {
-		status = api.WorkspaceAccessStatus{Error: err.Error()}
+		status = ui.WorkspaceAccessStatus{Error: err.Error()}
 	}
 	s.patchWorkspaceAccess(w, r, workspaceID, status)
 }
 
-func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceID string, status api.WorkspaceAccessStatus) {
+func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceID string, status ui.WorkspaceAccessStatus) {
 	workspace := s.workspaceResponse(r, workspaceID)
 	access := s.workspaceAccessResponse(r, workspace, true, status)
 	sse := datastar.NewSSE(w, r)
@@ -368,7 +368,11 @@ func (s *Server) apiRoleBindings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiUpsertRoleBinding(w http.ResponseWriter, r *http.Request) {
-	var input api.RoleBindingUpsertRequest
+	var input struct {
+		Email       string `json:"email"`
+		DisplayName string `json:"displayName"`
+		Role        string `json:"role"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -648,12 +652,12 @@ func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]ap
 	return bindings, roles, nil
 }
 
-func (s *Server) workspaceAccessResponse(r *http.Request, workspace api.WorkspaceResponse, canManage bool, status api.WorkspaceAccessStatus) api.WorkspaceAccessResponse {
+func (s *Server) workspaceAccessResponse(r *http.Request, workspace api.WorkspaceResponse, canManage bool, status ui.WorkspaceAccessStatus) ui.WorkspaceAccessResponse {
 	bindings, roles, err := s.roleBindingsAndRoles(r, workspace.ID)
 	if err != nil && status.Error == "" {
 		status.Error = err.Error()
 	}
-	return api.WorkspaceAccessResponse{
+	return ui.WorkspaceAccessResponse{
 		Workspace: workspace,
 		Roles:     roles,
 		Bindings:  bindings,

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -15,7 +14,7 @@ type storeEventSink struct {
 	scope          Scope
 	conversationID string
 	runID          string
-	onEvent        func(api.AgentEventEnvelope)
+	onEvent        func(EventEnvelope)
 	usage          agent.Usage
 	mu             sync.Mutex
 }
@@ -84,8 +83,8 @@ func eventPayload(raw string) map[string]any {
 	return payload
 }
 
-func eventEnvelope(conversationID string, row Event) api.AgentEventEnvelope {
-	return api.AgentEventEnvelope{
+func eventEnvelope(conversationID string, row Event) EventEnvelope {
+	return EventEnvelope{
 		ID:             row.ID,
 		ConversationID: conversationID,
 		RunID:          row.RunID,
@@ -97,8 +96,8 @@ func eventEnvelope(conversationID string, row Event) api.AgentEventEnvelope {
 	}
 }
 
-func messageEnvelope(conversationID string, row Message) api.AgentEventEnvelope {
-	return api.AgentEventEnvelope{
+func messageEnvelope(conversationID string, row Message) EventEnvelope {
+	return EventEnvelope{
 		ID:             "message:" + row.ID,
 		ConversationID: conversationID,
 		RunID:          row.RunID,

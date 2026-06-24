@@ -33,7 +33,7 @@ func WorkspacesPage(catalog dashboard.Catalog, workspaces []api.WorkspaceRespons
 	)
 }
 
-func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, assets []api.AssetResponse, activeType, query, roleLabel string, access api.WorkspaceAccessResponse, csrfToken string) g.Node {
+func WorkspacePage(catalog dashboard.Catalog, workspace api.WorkspaceResponse, assets []api.AssetResponse, activeType, query, roleLabel string, access WorkspaceAccessResponse, csrfToken string) g.Node {
 	extraHead := []g.Node{}
 	if access.CanManage {
 		extraHead = append(extraHead, h.Script(h.Type("module"), h.Src(staticAsset("/static/workspace-access-control.js"))))
@@ -69,24 +69,24 @@ func ConnectionsPage(catalog dashboard.Catalog, workspaceID string, assets []api
 	)
 }
 
-func workspacePageSignals(access api.WorkspaceAccessResponse, csrfToken string) map[string]any {
+func workspacePageSignals(access WorkspaceAccessResponse, csrfToken string) map[string]any {
 	return map[string]any{
 		"workspaceAccess": WorkspaceAccessSignals(access, csrfToken),
 	}
 }
 
 type workspaceAccessSignalState struct {
-	api.WorkspaceAccessResponse
-	CSRFToken string                     `json:"csrfToken"`
-	Command   api.WorkspaceAccessCommand `json:"command"`
-	Search    string                     `json:"search"`
+	WorkspaceAccessResponse
+	CSRFToken string                 `json:"csrfToken"`
+	Command   WorkspaceAccessCommand `json:"command"`
+	Search    string                 `json:"search"`
 }
 
-func WorkspaceAccessSignals(access api.WorkspaceAccessResponse, csrfToken string) workspaceAccessSignalState {
+func WorkspaceAccessSignals(access WorkspaceAccessResponse, csrfToken string) workspaceAccessSignalState {
 	return workspaceAccessSignalState{
 		WorkspaceAccessResponse: access,
 		CSRFToken:               csrfToken,
-		Command:                 api.WorkspaceAccessCommand{},
+		Command:                 WorkspaceAccessCommand{},
 		Search:                  "",
 	}
 }

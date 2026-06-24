@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -16,7 +15,7 @@ type PromptInput struct {
 	ConversationID string
 	Input          string
 	CorrelationID  string
-	OnEvent        func(api.AgentEventEnvelope)
+	OnEvent        func(EventEnvelope)
 }
 
 type PromptResult struct {
