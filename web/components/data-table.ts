@@ -1218,10 +1218,12 @@ class DataTable extends LitElement {
   }
 
   private selectRow(key: string, row: TableRow, event: MouseEvent): void {
-    const toggleGesture = event.metaKey || event.ctrlKey
-    this.rowSelection = toggleGesture ? this.toggledRowSelection(key) : { [key]: true }
+    const selected = this.rowIsSelected(row, key)
+    const onlySelectedRow = selected && this.selectedRowCount() === 1
+    const toggleSelection = event.metaKey || event.ctrlKey || onlySelectedRow
+    this.rowSelection = toggleSelection ? this.toggledRowSelection(key) : { [key]: true }
     this.selectedCellKey = ''
-    this.emitRowSelection(row, toggleGesture)
+    this.emitRowSelection(row, toggleSelection)
   }
 
   private syncSelectedRowFromTableSelection(): void {
