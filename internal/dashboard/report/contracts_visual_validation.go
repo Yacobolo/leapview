@@ -128,6 +128,77 @@ func validateVisualQueryShape(name string, visual Visual) error {
 	return nil
 }
 
+func ValidateVisualPointSelectionMappingKeys(name string, visual Visual) error {
+	if !supportsPointSelection(visual) {
+		return fmt.Errorf("visual %q type %q shape %q does not support point_selection", name, visual.Type, visual.ShapeOrDefault())
+	}
+	keys := visualPayloadKeys(visual)
+	for index, mapping := range visual.Interaction.PointSelection.Mappings {
+		if !keys.Contains(mapping.Value) {
+			return fmt.Errorf("visual %q interaction mapping %d references unknown value key %q for shape %q", name, index, mapping.Value, visual.ShapeOrDefault())
+		}
+		if mapping.Label != "" && !keys.Contains(mapping.Label) {
+			return fmt.Errorf("visual %q interaction mapping %d references unknown label key %q for shape %q", name, index, mapping.Label, visual.ShapeOrDefault())
+		}
+	}
+	return nil
+}
+
+func supportsPointSelection(visual Visual) bool {
+	switch visual.Type {
+	case "radar":
+		return false
+	}
+	switch visual.ShapeOrDefault() {
+	case "hierarchy":
+		return false
+	default:
+		return true
+	}
+}
+
+type payloadKeySet map[string]struct{}
+
+func (keys payloadKeySet) Contains(key string) bool {
+	_, ok := keys[key]
+	return ok
+}
+
+func visualPayloadKeys(visual Visual) payloadKeySet {
+	switch visual.ShapeOrDefault() {
+	case "category_series_value", "category_multi_measure":
+		return payloadKeys("label", "series", "value", "selected")
+	case "category_delta":
+		return payloadKeys("label", "value", "start", "end", "positive", "selected")
+	case "binned_measure":
+		return payloadKeys("label", "binStart", "binEnd", "value")
+	case "hierarchy":
+		return payloadKeys("path", "value")
+	case "single_value":
+		return payloadKeys("label", "value", "series", "selected")
+	case "matrix":
+		return payloadKeys("row", "column", "value", "selected")
+	case "graph":
+		return payloadKeys("source", "target", "value")
+	case "geo":
+		return payloadKeys("name", "value", "selected")
+	case "ohlc":
+		return payloadKeys("label", "open", "close", "low", "high")
+	case "distribution":
+		return payloadKeys("label", "min", "q1", "median", "q3", "max")
+	default:
+		return payloadKeys("label", "value", "selected")
+	}
+}
+
+func payloadKeys(values ...string) payloadKeySet {
+	keys := make(payloadKeySet, len(values))
+	for _, value := range values {
+		keys[value] = struct{}{}
+	}
+	return keys
+}
+
 func validateRendererOptions(name string, options map[string]any) error {
 	for renderer, value := range options {
 		if !supportsRenderer(renderer) {

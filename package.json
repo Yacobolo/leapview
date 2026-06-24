@@ -24,7 +24,8 @@
     "build:login-background": "esbuild web/components/topology-background.ts --bundle --format=esm --outfile=static/topology-background.js",
     "build:asset-lineage": "esbuild web/components/asset-lineage-graph.ts --bundle --format=esm --outfile=static/asset-lineage-graph.js",
     "build:chat": "esbuild web/components/chat.ts --bundle --format=esm --outfile=static/chat.js",
-    "watch:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css --watch"
+    "watch:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css --watch",
+    "test:table-selection": "mkdir -p .tmp && esbuild web/components/table/selection.test.ts --bundle --platform=node --format=esm --outfile=.tmp/table-selection.test.mjs && node --test .tmp/table-selection.test.mjs"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",

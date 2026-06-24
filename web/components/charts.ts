@@ -4,6 +4,7 @@ import { EllipsisVertical } from 'lucide'
 import { lucideIcon } from './lucide-icons'
 import { visualMenuIcon } from './visual-menu-icons'
 import './chart/renderers'
+import { chartInteractionDetailForDatum } from './chart/interactions'
 import { chartRenderer } from './chart/registry'
 import type { ChartDatum, ChartPayload, ChartRendererHandle, ChartType, VisualAction } from './chart/types'
 import { chartColumns, chartRows, formatValue, normalizeShape, normalizeType, numberValue, stringValue, stylesFor } from './chart/utils'
@@ -186,7 +187,6 @@ class ChartVisual extends LitElement {
   @property({ type: String, attribute: 'chart-title' }) chartTitle = 'Chart'
   @property({ type: String }) unit = ''
   @property({ type: String, attribute: 'visual-id' }) visualId = ''
-  @property({ type: String }) field = ''
   @property({ type: String }) type: ChartType | string = 'bar'
   @property({ type: Array }) selection: string[] = []
 
@@ -282,7 +282,7 @@ class ChartVisual extends LitElement {
     const renderer = chartRenderer(nextName)
     if (!canvas || !renderer) return undefined
 
-    this.rendererHandle = renderer.mount(canvas, { selectLabel: (label) => this.selectLabel(label) })
+    this.rendererHandle = renderer.mount(canvas, { selectDatum: (datum, index) => this.selectDatum(datum, index) })
     this.rendererName = nextName
     return this.rendererHandle
   }
@@ -300,7 +300,7 @@ class ChartVisual extends LitElement {
       title: chart.title || this.chartTitle,
       unit: chart.unit ?? this.unit,
       format: chart.format ?? '',
-      field: chart.field || this.field,
+      interaction: chart.interaction ?? {},
       dimensions: chart.dimensions ?? [],
       measure: chart.measure ?? '',
       measures: chart.measures ?? (chart.measure ? [chart.measure] : []),
@@ -312,20 +312,15 @@ class ChartVisual extends LitElement {
     }
   }
 
-  private selectLabel(label: string): void {
+  private selectDatum(datum: ChartDatum, _index: number): void {
     const payload = this.payload
-    if (!payload.id || !payload.field || !label) return
+    const detail = chartInteractionDetailForDatum(payload, datum)
+    if (!detail) return
     this.dispatchEvent(
-      new CustomEvent('ld-chart-select', {
+      new CustomEvent('ld-interaction-select', {
         bubbles: true,
         composed: true,
-        detail: {
-          visualId: payload.id,
-          field: payload.field,
-          value: label,
-          label,
-          mode: 'toggle',
-        },
+        detail,
       }),
     )
   }
@@ -350,7 +345,20 @@ class ChartVisual extends LitElement {
       }),
     )
     if (action === 'clear-selection') {
-      this.dispatchEvent(new CustomEvent('ld-chart-clear-selection', { bubbles: true, composed: true }))
+      this.dispatchEvent(
+        new CustomEvent('ld-interaction-select', {
+          bubbles: true,
+          composed: true,
+          detail: {
+            sourceKind: 'visual',
+            sourceId: payload.id || this.visualId,
+            interactionKind: payload.interaction?.kind || 'point_selection',
+            action: 'clear',
+            toggle: payload.interaction?.toggle !== false,
+            mappings: [],
+          },
+        }),
+      )
     }
   }
 

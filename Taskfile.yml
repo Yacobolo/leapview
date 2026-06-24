@@ -57,10 +57,11 @@ tasks:
       - npm run build
 
   test:
-    desc: Run Go tests
+    desc: Run tests
     deps:
       - build
     cmds:
+      - npm run test:table-selection
       - go test ./...
 
   agent:e2e:

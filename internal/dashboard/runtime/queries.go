@@ -190,6 +190,8 @@ func (s *TableQueryService) QueryTablePage(ctx context.Context, dashboardID, pag
 		Kind:          tableModel.KindOrDefault(),
 		Title:         tableModel.Title,
 		Style:         style,
+		Interaction:   tableInteractionConfig(tableModel.Interaction.RowSelection),
+		Selection:     selectedEntries(filters, "table", request.Table),
 		Columns:       tableModel.Columns,
 		TotalRows:     totalRows,
 		AvailableRows: availableRows,

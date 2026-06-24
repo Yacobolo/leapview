@@ -51,17 +51,20 @@ export type FilterControl = {
   values?: string[]
 }
 
-export type VisualSelection = {
+export type InteractionSelection = {
   label?: string
-  values?: string[]
+  entries?: Array<{
+    label?: string
+    mappings?: Array<{ field?: string; value?: string; label?: string }>
+  }>
 }
 
 export type FiltersSignal = {
   controls: Record<string, FilterControl>
-  visualSelections: VisualSelection[]
+  selections: InteractionSelection[]
 }
 
-export const emptyFilters: FiltersSignal = { controls: {}, visualSelections: [] }
+export const emptyFilters: FiltersSignal = { controls: {}, selections: [] }
 
 export function filterConfigEntries(config: FilterConfig): Array<[string, FilterDefinition]> {
   return config.map((definition) => [definition.id, definition])
@@ -91,7 +94,7 @@ export function defaultControl(definition: FilterDefinition): FilterControl {
 export function filtersFromURLParams(config: FilterConfig, filters: FiltersSignal, params: URLParamsShape): FiltersSignal {
   const next: FiltersSignal = {
     controls: { ...(filters.controls ?? {}) },
-    visualSelections: [...(filters.visualSelections ?? [])],
+    selections: [...(filters.selections ?? [])],
   }
 
   for (const [name, definition] of filterConfigEntries(config)) {

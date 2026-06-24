@@ -93,29 +93,41 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Operator: operator, Values: []any{value}})
 		}
 	}
-	for _, selection := range filters.VisualSelections {
-		if selection.VisualID == "" || len(selection.Values) == 0 {
+	for _, selection := range filters.Selections {
+		if selection.SourceKind == "" || selection.SourceID == "" || len(selection.Entries) == 0 {
 			continue
 		}
-		if targetKind == "visual" && selection.VisualID == targetID {
+		if !targetsInteractionSelection(report, selection, targetKind, targetID) {
 			continue
 		}
-		sourceVisual, ok := report.Visuals[selection.VisualID]
-		if !ok || !targetsSelection(sourceVisual.Interaction.Targets, targetKind, targetID) {
+		groups := make([]reportdef.QueryFilterGroup, 0, len(selection.Entries))
+		for _, entry := range selection.Entries {
+			group := reportdef.QueryFilterGroup{}
+			valid := len(entry.Mappings) > 0
+			for _, mapping := range entry.Mappings {
+				if mapping.Value == "" {
+					valid = false
+					break
+				}
+				dimension, err := runtime.model.ResolveDimension(mapping.Field)
+				if err != nil {
+					valid = false
+					break
+				}
+				group.Filters = append(group.Filters, reportdef.QueryFilter{Field: dimension.Field, Operator: "equals", Values: []any{mapping.Value}})
+			}
+			if valid && len(group.Filters) == len(entry.Mappings) {
+				groups = append(groups, group)
+			}
+		}
+		switch len(groups) {
+		case 0:
 			continue
+		case 1:
+			result = append(result, groups[0].Filters...)
+		default:
+			result = append(result, reportdef.QueryFilter{Groups: groups})
 		}
-		if selection.Operator != "" && selection.Operator != "in" {
-			continue
-		}
-		dimension, err := runtime.model.ResolveDimension(selection.Field)
-		if err != nil {
-			continue
-		}
-		values := make([]any, len(selection.Values))
-		for i, value := range selection.Values {
-			values[i] = value
-		}
-		result = append(result, reportdef.QueryFilter{Field: dimension.Field, Operator: "in", Values: values})
 	}
 	return result, nil
 }
@@ -175,12 +187,20 @@ func tableForField(field string) string {
 	return ""
 }
 
-func targetsSelection(targets reportdef.InteractionTargets, targetKind, targetID string) bool {
-	switch targetKind {
+func targetsInteractionSelection(report *reportdef.Dashboard, selection dashboard.InteractionSelection, targetKind, targetID string) bool {
+	switch selection.SourceKind {
 	case "visual":
-		return contains(targets.Visuals, targetID)
+		visual, ok := report.Visuals[selection.SourceID]
+		if !ok || selection.InteractionKind != "point_selection" {
+			return false
+		}
+		return contains(visual.Interaction.PointSelection.Targets, targetID)
 	case "table":
-		return contains(targets.Tables, targetID)
+		table, ok := report.Tables[selection.SourceID]
+		if !ok || selection.InteractionKind != "row_selection" {
+			return false
+		}
+		return contains(table.Interaction.RowSelection.Targets, targetID)
 	default:
 		return false
 	}

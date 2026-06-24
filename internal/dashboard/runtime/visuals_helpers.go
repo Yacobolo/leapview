@@ -212,34 +212,97 @@ func dimensionSortColumn(shape string, index int) string {
 	}
 }
 
-func selectedValues(filters dashboard.Filters, visualID string) []string {
-	for _, selection := range filters.VisualSelections {
-		if selection.VisualID == visualID {
-			values := make([]string, len(selection.Values))
-			copy(values, selection.Values)
-			return values
-		}
-	}
-	return []string{}
+func visualInteractionConfig(selection reportdef.SelectionInteraction) dashboard.InteractionConfig {
+	return interactionConfig("point_selection", selection)
 }
 
-func markSelected(data []dashboard.Datum, key string, values []string) {
-	if len(values) == 0 {
-		return
+func tableInteractionConfig(selection reportdef.SelectionInteraction) dashboard.InteractionConfig {
+	return interactionConfig("row_selection", selection)
+}
+
+func interactionConfig(kind string, selection reportdef.SelectionInteraction) dashboard.InteractionConfig {
+	mappings := make([]dashboard.InteractionConfigMapping, 0, len(selection.Mappings))
+	for _, mapping := range selection.Mappings {
+		mappings = append(mappings, dashboard.InteractionConfigMapping{
+			Field: mapping.Field,
+			Value: mapping.Value,
+			Label: mapping.Label,
+		})
 	}
-	selected := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		selected[value] = struct{}{}
+	return dashboard.InteractionConfig{
+		Kind:     kind,
+		Toggle:   selection.Toggle,
+		Mappings: mappings,
+		Targets:  append([]string{}, selection.Targets...),
 	}
-	for _, row := range data {
-		value, ok := row[key]
-		if !ok {
+}
+
+func selectedEntries(filters dashboard.Filters, sourceKind, sourceID string) []dashboard.InteractionSelectionEntry {
+	entries := []dashboard.InteractionSelectionEntry{}
+	for _, selection := range filters.Selections {
+		if selection.SourceKind != sourceKind || selection.SourceID != sourceID {
 			continue
 		}
-		if _, ok := selected[fmt.Sprint(value)]; ok {
+		for _, entry := range selection.Entries {
+			entries = append(entries, copySelectionEntry(entry))
+		}
+	}
+	return entries
+}
+
+func copySelectionEntry(entry dashboard.InteractionSelectionEntry) dashboard.InteractionSelectionEntry {
+	next := dashboard.InteractionSelectionEntry{
+		Label:    entry.Label,
+		Mappings: make([]dashboard.InteractionSelectionMapping, len(entry.Mappings)),
+	}
+	copy(next.Mappings, entry.Mappings)
+	return next
+}
+
+func markSelected(data []dashboard.Datum, selection reportdef.SelectionInteraction, entries []dashboard.InteractionSelectionEntry) {
+	if len(data) == 0 || len(selection.Mappings) == 0 || len(entries) == 0 {
+		return
+	}
+	for _, row := range data {
+		if datumMatchesAnySelectionEntry(row, selection.Mappings, entries) {
 			row["selected"] = true
 		}
 	}
+}
+
+func datumMatchesAnySelectionEntry(row dashboard.Datum, mappings []reportdef.SelectionMapping, entries []dashboard.InteractionSelectionEntry) bool {
+	for _, entry := range entries {
+		if datumMatchesSelectionEntry(row, mappings, entry) {
+			return true
+		}
+	}
+	return false
+}
+
+func datumMatchesSelectionEntry(row dashboard.Datum, mappings []reportdef.SelectionMapping, entry dashboard.InteractionSelectionEntry) bool {
+	if len(entry.Mappings) == 0 {
+		return false
+	}
+	for _, mapping := range mappings {
+		selectedValue, ok := selectionEntryMappingValue(entry, mapping.Field)
+		if !ok || selectedValue == "" {
+			return false
+		}
+		value, ok := row[mapping.Value]
+		if !ok || fmt.Sprint(value) != selectedValue {
+			return false
+		}
+	}
+	return true
+}
+
+func selectionEntryMappingValue(entry dashboard.InteractionSelectionEntry, field string) (string, bool) {
+	for _, mapping := range entry.Mappings {
+		if mapping.Field == field {
+			return mapping.Value, true
+		}
+	}
+	return "", false
 }
 
 func normalizeDatumValue(value any) any {

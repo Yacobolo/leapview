@@ -39,6 +39,28 @@ export type ChartShape =
 
 export type ChartDatum = Record<string, unknown>
 
+export type InteractionConfig = {
+  kind?: string
+  toggle?: boolean
+  mappings?: InteractionMapping[]
+  targets?: string[]
+}
+
+export type InteractionMapping = {
+  field: string
+  value: string
+  label?: string
+}
+
+export type InteractionSelectionEntry = {
+  mappings?: Array<{
+    field?: string
+    value?: string
+    label?: string
+  }>
+  label?: string
+}
+
 export type ChartPayload = {
   version?: number
   id?: string
@@ -49,12 +71,12 @@ export type ChartPayload = {
   title?: string
   unit?: string
   format?: string
-  field?: string
+  interaction?: InteractionConfig
   dimensions?: string[]
   measure?: string
   measures?: string[]
   series?: string[]
-  selection?: string[]
+  selection?: InteractionSelectionEntry[]
   data?: ChartDatum[]
   options?: Record<string, unknown>
   rendererOptions?: Record<string, Record<string, unknown>>
@@ -63,7 +85,7 @@ export type ChartPayload = {
 export type VisualAction = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
 
 export type ChartRendererContext = {
-  selectLabel(label: string): void
+  selectDatum(datum: ChartDatum, index: number): void
 }
 
 export type ChartRendererHandle = {

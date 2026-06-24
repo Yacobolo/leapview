@@ -21,22 +21,22 @@ type Dashboard struct {
 }
 
 type FilterDefinition struct {
-	Type             string             `yaml:"type" json:"type"`
-	Label            string             `yaml:"label" json:"label"`
-	Dimension        string             `yaml:"field" json:"dimension"`
-	Default          FilterDefault      `yaml:"default" json:"default"`
-	Custom           bool               `yaml:"custom" json:"custom,omitempty"`
-	Presets          []FilterPreset     `yaml:"presets" json:"presets,omitempty"`
-	Operator         string             `yaml:"operator" json:"operator,omitempty"`
-	Values           FilterValues       `yaml:"values" json:"values,omitempty"`
-	DefaultOperator  string             `yaml:"default_operator" json:"defaultOperator,omitempty"`
-	Operators        []string           `yaml:"operators" json:"operators,omitempty"`
-	Options          []FilterOption     `yaml:"options" json:"options,omitempty"`
-	URLParam         string             `yaml:"url_param" json:"urlParam,omitempty"`
-	FromURLParam     string             `yaml:"from_url_param" json:"fromURLParam,omitempty"`
-	ToURLParam       string             `yaml:"to_url_param" json:"toURLParam,omitempty"`
-	OperatorURLParam string             `yaml:"operator_url_param" json:"operatorURLParam,omitempty"`
-	Targets          InteractionTargets `yaml:"targets" json:"targets,omitempty"`
+	Type             string         `yaml:"type" json:"type"`
+	Label            string         `yaml:"label" json:"label"`
+	Dimension        string         `yaml:"field" json:"dimension"`
+	Default          FilterDefault  `yaml:"default" json:"default"`
+	Custom           bool           `yaml:"custom" json:"custom,omitempty"`
+	Presets          []FilterPreset `yaml:"presets" json:"presets,omitempty"`
+	Operator         string         `yaml:"operator" json:"operator,omitempty"`
+	Values           FilterValues   `yaml:"values" json:"values,omitempty"`
+	DefaultOperator  string         `yaml:"default_operator" json:"defaultOperator,omitempty"`
+	Operators        []string       `yaml:"operators" json:"operators,omitempty"`
+	Options          []FilterOption `yaml:"options" json:"options,omitempty"`
+	URLParam         string         `yaml:"url_param" json:"urlParam,omitempty"`
+	FromURLParam     string         `yaml:"from_url_param" json:"fromURLParam,omitempty"`
+	ToURLParam       string         `yaml:"to_url_param" json:"toURLParam,omitempty"`
+	OperatorURLParam string         `yaml:"operator_url_param" json:"operatorURLParam,omitempty"`
+	Targets          FilterTargets  `yaml:"targets" json:"targets,omitempty"`
 }
 
 type FilterConfig struct {
@@ -284,13 +284,82 @@ type Sort struct {
 }
 
 type Interaction struct {
-	Field   string             `yaml:"field"`
-	Targets InteractionTargets `yaml:"targets"`
+	PointSelection SelectionInteraction `yaml:"point_selection" json:"pointSelection,omitempty"`
+	RowSelection   SelectionInteraction `yaml:"row_selection" json:"rowSelection,omitempty"`
 }
 
-type InteractionTargets struct {
+type FilterTargets struct {
 	Visuals []string `yaml:"visuals" json:"visuals,omitempty"`
 	Tables  []string `yaml:"tables" json:"tables,omitempty"`
+}
+
+type SelectionInteraction struct {
+	Toggle   bool               `yaml:"toggle" json:"toggle,omitempty"`
+	Mappings []SelectionMapping `yaml:"mappings" json:"mappings,omitempty"`
+	Targets  []string           `yaml:"targets" json:"targets,omitempty"`
+}
+
+type SelectionMapping struct {
+	Field string `yaml:"field" json:"field"`
+	Value string `yaml:"value" json:"value"`
+	Label string `yaml:"label" json:"label,omitempty"`
+}
+
+func (s *SelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("selection interaction must be a mapping")
+	}
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		key := value.Content[index].Value
+		item := value.Content[index+1]
+		switch key {
+		case "toggle":
+			if err := item.Decode(&s.Toggle); err != nil {
+				return err
+			}
+		case "mappings":
+			if err := item.Decode(&s.Mappings); err != nil {
+				return err
+			}
+		case "targets":
+			if err := item.Decode(&s.Targets); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("field %s not found in type report.SelectionInteraction", key)
+		}
+	}
+	return nil
+}
+
+func (i *Interaction) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode && value.Tag == "!!null" {
+		return nil
+	}
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("interaction must be a mapping")
+	}
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		key := value.Content[index].Value
+		item := value.Content[index+1]
+		switch key {
+		case "point_selection":
+			if err := item.Decode(&i.PointSelection); err != nil {
+				return err
+			}
+		case "row_selection":
+			if err := item.Decode(&i.RowSelection); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("field %s not found in type report.Interaction", key)
+		}
+	}
+	return nil
+}
+
+func (s SelectionInteraction) IsZero() bool {
+	return !s.Toggle && len(s.Mappings) == 0 && len(s.Targets) == 0
 }
 
 type TableVisual struct {
@@ -300,6 +369,7 @@ type TableVisual struct {
 	DefaultSort       dashboard.TableSort                        `yaml:"default_sort"`
 	Style             dashboard.TableStyle                       `yaml:"style"`
 	Columns           []dashboard.TableColumn                    `yaml:"columns"`
+	Interaction       Interaction                                `yaml:"interaction"`
 	Rows              []string                                   `yaml:"-"`
 	Measures          []string                                   `yaml:"-"`
 	MeasureFormatting map[string][]dashboard.TableFormattingRule `yaml:"measure_formatting"`

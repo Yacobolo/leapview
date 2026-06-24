@@ -55,6 +55,7 @@ func (s *VisualQueryService) visuals(ctx context.Context, runtime *modelRuntime,
 		if visualType == "" && visual.KindOrDefault() == "kpi" {
 			visualType = "kpi"
 		}
+		interaction := visualInteractionConfig(visual.Interaction.PointSelection)
 		visuals[key] = dashboard.Visual{
 			Version:         3,
 			ID:              key,
@@ -65,14 +66,14 @@ func (s *VisualQueryService) visuals(ctx context.Context, runtime *modelRuntime,
 			Title:           title,
 			Unit:            unit,
 			Format:          measure.Format,
-			Field:           visual.Interaction.Field,
+			Interaction:     interaction,
 			Dimensions:      displayFields(queryDimensionFields(visual.Query.Dimensions)),
 			Measure:         displayField(measureName),
 			Measures:        displayFields(queryMeasureFields(visual.Query.Measures)),
 			Series:          series,
 			Options:         visual.CoreOptions(),
 			RendererOptions: rendererOptions,
-			Selection:       selectedValues(filters, key),
+			Selection:       selectedEntries(filters, "visual", key),
 			Data:            data,
 		}
 	}
@@ -140,7 +141,7 @@ func (s *VisualQueryService) categoryData(ctx context.Context, runtime *modelRun
 			}
 		}
 	}
-	markSelected(data, "label", selectedValues(filters, visualID))
+	markSelected(data, visual.Interaction.PointSelection, selectedEntries(filters, "visual", visualID))
 	return data, nil
 }
 
@@ -180,7 +181,7 @@ func (s *VisualQueryService) categoryMultiMeasureData(ctx context.Context, runti
 		}
 		data = append(data, rows...)
 	}
-	markSelected(data, "label", selectedValues(filters, visualID))
+	markSelected(data, visual.Interaction.PointSelection, selectedEntries(filters, "visual", visualID))
 	return data, nil
 }
 
@@ -307,7 +308,9 @@ func (s *VisualQueryService) singleValueData(ctx context.Context, runtime *model
 		}
 		row["series"] = ""
 	}
-	markSelected(data, "label", selectedValues(filters, visualID))
+	if len(visual.Query.Dimensions) == 1 {
+		markSelected(data, visual.Interaction.PointSelection, selectedEntries(filters, "visual", visualID))
+	}
 	return data, nil
 }
 
@@ -348,7 +351,7 @@ func (s *VisualQueryService) dimensionPairData(ctx context.Context, runtime *mod
 		}
 	}
 	if leftAlias == "row" {
-		markSelected(data, "row", selectedValues(filters, visualID))
+		markSelected(data, visual.Interaction.PointSelection, selectedEntries(filters, "visual", visualID))
 	}
 	return data, nil
 }
@@ -368,7 +371,7 @@ func (s *VisualQueryService) geoData(ctx context.Context, runtime *modelRuntime,
 	if err != nil {
 		return nil, err
 	}
-	markSelected(data, "name", selectedValues(filters, visualID))
+	markSelected(data, visual.Interaction.PointSelection, selectedEntries(filters, "visual", visualID))
 	return data, nil
 }
 

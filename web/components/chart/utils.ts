@@ -1,5 +1,7 @@
 import type { ChartDatum, ChartPayload, ChartShape, ChartTokens, ChartType } from './types'
 
+export const libreDashPayloadRowIndexKey = '__libredashPayloadRowIndex'
+
 export function stylesFor(element: HTMLElement): ChartTokens {
   const styles = getComputedStyle(element)
   const token = (...names: string[]) => {
@@ -172,6 +174,16 @@ export function booleanValue(row: ChartDatum | undefined, key: string): boolean 
   return row?.[key] === true
 }
 
+export function withPayloadRowIndex<T extends Record<string, unknown>>(item: T, index: number): T {
+  return { ...item, [libreDashPayloadRowIndexKey]: index } as T
+}
+
+export function payloadRowIndexFromData(data: unknown): number | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const index = (data as Record<string, unknown>)[libreDashPayloadRowIndexKey]
+  return typeof index === 'number' && Number.isInteger(index) && index >= 0 ? index : undefined
+}
+
 export function colorWithAlpha(color: string, alpha: number): string {
   if (color.startsWith('#') && color.length === 7) {
     const r = Number.parseInt(color.slice(1, 3), 16)
@@ -275,13 +287,36 @@ export function chartRows(payload: ChartPayload) {
   })
 }
 
-export function selectedValues(payload: ChartPayload, key = 'label') {
-  const rows = payload.data ?? []
-  const selected = new Set([
-    ...(payload.selection ?? []),
-    ...rows.filter((row) => booleanValue(row, 'selected')).map((row) => stringValue(row, key)),
-  ])
-  return { selected, hasSelection: selected.size > 0 }
+export function selectedRows(payload: ChartPayload, fallbackKey = 'label') {
+	const rows = payload.data ?? []
+	const mappings = payload.interaction?.mappings ?? []
+	const entries = payload.selection ?? []
+	const tupleKeys = new Set(entries.map((entry) => selectedEntryKey(entry, mappings)).filter(Boolean))
+	const fallbackValues = new Set(rows.filter((row) => booleanValue(row, 'selected')).map((row) => stringValue(row, fallbackKey)))
+	const hasSelection = tupleKeys.size > 0 || fallbackValues.size > 0
+	return {
+		hasSelection,
+		isSelected(row: ChartDatum, key = fallbackKey): boolean {
+			if (tupleKeys.size > 0) return tupleKeys.has(datumSelectionKey(row, mappings))
+			return booleanValue(row, 'selected') || fallbackValues.has(stringValue(row, key))
+		},
+	}
+}
+
+function selectedEntryKey(entry: NonNullable<ChartPayload['selection']>[number], mappings: NonNullable<ChartPayload['interaction']>['mappings']): string {
+	if (!mappings?.length || !entry.mappings?.length) return ''
+	const parts: string[] = []
+	for (const mapping of mappings) {
+		const selected = entry.mappings.find((candidate) => candidate.field === mapping.field)
+		if (!selected?.value) return ''
+		parts.push(`${mapping.field}\u0000${selected.value}`)
+	}
+	return parts.join('\u0001')
+}
+
+function datumSelectionKey(row: ChartDatum, mappings: NonNullable<ChartPayload['interaction']>['mappings']): string {
+	if (!mappings?.length) return ''
+	return mappings.map((mapping) => `${mapping.field}\u0000${stringValue(row, mapping.value)}`).join('\u0001')
 }
 
 export function titleCase(value: string): string {

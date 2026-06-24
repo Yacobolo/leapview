@@ -1,10 +1,10 @@
 package report
 
-func (targets InteractionTargets) IsEmpty() bool {
+func (targets FilterTargets) IsEmpty() bool {
 	return len(targets.Visuals) == 0 && len(targets.Tables) == 0
 }
 
-func (targets InteractionTargets) Contains(kind, id string) bool {
+func (targets FilterTargets) Contains(kind, id string) bool {
 	switch kind {
 	case "visual":
 		return containsString(targets.Visuals, id)
