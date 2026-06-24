@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +19,12 @@ import (
 )
 
 type principalContextKey struct{}
+type apiCredentialContextKey struct{}
+
+var (
+	errUnauthorized = errors.New("unauthorized")
+	errForbidden    = errors.New("forbidden")
+)
 
 type Principal struct {
 	ID          string `json:"id"`
@@ -69,6 +76,10 @@ func NewAuth(repo access.Repository, workspaceID string, cfg AuthConfig) *Auth {
 		csrf.Secure(cfg.CookieSecure),
 		csrf.SameSite(csrf.SameSiteLaxMode),
 		csrf.ErrorHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if wantsJSON(r) {
+				writeJSONError(w, csrf.FailureReason(r), http.StatusForbidden)
+				return
+			}
 			http.Error(w, csrf.FailureReason(r).Error(), http.StatusForbidden)
 		})),
 	)
@@ -149,34 +160,57 @@ func (a *Auth) Principal(r *http.Request) (Principal, bool) {
 	return Principal{}, false
 }
 
+func (a *Auth) APICredential(r *http.Request) (access.APICredential, bool) {
+	if value, ok := r.Context().Value(apiCredentialContextKey{}).(access.APICredential); ok {
+		return value, true
+	}
+	return access.APICredential{}, false
+}
+
 func (a *Auth) Middleware(permission string, next http.Handler) http.Handler {
 	if !a.Enabled() {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		principal, ok := a.authenticate(r)
+		principal, credential, ok := a.authenticate(r)
 		if !ok {
 			if wantsJSON(r) {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
 				return
 			}
 			http.Redirect(w, r, "/auth/azureadv2", http.StatusFound)
 			return
 		}
 		if permission != "" && !principal.DevBypass {
-			allowed, err := a.repo.HasPermission(r.Context(), a.permissionWorkspaceID(r), principal.ID, permission)
+			workspaceID := a.permissionWorkspaceID(r)
+			if credential != nil && !apiTokenAllows((*credential).Token, workspaceID, permission) {
+				writeAuthError(w, r, errForbidden, http.StatusForbidden)
+				return
+			}
+			allowed, err := a.repo.HasPermission(r.Context(), workspaceID, principal.ID, permission)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				writeAuthError(w, r, err, http.StatusInternalServerError)
 				return
 			}
 			if !allowed {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				writeAuthError(w, r, errForbidden, http.StatusForbidden)
 				return
 			}
 		}
 		ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
+		if credential != nil {
+			ctx = context.WithValue(ctx, apiCredentialContextKey{}, *credential)
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func writeAuthError(w http.ResponseWriter, r *http.Request, err error, status int) {
+	if wantsJSON(r) {
+		writeJSONError(w, err, status)
+		return
+	}
+	http.Error(w, err.Error(), status)
 }
 
 func (a *Auth) permissionWorkspaceID(r *http.Request) string {
@@ -206,31 +240,47 @@ func (a *Auth) CSRFMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (a *Auth) authenticate(r *http.Request) (Principal, bool) {
+func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, bool) {
 	if a.devBypass {
-		return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}, true
+		return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}, nil, true
 	}
 	if token := bearerToken(r); token != "" {
-		principal, err := a.repo.PrincipalForAPIToken(r.Context(), token)
+		credential, err := a.repo.CredentialForAPIToken(r.Context(), token)
 		if err == nil {
-			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, true
+			principal := credential.Principal
+			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
 		}
 	}
 	if a.apiTokenOnly {
-		return Principal{}, false
+		return Principal{}, nil, false
 	}
 	cookie, err := r.Cookie("ld_session")
 	if err != nil || cookie.Value == "" {
-		return Principal{}, false
+		return Principal{}, nil, false
 	}
 	principal, err := a.repo.PrincipalForToken(r.Context(), cookie.Value)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			return Principal{}, false
+			return Principal{}, nil, false
 		}
-		return Principal{}, false
+		return Principal{}, nil, false
 	}
-	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, true
+	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, nil, true
+}
+
+func apiTokenAllows(token access.APIToken, workspaceID, permission string) bool {
+	if token.WorkspaceID != "" && token.WorkspaceID != workspaceID {
+		return false
+	}
+	if token.Permissions == nil {
+		return true
+	}
+	for _, allowed := range token.Permissions {
+		if allowed == permission {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Auth) sessionCookie(token string, expires time.Time) *http.Cookie {

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 
 	"github.com/Yacobolo/libredash/internal/access"
@@ -72,10 +74,83 @@ func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r
 		return
 	}
 	a.server.protect(permission, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, w, r); !ok {
+		buffered := newAPIGenResponseBuffer(w)
+		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, buffered, r); !ok {
 			http.NotFound(w, r)
+			return
 		}
+		buffered.flush()
 	})).ServeHTTP(w, r)
+}
+
+type apiGenResponseBuffer struct {
+	downstream http.ResponseWriter
+	header     http.Header
+	body       bytes.Buffer
+	status     int
+}
+
+func newAPIGenResponseBuffer(w http.ResponseWriter) *apiGenResponseBuffer {
+	return &apiGenResponseBuffer{downstream: w, header: http.Header{}}
+}
+
+func (w *apiGenResponseBuffer) Header() http.Header {
+	return w.header
+}
+
+func (w *apiGenResponseBuffer) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *apiGenResponseBuffer) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(data)
+}
+
+func (w *apiGenResponseBuffer) flush() {
+	status := w.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	for key, values := range w.header {
+		for _, value := range values {
+			w.downstream.Header().Add(key, value)
+		}
+	}
+	body := w.normalizedBody(status)
+	w.downstream.WriteHeader(status)
+	_, _ = w.downstream.Write(body)
+}
+
+func (w *apiGenResponseBuffer) normalizedBody(status int) []byte {
+	if status < 400 || w.body.Len() == 0 {
+		return w.body.Bytes()
+	}
+	var value map[string]any
+	if err := json.Unmarshal(w.body.Bytes(), &value); err != nil {
+		return w.body.Bytes()
+	}
+	if _, ok := value["code"]; !ok {
+		return w.body.Bytes()
+	}
+	if _, ok := value["message"]; !ok {
+		return w.body.Bytes()
+	}
+	if _, ok := value["details"]; !ok {
+		value["details"] = map[string]any{}
+	}
+	if _, ok := value["requestId"]; !ok {
+		value["requestId"] = ""
+	}
+	out, err := json.Marshal(value)
+	if err != nil {
+		return w.body.Bytes()
+	}
+	return append(out, '\n')
 }
 
 func (a apiGenAdapter) GetCurrentPrincipal(w http.ResponseWriter, r *http.Request) {

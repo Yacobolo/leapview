@@ -145,6 +145,7 @@ func TestDeploymentAPIRequiresAuthentication(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	assertAPIError(t, rec, http.StatusUnauthorized, "unauthorized")
 }
 
 func TestDeploymentAPIRejectsBrowserPostWithoutCSRF(t *testing.T) {
@@ -161,6 +162,7 @@ func TestDeploymentAPIRejectsBrowserPostWithoutCSRF(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
+	assertAPIError(t, rec, http.StatusForbidden, "CSRF")
 }
 
 func TestCSRFMiddlewareAllowsBrowserPostWithToken(t *testing.T) {
@@ -251,6 +253,7 @@ func TestDeploymentAPIRejectsViewer(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
+	assertAPIError(t, rec, http.StatusForbidden, "forbidden")
 }
 
 func TestDeploymentAPIV1CreateUsesPathWorkspaceAndRejectsMalformedJSON(t *testing.T) {
@@ -267,6 +270,7 @@ func TestDeploymentAPIV1CreateUsesPathWorkspaceAndRejectsMalformedJSON(t *testin
 	if malformedRec.Code != http.StatusBadRequest {
 		t.Fatalf("malformed status = %d, want %d body=%s", malformedRec.Code, http.StatusBadRequest, malformedRec.Body.String())
 	}
+	assertAPIError(t, malformedRec, http.StatusBadRequest, "malformed JSON")
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/path-workspace/deployments", bytes.NewBufferString(`{"title":"Path wins"}`))
 	createReq.Header.Set("Authorization", "Bearer dev")
@@ -283,6 +287,114 @@ func TestDeploymentAPIV1CreateUsesPathWorkspaceAndRejectsMalformedJSON(t *testin
 	if created.WorkspaceID != "path-workspace" {
 		t.Fatalf("workspaceID = %q, want path-workspace", created.WorkspaceID)
 	}
+}
+
+func TestDeploymentAPIV1CreateRejectsBodyWorkspaceID(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "matching", body: `{"workspaceId":"path-workspace","title":"Ignored"}`},
+		{name: "mismatched", body: `{"workspaceId":"other-workspace","title":"Ignored"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/path-workspace/deployments", bytes.NewBufferString(tc.body))
+			req.Header.Set("Authorization", "Bearer dev")
+			req.Header.Set("Accept", "application/json")
+			rec := httptest.NewRecorder()
+			server.Routes().ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestDeploymentAPIListUsesEnvelopeAndOpaquePageToken(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	ctx := context.Background()
+	for i, id := range []string{"dep_old", "dep_mid", "dep_new"} {
+		createdAt := time.Date(2026, 1, 2, 15, 4, i+1, 0, time.UTC).Format(time.RFC3339)
+		if _, err := store.SQLDB().ExecContext(ctx, `
+			INSERT INTO deployments (id, workspace_id, status, digest, manifest_json, created_by, created_at)
+			VALUES (?, 'test', 'created', ?, '{}', 'tester', ?)
+		`, id, "sha256:"+id, createdAt); err != nil {
+			t.Fatalf("seed deployment %s: %v", id, err)
+		}
+	}
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	firstReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/deployments?limit=2", nil)
+	firstReq.Header.Set("Authorization", "Bearer dev")
+	firstReq.Header.Set("Accept", "application/json")
+	firstRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("first status = %d body=%s", firstRec.Code, firstRec.Body.String())
+	}
+	var first struct {
+		Items []api.DeploymentResponse `json:"items"`
+		Page  struct {
+			NextCursor string `json:"nextCursor"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(firstRec.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode first page: %v", err)
+	}
+	if len(first.Items) != 2 || first.Items[0].ID != "dep_new" || first.Items[1].ID != "dep_mid" {
+		t.Fatalf("first items = %#v", first.Items)
+	}
+	if first.Page.NextCursor == "" || first.Page.NextCursor == "dep_mid" {
+		t.Fatalf("next cursor = %q, want non-empty opaque cursor", first.Page.NextCursor)
+	}
+
+	nextReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/deployments?limit=2&pageToken="+first.Page.NextCursor, nil)
+	nextReq.Header.Set("Authorization", "Bearer dev")
+	nextReq.Header.Set("Accept", "application/json")
+	nextRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(nextRec, nextReq)
+	if nextRec.Code != http.StatusOK {
+		t.Fatalf("next status = %d body=%s", nextRec.Code, nextRec.Body.String())
+	}
+	var next struct {
+		Items []api.DeploymentResponse `json:"items"`
+		Page  struct {
+			NextCursor string `json:"nextCursor"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(nextRec.Body.Bytes(), &next); err != nil {
+		t.Fatalf("decode next page: %v", err)
+	}
+	if len(next.Items) != 1 || next.Items[0].ID != "dep_old" {
+		t.Fatalf("next items = %#v", next.Items)
+	}
+	if next.Page.NextCursor != "" {
+		t.Fatalf("next cursor = %q, want empty final cursor", next.Page.NextCursor)
+	}
+}
+
+func TestDeploymentAPIQueryBindingErrorUsesErrorContract(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/deployments?limit=oops", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	assertAPIError(t, rec, http.StatusBadRequest, "limit")
 }
 
 func TestDeploymentAPIV1WrongWorkspaceDeploymentReturnsNotFound(t *testing.T) {
@@ -317,6 +429,7 @@ func TestDeploymentAPIV1WrongWorkspaceDeploymentReturnsNotFound(t *testing.T) {
 			if rec.Code != http.StatusNotFound {
 				t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
 			}
+			assertAPIError(t, rec, http.StatusNotFound, "not found")
 		})
 	}
 }
@@ -888,6 +1001,94 @@ func TestWorkspaceRoleBindingAPIUpsertsPrincipalRole(t *testing.T) {
 	}
 }
 
+func TestGroupDeleteIsWorkspaceScopedAndCleansMembershipsAndBindings(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	member, err := testAccessRepository(store).UpsertPrincipal(ctx, access.PrincipalInput{ID: access.PrincipalIDForEmail("member@example.com"), Email: "member@example.com", DisplayName: "Member"})
+	if err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "other", Title: "Other"}); err != nil {
+		t.Fatalf("ensure other workspace: %v", err)
+	}
+	repo := testAccessRepository(store)
+	group, err := repo.UpsertGroup(ctx, access.GroupInput{ID: "group_test_finance", WorkspaceID: "test", Provider: "local", ExternalID: "finance", Name: "Finance"})
+	if err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	otherGroup, err := repo.UpsertGroup(ctx, access.GroupInput{ID: "group_other_finance", WorkspaceID: "other", Provider: "local", ExternalID: "finance", Name: "Other Finance"})
+	if err != nil {
+		t.Fatalf("seed other group: %v", err)
+	}
+	if err := repo.AddGroupMember(ctx, "test", group.ID, member.ID); err != nil {
+		t.Fatalf("add group member: %v", err)
+	}
+	if err := repo.AddGroupMember(ctx, "other", otherGroup.ID, member.ID); err != nil {
+		t.Fatalf("add other group member: %v", err)
+	}
+	if _, err := repo.CreateRoleBinding(ctx, access.RoleBindingInput{WorkspaceID: "test", SubjectType: access.SubjectGroup, SubjectID: group.ID, Role: access.RoleViewer}); err != nil {
+		t.Fatalf("create group binding: %v", err)
+	}
+	if _, err := repo.CreateRoleBinding(ctx, access.RoleBindingInput{WorkspaceID: "other", SubjectType: access.SubjectGroup, SubjectID: otherGroup.ID, Role: access.RoleViewer}); err != nil {
+		t.Fatalf("create other group binding: %v", err)
+	}
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/role-bindings", nil)
+	listReq.Header.Set("Authorization", "Bearer "+token)
+	listReq.Header.Set("Accept", "application/json")
+	listRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", listRec.Code, listRec.Body.String())
+	}
+	body := listRec.Body.String()
+	if !strings.Contains(body, `"subjectType":"group"`) || !strings.Contains(body, `"subjectId":"`+group.ID+`"`) {
+		t.Fatalf("group role binding did not preserve group subject:\n%s", body)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/workspaces/test/groups/"+group.ID, nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+token)
+	deleteReq.Header.Set("Accept", "application/json")
+	deleteRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+	if groups, err := repo.ListGroups(ctx, "test"); err != nil {
+		t.Fatalf("list groups: %v", err)
+	} else if len(groups) != 0 {
+		t.Fatalf("test groups after delete = %#v, want none", groups)
+	}
+	if members, err := repo.ListGroupMembers(ctx, "test", group.ID); err != nil {
+		t.Fatalf("list members after delete: %v", err)
+	} else if len(members) != 0 {
+		t.Fatalf("test group members after delete = %#v, want none", members)
+	}
+	if bindings, err := repo.ListRoleBindings(ctx, "test"); err != nil {
+		t.Fatalf("list bindings after delete: %v", err)
+	} else {
+		for _, binding := range bindings {
+			if binding.SubjectType == access.SubjectGroup && binding.SubjectID == group.ID {
+				t.Fatalf("deleted group binding remained: %#v", binding)
+			}
+		}
+	}
+	if groups, err := repo.ListGroups(ctx, "other"); err != nil {
+		t.Fatalf("list other groups: %v", err)
+	} else if len(groups) != 1 || groups[0].ID != otherGroup.ID {
+		t.Fatalf("other groups after delete = %#v, want %s", groups, otherGroup.ID)
+	}
+	if members, err := repo.ListGroupMembers(ctx, "other", otherGroup.ID); err != nil {
+		t.Fatalf("list other members after delete: %v", err)
+	} else if len(members) != 1 || members[0].PrincipalID != member.ID {
+		t.Fatalf("other group members after delete = %#v, want member", members)
+	}
+}
+
 func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
@@ -1041,6 +1242,35 @@ func testAPIToken(t *testing.T, ctx context.Context, store *platform.Store, prin
 		t.Fatalf("create api token: %v", err)
 	}
 	return token
+}
+
+func assertAPIError(t *testing.T, rec *httptest.ResponseRecorder, wantCode int, messageContains string) {
+	t.Helper()
+	if got := rec.Result().Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json body=%s", got, rec.Body.String())
+	}
+	var body struct {
+		Code      int            `json:"code"`
+		Message   string         `json:"message"`
+		Details   map[string]any `json:"details"`
+		RequestID string         `json:"requestId"`
+		Error     string         `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode API error: %v body=%s", err, rec.Body.String())
+	}
+	if body.Code != wantCode {
+		t.Fatalf("code = %d, want %d body=%s", body.Code, wantCode, rec.Body.String())
+	}
+	if !strings.Contains(body.Message, messageContains) {
+		t.Fatalf("message = %q, want to contain %q", body.Message, messageContains)
+	}
+	if body.Details == nil {
+		t.Fatalf("details = nil, want object body=%s", rec.Body.String())
+	}
+	if body.Error != "" {
+		t.Fatalf("legacy error field present: %q body=%s", body.Error, rec.Body.String())
+	}
 }
 
 func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID string) {

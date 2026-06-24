@@ -40,7 +40,7 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	workspaceID := s.workspaceID(firstNonEmpty(chi.URLParam(r, "workspace"), input.WorkspaceID))
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	workspaceRepo, err := s.workspaceRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -174,7 +174,8 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		response = append(response, deploymentDTO(row))
 	}
-	writeJSON(w, http.StatusOK, response)
+	page, nextCursor := pageDeployments(response, apiLimit(r), r.URL.Query().Get("pageToken"))
+	writeJSON(w, http.StatusOK, pagedResponseWithCursor(page, nextCursor))
 }
 
 func (s *Server) getDeployment(w http.ResponseWriter, r *http.Request) {
@@ -236,14 +237,52 @@ func deploymentDTO(row deployment.Deployment) api.DeploymentResponse {
 	return out
 }
 
+func pageDeployments(rows []api.DeploymentResponse, limit int, pageToken string) ([]api.DeploymentResponse, string) {
+	cursorCreatedAt, cursorID := decodeCursor(pageToken)
+	start := 0
+	if cursorCreatedAt != "" && cursorID != "" {
+		for i, row := range rows {
+			if row.CreatedAt == cursorCreatedAt && row.ID == cursorID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start > len(rows) {
+		start = len(rows)
+	}
+	end := start + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	nextCursor := ""
+	if end < len(rows) && end > start {
+		last := rows[end-1]
+		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+	}
+	return rows[start:end], nextCursor
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+type apiErrorResponse struct {
+	Code      int            `json:"code"`
+	Message   string         `json:"message"`
+	Details   map[string]any `json:"details"`
+	RequestID string         `json:"requestId"`
+}
+
 func writeJSONError(w http.ResponseWriter, err error, status int) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	writeJSON(w, status, apiErrorResponse{
+		Code:      status,
+		Message:   err.Error(),
+		Details:   map[string]any{},
+		RequestID: "",
+	})
 }
 
 func decodeOptionalJSONBody(r *http.Request, dst any) error {

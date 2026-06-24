@@ -126,10 +126,11 @@ func runDeploymentsList(ctx context.Context, opts *rootOptions) error {
 	if err != nil {
 		return err
 	}
-	var rows []api.DeploymentResponse
-	if err := doJSON(ctx, http.MethodGet, listURL, token, nil, &rows); err != nil {
+	var response apiListResponse[api.DeploymentResponse]
+	if err := doJSON(ctx, http.MethodGet, listURL, token, nil, &response); err != nil {
 		return err
 	}
+	rows := response.Items
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tDIGEST\tCREATED\tACTIVATED")
 	for _, row := range rows {

@@ -347,6 +347,21 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	return err
 }
 
+const deleteGroup = `-- name: DeleteGroup :exec
+DELETE FROM groups
+WHERE workspace_id = ? AND id = ?
+`
+
+type DeleteGroupParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) DeleteGroup(ctx context.Context, arg DeleteGroupParams) error {
+	_, err := q.db.ExecContext(ctx, deleteGroup, arg.WorkspaceID, arg.ID)
+	return err
+}
+
 const deleteGroupMember = `-- name: DeleteGroupMember :exec
 DELETE FROM group_members
 WHERE workspace_id = ? AND group_id = ? AND principal_id = ?
@@ -705,8 +720,8 @@ const getRoleBindingByID = `-- name: GetRoleBindingByID :one
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN rb.principal_id IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
-  COALESCE(rb.principal_id, rb.group_id, '') AS subject_id,
+  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
   p.email,
@@ -716,7 +731,7 @@ SELECT
   rb.created_at
 FROM role_bindings rb
 JOIN roles r ON r.id = rb.role_id
-LEFT JOIN principals p ON p.id = rb.principal_id
+LEFT JOIN principals p ON p.id = NULLIF(rb.principal_id, '')
 LEFT JOIN groups g ON g.id = rb.group_id
 WHERE rb.workspace_id = ? AND rb.id = ?
 `
@@ -1304,6 +1319,11 @@ SELECT id, workspace_id, principal_id, "action", target_type, target_id, metadat
 WHERE (? = '' OR workspace_id = ?)
   AND (? = '' OR principal_id = ?)
   AND (? = '' OR action = ?)
+  AND (? = '' OR target_type = ?)
+  AND (? = '' OR target_id = ?)
+  AND (? = '' OR created_at >= ?)
+  AND (? = '' OR created_at <= ?)
+  AND (? = '' OR created_at < ? OR (created_at = ? AND id < ?))
 ORDER BY created_at DESC, id DESC
 LIMIT ?
 `
@@ -1315,6 +1335,18 @@ type ListAuditEventsParams struct {
 	PrincipalID sql.NullString `json:"principal_id"`
 	Column5     interface{}    `json:"column_5"`
 	Action      string         `json:"action"`
+	Column7     interface{}    `json:"column_7"`
+	TargetType  string         `json:"target_type"`
+	Column9     interface{}    `json:"column_9"`
+	TargetID    string         `json:"target_id"`
+	Column11    interface{}    `json:"column_11"`
+	CreatedAt   string         `json:"created_at"`
+	Column13    interface{}    `json:"column_13"`
+	CreatedAt_2 string         `json:"created_at_2"`
+	Column15    interface{}    `json:"column_15"`
+	CreatedAt_3 string         `json:"created_at_3"`
+	CreatedAt_4 string         `json:"created_at_4"`
+	ID          string         `json:"id"`
 	Limit       int64          `json:"limit"`
 }
 
@@ -1326,6 +1358,18 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 		arg.PrincipalID,
 		arg.Column5,
 		arg.Action,
+		arg.Column7,
+		arg.TargetType,
+		arg.Column9,
+		arg.TargetID,
+		arg.Column11,
+		arg.CreatedAt,
+		arg.Column13,
+		arg.CreatedAt_2,
+		arg.Column15,
+		arg.CreatedAt_3,
+		arg.CreatedAt_4,
+		arg.ID,
 		arg.Limit,
 	)
 	if err != nil {
@@ -1566,8 +1610,8 @@ const listRoleBindingsByWorkspace = `-- name: ListRoleBindingsByWorkspace :many
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN rb.principal_id IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
-  COALESCE(rb.principal_id, rb.group_id, '') AS subject_id,
+  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
   p.email,
@@ -1577,7 +1621,7 @@ SELECT
   rb.created_at
 FROM role_bindings rb
 JOIN roles r ON r.id = rb.role_id
-LEFT JOIN principals p ON p.id = rb.principal_id
+LEFT JOIN principals p ON p.id = NULLIF(rb.principal_id, '')
 LEFT JOIN groups g ON g.id = rb.group_id
 WHERE rb.workspace_id = ?
 ORDER BY subject_type, p.email, g.name, r.name
@@ -1768,6 +1812,36 @@ func (q *Queries) RevokeAPIToken(ctx context.Context, id string) error {
 	return err
 }
 
+const revokeAPITokenForPrincipal = `-- name: RevokeAPITokenForPrincipal :one
+UPDATE api_tokens
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND id = ?
+RETURNING id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at, created_at, last_used_at, revoked_at
+`
+
+type RevokeAPITokenForPrincipalParams struct {
+	PrincipalID string `json:"principal_id"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) RevokeAPITokenForPrincipal(ctx context.Context, arg RevokeAPITokenForPrincipalParams) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, revokeAPITokenForPrincipal, arg.PrincipalID, arg.ID)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.TokenHash,
+		&i.PermissionsJson,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const revokeSession = `-- name: RevokeSession :exec
 UPDATE sessions
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
@@ -1777,6 +1851,33 @@ WHERE id = ?
 func (q *Queries) RevokeSession(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, revokeSession, id)
 	return err
+}
+
+const revokeSessionForPrincipal = `-- name: RevokeSessionForPrincipal :one
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND id = ?
+RETURNING id, principal_id, token_hash, expires_at, created_at, last_seen_at, revoked_at
+`
+
+type RevokeSessionForPrincipalParams struct {
+	PrincipalID string `json:"principal_id"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) RevokeSessionForPrincipal(ctx context.Context, arg RevokeSessionForPrincipalParams) (Session, error) {
+	row := q.db.QueryRowContext(ctx, revokeSessionForPrincipal, arg.PrincipalID, arg.ID)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.RevokedAt,
+	)
+	return i, err
 }
 
 const setWorkspaceActiveDeployment = `-- name: SetWorkspaceActiveDeployment :exec

@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -377,6 +379,107 @@ func TestRepositoryListsAndRevokesAPITokens(t *testing.T) {
 	}
 }
 
+func TestRepositoryAPITokenCredentialIncludesTokenMetadata(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          "principal_api_credential",
+		Email:       "credential@example.com",
+		DisplayName: "Credential",
+	})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	secret, created, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
+		PrincipalID: principal.ID,
+		WorkspaceID: "test",
+		Name:        "scoped",
+		Permissions: []string{access.PermissionWorkspaceRead, access.PermissionTokenManage},
+	})
+	if err != nil {
+		t.Fatalf("create api token: %v", err)
+	}
+
+	credential, err := repo.CredentialForAPIToken(ctx, secret)
+	if err != nil {
+		t.Fatalf("credential for api token: %v", err)
+	}
+	if credential.Principal.ID != principal.ID {
+		t.Fatalf("credential principal = %q, want %q", credential.Principal.ID, principal.ID)
+	}
+	if credential.Token.ID != created.ID || credential.Token.WorkspaceID != "test" {
+		t.Fatalf("credential token metadata = id %q workspace %q, want %q/test", credential.Token.ID, credential.Token.WorkspaceID, created.ID)
+	}
+	if len(credential.Token.Permissions) != 2 || credential.Token.Permissions[0] != access.PermissionWorkspaceRead || credential.Token.Permissions[1] != access.PermissionTokenManage {
+		t.Fatalf("credential token permissions = %#v", credential.Token.Permissions)
+	}
+}
+
+func TestRepositoryScopedRevocationRejectsForeignOrUnknownIDs(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	owner, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "principal_revoke_owner", Email: "owner@example.com", DisplayName: "Owner"})
+	if err != nil {
+		t.Fatalf("upsert owner: %v", err)
+	}
+	foreign, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "principal_revoke_foreign", Email: "foreign@example.com", DisplayName: "Foreign"})
+	if err != nil {
+		t.Fatalf("upsert foreign: %v", err)
+	}
+	ownerSessionSecret, err := repo.CreateSession(ctx, owner.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("create owner session: %v", err)
+	}
+	foreignSessionSecret, err := repo.CreateSession(ctx, foreign.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("create foreign session: %v", err)
+	}
+	ownerSessions, err := repo.ListSessions(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("list owner sessions: %v", err)
+	}
+	foreignSessions, err := repo.ListSessions(ctx, foreign.ID)
+	if err != nil {
+		t.Fatalf("list foreign sessions: %v", err)
+	}
+	if err := repo.RevokeSessionForPrincipal(ctx, owner.ID, foreignSessions[0].ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("revoke foreign session err = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := repo.PrincipalForToken(ctx, foreignSessionSecret); err != nil {
+		t.Fatalf("foreign session was revoked by owner: %v", err)
+	}
+	if err := repo.RevokeSessionForPrincipal(ctx, owner.ID, ownerSessions[0].ID); err != nil {
+		t.Fatalf("revoke owner session: %v", err)
+	}
+	if _, err := repo.PrincipalForToken(ctx, ownerSessionSecret); err == nil {
+		t.Fatal("owner session still resolves after scoped revoke")
+	}
+
+	ownerSecret, ownerToken, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{PrincipalID: owner.ID, Name: "owner"})
+	if err != nil {
+		t.Fatalf("create owner api token: %v", err)
+	}
+	foreignSecret, foreignToken, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{PrincipalID: foreign.ID, Name: "foreign"})
+	if err != nil {
+		t.Fatalf("create foreign api token: %v", err)
+	}
+	if err := repo.RevokeAPITokenForPrincipal(ctx, owner.ID, foreignToken.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("revoke foreign api token err = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := repo.PrincipalForAPIToken(ctx, foreignSecret); err != nil {
+		t.Fatalf("foreign api token was revoked by owner: %v", err)
+	}
+	if err := repo.RevokeAPITokenForPrincipal(ctx, owner.ID, ownerToken.ID); err != nil {
+		t.Fatalf("revoke owner api token: %v", err)
+	}
+	if _, err := repo.PrincipalForAPIToken(ctx, ownerSecret); err == nil {
+		t.Fatal("owner api token still resolves after scoped revoke")
+	}
+	if err := repo.RevokeAPITokenForPrincipal(ctx, owner.ID, "token_missing"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("revoke unknown api token err = %v, want sql.ErrNoRows", err)
+	}
+}
+
 func TestRepositoryListsAuditEvents(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openAccessRepo(t, ctx)
@@ -421,6 +524,99 @@ func TestRepositoryListsAuditEvents(t *testing.T) {
 	}
 	if events[0].PrincipalID != principal.ID || events[0].MetadataJSON != `{"role":"viewer"}` {
 		t.Fatalf("event = %#v, want recorded role binding event", events[0])
+	}
+}
+
+func TestRepositoryFiltersAndPaginatesAuditEvents(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	alice, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          "principal_audit_alice",
+		Email:       "alice@example.com",
+		DisplayName: "Alice",
+	})
+	if err != nil {
+		t.Fatalf("upsert alice: %v", err)
+	}
+	bob, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          "principal_audit_bob",
+		Email:       "bob@example.com",
+		DisplayName: "Bob",
+	})
+	if err != nil {
+		t.Fatalf("upsert bob: %v", err)
+	}
+	seed := []struct {
+		actor      string
+		action     string
+		targetType string
+		targetID   string
+		createdAt  string
+	}{
+		{actor: alice.ID, action: "role_binding.created", targetType: "role_binding", targetID: "binding_old", createdAt: "2026-01-02 10:00:00"},
+		{actor: alice.ID, action: "role_binding.created", targetType: "role_binding", targetID: "binding_mid", createdAt: "2026-01-02 11:00:00"},
+		{actor: alice.ID, action: "role_binding.deleted", targetType: "role_binding", targetID: "binding_new", createdAt: "2026-01-02 12:00:00"},
+		{actor: bob.ID, action: "role_binding.created", targetType: "role_binding", targetID: "binding_bob", createdAt: "2026-01-02 13:00:00"},
+		{actor: alice.ID, action: "session.revoked", targetType: "session", targetID: "session_1", createdAt: "2026-01-02 14:00:00"},
+	}
+	for _, row := range seed {
+		if err := repo.RecordAuditEvent(ctx, access.AuditEventInput{
+			WorkspaceID:  "test",
+			PrincipalID:  row.actor,
+			Action:       row.action,
+			TargetType:   row.targetType,
+			TargetID:     row.targetID,
+			MetadataJSON: `{}`,
+		}); err != nil {
+			t.Fatalf("record %s: %v", row.targetID, err)
+		}
+		if _, err := store.SQLDB().ExecContext(ctx, `UPDATE audit_events SET created_at = ? WHERE target_id = ?`, row.createdAt, row.targetID); err != nil {
+			t.Fatalf("set created_at for %s: %v", row.targetID, err)
+		}
+	}
+
+	filtered, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{
+		WorkspaceID: "test",
+		PrincipalID: alice.ID,
+		Action:      "role_binding.created",
+		TargetType:  "role_binding",
+		From:        "2026-01-02T10:30:00Z",
+		To:          "2026-01-02T12:30:00Z",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("list filtered audit events: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].TargetID != "binding_mid" {
+		t.Fatalf("filtered events = %#v, want only binding_mid", filtered)
+	}
+
+	targeted, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{
+		WorkspaceID: "test",
+		TargetType:  "role_binding",
+		TargetID:    "binding_new",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("list targeted audit events: %v", err)
+	}
+	if len(targeted) != 1 || targeted[0].Action != "role_binding.deleted" {
+		t.Fatalf("targeted events = %#v, want binding_new deletion", targeted)
+	}
+
+	firstPage, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{WorkspaceID: "test", Limit: 2})
+	if err != nil {
+		t.Fatalf("list first page: %v", err)
+	}
+	if len(firstPage) != 2 || firstPage[0].TargetID != "session_1" || firstPage[1].TargetID != "binding_bob" {
+		t.Fatalf("first page = %#v, want session_1 then binding_bob", firstPage)
+	}
+	nextPage, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{WorkspaceID: "test", Limit: 2, PageToken: auditPageToken(firstPage[1].CreatedAt, firstPage[1].ID)})
+	if err != nil {
+		t.Fatalf("list next page: %v", err)
+	}
+	if len(nextPage) != 2 || nextPage[0].TargetID != "binding_new" || nextPage[1].TargetID != "binding_mid" {
+		t.Fatalf("next page = %#v, want binding_new then binding_mid", nextPage)
 	}
 }
 

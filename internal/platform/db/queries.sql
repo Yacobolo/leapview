@@ -156,6 +156,10 @@ SELECT * FROM groups
 WHERE workspace_id = ?
 ORDER BY name, id;
 
+-- name: DeleteGroup :exec
+DELETE FROM groups
+WHERE workspace_id = ? AND id = ?;
+
 -- name: InsertGroupMember :exec
 INSERT OR IGNORE INTO group_members (workspace_id, group_id, principal_id)
 VALUES (?, ?, ?);
@@ -185,8 +189,8 @@ VALUES (?, ?, ?, ?, ?);
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN rb.principal_id IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
-  COALESCE(rb.principal_id, rb.group_id, '') AS subject_id,
+  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
   p.email,
@@ -196,7 +200,7 @@ SELECT
   rb.created_at
 FROM role_bindings rb
 JOIN roles r ON r.id = rb.role_id
-LEFT JOIN principals p ON p.id = rb.principal_id
+LEFT JOIN principals p ON p.id = NULLIF(rb.principal_id, '')
 LEFT JOIN groups g ON g.id = rb.group_id
 WHERE rb.workspace_id = ? AND rb.id = ?;
 
@@ -213,8 +217,8 @@ WHERE workspace_id = ? AND id = ?;
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN rb.principal_id IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
-  COALESCE(rb.principal_id, rb.group_id, '') AS subject_id,
+  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
   p.email,
@@ -224,7 +228,7 @@ SELECT
   rb.created_at
 FROM role_bindings rb
 JOIN roles r ON r.id = rb.role_id
-LEFT JOIN principals p ON p.id = rb.principal_id
+LEFT JOIN principals p ON p.id = NULLIF(rb.principal_id, '')
 LEFT JOIN groups g ON g.id = rb.group_id
 WHERE rb.workspace_id = ?
 ORDER BY subject_type, p.email, g.name, r.name;
@@ -271,6 +275,12 @@ UPDATE sessions
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE id = ?;
 
+-- name: RevokeSessionForPrincipal :one
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND id = ?
+RETURNING *;
+
 -- name: CreateAPIToken :exec
 INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?);
@@ -294,6 +304,12 @@ UPDATE api_tokens
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE id = ?;
 
+-- name: RevokeAPITokenForPrincipal :one
+UPDATE api_tokens
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND id = ?
+RETURNING *;
+
 -- name: InsertAuditEvent :exec
 INSERT INTO audit_events (id, workspace_id, principal_id, action, target_type, target_id, metadata_json)
 VALUES (?, ?, ?, ?, ?, ?, ?);
@@ -303,6 +319,11 @@ SELECT * FROM audit_events
 WHERE (? = '' OR workspace_id = ?)
   AND (? = '' OR principal_id = ?)
   AND (? = '' OR action = ?)
+  AND (? = '' OR target_type = ?)
+  AND (? = '' OR target_id = ?)
+  AND (? = '' OR created_at >= ?)
+  AND (? = '' OR created_at <= ?)
+  AND (? = '' OR created_at < ? OR (created_at = ? AND id < ?))
 ORDER BY created_at DESC, id DESC
 LIMIT ?;
 

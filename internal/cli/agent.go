@@ -75,10 +75,11 @@ func runAgentConversations(ctx context.Context, opts *rootOptions) error {
 	if err != nil {
 		return err
 	}
-	var rows []api.AgentConversationResponse
-	if err := doJSON(ctx, http.MethodGet, agentConversationEndpoint(target, opts.workspaceID), token, nil, &rows); err != nil {
+	var response apiListResponse[api.AgentConversationResponse]
+	if err := doJSON(ctx, http.MethodGet, agentConversationEndpoint(target, opts.workspaceID), token, nil, &response); err != nil {
 		return err
 	}
+	rows := response.Items
 	if opts.jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(rows)
 	}

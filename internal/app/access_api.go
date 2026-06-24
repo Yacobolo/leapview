@@ -2,6 +2,7 @@ package app
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,7 +18,11 @@ type pageResponse struct {
 }
 
 func pagedResponse(items any) map[string]any {
-	return map[string]any{"items": items, "page": pageResponse{}}
+	return pagedResponseWithCursor(items, "")
+}
+
+func pagedResponseWithCursor(items any, nextCursor string) map[string]any {
+	return map[string]any{"items": items, "page": pageResponse{NextCursor: nextCursor}}
 }
 
 func (s *Server) apiGetCurrentPrincipal(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +51,9 @@ func (s *Server) apiListCurrentPermissions(w http.ResponseWriter, r *http.Reques
 	for _, permission := range permissions {
 		if principal.DevBypass {
 			allowed = append(allowed, permission)
+			continue
+		}
+		if credential, ok := currentAPICredential(s, r); ok && !apiTokenAllows(credential.Token, workspaceID, permission) {
 			continue
 		}
 		ok, err := repo.HasPermission(r.Context(), workspaceID, principal.ID, permission)
@@ -128,13 +136,18 @@ func (s *Server) apiCreateCurrentAPIToken(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) apiRevokeCurrentAPIToken(w http.ResponseWriter, r *http.Request) {
+	principal, ok := currentPrincipal(s, r)
+	if !ok {
+		writeJSONError(w, fmt.Errorf("authenticated principal is required"), http.StatusUnauthorized)
+		return
+	}
 	repo, err := s.accessRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if err := repo.RevokeAPIToken(r.Context(), chi.URLParam(r, "token")); err != nil {
-		writeJSONError(w, err, http.StatusBadRequest)
+	if err := repo.RevokeAPITokenForPrincipal(r.Context(), principal.ID, chi.URLParam(r, "token")); err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
@@ -164,13 +177,18 @@ func (s *Server) apiListCurrentSessions(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) apiRevokeCurrentSession(w http.ResponseWriter, r *http.Request) {
+	principal, ok := currentPrincipal(s, r)
+	if !ok {
+		writeJSONError(w, fmt.Errorf("authenticated principal is required"), http.StatusUnauthorized)
+		return
+	}
 	repo, err := s.accessRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if err := repo.RevokeSession(r.Context(), chi.URLParam(r, "session")); err != nil {
-		writeJSONError(w, err, http.StatusBadRequest)
+	if err := repo.RevokeSessionForPrincipal(r.Context(), principal.ID, chi.URLParam(r, "session")); err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
@@ -303,6 +321,19 @@ func (s *Server) apiUpdateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	group, ok := s.groupByID(w, r)
+	if !ok {
+		return
+	}
+	repo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := repo.DeleteGroup(r.Context(), group.WorkspaceID, group.ID); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -392,16 +423,35 @@ func (s *Server) apiListAuditEvents(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	rows, err := repo.ListAuditEvents(r.Context(), access.AuditEventFilter{WorkspaceID: s.workspaceID(chi.URLParam(r, "workspace")), PrincipalID: r.URL.Query().Get("actor"), Action: r.URL.Query().Get("action"), Limit: apiLimit(r)})
+	limit := apiLimit(r)
+	cursorTime, cursorID := decodeCursor(r.URL.Query().Get("pageToken"))
+	rows, err := repo.ListAuditEvents(r.Context(), access.AuditEventFilter{
+		WorkspaceID: s.workspaceID(chi.URLParam(r, "workspace")),
+		PrincipalID: r.URL.Query().Get("actor"),
+		Action:      r.URL.Query().Get("action"),
+		TargetType:  r.URL.Query().Get("targetType"),
+		TargetID:    r.URL.Query().Get("targetId"),
+		From:        r.URL.Query().Get("from"),
+		To:          r.URL.Query().Get("to"),
+		CursorTime:  cursorTime,
+		CursorID:    cursorID,
+		Limit:       limit + 1,
+	})
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
+	}
+	nextCursor := ""
+	if len(rows) > limit {
+		last := rows[limit-1]
+		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+		rows = rows[:limit]
 	}
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, auditEventDTO(row))
 	}
-	writeJSON(w, http.StatusOK, pagedResponse(out))
+	writeJSON(w, http.StatusOK, pagedResponseWithCursor(out, nextCursor))
 }
 
 func currentPrincipal(s *Server, r *http.Request) (Principal, bool) {
@@ -409,6 +459,13 @@ func currentPrincipal(s *Server, r *http.Request) (Principal, bool) {
 		return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}, true
 	}
 	return s.auth.Principal(r)
+}
+
+func currentAPICredential(s *Server, r *http.Request) (access.APICredential, bool) {
+	if s.auth == nil {
+		return access.APICredential{}, false
+	}
+	return s.auth.APICredential(r)
 }
 
 func principalDTO(row access.Principal) map[string]any {
@@ -555,4 +612,26 @@ func apiLimit(r *http.Request) int {
 		return maxLimit
 	}
 	return value
+}
+
+func encodeCursor(createdAt, id string) string {
+	if createdAt == "" || id == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(createdAt + "\x00" + id))
+}
+
+func decodeCursor(token string) (string, string) {
+	if strings.TrimSpace(token) == "" {
+		return "", ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", ""
+	}
+	createdAt, id, ok := strings.Cut(string(raw), "\x00")
+	if !ok {
+		return "", ""
+	}
+	return createdAt, id
 }

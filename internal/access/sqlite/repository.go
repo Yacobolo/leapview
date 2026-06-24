@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -341,6 +342,16 @@ func (r *Repository) ListGroups(ctx context.Context, workspaceID string) ([]acce
 	return groups, nil
 }
 
+func (r *Repository) DeleteGroup(ctx context.Context, workspaceID, groupID string) error {
+	if strings.TrimSpace(groupID) == "" {
+		return fmt.Errorf("group id is required")
+	}
+	return r.q.DeleteGroup(ctx, platformdb.DeleteGroupParams{
+		WorkspaceID: workspaceID,
+		ID:          groupID,
+	})
+}
+
 func (r *Repository) AddGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error {
 	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
 		return fmt.Errorf("group id and principal id are required")
@@ -432,6 +443,17 @@ func (r *Repository) RevokeSession(ctx context.Context, id string) error {
 	return r.q.RevokeSession(ctx, id)
 }
 
+func (r *Repository) RevokeSessionForPrincipal(ctx context.Context, principalID, id string) error {
+	if strings.TrimSpace(principalID) == "" || strings.TrimSpace(id) == "" {
+		return fmt.Errorf("principal id and session id are required")
+	}
+	_, err := r.q.RevokeSessionForPrincipal(ctx, platformdb.RevokeSessionForPrincipalParams{
+		PrincipalID: principalID,
+		ID:          id,
+	})
+	return err
+}
+
 func (r *Repository) CreateAPIToken(ctx context.Context, principalID, name string) (string, error) {
 	token, _, err := r.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
 		PrincipalID: principalID,
@@ -481,16 +503,27 @@ func (r *Repository) CreateAPITokenWithMetadata(ctx context.Context, input acces
 }
 
 func (r *Repository) PrincipalForAPIToken(ctx context.Context, token string) (access.Principal, error) {
-	apiToken, err := r.q.GetAPITokenByHash(ctx, tokenHash(token))
+	credential, err := r.CredentialForAPIToken(ctx, token)
 	if err != nil {
 		return access.Principal{}, err
+	}
+	return credential.Principal, nil
+}
+
+func (r *Repository) CredentialForAPIToken(ctx context.Context, token string) (access.APICredential, error) {
+	apiToken, err := r.q.GetAPITokenByHash(ctx, tokenHash(token))
+	if err != nil {
+		return access.APICredential{}, err
 	}
 	_ = r.q.TouchAPIToken(ctx, apiToken.ID)
 	row, err := r.q.GetPrincipal(ctx, apiToken.PrincipalID)
 	if err != nil {
-		return access.Principal{}, err
+		return access.APICredential{}, err
 	}
-	return mapPrincipal(row), nil
+	return access.APICredential{
+		Principal: mapPrincipal(row),
+		Token:     mapAPIToken(apiToken),
+	}, nil
 }
 
 func (r *Repository) ListAPITokens(ctx context.Context, principalID string) ([]access.APIToken, error) {
@@ -510,6 +543,17 @@ func (r *Repository) RevokeAPIToken(ctx context.Context, id string) error {
 		return fmt.Errorf("api token id is required")
 	}
 	return r.q.RevokeAPIToken(ctx, id)
+}
+
+func (r *Repository) RevokeAPITokenForPrincipal(ctx context.Context, principalID, id string) error {
+	if strings.TrimSpace(principalID) == "" || strings.TrimSpace(id) == "" {
+		return fmt.Errorf("principal id and api token id are required")
+	}
+	_, err := r.q.RevokeAPITokenForPrincipal(ctx, platformdb.RevokeAPITokenForPrincipalParams{
+		PrincipalID: principalID,
+		ID:          id,
+	})
+	return err
 }
 
 func (r *Repository) RecordAuditEvent(ctx context.Context, input access.AuditEventInput) error {
@@ -538,6 +582,12 @@ func (r *Repository) ListAuditEvents(ctx context.Context, filter access.AuditEve
 	if limit > 1000 {
 		limit = 1000
 	}
+	if filter.PageToken != "" && filter.CursorTime == "" && filter.CursorID == "" {
+		filter.CursorTime, filter.CursorID = decodeAuditPageToken(filter.PageToken)
+	}
+	from := sqliteAuditTime(filter.From)
+	to := sqliteAuditTime(filter.To)
+	cursorTime := sqliteAuditTime(filter.CursorTime)
 	rows, err := r.q.ListAuditEvents(ctx, platformdb.ListAuditEventsParams{
 		Column1:     filter.WorkspaceID,
 		WorkspaceID: sql.NullString{String: filter.WorkspaceID, Valid: strings.TrimSpace(filter.WorkspaceID) != ""},
@@ -545,6 +595,18 @@ func (r *Repository) ListAuditEvents(ctx context.Context, filter access.AuditEve
 		PrincipalID: sql.NullString{String: filter.PrincipalID, Valid: strings.TrimSpace(filter.PrincipalID) != ""},
 		Column5:     filter.Action,
 		Action:      filter.Action,
+		Column7:     filter.TargetType,
+		TargetType:  filter.TargetType,
+		Column9:     filter.TargetID,
+		TargetID:    filter.TargetID,
+		Column11:    from,
+		CreatedAt:   from,
+		Column13:    to,
+		CreatedAt_2: to,
+		Column15:    cursorTime,
+		CreatedAt_3: cursorTime,
+		CreatedAt_4: cursorTime,
+		ID:          filter.CursorID,
 		Limit:       int64(limit),
 	})
 	if err != nil {
@@ -564,6 +626,39 @@ func (r *Repository) ListAuditEvents(ctx context.Context, filter access.AuditEve
 		})
 	}
 	return events, nil
+}
+
+func auditPageToken(createdAt, id string) string {
+	if createdAt == "" || id == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(createdAt + "\x00" + id))
+}
+
+func sqliteAuditTime(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed.UTC().Format("2006-01-02 15:04:05")
+		}
+	}
+	return value
+}
+
+func decodeAuditPageToken(token string) (string, string) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", ""
+	}
+	createdAt, id, ok := strings.Cut(string(raw), "\x00")
+	if !ok {
+		return "", ""
+	}
+	return createdAt, id
 }
 
 func (r *Repository) roleBindingParts(ctx context.Context, input access.RoleBindingInput) (platformdb.Role, sql.NullString, sql.NullString, error) {

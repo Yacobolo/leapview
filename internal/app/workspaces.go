@@ -346,23 +346,23 @@ func (s *Server) apiWorkspaceRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiRoleBindings(w http.ResponseWriter, r *http.Request) {
-	bindings, _, err := s.roleBindingsAndRoles(r, s.workspaceID(chi.URLParam(r, "workspace")))
+	repo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if repo == nil {
+		writeJSON(w, http.StatusOK, pagedResponse([]map[string]any{}))
+		return
+	}
+	bindings, err := repo.ListRoleBindings(r.Context(), s.workspaceID(chi.URLParam(r, "workspace")))
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
 	out := make([]map[string]any, 0, len(bindings))
 	for _, binding := range bindings {
-		out = append(out, map[string]any{
-			"id":          binding.ID,
-			"workspaceId": binding.WorkspaceID,
-			"subjectType": "principal",
-			"subjectId":   binding.PrincipalID,
-			"email":       binding.Email,
-			"displayName": binding.DisplayName,
-			"role":        binding.Role,
-			"createdAt":   binding.CreatedAt,
-		})
+		out = append(out, apiRoleBindingDTO(binding))
 	}
 	writeJSON(w, http.StatusOK, pagedResponse(out))
 }
@@ -744,9 +744,13 @@ func roleBindingDTO(row access.RoleBinding) api.RoleBindingResponse {
 	return api.RoleBindingResponse{
 		ID:          row.ID,
 		WorkspaceID: row.WorkspaceID,
+		SubjectType: string(row.SubjectType),
+		SubjectID:   row.SubjectID,
 		PrincipalID: row.PrincipalID,
+		GroupID:     row.GroupID,
 		Email:       row.Email,
-		DisplayName: row.DisplayName,
+		DisplayName: firstNonEmpty(row.DisplayName, row.GroupName),
+		GroupName:   row.GroupName,
 		Role:        row.Role,
 		CreatedAt:   row.CreatedAt,
 	}

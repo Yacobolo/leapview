@@ -213,6 +213,11 @@ type APIToken struct {
 	RevokedAt   string
 }
 
+type APICredential struct {
+	Principal Principal
+	Token     APIToken
+}
+
 type Session struct {
 	ID          string
 	PrincipalID string
@@ -235,6 +240,13 @@ type AuditEventFilter struct {
 	WorkspaceID string
 	PrincipalID string
 	Action      string
+	TargetType  string
+	TargetID    string
+	From        string
+	To          string
+	PageToken   string
+	CursorTime  string
+	CursorID    string
 	Limit       int
 }
 
@@ -265,6 +277,7 @@ type Repository interface {
 	ResolveExternalPrincipal(ctx context.Context, input ExternalIdentityInput) (Principal, error)
 	UpsertGroup(ctx context.Context, input GroupInput) (Group, error)
 	ListGroups(ctx context.Context, workspaceID string) ([]Group, error)
+	DeleteGroup(ctx context.Context, workspaceID, groupID string) error
 	AddGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error
 	RemoveGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error
 	ListGroupMembers(ctx context.Context, workspaceID, groupID string) ([]GroupMember, error)
@@ -273,11 +286,14 @@ type Repository interface {
 	DeleteSession(ctx context.Context, token string) error
 	ListSessions(ctx context.Context, principalID string) ([]Session, error)
 	RevokeSession(ctx context.Context, id string) error
+	RevokeSessionForPrincipal(ctx context.Context, principalID, id string) error
 	CreateAPIToken(ctx context.Context, principalID, name string) (string, error)
 	CreateAPITokenWithMetadata(ctx context.Context, input APITokenInput) (string, APIToken, error)
 	PrincipalForAPIToken(ctx context.Context, token string) (Principal, error)
+	CredentialForAPIToken(ctx context.Context, token string) (APICredential, error)
 	ListAPITokens(ctx context.Context, principalID string) ([]APIToken, error)
 	RevokeAPIToken(ctx context.Context, id string) error
+	RevokeAPITokenForPrincipal(ctx context.Context, principalID, id string) error
 	RecordAuditEvent(ctx context.Context, input AuditEventInput) error
 	ListAuditEvents(ctx context.Context, filter AuditEventFilter) ([]AuditEvent, error)
 }
