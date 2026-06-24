@@ -727,12 +727,16 @@ class DataTable extends LitElement {
       inset-inline: 0;
       z-index: 1;
       height: var(--ld-row-height, 34px);
-      background: var(--ld-chart-surface);
+      --ld-row-bg: var(--ld-chart-surface);
+      --ld-row-bg-hover: color-mix(in srgb, var(--ld-fg-link), var(--ld-row-bg) 88%);
+      --ld-row-bg-selected: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 62%);
+      --ld-row-bg-selected-hover: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 54%);
+      background: var(--ld-row-bg);
       color: var(--ld-fg-default);
     }
 
     .zebra .row:nth-child(even) {
-      background: color-mix(in srgb, var(--ld-table-stripe), var(--ld-chart-surface) 18%);
+      --ld-row-bg: color-mix(in srgb, var(--ld-table-stripe), var(--ld-chart-surface) 18%);
     }
 
     .grid-rows .row,
@@ -741,24 +745,20 @@ class DataTable extends LitElement {
     }
 
     .row:hover {
-      background: color-mix(in srgb, var(--ld-fg-link), transparent 91%);
+      background: var(--ld-row-bg-hover);
     }
 
     .row.hovered {
-      background: color-mix(in srgb, var(--ld-fg-link), transparent 91%);
+      background: var(--ld-row-bg-hover);
     }
 
-    .row.selected,
-    .zebra .row.selected,
-    .zebra .row.selected:nth-child(even) {
-      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 70%);
+    .row.selected {
+      background: var(--ld-row-bg-selected);
     }
 
     .row.selected:hover,
-    .row.selected.hovered,
-    .zebra .row.selected:hover,
-    .zebra .row.selected.hovered {
-      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 64%);
+    .row.selected.hovered {
+      background: var(--ld-row-bg-selected-hover);
     }
 
     .row.skeleton-row {
@@ -766,7 +766,7 @@ class DataTable extends LitElement {
     }
 
     .row.skeleton-row:hover {
-      background: var(--ld-chart-surface);
+      background: var(--ld-row-bg);
     }
 
     .cell {
