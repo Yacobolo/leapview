@@ -68,6 +68,65 @@ for dir in "${LIBREDASH_HOME:-}" "${LIBREDASH_DUCKDB_DIR:-}" "${LIBREDASH_DATA_D
   fi
 done
 
+pid_cwd() {
+  local pid="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1
+  elif [[ -e "/proc/$pid/cwd" ]]; then
+    readlink "/proc/$pid/cwd" 2>/dev/null || true
+  fi
+}
+
+stop_pid() {
+  local pid="$1"
+  local label="${2:-process}"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  echo "Stopping $label (pid $pid)"
+  kill "$pid" 2>/dev/null || true
+  for _ in {1..30}; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "Force stopping $label (pid $pid)"
+  kill -KILL "$pid" 2>/dev/null || true
+}
+
+stop_profile_duckdb_locks() {
+  if [[ -z "${LIBREDASH_DUCKDB_DIR:-}" ]]; then
+    return 0
+  fi
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local db_file="$LIBREDASH_DUCKDB_DIR/libredash-$profile.duckdb"
+  [[ -e "$db_file" ]] || return 0
+
+  local pids
+  pids="$(lsof -t "$db_file" 2>/dev/null | sort -u || true)"
+  [[ -n "$pids" ]] || return 0
+
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    if [[ "$(pid_cwd "$pid")" == "$ROOT" ]]; then
+      stop_pid "$pid" "stale LibreDash $profile DuckDB lock holder"
+    fi
+  done <<< "$pids"
+
+  local remaining
+  remaining="$(lsof -t "$db_file" 2>/dev/null | sort -u || true)"
+  if [[ -n "$remaining" ]]; then
+    echo "LibreDash profile '$profile' DuckDB is still locked by another process: $remaining" >&2
+    echo "DuckDB file: $db_file" >&2
+    exit 1
+  fi
+}
+
 if [[ "$profile" == "quack" && "$action" == "start" ]]; then
   if [[ -z "${LIBREDASH_QUACK_TOKEN:-}" ]]; then
     echo "Missing LIBREDASH_QUACK_TOKEN. Add it to $secrets_file before running task dev:quack." >&2
@@ -83,4 +142,16 @@ if [[ "$profile" == "quack" && "$action" == "start" ]]; then
   fi
 fi
 
-exec "$ROOT/scripts/dev-server.sh" "$action"
+case "$action" in
+  start)
+    stop_profile_duckdb_locks
+    exec "$ROOT/scripts/dev-server.sh" "$action"
+    ;;
+  stop)
+    "$ROOT/scripts/dev-server.sh" "$action"
+    stop_profile_duckdb_locks
+    ;;
+  status|logs)
+    exec "$ROOT/scripts/dev-server.sh" "$action"
+    ;;
+esac
