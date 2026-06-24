@@ -11,11 +11,12 @@ import (
 )
 
 type Repository struct {
-	q *platformdb.Queries
+	db *sql.DB
+	q  *platformdb.Queries
 }
 
 func NewRepository(sqlDB *sql.DB) *Repository {
-	return &Repository{q: platformdb.New(sqlDB)}
+	return &Repository{db: sqlDB, q: platformdb.New(sqlDB)}
 }
 
 func (r *Repository) Ensure(ctx context.Context, input workspace.EnsureInput) error {
@@ -81,6 +82,57 @@ func (r *Repository) ActiveDeploymentGraph(ctx context.Context, id workspace.Wor
 		graph.Edges = append(graph.Edges, mapAssetEdge(row))
 	}
 	return graph, true, nil
+}
+
+func (r *Repository) ReplaceActiveDeploymentGraph(ctx context.Context, id workspace.WorkspaceID, graph workspace.AssetGraph) error {
+	deployment, err := r.q.GetActiveDeployment(ctx, string(id))
+	if err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	if err := q.ClearAssetsForDeployment(ctx, deployment.ID); err != nil {
+		return err
+	}
+	for _, asset := range graph.Assets {
+		if string(asset.DeploymentID) != deployment.ID {
+			continue
+		}
+		if err := q.InsertAsset(ctx, platformdb.InsertAssetParams{
+			ID:            string(asset.ID),
+			WorkspaceID:   string(asset.WorkspaceID),
+			DeploymentID:  string(asset.DeploymentID),
+			AssetType:     string(asset.Type),
+			AssetKey:      asset.Key,
+			ParentAssetID: sql.NullString{String: string(asset.ParentID), Valid: asset.ParentID != ""},
+			Title:         asset.Title,
+			Description:   asset.Description,
+			ContentJson:   asset.ContentJSON,
+			ContentHash:   asset.ContentHash,
+		}); err != nil {
+			return err
+		}
+	}
+	for _, edge := range graph.Edges {
+		if string(edge.DeploymentID) != deployment.ID {
+			continue
+		}
+		if err := q.InsertAssetEdge(ctx, platformdb.InsertAssetEdgeParams{
+			ID:           string(edge.ID),
+			WorkspaceID:  string(edge.WorkspaceID),
+			DeploymentID: string(edge.DeploymentID),
+			FromAssetID:  string(edge.FromAssetID),
+			ToAssetID:    string(edge.ToAssetID),
+			EdgeType:     string(edge.Type),
+		}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func mapWorkspace(row platformdb.Workspace) workspace.Summary {

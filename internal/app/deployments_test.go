@@ -21,6 +21,7 @@ import (
 	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/runtimehost"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -35,6 +36,20 @@ type fakeReloader struct {
 
 type runtimeAssetMetrics struct {
 	fakeMetrics
+}
+
+type emptyPageRuntimeAssetMetrics struct {
+	fakeMetrics
+}
+
+type testRuntimeProvider struct {
+	runtime runtimehost.Runtime
+	err     error
+}
+
+type testWorkspaceAssetRuntime struct {
+	assets []workspace.Asset
+	edges  []workspace.AssetEdge
 }
 
 func (runtimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
@@ -52,6 +67,46 @@ func (runtimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]
 		return nil, nil, false
 	}
 	return []workspace.Asset{connection}, nil, true
+}
+
+func (emptyPageRuntimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	catalog, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, workspaceID, "", "Catalog", "", map[string]any{})
+	if err != nil {
+		return nil, nil, false
+	}
+	model, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", "", map[string]any{})
+	if err != nil {
+		return nil, nil, false
+	}
+	table, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticTable, "olist.orders", model.ID, "orders", "", map[string]any{})
+	if err != nil {
+		return nil, nil, false
+	}
+	dashboard, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeDashboard, "sales", catalog.ID, "Sales", "", map[string]any{})
+	if err != nil {
+		return nil, nil, false
+	}
+	return []workspace.Asset{catalog, model, table, dashboard}, []workspace.AssetEdge{
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), catalog.ID, model.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), model.ID, table.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), catalog.ID, dashboard.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), dashboard.ID, model.ID, workspace.AssetEdgeUsesSemanticModel),
+	}, true
+}
+
+func (p testRuntimeProvider) Active() (runtimehost.Runtime, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.runtime, nil
+}
+
+func (r testWorkspaceAssetRuntime) Close() error {
+	return nil
+}
+
+func (r testWorkspaceAssetRuntime) WorkspaceAssets(string, string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	return r.assets, r.edges, true
 }
 
 func (r *fakeReloader) Reload(context.Context) error {
@@ -434,6 +489,188 @@ func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testi
 			t.Fatalf("connections page missing runtime asset %q:\n%s", want, body)
 		}
 	}
+}
+
+func TestStaleActiveLineageGraphDetectsPartialCleanGraphs(t *testing.T) {
+	graph := func(modelContent, dashboardContent any, includeRelationship, includePageItem bool, rollupEdge workspace.AssetEdgeType) workspace.AssetGraph {
+		t.Helper()
+		workspaceID := workspace.WorkspaceID("test")
+		deploymentID := workspace.DeploymentID("dep_test")
+		catalog := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeCatalog, "test", "", "Catalog", map[string]any{})
+		model := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", modelContent)
+		semanticTable := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticTable, "olist.orders", model.ID, "Orders", map[string]any{})
+		dashboard := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeDashboard, "sales", catalog.ID, "Sales", dashboardContent)
+		assets := []workspace.Asset{catalog, model, semanticTable, dashboard}
+		if includeRelationship {
+			relationship := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeRelationship, "olist.orders_customers", model.ID, "orders_customers", map[string]any{})
+			assets = append(assets, relationship)
+		}
+		if includePageItem {
+			page := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypePage, "sales.overview", dashboard.ID, "Overview", map[string]any{})
+			pageItem := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypePageItem, "sales.overview.revenue", page.ID, "Revenue", map[string]any{})
+			assets = append(assets, page, pageItem)
+		}
+		edges := []workspace.AssetEdge{}
+		if rollupEdge != "" {
+			edges = append(edges, workspace.NewAssetEdge(workspaceID, deploymentID, dashboard.ID, semanticTable.ID, rollupEdge))
+		}
+		return workspace.AssetGraph{Assets: assets, Edges: edges}
+	}
+
+	relationships := map[string]any{"Relationships": []any{map[string]any{"ID": "orders_customers"}}}
+	pageVisuals := map[string]any{"Pages": []any{map[string]any{"Visuals": []any{map[string]any{"ID": "revenue"}}}}}
+	pageItems := map[string]any{"pages": []any{map[string]any{"items": []any{map[string]any{"id": "status_filter"}}}}}
+
+	if !staleActiveLineageGraph(graph(relationships, map[string]any{}, false, false, "")) {
+		t.Fatal("semantic model relationship definitions without relationship assets should be stale")
+	}
+	if !staleActiveLineageGraph(graph(map[string]any{}, pageVisuals, true, false, "")) {
+		t.Fatal("dashboard page component definitions without page_item assets should be stale")
+	}
+	if !staleActiveLineageGraph(graph(map[string]any{}, pageItems, true, false, "")) {
+		t.Fatal("dashboard page item definitions without page_item assets should be stale")
+	}
+	if !staleActiveLineageGraph(graph(map[string]any{}, map[string]any{}, true, true, workspace.AssetEdgeUsesMeasure)) {
+		t.Fatal("persisted dashboard rollup dependency edges should be stale")
+	}
+	if staleActiveLineageGraph(graph(map[string]any{}, map[string]any{}, true, false, "")) {
+		t.Fatal("clean graph without relationships or page placements should not be stale")
+	}
+}
+
+func TestReconcileActiveLineageGraphReplacesStaleGraphFromActiveRuntime(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
+	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	created, err := deploymentRepo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	workspaceID := workspace.WorkspaceID("test")
+	deploymentID := workspace.DeploymentID(created.ID)
+	catalog := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeCatalog, "test", "", "Catalog", map[string]any{})
+	model := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", map[string]any{})
+	dashboard := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeDashboard, "sales", catalog.ID, "Sales", map[string]any{})
+	staleAssets := []workspace.Asset{catalog, model, dashboard}
+	staleEdges := []workspace.AssetEdge{
+		workspace.NewAssetEdge(workspaceID, deploymentID, catalog.ID, model.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspaceID, deploymentID, catalog.ID, dashboard.ID, workspace.AssetEdgeContains),
+	}
+	cleanAssets, cleanEdges, ok := emptyPageRuntimeAssetMetrics{}.WorkspaceAssets("test", string(created.ID))
+	if !ok {
+		t.Fatal("runtime graph unavailable")
+	}
+	validation := deployment.Validation{
+		Digest:       "digest",
+		ManifestJSON: "{}",
+		Assets:       deploymentAssets(staleAssets),
+		Edges:        deploymentEdges(staleEdges),
+	}
+	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, "test")); err != nil {
+		t.Fatalf("save validated: %v", err)
+	}
+	if _, err := deploymentRepo.Activate(ctx, "test", created.ID); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+
+	provider := testRuntimeProvider{runtime: testWorkspaceAssetRuntime{assets: cleanAssets, edges: cleanEdges}}
+	if err := ReconcileActiveLineageGraph(ctx, workspaceRepo, provider, "test"); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	graph, ok, err := workspaceRepo.ActiveDeploymentGraph(ctx, "test")
+	if err != nil {
+		t.Fatalf("active graph: %v", err)
+	}
+	if !ok {
+		t.Fatal("active graph ok = false")
+	}
+	if staleActiveLineageGraph(graph) {
+		t.Fatal("active graph is still stale after reconciliation")
+	}
+	if !graphHasAssetType(graph, workspace.AssetTypeSemanticTable) {
+		t.Fatalf("reconciled graph missing semantic table asset: %#v", graph.Assets)
+	}
+	active, err := deploymentRepo.ByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("active deployment: %v", err)
+	}
+	if active.Status != deployment.StatusActive {
+		t.Fatalf("deployment status = %s, want active", active.Status)
+	}
+}
+
+func TestWorkspaceAssetsDoesNotRefreshCleanGraphWithoutPageItems(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	ctx := context.Background()
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	created, err := deploymentRepo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	runtimeAssets, runtimeEdges, ok := emptyPageRuntimeAssetMetrics{}.WorkspaceAssets("test", string(created.ID))
+	if !ok {
+		t.Fatal("runtime graph unavailable")
+	}
+	validation := deployment.Validation{
+		Digest:       "digest",
+		ManifestJSON: "{}",
+		Assets:       deploymentAssets(runtimeAssets),
+		Edges:        deploymentEdges(runtimeEdges),
+	}
+	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, "test")); err != nil {
+		t.Fatalf("save validated: %v", err)
+	}
+	if _, err := deploymentRepo.Activate(ctx, "test", created.ID); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	auth := NewAuth(accesssqlite.NewRepository(store.SQLDB()), "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	graph, ok, err := workspacesqlite.NewRepository(store.SQLDB()).ActiveDeploymentGraph(ctx, "test")
+	if err != nil {
+		t.Fatalf("active graph: %v", err)
+	}
+	if !ok {
+		t.Fatal("active graph ok = false")
+	}
+	for _, asset := range graph.Assets {
+		if asset.Type == workspace.AssetTypePageItem {
+			t.Fatalf("graph was unexpectedly refreshed with page item asset: %#v", asset)
+		}
+	}
+}
+
+func mustWorkspaceAsset(t *testing.T, workspaceID workspace.WorkspaceID, deploymentID workspace.DeploymentID, typ workspace.AssetType, key string, parentID workspace.AssetID, title string, content any) workspace.Asset {
+	t.Helper()
+	asset, err := workspace.NewAsset(workspaceID, deploymentID, typ, key, parentID, title, "", content)
+	if err != nil {
+		t.Fatalf("new asset %s %s: %v", typ, key, err)
+	}
+	return asset
+}
+
+func graphHasAssetType(graph workspace.AssetGraph, typ workspace.AssetType) bool {
+	for _, asset := range graph.Assets {
+		if asset.Type == typ {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWorkspacePermissionsRejectViewer(t *testing.T) {

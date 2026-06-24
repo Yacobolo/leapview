@@ -107,6 +107,9 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if err := manager.Reload(ctx); err != nil {
 		return err
 	}
+	if err := app.ReconcileActiveLineageGraph(ctx, workspaceRepo, manager, opts.workspaceID); err != nil {
+		return err
+	}
 	defer manager.Close()
 	runtimeMetrics := app.NewRuntimeMetrics(manager, dataDir, opts.workspaceID)
 	auth := app.NewAuth(accessRepo, opts.workspaceID, app.AuthConfig{
