@@ -207,6 +207,8 @@ type InteractionCommand struct {
 	Mappings        []InteractionCommandMapping `json:"mappings"`
 }
 
+const UIRowSelectionField = "__libredash.rowKey"
+
 type InteractionCommandMapping struct {
 	Field string `json:"field"`
 	Value string `json:"value"`

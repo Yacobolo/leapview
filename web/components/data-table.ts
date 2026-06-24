@@ -34,6 +34,15 @@ import { visualMenuIcon } from './visual-menu-icons'
 import { defaultDirection, formatCell, rowKey } from './table/format'
 import { blockStartsForAll, emptyBlocks, emptyTable, sameSort, sortedBlockRows, tableConverter } from './table/block-source'
 import {
+  buildRowSelectionCommand,
+  rowClickSelectionAction,
+  rowIsSelected as tableRowIsSelected,
+  rowSelectionFromEntries as tableRowSelectionFromEntries,
+  selectedRowCount as tableSelectedRowCount,
+  selectionLabels as tableSelectionLabels,
+  type RowClickSelectionAction,
+} from './table/selection'
+import {
   blockIDs,
   defaultChunkSize,
   defaultRowHeight,
@@ -69,7 +78,6 @@ const dataTableFeatures = tableFeatures({
 })
 
 const groupHeaderHeight = 26
-const uiRowSelectionField = '__libredash.rowKey'
 
 function defaultColumnSize(column: TableColumn): number {
   const configuredWidth = Number(column.width)
@@ -1217,10 +1225,14 @@ class DataTable extends LitElement {
 
   private selectRow(key: string, row: TableRow, event: MouseEvent): void {
     const selected = this.rowIsSelected(row, key)
-    const onlySelectedRow = selected && this.selectedRowCount() === 1
-    const toggleSelection = event.metaKey || event.ctrlKey || onlySelectedRow
+    const action = rowClickSelectionAction({
+      selected,
+      selectedCount: this.selectedRowCount(),
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+    })
     this.selectedCellKey = ''
-    this.emitRowSelection(key, row, toggleSelection)
+    this.emitRowSelection(key, row, action)
   }
 
   private syncSelectedRowFromTableSelection(): void {
@@ -1229,30 +1241,12 @@ class DataTable extends LitElement {
       this.clearLocalSelection()
       return
     }
-    this.rowSelection = this.rowSelectionFromEntries(selection)
+    this.rowSelection = tableRowSelectionFromEntries(
+      this.loadedRows.map((item) => ({ row: item.row, key: rowKey(item.row, item.index) })),
+      this.table?.interaction,
+      selection,
+    )
     this.selectedCellKey = ''
-  }
-
-  private rowSelectionFromEntries(selection: NonNullable<TableSignal['selection']>): RowSelectionState {
-    const next: RowSelectionState = {}
-    for (const item of this.loadedRows) {
-      const key = rowKey(item.row, item.index)
-      if (this.rowMatchesSelection(item.row, key, selection)) {
-        next[key] = true
-      }
-    }
-    return next
-  }
-
-  private rowMatchesSelection(row: TableRow, key: string, selection: NonNullable<TableSignal['selection']>): boolean {
-    const mappings = this.table?.interaction?.mappings ?? []
-    if (mappings.length === 0) {
-      return selection.some((entry) => entry.mappings?.some((mapping) => mapping.field === uiRowSelectionField && mapping.value === key))
-    }
-    return selection.some((entry) => mappings.every((mapping) => {
-      const selected = entry.mappings?.find((candidate) => candidate.field === mapping.field)
-      return Boolean(selected?.value) && String(row[mapping.value] ?? '') === selected?.value
-    }))
   }
 
   private clearLocalSelection(): void {
@@ -1261,55 +1255,31 @@ class DataTable extends LitElement {
   }
 
   private selectedRowCount(): number {
-    return this.table?.selection?.length ?? 0
+    return tableSelectedRowCount(this.table?.selection)
   }
 
   private selectionLabels(): string[] {
-    const selection = this.table?.selection ?? []
-    if (selection.length > 0) {
-      return selection.map((entry) => {
-        if (entry.label) return entry.label
-        return (entry.mappings ?? []).map((mapping) => mapping.label || mapping.value || '').filter(Boolean).join(', ')
-      }).filter(Boolean)
-    }
-    return []
+    return tableSelectionLabels(this.table?.selection)
   }
 
   private rowIsSelected(row: TableRow, key: string): boolean {
-    const selection = this.table?.selection ?? []
-    if (selection.length === 0) return false
-    return this.rowMatchesSelection(row, key, selection)
+    return tableRowIsSelected(row, key, this.table?.interaction, this.table?.selection)
   }
 
-  private emitRowSelection(key: string, row: TableRow, toggleGesture: boolean): void {
-    const sourceId = this.resolvedTableId()
-    const interaction = this.table?.interaction
-    const mappings = interaction?.mappings ?? []
-    if (!sourceId || !interaction) return
-    const commandMappings = mappings.length > 0
-      ? mappings.map((mapping) => ({
-        field: mapping.field,
-        value: String(row[mapping.value] ?? ''),
-        label: String(row[mapping.label || mapping.value] ?? row[mapping.value] ?? ''),
-      })).filter((mapping) => mapping.value !== '')
-      : [{
-        field: uiRowSelectionField,
-        value: key,
-        label: key,
-      }]
-    if (mappings.length > 0 && commandMappings.length !== mappings.length) return
+  private emitRowSelection(key: string, row: TableRow, selectionAction: RowClickSelectionAction): void {
+    const command = buildRowSelectionCommand({
+      sourceId: this.resolvedTableId(),
+      interaction: this.table?.interaction,
+      key,
+      row,
+      selectionAction,
+    })
+    if (!command) return
     this.dispatchEvent(
       new CustomEvent('ld-interaction-select', {
         bubbles: true,
         composed: true,
-        detail: {
-          sourceKind: 'table',
-          sourceId,
-          interactionKind: interaction.kind || 'row_selection',
-          action: toggleGesture ? 'set' : 'replace',
-          toggle: toggleGesture,
-          mappings: commandMappings,
-        },
+        detail: command,
       }),
     )
   }

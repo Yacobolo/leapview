@@ -1,0 +1,134 @@
+import type { InteractionConfig, InteractionSelectionEntry, TableRow } from './types'
+
+export const UI_ROW_SELECTION_FIELD = '__libredash.rowKey'
+
+export type RowSelectionState = Record<string, boolean>
+
+export interface RowSelectionCommand {
+  sourceKind: 'table'
+  sourceId: string
+  interactionKind: string
+  action: 'replace' | 'set'
+  toggle: boolean
+  mappings: Array<{
+    field: string
+    value: string
+    label: string
+  }>
+}
+
+export interface RowClickSelectionInput {
+  selected: boolean
+  selectedCount: number
+  metaKey: boolean
+  ctrlKey: boolean
+}
+
+export interface RowClickSelectionAction {
+  action: 'replace' | 'set'
+  toggle: boolean
+}
+
+export function rowClickSelectionAction(input: RowClickSelectionInput): RowClickSelectionAction {
+  const onlySelectedRow = input.selected && input.selectedCount === 1
+  const toggle = input.metaKey || input.ctrlKey || onlySelectedRow
+  return {
+    action: toggle ? 'set' : 'replace',
+    toggle,
+  }
+}
+
+export function buildRowSelectionCommand(input: {
+  sourceId: string
+  interaction: InteractionConfig | undefined
+  key: string
+  row: TableRow
+  selectionAction: RowClickSelectionAction
+}): RowSelectionCommand | null {
+  const sourceId = input.sourceId.trim()
+  const interaction = input.interaction
+  if (!sourceId || !interaction) return null
+
+  const mappings = interaction.mappings ?? []
+  const commandMappings = mappings.length > 0
+    ? semanticCommandMappings(input.row, mappings)
+    : [{
+      field: UI_ROW_SELECTION_FIELD,
+      value: input.key,
+      label: input.key,
+    }]
+  if (mappings.length > 0 && commandMappings.length !== mappings.length) return null
+
+  return {
+    sourceKind: 'table',
+    sourceId,
+    interactionKind: interaction.kind || 'row_selection',
+    action: input.selectionAction.action,
+    toggle: input.selectionAction.toggle,
+    mappings: commandMappings,
+  }
+}
+
+function semanticCommandMappings(row: TableRow, mappings: NonNullable<InteractionConfig['mappings']>): RowSelectionCommand['mappings'] {
+  return mappings.map((mapping) => ({
+    field: mapping.field,
+    value: String(row[mapping.value] ?? ''),
+    label: String(row[mapping.label || mapping.value] ?? row[mapping.value] ?? ''),
+  })).filter((mapping) => mapping.value !== '')
+}
+
+export function rowSelectionFromEntries(
+  rows: Array<{ row: TableRow; key: string }>,
+  interaction: InteractionConfig | undefined,
+  selection: InteractionSelectionEntry[] | undefined,
+): RowSelectionState {
+  const entries = selection ?? []
+  if (entries.length === 0) return {}
+  const next: RowSelectionState = {}
+  for (const item of rows) {
+    if (rowIsSelected(item.row, item.key, interaction, entries)) {
+      next[item.key] = true
+    }
+  }
+  return next
+}
+
+export function rowIsSelected(
+  row: TableRow,
+  key: string,
+  interaction: InteractionConfig | undefined,
+  selection: InteractionSelectionEntry[] | undefined,
+): boolean {
+  const entries = selection ?? []
+  if (entries.length === 0) return false
+  return rowMatchesSelection(row, key, interaction, entries)
+}
+
+function rowMatchesSelection(
+  row: TableRow,
+  key: string,
+  interaction: InteractionConfig | undefined,
+  selection: InteractionSelectionEntry[],
+): boolean {
+  const mappings = interaction?.mappings ?? []
+  if (mappings.length === 0) {
+    return selection.some((entry) => entry.mappings?.some((mapping) => mapping.field === UI_ROW_SELECTION_FIELD && mapping.value === key))
+  }
+  return selection.some((entry) => mappings.every((mapping) => {
+    const selected = entry.mappings?.find((candidate) => candidate.field === mapping.field)
+    return Boolean(selected?.value) && String(row[mapping.value] ?? '') === selected?.value
+  }))
+}
+
+export function selectedRowCount(selection: InteractionSelectionEntry[] | undefined): number {
+  return selection?.length ?? 0
+}
+
+export function selectionLabels(selection: InteractionSelectionEntry[] | undefined): string[] {
+  const entries = selection ?? []
+  if (entries.length === 0) return []
+  return entries.map((entry) => {
+    if (entry.label) return entry.label
+    return (entry.mappings ?? []).map((mapping) => mapping.label || mapping.value || '').filter(Boolean).join(', ')
+  }).filter(Boolean)
+}

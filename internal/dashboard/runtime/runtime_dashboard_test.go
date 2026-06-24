@@ -527,14 +527,14 @@ relogios_presentes,watches_gifts
 
 	uiOnlyRowSelection := dashboard.Filters{
 		Selections: []dashboard.InteractionSelection{
-			interactionSelection("table", "orders_table", "row_selection", "__libredash.rowKey", "o1"),
+			interactionSelection("table", "orders_table", "row_selection", dashboard.UIRowSelectionField, "o1"),
 		},
 	}
 	uiOnlyRowTable, err := metrics.QueryTable(context.Background(), "executive-sales", uiOnlyRowSelection, dashboard.TableRequest{Table: "orders_table", Block: "all", Count: 10, RequestSeq: 11})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := selectedEntryValue(uiOnlyRowTable.Selection, "__libredash.rowKey"); got != "o1" {
+	if got := selectedEntryValue(uiOnlyRowTable.Selection, dashboard.UIRowSelectionField); got != "o1" {
 		t.Fatalf("UI-only table selection entry = %q, want o1: %#v", got, uiOnlyRowTable.Selection)
 	}
 	if uiOnlyRowTable.TotalRows != table.TotalRows {
