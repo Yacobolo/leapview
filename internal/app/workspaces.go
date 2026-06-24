@@ -376,19 +376,8 @@ func (s *Server) workspaceResponse(r *http.Request, workspaceID string) api.Work
 
 func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([]api.AssetResponse, []api.AssetEdgeResponse, error) {
 	if s.store == nil {
-		if provider, ok := s.metrics.(workspaceAssetProvider); ok {
-			assetRows, edgeRows, ok := provider.WorkspaceAssets(workspaceID, "local")
-			if ok {
-				assets := make([]api.AssetResponse, 0, len(assetRows))
-				for _, row := range assetRows {
-					assets = append(assets, assetDTOFromWorkspace(row))
-				}
-				edges := make([]api.AssetEdgeResponse, 0, len(edgeRows))
-				for _, row := range edgeRows {
-					edges = append(edges, assetEdgeDTOFromWorkspace(row))
-				}
-				return assets, edges, nil
-			}
+		if assets, edges, ok := s.workspaceAssetsFromRuntime(workspaceID); ok {
+			return assets, edges, nil
 		}
 		return fallbackAssets(s.metrics.Catalog(), workspaceID), nil, nil
 	}
@@ -401,6 +390,9 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 		return nil, nil, err
 	}
 	if !ok {
+		if assets, edges, ok := s.workspaceAssetsFromRuntime(workspaceID); ok {
+			return assets, edges, nil
+		}
 		return nil, nil, nil
 	}
 	assets := make([]api.AssetResponse, 0, len(graph.Assets))
@@ -412,6 +404,26 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 		edges = append(edges, assetEdgeDTOFromWorkspace(row))
 	}
 	return assets, edges, nil
+}
+
+func (s *Server) workspaceAssetsFromRuntime(workspaceID string) ([]api.AssetResponse, []api.AssetEdgeResponse, bool) {
+	provider, ok := s.metrics.(workspaceAssetProvider)
+	if !ok {
+		return nil, nil, false
+	}
+	assetRows, edgeRows, ok := provider.WorkspaceAssets(workspaceID, "local")
+	if !ok {
+		return nil, nil, false
+	}
+	assets := make([]api.AssetResponse, 0, len(assetRows))
+	for _, row := range assetRows {
+		assets = append(assets, assetDTOFromWorkspace(row))
+	}
+	edges := make([]api.AssetEdgeResponse, 0, len(edgeRows))
+	for _, row := range edgeRows {
+		edges = append(edges, assetEdgeDTOFromWorkspace(row))
+	}
+	return assets, edges, true
 }
 
 func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]api.RoleBindingResponse, []api.RoleResponse, error) {
