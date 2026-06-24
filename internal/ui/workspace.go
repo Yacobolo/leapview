@@ -578,89 +578,81 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 		seenEdges[key] = struct{}{}
 	}
 
-	var walkUpstream func(assetID string, depth int, visiting map[string]struct{})
-	walkUpstream = func(assetID string, depth int, visiting map[string]struct{}) {
+	type lineageWalkConfig struct {
+		edges    func(string) []api.AssetEdgeResponse
+		peerID   func(api.AssetEdgeResponse) string
+		rank     func(int) int
+		rows     *[]map[string]any
+		seenRows map[string]struct{}
+	}
+	var walkDependencyEdges func(assetID string, depth int, visiting map[string]struct{}, config lineageWalkConfig)
+	walkDependencyEdges = func(assetID string, depth int, visiting map[string]struct{}, config lineageWalkConfig) {
 		if _, ok := visiting[assetID]; ok {
 			return
 		}
 		visiting[assetID] = struct{}{}
 		defer delete(visiting, assetID)
-		for _, edge := range sortedLineageEdges(outgoing[assetID], byID) {
+		for _, edge := range sortedLineageEdges(config.edges(assetID), byID) {
 			if !isLineageDependencyEdge(edge) {
 				continue
 			}
-			asset, ok := byID[edge.ToAssetID]
+			asset, ok := byID[config.peerID(edge)]
 			if !ok {
 				continue
 			}
-			addNode(asset, -depth, false)
+			addNode(asset, config.rank(depth), false)
 			addEdge(edge)
-			key := lineageRelationRowKey(edge.Type, edge.ToAssetID)
-			if _, ok := seenUseRows[key]; !ok {
-				usesRows = append(usesRows, lineageTableRow(workspaceID, edge, asset))
-				seenUseRows[key] = struct{}{}
+			if config.rows != nil {
+				key := lineageRelationRowKey(edge.Type, asset.ID)
+				if _, ok := config.seenRows[key]; !ok {
+					*config.rows = append(*config.rows, lineageTableRow(workspaceID, edge, asset))
+					config.seenRows[key] = struct{}{}
+				}
 			}
-			walkUpstream(asset.ID, depth+1, visiting)
+			walkDependencyEdges(asset.ID, depth+1, visiting, config)
 		}
 	}
 
-	var walkDownstream func(assetID string, depth int, visiting map[string]struct{})
-	walkDownstream = func(assetID string, depth int, visiting map[string]struct{}) {
-		if _, ok := visiting[assetID]; ok {
-			return
-		}
-		visiting[assetID] = struct{}{}
-		defer delete(visiting, assetID)
-		for _, edge := range sortedLineageEdges(incoming[assetID], byID) {
-			if !isLineageDependencyEdge(edge) {
-				continue
-			}
-			asset, ok := byID[edge.FromAssetID]
-			if !ok {
-				continue
-			}
-			addNode(asset, depth, false)
-			addEdge(edge)
-			key := lineageRelationRowKey(edge.Type, edge.FromAssetID)
-			if _, ok := seenUsedByRows[key]; !ok {
-				usedByRows = append(usedByRows, lineageTableRow(workspaceID, edge, asset))
-				seenUsedByRows[key] = struct{}{}
-			}
-			walkDownstream(asset.ID, depth+1, visiting)
-		}
+	upstreamWalk := lineageWalkConfig{
+		edges: func(assetID string) []api.AssetEdgeResponse {
+			return outgoing[assetID]
+		},
+		peerID: func(edge api.AssetEdgeResponse) string {
+			return edge.ToAssetID
+		},
+		rank: func(depth int) int {
+			return -depth
+		},
+		rows:     &usesRows,
+		seenRows: seenUseRows,
 	}
-
-	var walkDownstreamGraphOnly func(assetID string, depth int, visiting map[string]struct{})
-	walkDownstreamGraphOnly = func(assetID string, depth int, visiting map[string]struct{}) {
-		if _, ok := visiting[assetID]; ok {
-			return
-		}
-		visiting[assetID] = struct{}{}
-		defer delete(visiting, assetID)
-		for _, edge := range sortedLineageEdges(incoming[assetID], byID) {
-			if !isLineageDependencyEdge(edge) {
-				continue
-			}
-			asset, ok := byID[edge.FromAssetID]
-			if !ok {
-				continue
-			}
-			addNode(asset, depth, false)
-			addEdge(edge)
-			walkDownstreamGraphOnly(asset.ID, depth+1, visiting)
-		}
+	downstreamWalk := lineageWalkConfig{
+		edges: func(assetID string) []api.AssetEdgeResponse {
+			return incoming[assetID]
+		},
+		peerID: func(edge api.AssetEdgeResponse) string {
+			return edge.FromAssetID
+		},
+		rank: func(depth int) int {
+			return depth
+		},
+		rows:     &usedByRows,
+		seenRows: seenUsedByRows,
 	}
+	downstreamGraphWalk := downstreamWalk
+	downstreamGraphWalk.rows = nil
+	downstreamGraphWalk.seenRows = nil
 
 	for _, rootID := range lineageDependencyRootIDs(selected, outgoing, byID) {
 		if rootID != selected.ID {
 			addNode(byID[rootID], 1, false)
 		}
-		walkUpstream(rootID, 1, map[string]struct{}{})
+		walkDependencyEdges(rootID, 1, map[string]struct{}{}, upstreamWalk)
 		if rootID != selected.ID {
-			walkDownstreamGraphOnly(rootID, 1, map[string]struct{}{})
+			walkDependencyEdges(rootID, 1, map[string]struct{}{}, downstreamGraphWalk)
 		}
 	}
-	walkDownstream(selected.ID, 1, map[string]struct{}{})
+	walkDependencyEdges(selected.ID, 1, map[string]struct{}{}, downstreamWalk)
 	addContainsContext(selected.ID, &graph, nodeIndex, byID, edges, addNode, addEdge)
 
 	if len(usesRows)+len(usedByRows) == 0 {
@@ -745,17 +737,18 @@ func collapsedAssetLineageGraph(workspaceID string, selected api.AssetResponse, 
 		if !sourceOK || !targetOK || source.ID == target.ID {
 			continue
 		}
+		policy := lineageProjectionEdge(source.Type, target.Type, edge.Kind)
 		addNode(source)
 		addNode(target)
 		candidates = append(candidates, collapsedEdge{
 			source: source.ID,
 			target: target.ID,
-			kind:   lineageCollapsedEdgeKind(source.Type, target.Type, edge.Kind),
-			label:  lineageCollapsedEdgeLabel(source.Type, target.Type, edge.Kind),
+			kind:   policy.kind,
+			label:  policy.label,
 		})
 	}
 
-	hasMeasureDashboard := false
+	measureDashboardPairs := map[string]struct{}{}
 	for _, edge := range candidates {
 		if edge.source == "" || edge.target == "" {
 			continue
@@ -763,8 +756,10 @@ func collapsedAssetLineageGraph(workspaceID string, selected api.AssetResponse, 
 		source := assets[edge.source]
 		target := assets[edge.target]
 		if source.Type == "measure" && target.Type == "dashboard" {
-			hasMeasureDashboard = true
-			break
+			semanticModel, ok := assets[source.ParentID]
+			if ok && semanticModel.Type == "semantic_model" {
+				measureDashboardPairs[lineageProjectionPairKey(semanticModel.ID, target.ID)] = struct{}{}
+			}
 		}
 	}
 
@@ -772,8 +767,10 @@ func collapsedAssetLineageGraph(workspaceID string, selected api.AssetResponse, 
 	for _, edge := range candidates {
 		source := assets[edge.source]
 		target := assets[edge.target]
-		if hasMeasureDashboard && source.Type == "semantic_model" && target.Type == "dashboard" {
-			continue
+		if source.Type == "semantic_model" && target.Type == "dashboard" {
+			if _, ok := measureDashboardPairs[lineageProjectionPairKey(source.ID, target.ID)]; ok {
+				continue
+			}
 		}
 		if lineageVisualLayer(source.Type) >= lineageVisualLayer(target.Type) {
 			continue
@@ -794,6 +791,10 @@ func collapsedAssetLineageGraph(workspaceID string, selected api.AssetResponse, 
 	sortLineageNodes(out.Nodes)
 	sortLineageGraphEdges(out.Edges)
 	return out
+}
+
+func lineageProjectionPairKey(sourceID, targetID string) string {
+	return sourceID + "|" + targetID
 }
 
 func edgesByFromAsset(edges []api.AssetEdgeResponse) map[string][]api.AssetEdgeResponse {
@@ -921,61 +922,93 @@ func isLineageVisibleGraphAsset(typ string) bool {
 	return lineageVisualLayer(typ) >= 0
 }
 
+type lineageProjectionLayerPolicy struct {
+	assetType string
+	layer     int
+}
+
+var lineageProjectionLayers = []lineageProjectionLayerPolicy{
+	{assetType: "connection", layer: 0},
+	{assetType: "source", layer: 1},
+	{assetType: "model_table", layer: 2},
+	{assetType: "semantic_model", layer: 3},
+	{assetType: "measure", layer: 4},
+	{assetType: "dashboard", layer: 5},
+}
+
 func lineageVisualLayer(typ string) int {
-	switch typ {
-	case "connection":
-		return 0
-	case "source":
-		return 1
-	case "model_table":
-		return 2
-	case "semantic_model":
-		return 3
-	case "measure":
-		return 4
-	case "dashboard":
-		return 5
-	default:
-		return -1
+	for _, policy := range lineageProjectionLayers {
+		if typ == policy.assetType {
+			return policy.layer
+		}
+	}
+	return -1
+}
+
+type lineageProjectionEdgeKey struct {
+	sourceType string
+	targetType string
+}
+
+type lineageProjectionEdgePolicy struct {
+	key   lineageProjectionEdgeKey
+	kind  string
+	label string
+}
+
+var lineageProjectionEdges = []lineageProjectionEdgePolicy{
+	{
+		key:   lineageProjectionEdgeKey{sourceType: "connection", targetType: "source"},
+		kind:  "lineage_connection_source",
+		label: "Provides source",
+	},
+	{
+		key:   lineageProjectionEdgeKey{sourceType: "source", targetType: "model_table"},
+		kind:  "lineage_source_model_table",
+		label: "Feeds model table",
+	},
+	{
+		key:   lineageProjectionEdgeKey{sourceType: "model_table", targetType: "semantic_model"},
+		kind:  "lineage_model_table_semantic_model",
+		label: "Feeds semantic model",
+	},
+	{
+		key:   lineageProjectionEdgeKey{sourceType: "semantic_model", targetType: "measure"},
+		kind:  "lineage_semantic_model_measure",
+		label: "Defines measure",
+	},
+	{
+		key:   lineageProjectionEdgeKey{sourceType: "measure", targetType: "dashboard"},
+		kind:  "lineage_measure_dashboard",
+		label: "Used in dashboard",
+	},
+	{
+		key:   lineageProjectionEdgeKey{sourceType: "semantic_model", targetType: "dashboard"},
+		kind:  "lineage_semantic_model_dashboard",
+		label: "Powers dashboard",
+	},
+}
+
+func lineageProjectionEdge(sourceType, targetType, fallback string) lineageProjectionEdgePolicy {
+	key := lineageProjectionEdgeKey{sourceType: sourceType, targetType: targetType}
+	for _, policy := range lineageProjectionEdges {
+		if policy.key == key {
+			return policy
+		}
+	}
+	return lineageProjectionEdgePolicy{
+		key:   key,
+		kind:  fallback,
+		label: labelFromKey(fallback),
 	}
 }
 
 func lineageCollapsedEdgeKind(sourceType, targetType, fallback string) string {
-	switch {
-	case sourceType == "connection" && targetType == "source":
-		return "lineage_connection_source"
-	case sourceType == "source" && targetType == "model_table":
-		return "lineage_source_model_table"
-	case sourceType == "model_table" && targetType == "semantic_model":
-		return "lineage_model_table_semantic_model"
-	case sourceType == "semantic_model" && targetType == "measure":
-		return "lineage_semantic_model_measure"
-	case sourceType == "measure" && targetType == "dashboard":
-		return "lineage_measure_dashboard"
-	case sourceType == "semantic_model" && targetType == "dashboard":
-		return "lineage_semantic_model_dashboard"
-	default:
-		return fallback
-	}
+	return lineageProjectionEdge(sourceType, targetType, fallback).kind
 }
 
 func lineageCollapsedEdgeLabel(sourceType, targetType, fallback string) string {
-	switch {
-	case sourceType == "connection" && targetType == "source":
-		return "Provides source"
-	case sourceType == "source" && targetType == "model_table":
-		return "Feeds model table"
-	case sourceType == "model_table" && targetType == "semantic_model":
-		return "Feeds semantic model"
-	case sourceType == "semantic_model" && targetType == "measure":
-		return "Defines measure"
-	case sourceType == "measure" && targetType == "dashboard":
-		return "Used in dashboard"
-	case sourceType == "semantic_model" && targetType == "dashboard":
-		return "Powers dashboard"
-	default:
-		return labelFromKey(fallback)
-	}
+	return lineageProjectionEdge(sourceType, targetType, fallback).label
 }
 
 func isRollupLineageAsset(typ string) bool {

@@ -38,6 +38,18 @@ type LineageEdge = {
   kind: string
 }
 
+type LineageLayout = {
+  rankIndex: Map<number, number>
+  nodeIndex: Map<string, number>
+  rankSizes: Map<number, number>
+}
+
+const NODE_GAP_X = 260
+const NODE_GAP_Y = 124
+const NODE_OFFSET_X = 96
+const NODE_OFFSET_Y = 240
+const NODE_MIN_Y = 48
+
 class AssetLineageGraph extends LitElement {
   @property({ type: Object }) graph: LineageGraph | null = null
   private root?: Root
@@ -76,9 +88,10 @@ class AssetLineageGraph extends LitElement {
   private renderFlow(): void {
     if (!this.root) return
     const graph = this.resolvedGraph
+    const layout = createLineageLayout(graph.nodes)
     this.root.render(
       React.createElement(ReactFlow, {
-        nodes: graph.nodes.map((node) => toFlowNode(node, graph.nodes)),
+        nodes: graph.nodes.map((node) => toFlowNode(node, layout)),
         edges: graph.edges.map(toFlowEdge),
         nodeTypes: { lineageNode: LineageNodeComponent },
         fitView: true,
@@ -195,8 +208,8 @@ const assetLineageGraphStyles = `
   }
 `
 
-function toFlowNode(node: LineageNode, nodes: LineageNode[]): Node {
-  const { x, y } = positionFor(node, nodes)
+function toFlowNode(node: LineageNode, layout: LineageLayout): Node {
+  const { x, y } = positionFor(node, layout)
   return {
     id: node.id,
     type: 'lineageNode',
@@ -235,18 +248,34 @@ function toFlowEdge(edge: LineageEdge): Edge {
   }
 }
 
-function positionFor(node: LineageNode, nodes: LineageNode[]): { x: number; y: number } {
+function createLineageLayout(nodes: LineageNode[]): LineageLayout {
   const ranks = Array.from(new Set(nodes.map(nodeRank))).sort((left, right) => left - right)
+  const rankIndex = new Map(ranks.map((rank, index) => [rank, index]))
+  const nodeIndex = new Map<string, number>()
+  const rankSizes = new Map<number, number>()
+
+  for (const rank of ranks) {
+    const rankNodes = nodes
+      .filter((candidate) => nodeRank(candidate) === rank)
+      .sort((left, right) => nodeSortKey(left).localeCompare(nodeSortKey(right)))
+    rankSizes.set(rank, rankNodes.length)
+    rankNodes.forEach((candidate, index) => {
+      if (!nodeIndex.has(candidate.id)) nodeIndex.set(candidate.id, index)
+    })
+  }
+
+  return { rankIndex, nodeIndex, rankSizes }
+}
+
+function positionFor(node: LineageNode, layout: LineageLayout): { x: number; y: number } {
   const rank = nodeRank(node)
-  const rankIndex = Math.max(0, ranks.indexOf(rank))
-  const rankNodes = nodes
-    .filter((candidate) => nodeRank(candidate) === rank)
-    .sort((left, right) => nodeSortKey(left).localeCompare(nodeSortKey(right)))
-  const index = Math.max(0, rankNodes.findIndex((candidate) => candidate.id === node.id))
-  const centeredOffset = (index - (rankNodes.length - 1) / 2) * 124
+  const rankIndex = layout.rankIndex.get(rank) ?? 0
+  const rankSize = layout.rankSizes.get(rank) ?? 1
+  const index = layout.nodeIndex.get(node.id) ?? 0
+  const centeredOffset = (index - (rankSize - 1) / 2) * NODE_GAP_Y
   return {
-    x: 96 + rankIndex * 260,
-    y: Math.max(48, 240 + centeredOffset),
+    x: NODE_OFFSET_X + rankIndex * NODE_GAP_X,
+    y: Math.max(NODE_MIN_Y, NODE_OFFSET_Y + centeredOffset),
   }
 }
 
@@ -277,25 +306,26 @@ function LineageNodeComponent({ data }: { data: LineageNode }) {
   )
 }
 
+const nodePalette: Record<string, [string, string, string]> = {
+  catalog: ['var(--ld-asset-catalog-bg)', 'var(--ld-asset-catalog-accent)', 'var(--ld-asset-catalog-border)'],
+  connection: ['var(--ld-asset-connection-bg)', 'var(--ld-asset-connection-accent)', 'var(--ld-asset-connection-border)'],
+  dashboard: ['var(--ld-asset-dashboard-bg)', 'var(--ld-asset-dashboard-accent)', 'var(--ld-asset-dashboard-border)'],
+  field: ['var(--ld-asset-dimension-bg)', 'var(--ld-asset-dimension-accent)', 'var(--ld-asset-dimension-border)'],
+  filter: ['var(--ld-asset-filter-bg)', 'var(--ld-asset-filter-accent)', 'var(--ld-asset-filter-border)'],
+  measure: ['var(--ld-asset-measure-bg)', 'var(--ld-asset-measure-accent)', 'var(--ld-asset-measure-border)'],
+  model_table: ['var(--ld-asset-model-table-bg)', 'var(--ld-asset-model-table-accent)', 'var(--ld-asset-model-table-border)'],
+  page: ['var(--ld-asset-page-bg)', 'var(--ld-asset-page-accent)', 'var(--ld-asset-page-border)'],
+  page_item: ['var(--ld-asset-page-bg)', 'var(--ld-asset-page-accent)', 'var(--ld-asset-page-border)'],
+  relationship: ['var(--ld-asset-dimension-bg)', 'var(--ld-asset-dimension-accent)', 'var(--ld-asset-dimension-border)'],
+  semantic_model: ['var(--ld-asset-semantic-model-bg)', 'var(--ld-asset-semantic-model-accent)', 'var(--ld-asset-semantic-model-border)'],
+  semantic_table: ['var(--ld-asset-model-table-bg)', 'var(--ld-asset-model-table-accent)', 'var(--ld-asset-model-table-border)'],
+  source: ['var(--ld-asset-source-bg)', 'var(--ld-asset-source-accent)', 'var(--ld-asset-source-border)'],
+  table: ['var(--ld-asset-table-bg)', 'var(--ld-asset-table-accent)', 'var(--ld-asset-table-border)'],
+  visual: ['var(--ld-asset-visual-bg)', 'var(--ld-asset-visual-accent)', 'var(--ld-asset-visual-border)'],
+}
+
 function nodeStyle(node: LineageNode): Record<string, string> {
-  const palette: Record<string, [string, string, string]> = {
-    catalog: ['var(--ld-asset-catalog-bg)', 'var(--ld-asset-catalog-accent)', 'var(--ld-asset-catalog-border)'],
-    connection: ['var(--ld-asset-connection-bg)', 'var(--ld-asset-connection-accent)', 'var(--ld-asset-connection-border)'],
-    dashboard: ['var(--ld-asset-dashboard-bg)', 'var(--ld-asset-dashboard-accent)', 'var(--ld-asset-dashboard-border)'],
-    field: ['var(--ld-asset-dimension-bg)', 'var(--ld-asset-dimension-accent)', 'var(--ld-asset-dimension-border)'],
-    filter: ['var(--ld-asset-filter-bg)', 'var(--ld-asset-filter-accent)', 'var(--ld-asset-filter-border)'],
-    measure: ['var(--ld-asset-measure-bg)', 'var(--ld-asset-measure-accent)', 'var(--ld-asset-measure-border)'],
-    model_table: ['var(--ld-asset-model-table-bg)', 'var(--ld-asset-model-table-accent)', 'var(--ld-asset-model-table-border)'],
-    page: ['var(--ld-asset-page-bg)', 'var(--ld-asset-page-accent)', 'var(--ld-asset-page-border)'],
-    page_item: ['var(--ld-asset-page-bg)', 'var(--ld-asset-page-accent)', 'var(--ld-asset-page-border)'],
-    relationship: ['var(--ld-asset-dimension-bg)', 'var(--ld-asset-dimension-accent)', 'var(--ld-asset-dimension-border)'],
-    semantic_model: ['var(--ld-asset-semantic-model-bg)', 'var(--ld-asset-semantic-model-accent)', 'var(--ld-asset-semantic-model-border)'],
-    semantic_table: ['var(--ld-asset-model-table-bg)', 'var(--ld-asset-model-table-accent)', 'var(--ld-asset-model-table-border)'],
-    source: ['var(--ld-asset-source-bg)', 'var(--ld-asset-source-accent)', 'var(--ld-asset-source-border)'],
-    table: ['var(--ld-asset-table-bg)', 'var(--ld-asset-table-accent)', 'var(--ld-asset-table-border)'],
-    visual: ['var(--ld-asset-visual-bg)', 'var(--ld-asset-visual-accent)', 'var(--ld-asset-visual-border)'],
-  }
-  const [bg, accent, border] = palette[node.kind] ?? palette.semantic_model
+  const [bg, accent, border] = nodePalette[node.kind] ?? nodePalette.semantic_model
   return {
     '--lineage-node-bg': bg,
     '--lineage-node-accent': node.selected ? 'var(--ld-line-accent)' : accent,

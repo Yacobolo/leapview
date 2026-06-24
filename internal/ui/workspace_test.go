@@ -224,6 +224,170 @@ func TestAssetLineageFallsBackToContainsWhenNoDependenciesExist(t *testing.T) {
 	}
 }
 
+func TestLineageProjectionPolicy(t *testing.T) {
+	layerTests := []struct {
+		typ     string
+		want    int
+		visible bool
+	}{
+		{typ: "connection", want: 0, visible: true},
+		{typ: "source", want: 1, visible: true},
+		{typ: "model_table", want: 2, visible: true},
+		{typ: "semantic_model", want: 3, visible: true},
+		{typ: "measure", want: 4, visible: true},
+		{typ: "dashboard", want: 5, visible: true},
+		{typ: "field", want: -1, visible: false},
+	}
+	for _, tt := range layerTests {
+		t.Run(tt.typ, func(t *testing.T) {
+			if got := lineageVisualLayer(tt.typ); got != tt.want {
+				t.Fatalf("lineageVisualLayer(%q) = %d, want %d", tt.typ, got, tt.want)
+			}
+			if got := isLineageVisibleGraphAsset(tt.typ); got != tt.visible {
+				t.Fatalf("isLineageVisibleGraphAsset(%q) = %v, want %v", tt.typ, got, tt.visible)
+			}
+		})
+	}
+
+	edgeTests := []struct {
+		name       string
+		sourceType string
+		targetType string
+		fallback   string
+		wantKind   string
+		wantLabel  string
+	}{
+		{
+			name:       "connection source",
+			sourceType: "connection",
+			targetType: "source",
+			fallback:   "uses_connection",
+			wantKind:   "lineage_connection_source",
+			wantLabel:  "Provides source",
+		},
+		{
+			name:       "source model table",
+			sourceType: "source",
+			targetType: "model_table",
+			fallback:   "reads_source",
+			wantKind:   "lineage_source_model_table",
+			wantLabel:  "Feeds model table",
+		},
+		{
+			name:       "model table semantic model",
+			sourceType: "model_table",
+			targetType: "semantic_model",
+			fallback:   "uses_model_table",
+			wantKind:   "lineage_model_table_semantic_model",
+			wantLabel:  "Feeds semantic model",
+		},
+		{
+			name:       "semantic model measure",
+			sourceType: "semantic_model",
+			targetType: "measure",
+			fallback:   "uses_semantic_table",
+			wantKind:   "lineage_semantic_model_measure",
+			wantLabel:  "Defines measure",
+		},
+		{
+			name:       "measure dashboard",
+			sourceType: "measure",
+			targetType: "dashboard",
+			fallback:   "uses_measure",
+			wantKind:   "lineage_measure_dashboard",
+			wantLabel:  "Used in dashboard",
+		},
+		{
+			name:       "semantic model dashboard",
+			sourceType: "semantic_model",
+			targetType: "dashboard",
+			fallback:   "uses_semantic_model",
+			wantKind:   "lineage_semantic_model_dashboard",
+			wantLabel:  "Powers dashboard",
+		},
+		{
+			name:       "fallback",
+			sourceType: "field",
+			targetType: "dashboard",
+			fallback:   "filters_field",
+			wantKind:   "filters_field",
+			wantLabel:  "Filters field",
+		},
+	}
+	for _, tt := range edgeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := lineageCollapsedEdgeKind(tt.sourceType, tt.targetType, tt.fallback); got != tt.wantKind {
+				t.Fatalf("lineageCollapsedEdgeKind(%q, %q, %q) = %q, want %q", tt.sourceType, tt.targetType, tt.fallback, got, tt.wantKind)
+			}
+			if got := lineageCollapsedEdgeLabel(tt.sourceType, tt.targetType, tt.fallback); got != tt.wantLabel {
+				t.Fatalf("lineageCollapsedEdgeLabel(%q, %q, %q) = %q, want %q", tt.sourceType, tt.targetType, tt.fallback, got, tt.wantLabel)
+			}
+		})
+	}
+}
+
+func TestCollapsedAssetLineageSuppressesSemanticDashboardShortcutByPair(t *testing.T) {
+	workspaceID := "libredash"
+	assets := map[string]api.AssetResponse{
+		"model-a": {
+			ID:          "model-a",
+			WorkspaceID: workspaceID,
+			Type:        "semantic_model",
+			Key:         "model_a",
+			Title:       "Model A",
+		},
+		"measure-a": {
+			ID:          "measure-a",
+			WorkspaceID: workspaceID,
+			Type:        "measure",
+			Key:         "model_a.revenue",
+			ParentID:    "model-a",
+			Title:       "Revenue",
+		},
+		"dashboard-a": {
+			ID:          "dashboard-a",
+			WorkspaceID: workspaceID,
+			Type:        "dashboard",
+			Key:         "dashboard-a",
+			Title:       "Dashboard A",
+		},
+		"model-b": {
+			ID:          "model-b",
+			WorkspaceID: workspaceID,
+			Type:        "semantic_model",
+			Key:         "model_b",
+			Title:       "Model B",
+		},
+		"dashboard-b": {
+			ID:          "dashboard-b",
+			WorkspaceID: workspaceID,
+			Type:        "dashboard",
+			Key:         "dashboard-b",
+			Title:       "Dashboard B",
+		},
+	}
+	graph := assetLineageGraph{
+		Nodes: []assetLineageNode{
+			{ID: "model-a"},
+			{ID: "measure-a"},
+			{ID: "dashboard-a"},
+			{ID: "model-b"},
+			{ID: "dashboard-b"},
+		},
+		Edges: []assetLineageEdge{
+			{ID: "dashboard-a-measure-a", Source: "dashboard-a", Target: "measure-a", Kind: "uses_measure"},
+			{ID: "dashboard-a-model-a", Source: "dashboard-a", Target: "model-a", Kind: "uses_semantic_model"},
+			{ID: "dashboard-b-model-b", Source: "dashboard-b", Target: "model-b", Kind: "uses_semantic_model"},
+		},
+	}
+
+	lineage := collapsedAssetLineageGraph(workspaceID, assets["dashboard-b"], graph, assets)
+
+	assertLineageHasEdge(t, lineage, "measure-a", "dashboard-a", "lineage_measure_dashboard")
+	assertLineageMissingEdge(t, lineage, "model-a", "dashboard-a", "lineage_semantic_model_dashboard")
+	assertLineageHasEdge(t, lineage, "model-b", "dashboard-b", "lineage_semantic_model_dashboard")
+}
+
 func TestWorkspaceAssetDetailsRenderSharedShapeForLeafAsset(t *testing.T) {
 	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
 	var connection api.AssetResponse
@@ -467,6 +631,25 @@ func assertLineageSelectedNode(t *testing.T, graph assetLineageGraph, wantKind s
 		}
 	}
 	t.Fatalf("lineage graph has no selected node: %#v", graph.Nodes)
+}
+
+func assertLineageHasEdge(t *testing.T, graph assetLineageGraph, source, target, kind string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.Source == source && edge.Target == target && edge.Kind == kind {
+			return
+		}
+	}
+	t.Fatalf("lineage graph missing edge %s -> %s (%s): %#v", source, target, kind, graph.Edges)
+}
+
+func assertLineageMissingEdge(t *testing.T, graph assetLineageGraph, source, target, kind string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.Source == source && edge.Target == target && edge.Kind == kind {
+			t.Fatalf("lineage graph included unwanted edge %s -> %s (%s): %#v", source, target, kind, graph.Edges)
+		}
+	}
 }
 
 func assertGridRelations(t *testing.T, grid metricGrid, expected []string) {
