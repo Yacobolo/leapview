@@ -69,6 +69,7 @@ const dataTableFeatures = tableFeatures({
 })
 
 const groupHeaderHeight = 26
+const uiRowSelectionField = '__libredash.rowKey'
 
 function defaultColumnSize(column: TableColumn): number {
   const configuredWidth = Number(column.width)
@@ -1185,10 +1186,7 @@ class DataTable extends LitElement {
         onColumnSizingChange: (updater: unknown) => {
           this.columnSizing = applyUpdater(updater, this.columnSizing)
         },
-        onRowSelectionChange: (updater: unknown) => {
-          this.rowSelection = applyUpdater(updater, this.rowSelection)
-          if (!this.hasLocalSelection()) this.selectedCellKey = ''
-        },
+        onRowSelectionChange: () => {},
       } as any,
     ) as any
   }
@@ -1221,9 +1219,8 @@ class DataTable extends LitElement {
     const selected = this.rowIsSelected(row, key)
     const onlySelectedRow = selected && this.selectedRowCount() === 1
     const toggleSelection = event.metaKey || event.ctrlKey || onlySelectedRow
-    this.rowSelection = toggleSelection ? this.toggledRowSelection(key) : { [key]: true }
     this.selectedCellKey = ''
-    this.emitRowSelection(row, toggleSelection)
+    this.emitRowSelection(key, row, toggleSelection)
   }
 
   private syncSelectedRowFromTableSelection(): void {
@@ -1232,19 +1229,26 @@ class DataTable extends LitElement {
       this.clearLocalSelection()
       return
     }
-    const next: RowSelectionState = {}
-    for (const item of this.loadedRows) {
-      if (this.rowMatchesSelection(item.row, selection)) {
-        next[rowKey(item.row, item.index)] = true
-      }
-    }
-    this.rowSelection = next
+    this.rowSelection = this.rowSelectionFromEntries(selection)
     this.selectedCellKey = ''
   }
 
-  private rowMatchesSelection(row: TableRow, selection: NonNullable<TableSignal['selection']>): boolean {
+  private rowSelectionFromEntries(selection: NonNullable<TableSignal['selection']>): RowSelectionState {
+    const next: RowSelectionState = {}
+    for (const item of this.loadedRows) {
+      const key = rowKey(item.row, item.index)
+      if (this.rowMatchesSelection(item.row, key, selection)) {
+        next[key] = true
+      }
+    }
+    return next
+  }
+
+  private rowMatchesSelection(row: TableRow, key: string, selection: NonNullable<TableSignal['selection']>): boolean {
     const mappings = this.table?.interaction?.mappings ?? []
-    if (mappings.length === 0) return false
+    if (mappings.length === 0) {
+      return selection.some((entry) => entry.mappings?.some((mapping) => mapping.field === uiRowSelectionField && mapping.value === key))
+    }
     return selection.some((entry) => mappings.every((mapping) => {
       const selected = entry.mappings?.find((candidate) => candidate.field === mapping.field)
       return Boolean(selected?.value) && String(row[mapping.value] ?? '') === selected?.value
@@ -1256,14 +1260,8 @@ class DataTable extends LitElement {
     this.rowSelection = {}
   }
 
-  private hasLocalSelection(): boolean {
-    return Object.values(this.rowSelection).some(Boolean)
-  }
-
   private selectedRowCount(): number {
-    const selection = this.table?.selection ?? []
-    if (selection.length > 0) return selection.length
-    return Object.values(this.rowSelection).filter(Boolean).length
+    return this.table?.selection?.length ?? 0
   }
 
   private selectionLabels(): string[] {
@@ -1274,36 +1272,32 @@ class DataTable extends LitElement {
         return (entry.mappings ?? []).map((mapping) => mapping.label || mapping.value || '').filter(Boolean).join(', ')
       }).filter(Boolean)
     }
-    return Object.keys(this.rowSelection).filter((key) => this.rowSelection[key])
+    return []
   }
 
   private rowIsSelected(row: TableRow, key: string): boolean {
     const selection = this.table?.selection ?? []
-    if (selection.length > 0) return this.rowMatchesSelection(row, selection)
-    return Boolean(this.rowSelection[key])
+    if (selection.length === 0) return false
+    return this.rowMatchesSelection(row, key, selection)
   }
 
-  private toggledRowSelection(key: string): RowSelectionState {
-    const next: RowSelectionState = { ...this.rowSelection }
-    if (next[key]) {
-      delete next[key]
-    } else {
-      next[key] = true
-    }
-    return next
-  }
-
-  private emitRowSelection(row: TableRow, toggleGesture: boolean): void {
+  private emitRowSelection(key: string, row: TableRow, toggleGesture: boolean): void {
     const sourceId = this.resolvedTableId()
     const interaction = this.table?.interaction
     const mappings = interaction?.mappings ?? []
-    if (!sourceId || !interaction || mappings.length === 0) return
-    const commandMappings = mappings.map((mapping) => ({
-      field: mapping.field,
-      value: String(row[mapping.value] ?? ''),
-      label: String(row[mapping.label || mapping.value] ?? row[mapping.value] ?? ''),
-    })).filter((mapping) => mapping.value !== '')
-    if (commandMappings.length !== mappings.length) return
+    if (!sourceId || !interaction) return
+    const commandMappings = mappings.length > 0
+      ? mappings.map((mapping) => ({
+        field: mapping.field,
+        value: String(row[mapping.value] ?? ''),
+        label: String(row[mapping.label || mapping.value] ?? row[mapping.value] ?? ''),
+      })).filter((mapping) => mapping.value !== '')
+      : [{
+        field: uiRowSelectionField,
+        value: key,
+        label: key,
+      }]
+    if (mappings.length > 0 && commandMappings.length !== mappings.length) return
     this.dispatchEvent(
       new CustomEvent('ld-interaction-select', {
         bubbles: true,
@@ -1813,8 +1807,7 @@ class DataTable extends LitElement {
     const tableId = this.resolvedTableId()
     this.renderRoot.querySelector<HTMLDetailsElement>('.visual-options')?.removeAttribute('open')
     if (action === 'clear-selection') {
-      this.clearLocalSelection()
-      if (tableId && (this.table?.interaction?.mappings ?? []).length > 0) {
+      if (tableId) {
         this.dispatchEvent(
           new CustomEvent('ld-interaction-select', {
             bubbles: true,
