@@ -453,7 +453,7 @@ Dashboard domain code should own:
 - `PageState`
 - `PageSnapshot`
 - `FilterState`
-- `VisualSelection`
+- `InteractionSelection`
 - Table window and chart selection command intents
 - Typed analytics query intents
 

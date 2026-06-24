@@ -53,6 +53,15 @@ export type InteractionMapping = {
   label?: string
 }
 
+export type InteractionSelectionEntry = {
+  mappings?: Array<{
+    field?: string
+    value?: string
+    label?: string
+  }>
+  label?: string
+}
+
 export type ChartPayload = {
   version?: number
   id?: string
@@ -63,13 +72,12 @@ export type ChartPayload = {
   title?: string
   unit?: string
   format?: string
-  field?: string
   interaction?: InteractionConfig
   dimensions?: string[]
   measure?: string
   measures?: string[]
   series?: string[]
-  selection?: string[]
+  selection?: InteractionSelectionEntry[]
   data?: ChartDatum[]
   options?: Record<string, unknown>
   rendererOptions?: Record<string, Record<string, unknown>>

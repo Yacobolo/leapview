@@ -448,25 +448,24 @@ type Status struct {
 }
 
 type Visual struct {
-	Version         int                       `json:"version"`
-	ID              string                    `json:"id"`
-	Kind            string                    `json:"kind"`
-	Shape           string                    `json:"shape"`
-	Renderer        string                    `json:"renderer"`
-	Type            string                    `json:"type"`
-	Title           string                    `json:"title"`
-	Unit            string                    `json:"unit"`
-	Format          string                    `json:"format,omitempty"`
-	Field           string                    `json:"field"`
-	Interaction     InteractionConfig         `json:"interaction"`
-	Dimensions      []string                  `json:"dimensions"`
-	Measure         string                    `json:"measure"`
-	Measures        []string                  `json:"measures"`
-	Series          []string                  `json:"series"`
-	Options         map[string]any            `json:"options"`
-	RendererOptions map[string]map[string]any `json:"rendererOptions"`
-	Selection       []string                  `json:"selection"`
-	Data            []Datum                   `json:"data"`
+	Version         int                         `json:"version"`
+	ID              string                      `json:"id"`
+	Kind            string                      `json:"kind"`
+	Shape           string                      `json:"shape"`
+	Renderer        string                      `json:"renderer"`
+	Type            string                      `json:"type"`
+	Title           string                      `json:"title"`
+	Unit            string                      `json:"unit"`
+	Format          string                      `json:"format,omitempty"`
+	Interaction     InteractionConfig           `json:"interaction"`
+	Dimensions      []string                    `json:"dimensions"`
+	Measure         string                      `json:"measure"`
+	Measures        []string                    `json:"measures"`
+	Series          []string                    `json:"series"`
+	Options         map[string]any              `json:"options"`
+	RendererOptions map[string]map[string]any   `json:"rendererOptions"`
+	Selection       []InteractionSelectionEntry `json:"selection"`
+	Data            []Datum                     `json:"data"`
 }
 
 type Datum map[string]any
@@ -718,14 +717,13 @@ func emptyChart(id, chartType, title, unit, dimension, measure string) Visual {
 		Type:            chartType,
 		Title:           title,
 		Unit:            unit,
-		Field:           dimension,
 		Dimensions:      []string{dimension},
 		Measure:         measure,
 		Measures:        []string{measure},
 		Series:          []string{},
 		Options:         map[string]any{},
 		RendererOptions: map[string]map[string]any{},
-		Selection:       []string{},
+		Selection:       []InteractionSelectionEntry{},
 		Data:            []Datum{},
 	}
 }

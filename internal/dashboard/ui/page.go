@@ -518,7 +518,6 @@ func visualSignal(id string, visual reportdef.Visual, title, unit, format, measu
 		"title":           title,
 		"unit":            unit,
 		"format":          format,
-		"field":           firstInteractionSignalField(visual.Interaction.PointSelection),
 		"interaction":     interactionSignal("point_selection", visual.Interaction.PointSelection),
 		"dimensions":      displayFieldRefs(visual.Query.Dimensions),
 		"measure":         measure,
@@ -555,13 +554,6 @@ func interactionSignal(kind string, selection reportdef.SelectionInteraction) ma
 		"mappings": mappings,
 		"targets":  append([]string{}, selection.Targets...),
 	}
-}
-
-func firstInteractionSignalField(selection reportdef.SelectionInteraction) string {
-	if len(selection.Mappings) == 0 {
-		return ""
-	}
-	return selection.Mappings[0].Field
 }
 
 func displayFieldRefs(refs []reportdef.FieldRef) []string {

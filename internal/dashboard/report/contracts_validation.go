@@ -209,6 +209,9 @@ func (d *Dashboard) validateContract() error {
 			return fmt.Errorf("table %q does not support point_selection", name)
 		}
 		if !table.Interaction.RowSelection.IsZero() {
+			if table.Interaction.RowSelection.Mode == "multi" {
+				return fmt.Errorf("table %q row_selection mode multi is not supported for data_table", name)
+			}
 			if err := d.validateSelectionInteraction("table", name, "row_selection", table.Interaction.RowSelection); err != nil {
 				return err
 			}

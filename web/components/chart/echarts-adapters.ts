@@ -1,6 +1,6 @@
 import type { EChartsOption } from 'echarts'
 import type { ChartDatum, ChartPayload, ChartTokens, ChartType } from './types'
-import { booleanValue, colorWithAlpha, formatValue, normalizeShape, normalizeType, numberValue, selectedValues, stringValue, unique, withPayloadRowIndex } from './utils'
+import { booleanValue, colorWithAlpha, formatValue, normalizeShape, normalizeType, numberValue, selectedRows, stringValue, unique, withPayloadRowIndex } from './utils'
 
 const chartFontWeightMedium = 500
 const chartFontWeightStrong = 600
@@ -134,16 +134,17 @@ function thresholdColors(payload: ChartPayload, tokens: ChartTokens, maxValue: n
 }
 
 function itemDataFor(payload: ChartPayload, tokens: ChartTokens) {
-  const { selected, hasSelection } = selectedValues(payload)
+  const selection = selectedRows(payload)
   return (payload.data ?? []).map((row, index) => {
     const label = stringValue(row, 'label')
+    const isSelected = selection.isSelected(row)
     return withPayloadRowIndex({
       name: label,
       value: numberValue(row, 'value'),
-      selected: selected.has(label),
+      selected: isSelected,
       itemStyle: {
         color: tokens.palette[index % tokens.palette.length],
-        opacity: hasSelection && !selected.has(label) ? 0.35 : 1,
+        opacity: selection.hasSelection && !isSelected ? 0.35 : 1,
       },
     }, index)
   })
@@ -268,7 +269,7 @@ function singleValueAdapter(payload: ChartPayload, tokens: ChartTokens): ECharts
 function categoryAdapter(payload: ChartPayload, tokens: ChartTokens): EChartsOption {
   const type = normalizeType(payload.type)
   const data = payload.data ?? []
-  const { selected, hasSelection } = selectedValues(payload)
+  const selection = selectedRows(payload)
 	const stacked = Boolean(payload.options?.stacked)
 	const horizontal = type === 'bar'
 	const seriesType = type === 'area' ? 'line' : type === 'column' ? 'bar' : type
@@ -319,16 +320,16 @@ function categoryAdapter(payload: ChartPayload, tokens: ChartTokens): EChartsOpt
           ? data.findIndex((candidate) => stringValue(candidate, 'label') === label && (stringValue(candidate, 'series') || payload.title || 'Value') === seriesName)
           : labelIndex
         const point = pointIndex >= 0 ? data[pointIndex] : undefined
-        const isSelected = selected.has(label)
+        const isSelected = point ? selection.isSelected(point) : false
         return withPayloadRowIndex({
           name: label,
           value: numberValue(point, 'value'),
           itemStyle: {
             color:
-              hasSelection && !isSelected
-                ? tokens.dimmed
-              : tokens.palette[(multiSeries ? seriesIndex : labelIndex) % tokens.palette.length],
-            opacity: hasSelection && !isSelected ? 0.35 : 1,
+	              selection.hasSelection && !isSelected
+	                ? tokens.dimmed
+	              : tokens.palette[(multiSeries ? seriesIndex : labelIndex) % tokens.palette.length],
+	            opacity: selection.hasSelection && !isSelected ? 0.35 : 1,
           },
         }, pointIndex)
       }),
@@ -469,7 +470,7 @@ function matrixAdapter(payload: ChartPayload, tokens: ChartTokens): EChartsOptio
   const columns = unique(data.map((row) => stringValue(row, 'column')))
   const values = data.map((row) => numberValue(row, 'value'))
   const maxValue = Math.max(1, ...values)
-  const { selected, hasSelection } = selectedValues(payload, 'row')
+  const selection = selectedRows(payload, 'row')
   return {
 		...baseOption(payload, tokens),
     tooltip: { trigger: 'item', borderColor: tokens.border, backgroundColor: tokens.surface, textStyle: { color: tokens.text } },
@@ -493,11 +494,11 @@ function matrixAdapter(payload: ChartPayload, tokens: ChartTokens): EChartsOptio
         type: 'heatmap',
         data: data.map((row, index) => {
           const rowName = stringValue(row, 'row')
-          const isSelected = selected.has(rowName)
+	          const isSelected = selection.isSelected(row, 'row')
           return withPayloadRowIndex({
             name: rowName,
             value: [columns.indexOf(stringValue(row, 'column')), rows.indexOf(rowName), numberValue(row, 'value')],
-            itemStyle: { opacity: hasSelection && !isSelected ? 0.35 : 1 },
+	            itemStyle: { opacity: selection.hasSelection && !isSelected ? 0.35 : 1 },
           }, index)
         }),
 				label: labelOption(payload, tokens, 'inside'),

@@ -544,7 +544,7 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 		{
 			name: "clear selection",
 			path: "/commands/clear-selection",
-			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","mappings":[{"field":"orders.status","values":["delivered"]}]}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
 		},
 		{
 			name: "reset filters",
@@ -578,7 +578,7 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 }
 
 func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","mappings":[{"field":"orders.status","values":["delivered"]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":0,"count":50}}`)
+	body := strings.NewReader(`{"filters":{"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/clear-selection", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -591,7 +591,7 @@ func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {
 }
 
 func TestResetFiltersCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","mappings":[{"field":"orders.status","values":["delivered"]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":200,"count":50}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":200,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/reset-filters", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

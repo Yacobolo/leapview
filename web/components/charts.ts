@@ -187,7 +187,6 @@ class ChartVisual extends LitElement {
   @property({ type: String, attribute: 'chart-title' }) chartTitle = 'Chart'
   @property({ type: String }) unit = ''
   @property({ type: String, attribute: 'visual-id' }) visualId = ''
-  @property({ type: String }) field = ''
   @property({ type: String }) type: ChartType | string = 'bar'
   @property({ type: Array }) selection: string[] = []
 
@@ -301,7 +300,6 @@ class ChartVisual extends LitElement {
       title: chart.title || this.chartTitle,
       unit: chart.unit ?? this.unit,
       format: chart.format ?? '',
-      field: chart.field || this.field,
       interaction: chart.interaction ?? {},
       dimensions: chart.dimensions ?? [],
       measure: chart.measure ?? '',

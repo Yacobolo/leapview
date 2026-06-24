@@ -129,6 +129,9 @@ func validateVisualQueryShape(name string, visual Visual) error {
 }
 
 func ValidateVisualPointSelectionMappingKeys(name string, visual Visual) error {
+	if !supportsPointSelection(visual) {
+		return fmt.Errorf("visual %q type %q shape %q does not support point_selection", name, visual.Type, visual.ShapeOrDefault())
+	}
 	keys := visualPayloadKeys(visual)
 	for index, mapping := range visual.Interaction.PointSelection.Mappings {
 		if !keys.Contains(mapping.Value) {
@@ -139,6 +142,19 @@ func ValidateVisualPointSelectionMappingKeys(name string, visual Visual) error {
 		}
 	}
 	return nil
+}
+
+func supportsPointSelection(visual Visual) bool {
+	switch visual.Type {
+	case "radar":
+		return false
+	}
+	switch visual.ShapeOrDefault() {
+	case "hierarchy":
+		return false
+	default:
+		return true
+	}
 }
 
 type payloadKeySet map[string]struct{}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dashboard/reportmodel"
 	"github.com/Yacobolo/libredash/internal/semantic"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
@@ -789,6 +790,54 @@ func TestDashboardValidateRejectsUnknownPointSelectionLabelKey(t *testing.T) {
 	report.Visuals["orders"] = visual
 
 	assertDashboardValidateError(t, report, model, "unknown label key")
+}
+
+func TestDashboardValidateRejectsHierarchyPointSelection(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["category_status_sunburst"]
+	visual.Interaction.PointSelection = reportdef.SelectionInteraction{
+		Mode:   "single",
+		Toggle: true,
+		Mappings: []reportdef.SelectionMapping{{
+			Field: "orders.category",
+			Value: "path",
+			Label: "path",
+		}},
+		Targets: []string{"orders"},
+	}
+	report.Visuals["category_status_sunburst"] = visual
+
+	assertDashboardValidateError(t, report, model, "does not support point_selection")
+}
+
+func TestDashboardValidateRejectsDataTableMultiRowSelection(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	table := report.Tables["orders_table"]
+	table.Interaction.RowSelection.Mode = "multi"
+	report.Tables["orders_table"] = table
+
+	assertDashboardValidateError(t, report, model, "row_selection mode multi is not supported")
+}
+
+func TestDashboardValidateRejectsRadarPointSelection(t *testing.T) {
+	model := loadOlistModel(t)
+	report := loadOlistDashboard(t, model)
+	visual := report.Visuals["status_radar"]
+	visual.Interaction.PointSelection = reportdef.SelectionInteraction{
+		Mode:   "single",
+		Toggle: true,
+		Mappings: []reportdef.SelectionMapping{{
+			Field: "orders.status",
+			Value: "label",
+			Label: "label",
+		}},
+		Targets: []string{"orders"},
+	}
+	report.Visuals["status_radar"] = visual
+
+	assertDashboardValidateError(t, report, model, "does not support point_selection")
 }
 
 func TestDashboardValidateRejectsSeriesOnUnsupportedChart(t *testing.T) {

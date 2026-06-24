@@ -50,8 +50,10 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 				return fmt.Errorf("visual %q interaction references unknown field %q", name, mapping.Field)
 			}
 		}
-		if err := report.ValidateVisualPointSelectionMappingKeys(name, visual); err != nil {
-			return err
+		if !visual.Interaction.PointSelection.IsZero() {
+			if err := report.ValidateVisualPointSelectionMappingKeys(name, visual); err != nil {
+				return err
+			}
 		}
 	}
 	for name, table := range d.Tables {

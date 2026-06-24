@@ -248,6 +248,9 @@ relogios_presentes,watches_gifts
 	if !pointSelected(selectedPatch.Visuals["orders"].Data, "delivered") {
 		t.Fatalf("orders chart did not mark delivered as selected: %#v", selectedPatch.Visuals["orders"].Data)
 	}
+	if got := selectedEntryValue(selectedPatch.Visuals["orders"].Selection, "orders.status"); got != "delivered" {
+		t.Fatalf("orders chart selection entry = %q, want delivered: %#v", got, selectedPatch.Visuals["orders"].Selection)
+	}
 	if got := datumString(selectedPatch.Visuals["categories"].Data[0], "label"); got != "health_beauty" {
 		t.Fatalf("category chart under status selection = %q, want health_beauty", got)
 	}
@@ -671,6 +674,31 @@ relogios_presentes,watches_gifts
 	if got := categoryRevenueTotal(patch.Visuals["categories"].Data); got != 330 {
 		t.Fatalf("category revenue total = %v, want 330 without cross-matched tuples", got)
 	}
+
+	malformedFilters := dashboard.Filters{
+		Selections: []dashboard.InteractionSelection{
+			compositeInteractionSelection("visual", "orders", "point_selection",
+				map[string]string{"orders.status": "delivered", "orders.unknown": "health_beauty"},
+				map[string]string{"orders.status": "shipped", "orders.category": "watches_gifts"},
+			),
+		},
+	}
+	patch, err = metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", malformedFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.Status.Error != "" {
+		t.Fatalf("unexpected status error for malformed tuple filter: %s", patch.Status.Error)
+	}
+	if got := categoryRevenue(patch.Visuals["categories"].Data, "health_beauty"); got != 0 {
+		t.Fatalf("health_beauty revenue with malformed tuple = %v, want 0", got)
+	}
+	if got := categoryRevenue(patch.Visuals["categories"].Data, "watches_gifts"); got != 220 {
+		t.Fatalf("watches_gifts revenue with malformed tuple = %v, want 220", got)
+	}
+	if got := categoryRevenueTotal(patch.Visuals["categories"].Data); got != 220 {
+		t.Fatalf("category revenue total with malformed tuple = %v, want only the valid tuple", got)
+	}
 }
 
 func TestServicePowerFilters(t *testing.T) {
@@ -835,6 +863,17 @@ func categoryRevenueTotal(data []dashboard.Datum) float64 {
 		total += datumFloat(row["value"])
 	}
 	return total
+}
+
+func selectedEntryValue(entries []dashboard.InteractionSelectionEntry, field string) string {
+	for _, entry := range entries {
+		for _, mapping := range entry.Mappings {
+			if mapping.Field == field {
+				return mapping.Value
+			}
+		}
+	}
+	return ""
 }
 
 func removeString(values []string, value string) []string {

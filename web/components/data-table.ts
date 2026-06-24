@@ -1215,18 +1215,23 @@ class DataTable extends LitElement {
   }
 
   private selectRow(key: string, row: TableRow): void {
-    const clearing = this.selectedRowId === key
-    this.selectedRowId = clearing ? '' : key
-    this.rowSelection = clearing ? {} : { [key]: true }
+    this.selectedRowId = key
+    this.rowSelection = { [key]: true }
     this.selectedCellKey = ''
-    this.emitRowSelection(row, clearing)
+    this.emitRowSelection(row)
   }
 
-  private emitRowSelection(row: TableRow, clearing: boolean): void {
+  private emitRowSelection(row: TableRow): void {
     const sourceId = this.resolvedTableId()
     const interaction = this.table?.interaction
     const mappings = interaction?.mappings ?? []
     if (!sourceId || !interaction || mappings.length === 0) return
+    const commandMappings = mappings.map((mapping) => ({
+      field: mapping.field,
+      value: String(row[mapping.value] ?? ''),
+      label: String(row[mapping.label || mapping.value] ?? row[mapping.value] ?? ''),
+    })).filter((mapping) => mapping.value !== '')
+    if (commandMappings.length !== mappings.length) return
     this.dispatchEvent(
       new CustomEvent('ld-interaction-select', {
         bubbles: true,
@@ -1235,14 +1240,10 @@ class DataTable extends LitElement {
           sourceKind: 'table',
           sourceId,
           interactionKind: interaction.kind || 'row_selection',
-          action: clearing ? 'clear' : 'set',
+          action: 'set',
           mode: interaction.mode || 'single',
           toggle: interaction.toggle !== false,
-          mappings: clearing ? [] : mappings.map((mapping) => ({
-            field: mapping.field,
-            value: String(row[mapping.value] ?? ''),
-            label: String(row[mapping.label || mapping.value] ?? row[mapping.value] ?? ''),
-          })).filter((mapping) => mapping.value !== ''),
+          mappings: commandMappings,
         },
       }),
     )

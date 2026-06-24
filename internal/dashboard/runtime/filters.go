@@ -103,17 +103,20 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 		groups := make([]reportdef.QueryFilterGroup, 0, len(selection.Entries))
 		for _, entry := range selection.Entries {
 			group := reportdef.QueryFilterGroup{}
+			valid := len(entry.Mappings) > 0
 			for _, mapping := range entry.Mappings {
 				if mapping.Value == "" {
-					continue
+					valid = false
+					break
 				}
 				dimension, err := runtime.model.ResolveDimension(mapping.Field)
 				if err != nil {
-					continue
+					valid = false
+					break
 				}
 				group.Filters = append(group.Filters, reportdef.QueryFilter{Field: dimension.Field, Operator: "equals", Values: []any{mapping.Value}})
 			}
-			if len(group.Filters) > 0 {
+			if valid && len(group.Filters) == len(entry.Mappings) {
 				groups = append(groups, group)
 			}
 		}
