@@ -92,16 +92,19 @@ func (s *Server) workspaceAsset(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if selected.Type == "connection" {
+		http.Redirect(w, r, connectionAssetSectionHref(assetID, "details"), http.StatusFound)
+		return
+	}
 	http.Redirect(w, r, "/workspaces/"+workspaceID+"/assets/"+assetID+"/details", http.StatusFound)
 }
 
 func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 	section := chi.URLParam(r, "section")
+	redirectToDetails := false
 	if section == "definition" {
-		workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-		assetID := chi.URLParam(r, "asset")
-		http.Redirect(w, r, "/workspaces/"+workspaceID+"/assets/"+assetID+"/details", http.StatusFound)
-		return
+		section = "details"
+		redirectToDetails = true
 	}
 	if !ui.ValidWorkspaceAssetSection(section) {
 		http.NotFound(w, r)
@@ -125,10 +128,59 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if selected.Type == "connection" {
+		http.Redirect(w, r, connectionAssetSectionHref(assetID, section), http.StatusFound)
+		return
+	}
+	if redirectToDetails {
+		http.Redirect(w, r, "/workspaces/"+workspaceID+"/assets/"+assetID+"/details", http.StatusFound)
+		return
+	}
 	workspace := s.workspaceResponse(r, workspaceID)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if err := ui.WorkspaceAssetPage(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r)).Render(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) connectionAsset(w http.ResponseWriter, r *http.Request) {
+	assetID := chi.URLParam(r, "asset")
+	http.Redirect(w, r, connectionAssetSectionHref(assetID, "details"), http.StatusFound)
+}
+
+func (s *Server) connectionAssetSection(w http.ResponseWriter, r *http.Request) {
+	section := chi.URLParam(r, "section")
+	if section == "definition" {
+		http.Redirect(w, r, connectionAssetSectionHref(chi.URLParam(r, "asset"), "details"), http.StatusFound)
+		return
+	}
+	if !ui.ValidWorkspaceAssetSection(section) {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := s.workspaceID("")
+	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	assetID := chi.URLParam(r, "asset")
+	var selected api.AssetResponse
+	for _, asset := range assets {
+		if asset.ID == assetID {
+			selected = asset
+			break
+		}
+	}
+	if selected.ID == "" || selected.Type != "connection" {
+		http.NotFound(w, r)
+		return
+	}
+	workspace := s.workspaceResponse(r, workspaceID)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if err := ui.ConnectionAssetPage(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -700,7 +752,17 @@ func safeAssetMeta(assetType, raw string) map[string]any {
 	case "source":
 		return pickMeta(content, "format", "Format", "path", "Path", "connection", "Connection", "object", "Object", "options", "Options")
 	case "model_table":
-		return pickMeta(content, "source", "Source", "primary_key", "PrimaryKey", "grain", "Grain")
+		return pickMeta(content,
+			"source", "Source",
+			"sources", "Sources",
+			"source_dependencies", "SourceDependencies",
+			"transform", "Transform",
+			"sql", "SQL",
+			"primary_key", "PrimaryKey",
+			"grain", "Grain",
+			"dimensions", "Dimensions",
+			"fields", "Fields",
+		)
 	case "measure":
 		return pickMeta(content, "expression", "Expression", "unit", "Unit", "format", "Format")
 	case "field":
@@ -811,9 +873,13 @@ func connectionsHref(query string) string {
 	return href + "?" + values.Encode()
 }
 
+func connectionAssetSectionHref(assetID, section string) string {
+	return "/connections/" + assetID + "/" + section
+}
+
 func isWorkspaceLandingAsset(typ string) bool {
 	switch typ {
-	case "dashboard", "semantic_model":
+	case "model_table", "semantic_model", "dashboard":
 		return true
 	default:
 		return false

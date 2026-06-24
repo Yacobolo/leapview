@@ -29,22 +29,28 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 		"Details",
 		"Lineage",
 		"Overview",
-		"Default connection",
-		"Connections (1)",
-		"Sources (1)",
 		"Model tables (1)",
-		"Fields (1)",
 		"Measures (1)",
 		"Relationships (1)",
-		`data-attr:grid="$assetDetailsSemanticConnectionsGrid"`,
-		`data-attr:grid="$assetDetailsSemanticSourcesGrid"`,
 		`data-attr:grid="$assetDetailsSemanticModelTablesGrid"`,
-		`data-attr:grid="$assetDetailsSemanticFieldsGrid"`,
 		`data-attr:grid="$assetDetailsSemanticMeasuresGrid"`,
 		`data-attr:grid="$assetDetailsSemanticRelationshipsGrid"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("semantic model details did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		"Default connection",
+		"Connections (1)",
+		"Sources (1)",
+		"Fields (1)",
+		`data-attr:grid="$assetDetailsSemanticConnectionsGrid"`,
+		`data-attr:grid="$assetDetailsSemanticSourcesGrid"`,
+		`data-attr:grid="$assetDetailsSemanticFieldsGrid"`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("semantic model details rendered non-composition content %q:\n%s", notWant, rendered)
 		}
 	}
 	if strings.Contains(rendered, "Published from Git/YAML") {
@@ -63,10 +69,7 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 
 	semanticSignals := workspaceAssetSignals(workspace, byType["semantic_model"], assets, edges, assetLineage(workspace.ID, byType["semantic_model"], assets, edges), "details")
 	for _, key := range []string{
-		"assetDetailsSemanticConnectionsGrid",
-		"assetDetailsSemanticSourcesGrid",
 		"assetDetailsSemanticModelTablesGrid",
-		"assetDetailsSemanticFieldsGrid",
 		"assetDetailsSemanticMeasuresGrid",
 		"assetDetailsSemanticRelationshipsGrid",
 	} {
@@ -74,6 +77,20 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 			t.Fatalf("semantic model details did not seed %s: %#v", key, semanticSignals)
 		}
 	}
+	for _, key := range []string{
+		"assetDetailsSemanticConnectionsGrid",
+		"assetDetailsSemanticSourcesGrid",
+		"assetDetailsSemanticFieldsGrid",
+	} {
+		if _, ok := semanticSignals[key]; ok {
+			t.Fatalf("semantic model details seeded non-composition grid %s: %#v", key, semanticSignals)
+		}
+	}
+	modelTablesGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticModelTablesGrid")
+	relationshipsGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticRelationshipsGrid")
+	assertGridHeaders(t, modelTablesGrid, []string{"Name", "Primary key", "Fields", "Measures", "Description"})
+	assertGridHeaders(t, relationshipsGrid, []string{"ID", "From table", "From field", "To table", "To field", "Cardinality", "Active"})
+	assertGridMissingHeaders(t, modelTablesGrid, []string{"Source", "Reads", "SQL preview"})
 
 	dashboardSignals := workspaceAssetSignals(workspace, byType["dashboard"], assets, edges, assetLineage(workspace.ID, byType["dashboard"], assets, edges), "details")
 	for _, key := range []string{"assetDetailsPagesGrid", "assetDetailsFiltersGrid", "assetDetailsVisualsGrid", "assetDetailsTablesGrid"} {
@@ -90,6 +107,100 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAssetDetailsRenderModelTableComposition(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "table-transform")
+
+	var out strings.Builder
+	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		"Overview",
+		"Fields (2)",
+		"SQL",
+		"/static/code-block.js",
+		`data-attr:grid="$assetDetailsModelTableFieldsGrid"`,
+		`<ld-code-block language="sql"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("model table details did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		"Source / transform",
+		`data-attr:grid="$assetDetailsModelTableDefinitionGrid"`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("model table details rendered source definition content %q:\n%s", notWant, rendered)
+		}
+	}
+	if strings.Contains(rendered, "Measures (") || strings.Contains(rendered, `data-attr:grid="$assetDetailsModelTableMeasuresGrid"`) {
+		t.Fatalf("model table details rendered measures:\n%s", rendered)
+	}
+}
+
+func TestWorkspaceAssetDetailsRenderDirectSourceModelTableWithoutSQL(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "table-model")
+
+	var out strings.Builder
+	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		"Overview",
+		"Fields (2)",
+		`data-attr:grid="$assetDetailsModelTableFieldsGrid"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("direct source model table details did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		"SQL",
+		"Source / transform",
+		"/static/code-block.js",
+		`<ld-code-block language="sql"`,
+		`data-attr:grid="$assetDetailsModelTableDefinitionGrid"`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("direct source model table details rendered %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAssetDetailSignalsIncludeModelTableDefinition(t *testing.T) {
+	workspace, _, assets, edges := testWorkspaceAssetFixtures()
+
+	directAsset := testAssetByID(t, assets, "table-model")
+	directSignals := workspaceAssetSignals(workspace, directAsset, assets, edges, assetLineage(workspace.ID, directAsset, assets, edges), "details")
+	directFields := signalMetricGrid(t, directSignals, "assetDetailsModelTableFieldsGrid")
+	assertGridHeaders(t, directFields, []string{"Name", "Type"})
+	assertGridMissingHeaders(t, directFields, []string{"Expression", "Filter", "Order", "Model table", "Measures"})
+	if _, ok := directSignals["assetDetailsModelTableDefinitionGrid"]; ok {
+		t.Fatalf("direct source model table seeded source definition grid: %#v", directSignals)
+	}
+	if _, ok := directSignals["assetDetailsModelTableSQL"]; ok {
+		t.Fatalf("direct source model table seeded SQL signal: %#v", directSignals)
+	}
+
+	transformAsset := testAssetByID(t, assets, "table-transform")
+	transformSignals := workspaceAssetSignals(workspace, transformAsset, assets, edges, assetLineage(workspace.ID, transformAsset, assets, edges), "details")
+	if _, ok := transformSignals["assetDetailsModelTableDefinitionGrid"]; ok {
+		t.Fatalf("transform model table seeded source definition grid: %#v", transformSignals)
+	}
+	if _, ok := transformSignals["assetDetailsModelTableMeasuresGrid"]; ok {
+		t.Fatalf("model table details seeded measures grid: %#v", transformSignals)
+	}
+}
+
 func TestAssetLineageProjectsRecursiveDependenciesAndContext(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 	asset := testAssetByID(t, assets, "page-item")
@@ -98,7 +209,6 @@ func TestAssetLineageProjectsRecursiveDependenciesAndContext(t *testing.T) {
 
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
-		"measure",
 		"model_table",
 		"dashboard",
 		"semantic_model",
@@ -108,28 +218,20 @@ func TestAssetLineageProjectsRecursiveDependenciesAndContext(t *testing.T) {
 		"lineage_connection_source",
 		"lineage_source_model_table",
 		"lineage_model_table_semantic_model",
-		"lineage_semantic_model_measure",
-		"lineage_measure_dashboard",
+		"lineage_semantic_model_dashboard",
 	})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
 	assertLineageSelectedNode(t, lineage.Graph, "dashboard")
-	assertGridRelations(t, lineage.Uses, []string{
-		"Reads source",
-		"Uses connection",
-		"Uses field",
-		"Uses filter",
-		"Uses measure",
-		"Uses model table",
-		"Uses semantic table",
-		"Uses table",
-		"Uses visual",
-	})
+	assertGridRelations(t, lineage.Uses, []string{"Powers dashboard"})
 	assertGridRelations(t, lineage.UsedBy, nil)
 	if gridHasRelation(lineage.Uses, "Contains") || gridHasRelation(lineage.UsedBy, "Contains") {
 		t.Fatalf("dependency grids included contains edges: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
 	}
-	if lineage.Count != 10 {
-		t.Fatalf("lineage count included context edges, got %d", lineage.Count)
+	if gridHasRelation(lineage.Uses, "Uses measure") || gridHasRelation(lineage.UsedBy, "Uses measure") {
+		t.Fatalf("lineage tables included hidden measure edge: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
+	}
+	if lineage.Count != 1 {
+		t.Fatalf("lineage count included non-graph edges, got %d", lineage.Count)
 	}
 }
 
@@ -142,25 +244,19 @@ func TestAssetLineageProjectsRecursiveConsumers(t *testing.T) {
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
 		"dashboard",
-		"measure",
 		"model_table",
 		"semantic_model",
 		"source",
 	})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
 	assertLineageSelectedNode(t, lineage.Graph, "semantic_model")
-	assertGridRelations(t, lineage.Uses, []string{
-		"Reads source",
-		"Uses connection",
-		"Uses model table",
-	})
-	assertGridRelations(t, lineage.UsedBy, []string{
-		"Uses semantic table",
-		"Uses table",
-		"Uses visual",
-	})
+	assertGridRelations(t, lineage.Uses, []string{"Feeds semantic model"})
+	assertGridRelations(t, lineage.UsedBy, []string{"Powers dashboard"})
 	if gridHasRelation(lineage.Uses, "Contains") || gridHasRelation(lineage.UsedBy, "Contains") {
 		t.Fatalf("consumer/dependency grids included contains edges: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
+	}
+	if gridHasRelation(lineage.Uses, "Uses semantic table") || gridHasRelation(lineage.UsedBy, "Uses semantic table") {
+		t.Fatalf("lineage tables included hidden semantic table edge: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
 	}
 }
 
@@ -173,18 +269,12 @@ func TestAssetLineageDashboardDerivesMeasureConsumers(t *testing.T) {
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
 		"dashboard",
-		"measure",
 		"model_table",
 		"semantic_model",
 		"source",
 	})
-	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_measure_dashboard"})
+	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_semantic_model_dashboard"})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
-	for _, edge := range lineage.Graph.Edges {
-		if edge.Source == "model" && edge.Target == "dashboard" {
-			t.Fatalf("semantic model dashboard shortcut should be suppressed when measure usage exists: %#v", lineage.Graph.Edges)
-		}
-	}
 	node := assertLineageNode(t, lineage.Graph, "dashboard")
 	if node.VisibleUpstream != 1 || node.VisibleDownstream != 0 {
 		t.Fatalf("dashboard visible counts = upstream %d downstream %d, want 1/0: %#v", node.VisibleUpstream, node.VisibleDownstream, node)
@@ -195,6 +285,8 @@ func TestAssetLineageDashboardDerivesMeasureConsumers(t *testing.T) {
 	if node.ContainedCount != 4 || node.ContainedSummary != "1 filter, 1 page, 1 table, 1 visual" {
 		t.Fatalf("dashboard contained summary = %d %q, want 4 dashboard children: %#v", node.ContainedCount, node.ContainedSummary, node)
 	}
+	assertGridRelations(t, lineage.Uses, []string{"Powers dashboard"})
+	assertGridRelations(t, lineage.UsedBy, nil)
 }
 
 func TestAssetLineageSemanticModelDerivesMeasureDashboardPath(t *testing.T) {
@@ -206,18 +298,12 @@ func TestAssetLineageSemanticModelDerivesMeasureDashboardPath(t *testing.T) {
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
 		"dashboard",
-		"measure",
 		"model_table",
 		"semantic_model",
 		"source",
 	})
-	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_measure_dashboard"})
+	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_semantic_model_dashboard"})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
-	for _, edge := range lineage.Graph.Edges {
-		if edge.Source == "model" && edge.Target == "dashboard" {
-			t.Fatalf("semantic model dashboard shortcut should be suppressed when measure usage exists: %#v", lineage.Graph.Edges)
-		}
-	}
 	node := assertLineageNode(t, lineage.Graph, "model")
 	if node.VisibleUpstream != 1 || node.VisibleDownstream != 1 {
 		t.Fatalf("semantic model visible counts = upstream %d downstream %d, want 1/1: %#v", node.VisibleUpstream, node.VisibleDownstream, node)
@@ -228,6 +314,8 @@ func TestAssetLineageSemanticModelDerivesMeasureDashboardPath(t *testing.T) {
 	if node.ContainedCount != 3 || node.ContainedSummary != "1 measure, 1 relationship, 1 semantic table" {
 		t.Fatalf("semantic model contained summary = %d %q, want 3 semantic children: %#v", node.ContainedCount, node.ContainedSummary, node)
 	}
+	assertGridRelations(t, lineage.Uses, []string{"Feeds semantic model"})
+	assertGridRelations(t, lineage.UsedBy, []string{"Powers dashboard"})
 }
 
 func TestAssetLineageFallsBackToContainsWhenNoDependenciesExist(t *testing.T) {
@@ -254,8 +342,8 @@ func TestLineageProjectionPolicy(t *testing.T) {
 		{typ: "source", want: 1, visible: true},
 		{typ: "model_table", want: 2, visible: true},
 		{typ: "semantic_model", want: 3, visible: true},
-		{typ: "measure", want: 4, visible: true},
-		{typ: "dashboard", want: 5, visible: true},
+		{typ: "dashboard", want: 4, visible: true},
+		{typ: "measure", want: -1, visible: false},
 		{typ: "field", want: -1, visible: false},
 	}
 	for _, tt := range layerTests {
@@ -302,22 +390,6 @@ func TestLineageProjectionPolicy(t *testing.T) {
 			wantLabel:  "Feeds semantic model",
 		},
 		{
-			name:       "semantic model measure",
-			sourceType: "semantic_model",
-			targetType: "measure",
-			fallback:   "uses_semantic_table",
-			wantKind:   "lineage_semantic_model_measure",
-			wantLabel:  "Defines measure",
-		},
-		{
-			name:       "measure dashboard",
-			sourceType: "measure",
-			targetType: "dashboard",
-			fallback:   "uses_measure",
-			wantKind:   "lineage_measure_dashboard",
-			wantLabel:  "Used in dashboard",
-		},
-		{
 			name:       "semantic model dashboard",
 			sourceType: "semantic_model",
 			targetType: "dashboard",
@@ -346,7 +418,7 @@ func TestLineageProjectionPolicy(t *testing.T) {
 	}
 }
 
-func TestCollapsedAssetLineageSuppressesSemanticDashboardShortcutByPair(t *testing.T) {
+func TestCollapsedAssetLineageCollapsesMeasureUsageToSemanticModel(t *testing.T) {
 	workspaceID := "libredash"
 	assets := map[string]api.AssetResponse{
 		"model-a": {
@@ -403,12 +475,12 @@ func TestCollapsedAssetLineageSuppressesSemanticDashboardShortcutByPair(t *testi
 
 	lineage := collapsedAssetLineageGraph(workspaceID, assets["dashboard-b"], graph, assets)
 
-	assertLineageHasEdge(t, lineage, "measure-a", "dashboard-a", "lineage_measure_dashboard")
-	assertLineageMissingEdge(t, lineage, "model-a", "dashboard-a", "lineage_semantic_model_dashboard")
+	assertLineageHasEdge(t, lineage, "model-a", "dashboard-a", "lineage_semantic_model_dashboard")
+	assertLineageMissingNode(t, lineage, "measure-a")
 	assertLineageHasEdge(t, lineage, "model-b", "dashboard-b", "lineage_semantic_model_dashboard")
 }
 
-func TestWorkspaceAssetDetailsRenderSharedShapeForLeafAsset(t *testing.T) {
+func TestConnectionAssetDetailsRenderConnectionSurface(t *testing.T) {
 	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
 	var connection api.AssetResponse
 	for _, asset := range assets {
@@ -419,7 +491,7 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForLeafAsset(t *testing.T) {
 	}
 
 	var out strings.Builder
-	err := WorkspaceAssetPage(catalog, workspace, connection, assets, edges, "details", "Owner").Render(&out)
+	err := ConnectionAssetPage(catalog, workspace, connection, assets, edges, "details", "Owner").Render(&out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,17 +503,54 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForLeafAsset(t *testing.T) {
 		"Overview",
 		"Type",
 		"Connection",
-		"Parent",
-		"LibreDash Workspace",
 		"Kind",
 		"Credentials",
+		"Sources",
+		`Back to connections`,
+		`href="/connections/connection/lineage"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("connection details did not render %q:\n%s", want, rendered)
 		}
 	}
-	if strings.Contains(rendered, "Published from Git/YAML") {
-		t.Fatalf("connection details rendered hardcoded publication source:\n%s", rendered)
+	for _, notWant := range []string{
+		"Published from Git/YAML",
+		">Parent</span>",
+		"Back to workspace",
+		`href="/workspaces/libredash/assets/connection/details"`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("connection details rendered workspace-only content %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAssetTabsUseWorkspaceAssetTypes(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, assets, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		`href="/workspaces/libredash"`,
+		`>All</a>`,
+		`href="/workspaces/libredash?type=model_table"`,
+		`>Model table</a>`,
+		`href="/workspaces/libredash?type=semantic_model"`,
+		`>Semantic model</a>`,
+		`href="/workspaces/libredash?type=dashboard"`,
+		`>Dashboard</a>`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("workspace tabs did not render %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, `type=connection`) {
+		t.Fatalf("workspace tabs rendered connection filter:\n%s", rendered)
 	}
 }
 
@@ -585,6 +694,15 @@ func testAssetByID(t *testing.T, assets []api.AssetResponse, id string) api.Asse
 	return api.AssetResponse{}
 }
 
+func signalMetricGrid(t *testing.T, signals map[string]any, key string) metricGrid {
+	t.Helper()
+	grid, ok := signals[key].(metricGrid)
+	if !ok {
+		t.Fatalf("signal %s = %#v, want metricGrid", key, signals[key])
+	}
+	return grid
+}
+
 func assertLineageNodeKinds(t *testing.T, graph assetLineageGraph, expected []string) {
 	t.Helper()
 	got := map[string]struct{}{}
@@ -627,6 +745,59 @@ func assertLineageEdgeKinds(t *testing.T, graph assetLineageGraph, expected []st
 	}
 }
 
+func assertGridHeaders(t *testing.T, grid metricGrid, expected []string) {
+	t.Helper()
+	got := make([]string, 0, len(grid.Columns))
+	for _, column := range grid.Columns {
+		got = append(got, column.Header)
+	}
+	if strings.Join(got, "|") != strings.Join(expected, "|") {
+		t.Fatalf("grid headers = %#v, want %#v", got, expected)
+	}
+}
+
+func assertGridMissingHeaders(t *testing.T, grid metricGrid, unexpected []string) {
+	t.Helper()
+	got := map[string]struct{}{}
+	for _, column := range grid.Columns {
+		got[column.Header] = struct{}{}
+	}
+	for _, header := range unexpected {
+		if _, ok := got[header]; ok {
+			t.Fatalf("grid unexpectedly includes header %q: %#v", header, grid.Columns)
+		}
+	}
+}
+
+func assertGridRowValue(t *testing.T, grid metricGrid, column, expected string) {
+	t.Helper()
+	for _, row := range grid.Rows {
+		if fmt.Sprint(row[column]) == expected {
+			return
+		}
+	}
+	t.Fatalf("grid missing row with %s=%q: %#v", column, expected, grid.Rows)
+}
+
+func assertGridNoRowValue(t *testing.T, grid metricGrid, column, unexpected string) {
+	t.Helper()
+	for _, row := range grid.Rows {
+		if fmt.Sprint(row[column]) == unexpected {
+			t.Fatalf("grid unexpectedly includes row with %s=%q: %#v", column, unexpected, grid.Rows)
+		}
+	}
+}
+
+func assertGridRowContains(t *testing.T, grid metricGrid, column, expected string) {
+	t.Helper()
+	for _, row := range grid.Rows {
+		if strings.Contains(fmt.Sprint(row[column]), expected) {
+			return
+		}
+	}
+	t.Fatalf("grid missing row with %s containing %q: %#v", column, expected, grid.Rows)
+}
+
 func assertLineageEdgesMoveLeftToRight(t *testing.T, graph assetLineageGraph) {
 	t.Helper()
 	ranks := map[string]int{}
@@ -662,6 +833,15 @@ func assertLineageNode(t *testing.T, graph assetLineageGraph, id string) assetLi
 	}
 	t.Fatalf("lineage graph missing node %q: %#v", id, graph.Nodes)
 	return assetLineageNode{}
+}
+
+func assertLineageMissingNode(t *testing.T, graph assetLineageGraph, id string) {
+	t.Helper()
+	for _, node := range graph.Nodes {
+		if node.ID == id {
+			t.Fatalf("lineage graph included unwanted node %q: %#v", id, graph.Nodes)
+		}
+	}
 }
 
 func assertLineageHasEdge(t *testing.T, graph assetLineageGraph, source, target, kind string) {
@@ -750,7 +930,27 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 		},
 		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "catalog", Title: "Olist connection", Meta: map[string]any{"Kind": "local", "credentials_configured": false}},
 		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"}},
-		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{"Source": "orders", "PrimaryKey": "order_id"}},
+		{ID: "source-payments", WorkspaceID: workspace.ID, Type: "source", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "payments.csv"}},
+		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{
+			"Source":     "orders",
+			"PrimaryKey": "order_id",
+			"Grain":      "order_id",
+			"Dimensions": map[string]any{
+				"order_id": map[string]any{"Expr": "order_id"},
+				"state":    map[string]any{"Expr": "state"},
+			},
+		}},
+		{ID: "table-transform", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{
+			"Sources":            []any{"payments"},
+			"SourceDependencies": []any{"payments"},
+			"PrimaryKey":         "order_id",
+			"Grain":              "order_id",
+			"Transform":          map[string]any{"SQL": "SELECT order_id, SUM(payment_value) AS revenue FROM source.payments GROUP BY order_id"},
+			"Dimensions": map[string]any{
+				"order_id": map[string]any{"Expr": "order_id"},
+				"revenue":  map[string]any{"Expr": "revenue", "Type": "number"},
+			},
+		}},
 		{ID: "semantic-table", WorkspaceID: workspace.ID, Type: "semantic_table", Key: "olist.orders", ParentID: "model", Title: "Orders semantic table", Meta: map[string]any{"Table": "orders"}},
 		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "semantic-table", Title: "State", Meta: map[string]any{"Expr": "state"}},
 		{ID: "measure", WorkspaceID: workspace.ID, Type: "measure", Key: "olist.revenue", ParentID: "model", Title: "Revenue", Meta: map[string]any{"Table": "orders", "Expression": "SUM(orders.revenue)", "Format": "currency"}},

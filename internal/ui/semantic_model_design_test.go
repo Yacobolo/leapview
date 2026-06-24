@@ -42,12 +42,12 @@ func TestSemanticModelDesignDetailsVocabulary(t *testing.T) {
 	}
 	rendered := html.UnescapeString(out.String())
 
-	for _, want := range []string{"Model tables (1)", "Sources (1)", "Measures (1)", "Relationships (1)"} {
+	for _, want := range []string{"Model tables (1)", "Measures (1)", "Relationships (1)", "From table", "From field", "To table", "To field"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("semantic model details missing %q:\n%s", want, rendered)
 		}
 	}
-	for _, notWant := range []string{"Metric view", "Datasets", "Cache tables", "Cache table"} {
+	for _, notWant := range []string{"Sources (1)", "Connections (", "Fields (", "Metric view", "Datasets", "Cache tables", "Cache table"} {
 		if strings.Contains(rendered, notWant) {
 			t.Fatalf("semantic model details rendered legacy vocabulary %q:\n%s", notWant, rendered)
 		}
