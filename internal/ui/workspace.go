@@ -588,13 +588,8 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 	graph := assetLineageGraph{
 		Nodes: []assetLineageNode{lineageNode(workspaceID, selected, 0, true)},
 	}
-	usesRows := []map[string]any{}
-	usedByRows := []map[string]any{}
-
 	nodeIndex := map[string]int{selected.ID: 0}
 	seenEdges := map[string]struct{}{}
-	seenUseRows := map[string]struct{}{}
-	seenUsedByRows := map[string]struct{}{}
 
 	addNode := func(asset api.AssetResponse, rank int, selected bool) {
 		if asset.ID == "" {
@@ -640,11 +635,9 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 	}
 
 	type lineageWalkConfig struct {
-		edges    func(string) []api.AssetEdgeResponse
-		peerID   func(api.AssetEdgeResponse) string
-		rank     func(int) int
-		rows     *[]map[string]any
-		seenRows map[string]struct{}
+		edges  func(string) []api.AssetEdgeResponse
+		peerID func(api.AssetEdgeResponse) string
+		rank   func(int) int
 	}
 	var walkDependencyEdges func(assetID string, depth int, visiting map[string]struct{}, config lineageWalkConfig)
 	walkDependencyEdges = func(assetID string, depth int, visiting map[string]struct{}, config lineageWalkConfig) {
@@ -663,13 +656,6 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 			}
 			addNode(asset, config.rank(depth), false)
 			addEdge(edge)
-			if config.rows != nil {
-				key := lineageRelationRowKey(edge.Type, asset.ID)
-				if _, ok := config.seenRows[key]; !ok {
-					*config.rows = append(*config.rows, lineageTableRow(workspaceID, edge, asset))
-					config.seenRows[key] = struct{}{}
-				}
-			}
 			walkDependencyEdges(asset.ID, depth+1, visiting, config)
 		}
 	}
@@ -684,8 +670,6 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 		rank: func(depth int) int {
 			return -depth
 		},
-		rows:     &usesRows,
-		seenRows: seenUseRows,
 	}
 	downstreamWalk := lineageWalkConfig{
 		edges: func(assetID string) []api.AssetEdgeResponse {
@@ -697,12 +681,7 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 		rank: func(depth int) int {
 			return depth
 		},
-		rows:     &usedByRows,
-		seenRows: seenUsedByRows,
 	}
-	downstreamGraphWalk := downstreamWalk
-	downstreamGraphWalk.rows = nil
-	downstreamGraphWalk.seenRows = nil
 
 	for _, rootID := range lineageDependencyRootIDs(selected, outgoing, byID) {
 		if rootID != selected.ID {
@@ -710,39 +689,17 @@ func assetLineage(workspaceID string, selected api.AssetResponse, assets []api.A
 		}
 		walkDependencyEdges(rootID, 1, map[string]struct{}{}, upstreamWalk)
 		if rootID != selected.ID {
-			walkDependencyEdges(rootID, 1, map[string]struct{}{}, downstreamGraphWalk)
+			walkDependencyEdges(rootID, 1, map[string]struct{}{}, downstreamWalk)
 		}
 	}
 	walkDependencyEdges(selected.ID, 1, map[string]struct{}{}, downstreamWalk)
 	addContainsContext(selected.ID, &graph, nodeIndex, byID, edges, addNode, addEdge)
 
-	if len(usesRows)+len(usedByRows) == 0 {
-		for _, edge := range sortedLineageEdges(outgoing[selected.ID], byID) {
-			if !isContainsEdge(edge) {
-				continue
-			}
-			asset, ok := byID[edge.ToAssetID]
-			if ok {
-				usesRows = append(usesRows, lineageTableRow(workspaceID, edge, asset))
-			}
-		}
-		for _, edge := range sortedLineageEdges(incoming[selected.ID], byID) {
-			if !isContainsEdge(edge) {
-				continue
-			}
-			asset, ok := byID[edge.FromAssetID]
-			if ok {
-				usedByRows = append(usedByRows, lineageTableRow(workspaceID, edge, asset))
-			}
-		}
-	}
-
 	sortLineageNodes(graph.Nodes)
 	sortLineageGraphEdges(graph.Edges)
-	sortLineageRows(usesRows)
-	sortLineageRows(usedByRows)
 	collapsedGraph := collapsedAssetLineageGraph(workspaceID, selected, graph, byID)
 	enrichAssetLineageGraph(collapsedGraph, byID, edges)
+	usesRows, usedByRows := lineageTablesFromGraph(workspaceID, selected, collapsedGraph, byID)
 	return assetLineageModel{
 		Count:  len(usesRows) + len(usedByRows),
 		Graph:  collapsedGraph,
@@ -888,30 +845,10 @@ func collapsedAssetLineageGraph(workspaceID string, selected api.AssetResponse, 
 		})
 	}
 
-	measureDashboardPairs := map[string]struct{}{}
-	for _, edge := range candidates {
-		if edge.source == "" || edge.target == "" {
-			continue
-		}
-		source := assets[edge.source]
-		target := assets[edge.target]
-		if source.Type == "measure" && target.Type == "dashboard" {
-			semanticModel, ok := assets[source.ParentID]
-			if ok && semanticModel.Type == "semantic_model" {
-				measureDashboardPairs[lineageProjectionPairKey(semanticModel.ID, target.ID)] = struct{}{}
-			}
-		}
-	}
-
 	seenEdges := map[string]struct{}{}
 	for _, edge := range candidates {
 		source := assets[edge.source]
 		target := assets[edge.target]
-		if source.Type == "semantic_model" && target.Type == "dashboard" {
-			if _, ok := measureDashboardPairs[lineageProjectionPairKey(source.ID, target.ID)]; ok {
-				continue
-			}
-		}
 		if lineageVisualLayer(source.Type) >= lineageVisualLayer(target.Type) {
 			continue
 		}
@@ -931,10 +868,6 @@ func collapsedAssetLineageGraph(workspaceID string, selected api.AssetResponse, 
 	sortLineageNodes(out.Nodes)
 	sortLineageGraphEdges(out.Edges)
 	return out
-}
-
-func lineageProjectionPairKey(sourceID, targetID string) string {
-	return sourceID + "|" + targetID
 }
 
 func edgesByFromAsset(edges []api.AssetEdgeResponse) map[string][]api.AssetEdgeResponse {
@@ -959,9 +892,58 @@ func sortLineageRows(rows []map[string]any) {
 	})
 }
 
-func lineageTableRow(workspaceID string, edge api.AssetEdgeResponse, peer api.AssetResponse) map[string]any {
+func lineageTablesFromGraph(workspaceID string, selected api.AssetResponse, graph assetLineageGraph, assets map[string]api.AssetResponse) ([]map[string]any, []map[string]any) {
+	anchorID := selected.ID
+	if selected.Type != "catalog" {
+		if anchor, ok := lineageVisibleAnchor(selected, assets); ok {
+			anchorID = anchor.ID
+		}
+	}
+	usesRows := []map[string]any{}
+	usedByRows := []map[string]any{}
+	hasDependencyEdges := false
+	for _, edge := range graph.Edges {
+		if edge.Kind != "contains" {
+			hasDependencyEdges = true
+			break
+		}
+	}
+	for _, edge := range graph.Edges {
+		if hasDependencyEdges {
+			if edge.Kind == "contains" {
+				continue
+			}
+			if edge.Target == anchorID {
+				if peer, ok := assets[edge.Source]; ok {
+					usesRows = append(usesRows, lineageGraphTableRow(workspaceID, edge, peer))
+				}
+			}
+			if edge.Source == anchorID {
+				if peer, ok := assets[edge.Target]; ok {
+					usedByRows = append(usedByRows, lineageGraphTableRow(workspaceID, edge, peer))
+				}
+			}
+			continue
+		}
+		if edge.Source == anchorID {
+			if peer, ok := assets[edge.Target]; ok {
+				usesRows = append(usesRows, lineageGraphTableRow(workspaceID, edge, peer))
+			}
+		}
+		if edge.Target == anchorID {
+			if peer, ok := assets[edge.Source]; ok {
+				usedByRows = append(usedByRows, lineageGraphTableRow(workspaceID, edge, peer))
+			}
+		}
+	}
+	sortLineageRows(usesRows)
+	sortLineageRows(usedByRows)
+	return usesRows, usedByRows
+}
+
+func lineageGraphTableRow(workspaceID string, edge assetLineageEdge, peer api.AssetResponse) map[string]any {
 	return map[string]any{
-		"relation":  labelFromKey(edge.Type),
+		"relation":  firstNonEmpty(edge.Label, labelFromKey(edge.Kind)),
 		"asset":     assetTitle(peer),
 		"assetHref": lineageAssetHref(workspaceID, peer),
 		"type":      assetTypeLabel(peer.Type),
@@ -1072,8 +1054,7 @@ var lineageProjectionLayers = []lineageProjectionLayerPolicy{
 	{assetType: "source", layer: 1},
 	{assetType: "model_table", layer: 2},
 	{assetType: "semantic_model", layer: 3},
-	{assetType: "measure", layer: 4},
-	{assetType: "dashboard", layer: 5},
+	{assetType: "dashboard", layer: 4},
 }
 
 func lineageVisualLayer(typ string) int {
@@ -1111,16 +1092,6 @@ var lineageProjectionEdges = []lineageProjectionEdgePolicy{
 		key:   lineageProjectionEdgeKey{sourceType: "model_table", targetType: "semantic_model"},
 		kind:  "lineage_model_table_semantic_model",
 		label: "Feeds semantic model",
-	},
-	{
-		key:   lineageProjectionEdgeKey{sourceType: "semantic_model", targetType: "measure"},
-		kind:  "lineage_semantic_model_measure",
-		label: "Defines measure",
-	},
-	{
-		key:   lineageProjectionEdgeKey{sourceType: "measure", targetType: "dashboard"},
-		kind:  "lineage_measure_dashboard",
-		label: "Used in dashboard",
 	},
 	{
 		key:   lineageProjectionEdgeKey{sourceType: "semantic_model", targetType: "dashboard"},
@@ -1211,10 +1182,6 @@ func lineageEdgeKey(edge api.AssetEdgeResponse) string {
 		return edge.ID
 	}
 	return edge.FromAssetID + "|" + edge.ToAssetID + "|" + edge.Type
-}
-
-func lineageRelationRowKey(edgeType, peerID string) string {
-	return edgeType + "|" + peerID
 }
 
 func sortedLineageEdges(edges []api.AssetEdgeResponse, assets map[string]api.AssetResponse) []api.AssetEdgeResponse {
@@ -1324,7 +1291,7 @@ func assetDetailModelForAsset(workspace api.WorkspaceResponse, asset api.AssetRe
 	}
 	switch asset.Type {
 	case "semantic_model":
-		semanticModelDetailModel(&model, workspace, asset, assets, edges)
+		semanticModelDetailModel(&model, workspace, asset, assets)
 	case "dashboard":
 		dashboardDetailModel(&model, asset, assets)
 	case "connection":
@@ -1362,30 +1329,20 @@ func shouldShowParentFact(typ string) bool {
 	}
 }
 
-func semanticModelDetailModel(model *assetDetailModel, workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) {
+func semanticModelDetailModel(model *assetDetailModel, workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) {
 	meta := asset.Meta
-	connections := sortedMapKeys(metaMap(meta, "Connections", "connections"))
-	sources := sortedMapKeys(metaMap(meta, "Sources", "sources"))
 	modelTableMeta := metaMap(meta, "Tables", "tables", "Models", "models")
 	modelTables := sortedMapKeys(modelTableMeta)
-	fields := semanticFieldCount(modelTableMeta)
 	measures := sortedMapKeys(metaMap(meta, "Measures", "measures"))
 	relationships := metaSlice(meta, "Relationships", "relationships")
 
 	model.Overview = append(model.Overview,
-		definitionFact{Label: "Default connection", Value: metaString(meta, "DefaultConnection", "default_connection")},
-		definitionFact{Label: "Connections", Value: fmt.Sprint(len(connections))},
-		definitionFact{Label: "Sources", Value: fmt.Sprint(len(sources))},
 		definitionFact{Label: "Model tables", Value: fmt.Sprint(len(modelTables))},
-		definitionFact{Label: "Fields", Value: fmt.Sprint(fields)},
 		definitionFact{Label: "Measures", Value: fmt.Sprint(len(measures))},
 		definitionFact{Label: "Relationships", Value: fmt.Sprint(len(relationships))},
 	)
 	model.Sections = append(model.Sections,
-		assetDetailSection{Title: fmt.Sprintf("Connections (%d)", len(connections)), Signal: "assetDetailsSemanticConnectionsGrid", Grid: semanticConnectionsGrid(workspace.ID, asset, assets, meta)},
-		assetDetailSection{Title: fmt.Sprintf("Sources (%d)", len(sources)), Signal: "assetDetailsSemanticSourcesGrid", Grid: semanticSourcesGrid(workspace.ID, asset, assets, meta)},
-		assetDetailSection{Title: fmt.Sprintf("Model tables (%d)", len(modelTables)), Signal: "assetDetailsSemanticModelTablesGrid", Grid: semanticModelTablesGrid(workspace.ID, asset, assets, edges, meta)},
-		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", fields), Signal: "assetDetailsSemanticFieldsGrid", Grid: semanticFieldsGrid(workspace.ID, asset, assets, meta)},
+		assetDetailSection{Title: fmt.Sprintf("Model tables (%d)", len(modelTables)), Signal: "assetDetailsSemanticModelTablesGrid", Grid: semanticModelTablesGrid(workspace.ID, asset, assets, meta)},
 		assetDetailSection{Title: fmt.Sprintf("Measures (%d)", len(measures)), Signal: "assetDetailsSemanticMeasuresGrid", Grid: semanticMeasuresGrid(workspace.ID, asset, assets, meta)},
 		assetDetailSection{Title: fmt.Sprintf("Relationships (%d)", len(relationships)), Signal: "assetDetailsSemanticRelationshipsGrid", Grid: semanticRelationshipsGrid(workspace.ID, asset, assets, meta)},
 	)
@@ -1466,35 +1423,51 @@ func semanticSourcesGrid(workspaceID string, parent api.AssetResponse, assets []
 	}
 }
 
-func semanticModelTablesGrid(workspaceID string, parent api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse, meta map[string]any) metricGrid {
+func semanticModelTablesGrid(workspaceID string, parent api.AssetResponse, assets []api.AssetResponse, meta map[string]any) metricGrid {
 	tables := metaMap(meta, "Tables", "tables", "Models", "models")
+	measureCounts := semanticMeasureCountsByTable(metaMap(meta, "Measures", "measures"))
 	rows := make([]map[string]any, 0, len(tables))
 	for _, name := range sortedMapKeys(tables) {
 		table := asMap(tables[name])
 		child := semanticAssetByName(parent.Key, "model_table", name, assets)
-		sourceName := metaString(table, "Source", "source")
 		rows = append(rows, map[string]any{
 			"name":        name,
 			"nameHref":    childHref(workspaceID, child),
-			"source":      emptyDash(sourceName),
 			"primary_key": emptyDash(metaString(table, "PrimaryKey", "primary_key")),
+			"fields":      len(metaMap(table, "Dimensions", "dimensions", "Fields", "fields")),
+			"measures":    measureCounts[name],
 			"description": emptyDash(metaString(table, "Description", "description")),
-			"reads":       strings.Join(dependentAssetNames(child.ID, "reads_source", assets, edges), ", "),
-			"sql":         sqlPreview(firstNonEmpty(metaString(table, "SQL", "sql"), metaString(asMap(metaValue(table, "Transform", "transform")), "SQL", "sql"))),
 		})
 	}
 	return metricGrid{
 		Columns: []metricGridColumn{
 			{ID: "name", Header: "Name", Kind: "link", HrefKey: "nameHref", Width: "180px"},
-			{ID: "source", Header: "Source", Kind: "code", Width: "160px"},
 			{ID: "primary_key", Header: "Primary key", Kind: "code", Width: "150px"},
-			{ID: "reads", Header: "Reads", Kind: "expression", Width: "220px"},
-			{ID: "sql", Header: "SQL preview", Kind: "expression"},
+			{ID: "fields", Header: "Fields", Width: "100px"},
+			{ID: "measures", Header: "Measures", Width: "110px"},
+			{ID: "description", Header: "Description"},
 		},
 		Rows:     rows,
 		Empty:    "No model tables are defined for this semantic model.",
-		MinWidth: "980px",
+		MinWidth: "860px",
 	}
+}
+
+func semanticMeasureCountsByTable(measures map[string]any) map[string]int {
+	counts := map[string]int{}
+	defaultTable := metaString(asMap(metaValue(measures, "Defaults", "defaults")), "Table", "table")
+	for _, name := range sortedMapKeys(measures) {
+		if strings.EqualFold(name, "defaults") {
+			continue
+		}
+		measure := asMap(measures[name])
+		table := firstNonEmpty(metaString(measure, "Table", "table"), defaultTable)
+		if table == "" {
+			continue
+		}
+		counts[table]++
+	}
+	return counts
 }
 
 func semanticFieldsGrid(workspaceID string, parent api.AssetResponse, assets []api.AssetResponse, meta map[string]any) metricGrid {
@@ -1569,27 +1542,41 @@ func semanticRelationshipsGrid(workspaceID string, parent api.AssetResponse, ass
 		relationship := asMap(item)
 		id := metaString(relationship, "ID", "id")
 		child := semanticAssetByName(parent.Key, "relationship", id, assets)
+		fromTable, fromField := splitSemanticFieldRef(metaString(relationship, "From", "from"))
+		toTable, toField := splitSemanticFieldRef(metaString(relationship, "To", "to"))
 		rows = append(rows, map[string]any{
 			"id":          id,
 			"idHref":      childHref(workspaceID, child),
-			"from":        metaString(relationship, "From", "from"),
-			"to":          metaString(relationship, "To", "to"),
+			"from_table":  emptyDash(fromTable),
+			"from_field":  emptyDash(fromField),
+			"to_table":    emptyDash(toTable),
+			"to_field":    emptyDash(toField),
 			"cardinality": metricGridBadgeValue(metaString(relationship, "Cardinality", "cardinality"), "muted"),
 			"active":      metricGridBadgeValue(boolLabel(metaBool(relationship, "Active", "active")), "success"),
 		})
 	}
 	return metricGrid{
 		Columns: []metricGridColumn{
-			{ID: "id", Header: "ID", Kind: "link", HrefKey: "idHref", Width: "190px"},
-			{ID: "from", Header: "From", Kind: "code", Width: "240px"},
-			{ID: "to", Header: "To", Kind: "code", Width: "240px"},
+			{ID: "id", Header: "ID", Kind: "link", HrefKey: "idHref", Width: "180px"},
+			{ID: "from_table", Header: "From table", Kind: "code", Width: "140px"},
+			{ID: "from_field", Header: "From field", Kind: "code", Width: "160px"},
+			{ID: "to_table", Header: "To table", Kind: "code", Width: "140px"},
+			{ID: "to_field", Header: "To field", Kind: "code", Width: "160px"},
 			{ID: "cardinality", Header: "Cardinality", Kind: "badge", Width: "140px"},
 			{ID: "active", Header: "Active", Kind: "badge", Width: "90px"},
 		},
 		Rows:     rows,
 		Empty:    "No relationships are defined for this semantic model.",
-		MinWidth: "900px",
+		MinWidth: "1010px",
 	}
+}
+
+func splitSemanticFieldRef(ref string) (string, string) {
+	parts := strings.SplitN(strings.TrimSpace(ref), ".", 2)
+	if len(parts) != 2 {
+		return strings.TrimSpace(ref), ""
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 }
 
 func dashboardDetailModel(model *assetDetailModel, asset api.AssetResponse, assets []api.AssetResponse) {

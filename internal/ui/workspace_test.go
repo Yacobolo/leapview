@@ -29,22 +29,28 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 		"Details",
 		"Lineage",
 		"Overview",
-		"Default connection",
-		"Connections (1)",
-		"Sources (1)",
 		"Model tables (1)",
-		"Fields (1)",
 		"Measures (1)",
 		"Relationships (1)",
-		`data-attr:grid="$assetDetailsSemanticConnectionsGrid"`,
-		`data-attr:grid="$assetDetailsSemanticSourcesGrid"`,
 		`data-attr:grid="$assetDetailsSemanticModelTablesGrid"`,
-		`data-attr:grid="$assetDetailsSemanticFieldsGrid"`,
 		`data-attr:grid="$assetDetailsSemanticMeasuresGrid"`,
 		`data-attr:grid="$assetDetailsSemanticRelationshipsGrid"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("semantic model details did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		"Default connection",
+		"Connections (1)",
+		"Sources (1)",
+		"Fields (1)",
+		`data-attr:grid="$assetDetailsSemanticConnectionsGrid"`,
+		`data-attr:grid="$assetDetailsSemanticSourcesGrid"`,
+		`data-attr:grid="$assetDetailsSemanticFieldsGrid"`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("semantic model details rendered non-composition content %q:\n%s", notWant, rendered)
 		}
 	}
 	if strings.Contains(rendered, "Published from Git/YAML") {
@@ -63,10 +69,7 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 
 	semanticSignals := workspaceAssetSignals(workspace, byType["semantic_model"], assets, edges, assetLineage(workspace.ID, byType["semantic_model"], assets, edges), "details")
 	for _, key := range []string{
-		"assetDetailsSemanticConnectionsGrid",
-		"assetDetailsSemanticSourcesGrid",
 		"assetDetailsSemanticModelTablesGrid",
-		"assetDetailsSemanticFieldsGrid",
 		"assetDetailsSemanticMeasuresGrid",
 		"assetDetailsSemanticRelationshipsGrid",
 	} {
@@ -74,6 +77,20 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 			t.Fatalf("semantic model details did not seed %s: %#v", key, semanticSignals)
 		}
 	}
+	for _, key := range []string{
+		"assetDetailsSemanticConnectionsGrid",
+		"assetDetailsSemanticSourcesGrid",
+		"assetDetailsSemanticFieldsGrid",
+	} {
+		if _, ok := semanticSignals[key]; ok {
+			t.Fatalf("semantic model details seeded non-composition grid %s: %#v", key, semanticSignals)
+		}
+	}
+	modelTablesGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticModelTablesGrid")
+	relationshipsGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticRelationshipsGrid")
+	assertGridHeaders(t, modelTablesGrid, []string{"Name", "Primary key", "Fields", "Measures", "Description"})
+	assertGridHeaders(t, relationshipsGrid, []string{"ID", "From table", "From field", "To table", "To field", "Cardinality", "Active"})
+	assertGridMissingHeaders(t, modelTablesGrid, []string{"Source", "Reads", "SQL preview"})
 
 	dashboardSignals := workspaceAssetSignals(workspace, byType["dashboard"], assets, edges, assetLineage(workspace.ID, byType["dashboard"], assets, edges), "details")
 	for _, key := range []string{"assetDetailsPagesGrid", "assetDetailsFiltersGrid", "assetDetailsVisualsGrid", "assetDetailsTablesGrid"} {
@@ -98,7 +115,6 @@ func TestAssetLineageProjectsRecursiveDependenciesAndContext(t *testing.T) {
 
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
-		"measure",
 		"model_table",
 		"dashboard",
 		"semantic_model",
@@ -108,28 +124,20 @@ func TestAssetLineageProjectsRecursiveDependenciesAndContext(t *testing.T) {
 		"lineage_connection_source",
 		"lineage_source_model_table",
 		"lineage_model_table_semantic_model",
-		"lineage_semantic_model_measure",
-		"lineage_measure_dashboard",
+		"lineage_semantic_model_dashboard",
 	})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
 	assertLineageSelectedNode(t, lineage.Graph, "dashboard")
-	assertGridRelations(t, lineage.Uses, []string{
-		"Reads source",
-		"Uses connection",
-		"Uses field",
-		"Uses filter",
-		"Uses measure",
-		"Uses model table",
-		"Uses semantic table",
-		"Uses table",
-		"Uses visual",
-	})
+	assertGridRelations(t, lineage.Uses, []string{"Powers dashboard"})
 	assertGridRelations(t, lineage.UsedBy, nil)
 	if gridHasRelation(lineage.Uses, "Contains") || gridHasRelation(lineage.UsedBy, "Contains") {
 		t.Fatalf("dependency grids included contains edges: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
 	}
-	if lineage.Count != 10 {
-		t.Fatalf("lineage count included context edges, got %d", lineage.Count)
+	if gridHasRelation(lineage.Uses, "Uses measure") || gridHasRelation(lineage.UsedBy, "Uses measure") {
+		t.Fatalf("lineage tables included hidden measure edge: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
+	}
+	if lineage.Count != 1 {
+		t.Fatalf("lineage count included non-graph edges, got %d", lineage.Count)
 	}
 }
 
@@ -142,25 +150,19 @@ func TestAssetLineageProjectsRecursiveConsumers(t *testing.T) {
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
 		"dashboard",
-		"measure",
 		"model_table",
 		"semantic_model",
 		"source",
 	})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
 	assertLineageSelectedNode(t, lineage.Graph, "semantic_model")
-	assertGridRelations(t, lineage.Uses, []string{
-		"Reads source",
-		"Uses connection",
-		"Uses model table",
-	})
-	assertGridRelations(t, lineage.UsedBy, []string{
-		"Uses semantic table",
-		"Uses table",
-		"Uses visual",
-	})
+	assertGridRelations(t, lineage.Uses, []string{"Feeds semantic model"})
+	assertGridRelations(t, lineage.UsedBy, []string{"Powers dashboard"})
 	if gridHasRelation(lineage.Uses, "Contains") || gridHasRelation(lineage.UsedBy, "Contains") {
 		t.Fatalf("consumer/dependency grids included contains edges: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
+	}
+	if gridHasRelation(lineage.Uses, "Uses semantic table") || gridHasRelation(lineage.UsedBy, "Uses semantic table") {
+		t.Fatalf("lineage tables included hidden semantic table edge: uses=%#v usedBy=%#v", lineage.Uses.Rows, lineage.UsedBy.Rows)
 	}
 }
 
@@ -173,18 +175,12 @@ func TestAssetLineageDashboardDerivesMeasureConsumers(t *testing.T) {
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
 		"dashboard",
-		"measure",
 		"model_table",
 		"semantic_model",
 		"source",
 	})
-	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_measure_dashboard"})
+	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_semantic_model_dashboard"})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
-	for _, edge := range lineage.Graph.Edges {
-		if edge.Source == "model" && edge.Target == "dashboard" {
-			t.Fatalf("semantic model dashboard shortcut should be suppressed when measure usage exists: %#v", lineage.Graph.Edges)
-		}
-	}
 	node := assertLineageNode(t, lineage.Graph, "dashboard")
 	if node.VisibleUpstream != 1 || node.VisibleDownstream != 0 {
 		t.Fatalf("dashboard visible counts = upstream %d downstream %d, want 1/0: %#v", node.VisibleUpstream, node.VisibleDownstream, node)
@@ -195,6 +191,8 @@ func TestAssetLineageDashboardDerivesMeasureConsumers(t *testing.T) {
 	if node.ContainedCount != 4 || node.ContainedSummary != "1 filter, 1 page, 1 table, 1 visual" {
 		t.Fatalf("dashboard contained summary = %d %q, want 4 dashboard children: %#v", node.ContainedCount, node.ContainedSummary, node)
 	}
+	assertGridRelations(t, lineage.Uses, []string{"Powers dashboard"})
+	assertGridRelations(t, lineage.UsedBy, nil)
 }
 
 func TestAssetLineageSemanticModelDerivesMeasureDashboardPath(t *testing.T) {
@@ -206,18 +204,12 @@ func TestAssetLineageSemanticModelDerivesMeasureDashboardPath(t *testing.T) {
 	assertLineageNodeKindsExact(t, lineage.Graph, []string{
 		"connection",
 		"dashboard",
-		"measure",
 		"model_table",
 		"semantic_model",
 		"source",
 	})
-	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_measure_dashboard"})
+	assertLineageEdgeKinds(t, lineage.Graph, []string{"lineage_semantic_model_dashboard"})
 	assertLineageEdgesMoveLeftToRight(t, lineage.Graph)
-	for _, edge := range lineage.Graph.Edges {
-		if edge.Source == "model" && edge.Target == "dashboard" {
-			t.Fatalf("semantic model dashboard shortcut should be suppressed when measure usage exists: %#v", lineage.Graph.Edges)
-		}
-	}
 	node := assertLineageNode(t, lineage.Graph, "model")
 	if node.VisibleUpstream != 1 || node.VisibleDownstream != 1 {
 		t.Fatalf("semantic model visible counts = upstream %d downstream %d, want 1/1: %#v", node.VisibleUpstream, node.VisibleDownstream, node)
@@ -228,6 +220,8 @@ func TestAssetLineageSemanticModelDerivesMeasureDashboardPath(t *testing.T) {
 	if node.ContainedCount != 3 || node.ContainedSummary != "1 measure, 1 relationship, 1 semantic table" {
 		t.Fatalf("semantic model contained summary = %d %q, want 3 semantic children: %#v", node.ContainedCount, node.ContainedSummary, node)
 	}
+	assertGridRelations(t, lineage.Uses, []string{"Feeds semantic model"})
+	assertGridRelations(t, lineage.UsedBy, []string{"Powers dashboard"})
 }
 
 func TestAssetLineageFallsBackToContainsWhenNoDependenciesExist(t *testing.T) {
@@ -254,8 +248,8 @@ func TestLineageProjectionPolicy(t *testing.T) {
 		{typ: "source", want: 1, visible: true},
 		{typ: "model_table", want: 2, visible: true},
 		{typ: "semantic_model", want: 3, visible: true},
-		{typ: "measure", want: 4, visible: true},
-		{typ: "dashboard", want: 5, visible: true},
+		{typ: "dashboard", want: 4, visible: true},
+		{typ: "measure", want: -1, visible: false},
 		{typ: "field", want: -1, visible: false},
 	}
 	for _, tt := range layerTests {
@@ -302,22 +296,6 @@ func TestLineageProjectionPolicy(t *testing.T) {
 			wantLabel:  "Feeds semantic model",
 		},
 		{
-			name:       "semantic model measure",
-			sourceType: "semantic_model",
-			targetType: "measure",
-			fallback:   "uses_semantic_table",
-			wantKind:   "lineage_semantic_model_measure",
-			wantLabel:  "Defines measure",
-		},
-		{
-			name:       "measure dashboard",
-			sourceType: "measure",
-			targetType: "dashboard",
-			fallback:   "uses_measure",
-			wantKind:   "lineage_measure_dashboard",
-			wantLabel:  "Used in dashboard",
-		},
-		{
 			name:       "semantic model dashboard",
 			sourceType: "semantic_model",
 			targetType: "dashboard",
@@ -346,7 +324,7 @@ func TestLineageProjectionPolicy(t *testing.T) {
 	}
 }
 
-func TestCollapsedAssetLineageSuppressesSemanticDashboardShortcutByPair(t *testing.T) {
+func TestCollapsedAssetLineageCollapsesMeasureUsageToSemanticModel(t *testing.T) {
 	workspaceID := "libredash"
 	assets := map[string]api.AssetResponse{
 		"model-a": {
@@ -403,8 +381,8 @@ func TestCollapsedAssetLineageSuppressesSemanticDashboardShortcutByPair(t *testi
 
 	lineage := collapsedAssetLineageGraph(workspaceID, assets["dashboard-b"], graph, assets)
 
-	assertLineageHasEdge(t, lineage, "measure-a", "dashboard-a", "lineage_measure_dashboard")
-	assertLineageMissingEdge(t, lineage, "model-a", "dashboard-a", "lineage_semantic_model_dashboard")
+	assertLineageHasEdge(t, lineage, "model-a", "dashboard-a", "lineage_semantic_model_dashboard")
+	assertLineageMissingNode(t, lineage, "measure-a")
 	assertLineageHasEdge(t, lineage, "model-b", "dashboard-b", "lineage_semantic_model_dashboard")
 }
 
@@ -622,6 +600,15 @@ func testAssetByID(t *testing.T, assets []api.AssetResponse, id string) api.Asse
 	return api.AssetResponse{}
 }
 
+func signalMetricGrid(t *testing.T, signals map[string]any, key string) metricGrid {
+	t.Helper()
+	grid, ok := signals[key].(metricGrid)
+	if !ok {
+		t.Fatalf("signal %s = %#v, want metricGrid", key, signals[key])
+	}
+	return grid
+}
+
 func assertLineageNodeKinds(t *testing.T, graph assetLineageGraph, expected []string) {
 	t.Helper()
 	got := map[string]struct{}{}
@@ -664,6 +651,30 @@ func assertLineageEdgeKinds(t *testing.T, graph assetLineageGraph, expected []st
 	}
 }
 
+func assertGridHeaders(t *testing.T, grid metricGrid, expected []string) {
+	t.Helper()
+	got := make([]string, 0, len(grid.Columns))
+	for _, column := range grid.Columns {
+		got = append(got, column.Header)
+	}
+	if strings.Join(got, "|") != strings.Join(expected, "|") {
+		t.Fatalf("grid headers = %#v, want %#v", got, expected)
+	}
+}
+
+func assertGridMissingHeaders(t *testing.T, grid metricGrid, unexpected []string) {
+	t.Helper()
+	got := map[string]struct{}{}
+	for _, column := range grid.Columns {
+		got[column.Header] = struct{}{}
+	}
+	for _, header := range unexpected {
+		if _, ok := got[header]; ok {
+			t.Fatalf("grid unexpectedly includes header %q: %#v", header, grid.Columns)
+		}
+	}
+}
+
 func assertLineageEdgesMoveLeftToRight(t *testing.T, graph assetLineageGraph) {
 	t.Helper()
 	ranks := map[string]int{}
@@ -699,6 +710,15 @@ func assertLineageNode(t *testing.T, graph assetLineageGraph, id string) assetLi
 	}
 	t.Fatalf("lineage graph missing node %q: %#v", id, graph.Nodes)
 	return assetLineageNode{}
+}
+
+func assertLineageMissingNode(t *testing.T, graph assetLineageGraph, id string) {
+	t.Helper()
+	for _, node := range graph.Nodes {
+		if node.ID == id {
+			t.Fatalf("lineage graph included unwanted node %q: %#v", id, graph.Nodes)
+		}
+	}
 }
 
 func assertLineageHasEdge(t *testing.T, graph assetLineageGraph, source, target, kind string) {
