@@ -751,14 +751,14 @@ class DataTable extends LitElement {
     .row.selected,
     .zebra .row.selected,
     .zebra .row.selected:nth-child(even) {
-      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 82%);
+      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 70%);
     }
 
     .row.selected:hover,
     .row.selected.hovered,
     .zebra .row.selected:hover,
     .zebra .row.selected.hovered {
-      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 76%);
+      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 64%);
     }
 
     .row.skeleton-row {
