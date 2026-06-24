@@ -96,6 +96,11 @@ func TestExtractLineageCleanDependencies(t *testing.T) {
 			t.Fatalf("dashboard rollup edge persisted: %#v", edge)
 		}
 	}
+	for _, edge := range graph.Edges {
+		if edge.FromAssetID == table.ID && edge.ToAssetID == semanticTable.ID && edge.Type == workspace.AssetEdgeUsesSemanticTable {
+			t.Fatalf("dashboard table semantic-table dependency persisted: %#v", edge)
+		}
+	}
 }
 
 func TestExtractLineageRelationshipPrimaryKeyEndpoints(t *testing.T) {

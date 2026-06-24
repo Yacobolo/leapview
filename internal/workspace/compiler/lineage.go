@@ -284,9 +284,6 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				return workspace.AssetGraph{}, err
 			}
 			edge(reportID, tableID, workspace.AssetEdgeContains)
-			if err := addSemanticTableUse(tableID, table.Query.Table); err != nil {
-				return workspace.AssetGraph{}, err
-			}
 			for _, column := range table.DataColumns {
 				if err := addFieldUse(tableID, column.Field, workspace.AssetEdgeUsesField); err != nil {
 					return workspace.AssetGraph{}, err

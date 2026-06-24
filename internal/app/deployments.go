@@ -137,6 +137,15 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForActivationError(err))
 		return
 	}
+	if provider, ok := s.reloader.(runtimeProvider); ok {
+		if workspaceRepo, repoErr := s.workspaceRepository(); repoErr == nil {
+			if err := ReconcileActiveLineageGraph(r.Context(), workspaceRepo, provider, string(deployment.WorkspaceID)); err != nil && s.logger != nil {
+				s.logger.Warn("active lineage graph reconciliation failed", "workspace", deployment.WorkspaceID, "deployment", deployment.ID, "error", err)
+			}
+		} else if s.logger != nil {
+			s.logger.Warn("active lineage graph reconciliation skipped", "workspace", deployment.WorkspaceID, "deployment", deployment.ID, "error", repoErr)
+		}
+	}
 	writeJSON(w, http.StatusOK, deploymentDTO(deployment))
 }
 
