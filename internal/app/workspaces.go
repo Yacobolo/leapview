@@ -752,7 +752,17 @@ func safeAssetMeta(assetType, raw string) map[string]any {
 	case "source":
 		return pickMeta(content, "format", "Format", "path", "Path", "connection", "Connection", "object", "Object", "options", "Options")
 	case "model_table":
-		return pickMeta(content, "source", "Source", "primary_key", "PrimaryKey", "grain", "Grain")
+		return pickMeta(content,
+			"source", "Source",
+			"sources", "Sources",
+			"source_dependencies", "SourceDependencies",
+			"transform", "Transform",
+			"sql", "SQL",
+			"primary_key", "PrimaryKey",
+			"grain", "Grain",
+			"dimensions", "Dimensions",
+			"fields", "Fields",
+		)
 	case "measure":
 		return pickMeta(content, "expression", "Expression", "unit", "Unit", "format", "Format")
 	case "field":

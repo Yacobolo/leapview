@@ -112,6 +112,9 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace api.WorkspaceRespon
 	extraHead := []g.Node{
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/data-grid.js"))),
 	}
+	if activeSection == "details" && assetDetailUsesCodeBlock(asset) {
+		extraHead = append(extraHead, h.Script(h.Type("module"), h.Src(staticAsset("/static/code-block.js"))))
+	}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/asset-lineage-graph.css"))),
@@ -1268,6 +1271,8 @@ type assetDetailSection struct {
 	Signal string
 	Grid   metricGrid
 	Facts  []definitionFact
+	Code   string
+	Lang   string
 }
 
 func assetDetailsSection(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) g.Node {
@@ -1279,10 +1284,17 @@ func assetDetailsSection(workspace api.WorkspaceResponse, asset api.AssetRespons
 }
 
 func assetDetailSectionNode(section assetDetailSection) g.Node {
+	if section.Code != "" {
+		return definitionCodeBlock(section.Title, section.Lang, section.Code)
+	}
 	if section.Signal != "" {
 		return definitionSignalGrid(section.Title, section.Signal)
 	}
 	return definitionFacts(section.Title, section.Facts)
+}
+
+func assetDetailUsesCodeBlock(asset api.AssetResponse) bool {
+	return asset.Type == "model_table" && modelTableSQL(asset.Meta) != ""
 }
 
 func assetDetailModelForAsset(workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse, edges []api.AssetEdgeResponse) assetDetailModel {
@@ -1292,6 +1304,8 @@ func assetDetailModelForAsset(workspace api.WorkspaceResponse, asset api.AssetRe
 	switch asset.Type {
 	case "semantic_model":
 		semanticModelDetailModel(&model, workspace, asset, assets)
+	case "model_table":
+		modelTableDetailModel(&model, workspace, asset, assets)
 	case "dashboard":
 		dashboardDetailModel(&model, asset, assets)
 	case "connection":
@@ -1322,7 +1336,7 @@ func commonAssetOverviewFacts(asset api.AssetResponse, assets []api.AssetRespons
 
 func shouldShowParentFact(typ string) bool {
 	switch typ {
-	case "catalog", "connection", "dashboard", "semantic_model":
+	case "catalog", "connection", "dashboard", "model_table", "semantic_model":
 		return false
 	default:
 		return true
@@ -1468,6 +1482,91 @@ func semanticMeasureCountsByTable(measures map[string]any) map[string]int {
 		counts[table]++
 	}
 	return counts
+}
+
+func modelTableDetailModel(model *assetDetailModel, workspace api.WorkspaceResponse, asset api.AssetResponse, assets []api.AssetResponse) {
+	modelKey, tableName := modelTableKeyParts(asset)
+	fields := modelTableFields(asset.Meta)
+	sources := modelTableSourceNames(asset.Meta)
+	mode := "Unspecified"
+	if modelTableSQL(asset.Meta) != "" {
+		mode = "Transform"
+	} else if metaString(asset.Meta, "Source", "source") != "" {
+		mode = "Direct source"
+	}
+	semanticModel := assetByTypeKey("semantic_model", modelKey, assets)
+	model.Overview = append(model.Overview,
+		definitionFact{Label: "Semantic model", Value: assetTitle(semanticModel)},
+		definitionFact{Label: "Primary key", Value: metaString(asset.Meta, "PrimaryKey", "primary_key"), Code: true},
+		definitionFact{Label: "Grain", Value: metaString(asset.Meta, "Grain", "grain"), Code: true},
+		definitionFact{Label: "Fields", Value: fmt.Sprint(len(fields))},
+		definitionFact{Label: "Input sources", Value: fmt.Sprint(len(sources))},
+		definitionFact{Label: "Mode", Value: mode},
+	)
+	model.Sections = append(model.Sections,
+		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", len(fields)), Signal: "assetDetailsModelTableFieldsGrid", Grid: modelTableFieldsGrid(workspace.ID, modelKey, tableName, fields, assets)},
+	)
+	if sql := modelTableSQL(asset.Meta); sql != "" {
+		model.Sections = append(model.Sections, assetDetailSection{Title: "SQL", Lang: "sql", Code: sql})
+	}
+}
+
+func modelTableKeyParts(asset api.AssetResponse) (string, string) {
+	parts := strings.SplitN(asset.Key, ".", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", asset.Key
+}
+
+func modelTableFields(meta map[string]any) map[string]any {
+	return metaMap(meta, "Dimensions", "dimensions", "Fields", "fields")
+}
+
+func modelTableSourceNames(meta map[string]any) []string {
+	if source := metaString(meta, "Source", "source"); source != "" {
+		return []string{source}
+	}
+	for _, value := range []any{
+		metaValue(meta, "SourceDependencies", "source_dependencies"),
+		metaValue(meta, "Sources", "sources"),
+	} {
+		sources := stringSlice(value)
+		if len(sources) > 0 {
+			sort.Strings(sources)
+			return sources
+		}
+	}
+	return nil
+}
+
+func modelTableSQL(meta map[string]any) string {
+	return firstNonEmpty(
+		metaString(metaMap(meta, "Transform", "transform"), "SQL", "sql"),
+		metaString(meta, "SQL", "sql"),
+	)
+}
+
+func modelTableFieldsGrid(workspaceID, modelKey, tableName string, fields map[string]any, assets []api.AssetResponse) metricGrid {
+	rows := make([]map[string]any, 0, len(fields))
+	for _, name := range sortedMapKeys(fields) {
+		field := asMap(fields[name])
+		child := assetByTypeKey("field", modelKey+"."+tableName+"."+name, assets)
+		rows = append(rows, map[string]any{
+			"name":     name,
+			"nameHref": childHref(workspaceID, child),
+			"type":     metricGridBadgeValue(metaString(field, "Type", "type"), "muted"),
+		})
+	}
+	return metricGrid{
+		Columns: []metricGridColumn{
+			{ID: "name", Header: "Name", Kind: "link", HrefKey: "nameHref", Width: "170px"},
+			{ID: "type", Header: "Type", Kind: "badge", Width: "110px"},
+		},
+		Rows:     rows,
+		Empty:    "No fields are defined for this model table.",
+		MinWidth: "420px",
+	}
 }
 
 func semanticFieldsGrid(workspaceID string, parent api.AssetResponse, assets []api.AssetResponse, meta map[string]any) metricGrid {
@@ -1800,6 +1899,16 @@ func definitionFacts(title string, facts []definitionFact) g.Node {
 	)
 }
 
+func definitionCodeBlock(title, lang, code string) g.Node {
+	return h.Section(h.Class("grid min-w-0 content-start gap-3 border-b border-outline-muted pb-5 last:border-b-0"), h.Aria("label", title),
+		h.H2(h.Class("m-0 text-body-sm font-semibold text-fg-default"), g.Text(title)),
+		g.El("ld-code-block",
+			g.Attr("language", firstNonEmpty(lang, "text")),
+			g.Attr("code", code),
+		),
+	)
+}
+
 func definitionStats(title string, facts []definitionFact) g.Node {
 	filtered := make([]definitionFact, 0, len(facts))
 	for _, fact := range facts {
@@ -2074,14 +2183,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func sqlPreview(sql string) string {
-	sql = strings.Join(strings.Fields(sql), " ")
-	if len(sql) > 160 {
-		return sql[:157] + "..."
-	}
-	return sql
 }
 
 func childAssetByName(parentID, typ, name string, assets []api.AssetResponse) api.AssetResponse {

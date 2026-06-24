@@ -107,6 +107,100 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAssetDetailsRenderModelTableComposition(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "table-transform")
+
+	var out strings.Builder
+	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		"Overview",
+		"Fields (2)",
+		"SQL",
+		"/static/code-block.js",
+		`data-attr:grid="$assetDetailsModelTableFieldsGrid"`,
+		`<ld-code-block language="sql"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("model table details did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		"Source / transform",
+		`data-attr:grid="$assetDetailsModelTableDefinitionGrid"`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("model table details rendered source definition content %q:\n%s", notWant, rendered)
+		}
+	}
+	if strings.Contains(rendered, "Measures (") || strings.Contains(rendered, `data-attr:grid="$assetDetailsModelTableMeasuresGrid"`) {
+		t.Fatalf("model table details rendered measures:\n%s", rendered)
+	}
+}
+
+func TestWorkspaceAssetDetailsRenderDirectSourceModelTableWithoutSQL(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "table-model")
+
+	var out strings.Builder
+	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	for _, want := range []string{
+		"Overview",
+		"Fields (2)",
+		`data-attr:grid="$assetDetailsModelTableFieldsGrid"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("direct source model table details did not render %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		"SQL",
+		"Source / transform",
+		"/static/code-block.js",
+		`<ld-code-block language="sql"`,
+		`data-attr:grid="$assetDetailsModelTableDefinitionGrid"`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("direct source model table details rendered %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func TestWorkspaceAssetDetailSignalsIncludeModelTableDefinition(t *testing.T) {
+	workspace, _, assets, edges := testWorkspaceAssetFixtures()
+
+	directAsset := testAssetByID(t, assets, "table-model")
+	directSignals := workspaceAssetSignals(workspace, directAsset, assets, edges, assetLineage(workspace.ID, directAsset, assets, edges), "details")
+	directFields := signalMetricGrid(t, directSignals, "assetDetailsModelTableFieldsGrid")
+	assertGridHeaders(t, directFields, []string{"Name", "Type"})
+	assertGridMissingHeaders(t, directFields, []string{"Expression", "Filter", "Order", "Model table", "Measures"})
+	if _, ok := directSignals["assetDetailsModelTableDefinitionGrid"]; ok {
+		t.Fatalf("direct source model table seeded source definition grid: %#v", directSignals)
+	}
+	if _, ok := directSignals["assetDetailsModelTableSQL"]; ok {
+		t.Fatalf("direct source model table seeded SQL signal: %#v", directSignals)
+	}
+
+	transformAsset := testAssetByID(t, assets, "table-transform")
+	transformSignals := workspaceAssetSignals(workspace, transformAsset, assets, edges, assetLineage(workspace.ID, transformAsset, assets, edges), "details")
+	if _, ok := transformSignals["assetDetailsModelTableDefinitionGrid"]; ok {
+		t.Fatalf("transform model table seeded source definition grid: %#v", transformSignals)
+	}
+	if _, ok := transformSignals["assetDetailsModelTableMeasuresGrid"]; ok {
+		t.Fatalf("model table details seeded measures grid: %#v", transformSignals)
+	}
+}
+
 func TestAssetLineageProjectsRecursiveDependenciesAndContext(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 	asset := testAssetByID(t, assets, "page-item")
@@ -675,6 +769,35 @@ func assertGridMissingHeaders(t *testing.T, grid metricGrid, unexpected []string
 	}
 }
 
+func assertGridRowValue(t *testing.T, grid metricGrid, column, expected string) {
+	t.Helper()
+	for _, row := range grid.Rows {
+		if fmt.Sprint(row[column]) == expected {
+			return
+		}
+	}
+	t.Fatalf("grid missing row with %s=%q: %#v", column, expected, grid.Rows)
+}
+
+func assertGridNoRowValue(t *testing.T, grid metricGrid, column, unexpected string) {
+	t.Helper()
+	for _, row := range grid.Rows {
+		if fmt.Sprint(row[column]) == unexpected {
+			t.Fatalf("grid unexpectedly includes row with %s=%q: %#v", column, unexpected, grid.Rows)
+		}
+	}
+}
+
+func assertGridRowContains(t *testing.T, grid metricGrid, column, expected string) {
+	t.Helper()
+	for _, row := range grid.Rows {
+		if strings.Contains(fmt.Sprint(row[column]), expected) {
+			return
+		}
+	}
+	t.Fatalf("grid missing row with %s containing %q: %#v", column, expected, grid.Rows)
+}
+
 func assertLineageEdgesMoveLeftToRight(t *testing.T, graph assetLineageGraph) {
 	t.Helper()
 	ranks := map[string]int{}
@@ -807,7 +930,27 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 		},
 		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "catalog", Title: "Olist connection", Meta: map[string]any{"Kind": "local", "credentials_configured": false}},
 		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"}},
-		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{"Source": "orders", "PrimaryKey": "order_id"}},
+		{ID: "source-payments", WorkspaceID: workspace.ID, Type: "source", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "payments.csv"}},
+		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{
+			"Source":     "orders",
+			"PrimaryKey": "order_id",
+			"Grain":      "order_id",
+			"Dimensions": map[string]any{
+				"order_id": map[string]any{"Expr": "order_id"},
+				"state":    map[string]any{"Expr": "state"},
+			},
+		}},
+		{ID: "table-transform", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{
+			"Sources":            []any{"payments"},
+			"SourceDependencies": []any{"payments"},
+			"PrimaryKey":         "order_id",
+			"Grain":              "order_id",
+			"Transform":          map[string]any{"SQL": "SELECT order_id, SUM(payment_value) AS revenue FROM source.payments GROUP BY order_id"},
+			"Dimensions": map[string]any{
+				"order_id": map[string]any{"Expr": "order_id"},
+				"revenue":  map[string]any{"Expr": "revenue", "Type": "number"},
+			},
+		}},
 		{ID: "semantic-table", WorkspaceID: workspace.ID, Type: "semantic_table", Key: "olist.orders", ParentID: "model", Title: "Orders semantic table", Meta: map[string]any{"Table": "orders"}},
 		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "semantic-table", Title: "State", Meta: map[string]any{"Expr": "state"}},
 		{ID: "measure", WorkspaceID: workspace.ID, Type: "measure", Key: "olist.revenue", ParentID: "model", Title: "Revenue", Meta: map[string]any{"Table": "orders", "Expression": "SUM(orders.revenue)", "Format": "currency"}},
