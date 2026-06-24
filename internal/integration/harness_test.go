@@ -1,8 +1,13 @@
 package integration
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,7 +19,9 @@ import (
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	materializeruntime "github.com/Yacobolo/libredash/internal/analytics/materialize"
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/app"
+	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
@@ -22,14 +29,32 @@ import (
 
 type harness struct {
 	handler http.Handler
+	server  *httptest.Server
 }
 
 type harnessConfig struct {
 	catalogPath string
 	fixture     func(t *testing.T, dir string)
+	wrapMetrics func(*dashboardruntime.Service) integrationMetrics
 }
 
 type harnessOption func(*harnessConfig)
+
+type integrationMetrics interface {
+	Catalog() dashboard.Catalog
+	DefaultDashboardID() string
+	ModelIDForDashboard(dashboardID string) string
+	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
+	DefaultFilters(dashboardID string) dashboard.Filters
+	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest
+	QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error)
+	QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error)
+	QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
+	QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
+	RefreshMaterializations(ctx context.Context, modelID string) error
+	DataDir() string
+	Pages(dashboardID string) []dashboard.Page
+}
 
 func withCatalog(path string) harnessOption {
 	return func(config *harnessConfig) {
@@ -40,6 +65,12 @@ func withCatalog(path string) harnessOption {
 func withOlistFixture(fixture func(t *testing.T, dir string)) harnessOption {
 	return func(config *harnessConfig) {
 		config.fixture = fixture
+	}
+}
+
+func withMetricsWrapper(wrapper func(*dashboardruntime.Service) integrationMetrics) harnessOption {
+	return func(config *harnessConfig) {
+		config.wrapMetrics = wrapper
 	}
 }
 
@@ -66,9 +97,17 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	}
 	t.Cleanup(func() { _ = metrics.Close() })
 
-	return &harness{
-		handler: app.New(metrics).Routes(),
+	metricsForApp := integrationMetrics(metrics)
+	if config.wrapMetrics != nil {
+		metricsForApp = config.wrapMetrics(metrics)
 	}
+
+	h := &harness{
+		handler: app.New(metricsForApp).Routes(),
+	}
+	h.server = httptest.NewServer(h.handler)
+	t.Cleanup(h.server.Close)
+	return h
 }
 
 func (h *harness) getUpdates(t *testing.T, dashboardID, pageID string, signals map[string]any) string {
@@ -107,6 +146,168 @@ func (h *harness) getUpdatesSignals(t *testing.T, dashboardID, pageID string, si
 		t.Fatalf("GET /updates did not stream Datastar patch signals:\n%s", body)
 	}
 	return patches
+}
+
+func (h *harness) openUpdatesStream(t *testing.T, dashboardID, pageID string, signals map[string]any) *streamClient {
+	t.Helper()
+
+	serverURL := h.serverURL(t)
+	encodedSignals, err := json.Marshal(signals)
+	if err != nil {
+		t.Fatalf("marshal Datastar signals: %v", err)
+	}
+	values := url.Values{}
+	values.Set("dashboard", dashboardID)
+	values.Set("page", pageID)
+	values.Set("datastar", string(encodedSignals))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+"/updates?"+values.Encode(), nil)
+	if err != nil {
+		cancel()
+		t.Fatalf("create updates request: %v", err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		cancel()
+		t.Fatalf("open updates stream: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		defer res.Body.Close()
+		body, _ := io.ReadAll(res.Body)
+		cancel()
+		t.Fatalf("GET /updates status = %d, body:\n%s", res.StatusCode, string(body))
+	}
+	if got := res.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		_ = res.Body.Close()
+		cancel()
+		t.Fatalf("GET /updates content type = %q, want text/event-stream", got)
+	}
+
+	client := &streamClient{
+		cancel:  cancel,
+		body:    res.Body,
+		patches: make(chan map[string]any, 16),
+		errs:    make(chan error, 1),
+	}
+	go client.read()
+	t.Cleanup(client.close)
+	return client
+}
+
+func (h *harness) postCommand(t *testing.T, path string, signals map[string]any) int {
+	t.Helper()
+
+	encodedSignals, err := json.Marshal(signals)
+	if err != nil {
+		t.Fatalf("marshal Datastar signals: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, h.serverURL(t)+path, bytes.NewReader(encodedSignals))
+	if err != nil {
+		t.Fatalf("create command request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 400 {
+		body, _ := io.ReadAll(res.Body)
+		t.Fatalf("POST %s status = %d, body:\n%s", path, res.StatusCode, string(body))
+	}
+	return res.StatusCode
+}
+
+func (h *harness) serverURL(t *testing.T) string {
+	t.Helper()
+	return h.server.URL
+}
+
+type streamClient struct {
+	cancel  context.CancelFunc
+	body    io.ReadCloser
+	patches chan map[string]any
+	errs    chan error
+}
+
+func (c *streamClient) nextPatch(t *testing.T) map[string]any {
+	t.Helper()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	select {
+	case patch, ok := <-c.patches:
+		if !ok {
+			t.Fatal("updates stream closed before next patch")
+		}
+		return patch
+	case err := <-c.errs:
+		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, http.ErrAbortHandler) {
+			t.Fatal("updates stream closed before next patch")
+		}
+		t.Fatalf("read updates stream: %v", err)
+	case <-timer.C:
+		t.Fatal("timed out waiting for next updates patch")
+	}
+	return nil
+}
+
+func (c *streamClient) expectNoPatch(t *testing.T, duration time.Duration) {
+	t.Helper()
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case patch, ok := <-c.patches:
+		if !ok {
+			return
+		}
+		t.Fatalf("unexpected updates patch: %#v", patch)
+	case err := <-c.errs:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("read updates stream: %v", err)
+		}
+	case <-timer.C:
+	}
+}
+
+func (c *streamClient) close() {
+	c.cancel()
+	_ = c.body.Close()
+}
+
+func (c *streamClient) read() {
+	defer close(c.patches)
+
+	reader := bufio.NewReader(c.body)
+	var event strings.Builder
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			event.WriteString(line)
+			if line == "\n" || line == "\r\n" {
+				events := ssetest.ParseEvents(event.String())
+				event.Reset()
+				for _, evt := range events {
+					patch, ok, err := ssetest.DecodePatchSignalEvent(evt)
+					if err != nil {
+						c.errs <- err
+						return
+					}
+					if ok {
+						c.patches <- patch
+					}
+				}
+			}
+		}
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			return
+		}
+		c.errs <- fmt.Errorf("read SSE event: %w", err)
+		return
+	}
 }
 
 func discoverCatalogPath(t *testing.T) string {

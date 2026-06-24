@@ -2,6 +2,7 @@ package ssetest
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,10 @@ type Event struct {
 
 func Events(t testing.TB, body string) []Event {
 	t.Helper()
+	return ParseEvents(body)
+}
 
+func ParseEvents(body string) []Event {
 	var events []Event
 	var current Event
 	var data []string
@@ -74,21 +78,42 @@ func Events(t testing.TB, body string) []Event {
 func PatchSignals(t testing.TB, body string) []map[string]any {
 	t.Helper()
 
-	var patches []map[string]any
-	for _, event := range Events(t, body) {
-		if event.Event != datastarPatchSignalsEvent {
-			continue
-		}
+	patches, err := DecodePatchSignals(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return patches
+}
 
-		payload := datastarSignalsPayload(t, event.Data)
-		var patch map[string]any
-		if err := json.Unmarshal([]byte(payload), &patch); err != nil {
-			t.Fatalf("unmarshal Datastar patch signals payload %q: %v", payload, err)
+func DecodePatchSignals(body string) ([]map[string]any, error) {
+	var patches []map[string]any
+	for _, event := range ParseEvents(body) {
+		patch, ok, err := DecodePatchSignalEvent(event)
+		if err != nil {
+			return nil, err
 		}
-		patches = append(patches, patch)
+		if ok {
+			patches = append(patches, patch)
+		}
 	}
 
-	return patches
+	return patches, nil
+}
+
+func DecodePatchSignalEvent(event Event) (map[string]any, bool, error) {
+	if event.Event != datastarPatchSignalsEvent {
+		return nil, false, nil
+	}
+
+	payload, err := datastarSignalsPayload(event.Data)
+	if err != nil {
+		return nil, true, err
+	}
+	var patch map[string]any
+	if err := json.Unmarshal([]byte(payload), &patch); err != nil {
+		return nil, true, fmt.Errorf("unmarshal Datastar patch signals payload %q: %w", payload, err)
+	}
+	return patch, true, nil
 }
 
 func RequirePatchSignal(t testing.TB, body string, match func(map[string]any) bool) map[string]any {
@@ -104,9 +129,7 @@ func RequirePatchSignal(t testing.TB, body string, match func(map[string]any) bo
 	return nil
 }
 
-func datastarSignalsPayload(t testing.TB, data string) string {
-	t.Helper()
-
+func datastarSignalsPayload(data string) (string, error) {
 	lines := strings.Split(data, "\n")
 	payload := make([]string, 0, len(lines))
 	for _, line := range lines {
@@ -114,12 +137,12 @@ func datastarSignalsPayload(t testing.TB, data string) string {
 			continue
 		}
 		if !strings.HasPrefix(line, "signals ") {
-			t.Fatalf("Datastar patch-signal data line %q is missing signals prefix", line)
+			return "", fmt.Errorf("Datastar patch-signal data line %q is missing signals prefix", line)
 		}
 		payload = append(payload, strings.TrimPrefix(line, "signals "))
 	}
 	if len(payload) == 0 {
-		t.Fatal("Datastar patch-signal event did not include a signals payload")
+		return "", fmt.Errorf("Datastar patch-signal event did not include a signals payload")
 	}
-	return strings.Join(payload, "\n")
+	return strings.Join(payload, "\n"), nil
 }
