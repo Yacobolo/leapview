@@ -5,6 +5,7 @@ filters:
   purchase_date:
     type: date_range
     label: Period
+    description: Filters dashboard content by order purchase date.
     url_param: period
     from_url_param: from
     to_url_param: to
@@ -29,6 +30,7 @@ filters:
   state:
     type: multi_select
     label: State
+    description: Filters dashboard content by customer state.
     url_param: state
     operator: in
     values:
@@ -38,6 +40,7 @@ filters:
   category:
     type: text
     label: Category
+    description: Filters dashboard content by product category text.
     url_param: category
     operator_url_param: category_op
     default_operator: contains
@@ -50,6 +53,7 @@ filters:
 visuals:
   total_orders:
     kind: kpi
+    description: Shows the filtered count of distinct orders.
     shape: single_value
     query:
       measures:
@@ -59,6 +63,7 @@ visuals:
       tone: ink
   revenue_kpi:
     kind: kpi
+    description: Shows filtered total payment revenue.
     shape: single_value
     query:
       measures:
@@ -68,6 +73,7 @@ visuals:
       tone: green
   aov_kpi:
     kind: kpi
+    description: Shows average order value for the current filters.
     shape: single_value
     query:
       measures:
@@ -77,6 +83,7 @@ visuals:
       tone: amber
   review_kpi:
     kind: kpi
+    description: Shows average review score for the current filters.
     shape: single_value
     query:
       measures:
@@ -86,6 +93,7 @@ visuals:
       tone: coral
   revenue:
     title: Revenue by month
+    description: Tracks monthly revenue over the selected period.
     type: area
     query:
       dimensions:
@@ -110,6 +118,7 @@ visuals:
         - orders_table
   orders:
     title: Orders by status
+    description: Breaks down orders by lifecycle status.
     type: donut
     query:
       dimensions:
@@ -133,6 +142,7 @@ visuals:
         - orders_table
   orders_by_month_status:
     title: Orders by month and status
+    description: Compares monthly order volume split by status.
     shape: category_series_value
     renderer: echarts
     type: column
@@ -164,6 +174,7 @@ visuals:
         - orders_table
   categories:
     title: Top product categories
+    description: Ranks product categories by revenue.
     type: bar
     query:
       dimensions:
@@ -188,6 +199,7 @@ visuals:
         - orders_table
   delivery:
     title: Delivery speed
+    description: Compares order volume across delivery-speed buckets.
     type: bar
     query:
       dimensions:
@@ -211,6 +223,7 @@ visuals:
         - orders_table
   state_status_heatmap:
     title: State by order status
+    description: Shows order status concentration by customer state.
     shape: matrix
     renderer: echarts
     type: heatmap
@@ -228,6 +241,7 @@ visuals:
       limit: 120
   status_delivery_flow:
     title: Status to delivery speed
+    description: Shows flow from order status to delivery-speed bucket.
     shape: graph
     renderer: echarts
     type: sankey
@@ -243,6 +257,7 @@ visuals:
       limit: 40
   delivery_distribution:
     title: Delivery day distribution
+    description: Summarizes delivery-day distribution by speed bucket.
     shape: distribution
     renderer: echarts
     type: boxplot
@@ -256,6 +271,7 @@ visuals:
         direction: asc
   state_order_map:
     title: Orders by state
+    description: Maps order count by customer state.
     shape: geo
     renderer: echarts
     type: map
@@ -272,6 +288,7 @@ visuals:
       limit: 27
   status_delivery_graph:
     title: Status and delivery network
+    description: Shows status and delivery-speed relationships as a network.
     shape: graph
     renderer: echarts
     type: graph
@@ -287,6 +304,7 @@ visuals:
       limit: 40
   revenue_orders_combo:
     title: Revenue and orders by month
+    description: Compares monthly revenue and order volume together.
     shape: category_multi_measure
     renderer: echarts
     type: combo
@@ -306,6 +324,7 @@ visuals:
       limit: 30
   revenue_waterfall:
     title: Monthly revenue contribution
+    description: Shows each month contribution to total revenue.
     shape: category_delta
     renderer: echarts
     type: waterfall
@@ -320,6 +339,7 @@ visuals:
       limit: 18
   delivery_histogram:
     title: Delivery days histogram
+    description: Buckets order volume by delivery duration.
     shape: binned_measure
     renderer: echarts
     type: histogram
@@ -330,6 +350,7 @@ visuals:
         delivery_days:
   status_radar:
     title: Order status radar
+    description: Compares order status counts on a radar chart.
     shape: category_value
     renderer: echarts
     type: radar
@@ -344,6 +365,7 @@ visuals:
       limit: 8
   category_status_sunburst:
     title: Category and status hierarchy
+    description: Shows category and status hierarchy by order count.
     shape: hierarchy
     renderer: echarts
     type: sunburst
@@ -359,6 +381,7 @@ visuals:
       limit: 80
   state_status_tree:
     title: State and status tree
+    description: Shows customer state and order status as a hierarchy.
     shape: hierarchy
     renderer: echarts
     type: tree
@@ -1127,6 +1150,7 @@ tables:
   orders_table:
     kind: data_table
     title: Orders
+    description: Detailed order records with status, geography, revenue, review, and delivery columns.
     interaction:
       row_selection:
         toggle: true
@@ -1204,6 +1228,7 @@ tables:
   orders_compact:
     kind: data_table
     title: Orders compact
+    description: Compact order table for dense scanning.
     style:
       density: compact
       zebra: false
@@ -1251,6 +1276,7 @@ tables:
   orders_spacious:
     kind: data_table
     title: Orders spacious
+    description: Spacious order table focused on date, category, revenue, and delivery.
     style:
       density: spacious
       zebra: true
@@ -1298,6 +1324,7 @@ tables:
   orders_full_grid:
     kind: data_table
     title: Orders full grid
+    description: Full-grid order table with visible row and column borders.
     style:
       density: comfortable
       zebra: true
@@ -1351,6 +1378,7 @@ tables:
   orders_conditional:
     kind: data_table
     title: Orders conditional formatting
+    description: Order table demonstrating badges, data bars, and threshold formatting.
     style:
       density: comfortable
       zebra: true
@@ -1430,6 +1458,7 @@ tables:
   state_status_matrix:
     kind: matrix_table
     title: State status matrix
+    description: Matrix of orders and revenue by customer state and order status.
     default_sort:
       key: state
       direction: asc
@@ -1444,6 +1473,7 @@ tables:
   category_status_pivot:
     kind: pivot_table
     title: Category status pivot
+    description: Pivot of order count by product category and order status.
     default_sort:
       key: category
       direction: asc
@@ -1457,6 +1487,7 @@ tables:
   state_status_matrix_formatted:
     kind: matrix_table
     title: State/category matrix formatted
+    description: Formatted matrix combining geography, category, status, and measures.
     style:
       density: comfortable
       zebra: true
@@ -1504,6 +1535,7 @@ tables:
   category_status_pivot_heat:
     kind: pivot_table
     title: Category status pivot heat
+    description: Heat-formatted pivot of category and status performance.
     style:
       density: compact
       zebra: true
@@ -1540,6 +1572,7 @@ pages:
   - id: period-filter
     kind: filter_card
     filter: purchase_date
+    description: Period filter placement in the overview header.
     placement:
       col: 1
       row: 1
@@ -1548,6 +1581,7 @@ pages:
   - id: state-filter
     kind: filter_card
     filter: state
+    description: State filter placement in the overview header.
     placement:
       col: 4
       row: 1
@@ -1556,6 +1590,7 @@ pages:
   - id: total-orders
     kind: kpi_card
     visual: total_orders
+    description: Total orders KPI placement on the overview page.
     placement:
       col: 1
       row: 2
@@ -1564,6 +1599,7 @@ pages:
   - id: revenue-kpi
     kind: kpi_card
     visual: revenue_kpi
+    description: Revenue KPI placement on the overview page.
     placement:
       col: 4
       row: 2
@@ -1572,6 +1608,7 @@ pages:
   - id: aov-kpi
     kind: kpi_card
     visual: aov_kpi
+    description: Average order value KPI placement on the overview page.
     placement:
       col: 7
       row: 2
@@ -1580,6 +1617,7 @@ pages:
   - id: review-kpi
     kind: kpi_card
     visual: review_kpi
+    description: Review score KPI placement on the overview page.
     placement:
       col: 10
       row: 2
@@ -1588,6 +1626,7 @@ pages:
   - id: revenue
     kind: line_chart
     visual: revenue
+    description: Revenue trend chart placement on the overview page.
     placement:
       col: 1
       row: 4
@@ -1596,6 +1635,7 @@ pages:
   - id: orders
     kind: bar_chart
     visual: orders
+    description: Order status chart placement on the overview page.
     placement:
       col: 7
       row: 4
@@ -1604,6 +1644,7 @@ pages:
   - id: delivery
     kind: bar_chart
     visual: delivery
+    description: Delivery speed chart placement on the overview page.
     placement:
       col: 10
       row: 4
@@ -1612,6 +1653,7 @@ pages:
   - id: categories
     kind: bar_chart
     visual: categories
+    description: Product category chart placement on the overview page.
     placement:
       col: 1
       row: 9
@@ -1620,6 +1662,7 @@ pages:
   - id: orders-table
     kind: table
     table: orders_table
+    description: Orders table placement on the overview page.
     placement:
       col: 7
       row: 9

@@ -16,13 +16,7 @@ func (m *Model) ResolveDimension(ref string) (MetricDimension, error) {
 	}
 	dimension, ok := table.Dimensions[fieldName]
 	if !ok {
-		if len(table.Dimensions) > 0 {
-			return MetricDimension{}, fmt.Errorf("unknown dimension %q", fieldName)
-		}
-		if err := validateSemanticIdentifier(fieldName); err != nil {
-			return MetricDimension{}, fmt.Errorf("unknown dimension %q", fieldName)
-		}
-		dimension = MetricDimension{Expr: fieldName}
+		return MetricDimension{}, fmt.Errorf("unknown field %q on table %q", fieldName, tableName)
 	}
 	dimension.Field = ref
 	dimension.Table = tableName
@@ -44,9 +38,6 @@ func (m *Model) ResolveRelationshipEndpoint(ref string) (MetricDimension, error)
 		dimension.Table = tableName
 		dimension.Name = fieldName
 		return dimension, nil
-	}
-	if fieldName == table.PrimaryKey {
-		return MetricDimension{Field: ref, Table: tableName, Name: fieldName, Expr: fieldName}, nil
 	}
 	return MetricDimension{}, fmt.Errorf("unknown relationship endpoint field %q on table %q", fieldName, tableName)
 }
@@ -103,10 +94,7 @@ func splitSemanticField(ref string) (string, string, error) {
 }
 
 func (d MetricDimension) SQLExpression() string {
-	if strings.TrimSpace(d.Expr) != "" {
-		return d.Expr
-	}
-	return d.Expression
+	return d.Name
 }
 
 func (m MetricMeasure) SQLExpression() string {

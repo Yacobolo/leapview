@@ -67,14 +67,13 @@ sources:
 models:
   orders:
     source: olist_orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
 semantic_models:
   olist:
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -96,15 +95,14 @@ sources:
 models:
   orders:
     source: olist_orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
 semantic_models:
   olist:
     base_table: missing
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -140,17 +138,14 @@ semantic_models:
   olist:
     base_table: orders
     tables:
-      missing:
-        primary_key: id
-        fields:
-          id: {expr: id}
+      - missing
     measures:
       defaults: {table: missing, grain: id}
       count: {expr: COUNT(DISTINCT missing.id)}
 `)
 
 	_, err := CompileDefinition(catalogPath)
-	if err == nil || !strings.Contains(err.Error(), `references unknown model "missing"`) {
+	if err == nil || !strings.Contains(err.Error(), `semantic model table "missing" references unknown model`) {
 		t.Fatalf("CompileDefinition() error = %v, want missing model rejection", err)
 	}
 }
@@ -161,18 +156,8 @@ semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          customer_id: {expr: customer_id}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
-          state: {expr: state}
+      - orders
+      - customers
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -196,11 +181,7 @@ semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     relationships:
       - from: orders.order_id
         to: missing.id
@@ -215,16 +196,8 @@ semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
+      - orders
+      - customers
     relationships:
       - from: orders.missing_customer_id
         to: customers.customer_id
@@ -265,30 +238,29 @@ sources:
 models:
   orders:
     source: olist_orders
+    primary_key: order_id
+    fields:
+      customer_id: {label: Customer ID}
+      revenue: {label: Revenue}
   customers:
     source: olist_customers
+    primary_key: customer_id
+    fields:
+      customer_id: {label: Customer ID}
   refunds:
     source: olist_refunds
+    primary_key: refund_id
+    fields:
+      refund_id: {label: Refund ID}
+      amount: {label: Amount}
 
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          customer_id: {expr: customer_id}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
-      refunds:
-        model: refunds
-        primary_key: refund_id
-        fields:
-          refund_id: {expr: refund_id}
+      - orders
+      - customers
+      - refunds
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -341,16 +313,15 @@ sources:
 models:
   orders:
     source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      revenue: {label: Revenue}
 semantic_models:
   orders:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          revenue: {expr: revenue}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       revenue: {expr: SUM(orders.revenue)}
@@ -369,16 +340,15 @@ sources:
 models:
   refunds:
     source: refunds
+    primary_key: refund_id
+    fields:
+      refund_id: {label: Refund ID}
+      amount: {label: Amount}
 semantic_models:
   refunds:
     base_table: refunds
     tables:
-      refunds:
-        model: refunds
-        primary_key: refund_id
-        fields:
-          refund_id: {expr: refund_id}
-          amount: {expr: amount}
+      - refunds
     measures:
       defaults: {table: refunds, grain: refund_id}
       refund_amount: {expr: SUM(refunds.amount)}
@@ -420,17 +390,16 @@ sources:
     format: csv
 models:
   orders:
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT order_id FROM source.olist_orders
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -457,26 +426,24 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      customer_id: {label: Customer ID}
     transform:
       sql: SELECT order_id, customer_id FROM source.olist_orders
   customers:
     source: olist_customers
+    primary_key: customer_id
+    fields:
+      customer_id: {label: Customer ID}
+      state: {label: State}
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          customer_id: {expr: customer_id}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
-          state: {expr: state}
+      - orders
+      - customers
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -507,26 +474,24 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      customer_id: {label: Customer ID}
     transform:
       sql: SELECT order_id, customer_id FROM "source"."olist_orders"
   customers:
     source: olist_customers
+    primary_key: customer_id
+    fields:
+      customer_id: {label: Customer ID}
+      state: {label: State}
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          customer_id: {expr: customer_id}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
-          state: {expr: state}
+      - orders
+      - customers
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -553,17 +518,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT order_id FROM raw.olist_orders
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -586,17 +550,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT order_id FROM "raw"."olist_orders"
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -642,17 +605,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT order_id FROM source.olist_customers
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -674,17 +636,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT order_id FROM olist_orders
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -706,17 +667,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT o.order_id FROM source.olist_orders o JOIN leaked_table l ON l.order_id = o.order_id
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -738,17 +698,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT 1 AS order_id
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -775,6 +734,9 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: |
         WITH cleaned AS (
@@ -785,11 +747,7 @@ semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -812,17 +770,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: UPDATE source.olist_orders SET order_id = order_id
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -849,17 +806,16 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
     transform:
       sql: SELECT order_id FROM (SELECT order_id FROM source.olist_orders) orders
 semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
+      - orders
     measures:
       defaults: {table: orders, grain: order_id}
       order_count: {expr: COUNT(DISTINCT orders.order_id)}
@@ -878,23 +834,9 @@ semantic_models:
   olist:
     base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          customer_id: {expr: customer_id}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          customer_id: {expr: customer_id}
-          state: {expr: state}
-      items:
-        model: items
-        primary_key: item_id
-        fields:
-          item_id: {expr: item_id}
+      - orders
+      - customers
+      - items
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -931,22 +873,20 @@ sources:
 models:
   products:
     source: products
+    primary_key: product_id
+    fields:
+      product_id: {label: Product ID}
   warehouses:
     source: warehouses
+    primary_key: warehouse_id
+    fields:
+      warehouse_id: {label: Warehouse ID}
 semantic_models:
   inventory:
     base_table: products
     tables:
-      products:
-        model: products
-        primary_key: product_id
-        fields:
-          product_id: {expr: product_id}
-      warehouses:
-        model: warehouses
-        primary_key: warehouse_id
-        fields:
-          warehouse_id: {expr: warehouse_id}
+      - products
+      - warehouses
 `)
 
 	_, err := semantic.Load(modelPath)
@@ -966,16 +906,8 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
 	  olist:
 	    base_table: orders
 	    tables:
-	      orders:
-	        model: orders
-	        primary_key: order_id
-	        fields:
-	          order_id: {expr: order_id}
-	      items:
-	        model: items
-	        primary_key: item_id
-	        fields:
-	          order_id: {expr: order_id}
+	      - orders
+	      - items
     relationships:
       - from: orders.order_id
         to: items.order_id
@@ -993,16 +925,8 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
 	  olist:
 	    base_table: orders
 	    tables:
-	      orders:
-	        model: orders
-	        primary_key: order_id
-	        fields:
-	          customer_id: {expr: customer_id}
-	      customers:
-	        model: customers
-	        primary_key: customer_id
-	        fields:
-	          customer_id: {expr: customer_id}
+	      - orders
+	      - customers
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -1020,17 +944,8 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
 	  olist:
 	    base_table: orders
 	    tables:
-	      orders:
-	        model: orders
-	        primary_key: order_id
-	        fields:
-	          customer_id: {expr: customer_id}
-	          customer_id_alt: {expr: customer_id}
-	      customers:
-	        model: customers
-	        primary_key: customer_id
-	        fields:
-	          customer_id: {expr: customer_id}
+	      - orders
+	      - customers
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -1052,23 +967,9 @@ func TestSemanticModelDesignRejectsAmbiguousAndUnsafeRelationshipPaths(t *testin
 	  olist:
 	    base_table: orders
 	    tables:
-	      orders:
-	        model: orders
-	        primary_key: order_id
-	        fields:
-	          customer_id: {expr: customer_id}
-	          item_id: {expr: item_id}
-	      items:
-	        model: items
-	        primary_key: item_id
-	        fields:
-	          item_id: {expr: item_id}
-	          customer_id: {expr: customer_id}
-	      customers:
-	        model: customers
-	        primary_key: customer_id
-	        fields:
-	          customer_id: {expr: customer_id}
+	      - orders
+	      - items
+	      - customers
 	    relationships:
 	      - from: orders.customer_id
 	        to: customers.customer_id
@@ -1107,20 +1008,8 @@ func writeSemanticModelDesignWorkspace(t *testing.T) string {
 	  olist:
 	    base_table: orders
 	    tables:
-	      orders:
-	        model: orders
-	        primary_key: order_id
-	        fields:
-	          order_id: {expr: order_id}
-	          customer_id: {expr: customer_id}
-	          purchase_timestamp: {expr: purchase_timestamp, type: time}
-	          revenue: {expr: revenue, type: number}
-	      customers:
-	        model: customers
-	        primary_key: customer_id
-	        fields:
-	          customer_id: {expr: customer_id}
-	          state: {expr: state}
+	      - orders
+	      - customers
     relationships:
       - from: orders.customer_id
         to: customers.customer_id
@@ -1161,14 +1050,31 @@ sources:
 	models:
 	  orders:
 	    sources: [olist_orders]
+	    primary_key: order_id
+	    fields:
+	      order_id: {label: Order ID}
+	      customer_id: {label: Customer ID}
+	      customer_id_alt: {label: Alternate customer ID}
+	      item_id: {label: Item ID}
+	      purchase_timestamp: {label: Purchase timestamp}
+	      revenue: {label: Revenue}
 	    transform:
 	      sql: |
 	        SELECT order_id, customer_id, purchase_timestamp, revenue
 	        FROM source.olist_orders
 	  customers:
 	    source: olist_customers
+	    primary_key: customer_id
+	    fields:
+	      customer_id: {label: Customer ID}
+	      state: {label: State}
 	  items:
 	    source: olist_items
+	    primary_key: item_id
+	    fields:
+	      item_id: {label: Item ID}
+	      order_id: {label: Order ID}
+	      customer_id: {label: Customer ID}
 	`+semanticFragment)
 }
 

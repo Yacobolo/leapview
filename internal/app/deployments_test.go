@@ -459,7 +459,7 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Connections", "Global", "data-connection-toolbar", "local connection"} {
+	for _, want := range []string{"Connections", "Global", "data-connection-toolbar", "Local CSV files for the Olist ecommerce demo dataset."} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("connections page missing %q:\n%s", want, body)
 		}
@@ -569,10 +569,10 @@ func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testi
 }
 
 func TestStaleActiveLineageGraphDetectsPartialCleanGraphs(t *testing.T) {
+	workspaceID := workspace.WorkspaceID("test")
+	deploymentID := workspace.DeploymentID("dep_test")
 	graph := func(modelContent, dashboardContent any, includeRelationship, includePageItem bool, rollupEdge workspace.AssetEdgeType) workspace.AssetGraph {
 		t.Helper()
-		workspaceID := workspace.WorkspaceID("test")
-		deploymentID := workspace.DeploymentID("dep_test")
 		catalog := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeCatalog, "test", "", "Catalog", map[string]any{})
 		model := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", modelContent)
 		semanticTable := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticTable, "olist.orders", model.ID, "Orders", map[string]any{})
@@ -610,8 +610,63 @@ func TestStaleActiveLineageGraphDetectsPartialCleanGraphs(t *testing.T) {
 	if !staleActiveLineageGraph(graph(map[string]any{}, map[string]any{}, true, true, workspace.AssetEdgeUsesMeasure)) {
 		t.Fatal("persisted dashboard rollup dependency edges should be stale")
 	}
+	sourceWithGeneratedDescription := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", "", "customers", map[string]any{
+		"Format": "csv",
+		"Path":   "olist_customers_dataset.csv",
+	})
+	sourceWithGeneratedDescription.Description = "csv file: olist_customers_dataset.csv"
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{sourceWithGeneratedDescription}}) {
+		t.Fatal("source asset with legacy generated description should be stale")
+	}
+	connectionWithGeneratedDescription := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeConnection, "olist.olist", "", "olist", map[string]any{
+		"Kind": "local",
+	})
+	connectionWithGeneratedDescription.Description = "local connection"
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{connectionWithGeneratedDescription}}) {
+		t.Fatal("connection asset with legacy generated description should be stale")
+	}
 	if staleActiveLineageGraph(graph(map[string]any{}, map[string]any{}, true, false, "")) {
 		t.Fatal("clean graph without relationships or page placements should not be stale")
+	}
+	currentVersionAsset := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.orders", "", "orders", map[string]any{
+		"Fields": map[string]any{"order_id": map[string]any{"Label": "Order ID"}},
+		"Schema": map[string]any{"Columns": []any{map[string]any{"Name": "order_id"}}},
+	})
+	currentVersionAsset.ContentVersion = workspace.CurrentAssetContentVersion
+	if staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{currentVersionAsset}}) {
+		t.Fatal("asset with current content version should not be stale")
+	}
+	oldVersionAsset := currentVersionAsset
+	oldVersionAsset.ContentVersion = workspace.CurrentAssetContentVersion - 1
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{oldVersionAsset}}) {
+		t.Fatal("asset with old content version should be stale")
+	}
+	authoredSource := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", "", "customers", map[string]any{})
+	authoredSource.ContentVersion = workspace.CurrentAssetContentVersion
+	authoredSource.Description = "Raw customer records with customer geography."
+	if staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{authoredSource}}) {
+		t.Fatal("source asset with authored description should not be stale")
+	}
+	sourceWithOldContentVersion := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.orders", "", "orders", map[string]any{
+		"Schema": map[string]any{"Columns": []any{map[string]any{"Name": "order_id"}}},
+	})
+	sourceWithOldContentVersion.ContentVersion = workspace.CurrentAssetContentVersion - 1
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{sourceWithOldContentVersion}}) {
+		t.Fatal("source asset with old content version should be stale")
+	}
+	sourceWithFieldsWithoutSchema := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.orders", "", "orders", map[string]any{
+		"Fields": map[string]any{"order_id": map[string]any{"Label": "Order ID"}},
+	})
+	sourceWithFieldsWithoutSchema.ContentVersion = workspace.CurrentAssetContentVersion
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{sourceWithFieldsWithoutSchema}}) {
+		t.Fatal("source asset with field docs and no schema should be stale")
+	}
+	modelTableWithFieldsWithoutSchema := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeModelTable, "olist.orders", "", "orders", map[string]any{
+		"Dimensions": map[string]any{"order_id": map[string]any{"Label": "Order ID"}},
+	})
+	modelTableWithFieldsWithoutSchema.ContentVersion = workspace.CurrentAssetContentVersion
+	if !staleActiveLineageGraph(workspace.AssetGraph{Assets: []workspace.Asset{modelTableWithFieldsWithoutSchema}}) {
+		t.Fatal("model table asset with field docs and no schema should be stale")
 	}
 }
 
@@ -632,7 +687,12 @@ func TestReconcileActiveLineageGraphReplacesStaleGraphFromActiveRuntime(t *testi
 	catalog := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeCatalog, "test", "", "Catalog", map[string]any{})
 	model := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", map[string]any{})
 	dashboard := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeDashboard, "sales", catalog.ID, "Sales", map[string]any{})
-	staleAssets := []workspace.Asset{catalog, model, dashboard}
+	staleSource := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", catalog.ID, "customers", map[string]any{
+		"Format": "csv",
+		"Path":   "olist_customers_dataset.csv",
+	})
+	staleSource.Description = "csv file: olist_customers_dataset.csv"
+	staleAssets := []workspace.Asset{catalog, model, dashboard, staleSource}
 	staleEdges := []workspace.AssetEdge{
 		workspace.NewAssetEdge(workspaceID, deploymentID, catalog.ID, model.ID, workspace.AssetEdgeContains),
 		workspace.NewAssetEdge(workspaceID, deploymentID, catalog.ID, dashboard.ID, workspace.AssetEdgeContains),
@@ -641,6 +701,13 @@ func TestReconcileActiveLineageGraphReplacesStaleGraphFromActiveRuntime(t *testi
 	if !ok {
 		t.Fatal("runtime graph unavailable")
 	}
+	cleanSource := mustWorkspaceAsset(t, workspaceID, deploymentID, workspace.AssetTypeSource, "olist.customers", cleanAssets[0].ID, "customers", map[string]any{
+		"Format": "csv",
+		"Path":   "olist_customers_dataset.csv",
+	})
+	cleanSource.ContentVersion = workspace.CurrentAssetContentVersion
+	cleanSource.Description = "Raw customer records with customer geography."
+	cleanAssets = append(cleanAssets, cleanSource)
 	validation := deployment.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
@@ -670,6 +737,10 @@ func TestReconcileActiveLineageGraphReplacesStaleGraphFromActiveRuntime(t *testi
 	}
 	if !graphHasAssetType(graph, workspace.AssetTypeSemanticTable) {
 		t.Fatalf("reconciled graph missing semantic table asset: %#v", graph.Assets)
+	}
+	source := graphAssetByTypeAndKey(t, graph, workspace.AssetTypeSource, "olist.customers")
+	if source.Description != "Raw customer records with customer geography." {
+		t.Fatalf("source description = %q, want authored runtime description", source.Description)
 	}
 	active, err := deploymentRepo.ByID(ctx, created.ID)
 	if err != nil {
@@ -748,6 +819,17 @@ func graphHasAssetType(graph workspace.AssetGraph, typ workspace.AssetType) bool
 		}
 	}
 	return false
+}
+
+func graphAssetByTypeAndKey(t *testing.T, graph workspace.AssetGraph, typ workspace.AssetType, key string) workspace.Asset {
+	t.Helper()
+	for _, asset := range graph.Assets {
+		if asset.Type == typ && asset.Key == key {
+			return asset
+		}
+	}
+	t.Fatalf("graph missing asset %s %q", typ, key)
+	return workspace.Asset{}
 }
 
 func TestWorkspacePermissionsRejectViewer(t *testing.T) {
@@ -1030,16 +1112,17 @@ func deploymentAssets(rows []workspace.Asset) []deployment.Asset {
 	assets := make([]deployment.Asset, 0, len(rows))
 	for _, row := range rows {
 		assets = append(assets, deployment.Asset{
-			ID:           string(row.ID),
-			WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
-			DeploymentID: deployment.ID(row.DeploymentID),
-			Type:         string(row.Type),
-			Key:          row.Key,
-			ParentID:     string(row.ParentID),
-			Title:        row.Title,
-			Description:  row.Description,
-			ContentJSON:  row.ContentJSON,
-			ContentHash:  row.ContentHash,
+			ID:             string(row.ID),
+			WorkspaceID:    deployment.WorkspaceID(row.WorkspaceID),
+			DeploymentID:   deployment.ID(row.DeploymentID),
+			Type:           string(row.Type),
+			Key:            row.Key,
+			ParentID:       string(row.ParentID),
+			Title:          row.Title,
+			Description:    row.Description,
+			ContentJSON:    row.ContentJSON,
+			ContentHash:    row.ContentHash,
+			ContentVersion: row.ContentVersion,
 		})
 	}
 	return assets

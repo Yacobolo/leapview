@@ -23,6 +23,7 @@ type Dashboard struct {
 type FilterDefinition struct {
 	Type             string         `yaml:"type" json:"type"`
 	Label            string         `yaml:"label" json:"label"`
+	Description      string         `yaml:"description" json:"description,omitempty"`
 	Dimension        string         `yaml:"field" json:"dimension"`
 	Default          FilterDefault  `yaml:"default" json:"default"`
 	Custom           bool           `yaml:"custom" json:"custom,omitempty"`
@@ -73,6 +74,7 @@ type FilterValues struct {
 
 type Visual struct {
 	Title           string            `yaml:"title"`
+	Description     string            `yaml:"description"`
 	Kind            string            `yaml:"kind"`
 	Shape           string            `yaml:"shape"`
 	Renderer        string            `yaml:"renderer"`
@@ -365,6 +367,7 @@ func (s SelectionInteraction) IsZero() bool {
 type TableVisual struct {
 	Kind              string                                     `yaml:"kind"`
 	Title             string                                     `yaml:"title"`
+	Description       string                                     `yaml:"description"`
 	Query             TableQuery                                 `yaml:"query"`
 	DefaultSort       dashboard.TableSort                        `yaml:"default_sort"`
 	Style             dashboard.TableStyle                       `yaml:"style"`

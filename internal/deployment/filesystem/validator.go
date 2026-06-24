@@ -6,10 +6,16 @@ import (
 	"github.com/Yacobolo/libredash/internal/deployment"
 )
 
-type Validator struct{}
+type Validator struct {
+	DataDir   string
+	DuckDBDir string
+}
 
-func (Validator) ValidateArtifact(path string, workspaceID deployment.WorkspaceID, deploymentID deployment.ID) (deployment.Validation, error) {
-	return ValidateArtifact(path, workspaceID, deploymentID)
+func (v Validator) ValidateArtifact(path string, workspaceID deployment.WorkspaceID, deploymentID deployment.ID) (deployment.Validation, error) {
+	return ValidateArtifactWithOptions(path, workspaceID, deploymentID, ValidateOptions{
+		DataDir:   v.DataDir,
+		DuckDBDir: v.DuckDBDir,
+	})
 }
 
 func (Validator) Cleanup(validation deployment.Validation) error {

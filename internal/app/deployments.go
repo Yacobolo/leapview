@@ -115,7 +115,11 @@ func (s *Server) validateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	service := validate.NewService(repo, deploymentfs.NewArtifactStore(s.artifactDir), deploymentfs.Validator{})
+	dataDir := ""
+	if s.metrics != nil {
+		dataDir = s.metrics.DataDir()
+	}
+	service := validate.NewService(repo, deploymentfs.NewArtifactStore(s.artifactDir), deploymentfs.Validator{DataDir: dataDir})
 	deployment, err := service.Validate(r.Context(), deployment.ID(deploymentID))
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
