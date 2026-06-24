@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
 
@@ -163,31 +164,7 @@ func ResolveSourcePlan(model *semanticmodel.Model, source semanticmodel.Source, 
 }
 
 func ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {
-	connection := model.Connections[source.Connection]
-	switch connection.Kind {
-	case "local":
-		if filepath.IsAbs(source.Path) {
-			return source.Path, nil
-		}
-		root := connection.Root
-		if root == "" {
-			root = dataDir
-		} else if !filepath.IsAbs(root) {
-			root = filepath.Join(dataDir, root)
-		}
-		return filepath.Join(root, source.Path), nil
-	default:
-		if connection.Scope == "" {
-			return source.Path, nil
-		}
-		if semanticmodel.IsLocalPath(source.Path) {
-			return semanticmodel.JoinScope(connection.Scope, source.Path), nil
-		}
-		if !semanticmodel.WithinScope(connection.Scope, source.Path) {
-			return "", fmt.Errorf("path %q is outside connection %q scope %q", source.Path, source.Connection, connection.Scope)
-		}
-		return source.Path, nil
-	}
+	return analyticsmaterialize.ResolveSourcePath(model, source, dataDir)
 }
 
 func compileSourceRelation(plan sourcePlan) (string, error) {

@@ -2,27 +2,19 @@ package report
 
 import (
 	"fmt"
-
 	"strings"
-
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
 
-func (d *Dashboard) Validate(models map[string]*semanticmodel.Model) error {
-	return d.ValidateWithModels(models)
+func (d *Dashboard) ValidateContract() error {
+	return d.validateContract()
 }
 
-func (d *Dashboard) ValidateWithModels(models map[string]*semanticmodel.Model) error {
-	return d.validateSemanticModelDashboard(models)
-}
-
-func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmodel.Model) error {
+func (d *Dashboard) validateContract() error {
 	if d.ID == "" || d.Title == "" {
 		return fmt.Errorf("dashboard requires id and title")
 	}
-	model, ok := models[d.SemanticModel]
-	if !ok {
-		return fmt.Errorf("dashboard %q references unknown semantic model %q", d.ID, d.SemanticModel)
+	if d.SemanticModel == "" {
+		return fmt.Errorf("dashboard %q requires semantic_model", d.ID)
 	}
 	if len(d.Visuals) == 0 {
 		return fmt.Errorf("dashboard %q requires visuals", d.ID)
@@ -33,9 +25,6 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmo
 	for name, filter := range d.Filters {
 		if filter.Type == "" || filter.Label == "" || filter.Dimension == "" {
 			return fmt.Errorf("filter %q requires type, label, and field", name)
-		}
-		if _, err := model.ResolveDimension(filter.Dimension); err != nil {
-			return fmt.Errorf("filter %q references unknown dimension %q", name, filter.Dimension)
 		}
 		switch filter.Type {
 		case "date_range":
@@ -131,15 +120,7 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmo
 		if err := validateRendererOptions(name, visual.RendererOptions); err != nil {
 			return err
 		}
-		for _, dimension := range visual.Query.Dimensions {
-			if _, err := model.ResolveDimension(dimension.Field); err != nil {
-				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension.Field)
-			}
-		}
 		if !visual.Query.Series.IsZero() {
-			if _, err := model.ResolveDimension(visual.Query.Series.Field); err != nil {
-				return fmt.Errorf("visual %q references unknown series dimension %q", name, visual.Query.Series.Field)
-			}
 			if !supportsSeries(shape) {
 				return fmt.Errorf("visual %q shape %q does not support series", name, shape)
 			}
@@ -152,13 +133,6 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmo
 				if measure.Measure.Table == "" || measure.Measure.Grain == "" || measure.Measure.Time == "" || len(measure.Measure.Grains) == 0 || measure.Measure.Format == "" {
 					return fmt.Errorf("visual %q inline measure %q requires expr, table, grain, time, grains, and format", name, measure.Alias)
 				}
-				if _, ok := model.Tables[measure.Measure.Table]; !ok {
-					return fmt.Errorf("visual %q inline measure %q references unknown table %q", name, measure.Alias, measure.Measure.Table)
-				}
-				continue
-			}
-			if _, err := model.ResolveMeasure(measure.Field); err != nil {
-				return fmt.Errorf("visual %q references unknown measure %q", name, measure.Field)
 			}
 		}
 		if shape == "geo" {
@@ -169,11 +143,6 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmo
 		for _, sort := range visual.Query.Sort {
 			if sort.Field == "" && sort.Expr == "" {
 				return fmt.Errorf("visual %q has sort missing field or expr", name)
-			}
-		}
-		if visual.Interaction.Field != "" {
-			if _, err := model.ResolveDimension(visual.Interaction.Field); err != nil {
-				return fmt.Errorf("visual %q interaction references unknown field %q", name, visual.Interaction.Field)
 			}
 		}
 		for _, target := range visual.Interaction.Targets.Visuals {
@@ -195,16 +164,12 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmo
 		if err := validateTableStyle(name, table.Style); err != nil {
 			return err
 		}
-		normalizeTableFormatting(model, &table)
 		for _, column := range table.Columns {
 			if err := validateTableColumn(name, column); err != nil {
 				return err
 			}
 		}
 		for measure, rules := range table.MeasureFormatting {
-			if _, err := model.ResolveMeasure(measure); err != nil {
-				return fmt.Errorf("table %q measure_formatting references unknown measure %q", name, measure)
-			}
 			for _, rule := range rules {
 				if err := validateTableFormattingRule(name, measure, rule); err != nil {
 					return err
@@ -216,8 +181,8 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmo
 			if table.Query.Table == "" {
 				return fmt.Errorf("table %q kind data_table requires query.table", name)
 			}
-			if err := normalizeDataTableFields(name, model, &table); err != nil {
-				return err
+			if len(table.Query.Fields) == 0 && len(table.Query.Columns) == 0 {
+				return fmt.Errorf("table %q kind data_table requires query.fields or query.columns", name)
 			}
 		case "matrix_table":
 			if len(table.Query.Rows) == 0 || len(table.Query.Measures) == 0 {
@@ -226,51 +191,31 @@ func (d *Dashboard) validateSemanticModelDashboard(models map[string]*semanticmo
 			if len(table.Query.Columns) > 1 {
 				return fmt.Errorf("table %q kind matrix_table supports at most one column dimension", name)
 			}
-			if err := normalizeTableFields(name, model, &table); err != nil {
-				return err
-			}
 		case "pivot_table":
 			if len(table.Query.Rows) == 0 || len(table.Query.Columns) != 1 || len(table.Query.Measures) != 1 {
 				return fmt.Errorf("table %q kind pivot_table requires query.rows, one query column dimension, and one query measure", name)
-			}
-			if err := normalizeTableFields(name, model, &table); err != nil {
-				return err
 			}
 		default:
 			return fmt.Errorf("table %q has unsupported kind %q", name, table.Kind)
 		}
 		d.Tables[name] = table
 	}
-	if err := d.validateFilterTargets(model); err != nil {
+	if err := d.validateFilterTargetReferences(); err != nil {
 		return err
 	}
 	return d.validatePages()
 }
 
-func (d *Dashboard) validateFilterTargets(model *semanticmodel.Model) error {
+func (d *Dashboard) validateFilterTargetReferences() error {
 	for name, filter := range d.Filters {
 		for _, target := range filter.Targets.Visuals {
 			if _, ok := d.Visuals[target]; !ok {
 				return fmt.Errorf("filter %q references unknown target visual %q", name, target)
 			}
-			ok, err := d.FilterAppliesToTarget(model, filter, "visual", target)
-			if err != nil || !ok {
-				if err == nil {
-					err = fmt.Errorf("filter field %q is not reachable", filter.Dimension)
-				}
-				return fmt.Errorf("filter %q cannot apply to visual %q: %w", name, target, err)
-			}
 		}
 		for _, target := range filter.Targets.Tables {
 			if _, ok := d.Tables[target]; !ok {
 				return fmt.Errorf("filter %q references unknown target table %q", name, target)
-			}
-			ok, err := d.FilterAppliesToTarget(model, filter, "table", target)
-			if err != nil || !ok {
-				if err == nil {
-					err = fmt.Errorf("filter field %q is not reachable", filter.Dimension)
-				}
-				return fmt.Errorf("filter %q cannot apply to table %q: %w", name, target, err)
 			}
 		}
 	}

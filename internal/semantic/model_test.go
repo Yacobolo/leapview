@@ -1,4 +1,4 @@
-package semantic
+package semantic_test
 
 import (
 	"os"
@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/semantic"
+	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
 
 func TestLoadOlistModel(t *testing.T) {
@@ -453,7 +455,7 @@ datasets:
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Load(path); err == nil {
+			if _, err := semantic.Load(path); err == nil {
 				t.Fatal("Load() error = nil, want removed field rejection")
 			}
 		})
@@ -462,7 +464,7 @@ datasets:
 
 func loadOlistModel(t *testing.T) *Model {
 	t.Helper()
-	model, err := Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))
+	model, err := semantic.Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,8 +473,11 @@ func loadOlistModel(t *testing.T) *Model {
 
 func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
 	t.Helper()
-	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), map[string]*Model{"olist": model})
+	report, err := semantic.LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
 		t.Fatal(err)
 	}
 	return report
@@ -611,18 +616,7 @@ func assertModelValidateError(t *testing.T, model *Model, contains string) {
 
 func assertDashboardValidateError(t *testing.T, report *Dashboard, model *Model, contains string) {
 	t.Helper()
-	err := report.Validate(map[string]*Model{"olist": model})
-	if err == nil {
-		t.Fatalf("Validate() error = nil, want %q", contains)
-	}
-	if !strings.Contains(err.Error(), contains) {
-		t.Fatalf("Validate() error = %q, want containing %q", err.Error(), contains)
-	}
-}
-
-func assertCatalogValidateError(t *testing.T, catalog Catalog, baseDir, contains string) {
-	t.Helper()
-	err := catalog.Validate(baseDir)
+	err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model})
 	if err == nil {
 		t.Fatalf("Validate() error = nil, want %q", contains)
 	}

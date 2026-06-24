@@ -8,9 +8,12 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dashboard/reportmodel"
 )
 
-func (m *Service) filterOptions(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, names []string) (map[string][]dashboard.FilterOption, error) {
+type FilterService struct{}
+
+func (s *FilterService) filterOptions(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, names []string) (map[string][]dashboard.FilterOption, error) {
 	options := map[string][]dashboard.FilterOption{}
 	names = append([]string{}, names...)
 	sort.Strings(names)
@@ -49,7 +52,7 @@ func (m *Service) filterOptions(ctx context.Context, runtime *modelRuntime, repo
 	return options, nil
 }
 
-func (m *Service) semanticFilters(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, filters dashboard.Filters, targetKind, targetID string) ([]reportdef.QueryFilter, error) {
+func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, filters dashboard.Filters, targetKind, targetID string) ([]reportdef.QueryFilter, error) {
 	filters = filters.WithDefaults()
 	result := []reportdef.QueryFilter{}
 	for _, name := range sortedKeys(report.Filters) {
@@ -58,7 +61,7 @@ func (m *Service) semanticFilters(ctx context.Context, runtime *modelRuntime, re
 		if !ok {
 			continue
 		}
-		applies, err := report.FilterAppliesToTarget(runtime.model, filter, targetKind, targetID)
+		applies, err := reportmodel.FilterAppliesToTarget(report, runtime.model, filter, targetKind, targetID)
 		if err != nil {
 			return nil, err
 		}
@@ -67,7 +70,7 @@ func (m *Service) semanticFilters(ctx context.Context, runtime *modelRuntime, re
 		}
 		switch filter.Type {
 		case "date_range":
-			dateFilters := m.dateSemanticFilters(runtime, filter, control)
+			dateFilters := s.dateSemanticFilters(runtime, filter, control)
 			result = append(result, dateFilters...)
 		case "multi_select":
 			if control.Operator != "in" || len(control.Values) == 0 {
@@ -117,7 +120,7 @@ func (m *Service) semanticFilters(ctx context.Context, runtime *modelRuntime, re
 	return result, nil
 }
 
-func (m *Service) dateSemanticFilters(runtime *modelRuntime, filter reportdef.FilterDefinition, control dashboard.FilterControl) []reportdef.QueryFilter {
+func (s *FilterService) dateSemanticFilters(runtime *modelRuntime, filter reportdef.FilterDefinition, control dashboard.FilterControl) []reportdef.QueryFilter {
 	if control.From != "" || control.To != "" {
 		result := []reportdef.QueryFilter{}
 		if control.From != "" {
@@ -150,8 +153,8 @@ func (m *Service) dateSemanticFilters(runtime *modelRuntime, filter reportdef.Fi
 	return nil
 }
 
-func (m *Service) countRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table string, filters dashboard.Filters, targetKind, targetID string) (int, error) {
-	queryFilters, err := m.semanticFilters(ctx, runtime, report, filters, targetKind, targetID)
+func (s *FilterService) countRows(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, table string, filters dashboard.Filters, targetKind, targetID string) (int, error) {
+	queryFilters, err := s.semanticFilters(ctx, runtime, report, filters, targetKind, targetID)
 	if err != nil {
 		return 0, err
 	}

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 	"github.com/gorilla/sessions"
@@ -27,7 +27,7 @@ type Principal struct {
 }
 
 type Auth struct {
-	store        *platform.Store
+	repo         access.Repository
 	workspaceID  string
 	devBypass    bool
 	apiTokenOnly bool
@@ -50,9 +50,9 @@ type AuthConfig struct {
 	BootstrapTenant string
 }
 
-func NewAuth(store *platform.Store, workspaceID string, cfg AuthConfig) *Auth {
+func NewAuth(repo access.Repository, workspaceID string, cfg AuthConfig) *Auth {
 	auth := &Auth{
-		store:        store,
+		repo:         repo,
 		workspaceID:  workspaceID,
 		devBypass:    cfg.DevBypass,
 		apiTokenOnly: cfg.APITokenOnly,
@@ -114,7 +114,7 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := userEmail(user)
-	principal, err := a.store.ResolveExternalPrincipal(r.Context(), platform.ExternalIdentityInput{
+	principal, err := a.repo.ResolveExternalPrincipal(r.Context(), access.ExternalIdentityInput{
 		Provider:    provider,
 		TenantID:    a.azureTenant,
 		Subject:     stableSubject(user.UserID, email),
@@ -125,7 +125,7 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	token, err := a.store.CreateSession(r.Context(), principal.ID, 8*time.Hour)
+	token, err := a.repo.CreateSession(r.Context(), principal.ID, 8*time.Hour)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -136,7 +136,7 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 
 func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("ld_session"); err == nil {
-		_ = a.store.DeleteSession(r.Context(), cookie.Value)
+		_ = a.repo.DeleteSession(r.Context(), cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: "ld_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: a.cookieSecure})
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -164,7 +164,7 @@ func (a *Auth) Middleware(permission string, next http.Handler) http.Handler {
 			return
 		}
 		if permission != "" && !principal.DevBypass {
-			allowed, err := a.store.HasPermission(r.Context(), a.workspaceID, principal.ID, permission)
+			allowed, err := a.repo.HasPermission(r.Context(), a.workspaceID, principal.ID, permission)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -201,7 +201,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, bool) {
 		return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}, true
 	}
 	if token := bearerToken(r); token != "" {
-		principal, err := a.store.PrincipalForAPIToken(r.Context(), token)
+		principal, err := a.repo.PrincipalForAPIToken(r.Context(), token)
 		if err == nil {
 			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, true
 		}
@@ -213,7 +213,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, bool) {
 	if err != nil || cookie.Value == "" {
 		return Principal{}, false
 	}
-	principal, err := a.store.PrincipalForToken(r.Context(), cookie.Value)
+	principal, err := a.repo.PrincipalForToken(r.Context(), cookie.Value)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			return Principal{}, false
@@ -278,7 +278,7 @@ func csrfKey(value string) []byte {
 	if len(value) >= 32 {
 		return []byte(value)[:32]
 	}
-	seed := platform.PrincipalIDForEmail("csrf:" + value)
+	seed := access.PrincipalIDForEmail("csrf:" + value)
 	key := make([]byte, 32)
 	copy(key, []byte(seed))
 	return key

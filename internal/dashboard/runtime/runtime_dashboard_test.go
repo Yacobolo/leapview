@@ -191,7 +191,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("overview patch included off-page category filter: %#v", patch.Filters.Controls)
 	}
 
-	report := metrics.workspace.Dashboards["executive-sales"]
+	report := metrics.reports.workspace.Dashboards["executive-sales"]
 	originalKPI := report.Visuals["total_orders"]
 	inlineKPI := report.Visuals["total_orders"]
 	inlineKPI.Title = "Inline Revenue"
@@ -211,7 +211,7 @@ relogios_presentes,watches_gifts
 		},
 	}}
 	report.Visuals["total_orders"] = inlineKPI
-	metrics.workspace.Dashboards["executive-sales"] = report
+	metrics.reports.workspace.Dashboards["executive-sales"] = report
 	inlinePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 		"state":         {Type: "multi_select", Operator: "in", Values: []string{"SP"}},
 		"purchase_date": {Type: "date_range", Preset: "2018"},
@@ -225,9 +225,9 @@ relogios_presentes,watches_gifts
 	if got := datumFloat(inlinePatch.Visuals["total_orders"].Data[0]["value"]); got != 110 {
 		t.Fatalf("inline KPI value = %v, want 110", got)
 	}
-	report = metrics.workspace.Dashboards["executive-sales"]
+	report = metrics.reports.workspace.Dashboards["executive-sales"]
 	report.Visuals["total_orders"] = originalKPI
-	metrics.workspace.Dashboards["executive-sales"] = report
+	metrics.reports.workspace.Dashboards["executive-sales"] = report
 
 	selectedFilters := dashboard.Filters{
 		VisualSelections: []dashboard.VisualSelection{

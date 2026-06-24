@@ -2,17 +2,28 @@ package materialize
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
+
+type Executor interface {
+	Exec(ctx context.Context, statement string) error
+}
+
+type SourceRegistrar interface {
+	RegisterSources(ctx context.Context, model *semanticmodel.Model) error
+}
+
+type SourcePathResolver interface {
+	ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error)
+}
 
 type MissingDataError struct {
 	DataDir string
@@ -27,17 +38,30 @@ func (e *MissingDataError) SetupRequired() bool {
 	return true
 }
 
-func Refresh(ctx context.Context, db *sql.DB, model *semanticmodel.Model, dataDir string, attachedConnections map[string]struct{}) (time.Time, error) {
-	if err := duckdb.RegisterSourceViews(ctx, db, model, dataDir, attachedConnections); err != nil {
+func Refresh(ctx context.Context, executor Executor, sources SourceRegistrar, model *semanticmodel.Model) (time.Time, error) {
+	if executor == nil {
+		return time.Time{}, fmt.Errorf("materialization executor is required")
+	}
+	if sources == nil {
+		return time.Time{}, fmt.Errorf("source registrar is required")
+	}
+	if err := sources.RegisterSources(ctx, model); err != nil {
 		return time.Time{}, err
 	}
-	if err := ModelTables(ctx, db, model); err != nil {
+	if err := ModelTables(ctx, executor, model); err != nil {
 		return time.Time{}, err
 	}
 	return time.Now(), nil
 }
 
 func ValidateFiles(model *semanticmodel.Model, dataDir string) error {
+	return ValidateFilesWithResolver(model, dataDir, defaultSourcePathResolver{})
+}
+
+func ValidateFilesWithResolver(model *semanticmodel.Model, dataDir string, resolver SourcePathResolver) error {
+	if resolver == nil {
+		return fmt.Errorf("source path resolver is required")
+	}
 	var missing []string
 	for name, source := range model.Sources {
 		if source.Path == "" {
@@ -47,7 +71,7 @@ func ValidateFiles(model *semanticmodel.Model, dataDir string) error {
 		if connection.Kind != "local" {
 			continue
 		}
-		file, err := duckdb.ResolveSourcePath(model, source, dataDir)
+		file, err := resolver.ResolveSourcePath(model, source, dataDir)
 		if err != nil {
 			return fmt.Errorf("resolving local source %s: %w", name, err)
 		}
@@ -64,7 +88,44 @@ func ValidateFiles(model *semanticmodel.Model, dataDir string) error {
 	return nil
 }
 
-func ModelTables(ctx context.Context, db *sql.DB, model *semanticmodel.Model) error {
+func ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {
+	return defaultSourcePathResolver{}.ResolveSourcePath(model, source, dataDir)
+}
+
+type defaultSourcePathResolver struct{}
+
+func (defaultSourcePathResolver) ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {
+	connection := model.Connections[source.Connection]
+	switch connection.Kind {
+	case "local":
+		if filepath.IsAbs(source.Path) {
+			return source.Path, nil
+		}
+		root := connection.Root
+		if root == "" {
+			root = dataDir
+		} else if !filepath.IsAbs(root) {
+			root = filepath.Join(dataDir, root)
+		}
+		return filepath.Join(root, source.Path), nil
+	default:
+		if connection.Scope == "" {
+			return source.Path, nil
+		}
+		if semanticmodel.IsLocalPath(source.Path) {
+			return semanticmodel.JoinScope(connection.Scope, source.Path), nil
+		}
+		if !semanticmodel.WithinScope(connection.Scope, source.Path) {
+			return "", fmt.Errorf("path %q is outside connection %q scope %q", source.Path, source.Connection, connection.Scope)
+		}
+		return source.Path, nil
+	}
+}
+
+func ModelTables(ctx context.Context, executor Executor, model *semanticmodel.Model) error {
+	if executor == nil {
+		return fmt.Errorf("materialization executor is required")
+	}
 	for _, name := range model.TableNames() {
 		if err := validateIdentifier(name); err != nil {
 			return err
@@ -80,7 +141,7 @@ func ModelTables(ctx context.Context, db *sql.DB, model *semanticmodel.Model) er
 			}
 		}
 		stmt := fmt.Sprintf("CREATE OR REPLACE TABLE model.%s AS %s", name, sourceSQL)
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
+		if err := executor.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("materializing model.%s: %w", name, err)
 		}
 	}

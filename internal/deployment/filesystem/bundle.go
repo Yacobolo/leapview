@@ -15,7 +15,6 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/platform"
-	"github.com/Yacobolo/libredash/internal/semantic"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
@@ -41,7 +40,7 @@ func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	workspaceDef, err := semantic.LoadWorkspace(catalogPath)
+	workspaceDef, err := workspacecompiler.CompileDefinition(catalogPath)
 	if err != nil {
 		return Manifest{}, "", err
 	}

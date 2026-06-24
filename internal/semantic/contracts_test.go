@@ -1,9 +1,8 @@
-package semantic
+package semantic_test
 
 import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
-	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 type Model = semanticmodel.Model
@@ -26,7 +25,3 @@ type Visual = report.Visual
 type VisualQuery = report.VisualQuery
 type TableVisual = report.TableVisual
 type TableQuery = report.TableQuery
-
-type Catalog = workspace.Catalog
-type CatalogModel = workspace.CatalogModel
-type CatalogDashboard = workspace.CatalogDashboard

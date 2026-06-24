@@ -1,22 +1,21 @@
-package materialize
+package materialize_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
+	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
-	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "orders.csv", "order_id,revenue\no1,10.50\no2,20.25\n")
-	db, err := sql.Open("duckdb", filepath.Join(dir, "test.duckdb"))
+	db, err := analyticsduckdb.Open(context.Background(), filepath.Join(dir, "test.duckdb"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,12 +51,12 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	if err := model.Validate(); err != nil {
 		t.Fatalf("validate model: %v", err)
 	}
-	if _, err := Refresh(context.Background(), db, model, dir, map[string]struct{}{}); err != nil {
+	if _, err := analyticsmaterialize.Refresh(context.Background(), db, analyticsduckdb.NewSourceRuntime(db, dir), model); err != nil {
 		t.Fatalf("refresh materializations: %v", err)
 	}
 
 	var total float64
-	if err := db.QueryRowContext(context.Background(), "SELECT SUM(revenue) FROM model.orders").Scan(&total); err != nil {
+	if err := db.SQLDB().QueryRowContext(context.Background(), "SELECT SUM(revenue) FROM model.orders").Scan(&total); err != nil {
 		t.Fatal(err)
 	}
 	if total != 30.75 {
@@ -68,27 +67,27 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 func TestRegistersDatabaseSourceTwice(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.sqlite")
-	db, err := sql.Open("duckdb", filepath.Join(dir, "test.duckdb"))
+	db, err := analyticsduckdb.Open(context.Background(), filepath.Join(dir, "test.duckdb"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.ExecContext(context.Background(), "INSTALL sqlite"); err != nil {
+	if _, err := db.SQLDB().ExecContext(context.Background(), "INSTALL sqlite"); err != nil {
 		t.Skipf("sqlite extension unavailable: %v", err)
 	}
-	if _, err := db.ExecContext(context.Background(), "LOAD sqlite"); err != nil {
+	if _, err := db.SQLDB().ExecContext(context.Background(), "LOAD sqlite"); err != nil {
 		t.Skipf("sqlite extension unavailable: %v", err)
 	}
-	if _, err := db.ExecContext(context.Background(), "ATTACH '"+analyticsduckdb.SQLString(sourcePath)+"' AS seed (TYPE sqlite)"); err != nil {
+	if _, err := db.SQLDB().ExecContext(context.Background(), "ATTACH '"+analyticsduckdb.SQLString(sourcePath)+"' AS seed (TYPE sqlite)"); err != nil {
 		t.Fatalf("attach seed sqlite: %v", err)
 	}
-	if _, err := db.ExecContext(context.Background(), "CREATE TABLE seed.accounts (id INTEGER, name VARCHAR)"); err != nil {
+	if _, err := db.SQLDB().ExecContext(context.Background(), "CREATE TABLE seed.accounts (id INTEGER, name VARCHAR)"); err != nil {
 		t.Fatalf("create seed table: %v", err)
 	}
-	if _, err := db.ExecContext(context.Background(), "INSERT INTO seed.accounts VALUES (1, 'Acme')"); err != nil {
+	if _, err := db.SQLDB().ExecContext(context.Background(), "INSERT INTO seed.accounts VALUES (1, 'Acme')"); err != nil {
 		t.Fatalf("insert seed table: %v", err)
 	}
-	if _, err := db.ExecContext(context.Background(), "DETACH seed"); err != nil {
+	if _, err := db.SQLDB().ExecContext(context.Background(), "DETACH seed"); err != nil {
 		t.Fatalf("detach seed sqlite: %v", err)
 	}
 
@@ -108,15 +107,15 @@ func TestRegistersDatabaseSourceTwice(t *testing.T) {
 			},
 		},
 	}
-	attached := map[string]struct{}{}
+	sources := analyticsduckdb.NewSourceRuntime(db, dir)
 	for i := 0; i < 2; i++ {
-		if _, err := Refresh(context.Background(), db, model, dir, attached); err != nil {
+		if _, err := analyticsmaterialize.Refresh(context.Background(), db, sources, model); err != nil {
 			t.Fatalf("refresh pass %d: %v", i+1, err)
 		}
 	}
 
 	var name string
-	if err := db.QueryRowContext(context.Background(), "SELECT name FROM model.accounts WHERE id = 1").Scan(&name); err != nil {
+	if err := db.SQLDB().QueryRowContext(context.Background(), "SELECT name FROM model.accounts WHERE id = 1").Scan(&name); err != nil {
 		t.Fatal(err)
 	}
 	if name != "Acme" {
@@ -133,7 +132,7 @@ func TestValidateFilesIgnoresRemoteSources(t *testing.T) {
 			"events": {Format: "parquet", Path: "s3://bucket/events/*.parquet", Connection: "lake"},
 		},
 	}
-	if err := ValidateFiles(model, t.TempDir()); err != nil {
+	if err := analyticsmaterialize.ValidateFiles(model, t.TempDir()); err != nil {
 		t.Fatalf("validate files = %v, want nil", err)
 	}
 }
@@ -148,8 +147,8 @@ func TestValidateFilesUsesLocalConnectionRoot(t *testing.T) {
 			"orders": {Format: "csv", Path: "orders.csv", Connection: "local_files"},
 		},
 	}
-	err := ValidateFiles(model, dir)
-	var missing *MissingDataError
+	err := analyticsmaterialize.ValidateFiles(model, dir)
+	var missing *analyticsmaterialize.MissingDataError
 	if !errors.As(err, &missing) {
 		t.Fatalf("validate files error = %v, want MissingDataError", err)
 	}

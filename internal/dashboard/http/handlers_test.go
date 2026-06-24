@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"html"
 	nethttp "net/http"
 	"net/http/httptest"
@@ -19,6 +20,18 @@ func (fakeMetrics) Catalog() dashboard.Catalog {
 	return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "workspace", Title: "Workspace"}}
 }
 func (fakeMetrics) DataDir() string { return ".data" }
+func (fakeMetrics) DefaultDashboardID() string {
+	return "dash"
+}
+func (fakeMetrics) DefaultFilters(string) dashboard.Filters {
+	return dashboard.Filters{}.WithDefaults()
+}
+func (fakeMetrics) ModelIDForDashboard(string) string {
+	return "model"
+}
+func (fakeMetrics) NormalizeTableRequest(_ string, request dashboard.TableRequest) dashboard.TableRequest {
+	return request.WithDefaults()
+}
 func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
 	if dashboardID != "dash" {
 		return nil
@@ -35,6 +48,15 @@ func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmod
 		Tables: map[string]reportdef.TableVisual{},
 		Pages:  fakeMetrics{}.Pages(dashboardID),
 	}, &semanticmodel.Model{Name: "model", Title: "Model"}, true
+}
+func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, _ string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return dashboard.Patch{Filters: filters.WithDefaults(), Status: dashboard.Status{DataDirectory: ".data"}}, nil
+}
+func (fakeMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return dashboard.Table{Title: request.Table}, nil
+}
+func (fakeMetrics) RefreshMaterializations(context.Context, string) error {
+	return nil
 }
 
 func TestDashboardRedirectsToFirstPage(t *testing.T) {

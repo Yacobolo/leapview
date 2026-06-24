@@ -49,6 +49,11 @@ func (d *Database) SQLDB() *sql.DB {
 	return d.db
 }
 
+func (d *Database) Exec(ctx context.Context, statement string) error {
+	_, err := d.db.ExecContext(ctx, statement)
+	return err
+}
+
 func (d *Database) Query(ctx context.Context, plan semanticquery.Plan) (semanticquery.Rows, error) {
 	rows, err := d.db.QueryContext(ctx, plan.SQL, plan.Args...)
 	if err != nil {

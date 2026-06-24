@@ -37,7 +37,7 @@ func TestAuthRouteRateLimit(t *testing.T) {
 
 func TestDeploymentAPIRateLimitPreservesAuth(t *testing.T) {
 	store := testStore(t)
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{
 		Store:              store,
 		Auth:               auth,
@@ -64,7 +64,7 @@ func TestDeploymentAPIRateLimitPreservesAuth(t *testing.T) {
 }
 
 func TestUpdatesRateLimitAllowsOrdinaryReconnects(t *testing.T) {
-	auth := NewAuth(testStore(t), "test", AuthConfig{DevBypass: true})
+	auth := testAuth(testStore(t), "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{
 		Auth:       auth,
 		RateLimits: RateLimitConfig{Enabled: true, UpdatesLimit: 2, UpdatesWindow: time.Minute},
@@ -147,7 +147,7 @@ func TestRequestLoggerDoesNotLogSensitiveHeaders(t *testing.T) {
 }
 
 func TestNewAuthConfiguresGothCookieStore(t *testing.T) {
-	_ = NewAuth(testStore(t), "test", AuthConfig{
+	_ = testAuth(testStore(t), "test", AuthConfig{
 		DevBypass:    true,
 		CSRFKey:      "0123456789abcdef0123456789abcdef",
 		CookieSecure: true,

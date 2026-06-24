@@ -1,4 +1,4 @@
-package semantic
+package semantic_test
 
 import (
 	"net/url"
@@ -10,14 +10,14 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/reportmodel"
+	"github.com/Yacobolo/libredash/internal/semantic"
+	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
 
 func TestLoadOlistDashboard(t *testing.T) {
 	model := loadOlistModel(t)
-	report, err := LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"), map[string]*Model{"olist": model})
-	if err != nil {
-		t.Fatal(err)
-	}
+	report := loadOlistDashboard(t, model)
 
 	if report.ID != "executive-sales" {
 		t.Fatalf("dashboard id = %q, want executive-sales", report.ID)
@@ -140,7 +140,7 @@ func TestDataTableFieldsNormalizeToDataColumns(t *testing.T) {
 	table.Columns = nil
 	report.Tables["orders"] = table
 
-	if err := report.Validate(map[string]*Model{"olist": model}); err != nil {
+	if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
 		t.Fatal(err)
 	}
 	normalized := report.Tables["orders"]
@@ -167,7 +167,7 @@ func TestDataTableColumnsOverrideFields(t *testing.T) {
 	table.Columns = []dashboard.TableColumn{{Key: "order", Label: "Order"}}
 	report.Tables["orders"] = table
 
-	if err := report.Validate(map[string]*Model{"olist": model}); err != nil {
+	if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
 		t.Fatal(err)
 	}
 	if got := report.Tables["orders"].DataColumns[0].Alias; got != "order" {
@@ -201,10 +201,10 @@ func TestGlobalFilterSkipsIncompatibleTarget(t *testing.T) {
 	}
 	report.Filters["product"] = filter
 
-	if err := report.Validate(map[string]*Model{"olist": model}); err != nil {
+	if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
 		t.Fatal(err)
 	}
-	applies, err := report.FilterAppliesToTarget(model, filter, "visual", "revenue")
+	applies, err := reportmodel.FilterAppliesToTarget(report, model, filter, "visual", "revenue")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestDashboardValidateAcceptsV3VisualMetadata(t *testing.T) {
 	}
 	report.Visuals["revenue"] = visual
 
-	if err := report.Validate(map[string]*Model{"olist": model}); err != nil {
+	if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
 		t.Fatalf("validate v3 visual: %v", err)
 	}
 }
@@ -380,14 +380,13 @@ pages: []
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadDashboard(path, nil)
+	_, err := semantic.LoadDashboard(path)
 	if err == nil || !strings.Contains(err.Error(), "legacy metrics_views") {
 		t.Fatalf("LoadDashboard error = %v, want legacy metrics_views rejection", err)
 	}
 }
 
 func TestLoadDashboardRejectsLegacyTopLevelStacked(t *testing.T) {
-	model := loadOlistModel(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dashboard.yaml")
 	content := strings.ReplaceAll(`id: executive-sales
@@ -428,14 +427,13 @@ pages:
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadDashboard(path, map[string]*Model{"olist": model})
+	_, err := semantic.LoadDashboard(path)
 	if err == nil || !strings.Contains(err.Error(), "legacy top-level stacked") {
 		t.Fatalf("LoadDashboard error = %v, want legacy stacked rejection", err)
 	}
 }
 
 func TestLoadDashboardRejectsLegacyKPIs(t *testing.T) {
-	model := loadOlistModel(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dashboard.yaml")
 	content := strings.ReplaceAll(`id: executive-sales
@@ -468,7 +466,7 @@ pages:
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadDashboard(path, map[string]*Model{"olist": model})
+	_, err := semantic.LoadDashboard(path)
 	if err == nil || !strings.Contains(err.Error(), "legacy kpis") {
 		t.Fatalf("LoadDashboard error = %v, want legacy kpis rejection", err)
 	}
@@ -584,7 +582,7 @@ func TestDashboardValidateAcceptsAdvancedVisualShapes(t *testing.T) {
 	for name, visual := range cases {
 		report.Visuals = map[string]Visual{name: visual}
 		report.Pages = []dashboard.Page{{ID: "overview", Title: "Overview", Visuals: []dashboard.PageVisual{{ID: name, Kind: visual.Type + "_chart", Visual: name, Placement: dashboard.PagePlacement{Col: 1, Row: 1, ColSpan: 1, RowSpan: 1}}}}}
-		if err := report.Validate(map[string]*Model{"olist": model}); err != nil {
+		if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
 			t.Fatalf("validate advanced shape %s: %v", name, err)
 		}
 	}

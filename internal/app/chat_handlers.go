@@ -8,7 +8,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
-	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/go-chi/chi/v5"
 	"github.com/starfederation/datastar-go/datastar"
@@ -194,8 +193,8 @@ func (s *Server) chatScope(r *http.Request) agentapp.Scope {
 	if s.auth != nil {
 		if principal, ok := s.auth.Principal(r); ok {
 			principalID = principal.ID
-			if principal.DevBypass && s.store != nil {
-				_, _ = s.store.UpsertPrincipal(r.Context(), platform.PrincipalInput{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName})
+			if principal.DevBypass {
+				_ = s.upsertAuthenticatedPrincipal(r.Context(), principal)
 			}
 		}
 	}

@@ -2,19 +2,20 @@ package agentapp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	"github.com/Yacobolo/libredash/internal/platform"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -175,7 +176,7 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 	}))
 	defer modelServer.Close()
 
-	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Dashboards")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -192,33 +193,33 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 	if !strings.Contains(result.Content, "Executive Sales") || result.StopReason != agent.StopReasonCompleted {
 		t.Fatalf("result = %#v", result)
 	}
-	messages, err := store.ListAgentMessages(ctx, "test", principal.ID, conversation.ID)
+	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
 	if len(messages) != 4 {
 		t.Fatalf("messages len = %d, want user/assistant/tool/assistant: %#v", len(messages), messages)
 	}
-	runs, err := store.ListAgentRuns(ctx, "test", principal.ID, conversation.ID)
+	runs, err := store.ListRuns(ctx, "test", principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
 	}
-	if len(runs) != 1 || runs[0].ID != result.RunID || runs[0].TotalTokens != 64 {
+	if len(runs) != 1 || runs[0].ID != result.RunID {
 		t.Fatalf("runs = %#v result=%#v", runs, result)
 	}
-	events, err := store.ListAgentEvents(ctx, "test", principal.ID, result.RunID)
+	events, err := store.ListEvents(ctx, "test", principal.ID, result.RunID)
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
 	if len(events) == 0 || events[0].Seq != 1 {
 		t.Fatalf("events = %#v", events)
 	}
-	updated, err := store.GetAgentConversation(ctx, "test", principal.ID, conversation.ID)
+	updated, err := store.GetConversation(ctx, "test", principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("get updated conversation: %v", err)
 	}
-	if !strings.Contains(updated.TranscriptJson, "Executive Sales") {
-		t.Fatalf("transcript was not updated: %s", updated.TranscriptJson)
+	if !strings.Contains(updated.TranscriptJSON, "Executive Sales") {
+		t.Fatalf("transcript was not updated: %s", updated.TranscriptJSON)
 	}
 }
 
@@ -240,16 +241,16 @@ func TestServiceGenerateConversationTitleUsesNoToolsAndSavesCleanTitle(t *testin
 	defer modelServer.Close()
 
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, scope, "")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		ConversationID: conversation.ID,
-		Role:           platform.AgentMessageRoleUser,
+		Role:           MessageRoleUser,
 		ContentText:    "What dashboards can I use?",
 	}); err != nil {
 		t.Fatalf("append user message: %v", err)
@@ -292,16 +293,16 @@ func TestServiceGenerateConversationTitleFallsBackWhenModelReturnsEmptyContent(t
 	defer modelServer.Close()
 
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, scope, "")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		ConversationID: conversation.ID,
-		Role:           platform.AgentMessageRoleUser,
+		Role:           MessageRoleUser,
 		ContentText:    "how are you?",
 	}); err != nil {
 		t.Fatalf("append user message: %v", err)
@@ -327,7 +328,7 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 		http.Error(w, "provider down", http.StatusBadGateway)
 	}))
 	defer modelServer.Close()
-	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 
 	titled, err := service.CreateConversation(ctx, scope, "Manual title")
 	if err != nil {
@@ -345,11 +346,11 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 		t.Fatalf("create multi conversation: %v", err)
 	}
 	for _, text := range []string{"hello", "again"} {
-		if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+		if _, err := store.AppendMessage(ctx, MessageInput{
 			WorkspaceID:    scope.WorkspaceID,
 			PrincipalID:    scope.PrincipalID,
 			ConversationID: multi.ID,
-			Role:           platform.AgentMessageRoleUser,
+			Role:           MessageRoleUser,
 			ContentText:    text,
 		}); err != nil {
 			t.Fatalf("append user message: %v", err)
@@ -366,11 +367,11 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 	if err != nil {
 		t.Fatalf("create failing conversation: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		ConversationID: failing.ID,
-		Role:           platform.AgentMessageRoleUser,
+		Role:           MessageRoleUser,
 		ContentText:    "list semantic models",
 	}); err != nil {
 		t.Fatalf("append failing user message: %v", err)
@@ -388,56 +389,56 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 	store := openAgentAppStore(t, ctx)
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
-	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"})
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "Transcript")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
-		Role:           platform.AgentMessageRoleUser,
+		Role:           MessageRoleUser,
 		ContentText:    "hello",
 	}); err != nil {
 		t.Fatalf("append user: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
-		Role:           platform.AgentMessageRoleSummary,
+		Role:           MessageRoleSummary,
 		ContentText:    "internal summary",
 	}); err != nil {
 		t.Fatalf("append summary: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
-		Role:           platform.AgentMessageRoleAssistant,
+		Role:           MessageRoleAssistant,
 		ContentText:    "Let me look that up.",
 		ContentJSON:    `{"tool_calls":[{"id":"call_1","name":"list_dashboards","arguments":{"limit":2}}]}`,
 	}); err != nil {
 		t.Fatalf("append assistant tool call: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
-		Role:           platform.AgentMessageRoleTool,
+		Role:           MessageRoleTool,
 		ContentText:    `{"summary":"Found 2 dashboards"}`,
 		ToolCallID:     "call_1",
 		ToolName:       "list_dashboards",
 	}); err != nil {
 		t.Fatalf("append tool: %v", err)
 	}
-	if _, err := store.AppendAgentMessage(ctx, platform.AgentMessageInput{
+	if _, err := store.AppendMessage(ctx, MessageInput{
 		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
-		Role:           platform.AgentMessageRoleAssistant,
+		Role:           MessageRoleAssistant,
 		ContentText:    "I found **two** dashboards.",
 	}); err != nil {
 		t.Fatalf("append assistant answer: %v", err)
@@ -489,7 +490,7 @@ func TestServiceRejectsConcurrentConversationTurns(t *testing.T) {
 	}))
 	defer modelServer.Close()
 
-	service := NewService(fakeAgentMetrics{}, testAgentRepo{store: store}, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	conversation, err := service.CreateConversation(ctx, Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Dashboards")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -685,156 +686,259 @@ func runTool(t *testing.T, tools []agent.ToolDefinition, name, args string) stri
 	return ""
 }
 
-func openAgentAppStore(t *testing.T, ctx context.Context) *platform.Store {
+func openAgentAppStore(t *testing.T, _ context.Context) *testAgentStore {
 	t.Helper()
-	store, err := platform.Open(ctx, t.TempDir()+"/libredash.db")
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	if err := store.EnsureWorkspace(ctx, platform.WorkspaceInput{ID: "test", Title: "Test"}); err != nil {
-		t.Fatalf("ensure workspace: %v", err)
-	}
-	return store
+	return newTestAgentStore()
 }
 
-func createAgentAppPrincipal(t *testing.T, ctx context.Context, store *platform.Store, email string) testPrincipal {
+func createAgentAppPrincipal(t *testing.T, _ context.Context, store *testAgentStore, email string) testPrincipal {
 	t.Helper()
-	principal, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: email, DisplayName: email})
-	if err != nil {
-		t.Fatalf("upsert principal: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", principal.ID, "viewer"); err != nil {
-		t.Fatalf("bind role: %v", err)
-	}
-	return testPrincipal{ID: principal.ID}
+	id := "principal_" + strings.NewReplacer("@", "_", ".", "_").Replace(email)
+	store.upsertPrincipal(id)
+	return testPrincipal{ID: id}
 }
 
 type testPrincipal struct {
 	ID string
 }
 
-type testAgentRepo struct {
-	store *platform.Store
+type testAgentStore struct {
+	mu              sync.Mutex
+	nextID          int
+	principals      map[string]struct{}
+	conversations   map[string]Conversation
+	messages        map[string][]Message
+	runs            map[string]Run
+	runConversation map[string]string
+	events          map[string][]Event
 }
 
-func (r testAgentRepo) CreateConversation(ctx context.Context, input ConversationInput) (Conversation, error) {
-	row, err := r.store.CreateAgentConversation(ctx, platform.AgentConversationInput(input))
-	if err != nil {
-		return Conversation{}, err
+func newTestAgentStore() *testAgentStore {
+	return &testAgentStore{
+		principals:      map[string]struct{}{},
+		conversations:   map[string]Conversation{},
+		messages:        map[string][]Message{},
+		runs:            map[string]Run{},
+		runConversation: map[string]string{},
+		events:          map[string][]Event{},
 	}
-	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
 }
 
-func (r testAgentRepo) ListConversations(ctx context.Context, workspaceID, principalID string) ([]Conversation, error) {
-	rows, err := r.store.ListAgentConversations(ctx, workspaceID, principalID)
-	if err != nil {
-		return nil, err
+func (s *testAgentStore) Close() error { return nil }
+
+func (s *testAgentStore) upsertPrincipal(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.principals[id] = struct{}{}
+}
+
+func (s *testAgentStore) CreateConversation(_ context.Context, input ConversationInput) (Conversation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		title = ConversationDefaultTitle
 	}
-	out := make([]Conversation, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt))
+	conversation := Conversation{
+		ID:             s.id("agentconv"),
+		WorkspaceID:    input.WorkspaceID,
+		PrincipalID:    input.PrincipalID,
+		Title:          title,
+		Status:         ConversationStatusActive,
+		MetadataJSON:   firstNonEmpty(input.MetadataJSON, "{}"),
+		TranscriptJSON: "[]",
+		CreatedAt:      testNow(),
+		UpdatedAt:      testNow(),
+	}
+	s.conversations[conversation.ID] = conversation
+	return conversation, nil
+}
+
+func (s *testAgentStore) ListConversations(_ context.Context, workspaceID, principalID string) ([]Conversation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Conversation
+	for _, conversation := range s.conversations {
+		if conversation.WorkspaceID == workspaceID && conversation.PrincipalID == principalID && conversation.Status == ConversationStatusActive {
+			out = append(out, conversation)
+		}
 	}
 	return out, nil
 }
 
-func (r testAgentRepo) GetConversation(ctx context.Context, workspaceID, principalID, conversationID string) (Conversation, error) {
-	row, err := r.store.GetAgentConversation(ctx, workspaceID, principalID, conversationID)
+func (s *testAgentStore) GetConversation(_ context.Context, workspaceID, principalID, conversationID string) (Conversation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.conversationLocked(workspaceID, principalID, conversationID)
+}
+
+func (s *testAgentStore) UpdateDefaultConversationTitle(_ context.Context, workspaceID, principalID, conversationID, title string) (Conversation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	conversation, err := s.conversationLocked(workspaceID, principalID, conversationID)
 	if err != nil {
 		return Conversation{}, err
 	}
-	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
+	if conversation.Title != ConversationDefaultTitle || conversation.Status != ConversationStatusActive {
+		return Conversation{}, sql.ErrNoRows
+	}
+	conversation.Title = title
+	conversation.UpdatedAt = testNow()
+	s.conversations[conversation.ID] = conversation
+	return conversation, nil
 }
 
-func (r testAgentRepo) UpdateDefaultConversationTitle(ctx context.Context, workspaceID, principalID, conversationID, title string) (Conversation, error) {
-	row, err := r.store.UpdateDefaultAgentConversationTitle(ctx, workspaceID, principalID, conversationID, title)
+func (s *testAgentStore) UpdateConversationTranscript(_ context.Context, workspaceID, principalID, conversationID, transcriptJSON string) (Conversation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	conversation, err := s.conversationLocked(workspaceID, principalID, conversationID)
 	if err != nil {
 		return Conversation{}, err
 	}
-	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
+	conversation.TranscriptJSON = transcriptJSON
+	conversation.UpdatedAt = testNow()
+	s.conversations[conversation.ID] = conversation
+	return conversation, nil
 }
 
-func (r testAgentRepo) UpdateConversationTranscript(ctx context.Context, workspaceID, principalID, conversationID, transcriptJSON string) (Conversation, error) {
-	row, err := r.store.UpdateAgentConversationTranscript(ctx, workspaceID, principalID, conversationID, transcriptJSON)
-	if err != nil {
-		return Conversation{}, err
-	}
-	return testConversation(row.ID, row.WorkspaceID, row.PrincipalID, row.Title, row.Status, row.MetadataJson, row.TranscriptJson, row.CreatedAt, row.UpdatedAt), nil
-}
-
-func (r testAgentRepo) AppendMessage(ctx context.Context, input MessageInput) (Message, error) {
-	row, err := r.store.AppendAgentMessage(ctx, platform.AgentMessageInput(input))
-	if err != nil {
+func (s *testAgentStore) AppendMessage(_ context.Context, input MessageInput) (Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, input.ConversationID); err != nil {
 		return Message{}, err
 	}
-	message := Message{ID: row.ID, ConversationID: row.ConversationID, Seq: row.Seq, Role: row.Role, ContentText: row.ContentText, ContentJSON: row.ContentJson, ToolCallID: row.ToolCallID, ToolName: row.ToolName, IsError: row.IsError, CreatedAt: row.CreatedAt}
-	if row.RunID.Valid {
-		message.RunID = row.RunID.String
+	message := Message{
+		ID:             s.id("agentmsg"),
+		ConversationID: input.ConversationID,
+		RunID:          input.RunID,
+		Seq:            int64(len(s.messages[input.ConversationID]) + 1),
+		Role:           input.Role,
+		ContentText:    input.ContentText,
+		ContentJSON:    firstNonEmpty(input.ContentJSON, "{}"),
+		ToolCallID:     input.ToolCallID,
+		ToolName:       input.ToolName,
+		IsError:        input.IsError,
+		CreatedAt:      testNow(),
 	}
+	s.messages[input.ConversationID] = append(s.messages[input.ConversationID], message)
 	return message, nil
 }
 
-func (r testAgentRepo) ListMessages(ctx context.Context, workspaceID, principalID, conversationID string) ([]Message, error) {
-	rows, err := r.store.ListAgentMessages(ctx, workspaceID, principalID, conversationID)
-	if err != nil {
+func (s *testAgentStore) ListMessages(_ context.Context, workspaceID, principalID, conversationID string) ([]Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
 		return nil, err
 	}
-	out := make([]Message, 0, len(rows))
-	for _, row := range rows {
-		message := Message{ID: row.ID, ConversationID: row.ConversationID, Seq: row.Seq, Role: row.Role, ContentText: row.ContentText, ContentJSON: row.ContentJson, ToolCallID: row.ToolCallID, ToolName: row.ToolName, IsError: row.IsError, CreatedAt: row.CreatedAt}
-		if row.RunID.Valid {
-			message.RunID = row.RunID.String
+	return append([]Message(nil), s.messages[conversationID]...), nil
+}
+
+func (s *testAgentStore) CreateRun(_ context.Context, input RunInput) (Run, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, input.ConversationID); err != nil {
+		return Run{}, err
+	}
+	runID := strings.TrimSpace(input.RunID)
+	if runID == "" {
+		runID = s.id("agentrun")
+	}
+	run := Run{ID: runID, Status: RunStatusRunning, Model: input.Model, CreatedAt: testNow()}
+	s.runs[run.ID] = run
+	s.runConversation[run.ID] = input.ConversationID
+	return run, nil
+}
+
+func (s *testAgentStore) FinishRun(_ context.Context, input RunFinish) (Run, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, input.ConversationID); err != nil {
+		return Run{}, err
+	}
+	run, ok := s.runs[input.RunID]
+	if !ok {
+		return Run{}, sql.ErrNoRows
+	}
+	run.Status = input.Status
+	s.runs[run.ID] = run
+	return run, nil
+}
+
+func (s *testAgentStore) ListRuns(_ context.Context, workspaceID, principalID, conversationID string) ([]Run, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
+		return nil, err
+	}
+	var out []Run
+	for runID, candidate := range s.runs {
+		if s.runConversation[runID] == conversationID {
+			out = append(out, candidate)
 		}
-		out = append(out, message)
 	}
 	return out, nil
 }
 
-func (r testAgentRepo) CreateRun(ctx context.Context, input RunInput) (Run, error) {
-	row, err := r.store.CreateAgentRun(ctx, platform.AgentRunInput(input))
-	if err != nil {
-		return Run{}, err
+func (s *testAgentStore) AppendEvent(_ context.Context, input EventInput) (Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	conversationID, ok := s.runConversation[input.RunID]
+	if !ok {
+		return Event{}, sql.ErrNoRows
 	}
-	return Run{ID: row.ID, Status: row.Status, Model: row.Model, CreatedAt: row.StartedAt}, nil
-}
-
-func (r testAgentRepo) FinishRun(ctx context.Context, input RunFinish) (Run, error) {
-	row, err := r.store.FinishAgentRun(ctx, platform.AgentRunFinish(input))
-	if err != nil {
-		return Run{}, err
-	}
-	return Run{ID: row.ID, Status: row.Status, Model: row.Model, CreatedAt: row.StartedAt}, nil
-}
-
-func (r testAgentRepo) ListRuns(ctx context.Context, workspaceID, principalID, conversationID string) ([]Run, error) {
-	rows, err := r.store.ListAgentRuns(ctx, workspaceID, principalID, conversationID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Run, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, Run{ID: row.ID, Status: row.Status, Model: row.Model, CreatedAt: row.StartedAt})
-	}
-	return out, nil
-}
-
-func (r testAgentRepo) AppendEvent(ctx context.Context, input EventInput) (Event, error) {
-	row, err := r.store.AppendAgentEvent(ctx, platform.AgentEventInput(input))
-	if err != nil {
+	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, conversationID); err != nil {
 		return Event{}, err
 	}
-	return Event{ID: row.ID, RunID: row.RunID, Seq: row.Seq, EventType: row.EventType, Severity: row.Severity, PayloadJSON: row.PayloadJson, CreatedAt: row.CreatedAt}, nil
+	event := Event{
+		ID:          s.id("agentevt"),
+		RunID:       input.RunID,
+		Seq:         input.Sequence,
+		EventType:   input.EventType,
+		Severity:    firstNonEmpty(input.Severity, "info"),
+		PayloadJSON: firstNonEmpty(input.PayloadJSON, "{}"),
+		CreatedAt:   testNow(),
+	}
+	s.events[input.RunID] = append(s.events[input.RunID], event)
+	return event, nil
 }
 
-func (r testAgentRepo) ListEvents(ctx context.Context, workspaceID, principalID, runID string) ([]Event, error) {
-	rows, err := r.store.ListAgentEvents(ctx, workspaceID, principalID, runID)
-	if err != nil {
+func (s *testAgentStore) ListEvents(_ context.Context, workspaceID, principalID, runID string) ([]Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	conversationID, ok := s.runConversation[runID]
+	if !ok {
+		return nil, sql.ErrNoRows
+	}
+	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
 		return nil, err
 	}
-	out := make([]Event, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, Event{ID: row.ID, RunID: row.RunID, Seq: row.Seq, EventType: row.EventType, Severity: row.Severity, PayloadJSON: row.PayloadJson, CreatedAt: row.CreatedAt})
+	return append([]Event(nil), s.events[runID]...), nil
+}
+
+func (s *testAgentStore) conversationLocked(workspaceID, principalID, conversationID string) (Conversation, error) {
+	conversation, ok := s.conversations[conversationID]
+	if !ok || conversation.WorkspaceID != workspaceID || conversation.PrincipalID != principalID {
+		return Conversation{}, sql.ErrNoRows
 	}
-	return out, nil
+	return conversation, nil
+}
+
+func (s *testAgentStore) id(prefix string) string {
+	s.nextID++
+	return fmt.Sprintf("%s_%d", prefix, s.nextID)
+}
+
+func testNow() string {
+	return "2026-01-01 00:00:00"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func testConversation(id, workspaceID, principalID, title, status, metadataJSON, transcriptJSON, createdAt, updatedAt string) Conversation {

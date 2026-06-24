@@ -13,13 +13,12 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
-	"github.com/Yacobolo/libredash/internal/platform"
 )
 
 func TestAgentAPIReportsDisabledWhenProviderMissing(t *testing.T) {
 	store := testStore(t)
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{}), DefaultWorkspaceID: "test"})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{}), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/test/agent/conversations", nil)
 	rec := httptest.NewRecorder()
@@ -33,17 +32,8 @@ func TestAgentAPIReportsDisabledWhenProviderMissing(t *testing.T) {
 func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
-	principal, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "viewer@example.com", DisplayName: "Viewer"})
-	if err != nil {
-		t.Fatalf("upsert principal: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", principal.ID, "viewer"); err != nil {
-		t.Fatalf("bind role: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, principal.ID, "agent-test")
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
+	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
+	token := testAPIToken(t, ctx, store, principal.ID, "agent-test")
 	var calls atomic.Int64
 	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
@@ -53,8 +43,8 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"Executive Sales is available."},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}}`)
 	}))
 	defer modelServer.Close()
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	agentService := agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 
 	createReq := authedJSONRequest(http.MethodPost, "/api/workspaces/test/agent/conversations", token, `{"title":"Ask"}`)
@@ -101,24 +91,15 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 func TestAgentAPIRejectsConcurrentTurnsForConversation(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
-	principal, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "viewer@example.com", DisplayName: "Viewer"})
-	if err != nil {
-		t.Fatalf("upsert principal: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", principal.ID, "viewer"); err != nil {
-		t.Fatalf("bind role: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, principal.ID, "agent-test")
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
+	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
+	token := testAPIToken(t, ctx, store, principal.ID, "agent-test")
 	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(150 * time.Millisecond)
 		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer modelServer.Close()
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, NewAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	agentService := agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 	conversation, err := agentService.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Ask")
 	if err != nil {

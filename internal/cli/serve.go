@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 
+	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
@@ -87,10 +89,12 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(opts.workspaceID), Title: opts.workspaceID}); err != nil {
 		return err
 	}
-	if err := store.BootstrapAdmin(ctx, opts.workspaceID, cfg.BootstrapEmail); err != nil {
+	accessRepo := accesssqlite.NewRepository(store.SQLDB())
+	if err := accessRepo.BootstrapAdmin(ctx, opts.workspaceID, cfg.BootstrapEmail); err != nil {
 		return err
 	}
 	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
 	manager := runtimehost.NewManagerWithFactory(deploymentRepo, deployment.WorkspaceID(opts.workspaceID), dataDir, deploymentRuntimeFactory{
 		dataDir:    dataDir,
 		duckDBDir:  cfg.DuckDBDirPath(),
@@ -100,7 +104,8 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	defer manager.Close()
-	auth := app.NewAuth(store, opts.workspaceID, app.AuthConfig{
+	runtimeMetrics := app.NewRuntimeMetrics(manager, dataDir, opts.workspaceID)
+	auth := app.NewAuth(accessRepo, opts.workspaceID, app.AuthConfig{
 		DevBypass:       cfg.DevAuthBypass,
 		APITokenOnly:    cfg.APITokenOnlyAuth,
 		AzureClientID:   cfg.AzureClientID,
@@ -113,11 +118,12 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	})
 	rateLimits := app.ProductionRateLimitConfig()
 	rateLimits.Enabled = cfg.RateLimitingEnabled()
-	server := app.NewWithOptions(manager, app.Options{
+	server := app.NewWithOptions(runtimeMetrics, app.Options{
 		Store:              store,
 		DeploymentRepo:     deploymentRepo,
 		WorkspaceRepo:      workspaceRepo,
-		Agent:              agentapp.NewService(manager, app.NewAgentRepository(store), agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
+		AccessRepo:         accessRepo,
+		Agent:              agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
 		Auth:               auth,
 		Reloader:           manager,
 		ArtifactDir:        cfg.ArtifactDir(),

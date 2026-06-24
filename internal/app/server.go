@@ -11,7 +11,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	dashboardcommand "github.com/Yacobolo/libredash/internal/dashboard/command"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
@@ -120,6 +119,15 @@ func (s *Server) accessRepository() (access.Repository, error) {
 	return s.accessRepo, nil
 }
 
+func (s *Server) upsertAuthenticatedPrincipal(ctx context.Context, principal Principal) error {
+	repo, err := s.accessRepository()
+	if err != nil || repo == nil {
+		return err
+	}
+	_, err = repo.UpsertPrincipal(ctx, accessPrincipalInput(principal))
+	return err
+}
+
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -143,25 +151,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 	return dashboardhttp.Handler{
 		Metrics: s.metrics,
+		Broker:  s.broker,
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
 				return ""
 			}
 			return csrf.Token(r)
 		},
-	}
-}
-
-func (s *Server) dashboardStream() dashboardstream.Handler {
-	return dashboardstream.Handler{
-		Metrics: s.metrics,
-		Broker:  s.broker,
-	}
-}
-
-func (s *Server) dashboardCommands() dashboardcommand.Handler {
-	return dashboardcommand.Handler{
-		Metrics: s.metrics,
-		Broker:  s.broker,
 	}
 }

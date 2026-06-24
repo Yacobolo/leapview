@@ -12,14 +12,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/access"
+	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
+	"github.com/Yacobolo/libredash/internal/agentapp"
+	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
-	"github.com/Yacobolo/libredash/internal/semantic"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
+	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 	"github.com/gorilla/csrf"
 )
 
@@ -54,7 +58,7 @@ func (fakePreparedRuntime) Close() error { return nil }
 
 func TestDeploymentAPIRequiresAuthentication(t *testing.T) {
 	store := testStore(t)
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/deployments", nil)
@@ -70,7 +74,7 @@ func TestDeploymentAPIRequiresAuthentication(t *testing.T) {
 func TestDeploymentAPIRejectsBrowserPostWithoutCSRF(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/deployments", bytes.NewBufferString(`{"workspaceId":"test"}`))
@@ -85,7 +89,7 @@ func TestDeploymentAPIRejectsBrowserPostWithoutCSRF(t *testing.T) {
 
 func TestCSRFMiddlewareAllowsBrowserPostWithToken(t *testing.T) {
 	store := testStore(t)
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	handler := auth.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_, _ = w.Write([]byte(csrf.Token(r)))
@@ -116,7 +120,7 @@ func TestCSRFMiddlewareAllowsBrowserPostWithToken(t *testing.T) {
 
 func TestCSRFMiddlewareAllowsPlainHTTPPostWithToken(t *testing.T) {
 	store := testStore(t)
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true, CookieSecure: false})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true, CookieSecure: false})
 	handler := auth.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_, _ = w.Write([]byte(csrf.Token(r)))
@@ -147,7 +151,7 @@ func TestCSRFMiddlewareAllowsPlainHTTPPostWithToken(t *testing.T) {
 
 func TestSessionCookieUsesConfiguredSecureFlag(t *testing.T) {
 	store := testStore(t)
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true, CookieSecure: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true, CookieSecure: true})
 	cookie := auth.sessionCookie("token", time.Now().Add(time.Hour))
 	if !cookie.Secure {
 		t.Fatal("session cookie Secure = false, want true")
@@ -157,18 +161,9 @@ func TestSessionCookieUsesConfiguredSecureFlag(t *testing.T) {
 func TestDeploymentAPIRejectsViewer(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
-	principal, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "viewer@example.com", DisplayName: "Viewer"})
-	if err != nil {
-		t.Fatalf("upsert principal: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", principal.ID, "viewer"); err != nil {
-		t.Fatalf("bind role: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, principal.ID, "test")
-	if err != nil {
-		t.Fatalf("create api token: %v", err)
-	}
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
+	token := testAPIToken(t, ctx, store, principal.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/deployments", bytes.NewBufferString(`{"workspaceId":"test"}`))
@@ -187,7 +182,7 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	store := testStore(t)
 	reloader := &fakeReloader{}
 	artifactDir := t.TempDir()
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "test"})
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/deployments", bytes.NewBufferString(`{"workspaceId":"test","title":"Test"}`))
@@ -253,7 +248,7 @@ func TestDeploymentActivationPrepareFailureLeavesDeploymentInactive(t *testing.T
 	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, deployment.Validation{Digest: "digest", ManifestJSON: "{}"}, zeroArtifact(created.ID, "test")); err != nil {
 		t.Fatalf("validate deployment: %v", err)
 	}
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	reloader := &fakeReloader{prepareErr: errors.New("runtime load failed")}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
@@ -282,7 +277,7 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	seedActiveDeployment(t, store, "test")
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/test/assets?type=connection", nil)
@@ -306,7 +301,7 @@ func TestWorkspacePageDefaultsToTopLevelAssets(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	seedActiveDeployment(t, store, "test")
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test", nil)
@@ -334,7 +329,7 @@ func TestWorkspaceAssetSearchStaysWorkspaceFacing(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	seedActiveDeployment(t, store, "test")
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test?q=orders_enriched", nil)
@@ -356,7 +351,7 @@ func TestWorkspaceConnectionFilterRedirectsToGlobalConnections(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	seedActiveDeployment(t, store, "test")
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test?type=connection&q=olist", nil)
@@ -376,7 +371,7 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	seedActiveDeployment(t, store, "test")
-	auth := NewAuth(store, "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/connections?q=olist", nil)
@@ -401,18 +396,9 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 func TestWorkspacePermissionsRejectViewer(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
-	principal, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "viewer@example.com", DisplayName: "Viewer"})
-	if err != nil {
-		t.Fatalf("upsert principal: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", principal.ID, "viewer"); err != nil {
-		t.Fatalf("bind role: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, principal.ID, "test")
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
+	token := testAPIToken(t, ctx, store, principal.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/permissions", nil)
@@ -428,18 +414,9 @@ func TestWorkspacePermissionsRejectViewer(t *testing.T) {
 func TestWorkspaceRoleBindingAPIUpsertsPrincipalRole(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
-	owner, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "owner@example.com", DisplayName: "Owner"})
-	if err != nil {
-		t.Fatalf("upsert owner: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", owner.ID, "owner"); err != nil {
-		t.Fatalf("bind owner: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, owner.ID, "test")
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/test/role-bindings", bytes.NewBufferString(`{"email":"analyst@example.com","displayName":"Analyst","role":"viewer"}`))
@@ -479,18 +456,9 @@ func TestWorkspaceRoleBindingAPIUpsertsPrincipalRole(t *testing.T) {
 func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
-	owner, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "owner@example.com", DisplayName: "Owner"})
-	if err != nil {
-		t.Fatalf("upsert owner: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", owner.ID, "owner"); err != nil {
-		t.Fatalf("bind owner: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, owner.ID, "test")
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	signals := `{"workspaceAccess":{"command":{"email":"analyst@example.com","role":"viewer"}}}`
@@ -520,7 +488,7 @@ func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 		t.Fatalf("role binding missing after command:\n%s", listRec.Body.String())
 	}
 
-	removeSignals := `{"workspaceAccess":{"command":{"principalId":"` + platform.PrincipalIDForEmail("analyst@example.com") + `"}}}`
+	removeSignals := `{"workspaceAccess":{"command":{"principalId":"` + access.PrincipalIDForEmail("analyst@example.com") + `"}}}`
 	removeReq := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/remove", bytes.NewBufferString(removeSignals))
 	removeReq.Header.Set("Authorization", "Bearer "+token)
 	removeRec := httptest.NewRecorder()
@@ -545,18 +513,9 @@ func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 func TestWorkspaceAccessCommandRejectsViewer(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
-	viewer, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "viewer@example.com", DisplayName: "Viewer"})
-	if err != nil {
-		t.Fatalf("upsert viewer: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", viewer.ID, "viewer"); err != nil {
-		t.Fatalf("bind viewer: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, viewer.ID, "test")
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	viewer := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
+	token := testAPIToken(t, ctx, store, viewer.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	signals := `{"workspaceAccess":{"command":{"email":"analyst@example.com","role":"viewer"}}}`
@@ -573,18 +532,9 @@ func TestWorkspaceAccessCommandRejectsViewer(t *testing.T) {
 func TestWorkspaceAccessCommandPatchesInvalidInput(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
-	owner, err := store.UpsertPrincipal(ctx, platform.PrincipalInput{Email: "owner@example.com", DisplayName: "Owner"})
-	if err != nil {
-		t.Fatalf("upsert owner: %v", err)
-	}
-	if err := store.BindRole(ctx, "test", owner.ID, "owner"); err != nil {
-		t.Fatalf("bind owner: %v", err)
-	}
-	token, err := store.CreateAPIToken(ctx, owner.ID, "test")
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
-	auth := NewAuth(store, "test", AuthConfig{APITokenOnly: true})
+	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	signals := `{"workspaceAccess":{"command":{"email":"","role":"viewer"}}}`
@@ -617,10 +567,45 @@ func testStore(t *testing.T) *platform.Store {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.EnsureWorkspace(context.Background(), platform.WorkspaceInput{ID: "test", Title: "Test"}); err != nil {
+	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
+	if err := workspaceRepo.Ensure(context.Background(), workspace.EnsureInput{ID: workspace.WorkspaceID("test"), Title: "Test"}); err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
 	return store
+}
+
+func testAccessRepository(store *platform.Store) access.Repository {
+	return accesssqlite.NewRepository(store.SQLDB())
+}
+
+func testAgentRepository(store *platform.Store) agentapp.Repository {
+	return agentappsqlite.NewRepository(store.SQLDB())
+}
+
+func testPrincipal(t *testing.T, ctx context.Context, store *platform.Store, email, displayName, role string) access.Principal {
+	t.Helper()
+	repo := testAccessRepository(store)
+	if role != "" {
+		principal, err := repo.SetPrincipalRole(ctx, access.PrincipalRoleInput{WorkspaceID: "test", Email: email, DisplayName: displayName, Role: role})
+		if err != nil {
+			t.Fatalf("bind role: %v", err)
+		}
+		return principal
+	}
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{Email: email, DisplayName: displayName})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	return principal
+}
+
+func testAPIToken(t *testing.T, ctx context.Context, store *platform.Store, principalID, name string) string {
+	t.Helper()
+	token, err := testAccessRepository(store).CreateAPIToken(ctx, principalID, name)
+	if err != nil {
+		t.Fatalf("create api token: %v", err)
+	}
+	return token
 }
 
 func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID string) {
@@ -631,9 +616,9 @@ func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID strin
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}
-	workspaceDef, err := semantic.LoadWorkspace(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
+	workspaceDef, err := workspacecompiler.CompileDefinition(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
 	if err != nil {
-		t.Fatalf("load workspace: %v", err)
+		t.Fatalf("compile workspace definition: %v", err)
 	}
 	graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(created.ID), workspaceDef)
 	if err != nil {
