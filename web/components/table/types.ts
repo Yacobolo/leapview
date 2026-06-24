@@ -51,6 +51,15 @@ export interface InteractionMapping {
   label?: string
 }
 
+export interface InteractionSelectionEntry {
+  mappings?: Array<{
+    field?: string
+    value?: string
+    label?: string
+  }>
+  label?: string
+}
+
 export type TableRow = Record<string, unknown>
 
 export interface TableBlock {
@@ -67,6 +76,7 @@ export interface TableSignal {
   title: string
   style: TableStyle
   interaction: InteractionConfig
+  selection?: InteractionSelectionEntry[]
   columns: TableColumn[]
   totalRows: number
   availableRows: number

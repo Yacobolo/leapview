@@ -748,9 +748,17 @@ class DataTable extends LitElement {
       background: color-mix(in srgb, var(--ld-fg-link), transparent 91%);
     }
 
-    .row.selected {
-      background: color-mix(in srgb, var(--ld-fg-link), transparent 86%);
-      box-shadow: inset 3px 0 0 var(--ld-fg-link);
+    .row.selected,
+    .zebra .row.selected,
+    .zebra .row.selected:nth-child(even) {
+      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 82%);
+    }
+
+    .row.selected:hover,
+    .row.selected.hovered,
+    .zebra .row.selected:hover,
+    .zebra .row.selected.hovered {
+      background: color-mix(in srgb, var(--ld-fg-link), var(--ld-chart-surface) 76%);
     }
 
     .row.skeleton-row {
@@ -1002,7 +1010,7 @@ class DataTable extends LitElement {
     super.disconnectedCallback()
   }
 
-  willUpdate(): void {
+  willUpdate(changedProperties: Map<PropertyKey, unknown>): void {
     if (this.lastResetVersion !== this.table.resetVersion) {
       this.lastResetVersion = this.table.resetVersion
       this.blockCache = emptyBlocks()
@@ -1014,9 +1022,8 @@ class DataTable extends LitElement {
       this.selectedCellKey = ''
     }
     this.mergeIncomingBlocks()
-    if (this.selectedRowId && !this.loadedRows.some((item) => rowKey(item.row, item.index) === this.selectedRowId)) {
-      this.selectedRowId = ''
-      this.selectedCellKey = ''
+    if (changedProperties.has('table')) {
+      this.syncSelectedRowFromTableSelection()
     }
   }
 
@@ -1219,6 +1226,50 @@ class DataTable extends LitElement {
     this.rowSelection = { [key]: true }
     this.selectedCellKey = ''
     this.emitRowSelection(row)
+  }
+
+  private syncSelectedRowFromTableSelection(): void {
+    const selection = this.table?.selection ?? []
+    if (selection.length === 0) {
+      this.clearLocalSelection()
+      return
+    }
+    const selected = this.loadedRows.find((item) => this.rowMatchesSelection(item.row, selection))
+    if (!selected) {
+      this.selectedRowId = ''
+      this.selectedCellKey = ''
+      this.rowSelection = {}
+      return
+    }
+    const key = rowKey(selected.row, selected.index)
+    this.selectedRowId = key
+    this.rowSelection = { [key]: true }
+    this.selectedCellKey = ''
+  }
+
+  private rowMatchesSelection(row: TableRow, selection: NonNullable<TableSignal['selection']>): boolean {
+    const mappings = this.table?.interaction?.mappings ?? []
+    if (mappings.length === 0) return false
+    return selection.some((entry) => mappings.every((mapping) => {
+      const selected = entry.mappings?.find((candidate) => candidate.field === mapping.field)
+      return Boolean(selected?.value) && String(row[mapping.value] ?? '') === selected?.value
+    }))
+  }
+
+  private clearLocalSelection(): void {
+    this.selectedRowId = ''
+    this.selectedCellKey = ''
+    this.rowSelection = {}
+  }
+
+  private hasActiveSelection(): boolean {
+    return Boolean((this.table?.selection ?? []).length || this.selectedRowId)
+  }
+
+  private rowIsSelected(row: TableRow, key: string): boolean {
+    const selection = this.table?.selection ?? []
+    if (selection.length > 0) return this.rowMatchesSelection(row, selection)
+    return key === this.selectedRowId
   }
 
   private emitRowSelection(row: TableRow): void {
@@ -1449,7 +1500,7 @@ class DataTable extends LitElement {
   }
 
   private renderRowSegment(cells: any[], row: TableRow, index: number, key: string) {
-    const selected = key === this.selectedRowId
+    const selected = this.rowIsSelected(row, key)
     const hovered = key === this.hoveredRowId
     return html`
       <div
@@ -1496,7 +1547,8 @@ class DataTable extends LitElement {
     const totalHeight = this.availableRows * this.rowHeight
     const hasGroupHeaderRow = headers.some((header: any) => header.column.columnDef.meta?.column?.group)
     const rowRange = this.rowRangeText()
-    const selectedText = this.selectedRowId ? '1 row selected' : 'No selection'
+    const hasSelection = this.hasActiveSelection()
+    const selectedText = hasSelection ? '1 row selected' : 'No selection'
     const loading = Boolean(this.table.loadingBlock) || this.visibleLoading
     const gridTemplate = this.gridTemplateFor(columns)
     const tableWidth = this.tableWidthFor(columns)
@@ -1529,7 +1581,7 @@ class DataTable extends LitElement {
               <button type="button" role="menuitem" @click=${() => this.runAction('show-data')}>${visualMenuIcon('show-data')}<span>Show data</span></button>
               <button type="button" role="menuitem" @click=${() => this.runAction('copy-data')}>${visualMenuIcon('copy-data')}<span>Copy data</span></button>
               <button type="button" role="menuitem" @click=${() => this.runAction('export-csv')}>${visualMenuIcon('export-csv')}<span>Export CSV</span></button>
-              <button type="button" role="menuitem" ?disabled=${!this.selectedRowId} @click=${() => this.runAction('clear-selection')}>${visualMenuIcon('clear-selection')}<span>Clear selection</span></button>
+              <button type="button" role="menuitem" ?disabled=${!hasSelection} @click=${() => this.runAction('clear-selection')}>${visualMenuIcon('clear-selection')}<span>Clear selection</span></button>
               <div class="menu-divider"></div>
               <div class="column-menu" @click=${(event: Event) => event.stopPropagation()}>
                 <span>Columns</span>
@@ -1772,7 +1824,7 @@ class DataTable extends LitElement {
           title: this.table?.title ?? 'Orders',
           columns: this.columns,
           rows: this.exportRows(),
-          selection: this.selectedRowId ? [this.selectedRowId] : [],
+          selection: this.hasActiveSelection() ? [this.selectedRowId || 'active'] : [],
           table: {
             ...(this.table ?? emptyTable),
             blocks: this.blocks,

@@ -510,6 +510,21 @@ relogios_presentes,watches_gifts
 		t.Fatalf("all block request seq = %d, want 8", got)
 	}
 
+	selectedRowTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{
+		Selections: []dashboard.InteractionSelection{
+			interactionSelection("table", "orders_table", "row_selection", "orders.order_id", "o1"),
+		},
+	}, dashboard.TableRequest{Table: "orders_table", Block: "all", Count: 10, RequestSeq: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := selectedEntryValue(selectedRowTable.Selection, "orders.order_id"); got != "o1" {
+		t.Fatalf("table selection entry = %q, want o1: %#v", got, selectedRowTable.Selection)
+	}
+	if selectedRowTable.TotalRows != table.TotalRows {
+		t.Fatalf("selected source table total rows = %d, want self selection not applied to source table total %d", selectedRowTable.TotalRows, table.TotalRows)
+	}
+
 	matrixTable, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{
 		Table:      "state_status_matrix",
 		Block:      "all",

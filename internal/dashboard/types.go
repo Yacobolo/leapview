@@ -591,23 +591,24 @@ type TableSort struct {
 }
 
 type Table struct {
-	Version       int                   `json:"version"`
-	Kind          string                `json:"kind"`
-	Title         string                `json:"title"`
-	Style         TableStyle            `json:"style"`
-	Interaction   InteractionConfig     `json:"interaction"`
-	Columns       []TableColumn         `json:"columns"`
-	TotalRows     int                   `json:"totalRows"`
-	AvailableRows int                   `json:"availableRows"`
-	IsCapped      bool                  `json:"isCapped"`
-	RowCap        int                   `json:"rowCap"`
-	ChunkSize     int                   `json:"chunkSize"`
-	RowHeight     int                   `json:"rowHeight"`
-	ResetVersion  int                   `json:"resetVersion"`
-	Sort          TableSort             `json:"sort"`
-	Blocks        map[string]TableBlock `json:"blocks"`
-	LoadingBlock  string                `json:"loadingBlock"`
-	Error         string                `json:"error"`
+	Version       int                         `json:"version"`
+	Kind          string                      `json:"kind"`
+	Title         string                      `json:"title"`
+	Style         TableStyle                  `json:"style"`
+	Interaction   InteractionConfig           `json:"interaction"`
+	Selection     []InteractionSelectionEntry `json:"selection"`
+	Columns       []TableColumn               `json:"columns"`
+	TotalRows     int                         `json:"totalRows"`
+	AvailableRows int                         `json:"availableRows"`
+	IsCapped      bool                        `json:"isCapped"`
+	RowCap        int                         `json:"rowCap"`
+	ChunkSize     int                         `json:"chunkSize"`
+	RowHeight     int                         `json:"rowHeight"`
+	ResetVersion  int                         `json:"resetVersion"`
+	Sort          TableSort                   `json:"sort"`
+	Blocks        map[string]TableBlock       `json:"blocks"`
+	LoadingBlock  string                      `json:"loadingBlock"`
+	Error         string                      `json:"error"`
 }
 
 type TableBlock struct {
@@ -666,6 +667,7 @@ func EmptyTable(request TableRequest, err error) Table {
 		Kind:          "data_table",
 		Title:         "Orders",
 		Style:         TableStyle{}.WithDefaults(),
+		Selection:     []InteractionSelectionEntry{},
 		Columns:       OrdersTableColumns(),
 		TotalRows:     0,
 		AvailableRows: 0,

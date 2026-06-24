@@ -414,6 +414,7 @@ func tableSignals(report reportdef.Dashboard, page dashboard.Page, request dashb
 			"title":         table.Title,
 			"style":         style,
 			"interaction":   interactionSignal("row_selection", table.Interaction.RowSelection),
+			"selection":     []any{},
 			"columns":       table.Columns,
 			"version":       2,
 			"totalRows":     0,
