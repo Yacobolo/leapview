@@ -443,6 +443,26 @@ func TestWorkspaceConnectionFilterRedirectsToGlobalConnections(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSourceFilterRedirectsToConnectionSources(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	seedActiveDeployment(t, store, "test")
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test?type=source&q=orders", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusFound, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/connections?type=source&q=orders" {
+		t.Fatalf("Location = %q, want /connections?type=source&q=orders", got)
+	}
+}
+
 func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
@@ -610,6 +630,14 @@ func TestConnectionSourceAssetRoutesUseConnectionScopedSurface(t *testing.T) {
 	server.Routes().ServeHTTP(invalidRec, invalidReq)
 	if invalidRec.Code != http.StatusNotFound {
 		t.Fatalf("invalid source/connection pair status = %d, want 404 body=%s", invalidRec.Code, invalidRec.Body.String())
+	}
+
+	invalidRedirectReq := httptest.NewRequest(http.MethodGet, "/connections/"+sourceID+"/sources/"+sourceID, nil)
+	invalidRedirectReq.Header.Set("Authorization", "Bearer dev")
+	invalidRedirectRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(invalidRedirectRec, invalidRedirectReq)
+	if invalidRedirectRec.Code != http.StatusNotFound {
+		t.Fatalf("invalid source/connection redirect status = %d, want 404 body=%s", invalidRedirectRec.Code, invalidRedirectRec.Body.String())
 	}
 }
 
