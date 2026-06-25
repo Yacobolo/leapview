@@ -235,13 +235,26 @@ func (s *Server) agentRequest(w http.ResponseWriter, r *http.Request) (*agentapp
 		return nil, agentapp.Scope{}, false
 	}
 	scope := agentapp.Scope{
-		WorkspaceID: s.workspaceID(chi.URLParam(r, "workspace")),
-		PrincipalID: principal.ID,
+		WorkspaceID:   s.workspaceID(chi.URLParam(r, "workspace")),
+		PrincipalID:   principal.ID,
+		DevAuthBypass: principal.DevBypass,
+	}
+	if credential, ok := s.auth.APICredential(r); ok {
+		scope.Credential = agentCredentialScope(credential)
 	}
 	if principal.DevBypass {
 		_ = s.upsertAuthenticatedPrincipal(r.Context(), principal)
 	}
 	return s.agent, scope, true
+}
+
+func agentCredentialScope(credential access.APICredential) agentapp.CredentialScope {
+	token := credential.Token
+	return agentapp.CredentialScope{
+		WorkspaceID: token.WorkspaceID,
+		Permissions: append([]string(nil), token.Permissions...),
+		Restricted:  token.Permissions != nil,
+	}
 }
 
 func accessPrincipalInput(principal Principal) access.PrincipalInput {

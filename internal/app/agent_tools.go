@@ -37,17 +37,19 @@ type apigenAgentParameter struct {
 }
 
 type apigenAgentOperation struct {
-	Contract   apigenapi.GenOperationContract
-	Extension  apigenAgentExtension
-	Parameters []apigenAgentParameter
-	Summary    string
+	Contract           apigenapi.GenOperationContract
+	Extension          apigenAgentExtension
+	Parameters         []apigenAgentParameter
+	BodyProperties     map[string]any
+	BodyRequiredFields []string
+	Summary            string
 }
 
 func (s *Server) configureAgentTools() {
 	if s.agent == nil {
 		return
 	}
-	s.agent.SetToolProviders(s.agentAPIGenToolDefinitions)
+	s.agent.AppendToolProviders(s.agentAPIGenToolDefinitions)
 }
 
 func (s *Server) agentAPIGenToolDefinitions(scope agentapp.Scope) []agent.ToolDefinition {
@@ -85,10 +87,12 @@ func apigenAgentOperations() []apigenAgentOperation {
 			continue
 		}
 		operations = append(operations, apigenAgentOperation{
-			Contract:   contract,
-			Extension:  extension,
-			Parameters: apigenAgentParameters(openapiOperation),
-			Summary:    stringFromMap(openapiOperation, "summary"),
+			Contract:           contract,
+			Extension:          extension,
+			Parameters:         apigenAgentParameters(openapiOperation),
+			BodyProperties:     apigenAgentBodyProperties(spec, openapiOperation),
+			BodyRequiredFields: apigenAgentBodyRequiredFields(spec, openapiOperation),
+			Summary:            stringFromMap(openapiOperation, "summary"),
 		})
 	}
 	sort.Slice(operations, func(i, j int) bool {
@@ -101,7 +105,10 @@ func apigenAgentOperationAllowed(contract apigenapi.GenOperationContract, extens
 	if !extension.Enabled || extension.Name == "" || extension.Risk != "read" {
 		return false
 	}
-	if contract.Method != http.MethodGet || contract.RequestBodyRequired || contract.Manual {
+	if contract.Manual {
+		return false
+	}
+	if contract.Method != http.MethodGet && contract.Method != http.MethodPost {
 		return false
 	}
 	permission := apigenOperationPermissions[contract.OperationID]
@@ -161,6 +168,82 @@ func apigenAgentParameters(operation map[string]any) []apigenAgentParameter {
 	return parameters
 }
 
+func apigenAgentBodyProperties(spec map[string]any, operation map[string]any) map[string]any {
+	schema := apigenAgentRequestBodySchema(spec, operation)
+	properties, _ := schema["properties"].(map[string]any)
+	if len(properties) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(properties))
+	for name, value := range properties {
+		if property, ok := value.(map[string]any); ok {
+			out[name] = inlineOpenAPISchemaRefs(spec, property, map[string]bool{})
+		}
+	}
+	return out
+}
+
+func apigenAgentBodyRequiredFields(spec map[string]any, operation map[string]any) []string {
+	schema := apigenAgentRequestBodySchema(spec, operation)
+	rawRequired, _ := schema["required"].([]any)
+	required := make([]string, 0, len(rawRequired))
+	for _, raw := range rawRequired {
+		if value, ok := raw.(string); ok && value != "" {
+			required = append(required, value)
+		}
+	}
+	return required
+}
+
+func apigenAgentRequestBodySchema(spec map[string]any, operation map[string]any) map[string]any {
+	requestBody, _ := operation["requestBody"].(map[string]any)
+	content, _ := requestBody["content"].(map[string]any)
+	jsonContent, _ := content["application/json"].(map[string]any)
+	schema, _ := jsonContent["schema"].(map[string]any)
+	return resolveOpenAPISchemaRef(spec, schema)
+}
+
+func resolveOpenAPISchemaRef(spec map[string]any, schema map[string]any) map[string]any {
+	ref := stringFromMap(schema, "$ref")
+	if ref == "" || !strings.HasPrefix(ref, "#/components/schemas/") {
+		return schema
+	}
+	name := strings.TrimPrefix(ref, "#/components/schemas/")
+	components, _ := spec["components"].(map[string]any)
+	schemas, _ := components["schemas"].(map[string]any)
+	resolved, _ := schemas[name].(map[string]any)
+	return resolved
+}
+
+func inlineOpenAPISchemaRefs(spec map[string]any, schema map[string]any, seen map[string]bool) map[string]any {
+	ref := stringFromMap(schema, "$ref")
+	if ref != "" {
+		if seen[ref] {
+			return map[string]any{"type": "object"}
+		}
+		seen[ref] = true
+		return inlineOpenAPISchemaRefs(spec, resolveOpenAPISchemaRef(spec, schema), seen)
+	}
+	out := cloneStringAnyMap(schema)
+	for key, value := range out {
+		switch typed := value.(type) {
+		case map[string]any:
+			out[key] = inlineOpenAPISchemaRefs(spec, typed, seen)
+		case []any:
+			items := make([]any, len(typed))
+			for i, item := range typed {
+				if itemMap, ok := item.(map[string]any); ok {
+					items[i] = inlineOpenAPISchemaRefs(spec, itemMap, seen)
+				} else {
+					items[i] = item
+				}
+			}
+			out[key] = items
+		}
+	}
+	return out
+}
+
 func apigenAgentToolDescription(operation apigenAgentOperation) string {
 	if operation.Summary != "" {
 		return operation.Summary + "."
@@ -175,9 +258,17 @@ func apigenAgentInputSchema(operation apigenAgentOperation) json.RawMessage {
 		if parameter.Name == "" || parameter.Name == "workspace" {
 			continue
 		}
-		properties[parameter.Name] = parameter.Schema
-		if parameter.Required {
-			required = append(required, parameter.Name)
+		name := apigenAgentArgumentName(operation, parameter.Name)
+		properties[name] = parameter.Schema
+		if apigenAgentParameterRequired(operation, parameter) {
+			required = append(required, name)
+		}
+	}
+	for name, schema := range operation.BodyProperties {
+		argName := apigenAgentArgumentName(operation, name)
+		properties[argName] = schema
+		if agentStringSliceHas(operation.BodyRequiredFields, name) {
+			required = append(required, argName)
 		}
 	}
 	schema := map[string]any{
@@ -196,11 +287,24 @@ func apigenAgentInputSchema(operation apigenAgentOperation) json.RawMessage {
 	return out
 }
 
+func agentStringSliceHas(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) runAPIGenAgentTool(ctx context.Context, scope agentapp.Scope, operation apigenAgentOperation, rawArgs json.RawMessage) agent.ToolResult {
 	if errResult, ok := s.authorizeAPIGenAgentTool(ctx, scope, operation); !ok {
 		return errResult
 	}
 	args, err := decodeAPIGenAgentToolArguments(rawArgs)
+	if err != nil {
+		return apigenAgentToolError("invalid_arguments", err.Error())
+	}
+	args, err = s.normalizeAPIGenAgentToolArguments(operation, args)
 	if err != nil {
 		return apigenAgentToolError("invalid_arguments", err.Error())
 	}
@@ -223,6 +327,12 @@ func (s *Server) authorizeAPIGenAgentTool(ctx context.Context, scope agentapp.Sc
 	if scope.PrincipalID == "" {
 		return apigenAgentToolError("unauthorized", "agent tool requires an authenticated principal"), false
 	}
+	if !agentCredentialAllows(scope, permission) {
+		return apigenAgentToolError("forbidden", "credential is not allowed to call this tool"), false
+	}
+	if scope.DevAuthBypass {
+		return agent.ToolResult{}, true
+	}
 	repo, err := s.accessRepository()
 	if err != nil {
 		return apigenAgentToolError("authorization_failed", err.Error()), false
@@ -238,6 +348,22 @@ func (s *Server) authorizeAPIGenAgentTool(ctx context.Context, scope agentapp.Sc
 		return apigenAgentToolError("forbidden", "principal does not have permission to call this tool"), false
 	}
 	return agent.ToolResult{}, true
+}
+
+func agentCredentialAllows(scope agentapp.Scope, permission string) bool {
+	credential := scope.Credential
+	if credential.WorkspaceID != "" && credential.WorkspaceID != scope.WorkspaceID {
+		return false
+	}
+	if !credential.Restricted {
+		return true
+	}
+	for _, allowed := range credential.Permissions {
+		if allowed == permission {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeAPIGenAgentToolArguments(raw json.RawMessage) (map[string]any, error) {
@@ -257,6 +383,10 @@ func apigenAgentToolRequest(ctx context.Context, scope agentapp.Scope, operation
 	path := operation.Contract.Path
 	routeContext := chi.NewRouteContext()
 	query := url.Values{}
+	body, err := apigenAgentRequestBody(operation, args)
+	if err != nil {
+		return nil, err
+	}
 	for _, parameter := range operation.Parameters {
 		switch parameter.In {
 		case "path":
@@ -277,11 +407,14 @@ func apigenAgentToolRequest(ctx context.Context, scope agentapp.Scope, operation
 		}
 	}
 	u := &url.URL{Scheme: "http", Host: "libredash.agent.local", Path: path, RawQuery: query.Encode()}
-	request, err := http.NewRequestWithContext(ctx, operation.Contract.Method, u.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, operation.Contract.Method, u.String(), body)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	return request.WithContext(context.WithValue(request.Context(), chi.RouteCtxKey, routeContext)), nil
 }
 
@@ -302,6 +435,107 @@ func apigenAgentPathValue(scope agentapp.Scope, parameter apigenAgentParameter, 
 		return "", fmt.Errorf("%s is required", parameter.Name)
 	}
 	return value, nil
+}
+
+func apigenAgentRequestBody(operation apigenAgentOperation, args map[string]any) (io.Reader, error) {
+	if operation.Contract.Method != http.MethodPost || len(operation.BodyProperties) == 0 {
+		return nil, nil
+	}
+	body := map[string]any{}
+	for name := range operation.BodyProperties {
+		if value, ok := args[name]; ok {
+			body[name] = value
+		}
+	}
+	if len(body) == 0 && !operation.Contract.RequestBodyRequired {
+		return nil, nil
+	}
+	for _, name := range operation.BodyRequiredFields {
+		if _, ok := body[name]; !ok {
+			return nil, fmt.Errorf("%s is required", apigenAgentArgumentName(operation, name))
+		}
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(encoded), nil
+}
+
+func (s *Server) normalizeAPIGenAgentToolArguments(operation apigenAgentOperation, args map[string]any) (map[string]any, error) {
+	out := cloneStringAnyMap(args)
+	copyAgentArgumentAlias(out, "dashboard_id", "dashboard")
+	copyAgentArgumentAlias(out, "model_id", "model")
+	copyAgentArgumentAlias(out, "table_id", "table")
+	copyAgentArgumentAlias(out, "page_id", "page")
+	copyAgentArgumentAlias(out, "page_id", "pageId")
+	if operation.Contract.OperationID == "queryDashboardPage" {
+		if _, ok, err := apigenAgentStringArgument("page", out); err != nil {
+			return nil, err
+		} else if !ok {
+			dashboardID, _, err := apigenAgentStringArgument("dashboard", out)
+			if err != nil {
+				return nil, err
+			}
+			pageID := firstDashboardPageID(s.metrics, dashboardID)
+			if pageID == "" {
+				return nil, fmt.Errorf("page_id is required when the dashboard has no default page")
+			}
+			out["page"] = pageID
+		}
+	}
+	return out, nil
+}
+
+func copyAgentArgumentAlias(args map[string]any, alias, canonical string) {
+	if _, ok := args[canonical]; ok {
+		return
+	}
+	if value, ok := args[alias]; ok {
+		args[canonical] = value
+	}
+}
+
+func firstDashboardPageID(metrics queryMetrics, dashboardID string) string {
+	if metrics == nil {
+		return ""
+	}
+	for _, page := range metrics.Pages(dashboardID) {
+		if page.ID != "" {
+			return page.ID
+		}
+	}
+	return ""
+}
+
+func apigenAgentArgumentName(operation apigenAgentOperation, name string) string {
+	switch operation.Extension.Name {
+	case "describe_dashboard", "query_dashboard_page", "query_table":
+		if name == "dashboard" {
+			return "dashboard_id"
+		}
+	case "describe_model":
+		if name == "model" {
+			return "model_id"
+		}
+	}
+	switch name {
+	case "page":
+		return "page_id"
+	case "table":
+		return "table_id"
+	case "pageId":
+		return "page_id"
+	default:
+		return name
+	}
+}
+
+func apigenAgentParameterRequired(operation apigenAgentOperation, parameter apigenAgentParameter) bool {
+	if operation.Contract.OperationID == "queryDashboardPage" && parameter.Name == "page" {
+		return false
+	}
+	return parameter.Required
 }
 
 func apigenAgentStringArgument(name string, args map[string]any) (string, bool, error) {

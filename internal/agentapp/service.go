@@ -26,14 +26,22 @@ func IsBusy(err error) bool {
 }
 
 type Scope struct {
+	WorkspaceID   string
+	PrincipalID   string
+	Credential    CredentialScope
+	DevAuthBypass bool
+}
+
+type CredentialScope struct {
 	WorkspaceID string
-	PrincipalID string
+	Permissions []string
+	Restricted  bool
 }
 
 type ToolProvider func(scope Scope) []agent.ToolDefinition
 
 type Service struct {
-	metrics Metrics
+	metrics any
 	repo    Repository
 	config  Config
 	model   agent.Model
@@ -44,7 +52,7 @@ type Service struct {
 	running map[string]struct{}
 }
 
-func NewService(metrics Metrics, repo Repository, config Config) *Service {
+func NewService(metrics any, repo Repository, config Config) *Service {
 	return &Service{
 		metrics: metrics,
 		repo:    repo,
@@ -56,6 +64,10 @@ func NewService(metrics Metrics, repo Repository, config Config) *Service {
 
 func (s *Service) SetToolProviders(providers ...ToolProvider) {
 	s.toolProviders = append([]ToolProvider(nil), providers...)
+}
+
+func (s *Service) AppendToolProviders(providers ...ToolProvider) {
+	s.toolProviders = append(s.toolProviders, providers...)
 }
 
 func (s *Service) Enabled() bool {

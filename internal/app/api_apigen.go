@@ -21,6 +21,12 @@ var apigenOperationPermissions = map[string]string{
 	"listWorkspaces":           access.PermissionWorkspaceRead,
 	"listWorkspaceAssets":      access.PermissionAssetRead,
 	"listWorkspaceAssetEdges":  access.PermissionAssetRead,
+	"listDashboards":           access.PermissionAssetRead,
+	"getDashboard":             access.PermissionAssetRead,
+	"listSemanticModels":       access.PermissionAssetRead,
+	"getSemanticModel":         access.PermissionAssetRead,
+	"queryDashboardPage":       access.PermissionAssetRead,
+	"queryDashboardTable":      access.PermissionAssetRead,
 	"createDeployment":         access.PermissionDeploymentWrite,
 	"listDeployments":          access.PermissionDeploymentRead,
 	"getDeployment":            access.PermissionDeploymentRead,
@@ -193,6 +199,22 @@ func (a apiGenAdapter) ListWorkspaceAssetEdges(w http.ResponseWriter, r *http.Re
 	a.server.apiWorkspaceAssetEdges(w, r)
 }
 
+func (a apiGenAdapter) ListDashboards(w http.ResponseWriter, r *http.Request, _ string) {
+	a.server.listDashboards(w, r)
+}
+
+func (a apiGenAdapter) GetDashboard(w http.ResponseWriter, r *http.Request, _, _ string) {
+	a.server.getDashboard(w, r)
+}
+
+func (a apiGenAdapter) QueryDashboardPage(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+	a.server.queryDashboardPage(w, r)
+}
+
+func (a apiGenAdapter) QueryDashboardTable(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+	a.server.queryDashboardTable(w, r)
+}
+
 func (a apiGenAdapter) ListDeployments(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDeploymentsParams) {
 	a.server.listDeployments(w, r)
 }
@@ -283,6 +305,14 @@ func (a apiGenAdapter) UpdatePrincipal(w http.ResponseWriter, r *http.Request, _
 
 func (a apiGenAdapter) ListWorkspaceRoles(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceRolesParams) {
 	a.server.apiWorkspaceRoles(w, r)
+}
+
+func (a apiGenAdapter) ListSemanticModels(w http.ResponseWriter, r *http.Request, _ string) {
+	a.server.listSemanticModels(w, r)
+}
+
+func (a apiGenAdapter) GetSemanticModel(w http.ResponseWriter, r *http.Request, _, _ string) {
+	a.server.getSemanticModel(w, r)
 }
 
 func (a apiGenAdapter) ListGroups(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListGroupsParams) {

@@ -66,6 +66,12 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		"/api/v1/workspaces",
 		"/api/v1/workspaces/{workspace}/assets",
 		"/api/v1/workspaces/{workspace}/asset-edges",
+		"/api/v1/workspaces/{workspace}/dashboards",
+		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}",
+		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/query",
+		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/tables/{table}/query",
+		"/api/v1/workspaces/{workspace}/semantic-models",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}",
 		"/api/v1/workspaces/{workspace}/deployments",
 		"/api/v1/workspaces/{workspace}/deployments/{deployment}",
 		"/api/v1/workspaces/{workspace}/deployments/{deployment}/artifact",
@@ -128,12 +134,18 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 	contracts := apigenapi.GetAPIGenOperationContracts()
 	agentTools := map[string]string{
 		"getDeployment":           "get_deployment",
+		"getDashboard":            "describe_dashboard",
+		"getSemanticModel":        "describe_model",
 		"getMaterializationRun":   "get_materialization_run",
+		"listDashboards":          "list_dashboards",
 		"listDeployments":         "list_deployments",
 		"listMaterializationRuns": "list_materialization_runs",
+		"listSemanticModels":      "list_semantic_models",
 		"listWorkspaceAssetEdges": "list_workspace_asset_edges",
 		"listWorkspaceAssets":     "list_workspace_assets",
 		"listWorkspaces":          "list_workspaces",
+		"queryDashboardPage":      "query_dashboard_page",
+		"queryDashboardTable":     "query_table",
 	}
 	for operationID, contract := range contracts {
 		authz, ok := contract.Extensions["x-authz"].(map[string]any)
