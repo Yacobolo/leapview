@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
-	"github.com/Yacobolo/libredash/internal/api"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/go-chi/chi/v5"
@@ -69,7 +68,7 @@ func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
 	s.renderChat(w, r, s.chatSignalWith(r.Context(), scope, conversationID, transcript, "", false))
 }
 
-func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, signal api.AgentChatSignal) {
+func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, signal ui.ChatSignal) {
 	_ = lddatastar.EnsureClientID(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -123,7 +122,7 @@ func (s *Server) runChatTurn(w http.ResponseWriter, r *http.Request, service *ag
 	}
 
 	streamActiveID := strings.TrimSpace(activeConversationID)
-	emit := func(event api.AgentEventEnvelope) {
+	emit := func(event agentapp.EventEnvelope) {
 		transcript = applyLiveTranscriptEvent(transcript, conversationID, event)
 		_ = sse.MarshalAndPatchSignals(map[string]any{"agent": chatSignalWithConversations(streamConversations, streamActiveID, transcript, "", true, true)})
 	}

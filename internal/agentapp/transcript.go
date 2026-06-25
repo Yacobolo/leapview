@@ -6,17 +6,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
-func transcriptFromMessages(conversationID string, messages []Message) []api.AgentChatTranscriptItem {
-	items := make([]api.AgentChatTranscriptItem, 0, len(messages))
+func transcriptFromMessages(conversationID string, messages []Message) []ChatTranscriptItem {
+	items := make([]ChatTranscriptItem, 0, len(messages))
 	toolIndex := map[string]int{}
 	for _, message := range messages {
 		switch message.Role {
 		case MessageRoleUser:
-			items = append(items, api.AgentChatTranscriptItem{
+			items = append(items, ChatTranscriptItem{
 				ID:             message.ID,
 				Kind:           "user",
 				Text:           message.ContentText,
@@ -26,7 +25,7 @@ func transcriptFromMessages(conversationID string, messages []Message) []api.Age
 			})
 		case MessageRoleAssistant:
 			if strings.TrimSpace(message.ContentText) != "" {
-				items = append(items, api.AgentChatTranscriptItem{
+				items = append(items, ChatTranscriptItem{
 					ID:             message.ID,
 					Kind:           "assistant",
 					Markdown:       message.ContentText,
@@ -41,7 +40,7 @@ func transcriptFromMessages(conversationID string, messages []Message) []api.Age
 					continue
 				}
 				toolIndex[call.ID] = len(items)
-				items = append(items, api.AgentChatTranscriptItem{
+				items = append(items, ChatTranscriptItem{
 					ID:             "tool:" + call.ID,
 					Kind:           "tool",
 					ToolCallID:     call.ID,
@@ -56,7 +55,7 @@ func transcriptFromMessages(conversationID string, messages []Message) []api.Age
 				})
 			}
 		case MessageRoleTool:
-			item := api.AgentChatTranscriptItem{
+			item := ChatTranscriptItem{
 				ID:             message.ID,
 				Kind:           "tool",
 				ToolCallID:     message.ToolCallID,
@@ -102,7 +101,7 @@ func toolCallsFromContentJSON(raw string) []transcriptToolCall {
 	return payload.ToolCalls
 }
 
-func mergeToolTranscriptItem(started, finished api.AgentChatTranscriptItem) api.AgentChatTranscriptItem {
+func mergeToolTranscriptItem(started, finished ChatTranscriptItem) ChatTranscriptItem {
 	started.ID = finished.ID
 	started.Status = finished.Status
 	started.Summary = finished.Summary

@@ -727,8 +727,8 @@ func TestWorkspaceAccessControlDoesNotRenderForViewers(t *testing.T) {
 	}
 }
 
-func testWorkspaceAccess(workspace api.WorkspaceResponse, canManage bool) api.WorkspaceAccessResponse {
-	return api.WorkspaceAccessResponse{
+func testWorkspaceAccess(workspace api.WorkspaceResponse, canManage bool) WorkspaceAccessResponse {
+	return WorkspaceAccessResponse{
 		Workspace: workspace,
 		Roles: []api.RoleResponse{
 			{Name: "viewer"},

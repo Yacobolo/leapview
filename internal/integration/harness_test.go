@@ -333,29 +333,29 @@ func discoverCatalogPath(t *testing.T) string {
 func writeMinimalOlistFixture(t *testing.T, dir string) {
 	t.Helper()
 
-	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_delivered_customer_date
-o1,c1,delivered,2018-01-10 10:00:00,2018-01-14 10:00:00
-o2,c2,shipped,2017-06-10 10:00:00,2017-06-20 10:00:00
+	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_approved_at,order_delivered_carrier_date,order_delivered_customer_date,order_estimated_delivery_date
+o1,c1,delivered,2018-01-10 10:00:00,2018-01-10 11:00:00,2018-01-11 10:00:00,2018-01-14 10:00:00,2018-01-20 10:00:00
+o2,c2,shipped,2017-06-10 10:00:00,2017-06-10 11:00:00,2017-06-12 10:00:00,2017-06-20 10:00:00,2017-06-25 10:00:00
 `)
-	writeFixture(t, dir, "olist_order_items_dataset.csv", `order_id,order_item_id,product_id,price,freight_value
-o1,1,p1,100.00,10.00
-o2,1,p2,50.00,5.00
+	writeFixture(t, dir, "olist_order_items_dataset.csv", `order_id,order_item_id,product_id,seller_id,shipping_limit_date,price,freight_value
+o1,1,p1,s1,2018-01-12 10:00:00,100.00,10.00
+o2,1,p2,s2,2017-06-15 10:00:00,50.00,5.00
 `)
-	writeFixture(t, dir, "olist_order_payments_dataset.csv", `order_id,payment_value
-o1,110.00
-o2,55.00
+	writeFixture(t, dir, "olist_order_payments_dataset.csv", `order_id,payment_sequential,payment_type,payment_installments,payment_value
+o1,1,credit_card,1,110.00
+o2,1,boleto,1,55.00
 `)
-	writeFixture(t, dir, "olist_products_dataset.csv", `product_id,product_category_name
-p1,beleza_saude
-p2,relogios_presentes
+	writeFixture(t, dir, "olist_products_dataset.csv", `product_id,product_category_name,product_name_lenght,product_description_lenght,product_photos_qty,product_weight_g,product_length_cm,product_height_cm,product_width_cm
+p1,beleza_saude,10,20,1,500,20,10,15
+p2,relogios_presentes,12,22,1,700,25,12,16
 `)
-	writeFixture(t, dir, "olist_customers_dataset.csv", `customer_id,customer_state
-c1,SP
-c2,RJ
+	writeFixture(t, dir, "olist_customers_dataset.csv", `customer_id,customer_unique_id,customer_zip_code_prefix,customer_city,customer_state
+c1,u1,01000,sao paulo,SP
+c2,u2,20000,rio de janeiro,RJ
 `)
-	writeFixture(t, dir, "olist_order_reviews_dataset.csv", `review_id,order_id,review_score
-r1,o1,5
-r2,o2,3
+	writeFixture(t, dir, "olist_order_reviews_dataset.csv", `review_id,order_id,review_score,review_comment_title,review_comment_message,review_creation_date,review_answer_timestamp
+r1,o1,5,great,fast,2018-01-15,2018-01-16
+r2,o2,3,ok,slow,2017-06-21,2017-06-22
 `)
 	writeFixture(t, dir, "product_category_name_translation.csv", `product_category_name,product_category_name_english
 beleza_saude,health_beauty

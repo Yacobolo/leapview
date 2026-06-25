@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"text/tabwriter"
 
@@ -76,10 +75,11 @@ func runAgentConversations(ctx context.Context, opts *rootOptions) error {
 	if err != nil {
 		return err
 	}
-	var rows []api.AgentConversationResponse
-	if err := doJSON(ctx, http.MethodGet, agentConversationEndpoint(target, opts.workspaceID), token, nil, &rows); err != nil {
+	var response apiListResponse[api.AgentConversationResponse]
+	if err := doJSON(ctx, http.MethodGet, agentConversationEndpoint(target, opts.workspaceID), token, nil, &response); err != nil {
 		return err
 	}
+	rows := response.Items
 	if opts.jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(rows)
 	}
@@ -92,11 +92,11 @@ func runAgentConversations(ctx context.Context, opts *rootOptions) error {
 }
 
 func agentConversationEndpoint(target, workspaceID string) string {
-	u, _ := url.Parse(target + "/api/workspaces/" + url.PathEscape(workspaceID) + "/agent/conversations")
-	return u.String()
+	u, _ := apiOperationURL(target, "listAgentConversations", map[string]string{"workspace": workspaceID}, nil)
+	return u
 }
 
 func agentTurnEndpoint(target, workspaceID, conversationID string) string {
-	u, _ := url.Parse(target + "/api/workspaces/" + url.PathEscape(workspaceID) + "/agent/conversations/" + url.PathEscape(conversationID) + "/turns")
-	return u.String()
+	u, _ := apiOperationURL(target, "createAgentTurn", map[string]string{"workspace": workspaceID, "conversation": conversationID}, nil)
+	return u
 }

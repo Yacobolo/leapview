@@ -1,7 +1,6 @@
 package api
 
 type DeploymentCreateRequest struct {
-	WorkspaceID string `json:"workspaceId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }

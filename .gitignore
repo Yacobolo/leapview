@@ -7,6 +7,9 @@
 node_modules/
 bin/
 coverage.out
+api/gen/
+internal/api/gen/
+internal/cli/gen/
 static/app.css
 static/*.js
 !static/theme.js

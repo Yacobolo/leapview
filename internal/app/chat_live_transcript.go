@@ -3,16 +3,16 @@ package app
 import (
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/api"
+	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
-func appendServerUserTranscript(transcript []api.AgentChatTranscriptItem, conversationID, input string) []api.AgentChatTranscriptItem {
+func appendServerUserTranscript(transcript []agentapp.ChatTranscriptItem, conversationID, input string) []agentapp.ChatTranscriptItem {
 	if strings.TrimSpace(input) == "" {
 		return transcript
 	}
-	next := append([]api.AgentChatTranscriptItem{}, transcript...)
-	next = append(next, api.AgentChatTranscriptItem{
+	next := append([]agentapp.ChatTranscriptItem{}, transcript...)
+	next = append(next, agentapp.ChatTranscriptItem{
 		ID:             "live:user",
 		Kind:           "user",
 		Text:           input,
@@ -21,8 +21,8 @@ func appendServerUserTranscript(transcript []api.AgentChatTranscriptItem, conver
 	return next
 }
 
-func applyLiveTranscriptEvent(transcript []api.AgentChatTranscriptItem, conversationID string, event api.AgentEventEnvelope) []api.AgentChatTranscriptItem {
-	next := append([]api.AgentChatTranscriptItem{}, transcript...)
+func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversationID string, event agentapp.EventEnvelope) []agentapp.ChatTranscriptItem {
+	next := append([]agentapp.ChatTranscriptItem{}, transcript...)
 	switch event.Type {
 	case string(agent.EventTypeMessageDelta):
 		delta := stringPayload(event.Payload, "delta")
@@ -35,7 +35,7 @@ func applyLiveTranscriptEvent(transcript []api.AgentChatTranscriptItem, conversa
 				return next
 			}
 		}
-		return append(next, api.AgentChatTranscriptItem{
+		return append(next, agentapp.ChatTranscriptItem{
 			ID:             "live:assistant:" + event.RunID,
 			Kind:           "assistant",
 			Markdown:       delta,
@@ -54,7 +54,7 @@ func applyLiveTranscriptEvent(transcript []api.AgentChatTranscriptItem, conversa
 			next[idx].Status = "running"
 			return next
 		}
-		return append(next, api.AgentChatTranscriptItem{
+		return append(next, agentapp.ChatTranscriptItem{
 			ID:             "live:tool:" + callID,
 			Kind:           "tool",
 			ToolCallID:     callID,
@@ -73,7 +73,7 @@ func applyLiveTranscriptEvent(transcript []api.AgentChatTranscriptItem, conversa
 		idx := transcriptToolIndex(next, callID)
 		if idx < 0 {
 			name := stringPayload(event.Payload, "tool_name")
-			next = append(next, api.AgentChatTranscriptItem{
+			next = append(next, agentapp.ChatTranscriptItem{
 				ID:             "live:tool:" + callID,
 				Kind:           "tool",
 				ToolCallID:     callID,
@@ -97,7 +97,7 @@ func applyLiveTranscriptEvent(transcript []api.AgentChatTranscriptItem, conversa
 	}
 }
 
-func transcriptToolIndex(transcript []api.AgentChatTranscriptItem, callID string) int {
+func transcriptToolIndex(transcript []agentapp.ChatTranscriptItem, callID string) int {
 	for i := range transcript {
 		if transcript[i].Kind == "tool" && transcript[i].ToolCallID == callID {
 			return i

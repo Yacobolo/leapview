@@ -61,13 +61,16 @@ type AgentRun struct {
 }
 
 type ApiToken struct {
-	ID          string         `json:"id"`
-	PrincipalID string         `json:"principal_id"`
-	Name        string         `json:"name"`
-	TokenHash   string         `json:"token_hash"`
-	ExpiresAt   sql.NullString `json:"expires_at"`
-	CreatedAt   string         `json:"created_at"`
-	LastUsedAt  sql.NullString `json:"last_used_at"`
+	ID              string         `json:"id"`
+	PrincipalID     string         `json:"principal_id"`
+	WorkspaceID     sql.NullString `json:"workspace_id"`
+	Name            string         `json:"name"`
+	TokenHash       string         `json:"token_hash"`
+	PermissionsJson string         `json:"permissions_json"`
+	ExpiresAt       sql.NullString `json:"expires_at"`
+	CreatedAt       string         `json:"created_at"`
+	LastUsedAt      sql.NullString `json:"last_used_at"`
+	RevokedAt       sql.NullString `json:"revoked_at"`
 }
 
 type Asset struct {
@@ -150,6 +153,13 @@ type Group struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type GroupMember struct {
+	GroupID     string `json:"group_id"`
+	WorkspaceID string `json:"workspace_id"`
+	PrincipalID string `json:"principal_id"`
+	CreatedAt   string `json:"created_at"`
+}
+
 type MaterializationJob struct {
 	ID           string         `json:"id"`
 	WorkspaceID  string         `json:"workspace_id"`
@@ -177,6 +187,11 @@ type OauthState struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type Permission struct {
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+}
+
 type Principal struct {
 	ID          string `json:"id"`
 	Email       string `json:"email"`
@@ -200,13 +215,20 @@ type RoleBinding struct {
 	CreatedAt   string         `json:"created_at"`
 }
 
+type RolePermission struct {
+	RoleID         string `json:"role_id"`
+	PermissionName string `json:"permission_name"`
+	CreatedAt      string `json:"created_at"`
+}
+
 type Session struct {
-	ID          string `json:"id"`
-	PrincipalID string `json:"principal_id"`
-	TokenHash   string `json:"token_hash"`
-	ExpiresAt   string `json:"expires_at"`
-	CreatedAt   string `json:"created_at"`
-	LastSeenAt  string `json:"last_seen_at"`
+	ID          string         `json:"id"`
+	PrincipalID string         `json:"principal_id"`
+	TokenHash   string         `json:"token_hash"`
+	ExpiresAt   string         `json:"expires_at"`
+	CreatedAt   string         `json:"created_at"`
+	LastSeenAt  string         `json:"last_seen_at"`
+	RevokedAt   sql.NullString `json:"revoked_at"`
 }
 
 type Workspace struct {

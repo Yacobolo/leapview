@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"text/tabwriter"
@@ -80,22 +79,38 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	createBody, _ := json.Marshal(map[string]any{
-		"workspaceId": opts.workspaceID,
-		"title":       manifest.WorkspaceTitle,
+		"title": manifest.WorkspaceTitle,
 	})
 	var created api.DeploymentResponse
-	if err := doJSON(ctx, http.MethodPost, target+"/api/deployments", token, bytes.NewReader(createBody), &created); err != nil {
+	workspacePathParams := map[string]string{"workspace": opts.workspaceID}
+	createURL, err := apiOperationURL(target, "createDeployment", workspacePathParams, nil)
+	if err != nil {
 		return err
 	}
-	if err := doJSON(ctx, http.MethodPut, target+"/api/deployments/"+created.ID+"/artifact", token, bytes.NewReader(buf.Bytes()), nil); err != nil {
+	if err := doJSON(ctx, http.MethodPost, createURL, token, bytes.NewReader(createBody), &created); err != nil {
+		return err
+	}
+	uploadURL, err := apiOperationURL(target, "uploadDeploymentArtifact", map[string]string{"workspace": opts.workspaceID, "deployment": created.ID}, nil)
+	if err != nil {
+		return err
+	}
+	if err := doJSON(ctx, http.MethodPut, uploadURL, token, bytes.NewReader(buf.Bytes()), nil); err != nil {
 		return err
 	}
 	var validated api.DeploymentResponse
-	if err := doJSON(ctx, http.MethodPost, target+"/api/deployments/"+created.ID+"/validate", token, nil, &validated); err != nil {
+	validateURL, err := apiOperationURL(target, "validateDeployment", map[string]string{"workspace": opts.workspaceID, "deployment": created.ID}, nil)
+	if err != nil {
+		return err
+	}
+	if err := doJSON(ctx, http.MethodPost, validateURL, token, nil, &validated); err != nil {
 		return err
 	}
 	var activated api.DeploymentResponse
-	if err := doJSON(ctx, http.MethodPost, target+"/api/deployments/"+created.ID+"/activate", token, nil, &activated); err != nil {
+	activateURL, err := apiOperationURL(target, "activateDeployment", map[string]string{"workspace": opts.workspaceID, "deployment": created.ID}, nil)
+	if err != nil {
+		return err
+	}
+	if err := doJSON(ctx, http.MethodPost, activateURL, token, nil, &activated); err != nil {
 		return err
 	}
 	fmt.Printf("deployed %s digest=%s localDigest=%s status=%s\n", activated.ID, activated.Digest, digest, activated.Status)
@@ -107,14 +122,15 @@ func runDeploymentsList(ctx context.Context, opts *rootOptions) error {
 	if err != nil {
 		return err
 	}
-	u, _ := url.Parse(target + "/api/deployments")
-	q := u.Query()
-	q.Set("workspace", opts.workspaceID)
-	u.RawQuery = q.Encode()
-	var rows []api.DeploymentResponse
-	if err := doJSON(ctx, http.MethodGet, u.String(), token, nil, &rows); err != nil {
+	listURL, err := apiOperationURL(target, "listDeployments", map[string]string{"workspace": opts.workspaceID}, nil)
+	if err != nil {
 		return err
 	}
+	var response apiListResponse[api.DeploymentResponse]
+	if err := doJSON(ctx, http.MethodGet, listURL, token, nil, &response); err != nil {
+		return err
+	}
+	rows := response.Items
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tDIGEST\tCREATED\tACTIVATED")
 	for _, row := range rows {
@@ -132,7 +148,11 @@ func runRollback(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	var row api.DeploymentResponse
-	if err := doJSON(ctx, http.MethodPost, target+"/api/deployments/"+opts.deployment+"/rollback", token, nil, &row); err != nil {
+	rollbackURL, err := apiOperationURL(target, "activateDeployment", map[string]string{"workspace": opts.workspaceID, "deployment": opts.deployment}, nil)
+	if err != nil {
+		return err
+	}
+	if err := doJSON(ctx, http.MethodPost, rollbackURL, token, nil, &row); err != nil {
 		return err
 	}
 	fmt.Printf("activated %s status=%s\n", row.ID, row.Status)

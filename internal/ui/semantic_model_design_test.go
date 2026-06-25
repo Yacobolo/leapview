@@ -54,7 +54,7 @@ func TestSemanticModelDesignDetailsVocabulary(t *testing.T) {
 	}
 }
 
-func semanticDesignUIFixtures() (api.WorkspaceResponse, dashboard.Catalog, []api.AssetResponse, api.WorkspaceAccessResponse) {
+func semanticDesignUIFixtures() (api.WorkspaceResponse, dashboard.Catalog, []api.AssetResponse, WorkspaceAccessResponse) {
 	workspace := api.WorkspaceResponse{ID: "libredash", Title: "LibreDash Workspace", Description: "Local BI workspace."}
 	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
 	assets := []api.AssetResponse{
@@ -74,6 +74,6 @@ func semanticDesignUIFixtures() (api.WorkspaceResponse, dashboard.Catalog, []api
 		},
 		{ID: "dashboard", WorkspaceID: workspace.ID, Type: "dashboard", Key: "executive-sales", Title: "Executive Sales Dashboard", Description: "Sales overview."},
 	}
-	access := api.WorkspaceAccessResponse{Workspace: workspace, CanManage: false}
+	access := WorkspaceAccessResponse{Workspace: workspace, CanManage: false}
 	return workspace, catalog, assets, access
 }

@@ -4,6 +4,7 @@ tasks:
   dev:
     desc: Start the managed LibreDash dev server for this worktree
     deps:
+      - generate
       - build
       - bootstrap
     cmds:
@@ -12,6 +13,7 @@ tasks:
   dev:quack:
     desc: Start the managed LibreDash dev server with the local Quack profile
     deps:
+      - generate
       - build
     cmds:
       - ./scripts/dev-profile.sh quack start
@@ -56,9 +58,21 @@ tasks:
     cmds:
       - npm run build
 
+  generate:
+    desc: Generate all checked-out derived code needed for local development
+    deps:
+      - api:generate
+
+  api:generate:
+    desc: Generate headless API contract artifacts and APIGen Go surfaces
+    cmds:
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.2.0 cue-compile -manifest api/apigen.yaml -target libredash-v1
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.2.0 all -manifest api/apigen.yaml -target libredash-v1
+
   test:
     desc: Run tests
     deps:
+      - generate
       - build
     cmds:
       - npm run test:table-selection

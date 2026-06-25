@@ -36,10 +36,11 @@ type deploymentRepository interface {
 
 func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
 	var input api.DeploymentCreateRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
 	}
-	workspaceID := s.workspaceID(input.WorkspaceID)
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	workspaceRepo, err := s.workspaceRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -79,7 +80,7 @@ func (s *Server) uploadDeploymentArtifact(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	deployment, err := repo.ByID(r.Context(), deployment.ID(deploymentID))
+	deployment, err := s.deploymentByIDForRequestWorkspace(r, repo, deployment.ID(deploymentID))
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
@@ -115,6 +116,10 @@ func (s *Server) validateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
+	if _, err := s.deploymentByIDForRequestWorkspace(r, repo, deployment.ID(deploymentID)); err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
 	dataDir := ""
 	if s.metrics != nil {
 		dataDir = s.metrics.DataDir()
@@ -133,6 +138,10 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 	repo, err := s.deploymentRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if _, err := s.deploymentByIDForRequestWorkspace(r, repo, deployment.ID(deploymentID)); err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
 	service := activate.NewService(repo, s.reloader)
@@ -154,7 +163,7 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(r.URL.Query().Get("workspace"))
+	workspaceID := s.workspaceID(firstNonEmpty(chi.URLParam(r, "workspace"), r.URL.Query().Get("workspace")))
 	repo, err := s.deploymentRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -169,7 +178,8 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		response = append(response, deploymentDTO(row))
 	}
-	writeJSON(w, http.StatusOK, response)
+	page, nextCursor := pageDeployments(response, apiLimit(r), r.URL.Query().Get("pageToken"))
+	writeJSON(w, http.StatusOK, pagedResponseWithCursor(page, nextCursor))
 }
 
 func (s *Server) getDeployment(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +188,7 @@ func (s *Server) getDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	deployment, err := repo.ByID(r.Context(), deployment.ID(chi.URLParam(r, "deployment")))
+	deployment, err := s.deploymentByIDForRequestWorkspace(r, repo, deployment.ID(chi.URLParam(r, "deployment")))
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
@@ -186,8 +196,15 @@ func (s *Server) getDeployment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, deploymentDTO(deployment))
 }
 
-func (s *Server) rollbackDeployment(w http.ResponseWriter, r *http.Request) {
-	s.activateDeployment(w, r)
+func (s *Server) deploymentByIDForRequestWorkspace(r *http.Request, repo deploymentRepository, deploymentID deployment.ID) (deployment.Deployment, error) {
+	row, err := repo.ByID(r.Context(), deploymentID)
+	if err != nil {
+		return deployment.Deployment{}, err
+	}
+	if workspaceID := chi.URLParam(r, "workspace"); workspaceID != "" && row.WorkspaceID != deployment.WorkspaceID(s.workspaceID(workspaceID)) {
+		return deployment.Deployment{}, deployment.ErrNotFound
+	}
+	return row, nil
 }
 
 func (s *Server) workspaceID(candidate string) string {
@@ -224,6 +241,32 @@ func deploymentDTO(row deployment.Deployment) api.DeploymentResponse {
 	return out
 }
 
+func pageDeployments(rows []api.DeploymentResponse, limit int, pageToken string) ([]api.DeploymentResponse, string) {
+	cursorCreatedAt, cursorID := decodeCursor(pageToken)
+	start := 0
+	if cursorCreatedAt != "" && cursorID != "" {
+		for i, row := range rows {
+			if row.CreatedAt == cursorCreatedAt && row.ID == cursorID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start > len(rows) {
+		start = len(rows)
+	}
+	end := start + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	nextCursor := ""
+	if end < len(rows) && end > start {
+		last := rows[end-1]
+		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+	}
+	return rows[start:end], nextCursor
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -231,7 +274,34 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func writeJSONError(w http.ResponseWriter, err error, status int) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	writeJSON(w, status, api.ErrorResponse{
+		Code:      status,
+		Message:   err.Error(),
+		Details:   map[string]any{},
+		RequestID: "",
+	})
+}
+
+func decodeOptionalJSONBody(r *http.Request, dst any) error {
+	if r.Body == nil || r.Body == http.NoBody {
+		return nil
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return fmt.Errorf("malformed JSON: %w", err)
+	}
+	var extra struct{}
+	if err := decoder.Decode(&extra); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return fmt.Errorf("malformed JSON: %w", err)
+	}
+	return fmt.Errorf("malformed JSON: multiple JSON values")
 }
 
 func statusForNotFound(err error) int {
