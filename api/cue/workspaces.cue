@@ -27,6 +27,7 @@ schemas: {
 		type: "object"
 		properties: {
 			"id": {schema: {type: "string"}}
+			"snapshotId": {schema: {type: "string"}}
 			"workspaceId": {schema: {type: "string"}}
 			"deploymentId": {schema: {type: "string"}}
 			"type": {schema: {type: "string"}}
@@ -34,10 +35,11 @@ schemas: {
 			"parentId": {schema: {type: "string"}}
 			"title": {schema: {type: "string"}}
 			"description": {schema: {type: "string"}}
-			"meta": {schema: {type: "object", additional_properties: {any: true}}}
+			"payloadSchema": {schema: {type: "string"}}
+			"payload": {schema: {type: "object", additional_properties: {any: true}}}
 			"href": {schema: {type: "string"}}
 		}
-		required: ["id", "workspaceId", "deploymentId", "type", "key", "title", "description"]
+		required: ["id", "workspaceId", "deploymentId", "type", "key", "title", "description", "payloadSchema"]
 	}
 	"AssetListResponse": {
 		type: "object"

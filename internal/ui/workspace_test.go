@@ -237,7 +237,7 @@ func TestWorkspaceAssetDetailsRenderUnknownNullableAsDash(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 
 	source := testAssetByID(t, assets, "source-payments")
-	source.Meta["Fields"] = map[string]any{
+	source.Payload["Fields"] = map[string]any{
 		"order_id": map[string]any{"Description": "Raw order identifier."},
 	}
 	signals := workspaceAssetSignals(workspace, source, assets, edges, assetLineage(workspace.ID, source, assets, edges), "details")
@@ -250,7 +250,7 @@ func TestWorkspaceAssetDetailsRenderUnknownNullableAsDash(t *testing.T) {
 	}
 
 	modelTable := testAssetByID(t, assets, "table-model")
-	modelTable.Meta["Schema"] = map[string]any{"columns": []any{
+	modelTable.Payload["Schema"] = map[string]any{"columns": []any{
 		map[string]any{"name": "order_id", "ordinal": float64(1), "physicalType": "VARCHAR", "primaryKey": true},
 	}}
 	signals = workspaceAssetSignals(workspace, modelTable, assets, edges, assetLineage(workspace.ID, modelTable, assets, edges), "details")
@@ -1034,7 +1034,7 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 			ParentID:    "catalog",
 			Title:       "Olist Commerce",
 			Description: "Brazilian ecommerce model.",
-			Meta: map[string]any{
+			Payload: map[string]any{
 				"DefaultConnection": "olist",
 				"Connections": map[string]any{
 					"olist": map[string]any{"Kind": "local", "credentials_configured": false, "Defaults": map[string]any{"Options": map[string]any{"header": true}}},
@@ -1058,8 +1058,8 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 				"Relationships": []any{map[string]any{"ID": "orders_customers", "From": "orders.customer_id", "To": "customers.customer_id", "Cardinality": "many_to_one", "Active": true}},
 			},
 		},
-		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "catalog", Title: "Olist connection", Meta: map[string]any{"Kind": "local", "credentials_configured": false}},
-		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{
+		{ID: "connection", WorkspaceID: workspace.ID, Type: "connection", Key: "olist.olist", ParentID: "catalog", Title: "Olist connection", Payload: map[string]any{"Kind": "local", "credentials_configured": false}},
+		{ID: "source", WorkspaceID: workspace.ID, Type: "source", Key: "olist.orders", ParentID: "catalog", Title: "orders", Payload: map[string]any{
 			"Connection": "olist",
 			"Format":     "csv",
 			"Path":       "orders.csv",
@@ -1072,8 +1072,8 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 				map[string]any{"name": "customer_id", "ordinal": float64(2), "physicalType": "VARCHAR", "nullable": true},
 			}},
 		}},
-		{ID: "source-payments", WorkspaceID: workspace.ID, Type: "source", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{"Connection": "olist", "Format": "csv", "Path": "payments.csv"}},
-		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Meta: map[string]any{
+		{ID: "source-payments", WorkspaceID: workspace.ID, Type: "source", Key: "olist.payments", ParentID: "catalog", Title: "payments", Payload: map[string]any{"Connection": "olist", "Format": "csv", "Path": "payments.csv"}},
+		{ID: "table-model", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.orders", ParentID: "catalog", Title: "orders", Payload: map[string]any{
 			"Source":     "orders",
 			"PrimaryKey": "order_id",
 			"Grain":      "order_id",
@@ -1086,7 +1086,7 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 				map[string]any{"name": "state", "ordinal": float64(2), "physicalType": "VARCHAR", "nullable": true},
 			}},
 		}},
-		{ID: "table-transform", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.payments", ParentID: "catalog", Title: "payments", Meta: map[string]any{
+		{ID: "table-transform", WorkspaceID: workspace.ID, Type: "model_table", Key: "olist.payments", ParentID: "catalog", Title: "payments", Payload: map[string]any{
 			"Sources":            []any{"payments"},
 			"SourceDependencies": []any{"payments"},
 			"PrimaryKey":         "order_id",
@@ -1101,16 +1101,16 @@ func testWorkspaceAssetFixtures() (api.WorkspaceResponse, dashboard.Catalog, []a
 				map[string]any{"name": "revenue", "ordinal": float64(2), "physicalType": "DOUBLE", "nullable": true},
 			}},
 		}},
-		{ID: "semantic-table", WorkspaceID: workspace.ID, Type: "semantic_table", Key: "olist.orders", ParentID: "model", Title: "Orders semantic table", Meta: map[string]any{"Table": "orders"}},
-		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "semantic-table", Title: "State", Meta: map[string]any{"Label": "State"}},
-		{ID: "measure", WorkspaceID: workspace.ID, Type: "measure", Key: "olist.revenue", ParentID: "model", Title: "Revenue", Meta: map[string]any{"Table": "orders", "Expression": "SUM(orders.revenue)", "Format": "currency"}},
-		{ID: "relationship", WorkspaceID: workspace.ID, Type: "relationship", Key: "olist.orders_customers", ParentID: "model", Title: "Orders to customers", Meta: map[string]any{"From": "orders.customer_id", "To": "customers.customer_id"}},
-		{ID: "dashboard", WorkspaceID: workspace.ID, Type: "dashboard", Key: "executive-sales", ParentID: "catalog", Title: "Executive Sales Dashboard", Description: "Sales overview.", Href: "/dashboards/executive-sales", Meta: map[string]any{"SemanticModel": "olist", "Tags": []any{"sales"}}},
+		{ID: "semantic-table", WorkspaceID: workspace.ID, Type: "semantic_table", Key: "olist.orders", ParentID: "model", Title: "Orders semantic table", Payload: map[string]any{"Table": "orders"}},
+		{ID: "field", WorkspaceID: workspace.ID, Type: "field", Key: "olist.orders.state", ParentID: "semantic-table", Title: "State", Payload: map[string]any{"Label": "State"}},
+		{ID: "measure", WorkspaceID: workspace.ID, Type: "measure", Key: "olist.revenue", ParentID: "model", Title: "Revenue", Payload: map[string]any{"Table": "orders", "Expression": "SUM(orders.revenue)", "Format": "currency"}},
+		{ID: "relationship", WorkspaceID: workspace.ID, Type: "relationship", Key: "olist.orders_customers", ParentID: "model", Title: "Orders to customers", Payload: map[string]any{"From": "orders.customer_id", "To": "customers.customer_id"}},
+		{ID: "dashboard", WorkspaceID: workspace.ID, Type: "dashboard", Key: "executive-sales", ParentID: "catalog", Title: "Executive Sales Dashboard", Description: "Sales overview.", Href: "/dashboards/executive-sales", Payload: map[string]any{"SemanticModel": "olist", "Tags": []any{"sales"}}},
 		{ID: "page", WorkspaceID: workspace.ID, Type: "page", Key: "executive-sales.overview", ParentID: "dashboard", Title: "Overview"},
 		{ID: "page-item", WorkspaceID: workspace.ID, Type: "page_item", Key: "executive-sales.overview.revenue", ParentID: "page", Title: "Revenue tile"},
-		{ID: "filter", WorkspaceID: workspace.ID, Type: "filter", Key: "executive-sales.state", ParentID: "dashboard", Title: "State", Meta: map[string]any{"Field": "orders.state", "Type": "multi_select"}},
-		{ID: "visual", WorkspaceID: workspace.ID, Type: "visual", Key: "executive-sales.revenue", ParentID: "dashboard", Title: "Revenue by month", Meta: map[string]any{"Type": "line"}},
-		{ID: "table", WorkspaceID: workspace.ID, Type: "table", Key: "executive-sales.orders", ParentID: "dashboard", Title: "Orders", Meta: map[string]any{"Table": "orders"}},
+		{ID: "filter", WorkspaceID: workspace.ID, Type: "filter", Key: "executive-sales.state", ParentID: "dashboard", Title: "State", Payload: map[string]any{"Field": "orders.state", "Type": "multi_select"}},
+		{ID: "visual", WorkspaceID: workspace.ID, Type: "visual", Key: "executive-sales.revenue", ParentID: "dashboard", Title: "Revenue by month", Payload: map[string]any{"Type": "line"}},
+		{ID: "table", WorkspaceID: workspace.ID, Type: "table", Key: "executive-sales.orders", ParentID: "dashboard", Title: "Orders", Payload: map[string]any{"Table": "orders"}},
 	}
 	edges := []api.AssetEdgeResponse{
 		{ID: "catalog-model", FromAssetID: "catalog", ToAssetID: "model", Type: "contains"},

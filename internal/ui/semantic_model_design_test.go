@@ -65,7 +65,7 @@ func semanticDesignUIFixtures() (api.WorkspaceResponse, dashboard.Catalog, []api
 			Key:         "olist",
 			Title:       "Olist Commerce",
 			Description: "Olist semantic model.",
-			Meta: map[string]any{
+			Payload: map[string]any{
 				"Models":        map[string]any{"orders": map[string]any{"Source": "olist_orders"}},
 				"Sources":       map[string]any{"olist_orders": map[string]any{"Connection": "olist", "Format": "csv", "Path": "orders.csv"}},
 				"Measures":      map[string]any{"revenue": map[string]any{"Expr": "SUM(orders.revenue)", "Table": "orders", "Grain": "order_id"}},

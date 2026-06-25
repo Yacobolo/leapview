@@ -107,9 +107,6 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if err := manager.Reload(ctx); err != nil {
 		return err
 	}
-	if err := app.ReconcileActiveLineageGraph(ctx, workspaceRepo, manager, opts.workspaceID); err != nil {
-		return err
-	}
 	defer manager.Close()
 	runtimeMetrics := app.NewRuntimeMetrics(manager, dataDir, opts.workspaceID)
 	auth := app.NewAuth(accessRepo, opts.workspaceID, app.AuthConfig{
@@ -130,7 +127,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		DeploymentRepo:     deploymentRepo,
 		WorkspaceRepo:      workspaceRepo,
 		AccessRepo:         accessRepo,
-		Agent:              agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
+		Agent:              agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}).WithAssetCatalog(workspaceRepo),
 		Auth:               auth,
 		Reloader:           manager,
 		ArtifactDir:        cfg.ArtifactDir(),
@@ -172,7 +169,7 @@ func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg 
 		Store:              store,
 		WorkspaceRepo:      workspaceRepo,
 		AccessRepo:         accessRepo,
-		Agent:              agentapp.NewService(metrics, agentRepo, config),
+		Agent:              agentapp.NewService(metrics, agentRepo, config).WithAssetCatalog(workspaceRepo),
 		Auth:               auth,
 		DefaultWorkspaceID: workspaceID,
 	})

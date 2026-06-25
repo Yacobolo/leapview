@@ -32,27 +32,28 @@ CREATE TABLE IF NOT EXISTS deployment_artifacts (
 );
 
 CREATE TABLE IF NOT EXISTS assets (
-  id TEXT PRIMARY KEY,
+  snapshot_id TEXT PRIMARY KEY,
+  logical_asset_id TEXT NOT NULL,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
   asset_type TEXT NOT NULL,
   asset_key TEXT NOT NULL,
-  parent_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+  parent_logical_asset_id TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL DEFAULT '',
-  content_json TEXT NOT NULL DEFAULT '{}',
+  payload_schema TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
   content_hash TEXT NOT NULL,
-  content_version INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(deployment_id, asset_type, asset_key)
+  UNIQUE(deployment_id, logical_asset_id)
 );
 
 CREATE TABLE IF NOT EXISTS asset_edges (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
-  from_asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-  to_asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  from_logical_asset_id TEXT NOT NULL,
+  to_logical_asset_id TEXT NOT NULL,
   edge_type TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -239,8 +240,9 @@ CREATE TABLE IF NOT EXISTS agent_events (
 
 CREATE INDEX IF NOT EXISTS deployments_workspace_created_idx ON deployments(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS assets_deployment_type_idx ON assets(deployment_id, asset_type);
+CREATE INDEX IF NOT EXISTS assets_deployment_logical_idx ON assets(deployment_id, logical_asset_id);
 CREATE UNIQUE INDEX IF NOT EXISTS asset_edges_unique_idx
-  ON asset_edges(deployment_id, from_asset_id, to_asset_id, edge_type);
+  ON asset_edges(deployment_id, from_logical_asset_id, to_logical_asset_id, edge_type);
 CREATE INDEX IF NOT EXISTS role_bindings_principal_idx ON role_bindings(workspace_id, principal_id);
 CREATE INDEX IF NOT EXISTS group_members_principal_idx ON group_members(workspace_id, principal_id);
 CREATE UNIQUE INDEX IF NOT EXISTS role_bindings_principal_unique_idx

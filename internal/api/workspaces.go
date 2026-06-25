@@ -10,16 +10,18 @@ type WorkspaceResponse struct {
 }
 
 type AssetResponse struct {
-	ID           string         `json:"id"`
-	WorkspaceID  string         `json:"workspaceId"`
-	DeploymentID string         `json:"deploymentId"`
-	Type         string         `json:"type"`
-	Key          string         `json:"key"`
-	ParentID     string         `json:"parentId,omitempty"`
-	Title        string         `json:"title"`
-	Description  string         `json:"description"`
-	Meta         map[string]any `json:"meta,omitempty"`
-	Href         string         `json:"href,omitempty"`
+	ID            string         `json:"id"`
+	SnapshotID    string         `json:"snapshotId,omitempty"`
+	WorkspaceID   string         `json:"workspaceId"`
+	DeploymentID  string         `json:"deploymentId"`
+	Type          string         `json:"type"`
+	Key           string         `json:"key"`
+	ParentID      string         `json:"parentId,omitempty"`
+	Title         string         `json:"title"`
+	Description   string         `json:"description"`
+	PayloadSchema string         `json:"payloadSchema"`
+	Payload       map[string]any `json:"payload,omitempty"`
+	Href          string         `json:"href,omitempty"`
 }
 
 type AssetEdgeResponse struct {

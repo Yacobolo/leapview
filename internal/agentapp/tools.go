@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
+
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -31,6 +35,70 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 			InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 			Handler: s.tool(func(ctx context.Context, _ json.RawMessage) (any, error) {
 				return dashboardListPayload{Dashboards: s.metrics.Catalog().Dashboards}, nil
+			}),
+		},
+		{
+			Name:        "list_assets",
+			Description: "List bounded logical asset summaries from the active deployment graph.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"type":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false}`),
+			Handler: s.tool(func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var input struct {
+					Type  string `json:"type"`
+					Limit int    `json:"limit"`
+				}
+				if err := json.Unmarshal(raw, &input); err != nil {
+					return nil, err
+				}
+				graph, ok, err := s.activeAssetGraph(ctx, scope.WorkspaceID)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					return assetListPayload{Assets: []assetSummary{}}, nil
+				}
+				return assetList(graph, input.Type, input.Limit), nil
+			}),
+		},
+		{
+			Name:        "describe_asset",
+			Description: "Describe one logical asset and return its typed payload from the active deployment graph.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"asset_id":{"type":"string"}},"required":["asset_id"],"additionalProperties":false}`),
+			Handler: s.tool(func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var input struct {
+					AssetID string `json:"asset_id"`
+				}
+				if err := json.Unmarshal(raw, &input); err != nil {
+					return nil, err
+				}
+				graph, ok, err := s.activeAssetGraph(ctx, scope.WorkspaceID)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					return nil, fmt.Errorf("no active asset graph for workspace %q", scope.WorkspaceID)
+				}
+				return describeAsset(graph, input.AssetID)
+			}),
+		},
+		{
+			Name:        "asset_lineage",
+			Description: "Return upstream and downstream logical asset IDs for one asset in the active deployment graph.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"asset_id":{"type":"string"}},"required":["asset_id"],"additionalProperties":false}`),
+			Handler: s.tool(func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var input struct {
+					AssetID string `json:"asset_id"`
+				}
+				if err := json.Unmarshal(raw, &input); err != nil {
+					return nil, err
+				}
+				graph, ok, err := s.activeAssetGraph(ctx, scope.WorkspaceID)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					return nil, fmt.Errorf("no active asset graph for workspace %q", scope.WorkspaceID)
+				}
+				return assetLineage(graph, input.AssetID)
 			}),
 		},
 		{
@@ -136,6 +204,13 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 	}
 }
 
+func (s *Service) activeAssetGraph(ctx context.Context, workspaceID string) (workspace.AssetGraph, bool, error) {
+	if s.assets == nil {
+		return workspace.AssetGraph{}, false, nil
+	}
+	return s.assets.ActiveDeploymentGraph(ctx, workspace.WorkspaceID(workspaceID))
+}
+
 func (s *Service) tool(fn func(ctx context.Context, raw json.RawMessage) (any, error)) agent.ToolHandler {
 	return agent.ToolHandlerFunc(func(ctx context.Context, call agent.ToolCall) (agent.ToolResult, error) {
 		content, err := fn(ctx, call.Arguments)
@@ -144,6 +219,136 @@ func (s *Service) tool(fn func(ctx context.Context, raw json.RawMessage) (any, e
 		}
 		return agent.ToolResult{Content: content}, nil
 	})
+}
+
+type assetListPayload struct {
+	Assets []assetSummary `json:"assets"`
+}
+
+type assetSummary struct {
+	ID            string `json:"id"`
+	SnapshotID    string `json:"snapshot_id,omitempty"`
+	Type          string `json:"type"`
+	Key           string `json:"key"`
+	ParentID      string `json:"parent_id,omitempty"`
+	Title         string `json:"title"`
+	Description   string `json:"description,omitempty"`
+	PayloadSchema string `json:"payload_schema"`
+	ContentHash   string `json:"content_hash"`
+}
+
+type assetDescriptionPayload struct {
+	Asset   assetSummary      `json:"asset"`
+	Payload map[string]any    `json:"payload"`
+	Lineage assetLineageReply `json:"lineage"`
+}
+
+type assetLineageReply struct {
+	AssetID    string   `json:"asset_id"`
+	Upstream   []string `json:"upstream"`
+	Downstream []string `json:"downstream"`
+}
+
+func assetList(graph workspace.AssetGraph, typ string, limit int) assetListPayload {
+	if limit <= 0 || limit > 100 {
+		limit = maxAgentRows
+	}
+	typ = strings.TrimSpace(strings.ToLower(typ))
+	assets := append([]workspace.Asset(nil), graph.Assets...)
+	sort.SliceStable(assets, func(i, j int) bool { return assets[i].ID < assets[j].ID })
+	out := make([]assetSummary, 0, min(len(assets), limit))
+	for _, asset := range assets {
+		if typ != "" && string(asset.Type) != typ {
+			continue
+		}
+		out = append(out, summarizeAsset(asset))
+		if len(out) >= limit {
+			break
+		}
+	}
+	return assetListPayload{Assets: out}
+}
+
+func describeAsset(graph workspace.AssetGraph, assetID string) (assetDescriptionPayload, error) {
+	asset, ok := assetByLogicalID(graph, assetID)
+	if !ok {
+		return assetDescriptionPayload{}, fmt.Errorf("asset %q not found", assetID)
+	}
+	payload, err := assetPayloadMap(asset.PayloadJSON)
+	if err != nil {
+		return assetDescriptionPayload{}, err
+	}
+	lineage, err := assetLineage(graph, assetID)
+	if err != nil {
+		return assetDescriptionPayload{}, err
+	}
+	return assetDescriptionPayload{Asset: summarizeAsset(asset), Payload: payload, Lineage: lineage}, nil
+}
+
+func assetLineage(graph workspace.AssetGraph, assetID string) (assetLineageReply, error) {
+	if _, ok := assetByLogicalID(graph, assetID); !ok {
+		return assetLineageReply{}, fmt.Errorf("asset %q not found", assetID)
+	}
+	upstreamSet := map[string]struct{}{}
+	downstreamSet := map[string]struct{}{}
+	for _, edge := range graph.Edges {
+		from := string(edge.FromAssetID)
+		to := string(edge.ToAssetID)
+		if to == assetID {
+			upstreamSet[from] = struct{}{}
+		}
+		if from == assetID {
+			downstreamSet[to] = struct{}{}
+		}
+	}
+	return assetLineageReply{
+		AssetID:    assetID,
+		Upstream:   sortedKeys(upstreamSet),
+		Downstream: sortedKeys(downstreamSet),
+	}, nil
+}
+
+func assetByLogicalID(graph workspace.AssetGraph, assetID string) (workspace.Asset, bool) {
+	for _, asset := range graph.Assets {
+		if string(asset.ID) == assetID {
+			return asset, true
+		}
+	}
+	return workspace.Asset{}, false
+}
+
+func summarizeAsset(asset workspace.Asset) assetSummary {
+	return assetSummary{
+		ID:            string(asset.ID),
+		SnapshotID:    string(asset.SnapshotID),
+		Type:          string(asset.Type),
+		Key:           asset.Key,
+		ParentID:      string(asset.ParentID),
+		Title:         asset.Title,
+		Description:   asset.Description,
+		PayloadSchema: asset.PayloadSchema,
+		ContentHash:   asset.ContentHash,
+	}
+}
+
+func assetPayloadMap(raw string) (map[string]any, error) {
+	out := map[string]any{}
+	if strings.TrimSpace(raw) == "" {
+		return out, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, fmt.Errorf("decode asset payload: %w", err)
+	}
+	return out, nil
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func boundedPatch(patch dashboard.Patch) dashboard.Patch {

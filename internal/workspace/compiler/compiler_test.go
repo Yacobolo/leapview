@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,6 +177,66 @@ func TestCompileLineageAssetTypes(t *testing.T) {
 	}
 }
 
+func TestCompileAssetGraphIdentityAndPayloadInvariants(t *testing.T) {
+	catalogPath := writeCompilerWorkspace(t, validCompilerDashboardYAML())
+	first, err := Compile(catalogPath, Options{WorkspaceID: "libredash", DeploymentID: "dep_a"})
+	if err != nil {
+		t.Fatalf("Compile(dep_a) error = %v", err)
+	}
+	second, err := Compile(catalogPath, Options{WorkspaceID: "libredash", DeploymentID: "dep_b"})
+	if err != nil {
+		t.Fatalf("Compile(dep_b) error = %v", err)
+	}
+
+	firstAssets := assetsByID(first.Workspace.Graph)
+	secondAssets := assetsByID(second.Workspace.Graph)
+	if len(firstAssets) == 0 || len(firstAssets) != len(secondAssets) {
+		t.Fatalf("asset counts = %d and %d", len(firstAssets), len(secondAssets))
+	}
+	for id, firstAsset := range firstAssets {
+		secondAsset, ok := secondAssets[id]
+		if !ok {
+			t.Fatalf("asset %q missing from second graph", id)
+		}
+		if !strings.Contains(id, ":") || strings.HasPrefix(id, "asset_") {
+			t.Fatalf("asset id %q is not a logical id", id)
+		}
+		if firstAsset.ContentHash != secondAsset.ContentHash {
+			t.Fatalf("asset %q content hash changed across deployments", id)
+		}
+		if firstAsset.SnapshotID == secondAsset.SnapshotID {
+			t.Fatalf("asset %q snapshot id did not change across deployments", id)
+		}
+		if firstAsset.ParentID != "" && !strings.Contains(string(firstAsset.ParentID), ":") {
+			t.Fatalf("asset %q parent id %q is not logical", id, firstAsset.ParentID)
+		}
+		if firstAsset.PayloadSchema == "" {
+			t.Fatalf("asset %q has empty payload schema", id)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(firstAsset.PayloadJSON), &payload); err != nil {
+			t.Fatalf("asset %q payload is invalid JSON: %v", id, err)
+		}
+		if strings.Contains(strings.ToLower(firstAsset.PayloadJSON), `"auth"`) {
+			t.Fatalf("asset %q payload leaked auth: %s", id, firstAsset.PayloadJSON)
+		}
+	}
+	for _, edge := range first.Workspace.Graph.Edges {
+		if !strings.Contains(string(edge.FromAssetID), ":") || !strings.Contains(string(edge.ToAssetID), ":") {
+			t.Fatalf("edge endpoints are not logical ids: %#v", edge)
+		}
+	}
+
+	changedPath := writeCompilerWorkspace(t, strings.Replace(validCompilerDashboardYAML(), "title: Sales", "title: Sales Updated", 1))
+	changed, err := Compile(changedPath, Options{WorkspaceID: "libredash", DeploymentID: "dep_a"})
+	if err != nil {
+		t.Fatalf("Compile(changed) error = %v", err)
+	}
+	if assetsByID(changed.Workspace.Graph)["dashboard:sales"].ContentHash == firstAssets["dashboard:sales"].ContentHash {
+		t.Fatal("dashboard content hash did not change after authored title changed")
+	}
+}
+
 func writeCompilerWorkspace(t *testing.T, dashboardYAML string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -183,6 +244,14 @@ func writeCompilerWorkspace(t *testing.T, dashboardYAML string) string {
 	writeCompilerFixture(t, filepath.Join(dir, "model.yaml"), validCompilerModelYAML())
 	writeCompilerFixture(t, filepath.Join(dir, "dashboard.yaml"), dashboardYAML)
 	return filepath.Join(dir, "catalog.yaml")
+}
+
+func assetsByID(graph workspace.AssetGraph) map[string]workspace.Asset {
+	out := make(map[string]workspace.Asset, len(graph.Assets))
+	for _, asset := range graph.Assets {
+		out[string(asset.ID)] = asset
+	}
+	return out
 }
 
 func validCompilerCatalogYAML() string {

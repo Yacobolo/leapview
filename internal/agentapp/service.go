@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -33,6 +34,7 @@ type Scope struct {
 type Service struct {
 	metrics Metrics
 	repo    Repository
+	assets  AssetCatalog
 	config  Config
 	model   agent.Model
 
@@ -48,6 +50,15 @@ func NewService(metrics Metrics, repo Repository, config Config) *Service {
 		model:   NewOpenAIModel(config, http.DefaultClient),
 		running: map[string]struct{}{},
 	}
+}
+
+type AssetCatalog interface {
+	ActiveDeploymentGraph(ctx context.Context, id workspace.WorkspaceID) (workspace.AssetGraph, bool, error)
+}
+
+func (s *Service) WithAssetCatalog(catalog AssetCatalog) *Service {
+	s.assets = catalog
+	return s
 }
 
 func (s *Service) Enabled() bool {

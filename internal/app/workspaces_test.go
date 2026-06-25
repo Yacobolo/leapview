@@ -1,29 +1,32 @@
 package app
 
-import "testing"
+import (
+	"testing"
 
-func TestSafeAssetMetaKeepsModelTableDefinition(t *testing.T) {
-	meta := safeAssetMeta("model_table", `{
-		"Source": "orders",
-		"Sources": ["orders", "payments"],
-		"SourceDependencies": ["orders", "payments"],
-		"Transform": {"SQL": "SELECT * FROM source.orders"},
-		"PrimaryKey": "order_id",
-		"Grain": "order_id",
-		"Dimensions": {"order_id": {"Expr": "order_id"}},
-		"Measures": {"revenue": {"Expression": "SUM(revenue)"}},
-		"Auth": {"token": "secret"}
-	}`)
+	"github.com/Yacobolo/libredash/internal/workspace"
+)
 
-	for _, key := range []string{"Source", "Sources", "SourceDependencies", "Transform", "PrimaryKey", "Grain", "Dimensions"} {
-		if _, ok := meta[key]; !ok {
-			t.Fatalf("model table meta missing %s: %#v", key, meta)
-		}
+func TestAssetDTOUsesLogicalIDAndTypedPayload(t *testing.T) {
+	asset, err := workspace.NewAsset(
+		workspace.WorkspaceID("test"),
+		workspace.DeploymentID("deploy_a"),
+		workspace.AssetTypeVisual,
+		"executive-sales.orders",
+		workspace.AssetID("dashboard:executive-sales"),
+		"Orders",
+		"Orders visual",
+		"visual.v1",
+		map[string]any{"query_kind": "aggregate"},
+	)
+	if err != nil {
+		t.Fatalf("asset: %v", err)
 	}
-	if _, ok := meta["Measures"]; ok {
-		t.Fatalf("model table meta should not expose measures: %#v", meta)
+
+	dto := assetDTOFromWorkspace(asset)
+	if dto.ID != "visual:executive-sales.orders" || dto.SnapshotID == "" || dto.SnapshotID == dto.ID {
+		t.Fatalf("asset identity = %#v", dto)
 	}
-	if _, ok := meta["Auth"]; ok {
-		t.Fatalf("model table meta should not expose auth: %#v", meta)
+	if dto.ParentID != "dashboard:executive-sales" || dto.PayloadSchema != "visual.v1" || dto.Payload["query_kind"] != "aggregate" {
+		t.Fatalf("asset dto = %#v", dto)
 	}
 }

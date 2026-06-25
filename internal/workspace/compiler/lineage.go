@@ -18,8 +18,8 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 	graph := workspace.AssetGraph{}
 	byKey := map[string]workspace.AssetID{}
 	seenEdges := map[string]struct{}{}
-	add := func(typ workspace.AssetType, key string, parentID workspace.AssetID, title, description string, content any) (workspace.AssetID, error) {
-		asset, err := workspace.NewAsset(workspaceID, deploymentID, typ, key, parentID, title, description, content)
+	add := func(typ workspace.AssetType, key string, parentID workspace.AssetID, title, description string, payload any) (workspace.AssetID, error) {
+		asset, err := workspace.NewAsset(workspaceID, deploymentID, typ, key, parentID, title, description, string(typ)+".v1", payload)
 		if err != nil {
 			return "", err
 		}
@@ -46,7 +46,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		return id, nil
 	}
 
-	catalogID, err := add(workspace.AssetTypeCatalog, string(workspaceID), "", workspaceTitle(definition.Catalog.Workspace.Title), definition.Catalog.Workspace.Description, definition.Catalog)
+	catalogID, err := add(workspace.AssetTypeCatalog, string(workspaceID), "", workspaceTitle(definition.Catalog.Workspace.Title), definition.Catalog.Workspace.Description, catalogPayload(definition))
 	if err != nil {
 		return workspace.AssetGraph{}, err
 	}
@@ -54,7 +54,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		model := definition.Models[modelEntry.ID]
 		for _, connectionName := range sortedMapKeys(model.Connections) {
 			connection := model.Connections[connectionName]
-			id, err := add(workspace.AssetTypeConnection, modelEntry.ID+"."+connectionName, catalogID, connectionName, connection.Description, connection)
+			id, err := add(workspace.AssetTypeConnection, modelEntry.ID+"."+connectionName, catalogID, connectionName, connection.Description, connectionPayload(connection))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -62,7 +62,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, sourceName := range sortedMapKeys(model.Sources) {
 			source := model.Sources[sourceName]
-			id, err := add(workspace.AssetTypeSource, modelEntry.ID+"."+sourceName, catalogID, sourceName, source.Description, source)
+			id, err := add(workspace.AssetTypeSource, modelEntry.ID+"."+sourceName, catalogID, sourceName, source.Description, sourcePayload(source))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -75,7 +75,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, tableName := range sortedMapKeys(model.Tables) {
 			table := model.Tables[tableName]
-			id, err := add(workspace.AssetTypeModelTable, modelEntry.ID+"."+tableName, catalogID, tableName, table.Description, table)
+			id, err := add(workspace.AssetTypeModelTable, modelEntry.ID+"."+tableName, catalogID, tableName, table.Description, modelTablePayload(table))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -102,14 +102,14 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				edge(id, dependencyID, workspace.AssetEdgeUsesModelTable)
 			}
 		}
-		modelID, err := add(workspace.AssetTypeSemanticModel, modelEntry.ID, catalogID, modelEntry.Title, modelEntry.Description, model)
+		modelID, err := add(workspace.AssetTypeSemanticModel, modelEntry.ID, catalogID, modelEntry.Title, modelEntry.Description, semanticModelPayload(model))
 		if err != nil {
 			return workspace.AssetGraph{}, err
 		}
 		edge(catalogID, modelID, workspace.AssetEdgeContains)
 		for _, tableName := range sortedMapKeys(model.Tables) {
 			table := model.Tables[tableName]
-			semanticTableID, err := add(workspace.AssetTypeSemanticTable, modelEntry.ID+"."+tableName, modelID, tableName, table.Description, table)
+			semanticTableID, err := add(workspace.AssetTypeSemanticTable, modelEntry.ID+"."+tableName, modelID, tableName, table.Description, semanticTablePayload(tableName, table))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -124,7 +124,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				field.Field = tableName + "." + table.PrimaryKey
 				field.Table = tableName
 				field.Name = table.PrimaryKey
-				fieldID, err := add(workspace.AssetTypeField, modelEntry.ID+"."+tableName+"."+table.PrimaryKey, semanticTableID, dimensionLabel(table.PrimaryKey, field.Label), field.Description, field)
+				fieldID, err := add(workspace.AssetTypeField, modelEntry.ID+"."+tableName+"."+table.PrimaryKey, semanticTableID, dimensionLabel(table.PrimaryKey, field.Label), field.Description, fieldPayload(field))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
@@ -135,7 +135,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				if fieldName == table.PrimaryKey {
 					continue
 				}
-				fieldID, err := add(workspace.AssetTypeField, modelEntry.ID+"."+tableName+"."+fieldName, semanticTableID, dimensionLabel(fieldName, field.Label), field.Description, field)
+				fieldID, err := add(workspace.AssetTypeField, modelEntry.ID+"."+tableName+"."+fieldName, semanticTableID, dimensionLabel(fieldName, field.Label), field.Description, fieldPayload(field))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
@@ -143,7 +143,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 			}
 		}
 		for _, relationship := range model.Relationships {
-			id, err := add(workspace.AssetTypeRelationship, modelEntry.ID+"."+relationship.ID, modelID, relationship.ID, relationship.Description, relationship)
+			id, err := add(workspace.AssetTypeRelationship, modelEntry.ID+"."+relationship.ID, modelID, relationship.ID, relationship.Description, relationshipPayload(relationship))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -158,7 +158,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, measureName := range sortedMapKeys(model.Measures) {
 			measure := model.Measures[measureName]
-			id, err := add(workspace.AssetTypeMeasure, modelEntry.ID+"."+measureName, modelID, measureLabel(measureName, measure.Label), measure.Description, measure)
+			id, err := add(workspace.AssetTypeMeasure, modelEntry.ID+"."+measureName, modelID, measureLabel(measureName, measure.Label), measure.Description, measurePayload(measure))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -179,7 +179,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 	}
 	for _, reportEntry := range definition.Catalog.Dashboards {
 		report := definition.Dashboards[reportEntry.ID]
-		reportID, err := add(workspace.AssetTypeDashboard, reportEntry.ID, catalogID, reportEntry.Title, reportEntry.Description, report)
+		reportID, err := add(workspace.AssetTypeDashboard, reportEntry.ID, catalogID, reportEntry.Title, reportEntry.Description, dashboardPayload(*report, reportEntry.Tags))
 		if err != nil {
 			return workspace.AssetGraph{}, err
 		}
@@ -251,7 +251,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, filterName := range sortedMapKeys(report.Filters) {
 			filter := report.Filters[filterName]
-			filterID, err := add(workspace.AssetTypeFilter, report.ID+"."+filterName, reportID, filter.Label, filter.Description, filter)
+			filterID, err := add(workspace.AssetTypeFilter, report.ID+"."+filterName, reportID, filter.Label, filter.Description, filterPayload(filter))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -262,7 +262,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, visualName := range sortedMapKeys(report.Visuals) {
 			visual := report.Visuals[visualName]
-			visualID, err := add(workspace.AssetTypeVisual, report.ID+"."+visualName, reportID, visual.Title, visual.Description, visual)
+			visualID, err := add(workspace.AssetTypeVisual, report.ID+"."+visualName, reportID, visual.Title, visual.Description, visualPayload(visual))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -290,7 +290,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, tableName := range sortedMapKeys(report.Tables) {
 			table := report.Tables[tableName]
-			tableID, err := add(workspace.AssetTypeTable, report.ID+"."+tableName, reportID, table.Title, table.Description, table)
+			tableID, err := add(workspace.AssetTypeTable, report.ID+"."+tableName, reportID, table.Title, table.Description, tableVisualPayload(table))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -317,7 +317,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 			}
 		}
 		for _, page := range report.Pages {
-			pageID, err := add(workspace.AssetTypePage, report.ID+"."+page.ID, reportID, page.Title, page.Description, page)
+			pageID, err := add(workspace.AssetTypePage, report.ID+"."+page.ID, reportID, page.Title, page.Description, pagePayload(page))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -327,7 +327,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				if itemKey == "" {
 					itemKey = strconv.Itoa(index)
 				}
-				itemID, err := add(workspace.AssetTypePageItem, report.ID+"."+page.ID+"."+itemKey, pageID, pageItemTitle(item), item.Description, item)
+				itemID, err := add(workspace.AssetTypePageItem, report.ID+"."+page.ID+"."+itemKey, pageID, pageItemTitle(item), item.Description, pageItemPayload(item))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
@@ -357,6 +357,312 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 	}
 	return graph, nil
+}
+
+func catalogPayload(definition *workspace.Definition) map[string]any {
+	return map[string]any{
+		"Workspace": map[string]any{
+			"ID":          definition.Catalog.Workspace.ID,
+			"Title":       workspaceTitle(definition.Catalog.Workspace.Title),
+			"Description": definition.Catalog.Workspace.Description,
+		},
+		"SemanticModels": definition.Catalog.SemanticModels,
+		"Dashboards":     definition.Catalog.Dashboards,
+	}
+}
+
+func connectionPayload(connection semanticmodel.Connection) map[string]any {
+	return map[string]any{
+		"Kind":                   connection.Kind,
+		"Path":                   connection.Path,
+		"Root":                   connection.Root,
+		"Scope":                  connection.Scope,
+		"Options":                connection.Options,
+		"Defaults":               map[string]any{"Options": connection.Defaults.Options},
+		"credentials_configured": len(connection.Auth) > 0,
+	}
+}
+
+func sourcePayload(source semanticmodel.Source) map[string]any {
+	return map[string]any{
+		"Format":     source.Format,
+		"Path":       source.Path,
+		"Connection": source.Connection,
+		"Object":     source.Object,
+		"Options":    source.Options,
+		"Fields":     sourceFieldsPayload(source.Fields),
+		"Schema":     schemaPayload(source.Schema),
+	}
+}
+
+func sourceFieldsPayload(fields map[string]semanticmodel.SourceField) map[string]any {
+	out := map[string]any{}
+	for _, name := range sortedMapKeys(fields) {
+		field := fields[name]
+		out[name] = map[string]any{
+			"Name":        field.Name,
+			"Field":       field.Field,
+			"Table":       field.Table,
+			"Description": field.Description,
+		}
+	}
+	return out
+}
+
+func modelTablePayload(table semanticmodel.Table) map[string]any {
+	return map[string]any{
+		"Kind":               table.Kind,
+		"Source":             table.Source,
+		"Sources":            table.Sources,
+		"SourceDependencies": table.SourceDependencies,
+		"ModelDependencies":  table.ModelDependencies,
+		"Transform":          map[string]any{"SQL": table.Transform.SQL},
+		"SQL":                table.SQL,
+		"PrimaryKey":         table.PrimaryKey,
+		"Grain":              table.Grain,
+		"Dimensions":         dimensionsPayload(table.Dimensions),
+		"Fields":             dimensionsPayload(table.Dimensions),
+		"Measures":           measuresPayload(table.Measures),
+		"Columns":            columnsPayload(table.Columns),
+		"Schema":             schemaPayload(table.Schema),
+	}
+}
+
+func semanticModelPayload(model *semanticmodel.Model) map[string]any {
+	connections := map[string]any{}
+	for _, name := range sortedMapKeys(model.Connections) {
+		connections[name] = connectionPayload(model.Connections[name])
+	}
+	sources := map[string]any{}
+	for _, name := range sortedMapKeys(model.Sources) {
+		sources[name] = sourcePayload(model.Sources[name])
+	}
+	tables := map[string]any{}
+	for _, name := range sortedMapKeys(model.Tables) {
+		tables[name] = modelTablePayload(model.Tables[name])
+	}
+	return map[string]any{
+		"Name":          model.Name,
+		"Title":         model.Title,
+		"Description":   model.Description,
+		"BaseTable":     model.BaseTable,
+		"Connections":   connections,
+		"Sources":       sources,
+		"Tables":        tables,
+		"Models":        tables,
+		"Measures":      measuresPayload(model.Measures),
+		"Relationships": relationshipsPayload(model.Relationships),
+	}
+}
+
+func semanticTablePayload(name string, table semanticmodel.Table) map[string]any {
+	payload := modelTablePayload(table)
+	payload["Table"] = name
+	return payload
+}
+
+func fieldPayload(field semanticmodel.MetricDimension) map[string]any {
+	return map[string]any{
+		"Field":       field.Field,
+		"Table":       field.Table,
+		"Name":        field.Name,
+		"Label":       field.Label,
+		"Description": field.Description,
+		"Expr":        field.Expr,
+		"Expression":  field.Expression,
+	}
+}
+
+func dimensionsPayload(fields map[string]semanticmodel.MetricDimension) map[string]any {
+	out := map[string]any{}
+	for _, name := range sortedMapKeys(fields) {
+		out[name] = fieldPayload(fields[name])
+	}
+	return out
+}
+
+func measurePayload(measure semanticmodel.MetricMeasure) map[string]any {
+	return map[string]any{
+		"Field":       measure.Field,
+		"Table":       measure.Table,
+		"Name":        measure.Name,
+		"Label":       measure.Label,
+		"Description": measure.Description,
+		"Expr":        measure.Expr,
+		"Expression":  measure.SQLExpression(),
+		"Unit":        measure.Unit,
+		"Format":      measure.Format,
+		"Grain":       measure.Grain,
+		"Time":        measure.Time,
+		"Grains":      measure.Grains,
+	}
+}
+
+func measuresPayload(measures map[string]semanticmodel.MetricMeasure) map[string]any {
+	out := map[string]any{}
+	for _, name := range sortedMapKeys(measures) {
+		out[name] = measurePayload(measures[name])
+	}
+	return out
+}
+
+func relationshipPayload(relationship semanticmodel.Relationship) map[string]any {
+	return map[string]any{
+		"ID":          relationship.ID,
+		"Description": relationship.Description,
+		"From":        relationship.From,
+		"To":          relationship.To,
+		"Cardinality": relationship.Cardinality,
+		"Active":      relationship.Active,
+	}
+}
+
+func relationshipsPayload(relationships []semanticmodel.Relationship) []any {
+	out := make([]any, 0, len(relationships))
+	for _, relationship := range relationships {
+		out = append(out, relationshipPayload(relationship))
+	}
+	return out
+}
+
+func columnsPayload(columns map[string]semanticmodel.ModelColumn) map[string]any {
+	out := map[string]any{}
+	for _, name := range sortedMapKeys(columns) {
+		column := columns[name]
+		out[name] = map[string]any{
+			"Field":       column.Field,
+			"Name":        column.Name,
+			"SourceField": column.SourceField,
+			"Description": column.Description,
+			"Type":        column.Type,
+		}
+	}
+	return out
+}
+
+func schemaPayload(schema semanticmodel.TableSchema) map[string]any {
+	columns := make([]map[string]any, 0, len(schema.Columns))
+	for _, column := range schema.Columns {
+		columns = append(columns, map[string]any{
+			"Name":         column.Name,
+			"Ordinal":      column.Ordinal,
+			"PhysicalType": column.PhysicalType,
+			"Nullable":     column.Nullable,
+			"Default":      column.Default,
+			"Comment":      column.Comment,
+			"PrimaryKey":   column.PrimaryKey,
+		})
+	}
+	return map[string]any{"Columns": columns}
+}
+
+func dashboardPayload(report reportdef.Dashboard, tags []string) map[string]any {
+	return map[string]any{
+		"ID":            report.ID,
+		"Title":         report.Title,
+		"Description":   report.Description,
+		"SemanticModel": report.SemanticModel,
+		"Tags":          tags,
+	}
+}
+
+func filterPayload(filter reportdef.FilterDefinition) map[string]any {
+	return map[string]any{
+		"Type":             filter.Type,
+		"Label":            filter.Label,
+		"Description":      filter.Description,
+		"Dimension":        filter.Dimension,
+		"Default":          filter.Default,
+		"Custom":           filter.Custom,
+		"Presets":          filter.Presets,
+		"Operator":         filter.Operator,
+		"Values":           filter.Values,
+		"DefaultOperator":  filter.DefaultOperator,
+		"Operators":        filter.Operators,
+		"Options":          filter.Options,
+		"URLParam":         filter.URLParam,
+		"FromURLParam":     filter.FromURLParam,
+		"ToURLParam":       filter.ToURLParam,
+		"OperatorURLParam": filter.OperatorURLParam,
+		"Targets":          filter.Targets,
+	}
+}
+
+func visualPayload(visual reportdef.Visual) map[string]any {
+	return map[string]any{
+		"Title":           visual.Title,
+		"Description":     visual.Description,
+		"Kind":            visual.KindOrDefault(),
+		"Shape":           visual.ShapeOrDefault(),
+		"Renderer":        visual.RendererOrDefault(),
+		"Type":            visual.Type,
+		"Query":           visualQueryPayload(visual.Query),
+		"Options":         visual.CoreOptions(),
+		"RendererOptions": visual.RendererOptions,
+		"Encode":          visual.Encode,
+	}
+}
+
+func visualQueryPayload(query reportdef.VisualQuery) map[string]any {
+	return map[string]any{
+		"Table":      query.Table,
+		"Dimensions": fieldRefStrings(query.Dimensions),
+		"Series":     query.Series.Field,
+		"Measures":   fieldRefStrings(query.Measures),
+		"Time":       query.Time,
+		"Sort":       query.Sort,
+		"Limit":      query.Limit,
+	}
+}
+
+func fieldRefStrings(refs []reportdef.FieldRef) []string {
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, ref.Field)
+	}
+	return out
+}
+
+func tableVisualPayload(table reportdef.TableVisual) map[string]any {
+	return map[string]any{
+		"Title":       table.Title,
+		"Description": table.Description,
+		"Kind":        table.KindOrDefault(),
+		"Query": map[string]any{
+			"Table":    table.Query.Table,
+			"Measures": fieldRefStrings(table.Query.Measures),
+		},
+		"Rows":        table.Rows,
+		"ColumnDims":  table.ColumnDims,
+		"DataColumns": table.DataColumns,
+		"Style":       table.Style,
+		"DefaultSort": table.DefaultSort,
+	}
+}
+
+func pagePayload(page dashboard.Page) map[string]any {
+	return map[string]any{
+		"ID":          page.ID,
+		"Title":       page.Title,
+		"Description": page.Description,
+		"Canvas":      page.Canvas,
+		"Grid":        page.Grid,
+	}
+}
+
+func pageItemPayload(item dashboard.PageVisual) map[string]any {
+	return map[string]any{
+		"ID":          item.ID,
+		"Kind":        item.Kind,
+		"Visual":      item.Visual,
+		"Table":       item.Table,
+		"Filter":      item.Filter,
+		"Description": item.Description,
+		"Placement":   item.Placement,
+		"Title":       item.Title,
+		"Subtitle":    item.Subtitle,
+		"Badges":      item.Badges,
+	}
 }
 
 func sortedMapKeys[T any](values map[string]T) []string {

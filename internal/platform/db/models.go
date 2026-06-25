@@ -74,28 +74,29 @@ type ApiToken struct {
 }
 
 type Asset struct {
-	ID             string         `json:"id"`
-	WorkspaceID    string         `json:"workspace_id"`
-	DeploymentID   string         `json:"deployment_id"`
-	AssetType      string         `json:"asset_type"`
-	AssetKey       string         `json:"asset_key"`
-	ParentAssetID  sql.NullString `json:"parent_asset_id"`
-	Title          string         `json:"title"`
-	Description    string         `json:"description"`
-	ContentJson    string         `json:"content_json"`
-	ContentHash    string         `json:"content_hash"`
-	ContentVersion int64          `json:"content_version"`
-	CreatedAt      string         `json:"created_at"`
+	SnapshotID           string `json:"snapshot_id"`
+	LogicalAssetID       string `json:"logical_asset_id"`
+	WorkspaceID          string `json:"workspace_id"`
+	DeploymentID         string `json:"deployment_id"`
+	AssetType            string `json:"asset_type"`
+	AssetKey             string `json:"asset_key"`
+	ParentLogicalAssetID string `json:"parent_logical_asset_id"`
+	Title                string `json:"title"`
+	Description          string `json:"description"`
+	PayloadSchema        string `json:"payload_schema"`
+	PayloadJson          string `json:"payload_json"`
+	ContentHash          string `json:"content_hash"`
+	CreatedAt            string `json:"created_at"`
 }
 
 type AssetEdge struct {
-	ID           string `json:"id"`
-	WorkspaceID  string `json:"workspace_id"`
-	DeploymentID string `json:"deployment_id"`
-	FromAssetID  string `json:"from_asset_id"`
-	ToAssetID    string `json:"to_asset_id"`
-	EdgeType     string `json:"edge_type"`
-	CreatedAt    string `json:"created_at"`
+	ID                 string `json:"id"`
+	WorkspaceID        string `json:"workspace_id"`
+	DeploymentID       string `json:"deployment_id"`
+	FromLogicalAssetID string `json:"from_logical_asset_id"`
+	ToLogicalAssetID   string `json:"to_logical_asset_id"`
+	EdgeType           string `json:"edge_type"`
+	CreatedAt          string `json:"created_at"`
 }
 
 type AuditEvent struct {

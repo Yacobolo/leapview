@@ -16,6 +16,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -88,6 +89,39 @@ func TestReadOnlyToolPayloadShapesStayStable(t *testing.T) {
 	}
 }
 
+func TestAssetToolsUseLogicalIDsAndTypedPayloads(t *testing.T) {
+	graph := testAgentAssetGraph(t)
+	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"}).WithAssetCatalog(fakeAssetCatalog{graph: graph})
+	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
+
+	var assets assetListPayload
+	if err := json.Unmarshal([]byte(runTool(t, tools, "list_assets", `{"type":"visual","limit":10}`)), &assets); err != nil {
+		t.Fatalf("decode list_assets: %v", err)
+	}
+	if len(assets.Assets) != 1 || assets.Assets[0].ID != "visual:executive-sales.orders" || assets.Assets[0].SnapshotID == assets.Assets[0].ID {
+		t.Fatalf("list_assets payload = %#v", assets)
+	}
+
+	var described assetDescriptionPayload
+	if err := json.Unmarshal([]byte(runTool(t, tools, "describe_asset", `{"asset_id":"visual:executive-sales.orders"}`)), &described); err != nil {
+		t.Fatalf("decode describe_asset: %v", err)
+	}
+	if described.Asset.PayloadSchema != "visual.v1" || described.Payload["query_kind"] != "aggregate" {
+		t.Fatalf("describe_asset payload = %#v", described)
+	}
+	if len(described.Lineage.Upstream) != 1 || described.Lineage.Upstream[0] != "semantic_model:test" {
+		t.Fatalf("describe_asset lineage = %#v", described.Lineage)
+	}
+
+	var lineage assetLineageReply
+	if err := json.Unmarshal([]byte(runTool(t, tools, "asset_lineage", `{"asset_id":"semantic_model:test"}`)), &lineage); err != nil {
+		t.Fatalf("decode asset_lineage: %v", err)
+	}
+	if len(lineage.Downstream) != 1 || lineage.Downstream[0] != "visual:executive-sales.orders" {
+		t.Fatalf("asset_lineage = %#v", lineage)
+	}
+}
+
 func TestDescribeDashboardReturnsCompactManifest(t *testing.T) {
 	service := NewService(largeDashboardMetrics{}, nil, Config{APIKey: "key", Model: "model"})
 	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
@@ -133,6 +167,37 @@ func TestDescribeDashboardReturnsCompactManifest(t *testing.T) {
 	}
 	if got.DetailTools["page_data"] != "query_dashboard_page" || got.DetailTools["model"] != "describe_model" {
 		t.Fatalf("detail tools = %#v", got.DetailTools)
+	}
+}
+
+type fakeAssetCatalog struct {
+	graph workspace.AssetGraph
+}
+
+func (c fakeAssetCatalog) ActiveDeploymentGraph(context.Context, workspace.WorkspaceID) (workspace.AssetGraph, bool, error) {
+	return c.graph, true, nil
+}
+
+func testAgentAssetGraph(t *testing.T) workspace.AssetGraph {
+	t.Helper()
+	workspaceID := workspace.WorkspaceID("test")
+	deploymentID := workspace.DeploymentID("deploy_a")
+	model, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeSemanticModel, "test", "", "Test Model", "Fixture model", "semantic_model.v1", map[string]any{
+		"name": "test",
+	})
+	if err != nil {
+		t.Fatalf("model asset: %v", err)
+	}
+	visual, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeVisual, "executive-sales.orders", model.ID, "Orders", "Orders visual", "visual.v1", map[string]any{
+		"query_kind": "aggregate",
+		"measures":   []string{"order_count"},
+	})
+	if err != nil {
+		t.Fatalf("visual asset: %v", err)
+	}
+	return workspace.AssetGraph{
+		Assets: []workspace.Asset{visual, model},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, deploymentID, model.ID, visual.ID, workspace.AssetEdgeUsesSemanticModel)},
 	}
 }
 

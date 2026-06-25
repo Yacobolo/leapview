@@ -53,9 +53,9 @@ func TestRepositorySaveValidatedRollsBackOnDuplicateEdge(t *testing.T) {
 	}
 
 	validation := validationGraph(created.ID, "edge_1", "edge_2")
-	validation.Edges[1].FromAssetID = validation.Edges[0].FromAssetID
-	validation.Edges[1].ToAssetID = validation.Edges[0].ToAssetID
-	validation.Edges[1].Type = validation.Edges[0].Type
+	validation.Graph.Edges[1].FromAssetID = validation.Graph.Edges[0].FromAssetID
+	validation.Graph.Edges[1].ToAssetID = validation.Graph.Edges[0].ToAssetID
+	validation.Graph.Edges[1].Type = validation.Graph.Edges[0].Type
 	if _, err := repo.SaveValidated(ctx, created.ID, validation, artifact(created.ID, "test")); err == nil {
 		t.Fatal("expected duplicate edge error")
 	}
@@ -83,18 +83,28 @@ func openRepo(t *testing.T, ctx context.Context) (*platform.Store, *Repository) 
 }
 
 func validationGraph(deploymentID deployment.ID, edgeID1, edgeID2 string) deployment.Validation {
+	workspaceID := workspace.WorkspaceID("test")
+	assetA := mustTestAsset(workspaceID, workspace.DeploymentID(deploymentID), workspace.AssetTypeDashboard, "a", "")
+	assetB := mustTestAsset(workspaceID, workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticModel, "b", "")
 	return deployment.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
-		Assets: []deployment.Asset{
-			{ID: "asset_a", WorkspaceID: "test", DeploymentID: deploymentID, Type: "dashboard", Key: "a", ContentJSON: "{}", ContentHash: "a"},
-			{ID: "asset_b", WorkspaceID: "test", DeploymentID: deploymentID, Type: "semantic_model", Key: "b", ContentJSON: "{}", ContentHash: "b"},
-		},
-		Edges: []deployment.AssetEdge{
-			{ID: edgeID1, WorkspaceID: "test", DeploymentID: deploymentID, FromAssetID: "asset_a", ToAssetID: "asset_b", Type: "uses_semantic_model"},
-			{ID: edgeID2, WorkspaceID: "test", DeploymentID: deploymentID, FromAssetID: "asset_b", ToAssetID: "asset_a", Type: "contains"},
+		Graph: workspace.AssetGraph{
+			Assets: []workspace.Asset{assetA, assetB},
+			Edges: []workspace.AssetEdge{
+				{ID: workspace.AssetEdgeID(edgeID1), WorkspaceID: workspaceID, DeploymentID: workspace.DeploymentID(deploymentID), FromAssetID: assetA.ID, ToAssetID: assetB.ID, Type: workspace.AssetEdgeUsesSemanticModel},
+				{ID: workspace.AssetEdgeID(edgeID2), WorkspaceID: workspaceID, DeploymentID: workspace.DeploymentID(deploymentID), FromAssetID: assetB.ID, ToAssetID: assetA.ID, Type: workspace.AssetEdgeContains},
+			},
 		},
 	}
+}
+
+func mustTestAsset(workspaceID workspace.WorkspaceID, deploymentID workspace.DeploymentID, typ workspace.AssetType, key string, parent workspace.AssetID) workspace.Asset {
+	asset, err := workspace.NewAsset(workspaceID, deploymentID, typ, key, parent, key, "", string(typ)+".v1", map[string]any{"key": key})
+	if err != nil {
+		panic(err)
+	}
+	return asset
 }
 
 func artifact(deploymentID deployment.ID, workspaceID deployment.WorkspaceID) deployment.Artifact {

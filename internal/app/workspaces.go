@@ -522,7 +522,7 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 		if assets, edges, ok := s.workspaceAssetsFromRuntime(workspaceID); ok {
 			return assets, edges, nil
 		}
-		return fallbackAssets(s.metrics.Catalog(), workspaceID), nil, nil
+		return nil, nil, nil
 	}
 	repo, err := s.workspaceRepository()
 	if err != nil {
@@ -538,13 +538,6 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 		}
 		return nil, nil, nil
 	}
-	if staleActiveLineageGraph(graph) {
-		if refreshed, ok := s.workspaceGraphFromRuntime(workspaceID, string(activeGraphDeploymentID(graph))); ok && !staleActiveLineageGraph(refreshed) {
-			if err := repo.ReplaceActiveDeploymentGraph(r.Context(), workspace.WorkspaceID(workspaceID), refreshed); err == nil {
-				graph = refreshed
-			}
-		}
-	}
 	assets := make([]api.AssetResponse, 0, len(graph.Assets))
 	for _, row := range graph.Assets {
 		assets = append(assets, assetDTOFromWorkspace(row))
@@ -554,184 +547,6 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 		edges = append(edges, assetEdgeDTOFromWorkspace(row))
 	}
 	return assets, edges, nil
-}
-
-func activeGraphDeploymentID(graph workspace.AssetGraph) workspace.DeploymentID {
-	for _, asset := range graph.Assets {
-		if asset.DeploymentID != "" {
-			return asset.DeploymentID
-		}
-	}
-	for _, edge := range graph.Edges {
-		if edge.DeploymentID != "" {
-			return edge.DeploymentID
-		}
-	}
-	return ""
-}
-
-func staleActiveLineageGraph(graph workspace.AssetGraph) bool {
-	hasLegacyModel := false
-	hasSemanticTable := false
-	hasRelationship := false
-	hasPageItem := false
-	hasRelationshipDefinition := false
-	hasPageItemDefinition := false
-	assets := map[workspace.AssetID]workspace.Asset{}
-	for _, asset := range graph.Assets {
-		assets[asset.ID] = asset
-		if asset.ContentVersion < workspace.CurrentAssetContentVersion {
-			return true
-		}
-		if assetHasLegacyGeneratedDescription(asset) {
-			return true
-		}
-		if assetHasDocumentedFieldsWithoutSchema(asset) {
-			return true
-		}
-		switch asset.Type {
-		case "semantic_model", "dashboard":
-			hasLegacyModel = true
-		case "semantic_table":
-			hasSemanticTable = true
-		case "relationship":
-			hasRelationship = true
-		case "page_item":
-			hasPageItem = true
-		}
-		if asset.Type == "semantic_model" && assetContentHasItems(asset.ContentJSON, "Relationships", "relationships") {
-			hasRelationshipDefinition = true
-		}
-		if asset.Type == "dashboard" && dashboardContentHasPageItems(asset.ContentJSON) {
-			hasPageItemDefinition = true
-		}
-	}
-	if !hasLegacyModel {
-		return false
-	}
-	if !hasSemanticTable {
-		return true
-	}
-	if hasRelationshipDefinition && !hasRelationship {
-		return true
-	}
-	if hasPageItemDefinition && !hasPageItem {
-		return true
-	}
-	for _, edge := range graph.Edges {
-		from := assets[edge.FromAssetID]
-		if from.Type != "dashboard" {
-			continue
-		}
-		switch edge.Type {
-		case workspace.AssetEdgeUsesField, workspace.AssetEdgeUsesMeasure, workspace.AssetEdgeUsesModelTable:
-			return true
-		}
-	}
-	return false
-}
-
-func assetHasDocumentedFieldsWithoutSchema(asset workspace.Asset) bool {
-	if asset.Type != workspace.AssetTypeSource && asset.Type != workspace.AssetTypeModelTable {
-		return false
-	}
-	if assetContentHasItems(asset.ContentJSON, "Schema", "schema") {
-		return false
-	}
-	if asset.Type == workspace.AssetTypeModelTable {
-		return assetContentHasItems(asset.ContentJSON, "Dimensions", "dimensions", "Fields", "fields")
-	}
-	return assetContentHasItems(asset.ContentJSON, "Fields", "fields")
-}
-
-func assetHasLegacyGeneratedDescription(asset workspace.Asset) bool {
-	description := strings.TrimSpace(asset.Description)
-	if description == "" {
-		return false
-	}
-	switch asset.Type {
-	case workspace.AssetTypeConnection:
-		var content map[string]any
-		if err := json.Unmarshal([]byte(asset.ContentJSON), &content); err != nil {
-			return false
-		}
-		kind, _ := content["Kind"].(string)
-		if kind == "" {
-			kind, _ = content["kind"].(string)
-		}
-		return kind != "" && description == kind+" connection"
-	case workspace.AssetTypeSource:
-		var content map[string]any
-		if err := json.Unmarshal([]byte(asset.ContentJSON), &content); err != nil {
-			return false
-		}
-		format, _ := content["Format"].(string)
-		if format == "" {
-			format, _ = content["format"].(string)
-		}
-		path, _ := content["Path"].(string)
-		if path == "" {
-			path, _ = content["path"].(string)
-		}
-		object, _ := content["Object"].(string)
-		if object == "" {
-			object, _ = content["object"].(string)
-		}
-		if object != "" && description == "object: "+object {
-			return true
-		}
-		if format == "" || path == "" {
-			return false
-		}
-		return description == format+" file: "+path || description == format+" table: "+path
-	default:
-		return false
-	}
-}
-
-func assetContentHasItems(raw string, keys ...string) bool {
-	var content map[string]any
-	if err := json.Unmarshal([]byte(raw), &content); err != nil {
-		return false
-	}
-	for _, key := range keys {
-		switch value := content[key].(type) {
-		case []any:
-			if len(value) > 0 {
-				return true
-			}
-		case map[string]any:
-			if len(value) > 0 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func dashboardContentHasPageItems(raw string) bool {
-	var content map[string]any
-	if err := json.Unmarshal([]byte(raw), &content); err != nil {
-		return false
-	}
-	for _, key := range []string{"Pages", "pages"} {
-		pages, ok := content[key].([]any)
-		if !ok {
-			continue
-		}
-		for _, item := range pages {
-			page, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			for _, key := range []string{"Visuals", "visuals", "Items", "items"} {
-				if items, ok := page[key].([]any); ok && len(items) > 0 {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 func (s *Server) workspaceGraphFromRuntime(workspaceID, deploymentID string) (workspace.AssetGraph, bool) {
@@ -857,16 +672,18 @@ func catalogWorkspaceResponse(catalog dashboard.Catalog) api.WorkspaceResponse {
 
 func assetDTOFromWorkspace(row workspace.Asset) api.AssetResponse {
 	return api.AssetResponse{
-		ID:           string(row.ID),
-		WorkspaceID:  string(row.WorkspaceID),
-		DeploymentID: string(row.DeploymentID),
-		Type:         string(row.Type),
-		Key:          row.Key,
-		ParentID:     string(row.ParentID),
-		Title:        row.Title,
-		Description:  row.Description,
-		Meta:         safeAssetMeta(string(row.Type), row.ContentJSON),
-		Href:         assetHref(string(row.Type), row.Key),
+		ID:            string(row.ID),
+		SnapshotID:    string(row.SnapshotID),
+		WorkspaceID:   string(row.WorkspaceID),
+		DeploymentID:  string(row.DeploymentID),
+		Type:          string(row.Type),
+		Key:           row.Key,
+		ParentID:      string(row.ParentID),
+		Title:         row.Title,
+		Description:   row.Description,
+		PayloadSchema: row.PayloadSchema,
+		Payload:       assetPayload(row.PayloadJSON),
+		Href:          assetHref(string(row.Type), row.Key),
 	}
 }
 
@@ -901,85 +718,12 @@ func roleDTO(row access.Role) api.RoleResponse {
 	return api.RoleResponse{Name: row.Name, Permissions: row.Permissions}
 }
 
-func safeAssetMeta(assetType, raw string) map[string]any {
-	var content map[string]any
-	if err := json.Unmarshal([]byte(raw), &content); err != nil {
+func assetPayload(raw string) map[string]any {
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return nil
 	}
-	authConfigured := hasConfiguredAuth(content["auth"]) || hasConfiguredAuth(content["Auth"])
-	content = scrubAssetSecrets(content).(map[string]any)
-	switch assetType {
-	case "connection":
-		content["credentials_configured"] = authConfigured
-	case "source":
-		return pickMeta(content, "format", "Format", "path", "Path", "connection", "Connection", "object", "Object", "options", "Options", "fields", "Fields", "schema", "Schema")
-	case "model_table":
-		return pickMeta(content,
-			"source", "Source",
-			"sources", "Sources",
-			"source_dependencies", "SourceDependencies",
-			"transform", "Transform",
-			"sql", "SQL",
-			"primary_key", "PrimaryKey",
-			"grain", "Grain",
-			"dimensions", "Dimensions",
-			"fields", "Fields",
-			"schema", "Schema",
-		)
-	case "measure":
-		return pickMeta(content, "expression", "Expression", "unit", "Unit", "format", "Format")
-	case "field":
-		return pickMeta(content, "expr", "Expr", "where", "Where", "order_expr", "OrderExpr")
-	case "dashboard":
-		return pickMeta(content, "semantic_model", "SemanticModel", "tags", "Tags")
-	}
-	return content
-}
-
-func scrubAssetSecrets(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(typed))
-		for key, nested := range typed {
-			if strings.EqualFold(key, "auth") {
-				if hasConfiguredAuth(nested) {
-					out["credentials_configured"] = true
-				}
-				continue
-			}
-			out[key] = scrubAssetSecrets(nested)
-		}
-		return out
-	case []any:
-		out := make([]any, 0, len(typed))
-		for _, nested := range typed {
-			out = append(out, scrubAssetSecrets(nested))
-		}
-		return out
-	default:
-		return value
-	}
-}
-
-func hasConfiguredAuth(value any) bool {
-	switch typed := value.(type) {
-	case map[string]any:
-		return len(typed) > 0
-	case nil:
-		return false
-	default:
-		return true
-	}
-}
-
-func pickMeta(content map[string]any, keys ...string) map[string]any {
-	out := map[string]any{}
-	for _, key := range keys {
-		if value, ok := content[key]; ok {
-			out[key] = value
-		}
-	}
-	return out
+	return payload
 }
 
 func assetHref(assetType, key string) string {
@@ -1071,17 +815,6 @@ func isWorkspaceLandingAsset(typ string) bool {
 	default:
 		return false
 	}
-}
-
-func fallbackAssets(catalog dashboard.Catalog, workspaceID string) []api.AssetResponse {
-	assets := []api.AssetResponse{}
-	for _, report := range catalog.Dashboards {
-		assets = append(assets, api.AssetResponse{ID: "dashboard:" + report.ID, WorkspaceID: workspaceID, Type: "dashboard", Key: report.ID, Title: report.Title, Description: report.Description, Href: "/dashboards/" + report.ID})
-	}
-	for _, model := range catalog.Models {
-		assets = append(assets, api.AssetResponse{ID: "semantic_model:" + model.ID, WorkspaceID: workspaceID, Type: "semantic_model", Key: model.ID, Title: model.Title, Description: model.Description})
-	}
-	return assets
 }
 
 func csrfToken(r *http.Request, auth *Auth) string {

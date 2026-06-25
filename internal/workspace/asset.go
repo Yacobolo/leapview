@@ -7,17 +7,18 @@ import (
 )
 
 type Asset struct {
-	ID             AssetID
-	WorkspaceID    WorkspaceID
-	DeploymentID   DeploymentID
-	Type           AssetType
-	Key            string
-	ParentID       AssetID
-	Title          string
-	Description    string
-	ContentJSON    string
-	ContentHash    string
-	ContentVersion int
+	ID            AssetID
+	SnapshotID    AssetSnapshotID
+	WorkspaceID   WorkspaceID
+	DeploymentID  DeploymentID
+	Type          AssetType
+	Key           string
+	ParentID      AssetID
+	Title         string
+	Description   string
+	PayloadSchema string
+	PayloadJSON   string
+	ContentHash   string
 }
 
 type AssetEdge struct {
@@ -34,27 +35,49 @@ type AssetGraph struct {
 	Edges  []AssetEdge
 }
 
-const CurrentAssetContentVersion = 2
-
-func NewAsset(workspaceID WorkspaceID, deploymentID DeploymentID, typ AssetType, key string, parentID AssetID, title, description string, content any) (Asset, error) {
-	bytes, err := json.Marshal(content)
+func NewAsset(workspaceID WorkspaceID, deploymentID DeploymentID, typ AssetType, key string, parentID AssetID, title, description, payloadSchema string, payload any) (Asset, error) {
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return Asset{}, err
 	}
-	sum := sha256.Sum256(bytes)
+	id := NewAssetID(typ, key)
+	hashBytes, err := json.Marshal(assetHashPayload{
+		Type:          typ,
+		Key:           key,
+		ParentID:      parentID,
+		Title:         title,
+		Description:   description,
+		PayloadSchema: payloadSchema,
+		PayloadJSON:   json.RawMessage(payloadBytes),
+	})
+	if err != nil {
+		return Asset{}, err
+	}
+	sum := sha256.Sum256(hashBytes)
 	return Asset{
-		ID:             NewAssetID(deploymentID, typ, key),
-		WorkspaceID:    workspaceID,
-		DeploymentID:   deploymentID,
-		Type:           typ,
-		Key:            key,
-		ParentID:       parentID,
-		Title:          title,
-		Description:    description,
-		ContentJSON:    string(bytes),
-		ContentHash:    hex.EncodeToString(sum[:]),
-		ContentVersion: CurrentAssetContentVersion,
+		ID:            id,
+		SnapshotID:    NewAssetSnapshotID(deploymentID, id),
+		WorkspaceID:   workspaceID,
+		DeploymentID:  deploymentID,
+		Type:          typ,
+		Key:           key,
+		ParentID:      parentID,
+		Title:         title,
+		Description:   description,
+		PayloadSchema: payloadSchema,
+		PayloadJSON:   string(payloadBytes),
+		ContentHash:   hex.EncodeToString(sum[:]),
 	}, nil
+}
+
+type assetHashPayload struct {
+	Type          AssetType       `json:"type"`
+	Key           string          `json:"key"`
+	ParentID      AssetID         `json:"parentId,omitempty"`
+	Title         string          `json:"title"`
+	Description   string          `json:"description"`
+	PayloadSchema string          `json:"payloadSchema"`
+	PayloadJSON   json.RawMessage `json:"payload"`
 }
 
 func NewAssetEdge(workspaceID WorkspaceID, deploymentID DeploymentID, fromID, toID AssetID, typ AssetEdgeType) AssetEdge {
