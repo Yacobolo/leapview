@@ -303,6 +303,31 @@ func TestCompileSourceRelation(t *testing.T) {
 		t.Fatalf("quack relation without options = %q, want %q", relation, want)
 	}
 
+	relation, err = compileSourceRelation(sourcePlan{
+		kind:       "object",
+		connection: "remote_quack",
+		connectionConfig: semanticmodel.Connection{
+			Path: "quack:quack.example.com:443",
+			Auth: semanticmodel.ConnectionAuth{"token": "secret-token"},
+		},
+		connectionSpec: semanticmodel.ConnectionSpec{ObjectRelation: semanticmodel.ObjectRelationQuackQuery},
+		object:         "oeducklake.oe_aravind.fact_general_ledger_line",
+		fields:         []string{"gl_line_fact_key", "amount_dkk", "transaction_date"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "SELECT * FROM quack_query('quack:quack.example.com:443', 'SELECT gl_line_fact_key, amount_dkk, transaction_date FROM oeducklake.oe_aravind.fact_general_ledger_line')"
+	if relation != want {
+		t.Fatalf("quack projected relation = %q, want %q", relation, want)
+	}
+	if strings.Contains(relation, "CAST(") || strings.Contains(relation, "VARCHAR") {
+		t.Fatalf("quack projected relation should preserve native types: %q", relation)
+	}
+	if strings.Contains(relation, "secret-token") {
+		t.Fatalf("quack projected relation contains token: %q", relation)
+	}
+
 	_, err = compileSourceRelation(sourcePlan{kind: "path", format: "csv", path: "/data/orders.csv", options: map[string]any{"bad-key": true}})
 	if err == nil || !strings.Contains(err.Error(), "invalid source option") {
 		t.Fatalf("invalid option error = %v, want invalid source option", err)
@@ -311,6 +336,26 @@ func TestCompileSourceRelation(t *testing.T) {
 	_, err = compileSourceRelation(sourcePlan{kind: "path", format: "lance", path: "/data/products.lance", options: map[string]any{"sample_size": 1000}})
 	if err == nil || !strings.Contains(err.Error(), "lance source cannot set options") {
 		t.Fatalf("lance option error = %v, want lance option rejection", err)
+	}
+}
+
+func TestQuackMetadataColumnsSQLUsesInformationSchema(t *testing.T) {
+	sqlText, err := quackMetadataColumnsSQL(
+		"quack:quack.example.com:443",
+		"oeducklake.oe_aravind.fact_general_ledger_line",
+		map[string]any{"disable_ssl": true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sqlText, "information_schema.columns") {
+		t.Fatalf("metadata SQL = %q, want information_schema.columns", sqlText)
+	}
+	if strings.Contains(sqlText, "SELECT * FROM oeducklake.oe_aravind.fact_general_ledger_line") {
+		t.Fatalf("metadata SQL scans source object: %q", sqlText)
+	}
+	if strings.Contains(sqlText, "secret-token") {
+		t.Fatalf("metadata SQL contains token: %q", sqlText)
 	}
 }
 

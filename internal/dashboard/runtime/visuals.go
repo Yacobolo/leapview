@@ -125,6 +125,7 @@ func (s *VisualQueryService) categoryData(ctx context.Context, runtime *modelRun
 		sorts = []reportdef.QuerySort{{Field: dimensionAlias, Direction: "asc"}}
 	}
 	data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table:      visual.Query.Table,
 		Dimensions: dimensions,
 		Measures:   []reportdef.QueryField{queryFieldRef(visual.Query.Measures[0], measureAlias)},
 		Filters:    queryFilters,
@@ -166,6 +167,7 @@ func (s *VisualQueryService) categoryMultiMeasureData(ctx context.Context, runti
 
 	for _, measureName := range visual.Query.Measures {
 		rows, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+			Table:      visual.Query.Table,
 			Dimensions: []reportdef.QueryField{fieldRef(visual.Query.Dimensions[0].Field, "label")},
 			Measures:   []reportdef.QueryField{queryFieldRef(measureName, "value")},
 			Filters:    queryFilters,
@@ -208,6 +210,7 @@ func (s *VisualQueryService) binnedMeasureData(ctx context.Context, runtime *mod
 		return nil, err
 	}
 	bins, err := runtime.data.Histogram(ctx, reportdef.RawValueQuery{
+		Table:   visual.Query.Table,
 		Measure: queryFieldRef(visual.Query.Measures[0], "value"),
 		Filters: queryFilters,
 	}, optionInt(visual.Options, "bin_count", 20, 5, 60))
@@ -239,6 +242,7 @@ func (s *VisualQueryService) hierarchyData(ctx context.Context, runtime *modelRu
 		levelAliases = append(levelAliases, alias)
 	}
 	rows, err := runtime.data.Query(ctx, reportdef.AggregateQuery{
+		Table:      visual.Query.Table,
 		Dimensions: dimensions,
 		Measures:   []reportdef.QueryField{queryFieldRef(visual.Query.Measures[0], "value")},
 		Filters:    queryFilters,
@@ -293,6 +297,7 @@ func (s *VisualQueryService) singleValueData(ctx context.Context, runtime *model
 		sorts = nil
 	}
 	data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table:      visual.Query.Table,
 		Dimensions: dimensions,
 		Measures:   []reportdef.QueryField{queryFieldRef(measureRef, "value")},
 		Filters:    queryFilters,
@@ -332,6 +337,7 @@ func (s *VisualQueryService) dimensionPairData(ctx context.Context, runtime *mod
 		return nil, err
 	}
 	data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table: visual.Query.Table,
 		Dimensions: []reportdef.QueryField{
 			fieldRef(visual.Query.Dimensions[0].Field, leftAlias),
 			fieldRef(visual.Query.Dimensions[1].Field, rightSQLAlias),
@@ -362,6 +368,7 @@ func (s *VisualQueryService) geoData(ctx context.Context, runtime *modelRuntime,
 		return nil, err
 	}
 	data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table:      visual.Query.Table,
 		Dimensions: []reportdef.QueryField{fieldRef(visual.Query.Dimensions[0].Field, "name")},
 		Measures:   []reportdef.QueryField{queryFieldRef(visual.Query.Measures[0], "value")},
 		Filters:    queryFilters,
@@ -381,6 +388,7 @@ func (s *VisualQueryService) ohlcData(ctx context.Context, runtime *modelRuntime
 		return nil, err
 	}
 	return s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table:      visual.Query.Table,
 		Dimensions: []reportdef.QueryField{fieldRef(visual.Query.Dimensions[0].Field, "label")},
 		Measures: []reportdef.QueryField{
 			queryFieldRef(visual.Query.Measures[0], "open"),
@@ -400,6 +408,7 @@ func (s *VisualQueryService) distributionData(ctx context.Context, runtime *mode
 		return nil, err
 	}
 	return s.queryDistributionDatums(ctx, runtime, reportdef.RawValueQuery{
+		Table:      visual.Query.Table,
 		Dimensions: []reportdef.QueryField{fieldRef(visual.Query.Dimensions[0].Field, "label")},
 		Measure:    queryFieldRef(visual.Query.Measures[0], "value"),
 		Filters:    queryFilters,

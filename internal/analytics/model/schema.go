@@ -52,7 +52,7 @@ func (m *Model) ValidateDiscoveredSchemas() error {
 	return nil
 }
 
-func discoveredFieldRefs(expression string) []string {
+func ExpressionFieldRefs(expression string) []string {
 	matches := discoveredFieldRefPattern.FindAllStringSubmatch(expression, -1)
 	seen := map[string]struct{}{}
 	refs := make([]string, 0, len(matches))
@@ -68,4 +68,8 @@ func discoveredFieldRefs(expression string) []string {
 		refs = append(refs, ref)
 	}
 	return refs
+}
+
+func discoveredFieldRefs(expression string) []string {
+	return ExpressionFieldRefs(expression)
 }

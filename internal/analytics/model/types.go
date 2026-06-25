@@ -61,6 +61,7 @@ type Table struct {
 	Description        string                     `yaml:"description"`
 	Schema             TableSchema                `yaml:"-"`
 	SourceDependencies []string                   `yaml:"-"`
+	ModelDependencies  []string                   `yaml:"-"`
 }
 
 type Transform struct {

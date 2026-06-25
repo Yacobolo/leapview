@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
@@ -14,6 +16,92 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
+
+func TestDirectModelTableRegistersProjectedSourceRead(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name: "test",
+		Connections: map[string]semanticmodel.Connection{
+			"local_files": {Kind: "local"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), recordingExecutor{}, sources, model); err != nil {
+		t.Fatal(err)
+	}
+	want := []analyticsmaterialize.SourceReadPlan{{Source: "orders", Fields: []string{"order_id", "revenue", "status"}}}
+	if !reflect.DeepEqual(sources.reads, want) {
+		t.Fatalf("source reads = %#v, want %#v", sources.reads, want)
+	}
+}
+
+func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name: "test",
+		Connections: map[string]semanticmodel.Connection{
+			"local_files": {Kind: "local"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "order_summary",
+		Tables: map[string]semanticmodel.Table{
+			"order_summary": {
+				Sources:    []string{},
+				PrimaryKey: "status",
+				Transform:  semanticmodel.Transform{SQL: "SELECT status, SUM(revenue) AS revenue FROM model.orders GROUP BY status"},
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"status":  {Label: "Status"},
+					"revenue": {Label: "Revenue"},
+				},
+			},
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "order_summary", Grain: "status", Expression: "SUM(order_summary.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	executor := &recordingStatementsExecutor{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), executor, &recordingSourceRegistrar{}, model); err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.statements) != 2 {
+		t.Fatalf("statements = %#v, want two materializations", executor.statements)
+	}
+	if !strings.Contains(executor.statements[0], "model.orders") || !strings.Contains(executor.statements[1], "model.order_summary") {
+		t.Fatalf("materialization order = %#v, want orders before order_summary", executor.statements)
+	}
+}
 
 func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	dir := t.TempDir()
@@ -65,6 +153,37 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	if total != 30.75 {
 		t.Fatalf("total revenue = %v, want 30.75", total)
 	}
+	var rawObjects int
+	if err := db.SQLDB().QueryRowContext(context.Background(), "SELECT count(*) FROM duckdb_tables() WHERE schema_name = 'raw'").Scan(&rawObjects); err != nil {
+		t.Fatal(err)
+	}
+	if rawObjects != 0 {
+		t.Fatalf("raw schema object count = %d, want 0", rawObjects)
+	}
+}
+
+type recordingSourceRegistrar struct {
+	reads []analyticsmaterialize.SourceReadPlan
+}
+
+func (r *recordingSourceRegistrar) RegisterSourceReads(_ context.Context, _ *semanticmodel.Model, reads []analyticsmaterialize.SourceReadPlan) error {
+	r.reads = append(r.reads, reads...)
+	return nil
+}
+
+type recordingExecutor struct{}
+
+func (recordingExecutor) Exec(context.Context, string) error {
+	return nil
+}
+
+type recordingStatementsExecutor struct {
+	statements []string
+}
+
+func (r *recordingStatementsExecutor) Exec(_ context.Context, statement string) error {
+	r.statements = append(r.statements, statement)
+	return nil
 }
 
 func TestRegistersDatabaseSourceTwice(t *testing.T) {

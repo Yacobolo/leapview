@@ -24,6 +24,11 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 		}
 	}
 	for name, visual := range d.Visuals {
+		if visual.Query.Table != "" {
+			if _, ok := model.Tables[visual.Query.Table]; !ok {
+				return fmt.Errorf("visual %q query.table references unknown table %q", name, visual.Query.Table)
+			}
+		}
 		for _, dimension := range visual.Query.Dimensions {
 			if _, err := model.ResolveDimension(dimension.Field); err != nil {
 				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension.Field)

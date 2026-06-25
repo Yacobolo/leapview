@@ -87,6 +87,7 @@ type Visual struct {
 }
 
 type VisualQuery struct {
+	Table      string     `yaml:"table"`
 	Dimensions []FieldRef `yaml:"dimensions"`
 	Series     FieldRef   `yaml:"series"`
 	Measures   []FieldRef `yaml:"measures"`
@@ -136,6 +137,10 @@ func (q *VisualQuery) UnmarshalYAML(value *yaml.Node) error {
 		key := value.Content[index].Value
 		item := value.Content[index+1]
 		switch key {
+		case "table":
+			if err := item.Decode(&out.Table); err != nil {
+				return err
+			}
 		case "metric_view":
 			return fmt.Errorf("metric_view is not supported; use dashboard semantic_model")
 		case "dimensions":

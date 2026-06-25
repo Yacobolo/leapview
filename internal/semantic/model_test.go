@@ -78,7 +78,7 @@ semantic_models:
 	}
 }
 
-func TestModelValidateRejectsMeasureOnUnreachableTable(t *testing.T) {
+func TestModelValidateAllowsMeasureOnDisconnectedFactTable(t *testing.T) {
 	model := minimalSourceModel()
 	model.Sources["customers"] = Source{Path: "customers.csv"}
 	model.Measures = map[string]MetricMeasure{}
@@ -101,8 +101,8 @@ func TestModelValidateRejectsMeasureOnUnreachableTable(t *testing.T) {
 		Expression: "COUNT(DISTINCT customers.customer_id)",
 	}
 	err := model.Validate()
-	if err == nil || !strings.Contains(err.Error(), `no safe relationship path from "orders" to "customers"`) {
-		t.Fatalf("Validate() error = %v, want unreachable measure table rejection", err)
+	if err != nil {
+		t.Fatalf("Validate() error = %v, want disconnected fact table to load", err)
 	}
 }
 

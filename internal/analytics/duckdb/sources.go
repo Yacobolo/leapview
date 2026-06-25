@@ -84,6 +84,9 @@ func PrepareSourceRuntime(ctx context.Context, db *sql.DB, model *semanticmodel.
 }
 
 func RegisterSourceViews(ctx context.Context, db *sql.DB, model *semanticmodel.Model, dataDir string, attachedConnections map[string]struct{}) error {
+	if err := PrepareSourceRuntime(ctx, db, model, dataDir, attachedConnections); err != nil {
+		return err
+	}
 	if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS raw"); err != nil {
 		return err
 	}
@@ -91,10 +94,6 @@ func RegisterSourceViews(ctx context.Context, db *sql.DB, model *semanticmodel.M
 		return err
 	}
 	if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS model"); err != nil {
-		return err
-	}
-
-	if err := PrepareSourceRuntime(ctx, db, model, dataDir, attachedConnections); err != nil {
 		return err
 	}
 
@@ -119,6 +118,36 @@ func RegisterSourceViews(ctx context.Context, db *sql.DB, model *semanticmodel.M
 	return nil
 }
 
+func RegisterSourceReads(ctx context.Context, db *sql.DB, model *semanticmodel.Model, dataDir string, reads []analyticsmaterialize.SourceReadPlan, attachedConnections map[string]struct{}) error {
+	if err := PrepareSourceRuntime(ctx, db, model, dataDir, attachedConnections); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS source"); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS model"); err != nil {
+		return err
+	}
+	for _, read := range reads {
+		if err := validateIdentifier(read.Source); err != nil {
+			return err
+		}
+		source, ok := model.Sources[read.Source]
+		if !ok {
+			return fmt.Errorf("unknown source %q", read.Source)
+		}
+		relation, err := SourceReadRelation(model, source, dataDir, read.Fields)
+		if err != nil {
+			return fmt.Errorf("compiling source %s: %w", read.Source, err)
+		}
+		stmt := fmt.Sprintf("CREATE OR REPLACE VIEW source.%s AS %s", read.Source, relation)
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("registering source %s: %w", read.Source, err)
+		}
+	}
+	return nil
+}
+
 type sourcePlan struct {
 	kind             string
 	format           string
@@ -127,14 +156,20 @@ type sourcePlan struct {
 	connectionConfig semanticmodel.Connection
 	connectionSpec   semanticmodel.ConnectionSpec
 	object           string
+	fields           []string
 	options          map[string]any
 }
 
 func SourceRelation(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {
+	return SourceReadRelation(model, source, dataDir, nil)
+}
+
+func SourceReadRelation(model *semanticmodel.Model, source semanticmodel.Source, dataDir string, fields []string) (string, error) {
 	plan, err := ResolveSourcePlan(model, source, dataDir)
 	if err != nil {
 		return "", err
 	}
+	plan.fields = append([]string{}, fields...)
 	return compileSourceRelation(plan)
 }
 
@@ -179,9 +214,13 @@ func compileSourceRelation(plan sourcePlan) (string, error) {
 		}
 		switch format.ScanKind {
 		case semanticmodel.ScanTableFunction:
-			return scanRelation(format.ScanFunction, plan.path, plan.options)
+			source, err := scanRelationSource(format.ScanFunction, plan.path, plan.options)
+			if err != nil {
+				return "", err
+			}
+			return projectedRelation(source, plan.fields)
 		case semanticmodel.ScanReplacement:
-			return replacementScanRelation(plan.path), nil
+			return projectedRelation(replacementScanSource(plan.path), plan.fields)
 		default:
 			return "", fmt.Errorf("unsupported source scan kind %q", format.ScanKind)
 		}
@@ -196,9 +235,9 @@ func compileSourceRelation(plan sourcePlan) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("SELECT * FROM %s.%s", alias, object), nil
+			return projectedRelation(fmt.Sprintf("%s.%s", alias, object), plan.fields)
 		case semanticmodel.ObjectRelationQuackQuery:
-			return quackQueryRelation(plan.connectionConfig.Path, object, plan.connectionConfig.Options)
+			return quackQueryRelation(plan.connectionConfig.Path, object, plan.fields, plan.connectionConfig.Options)
 		default:
 			return "", fmt.Errorf("unsupported object relation mode %q", plan.connectionSpec.ObjectRelation)
 		}
@@ -211,10 +250,33 @@ func connectionRequiresObjectAttach(connection semanticmodel.ConnectionSpec) boo
 	return connection.ObjectRelation == semanticmodel.ObjectRelationAttach
 }
 
-func quackQueryRelation(uri, object string, options map[string]any) (string, error) {
+func quackQueryRelation(uri, object string, fields []string, options map[string]any) (string, error) {
+	projection := "*"
+	if len(fields) > 0 {
+		projectedFields := make([]string, 0, len(fields))
+		for _, field := range fields {
+			projectedField, err := qualifiedSQLName(field)
+			if err != nil {
+				return "", err
+			}
+			if err := validateIdentifier(field); err != nil {
+				return "", err
+			}
+			projectedFields = append(projectedFields, projectedField)
+		}
+		projection = strings.Join(projectedFields, ", ")
+	}
+	call, err := quackQueryCall(uri, "SELECT "+projection+" FROM "+object, options)
+	if err != nil {
+		return "", err
+	}
+	return "SELECT * FROM " + call, nil
+}
+
+func quackQueryCall(uri, remoteSQL string, options map[string]any) (string, error) {
 	args := []string{
 		"'" + sqlString(uri) + "'",
-		"'" + sqlString("SELECT * FROM "+object) + "'",
+		"'" + sqlString(remoteSQL) + "'",
 	}
 	if value, ok := options["disable_ssl"]; ok {
 		disableSSL, ok := value.(bool)
@@ -223,19 +285,58 @@ func quackQueryRelation(uri, object string, options map[string]any) (string, err
 		}
 		args = append(args, fmt.Sprintf("disable_ssl => %t", disableSSL))
 	}
-	return fmt.Sprintf("SELECT * FROM quack_query(%s)", strings.Join(args, ", ")), nil
+	return fmt.Sprintf("quack_query(%s)", strings.Join(args, ", ")), nil
 }
 
 func replacementScanRelation(path string) string {
-	return fmt.Sprintf("SELECT * FROM '%s'", sqlString(path))
+	relation, _ := projectedRelation(replacementScanSource(path), nil)
+	return relation
+}
+
+func replacementScanSource(path string) string {
+	return fmt.Sprintf("'%s'", sqlString(path))
 }
 
 func scanRelation(function, location string, options map[string]any) (string, error) {
+	source, err := scanRelationSource(function, location, options)
+	if err != nil {
+		return "", err
+	}
+	return projectedRelation(source, nil)
+}
+
+func scanRelationSource(function, location string, options map[string]any) (string, error) {
 	optionSQL, err := sqlOptions(options)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("SELECT * FROM %s('%s'%s)", function, sqlString(location), optionSQL), nil
+	return fmt.Sprintf("%s('%s'%s)", function, sqlString(location), optionSQL), nil
+}
+
+func projectedRelation(source string, fields []string) (string, error) {
+	projection, err := projectionSQL(fields)
+	if err != nil {
+		return "", err
+	}
+	return "SELECT " + projection + " FROM " + source, nil
+}
+
+func projectionSQL(fields []string) (string, error) {
+	if len(fields) == 0 {
+		return "*", nil
+	}
+	projected := make([]string, 0, len(fields))
+	for _, field := range fields {
+		sqlName, err := qualifiedSQLName(field)
+		if err != nil {
+			return "", err
+		}
+		if err := validateIdentifier(field); err != nil {
+			return "", err
+		}
+		projected = append(projected, sqlName)
+	}
+	return strings.Join(projected, ", "), nil
 }
 
 func sqlOptions(options map[string]any) (string, error) {
