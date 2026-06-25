@@ -1,6 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
+@route("/api/v1")
 namespace LibreDashAPI;
 
 model PermissionListResponse {
@@ -48,86 +49,65 @@ model SessionListResponse {
   page: PageInfo;
 }
 
-model GetCurrentPrincipalOK {
-  @statusCode statusCode: 200;
-  @body body: PrincipalResponse;
-}
+alias GetCurrentPrincipalOK = OkJson<PrincipalResponse>;
 
 @tag("Current User")
 @summary("Get current principal")
-@route("/api/v1/me")
+@route("/me")
 @get
 @apigen.authz(#{ mode: "permission", permission: "workspace:read" })
-op getCurrentPrincipal(): GetCurrentPrincipalOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op getCurrentPrincipal(): GetCurrentPrincipalOK | CommonErrors;
 
-model ListCurrentAPITokensOK {
-  @statusCode statusCode: 200;
-  @body body: APITokenListResponse;
-}
+alias ListCurrentAPITokensOK = OkJson<APITokenListResponse>;
 
 @tag("Current User")
 @summary("List current API tokens")
-@route("/api/v1/me/api-tokens")
+@route("/me/api-tokens")
 @get
 @apigen.authz(#{ mode: "permission", permission: "token:manage" })
-op listCurrentAPITokens(@query limit?: int32, @query pageToken?: string): ListCurrentAPITokensOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listCurrentAPITokens(@query limit?: int32, @query pageToken?: string): ListCurrentAPITokensOK | CommonErrors;
 
-model CreateCurrentAPITokenCreated {
-  @statusCode statusCode: 201;
-  @body body: APITokenCreateResponse;
-}
+alias CreateCurrentAPITokenCreated = CreatedJson<APITokenCreateResponse>;
 
 @tag("Current User")
 @summary("Create current API token")
-@route("/api/v1/me/api-tokens")
+@route("/me/api-tokens")
 @post
 @apigen.authz(#{ mode: "permission", permission: "token:manage" })
-op createCurrentAPIToken(@body body: APITokenCreateRequest): CreateCurrentAPITokenCreated | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op createCurrentAPIToken(@body body: APITokenCreateRequest): CreateCurrentAPITokenCreated | CommonErrors;
 
-model RevokeCurrentAPITokenOK {
-  @statusCode statusCode: 200;
-  @body body: StatusResponse;
-}
+alias RevokeCurrentAPITokenOK = OkJson<StatusResponse>;
 
 @tag("Current User")
 @summary("Revoke current API token")
-@route("/api/v1/me/api-tokens/{token}")
+@route("/me/api-tokens/{token}")
 @delete
 @apigen.authz(#{ mode: "permission", permission: "token:manage" })
-op revokeCurrentAPIToken(@path token: string): RevokeCurrentAPITokenOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op revokeCurrentAPIToken(@path token: string): RevokeCurrentAPITokenOK | CommonErrors;
 
-model ListCurrentPermissionsOK {
-  @statusCode statusCode: 200;
-  @body body: PermissionListResponse;
-}
+alias ListCurrentPermissionsOK = OkJson<PermissionListResponse>;
 
 @tag("Current User")
 @summary("List current permissions")
-@route("/api/v1/me/permissions")
+@route("/me/permissions")
 @get
 @apigen.authz(#{ mode: "permission", permission: "workspace:read" })
-op listCurrentPermissions(@query workspace?: string): ListCurrentPermissionsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listCurrentPermissions(@query workspace?: string): ListCurrentPermissionsOK | CommonErrors;
 
-model ListCurrentSessionsOK {
-  @statusCode statusCode: 200;
-  @body body: SessionListResponse;
-}
+alias ListCurrentSessionsOK = OkJson<SessionListResponse>;
 
 @tag("Current User")
 @summary("List current sessions")
-@route("/api/v1/me/sessions")
+@route("/me/sessions")
 @get
 @apigen.authz(#{ mode: "permission", permission: "workspace:read" })
-op listCurrentSessions(@query limit?: int32, @query pageToken?: string): ListCurrentSessionsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listCurrentSessions(@query limit?: int32, @query pageToken?: string): ListCurrentSessionsOK | CommonErrors;
 
-model RevokeCurrentSessionOK {
-  @statusCode statusCode: 200;
-  @body body: StatusResponse;
-}
+alias RevokeCurrentSessionOK = OkJson<StatusResponse>;
 
 @tag("Current User")
 @summary("Revoke current session")
-@route("/api/v1/me/sessions/{session}")
+@route("/me/sessions/{session}")
 @delete
 @apigen.authz(#{ mode: "permission", permission: "workspace:read" })
-op revokeCurrentSession(@path session: string): RevokeCurrentSessionOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op revokeCurrentSession(@path session: string): RevokeCurrentSessionOK | CommonErrors;

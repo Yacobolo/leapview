@@ -1,6 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
+@route("/api/v1")
 namespace LibreDashAPI;
 
 model DeploymentCreateRequest {
@@ -14,7 +15,7 @@ model DeploymentArtifactResponse {
 }
 
 model DeploymentArtifactUploadRequest {
-  value: bytes;
+  artifact: bytes;
 }
 
 model DeploymentResponse {
@@ -32,78 +33,60 @@ model DeploymentListResponse {
   page: PageInfo;
 }
 
-model ListDeploymentsOK {
-  @statusCode statusCode: 200;
-  @body body: DeploymentListResponse;
-}
+alias ListDeploymentsOK = OkJson<DeploymentListResponse>;
 
 @tag("Deployments")
 @summary("List deployments")
-@route("/api/v1/workspaces/{workspace}/deployments")
+@route("/workspaces/{workspace}/deployments")
 @get
 @apigen.authz(#{ mode: "permission", permission: "deployment:read" })
 @apigen.cli(#{ command: #["deployments", "list"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
-@extension("x-agent", #{ enabled: true, name: "list_deployments", risk: "read", tags: #["deployment"] })
-op listDeployments(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListDeploymentsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+@extension("x-agent", #{ enabled: true, name: "list_deployments", risk: "read", tags: #["deployment"], defaultLimit: 25 })
+op listDeployments(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListDeploymentsOK | CommonErrors;
 
-model CreateDeploymentCreated {
-  @statusCode statusCode: 201;
-  @body body: DeploymentResponse;
-}
+alias CreateDeploymentCreated = CreatedJson<DeploymentResponse>;
 
 @tag("Deployments")
 @summary("Create a deployment")
-@route("/api/v1/workspaces/{workspace}/deployments")
+@route("/workspaces/{workspace}/deployments")
 @post
 @apigen.authz(#{ mode: "permission", permission: "deployment:write" })
-op createDeployment(@path workspace: string, @body body?: DeploymentCreateRequest): CreateDeploymentCreated | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op createDeployment(@path workspace: string, @body body?: DeploymentCreateRequest): CreateDeploymentCreated | CommonErrors;
 
-model GetDeploymentOK {
-  @statusCode statusCode: 200;
-  @body body: DeploymentResponse;
-}
+alias GetDeploymentOK = OkJson<DeploymentResponse>;
 
 @tag("Deployments")
 @summary("Get a deployment")
-@route("/api/v1/workspaces/{workspace}/deployments/{deployment}")
+@route("/workspaces/{workspace}/deployments/{deployment}")
 @get
 @apigen.authz(#{ mode: "permission", permission: "deployment:read" })
 @extension("x-agent", #{ enabled: true, name: "get_deployment", risk: "read", tags: #["deployment"] })
-op getDeployment(@path workspace: string, @path deployment: string): GetDeploymentOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op getDeployment(@path workspace: string, @path deployment: string): GetDeploymentOK | CommonErrors;
 
-model ActivateDeploymentOK {
-  @statusCode statusCode: 200;
-  @body body: DeploymentResponse;
-}
+alias ActivateDeploymentOK = OkJson<DeploymentResponse>;
 
 @tag("Deployments")
 @summary("Activate a deployment")
-@route("/api/v1/workspaces/{workspace}/deployments/{deployment}/activate")
+@route("/workspaces/{workspace}/deployments/{deployment}/activate")
 @post
 @apigen.authz(#{ mode: "permission", permission: "deployment:activate" })
-op activateDeployment(@path workspace: string, @path deployment: string): ActivateDeploymentOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op activateDeployment(@path workspace: string, @path deployment: string): ActivateDeploymentOK | CommonErrors;
 
-model UploadDeploymentArtifactOK {
-  @statusCode statusCode: 200;
-  @body body: DeploymentArtifactResponse;
-}
+alias UploadDeploymentArtifactOK = OkJson<DeploymentArtifactResponse>;
 
 @tag("Deployments")
 @summary("Upload a deployment artifact")
-@route("/api/v1/workspaces/{workspace}/deployments/{deployment}/artifact")
+@route("/workspaces/{workspace}/deployments/{deployment}/artifact")
 @put
 @apigen.authz(#{ mode: "permission", permission: "deployment:write" })
 @extension("x-libredash-dispatch", "raw-body")
-op uploadDeploymentArtifact(@path workspace: string, @path deployment: string, @body body: DeploymentArtifactUploadRequest): UploadDeploymentArtifactOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op uploadDeploymentArtifact(@path workspace: string, @path deployment: string, @header contentType: "application/octet-stream", @body body: DeploymentArtifactUploadRequest): UploadDeploymentArtifactOK | CommonErrors;
 
-model ValidateDeploymentOK {
-  @statusCode statusCode: 200;
-  @body body: DeploymentResponse;
-}
+alias ValidateDeploymentOK = OkJson<DeploymentResponse>;
 
 @tag("Deployments")
 @summary("Validate a deployment")
-@route("/api/v1/workspaces/{workspace}/deployments/{deployment}/validate")
+@route("/workspaces/{workspace}/deployments/{deployment}/validate")
 @post
 @apigen.authz(#{ mode: "permission", permission: "deployment:write" })
-op validateDeployment(@path workspace: string, @path deployment: string): ValidateDeploymentOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op validateDeployment(@path workspace: string, @path deployment: string): ValidateDeploymentOK | CommonErrors;

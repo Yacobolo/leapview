@@ -1,6 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
+@route("/api/v1")
 namespace LibreDashAPI;
 
 model WorkspaceResponse {
@@ -49,42 +50,33 @@ model AssetEdgeListResponse {
   page: PageInfo;
 }
 
-model ListWorkspacesOK {
-  @statusCode statusCode: 200;
-  @body body: WorkspaceListResponse;
-}
+alias ListWorkspacesOK = OkJson<WorkspaceListResponse>;
 
 @tag("Workspaces")
 @summary("List workspaces")
-@route("/api/v1/workspaces")
+@route("/workspaces")
 @get
 @apigen.authz(#{ mode: "permission", permission: "workspace:read" })
 @apigen.cli(#{ command: #["workspaces", "list"], output: #{ mode: "raw" } })
-@extension("x-agent", #{ enabled: true, name: "list_workspaces", risk: "read", tags: #["workspace"] })
-op listWorkspaces(@query limit?: int32, @query pageToken?: string): ListWorkspacesOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+@extension("x-agent", #{ enabled: true, name: "list_workspaces", risk: "read", tags: #["workspace"], defaultLimit: 25 })
+op listWorkspaces(@query limit?: int32, @query pageToken?: string): ListWorkspacesOK | CommonErrors;
 
-model ListWorkspaceAssetEdgesOK {
-  @statusCode statusCode: 200;
-  @body body: AssetEdgeListResponse;
-}
+alias ListWorkspaceAssetEdgesOK = OkJson<AssetEdgeListResponse>;
 
 @tag("Workspaces")
 @summary("List workspace asset edges")
-@route("/api/v1/workspaces/{workspace}/asset-edges")
+@route("/workspaces/{workspace}/asset-edges")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
-@extension("x-agent", #{ enabled: true, name: "list_workspace_asset_edges", risk: "read", tags: #["workspace", "lineage"] })
-op listWorkspaceAssetEdges(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetEdgesOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+@extension("x-agent", #{ enabled: true, name: "list_workspace_asset_edges", risk: "read", tags: #["workspace", "lineage"], defaultLimit: 25 })
+op listWorkspaceAssetEdges(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetEdgesOK | CommonErrors;
 
-model ListWorkspaceAssetsOK {
-  @statusCode statusCode: 200;
-  @body body: AssetListResponse;
-}
+alias ListWorkspaceAssetsOK = OkJson<AssetListResponse>;
 
 @tag("Workspaces")
 @summary("List workspace assets")
-@route("/api/v1/workspaces/{workspace}/assets")
+@route("/workspaces/{workspace}/assets")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
-@extension("x-agent", #{ enabled: true, name: "list_workspace_assets", risk: "read", tags: #["workspace", "asset", "lineage"] })
-op listWorkspaceAssets(@path workspace: string, @query type?: string, @query q?: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+@extension("x-agent", #{ enabled: true, name: "list_workspace_assets", risk: "read", tags: #["workspace", "asset", "lineage"], defaultLimit: 25 })
+op listWorkspaceAssets(@path workspace: string, @query type?: string, @query q?: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetsOK | CommonErrors;

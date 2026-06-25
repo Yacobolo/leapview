@@ -1,6 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
+@route("/api/v1")
 namespace LibreDashAPI;
 
 model DashboardSummary {
@@ -13,7 +14,8 @@ model DashboardSummary {
 }
 
 model DashboardListResponse {
-  dashboards: DashboardSummary[];
+  items: DashboardSummary[];
+  page: PageInfo;
 }
 
 model SemanticModelSummary {
@@ -23,7 +25,8 @@ model SemanticModelSummary {
 }
 
 model SemanticModelListResponse {
-  models: SemanticModelSummary[];
+  items: SemanticModelSummary[];
+  page: PageInfo;
 }
 
 model ModelRef {
@@ -123,86 +126,68 @@ model DashboardTableQueryResponse {
   blocks: Record<string>;
 }
 
-model ListDashboardsOK {
-  @statusCode statusCode: 200;
-  @body body: DashboardListResponse;
-}
+alias ListDashboardsOK = OkJson<DashboardListResponse>;
 
 @tag("BI")
 @summary("List dashboards")
-@route("/api/v1/workspaces/{workspace}/dashboards")
+@route("/workspaces/{workspace}/dashboards")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
 @apigen.cli(#{ command: #["dashboards", "list"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
-@extension("x-agent", #{ enabled: true, name: "list_dashboards", risk: "read", tags: #["dashboard", "catalog"] })
-op listDashboards(@path workspace: string): ListDashboardsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+@extension("x-agent", #{ enabled: true, name: "list_dashboards", risk: "read", tags: #["dashboard", "catalog"], defaultLimit: 25 })
+op listDashboards(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListDashboardsOK | CommonErrors;
 
-model GetDashboardOK {
-  @statusCode statusCode: 200;
-  @body body: DashboardManifestResponse;
-}
+alias GetDashboardOK = OkJson<DashboardManifestResponse>;
 
 @tag("BI")
 @summary("Describe dashboard")
-@route("/api/v1/workspaces/{workspace}/dashboards/{dashboard}")
+@route("/workspaces/{workspace}/dashboards/{dashboard}")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
 @apigen.cli(#{ command: #["dashboards", "describe"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }], output: #{ mode: "raw" } })
 @extension("x-agent", #{ enabled: true, name: "describe_dashboard", risk: "read", tags: #["dashboard", "catalog"] })
-op getDashboard(@path workspace: string, @path dashboard: string): GetDashboardOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op getDashboard(@path workspace: string, @path dashboard: string): GetDashboardOK | CommonErrors;
 
-model ListSemanticModelsOK {
-  @statusCode statusCode: 200;
-  @body body: SemanticModelListResponse;
-}
+alias ListSemanticModelsOK = OkJson<SemanticModelListResponse>;
 
 @tag("BI")
 @summary("List semantic models")
-@route("/api/v1/workspaces/{workspace}/semantic-models")
+@route("/workspaces/{workspace}/semantic-models")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
 @apigen.cli(#{ command: #["semantic-models", "list"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
-@extension("x-agent", #{ enabled: true, name: "list_semantic_models", risk: "read", tags: #["semantic-model", "catalog"] })
-op listSemanticModels(@path workspace: string): ListSemanticModelsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+@extension("x-agent", #{ enabled: true, name: "list_semantic_models", risk: "read", tags: #["semantic-model", "catalog"], defaultLimit: 25 })
+op listSemanticModels(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListSemanticModelsOK | CommonErrors;
 
-model GetSemanticModelOK {
-  @statusCode statusCode: 200;
-  @body body: SemanticModelDescriptionResponse;
-}
+alias GetSemanticModelOK = OkJson<SemanticModelDescriptionResponse>;
 
 @tag("BI")
 @summary("Describe semantic model")
-@route("/api/v1/workspaces/{workspace}/semantic-models/{model}")
+@route("/workspaces/{workspace}/semantic-models/{model}")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
 @apigen.cli(#{ command: #["semantic-models", "describe"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
 @extension("x-agent", #{ enabled: true, name: "describe_model", risk: "read", tags: #["semantic-model", "catalog"] })
-op getSemanticModel(@path workspace: string, @path("model") modelName: string): GetSemanticModelOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op getSemanticModel(@path workspace: string, @path("model") modelName: string): GetSemanticModelOK | CommonErrors;
 
-model QueryDashboardPageOK {
-  @statusCode statusCode: 200;
-  @body body: DashboardPageQueryResponse;
-}
+alias QueryDashboardPageOK = OkJson<DashboardPageQueryResponse>;
 
 @tag("BI")
 @summary("Query dashboard page")
-@route("/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/query")
+@route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/query")
 @post
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
 @apigen.cli(#{ command: #["dashboards", "query-page"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }], output: #{ mode: "raw" } })
 @extension("x-agent", #{ enabled: true, name: "query_dashboard_page", risk: "read", tags: #["dashboard", "query"] })
-op queryDashboardPage(@path workspace: string, @path dashboard: string, @path page: string, @body body?: DashboardPageQueryRequest): QueryDashboardPageOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op queryDashboardPage(@path workspace: string, @path dashboard: string, @path page: string, @body body?: DashboardPageQueryRequest): QueryDashboardPageOK | CommonErrors;
 
-model QueryDashboardTableOK {
-  @statusCode statusCode: 200;
-  @body body: DashboardTableQueryResponse;
-}
+alias QueryDashboardTableOK = OkJson<DashboardTableQueryResponse>;
 
 @tag("BI")
 @summary("Query dashboard table")
-@route("/api/v1/workspaces/{workspace}/dashboards/{dashboard}/tables/{table}/query")
+@route("/workspaces/{workspace}/dashboards/{dashboard}/tables/{table}/query")
 @post
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
 @apigen.cli(#{ command: #["dashboards", "query-table"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "table", displayName: "table" }], output: #{ mode: "raw" } })
 @extension("x-agent", #{ enabled: true, name: "query_table", risk: "read", tags: #["dashboard", "query", "table"] })
-op queryDashboardTable(@path workspace: string, @path dashboard: string, @path table: string, @body body?: DashboardTableQueryRequest): QueryDashboardTableOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op queryDashboardTable(@path workspace: string, @path dashboard: string, @path table: string, @body body?: DashboardTableQueryRequest): QueryDashboardTableOK | CommonErrors;

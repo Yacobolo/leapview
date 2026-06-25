@@ -18,37 +18,57 @@ model StatusResponse {
   status: string;
 }
 
+model OkJson<T> {
+  ...OkResponse;
+  ...Body<T>;
+}
+
+model CreatedJson<T> {
+  ...CreatedResponse;
+  ...Body<T>;
+}
+
+model AcceptedJson<T> {
+  ...Response<202>;
+  ...Body<T>;
+}
+
+model ErrorResponse<Status> {
+  ...Response<Status>;
+  ...Body<Error>;
+}
+
 model BadRequest {
-  @statusCode statusCode: 400;
-  @body body: Error;
+  ...BadRequestResponse;
+  ...Body<Error>;
 }
 
 model Unauthorized {
-  @statusCode statusCode: 401;
-  @body body: Error;
+  ...UnauthorizedResponse;
+  ...Body<Error>;
 }
 
 model Forbidden {
-  @statusCode statusCode: 403;
-  @body body: Error;
+  ...ForbiddenResponse;
+  ...Body<Error>;
 }
 
 model NotFound {
-  @statusCode statusCode: 404;
-  @body body: Error;
+  ...NotFoundResponse;
+  ...Body<Error>;
 }
 
 model Conflict {
-  @statusCode statusCode: 409;
-  @body body: Error;
+  ...ConflictResponse;
+  ...Body<Error>;
 }
 
 model RateLimited {
-  @statusCode statusCode: 429;
-  @body body: Error;
+  ...ErrorResponse<429>;
 }
 
 model InternalServerError {
-  @statusCode statusCode: 500;
-  @body body: Error;
+  ...ErrorResponse<500>;
 }
+
+alias CommonErrors = BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;

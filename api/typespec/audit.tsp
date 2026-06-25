@@ -1,6 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
+@route("/api/v1")
 namespace LibreDashAPI;
 
 model AuditEventResponse {
@@ -19,14 +20,11 @@ model AuditEventListResponse {
   page: PageInfo;
 }
 
-model ListAuditEventsOK {
-  @statusCode statusCode: 200;
-  @body body: AuditEventListResponse;
-}
+alias ListAuditEventsOK = OkJson<AuditEventListResponse>;
 
 @tag("Audit")
 @summary("List workspace audit events")
-@route("/api/v1/workspaces/{workspace}/audit-events")
+@route("/workspaces/{workspace}/audit-events")
 @get
 @apigen.authz(#{ mode: "permission", permission: "audit:read" })
-op listAuditEvents(@path workspace: string, @query actor?: string, @query action?: string, @query targetType?: string, @query targetId?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: int32, @query pageToken?: string): ListAuditEventsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listAuditEvents(@path workspace: string, @query actor?: string, @query action?: string, @query targetType?: string, @query targetId?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: int32, @query pageToken?: string): ListAuditEventsOK | CommonErrors;

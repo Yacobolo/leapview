@@ -1,6 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
+@route("/api/v1")
 namespace LibreDashAPI;
 
 model AgentConversationCreateRequest {
@@ -94,123 +95,93 @@ model AgentEventListResponse {
   page: PageInfo;
 }
 
-model ListAgentConversationsOK {
-  @statusCode statusCode: 200;
-  @body body: AgentConversationListResponse;
-}
+alias ListAgentConversationsOK = OkJson<AgentConversationListResponse>;
 
 @tag("Agent")
 @summary("List agent conversations")
-@route("/api/v1/workspaces/{workspace}/agent/conversations")
+@route("/workspaces/{workspace}/agent/conversations")
 @get
 @apigen.authz(#{ mode: "permission", permission: "agent:read" })
 @apigen.cli(#{ command: #["agent", "conversations"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
-op listAgentConversations(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListAgentConversationsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listAgentConversations(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListAgentConversationsOK | CommonErrors;
 
-model CreateAgentConversationCreated {
-  @statusCode statusCode: 201;
-  @body body: AgentConversationResponse;
-}
+alias CreateAgentConversationCreated = CreatedJson<AgentConversationResponse>;
 
 @tag("Agent")
 @summary("Create an agent conversation")
-@route("/api/v1/workspaces/{workspace}/agent/conversations")
+@route("/workspaces/{workspace}/agent/conversations")
 @post
 @apigen.authz(#{ mode: "permission", permission: "agent:use" })
-op createAgentConversation(@path workspace: string, @body body: AgentConversationCreateRequest): CreateAgentConversationCreated | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op createAgentConversation(@path workspace: string, @body body: AgentConversationCreateRequest): CreateAgentConversationCreated | CommonErrors;
 
-model ArchiveAgentConversationOK {
-  @statusCode statusCode: 200;
-  @body body: AgentConversationResponse;
-}
+alias ArchiveAgentConversationOK = OkJson<AgentConversationResponse>;
 
 @tag("Agent")
 @summary("Archive an agent conversation")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}")
 @delete
 @apigen.authz(#{ mode: "permission", permission: "agent:use" })
-op archiveAgentConversation(@path workspace: string, @path conversation: string): ArchiveAgentConversationOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op archiveAgentConversation(@path workspace: string, @path conversation: string): ArchiveAgentConversationOK | CommonErrors;
 
-model GetAgentConversationOK {
-  @statusCode statusCode: 200;
-  @body body: AgentConversationResponse;
-}
+alias GetAgentConversationOK = OkJson<AgentConversationResponse>;
 
 @tag("Agent")
 @summary("Get an agent conversation")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}")
 @get
 @apigen.authz(#{ mode: "permission", permission: "agent:read" })
-op getAgentConversation(@path workspace: string, @path conversation: string): GetAgentConversationOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op getAgentConversation(@path workspace: string, @path conversation: string): GetAgentConversationOK | CommonErrors;
 
-model UpdateAgentConversationOK {
-  @statusCode statusCode: 200;
-  @body body: AgentConversationResponse;
-}
+alias UpdateAgentConversationOK = OkJson<AgentConversationResponse>;
 
 @tag("Agent")
 @summary("Update an agent conversation")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}")
 @patch
 @apigen.authz(#{ mode: "permission", permission: "agent:use" })
-op updateAgentConversation(@path workspace: string, @path conversation: string, @body body: AgentConversationPatchRequest): UpdateAgentConversationOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op updateAgentConversation(@path workspace: string, @path conversation: string, @body body: AgentConversationPatchRequest): UpdateAgentConversationOK | CommonErrors;
 
-model ListAgentMessagesOK {
-  @statusCode statusCode: 200;
-  @body body: AgentMessageListResponse;
-}
+alias ListAgentMessagesOK = OkJson<AgentMessageListResponse>;
 
 @tag("Agent")
 @summary("List agent messages")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/messages")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}/messages")
 @get
 @apigen.authz(#{ mode: "permission", permission: "agent:read" })
-op listAgentMessages(@path workspace: string, @path conversation: string, @query limit?: int32, @query pageToken?: string): ListAgentMessagesOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listAgentMessages(@path workspace: string, @path conversation: string, @query limit?: int32, @query pageToken?: string): ListAgentMessagesOK | CommonErrors;
 
-model ListAgentRunsOK {
-  @statusCode statusCode: 200;
-  @body body: AgentRunListResponse;
-}
+alias ListAgentRunsOK = OkJson<AgentRunListResponse>;
 
 @tag("Agent")
 @summary("List agent runs")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs")
 @get
 @apigen.authz(#{ mode: "permission", permission: "agent:read" })
-op listAgentRuns(@path workspace: string, @path conversation: string, @query limit?: int32, @query pageToken?: string): ListAgentRunsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listAgentRuns(@path workspace: string, @path conversation: string, @query limit?: int32, @query pageToken?: string): ListAgentRunsOK | CommonErrors;
 
-model GetAgentRunOK {
-  @statusCode statusCode: 200;
-  @body body: AgentRunResponse;
-}
+alias GetAgentRunOK = OkJson<AgentRunResponse>;
 
 @tag("Agent")
 @summary("Get an agent run")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}")
 @get
 @apigen.authz(#{ mode: "permission", permission: "agent:read" })
-op getAgentRun(@path workspace: string, @path conversation: string, @path run: string): GetAgentRunOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op getAgentRun(@path workspace: string, @path conversation: string, @path run: string): GetAgentRunOK | CommonErrors;
 
-model ListAgentEventsOK {
-  @statusCode statusCode: 200;
-  @body body: AgentEventListResponse;
-}
+alias ListAgentEventsOK = OkJson<AgentEventListResponse>;
 
 @tag("Agent")
 @summary("List agent run events")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events")
 @get
 @apigen.authz(#{ mode: "permission", permission: "agent:read" })
-op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @query limit?: int32, @query pageToken?: string): ListAgentEventsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @query limit?: int32, @query pageToken?: string): ListAgentEventsOK | CommonErrors;
 
-model CreateAgentTurnOK {
-  @statusCode statusCode: 200;
-  @body body: AgentTurnResponse;
-}
+alias CreateAgentTurnOK = OkJson<AgentTurnResponse>;
 
 @tag("Agent")
 @summary("Create an agent turn")
-@route("/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/turns")
+@route("/workspaces/{workspace}/agent/conversations/{conversation}/turns")
 @post
 @apigen.authz(#{ mode: "permission", permission: "agent:use" })
-op createAgentTurn(@path workspace: string, @path conversation: string, @body body: AgentTurnRequest): CreateAgentTurnOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
+op createAgentTurn(@path workspace: string, @path conversation: string, @body body: AgentTurnRequest): CreateAgentTurnOK | CommonErrors;
