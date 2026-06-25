@@ -60,15 +60,16 @@ func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID("")
-	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
 	if err != nil {
 		http.Error(w, err.Error(), statusForNotFound(err))
 		return
 	}
-	filtered := filterAssets(assets, "connection", r.URL.Query().Get("q"))
+	activeType := normalizeConnectionAssetType(r.URL.Query().Get("type"))
+	filtered := filterConnectionAssets(assets, activeType, r.URL.Query().Get("q"))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.ConnectionsPage(s.metrics.Catalog(), workspaceID, filtered, r.URL.Query().Get("q"), s.currentRoleLabel(r)).Render(w); err != nil {
+	if err := ui.ConnectionsPage(s.metrics.Catalog(), workspaceID, filtered, edges, activeType, r.URL.Query().Get("q"), s.currentRoleLabel(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -76,7 +77,7 @@ func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
 func (s *Server) workspaceAsset(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	assetID := chi.URLParam(r, "asset")
-	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
 	if err != nil {
 		http.Error(w, err.Error(), statusForNotFound(err))
 		return
@@ -94,6 +95,10 @@ func (s *Server) workspaceAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	if selected.Type == "connection" {
 		http.Redirect(w, r, connectionAssetSectionHref(assetID, "details"), http.StatusFound)
+		return
+	}
+	if selected.Type == "source" {
+		http.Redirect(w, r, canonicalSourceAssetSectionHref(workspaceID, selected.ID, "details", edges), http.StatusFound)
 		return
 	}
 	http.Redirect(w, r, "/workspaces/"+workspaceID+"/assets/"+assetID+"/details", http.StatusFound)
@@ -132,6 +137,10 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, connectionAssetSectionHref(assetID, section), http.StatusFound)
 		return
 	}
+	if selected.Type == "source" {
+		http.Redirect(w, r, canonicalSourceAssetSectionHref(workspaceID, selected.ID, section, edges), http.StatusFound)
+		return
+	}
 	if redirectToDetails {
 		http.Redirect(w, r, "/workspaces/"+workspaceID+"/assets/"+assetID+"/details", http.StatusFound)
 		return
@@ -147,6 +156,46 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 func (s *Server) connectionAsset(w http.ResponseWriter, r *http.Request) {
 	assetID := chi.URLParam(r, "asset")
 	http.Redirect(w, r, connectionAssetSectionHref(assetID, "details"), http.StatusFound)
+}
+
+func (s *Server) connectionSourceAsset(w http.ResponseWriter, r *http.Request) {
+	connectionID := chi.URLParam(r, "connection")
+	sourceID := chi.URLParam(r, "source")
+	http.Redirect(w, r, connectionSourceAssetSectionHref(connectionID, sourceID, "details"), http.StatusFound)
+}
+
+func (s *Server) connectionSourceAssetSection(w http.ResponseWriter, r *http.Request) {
+	section := chi.URLParam(r, "section")
+	if section == "definition" {
+		http.Redirect(w, r, connectionSourceAssetSectionHref(chi.URLParam(r, "connection"), chi.URLParam(r, "source"), "details"), http.StatusFound)
+		return
+	}
+	if !ui.ValidWorkspaceAssetSection(section) {
+		http.NotFound(w, r)
+		return
+	}
+	workspaceID := s.workspaceID("")
+	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	connection, ok := assetByID(assets, chi.URLParam(r, "connection"))
+	if !ok || connection.Type != "connection" {
+		http.NotFound(w, r)
+		return
+	}
+	source, ok := assetByID(assets, chi.URLParam(r, "source"))
+	if !ok || source.Type != "source" || sourceConnectionID(source.ID, edges) != connection.ID {
+		http.NotFound(w, r)
+		return
+	}
+	workspace := s.workspaceResponse(r, workspaceID)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if err := ui.ConnectionSourceAssetPage(s.metrics.Catalog(), workspace, connection, source, assets, edges, section, s.currentRoleLabel(r)).Render(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) connectionAssetSection(w http.ResponseWriter, r *http.Request) {
@@ -931,6 +980,35 @@ func filterWorkspaceAssets(assets []api.AssetResponse, typ, query string) []api.
 	return out
 }
 
+func filterConnectionAssets(assets []api.AssetResponse, typ, query string) []api.AssetResponse {
+	typ = normalizeConnectionAssetType(typ)
+	query = strings.ToLower(strings.TrimSpace(query))
+	out := make([]api.AssetResponse, 0, len(assets))
+	for _, asset := range assets {
+		if asset.Type != "connection" && asset.Type != "source" {
+			continue
+		}
+		if typ != "" && asset.Type != typ {
+			continue
+		}
+		haystack := strings.ToLower(asset.Type + " " + asset.Key + " " + asset.Title + " " + asset.Description)
+		if query != "" && !strings.Contains(haystack, query) {
+			continue
+		}
+		out = append(out, asset)
+	}
+	return out
+}
+
+func normalizeConnectionAssetType(typ string) string {
+	switch strings.TrimSpace(typ) {
+	case "connection", "source":
+		return strings.TrimSpace(typ)
+	default:
+		return ""
+	}
+}
+
 func connectionsHref(query string) string {
 	href := "/connections"
 	if strings.TrimSpace(query) == "" {
@@ -943,6 +1021,35 @@ func connectionsHref(query string) string {
 
 func connectionAssetSectionHref(assetID, section string) string {
 	return "/connections/" + assetID + "/" + section
+}
+
+func connectionSourceAssetSectionHref(connectionID, sourceID, section string) string {
+	return "/connections/" + connectionID + "/sources/" + sourceID + "/" + section
+}
+
+func canonicalSourceAssetSectionHref(workspaceID, sourceID, section string, edges []api.AssetEdgeResponse) string {
+	if connectionID := sourceConnectionID(sourceID, edges); connectionID != "" {
+		return connectionSourceAssetSectionHref(connectionID, sourceID, section)
+	}
+	return "/workspaces/" + workspaceID + "/assets/" + sourceID + "/" + section
+}
+
+func sourceConnectionID(sourceID string, edges []api.AssetEdgeResponse) string {
+	for _, edge := range edges {
+		if edge.Type == string(workspace.AssetEdgeUsesConnection) && edge.FromAssetID == sourceID {
+			return edge.ToAssetID
+		}
+	}
+	return ""
+}
+
+func assetByID(assets []api.AssetResponse, id string) (api.AssetResponse, bool) {
+	for _, asset := range assets {
+		if asset.ID == id {
+			return asset, true
+		}
+	}
+	return api.AssetResponse{}, false
 }
 
 func isWorkspaceLandingAsset(typ string) bool {
