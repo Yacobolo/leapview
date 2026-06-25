@@ -19,6 +19,7 @@ var apigenOperationPermissions = map[string]string{
 	"listCurrentSessions":        access.PermissionWorkspaceRead,
 	"revokeCurrentSession":       access.PermissionWorkspaceRead,
 	"listWorkspaces":             access.PermissionWorkspaceRead,
+	"searchWorkspace":            access.PermissionAssetRead,
 	"listWorkspaceAssets":        access.PermissionAssetRead,
 	"listWorkspaceAssetEdges":    access.PermissionAssetRead,
 	"listDashboards":             access.PermissionAssetRead,
@@ -27,6 +28,13 @@ var apigenOperationPermissions = map[string]string{
 	"getDashboardVisual":         access.PermissionAssetRead,
 	"listSemanticModels":         access.PermissionAssetRead,
 	"getSemanticModel":           access.PermissionAssetRead,
+	"listSemanticDatasets":       access.PermissionAssetRead,
+	"getSemanticDataset":         access.PermissionAssetRead,
+	"listSemanticFields":         access.PermissionAssetRead,
+	"querySemanticDataset":       access.PermissionAssetRead,
+	"previewSemanticDataset":     access.PermissionAssetRead,
+	"explainSemanticQuery":       access.PermissionAssetRead,
+	"explainSemanticPreview":     access.PermissionAssetRead,
 	"queryDashboardPage":         access.PermissionAssetRead,
 	"queryDashboardVisualData":   access.PermissionAssetRead,
 	"queryDashboardTable":        access.PermissionAssetRead,
@@ -196,6 +204,10 @@ func (a apiGenAdapter) ListWorkspaces(w http.ResponseWriter, r *http.Request, _ 
 	a.server.apiWorkspaces(w, r)
 }
 
+func (a apiGenAdapter) SearchWorkspace(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenSearchWorkspaceParams) {
+	a.server.searchWorkspace(w, r)
+}
+
 func (a apiGenAdapter) ListWorkspaceAssets(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceAssetsParams) {
 	a.server.apiWorkspaceAssets(w, r)
 }
@@ -218,6 +230,34 @@ func (a apiGenAdapter) ListDashboardComponents(w http.ResponseWriter, r *http.Re
 
 func (a apiGenAdapter) GetDashboardVisual(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
 	a.server.getDashboardVisual(w, r)
+}
+
+func (a apiGenAdapter) ListSemanticDatasets(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListSemanticDatasetsParams) {
+	a.server.listSemanticDatasets(w, r)
+}
+
+func (a apiGenAdapter) GetSemanticDataset(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+	a.server.getSemanticDataset(w, r)
+}
+
+func (a apiGenAdapter) ListSemanticFields(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenListSemanticFieldsParams) {
+	a.server.listSemanticFields(w, r)
+}
+
+func (a apiGenAdapter) QuerySemanticDataset(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+	a.server.querySemanticDataset(w, r)
+}
+
+func (a apiGenAdapter) PreviewSemanticDataset(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+	a.server.previewSemanticDataset(w, r)
+}
+
+func (a apiGenAdapter) ExplainSemanticQuery(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+	a.server.explainSemanticQuery(w, r)
+}
+
+func (a apiGenAdapter) ExplainSemanticPreview(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+	a.server.explainSemanticPreview(w, r)
 }
 
 func (a apiGenAdapter) QueryDashboardPage(w http.ResponseWriter, r *http.Request, _, _, _ string) {

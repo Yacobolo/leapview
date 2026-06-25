@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -93,6 +95,153 @@ func (s *Server) getSemanticModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, model)
+}
+
+func (s *Server) listSemanticDatasets(w http.ResponseWriter, r *http.Request) {
+	model, ok := s.semanticModelForRequest(w, r)
+	if !ok {
+		return
+	}
+	out := make([]api.SemanticDatasetSummary, 0, len(model.Tables))
+	for _, datasetID := range sortedMapKeys(model.Tables) {
+		table := model.Tables[datasetID]
+		out = append(out, api.SemanticDatasetSummary{
+			ID:           datasetID,
+			Kind:         table.Kind,
+			Source:       table.Source,
+			Description:  table.Description,
+			FieldCount:   len(table.Dimensions),
+			MeasureCount: semanticDatasetMeasureCount(model, datasetID),
+		})
+	}
+	items, nextCursor, ok := pageSliceForRequest(w, r, out)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, api.SemanticDatasetListResponse{Items: items, Page: api.PageInfo{NextCursor: nextCursor}})
+}
+
+func (s *Server) getSemanticDataset(w http.ResponseWriter, r *http.Request) {
+	model, table, datasetID, ok := s.semanticDatasetForRequest(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, semanticDatasetDTO(model, datasetID, table))
+}
+
+func (s *Server) listSemanticFields(w http.ResponseWriter, r *http.Request) {
+	model, table, datasetID, ok := s.semanticDatasetForRequest(w, r)
+	if !ok {
+		return
+	}
+	fields := semanticDatasetFields(model, datasetID, table)
+	items, nextCursor, ok := pageSliceForRequest(w, r, fields)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, api.SemanticFieldListResponse{Items: items, Page: api.PageInfo{NextCursor: nextCursor}})
+}
+
+func (s *Server) querySemanticDataset(w http.ResponseWriter, r *http.Request) {
+	var input api.SemanticQueryRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	modelID, datasetID := chi.URLParam(r, "model"), chi.URLParam(r, "dataset")
+	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
+		return
+	}
+	request, limit, err := semanticAggregateRequest(datasetID, input, true)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	plan, err := semanticExplainAggregate(s.metrics, modelID, request)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	rows, err := s.metrics.QuerySemantic(r.Context(), modelID, request)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, semanticQueryResponse(plan.Columns, rows, limit, request.Offset))
+}
+
+func (s *Server) previewSemanticDataset(w http.ResponseWriter, r *http.Request) {
+	var input api.SemanticPreviewRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	modelID, datasetID := chi.URLParam(r, "model"), chi.URLParam(r, "dataset")
+	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
+		return
+	}
+	request, limit, err := semanticRowRequest(datasetID, input, true)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	plan, err := semanticExplainRows(s.metrics, modelID, request)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	rows, err := s.metrics.PreviewSemantic(r.Context(), modelID, request)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, semanticQueryResponse(plan.Columns, rows, limit, request.Offset))
+}
+
+func (s *Server) explainSemanticQuery(w http.ResponseWriter, r *http.Request) {
+	var input api.SemanticQueryRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	modelID, datasetID := chi.URLParam(r, "model"), chi.URLParam(r, "dataset")
+	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
+		return
+	}
+	request, _, err := semanticAggregateRequest(datasetID, input, false)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	plan, err := semanticExplainAggregate(s.metrics, modelID, request)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, semanticExplainResponse("query", plan, semanticQueryWarnings(input.Sort)))
+}
+
+func (s *Server) explainSemanticPreview(w http.ResponseWriter, r *http.Request) {
+	var input api.SemanticPreviewRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	modelID, datasetID := chi.URLParam(r, "model"), chi.URLParam(r, "dataset")
+	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
+		return
+	}
+	request, _, err := semanticRowRequest(datasetID, input, false)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	plan, err := semanticExplainRows(s.metrics, modelID, request)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, semanticExplainResponse("preview", plan, semanticQueryWarnings(input.Sort)))
 }
 
 func (s *Server) queryDashboardPage(w http.ResponseWriter, r *http.Request) {
@@ -312,6 +461,273 @@ func semanticModelSummaryDTO(row dashboard.CatalogModel) api.SemanticModelSummar
 	return api.SemanticModelSummary{ID: row.ID, Title: row.Title, Description: row.Description}
 }
 
+func (s *Server) semanticModelForRequest(w http.ResponseWriter, r *http.Request) (*semanticmodel.Model, bool) {
+	modelID := chi.URLParam(r, "model")
+	model := semanticModelForID(s.metrics, modelID)
+	if model == nil {
+		writeJSONError(w, fmt.Errorf("model %q not found", modelID), http.StatusNotFound)
+		return nil, false
+	}
+	return model, true
+}
+
+func (s *Server) semanticDatasetForRequest(w http.ResponseWriter, r *http.Request) (*semanticmodel.Model, semanticmodel.Table, string, bool) {
+	model, ok := s.semanticModelForRequest(w, r)
+	if !ok {
+		return nil, semanticmodel.Table{}, "", false
+	}
+	datasetID := chi.URLParam(r, "dataset")
+	table, exists := model.Tables[datasetID]
+	if !exists {
+		writeJSONError(w, fmt.Errorf("dataset %q not found", datasetID), http.StatusNotFound)
+		return nil, semanticmodel.Table{}, "", false
+	}
+	return model, table, datasetID, true
+}
+
+func semanticDatasetDTO(model *semanticmodel.Model, datasetID string, table semanticmodel.Table) api.SemanticDatasetResponse {
+	sources := append([]string{}, table.Sources...)
+	if table.Source != "" && len(sources) == 0 {
+		sources = []string{table.Source}
+	}
+	sort.Strings(sources)
+	return api.SemanticDatasetResponse{
+		ID:           datasetID,
+		Kind:         table.Kind,
+		Source:       table.Source,
+		Sources:      sources,
+		Description:  table.Description,
+		PrimaryKey:   table.PrimaryKey,
+		Grain:        table.Grain,
+		FieldCount:   len(table.Dimensions),
+		MeasureCount: semanticDatasetMeasureCount(model, datasetID),
+	}
+}
+
+func semanticDatasetMeasureCount(model *semanticmodel.Model, datasetID string) int {
+	if model == nil {
+		return 0
+	}
+	count := 0
+	if table, ok := model.Tables[datasetID]; ok {
+		count += len(table.Measures)
+	}
+	for _, measure := range model.Measures {
+		if measure.Table == datasetID {
+			count++
+		}
+	}
+	return count
+}
+
+func semanticDatasetFields(model *semanticmodel.Model, datasetID string, table semanticmodel.Table) []api.SemanticFieldResponse {
+	out := make([]api.SemanticFieldResponse, 0, len(table.Dimensions)+semanticDatasetMeasureCount(model, datasetID))
+	for _, fieldID := range sortedMapKeys(table.Dimensions) {
+		dimension := table.Dimensions[fieldID]
+		out = append(out, api.SemanticFieldResponse{
+			ID:          datasetID + "." + fieldID,
+			Kind:        "dimension",
+			Table:       datasetID,
+			Name:        fieldID,
+			Label:       dimension.Label,
+			Description: dimension.Description,
+		})
+	}
+	for _, measureID := range sortedMapKeys(table.Measures) {
+		measure := table.Measures[measureID]
+		out = append(out, semanticMeasureFieldDTO(datasetID+"."+measureID, datasetID, measureID, measure))
+	}
+	for _, measureID := range sortedMapKeys(model.Measures) {
+		measure := model.Measures[measureID]
+		if measure.Table != datasetID {
+			continue
+		}
+		out = append(out, semanticMeasureFieldDTO(measureID, datasetID, measureID, measure))
+	}
+	return out
+}
+
+func semanticMeasureFieldDTO(id, datasetID, name string, measure semanticmodel.MetricMeasure) api.SemanticFieldResponse {
+	return api.SemanticFieldResponse{
+		ID:          id,
+		Kind:        "measure",
+		Table:       datasetID,
+		Name:        name,
+		Label:       measure.Label,
+		Description: measure.Description,
+		Unit:        measure.Unit,
+		Format:      measure.Format,
+		Grain:       measure.Grain,
+		Time:        measure.Time,
+		Grains:      append([]string{}, measure.Grains...),
+	}
+}
+
+func semanticAggregateRequest(datasetID string, input api.SemanticQueryRequest, includeExtraRow bool) (reportdef.AggregateQuery, int, error) {
+	limit, offset, err := semanticLimitAndOffset(input.Limit, input.PageToken)
+	if err != nil {
+		return reportdef.AggregateQuery{}, 0, err
+	}
+	requestLimit := limit
+	if includeExtraRow {
+		requestLimit++
+	}
+	request := reportdef.AggregateQuery{
+		Table:      datasetID,
+		Dimensions: semanticQueryFields(input.Dimensions),
+		Measures:   semanticQueryFields(input.Measures),
+		Filters:    semanticFilters(input.Filters),
+		Sort:       semanticSorts(input.Sort),
+		Limit:      requestLimit,
+		Offset:     offset,
+	}
+	if input.Time != nil {
+		request.Time = reportdef.QueryTime{Field: input.Time.Field, Grain: input.Time.Grain, Alias: input.Time.Alias}
+	}
+	return request, limit, nil
+}
+
+func semanticRowRequest(datasetID string, input api.SemanticPreviewRequest, includeExtraRow bool) (reportdef.RowQuery, int, error) {
+	limit, offset, err := semanticLimitAndOffset(input.Limit, input.PageToken)
+	if err != nil {
+		return reportdef.RowQuery{}, 0, err
+	}
+	requestLimit := limit
+	if includeExtraRow {
+		requestLimit++
+	}
+	return reportdef.RowQuery{
+		Table:      datasetID,
+		Dimensions: semanticQueryFields(input.Dimensions),
+		Measures:   semanticQueryFields(input.Measures),
+		Filters:    semanticFilters(input.Filters),
+		Sort:       semanticSorts(input.Sort),
+		Limit:      requestLimit,
+		Offset:     offset,
+	}, limit, nil
+}
+
+func semanticLimitAndOffset(limitValue int, pageToken string) (int, int, error) {
+	limit := limitValue
+	if limit <= 0 {
+		limit = defaultAPILimit
+	}
+	if limit > maxAPILimit {
+		limit = maxAPILimit
+	}
+	offset, err := decodeIndexCursor(pageToken)
+	if err != nil {
+		return 0, 0, err
+	}
+	return limit, offset, nil
+}
+
+func semanticQueryFields(fields []api.SemanticFieldRef) []reportdef.QueryField {
+	out := make([]reportdef.QueryField, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, reportdef.QueryField{Field: field.Field, Alias: field.Alias})
+	}
+	return out
+}
+
+func semanticExplainAggregate(metrics queryMetrics, modelID string, request reportdef.AggregateQuery) (semanticquery.Plan, error) {
+	model := semanticModelForID(metrics, modelID)
+	if model == nil {
+		return semanticquery.Plan{}, fmt.Errorf("unknown semantic model %q", modelID)
+	}
+	return semanticquery.NewPlanner(model).Plan(reportdef.SemanticAggregateRequest(request))
+}
+
+func semanticExplainRows(metrics queryMetrics, modelID string, request reportdef.RowQuery) (semanticquery.Plan, error) {
+	model := semanticModelForID(metrics, modelID)
+	if model == nil {
+		return semanticquery.Plan{}, fmt.Errorf("unknown semantic model %q", modelID)
+	}
+	return semanticquery.NewPlanner(model).PlanRows(reportdef.SemanticRowRequest(request))
+}
+
+func semanticFilters(filters []api.SemanticFilter) []reportdef.QueryFilter {
+	out := make([]reportdef.QueryFilter, 0, len(filters))
+	for _, filter := range filters {
+		out = append(out, reportdef.QueryFilter{
+			Field:    filter.Field,
+			Operator: filter.Operator,
+			Values:   append([]any{}, filter.Values...),
+			Groups:   semanticFilterGroups(filter.Groups),
+		})
+	}
+	return out
+}
+
+func semanticFilterGroups(groups []api.SemanticFilterGroup) []reportdef.QueryFilterGroup {
+	out := make([]reportdef.QueryFilterGroup, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, reportdef.QueryFilterGroup{Filters: semanticFilters(group.Filters)})
+	}
+	return out
+}
+
+func semanticSorts(sorts []api.SemanticSort) []reportdef.QuerySort {
+	out := make([]reportdef.QuerySort, 0, len(sorts))
+	for _, sortSpec := range sorts {
+		out = append(out, reportdef.QuerySort{Field: sortSpec.Field, Direction: sortSpec.Direction})
+	}
+	return out
+}
+
+func semanticQueryResponse(columns []string, rows reportdef.QueryRows, limit, offset int) api.SemanticQueryResponse {
+	items := make([]map[string]any, 0, min(len(rows), limit))
+	for i, row := range rows {
+		if i >= limit {
+			break
+		}
+		item := make(map[string]any, len(row))
+		for key, value := range row {
+			item[key] = value
+		}
+		items = append(items, item)
+	}
+	nextCursor := ""
+	if len(rows) > limit {
+		nextCursor = encodeIndexCursor(offset + limit)
+	}
+	return api.SemanticQueryResponse{Columns: columns, Items: items, Page: api.PageInfo{NextCursor: nextCursor}}
+}
+
+func semanticExplainResponse(mode string, plan semanticquery.Plan, warnings []string) api.SemanticExplainResponse {
+	return api.SemanticExplainResponse{
+		Mode:     mode,
+		SQL:      plan.SQL,
+		Args:     semanticExplainArgs(plan.Args),
+		Columns:  append([]string{}, plan.Columns...),
+		Warnings: warnings,
+	}
+}
+
+func semanticExplainArgs(args []any) []map[string]any {
+	out := make([]map[string]any, 0, len(args))
+	for i, value := range args {
+		out = append(out, map[string]any{"index": i + 1, "value": value})
+	}
+	return out
+}
+
+func semanticQueryWarnings(sorts []api.SemanticSort) []string {
+	if len(sorts) == 0 {
+		return []string{"result order is not stable without sort"}
+	}
+	return nil
+}
+
+func sortedMapKeys[T any](items map[string]T) []string {
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func (s *Server) dashboardReportPage(w http.ResponseWriter, r *http.Request) (reportdef.Dashboard, dashboard.Page, bool) {
 	dashboardID := chi.URLParam(r, "dashboard")
 	report, _, ok := s.metrics.Report(dashboardID)
@@ -497,6 +913,9 @@ func dashboardsForModel(metrics queryMetrics, modelID string) []api.ModelDashboa
 }
 
 func semanticModelForID(metrics queryMetrics, modelID string) *semanticmodel.Model {
+	if model, ok := metrics.SemanticModel(modelID); ok {
+		return model
+	}
 	for _, dashboardSummary := range metrics.Catalog().Dashboards {
 		_, model, ok := metrics.Report(dashboardSummary.ID)
 		if ok && model != nil && model.Name == modelID {

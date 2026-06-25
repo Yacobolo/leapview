@@ -8,6 +8,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
@@ -31,14 +32,21 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		"list_dashboards",
 		"list_deployments",
 		"list_materialization_runs",
+		"list_semantic_datasets",
+		"list_semantic_fields",
 		"list_semantic_models",
 		"list_workspace_asset_edges",
 		"list_workspace_assets",
 		"list_workspaces",
+		"preview_semantic_dataset",
 		"query_dashboard_page",
 		"query_dashboard_table_data",
 		"query_dashboard_visual_data",
+		"query_semantic_dataset",
+		"search_workspace",
 		"query_table",
+		"explain_semantic_preview",
+		"explain_semantic_query",
 	} {
 		if _, ok := names[want]; !ok {
 			t.Fatalf("missing APIGen agent tool %q in %#v", want, toolNames(tools))
@@ -72,6 +80,70 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 			t.Fatalf("schema missing query parameter %q: %s", want, names["list_workspace_assets"].InputSchema)
 		}
 	}
+	if err := json.Unmarshal(names["search_workspace"].InputSchema, &schema); err != nil {
+		t.Fatalf("decode search_workspace schema: %v", err)
+	}
+	if _, ok := schema.Properties["workspace"]; ok {
+		t.Fatalf("workspace should be injected from agent scope, not model arguments: %s", names["search_workspace"].InputSchema)
+	}
+	for _, want := range []string{"q", "types", "limit", "pageToken"} {
+		if _, ok := schema.Properties[want]; !ok {
+			t.Fatalf("search_workspace schema missing query parameter %q: %s", want, names["search_workspace"].InputSchema)
+		}
+	}
+}
+
+func TestAPIGenAgentSearchToolInjectsDefaultLimit(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var search agent.ToolDefinition
+	for _, tool := range tools {
+		if tool.Name == "search_workspace" {
+			search = tool
+			break
+		}
+	}
+	if search.Handler == nil {
+		t.Fatal("search_workspace tool missing")
+	}
+	result, err := search.Handler.Run(context.Background(), agent.ToolCall{
+		ID:        "call_1",
+		Name:      "search_workspace",
+		Arguments: json.RawMessage(`{"q":"orders"}`),
+	})
+	if err != nil {
+		t.Fatalf("run tool: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool returned error: %#v", result.Content)
+	}
+	body, err := json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("marshal result content: %v", err)
+	}
+	var decoded struct {
+		Items []map[string]any `json:"items"`
+		Page  struct {
+			NextCursor string `json:"nextCursor"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode result: %v body=%s", err, body)
+	}
+	if len(decoded.Items) == 0 || len(decoded.Items) > 10 {
+		t.Fatalf("search result count = %d, want 1..10: %#v", len(decoded.Items), decoded.Items)
+	}
+	for _, item := range decoded.Items {
+		if _, ok := item["name"]; !ok {
+			t.Fatalf("search item missing concise name: %#v", item)
+		}
+		if _, ok := item["description"]; !ok {
+			t.Fatalf("search item missing concise description: %#v", item)
+		}
+		if _, ok := item["type"]; !ok {
+			t.Fatalf("search item missing concise type: %#v", item)
+		}
+	}
 }
 
 func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) {
@@ -90,6 +162,7 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 		"query_dashboard_page":          {"dashboard", "page", "filters"},
 		"query_dashboard_table_data":    {"dashboard", "page", "table", "count", "filters"},
 		"query_dashboard_visual_data":   {"dashboard", "page", "visual", "filters"},
+		"query_semantic_dataset":        {"model", "dataset", "dimensions", "measures", "filters", "sort", "limit", "pageToken"},
 		"query_table":                   {"dashboard", "table", "count", "filters", "pageId"},
 	} {
 		var schema struct {
@@ -295,6 +368,48 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	}
 }
 
+func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
+	server := NewWithOptions(manySemanticRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var querySemantic agent.ToolDefinition
+	for _, tool := range tools {
+		if tool.Name == "query_semantic_dataset" {
+			querySemantic = tool
+			break
+		}
+	}
+	if querySemantic.Handler == nil {
+		t.Fatal("query_semantic_dataset tool missing")
+	}
+	result, err := querySemantic.Handler.Run(context.Background(), agent.ToolCall{
+		ID:        "call_1",
+		Name:      "query_semantic_dataset",
+		Arguments: json.RawMessage(`{"model":"test","dataset":"orders","dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("run tool: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool returned error: %#v", result.Content)
+	}
+	body, err := json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("marshal result content: %v", err)
+	}
+	var decoded struct {
+		Items []map[string]any `json:"items"`
+		Page  struct {
+			NextCursor string `json:"nextCursor"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode semantic result: %v body=%s", err, body)
+	}
+	if len(decoded.Items) != 25 || decoded.Page.NextCursor == "" {
+		t.Fatalf("semantic default-limited result = %#v", decoded)
+	}
+}
+
 func TestAPIGenAgentToolEnforcesCredentialPermissionAllowlistAndWorkspace(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
@@ -349,6 +464,18 @@ func toolNames(tools []agent.ToolDefinition) []string {
 
 type manyEdgesMetrics struct {
 	fakeMetrics
+}
+
+type manySemanticRowsMetrics struct {
+	fakeMetrics
+}
+
+func (manySemanticRowsMetrics) QuerySemantic(_ context.Context, _ string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
+	rows := make(reportdef.QueryRows, 0, request.Limit)
+	for i := 0; i < request.Limit; i++ {
+		rows = append(rows, reportdef.QueryRow{"status": "s" + strconv.Itoa(i), "order_count": i})
+	}
+	return rows, nil
 }
 
 func (manyEdgesMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {

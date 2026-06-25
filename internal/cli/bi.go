@@ -176,8 +176,63 @@ func semanticModelsCommand(ctx context.Context, opts *rootOptions) *cobra.Comman
 	}
 	addTargetTokenFlags(describe, opts)
 
-	parent.AddCommand(list, describe)
+	datasets := &cobra.Command{
+		Use:   "datasets <model>",
+		Short: "List semantic model datasets",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRawAPI(ctx, opts, "listSemanticDatasets", map[string]string{"workspace": opts.workspaceID, "model": args[0]}, paginationQuery(opts), nil)
+		},
+	}
+	addTargetTokenFlags(datasets, opts)
+	addPaginationFlags(datasets, opts)
+
+	dataset := &cobra.Command{
+		Use:   "dataset <model> <dataset>",
+		Short: "Describe a semantic model dataset",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRawAPI(ctx, opts, "getSemanticDataset", map[string]string{"workspace": opts.workspaceID, "model": args[0], "dataset": args[1]}, nil, nil)
+		},
+	}
+	addTargetTokenFlags(dataset, opts)
+
+	fields := &cobra.Command{
+		Use:   "fields <model> <dataset>",
+		Short: "List semantic model dataset fields",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRawAPI(ctx, opts, "listSemanticFields", map[string]string{"workspace": opts.workspaceID, "model": args[0], "dataset": args[1]}, paginationQuery(opts), nil)
+		},
+	}
+	addTargetTokenFlags(fields, opts)
+	addPaginationFlags(fields, opts)
+
+	query := semanticBodyCommand(ctx, opts, "query <model> <dataset>", "Query a semantic model dataset", "querySemanticDataset")
+	preview := semanticBodyCommand(ctx, opts, "preview <model> <dataset>", "Preview semantic model dataset rows", "previewSemanticDataset")
+	explainQuery := semanticBodyCommand(ctx, opts, "explain-query <model> <dataset>", "Explain a semantic model dataset query", "explainSemanticQuery")
+	explainPreview := semanticBodyCommand(ctx, opts, "explain-preview <model> <dataset>", "Explain a semantic model dataset row preview", "explainSemanticPreview")
+
+	parent.AddCommand(list, describe, datasets, dataset, fields, query, preview, explainQuery, explainPreview)
 	return parent
+}
+
+func semanticBodyCommand(ctx context.Context, opts *rootOptions, use, short, operationID string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := bodyJSONMap(opts.bodyJSON)
+			if err != nil {
+				return err
+			}
+			return runRawAPI(ctx, opts, operationID, map[string]string{"workspace": opts.workspaceID, "model": args[0], "dataset": args[1]}, nil, postBody(body))
+		},
+	}
+	addTargetTokenFlags(cmd, opts)
+	cmd.Flags().StringVar(&opts.bodyJSON, "body-json", "", "request JSON body")
+	return cmd
 }
 
 func addTargetTokenFlags(cmd *cobra.Command, opts *rootOptions) {
@@ -284,4 +339,15 @@ func decodeObjectJSON(raw string) (map[string]any, error) {
 		return nil, fmt.Errorf("must be a JSON object")
 	}
 	return out, nil
+}
+
+func bodyJSONMap(raw string) (map[string]any, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	body, err := decodeObjectJSON(raw)
+	if err != nil {
+		return nil, fmt.Errorf("body-json: %w", err)
+	}
+	return body, nil
 }

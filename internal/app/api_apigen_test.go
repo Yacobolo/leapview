@@ -64,6 +64,7 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		"/api/v1/principals",
 		"/api/v1/principals/{principal}",
 		"/api/v1/workspaces",
+		"/api/v1/workspaces/{workspace}/search",
 		"/api/v1/workspaces/{workspace}/assets",
 		"/api/v1/workspaces/{workspace}/asset-edges",
 		"/api/v1/workspaces/{workspace}/dashboards",
@@ -77,6 +78,13 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/tables/{table}/query",
 		"/api/v1/workspaces/{workspace}/semantic-models",
 		"/api/v1/workspaces/{workspace}/semantic-models/{model}",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/fields",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/query",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/preview",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/query/explain",
+		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/preview/explain",
 		"/api/v1/workspaces/{workspace}/deployments",
 		"/api/v1/workspaces/{workspace}/deployments/{deployment}",
 		"/api/v1/workspaces/{workspace}/deployments/{deployment}/artifact",
@@ -142,20 +150,28 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 		"getDashboard":               "describe_dashboard",
 		"getDashboardVisual":         "describe_dashboard_visual",
 		"getSemanticModel":           "describe_model",
+		"getSemanticDataset":         "describe_semantic_dataset",
 		"getMaterializationRun":      "get_materialization_run",
 		"listDashboardComponents":    "list_dashboard_components",
 		"listDashboards":             "list_dashboards",
 		"listDeployments":            "list_deployments",
 		"listDashboardFilterOptions": "list_dashboard_filter_options",
 		"listMaterializationRuns":    "list_materialization_runs",
+		"listSemanticDatasets":       "list_semantic_datasets",
+		"listSemanticFields":         "list_semantic_fields",
 		"listSemanticModels":         "list_semantic_models",
 		"listWorkspaceAssetEdges":    "list_workspace_asset_edges",
 		"listWorkspaceAssets":        "list_workspace_assets",
 		"listWorkspaces":             "list_workspaces",
+		"searchWorkspace":            "search_workspace",
 		"queryDashboardTableData":    "query_dashboard_table_data",
 		"queryDashboardVisualData":   "query_dashboard_visual_data",
 		"queryDashboardPage":         "query_dashboard_page",
 		"queryDashboardTable":        "query_table",
+		"querySemanticDataset":       "query_semantic_dataset",
+		"previewSemanticDataset":     "preview_semantic_dataset",
+		"explainSemanticQuery":       "explain_semantic_query",
+		"explainSemanticPreview":     "explain_semantic_preview",
 	}
 	for operationID, contract := range contracts {
 		authz, ok := contract.Extensions["x-authz"].(map[string]any)
@@ -199,6 +215,7 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 	if got := upload.Extensions["x-libredash-dispatch"]; got != "raw-body" {
 		t.Fatalf("uploadDeploymentArtifact x-libredash-dispatch = %#v, want raw-body", got)
 	}
+
 }
 
 func TestAPIGenListOperationsUseStandardEnvelope(t *testing.T) {
@@ -217,12 +234,15 @@ func TestAPIGenListOperationsUseStandardEnvelope(t *testing.T) {
 		method string
 	}{
 		{"/api/v1/workspaces", "get"},
+		{"/api/v1/workspaces/{workspace}/search", "get"},
 		{"/api/v1/workspaces/{workspace}/assets", "get"},
 		{"/api/v1/workspaces/{workspace}/asset-edges", "get"},
 		{"/api/v1/workspaces/{workspace}/dashboards", "get"},
 		{"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/components", "get"},
 		{"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/filters/{filter}/options", "post"},
 		{"/api/v1/workspaces/{workspace}/semantic-models", "get"},
+		{"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets", "get"},
+		{"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/fields", "get"},
 		{"/api/v1/workspaces/{workspace}/deployments", "get"},
 		{"/api/v1/workspaces/{workspace}/materialization-runs", "get"},
 		{"/api/v1/workspaces/{workspace}/agent/conversations", "get"},

@@ -203,6 +203,106 @@ func TestBIAPIDashboardVisualDataSurfaceNotFoundAndMalformedBody(t *testing.T) {
 	}
 }
 
+func TestBIAPISemanticDatasetSurface(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+		want   []string
+	}{
+		{
+			method: http.MethodGet,
+			path:   "/api/v1/workspaces/test/semantic-models/test/datasets?limit=1",
+			want:   []string{`"items"`, `"id":"orders"`, `"page"`},
+		},
+		{
+			method: http.MethodGet,
+			path:   "/api/v1/workspaces/test/semantic-models/test/datasets/orders",
+			want:   []string{`"primaryKey":"order_id"`, `"grain":"order_id"`},
+		},
+		{
+			method: http.MethodGet,
+			path:   "/api/v1/workspaces/test/semantic-models/test/datasets/orders/fields?limit=3",
+			want:   []string{`"kind":"dimension"`, `"kind":"measure"`, `"order_count"`},
+		},
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/workspaces/test/semantic-models/test/datasets/orders/query",
+			body:   `{"dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}],"limit":1}`,
+			want:   []string{`"columns"`, `"items"`, `"delivered"`, `"nextCursor"`},
+		},
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/workspaces/test/semantic-models/test/datasets/orders/preview",
+			body:   `{"dimensions":[{"field":"orders.order_id"},{"field":"orders.status"}],"sort":[{"field":"order_id","direction":"asc"}],"limit":1}`,
+			want:   []string{`"order_id"`, `"o1"`, `"nextCursor"`},
+		},
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/workspaces/test/semantic-models/test/datasets/orders/query/explain",
+			body:   `{"dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`,
+			want:   []string{`"mode":"query"`, `"sql"`, `"columns"`},
+		},
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/workspaces/test/semantic-models/test/datasets/orders/preview/explain",
+			body:   `{"dimensions":[{"field":"orders.order_id"}],"sort":[{"field":"order_id","direction":"asc"}]}`,
+			want:   []string{`"mode":"preview"`, `"sql"`, `"columns"`},
+		},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			body := strings.NewReader(tc.body)
+			if tc.body == "" {
+				body = strings.NewReader(`{}`)
+			}
+			req := httptest.NewRequest(tc.method, tc.path, body)
+			req.Header.Set("Accept", "application/json")
+			if tc.method == http.MethodPost {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rec := httptest.NewRecorder()
+			server.Routes().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(rec.Body.String(), want) {
+					t.Fatalf("body missing %q: %s", want, rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
+func TestBIAPISemanticDatasetErrors(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+		status int
+	}{
+		{method: http.MethodGet, path: "/api/v1/workspaces/test/semantic-models/test/datasets/missing", status: http.StatusNotFound},
+		{method: http.MethodPost, path: "/api/v1/workspaces/test/semantic-models/test/datasets/orders/query", body: `{"dimensions":[{"field":"missing.field"}]}`, status: http.StatusBadRequest},
+		{method: http.MethodPost, path: "/api/v1/workspaces/test/semantic-models/test/datasets/orders/query", body: `{"dimensions":[{"field":"orders.status"}],"sort":[{"field":"missing"}]}`, status: http.StatusBadRequest},
+		{method: http.MethodPost, path: "/api/v1/workspaces/test/semantic-models/test/datasets/orders/query", body: `{"dimensions":`, status: http.StatusBadRequest},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Accept", "application/json")
+		if tc.method == http.MethodPost {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		server.Routes().ServeHTTP(rec, req)
+		if rec.Code != tc.status {
+			t.Fatalf("%s %s status=%d want=%d body=%s", tc.method, tc.path, rec.Code, tc.status, rec.Body.String())
+		}
+	}
+}
+
 type manyRowsMetrics struct {
 	fakeMetrics
 }

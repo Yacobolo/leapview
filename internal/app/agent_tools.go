@@ -447,6 +447,11 @@ func apigenAgentRequestBody(operation apigenAgentOperation, args map[string]any)
 			body[name] = value
 		}
 	}
+	if _, ok := body["limit"]; !ok && operation.Extension.DefaultLimit > 0 {
+		if _, hasLimit := operation.BodyProperties["limit"]; hasLimit {
+			body["limit"] = operation.Extension.DefaultLimit
+		}
+	}
 	if len(body) == 0 && !operation.Contract.RequestBodyRequired {
 		return nil, nil
 	}

@@ -132,6 +132,111 @@ type SemanticModelTableSummary struct {
 	Fields      int    `json:"fields"`
 }
 
+type SemanticDatasetSummary struct {
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	Source       string `json:"source"`
+	Description  string `json:"description"`
+	FieldCount   int    `json:"fieldCount"`
+	MeasureCount int    `json:"measureCount"`
+}
+
+type SemanticDatasetListResponse struct {
+	Items []SemanticDatasetSummary `json:"items"`
+	Page  PageInfo                 `json:"page"`
+}
+
+type SemanticDatasetResponse struct {
+	ID           string   `json:"id"`
+	Kind         string   `json:"kind"`
+	Source       string   `json:"source"`
+	Sources      []string `json:"sources"`
+	Description  string   `json:"description"`
+	PrimaryKey   string   `json:"primaryKey"`
+	Grain        string   `json:"grain"`
+	FieldCount   int      `json:"fieldCount"`
+	MeasureCount int      `json:"measureCount"`
+}
+
+type SemanticFieldResponse struct {
+	ID          string   `json:"id"`
+	Kind        string   `json:"kind"`
+	Table       string   `json:"table"`
+	Name        string   `json:"name"`
+	Label       string   `json:"label"`
+	Description string   `json:"description,omitempty"`
+	Unit        string   `json:"unit,omitempty"`
+	Format      string   `json:"format,omitempty"`
+	Grain       string   `json:"grain,omitempty"`
+	Time        string   `json:"time,omitempty"`
+	Grains      []string `json:"grains,omitempty"`
+}
+
+type SemanticFieldListResponse struct {
+	Items []SemanticFieldResponse `json:"items"`
+	Page  PageInfo                `json:"page"`
+}
+
+type SemanticFieldRef struct {
+	Field string `json:"field"`
+	Alias string `json:"alias,omitempty"`
+}
+
+type SemanticTimeRef struct {
+	Field string `json:"field"`
+	Grain string `json:"grain,omitempty"`
+	Alias string `json:"alias,omitempty"`
+}
+
+type SemanticSort struct {
+	Field     string `json:"field"`
+	Direction string `json:"direction,omitempty"`
+}
+
+type SemanticFilter struct {
+	Field    string                `json:"field,omitempty"`
+	Operator string                `json:"operator,omitempty"`
+	Values   []any                 `json:"values,omitempty"`
+	Groups   []SemanticFilterGroup `json:"groups,omitempty"`
+}
+
+type SemanticFilterGroup struct {
+	Filters []SemanticFilter `json:"filters"`
+}
+
+type SemanticQueryRequest struct {
+	Dimensions []SemanticFieldRef `json:"dimensions,omitempty"`
+	Measures   []SemanticFieldRef `json:"measures,omitempty"`
+	Time       *SemanticTimeRef   `json:"time,omitempty"`
+	Filters    []SemanticFilter   `json:"filters,omitempty"`
+	Sort       []SemanticSort     `json:"sort,omitempty"`
+	Limit      int                `json:"limit,omitempty"`
+	PageToken  string             `json:"pageToken,omitempty"`
+}
+
+type SemanticPreviewRequest struct {
+	Dimensions []SemanticFieldRef `json:"dimensions,omitempty"`
+	Measures   []SemanticFieldRef `json:"measures,omitempty"`
+	Filters    []SemanticFilter   `json:"filters,omitempty"`
+	Sort       []SemanticSort     `json:"sort,omitempty"`
+	Limit      int                `json:"limit,omitempty"`
+	PageToken  string             `json:"pageToken,omitempty"`
+}
+
+type SemanticQueryResponse struct {
+	Columns []string         `json:"columns"`
+	Items   []map[string]any `json:"items"`
+	Page    PageInfo         `json:"page"`
+}
+
+type SemanticExplainResponse struct {
+	Mode     string           `json:"mode"`
+	SQL      string           `json:"sql"`
+	Args     []map[string]any `json:"args"`
+	Columns  []string         `json:"columns"`
+	Warnings []string         `json:"warnings"`
+}
+
 type ModelDashboardUsage struct {
 	ID            string `json:"id"`
 	Title         string `json:"title"`
