@@ -37,6 +37,41 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dashboardManifest(report, model, s.metrics.Pages(dashboardID)))
 }
 
+func (s *Server) listDashboardComponents(w http.ResponseWriter, r *http.Request) {
+	report, page, ok := s.dashboardReportPage(w, r)
+	if !ok {
+		return
+	}
+	out := make([]api.DashboardComponentResponse, 0, len(page.Visuals))
+	for _, component := range page.PlacedVisuals() {
+		out = append(out, dashboardComponentDTO(component, report))
+	}
+	items, nextCursor, ok := pageSliceForRequest(w, r, out)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, api.DashboardComponentListResponse{Items: items, Page: api.PageInfo{NextCursor: nextCursor}})
+}
+
+func (s *Server) getDashboardVisual(w http.ResponseWriter, r *http.Request) {
+	report, page, ok := s.dashboardReportPage(w, r)
+	if !ok {
+		return
+	}
+	visualID := chi.URLParam(r, "visual")
+	visual, exists := report.Visuals[visualID]
+	if !exists {
+		writeJSONError(w, fmt.Errorf("visual %q not found", visualID), http.StatusNotFound)
+		return
+	}
+	component, ok := pageComponentForVisual(page, visualID)
+	if !ok {
+		writeJSONError(w, fmt.Errorf("visual %q not found on page %q", visualID, page.ID), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, dashboardVisualDTO(visualID, visual, component))
+}
+
 func (s *Server) listSemanticModels(w http.ResponseWriter, r *http.Request) {
 	catalog := s.metrics.Catalog()
 	out := make([]api.SemanticModelSummary, 0, len(catalog.Models))
@@ -104,6 +139,122 @@ func (s *Server) queryDashboardTable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, boundedTable(table))
 }
 
+func (s *Server) queryDashboardVisualData(w http.ResponseWriter, r *http.Request) {
+	var input api.DashboardPageQueryRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	report, page, ok := s.dashboardReportPage(w, r)
+	if !ok {
+		return
+	}
+	visualID := chi.URLParam(r, "visual")
+	if _, exists := report.Visuals[visualID]; !exists {
+		writeJSONError(w, fmt.Errorf("visual %q not found", visualID), http.StatusNotFound)
+		return
+	}
+	if _, ok := pageComponentForVisual(page, visualID); !ok {
+		writeJSONError(w, fmt.Errorf("visual %q not found on page %q", visualID, page.ID), http.StatusNotFound)
+		return
+	}
+	dashboardID := chi.URLParam(r, "dashboard")
+	filters := dashboardFilters(input.Filters)
+	if filters.Controls == nil && filters.Selections == nil {
+		filters = s.metrics.DefaultFilters(dashboardID)
+	}
+	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, page.ID, filters)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	visual, ok := patch.Visuals[visualID]
+	if !ok {
+		writeJSONError(w, fmt.Errorf("visual %q data not found", visualID), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, boundedVisual(visual))
+}
+
+func (s *Server) queryDashboardTableData(w http.ResponseWriter, r *http.Request) {
+	var input api.DashboardTableDataRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	report, page, ok := s.dashboardReportPage(w, r)
+	if !ok {
+		return
+	}
+	tableID := chi.URLParam(r, "table")
+	if _, exists := report.Tables[tableID]; !exists {
+		writeJSONError(w, fmt.Errorf("table %q not found", tableID), http.StatusNotFound)
+		return
+	}
+	if _, ok := pageComponentForTable(page, tableID); !ok {
+		writeJSONError(w, fmt.Errorf("table %q not found on page %q", tableID, page.ID), http.StatusNotFound)
+		return
+	}
+	count := input.Count
+	if count <= 0 || count > maxAgentRows {
+		count = maxAgentRows
+	}
+	dashboardID := chi.URLParam(r, "dashboard")
+	filters := dashboardFilters(input.Filters)
+	if filters.Controls == nil && filters.Selections == nil {
+		filters = s.metrics.DefaultFilters(dashboardID)
+	}
+	request := s.metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: tableID, Block: "a", Count: count})
+	request.Count = count
+	table, err := s.metrics.QueryTablePage(r.Context(), dashboardID, page.ID, filters, request)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, boundedTable(table))
+}
+
+func (s *Server) listDashboardFilterOptions(w http.ResponseWriter, r *http.Request) {
+	var input api.DashboardPageQueryRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	report, page, ok := s.dashboardReportPage(w, r)
+	if !ok {
+		return
+	}
+	filterID := chi.URLParam(r, "filter")
+	if _, exists := report.Filters[filterID]; !exists {
+		writeJSONError(w, fmt.Errorf("filter %q not found", filterID), http.StatusNotFound)
+		return
+	}
+	if _, ok := pageComponentForFilter(page, filterID); !ok {
+		writeJSONError(w, fmt.Errorf("filter %q not found on page %q", filterID, page.ID), http.StatusNotFound)
+		return
+	}
+	dashboardID := chi.URLParam(r, "dashboard")
+	filters := dashboardFilters(input.Filters)
+	if filters.Controls == nil && filters.Selections == nil {
+		filters = s.metrics.DefaultFilters(dashboardID)
+	}
+	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, page.ID, filters)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	options := patch.FilterOptions[filterID]
+	out := make([]api.DashboardFilterOptionResponse, 0, len(options))
+	for _, option := range options {
+		out = append(out, api.DashboardFilterOptionResponse{Value: option.Value, Label: option.Label})
+	}
+	items, nextCursor, ok := pageSliceForRequest(w, r, out)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, api.DashboardFilterOptionListResponse{Items: items, Page: api.PageInfo{NextCursor: nextCursor}})
+}
+
 func dashboardFilters(raw map[string]any) dashboard.Filters {
 	if len(raw) == 0 {
 		return dashboard.Filters{}
@@ -121,12 +272,16 @@ func dashboardFilters(raw map[string]any) dashboard.Filters {
 
 func boundedPatch(patch dashboard.Patch) dashboard.Patch {
 	for key, visual := range patch.Visuals {
-		if len(visual.Data) > maxAgentRows {
-			visual.Data = visual.Data[:maxAgentRows]
-		}
-		patch.Visuals[key] = visual
+		patch.Visuals[key] = boundedVisual(visual)
 	}
 	return patch
+}
+
+func boundedVisual(visual dashboard.Visual) dashboard.Visual {
+	if len(visual.Data) > maxAgentRows {
+		visual.Data = visual.Data[:maxAgentRows]
+	}
+	return visual
 }
 
 func boundedTable(table dashboard.Table) dashboard.Table {
@@ -155,6 +310,120 @@ func dashboardSummaryDTO(row dashboard.CatalogDashboard) api.DashboardSummary {
 
 func semanticModelSummaryDTO(row dashboard.CatalogModel) api.SemanticModelSummary {
 	return api.SemanticModelSummary{ID: row.ID, Title: row.Title, Description: row.Description}
+}
+
+func (s *Server) dashboardReportPage(w http.ResponseWriter, r *http.Request) (reportdef.Dashboard, dashboard.Page, bool) {
+	dashboardID := chi.URLParam(r, "dashboard")
+	report, _, ok := s.metrics.Report(dashboardID)
+	if !ok {
+		writeJSONError(w, fmt.Errorf("dashboard %q not found", dashboardID), http.StatusNotFound)
+		return reportdef.Dashboard{}, dashboard.Page{}, false
+	}
+	pageID := chi.URLParam(r, "page")
+	pages := s.metrics.Pages(dashboardID)
+	if pages == nil {
+		pages = report.Pages
+	}
+	for _, page := range pages {
+		if page.ID == pageID {
+			return report, page.WithDefaults(), true
+		}
+	}
+	writeJSONError(w, fmt.Errorf("page %q not found", pageID), http.StatusNotFound)
+	return reportdef.Dashboard{}, dashboard.Page{}, false
+}
+
+func dashboardComponentDTO(component dashboard.PageVisual, report reportdef.Dashboard) api.DashboardComponentResponse {
+	summary := dashboardComponentSummary(component, report)
+	out := api.DashboardComponentResponse{
+		ID:          component.ID,
+		Kind:        summary.Kind,
+		Ref:         summary.Ref,
+		Title:       summary.Title,
+		Description: component.Description,
+		X:           component.X,
+		Y:           component.Y,
+		Width:       component.Width,
+		Height:      component.Height,
+	}
+	if !component.Placement.IsZero() {
+		out.Placement = &api.DashboardComponentPlacement{
+			Col:     component.Placement.Col,
+			Row:     component.Placement.Row,
+			ColSpan: component.Placement.ColSpan,
+			RowSpan: component.Placement.RowSpan,
+		}
+	}
+	return out
+}
+
+func dashboardVisualDTO(visualID string, visual reportdef.Visual, component dashboard.PageVisual) api.DashboardVisualDescribeResponse {
+	out := api.DashboardVisualDescribeResponse{
+		ID:              visualID,
+		ComponentID:     component.ID,
+		Kind:            firstNonEmpty(visual.Kind, component.Kind),
+		Shape:           visual.Shape,
+		Renderer:        visual.Renderer,
+		Type:            visual.Type,
+		Title:           firstNonEmpty(component.Title, visual.Title),
+		Description:     firstNonEmpty(component.Description, visual.Description),
+		Query:           jsonMap(visual.Query),
+		Options:         visual.Options,
+		RendererOptions: visual.RendererOptions,
+		Interaction:     jsonMap(visual.Interaction),
+		X:               component.X,
+		Y:               component.Y,
+		Width:           component.Width,
+		Height:          component.Height,
+	}
+	if !component.Placement.IsZero() {
+		out.Placement = &api.DashboardComponentPlacement{
+			Col:     component.Placement.Col,
+			Row:     component.Placement.Row,
+			ColSpan: component.Placement.ColSpan,
+			RowSpan: component.Placement.RowSpan,
+		}
+	}
+	return out
+}
+
+func jsonMap(value any) map[string]any {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return map[string]any{}
+	}
+	var out map[string]any
+	if err := json.Unmarshal(encoded, &out); err != nil || out == nil {
+		return map[string]any{}
+	}
+	return out
+}
+
+func pageComponentForVisual(page dashboard.Page, visualID string) (dashboard.PageVisual, bool) {
+	for _, component := range page.PlacedVisuals() {
+		if component.Visual == visualID {
+			return component, true
+		}
+	}
+	return dashboard.PageVisual{}, false
+}
+
+func pageComponentForTable(page dashboard.Page, tableID string) (dashboard.PageVisual, bool) {
+	for _, component := range page.PlacedVisuals() {
+		if component.Table == tableID {
+			return component, true
+		}
+	}
+	return dashboard.PageVisual{}, false
+}
+
+func pageComponentForFilter(page dashboard.Page, filterID string) (dashboard.PageVisual, bool) {
+	for _, component := range page.PlacedVisuals() {
+		if component.Filter == filterID {
+			return component, true
+		}
+	}
+	return dashboard.PageVisual{}, false
 }
 
 func modelSummary(model *semanticmodel.Model) *api.ModelRef {

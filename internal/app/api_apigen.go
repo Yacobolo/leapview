@@ -11,58 +11,63 @@ import (
 )
 
 var apigenOperationPermissions = map[string]string{
-	"getCurrentPrincipal":      access.PermissionWorkspaceRead,
-	"listCurrentPermissions":   access.PermissionWorkspaceRead,
-	"listCurrentAPITokens":     access.PermissionTokenManage,
-	"createCurrentAPIToken":    access.PermissionTokenManage,
-	"revokeCurrentAPIToken":    access.PermissionTokenManage,
-	"listCurrentSessions":      access.PermissionWorkspaceRead,
-	"revokeCurrentSession":     access.PermissionWorkspaceRead,
-	"listWorkspaces":           access.PermissionWorkspaceRead,
-	"listWorkspaceAssets":      access.PermissionAssetRead,
-	"listWorkspaceAssetEdges":  access.PermissionAssetRead,
-	"listDashboards":           access.PermissionAssetRead,
-	"getDashboard":             access.PermissionAssetRead,
-	"listSemanticModels":       access.PermissionAssetRead,
-	"getSemanticModel":         access.PermissionAssetRead,
-	"queryDashboardPage":       access.PermissionAssetRead,
-	"queryDashboardTable":      access.PermissionAssetRead,
-	"createDeployment":         access.PermissionDeploymentWrite,
-	"listDeployments":          access.PermissionDeploymentRead,
-	"getDeployment":            access.PermissionDeploymentRead,
-	"uploadDeploymentArtifact": access.PermissionDeploymentWrite,
-	"validateDeployment":       access.PermissionDeploymentWrite,
-	"activateDeployment":       access.PermissionDeploymentActivate,
-	"createMaterializationRun": access.PermissionMaterializationRun,
-	"listMaterializationRuns":  access.PermissionMaterializationRun,
-	"getMaterializationRun":    access.PermissionMaterializationRun,
-	"createAgentConversation":  access.PermissionAgentUse,
-	"listAgentConversations":   access.PermissionAgentRead,
-	"getAgentConversation":     access.PermissionAgentRead,
-	"updateAgentConversation":  access.PermissionAgentUse,
-	"archiveAgentConversation": access.PermissionAgentUse,
-	"listAgentMessages":        access.PermissionAgentRead,
-	"createAgentTurn":          access.PermissionAgentUse,
-	"listAgentRuns":            access.PermissionAgentRead,
-	"getAgentRun":              access.PermissionAgentRead,
-	"listAgentEvents":          access.PermissionAgentRead,
-	"listPrincipals":           access.PermissionRBACRead,
-	"getPrincipal":             access.PermissionRBACRead,
-	"updatePrincipal":          access.PermissionRBACWrite,
-	"listWorkspaceRoles":       access.PermissionRBACRead,
-	"listGroups":               access.PermissionRBACRead,
-	"createGroup":              access.PermissionRBACWrite,
-	"getGroup":                 access.PermissionRBACRead,
-	"updateGroup":              access.PermissionRBACWrite,
-	"deleteGroup":              access.PermissionRBACWrite,
-	"listGroupMembers":         access.PermissionRBACRead,
-	"addGroupMember":           access.PermissionRBACWrite,
-	"removeGroupMember":        access.PermissionRBACWrite,
-	"listRoleBindings":         access.PermissionRBACRead,
-	"createRoleBinding":        access.PermissionRBACWrite,
-	"updateRoleBinding":        access.PermissionRBACWrite,
-	"deleteRoleBinding":        access.PermissionRBACWrite,
-	"listAuditEvents":          access.PermissionAuditRead,
+	"getCurrentPrincipal":        access.PermissionWorkspaceRead,
+	"listCurrentPermissions":     access.PermissionWorkspaceRead,
+	"listCurrentAPITokens":       access.PermissionTokenManage,
+	"createCurrentAPIToken":      access.PermissionTokenManage,
+	"revokeCurrentAPIToken":      access.PermissionTokenManage,
+	"listCurrentSessions":        access.PermissionWorkspaceRead,
+	"revokeCurrentSession":       access.PermissionWorkspaceRead,
+	"listWorkspaces":             access.PermissionWorkspaceRead,
+	"listWorkspaceAssets":        access.PermissionAssetRead,
+	"listWorkspaceAssetEdges":    access.PermissionAssetRead,
+	"listDashboards":             access.PermissionAssetRead,
+	"getDashboard":               access.PermissionAssetRead,
+	"listDashboardComponents":    access.PermissionAssetRead,
+	"getDashboardVisual":         access.PermissionAssetRead,
+	"listSemanticModels":         access.PermissionAssetRead,
+	"getSemanticModel":           access.PermissionAssetRead,
+	"queryDashboardPage":         access.PermissionAssetRead,
+	"queryDashboardVisualData":   access.PermissionAssetRead,
+	"queryDashboardTable":        access.PermissionAssetRead,
+	"queryDashboardTableData":    access.PermissionAssetRead,
+	"listDashboardFilterOptions": access.PermissionAssetRead,
+	"createDeployment":           access.PermissionDeploymentWrite,
+	"listDeployments":            access.PermissionDeploymentRead,
+	"getDeployment":              access.PermissionDeploymentRead,
+	"uploadDeploymentArtifact":   access.PermissionDeploymentWrite,
+	"validateDeployment":         access.PermissionDeploymentWrite,
+	"activateDeployment":         access.PermissionDeploymentActivate,
+	"createMaterializationRun":   access.PermissionMaterializationRun,
+	"listMaterializationRuns":    access.PermissionMaterializationRun,
+	"getMaterializationRun":      access.PermissionMaterializationRun,
+	"createAgentConversation":    access.PermissionAgentUse,
+	"listAgentConversations":     access.PermissionAgentRead,
+	"getAgentConversation":       access.PermissionAgentRead,
+	"updateAgentConversation":    access.PermissionAgentUse,
+	"archiveAgentConversation":   access.PermissionAgentUse,
+	"listAgentMessages":          access.PermissionAgentRead,
+	"createAgentTurn":            access.PermissionAgentUse,
+	"listAgentRuns":              access.PermissionAgentRead,
+	"getAgentRun":                access.PermissionAgentRead,
+	"listAgentEvents":            access.PermissionAgentRead,
+	"listPrincipals":             access.PermissionRBACRead,
+	"getPrincipal":               access.PermissionRBACRead,
+	"updatePrincipal":            access.PermissionRBACWrite,
+	"listWorkspaceRoles":         access.PermissionRBACRead,
+	"listGroups":                 access.PermissionRBACRead,
+	"createGroup":                access.PermissionRBACWrite,
+	"getGroup":                   access.PermissionRBACRead,
+	"updateGroup":                access.PermissionRBACWrite,
+	"deleteGroup":                access.PermissionRBACWrite,
+	"listGroupMembers":           access.PermissionRBACRead,
+	"addGroupMember":             access.PermissionRBACWrite,
+	"removeGroupMember":          access.PermissionRBACWrite,
+	"listRoleBindings":           access.PermissionRBACRead,
+	"createRoleBinding":          access.PermissionRBACWrite,
+	"updateRoleBinding":          access.PermissionRBACWrite,
+	"deleteRoleBinding":          access.PermissionRBACWrite,
+	"listAuditEvents":            access.PermissionAuditRead,
 }
 
 func (s *Server) registerAPIGenRoutes(r chi.Router) {
@@ -207,12 +212,32 @@ func (a apiGenAdapter) GetDashboard(w http.ResponseWriter, r *http.Request, _, _
 	a.server.getDashboard(w, r)
 }
 
+func (a apiGenAdapter) ListDashboardComponents(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenListDashboardComponentsParams) {
+	a.server.listDashboardComponents(w, r)
+}
+
+func (a apiGenAdapter) GetDashboardVisual(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
+	a.server.getDashboardVisual(w, r)
+}
+
 func (a apiGenAdapter) QueryDashboardPage(w http.ResponseWriter, r *http.Request, _, _, _ string) {
 	a.server.queryDashboardPage(w, r)
 }
 
+func (a apiGenAdapter) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
+	a.server.queryDashboardVisualData(w, r)
+}
+
 func (a apiGenAdapter) QueryDashboardTable(w http.ResponseWriter, r *http.Request, _, _, _ string) {
 	a.server.queryDashboardTable(w, r)
+}
+
+func (a apiGenAdapter) QueryDashboardTableData(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
+	a.server.queryDashboardTableData(w, r)
+}
+
+func (a apiGenAdapter) ListDashboardFilterOptions(w http.ResponseWriter, r *http.Request, _, _, _, _ string, _ apigenapi.GenListDashboardFilterOptionsParams) {
+	a.server.listDashboardFilterOptions(w, r)
 }
 
 func (a apiGenAdapter) ListDeployments(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDeploymentsParams) {

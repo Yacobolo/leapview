@@ -166,6 +166,97 @@ func TestFriendlyListCommandsPassPaginationQuery(t *testing.T) {
 	}
 }
 
+func TestDashboardDataCommandsUseGeneratedURLsAndBodies(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		method   string
+		path     string
+		wantBody []string
+		response any
+	}{
+		{
+			name:     "components",
+			args:     []string{"components", "executive-sales", "overview"},
+			method:   http.MethodGet,
+			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/components",
+			response: map[string]any{"items": []map[string]any{}, "page": map[string]any{"nextCursor": ""}},
+		},
+		{
+			name:     "visual describe",
+			args:     []string{"visual", "executive-sales", "overview", "orders"},
+			method:   http.MethodGet,
+			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders",
+			response: map[string]any{"id": "orders", "title": "Orders"},
+		},
+		{
+			name:     "visual data",
+			args:     []string{"visual-data", "executive-sales", "overview", "orders", "--filters-json", `{"controls":{"state":{"values":["SP"]}}}`},
+			method:   http.MethodPost,
+			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/data",
+			wantBody: []string{`"filters"`, `"state"`},
+			response: map[string]any{"id": "orders", "data": []map[string]any{}},
+		},
+		{
+			name:     "table data",
+			args:     []string{"table-data", "executive-sales", "overview", "orders", "--count", "7"},
+			method:   http.MethodPost,
+			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/data",
+			wantBody: []string{`"count":7`},
+			response: map[string]any{"title": "Orders", "blocks": map[string]any{}},
+		},
+		{
+			name:     "filter options",
+			args:     []string{"filter-options", "executive-sales", "overview", "state", "--limit", "7", "--page-token", "cursor"},
+			method:   http.MethodPost,
+			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/state/options",
+			wantBody: []string{},
+			response: map[string]any{"items": []map[string]any{}, "page": map[string]any{"nextCursor": ""}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tc.method {
+					t.Fatalf("method=%s want=%s", r.Method, tc.method)
+				}
+				if r.URL.Path != tc.path {
+					t.Fatalf("path=%s want=%s", r.URL.Path, tc.path)
+				}
+				if tc.name == "filter options" {
+					if got := r.URL.Query().Get("limit"); got != "7" {
+						t.Fatalf("limit=%q", got)
+					}
+					if got := r.URL.Query().Get("pageToken"); got != "cursor" {
+						t.Fatalf("pageToken=%q", got)
+					}
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatalf("read body: %v", err)
+				}
+				for _, want := range tc.wantBody {
+					if !strings.Contains(string(body), want) {
+						t.Fatalf("body missing %q: %s", want, body)
+					}
+				}
+				writeCLIJSON(t, w, tc.response)
+			}))
+			defer server.Close()
+
+			opts := &rootOptions{workspaceID: "test"}
+			cmd := dashboardsCommand(context.Background(), opts)
+			args := append([]string{}, tc.args...)
+			args = append(args, "--target", server.URL, "--token", "token")
+			cmd.SetArgs(args)
+			captureStdout(t, func() {
+				if err := cmd.Execute(); err != nil {
+					t.Fatalf("run command: %v", err)
+				}
+			})
+		})
+	}
+}
+
 func TestAgentToolsCommandListsGeneratedTools(t *testing.T) {
 	output := captureStdout(t, func() {
 		cmd := agentCommand(context.Background(), &rootOptions{})
@@ -174,7 +265,7 @@ func TestAgentToolsCommandListsGeneratedTools(t *testing.T) {
 			t.Fatalf("agent tools: %v", err)
 		}
 	})
-	for _, want := range []string{"NAME", "PERMISSION", "list_dashboards", "asset:read", "list_workspace_assets"} {
+	for _, want := range []string{"NAME", "PERMISSION", "list_dashboards", "asset:read", "list_workspace_assets", "query_dashboard_visual_data"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("agent tools output missing %q:\n%s", want, output)
 		}

@@ -22,9 +22,12 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 
 	for _, want := range []string{
 		"describe_dashboard",
+		"describe_dashboard_visual",
 		"describe_model",
 		"get_deployment",
 		"get_materialization_run",
+		"list_dashboard_components",
+		"list_dashboard_filter_options",
 		"list_dashboards",
 		"list_deployments",
 		"list_materialization_runs",
@@ -33,6 +36,8 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		"list_workspace_assets",
 		"list_workspaces",
 		"query_dashboard_page",
+		"query_dashboard_table_data",
+		"query_dashboard_visual_data",
 		"query_table",
 	} {
 		if _, ok := names[want]; !ok {
@@ -77,10 +82,15 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 		names[tool.Name] = tool
 	}
 	for toolName, wantProps := range map[string][]string{
-		"describe_dashboard":   {"dashboard"},
-		"describe_model":       {"model"},
-		"query_dashboard_page": {"dashboard", "page", "filters"},
-		"query_table":          {"dashboard", "table", "count", "filters", "pageId"},
+		"describe_dashboard":            {"dashboard"},
+		"describe_dashboard_visual":     {"dashboard", "page", "visual"},
+		"describe_model":                {"model"},
+		"list_dashboard_components":     {"dashboard", "page", "limit", "pageToken"},
+		"list_dashboard_filter_options": {"dashboard", "page", "filter", "filters", "limit", "pageToken"},
+		"query_dashboard_page":          {"dashboard", "page", "filters"},
+		"query_dashboard_table_data":    {"dashboard", "page", "table", "count", "filters"},
+		"query_dashboard_visual_data":   {"dashboard", "page", "visual", "filters"},
+		"query_table":                   {"dashboard", "table", "count", "filters", "pageId"},
 	} {
 		var schema struct {
 			Properties map[string]any `json:"properties"`
@@ -242,6 +252,46 @@ func TestAPIGenAgentToolDispatchesJSONBodyOperation(t *testing.T) {
 	}
 	if table.AvailableRows != 50 || len(table.Blocks["a"].Rows) != 50 {
 		t.Fatalf("table result was not capped to 50: %#v", table)
+	}
+}
+
+func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var queryVisual agent.ToolDefinition
+	for _, tool := range tools {
+		if tool.Name == "query_dashboard_visual_data" {
+			queryVisual = tool
+			break
+		}
+	}
+	if queryVisual.Handler == nil {
+		t.Fatal("query_dashboard_visual_data tool missing")
+	}
+	result, err := queryVisual.Handler.Run(context.Background(), agent.ToolCall{
+		ID:        "call_1",
+		Name:      "query_dashboard_visual_data",
+		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"orders"}`),
+	})
+	if err != nil {
+		t.Fatalf("run tool: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool returned error: %#v", result.Content)
+	}
+	body, err := json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("marshal result content: %v", err)
+	}
+	var visual struct {
+		Title string           `json:"title"`
+		Data  []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(body, &visual); err != nil {
+		t.Fatalf("decode visual result: %v body=%s", err, body)
+	}
+	if visual.Title != "Orders" || len(visual.Data) != 1 {
+		t.Fatalf("visual result = %#v", visual)
 	}
 }
 

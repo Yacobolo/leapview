@@ -105,6 +105,104 @@ func TestBIAPIQueriesBoundRowsAndPageData(t *testing.T) {
 	}
 }
 
+func TestBIAPIDashboardVisualDataSurface(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+
+	componentReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/components?limit=2", nil)
+	componentReq.Header.Set("Accept", "application/json")
+	componentRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(componentRec, componentReq)
+	if componentRec.Code != http.StatusOK {
+		t.Fatalf("components status=%d body=%s", componentRec.Code, componentRec.Body.String())
+	}
+	var components struct {
+		Items []struct {
+			ID        string  `json:"id"`
+			Kind      string  `json:"kind"`
+			Ref       string  `json:"ref"`
+			Title     string  `json:"title"`
+			Placement any     `json:"placement"`
+			X         float64 `json:"x"`
+		} `json:"items"`
+		Page struct {
+			NextCursor string `json:"nextCursor"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(componentRec.Body.Bytes(), &components); err != nil {
+		t.Fatalf("decode components: %v body=%s", err, componentRec.Body.String())
+	}
+	if len(components.Items) != 2 || components.Items[1].ID != "state-filter" || components.Page.NextCursor == "" {
+		t.Fatalf("components response = %#v", components)
+	}
+
+	visualReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders", nil)
+	visualReq.Header.Set("Accept", "application/json")
+	visualRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(visualRec, visualReq)
+	if visualRec.Code != http.StatusOK || !strings.Contains(visualRec.Body.String(), `"title":"Orders"`) || !strings.Contains(visualRec.Body.String(), `"componentId":"orders-chart"`) {
+		t.Fatalf("visual describe status=%d body=%s", visualRec.Code, visualRec.Body.String())
+	}
+
+	dataReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/data", strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}}`))
+	dataReq.Header.Set("Accept", "application/json")
+	dataReq.Header.Set("Content-Type", "application/json")
+	dataRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(dataRec, dataReq)
+	if dataRec.Code != http.StatusOK || !strings.Contains(dataRec.Body.String(), `"data"`) || !strings.Contains(dataRec.Body.String(), `"delivered"`) {
+		t.Fatalf("visual data status=%d body=%s", dataRec.Code, dataRec.Body.String())
+	}
+
+	tableReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/data", strings.NewReader(`{"count":10}`))
+	tableReq.Header.Set("Accept", "application/json")
+	tableReq.Header.Set("Content-Type", "application/json")
+	tableRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(tableRec, tableReq)
+	if tableRec.Code != http.StatusOK || !strings.Contains(tableRec.Body.String(), `"order_id":"o1"`) {
+		t.Fatalf("table data status=%d body=%s", tableRec.Code, tableRec.Body.String())
+	}
+
+	filterReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/state/options?limit=1", strings.NewReader(`{}`))
+	filterReq.Header.Set("Accept", "application/json")
+	filterReq.Header.Set("Content-Type", "application/json")
+	filterRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(filterRec, filterReq)
+	if filterRec.Code != http.StatusOK || !strings.Contains(filterRec.Body.String(), `"items"`) || !strings.Contains(filterRec.Body.String(), `"SP"`) {
+		t.Fatalf("filter options status=%d body=%s", filterRec.Code, filterRec.Body.String())
+	}
+}
+
+func TestBIAPIDashboardVisualDataSurfaceNotFoundAndMalformedBody(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/missing"},
+		{method: http.MethodPost, path: "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/missing/data"},
+		{method: http.MethodPost, path: "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/missing/data"},
+		{method: http.MethodPost, path: "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/missing/options"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s %s status=%d body=%s", tc.method, tc.path, rec.Code, rec.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/data", strings.NewReader(`{"filters":`))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 type manyRowsMetrics struct {
 	fakeMetrics
 }

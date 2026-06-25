@@ -50,6 +50,42 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	}
 	addTargetTokenFlags(describe, opts)
 
+	components := &cobra.Command{
+		Use:   "components <dashboard> <page>",
+		Short: "List dashboard page components",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRawAPI(ctx, opts, "listDashboardComponents", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1]}, paginationQuery(opts), nil)
+		},
+	}
+	addTargetTokenFlags(components, opts)
+	addPaginationFlags(components, opts)
+
+	visual := &cobra.Command{
+		Use:   "visual <dashboard> <page> <visual>",
+		Short: "Describe a dashboard visual",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRawAPI(ctx, opts, "getDashboardVisual", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1], "visual": args[2]}, nil, nil)
+		},
+	}
+	addTargetTokenFlags(visual, opts)
+
+	visualData := &cobra.Command{
+		Use:   "visual-data <dashboard> <page> <visual>",
+		Short: "Query dashboard visual data",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := filtersBody(opts.filtersJSON)
+			if err != nil {
+				return err
+			}
+			return runRawAPI(ctx, opts, "queryDashboardVisualData", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1], "visual": args[2]}, nil, postBody(body))
+		},
+	}
+	addTargetTokenFlags(visualData, opts)
+	visualData.Flags().StringVar(&opts.filtersJSON, "filters-json", "", "dashboard filters JSON")
+
 	queryPage := &cobra.Command{
 		Use:   "query-page <dashboard> <page>",
 		Short: "Query a dashboard page",
@@ -59,7 +95,7 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runRawAPI(ctx, opts, "queryDashboardPage", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1]}, nil, body)
+			return runRawAPI(ctx, opts, "queryDashboardPage", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1]}, nil, postBody(body))
 		},
 	}
 	addTargetTokenFlags(queryPage, opts)
@@ -74,7 +110,7 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runRawAPI(ctx, opts, "queryDashboardTable", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "table": args[1]}, nil, body)
+			return runRawAPI(ctx, opts, "queryDashboardTable", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "table": args[1]}, nil, postBody(body))
 		},
 	}
 	addTargetTokenFlags(queryTable, opts)
@@ -82,7 +118,39 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	queryTable.Flags().IntVar(&opts.count, "count", 0, "row count")
 	queryTable.Flags().StringVar(&opts.filtersJSON, "filters-json", "", "dashboard filters JSON")
 
-	parent.AddCommand(list, describe, queryPage, queryTable)
+	tableData := &cobra.Command{
+		Use:   "table-data <dashboard> <page> <table>",
+		Short: "Query dashboard table data",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := tableQueryBody("", opts.count, opts.filtersJSON)
+			if err != nil {
+				return err
+			}
+			return runRawAPI(ctx, opts, "queryDashboardTableData", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1], "table": args[2]}, nil, postBody(body))
+		},
+	}
+	addTargetTokenFlags(tableData, opts)
+	tableData.Flags().IntVar(&opts.count, "count", 0, "row count")
+	tableData.Flags().StringVar(&opts.filtersJSON, "filters-json", "", "dashboard filters JSON")
+
+	filterOptions := &cobra.Command{
+		Use:   "filter-options <dashboard> <page> <filter>",
+		Short: "List dashboard filter options",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := filtersBody(opts.filtersJSON)
+			if err != nil {
+				return err
+			}
+			return runRawAPI(ctx, opts, "listDashboardFilterOptions", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1], "filter": args[2]}, paginationQuery(opts), postBody(body))
+		},
+	}
+	addTargetTokenFlags(filterOptions, opts)
+	addPaginationFlags(filterOptions, opts)
+	filterOptions.Flags().StringVar(&opts.filtersJSON, "filters-json", "", "dashboard filters JSON")
+
+	parent.AddCommand(list, describe, components, visual, visualData, queryPage, queryTable, tableData, filterOptions)
 	return parent
 }
 
@@ -131,6 +199,13 @@ func paginationQuery(opts *rootOptions) url.Values {
 		query.Set("pageToken", opts.pageToken)
 	}
 	return query
+}
+
+func postBody(body map[string]any) map[string]any {
+	if body == nil {
+		return map[string]any{}
+	}
+	return body
 }
 
 func runRawAPI(ctx context.Context, opts *rootOptions, operationID string, pathParams map[string]string, query url.Values, body map[string]any) error {
