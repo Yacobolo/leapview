@@ -72,6 +72,9 @@ func (m *Model) Validate() error {
 				return fmt.Errorf("model table %q references unknown source %q", name, table.Source)
 			}
 		}
+		if len(table.SourceReads) > 0 {
+			return fmt.Errorf("model table %q source_reads is no longer supported; source reads are inferred from transform.sql", name)
+		}
 		dependencies, err := m.modelTableSourceDependencies(name, table)
 		if err != nil {
 			return err
@@ -182,16 +185,6 @@ func (m *Model) modelTableSourceDependencies(tableName string, table Table) ([]s
 			return nil, err
 		}
 	}
-	for source, fields := range table.SourceReads {
-		if err := add(source); err != nil {
-			return nil, err
-		}
-		for _, field := range fields {
-			if err := validateSemanticIdentifier(field); err != nil {
-				return nil, fmt.Errorf("model table %q source_reads.%s field %q is invalid: %w", tableName, source, field, err)
-			}
-		}
-	}
 	inferred, rawRefs, unqualifiedRefs := m.modelSQLSourceRefs(sql)
 	if len(rawRefs) > 0 {
 		return nil, fmt.Errorf("model table %q model SQL must reference sources through source.<name>; raw.<name> is internal", tableName)
@@ -214,13 +207,6 @@ func (m *Model) modelTableSourceDependencies(tableName string, table Table) ([]s
 			return nil, fmt.Errorf("model table %q uses transform.sql and requires sources", tableName)
 		}
 		return nil, fmt.Errorf("model table %q SQL source references %v do not match declared sources %v", tableName, inferred, result)
-	}
-	if hasSQL {
-		for _, source := range inferred {
-			if len(table.SourceReads[source]) == 0 {
-				return nil, fmt.Errorf("model table %q SQL source %q requires source_reads projection", tableName, source)
-			}
-		}
 	}
 	return result, nil
 }

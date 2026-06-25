@@ -144,7 +144,7 @@ func RegisterSourceReads(ctx context.Context, db *sql.DB, model *semanticmodel.M
 		if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP VIEW IF EXISTS source.%s", read.Source)); err != nil {
 			return fmt.Errorf("dropping stale source %s: %w", read.Source, err)
 		}
-		relation, err := SourceReadRelation(model, source, dataDir, read.Fields, read.Columns)
+		relation, err := SourceReadRelation(model, source, dataDir, read.Fields, read.Columns, read.RowPresenceOnly)
 		if err != nil {
 			return fmt.Errorf("compiling source %s: %w", read.Source, err)
 		}
@@ -183,20 +183,22 @@ type sourcePlan struct {
 	object           string
 	fields           []string
 	columns          []analyticsmaterialize.SourceReadColumn
+	rowPresenceOnly  bool
 	options          map[string]any
 }
 
 func SourceRelation(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {
-	return SourceReadRelation(model, source, dataDir, nil, nil)
+	return SourceReadRelation(model, source, dataDir, nil, nil, false)
 }
 
-func SourceReadRelation(model *semanticmodel.Model, source semanticmodel.Source, dataDir string, fields []string, columns []analyticsmaterialize.SourceReadColumn) (string, error) {
+func SourceReadRelation(model *semanticmodel.Model, source semanticmodel.Source, dataDir string, fields []string, columns []analyticsmaterialize.SourceReadColumn, rowPresenceOnly bool) (string, error) {
 	plan, err := ResolveSourcePlan(model, source, dataDir)
 	if err != nil {
 		return "", err
 	}
 	plan.fields = append([]string{}, fields...)
 	plan.columns = append([]analyticsmaterialize.SourceReadColumn{}, columns...)
+	plan.rowPresenceOnly = rowPresenceOnly
 	return compileSourceRelation(plan)
 }
 
@@ -258,9 +260,9 @@ func (pathSourceAdapter) CompileRead(plan sourcePlan) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return projectedRelation(source, plan.fields, plan.columns)
+		return projectedRelation(source, plan.fields, plan.columns, plan.rowPresenceOnly)
 	case semanticmodel.ScanReplacement:
-		return projectedRelation(replacementScanSource(plan.path), plan.fields, plan.columns)
+		return projectedRelation(replacementScanSource(plan.path), plan.fields, plan.columns, plan.rowPresenceOnly)
 	default:
 		return "", fmt.Errorf("unsupported source scan kind %q", format.ScanKind)
 	}
@@ -277,7 +279,7 @@ func (attachedObjectSourceAdapter) CompileRead(plan sourcePlan) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return projectedRelation(fmt.Sprintf("%s.%s", alias, object), plan.fields, plan.columns)
+	return projectedRelation(fmt.Sprintf("%s.%s", alias, object), plan.fields, plan.columns, plan.rowPresenceOnly)
 }
 
 type quackSourceAdapter struct{}
@@ -287,7 +289,7 @@ func (quackSourceAdapter) CompileRead(plan sourcePlan) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return quackQueryRelation(plan.connectionConfig.Path, object, plan.fields, plan.columns, plan.connectionConfig.Options)
+	return quackQueryRelation(plan.connectionConfig.Path, object, plan.fields, plan.columns, plan.rowPresenceOnly, plan.connectionConfig.Options)
 }
 
 func sourceAdapterForPlan(plan sourcePlan) (sourceAdapter, error) {
@@ -312,11 +314,13 @@ func connectionRequiresObjectAttach(connection semanticmodel.ConnectionSpec) boo
 	return connection.ObjectRelation == semanticmodel.ObjectRelationAttach
 }
 
-func quackQueryRelation(uri, object string, fields []string, columns []analyticsmaterialize.SourceReadColumn, options map[string]any) (string, error) {
+func quackQueryRelation(uri, object string, fields []string, columns []analyticsmaterialize.SourceReadColumn, rowPresenceOnly bool, options map[string]any) (string, error) {
 	projection := "*"
-	if len(fields) > 0 || len(columns) > 0 {
+	if rowPresenceOnly {
+		projection = "1 AS " + rowPresenceColumn
+	} else if len(fields) > 0 || len(columns) > 0 {
 		var err error
-		projection, err = projectionSQL(fields, columns)
+		projection, err = projectionSQL(fields, columns, false)
 		if err != nil {
 			return "", err
 		}
@@ -344,7 +348,7 @@ func quackQueryCall(uri, remoteSQL string, options map[string]any) (string, erro
 }
 
 func replacementScanRelation(path string) string {
-	relation, _ := projectedRelation(replacementScanSource(path), nil, nil)
+	relation, _ := projectedRelation(replacementScanSource(path), nil, nil, false)
 	return relation
 }
 
@@ -357,7 +361,7 @@ func scanRelation(function, location string, options map[string]any) (string, er
 	if err != nil {
 		return "", err
 	}
-	return projectedRelation(source, nil, nil)
+	return projectedRelation(source, nil, nil, false)
 }
 
 func scanRelationSource(function, location string, options map[string]any) (string, error) {
@@ -368,15 +372,18 @@ func scanRelationSource(function, location string, options map[string]any) (stri
 	return fmt.Sprintf("%s('%s'%s)", function, sqlString(location), optionSQL), nil
 }
 
-func projectedRelation(source string, fields []string, columns []analyticsmaterialize.SourceReadColumn) (string, error) {
-	projection, err := projectionSQL(fields, columns)
+func projectedRelation(source string, fields []string, columns []analyticsmaterialize.SourceReadColumn, rowPresenceOnly bool) (string, error) {
+	projection, err := projectionSQL(fields, columns, rowPresenceOnly)
 	if err != nil {
 		return "", err
 	}
 	return "SELECT " + projection + " FROM " + source, nil
 }
 
-func projectionSQL(fields []string, columns []analyticsmaterialize.SourceReadColumn) (string, error) {
+func projectionSQL(fields []string, columns []analyticsmaterialize.SourceReadColumn, rowPresenceOnly bool) (string, error) {
+	if rowPresenceOnly {
+		return "1 AS " + rowPresenceColumn, nil
+	}
 	if len(fields) == 0 && len(columns) == 0 {
 		return "*", nil
 	}

@@ -327,6 +327,23 @@ func TestCompileSourceRelation(t *testing.T) {
 	if strings.Contains(relation, "secret-token") {
 		t.Fatalf("quack projected relation contains token: %q", relation)
 	}
+	relation, err = compileSourceRelation(sourcePlan{
+		kind:       "object",
+		connection: "remote_quack",
+		connectionConfig: semanticmodel.Connection{
+			Path: "quack:quack.example.com:443",
+		},
+		connectionSpec:  semanticmodel.ConnectionSpec{ObjectRelation: semanticmodel.ObjectRelationQuackQuery},
+		object:          "oeducklake.oe_aravind.fact_general_ledger_line",
+		rowPresenceOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "SELECT * FROM quack_query('quack:quack.example.com:443', 'SELECT 1 AS __libredash_row_present FROM oeducklake.oe_aravind.fact_general_ledger_line')"
+	if relation != want {
+		t.Fatalf("quack row-presence relation = %q, want %q", relation, want)
+	}
 
 	relation, err = compileSourceRelation(sourcePlan{
 		kind:   "path",

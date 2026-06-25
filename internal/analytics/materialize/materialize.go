@@ -19,14 +19,16 @@ type Executor interface {
 
 type SourceRegistrar interface {
 	PrepareSourceRuntime(ctx context.Context, model *semanticmodel.Model) error
+	PlanSourceReads(ctx context.Context, model *semanticmodel.Model, tableName string, table semanticmodel.Table) ([]SourceReadPlan, error)
 	RegisterSourceReads(ctx context.Context, model *semanticmodel.Model, reads []SourceReadPlan) error
 	DropSourceReads(ctx context.Context, model *semanticmodel.Model, reads []SourceReadPlan) error
 }
 
 type SourceReadPlan struct {
-	Source  string
-	Fields  []string
-	Columns []SourceReadColumn
+	Source          string
+	Fields          []string
+	Columns         []SourceReadColumn
+	RowPresenceOnly bool
 }
 
 type SourceReadColumn struct {
@@ -159,7 +161,10 @@ func ModelTables(ctx context.Context, executor Executor, sources SourceRegistrar
 
 func materializeModelTable(ctx context.Context, executor Executor, sources SourceRegistrar, model *semanticmodel.Model, name string) error {
 	table := model.Tables[name]
-	reads := sourceReadPlans(model, name, table)
+	reads, err := sourceReadPlans(ctx, sources, model, name, table)
+	if err != nil {
+		return err
+	}
 	if err := sources.RegisterSourceReads(ctx, model, reads); err != nil {
 		_ = sources.DropSourceReads(ctx, model, reads)
 		return err
@@ -228,22 +233,20 @@ func materializationOrder(model *semanticmodel.Model) ([]string, error) {
 	return order, nil
 }
 
-func sourceReadPlans(model *semanticmodel.Model, tableName string, table semanticmodel.Table) []SourceReadPlan {
+func sourceReadPlans(ctx context.Context, sources SourceRegistrar, model *semanticmodel.Model, tableName string, table semanticmodel.Table) ([]SourceReadPlan, error) {
 	plans := []SourceReadPlan{}
 	if table.Source != "" && table.Transform.SQL == "" {
 		plans = append(plans, SourceReadPlan{Source: table.Source, Columns: modelTableReadColumns(tableName, table)})
-		return plans
+		return plans, nil
 	}
-	for _, source := range table.SourceDependencies {
-		plans = append(plans, SourceReadPlan{Source: source, Fields: modelTableSourceReadFields(table, source)})
+	if len(table.SourceDependencies) == 0 {
+		return plans, nil
 	}
-	return plans
-}
-
-func modelTableSourceReadFields(table semanticmodel.Table, sourceName string) []string {
-	fields := append([]string{}, table.SourceReads[sourceName]...)
-	sort.Strings(fields)
-	return fields
+	planned, err := sources.PlanSourceReads(ctx, model, tableName, table)
+	if err != nil {
+		return nil, err
+	}
+	return planned, nil
 }
 
 func modelTableReadColumns(tableName string, table semanticmodel.Table) []SourceReadColumn {

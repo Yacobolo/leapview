@@ -327,10 +327,6 @@ models:
       revenue: {label: Revenue, description: Order revenue after payment aggregation.}
   customers:
     sources: [customers]
-    source_reads:
-      customers:
-        - customer_id
-        - customer_state
     description: Customer lookup model table for geographic slicing.
     transform:
       sql: SELECT customer_id, customer_state AS state FROM source.customers

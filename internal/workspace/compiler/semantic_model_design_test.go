@@ -661,10 +661,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
-        - customer_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -713,10 +709,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
-        - customer_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -761,9 +753,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -796,9 +785,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -854,9 +840,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -888,9 +871,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -989,9 +969,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -1064,9 +1041,6 @@ sources:
 models:
   orders:
     sources: [olist_orders]
-    source_reads:
-      olist_orders:
-        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -1309,12 +1283,6 @@ sources:
 	models:
 	  orders:
 	    sources: [olist_orders]
-	    source_reads:
-	      olist_orders:
-	        - order_id
-	        - customer_id
-	        - purchase_timestamp
-	        - revenue
 	    primary_key: order_id
 	    fields:
 	      order_id: {label: Order ID}

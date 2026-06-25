@@ -117,11 +117,10 @@ func TestSQLModelTableUsesModelOwnedSourceReads(t *testing.T) {
 		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
-				Sources:     []string{"orders"},
-				SourceReads: map[string][]string{"orders": []string{"order_id", "revenue"}},
-				Transform:   semanticmodel.Transform{SQL: "SELECT order_id, revenue FROM source.orders"},
-				PrimaryKey:  "order_id",
-				Dimensions:  map[string]semanticmodel.MetricDimension{"order_id": {Label: "Order ID"}, "revenue": {Label: "Revenue"}},
+				Sources:    []string{"orders"},
+				Transform:  semanticmodel.Transform{SQL: "SELECT order_id, revenue FROM source.orders"},
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Label: "Order ID"}, "revenue": {Label: "Revenue"}},
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
@@ -131,7 +130,7 @@ func TestSQLModelTableUsesModelOwnedSourceReads(t *testing.T) {
 	if err := model.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	sources := &recordingSourceRegistrar{}
+	sources := &recordingSourceRegistrar{planned: []analyticsmaterialize.SourceReadPlan{{Source: "orders", Fields: []string{"order_id", "revenue"}}}}
 	if _, err := analyticsmaterialize.Refresh(context.Background(), recordingExecutor{}, sources, model); err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +242,6 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Kind: "fact", Sources: []string{"orders"},
-				SourceReads: map[string][]string{"orders": []string{"order_id", "revenue"}},
 				Transform: semanticmodel.Transform{SQL: `
 					SELECT order_id, try_cast(revenue AS DOUBLE) AS revenue
 					FROM source.orders
@@ -286,13 +284,18 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 }
 
 type recordingSourceRegistrar struct {
-	reads []analyticsmaterialize.SourceReadPlan
-	ops   []string
+	planned []analyticsmaterialize.SourceReadPlan
+	reads   []analyticsmaterialize.SourceReadPlan
+	ops     []string
 }
 
 func (r *recordingSourceRegistrar) PrepareSourceRuntime(_ context.Context, _ *semanticmodel.Model) error {
 	r.ops = append(r.ops, "prepare")
 	return nil
+}
+
+func (r *recordingSourceRegistrar) PlanSourceReads(_ context.Context, _ *semanticmodel.Model, _ string, _ semanticmodel.Table) ([]analyticsmaterialize.SourceReadPlan, error) {
+	return append([]analyticsmaterialize.SourceReadPlan{}, r.planned...), nil
 }
 
 func (r *recordingSourceRegistrar) RegisterSourceReads(_ context.Context, _ *semanticmodel.Model, reads []analyticsmaterialize.SourceReadPlan) error {
