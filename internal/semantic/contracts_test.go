@@ -12,6 +12,7 @@ type Connection = semanticmodel.Connection
 type ConnectionAuth = semanticmodel.ConnectionAuth
 type ConnectionDefaults = semanticmodel.ConnectionDefaults
 type ModelTable = semanticmodel.Table
+type ModelColumn = semanticmodel.ModelColumn
 type ModelTransform = semanticmodel.Transform
 type MetricDimension = semanticmodel.MetricDimension
 type MetricMeasure = semanticmodel.MetricMeasure

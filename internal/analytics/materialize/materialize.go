@@ -18,8 +18,21 @@ type Executor interface {
 }
 
 type SourceRegistrar interface {
-	RegisterSources(ctx context.Context, model *semanticmodel.Model) error
+	PrepareSourceRuntime(ctx context.Context, model *semanticmodel.Model) error
+	PlanModelTable(ctx context.Context, model *semanticmodel.Model, tableName string, table semanticmodel.Table) (ModelTablePlan, error)
 }
+
+type ModelTablePlan struct {
+	Mode string
+	SQL  string
+}
+
+const (
+	PlanModeDirectSourceRead      = "direct_source_read"
+	PlanModeProjectedSourceInline = "projected_source_inline"
+	PlanModeWholeQueryPushdown    = "whole_query_pushdown"
+	PlanModeModelSQL              = "model_sql"
+)
 
 type SourcePathResolver interface {
 	ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error)
@@ -45,10 +58,10 @@ func Refresh(ctx context.Context, executor Executor, sources SourceRegistrar, mo
 	if sources == nil {
 		return time.Time{}, fmt.Errorf("source registrar is required")
 	}
-	if err := sources.RegisterSources(ctx, model); err != nil {
+	if err := sources.PrepareSourceRuntime(ctx, model); err != nil {
 		return time.Time{}, err
 	}
-	if err := ModelTables(ctx, executor, model); err != nil {
+	if err := ModelTables(ctx, executor, sources, model); err != nil {
 		return time.Time{}, err
 	}
 	return time.Now(), nil
@@ -122,30 +135,82 @@ func (defaultSourcePathResolver) ResolveSourcePath(model *semanticmodel.Model, s
 	}
 }
 
-func ModelTables(ctx context.Context, executor Executor, model *semanticmodel.Model) error {
+func ModelTables(ctx context.Context, executor Executor, sources SourceRegistrar, model *semanticmodel.Model) error {
 	if executor == nil {
 		return fmt.Errorf("materialization executor is required")
 	}
-	for _, name := range model.TableNames() {
+	if sources == nil {
+		return fmt.Errorf("source registrar is required")
+	}
+	order, err := materializationOrder(model)
+	if err != nil {
+		return err
+	}
+	if err := executor.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS model"); err != nil {
+		return err
+	}
+	for _, name := range order {
 		if err := validateIdentifier(name); err != nil {
 			return err
 		}
-		table := model.Tables[name]
-		sourceSQL := table.Transform.SQL
-		if table.Source != "" {
-			if err := validateIdentifier(table.Source); err != nil {
-				return err
-			}
-			if sourceSQL == "" {
-				sourceSQL = "SELECT * FROM raw." + table.Source
-			}
-		}
-		stmt := fmt.Sprintf("CREATE OR REPLACE TABLE model.%s AS %s", name, sourceSQL)
-		if err := executor.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("materializing model.%s: %w", name, err)
+		if err := materializeModelTable(ctx, executor, sources, model, name); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func materializeModelTable(ctx context.Context, executor Executor, sources SourceRegistrar, model *semanticmodel.Model, name string) error {
+	table := model.Tables[name]
+	plan, err := sources.PlanModelTable(ctx, model, name, table)
+	if err != nil {
+		return err
+	}
+	if plan.SQL == "" {
+		return fmt.Errorf("model table %q produced empty materialization SQL", name)
+	}
+	if err := executor.Exec(ctx, plan.SQL); err != nil {
+		return fmt.Errorf("materializing model.%s: %w", name, err)
+	}
+	return nil
+}
+
+func materializationOrder(model *semanticmodel.Model) ([]string, error) {
+	if model == nil {
+		return nil, fmt.Errorf("semantic model is required")
+	}
+	temporary := map[string]bool{}
+	permanent := map[string]bool{}
+	order := []string{}
+	var visit func(string) error
+	visit = func(name string) error {
+		if permanent[name] {
+			return nil
+		}
+		if temporary[name] {
+			return fmt.Errorf("model table dependency cycle includes %q", name)
+		}
+		table, ok := model.Tables[name]
+		if !ok {
+			return fmt.Errorf("unknown model table %q", name)
+		}
+		temporary[name] = true
+		for _, dependency := range table.ModelDependencies {
+			if err := visit(dependency); err != nil {
+				return err
+			}
+		}
+		temporary[name] = false
+		permanent[name] = true
+		order = append(order, name)
+		return nil
+	}
+	for _, name := range model.TableNames() {
+		if err := visit(name); err != nil {
+			return nil, err
+		}
+	}
+	return order, nil
 }
 
 func validateIdentifier(value string) error {

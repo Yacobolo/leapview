@@ -45,6 +45,12 @@ func TargetBaseTable(d *report.Dashboard, model *semanticmodel.Model, targetKind
 }
 
 func visualQueryBaseTable(model *semanticmodel.Model, query report.VisualQuery) (string, error) {
+	if query.Table != "" {
+		if _, ok := model.Tables[query.Table]; !ok {
+			return "", fmt.Errorf("query references unknown table %q", query.Table)
+		}
+		return query.Table, nil
+	}
 	base, err := measureRefsBaseTable(model, query.Measures)
 	if err != nil {
 		return "", err

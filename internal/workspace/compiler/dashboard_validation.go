@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dashboard/reportmodel"
@@ -24,6 +25,11 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 		}
 	}
 	for name, visual := range d.Visuals {
+		if visual.Query.Table != "" {
+			if _, ok := model.Tables[visual.Query.Table]; !ok {
+				return fmt.Errorf("visual %q query.table references unknown table %q", name, visual.Query.Table)
+			}
+		}
 		for _, dimension := range visual.Query.Dimensions {
 			if _, err := model.ResolveDimension(dimension.Field); err != nil {
 				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension.Field)
@@ -55,6 +61,9 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 				return err
 			}
 		}
+		if err := validateVisualQueryPlan(d, model, name, visual); err != nil {
+			return err
+		}
 	}
 	for name, table := range d.Tables {
 		normalizeTableFormatting(model, &table)
@@ -84,9 +93,114 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 				return fmt.Errorf("table %q interaction references unknown label column %q", name, mapping.Label)
 			}
 		}
+		if err := validateTableQueryPlan(d, model, name, table); err != nil {
+			return err
+		}
 		d.Tables[name] = table
 	}
 	return validateFilterTargets(d, model)
+}
+
+func validateVisualQueryPlan(d *report.Dashboard, model *semanticmodel.Model, name string, visual report.Visual) error {
+	planner := semanticquery.NewPlanner(model)
+	dimensions := reportFieldRefsToQueryFields(visual.Query.Dimensions)
+	if !visual.Query.Series.IsZero() {
+		dimensions = append(dimensions, reportFieldRefToQueryField(visual.Query.Series))
+	}
+	_, err := planner.Plan(semanticquery.Request{
+		Table:      visual.Query.Table,
+		Dimensions: dimensions,
+		Measures:   reportFieldRefsToQueryFields(visual.Query.Measures),
+		Time: semanticquery.Time{
+			Field: visual.Query.Time.Field,
+			Grain: visual.Query.Time.Grain,
+			Alias: visual.Query.Time.Alias,
+		},
+		Filters: scopedQueryFilters(d, model, "visual", name),
+		Limit:   visual.Query.Limit,
+	})
+	if err != nil {
+		return fmt.Errorf("visual %q query is invalid: %w", name, err)
+	}
+	return nil
+}
+
+func validateTableQueryPlan(d *report.Dashboard, model *semanticmodel.Model, name string, table report.TableVisual) error {
+	planner := semanticquery.NewPlanner(model)
+	filters := scopedQueryFilters(d, model, "table", name)
+	var err error
+	switch table.KindOrDefault() {
+	case "matrix_table", "pivot_table":
+		dimensions := reportFieldRefsToQueryFields(table.Query.Rows)
+		dimensions = append(dimensions, reportFieldRefsToQueryFields(table.Query.Columns)...)
+		_, err = planner.Plan(semanticquery.Request{
+			Table:      table.Query.Table,
+			Dimensions: dimensions,
+			Measures:   reportFieldRefsToQueryFields(table.Query.Measures),
+			Filters:    filters,
+		})
+	default:
+		dimensions := []semanticquery.Field{}
+		measures := []semanticquery.Field{}
+		for _, column := range table.DataColumns {
+			if _, resolveErr := model.ResolveDimension(column.Field); resolveErr == nil {
+				dimensions = append(dimensions, reportFieldRefToQueryField(column))
+				continue
+			}
+			measures = append(measures, reportFieldRefToQueryField(column))
+		}
+		_, err = planner.PlanRows(semanticquery.RowRequest{
+			Table:      table.Query.Table,
+			Dimensions: dimensions,
+			Measures:   measures,
+			Filters:    filters,
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("table %q query is invalid: %w", name, err)
+	}
+	return nil
+}
+
+func scopedQueryFilters(d *report.Dashboard, model *semanticmodel.Model, targetKind, targetID string) []semanticquery.Filter {
+	filters := []semanticquery.Filter{}
+	for _, filter := range d.Filters {
+		applies, err := reportmodel.FilterAppliesToTarget(d, model, filter, targetKind, targetID)
+		if err != nil || !applies {
+			continue
+		}
+		filters = append(filters, semanticquery.Filter{Field: filter.Dimension, Operator: "in"})
+	}
+	return filters
+}
+
+func reportFieldRefsToQueryFields(fields []report.FieldRef) []semanticquery.Field {
+	out := make([]semanticquery.Field, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, reportFieldRefToQueryField(field))
+	}
+	return out
+}
+
+func reportFieldRefToQueryField(field report.FieldRef) semanticquery.Field {
+	return semanticquery.Field{
+		Field: field.Field,
+		Alias: field.Alias,
+		Measure: semanticquery.InlineMeasure{
+			Field:       field.Measure.Field,
+			Name:        field.Measure.Name,
+			Label:       field.Measure.Label,
+			Description: field.Measure.Description,
+			Expr:        field.Measure.Expr,
+			Expression:  field.Measure.Expression,
+			Table:       field.Measure.Table,
+			Grain:       field.Measure.Grain,
+			Time:        field.Measure.Time,
+			Grains:      append([]string{}, field.Measure.Grains...),
+			Unit:        field.Measure.Unit,
+			Format:      field.Measure.Format,
+		},
+	}
 }
 
 func tableHasOutputColumn(table report.TableVisual, key string) bool {

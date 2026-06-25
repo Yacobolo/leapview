@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strings"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
@@ -65,7 +66,17 @@ ORDER BY schema_name, table_name, column_index`, databaseName)
 	}
 
 	for name, source := range model.Sources {
-		source.Schema = semanticmodel.TableSchema{Columns: sortedColumns(sourceColumns[name])}
+		columns, err := discoverSourceSchema(ctx, db.SQLDB(), model, source)
+		if err != nil {
+			return fmt.Errorf("discovering source %s schema: %w", name, err)
+		}
+		if len(columns) == 0 {
+			columns = sortedColumns(sourceColumns[name])
+		}
+		if len(columns) == 0 {
+			columns = source.Schema.Columns
+		}
+		source.Schema = semanticmodel.TableSchema{Columns: columns}
 		model.Sources[name] = source
 	}
 	for name, table := range model.Tables {
@@ -77,6 +88,166 @@ ORDER BY schema_name, table_name, column_index`, databaseName)
 		model.Tables[name] = table
 	}
 	return model.ValidateDiscoveredSchemas()
+}
+
+func discoverSourceSchema(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source) ([]semanticmodel.ColumnSchema, error) {
+	return discoverSourceSchemaWithDataDir(ctx, db, model, source, "")
+}
+
+func discoverSourceSchemaWithDataDir(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	if dataDir == "" && source.Kind() == semanticmodel.KindPath {
+		return nil, nil
+	}
+	plan, err := ResolveSourcePlan(model, source, dataDir)
+	if err != nil {
+		return nil, err
+	}
+	adapter, err := sourceAdapterForPlan(plan)
+	if err != nil {
+		return nil, err
+	}
+	return adapter.Discover(ctx, db, model, source, dataDir)
+}
+
+func (pathSourceAdapter) Discover(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	return describeSourceSchema(ctx, db, model, source, dataDir)
+}
+
+func (attachedObjectSourceAdapter) Discover(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	return describeSourceSchema(ctx, db, model, source, dataDir)
+}
+
+func (quackSourceAdapter) Discover(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, _ string) ([]semanticmodel.ColumnSchema, error) {
+	connection := model.Connections[source.Connection]
+	sqlText, err := quackMetadataColumnsSQL(connection.Path, source.Object, connection.Options)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, sqlText)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns := []semanticmodel.ColumnSchema{}
+	for rows.Next() {
+		var columnName, dataType string
+		var ordinal int
+		var nullableText sql.NullString
+		var defaultValue, comment sql.NullString
+		if err := rows.Scan(&columnName, &ordinal, &dataType, &nullableText, &defaultValue, &comment); err != nil {
+			return nil, err
+		}
+		var nullableValue *bool
+		if nullableText.Valid {
+			value := strings.EqualFold(nullableText.String, "YES") || strings.EqualFold(nullableText.String, "true")
+			nullableValue = &value
+		}
+		columns = append(columns, semanticmodel.ColumnSchema{
+			Name:         columnName,
+			Ordinal:      ordinal,
+			PhysicalType: dataType,
+			Nullable:     nullableValue,
+			Default:      defaultValue.String,
+			Comment:      comment.String,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(columns) > 0 {
+		return sortedColumns(columns), nil
+	}
+	return describeQuackLimitZeroSchema(ctx, db, connection.Path, source.Object, connection.Options)
+}
+
+func describeSourceSchema(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	relation, err := SourceRelation(model, source, dataDir)
+	if err != nil {
+		return nil, err
+	}
+	return describeRelationSchema(ctx, db, relation)
+}
+
+func describeQuackLimitZeroSchema(ctx context.Context, db *sql.DB, uri, object string, options map[string]any) ([]semanticmodel.ColumnSchema, error) {
+	relation, err := quackLimitZeroSchemaRelation(uri, object, options)
+	if err != nil {
+		return nil, err
+	}
+	return describeRelationSchema(ctx, db, relation)
+}
+
+func quackLimitZeroSchemaRelation(uri, object string, options map[string]any) (string, error) {
+	qualifiedObject, err := qualifiedSQLName(object)
+	if err != nil {
+		return "", err
+	}
+	call, err := quackQueryCall(uri, "SELECT * FROM "+qualifiedObject+" LIMIT 0", options)
+	if err != nil {
+		return "", err
+	}
+	return "SELECT * FROM " + call, nil
+}
+
+func describeRelationSchema(ctx context.Context, db *sql.DB, relation string) ([]semanticmodel.ColumnSchema, error) {
+	rows, err := db.QueryContext(ctx, "DESCRIBE "+relation)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []semanticmodel.ColumnSchema{}
+	columnNames, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		values := make([]sql.NullString, len(columnNames))
+		scan := make([]any, len(values))
+		for index := range values {
+			scan[index] = &values[index]
+		}
+		if err := rows.Scan(scan...); err != nil {
+			return nil, err
+		}
+		if len(values) < 2 || !values[0].Valid {
+			continue
+		}
+		column := semanticmodel.ColumnSchema{Name: values[0].String, Ordinal: len(result) + 1}
+		if values[1].Valid {
+			column.PhysicalType = values[1].String
+		}
+		if len(values) > 2 && values[2].Valid {
+			nullable := strings.EqualFold(values[2].String, "YES") || strings.EqualFold(values[2].String, "true")
+			column.Nullable = &nullable
+		}
+		if len(values) > 4 && values[4].Valid {
+			column.Default = values[4].String
+		}
+		result = append(result, column)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sortedColumns(result), nil
+}
+
+func quackMetadataColumnsSQL(uri, object string, options map[string]any) (string, error) {
+	parts := strings.Split(object, ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("quack object %q must include at least schema and table", object)
+	}
+	tableName := parts[len(parts)-1]
+	schemaName := parts[len(parts)-2]
+	catalogPredicate := ""
+	if len(parts) >= 3 {
+		catalogPredicate = " AND table_catalog = '" + sqlString(parts[len(parts)-3]) + "'"
+	}
+	remoteSQL := "SELECT column_name, ordinal_position, data_type, is_nullable, column_default, NULL AS comment FROM information_schema.columns WHERE table_schema = '" +
+		sqlString(schemaName) + "' AND table_name = '" + sqlString(tableName) + "'" + catalogPredicate + " ORDER BY ordinal_position"
+	call, err := quackQueryCall(uri, remoteSQL, options)
+	if err != nil {
+		return "", err
+	}
+	return "SELECT column_name, ordinal_position, data_type, is_nullable, column_default, comment FROM " + call, nil
 }
 
 func (db *Database) DiscoverSchemas(ctx context.Context, model *semanticmodel.Model) error {

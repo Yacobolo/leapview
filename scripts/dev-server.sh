@@ -8,8 +8,14 @@ PORT_FILE="$TMP_DIR/dev-server.port"
 LOG_FILE="$TMP_DIR/dev-server.log"
 PORT_START="${LIBREDASH_DEV_PORT_START:-8100}"
 PORT_COUNT="${LIBREDASH_DEV_PORT_COUNT:-100}"
+START_TIMEOUT_SECONDS="${LIBREDASH_DEV_START_TIMEOUT_SECONDS:-120}"
 
 mkdir -p "$TMP_DIR"
+
+if ! [[ "$START_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || (( START_TIMEOUT_SECONDS < 1 )); then
+  echo "LIBREDASH_DEV_START_TIMEOUT_SECONDS must be a positive integer" >&2
+  exit 2
+fi
 
 usage() {
   echo "Usage: $0 start|stop|status|logs"
@@ -177,7 +183,8 @@ runner_name() {
 wait_for_port() {
   local port="$1"
   local pid="$2"
-  for _ in {1..80}; do
+  local attempts=$((START_TIMEOUT_SECONDS * 4))
+  for (( attempt = 0; attempt < attempts; attempt++ )); do
     if [[ -n "$(port_pids "$port")" ]]; then
       return 0
     fi

@@ -23,8 +23,12 @@ func NewSourceRuntime(db *Database, dataDir string) *SourceRuntime {
 	}
 }
 
-func (r *SourceRuntime) RegisterSources(ctx context.Context, model *semanticmodel.Model) error {
-	return RegisterSourceViews(ctx, r.db.SQLDB(), model, r.dataDir, r.attachedConnections)
+func (r *SourceRuntime) PrepareSourceRuntime(ctx context.Context, model *semanticmodel.Model) error {
+	return PrepareSourceRuntime(ctx, r.db.SQLDB(), model, r.dataDir, r.attachedConnections)
+}
+
+func (r *SourceRuntime) PlanModelTable(ctx context.Context, model *semanticmodel.Model, tableName string, table semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {
+	return PlanModelTable(ctx, r.db.SQLDB(), model, r.dataDir, tableName, table)
 }
 
 func (r *SourceRuntime) ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {

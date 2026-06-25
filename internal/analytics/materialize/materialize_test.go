@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
@@ -14,6 +16,202 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
+
+func TestModelTableExecutesPlannedSQL(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name: "test",
+		Connections: map[string]semanticmodel.Connection{
+			"local_files": {Kind: "local"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{plan: analyticsmaterialize.ModelTablePlan{Mode: analyticsmaterialize.PlanModeDirectSourceRead, SQL: "CREATE OR REPLACE TABLE model.orders AS SELECT 1 AS order_id"}}
+	executor := &recordingStatementsExecutor{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), executor, sources, model); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sources.ops, []string{"prepare", "plan:orders"}) {
+		t.Fatalf("source ops = %#v, want prepare/plan", sources.ops)
+	}
+	if !reflect.DeepEqual(executor.statements, []string{"CREATE SCHEMA IF NOT EXISTS model", "CREATE OR REPLACE TABLE model.orders AS SELECT 1 AS order_id"}) {
+		t.Fatalf("statements = %#v, want planned SQL", executor.statements)
+	}
+}
+
+func TestModelTablePlannerErrorStopsMaterialization(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name:        "test",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
+		BaseTable:   "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Columns: map[string]semanticmodel.ModelColumn{
+					"order_id": {SourceField: "raw_order_id"},
+					"status":   {},
+					"revenue":  {SourceField: "gross_revenue"},
+				},
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{planErr: errors.New("plan failed")}
+	executor := &recordingStatementsExecutor{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), executor, sources, model); err == nil || !strings.Contains(err.Error(), "plan failed") {
+		t.Fatalf("Refresh() error = %v, want plan failed", err)
+	}
+	if !reflect.DeepEqual(executor.statements, []string{"CREATE SCHEMA IF NOT EXISTS model"}) {
+		t.Fatalf("statements = %#v, want only schema setup", executor.statements)
+	}
+}
+
+func TestSQLModelTableUsesPlannedSQL(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name: "test",
+		Connections: map[string]semanticmodel.Connection{
+			"local_files": {Kind: "local"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {
+				Path:       "orders.csv",
+				Format:     "csv",
+				Connection: "local_files",
+				Fields: map[string]semanticmodel.SourceField{
+					"unwanted_source_level_field": {},
+				},
+			},
+		},
+		BaseTable: "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Sources:    []string{"orders"},
+				Transform:  semanticmodel.Transform{SQL: "SELECT order_id, revenue FROM source.orders"},
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Label: "Order ID"}, "revenue": {Label: "Revenue"}},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{plan: analyticsmaterialize.ModelTablePlan{Mode: analyticsmaterialize.PlanModeProjectedSourceInline, SQL: "CREATE OR REPLACE TABLE model.orders AS SELECT order_id, revenue FROM read_csv('orders.csv')"}}
+	executor := &recordingStatementsExecutor{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), executor, sources, model); err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.statements) != 2 || !strings.Contains(executor.statements[1], "read_csv") {
+		t.Fatalf("statements = %#v, want planned inline SQL", executor.statements)
+	}
+}
+
+func TestModelTableExecutionErrorReturnsMaterializationError(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name:        "test",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
+		BaseTable:   "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Label: "Order ID"}},
+			},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{plan: analyticsmaterialize.ModelTablePlan{Mode: analyticsmaterialize.PlanModeDirectSourceRead, SQL: "CREATE OR REPLACE TABLE model.orders AS SELECT 1"}}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), failingExecutor{}, sources, model); err == nil {
+		t.Fatal("refresh unexpectedly succeeded")
+	}
+	want := []string{"prepare"}
+	if !reflect.DeepEqual(sources.ops, want) {
+		t.Fatalf("source ops = %#v, want %#v", sources.ops, want)
+	}
+}
+
+func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name: "test",
+		Connections: map[string]semanticmodel.Connection{
+			"local_files": {Kind: "local"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "order_summary",
+		Tables: map[string]semanticmodel.Table{
+			"order_summary": {
+				Sources:    []string{},
+				PrimaryKey: "status",
+				Transform:  semanticmodel.Transform{SQL: "SELECT status, SUM(revenue) AS revenue FROM model.orders GROUP BY status"},
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"status":  {Label: "Status"},
+					"revenue": {Label: "Revenue"},
+				},
+			},
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "order_summary", Grain: "status", Expression: "SUM(order_summary.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	executor := &recordingStatementsExecutor{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), executor, &recordingSourceRegistrar{}, model); err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.statements) != 3 {
+		t.Fatalf("statements = %#v, want schema setup and two materializations", executor.statements)
+	}
+	if !strings.Contains(executor.statements[1], "model.orders") || !strings.Contains(executor.statements[2], "model.order_summary") {
+		t.Fatalf("materialization order = %#v, want orders before order_summary", executor.statements)
+	}
+}
 
 func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	dir := t.TempDir()
@@ -65,6 +263,63 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	if total != 30.75 {
 		t.Fatalf("total revenue = %v, want 30.75", total)
 	}
+	var rawObjects int
+	if err := db.SQLDB().QueryRowContext(context.Background(), "SELECT count(*) FROM duckdb_tables() WHERE schema_name = 'raw'").Scan(&rawObjects); err != nil {
+		t.Fatal(err)
+	}
+	if rawObjects != 0 {
+		t.Fatalf("raw schema object count = %d, want 0", rawObjects)
+	}
+	var sourceObjects int
+	if err := db.SQLDB().QueryRowContext(context.Background(), "SELECT count(*) FROM duckdb_views() WHERE schema_name = 'source'").Scan(&sourceObjects); err != nil {
+		t.Fatal(err)
+	}
+	if sourceObjects != 0 {
+		t.Fatalf("source schema view count = %d, want 0", sourceObjects)
+	}
+}
+
+type recordingSourceRegistrar struct {
+	plan    analyticsmaterialize.ModelTablePlan
+	planErr error
+	ops     []string
+}
+
+func (r *recordingSourceRegistrar) PrepareSourceRuntime(_ context.Context, _ *semanticmodel.Model) error {
+	r.ops = append(r.ops, "prepare")
+	return nil
+}
+
+func (r *recordingSourceRegistrar) PlanModelTable(_ context.Context, _ *semanticmodel.Model, tableName string, _ semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {
+	r.ops = append(r.ops, "plan:"+tableName)
+	if r.planErr != nil {
+		return analyticsmaterialize.ModelTablePlan{}, r.planErr
+	}
+	if r.plan.SQL != "" {
+		return r.plan, nil
+	}
+	return analyticsmaterialize.ModelTablePlan{Mode: analyticsmaterialize.PlanModeModelSQL, SQL: "CREATE OR REPLACE TABLE model." + tableName + " AS SELECT 1"}, nil
+}
+
+type recordingExecutor struct{}
+
+func (recordingExecutor) Exec(context.Context, string) error {
+	return nil
+}
+
+type failingExecutor struct{}
+
+func (failingExecutor) Exec(context.Context, string) error {
+	return errors.New("exec failed")
+}
+
+type recordingStatementsExecutor struct {
+	statements []string
+}
+
+func (r *recordingStatementsExecutor) Exec(_ context.Context, statement string) error {
+	r.statements = append(r.statements, statement)
+	return nil
 }
 
 func TestRegistersDatabaseSourceTwice(t *testing.T) {

@@ -219,8 +219,14 @@ semantic_models:
 	}
 }
 
-func TestSemanticModelDesignRejectsMeasureSpecificUnsafePath(t *testing.T) {
-	catalogPath := writeSemanticModelDesignWorkspaceWithModelFragment(t, `
+func TestSemanticModelDesignAllowsDisconnectedFactTables(t *testing.T) {
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.yaml")
+	mustWriteFile(t, modelPath, `
+name: olist
+connections:
+  olist:
+    kind: local
 sources:
   olist_orders:
     connection: olist
@@ -275,9 +281,238 @@ semantic_models:
         expr: SUM(refunds.amount)
 `)
 
-	_, err := CompileDefinition(catalogPath)
-	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
-		t.Fatalf("CompileDefinition() error = %v, want measure-specific connected graph rejection", err)
+	model, err := semantic.Load(modelPath)
+	if err != nil {
+		t.Fatalf("semantic.Load() error = %v, want disconnected facts to load", err)
+	}
+	if model.Tables["orders"].PrimaryKey == "" || model.Tables["refunds"].PrimaryKey == "" {
+		t.Fatalf("loaded model = %#v, want orders and refunds fact tables", model)
+	}
+}
+
+func TestSemanticModelDesignVisualQueryTableCanTargetSeparateFact(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "catalog.yaml"), `
+workspace:
+  id: libredash
+semantic_models:
+  - id: sales
+    title: Sales
+    path: model.yaml
+dashboards:
+  - id: overview
+    title: Overview
+    path: dashboard.yaml
+`)
+	mustWriteFile(t, filepath.Join(dir, "model.yaml"), `
+name: sales
+connections:
+  local: {kind: local}
+sources:
+  orders:
+    connection: local
+    path: orders.csv
+    format: csv
+  invoices:
+    connection: local
+    path: invoices.csv
+    format: csv
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      amount: {label: Amount}
+  invoices:
+    source: invoices
+    primary_key: invoice_id
+    fields:
+      invoice_id: {label: Invoice ID}
+      billed_amount: {label: Billed Amount}
+semantic_models:
+  sales:
+    base_table: orders
+    tables:
+      - orders
+      - invoices
+    measures:
+      defaults: {table: orders}
+      order_amount:
+        table: orders
+        grain: order_id
+        expr: SUM(orders.amount)
+      billed_amount:
+        table: invoices
+        grain: invoice_id
+        expr: SUM(invoices.billed_amount)
+`)
+	mustWriteFile(t, filepath.Join(dir, "dashboard.yaml"), `
+id: overview
+title: Overview
+semantic_model: sales
+filters: {}
+visuals:
+  billed:
+    title: Billed
+    type: bar
+    query:
+      table: invoices
+      dimensions:
+        invoice: invoices.invoice_id
+      measures:
+        billed_amount:
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals: []
+`)
+
+	if _, err := CompileDefinition(filepath.Join(dir, "catalog.yaml")); err != nil {
+		t.Fatalf("CompileDefinition() error = %v, want visual query.table to target separate fact", err)
+	}
+}
+
+func TestSemanticModelDesignRejectsVisualQueryTableWithForeignMeasure(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "catalog.yaml"), `
+workspace:
+  id: libredash
+semantic_models:
+  - id: sales
+    title: Sales
+    path: model.yaml
+dashboards:
+  - id: overview
+    title: Overview
+    path: dashboard.yaml
+`)
+	mustWriteFile(t, filepath.Join(dir, "model.yaml"), `
+name: sales
+connections:
+  local: {kind: local}
+sources:
+  orders: {connection: local, path: orders.csv, format: csv}
+  invoices: {connection: local, path: invoices.csv, format: csv}
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      amount: {label: Amount}
+  invoices:
+    source: invoices
+    primary_key: invoice_id
+    fields:
+      invoice_id: {label: Invoice ID}
+semantic_models:
+  sales:
+    base_table: orders
+    tables: [orders, invoices]
+    measures:
+      defaults: {table: orders}
+      order_amount:
+        table: orders
+        grain: order_id
+        expr: SUM(orders.amount)
+`)
+	mustWriteFile(t, filepath.Join(dir, "dashboard.yaml"), `
+id: overview
+title: Overview
+semantic_model: sales
+filters: {}
+visuals:
+  bad:
+    title: Bad
+    type: bar
+    query:
+      table: invoices
+      dimensions:
+        invoice: invoices.invoice_id
+      measures:
+        order_amount:
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals: []
+`)
+	_, err := CompileDefinition(filepath.Join(dir, "catalog.yaml"))
+	if err == nil || !strings.Contains(err.Error(), `visual "bad" query is invalid`) || !strings.Contains(err.Error(), "cross-fact measures") {
+		t.Fatalf("CompileDefinition() error = %v, want query.table foreign measure rejection", err)
+	}
+}
+
+func TestSemanticModelDesignRejectsVisualQueryTableUnreachableDimension(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "catalog.yaml"), `
+workspace:
+  id: libredash
+semantic_models:
+  - id: sales
+    title: Sales
+    path: model.yaml
+dashboards:
+  - id: overview
+    title: Overview
+    path: dashboard.yaml
+`)
+	mustWriteFile(t, filepath.Join(dir, "model.yaml"), `
+name: sales
+connections:
+  local: {kind: local}
+sources:
+  orders: {connection: local, path: orders.csv, format: csv}
+  invoices: {connection: local, path: invoices.csv, format: csv}
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+  invoices:
+    source: invoices
+    primary_key: invoice_id
+    fields:
+      invoice_id: {label: Invoice ID}
+      amount: {label: Amount}
+semantic_models:
+  sales:
+    base_table: orders
+    tables: [orders, invoices]
+    measures:
+      defaults: {table: invoices}
+      billed_amount:
+        table: invoices
+        grain: invoice_id
+        expr: SUM(invoices.amount)
+`)
+	mustWriteFile(t, filepath.Join(dir, "dashboard.yaml"), `
+id: overview
+title: Overview
+semantic_model: sales
+filters: {}
+visuals:
+  bad:
+    title: Bad
+    type: bar
+    query:
+      table: invoices
+      dimensions:
+        order: orders.order_id
+      measures:
+        billed_amount:
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals: []
+`)
+	_, err := CompileDefinition(filepath.Join(dir, "catalog.yaml"))
+	if err == nil || !strings.Contains(err.Error(), `visual "bad" query is invalid`) || !strings.Contains(err.Error(), "no safe relationship path") {
+		t.Fatalf("CompileDefinition() error = %v, want unreachable query.table dimension rejection", err)
 	}
 }
 
@@ -828,7 +1063,7 @@ semantic_models:
 	}
 }
 
-func TestSemanticModelDesignRejectsIsolatedSemanticTable(t *testing.T) {
+func TestSemanticModelDesignAllowsIsolatedSemanticTable(t *testing.T) {
 	catalogPath := writeSemanticModelDesignWorkspaceWithSemanticFragment(t, `
 semantic_models:
   olist:
@@ -847,13 +1082,12 @@ semantic_models:
       revenue: {expr: SUM(orders.revenue)}
 `)
 
-	_, err := CompileDefinition(catalogPath)
-	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
-		t.Fatalf("CompileDefinition() error = %v, want isolated table rejection", err)
+	if _, err := CompileDefinition(catalogPath); err != nil {
+		t.Fatalf("CompileDefinition() error = %v, want isolated table to load", err)
 	}
 }
 
-func TestSemanticModelDesignRejectsDisconnectedNoMeasureModel(t *testing.T) {
+func TestSemanticModelDesignAllowsDisconnectedNoMeasureModel(t *testing.T) {
 	dir := t.TempDir()
 	modelPath := filepath.Join(dir, "model.yaml")
 	mustWriteFile(t, modelPath, `
@@ -889,9 +1123,8 @@ semantic_models:
       - warehouses
 `)
 
-	_, err := semantic.Load(modelPath)
-	if err == nil || !strings.Contains(err.Error(), "connected relationship graph") {
-		t.Fatalf("semantic.Load() error = %v, want disconnected no-measure model rejection", err)
+	if _, err := semantic.Load(modelPath); err != nil {
+		t.Fatalf("semantic.Load() error = %v, want disconnected no-measure model to load", err)
 	}
 }
 
