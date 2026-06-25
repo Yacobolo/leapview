@@ -30,11 +30,15 @@ type Scope struct {
 	PrincipalID string
 }
 
+type ToolProvider func(scope Scope) []agent.ToolDefinition
+
 type Service struct {
 	metrics Metrics
 	repo    Repository
 	config  Config
 	model   agent.Model
+
+	toolProviders []ToolProvider
 
 	mu      sync.Mutex
 	running map[string]struct{}
@@ -48,6 +52,10 @@ func NewService(metrics Metrics, repo Repository, config Config) *Service {
 		model:   NewOpenAIModel(config, http.DefaultClient),
 		running: map[string]struct{}{},
 	}
+}
+
+func (s *Service) SetToolProviders(providers ...ToolProvider) {
+	s.toolProviders = append([]ToolProvider(nil), providers...)
 }
 
 func (s *Service) Enabled() bool {

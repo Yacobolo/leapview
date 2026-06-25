@@ -43,6 +43,7 @@ model ListDeploymentsOK {
 @get
 @apigen.authz(#{ mode: "permission", permission: "deployment:read" })
 @apigen.cli(#{ command: #["deployments", "list"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
+@extension("x-agent", #{ enabled: true, name: "list_deployments", risk: "read", tags: #["deployment"] })
 op listDeployments(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListDeploymentsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
 
 model CreateDeploymentCreated {
@@ -67,6 +68,7 @@ model GetDeploymentOK {
 @route("/api/v1/workspaces/{workspace}/deployments/{deployment}")
 @get
 @apigen.authz(#{ mode: "permission", permission: "deployment:read" })
+@extension("x-agent", #{ enabled: true, name: "get_deployment", risk: "read", tags: #["deployment"] })
 op getDeployment(@path workspace: string, @path deployment: string): GetDeploymentOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
 
 model ActivateDeploymentOK {

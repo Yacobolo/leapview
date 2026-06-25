@@ -60,6 +60,7 @@ model ListWorkspacesOK {
 @get
 @apigen.authz(#{ mode: "permission", permission: "workspace:read" })
 @apigen.cli(#{ command: #["workspaces", "list"], output: #{ mode: "raw" } })
+@extension("x-agent", #{ enabled: true, name: "list_workspaces", risk: "read", tags: #["workspace"] })
 op listWorkspaces(@query limit?: int32, @query pageToken?: string): ListWorkspacesOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
 
 model ListWorkspaceAssetEdgesOK {
@@ -72,6 +73,7 @@ model ListWorkspaceAssetEdgesOK {
 @route("/api/v1/workspaces/{workspace}/asset-edges")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
+@extension("x-agent", #{ enabled: true, name: "list_workspace_asset_edges", risk: "read", tags: #["workspace", "lineage"] })
 op listWorkspaceAssetEdges(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetEdgesOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
 
 model ListWorkspaceAssetsOK {
@@ -84,4 +86,5 @@ model ListWorkspaceAssetsOK {
 @route("/api/v1/workspaces/{workspace}/assets")
 @get
 @apigen.authz(#{ mode: "permission", permission: "asset:read" })
+@extension("x-agent", #{ enabled: true, name: "list_workspace_assets", risk: "read", tags: #["workspace", "asset", "lineage"] })
 op listWorkspaceAssets(@path workspace: string, @query type?: string, @query q?: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;

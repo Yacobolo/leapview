@@ -126,10 +126,16 @@ func TestAPIGenOperationAuthCoverage(t *testing.T) {
 
 func TestAPIGenOperationExtensions(t *testing.T) {
 	contracts := apigenapi.GetAPIGenOperationContracts()
+	agentTools := map[string]string{
+		"getDeployment":           "get_deployment",
+		"getMaterializationRun":   "get_materialization_run",
+		"listDeployments":         "list_deployments",
+		"listMaterializationRuns": "list_materialization_runs",
+		"listWorkspaceAssetEdges": "list_workspace_asset_edges",
+		"listWorkspaceAssets":     "list_workspace_assets",
+		"listWorkspaces":          "list_workspaces",
+	}
 	for operationID, contract := range contracts {
-		if _, ok := contract.Extensions["x-agent"]; ok {
-			t.Fatalf("%s should not have x-agent metadata in the TypeSpec migration", operationID)
-		}
 		authz, ok := contract.Extensions["x-authz"].(map[string]any)
 		if !ok {
 			t.Fatalf("%s missing generated x-authz extension: %#v", operationID, contract.Extensions["x-authz"])
@@ -139,6 +145,23 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 		}
 		if got := authz["permission"]; got != apigenOperationPermissions[operationID] {
 			t.Fatalf("%s x-authz permission = %#v, want %q", operationID, got, apigenOperationPermissions[operationID])
+		}
+		agentExtension, hasAgentExtension := contract.Extensions["x-agent"].(map[string]any)
+		if wantName, ok := agentTools[operationID]; ok {
+			if !hasAgentExtension {
+				t.Fatalf("%s missing x-agent extension", operationID)
+			}
+			if got := agentExtension["enabled"]; got != true {
+				t.Fatalf("%s x-agent enabled = %#v, want true", operationID, got)
+			}
+			if got := agentExtension["name"]; got != wantName {
+				t.Fatalf("%s x-agent name = %#v, want %q", operationID, got, wantName)
+			}
+			if got := agentExtension["risk"]; got != "read" {
+				t.Fatalf("%s x-agent risk = %#v, want read", operationID, got)
+			}
+		} else if hasAgentExtension {
+			t.Fatalf("%s should not have x-agent metadata", operationID)
 		}
 		if operationID != "uploadDeploymentArtifact" {
 			if _, ok := contract.Extensions["x-libredash-dispatch"]; ok {

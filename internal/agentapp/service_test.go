@@ -41,6 +41,28 @@ func TestReadOnlyToolsExposeWorkspaceFactsAndBoundRows(t *testing.T) {
 	}
 }
 
+func TestServiceAppendsHostProvidedTools(t *testing.T) {
+	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	service.SetToolProviders(func(scope Scope) []agent.ToolDefinition {
+		if scope.WorkspaceID != "test" || scope.PrincipalID != "principal" {
+			t.Fatalf("scope = %#v", scope)
+		}
+		return []agent.ToolDefinition{{
+			Name:        "list_workspace_assets",
+			Description: "List workspace assets via APIGen.",
+			InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
+			Handler: agent.ToolHandlerFunc(func(context.Context, agent.ToolCall) (agent.ToolResult, error) {
+				return agent.ToolResult{Content: map[string]any{"ok": true}}, nil
+			}),
+		}}
+	})
+
+	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	if runTool(t, tools, "list_workspace_assets", `{}`) != `{"ok":true}` {
+		t.Fatalf("host-provided tool did not run")
+	}
+}
+
 func TestReadOnlyToolPayloadShapesStayStable(t *testing.T) {
 	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
 	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})

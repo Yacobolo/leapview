@@ -24,7 +24,7 @@ type Metrics interface {
 }
 
 func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
-	return []agent.ToolDefinition{
+	tools := []agent.ToolDefinition{
 		{
 			Name:        "list_dashboards",
 			Description: "List dashboards available in the current workspace.",
@@ -134,6 +134,13 @@ func (s *Service) toolDefinitions(scope Scope) []agent.ToolDefinition {
 			}),
 		},
 	}
+	for _, provider := range s.toolProviders {
+		if provider == nil {
+			continue
+		}
+		tools = append(tools, provider(scope)...)
+	}
+	return tools
 }
 
 func (s *Service) tool(fn func(ctx context.Context, raw json.RawMessage) (any, error)) agent.ToolHandler {

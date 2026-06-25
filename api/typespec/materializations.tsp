@@ -35,6 +35,7 @@ model ListMaterializationRunsOK {
 @route("/api/v1/workspaces/{workspace}/materialization-runs")
 @get
 @apigen.authz(#{ mode: "permission", permission: "materialization:run" })
+@extension("x-agent", #{ enabled: true, name: "list_materialization_runs", risk: "read", tags: #["materialization"] })
 op listMaterializationRuns(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListMaterializationRunsOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;
 
 model CreateMaterializationRunAccepted {
@@ -59,4 +60,5 @@ model GetMaterializationRunOK {
 @route("/api/v1/workspaces/{workspace}/materialization-runs/{run}")
 @get
 @apigen.authz(#{ mode: "permission", permission: "materialization:run" })
+@extension("x-agent", #{ enabled: true, name: "get_materialization_run", risk: "read", tags: #["materialization"] })
 op getMaterializationRun(@path workspace: string, @path run: string): GetMaterializationRunOK | BadRequest | Unauthorized | Forbidden | NotFound | Conflict | RateLimited | InternalServerError;

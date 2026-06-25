@@ -94,6 +94,7 @@ func NewWithOptions(metrics queryMetrics, options Options) *Server {
 	if options.Logger != nil {
 		server.logger = options.Logger
 	}
+	server.configureAgentTools()
 	return server
 }
 
