@@ -32,14 +32,6 @@ func PlanModelTable(ctx context.Context, runtimeDB *sql.DB, model *semanticmodel
 	if len(table.SourceDependencies) == 0 {
 		return materializationPlan(analyticsmaterialize.PlanModeModelSQL, tableName, sqlText), nil
 	}
-	sourceSchemas, err := discoverPlanningSourceSchemas(ctx, runtimeDB, model, dataDir, table.SourceDependencies)
-	if err != nil {
-		return analyticsmaterialize.ModelTablePlan{}, err
-	}
-	modelSchemas, err := discoverPlanningModelSchemas(ctx, runtimeDB, model, table.ModelDependencies)
-	if err != nil {
-		return analyticsmaterialize.ModelTablePlan{}, err
-	}
 	plannerDB, err := sql.Open("duckdb", "")
 	if err != nil {
 		return analyticsmaterialize.ModelTablePlan{}, err
@@ -47,7 +39,7 @@ func PlanModelTable(ctx context.Context, runtimeDB *sql.DB, model *semanticmodel
 	defer plannerDB.Close()
 	plannerDB.SetMaxOpenConns(1)
 	plannerDB.SetMaxIdleConns(1)
-	if err := preparePlanningDatabase(ctx, plannerDB, sourceSchemas, modelSchemas); err != nil {
+	if err := prepareSQLAnalysisDatabase(ctx, plannerDB); err != nil {
 		return analyticsmaterialize.ModelTablePlan{}, err
 	}
 	sqlAnalysis, err := analyzeSQLWithDuckDB(ctx, plannerDB, sqlText)
@@ -68,6 +60,17 @@ func PlanModelTable(ctx context.Context, runtimeDB *sql.DB, model *semanticmodel
 		}
 		return materializationPlan(analyticsmaterialize.PlanModeWholeQueryPushdown, tableName, "SELECT * FROM "+call), nil
 	}
+	sourceSchemas, err := discoverPlanningSourceSchemas(ctx, runtimeDB, model, dataDir, table.SourceDependencies)
+	if err != nil {
+		return analyticsmaterialize.ModelTablePlan{}, err
+	}
+	modelSchemas, err := discoverPlanningModelSchemas(ctx, runtimeDB, model, table.ModelDependencies)
+	if err != nil {
+		return analyticsmaterialize.ModelTablePlan{}, err
+	}
+	if err := preparePlanningDatabase(ctx, plannerDB, sourceSchemas, modelSchemas); err != nil {
+		return analyticsmaterialize.ModelTablePlan{}, err
+	}
 	explainAnalysis, err := explainSQLWithDuckDB(ctx, plannerDB, sqlText)
 	if err != nil {
 		return analyticsmaterialize.ModelTablePlan{}, fmt.Errorf("planning model table %q source reads: %w", tableName, err)
@@ -80,7 +83,7 @@ func PlanModelTable(ctx context.Context, runtimeDB *sql.DB, model *semanticmodel
 	if err != nil {
 		return analyticsmaterialize.ModelTablePlan{}, err
 	}
-	rewritten, err := queryjson.RewriteSourceRefs(sqlText, sqlAnalysis.TableRefs, replacements)
+	rewritten, err := queryjson.RewriteSourceRefsWithOptions(sqlText, sqlAnalysis.TableRefs, replacements, queryjson.RewriteOptions{AliasUnaliasedSourceRefs: true})
 	if err != nil {
 		return analyticsmaterialize.ModelTablePlan{}, fmt.Errorf("rewriting model table %q source refs: %w", tableName, err)
 	}
@@ -205,8 +208,8 @@ func modelColumnsAsSchema(table semanticmodel.Table) []semanticmodel.ColumnSchem
 }
 
 func preparePlanningDatabase(ctx context.Context, db *sql.DB, sourceSchemas map[string][]semanticmodel.ColumnSchema, modelSchemas map[string][]semanticmodel.ColumnSchema) error {
-	if _, err := db.ExecContext(ctx, "LOAD json"); err != nil {
-		return fmt.Errorf("loading DuckDB json extension: %w", err)
+	if err := prepareSQLAnalysisDatabase(ctx, db); err != nil {
+		return err
 	}
 	if _, err := db.ExecContext(ctx, "CREATE SCHEMA source"); err != nil {
 		return err
@@ -223,6 +226,13 @@ func preparePlanningDatabase(ctx context.Context, db *sql.DB, sourceSchemas map[
 		if err := createPlanningTable(ctx, db, "model", name, modelSchemas[name]); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func prepareSQLAnalysisDatabase(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, "LOAD json"); err != nil {
+		return fmt.Errorf("loading DuckDB json extension: %w", err)
 	}
 	return nil
 }
@@ -343,6 +353,9 @@ func singleStringResult(rows *sql.Rows, preferredColumn string) (string, error) 
 func validateSQLAnalysis(tableName string, table semanticmodel.Table, analysis queryjson.SQLAnalysis) error {
 	if len(analysis.RawRefs) > 0 {
 		return fmt.Errorf("model table %q model SQL must reference sources through source.<name>; raw.<name> is internal", tableName)
+	}
+	if len(analysis.QualifiedSourceColumnRefs) > 0 {
+		return fmt.Errorf("model table %q column reference %q must use a table alias; source.<name> is only valid in FROM/JOIN relations", tableName, analysis.QualifiedSourceColumnRefs[0])
 	}
 	if !sameStringSet(sortedStrings(table.SourceDependencies), analysis.SourceRefs) {
 		return fmt.Errorf("model table %q SQL source references %v do not match declared sources %v", tableName, analysis.SourceRefs, sortedStrings(table.SourceDependencies))

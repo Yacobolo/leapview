@@ -12,7 +12,15 @@ type rewriteEdit struct {
 	replacement string
 }
 
+type RewriteOptions struct {
+	AliasUnaliasedSourceRefs bool
+}
+
 func RewriteSourceRefs(sql string, refs []TableRef, replacements map[string]string) (string, error) {
+	return RewriteSourceRefsWithOptions(sql, refs, replacements, RewriteOptions{})
+}
+
+func RewriteSourceRefsWithOptions(sql string, refs []TableRef, replacements map[string]string, options RewriteOptions) (string, error) {
 	edits := []rewriteEdit{}
 	for _, ref := range refs {
 		if strings.ToLower(ref.Schema) != "source" {
@@ -25,6 +33,9 @@ func RewriteSourceRefs(sql string, refs []TableRef, replacements map[string]stri
 		start, end, err := tableRefExtent(sql, ref)
 		if err != nil {
 			return "", err
+		}
+		if options.AliasUnaliasedSourceRefs && ref.Alias == "" {
+			replacement += " AS " + ref.Table
 		}
 		edits = append(edits, rewriteEdit{start: start, end: end, replacement: replacement})
 	}

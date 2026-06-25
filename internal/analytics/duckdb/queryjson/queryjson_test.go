@@ -72,6 +72,36 @@ func TestAnalyzeSQLRejectsSerializerError(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSQLFindsQualifiedSourceColumnRefs(t *testing.T) {
+	input := []byte(`{
+		"error": false,
+		"statements": [{
+			"node": {
+				"type": "SELECT_NODE",
+				"select_list": [{
+					"class": "COLUMN_REF",
+					"type": "COLUMN_REF",
+					"column_names": ["source", "orders", "order_id"]
+				}],
+				"from_table": {
+					"type": "BASE_TABLE",
+					"schema_name": "source",
+					"table_name": "orders"
+				}
+			}
+		}]
+	}`)
+
+	got, err := AnalyzeSQL(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"source.orders.order_id"}
+	if !reflect.DeepEqual(got.QualifiedSourceColumnRefs, want) {
+		t.Fatalf("qualified source column refs = %#v, want %#v", got.QualifiedSourceColumnRefs, want)
+	}
+}
+
 func TestAnalyzeExplainNormalizesScansAndProjections(t *testing.T) {
 	input := []byte(`[
 		{

@@ -44,6 +44,26 @@ JOIN "source".payments p USING (order_id)
 	}
 }
 
+func TestRewriteSourceRefsAliasesUnaliasedRefsWhenRequested(t *testing.T) {
+	sql := `SELECT orders.order_id, p.payment_value FROM source.orders JOIN source.payments p USING (order_id)`
+	got, err := RewriteSourceRefsWithOptions(sql, []TableRef{
+		{Schema: "source", Table: "orders", QueryLocation: strings.Index(sql, "source.orders")},
+		{Schema: "source", Table: "payments", Alias: "p", QueryLocation: strings.Index(sql, "source.payments")},
+	}, map[string]string{
+		"orders":   "(SELECT order_id FROM read_csv('orders.csv'))",
+		"payments": "(SELECT order_id, payment_value FROM read_csv('payments.csv'))",
+	}, RewriteOptions{AliasUnaliasedSourceRefs: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "FROM (SELECT order_id FROM read_csv('orders.csv')) AS orders") {
+		t.Fatalf("rewritten SQL = %s, want stable alias for unaliased source", got)
+	}
+	if !strings.Contains(got, "JOIN (SELECT order_id, payment_value FROM read_csv('payments.csv')) p") {
+		t.Fatalf("rewritten SQL = %s, want explicit alias preserved", got)
+	}
+}
+
 func TestRewriteSourceRefsRejectsMissingReplacement(t *testing.T) {
 	sql := `SELECT * FROM source.orders`
 	_, err := RewriteSourceRefs(sql, []TableRef{{Schema: "source", Table: "orders", QueryLocation: strings.Index(sql, "source.orders")}}, map[string]string{})

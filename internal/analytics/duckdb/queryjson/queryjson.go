@@ -9,11 +9,12 @@ import (
 )
 
 type SQLAnalysis struct {
-	SourceRefs []string
-	RawRefs    []string
-	CTEs       []string
-	Aliases    map[string]TableRef
-	TableRefs  []TableRef
+	SourceRefs                []string
+	RawRefs                   []string
+	QualifiedSourceColumnRefs []string
+	CTEs                      []string
+	Aliases                   map[string]TableRef
+	TableRefs                 []TableRef
 }
 
 type TableRef struct {
@@ -51,10 +52,12 @@ func AnalyzeSQL(input []byte) (SQLAnalysis, error) {
 	analysis := SQLAnalysis{Aliases: map[string]TableRef{}}
 	sourceRefs := map[string]struct{}{}
 	rawRefs := map[string]struct{}{}
+	qualifiedSourceColumnRefs := map[string]struct{}{}
 	ctes := map[string]struct{}{}
-	walkSQL(root, &analysis, sourceRefs, rawRefs, ctes)
+	walkSQL(root, &analysis, sourceRefs, rawRefs, qualifiedSourceColumnRefs, ctes)
 	analysis.SourceRefs = sortedSet(sourceRefs)
 	analysis.RawRefs = sortedSet(rawRefs)
+	analysis.QualifiedSourceColumnRefs = sortedSet(qualifiedSourceColumnRefs)
 	analysis.CTEs = sortedSet(ctes)
 	return analysis, nil
 }
@@ -71,7 +74,7 @@ func AnalyzeExplain(input []byte) (ExplainAnalysis, error) {
 	return analysis, nil
 }
 
-func walkSQL(value any, analysis *SQLAnalysis, sourceRefs, rawRefs, ctes map[string]struct{}) {
+func walkSQL(value any, analysis *SQLAnalysis, sourceRefs, rawRefs, qualifiedSourceColumnRefs, ctes map[string]struct{}) {
 	switch typed := value.(type) {
 	case map[string]any:
 		if cteMap, ok := typed["cte_map"].(map[string]any); ok {
@@ -109,14 +112,36 @@ func walkSQL(value any, analysis *SQLAnalysis, sourceRefs, rawRefs, ctes map[str
 				analysis.Aliases[alias] = ref
 			}
 		}
+		if class, _ := typed["class"].(string); class == "COLUMN_REF" {
+			names := stringArray(typed["column_names"])
+			if len(names) >= 3 && strings.EqualFold(names[0], "source") {
+				qualifiedSourceColumnRefs[strings.Join(names[:3], ".")] = struct{}{}
+			}
+		}
 		for _, child := range typed {
-			walkSQL(child, analysis, sourceRefs, rawRefs, ctes)
+			walkSQL(child, analysis, sourceRefs, rawRefs, qualifiedSourceColumnRefs, ctes)
 		}
 	case []any:
 		for _, child := range typed {
-			walkSQL(child, analysis, sourceRefs, rawRefs, ctes)
+			walkSQL(child, analysis, sourceRefs, rawRefs, qualifiedSourceColumnRefs, ctes)
 		}
 	}
+}
+
+func stringArray(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			return nil
+		}
+		result = append(result, text)
+	}
+	return result
 }
 
 func queryLocation(value any) int {
