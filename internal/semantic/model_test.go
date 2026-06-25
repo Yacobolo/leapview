@@ -106,6 +106,23 @@ func TestModelValidateAllowsMeasureOnDisconnectedFactTable(t *testing.T) {
 	}
 }
 
+func TestModelValidateRejectsMissingRequiredModelColumn(t *testing.T) {
+	model := minimalSourceModel()
+	table := model.Tables["orders"]
+	table.Columns = map[string]ModelColumn{
+		"order_id": {},
+	}
+	table.Dimensions["status"] = MetricDimension{Label: "Status"}
+	model.Tables["orders"] = table
+	model.Measures = map[string]MetricMeasure{
+		"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+	}
+	err := model.Validate()
+	if err == nil || !strings.Contains(err.Error(), `column contract missing field "status"`) {
+		t.Fatalf("Validate() error = %v, want missing model column rejection", err)
+	}
+}
+
 func TestModelValidateAcceptsNativeSourceFamilies(t *testing.T) {
 	model := minimalSourceModel()
 	model.DefaultConnection = "local_files"

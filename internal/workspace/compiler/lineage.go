@@ -80,12 +80,26 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				return workspace.AssetGraph{}, err
 			}
 			edge(catalogID, id, workspace.AssetEdgeContains)
+		}
+		for _, tableName := range sortedMapKeys(model.Tables) {
+			table := model.Tables[tableName]
+			id, err := assetID(workspace.AssetTypeModelTable, modelEntry.ID+"."+tableName)
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
 			for _, sourceName := range table.SourceDependencies {
 				sourceID, err := assetID(workspace.AssetTypeSource, modelEntry.ID+"."+sourceName)
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
 				edge(id, sourceID, workspace.AssetEdgeReadsSource)
+			}
+			for _, dependency := range table.ModelDependencies {
+				dependencyID, err := assetID(workspace.AssetTypeModelTable, modelEntry.ID+"."+dependency)
+				if err != nil {
+					return workspace.AssetGraph{}, err
+				}
+				edge(id, dependencyID, workspace.AssetEdgeUsesModelTable)
 			}
 		}
 		modelID, err := add(workspace.AssetTypeSemanticModel, modelEntry.ID, catalogID, modelEntry.Title, modelEntry.Description, model)

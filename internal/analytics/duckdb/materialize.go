@@ -23,8 +23,16 @@ func NewSourceRuntime(db *Database, dataDir string) *SourceRuntime {
 	}
 }
 
+func (r *SourceRuntime) PrepareSourceRuntime(ctx context.Context, model *semanticmodel.Model) error {
+	return PrepareSourceRuntime(ctx, r.db.SQLDB(), model, r.dataDir, r.attachedConnections)
+}
+
 func (r *SourceRuntime) RegisterSourceReads(ctx context.Context, model *semanticmodel.Model, reads []analyticsmaterialize.SourceReadPlan) error {
 	return RegisterSourceReads(ctx, r.db.SQLDB(), model, r.dataDir, reads, r.attachedConnections)
+}
+
+func (r *SourceRuntime) DropSourceReads(ctx context.Context, model *semanticmodel.Model, reads []analyticsmaterialize.SourceReadPlan) error {
+	return DropSourceReads(ctx, r.db.SQLDB(), model, reads)
 }
 
 func (r *SourceRuntime) ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {

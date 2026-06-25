@@ -18,12 +18,20 @@ type Executor interface {
 }
 
 type SourceRegistrar interface {
+	PrepareSourceRuntime(ctx context.Context, model *semanticmodel.Model) error
 	RegisterSourceReads(ctx context.Context, model *semanticmodel.Model, reads []SourceReadPlan) error
+	DropSourceReads(ctx context.Context, model *semanticmodel.Model, reads []SourceReadPlan) error
 }
 
 type SourceReadPlan struct {
-	Source string
-	Fields []string
+	Source  string
+	Fields  []string
+	Columns []SourceReadColumn
+}
+
+type SourceReadColumn struct {
+	SourceField string
+	OutputField string
 }
 
 type SourcePathResolver interface {
@@ -49,6 +57,9 @@ func Refresh(ctx context.Context, executor Executor, sources SourceRegistrar, mo
 	}
 	if sources == nil {
 		return time.Time{}, fmt.Errorf("source registrar is required")
+	}
+	if err := sources.PrepareSourceRuntime(ctx, model); err != nil {
+		return time.Time{}, err
 	}
 	if err := ModelTables(ctx, executor, sources, model); err != nil {
 		return time.Time{}, err
@@ -139,24 +150,43 @@ func ModelTables(ctx context.Context, executor Executor, sources SourceRegistrar
 		if err := validateIdentifier(name); err != nil {
 			return err
 		}
-		table := model.Tables[name]
-		if err := sources.RegisterSourceReads(ctx, model, sourceReadPlans(model, name, table)); err != nil {
+		if err := materializeModelTable(ctx, executor, sources, model, name); err != nil {
 			return err
 		}
-		sourceSQL := table.Transform.SQL
-		if table.Source != "" {
-			if err := validateIdentifier(table.Source); err != nil {
-				return err
-			}
-			if sourceSQL == "" {
-				sourceSQL = "SELECT * FROM source." + table.Source
-			}
+	}
+	return nil
+}
+
+func materializeModelTable(ctx context.Context, executor Executor, sources SourceRegistrar, model *semanticmodel.Model, name string) error {
+	table := model.Tables[name]
+	reads := sourceReadPlans(model, name, table)
+	if err := sources.RegisterSourceReads(ctx, model, reads); err != nil {
+		_ = sources.DropSourceReads(ctx, model, reads)
+		return err
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = sources.DropSourceReads(ctx, model, reads)
 		}
-		stmt := fmt.Sprintf("CREATE OR REPLACE TABLE model.%s AS %s", name, sourceSQL)
-		if err := executor.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("materializing model.%s: %w", name, err)
+	}()
+	sourceSQL := table.Transform.SQL
+	if table.Source != "" {
+		if err := validateIdentifier(table.Source); err != nil {
+			return err
+		}
+		if sourceSQL == "" {
+			sourceSQL = "SELECT * FROM source." + table.Source
 		}
 	}
+	stmt := fmt.Sprintf("CREATE OR REPLACE TABLE model.%s AS %s", name, sourceSQL)
+	if err := executor.Exec(ctx, stmt); err != nil {
+		return fmt.Errorf("materializing model.%s: %w", name, err)
+	}
+	if err := sources.DropSourceReads(ctx, model, reads); err != nil {
+		return err
+	}
+	cleanup = false
 	return nil
 }
 
@@ -201,74 +231,41 @@ func materializationOrder(model *semanticmodel.Model) ([]string, error) {
 func sourceReadPlans(model *semanticmodel.Model, tableName string, table semanticmodel.Table) []SourceReadPlan {
 	plans := []SourceReadPlan{}
 	if table.Source != "" && table.Transform.SQL == "" {
-		plans = append(plans, SourceReadPlan{Source: table.Source, Fields: modelTableReadFields(model, tableName, table)})
+		plans = append(plans, SourceReadPlan{Source: table.Source, Columns: modelTableReadColumns(tableName, table)})
 		return plans
 	}
 	for _, source := range table.SourceDependencies {
-		plans = append(plans, SourceReadPlan{Source: source, Fields: sourceProjectionHint(model, source)})
+		plans = append(plans, SourceReadPlan{Source: source, Fields: modelTableSourceReadFields(table, source)})
 	}
 	return plans
 }
 
-func sourceProjectionHint(model *semanticmodel.Model, sourceName string) []string {
-	if model == nil {
-		return nil
-	}
-	source, ok := model.Sources[sourceName]
-	if !ok || len(source.Fields) == 0 {
-		return nil
-	}
-	fields := make([]string, 0, len(source.Fields))
-	for field := range source.Fields {
-		fields = append(fields, field)
-	}
+func modelTableSourceReadFields(table semanticmodel.Table, sourceName string) []string {
+	fields := append([]string{}, table.SourceReads[sourceName]...)
 	sort.Strings(fields)
 	return fields
 }
 
-func modelTableReadFields(model *semanticmodel.Model, tableName string, table semanticmodel.Table) []string {
-	fields := map[string]struct{}{}
-	add := func(field string) {
-		if field == "" {
-			return
+func modelTableReadColumns(tableName string, table semanticmodel.Table) []SourceReadColumn {
+	columns := make([]SourceReadColumn, 0, len(table.Columns))
+	for name, column := range table.Columns {
+		output := column.Name
+		if output == "" {
+			output = name
 		}
-		fields[field] = struct{}{}
-	}
-	add(table.PrimaryKey)
-	for field := range table.Dimensions {
-		add(field)
-	}
-	for _, measure := range table.Measures {
-		for _, ref := range semanticmodel.ExpressionFieldRefs(measure.SQLExpression()) {
-			refTable, refField, ok := strings.Cut(ref, ".")
-			if ok && refTable == tableName {
-				add(refField)
-			}
+		source := column.SourceField
+		if source == "" {
+			source = output
 		}
+		columns = append(columns, SourceReadColumn{SourceField: source, OutputField: output})
 	}
-	if model != nil {
-		for _, measure := range model.Measures {
-			if measure.Table != tableName {
-				continue
-			}
-			for _, ref := range semanticmodel.ExpressionFieldRefs(measure.SQLExpression()) {
-				refTable, refField, ok := strings.Cut(ref, ".")
-				if ok && refTable == tableName {
-					add(refField)
-				}
-			}
+	sort.Slice(columns, func(i, j int) bool {
+		if columns[i].OutputField == columns[j].OutputField {
+			return columns[i].SourceField < columns[j].SourceField
 		}
-	}
-	return sortedStringSet(fields)
-}
-
-func sortedStringSet(values map[string]struct{}) []string {
-	out := make([]string, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
+		return columns[i].OutputField < columns[j].OutputField
+	})
+	return columns
 }
 
 func validateIdentifier(value string) error {

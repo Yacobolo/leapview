@@ -140,6 +140,20 @@ func (file modelFile) compile() (*model.Model, error) {
 		if modelTable.Dimensions == nil {
 			modelTable.Dimensions = map[string]model.MetricDimension{}
 		}
+		if modelTable.Columns == nil {
+			modelTable.Columns = map[string]model.ModelColumn{}
+		}
+		for columnName, column := range modelTable.Columns {
+			if err := validateSemanticIdentifier(columnName); err != nil {
+				return nil, fmt.Errorf("semantic model table %q column %q is invalid: %w", tableName, columnName, err)
+			}
+			column.Name = columnName
+			column.Field = tableName + "." + columnName
+			if column.SourceField == "" {
+				column.SourceField = columnName
+			}
+			modelTable.Columns[columnName] = column
+		}
 		for field, dimension := range modelTable.Dimensions {
 			if err := validateSemanticIdentifier(field); err != nil {
 				return nil, fmt.Errorf("semantic model table %q field %q is invalid: %w", tableName, field, err)

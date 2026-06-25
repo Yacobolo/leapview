@@ -73,6 +73,9 @@ ORDER BY schema_name, table_name, column_index`, databaseName)
 		if len(columns) == 0 {
 			columns = sortedColumns(sourceColumns[name])
 		}
+		if len(columns) == 0 {
+			columns = source.Schema.Columns
+		}
 		source.Schema = semanticmodel.TableSchema{Columns: columns}
 		model.Sources[name] = source
 	}
@@ -88,14 +91,34 @@ ORDER BY schema_name, table_name, column_index`, databaseName)
 }
 
 func discoverSourceSchema(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source) ([]semanticmodel.ColumnSchema, error) {
-	if source.Kind() != semanticmodel.KindObject {
+	return discoverSourceSchemaWithDataDir(ctx, db, model, source, "")
+}
+
+func discoverSourceSchemaWithDataDir(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	if dataDir == "" && source.Kind() == semanticmodel.KindPath {
 		return nil, nil
 	}
+	plan, err := ResolveSourcePlan(model, source, dataDir)
+	if err != nil {
+		return nil, err
+	}
+	adapter, err := sourceAdapterForPlan(plan)
+	if err != nil {
+		return nil, err
+	}
+	return adapter.Discover(ctx, db, model, source, dataDir)
+}
+
+func (pathSourceAdapter) Discover(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	return describeSourceSchema(ctx, db, model, source, dataDir)
+}
+
+func (attachedObjectSourceAdapter) Discover(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	return describeSourceSchema(ctx, db, model, source, dataDir)
+}
+
+func (quackSourceAdapter) Discover(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, _ string) ([]semanticmodel.ColumnSchema, error) {
 	connection := model.Connections[source.Connection]
-	spec, ok := semanticmodel.LookupConnection(connection.Kind)
-	if !ok || spec.ObjectRelation != semanticmodel.ObjectRelationQuackQuery {
-		return nil, nil
-	}
 	sqlText, err := quackMetadataColumnsSQL(connection.Path, source.Object, connection.Options)
 	if err != nil {
 		return nil, err
@@ -131,7 +154,80 @@ func discoverSourceSchema(ctx context.Context, db *sql.DB, model *semanticmodel.
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return sortedColumns(columns), nil
+	if len(columns) > 0 {
+		return sortedColumns(columns), nil
+	}
+	return describeQuackLimitZeroSchema(ctx, db, connection.Path, source.Object, connection.Options)
+}
+
+func describeSourceSchema(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
+	relation, err := SourceRelation(model, source, dataDir)
+	if err != nil {
+		return nil, err
+	}
+	return describeRelationSchema(ctx, db, relation)
+}
+
+func describeQuackLimitZeroSchema(ctx context.Context, db *sql.DB, uri, object string, options map[string]any) ([]semanticmodel.ColumnSchema, error) {
+	relation, err := quackLimitZeroSchemaRelation(uri, object, options)
+	if err != nil {
+		return nil, err
+	}
+	return describeRelationSchema(ctx, db, relation)
+}
+
+func quackLimitZeroSchemaRelation(uri, object string, options map[string]any) (string, error) {
+	qualifiedObject, err := qualifiedSQLName(object)
+	if err != nil {
+		return "", err
+	}
+	call, err := quackQueryCall(uri, "SELECT * FROM "+qualifiedObject+" LIMIT 0", options)
+	if err != nil {
+		return "", err
+	}
+	return "SELECT * FROM " + call, nil
+}
+
+func describeRelationSchema(ctx context.Context, db *sql.DB, relation string) ([]semanticmodel.ColumnSchema, error) {
+	rows, err := db.QueryContext(ctx, "DESCRIBE "+relation)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []semanticmodel.ColumnSchema{}
+	columnNames, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		values := make([]sql.NullString, len(columnNames))
+		scan := make([]any, len(values))
+		for index := range values {
+			scan[index] = &values[index]
+		}
+		if err := rows.Scan(scan...); err != nil {
+			return nil, err
+		}
+		if len(values) < 2 || !values[0].Valid {
+			continue
+		}
+		column := semanticmodel.ColumnSchema{Name: values[0].String, Ordinal: len(result) + 1}
+		if values[1].Valid {
+			column.PhysicalType = values[1].String
+		}
+		if len(values) > 2 && values[2].Valid {
+			nullable := strings.EqualFold(values[2].String, "YES") || strings.EqualFold(values[2].String, "true")
+			column.Nullable = &nullable
+		}
+		if len(values) > 4 && values[4].Valid {
+			column.Default = values[4].String
+		}
+		result = append(result, column)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sortedColumns(result), nil
 }
 
 func quackMetadataColumnsSQL(uri, object string, options map[string]any) (string, error) {

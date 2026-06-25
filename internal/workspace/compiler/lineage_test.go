@@ -221,6 +221,78 @@ semantic_models:
 	requireLineageEdge(t, graph, measure, orderPK, workspace.AssetEdgeUsesField)
 }
 
+func TestExtractLineageModelTableDependencies(t *testing.T) {
+	dir := t.TempDir()
+	writeCompilerFixture(t, filepath.Join(dir, "catalog.yaml"), validCompilerCatalogYAML())
+	writeCompilerFixture(t, filepath.Join(dir, "model.yaml"), `
+name: olist
+title: Olist
+connections:
+  olist:
+    kind: local
+sources:
+  orders:
+    connection: olist
+    path: orders.csv
+    format: csv
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      status: {label: Status}
+      revenue: {label: Revenue}
+  order_summary:
+    transform:
+      sql: SELECT status, SUM(revenue) AS revenue FROM model.orders GROUP BY status
+    primary_key: status
+    fields:
+      status: {label: Status}
+      revenue: {label: Revenue}
+semantic_models:
+  olist:
+    base_table: order_summary
+    tables:
+      - orders
+      - order_summary
+    measures:
+      defaults: {table: order_summary, grain: status}
+      revenue:
+        table: order_summary
+        grain: status
+        expr: SUM(order_summary.revenue)
+`)
+	writeCompilerFixture(t, filepath.Join(dir, "dashboard.yaml"), `
+id: sales
+title: Sales
+semantic_model: olist
+filters: {}
+visuals:
+  revenue:
+    title: Revenue
+    type: bar
+    query:
+      dimensions:
+        status: order_summary.status
+      measures:
+        revenue:
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals: []
+`)
+	compiled, err := Compile(filepath.Join(dir, "catalog.yaml"), Options{WorkspaceID: "libredash", DeploymentID: "dep_test"})
+	if err != nil {
+		t.Fatalf("Compile() error = %v, want derived model table workspace to compile", err)
+	}
+	graph := compiled.Workspace.Graph
+	orders := requireLineageAsset(t, graph, workspace.AssetTypeModelTable, "olist.orders")
+	summary := requireLineageAsset(t, graph, workspace.AssetTypeModelTable, "olist.order_summary")
+	requireLineageEdge(t, graph, summary, orders, workspace.AssetEdgeUsesModelTable)
+}
+
 func compileLineageWorkspace(t *testing.T) CompiledWorkspace {
 	t.Helper()
 	dir := t.TempDir()
@@ -255,6 +327,10 @@ models:
       revenue: {label: Revenue, description: Order revenue after payment aggregation.}
   customers:
     sources: [customers]
+    source_reads:
+      customers:
+        - customer_id
+        - customer_state
     description: Customer lookup model table for geographic slicing.
     transform:
       sql: SELECT customer_id, customer_state AS state FROM source.customers

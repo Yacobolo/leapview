@@ -180,6 +180,28 @@ models:
       - order_items
       - products
       - translations
+    source_reads:
+      orders:
+        - order_id
+        - customer_id
+        - order_purchase_timestamp
+        - order_delivered_customer_date
+        - order_status
+      payments:
+        - order_id
+        - payment_value
+      reviews:
+        - order_id
+        - review_score
+      order_items:
+        - order_id
+        - product_id
+      products:
+        - product_id
+        - product_category_name
+      translations:
+        - product_category_name
+        - product_category_name_english
     transform:
       sql: |
         WITH revenue AS (
@@ -239,6 +261,10 @@ models:
         description: Brazilian state for the customer.
     sources:
       - customers
+    source_reads:
+      customers:
+        - customer_id
+        - customer_state
     transform:
       sql: |
         SELECT

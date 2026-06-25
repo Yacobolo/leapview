@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -49,8 +50,122 @@ func TestDirectModelTableRegistersProjectedSourceRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []analyticsmaterialize.SourceReadPlan{{Source: "orders", Fields: []string{"order_id", "revenue", "status"}}}
-	if !reflect.DeepEqual(sources.reads, want) {
-		t.Fatalf("source reads = %#v, want %#v", sources.reads, want)
+	got := normalizeReadPlansForTest(sources.reads)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("source reads = %#v, want %#v", got, want)
+	}
+}
+
+func TestDirectModelTableUsesColumnSourceMappings(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name:        "test",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
+		BaseTable:   "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Columns: map[string]semanticmodel.ModelColumn{
+					"order_id": {SourceField: "raw_order_id"},
+					"status":   {},
+					"revenue":  {SourceField: "gross_revenue"},
+				},
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), recordingExecutor{}, sources, model); err != nil {
+		t.Fatal(err)
+	}
+	want := []analyticsmaterialize.SourceReadColumn{
+		{SourceField: "raw_order_id", OutputField: "order_id"},
+		{SourceField: "gross_revenue", OutputField: "revenue"},
+		{SourceField: "status", OutputField: "status"},
+	}
+	if !reflect.DeepEqual(sources.reads[0].Columns, want) {
+		t.Fatalf("source read columns = %#v, want %#v", sources.reads[0].Columns, want)
+	}
+}
+
+func TestSQLModelTableUsesModelOwnedSourceReads(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name: "test",
+		Connections: map[string]semanticmodel.Connection{
+			"local_files": {Kind: "local"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {
+				Path:       "orders.csv",
+				Format:     "csv",
+				Connection: "local_files",
+				Fields: map[string]semanticmodel.SourceField{
+					"unwanted_source_level_field": {},
+				},
+			},
+		},
+		BaseTable: "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Sources:     []string{"orders"},
+				SourceReads: map[string][]string{"orders": []string{"order_id", "revenue"}},
+				Transform:   semanticmodel.Transform{SQL: "SELECT order_id, revenue FROM source.orders"},
+				PrimaryKey:  "order_id",
+				Dimensions:  map[string]semanticmodel.MetricDimension{"order_id": {Label: "Order ID"}, "revenue": {Label: "Revenue"}},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), recordingExecutor{}, sources, model); err != nil {
+		t.Fatal(err)
+	}
+	want := []analyticsmaterialize.SourceReadPlan{{Source: "orders", Fields: []string{"order_id", "revenue"}}}
+	got := normalizeReadPlansForTest(sources.reads)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("source reads = %#v, want %#v", got, want)
+	}
+}
+
+func TestModelTableDropsSourceReadsOnMaterializationError(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name:        "test",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
+		BaseTable:   "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Label: "Order ID"}},
+			},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{}
+	if _, err := analyticsmaterialize.Refresh(context.Background(), failingExecutor{}, sources, model); err == nil {
+		t.Fatal("refresh unexpectedly succeeded")
+	}
+	want := []string{"prepare", "register:orders", "drop:orders"}
+	if !reflect.DeepEqual(sources.ops, want) {
+		t.Fatalf("source ops = %#v, want %#v", sources.ops, want)
 	}
 }
 
@@ -128,6 +243,7 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Kind: "fact", Sources: []string{"orders"},
+				SourceReads: map[string][]string{"orders": []string{"order_id", "revenue"}},
 				Transform: semanticmodel.Transform{SQL: `
 					SELECT order_id, try_cast(revenue AS DOUBLE) AS revenue
 					FROM source.orders
@@ -160,21 +276,63 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	if rawObjects != 0 {
 		t.Fatalf("raw schema object count = %d, want 0", rawObjects)
 	}
+	var sourceObjects int
+	if err := db.SQLDB().QueryRowContext(context.Background(), "SELECT count(*) FROM duckdb_views() WHERE schema_name = 'source'").Scan(&sourceObjects); err != nil {
+		t.Fatal(err)
+	}
+	if sourceObjects != 0 {
+		t.Fatalf("source schema view count = %d, want 0", sourceObjects)
+	}
 }
 
 type recordingSourceRegistrar struct {
 	reads []analyticsmaterialize.SourceReadPlan
+	ops   []string
+}
+
+func (r *recordingSourceRegistrar) PrepareSourceRuntime(_ context.Context, _ *semanticmodel.Model) error {
+	r.ops = append(r.ops, "prepare")
+	return nil
 }
 
 func (r *recordingSourceRegistrar) RegisterSourceReads(_ context.Context, _ *semanticmodel.Model, reads []analyticsmaterialize.SourceReadPlan) error {
 	r.reads = append(r.reads, reads...)
+	for _, read := range reads {
+		r.ops = append(r.ops, "register:"+read.Source)
+	}
 	return nil
+}
+
+func (r *recordingSourceRegistrar) DropSourceReads(_ context.Context, _ *semanticmodel.Model, reads []analyticsmaterialize.SourceReadPlan) error {
+	for _, read := range reads {
+		r.ops = append(r.ops, "drop:"+read.Source)
+	}
+	return nil
+}
+
+func normalizeReadPlansForTest(reads []analyticsmaterialize.SourceReadPlan) []analyticsmaterialize.SourceReadPlan {
+	out := make([]analyticsmaterialize.SourceReadPlan, len(reads))
+	for index, read := range reads {
+		fields := append([]string{}, read.Fields...)
+		for _, column := range read.Columns {
+			fields = append(fields, column.SourceField)
+		}
+		sort.Strings(fields)
+		out[index] = analyticsmaterialize.SourceReadPlan{Source: read.Source, Fields: fields}
+	}
+	return out
 }
 
 type recordingExecutor struct{}
 
 func (recordingExecutor) Exec(context.Context, string) error {
 	return nil
+}
+
+type failingExecutor struct{}
+
+func (failingExecutor) Exec(context.Context, string) error {
+	return errors.New("exec failed")
 }
 
 type recordingStatementsExecutor struct {

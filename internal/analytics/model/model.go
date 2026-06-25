@@ -123,6 +123,11 @@ func (m *Model) Validate() error {
 				return fmt.Errorf("model table %q measure %q requires label and expression", name, field)
 			}
 		}
+		columns, err := m.resolveModelColumns(name, table)
+		if err != nil {
+			return err
+		}
+		table.Columns = columns
 		m.Tables[name] = table
 	}
 	seenRelationships := map[string]struct{}{}
@@ -177,6 +182,16 @@ func (m *Model) modelTableSourceDependencies(tableName string, table Table) ([]s
 			return nil, err
 		}
 	}
+	for source, fields := range table.SourceReads {
+		if err := add(source); err != nil {
+			return nil, err
+		}
+		for _, field := range fields {
+			if err := validateSemanticIdentifier(field); err != nil {
+				return nil, fmt.Errorf("model table %q source_reads.%s field %q is invalid: %w", tableName, source, field, err)
+			}
+		}
+	}
 	inferred, rawRefs, unqualifiedRefs := m.modelSQLSourceRefs(sql)
 	if len(rawRefs) > 0 {
 		return nil, fmt.Errorf("model table %q model SQL must reference sources through source.<name>; raw.<name> is internal", tableName)
@@ -200,7 +215,104 @@ func (m *Model) modelTableSourceDependencies(tableName string, table Table) ([]s
 		}
 		return nil, fmt.Errorf("model table %q SQL source references %v do not match declared sources %v", tableName, inferred, result)
 	}
+	if hasSQL {
+		for _, source := range inferred {
+			if len(table.SourceReads[source]) == 0 {
+				return nil, fmt.Errorf("model table %q SQL source %q requires source_reads projection", tableName, source)
+			}
+		}
+	}
 	return result, nil
+}
+
+func (m *Model) resolveModelColumns(tableName string, table Table) (map[string]ModelColumn, error) {
+	if len(table.Columns) > 0 {
+		columns := make(map[string]ModelColumn, len(table.Columns))
+		for name, column := range table.Columns {
+			if err := validateSemanticIdentifier(name); err != nil {
+				return nil, fmt.Errorf("model table %q column %q is invalid: %w", tableName, name, err)
+			}
+			if column.SourceField == "" {
+				column.SourceField = name
+			}
+			if table.Source != "" && table.Transform.SQL == "" {
+				if err := validateSemanticIdentifier(column.SourceField); err != nil {
+					return nil, fmt.Errorf("model table %q column %q source_field %q is invalid: %w", tableName, name, column.SourceField, err)
+				}
+			}
+			column.Name = name
+			column.Field = tableName + "." + name
+			columns[name] = column
+		}
+		if err := validateRequiredModelColumns(tableName, table, columns); err != nil {
+			return nil, err
+		}
+		return columns, nil
+	}
+	columns := map[string]ModelColumn{}
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		columns[name] = ModelColumn{Name: name, Field: tableName + "." + name, SourceField: name}
+	}
+	add(table.PrimaryKey)
+	for field := range table.Dimensions {
+		add(field)
+	}
+	for _, measure := range table.Measures {
+		for _, ref := range ExpressionFieldRefs(measure.SQLExpression()) {
+			refTable, refField, ok := strings.Cut(ref, ".")
+			if ok && refTable == tableName {
+				add(refField)
+			}
+		}
+	}
+	if m != nil {
+		for _, measure := range m.Measures {
+			if measure.Table != tableName {
+				continue
+			}
+			for _, ref := range ExpressionFieldRefs(measure.SQLExpression()) {
+				refTable, refField, ok := strings.Cut(ref, ".")
+				if ok && refTable == tableName {
+					add(refField)
+				}
+			}
+		}
+	}
+	return columns, validateRequiredModelColumns(tableName, table, columns)
+}
+
+func validateRequiredModelColumns(tableName string, table Table, columns map[string]ModelColumn) error {
+	require := func(field, reason string) error {
+		if field == "" {
+			return nil
+		}
+		if _, ok := columns[field]; !ok {
+			return fmt.Errorf("model table %q column contract missing %s %q", tableName, reason, field)
+		}
+		return nil
+	}
+	if err := require(table.PrimaryKey, "primary_key"); err != nil {
+		return err
+	}
+	for field := range table.Dimensions {
+		if err := require(field, "field"); err != nil {
+			return err
+		}
+	}
+	for _, measure := range table.Measures {
+		for _, ref := range ExpressionFieldRefs(measure.SQLExpression()) {
+			refTable, refField, ok := strings.Cut(ref, ".")
+			if ok && refTable == tableName {
+				if err := require(refField, "measure field"); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (m *Model) modelTableModelDependencies(tableName string, table Table) ([]string, error) {

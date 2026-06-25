@@ -374,6 +374,148 @@ pages:
 	}
 }
 
+func TestSemanticModelDesignRejectsVisualQueryTableWithForeignMeasure(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "catalog.yaml"), `
+workspace:
+  id: libredash
+semantic_models:
+  - id: sales
+    title: Sales
+    path: model.yaml
+dashboards:
+  - id: overview
+    title: Overview
+    path: dashboard.yaml
+`)
+	mustWriteFile(t, filepath.Join(dir, "model.yaml"), `
+name: sales
+connections:
+  local: {kind: local}
+sources:
+  orders: {connection: local, path: orders.csv, format: csv}
+  invoices: {connection: local, path: invoices.csv, format: csv}
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+      amount: {label: Amount}
+  invoices:
+    source: invoices
+    primary_key: invoice_id
+    fields:
+      invoice_id: {label: Invoice ID}
+semantic_models:
+  sales:
+    base_table: orders
+    tables: [orders, invoices]
+    measures:
+      defaults: {table: orders}
+      order_amount:
+        table: orders
+        grain: order_id
+        expr: SUM(orders.amount)
+`)
+	mustWriteFile(t, filepath.Join(dir, "dashboard.yaml"), `
+id: overview
+title: Overview
+semantic_model: sales
+filters: {}
+visuals:
+  bad:
+    title: Bad
+    type: bar
+    query:
+      table: invoices
+      dimensions:
+        invoice: invoices.invoice_id
+      measures:
+        order_amount:
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals: []
+`)
+	_, err := CompileDefinition(filepath.Join(dir, "catalog.yaml"))
+	if err == nil || !strings.Contains(err.Error(), `visual "bad" query is invalid`) || !strings.Contains(err.Error(), "cross-fact measures") {
+		t.Fatalf("CompileDefinition() error = %v, want query.table foreign measure rejection", err)
+	}
+}
+
+func TestSemanticModelDesignRejectsVisualQueryTableUnreachableDimension(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "catalog.yaml"), `
+workspace:
+  id: libredash
+semantic_models:
+  - id: sales
+    title: Sales
+    path: model.yaml
+dashboards:
+  - id: overview
+    title: Overview
+    path: dashboard.yaml
+`)
+	mustWriteFile(t, filepath.Join(dir, "model.yaml"), `
+name: sales
+connections:
+  local: {kind: local}
+sources:
+  orders: {connection: local, path: orders.csv, format: csv}
+  invoices: {connection: local, path: invoices.csv, format: csv}
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      order_id: {label: Order ID}
+  invoices:
+    source: invoices
+    primary_key: invoice_id
+    fields:
+      invoice_id: {label: Invoice ID}
+      amount: {label: Amount}
+semantic_models:
+  sales:
+    base_table: orders
+    tables: [orders, invoices]
+    measures:
+      defaults: {table: invoices}
+      billed_amount:
+        table: invoices
+        grain: invoice_id
+        expr: SUM(invoices.amount)
+`)
+	mustWriteFile(t, filepath.Join(dir, "dashboard.yaml"), `
+id: overview
+title: Overview
+semantic_model: sales
+filters: {}
+visuals:
+  bad:
+    title: Bad
+    type: bar
+    query:
+      table: invoices
+      dimensions:
+        order: orders.order_id
+      measures:
+        billed_amount:
+tables: {}
+pages:
+  - id: overview
+    title: Overview
+    visuals: []
+`)
+	_, err := CompileDefinition(filepath.Join(dir, "catalog.yaml"))
+	if err == nil || !strings.Contains(err.Error(), `visual "bad" query is invalid`) || !strings.Contains(err.Error(), "no safe relationship path") {
+		t.Fatalf("CompileDefinition() error = %v, want unreachable query.table dimension rejection", err)
+	}
+}
+
 func TestSemanticModelDesignAllowsUnrelatedFactsInSeparateSemanticModels(t *testing.T) {
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "catalog.yaml"), `
@@ -519,6 +661,10 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
+        - customer_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -567,6 +713,10 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
+        - customer_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -611,6 +761,9 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -643,6 +796,9 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -698,6 +854,9 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -729,6 +888,9 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -827,6 +989,9 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -899,6 +1064,9 @@ sources:
 models:
   orders:
     sources: [olist_orders]
+    source_reads:
+      olist_orders:
+        - order_id
     primary_key: order_id
     fields:
       order_id: {label: Order ID}
@@ -1141,6 +1309,12 @@ sources:
 	models:
 	  orders:
 	    sources: [olist_orders]
+	    source_reads:
+	      olist_orders:
+	        - order_id
+	        - customer_id
+	        - purchase_timestamp
+	        - revenue
 	    primary_key: order_id
 	    fields:
 	      order_id: {label: Order ID}

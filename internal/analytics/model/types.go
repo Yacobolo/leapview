@@ -52,8 +52,10 @@ type Table struct {
 	Kind               string                     `yaml:"kind"`
 	Source             string                     `yaml:"source"`
 	Sources            []string                   `yaml:"sources"`
+	SourceReads        map[string][]string        `yaml:"source_reads"`
 	SQL                string                     `yaml:"sql"`
 	Transform          Transform                  `yaml:"transform"`
+	Columns            map[string]ModelColumn     `yaml:"columns"`
 	PrimaryKey         string                     `yaml:"primary_key"`
 	Grain              string                     `yaml:"grain"`
 	Dimensions         map[string]MetricDimension `yaml:"fields"`
@@ -73,6 +75,14 @@ type SourceField struct {
 	Table       string `yaml:"-"`
 	Name        string `yaml:"-"`
 	Description string `yaml:"description"`
+}
+
+type ModelColumn struct {
+	Field       string `yaml:"-"`
+	Name        string `yaml:"-"`
+	SourceField string `yaml:"source_field"`
+	Description string `yaml:"description"`
+	Type        string `yaml:"type"`
 }
 
 type MeasureDefaults struct {

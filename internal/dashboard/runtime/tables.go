@@ -137,6 +137,7 @@ func (s *TableQueryService) matrixTableRows(ctx context.Context, runtime *modelR
 		sorts = []reportdef.QuerySort{{Field: request.Sort.Key, Direction: request.Sort.Direction}}
 	}
 	rows, err := runtime.data.Query(ctx, reportdef.AggregateQuery{
+		Table:      table.Query.Table,
 		Dimensions: dimensions,
 		Measures:   measures,
 		Filters:    queryFilters,
@@ -181,6 +182,7 @@ func (s *TableQueryService) crossTabTableRows(ctx context.Context, runtime *mode
 		sorts = append(sorts, reportdef.QuerySort{Field: dimension.Alias, Direction: "asc"})
 	}
 	rawRows, err := runtime.data.Query(ctx, reportdef.AggregateQuery{
+		Table:      table.Query.Table,
 		Dimensions: dimensions,
 		Measures:   measures,
 		Filters:    queryFilters,

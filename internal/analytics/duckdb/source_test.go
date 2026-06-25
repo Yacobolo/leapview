@@ -328,6 +328,23 @@ func TestCompileSourceRelation(t *testing.T) {
 		t.Fatalf("quack projected relation contains token: %q", relation)
 	}
 
+	relation, err = compileSourceRelation(sourcePlan{
+		kind:   "path",
+		format: "csv",
+		path:   "/data/orders.csv",
+		columns: []analyticsmaterialize.SourceReadColumn{
+			{SourceField: "raw_order_id", OutputField: "order_id"},
+			{SourceField: "gross_revenue", OutputField: "revenue"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "SELECT raw_order_id AS order_id, gross_revenue AS revenue FROM read_csv('/data/orders.csv')"
+	if relation != want {
+		t.Fatalf("projected column relation = %q, want %q", relation, want)
+	}
+
 	_, err = compileSourceRelation(sourcePlan{kind: "path", format: "csv", path: "/data/orders.csv", options: map[string]any{"bad-key": true}})
 	if err == nil || !strings.Contains(err.Error(), "invalid source option") {
 		t.Fatalf("invalid option error = %v, want invalid source option", err)
@@ -356,6 +373,23 @@ func TestQuackMetadataColumnsSQLUsesInformationSchema(t *testing.T) {
 	}
 	if strings.Contains(sqlText, "secret-token") {
 		t.Fatalf("metadata SQL contains token: %q", sqlText)
+	}
+}
+
+func TestQuackLimitZeroSchemaRelationAvoidsFactScan(t *testing.T) {
+	relation, err := quackLimitZeroSchemaRelation(
+		"quack:quack.example.com:443",
+		"information_schema.columns",
+		map[string]any{"disable_ssl": true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(relation, "SELECT * FROM information_schema.columns LIMIT 0") {
+		t.Fatalf("limit-zero schema relation = %q, want zero-row remote read", relation)
+	}
+	if strings.Contains(relation, "secret-token") {
+		t.Fatalf("schema relation contains token: %q", relation)
 	}
 }
 
