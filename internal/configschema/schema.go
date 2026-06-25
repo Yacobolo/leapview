@@ -78,13 +78,8 @@ func ValidateFile(kind Kind, path string) error {
 }
 
 func ValidateBytes(kind Kind, filename string, content []byte) error {
-	definition, err := definitionName(kind)
+	ctx, value, definition, err := compiledDefinition(kind)
 	if err != nil {
-		return err
-	}
-	ctx := cuecontext.New()
-	contracts := ctx.CompileString(contractsCUE, cue.Filename("contracts.cue"))
-	if err := contracts.Err(); err != nil {
 		return err
 	}
 	file, err := cueyaml.Extract(filename, content)
@@ -97,7 +92,7 @@ func ValidateBytes(kind Kind, filename string, content []byte) error {
 		}}}
 	}
 	data := ctx.BuildFile(file)
-	value := contracts.LookupPath(cue.MakePath(cue.Def(definition))).Unify(data)
+	value = value.Unify(data)
 	if err := value.Validate(cue.Final()); err != nil {
 		return &Error{Diagnostics: diagnosticsForCUEError(filename, definition, err)}
 	}
@@ -108,16 +103,10 @@ func ValidateBytes(kind Kind, filename string, content []byte) error {
 }
 
 func JSONSchema(kind Kind) ([]byte, error) {
-	definition, err := definitionName(kind)
+	ctx, value, _, err := compiledDefinition(kind)
 	if err != nil {
 		return nil, err
 	}
-	ctx := cuecontext.New()
-	contracts := ctx.CompileString(contractsCUE, cue.Filename("contracts.cue"))
-	if err := contracts.Err(); err != nil {
-		return nil, err
-	}
-	value := contracts.LookupPath(cue.MakePath(cue.Def(definition)))
 	expr, err := cuejsonschema.Generate(value, &cuejsonschema.GenerateConfig{Version: cuejsonschema.VersionDraft2020_12})
 	if err != nil {
 		return nil, err
@@ -136,6 +125,20 @@ func JSONSchema(kind Kind) ([]byte, error) {
 		return nil, err
 	}
 	return append(pretty, '\n'), nil
+}
+
+func compiledDefinition(kind Kind) (*cue.Context, cue.Value, string, error) {
+	definition, err := definitionName(kind)
+	if err != nil {
+		return nil, cue.Value{}, "", err
+	}
+	ctx := cuecontext.New()
+	contracts := ctx.CompileString(contractsCUE, cue.Filename("contracts.cue"))
+	if err := contracts.Err(); err != nil {
+		return nil, cue.Value{}, "", err
+	}
+	value := contracts.LookupPath(cue.MakePath(cue.Def(definition)))
+	return ctx, value, definition, nil
 }
 
 func JSONSchemaFiles() (map[string][]byte, error) {
@@ -309,27 +312,95 @@ func readFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+type schemaOverlay struct {
+	required    []string
+	collections []collectionRule
+}
+
+type collectionKind string
+
+const (
+	collectionMapping  collectionKind = "mapping"
+	collectionSequence collectionKind = "sequence"
+)
+
+type collectionRule struct {
+	path     schemaPath
+	kind     collectionKind
+	min      int
+	rootYAML bool
+}
+
+type schemaPath struct {
+	definition string
+	property   string
+}
+
+var schemaOverlays = map[Kind]schemaOverlay{
+	KindCatalog: {
+		required: []string{"semantic_models", "dashboards"},
+		collections: []collectionRule{
+			rootCollection("semantic_models", collectionSequence),
+			rootCollection("dashboards", collectionSequence),
+		},
+	},
+	KindSemanticModel: {
+		required: []string{"name", "sources", "models", "semantic_models"},
+		collections: []collectionRule{
+			rootCollection("sources", collectionMapping),
+			rootCollection("models", collectionMapping),
+			rootCollection("semantic_models", collectionMapping),
+			definitionCollection("#SemanticModelSpec", "tables", collectionSequence),
+		},
+	},
+	KindDashboard: {
+		required: []string{"id", "title", "semantic_model", "visuals", "pages"},
+		collections: []collectionRule{
+			rootCollection("visuals", collectionMapping),
+			rootCollection("pages", collectionSequence),
+		},
+	},
+}
+
+func rootCollection(property string, kind collectionKind) collectionRule {
+	return collectionRule{
+		path:     schemaPath{property: property},
+		kind:     kind,
+		min:      1,
+		rootYAML: true,
+	}
+}
+
+func definitionCollection(definition, property string, kind collectionKind) collectionRule {
+	return collectionRule{
+		path: schemaPath{
+			definition: definition,
+			property:   property,
+		},
+		kind: kind,
+		min:  1,
+	}
+}
+
 func hardenJSONSchema(kind Kind, payload any) {
 	normalizeGeneratedSchema(payload)
 	root, ok := payload.(map[string]any)
 	if !ok {
 		return
 	}
-	switch kind {
-	case KindCatalog:
-		addRequired(root, "semantic_models", "dashboards")
-		addMinItems(propertySchema(root, "semantic_models"), 1)
-		addMinItems(propertySchema(root, "dashboards"), 1)
-	case KindSemanticModel:
-		addRequired(root, "name", "sources", "models", "semantic_models")
-		addMinProperties(propertySchema(root, "sources"), 1)
-		addMinProperties(propertySchema(root, "models"), 1)
-		addMinProperties(propertySchema(root, "semantic_models"), 1)
-		addMinItems(propertySchema(definitionSchema(root, "#SemanticModelSpec"), "tables"), 1)
-	case KindDashboard:
-		addRequired(root, "id", "title", "semantic_model", "visuals", "pages")
-		addMinProperties(propertySchema(root, "visuals"), 1)
-		addMinItems(propertySchema(root, "pages"), 1)
+	overlay, ok := schemaOverlays[kind]
+	if !ok {
+		return
+	}
+	addRequired(root, overlay.required...)
+	for _, collection := range overlay.collections {
+		schema := collection.path.resolve(root)
+		switch collection.kind {
+		case collectionMapping:
+			addMinProperties(schema, collection.min)
+		case collectionSequence:
+			addMinItems(schema, collection.min)
+		}
 	}
 }
 
@@ -430,6 +501,14 @@ func definitionSchema(schema map[string]any, name string) map[string]any {
 	return definition
 }
 
+func (p schemaPath) resolve(root map[string]any) map[string]any {
+	schema := root
+	if p.definition != "" {
+		schema = definitionSchema(root, p.definition)
+	}
+	return propertySchema(schema, p.property)
+}
+
 func requiredCollectionDiagnostics(kind Kind, filename string, content []byte) []Diagnostic {
 	var document yaml.Node
 	if err := yaml.Unmarshal(content, &document); err != nil {
@@ -440,35 +519,37 @@ func requiredCollectionDiagnostics(kind Kind, filename string, content []byte) [
 		return nil
 	}
 	var diagnostics []Diagnostic
-	switch kind {
-	case KindCatalog:
-		requireNonEmptyYAMLSequence(&diagnostics, filename, root, "semantic_models")
-		requireNonEmptyYAMLSequence(&diagnostics, filename, root, "dashboards")
-	case KindSemanticModel:
-		requireNonEmptyYAMLMapping(&diagnostics, filename, root, "sources")
-		requireNonEmptyYAMLMapping(&diagnostics, filename, root, "models")
-		requireNonEmptyYAMLMapping(&diagnostics, filename, root, "semantic_models")
-	case KindDashboard:
-		requireNonEmptyYAMLMapping(&diagnostics, filename, root, "visuals")
-		requireNonEmptyYAMLSequence(&diagnostics, filename, root, "pages")
+	overlay, ok := schemaOverlays[kind]
+	if !ok {
+		return nil
+	}
+	for _, collection := range overlay.collections {
+		if !collection.rootYAML {
+			continue
+		}
+		requireNonEmptyYAMLCollection(&diagnostics, filename, root, collection)
 	}
 	return diagnostics
 }
 
-func requireNonEmptyYAMLMapping(diagnostics *[]Diagnostic, filename string, root *yaml.Node, key string) {
-	node := yamlMappingValue(root, key)
-	if node == nil || node.Kind != yaml.MappingNode || len(node.Content) > 0 {
+func requireNonEmptyYAMLCollection(diagnostics *[]Diagnostic, filename string, root *yaml.Node, collection collectionRule) {
+	node := yamlMappingValue(root, collection.path.property)
+	if node == nil || !collection.matchesYAMLKind(node.Kind) || collection.yamlItemCount(node) >= collection.min {
 		return
 	}
-	*diagnostics = append(*diagnostics, collectionDiagnostic(filename, node, key))
+	*diagnostics = append(*diagnostics, collectionDiagnostic(filename, node, collection.path.property))
 }
 
-func requireNonEmptyYAMLSequence(diagnostics *[]Diagnostic, filename string, root *yaml.Node, key string) {
-	node := yamlMappingValue(root, key)
-	if node == nil || node.Kind != yaml.SequenceNode || len(node.Content) > 0 {
-		return
+func (c collectionRule) matchesYAMLKind(kind yaml.Kind) bool {
+	return c.kind == collectionMapping && kind == yaml.MappingNode ||
+		c.kind == collectionSequence && kind == yaml.SequenceNode
+}
+
+func (c collectionRule) yamlItemCount(node *yaml.Node) int {
+	if c.kind == collectionMapping {
+		return len(node.Content) / 2
 	}
-	*diagnostics = append(*diagnostics, collectionDiagnostic(filename, node, key))
+	return len(node.Content)
 }
 
 func collectionDiagnostic(filename string, node *yaml.Node, key string) Diagnostic {
