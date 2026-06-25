@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,10 +19,11 @@ func workspacesCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 		Use:   "list",
 		Short: "List workspaces",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRawAPI(ctx, opts, "listWorkspaces", nil, nil)
+			return runRawAPI(ctx, opts, "listWorkspaces", nil, paginationQuery(opts), nil)
 		},
 	}
 	addTargetTokenFlags(list, opts)
+	addPaginationFlags(list, opts)
 	parent.AddCommand(list)
 	return parent
 }
@@ -32,17 +34,18 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 		Use:   "list",
 		Short: "List dashboards",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRawAPI(ctx, opts, "listDashboards", map[string]string{"workspace": opts.workspaceID}, nil)
+			return runRawAPI(ctx, opts, "listDashboards", map[string]string{"workspace": opts.workspaceID}, paginationQuery(opts), nil)
 		},
 	}
 	addTargetTokenFlags(list, opts)
+	addPaginationFlags(list, opts)
 
 	describe := &cobra.Command{
 		Use:   "describe <dashboard>",
 		Short: "Describe a dashboard",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRawAPI(ctx, opts, "getDashboard", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0]}, nil)
+			return runRawAPI(ctx, opts, "getDashboard", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0]}, nil, nil)
 		},
 	}
 	addTargetTokenFlags(describe, opts)
@@ -56,7 +59,7 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runRawAPI(ctx, opts, "queryDashboardPage", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1]}, body)
+			return runRawAPI(ctx, opts, "queryDashboardPage", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "page": args[1]}, nil, body)
 		},
 	}
 	addTargetTokenFlags(queryPage, opts)
@@ -71,7 +74,7 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runRawAPI(ctx, opts, "queryDashboardTable", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "table": args[1]}, body)
+			return runRawAPI(ctx, opts, "queryDashboardTable", map[string]string{"workspace": opts.workspaceID, "dashboard": args[0], "table": args[1]}, nil, body)
 		},
 	}
 	addTargetTokenFlags(queryTable, opts)
@@ -89,17 +92,18 @@ func semanticModelsCommand(ctx context.Context, opts *rootOptions) *cobra.Comman
 		Use:   "list",
 		Short: "List semantic models",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRawAPI(ctx, opts, "listSemanticModels", map[string]string{"workspace": opts.workspaceID}, nil)
+			return runRawAPI(ctx, opts, "listSemanticModels", map[string]string{"workspace": opts.workspaceID}, paginationQuery(opts), nil)
 		},
 	}
 	addTargetTokenFlags(list, opts)
+	addPaginationFlags(list, opts)
 
 	describe := &cobra.Command{
 		Use:   "describe <model>",
 		Short: "Describe a semantic model",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRawAPI(ctx, opts, "getSemanticModel", map[string]string{"workspace": opts.workspaceID, "model": args[0]}, nil)
+			return runRawAPI(ctx, opts, "getSemanticModel", map[string]string{"workspace": opts.workspaceID, "model": args[0]}, nil, nil)
 		},
 	}
 	addTargetTokenFlags(describe, opts)
@@ -113,7 +117,23 @@ func addTargetTokenFlags(cmd *cobra.Command, opts *rootOptions) {
 	cmd.Flags().StringVar(&opts.token, "token", "", "API token")
 }
 
-func runRawAPI(ctx context.Context, opts *rootOptions, operationID string, pathParams map[string]string, body map[string]any) error {
+func addPaginationFlags(cmd *cobra.Command, opts *rootOptions) {
+	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum items to return")
+	cmd.Flags().StringVar(&opts.pageToken, "page-token", "", "opaque page token")
+}
+
+func paginationQuery(opts *rootOptions) url.Values {
+	query := url.Values{}
+	if opts.limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", opts.limit))
+	}
+	if opts.pageToken != "" {
+		query.Set("pageToken", opts.pageToken)
+	}
+	return query
+}
+
+func runRawAPI(ctx context.Context, opts *rootOptions, operationID string, pathParams map[string]string, query url.Values, body map[string]any) error {
 	target, token, err := clientTargetAndToken(opts)
 	if err != nil {
 		return err
@@ -122,7 +142,7 @@ func runRawAPI(ctx context.Context, opts *rootOptions, operationID string, pathP
 	if body != nil {
 		method = http.MethodPost
 	}
-	endpoint, err := apiOperationURL(target, operationID, pathParams, url.Values{})
+	endpoint, err := apiOperationURL(target, operationID, pathParams, query)
 	if err != nil {
 		return err
 	}
@@ -137,7 +157,7 @@ func runRawAPI(ctx context.Context, opts *rootOptions, operationID string, pathP
 		reader = bytes.NewReader(nil)
 	}
 	var out any
-	var requestBody *bytes.Reader
+	var requestBody io.Reader
 	if body != nil {
 		requestBody = reader
 	}

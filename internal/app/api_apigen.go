@@ -199,7 +199,7 @@ func (a apiGenAdapter) ListWorkspaceAssetEdges(w http.ResponseWriter, r *http.Re
 	a.server.apiWorkspaceAssetEdges(w, r)
 }
 
-func (a apiGenAdapter) ListDashboards(w http.ResponseWriter, r *http.Request, _ string) {
+func (a apiGenAdapter) ListDashboards(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDashboardsParams) {
 	a.server.listDashboards(w, r)
 }
 
@@ -307,7 +307,7 @@ func (a apiGenAdapter) ListWorkspaceRoles(w http.ResponseWriter, r *http.Request
 	a.server.apiWorkspaceRoles(w, r)
 }
 
-func (a apiGenAdapter) ListSemanticModels(w http.ResponseWriter, r *http.Request, _ string) {
+func (a apiGenAdapter) ListSemanticModels(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListSemanticModelsParams) {
 	a.server.listSemanticModels(w, r)
 }
 

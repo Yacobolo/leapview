@@ -191,6 +191,91 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 	}
 }
 
+func TestAPIGenListOperationsUseStandardEnvelope(t *testing.T) {
+	spec, err := apigenapi.GetEmbeddedOpenAPISpec()
+	if err != nil {
+		t.Fatalf("embedded openapi: %v", err)
+	}
+	paths, ok := spec["paths"].(map[string]any)
+	if !ok {
+		t.Fatalf("openapi paths missing: %#v", spec["paths"])
+	}
+	components, _ := spec["components"].(map[string]any)
+	schemas, _ := components["schemas"].(map[string]any)
+	for _, tc := range []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/workspaces", "get"},
+		{"/api/v1/workspaces/{workspace}/assets", "get"},
+		{"/api/v1/workspaces/{workspace}/asset-edges", "get"},
+		{"/api/v1/workspaces/{workspace}/dashboards", "get"},
+		{"/api/v1/workspaces/{workspace}/semantic-models", "get"},
+		{"/api/v1/workspaces/{workspace}/deployments", "get"},
+		{"/api/v1/workspaces/{workspace}/materialization-runs", "get"},
+		{"/api/v1/workspaces/{workspace}/agent/conversations", "get"},
+	} {
+		operation := mustOpenAPIOperation(t, paths, tc.path, tc.method)
+		for _, want := range []string{"limit", "pageToken"} {
+			if !openAPIOperationHasQueryParam(operation, want) {
+				t.Fatalf("%s %s missing query param %s", tc.method, tc.path, want)
+			}
+		}
+		schemaName := responseSchemaName(operation, "200")
+		if schemaName == "" {
+			t.Fatalf("%s %s missing 200 response schema", tc.method, tc.path)
+		}
+		schema, _ := schemas[schemaName].(map[string]any)
+		properties, _ := schema["properties"].(map[string]any)
+		if _, ok := properties["items"]; !ok {
+			t.Fatalf("%s %s schema %s missing items property: %#v", tc.method, tc.path, schemaName, properties)
+		}
+		if _, ok := properties["page"]; !ok {
+			t.Fatalf("%s %s schema %s missing page property: %#v", tc.method, tc.path, schemaName, properties)
+		}
+		if _, ok := properties["dashboards"]; ok {
+			t.Fatalf("%s %s schema %s has legacy dashboards property", tc.method, tc.path, schemaName)
+		}
+		if _, ok := properties["models"]; ok {
+			t.Fatalf("%s %s schema %s has legacy models property", tc.method, tc.path, schemaName)
+		}
+	}
+}
+
+func mustOpenAPIOperation(t *testing.T, paths map[string]any, path, method string) map[string]any {
+	t.Helper()
+	pathItem, ok := paths[path].(map[string]any)
+	if !ok {
+		t.Fatalf("path %s missing", path)
+	}
+	operation, ok := pathItem[method].(map[string]any)
+	if !ok {
+		t.Fatalf("%s operation missing for %s", method, path)
+	}
+	return operation
+}
+
+func openAPIOperationHasQueryParam(operation map[string]any, name string) bool {
+	parameters, _ := operation["parameters"].([]any)
+	for _, raw := range parameters {
+		parameter, _ := raw.(map[string]any)
+		if parameter["name"] == name && parameter["in"] == "query" {
+			return true
+		}
+	}
+	return false
+}
+
+func responseSchemaName(operation map[string]any, status string) string {
+	responses, _ := operation["responses"].(map[string]any)
+	response, _ := responses[status].(map[string]any)
+	content, _ := response["content"].(map[string]any)
+	jsonContent, _ := content["application/json"].(map[string]any)
+	schema, _ := jsonContent["schema"].(map[string]any)
+	ref, _ := schema["$ref"].(string)
+	return strings.TrimPrefix(ref, "#/components/schemas/")
+}
+
 func projectRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

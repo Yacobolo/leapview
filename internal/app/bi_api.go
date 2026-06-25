@@ -20,7 +20,11 @@ func (s *Server) listDashboards(w http.ResponseWriter, r *http.Request) {
 	for _, row := range catalog.Dashboards {
 		out = append(out, dashboardSummaryDTO(row))
 	}
-	writeJSON(w, http.StatusOK, api.DashboardListResponse{Dashboards: out})
+	page, nextCursor, ok := pageSliceForRequest(w, r, out)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, api.DashboardListResponse{Items: page, Page: api.PageInfo{NextCursor: nextCursor}})
 }
 
 func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +43,11 @@ func (s *Server) listSemanticModels(w http.ResponseWriter, r *http.Request) {
 	for _, row := range catalog.Models {
 		out = append(out, semanticModelSummaryDTO(row))
 	}
-	writeJSON(w, http.StatusOK, api.SemanticModelListResponse{Models: out})
+	page, nextCursor, ok := pageSliceForRequest(w, r, out)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, api.SemanticModelListResponse{Items: page, Page: api.PageInfo{NextCursor: nextCursor}})
 }
 
 func (s *Server) getSemanticModel(w http.ResponseWriter, r *http.Request) {

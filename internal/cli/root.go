@@ -25,6 +25,8 @@ type rootOptions struct {
 	filtersJSON  string
 	schemaFormat string
 	schemaOut    string
+	limit        int
+	pageToken    string
 }
 
 func Execute(ctx context.Context) error {

@@ -10,7 +10,8 @@ type DashboardSummary struct {
 }
 
 type DashboardListResponse struct {
-	Dashboards []DashboardSummary `json:"dashboards"`
+	Items []DashboardSummary `json:"items"`
+	Page  PageInfo           `json:"page"`
 }
 
 type SemanticModelSummary struct {
@@ -20,7 +21,8 @@ type SemanticModelSummary struct {
 }
 
 type SemanticModelListResponse struct {
-	Models []SemanticModelSummary `json:"models"`
+	Items []SemanticModelSummary `json:"items"`
+	Page  PageInfo               `json:"page"`
 }
 
 type ModelRef struct {

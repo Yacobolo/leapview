@@ -383,7 +383,7 @@ func (s *Server) apiWorkspaces(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, pagedResponse(workspaces))
+	_ = writePagedJSON(w, r, workspaces)
 }
 
 func (s *Server) apiWorkspaceAssets(w http.ResponseWriter, r *http.Request) {
@@ -393,7 +393,7 @@ func (s *Server) apiWorkspaceAssets(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, pagedResponse(filterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))))
+	_ = writePagedJSON(w, r, filterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q")))
 }
 
 func (s *Server) apiWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request) {
@@ -403,7 +403,7 @@ func (s *Server) apiWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, pagedResponse(edges))
+	_ = writePagedJSON(w, r, edges)
 }
 
 func (s *Server) apiWorkspaceRoles(w http.ResponseWriter, r *http.Request) {
@@ -412,7 +412,7 @@ func (s *Server) apiWorkspaceRoles(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, pagedResponse(roles))
+	_ = writePagedJSON(w, r, roles)
 }
 
 func (s *Server) apiRoleBindings(w http.ResponseWriter, r *http.Request) {
@@ -422,7 +422,7 @@ func (s *Server) apiRoleBindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if repo == nil {
-		writeJSON(w, http.StatusOK, pagedResponse([]map[string]any{}))
+		_ = writePagedJSON(w, r, []map[string]any{})
 		return
 	}
 	bindings, err := repo.ListRoleBindings(r.Context(), s.workspaceID(chi.URLParam(r, "workspace")))
@@ -434,7 +434,7 @@ func (s *Server) apiRoleBindings(w http.ResponseWriter, r *http.Request) {
 	for _, binding := range bindings {
 		out = append(out, apiRoleBindingDTO(binding))
 	}
-	writeJSON(w, http.StatusOK, pagedResponse(out))
+	_ = writePagedJSON(w, r, out)
 }
 
 func (s *Server) apiUpsertRoleBinding(w http.ResponseWriter, r *http.Request) {

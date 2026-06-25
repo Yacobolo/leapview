@@ -11,16 +11,47 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 )
 
-func TestBIAPIPreservesFormerAgentPayloadShapes(t *testing.T) {
+func TestBIAPIListResponsesUseStandardEnvelope(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+
+	for _, tc := range []struct {
+		path string
+		name string
+	}{
+		{path: "/api/v1/workspaces/test/dashboards?limit=1", name: "dashboards"},
+		{path: "/api/v1/workspaces/test/semantic-models?limit=1", name: "semantic models"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.Header.Set("Accept", "application/json")
+		rec := httptest.NewRecorder()
+		server.Routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", tc.path, rec.Code, rec.Body.String())
+		}
+		var response struct {
+			Items []map[string]any `json:"items"`
+			Page  struct {
+				NextCursor string `json:"nextCursor"`
+			} `json:"page"`
+			Dashboards any `json:"dashboards"`
+			Models     any `json:"models"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatalf("decode %s response: %v body=%s", tc.name, err, rec.Body.String())
+		}
+		if len(response.Items) != 1 {
+			t.Fatalf("%s items = %#v", tc.name, response.Items)
+		}
+		if response.Dashboards != nil || response.Models != nil {
+			t.Fatalf("%s response leaked legacy wrapper: %s", tc.name, rec.Body.String())
+		}
+	}
 
 	for _, tc := range []struct {
 		path string
 		want string
 	}{
-		{path: "/api/v1/workspaces/test/dashboards", want: `"dashboards"`},
 		{path: "/api/v1/workspaces/test/dashboards/executive-sales", want: `"detail_tools"`},
-		{path: "/api/v1/workspaces/test/semantic-models", want: `"models"`},
 		{path: "/api/v1/workspaces/test/semantic-models/test", want: `"model_tables"`},
 	} {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -31,6 +62,18 @@ func TestBIAPIPreservesFormerAgentPayloadShapes(t *testing.T) {
 			t.Fatalf("%s status=%d body=%s", tc.path, rec.Code, rec.Body.String())
 		}
 	}
+}
+
+func TestBIAPIListPaginationRejectsMalformedLimit(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards?limit=oops", nil)
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d want=%d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	assertAPIError(t, rec, http.StatusBadRequest, "limit")
 }
 
 func TestBIAPIQueriesBoundRowsAndPageData(t *testing.T) {

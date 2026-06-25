@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestDeploymentsListDecodesEnvelopePreservingTableOutput(t *testing.T) {
@@ -91,6 +93,91 @@ func TestAgentConversationsDecodesEnvelopePreservingJSONOutput(t *testing.T) {
 	}
 	if strings.Contains(output, "nextCursor") || strings.Contains(output, `"items"`) {
 		t.Fatalf("output leaked envelope:\n%s", output)
+	}
+}
+
+func TestFriendlyListCommandsPassPaginationQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		command func(context.Context, *rootOptions) *cobra.Command
+		args    []string
+		path    string
+	}{
+		{
+			name:    "workspaces",
+			command: workspacesCommand,
+			args:    []string{"list"},
+			path:    "/api/v1/workspaces",
+		},
+		{
+			name:    "dashboards",
+			command: dashboardsCommand,
+			args:    []string{"list"},
+			path:    "/api/v1/workspaces/test/dashboards",
+		},
+		{
+			name:    "semantic-models",
+			command: semanticModelsCommand,
+			args:    []string{"list"},
+			path:    "/api/v1/workspaces/test/semantic-models",
+		},
+		{
+			name:    "deployments",
+			command: deploymentsCommand,
+			args:    []string{"list"},
+			path:    "/api/v1/workspaces/test/deployments",
+		},
+		{
+			name:    "agent conversations",
+			command: agentCommand,
+			args:    []string{"conversations"},
+			path:    "/api/v1/workspaces/test/agent/conversations",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tc.path {
+					t.Fatalf("path = %s want %s", r.URL.Path, tc.path)
+				}
+				if got := r.URL.Query().Get("limit"); got != "7" {
+					t.Fatalf("limit = %q", got)
+				}
+				if got := r.URL.Query().Get("pageToken"); got != "cursor" {
+					t.Fatalf("pageToken = %q", got)
+				}
+				writeCLIJSON(t, w, map[string]any{
+					"items": []map[string]any{},
+					"page":  map[string]any{"nextCursor": ""},
+				})
+			}))
+			defer server.Close()
+
+			opts := &rootOptions{workspaceID: "test"}
+			cmd := tc.command(context.Background(), opts)
+			args := append([]string{}, tc.args...)
+			args = append(args, "--target", server.URL, "--token", "token", "--limit", "7", "--page-token", "cursor")
+			cmd.SetArgs(args)
+			captureStdout(t, func() {
+				if err := cmd.Execute(); err != nil {
+					t.Fatalf("run command: %v", err)
+				}
+			})
+		})
+	}
+}
+
+func TestAgentToolsCommandListsGeneratedTools(t *testing.T) {
+	output := captureStdout(t, func() {
+		cmd := agentCommand(context.Background(), &rootOptions{})
+		cmd.SetArgs([]string{"tools"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("agent tools: %v", err)
+		}
+	})
+	for _, want := range []string{"NAME", "PERMISSION", "list_dashboards", "asset:read", "list_workspace_assets"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("agent tools output missing %q:\n%s", want, output)
+		}
 	}
 }
 

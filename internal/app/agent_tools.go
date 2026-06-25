@@ -23,10 +23,11 @@ import (
 const agentExtensionKey = "x-agent"
 
 type apigenAgentExtension struct {
-	Enabled bool
-	Name    string
-	Risk    string
-	Tags    []string
+	Enabled      bool
+	Name         string
+	Risk         string
+	Tags         []string
+	DefaultLimit int
 }
 
 type apigenAgentParameter struct {
@@ -126,9 +127,10 @@ func parseAPIGenAgentExtension(value any) (apigenAgentExtension, bool) {
 		return apigenAgentExtension{}, false
 	}
 	extension := apigenAgentExtension{
-		Enabled: boolFromMap(raw, "enabled"),
-		Name:    stringFromMap(raw, "name"),
-		Risk:    stringFromMap(raw, "risk"),
+		Enabled:      boolFromMap(raw, "enabled"),
+		Name:         stringFromMap(raw, "name"),
+		Risk:         stringFromMap(raw, "risk"),
+		DefaultLimit: intFromMap(raw, "defaultLimit"),
 	}
 	if tags, ok := raw["tags"].([]any); ok {
 		for _, tag := range tags {
@@ -395,6 +397,10 @@ func apigenAgentToolRequest(ctx context.Context, scope agentapp.Scope, operation
 			if err != nil {
 				return nil, err
 			}
+			if !ok && parameter.Name == "limit" && operation.Extension.DefaultLimit > 0 {
+				value = strconv.Itoa(operation.Extension.DefaultLimit)
+				ok = true
+			}
 			if ok {
 				query.Set(parameter.Name, value)
 			}
@@ -522,6 +528,22 @@ func boolFromMap(values map[string]any, key string) bool {
 		return value
 	}
 	return false
+}
+
+func intFromMap(values map[string]any, key string) int {
+	switch value := values[key].(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case json.Number:
+		parsed, _ := strconv.Atoi(value.String())
+		return parsed
+	default:
+		return 0
+	}
 }
 
 func cloneStringAnyMap(in map[string]any) map[string]any {

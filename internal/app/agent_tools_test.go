@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -143,6 +145,64 @@ func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
 	}
 }
 
+func TestAPIGenAgentListToolInjectsDefaultLimit(t *testing.T) {
+	server := NewWithOptions(manyEdgesMetrics{}, Options{DefaultWorkspaceID: "test"})
+	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var listEdges agent.ToolDefinition
+	for _, tool := range tools {
+		if tool.Name == "list_workspace_asset_edges" {
+			listEdges = tool
+			break
+		}
+	}
+	if listEdges.Handler == nil {
+		t.Fatal("list_workspace_asset_edges tool missing")
+	}
+	result, err := listEdges.Handler.Run(context.Background(), agent.ToolCall{
+		ID:        "call_1",
+		Name:      "list_workspace_asset_edges",
+		Arguments: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("run tool: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool returned error: %#v", result.Content)
+	}
+	body, err := json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("marshal result content: %v", err)
+	}
+	var decoded struct {
+		Items []map[string]any `json:"items"`
+		Page  struct {
+			NextCursor string `json:"nextCursor"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode result: %v body=%s", err, body)
+	}
+	if len(decoded.Items) != 25 || decoded.Page.NextCursor == "" {
+		t.Fatalf("default-limited edge result = count %d cursor %q", len(decoded.Items), decoded.Page.NextCursor)
+	}
+
+	result, err = listEdges.Handler.Run(context.Background(), agent.ToolCall{
+		ID:        "call_2",
+		Name:      "list_workspace_asset_edges",
+		Arguments: json.RawMessage(`{"limit":3}`),
+	})
+	if err != nil {
+		t.Fatalf("run explicit limit tool: %v", err)
+	}
+	body, _ = json.Marshal(result.Content)
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode explicit result: %v body=%s", err, body)
+	}
+	if len(decoded.Items) != 3 {
+		t.Fatalf("explicit-limited edge count = %d, want 3", len(decoded.Items))
+	}
+}
+
 func TestAPIGenAgentToolDispatchesJSONBodyOperation(t *testing.T) {
 	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
 	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
@@ -235,4 +295,27 @@ func toolNames(tools []agent.ToolDefinition) []string {
 		names = append(names, tool.Name)
 	}
 	return names
+}
+
+type manyEdgesMetrics struct {
+	fakeMetrics
+}
+
+func (manyEdgesMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	root, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, "catalog", "", "Catalog", "", map[string]any{})
+	if err != nil {
+		return nil, nil, false
+	}
+	assets := []workspace.Asset{root}
+	edges := make([]workspace.AssetEdge, 0, 30)
+	for i := 0; i < 30; i++ {
+		key := "dashboard-" + strconv.Itoa(i)
+		child, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeDashboard, key, root.ID, "Dashboard", "", map[string]any{"index": i})
+		if err != nil {
+			return nil, nil, false
+		}
+		assets = append(assets, child)
+		edges = append(edges, workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), root.ID, child.ID, workspace.AssetEdgeContains))
+	}
+	return assets, edges, true
 }
