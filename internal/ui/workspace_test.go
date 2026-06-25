@@ -607,6 +607,7 @@ func TestConnectionsPageUsesConnectionAssetTabs(t *testing.T) {
 		`href="/connections?type=connection"`,
 		`href="/connections?type=source" aria-current="page"`,
 		`href="/connections/connection/sources/source/details"`,
+		`href="/connections/connection/details">Olist connection</a>`,
 		`>Source<`,
 	} {
 		if !strings.Contains(rendered, want) {

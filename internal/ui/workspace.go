@@ -528,7 +528,7 @@ func assetRow(workspaceID string, asset api.AssetResponse, assetIndex map[string
 		),
 		assetCell("w-40 text-body-sm font-medium text-fg-muted", h.Span(g.Text(assetTypeLabel(asset.Type)))),
 		assetCell("w-56 max-md:hidden", h.Code(h.Class("block truncate text-caption font-medium text-fg-muted"), g.Text(asset.Key))),
-		assetCell("w-48 max-lg:hidden", assetParentTableLink(workspaceID, asset, assetIndex)),
+		assetCell("w-48 max-lg:hidden", assetParentTableLink(workspaceID, asset, assetIndex, edges)),
 		assetCell("w-24",
 			h.Div(h.Class("inline-flex w-full justify-end gap-2"),
 				h.A(h.Class(metricActionButtonClass), h.Href(detailHref), h.Title("View details"), h.Aria("label", "View details"), lucide.FileText(metricActionIconAttrs()...)),
@@ -538,7 +538,16 @@ func assetRow(workspaceID string, asset api.AssetResponse, assetIndex map[string
 	)
 }
 
-func assetParentTableLink(workspaceID string, asset api.AssetResponse, assetIndex map[string]api.AssetResponse) g.Node {
+func assetParentTableLink(workspaceID string, asset api.AssetResponse, assetIndex map[string]api.AssetResponse, edges []api.AssetEdgeResponse) g.Node {
+	if asset.Type == "source" {
+		if connection, ok := assetIndex[assetnav.SourceConnectionID(asset.ID, edges)]; ok && connection.Type == "connection" {
+			return h.A(
+				h.Class("block truncate text-body-sm font-medium text-fg-accent no-underline hover:underline"),
+				h.Href(assetnav.ConnectionAssetSectionHref(connection.ID, "details")),
+				g.Text(assetTitle(connection)),
+			)
+		}
+	}
 	parent, ok := assetIndex[asset.ParentID]
 	if !ok {
 		return h.Span(h.Class("text-caption font-medium text-fg-muted"), g.Text(emptyDash("")))
