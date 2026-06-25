@@ -3,6 +3,7 @@ import { property } from 'lit/decorators.js'
 import { EllipsisVertical } from 'lucide'
 import { lucideIcon } from './lucide-icons'
 import { visualMenuIcon } from './visual-menu-icons'
+import { visualActionStyles } from './visual-action-styles'
 import './chart/renderers'
 import { chartInteractionDetailForDatum } from './chart/interactions'
 import { chartRenderer } from './chart/registry'
@@ -190,7 +191,7 @@ class ChartVisual extends LitElement {
   @property({ type: String }) type: ChartType | string = 'bar'
   @property({ type: Array }) selection: string[] = []
 
-  static styles = chartStyles
+  static styles = [visualActionStyles, chartStyles]
 
   private rendererHandle?: ChartRendererHandle
   private rendererName = ''
@@ -210,6 +211,12 @@ class ChartVisual extends LitElement {
     this.observer = new ResizeObserver(() => this.rendererHandle?.resize())
     document.addEventListener('pointerdown', this.handleOutsidePointerDown)
     document.addEventListener('keydown', this.handleDocumentKeyDown)
+    if (this.hasUpdated) {
+      queueMicrotask(() => {
+        this.observer?.observe(this)
+        this.renderChart()
+      })
+    }
   }
 
   firstUpdated(): void {
@@ -226,6 +233,8 @@ class ChartVisual extends LitElement {
     document.removeEventListener('keydown', this.handleDocumentKeyDown)
     this.observer?.disconnect()
     this.rendererHandle?.dispose()
+    this.rendererHandle = undefined
+    this.rendererName = ''
     super.disconnectedCallback()
   }
 
@@ -239,16 +248,18 @@ class ChartVisual extends LitElement {
             <h2>${payload.title ?? 'Chart'}</h2>
             <span class="unit">${payload.unit ?? ''}</span>
           </div>
-          <details class="options">
-            <summary aria-label="Visual options" title="Visual options">${lucideIcon(EllipsisVertical)}</summary>
-            <div class="menu" role="menu">
-              <button type="button" role="menuitem" @click=${() => this.runAction('focus')}>${visualMenuIcon('focus')}<span>Focus mode</span></button>
-              <button type="button" role="menuitem" @click=${() => this.runAction('show-data')}>${visualMenuIcon('show-data')}<span>Show data</span></button>
-              <button type="button" role="menuitem" @click=${() => this.runAction('copy-data')}>${visualMenuIcon('copy-data')}<span>Copy data</span></button>
-              <button type="button" role="menuitem" @click=${() => this.runAction('export-csv')}>${visualMenuIcon('export-csv')}<span>Export CSV</span></button>
-              <button type="button" role="menuitem" ?disabled=${!this.hasSelection(payload)} @click=${() => this.runAction('clear-selection')}>${visualMenuIcon('clear-selection')}<span>Clear selection</span></button>
-            </div>
-          </details>
+          <div class="visual-actions">
+            <button class="icon-action" type="button" aria-label="Expand visual" title="Expand visual" @click=${() => this.runAction('focus')}>${visualMenuIcon('focus')}</button>
+            <details class="options">
+              <summary aria-label="Visual options" title="Visual options">${lucideIcon(EllipsisVertical)}</summary>
+              <div class="menu" role="menu">
+                <button type="button" role="menuitem" @click=${() => this.runAction('show-data')}>${visualMenuIcon('show-data')}<span>Show data</span></button>
+                <button type="button" role="menuitem" @click=${() => this.runAction('copy-data')}>${visualMenuIcon('copy-data')}<span>Copy data</span></button>
+                <button type="button" role="menuitem" @click=${() => this.runAction('export-csv')}>${visualMenuIcon('export-csv')}<span>Export CSV</span></button>
+                <button type="button" role="menuitem" ?disabled=${!this.hasSelection(payload)} @click=${() => this.runAction('clear-selection')}>${visualMenuIcon('clear-selection')}<span>Clear selection</span></button>
+              </div>
+            </details>
+          </div>
         </header>
         <div class=${data.length === 0 ? 'canvas idle' : 'canvas'}></div>
         ${data.length === 0 ? html`<div class="empty">Waiting for signal data</div>` : null}

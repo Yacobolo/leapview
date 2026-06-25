@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing } from 'lit'
 import { state } from 'lit/decorators.js'
 import { X } from 'lucide'
 import { lucideIcon } from './lucide-icons'
+import { mountVisualFocus, restoreVisualFocus, visualSourceFromEvent, type VisualFocusMount } from './visual-modal-focus'
 
 type VisualActionName = 'focus' | 'show-data' | 'copy-data' | 'export-csv' | 'clear-selection'
 
@@ -31,6 +32,9 @@ class VisualModal extends LitElement {
   @state() private mode: ModalMode | '' = ''
   @state() private detail: VisualActionDetail | null = null
   @state() private notice = ''
+  private focusMount: VisualFocusMount<HTMLElement> | null = null
+  private focusSource: HTMLElement | null = null
+  private restoreFocusTo: HTMLElement | null = null
 
   static styles = css`
     :host {
@@ -59,6 +63,16 @@ class VisualModal extends LitElement {
       background: var(--ld-bg-overlay);
       box-shadow: var(--shadow-floating-large);
       overflow: hidden;
+    }
+
+    .focus-dialog {
+      position: relative;
+      width: min(1420px, 100%);
+      height: min(920px, calc(100vh - 56px));
+      max-height: calc(100vh - 56px);
+      min-height: min(520px, calc(100vh - 56px));
+      grid-template-rows: minmax(0, 1fr);
+      background: var(--ld-chart-surface);
     }
 
     header {
@@ -125,6 +139,17 @@ class VisualModal extends LitElement {
       padding: 0;
     }
 
+    .focus-close {
+      position: absolute;
+      top: var(--ld-space-md);
+      right: var(--ld-space-md);
+      z-index: var(--zIndex-popover);
+      display: grid;
+      place-items: center;
+      background: var(--ld-bg-overlay);
+      box-shadow: var(--shadow-floating-small);
+    }
+
     .close svg {
       width: var(--base-size-16);
       height: var(--base-size-16);
@@ -134,6 +159,29 @@ class VisualModal extends LitElement {
       min-height: 0;
       overflow: hidden;
       background: var(--ld-chart-surface);
+    }
+
+    .focus-slot {
+      display: block;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--ld-chart-surface);
+    }
+
+    .focus-slot > * {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+
+    ::slotted([slot='focus-visual']) {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
     }
 
     .focus-chart,
@@ -229,6 +277,7 @@ class VisualModal extends LitElement {
   disconnectedCallback(): void {
     window.removeEventListener('ld-visual-action', this.handleVisualAction as EventListener)
     window.removeEventListener('keydown', this.handleKeydown)
+    this.restoreFocusedVisual(false)
     super.disconnectedCallback()
   }
 
@@ -240,12 +289,13 @@ class VisualModal extends LitElement {
   }
 
   private renderDialog(detail: VisualActionDetail, mode: ModalMode) {
+    if (mode === 'focus') return this.renderFocusDialog(detail)
     return html`
       <div class="backdrop" @click=${this.closeFromBackdrop}>
         <section class="dialog" role="dialog" aria-modal="true" aria-label=${detail.title}>
           <header>
             <div class="title">
-              <p class="eyebrow">${mode === 'focus' ? 'Focus mode' : 'Show data'} · ${detail.visualType}</p>
+              <p class="eyebrow">Show data · ${detail.visualType}</p>
               <h2>${detail.title}</h2>
             </div>
             <div class="actions">
@@ -255,19 +305,22 @@ class VisualModal extends LitElement {
             </div>
           </header>
           <div class="body">
-            ${mode === 'focus' ? this.renderFocus(detail) : this.renderData(detail)}
+            ${this.renderData(detail)}
           </div>
         </section>
       </div>
     `
   }
 
-  private renderFocus(detail: VisualActionDetail) {
-    if (detail.visualType === 'chart') {
-      const chart = detail.chart ?? chartPayloadFromRows(detail)
-      return html`<ld-echart class="focus-chart" .chart=${chart}></ld-echart>`
-    }
-    return html`<div class="focus-table">${this.renderData(detail)}</div>`
+  private renderFocusDialog(detail: VisualActionDetail) {
+    return html`
+      <div class="backdrop" @click=${this.closeFromBackdrop}>
+        <section class="dialog focus-dialog" role="dialog" aria-modal="true" aria-label=${detail.title}>
+          <button class="close focus-close" type="button" aria-label="Close visual modal" @click=${this.close}>${lucideIcon(X)}</button>
+          <div class="focus-slot"><slot name="focus-visual"></slot></div>
+        </section>
+      </div>
+    `
   }
 
   private renderData(detail: VisualActionDetail) {
@@ -308,14 +361,23 @@ class VisualModal extends LitElement {
       this.exportCSV(detail)
       return
     }
-    if (detail.action === 'focus' || detail.action === 'show-data') {
+    if (detail.action === 'focus') {
+      this.openFocus(detail, event)
+      return
+    }
+    if (detail.action === 'show-data') {
+      this.restoreFocusedVisual(false)
       this.detail = detail
-      this.mode = detail.action === 'focus' ? 'focus' : 'show-data'
+      this.mode = 'show-data'
     }
   }
 
   private handleKeydown = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape') this.close()
+    if (event.key === 'Escape') {
+      this.close()
+      return
+    }
+    if (event.key === 'Tab' && this.mode === 'focus') this.trapFocus(event)
   }
 
   private closeFromBackdrop = (event: Event): void => {
@@ -323,8 +385,105 @@ class VisualModal extends LitElement {
   }
 
   private close = (): void => {
+    this.restoreFocusedVisual(true)
     this.mode = ''
     this.detail = null
+  }
+
+  private openFocus(detail: VisualActionDetail, event: Event): void {
+    const source = visualSourceFromEvent(event)
+    if (!source) return
+    if (this.mode === 'focus' && this.focusMount?.element === source) return
+
+    const focusToRestore = this.deepActiveElement()
+    this.restoreFocusedVisual(false)
+    this.restoreFocusTo = focusToRestore
+    this.detail = detail
+    this.mode = 'focus'
+    this.focusSource = source
+    void this.updateComplete.then(() => {
+      this.mountFocusedVisual(source)
+      this.focusInitialControl()
+    })
+  }
+
+  private mountFocusedVisual(source: HTMLElement): void {
+    if (this.mode !== 'focus' || this.focusSource !== source || this.focusMount?.element === source) return
+    const mount = mountVisualFocus(source, this, { slot: 'focus-visual' })
+    if (!mount) return
+    this.focusMount = mount
+  }
+
+  private restoreFocusedVisual(restoreFocus: boolean): void {
+    const focusToRestore = this.restoreFocusTo
+    if (this.focusMount) {
+      restoreVisualFocus(this.focusMount)
+    }
+    this.focusMount = null
+    this.focusSource = null
+    this.restoreFocusTo = null
+    if (restoreFocus && focusToRestore?.isConnected) {
+      queueMicrotask(() => focusToRestore.focus({ preventScroll: true }))
+    }
+  }
+
+  private focusInitialControl(): void {
+    this.renderRoot.querySelector<HTMLButtonElement>('.focus-close')?.focus({ preventScroll: true })
+  }
+
+  private trapFocus(event: KeyboardEvent): void {
+    const focusable = this.focusableElements()
+    if (focusable.length === 0) {
+      event.preventDefault()
+      return
+    }
+
+    const active = this.deepActiveElement()
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const activeInsideModal = Boolean(active && focusable.includes(active))
+    if (event.shiftKey && (!activeInsideModal || active === first)) {
+      event.preventDefault()
+      last.focus({ preventScroll: true })
+      return
+    }
+    if (!event.shiftKey && (!activeInsideModal || active === last)) {
+      event.preventDefault()
+      first.focus({ preventScroll: true })
+    }
+  }
+
+  private focusableElements(): HTMLElement[] {
+    return [
+      ...this.deepFocusableElements(this.renderRoot),
+      ...(this.focusMount ? this.deepFocusableElements(this.focusMount.element) : []),
+    ]
+  }
+
+  private deepFocusableElements(root: ParentNode): HTMLElement[] {
+    const selector = [
+      'button:not([disabled])',
+      'a[href]',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',')
+    const elements: HTMLElement[] = []
+    root.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+      elements.push(element)
+      if (element.shadowRoot) elements.push(...this.deepFocusableElements(element.shadowRoot))
+    })
+    root.querySelectorAll<HTMLElement>('*').forEach((element) => {
+      if (element.shadowRoot) elements.push(...this.deepFocusableElements(element.shadowRoot))
+    })
+    return [...new Set(elements)]
+  }
+
+  private deepActiveElement(): HTMLElement | null {
+    let active = document.activeElement
+    while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement
+    return active instanceof HTMLElement ? active : null
   }
 
   private async copy(detail: VisualActionDetail): Promise<void> {
@@ -368,19 +527,6 @@ class VisualModal extends LitElement {
     window.setTimeout(() => {
       if (this.notice === message) this.notice = ''
     }, 1800)
-  }
-}
-
-function chartPayloadFromRows(detail: VisualActionDetail): Record<string, unknown> {
-  return {
-    id: detail.visualId,
-    title: detail.title,
-    type: 'bar',
-    data: detail.rows.map((row) => ({
-      label: stringValue(row.label),
-      series: stringValue(row.series),
-      value: Number(row.value) || 0,
-    })),
   }
 }
 
