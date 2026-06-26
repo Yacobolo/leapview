@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"encoding/json"
 	"go/parser"
 	"go/token"
 	"os"
@@ -44,6 +45,39 @@ func TestGeneratedAssetResponseRequiresSnapshotAndPayload(t *testing.T) {
 		if strings.Contains(string(field.Tag), "omitempty") {
 			t.Fatalf("AssetResponse.%s JSON tag is optional: %s", name, field.Tag)
 		}
+	}
+}
+
+func TestGeneratedAssetListUsesSummaryWithoutPayload(t *testing.T) {
+	listTyp := reflect.TypeOf(apigen.AssetListResponse{})
+	items, ok := listTyp.FieldByName("Items")
+	if !ok {
+		t.Fatal("AssetListResponse.Items missing")
+	}
+	if items.Type.Kind() != reflect.Slice || items.Type.Elem() != reflect.TypeOf(apigen.AssetSummaryResponse{}) {
+		t.Fatalf("AssetListResponse.Items type = %s, want []AssetSummaryResponse", items.Type)
+	}
+	if _, ok := reflect.TypeOf(apigen.AssetSummaryResponse{}).FieldByName("Payload"); ok {
+		t.Fatal("AssetSummaryResponse unexpectedly includes Payload")
+	}
+}
+
+func TestGeneratedAssetPayloadOpenAPIAllowsArbitraryJSON(t *testing.T) {
+	spec, err := apigen.GetEmbeddedOpenAPISpec()
+	if err != nil {
+		t.Fatalf("embedded openapi: %v", err)
+	}
+	components, _ := spec["components"].(map[string]any)
+	schemas, _ := components["schemas"].(map[string]any)
+	assetResponse, _ := schemas["AssetResponse"].(map[string]any)
+	properties, _ := assetResponse["properties"].(map[string]any)
+	payload, _ := properties["payload"].(map[string]any)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload schema: %v", err)
+	}
+	if strings.Contains(string(raw), `"additionalProperties":{"type":"string"}`) {
+		t.Fatalf("payload schema is string-only, want arbitrary JSON: %s", raw)
 	}
 }
 

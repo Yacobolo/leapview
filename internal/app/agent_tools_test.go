@@ -222,6 +222,7 @@ func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
 			ID          string `json:"id"`
 			WorkspaceID string `json:"workspaceId"`
 			Type        string `json:"type"`
+			Payload     any    `json:"payload"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
@@ -229,6 +230,9 @@ func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
 	}
 	if len(decoded.Items) != 1 || decoded.Items[0].ID != "dashboard:dashboard-0" || decoded.Items[0].WorkspaceID != "test" || decoded.Items[0].Type != "dashboard" {
 		t.Fatalf("tool result = %#v", decoded.Items)
+	}
+	if decoded.Items[0].Payload != nil {
+		t.Fatalf("list_assets returned payload in summary row: %#v", decoded.Items[0])
 	}
 }
 

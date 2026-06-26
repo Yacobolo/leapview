@@ -391,7 +391,7 @@ func (s *Server) apiWorkspaceAssets(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	_ = writePagedJSON(w, r, apiAssetDTOs(workspace.FilterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))))
+	_ = writePagedJSON(w, r, apiAssetSummaryDTOs(workspace.FilterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))))
 }
 
 func (s *Server) apiWorkspaceAsset(w http.ResponseWriter, r *http.Request) {
@@ -698,6 +698,26 @@ func apiAssetDTOs(rows []workspace.AssetView) []api.AssetResponse {
 			Description:   row.Description,
 			PayloadSchema: row.PayloadSchema,
 			Payload:       row.Payload,
+			Href:          row.Href,
+		})
+	}
+	return out
+}
+
+func apiAssetSummaryDTOs(rows []workspace.AssetView) []api.AssetSummaryResponse {
+	out := make([]api.AssetSummaryResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, api.AssetSummaryResponse{
+			ID:            row.ID,
+			SnapshotID:    row.SnapshotID,
+			WorkspaceID:   row.WorkspaceID,
+			DeploymentID:  row.DeploymentID,
+			Type:          row.Type,
+			Key:           row.Key,
+			ParentID:      row.ParentID,
+			Title:         row.Title,
+			Description:   row.Description,
+			PayloadSchema: row.PayloadSchema,
 			Href:          row.Href,
 		})
 	}

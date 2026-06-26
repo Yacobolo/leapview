@@ -613,7 +613,7 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Items []api.AssetResponse `json:"items"`
+		Items []api.AssetSummaryResponse `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode assets response: %v body=%s", err, rec.Body.String())
@@ -625,8 +625,20 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 	if connection.ID != "connection:olist.olist" || connection.SnapshotID == "" || connection.SnapshotID == connection.ID {
 		t.Fatalf("connection identity = %#v", connection)
 	}
-	if connection.PayloadSchema != "connection.v1" || connection.Payload["Kind"] != "local" || connection.Payload["credentials_configured"] != false {
-		t.Fatalf("connection payload = schema %q payload %#v", connection.PayloadSchema, connection.Payload)
+	if connection.PayloadSchema != "connection.v1" {
+		t.Fatalf("connection payload schema = %q", connection.PayloadSchema)
+	}
+	var rawListBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &rawListBody); err != nil {
+		t.Fatalf("decode raw list response: %v", err)
+	}
+	listItems, _ := rawListBody["items"].([]any)
+	if len(listItems) != 1 {
+		t.Fatalf("raw list items = %#v", rawListBody["items"])
+	}
+	listConnection, _ := listItems[0].(map[string]any)
+	if _, ok := listConnection["payload"]; ok {
+		t.Fatalf("asset list included payload: %s", rec.Body.String())
 	}
 	if bytes.Contains(rec.Body.Bytes(), []byte(`"auth"`)) {
 		t.Fatalf("connection API leaked auth content:\n%s", rec.Body.String())
@@ -646,6 +658,9 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 	}
 	if detail.ID != connection.ID || detail.SnapshotID != connection.SnapshotID || detail.PayloadSchema != "connection.v1" {
 		t.Fatalf("asset detail = %#v, list connection = %#v", detail, connection)
+	}
+	if detail.Payload["Kind"] != "local" || detail.Payload["credentials_configured"] != false {
+		t.Fatalf("asset detail payload = %#v", detail.Payload)
 	}
 
 	lineageReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/assets/connection:olist.olist/lineage", nil)

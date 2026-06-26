@@ -29,12 +29,26 @@ model AssetResponse {
   title: string;
   description: string;
   payloadSchema: string;
-  payload: Record<string>;
+  payload: JSONObject;
+  href?: string;
+}
+
+model AssetSummaryResponse {
+  id: string;
+  snapshotId: string;
+  workspaceId: string;
+  deploymentId: string;
+  type: string;
+  key: string;
+  parentId?: string;
+  title: string;
+  description: string;
+  payloadSchema: string;
   href?: string;
 }
 
 model AssetListResponse {
-  items: AssetResponse[];
+  items: AssetSummaryResponse[];
   page: PageInfo;
 }
 
