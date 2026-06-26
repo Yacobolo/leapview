@@ -191,15 +191,13 @@ class DataGrid extends LitElement {
       case 'check':
         return svg`
           <svg viewBox="0 0 16 16" focusable="false">
-            <circle cx="8" cy="8" r="8" fill="currentColor"></circle>
-            <path d="M6.6 11.1 3.8 8.3 5 7.1l1.6 1.6L11 4.3l1.2 1.2-5.6 5.6Z" fill="var(--ld-fg-on-emphasis)"></path>
+            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm-1.4-4.9L3.8 8.3 5 7.1l1.6 1.6L11 4.3l1.2 1.2-5.6 5.6Z"></path>
           </svg>
         `
       case 'x':
         return svg`
           <svg viewBox="0 0 16 16" focusable="false">
-            <circle cx="8" cy="8" r="8" fill="currentColor"></circle>
-            <path d="m5.1 4 2.9 2.9L10.9 4 12 5.1 9.1 8l2.9 2.9-1.1 1.1L8 9.1 5.1 12 4 10.9 6.9 8 4 5.1 5.1 4Z" fill="var(--ld-fg-on-emphasis)"></path>
+            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16ZM5.1 4 8 6.9 10.9 4 12 5.1 9.1 8l2.9 2.9-1.1 1.1L8 9.1 5.1 12 4 10.9 6.9 8 4 5.1 5.1 4Z"></path>
           </svg>
         `
       case 'clock':
