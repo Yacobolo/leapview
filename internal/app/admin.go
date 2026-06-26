@@ -94,8 +94,7 @@ func (s *Server) adminData(r *http.Request, workspaceID string) (ui.AdminData, e
 	if repo == nil {
 		data.RBACConfigured = false
 		data.RBACStatusLabel = "RBAC store is not configured"
-		data.Roles = defaultWorkspaceRoles()
-		data.RoleCount = len(data.Roles)
+		data.RoleCount = len(defaultWorkspaceRoles())
 		return data, nil
 	}
 	principals, err := s.adminPrincipalsData(r)
@@ -126,7 +125,6 @@ func (s *Server) adminData(r *http.Request, workspaceID string) (ui.AdminData, e
 			})
 		}
 	}
-	data.Roles = roles
 	data.RoleCount = len(roles)
 	data.BindingCount = len(bindings)
 	data.Principals = buildAdminPrincipals(principals, bindings, groupsByID, membersByGroup)

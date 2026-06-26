@@ -23,7 +23,6 @@ type AdminData struct {
 	GroupCount        int
 	BindingCount      int
 	RoleCount         int
-	Roles             []workspaceview.RoleView
 	Principals        []AdminPrincipal
 	SelectedPrincipal *AdminPrincipal
 	Groups            []AdminGroup
@@ -337,22 +336,6 @@ func adminGroupMembersGrid(group AdminGroup, principals []AdminPrincipal) metric
 	}
 }
 
-func adminGroupRefLabels(values []AdminGroupRef) []string {
-	tags := make([]string, 0, len(values))
-	for _, value := range values {
-		tags = append(tags, adminDisplayLabel(value.Name, value.ExternalID, value.ID))
-	}
-	return tags
-}
-
-func adminPrincipalLabels(values []AdminPrincipalRef) []string {
-	labels := make([]string, 0, len(values))
-	for _, value := range values {
-		labels = append(labels, adminPrincipalLabel(value))
-	}
-	return labels
-}
-
 func adminGroupHref(groupID string) string {
 	return "/admin/groups/" + url.PathEscape(groupID)
 }
@@ -390,11 +373,4 @@ func adminDisplayLabel(values ...string) string {
 		}
 	}
 	return "-"
-}
-
-func adminPrincipalLabel(member AdminPrincipalRef) string {
-	if strings.TrimSpace(member.DisplayName) != "" && strings.TrimSpace(member.Email) != "" && member.DisplayName != member.Email {
-		return member.DisplayName + " <" + member.Email + ">"
-	}
-	return adminDisplayLabel(member.DisplayName, member.Email, member.ID)
 }
