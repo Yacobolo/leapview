@@ -18,10 +18,6 @@ import (
 	"github.com/starfederation/datastar-go/datastar"
 )
 
-type workspaceAssetProvider interface {
-	WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool)
-}
-
 var errWorkspaceRBACNotConfigured = errors.New("Workspace RBAC store is not configured.")
 
 func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
@@ -535,38 +531,27 @@ func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([
 }
 
 func (s *Server) workspaceAssetCatalog(ctx context.Context, workspaceID string) (workspace.AssetCatalog, bool, error) {
-	if s.store != nil {
-		repo, err := s.workspaceRepository()
-		if err != nil {
-			return workspace.AssetCatalog{}, false, err
-		}
-		catalog, ok, err := workspace.NewAssetCatalogService(repo).ActiveAssetCatalog(ctx, workspace.WorkspaceID(workspaceID))
-		if err != nil || ok {
-			return catalog, ok, err
-		}
+	reader, err := s.workspaceAssetCatalogReader()
+	if err != nil || reader == nil {
+		return workspace.AssetCatalog{}, false, err
 	}
-	return s.workspaceAssetCatalogFromRuntime(workspaceID)
+	return reader.ActiveAssetCatalog(ctx, workspace.WorkspaceID(workspaceID))
 }
 
-func (s *Server) workspaceGraphFromRuntime(workspaceID, deploymentID string) (workspace.AssetGraph, bool) {
-	provider, ok := s.metrics.(workspaceAssetProvider)
-	if !ok || deploymentID == "" {
-		return workspace.AssetGraph{}, false
+func (s *Server) workspaceAssetCatalogReader() (workspace.AssetCatalogReader, error) {
+	if s.assetCatalog != nil {
+		return s.assetCatalog, nil
 	}
-	assets, edges, ok := provider.WorkspaceAssets(workspaceID, deploymentID)
-	if !ok {
-		return workspace.AssetGraph{}, false
+	repo, err := s.workspaceRepository()
+	if err != nil {
+		return nil, err
 	}
-	return workspace.AssetGraph{Assets: assets, Edges: edges}, true
-}
-
-func (s *Server) workspaceAssetCatalogFromRuntime(workspaceID string) (workspace.AssetCatalog, bool, error) {
-	graph, ok := s.workspaceGraphFromRuntime(workspaceID, "local")
-	if !ok {
-		return workspace.AssetCatalog{}, false, nil
+	service := workspace.NewAssetCatalogService(repo)
+	if provider, ok := s.metrics.(workspace.RuntimeAssetGraphProvider); ok {
+		service.WithRuntimeProvider(provider)
 	}
-	catalog, err := workspace.DecodeAssetCatalog(graph)
-	return catalog, err == nil, err
+	s.assetCatalog = service
+	return s.assetCatalog, nil
 }
 
 func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]api.RoleBindingResponse, []api.RoleResponse, error) {

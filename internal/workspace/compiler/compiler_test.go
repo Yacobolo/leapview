@@ -2,6 +2,9 @@ package compiler
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -297,6 +300,56 @@ semantic_models:
 	for _, leaked := range []string{`"auth"`, "access_key_id", "secret_access_key", "env-key", "env-secret"} {
 		if strings.Contains(strings.ToLower(asset.PayloadJSON), strings.ToLower(leaked)) {
 			t.Fatalf("connection payload leaked %q: %s", leaked, asset.PayloadJSON)
+		}
+	}
+}
+
+func TestCompilerPayloadBuildersDoNotReturnAnonymousMaps(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "lineage.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse lineage.go: %v", err)
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || !strings.HasSuffix(fn.Name.Name, "Payload") || fn.Type.Results == nil {
+			continue
+		}
+		for _, result := range fn.Type.Results.List {
+			mapType, ok := result.Type.(*ast.MapType)
+			if !ok {
+				continue
+			}
+			if key, ok := mapType.Key.(*ast.Ident); ok && key.Name == "string" {
+				if value, ok := mapType.Value.(*ast.InterfaceType); ok && value.Methods.NumFields() == 0 {
+					t.Fatalf("%s returns anonymous map[string]any; use a named v1 payload contract", fn.Name.Name)
+				}
+			}
+		}
+	}
+}
+
+func TestCompileTypedTablePagePayloadsKeepFieldNames(t *testing.T) {
+	compiled := compileLineageWorkspace(t)
+	assets := assetsByID(compiled.Workspace.Graph)
+	checks := map[string][]string{
+		"table:sales.order_rows":                {"Title", "Description", "Kind", "Query", "Rows", "ColumnDims", "DataColumns", "Style", "DefaultSort"},
+		"page:sales.overview":                   {"ID", "Title", "Description", "Canvas", "Grid"},
+		"page_item:sales.overview.orders_table": {"ID", "Kind", "Visual", "Table", "Filter", "Description", "Placement", "Title", "Subtitle", "Badges"},
+	}
+	for id, fields := range checks {
+		asset := assets[id]
+		if asset.ID == "" {
+			t.Fatalf("asset %q missing", id)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(asset.PayloadJSON), &payload); err != nil {
+			t.Fatalf("asset %q payload JSON invalid: %v", id, err)
+		}
+		for _, field := range fields {
+			if _, ok := payload[field]; !ok {
+				t.Fatalf("asset %q payload missing field %q: %s", id, field, asset.PayloadJSON)
+			}
 		}
 	}
 }

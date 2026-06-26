@@ -103,8 +103,9 @@ func TestRepositorySaveValidatedReplacesDeploymentGraph(t *testing.T) {
 	if !ok {
 		t.Fatal("active graph ok = false")
 	}
-	if len(graph.Edges) != 1 || graph.Edges[0].ID != "edge_1" {
-		t.Fatalf("edges after replacement = %#v, want only edge_1", graph.Edges)
+	wantEdgeID := workspace.NewAssetEdgeID(workspace.DeploymentID(created.ID), replacement.Graph.Edges[0].FromAssetID, replacement.Graph.Edges[0].ToAssetID, replacement.Graph.Edges[0].Type)
+	if len(graph.Edges) != 1 || graph.Edges[0].ID != wantEdgeID {
+		t.Fatalf("edges after replacement = %#v, want only %q", graph.Edges, wantEdgeID)
 	}
 }
 
@@ -157,6 +158,78 @@ func TestRepositorySaveValidatedAllowsSameLogicalAssetsAcrossDeployments(t *test
 	}
 }
 
+func TestRepositorySaveValidatedRejectsMismatchedAssetGraph(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*deployment.Validation)
+	}{
+		{
+			name: "asset workspace",
+			mutate: func(validation *deployment.Validation) {
+				validation.Graph.Assets[0].WorkspaceID = "other"
+			},
+		},
+		{
+			name: "asset deployment",
+			mutate: func(validation *deployment.Validation) {
+				validation.Graph.Assets[0].DeploymentID = "other"
+			},
+		},
+		{
+			name: "asset snapshot",
+			mutate: func(validation *deployment.Validation) {
+				validation.Graph.Assets[0].SnapshotID = "asset_wrong"
+			},
+		},
+		{
+			name: "edge workspace",
+			mutate: func(validation *deployment.Validation) {
+				validation.Graph.Edges[0].WorkspaceID = "other"
+			},
+		},
+		{
+			name: "edge deployment",
+			mutate: func(validation *deployment.Validation) {
+				validation.Graph.Edges[0].DeploymentID = "other"
+			},
+		},
+		{
+			name: "edge id",
+			mutate: func(validation *deployment.Validation) {
+				validation.Graph.Edges[0].ID = "edge_wrong"
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			store, repo := openRepo(t, ctx)
+			if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+				t.Fatalf("ensure workspace: %v", err)
+			}
+			created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			validation := validationGraph(created.ID, "edge_1", "edge_2")
+			tt.mutate(&validation)
+			if _, err := repo.SaveValidated(ctx, created.ID, validation, artifact(created.ID, "test")); err == nil {
+				t.Fatal("expected mismatched graph error")
+			}
+			after, err := repo.ByID(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("get after rollback: %v", err)
+			}
+			if after.Status != deployment.StatusPending {
+				t.Fatalf("status = %q, want pending rollback", after.Status)
+			}
+			if _, err := repo.ArtifactByDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrNotFound) {
+				t.Fatalf("artifact error = %v, want ErrNotFound", err)
+			}
+		})
+	}
+}
+
 func openRepo(t *testing.T, ctx context.Context) (*platform.Store, *Repository) {
 	t.Helper()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
@@ -177,8 +250,8 @@ func validationGraph(deploymentID deployment.ID, edgeID1, edgeID2 string) deploy
 		Graph: workspace.AssetGraph{
 			Assets: []workspace.Asset{assetA, assetB},
 			Edges: []workspace.AssetEdge{
-				{ID: workspace.AssetEdgeID(edgeID1), WorkspaceID: workspaceID, DeploymentID: workspace.DeploymentID(deploymentID), FromAssetID: assetA.ID, ToAssetID: assetB.ID, Type: workspace.AssetEdgeUsesSemanticModel},
-				{ID: workspace.AssetEdgeID(edgeID2), WorkspaceID: workspaceID, DeploymentID: workspace.DeploymentID(deploymentID), FromAssetID: assetB.ID, ToAssetID: assetA.ID, Type: workspace.AssetEdgeContains},
+				workspace.NewAssetEdge(workspaceID, workspace.DeploymentID(deploymentID), assetA.ID, assetB.ID, workspace.AssetEdgeUsesSemanticModel),
+				workspace.NewAssetEdge(workspaceID, workspace.DeploymentID(deploymentID), assetB.ID, assetA.ID, workspace.AssetEdgeContains),
 			},
 		},
 	}

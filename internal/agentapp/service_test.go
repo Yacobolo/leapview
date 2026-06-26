@@ -126,6 +126,29 @@ func TestAssetToolsUseLogicalIDsAndTypedPayloads(t *testing.T) {
 	}
 }
 
+func TestAssetToolsUseSharedRuntimeFallbackCatalog(t *testing.T) {
+	graph := testAgentAssetGraph(t)
+	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"}).
+		WithAssetCatalog(workspace.NewAssetCatalogService(nil).WithRuntimeProvider(fakeRuntimeAssetGraphProvider{graph: graph, ok: true}))
+	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
+
+	var assets assetListPayload
+	if err := json.Unmarshal([]byte(runTool(t, tools, "list_assets", `{"type":"visual","limit":10}`)), &assets); err != nil {
+		t.Fatalf("decode list_assets: %v", err)
+	}
+	if len(assets.Assets) != 1 || assets.Assets[0].ID != "visual:executive-sales.orders" {
+		t.Fatalf("list_assets payload = %#v", assets)
+	}
+
+	var lineage assetLineageReply
+	if err := json.Unmarshal([]byte(runTool(t, tools, "asset_lineage", `{"asset_id":"semantic_model:test"}`)), &lineage); err != nil {
+		t.Fatalf("decode asset_lineage: %v", err)
+	}
+	if len(lineage.Downstream) != 1 || lineage.Downstream[0] != "visual:executive-sales.orders" {
+		t.Fatalf("asset_lineage = %#v", lineage)
+	}
+}
+
 func TestDescribeDashboardReturnsCompactManifest(t *testing.T) {
 	service := NewService(largeDashboardMetrics{}, nil, Config{APIKey: "key", Model: "model"})
 	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
@@ -180,6 +203,15 @@ type fakeAssetCatalog struct {
 
 func (c fakeAssetCatalog) ActiveAssetCatalog(context.Context, workspace.WorkspaceID) (workspace.AssetCatalog, bool, error) {
 	return c.catalog, true, nil
+}
+
+type fakeRuntimeAssetGraphProvider struct {
+	graph workspace.AssetGraph
+	ok    bool
+}
+
+func (p fakeRuntimeAssetGraphProvider) WorkspaceAssets(string, string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	return p.graph.Assets, p.graph.Edges, p.ok
 }
 
 func testAgentAssetGraph(t *testing.T) workspace.AssetGraph {

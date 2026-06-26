@@ -39,7 +39,7 @@ schemas: {
 			"payload": {schema: {type: "object", additional_properties: {any: true}}}
 			"href": {schema: {type: "string"}}
 		}
-		required: ["id", "workspaceId", "deploymentId", "type", "key", "title", "description", "payloadSchema"]
+		required: ["id", "snapshotId", "workspaceId", "deploymentId", "type", "key", "title", "description", "payloadSchema", "payload"]
 	}
 	"AssetListResponse": {
 		type: "object"

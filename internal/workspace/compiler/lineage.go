@@ -838,45 +838,45 @@ func fieldRefStrings(refs []reportdef.FieldRef) []string {
 	return out
 }
 
-func tableVisualPayload(table reportdef.TableVisual) map[string]any {
-	return map[string]any{
-		"Title":       table.Title,
-		"Description": table.Description,
-		"Kind":        table.KindOrDefault(),
-		"Query": map[string]any{
-			"Table":    table.Query.Table,
-			"Measures": fieldRefStrings(table.Query.Measures),
+func tableVisualPayload(table reportdef.TableVisual) tablePayloadV1 {
+	return tablePayloadV1{
+		Title:       table.Title,
+		Description: table.Description,
+		Kind:        table.KindOrDefault(),
+		Query: tableQueryPayloadV1{
+			Table:    table.Query.Table,
+			Measures: fieldRefStrings(table.Query.Measures),
 		},
-		"Rows":        table.Rows,
-		"ColumnDims":  table.ColumnDims,
-		"DataColumns": table.DataColumns,
-		"Style":       table.Style,
-		"DefaultSort": table.DefaultSort,
+		Rows:        table.Rows,
+		ColumnDims:  table.ColumnDims,
+		DataColumns: table.DataColumns,
+		Style:       table.Style,
+		DefaultSort: table.DefaultSort,
 	}
 }
 
-func pagePayload(page dashboard.Page) map[string]any {
-	return map[string]any{
-		"ID":          page.ID,
-		"Title":       page.Title,
-		"Description": page.Description,
-		"Canvas":      page.Canvas,
-		"Grid":        page.Grid,
+func pagePayload(page dashboard.Page) pagePayloadV1 {
+	return pagePayloadV1{
+		ID:          page.ID,
+		Title:       page.Title,
+		Description: page.Description,
+		Canvas:      page.Canvas,
+		Grid:        page.Grid,
 	}
 }
 
-func pageItemPayload(item dashboard.PageVisual) map[string]any {
-	return map[string]any{
-		"ID":          item.ID,
-		"Kind":        item.Kind,
-		"Visual":      item.Visual,
-		"Table":       item.Table,
-		"Filter":      item.Filter,
-		"Description": item.Description,
-		"Placement":   item.Placement,
-		"Title":       item.Title,
-		"Subtitle":    item.Subtitle,
-		"Badges":      item.Badges,
+func pageItemPayload(item dashboard.PageVisual) pageItemPayloadV1 {
+	return pageItemPayloadV1{
+		ID:          item.ID,
+		Kind:        item.Kind,
+		Visual:      item.Visual,
+		Table:       item.Table,
+		Filter:      item.Filter,
+		Description: item.Description,
+		Placement:   item.Placement,
+		Title:       item.Title,
+		Subtitle:    item.Subtitle,
+		Badges:      item.Badges,
 	}
 }
 

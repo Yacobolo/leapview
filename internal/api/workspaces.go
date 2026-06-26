@@ -11,7 +11,7 @@ type WorkspaceResponse struct {
 
 type AssetResponse struct {
 	ID            string         `json:"id"`
-	SnapshotID    string         `json:"snapshotId,omitempty"`
+	SnapshotID    string         `json:"snapshotId"`
 	WorkspaceID   string         `json:"workspaceId"`
 	DeploymentID  string         `json:"deploymentId"`
 	Type          string         `json:"type"`
@@ -20,7 +20,7 @@ type AssetResponse struct {
 	Title         string         `json:"title"`
 	Description   string         `json:"description"`
 	PayloadSchema string         `json:"payloadSchema"`
-	Payload       map[string]any `json:"payload,omitempty"`
+	Payload       map[string]any `json:"payload"`
 	Href          string         `json:"href,omitempty"`
 }
 

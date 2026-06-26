@@ -5,8 +5,11 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	apigen "github.com/Yacobolo/libredash/internal/api/gen"
 )
 
 func TestAPIPackageStaysTransportContractOnly(t *testing.T) {
@@ -26,6 +29,22 @@ func TestAgentAppDoesNotDependOnHeadlessAPIContract(t *testing.T) {
 	assertPackageDoesNotImport(t, filepath.Join("..", "agentapp"), map[string]bool{
 		"github.com/Yacobolo/libredash/internal/api": true,
 	})
+}
+
+func TestGeneratedAssetResponseRequiresSnapshotAndPayload(t *testing.T) {
+	typ := reflect.TypeOf(apigen.AssetResponse{})
+	for _, name := range []string{"SnapshotId", "Payload"} {
+		field, ok := typ.FieldByName(name)
+		if !ok {
+			t.Fatalf("AssetResponse.%s missing", name)
+		}
+		if field.Type.Kind() == reflect.Pointer {
+			t.Fatalf("AssetResponse.%s is optional pointer type %s", name, field.Type)
+		}
+		if strings.Contains(string(field.Tag), "omitempty") {
+			t.Fatalf("AssetResponse.%s JSON tag is optional: %s", name, field.Tag)
+		}
+	}
 }
 
 func assertPackageDoesNotImport(t *testing.T, dir string, forbidden map[string]bool) {
