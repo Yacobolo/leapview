@@ -305,24 +305,21 @@ semantic_models:
 }
 
 func TestCompilerPayloadBuildersDoNotReturnAnonymousMaps(t *testing.T) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "lineage.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse lineage.go: %v", err)
-	}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || !strings.HasSuffix(fn.Name.Name, "Payload") || fn.Type.Results == nil {
-			continue
-		}
-		for _, result := range fn.Type.Results.List {
-			mapType, ok := result.Type.(*ast.MapType)
-			if !ok {
+	for _, file := range parseCompilerPackageFiles(t) {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || !strings.HasSuffix(fn.Name.Name, "Payload") || fn.Type.Results == nil {
 				continue
 			}
-			if key, ok := mapType.Key.(*ast.Ident); ok && key.Name == "string" {
-				if value, ok := mapType.Value.(*ast.InterfaceType); ok && value.Methods.NumFields() == 0 {
-					t.Fatalf("%s returns anonymous map[string]any; use a named v1 payload contract", fn.Name.Name)
+			for _, result := range fn.Type.Results.List {
+				mapType, ok := result.Type.(*ast.MapType)
+				if !ok {
+					continue
+				}
+				if key, ok := mapType.Key.(*ast.Ident); ok && key.Name == "string" {
+					if value, ok := mapType.Value.(*ast.InterfaceType); ok && value.Methods.NumFields() == 0 {
+						t.Fatalf("%s returns anonymous map[string]any; use a named v1 payload contract", fn.Name.Name)
+					}
 				}
 			}
 		}
@@ -330,28 +327,25 @@ func TestCompilerPayloadBuildersDoNotReturnAnonymousMaps(t *testing.T) {
 }
 
 func TestCompilerPayloadContractsDoNotEmbedDomainTypes(t *testing.T) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "lineage.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse lineage.go: %v", err)
-	}
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok || !strings.HasSuffix(typeSpec.Name.Name, "PayloadV1") {
-				continue
-			}
-			structType, ok := typeSpec.Type.(*ast.StructType)
+	for _, file := range parseCompilerPackageFiles(t) {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
 			if !ok {
 				continue
 			}
-			for _, field := range structType.Fields.List {
-				if selectorTypeName(field.Type) != "" {
-					t.Fatalf("%s embeds domain type %s; project into a compiler-owned v1 payload struct", typeSpec.Name.Name, selectorTypeName(field.Type))
+			for _, spec := range gen.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if !ok || !strings.HasSuffix(typeSpec.Name.Name, "PayloadV1") {
+					continue
+				}
+				structType, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range structType.Fields.List {
+					if selectorTypeName(field.Type) != "" {
+						t.Fatalf("%s embeds domain type %s; project into a compiler-owned v1 payload struct", typeSpec.Name.Name, selectorTypeName(field.Type))
+					}
 				}
 			}
 		}
@@ -417,6 +411,27 @@ func selectorTypeName(expr ast.Expr) string {
 	default:
 		return ""
 	}
+}
+
+func parseCompilerPackageFiles(t *testing.T) []*ast.File {
+	t.Helper()
+	fset := token.NewFileSet()
+	packages, err := parser.ParseDir(fset, ".", func(info os.FileInfo) bool {
+		name := info.Name()
+		return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("parse compiler package: %v", err)
+	}
+	pkg := packages["compiler"]
+	if pkg == nil {
+		t.Fatal("compiler package not found")
+	}
+	files := make([]*ast.File, 0, len(pkg.Files))
+	for _, file := range pkg.Files {
+		files = append(files, file)
+	}
+	return files
 }
 
 func writeCompilerWorkspace(t *testing.T, dashboardYAML string) string {
