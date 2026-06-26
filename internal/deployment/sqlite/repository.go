@@ -12,6 +12,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/deployment"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 type Repository struct {
@@ -75,44 +76,49 @@ func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.
 	defer tx.Rollback()
 	q := r.q.WithTx(tx)
 	artifact.DeploymentID = deploymentID
-	if artifact.WorkspaceID == "" {
-		current, err := q.GetDeployment(ctx, string(deploymentID))
-		if err != nil {
-			return deployment.Deployment{}, mapNotFound(err)
-		}
-		artifact.WorkspaceID = deployment.WorkspaceID(current.WorkspaceID)
+	current, err := q.GetDeployment(ctx, string(deploymentID))
+	if err != nil {
+		return deployment.Deployment{}, mapNotFound(err)
+	}
+	artifact.WorkspaceID = deployment.WorkspaceID(current.WorkspaceID)
+	if err := workspace.ValidateAssetGraphForDeployment(validation.Graph, workspace.WorkspaceID(current.WorkspaceID), workspace.DeploymentID(deploymentID)); err != nil {
+		return deployment.Deployment{}, err
 	}
 	if err := q.InsertDeploymentArtifact(ctx, mapArtifactParams(artifact)); err != nil {
+		return deployment.Deployment{}, err
+	}
+	if err := q.ClearAssetEdgesForDeployment(ctx, string(deploymentID)); err != nil {
 		return deployment.Deployment{}, err
 	}
 	if err := q.ClearAssetsForDeployment(ctx, string(deploymentID)); err != nil {
 		return deployment.Deployment{}, err
 	}
-	for _, asset := range validation.Assets {
+	for _, asset := range validation.Graph.Assets {
 		if err := q.InsertAsset(ctx, platformdb.InsertAssetParams{
-			ID:             asset.ID,
-			WorkspaceID:    string(asset.WorkspaceID),
-			DeploymentID:   string(asset.DeploymentID),
-			AssetType:      asset.Type,
-			AssetKey:       asset.Key,
-			ParentAssetID:  sql.NullString{String: asset.ParentID, Valid: asset.ParentID != ""},
-			Title:          asset.Title,
-			Description:    asset.Description,
-			ContentJson:    asset.ContentJSON,
-			ContentHash:    asset.ContentHash,
-			ContentVersion: int64(asset.ContentVersion),
+			SnapshotID:           string(asset.SnapshotID),
+			LogicalAssetID:       string(asset.ID),
+			WorkspaceID:          string(asset.WorkspaceID),
+			DeploymentID:         string(asset.DeploymentID),
+			AssetType:            string(asset.Type),
+			AssetKey:             asset.Key,
+			ParentLogicalAssetID: string(asset.ParentID),
+			Title:                asset.Title,
+			Description:          asset.Description,
+			PayloadSchema:        asset.PayloadSchema,
+			PayloadJson:          asset.PayloadJSON,
+			ContentHash:          asset.ContentHash,
 		}); err != nil {
 			return deployment.Deployment{}, err
 		}
 	}
-	for _, edge := range validation.Edges {
+	for _, edge := range validation.Graph.Edges {
 		if err := q.InsertAssetEdge(ctx, platformdb.InsertAssetEdgeParams{
-			ID:           edge.ID,
-			WorkspaceID:  string(edge.WorkspaceID),
-			DeploymentID: string(edge.DeploymentID),
-			FromAssetID:  edge.FromAssetID,
-			ToAssetID:    edge.ToAssetID,
-			EdgeType:     edge.Type,
+			ID:                 string(edge.ID),
+			WorkspaceID:        string(edge.WorkspaceID),
+			DeploymentID:       string(edge.DeploymentID),
+			FromLogicalAssetID: string(edge.FromAssetID),
+			ToLogicalAssetID:   string(edge.ToAssetID),
+			EdgeType:           string(edge.Type),
 		}); err != nil {
 			return deployment.Deployment{}, err
 		}

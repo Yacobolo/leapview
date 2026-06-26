@@ -162,6 +162,15 @@ func (q *Queries) ArchiveAgentConversation(ctx context.Context, arg ArchiveAgent
 	return i, err
 }
 
+const clearAssetEdgesForDeployment = `-- name: ClearAssetEdgesForDeployment :exec
+DELETE FROM asset_edges WHERE deployment_id = ?
+`
+
+func (q *Queries) ClearAssetEdgesForDeployment(ctx context.Context, deploymentID string) error {
+	_, err := q.db.ExecContext(ctx, clearAssetEdgesForDeployment, deploymentID)
+	return err
+}
+
 const clearAssetsForDeployment = `-- name: ClearAssetsForDeployment :exec
 DELETE FROM assets WHERE deployment_id = ?
 `
@@ -824,53 +833,55 @@ func (q *Queries) GetWorkspace(ctx context.Context, id string) (Workspace, error
 }
 
 const insertAsset = `-- name: InsertAsset :exec
-INSERT INTO assets (id, workspace_id, deployment_id, asset_type, asset_key, parent_asset_id, title, description, content_json, content_hash, content_version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO assets (snapshot_id, logical_asset_id, workspace_id, deployment_id, asset_type, asset_key, parent_logical_asset_id, title, description, payload_schema, payload_json, content_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertAssetParams struct {
-	ID             string         `json:"id"`
-	WorkspaceID    string         `json:"workspace_id"`
-	DeploymentID   string         `json:"deployment_id"`
-	AssetType      string         `json:"asset_type"`
-	AssetKey       string         `json:"asset_key"`
-	ParentAssetID  sql.NullString `json:"parent_asset_id"`
-	Title          string         `json:"title"`
-	Description    string         `json:"description"`
-	ContentJson    string         `json:"content_json"`
-	ContentHash    string         `json:"content_hash"`
-	ContentVersion int64          `json:"content_version"`
+	SnapshotID           string `json:"snapshot_id"`
+	LogicalAssetID       string `json:"logical_asset_id"`
+	WorkspaceID          string `json:"workspace_id"`
+	DeploymentID         string `json:"deployment_id"`
+	AssetType            string `json:"asset_type"`
+	AssetKey             string `json:"asset_key"`
+	ParentLogicalAssetID string `json:"parent_logical_asset_id"`
+	Title                string `json:"title"`
+	Description          string `json:"description"`
+	PayloadSchema        string `json:"payload_schema"`
+	PayloadJson          string `json:"payload_json"`
+	ContentHash          string `json:"content_hash"`
 }
 
 func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error {
 	_, err := q.db.ExecContext(ctx, insertAsset,
-		arg.ID,
+		arg.SnapshotID,
+		arg.LogicalAssetID,
 		arg.WorkspaceID,
 		arg.DeploymentID,
 		arg.AssetType,
 		arg.AssetKey,
-		arg.ParentAssetID,
+		arg.ParentLogicalAssetID,
 		arg.Title,
 		arg.Description,
-		arg.ContentJson,
+		arg.PayloadSchema,
+		arg.PayloadJson,
 		arg.ContentHash,
-		arg.ContentVersion,
 	)
 	return err
 }
 
 const insertAssetEdge = `-- name: InsertAssetEdge :exec
-INSERT INTO asset_edges (id, workspace_id, deployment_id, from_asset_id, to_asset_id, edge_type)
+INSERT INTO asset_edges (id, workspace_id, deployment_id, from_logical_asset_id, to_logical_asset_id, edge_type)
 VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertAssetEdgeParams struct {
-	ID           string `json:"id"`
-	WorkspaceID  string `json:"workspace_id"`
-	DeploymentID string `json:"deployment_id"`
-	FromAssetID  string `json:"from_asset_id"`
-	ToAssetID    string `json:"to_asset_id"`
-	EdgeType     string `json:"edge_type"`
+	ID                 string `json:"id"`
+	WorkspaceID        string `json:"workspace_id"`
+	DeploymentID       string `json:"deployment_id"`
+	FromLogicalAssetID string `json:"from_logical_asset_id"`
+	ToLogicalAssetID   string `json:"to_logical_asset_id"`
+	EdgeType           string `json:"edge_type"`
 }
 
 func (q *Queries) InsertAssetEdge(ctx context.Context, arg InsertAssetEdgeParams) error {
@@ -878,8 +889,8 @@ func (q *Queries) InsertAssetEdge(ctx context.Context, arg InsertAssetEdgeParams
 		arg.ID,
 		arg.WorkspaceID,
 		arg.DeploymentID,
-		arg.FromAssetID,
-		arg.ToAssetID,
+		arg.FromLogicalAssetID,
+		arg.ToLogicalAssetID,
 		arg.EdgeType,
 	)
 	return err
@@ -1243,7 +1254,7 @@ func (q *Queries) ListAgentRuns(ctx context.Context, arg ListAgentRunsParams) ([
 }
 
 const listAssetEdgesByDeployment = `-- name: ListAssetEdgesByDeployment :many
-SELECT id, workspace_id, deployment_id, from_asset_id, to_asset_id, edge_type, created_at FROM asset_edges WHERE deployment_id = ? ORDER BY edge_type, from_asset_id, to_asset_id
+SELECT id, workspace_id, deployment_id, from_logical_asset_id, to_logical_asset_id, edge_type, created_at FROM asset_edges WHERE deployment_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id
 `
 
 func (q *Queries) ListAssetEdgesByDeployment(ctx context.Context, deploymentID string) ([]AssetEdge, error) {
@@ -1259,8 +1270,8 @@ func (q *Queries) ListAssetEdgesByDeployment(ctx context.Context, deploymentID s
 			&i.ID,
 			&i.WorkspaceID,
 			&i.DeploymentID,
-			&i.FromAssetID,
-			&i.ToAssetID,
+			&i.FromLogicalAssetID,
+			&i.ToLogicalAssetID,
 			&i.EdgeType,
 			&i.CreatedAt,
 		); err != nil {
@@ -1278,7 +1289,7 @@ func (q *Queries) ListAssetEdgesByDeployment(ctx context.Context, deploymentID s
 }
 
 const listAssetsByDeployment = `-- name: ListAssetsByDeployment :many
-SELECT id, workspace_id, deployment_id, asset_type, asset_key, parent_asset_id, title, description, content_json, content_hash, content_version, created_at FROM assets WHERE deployment_id = ? ORDER BY asset_type, asset_key
+SELECT snapshot_id, logical_asset_id, workspace_id, deployment_id, asset_type, asset_key, parent_logical_asset_id, title, description, payload_schema, payload_json, content_hash, created_at FROM assets WHERE deployment_id = ? ORDER BY asset_type, asset_key
 `
 
 func (q *Queries) ListAssetsByDeployment(ctx context.Context, deploymentID string) ([]Asset, error) {
@@ -1291,17 +1302,18 @@ func (q *Queries) ListAssetsByDeployment(ctx context.Context, deploymentID strin
 	for rows.Next() {
 		var i Asset
 		if err := rows.Scan(
-			&i.ID,
+			&i.SnapshotID,
+			&i.LogicalAssetID,
 			&i.WorkspaceID,
 			&i.DeploymentID,
 			&i.AssetType,
 			&i.AssetKey,
-			&i.ParentAssetID,
+			&i.ParentLogicalAssetID,
 			&i.Title,
 			&i.Description,
-			&i.ContentJson,
+			&i.PayloadSchema,
+			&i.PayloadJson,
 			&i.ContentHash,
-			&i.ContentVersion,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

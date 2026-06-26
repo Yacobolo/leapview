@@ -1,6 +1,10 @@
 package compiler
 
 import (
+	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,6 +180,260 @@ func TestCompileLineageAssetTypes(t *testing.T) {
 	}
 }
 
+func TestCompileAssetGraphIdentityAndPayloadInvariants(t *testing.T) {
+	catalogPath := writeCompilerWorkspace(t, validCompilerDashboardYAML())
+	first, err := Compile(catalogPath, Options{WorkspaceID: "libredash", DeploymentID: "dep_a"})
+	if err != nil {
+		t.Fatalf("Compile(dep_a) error = %v", err)
+	}
+	second, err := Compile(catalogPath, Options{WorkspaceID: "libredash", DeploymentID: "dep_b"})
+	if err != nil {
+		t.Fatalf("Compile(dep_b) error = %v", err)
+	}
+
+	firstAssets := assetsByID(first.Workspace.Graph)
+	secondAssets := assetsByID(second.Workspace.Graph)
+	if len(firstAssets) == 0 || len(firstAssets) != len(secondAssets) {
+		t.Fatalf("asset counts = %d and %d", len(firstAssets), len(secondAssets))
+	}
+	for id, firstAsset := range firstAssets {
+		secondAsset, ok := secondAssets[id]
+		if !ok {
+			t.Fatalf("asset %q missing from second graph", id)
+		}
+		if !strings.Contains(id, ":") || strings.HasPrefix(id, "asset_") {
+			t.Fatalf("asset id %q is not a logical id", id)
+		}
+		if firstAsset.ContentHash != secondAsset.ContentHash {
+			t.Fatalf("asset %q content hash changed across deployments", id)
+		}
+		if firstAsset.SnapshotID == secondAsset.SnapshotID {
+			t.Fatalf("asset %q snapshot id did not change across deployments", id)
+		}
+		if firstAsset.ParentID != "" && !strings.Contains(string(firstAsset.ParentID), ":") {
+			t.Fatalf("asset %q parent id %q is not logical", id, firstAsset.ParentID)
+		}
+		if firstAsset.PayloadSchema == "" {
+			t.Fatalf("asset %q has empty payload schema", id)
+		}
+		if want := workspace.PayloadSchemaForAssetType(firstAsset.Type); want == "" || firstAsset.PayloadSchema != want {
+			t.Fatalf("asset %q payload schema = %q, want %q", id, firstAsset.PayloadSchema, want)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(firstAsset.PayloadJSON), &payload); err != nil {
+			t.Fatalf("asset %q payload is invalid JSON: %v", id, err)
+		}
+		if strings.Contains(strings.ToLower(firstAsset.PayloadJSON), `"auth"`) {
+			t.Fatalf("asset %q payload leaked auth: %s", id, firstAsset.PayloadJSON)
+		}
+	}
+	for _, edge := range first.Workspace.Graph.Edges {
+		if !strings.Contains(string(edge.FromAssetID), ":") || !strings.Contains(string(edge.ToAssetID), ":") {
+			t.Fatalf("edge endpoints are not logical ids: %#v", edge)
+		}
+	}
+
+	changedPath := writeCompilerWorkspace(t, strings.Replace(validCompilerDashboardYAML(), "title: Sales", "title: Sales Updated", 1))
+	changed, err := Compile(changedPath, Options{WorkspaceID: "libredash", DeploymentID: "dep_a"})
+	if err != nil {
+		t.Fatalf("Compile(changed) error = %v", err)
+	}
+	if assetsByID(changed.Workspace.Graph)["dashboard:sales"].ContentHash == firstAssets["dashboard:sales"].ContentHash {
+		t.Fatal("dashboard content hash did not change after authored title changed")
+	}
+}
+
+func TestCompileConnectionPayloadRedactsAuth(t *testing.T) {
+	t.Setenv("LIBREDASH_TEST_S3_KEY", "env-key")
+	t.Setenv("LIBREDASH_TEST_S3_SECRET", "env-secret")
+	dir := t.TempDir()
+	writeCompilerFixture(t, filepath.Join(dir, "catalog.yaml"), validCompilerCatalogYAML())
+	writeCompilerFixture(t, filepath.Join(dir, "model.yaml"), `
+name: olist
+title: Olist
+connections:
+  prod_lake:
+    kind: s3
+    scope: s3://analytics-prod/
+    auth:
+      access_key_id: ${LIBREDASH_TEST_S3_KEY}
+      secret_access_key: ${LIBREDASH_TEST_S3_SECRET}
+sources:
+  orders:
+    connection: prod_lake
+    path: orders.parquet
+models:
+  orders:
+    source: orders
+    primary_key: order_id
+    fields:
+      revenue: {label: Revenue}
+semantic_models:
+  olist:
+    base_table: orders
+    tables:
+      - orders
+    measures:
+      defaults: {table: orders, grain: order_id}
+      revenue: {expr: SUM(orders.revenue), format: currency}
+`)
+	writeCompilerFixture(t, filepath.Join(dir, "dashboard.yaml"), validCompilerDashboardYAML())
+
+	compiled, err := Compile(filepath.Join(dir, "catalog.yaml"), Options{WorkspaceID: "libredash", DeploymentID: "dep_auth"})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	asset := assetsByID(compiled.Workspace.Graph)["connection:olist.prod_lake"]
+	if asset.ID == "" {
+		t.Fatal("connection asset missing")
+	}
+	if asset.PayloadSchema != "connection.v1" {
+		t.Fatalf("connection payload schema = %q, want connection.v1", asset.PayloadSchema)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(asset.PayloadJSON), &payload); err != nil {
+		t.Fatalf("connection payload JSON invalid: %v", err)
+	}
+	if payload["credentials_configured"] != true {
+		t.Fatalf("credentials_configured = %#v, want true in %s", payload["credentials_configured"], asset.PayloadJSON)
+	}
+	for _, leaked := range []string{`"auth"`, "access_key_id", "secret_access_key", "env-key", "env-secret"} {
+		if strings.Contains(strings.ToLower(asset.PayloadJSON), strings.ToLower(leaked)) {
+			t.Fatalf("connection payload leaked %q: %s", leaked, asset.PayloadJSON)
+		}
+	}
+}
+
+func TestCompilerPayloadBuildersDoNotReturnAnonymousMaps(t *testing.T) {
+	for _, file := range parseCompilerPackageFiles(t) {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || !strings.HasSuffix(fn.Name.Name, "Payload") || fn.Type.Results == nil {
+				continue
+			}
+			for _, result := range fn.Type.Results.List {
+				mapType, ok := result.Type.(*ast.MapType)
+				if !ok {
+					continue
+				}
+				if key, ok := mapType.Key.(*ast.Ident); ok && key.Name == "string" {
+					if value, ok := mapType.Value.(*ast.InterfaceType); ok && value.Methods.NumFields() == 0 {
+						t.Fatalf("%s returns anonymous map[string]any; use a named v1 payload contract", fn.Name.Name)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestCompilerPayloadContractsDoNotEmbedDomainTypes(t *testing.T) {
+	for _, file := range parseCompilerPackageFiles(t) {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if !ok || !strings.HasSuffix(typeSpec.Name.Name, "PayloadV1") {
+					continue
+				}
+				structType, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range structType.Fields.List {
+					if selectorTypeName(field.Type) != "" {
+						t.Fatalf("%s embeds domain type %s; project into a compiler-owned v1 payload struct", typeSpec.Name.Name, selectorTypeName(field.Type))
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestCompileTypedPayloadsKeepFieldNames(t *testing.T) {
+	compiled := compileLineageWorkspace(t)
+	assets := assetsByID(compiled.Workspace.Graph)
+	checks := map[string][]string{
+		"table:sales.order_rows":                {"Title", "Description", "Kind", "Query", "Rows", "ColumnDims", "DataColumns", "Style", "DefaultSort"},
+		"page:sales.overview":                   {"ID", "Title", "Description", "Canvas", "Grid"},
+		"page_item:sales.overview.orders_table": {"ID", "Kind", "Visual", "Table", "Filter", "Description", "Placement", "Title", "Subtitle", "Badges"},
+		"filter:sales.status":                   {"Type", "Label", "Description", "Dimension", "Default", "Custom", "Presets", "Operator", "Values", "DefaultOperator", "Operators", "Options", "URLParam", "FromURLParam", "ToURLParam", "OperatorURLParam", "Targets"},
+		"visual:sales.revenue_by_status":        {"Title", "Description", "Kind", "Shape", "Renderer", "Type", "Query", "Options", "RendererOptions", "Encode"},
+	}
+	for id, fields := range checks {
+		asset := assets[id]
+		if asset.ID == "" {
+			t.Fatalf("asset %q missing", id)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(asset.PayloadJSON), &payload); err != nil {
+			t.Fatalf("asset %q payload JSON invalid: %v", id, err)
+		}
+		for _, field := range fields {
+			if _, ok := payload[field]; !ok {
+				t.Fatalf("asset %q payload missing field %q: %s", id, field, asset.PayloadJSON)
+			}
+		}
+	}
+	var visualPayload map[string]any
+	if err := json.Unmarshal([]byte(assets["visual:sales.revenue_by_status"].PayloadJSON), &visualPayload); err != nil {
+		t.Fatalf("visual payload JSON invalid: %v", err)
+	}
+	query, ok := visualPayload["Query"].(map[string]any)
+	if !ok {
+		t.Fatalf("visual payload Query = %#v, want object", visualPayload["Query"])
+	}
+	for _, field := range []string{"Table", "Dimensions", "Series", "Measures", "Time", "Sort", "Limit"} {
+		if _, ok := query[field]; !ok {
+			t.Fatalf("visual query payload missing field %q: %s", field, assets["visual:sales.revenue_by_status"].PayloadJSON)
+		}
+	}
+}
+
+func selectorTypeName(expr ast.Expr) string {
+	switch typ := expr.(type) {
+	case *ast.SelectorExpr:
+		if pkg, ok := typ.X.(*ast.Ident); ok {
+			return pkg.Name + "." + typ.Sel.Name
+		}
+		return typ.Sel.Name
+	case *ast.ArrayType:
+		return selectorTypeName(typ.Elt)
+	case *ast.StarExpr:
+		return selectorTypeName(typ.X)
+	case *ast.MapType:
+		if name := selectorTypeName(typ.Key); name != "" {
+			return name
+		}
+		return selectorTypeName(typ.Value)
+	default:
+		return ""
+	}
+}
+
+func parseCompilerPackageFiles(t *testing.T) []*ast.File {
+	t.Helper()
+	fset := token.NewFileSet()
+	packages, err := parser.ParseDir(fset, ".", func(info os.FileInfo) bool {
+		name := info.Name()
+		return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("parse compiler package: %v", err)
+	}
+	pkg := packages["compiler"]
+	if pkg == nil {
+		t.Fatal("compiler package not found")
+	}
+	files := make([]*ast.File, 0, len(pkg.Files))
+	for _, file := range pkg.Files {
+		files = append(files, file)
+	}
+	return files
+}
+
 func writeCompilerWorkspace(t *testing.T, dashboardYAML string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -183,6 +441,14 @@ func writeCompilerWorkspace(t *testing.T, dashboardYAML string) string {
 	writeCompilerFixture(t, filepath.Join(dir, "model.yaml"), validCompilerModelYAML())
 	writeCompilerFixture(t, filepath.Join(dir, "dashboard.yaml"), dashboardYAML)
 	return filepath.Join(dir, "catalog.yaml")
+}
+
+func assetsByID(graph workspace.AssetGraph) map[string]workspace.Asset {
+	out := make(map[string]workspace.Asset, len(graph.Assets))
+	for _, asset := range graph.Assets {
+		out[string(asset.ID)] = asset
+	}
+	return out
 }
 
 func validCompilerCatalogYAML() string {

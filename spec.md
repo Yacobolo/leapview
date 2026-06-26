@@ -99,6 +99,8 @@ Product contract:
 sources -> models -> semantic model -> dashboards
 ```
 
+LibreDash is assets-as-code. Authored YAML in Git is the source of truth. The compiler turns authored contracts into a stable asset graph. Deployments publish immutable graph snapshots. Runtime stores never become authoring sources.
+
 Metric views, datasets, cache tables, and generated serving tables are not product/schema concepts in the v1 contract. If they appear in code, they should be internal runtime implementation details, legacy rejection paths, or tests proving old vocabulary does not leak into user-facing surfaces.
 
 YAML contract ownership:
@@ -110,8 +112,9 @@ YAML contract ownership:
 
 Storage ownership:
 
-- SQLite is the control-plane store for application metadata such as workspaces, deployments, assets, roles, sessions, and agent conversations.
-- DuckDB is the analytical engine for imported/cache data, semantic query execution, dashboard data, and materializations.
+- SQLite is the control-plane store for workspaces, deployments, immutable asset graph snapshots, roles, sessions, agent conversations, and audit data.
+- SQLite asset tables are indexed read models of compiled code assets. They are not an authoring database for dashboards, models, sources, fields, measures, or visuals.
+- DuckDB is the analytical data plane for imported/cache data, semantic query execution, dashboard data, and materializations.
 
 Capability sub-boundaries should make the semantic-model-first core explicit:
 
@@ -131,21 +134,22 @@ dashboard/
 
 workspace/
   catalog/      catalog discovery and workspace identity
-  compiler/     cross-contract loading, normalization, and validation
+  compiler/     cross-contract loading, validation, normalization, and asset graph extraction
 ```
 
 `analytics` is the only owner of semantic query planning, semantic model validation, materialization, and DuckDB execution. `dashboard` may describe what data a page needs, but it should call analytics through typed semantic query ports instead of planning or executing semantic queries itself.
 
-## Workspace Compiler
+## Asset-Centric Compiler
 
-LibreDash is dashboards-as-code, so authored YAML contracts need a clear compilation boundary.
+LibreDash is dashboards-as-code and assets-as-code, so authored YAML contracts need one compilation boundary.
 
 The long-term target is:
 
 ```text
 workspace/catalog + analytics/model + dashboard/report
         -> workspace/compiler
-        -> normalized runtime workspace
+        -> normalized workspace + stable asset graph
+        -> immutable deployment snapshot
 ```
 
 The compiler owns cross-contract validation and normalization:
@@ -154,11 +158,21 @@ The compiler owns cross-contract validation and normalization:
 - Dashboard `semantic_model` references resolve to loaded semantic models.
 - Dashboard fields, measures, filters, tables, and visuals resolve against the semantic model.
 - Legacy product vocabulary such as metric views is rejected at the boundary.
-- The compiler produces a runtime workspace that dashboard, analytics, deployment, workspace UI, and agent tools can consume without re-parsing YAML.
+- The compiler produces a runtime workspace that dashboard, analytics, deployment, workspace UI, APIs, and agent tools can consume without re-parsing YAML.
+- The compiler produces the asset graph. Deployment, UI, API, agents, and storage adapters must not rediscover lineage by walking semantic or dashboard internals.
 
 Capability packages own their local contracts and validation. The compiler owns validation that spans multiple contracts. Deployment validation should call the compiler instead of importing semantic/dashboard internals directly.
 
-The compiler also owns workspace lineage in workspace terms. Deployment can persist a versioned asset graph produced by the compiler, the control-plane store can store it, and workspace UI/API can present it. Deployment should not build lineage by walking semantic/dashboard internals itself.
+Asset graph rules:
+
+- Every authored object that users can discover, govern, diff, or trace is an asset.
+- Each asset has a stable logical identity independent of deployment, such as `semantic_model:olist` or `visual:executive-sales.revenue`.
+- Each deployment stores immutable asset snapshots tied to the deployment and source bundle digest.
+- Asset snapshot IDs may be deployment-scoped. Logical asset IDs must be stable across deployments.
+- Asset payloads are explicit, versioned projections such as `semantic_model.v1`, `model_table.v1`, `measure.v1`, `dashboard.v1`, and `visual.v1`.
+- Asset payloads must not be raw `json.Marshal` output of arbitrary Go structs. Persisted payload shape changes through payload versions, not incidental Go field changes.
+- The full authored YAML remains in the deployment artifact. The asset graph stores the metadata needed for catalog views, search, lineage, diffs, policy, API responses, and agent context.
+- Read paths may load asset snapshots. They must not repair, migrate, or reinterpret stale graph shapes during ordinary HTTP requests.
 
 ## Source and Connector Boundaries
 
@@ -590,11 +604,11 @@ Deployment owns the lifecycle of published workspace artifacts:
 - Artifact identity and digest.
 - Deployment status transitions.
 - Upload, validation, activation, rollback, and failure marking.
+- Persistence of compiler-produced asset snapshots for each deployment.
 
 Deployment should not walk semantic/dashboard internals directly. It should depend on ports:
 
-- A workspace compiler/validator for contract validation.
-- An asset graph extractor for workspace lineage assets.
+- A workspace compiler for contract validation, normalization, and asset graph output.
 - An analytics runtime factory for preparing a runtime from a compiled artifact.
 - Capability repositories for deployment and artifact persistence.
 

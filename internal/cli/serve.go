@@ -107,11 +107,12 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if err := manager.Reload(ctx); err != nil {
 		return err
 	}
-	if err := app.ReconcileActiveLineageGraph(ctx, workspaceRepo, manager, opts.workspaceID); err != nil {
-		return err
-	}
 	defer manager.Close()
 	runtimeMetrics := app.NewRuntimeMetrics(manager, dataDir, opts.workspaceID)
+	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo)
+	if provider, ok := runtimeMetrics.(workspace.RuntimeAssetGraphProvider); ok {
+		assetCatalog.WithRuntimeProvider(provider)
+	}
 	auth := app.NewAuth(accessRepo, opts.workspaceID, app.AuthConfig{
 		DevBypass:       cfg.DevAuthBypass,
 		APITokenOnly:    cfg.APITokenOnlyAuth,
@@ -129,6 +130,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		Store:              store,
 		DeploymentRepo:     deploymentRepo,
 		WorkspaceRepo:      workspaceRepo,
+		AssetCatalog:       assetCatalog,
 		AccessRepo:         accessRepo,
 		Agent:              agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
 		Auth:               auth,
@@ -163,6 +165,7 @@ func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg 
 	}
 	accessRepo := accesssqlite.NewRepository(store.SQLDB())
 	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
+	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo).WithRuntimeProvider(metrics)
 	auth := app.NewAuth(accessRepo, workspaceID, app.AuthConfig{
 		DevBypass:    true,
 		CSRFKey:      cfg.CSRFKey,
@@ -171,6 +174,7 @@ func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg 
 	server := app.NewWithOptions(metrics, app.Options{
 		Store:              store,
 		WorkspaceRepo:      workspaceRepo,
+		AssetCatalog:       assetCatalog,
 		AccessRepo:         accessRepo,
 		Agent:              agentapp.NewService(metrics, agentRepo, config),
 		Auth:               auth,

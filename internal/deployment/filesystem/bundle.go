@@ -184,33 +184,6 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 		}
 		compiled.Workspace.Graph = graph
 	}
-	assets := make([]deployment.Asset, 0, len(compiled.Workspace.Graph.Assets))
-	for _, asset := range compiled.Workspace.Graph.Assets {
-		assets = append(assets, deployment.Asset{
-			ID:             string(asset.ID),
-			WorkspaceID:    deployment.WorkspaceID(asset.WorkspaceID),
-			DeploymentID:   deployment.ID(asset.DeploymentID),
-			Type:           string(asset.Type),
-			Key:            asset.Key,
-			ParentID:       string(asset.ParentID),
-			Title:          asset.Title,
-			Description:    asset.Description,
-			ContentJSON:    asset.ContentJSON,
-			ContentHash:    asset.ContentHash,
-			ContentVersion: asset.ContentVersion,
-		})
-	}
-	edges := make([]deployment.AssetEdge, 0, len(compiled.Workspace.Graph.Edges))
-	for _, edge := range compiled.Workspace.Graph.Edges {
-		edges = append(edges, deployment.AssetEdge{
-			ID:           string(edge.ID),
-			WorkspaceID:  deployment.WorkspaceID(edge.WorkspaceID),
-			DeploymentID: deployment.ID(edge.DeploymentID),
-			FromAssetID:  string(edge.FromAssetID),
-			ToAssetID:    string(edge.ToAssetID),
-			Type:         string(edge.Type),
-		})
-	}
 	manifestJSON, err := json.Marshal(manifest)
 	if err != nil {
 		os.RemoveAll(root)
@@ -220,8 +193,7 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 		Digest:       digest,
 		ManifestJSON: string(manifestJSON),
 		RootDir:      root,
-		Assets:       assets,
-		Edges:        edges,
+		Graph:        compiled.Workspace.Graph,
 	}, nil
 }
 

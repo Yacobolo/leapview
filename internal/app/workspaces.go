@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
-	"strings"
+	"sort"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/api"
@@ -16,10 +18,6 @@ import (
 	"github.com/gorilla/csrf"
 	"github.com/starfederation/datastar-go/datastar"
 )
-
-type workspaceAssetProvider interface {
-	WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool)
-}
 
 var errWorkspaceRBACNotConfigured = errors.New("Workspace RBAC store is not configured.")
 
@@ -393,7 +391,23 @@ func (s *Server) apiWorkspaceAssets(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	_ = writePagedJSON(w, r, apiAssetDTOs(workspace.FilterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))))
+	_ = writePagedJSON(w, r, apiAssetSummaryDTOs(workspace.FilterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))))
+}
+
+func (s *Server) apiWorkspaceAsset(w http.ResponseWriter, r *http.Request) {
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	assetID := firstNonEmpty(chi.URLParam(r, "assetId"), chi.URLParam(r, "asset"))
+	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
+	asset, ok := workspace.AssetByID(assets, assetID)
+	if !ok {
+		writeJSONError(w, fmt.Errorf("asset %q not found", assetID), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, apiAssetDTOs([]workspace.AssetView{asset})[0])
 }
 
 func (s *Server) apiWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request) {
@@ -404,6 +418,25 @@ func (s *Server) apiWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	_ = writePagedJSON(w, r, apiAssetEdgeDTOs(edges))
+}
+
+func (s *Server) apiWorkspaceAssetLineage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	assetID := firstNonEmpty(chi.URLParam(r, "assetId"), chi.URLParam(r, "asset"))
+	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
+	if _, ok := workspace.AssetByID(assets, assetID); !ok {
+		writeJSONError(w, fmt.Errorf("asset %q not found", assetID), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, api.AssetLineageResponse{
+		AssetID:    assetID,
+		Upstream:   assetLineageEndpointIDs(edges, assetID, true),
+		Downstream: assetLineageEndpointIDs(edges, assetID, false),
+	})
 }
 
 func (s *Server) apiWorkspaceRoles(w http.ResponseWriter, r *http.Request) {
@@ -518,248 +551,43 @@ func (s *Server) workspaceResponse(r *http.Request, workspaceID string) workspac
 }
 
 func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, error) {
-	if s.store == nil {
-		if assets, edges, ok := s.workspaceAssetsFromRuntime(workspaceID); ok {
-			return assets, edges, nil
-		}
-		return fallbackAssets(s.metrics.Catalog(), workspaceID), nil, nil
-	}
-	repo, err := s.workspaceRepository()
-	if err != nil {
+	catalog, ok, err := s.workspaceAssetCatalog(r.Context(), workspaceID)
+	if err != nil || !ok {
 		return nil, nil, err
 	}
-	graph, ok, err := repo.ActiveDeploymentGraph(r.Context(), workspace.WorkspaceID(workspaceID))
-	if err != nil {
-		return nil, nil, err
+	assets := make([]workspace.AssetView, 0, len(catalog.Assets))
+	for _, row := range catalog.Assets {
+		assets = append(assets, workspace.AssetViewFromCatalogRecord(row))
 	}
-	if !ok {
-		if assets, edges, ok := s.workspaceAssetsFromRuntime(workspaceID); ok {
-			return assets, edges, nil
-		}
-		return nil, nil, nil
-	}
-	if staleActiveLineageGraph(graph) {
-		if refreshed, ok := s.workspaceGraphFromRuntime(workspaceID, string(activeGraphDeploymentID(graph))); ok && !staleActiveLineageGraph(refreshed) {
-			if err := repo.ReplaceActiveDeploymentGraph(r.Context(), workspace.WorkspaceID(workspaceID), refreshed); err == nil {
-				graph = refreshed
-			}
-		}
-	}
-	assets := make([]workspace.AssetView, 0, len(graph.Assets))
-	for _, row := range graph.Assets {
-		assets = append(assets, workspace.AssetViewFromAsset(row))
-	}
-	edges := make([]workspace.AssetEdgeView, 0, len(graph.Edges))
-	for _, row := range graph.Edges {
-		edges = append(edges, workspace.AssetEdgeViewFromAssetEdge(row))
+	edges := make([]workspace.AssetEdgeView, 0, len(catalog.Edges))
+	for _, row := range catalog.Edges {
+		edges = append(edges, workspace.AssetEdgeViewFromCatalogRecord(row))
 	}
 	return assets, edges, nil
 }
 
-func activeGraphDeploymentID(graph workspace.AssetGraph) workspace.DeploymentID {
-	for _, asset := range graph.Assets {
-		if asset.DeploymentID != "" {
-			return asset.DeploymentID
-		}
+func (s *Server) workspaceAssetCatalog(ctx context.Context, workspaceID string) (workspace.AssetCatalog, bool, error) {
+	reader, err := s.workspaceAssetCatalogReader()
+	if err != nil || reader == nil {
+		return workspace.AssetCatalog{}, false, err
 	}
-	for _, edge := range graph.Edges {
-		if edge.DeploymentID != "" {
-			return edge.DeploymentID
-		}
-	}
-	return ""
+	return reader.ActiveAssetCatalog(ctx, workspace.WorkspaceID(workspaceID))
 }
 
-func staleActiveLineageGraph(graph workspace.AssetGraph) bool {
-	hasLegacyModel := false
-	hasSemanticTable := false
-	hasRelationship := false
-	hasPageItem := false
-	hasRelationshipDefinition := false
-	hasPageItemDefinition := false
-	assets := map[workspace.AssetID]workspace.Asset{}
-	for _, asset := range graph.Assets {
-		assets[asset.ID] = asset
-		if asset.ContentVersion < workspace.CurrentAssetContentVersion {
-			return true
-		}
-		if assetHasLegacyGeneratedDescription(asset) {
-			return true
-		}
-		if assetHasDocumentedFieldsWithoutSchema(asset) {
-			return true
-		}
-		switch asset.Type {
-		case "semantic_model", "dashboard":
-			hasLegacyModel = true
-		case "semantic_table":
-			hasSemanticTable = true
-		case "relationship":
-			hasRelationship = true
-		case "page_item":
-			hasPageItem = true
-		}
-		if asset.Type == "semantic_model" && assetContentHasItems(asset.ContentJSON, "Relationships", "relationships") {
-			hasRelationshipDefinition = true
-		}
-		if asset.Type == "dashboard" && dashboardContentHasPageItems(asset.ContentJSON) {
-			hasPageItemDefinition = true
-		}
+func (s *Server) workspaceAssetCatalogReader() (workspace.AssetCatalogReader, error) {
+	if s.assetCatalog != nil {
+		return s.assetCatalog, nil
 	}
-	if !hasLegacyModel {
-		return false
+	repo, err := s.workspaceRepository()
+	if err != nil {
+		return nil, err
 	}
-	if !hasSemanticTable {
-		return true
+	service := workspace.NewAssetCatalogService(repo)
+	if provider, ok := s.metrics.(workspace.RuntimeAssetGraphProvider); ok {
+		service.WithRuntimeProvider(provider)
 	}
-	if hasRelationshipDefinition && !hasRelationship {
-		return true
-	}
-	if hasPageItemDefinition && !hasPageItem {
-		return true
-	}
-	for _, edge := range graph.Edges {
-		from := assets[edge.FromAssetID]
-		if from.Type != "dashboard" {
-			continue
-		}
-		switch edge.Type {
-		case workspace.AssetEdgeUsesField, workspace.AssetEdgeUsesMeasure, workspace.AssetEdgeUsesModelTable:
-			return true
-		}
-	}
-	return false
-}
-
-func assetHasDocumentedFieldsWithoutSchema(asset workspace.Asset) bool {
-	if asset.Type != workspace.AssetTypeSource && asset.Type != workspace.AssetTypeModelTable {
-		return false
-	}
-	if assetContentHasItems(asset.ContentJSON, "Schema", "schema") {
-		return false
-	}
-	if asset.Type == workspace.AssetTypeModelTable {
-		return assetContentHasItems(asset.ContentJSON, "Dimensions", "dimensions", "Fields", "fields")
-	}
-	return assetContentHasItems(asset.ContentJSON, "Fields", "fields")
-}
-
-func assetHasLegacyGeneratedDescription(asset workspace.Asset) bool {
-	description := strings.TrimSpace(asset.Description)
-	if description == "" {
-		return false
-	}
-	switch asset.Type {
-	case workspace.AssetTypeConnection:
-		var content map[string]any
-		if err := json.Unmarshal([]byte(asset.ContentJSON), &content); err != nil {
-			return false
-		}
-		kind, _ := content["Kind"].(string)
-		if kind == "" {
-			kind, _ = content["kind"].(string)
-		}
-		return kind != "" && description == kind+" connection"
-	case workspace.AssetTypeSource:
-		var content map[string]any
-		if err := json.Unmarshal([]byte(asset.ContentJSON), &content); err != nil {
-			return false
-		}
-		format, _ := content["Format"].(string)
-		if format == "" {
-			format, _ = content["format"].(string)
-		}
-		path, _ := content["Path"].(string)
-		if path == "" {
-			path, _ = content["path"].(string)
-		}
-		object, _ := content["Object"].(string)
-		if object == "" {
-			object, _ = content["object"].(string)
-		}
-		if object != "" && description == "object: "+object {
-			return true
-		}
-		if format == "" || path == "" {
-			return false
-		}
-		return description == format+" file: "+path || description == format+" table: "+path
-	default:
-		return false
-	}
-}
-
-func assetContentHasItems(raw string, keys ...string) bool {
-	var content map[string]any
-	if err := json.Unmarshal([]byte(raw), &content); err != nil {
-		return false
-	}
-	for _, key := range keys {
-		switch value := content[key].(type) {
-		case []any:
-			if len(value) > 0 {
-				return true
-			}
-		case map[string]any:
-			if len(value) > 0 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func dashboardContentHasPageItems(raw string) bool {
-	var content map[string]any
-	if err := json.Unmarshal([]byte(raw), &content); err != nil {
-		return false
-	}
-	for _, key := range []string{"Pages", "pages"} {
-		pages, ok := content[key].([]any)
-		if !ok {
-			continue
-		}
-		for _, item := range pages {
-			page, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			for _, key := range []string{"Visuals", "visuals", "Items", "items"} {
-				if items, ok := page[key].([]any); ok && len(items) > 0 {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func (s *Server) workspaceGraphFromRuntime(workspaceID, deploymentID string) (workspace.AssetGraph, bool) {
-	provider, ok := s.metrics.(workspaceAssetProvider)
-	if !ok || deploymentID == "" {
-		return workspace.AssetGraph{}, false
-	}
-	assets, edges, ok := provider.WorkspaceAssets(workspaceID, deploymentID)
-	if !ok {
-		return workspace.AssetGraph{}, false
-	}
-	return workspace.AssetGraph{Assets: assets, Edges: edges}, true
-}
-
-func (s *Server) workspaceAssetsFromRuntime(workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
-	graph, ok := s.workspaceGraphFromRuntime(workspaceID, "local")
-	if !ok {
-		return nil, nil, false
-	}
-	assets := make([]workspace.AssetView, 0, len(graph.Assets))
-	for _, row := range graph.Assets {
-		assets = append(assets, workspace.AssetViewFromAsset(row))
-	}
-	edges := make([]workspace.AssetEdgeView, 0, len(graph.Edges))
-	for _, row := range graph.Edges {
-		edges = append(edges, workspace.AssetEdgeViewFromAssetEdge(row))
-	}
-	return assets, edges, true
+	s.assetCatalog = service
+	return s.assetCatalog, nil
 }
 
 func (s *Server) roleBindingsAndRoles(r *http.Request, workspaceID string) ([]workspace.RoleBindingView, []workspace.RoleView, error) {
@@ -840,6 +668,103 @@ func catalogWorkspaceView(catalog dashboard.Catalog) workspace.WorkspaceView {
 	}
 }
 
+func apiWorkspaceDTOs(rows []workspace.WorkspaceView) []api.WorkspaceResponse {
+	out := make([]api.WorkspaceResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, api.WorkspaceResponse{
+			ID:                 row.ID,
+			Title:              row.Title,
+			Description:        row.Description,
+			ActiveDeploymentID: row.ActiveDeploymentID,
+			CreatedAt:          row.CreatedAt,
+			UpdatedAt:          row.UpdatedAt,
+		})
+	}
+	return out
+}
+
+func apiAssetDTOs(rows []workspace.AssetView) []api.AssetResponse {
+	out := make([]api.AssetResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, api.AssetResponse{
+			ID:            row.ID,
+			SnapshotID:    row.SnapshotID,
+			WorkspaceID:   row.WorkspaceID,
+			DeploymentID:  row.DeploymentID,
+			Type:          row.Type,
+			Key:           row.Key,
+			ParentID:      row.ParentID,
+			Title:         row.Title,
+			Description:   row.Description,
+			PayloadSchema: row.PayloadSchema,
+			Payload:       row.Payload,
+			Href:          row.Href,
+		})
+	}
+	return out
+}
+
+func apiAssetSummaryDTOs(rows []workspace.AssetView) []api.AssetSummaryResponse {
+	out := make([]api.AssetSummaryResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, api.AssetSummaryResponse{
+			ID:            row.ID,
+			SnapshotID:    row.SnapshotID,
+			WorkspaceID:   row.WorkspaceID,
+			DeploymentID:  row.DeploymentID,
+			Type:          row.Type,
+			Key:           row.Key,
+			ParentID:      row.ParentID,
+			Title:         row.Title,
+			Description:   row.Description,
+			PayloadSchema: row.PayloadSchema,
+			Href:          row.Href,
+		})
+	}
+	return out
+}
+
+func apiAssetEdgeDTOs(rows []workspace.AssetEdgeView) []api.AssetEdgeResponse {
+	out := make([]api.AssetEdgeResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, api.AssetEdgeResponse{
+			ID:           row.ID,
+			WorkspaceID:  row.WorkspaceID,
+			DeploymentID: row.DeploymentID,
+			FromAssetID:  row.FromAssetID,
+			ToAssetID:    row.ToAssetID,
+			Type:         row.Type,
+		})
+	}
+	return out
+}
+
+func assetLineageEndpointIDs(edges []workspace.AssetEdgeView, assetID string, upstream bool) []string {
+	values := map[string]struct{}{}
+	for _, edge := range edges {
+		if upstream && edge.ToAssetID == assetID {
+			values[edge.FromAssetID] = struct{}{}
+		}
+		if !upstream && edge.FromAssetID == assetID {
+			values[edge.ToAssetID] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func apiRoleDTOs(rows []workspace.RoleView) []api.RoleResponse {
+	out := make([]api.RoleResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, api.RoleResponse{Name: row.Name, Permissions: row.Permissions})
+	}
+	return out
+}
+
 func roleBindingView(row access.RoleBinding) workspace.RoleBindingView {
 	return workspace.RoleBindingView{
 		ID:          row.ID,
@@ -858,86 +783,6 @@ func roleBindingView(row access.RoleBinding) workspace.RoleBindingView {
 
 func roleView(row access.Role) workspace.RoleView {
 	return workspace.RoleView{Name: row.Name, Permissions: row.Permissions}
-}
-
-func fallbackAssets(catalog dashboard.Catalog, workspaceID string) []workspace.AssetView {
-	inputs := []workspace.FallbackAssetInput{}
-	for _, report := range catalog.Dashboards {
-		inputs = append(inputs, workspace.FallbackAssetInput{ID: "dashboard:" + report.ID, Type: "dashboard", Key: report.ID, Title: report.Title, Description: report.Description})
-	}
-	for _, model := range catalog.Models {
-		inputs = append(inputs, workspace.FallbackAssetInput{ID: "semantic_model:" + model.ID, Type: "semantic_model", Key: model.ID, Title: model.Title, Description: model.Description})
-	}
-	return workspace.FallbackAssetViews(workspaceID, inputs)
-}
-
-func apiWorkspaceDTOs(views []workspace.WorkspaceView) []api.WorkspaceResponse {
-	out := make([]api.WorkspaceResponse, 0, len(views))
-	for _, view := range views {
-		out = append(out, apiWorkspaceDTO(view))
-	}
-	return out
-}
-
-func apiWorkspaceDTO(view workspace.WorkspaceView) api.WorkspaceResponse {
-	return api.WorkspaceResponse{
-		ID:                 view.ID,
-		Title:              view.Title,
-		Description:        view.Description,
-		ActiveDeploymentID: view.ActiveDeploymentID,
-		CreatedAt:          view.CreatedAt,
-		UpdatedAt:          view.UpdatedAt,
-	}
-}
-
-func apiAssetDTOs(views []workspace.AssetView) []api.AssetResponse {
-	out := make([]api.AssetResponse, 0, len(views))
-	for _, view := range views {
-		out = append(out, apiAssetDTO(view))
-	}
-	return out
-}
-
-func apiAssetDTO(view workspace.AssetView) api.AssetResponse {
-	return api.AssetResponse{
-		ID:           view.ID,
-		WorkspaceID:  view.WorkspaceID,
-		DeploymentID: view.DeploymentID,
-		Type:         view.Type,
-		Key:          view.Key,
-		ParentID:     view.ParentID,
-		Title:        view.Title,
-		Description:  view.Description,
-		Meta:         view.Meta,
-		Href:         view.Href,
-	}
-}
-
-func apiAssetEdgeDTOs(views []workspace.AssetEdgeView) []api.AssetEdgeResponse {
-	out := make([]api.AssetEdgeResponse, 0, len(views))
-	for _, view := range views {
-		out = append(out, apiAssetEdgeDTO(view))
-	}
-	return out
-}
-
-func apiAssetEdgeDTO(view workspace.AssetEdgeView) api.AssetEdgeResponse {
-	return api.AssetEdgeResponse{
-		ID:           view.ID,
-		WorkspaceID:  view.WorkspaceID,
-		DeploymentID: view.DeploymentID,
-		FromAssetID:  view.FromAssetID,
-		ToAssetID:    view.ToAssetID,
-		Type:         view.Type,
-	}
-}
-
-func apiRoleDTOs(views []workspace.RoleView) []api.RoleResponse {
-	out := make([]api.RoleResponse, 0, len(views))
-	for _, view := range views {
-		out = append(out, api.RoleResponse{Name: view.Name, Permissions: view.Permissions})
-	}
-	return out
 }
 
 func csrfToken(r *http.Request, auth *Auth) string {

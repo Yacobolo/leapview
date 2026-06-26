@@ -71,19 +71,22 @@ SELECT * FROM deployment_artifacts WHERE deployment_id = ?;
 -- name: ClearAssetsForDeployment :exec
 DELETE FROM assets WHERE deployment_id = ?;
 
+-- name: ClearAssetEdgesForDeployment :exec
+DELETE FROM asset_edges WHERE deployment_id = ?;
+
 -- name: InsertAsset :exec
-INSERT INTO assets (id, workspace_id, deployment_id, asset_type, asset_key, parent_asset_id, title, description, content_json, content_hash, content_version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO assets (snapshot_id, logical_asset_id, workspace_id, deployment_id, asset_type, asset_key, parent_logical_asset_id, title, description, payload_schema, payload_json, content_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: InsertAssetEdge :exec
-INSERT INTO asset_edges (id, workspace_id, deployment_id, from_asset_id, to_asset_id, edge_type)
+INSERT INTO asset_edges (id, workspace_id, deployment_id, from_logical_asset_id, to_logical_asset_id, edge_type)
 VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: ListAssetsByDeployment :many
 SELECT * FROM assets WHERE deployment_id = ? ORDER BY asset_type, asset_key;
 
 -- name: ListAssetEdgesByDeployment :many
-SELECT * FROM asset_edges WHERE deployment_id = ? ORDER BY edge_type, from_asset_id, to_asset_id;
+SELECT * FROM asset_edges WHERE deployment_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id;
 
 -- name: UpsertPrincipal :exec
 INSERT INTO principals (id, email, display_name, updated_at)
