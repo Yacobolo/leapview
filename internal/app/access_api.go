@@ -498,7 +498,7 @@ func (s *Server) apiListAuditEvents(w http.ResponseWriter, r *http.Request) {
 
 func currentPrincipal(s *Server, r *http.Request) (Principal, bool) {
 	if s.auth == nil {
-		return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}, true
+		return localDeveloperPrincipal(), true
 	}
 	return s.auth.Principal(r)
 }

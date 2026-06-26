@@ -23,22 +23,25 @@ type RefreshRunner interface {
 }
 
 type RunRecord struct {
-	ID           string `json:"id"`
-	WorkspaceID  string `json:"workspaceId"`
-	ModelID      string `json:"modelId"`
-	DeploymentID string `json:"deploymentId,omitempty"`
-	Status       string `json:"status"`
-	CreatedAt    string `json:"createdAt"`
-	UpdatedAt    string `json:"updatedAt"`
-	StartedAt    string `json:"startedAt,omitempty"`
-	FinishedAt   string `json:"finishedAt,omitempty"`
-	Error        string `json:"error,omitempty"`
+	ID                   string `json:"id"`
+	WorkspaceID          string `json:"workspaceId"`
+	ModelID              string `json:"modelId"`
+	DeploymentID         string `json:"deploymentId,omitempty"`
+	PrincipalID          string `json:"principalId,omitempty"`
+	PrincipalDisplayName string `json:"principalDisplayName,omitempty"`
+	Status               string `json:"status"`
+	CreatedAt            string `json:"createdAt"`
+	UpdatedAt            string `json:"updatedAt"`
+	StartedAt            string `json:"startedAt,omitempty"`
+	FinishedAt           string `json:"finishedAt,omitempty"`
+	Error                string `json:"error,omitempty"`
 }
 
 type RunInput struct {
 	WorkspaceID  string
 	ModelID      string
 	DeploymentID string
+	PrincipalID  string
 }
 
 type RunRepository interface {
@@ -100,7 +103,7 @@ func (r *SQLRunRepository) CreateRun(ctx context.Context, input RunInput) (RunRe
 	if r == nil || r.db == nil {
 		return RunRecord{}, fmt.Errorf("materialization run database is required")
 	}
-	workspaceID, modelID, deploymentID, err := normalizeRunInput(input)
+	workspaceID, modelID, deploymentID, principalID, err := normalizeRunInput(input)
 	if err != nil {
 		return RunRecord{}, err
 	}
@@ -118,9 +121,9 @@ func (r *SQLRunRepository) CreateRun(ctx context.Context, input RunInput) (RunRe
 		return RunRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO materialization_job_runs (id, job_id, status)
-		VALUES (?, ?, ?)
-	`, runID, jobID, RunStatusQueued); err != nil {
+		INSERT INTO materialization_job_runs (id, job_id, principal_id, status)
+		VALUES (?, ?, NULLIF(?, ''), ?)
+	`, runID, jobID, principalID, RunStatusQueued); err != nil {
 		return RunRecord{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -303,12 +306,14 @@ type runScanner interface {
 
 func scanRun(row runScanner) (RunRecord, error) {
 	var run RunRecord
-	var deploymentID, finishedAt sql.NullString
+	var deploymentID, principalID, principalDisplayName, finishedAt sql.NullString
 	if err := row.Scan(
 		&run.ID,
 		&run.WorkspaceID,
 		&deploymentID,
 		&run.ModelID,
+		&principalID,
+		&principalDisplayName,
 		&run.Status,
 		&run.CreatedAt,
 		&run.UpdatedAt,
@@ -321,6 +326,12 @@ func scanRun(row runScanner) (RunRecord, error) {
 	if deploymentID.Valid {
 		run.DeploymentID = deploymentID.String
 	}
+	if principalID.Valid {
+		run.PrincipalID = principalID.String
+	}
+	if principalDisplayName.Valid {
+		run.PrincipalDisplayName = principalDisplayName.String
+	}
 	if finishedAt.Valid {
 		run.FinishedAt = finishedAt.String
 	}
@@ -332,23 +343,25 @@ func scanRun(row runScanner) (RunRecord, error) {
 
 func materializationRunSelect() string {
 	return `
-		SELECT r.id, j.workspace_id, j.deployment_id, j.model_id, r.status, j.created_at, j.updated_at, r.started_at, r.finished_at, r.error
+		SELECT r.id, j.workspace_id, j.deployment_id, j.model_id, r.principal_id, COALESCE(NULLIF(p.display_name, ''), NULLIF(p.email, ''), r.principal_id, '') AS principal_display_name, r.status, j.created_at, j.updated_at, r.started_at, r.finished_at, r.error
 		FROM materialization_job_runs r
 		JOIN materialization_jobs j ON j.id = r.job_id
+		LEFT JOIN principals p ON p.id = r.principal_id
 	`
 }
 
-func normalizeRunInput(input RunInput) (string, string, string, error) {
+func normalizeRunInput(input RunInput) (string, string, string, string, error) {
 	workspaceID := strings.TrimSpace(input.WorkspaceID)
 	modelID := strings.TrimSpace(input.ModelID)
 	deploymentID := strings.TrimSpace(input.DeploymentID)
+	principalID := strings.TrimSpace(input.PrincipalID)
 	if workspaceID == "" {
-		return "", "", "", fmt.Errorf("workspace id is required")
+		return "", "", "", "", fmt.Errorf("workspace id is required")
 	}
 	if modelID == "" {
-		return "", "", "", fmt.Errorf("model id is required")
+		return "", "", "", "", fmt.Errorf("model id is required")
 	}
-	return workspaceID, modelID, deploymentID, nil
+	return workspaceID, modelID, deploymentID, principalID, nil
 }
 
 func pageRuns(rows []RunRecord, page RunPage) []RunRecord {

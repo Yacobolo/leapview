@@ -171,12 +171,13 @@ type MaterializationJob struct {
 }
 
 type MaterializationJobRun struct {
-	ID         string         `json:"id"`
-	JobID      string         `json:"job_id"`
-	Status     string         `json:"status"`
-	StartedAt  string         `json:"started_at"`
-	FinishedAt sql.NullString `json:"finished_at"`
-	Error      string         `json:"error"`
+	ID          string         `json:"id"`
+	JobID       string         `json:"job_id"`
+	PrincipalID sql.NullString `json:"principal_id"`
+	Status      string         `json:"status"`
+	StartedAt   string         `json:"started_at"`
+	FinishedAt  sql.NullString `json:"finished_at"`
+	Error       string         `json:"error"`
 }
 
 type OauthState struct {

@@ -166,6 +166,7 @@ CREATE TABLE IF NOT EXISTS materialization_jobs (
 CREATE TABLE IF NOT EXISTS materialization_job_runs (
   id TEXT PRIMARY KEY,
   job_id TEXT NOT NULL REFERENCES materialization_jobs(id) ON DELETE CASCADE,
+  principal_id TEXT REFERENCES principals(id) ON DELETE SET NULL,
   status TEXT NOT NULL,
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at TEXT,

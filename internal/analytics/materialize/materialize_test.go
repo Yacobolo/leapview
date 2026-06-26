@@ -472,6 +472,52 @@ func TestRunServicePersistsFailedStateWithError(t *testing.T) {
 	}
 }
 
+func TestRunRepositoryPersistsPrincipalAttribution(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	seedMaterializationPrincipal(t, ctx, store, "principal_alice", "alice@example.com", "Alice")
+
+	queued, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders", PrincipalID: "principal_alice"})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if queued.PrincipalID != "principal_alice" || queued.PrincipalDisplayName != "Alice" {
+		t.Fatalf("queued attribution = %#v, want Alice principal", queued)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", queued.ID); err != nil {
+		t.Fatalf("mark succeeded: %v", err)
+	}
+
+	stored, err := repo.GetRun(ctx, "test", queued.ID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if stored.PrincipalID != "principal_alice" || stored.PrincipalDisplayName != "Alice" {
+		t.Fatalf("stored attribution = %#v, want Alice principal", stored)
+	}
+	listed, err := repo.ListModelRuns(ctx, "test", "model.orders", analyticsmaterialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(listed) != 1 || listed[0].PrincipalID != "principal_alice" || listed[0].PrincipalDisplayName != "Alice" {
+		t.Fatalf("listed attribution = %#v, want Alice principal", listed)
+	}
+	latest, ok, err := repo.LatestSuccessfulModelRun(ctx, "test", "model.orders")
+	if err != nil || !ok || latest.PrincipalDisplayName != "Alice" {
+		t.Fatalf("latest attribution = %#v ok=%v err=%v, want Alice", latest, ok, err)
+	}
+
+	legacy, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.legacy"})
+	if err != nil {
+		t.Fatalf("create legacy run: %v", err)
+	}
+	if legacy.PrincipalID != "" || legacy.PrincipalDisplayName != "" {
+		t.Fatalf("legacy attribution = %#v, want empty principal fields", legacy)
+	}
+}
+
 func TestRunRepositoryListsAndFindsLatestByModel(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
@@ -565,4 +611,14 @@ func openMaterializationStore(t *testing.T, ctx context.Context) *platform.Store
 		t.Fatalf("seed deployment: %v", err)
 	}
 	return store
+}
+
+func seedMaterializationPrincipal(t *testing.T, ctx context.Context, store *platform.Store, id, email, displayName string) {
+	t.Helper()
+	if _, err := store.SQLDB().ExecContext(ctx, `
+		INSERT INTO principals (id, email, display_name)
+		VALUES (?, ?, ?)
+	`, id, email, displayName); err != nil {
+		t.Fatalf("seed principal: %v", err)
+	}
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/Yacobolo/libredash/internal/access"
@@ -73,7 +74,10 @@ func (s *Server) protected(permission string, handler http.HandlerFunc) http.Han
 
 func (s *Server) protect(permission string, next http.Handler) http.Handler {
 	if s.auth == nil {
-		return next
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), principalContextKey{}, localDeveloperPrincipal())
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
 	}
 	return s.auth.Middleware(permission, next)
 }

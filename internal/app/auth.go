@@ -246,7 +246,7 @@ func (a *Auth) CSRFMiddleware(next http.Handler) http.Handler {
 
 func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, bool) {
 	if a.devBypass {
-		return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}, nil, true
+		return localDeveloperPrincipal(), nil, true
 	}
 	if token := bearerToken(r); token != "" {
 		credential, err := a.repo.CredentialForAPIToken(r.Context(), token)

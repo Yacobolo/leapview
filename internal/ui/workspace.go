@@ -768,24 +768,26 @@ func assetRefreshesGrid(refresh AssetRefreshState) metricGrid {
 	rows := make([]map[string]any, 0, len(refresh.Runs))
 	for _, run := range refresh.Runs {
 		rows = append(rows, map[string]any{
-			"status":   refreshStatusGridValue(run.Status),
-			"started":  emptyDash(run.StartedAt),
-			"finished": emptyDash(run.FinishedAt),
-			"duration": emptyDash(refreshRunDuration(run)),
-			"error":    emptyDash(run.Error),
+			"status":       refreshStatusGridValue(run.Status),
+			"started":      emptyDash(run.StartedAt),
+			"duration":     emptyDash(refreshRunDuration(run)),
+			"triggered_by": emptyDash(run.PrincipalDisplayName),
+			"run":          emptyDash(shortRefreshRunID(run.ID)),
+			"error":        emptyDash(run.Error),
 		})
 	}
 	return metricGrid{
 		Columns: []metricGridColumn{
 			{ID: "status", Header: "Status", Kind: "status", Width: "140px"},
 			{ID: "started", Header: "Started", Width: "180px"},
-			{ID: "finished", Header: "Finished", Width: "180px"},
 			{ID: "duration", Header: "Duration", Width: "110px"},
+			{ID: "triggered_by", Header: "Triggered by", Width: "130px"},
+			{ID: "run", Header: "Run ID", Kind: "code", Width: "160px"},
 			{ID: "error", Header: "Error"},
 		},
 		Rows:     rows,
 		Empty:    "No refresh runs have been recorded for this semantic model.",
-		MinWidth: "860px",
+		MinWidth: "920px",
 	}
 }
 
@@ -795,6 +797,14 @@ func refreshStatusGridValue(status string) any {
 		status = "not refreshed"
 	}
 	return metricGridBadge{Label: status, Tone: refreshStatusBadgeTone(status)}
+}
+
+func shortRefreshRunID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 18 {
+		return id
+	}
+	return id[:18]
 }
 
 func refreshRunDuration(run AssetRefreshRun) string {
@@ -1499,13 +1509,15 @@ type AssetRefreshState struct {
 }
 
 type AssetRefreshRun struct {
-	ID           string
-	ModelID      string
-	DeploymentID string
-	Status       string
-	StartedAt    string
-	FinishedAt   string
-	Error        string
+	ID                   string
+	ModelID              string
+	DeploymentID         string
+	PrincipalID          string
+	PrincipalDisplayName string
+	Status               string
+	StartedAt            string
+	FinishedAt           string
+	Error                string
 }
 
 type assetDetailSection struct {
@@ -1616,11 +1628,9 @@ func refreshOverviewFacts(refresh AssetRefreshState) []definitionFact {
 	}
 	return []definitionFact{
 		{
-			Label:       "Refresh status",
-			Value:       status,
-			BadgeTone:   refreshStatusBadgeTone(status),
-			TextSignal:  "$assetRefresh.status",
-			StyleSignal: refreshStatusBadgeStyleSignal("$assetRefresh.status"),
+			Label:        "Refresh status",
+			Value:        status,
+			StatusSignal: "$assetRefresh.status",
 		},
 		{Label: "Last refreshed", Value: emptyDash(refresh.LatestSuccessful.FinishedAt), TextSignal: "$assetRefresh.lastSuccessful || '-'"},
 	}
@@ -2231,19 +2241,20 @@ func metricLeafFacts(asset workspaceview.AssetView) []definitionFact {
 }
 
 type definitionFact struct {
-	Label       string
-	Value       string
-	Code        bool
-	Wide        bool
-	BadgeTone   string
-	TextSignal  string
-	StyleSignal string
+	Label        string
+	Value        string
+	Code         bool
+	Wide         bool
+	BadgeTone    string
+	TextSignal   string
+	StatusSignal string
+	StyleSignal  string
 }
 
 func definitionFacts(title string, facts []definitionFact) g.Node {
 	filtered := make([]definitionFact, 0, len(facts))
 	for _, fact := range facts {
-		if strings.TrimSpace(fact.Value) == "" && fact.TextSignal == "" {
+		if strings.TrimSpace(fact.Value) == "" && fact.TextSignal == "" && fact.StatusSignal == "" {
 			continue
 		}
 		filtered = append(filtered, fact)
@@ -2255,9 +2266,10 @@ func definitionFacts(title string, facts []definitionFact) g.Node {
 			g.Map(filtered, func(fact definitionFact) g.Node {
 				return h.Div(h.Class("grid min-w-0 gap-1"),
 					h.Span(h.Class("text-caption font-medium uppercase leading-none text-fg-muted"), g.Text(fact.Label)),
+					g.If(fact.StatusSignal != "", definitionStatus(fact)),
 					g.If(fact.BadgeTone != "", definitionBadge(fact)),
 					g.If(fact.Code, h.Code(h.Class("min-w-0 truncate font-mono text-body-sm font-medium text-fg-default"), g.Text(fact.Value))),
-					g.If(!fact.Code && fact.BadgeTone == "", definitionFactValue(fact, "min-w-0 truncate text-body-sm font-medium text-fg-default")),
+					g.If(!fact.Code && fact.BadgeTone == "" && fact.StatusSignal == "", definitionFactValue(fact, "min-w-0 truncate text-body-sm font-medium text-fg-default")),
 				)
 			}),
 		)),
@@ -2277,7 +2289,7 @@ func definitionCodeBlock(title, lang, code string) g.Node {
 func definitionStats(title string, facts []definitionFact) g.Node {
 	filtered := make([]definitionFact, 0, len(facts))
 	for _, fact := range facts {
-		if strings.TrimSpace(fact.Value) == "" && fact.TextSignal == "" {
+		if strings.TrimSpace(fact.Value) == "" && fact.TextSignal == "" && fact.StatusSignal == "" {
 			continue
 		}
 		filtered = append(filtered, fact)
@@ -2289,9 +2301,10 @@ func definitionStats(title string, facts []definitionFact) g.Node {
 			g.Map(filtered, func(fact definitionFact) g.Node {
 				return h.Div(h.Class(definitionStatItemClass(fact)),
 					h.Span(h.Class("text-caption font-medium uppercase leading-none text-fg-muted"), g.Text(fact.Label)),
+					g.If(fact.StatusSignal != "", definitionStatus(fact)),
 					g.If(fact.BadgeTone != "", definitionBadge(fact)),
 					g.If(fact.Code, h.Code(h.Class(definitionStatValueClass(fact, true)), g.Text(fact.Value))),
-					g.If(!fact.Code && fact.BadgeTone == "", definitionFactValue(fact, definitionStatValueClass(fact, false))),
+					g.If(!fact.Code && fact.BadgeTone == "" && fact.StatusSignal == "", definitionFactValue(fact, definitionStatValueClass(fact, false))),
 				)
 			}),
 		)),
@@ -2303,6 +2316,88 @@ func definitionFactValue(fact definitionFact, class string) g.Node {
 		h.Class(class),
 		g.If(fact.TextSignal != "", ds.Text(fact.TextSignal)),
 		g.Text(fact.Value),
+	)
+}
+
+func definitionStatus(fact definitionFact) g.Node {
+	return h.Span(
+		h.Class("inline-flex min-w-0 items-center gap-1.5 text-body-sm font-medium leading-normal text-fg-default"),
+		definitionStatusIcon(fact.StatusSignal),
+		h.Span(
+			h.Class("min-w-0 truncate"),
+			ds.Text(fact.StatusSignal),
+			g.Text(fact.Value),
+		),
+	)
+}
+
+func definitionStatusIcon(statusSignal string) g.Node {
+	return h.Span(h.Class("inline-flex size-4 shrink-0 items-center justify-center"),
+		definitionStatusSVG(statusSignal+" === 'succeeded'", "var(--ld-fg-success)", "M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm-1.4-4.9L3.8 8.3 5 7.1l1.6 1.6L11 4.3l1.2 1.2-5.6 5.6Z"),
+		definitionStatusSVG(statusSignal+" === 'failed'", "var(--ld-fg-danger)", "M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16ZM5.1 4 8 6.9 10.9 4 12 5.1 9.1 8l2.9 2.9-1.1 1.1L8 9.1 5.1 12 4 10.9 6.9 8 4 5.1 5.1 4Z"),
+		definitionClockStatusSVG("("+statusSignal+" === 'running' || "+statusSignal+" === 'queued')"),
+		definitionStatusDot("("+statusSignal+" !== 'succeeded' && "+statusSignal+" !== 'failed' && "+statusSignal+" !== 'running' && "+statusSignal+" !== 'queued')"),
+	)
+}
+
+func definitionStatusSVG(showExpr, color, path string) g.Node {
+	return g.El("svg",
+		g.Attr("viewBox", "0 0 16 16"),
+		g.Attr("focusable", "false"),
+		h.Aria("hidden", "true"),
+		h.Class("block size-4"),
+		h.Style("color: "+color),
+		ds.Show(showExpr),
+		g.El("path",
+			g.Attr("fill", "currentColor"),
+			g.Attr("fill-rule", "evenodd"),
+			g.Attr("clip-rule", "evenodd"),
+			g.Attr("d", path),
+		),
+	)
+}
+
+func definitionClockStatusSVG(showExpr string) g.Node {
+	return g.El("svg",
+		g.Attr("viewBox", "0 0 16 16"),
+		g.Attr("focusable", "false"),
+		h.Aria("hidden", "true"),
+		h.Class("block size-4"),
+		h.Style("color: var(--ld-fg-link)"),
+		ds.Show(showExpr),
+		g.El("circle",
+			g.Attr("cx", "8"),
+			g.Attr("cy", "8"),
+			g.Attr("r", "7"),
+			g.Attr("fill", "none"),
+			g.Attr("stroke", "currentColor"),
+			g.Attr("stroke-width", "2"),
+		),
+		g.El("path",
+			g.Attr("d", "M8 4.5v3.8l2.6 1.5"),
+			g.Attr("fill", "none"),
+			g.Attr("stroke", "currentColor"),
+			g.Attr("stroke-linecap", "round"),
+			g.Attr("stroke-linejoin", "round"),
+			g.Attr("stroke-width", "1.6"),
+		),
+	)
+}
+
+func definitionStatusDot(showExpr string) g.Node {
+	return g.El("svg",
+		g.Attr("viewBox", "0 0 16 16"),
+		g.Attr("focusable", "false"),
+		h.Aria("hidden", "true"),
+		h.Class("block size-4"),
+		h.Style("color: var(--ld-fg-muted)"),
+		ds.Show(showExpr),
+		g.El("circle",
+			g.Attr("cx", "8"),
+			g.Attr("cy", "8"),
+			g.Attr("r", "4"),
+			g.Attr("fill", "currentColor"),
+		),
 	)
 }
 

@@ -14,6 +14,8 @@ model MaterializationRunResponse {
   workspaceId: string;
   modelId: string;
   deploymentId?: string;
+  principalId?: string;
+  principalDisplayName?: string;
   status: string;
   error?: string;
   createdAt: utcDateTime;

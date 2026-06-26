@@ -92,8 +92,9 @@ func TestWorkspaceAssetDetailsRenderSemanticModelRefreshSummary(t *testing.T) {
 		"Refresh status",
 		"failed",
 		`data-text="$assetRefresh.status"`,
-		`data-style="{'border-color': $assetRefresh.status === 'succeeded'`,
-		`background: var(--ld-bg-danger-muted)`,
+		`data-show="$assetRefresh.status === 'failed'"`,
+		`style="color: var(--ld-fg-danger)"`,
+		`fill-rule="evenodd"`,
 		"Last refreshed",
 		"2026-06-26 10:00:12",
 		`data-text="$assetRefresh.lastSuccessful || '-'"`,
@@ -168,7 +169,7 @@ func TestWorkspaceAssetRefreshesTabRendersSemanticModelRuns(t *testing.T) {
 	asset := testAssetByID(t, assets, "model")
 	refresh := AssetRefreshState{
 		Runs: []AssetRefreshRun{
-			{ID: "run_failed", ModelID: "olist", Status: "failed", StartedAt: "2026-06-26 10:03:00", FinishedAt: "2026-06-26 10:03:05", Error: "missing source file"},
+			{ID: "matrun_1234567890abcdef", ModelID: "olist", Status: "failed", StartedAt: "2026-06-26 10:03:00", FinishedAt: "2026-06-26 10:03:05", Error: "missing source file", PrincipalDisplayName: "Alice"},
 			{ID: "run_ok", ModelID: "olist", Status: "succeeded", StartedAt: "2026-06-26 10:00:00", FinishedAt: "2026-06-26 10:00:12"},
 		},
 	}
@@ -190,7 +191,7 @@ func TestWorkspaceAssetRefreshesTabRendersSemanticModelRuns(t *testing.T) {
 	}
 	signals := workspaceAssetSignalsWithRefresh(workspace, asset, assets, edges, assetLineage(workspace.ID, asset, assets, edges), "refreshes", refresh)
 	grid := signalMetricGrid(t, signals, "assetRefreshesGrid")
-	assertGridHeaders(t, grid, []string{"Status", "Started", "Finished", "Duration", "Error"})
+	assertGridHeaders(t, grid, []string{"Status", "Started", "Duration", "Triggered by", "Run ID", "Error"})
 	if len(grid.Rows) != 2 {
 		t.Fatalf("refresh rows = %#v, want 2", grid.Rows)
 	}
@@ -199,6 +200,15 @@ func TestWorkspaceAssetRefreshesTabRendersSemanticModelRuns(t *testing.T) {
 	}
 	assertGridStatusValue(t, grid.Rows[0]["status"], "failed", "danger")
 	assertGridStatusValue(t, grid.Rows[1]["status"], "succeeded", "success")
+	if got := fmt.Sprint(grid.Rows[0]["triggered_by"]); got != "Alice" {
+		t.Fatalf("triggered by = %q, want Alice", got)
+	}
+	if got := fmt.Sprint(grid.Rows[1]["triggered_by"]); got != "-" {
+		t.Fatalf("missing triggered by = %q, want -", got)
+	}
+	if got := fmt.Sprint(grid.Rows[0]["run"]); got != "matrun_1234567890a" {
+		t.Fatalf("run = %q, want matrun_1234567890a", got)
+	}
 }
 
 func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {

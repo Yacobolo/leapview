@@ -235,7 +235,12 @@ func (s *Server) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) refreshWorkspaceAssetWithPatches(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
 	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
-	run, err := repo.CreateRun(r.Context(), materialize.RunInput{WorkspaceID: workspaceID, ModelID: asset.Key})
+	principal, principalOK := currentPrincipal(s, r)
+	principalID, err := s.materializationPrincipalID(r.Context(), principal, principalOK)
+	if err != nil {
+		return err
+	}
+	run, err := repo.CreateRun(r.Context(), materialize.RunInput{WorkspaceID: workspaceID, ModelID: asset.Key, PrincipalID: principalID})
 	if err != nil {
 		return err
 	}
@@ -367,13 +372,15 @@ func uiRefreshRuns(runs []materialize.RunRecord) []ui.AssetRefreshRun {
 
 func uiRefreshRun(run materialize.RunRecord) ui.AssetRefreshRun {
 	return ui.AssetRefreshRun{
-		ID:           run.ID,
-		ModelID:      run.ModelID,
-		DeploymentID: run.DeploymentID,
-		Status:       run.Status,
-		StartedAt:    run.StartedAt,
-		FinishedAt:   run.FinishedAt,
-		Error:        run.Error,
+		ID:                   run.ID,
+		ModelID:              run.ModelID,
+		DeploymentID:         run.DeploymentID,
+		PrincipalID:          run.PrincipalID,
+		PrincipalDisplayName: run.PrincipalDisplayName,
+		Status:               run.Status,
+		StartedAt:            run.StartedAt,
+		FinishedAt:           run.FinishedAt,
+		Error:                run.Error,
 	}
 }
 

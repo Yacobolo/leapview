@@ -656,11 +656,16 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 }
 
 func TestDashboardRefreshCommandPersistsMaterializationRun(t *testing.T) {
+	ctx := context.Background()
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	principal := testPrincipal(t, ctx, store, "editor@example.com", "Editor", "editor")
+	token := testAPIToken(t, ctx, store, principal.ID, "dashboard-refresh")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
 	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations","modelId":"test"},"filters":{},"tableCommand":{"block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/commands/refresh-materializations", body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 
 	server.Routes().ServeHTTP(rec, req)
@@ -675,6 +680,9 @@ func TestDashboardRefreshCommandPersistsMaterializationRun(t *testing.T) {
 	}
 	if len(runs) != 1 || runs[0].Status != materialize.RunStatusSucceeded || runs[0].ModelID != "test" {
 		t.Fatalf("runs = %#v, want one succeeded test model run", runs)
+	}
+	if runs[0].PrincipalID != principal.ID || runs[0].PrincipalDisplayName != "Editor" {
+		t.Fatalf("run attribution = %#v, want Editor principal", runs[0])
 	}
 }
 
@@ -747,13 +755,18 @@ func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesGridAndUnusedRefreshFields(
 }
 
 func TestWorkspaceAssetRefreshCommandPublishesRunningAndFinalState(t *testing.T) {
+	ctx := context.Background()
 	store := testStore(t)
-	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	principal := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, principal.ID, "workspace-refresh")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
 	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
 	updates, unsubscribe := server.broker.Subscribe(workspaceAssetStreamID("test", string(assetID), "details"))
 	defer unsubscribe()
 	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
 	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 
 	server.Routes().ServeHTTP(rec, req)
@@ -768,6 +781,9 @@ func TestWorkspaceAssetRefreshCommandPublishesRunningAndFinalState(t *testing.T)
 	}
 	if len(runs) != 1 || runs[0].Status != materialize.RunStatusSucceeded {
 		t.Fatalf("runs = %#v, want one succeeded olist model run", runs)
+	}
+	if runs[0].PrincipalID != principal.ID || runs[0].PrincipalDisplayName != "Owner" {
+		t.Fatalf("run attribution = %#v, want Owner principal", runs[0])
 	}
 	patches := drainPatches(updates)
 	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusRunning) {

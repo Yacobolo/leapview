@@ -133,6 +133,25 @@ func (s *Server) upsertAuthenticatedPrincipal(ctx context.Context, principal Pri
 	return err
 }
 
+func (s *Server) materializationPrincipalID(ctx context.Context, principal Principal, ok bool) (string, error) {
+	if !ok || principal.ID == "" {
+		return "", nil
+	}
+	if err := s.upsertAuthenticatedPrincipal(ctx, principal); err != nil {
+		return "", err
+	}
+	return principal.ID, nil
+}
+
+func principalFromContext(ctx context.Context) (Principal, bool) {
+	principal, ok := ctx.Value(principalContextKey{}).(Principal)
+	return principal, ok
+}
+
+func localDeveloperPrincipal() Principal {
+	return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}
+}
+
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -194,9 +213,15 @@ func (s *Server) refreshMaterializationsWithRunForWorkspace(ctx context.Context,
 		return s.metrics.RefreshMaterializations(ctx, modelID)
 	}
 	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	principal, principalOK := principalFromContext(ctx)
+	principalID, err := s.materializationPrincipalID(ctx, principal, principalOK)
+	if err != nil {
+		return err
+	}
 	run, err := repo.CreateRun(ctx, materialize.RunInput{
 		WorkspaceID: workspaceID,
 		ModelID:     modelID,
+		PrincipalID: principalID,
 	})
 	if err != nil {
 		return err

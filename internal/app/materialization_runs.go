@@ -25,10 +25,17 @@ func (s *Server) createMaterializationRun(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
+	principal, principalOK := currentPrincipal(s, r)
+	principalID, err := s.materializationPrincipalID(r.Context(), principal, principalOK)
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
 	run, err := service.Enqueue(r.Context(), materialize.RunInput{
 		WorkspaceID:  workspaceID,
 		ModelID:      input.ModelID,
 		DeploymentID: input.DeploymentID,
+		PrincipalID:  principalID,
 	})
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
