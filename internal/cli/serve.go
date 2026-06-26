@@ -145,11 +145,6 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 }
 
 func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg config.Config, workspaceID string) (*app.Server, func(), error) {
-	config := agentConfig(cfg)
-	if !config.Enabled() {
-		return app.New(metrics), func() {}, nil
-	}
-
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return nil, nil, err
@@ -162,17 +157,22 @@ func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg 
 		return nil, nil, err
 	}
 	accessRepo := accesssqlite.NewRepository(store.SQLDB())
-	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
 	auth := app.NewAuth(accessRepo, workspaceID, app.AuthConfig{
 		DevBypass:    true,
 		CSRFKey:      cfg.CSRFKey,
 		CookieSecure: false,
 	})
+	config := agentConfig(cfg)
+	var agent *agentapp.Service
+	if config.Enabled() {
+		agentRepo := agentappsqlite.NewRepository(store.SQLDB())
+		agent = agentapp.NewService(metrics, agentRepo, config)
+	}
 	server := app.NewWithOptions(metrics, app.Options{
 		Store:              store,
 		WorkspaceRepo:      workspaceRepo,
 		AccessRepo:         accessRepo,
-		Agent:              agentapp.NewService(metrics, agentRepo, config),
+		Agent:              agent,
 		Auth:               auth,
 		DefaultWorkspaceID: workspaceID,
 	})

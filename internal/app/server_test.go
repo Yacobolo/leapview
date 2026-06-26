@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -9,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 func fieldRefs(fields ...string) []reportdef.FieldRef {
@@ -33,6 +37,10 @@ type canceledTableMetrics struct {
 type recordingMetrics struct {
 	fakeMetrics
 	pageIDs []string
+}
+
+type failingRefreshAssetMetrics struct {
+	emptyPageRuntimeAssetMetrics
 }
 
 func (fakeMetrics) Catalog() dashboard.Catalog {
@@ -493,6 +501,10 @@ func (fakeMetrics) RefreshMaterializations(_ context.Context, _ string) error {
 	return nil
 }
 
+func (failingRefreshAssetMetrics) RefreshMaterializations(_ context.Context, _ string) error {
+	return errors.New("refresh failed")
+}
+
 func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
@@ -641,6 +653,185 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDashboardRefreshCommandPersistsMaterializationRun(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations","modelId":"test"},"filters":{},"tableCommand":{"block":"all","start":0,"count":50}}`)
+	req := httptest.NewRequest(http.MethodPost, "/commands/refresh-materializations", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	runs, err := repo.ListModelRuns(context.Background(), "test", "test", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != materialize.RunStatusSucceeded || runs[0].ModelID != "test" {
+		t.Fatalf("runs = %#v, want one succeeded test model run", runs)
+	}
+}
+
+func TestWorkspaceAssetUpdatesStreamsInitialRefreshState(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	service := materialize.RunService{Repo: repo, Runner: fakeMetrics{}}
+	queued, err := service.Enqueue(context.Background(), materialize.RunInput{WorkspaceID: "test", ModelID: "olist"})
+	if err != nil {
+		t.Fatalf("enqueue run: %v", err)
+	}
+	if _, err := service.Execute(context.Background(), "test", queued.ID); err != nil {
+		t.Fatalf("execute run: %v", err)
+	}
+	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=refreshes", nil)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	patches := ssetest.PatchSignals(t, body)
+	if len(patches) == 0 {
+		t.Fatalf("updates did not stream patches:\n%s", body)
+	}
+	var found bool
+	for _, patch := range patches {
+		if _, ok := patch["assetRefreshesGrid"]; ok {
+			found = true
+		}
+	}
+	if !found || !strings.Contains(body, `"status":"succeeded"`) {
+		t.Fatalf("updates did not stream succeeded refresh state:\n%s", body)
+	}
+}
+
+func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesGridAndUnusedRefreshFields(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=details", nil)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	patches := ssetest.PatchSignals(t, body)
+	if len(patches) == 0 {
+		t.Fatalf("details updates did not stream patches:\n%s", body)
+	}
+	for _, patch := range patches {
+		if _, ok := patch["assetRefreshesGrid"]; ok {
+			t.Fatalf("details updates streamed refreshes grid: %#v", patch["assetRefreshesGrid"])
+		}
+		refresh, ok := patch["assetRefresh"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"error", "lastAttempt", "lastDuration"} {
+			if _, ok := refresh[key]; ok {
+				t.Fatalf("details assetRefresh included unused field %q: %#v", key, refresh)
+			}
+		}
+	}
+}
+
+func TestWorkspaceAssetRefreshCommandPublishesRunningAndFinalState(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	updates, unsubscribe := server.broker.Subscribe(workspaceAssetStreamID("test", string(assetID), "details"))
+	defer unsubscribe()
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	runs, err := repo.ListModelRuns(context.Background(), "test", "olist", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != materialize.RunStatusSucceeded {
+		t.Fatalf("runs = %#v, want one succeeded olist model run", runs)
+	}
+	patches := drainPatches(updates)
+	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusRunning) {
+		t.Fatalf("patches did not include running state: %#v", patches)
+	}
+	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusSucceeded) {
+		t.Fatalf("patches did not include succeeded state: %#v", patches)
+	}
+}
+
+func TestWorkspaceAssetRefreshCommandPublishesFailedError(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(failingRefreshAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	updates, unsubscribe := server.broker.Subscribe(workspaceAssetStreamID("test", string(assetID), "refreshes"))
+	defer unsubscribe()
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	runs, err := repo.ListModelRuns(context.Background(), "test", "olist", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != materialize.RunStatusFailed || !strings.Contains(runs[0].Error, "refresh failed") {
+		t.Fatalf("runs = %#v, want one failed run with error", runs)
+	}
+	patches := drainPatches(updates)
+	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusFailed) || !strings.Contains(anyPatchesString(patches), "refresh failed") {
+		t.Fatalf("patches did not include failed error state: %#v", patches)
+	}
+}
+
+func drainPatches(ch <-chan map[string]any) []map[string]any {
+	var patches []map[string]any
+	for {
+		select {
+		case patch := <-ch:
+			patches = append(patches, patch)
+		default:
+			return patches
+		}
+	}
+}
+
+func patchesContainAssetRefreshStatus(patches []map[string]any, status string) bool {
+	for _, patch := range patches {
+		refresh, ok := patch["assetRefresh"].(map[string]any)
+		if ok && refresh["status"] == status {
+			return true
+		}
+	}
+	return false
+}
+
+func anyPatchesString(patches []map[string]any) string {
+	bytes, _ := json.Marshal(patches)
+	return string(bytes)
 }
 
 func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {

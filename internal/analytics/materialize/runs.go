@@ -151,7 +151,7 @@ func (r *SQLRunRepository) ListRuns(ctx context.Context, workspaceID string, pag
 	}
 	rows, err := r.db.QueryContext(ctx, materializationRunSelect()+`
 		WHERE j.workspace_id = ?
-		ORDER BY j.created_at DESC, r.id DESC
+		ORDER BY j.created_at DESC, r.rowid DESC
 	`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -169,6 +169,72 @@ func (r *SQLRunRepository) ListRuns(ctx context.Context, workspaceID string, pag
 		return nil, err
 	}
 	return pageRuns(out, page), nil
+}
+
+func (r *SQLRunRepository) ListModelRuns(ctx context.Context, workspaceID, modelID string, page RunPage) ([]RunRecord, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	modelID = strings.TrimSpace(modelID)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
+	}
+	if modelID == "" {
+		return nil, fmt.Errorf("model id is required")
+	}
+	rows, err := r.db.QueryContext(ctx, materializationRunSelect()+`
+		WHERE j.workspace_id = ? AND j.model_id = ?
+		ORDER BY j.created_at DESC, r.rowid DESC
+	`, workspaceID, modelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunRecord
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return pageRuns(out, page), nil
+}
+
+func (r *SQLRunRepository) LatestModelRun(ctx context.Context, workspaceID, modelID string) (RunRecord, bool, error) {
+	runs, err := r.ListModelRuns(ctx, workspaceID, modelID, RunPage{Limit: 1})
+	if err != nil {
+		return RunRecord{}, false, err
+	}
+	if len(runs) == 0 {
+		return RunRecord{}, false, nil
+	}
+	return runs[0], true, nil
+}
+
+func (r *SQLRunRepository) LatestSuccessfulModelRun(ctx context.Context, workspaceID, modelID string) (RunRecord, bool, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	modelID = strings.TrimSpace(modelID)
+	if workspaceID == "" {
+		return RunRecord{}, false, fmt.Errorf("workspace id is required")
+	}
+	if modelID == "" {
+		return RunRecord{}, false, fmt.Errorf("model id is required")
+	}
+	row := r.db.QueryRowContext(ctx, materializationRunSelect()+`
+		WHERE j.workspace_id = ? AND j.model_id = ? AND r.status = ?
+		ORDER BY j.created_at DESC, r.rowid DESC
+		LIMIT 1
+	`, workspaceID, modelID, RunStatusSucceeded)
+	run, err := scanRun(row)
+	if err == sql.ErrNoRows {
+		return RunRecord{}, false, nil
+	}
+	if err != nil {
+		return RunRecord{}, false, err
+	}
+	return run, true, nil
 }
 
 func (r *SQLRunRepository) MarkRunRunning(ctx context.Context, workspaceID, runID string) (RunRecord, error) {

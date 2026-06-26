@@ -472,6 +472,57 @@ func TestRunServicePersistsFailedStateWithError(t *testing.T) {
 	}
 }
 
+func TestRunRepositoryListsAndFindsLatestByModel(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	ordersSucceeded, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+	if err != nil {
+		t.Fatalf("create succeeded run: %v", err)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", ordersSucceeded.ID); err != nil {
+		t.Fatalf("mark succeeded: %v", err)
+	}
+	other, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.customers"})
+	if err != nil {
+		t.Fatalf("create other run: %v", err)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", other.ID); err != nil {
+		t.Fatalf("mark other succeeded: %v", err)
+	}
+	ordersFailed, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+	if err != nil {
+		t.Fatalf("create failed run: %v", err)
+	}
+	if _, err := repo.MarkRunFailed(ctx, "test", ordersFailed.ID, "boom"); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	runs, err := repo.ListModelRuns(ctx, "test", "model.orders", analyticsmaterialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(runs) != 2 || runs[0].ID != ordersFailed.ID || runs[1].ID != ordersSucceeded.ID {
+		t.Fatalf("model runs = %#v, want failed then succeeded orders runs", runs)
+	}
+	for _, run := range runs {
+		if run.ModelID != "model.orders" {
+			t.Fatalf("list included wrong model run: %#v", run)
+		}
+	}
+
+	latest, ok, err := repo.LatestModelRun(ctx, "test", "model.orders")
+	if err != nil || !ok || latest.ID != ordersFailed.ID {
+		t.Fatalf("latest = %#v ok=%v err=%v, want failed latest", latest, ok, err)
+	}
+	latestSucceeded, ok, err := repo.LatestSuccessfulModelRun(ctx, "test", "model.orders")
+	if err != nil || !ok || latestSucceeded.ID != ordersSucceeded.ID {
+		t.Fatalf("latest succeeded = %#v ok=%v err=%v, want older succeeded", latestSucceeded, ok, err)
+	}
+}
+
 func writeFixture(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, name)

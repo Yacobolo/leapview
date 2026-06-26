@@ -9,6 +9,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
@@ -153,8 +154,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dashboardHTTP() dashboardhttp.Handler {
+	var metrics dashboardhttp.Metrics = s.metrics
+	if s.store != nil {
+		metrics = dashboardCommandMetrics{
+			queryMetrics: s.metrics,
+			refresh:      s.refreshMaterializationsWithRun,
+		}
+	}
 	return dashboardhttp.Handler{
-		Metrics: s.metrics,
+		Metrics: metrics,
 		Broker:  s.broker,
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
@@ -163,4 +171,51 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			return csrf.Token(r)
 		},
 	}
+}
+
+type dashboardCommandMetrics struct {
+	queryMetrics
+	refresh func(context.Context, string) error
+}
+
+func (m dashboardCommandMetrics) RefreshMaterializations(ctx context.Context, modelID string) error {
+	if m.refresh != nil {
+		return m.refresh(ctx, modelID)
+	}
+	return m.queryMetrics.RefreshMaterializations(ctx, modelID)
+}
+
+func (s *Server) refreshMaterializationsWithRun(ctx context.Context, modelID string) error {
+	return s.refreshMaterializationsWithRunForWorkspace(ctx, s.workspaceID(""), modelID)
+}
+
+func (s *Server) refreshMaterializationsWithRunForWorkspace(ctx context.Context, workspaceID, modelID string) error {
+	if s.store == nil {
+		return s.metrics.RefreshMaterializations(ctx, modelID)
+	}
+	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	run, err := repo.CreateRun(ctx, materialize.RunInput{
+		WorkspaceID: workspaceID,
+		ModelID:     modelID,
+	})
+	if err != nil {
+		return err
+	}
+	s.publishModelRefreshPatches(ctx, workspaceID, modelID)
+	if _, err := repo.MarkRunRunning(ctx, workspaceID, run.ID); err != nil {
+		return err
+	}
+	s.publishModelRefreshPatches(ctx, workspaceID, modelID)
+	if err := s.metrics.RefreshMaterializations(ctx, modelID); err != nil {
+		if _, finishErr := repo.MarkRunFailed(ctx, workspaceID, run.ID, err.Error()); finishErr != nil {
+			return finishErr
+		}
+		s.publishModelRefreshPatches(ctx, workspaceID, modelID)
+		return err
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, workspaceID, run.ID); err != nil {
+		return err
+	}
+	s.publishModelRefreshPatches(ctx, workspaceID, modelID)
+	return nil
 }
