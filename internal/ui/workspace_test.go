@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	workspaceview "github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -22,19 +23,21 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		"Breadcrumb",
+		"<ld-app-shell",
+		"<ld-workspace-asset-page",
+		`"breadcrumbs":[`,
 		"Workspaces",
 		"LibreDash Workspace",
 		"Olist Commerce",
 		"Details",
 		"Lineage",
-		"Overview",
+		`"overview":[`,
 		"Model tables (1)",
 		"Measures (1)",
 		"Relationships (1)",
-		`data-attr:grid="$assetDetailsSemanticModelTablesGrid"`,
-		`data-attr:grid="$assetDetailsSemanticMeasuresGrid"`,
-		`data-attr:grid="$assetDetailsSemanticRelationshipsGrid"`,
+		`"id":"name","header":"Name"`,
+		`"id":"primary_key","header":"Primary key"`,
+		`"id":"cardinality","header":"Cardinality"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("semantic model details did not render %q:\n%s", want, rendered)
@@ -67,43 +70,24 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 		}
 	}
 
-	semanticSignals := workspaceAssetSignals(workspace, byType["semantic_model"], assets, edges, assetLineage(workspace.ID, byType["semantic_model"], assets, edges), "details")
-	for _, key := range []string{
-		"assetDetailsSemanticModelTablesGrid",
-		"assetDetailsSemanticMeasuresGrid",
-		"assetDetailsSemanticRelationshipsGrid",
-	} {
-		if _, ok := semanticSignals[key]; !ok {
-			t.Fatalf("semantic model details did not seed %s: %#v", key, semanticSignals)
-		}
-	}
-	for _, key := range []string{
-		"assetDetailsSemanticConnectionsGrid",
-		"assetDetailsSemanticSourcesGrid",
-		"assetDetailsSemanticFieldsGrid",
-	} {
-		if _, ok := semanticSignals[key]; ok {
-			t.Fatalf("semantic model details seeded non-composition grid %s: %#v", key, semanticSignals)
-		}
-	}
-	modelTablesGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticModelTablesGrid")
-	relationshipsGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticRelationshipsGrid")
+	semanticPage := workspaceAssetPageSignal(workspace, byType["semantic_model"], assets, edges, "details", assetLineage(workspace.ID, byType["semantic_model"], assets, edges))
+	modelTablesGrid := detailSectionGrid(t, semanticPage.Details.Sections, "Model tables")
+	relationshipsGrid := detailSectionGrid(t, semanticPage.Details.Sections, "Relationships")
 	assertGridHeaders(t, modelTablesGrid, []string{"Name", "Primary key", "Fields", "Measures", "Description"})
 	assertGridHeaders(t, relationshipsGrid, []string{"ID", "From table", "From field", "To table", "To field", "Cardinality", "Active"})
 	assertGridMissingHeaders(t, modelTablesGrid, []string{"Source", "Reads", "SQL preview"})
+	assertNoDetailSection(t, semanticPage.Details.Sections, "Connections")
+	assertNoDetailSection(t, semanticPage.Details.Sections, "Sources")
+	assertNoDetailSection(t, semanticPage.Details.Sections, "Fields")
 
-	dashboardSignals := workspaceAssetSignals(workspace, byType["dashboard"], assets, edges, assetLineage(workspace.ID, byType["dashboard"], assets, edges), "details")
-	for _, key := range []string{"assetDetailsPagesGrid", "assetDetailsFiltersGrid", "assetDetailsVisualsGrid", "assetDetailsTablesGrid"} {
-		if _, ok := dashboardSignals[key]; !ok {
-			t.Fatalf("dashboard details did not seed %s: %#v", key, dashboardSignals)
-		}
+	dashboardPage := workspaceAssetPageSignal(workspace, byType["dashboard"], assets, edges, "details", assetLineage(workspace.ID, byType["dashboard"], assets, edges))
+	for _, title := range []string{"Pages", "Filters", "Visuals", "Tables"} {
+		detailSectionGrid(t, dashboardPage.Details.Sections, title)
 	}
 
-	lineageSignals := workspaceAssetSignals(workspace, byType["dashboard"], assets, edges, assetLineage(workspace.ID, byType["dashboard"], assets, edges), "lineage")
-	for _, key := range []string{"assetLineageGraph", "assetLineageUsesGrid", "assetLineageUsedByGrid"} {
-		if _, ok := lineageSignals[key]; !ok {
-			t.Fatalf("lineage did not seed %s: %#v", key, lineageSignals)
-		}
+	lineagePage := workspaceAssetPageSignal(workspace, byType["dashboard"], assets, edges, "lineage", assetLineage(workspace.ID, byType["dashboard"], assets, edges))
+	if len(lineagePage.Lineage.Graph.Nodes) == 0 || len(lineagePage.Lineage.UsesGrid.Columns) == 0 || len(lineagePage.Lineage.UsedByGrid.Columns) == 0 {
+		t.Fatalf("lineage page did not seed graph and relation grids: %#v", lineagePage.Lineage)
 	}
 }
 
@@ -119,12 +103,11 @@ func TestWorkspaceAssetDetailsRenderModelTableComposition(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		"Overview",
+		"<ld-workspace-asset-page",
+		`"overview":[`,
 		"Fields (2)",
-		"SQL",
-		"/static/code-block.js",
-		`data-attr:grid="$assetDetailsModelTableFieldsGrid"`,
-		`<ld-code-block language="sql"`,
+		`"title":"SQL"`,
+		`"code":"SELECT order_id, SUM(payment_value) AS revenue FROM source.payments GROUP BY order_id"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("model table details did not render %q:\n%s", want, rendered)
@@ -132,6 +115,8 @@ func TestWorkspaceAssetDetailsRenderModelTableComposition(t *testing.T) {
 	}
 	for _, notWant := range []string{
 		"Source / transform",
+		"/static/code-block.js",
+		`<ld-code-block language="sql"`,
 		`data-attr:grid="$assetDetailsModelTableDefinitionGrid"`,
 	} {
 		if strings.Contains(rendered, notWant) {
@@ -155,9 +140,10 @@ func TestWorkspaceAssetDetailsRenderDirectSourceModelTableWithoutSQL(t *testing.
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		"Overview",
+		"<ld-workspace-asset-page",
+		`"overview":[`,
 		"Fields (2)",
-		`data-attr:grid="$assetDetailsModelTableFieldsGrid"`,
+		`"id":"physical_type","header":"Physical type"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("direct source model table details did not render %q:\n%s", want, rendered)
@@ -188,16 +174,17 @@ func TestWorkspaceAssetDetailsRenderSourceSchema(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		"Overview",
+		"<ld-workspace-asset-page",
+		`"overview":[`,
 		"Fields (2)",
-		`data-attr:grid="$assetDetailsSourceFieldsGrid"`,
+		`"id":"physical_type","header":"Physical type"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("source details did not render %q:\n%s", want, rendered)
 		}
 	}
-	signals := workspaceAssetSignals(workspace, asset, assets, edges, assetLineage(workspace.ID, asset, assets, edges), "details")
-	grid := signalMetricGrid(t, signals, "assetDetailsSourceFieldsGrid")
+	page := workspaceAssetPageSignal(workspace, asset, assets, edges, "details", assetLineage(workspace.ID, asset, assets, edges))
+	grid := detailSectionGrid(t, page.Details.Sections, "Fields")
 	assertGridHeaders(t, grid, []string{"Name", "Description", "Physical type", "Nullable"})
 	if len(grid.Rows) != 2 {
 		t.Fatalf("source field rows = %#v, want 2 rows", grid.Rows)
@@ -212,25 +199,17 @@ func TestWorkspaceAssetDetailSignalsIncludeModelTableDefinition(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 
 	directAsset := testAssetByID(t, assets, "table-model")
-	directSignals := workspaceAssetSignals(workspace, directAsset, assets, edges, assetLineage(workspace.ID, directAsset, assets, edges), "details")
-	directFields := signalMetricGrid(t, directSignals, "assetDetailsModelTableFieldsGrid")
+	directPage := workspaceAssetPageSignal(workspace, directAsset, assets, edges, "details", assetLineage(workspace.ID, directAsset, assets, edges))
+	directFields := detailSectionGrid(t, directPage.Details.Sections, "Fields")
 	assertGridHeaders(t, directFields, []string{"Name", "Label", "Physical type", "Nullable", "Key", "Description"})
 	assertGridMissingHeaders(t, directFields, []string{"Expression", "Filter", "Order", "Model table", "Measures"})
-	if _, ok := directSignals["assetDetailsModelTableDefinitionGrid"]; ok {
-		t.Fatalf("direct source model table seeded source definition grid: %#v", directSignals)
-	}
-	if _, ok := directSignals["assetDetailsModelTableSQL"]; ok {
-		t.Fatalf("direct source model table seeded SQL signal: %#v", directSignals)
-	}
+	assertNoDetailSection(t, directPage.Details.Sections, "Definition")
+	assertNoDetailSection(t, directPage.Details.Sections, "SQL")
 
 	transformAsset := testAssetByID(t, assets, "table-transform")
-	transformSignals := workspaceAssetSignals(workspace, transformAsset, assets, edges, assetLineage(workspace.ID, transformAsset, assets, edges), "details")
-	if _, ok := transformSignals["assetDetailsModelTableDefinitionGrid"]; ok {
-		t.Fatalf("transform model table seeded source definition grid: %#v", transformSignals)
-	}
-	if _, ok := transformSignals["assetDetailsModelTableMeasuresGrid"]; ok {
-		t.Fatalf("model table details seeded measures grid: %#v", transformSignals)
-	}
+	transformPage := workspaceAssetPageSignal(workspace, transformAsset, assets, edges, "details", assetLineage(workspace.ID, transformAsset, assets, edges))
+	assertNoDetailSection(t, transformPage.Details.Sections, "Definition")
+	assertNoDetailSection(t, transformPage.Details.Sections, "Measures")
 }
 
 func TestWorkspaceAssetDetailsRenderUnknownNullableAsDash(t *testing.T) {
@@ -240,8 +219,8 @@ func TestWorkspaceAssetDetailsRenderUnknownNullableAsDash(t *testing.T) {
 	source.Payload["Fields"] = map[string]any{
 		"order_id": map[string]any{"Description": "Raw order identifier."},
 	}
-	signals := workspaceAssetSignals(workspace, source, assets, edges, assetLineage(workspace.ID, source, assets, edges), "details")
-	sourceGrid := signalMetricGrid(t, signals, "assetDetailsSourceFieldsGrid")
+	sourcePage := workspaceAssetPageSignal(workspace, source, assets, edges, "details", assetLineage(workspace.ID, source, assets, edges))
+	sourceGrid := detailSectionGrid(t, sourcePage.Details.Sections, "Fields")
 	if len(sourceGrid.Rows) != 1 {
 		t.Fatalf("source fallback rows = %#v, want 1", sourceGrid.Rows)
 	}
@@ -253,8 +232,8 @@ func TestWorkspaceAssetDetailsRenderUnknownNullableAsDash(t *testing.T) {
 	modelTable.Payload["Schema"] = map[string]any{"columns": []any{
 		map[string]any{"name": "order_id", "ordinal": float64(1), "physicalType": "VARCHAR", "primaryKey": true},
 	}}
-	signals = workspaceAssetSignals(workspace, modelTable, assets, edges, assetLineage(workspace.ID, modelTable, assets, edges), "details")
-	modelGrid := signalMetricGrid(t, signals, "assetDetailsModelTableFieldsGrid")
+	modelPage := workspaceAssetPageSignal(workspace, modelTable, assets, edges, "details", assetLineage(workspace.ID, modelTable, assets, edges))
+	modelGrid := detailSectionGrid(t, modelPage.Details.Sections, "Fields")
 	if got := fmt.Sprint(modelGrid.Rows[0]["nullable"]); got != "-" {
 		t.Fatalf("model table missing nullable = %q, want -", got)
 	}
@@ -557,17 +536,18 @@ func TestConnectionAssetDetailsRenderConnectionSurface(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		"Breadcrumb",
+		"<ld-workspace-asset-page",
+		`"breadcrumbs":[`,
 		"Olist connection",
-		"Overview",
+		`"overview":[`,
 		"Type",
 		"Connection",
 		"Kind",
 		"Credentials",
 		"Sources",
 		`Back to connections`,
-		`href="/connections/connection:olist.olist/lineage"`,
-		`/connections/connection:olist.olist/sources/source:olist.orders/details`,
+		`"href":"/connections/connection:olist.olist/lineage"`,
+		`"/connections/connection:olist.olist/sources/source:olist.orders/details"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("connection details did not render %q:\n%s", want, rendered)
@@ -602,13 +582,13 @@ func TestConnectionsPageUsesConnectionAssetTabs(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		`data-connection-toolbar`,
-		`href="/connections"`,
-		`href="/connections?type=connection"`,
-		`href="/connections?type=source" aria-current="page"`,
-		`href="/connections/connection:olist.olist/sources/source:olist.orders/details"`,
-		`href="/connections/connection:olist.olist/details">Olist connection</a>`,
-		`>Source<`,
+		`<ld-connections-page`,
+		`"searchHref":"/connections"`,
+		`"href":"/connections?type=connection"`,
+		`"href":"/connections?type=source","active":true`,
+		`"/connections/connection:olist.olist/sources/source:olist.orders/details"`,
+		`"parentHref":"/connections/connection:olist.olist/details"`,
+		`"typeLabel":"Source"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("connections page did not render %q:\n%s", want, rendered)
@@ -632,13 +612,14 @@ func TestConnectionSourceAssetDetailsRenderConnectionChrome(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
+		`<ld-workspace-asset-page`,
 		"Connections",
 		"Olist connection",
 		"Sources",
 		"orders",
 		"Fields",
-		`href="/connections?type=source"`,
-		`href="/connections/connection:olist.olist/sources/source:olist.orders/lineage"`,
+		`"href":"/connections?type=source"`,
+		`"href":"/connections/connection:olist.olist/sources/source:olist.orders/lineage"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("connection-scoped source details did not render %q:\n%s", want, rendered)
@@ -666,14 +647,15 @@ func TestWorkspaceAssetTabsUseWorkspaceAssetTypes(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		`href="/workspaces/libredash"`,
-		`>All</a>`,
-		`href="/workspaces/libredash?type=model_table"`,
-		`>Model table</a>`,
-		`href="/workspaces/libredash?type=semantic_model"`,
-		`>Semantic model</a>`,
-		`href="/workspaces/libredash?type=dashboard"`,
-		`>Dashboard</a>`,
+		`<ld-workspace-page`,
+		`"href":"/workspaces/libredash"`,
+		`"label":"All"`,
+		`"href":"/workspaces/libredash?type=model_table"`,
+		`"label":"Model table"`,
+		`"href":"/workspaces/libredash?type=semantic_model"`,
+		`"label":"Semantic model"`,
+		`"href":"/workspaces/libredash?type=dashboard"`,
+		`"label":"Dashboard"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("workspace tabs did not render %q:\n%s", want, rendered)
@@ -696,16 +678,12 @@ func TestWorkspaceAssetRowsUseDetailLinksForModelAndMetricAssets(t *testing.T) {
 	}
 
 	for _, typ := range []string{"semantic_model", "dashboard"} {
-		var out strings.Builder
-		if err := assetRow(workspace.ID, byType[typ], byID, nil).Render(&out); err != nil {
-			t.Fatal(err)
+		summary := workspaceAssetSummarySignal(workspace.ID, byType[typ], byID, nil)
+		if strings.Contains(summary.DetailHref, `/models`) || strings.Contains(summary.DetailHref, `/metrics`) {
+			t.Fatalf("%s asset summary rendered removed legacy detail link: %s", typ, summary.DetailHref)
 		}
-		rendered := html.UnescapeString(out.String())
-		if strings.Contains(rendered, `/models`) || strings.Contains(rendered, `/metrics`) {
-			t.Fatalf("%s asset row rendered removed legacy link:\n%s", typ, rendered)
-		}
-		if !strings.Contains(rendered, "/workspaces/libredash/assets/"+byType[typ].ID+"/details") {
-			t.Fatalf("%s asset row did not link to canonical details:\n%s", typ, rendered)
+		if want := "/workspaces/libredash/assets/" + byType[typ].ID + "/details"; summary.DetailHref != want {
+			t.Fatalf("%s asset summary detail href = %q, want %q", typ, summary.DetailHref, want)
 		}
 	}
 }
@@ -726,17 +704,15 @@ func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted" scope="col">Name</th>`,
-		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-40" scope="col">Type</th>`,
-		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-56 max-md:hidden" scope="col">Key</th>`,
-		`<th class="px-3 py-2 text-caption font-medium uppercase text-fg-muted w-48 max-lg:hidden" scope="col">Parent</th>`,
-		"background-color: var(--ld-asset-semantic-model-bg); border-color: var(--ld-asset-semantic-model-border); color: var(--ld-asset-semantic-model-accent)",
-		"background-color: var(--ld-asset-measure-bg); border-color: var(--ld-asset-measure-border); color: var(--ld-asset-measure-accent)",
-		"background-color: var(--ld-asset-dashboard-bg); border-color: var(--ld-asset-dashboard-border); color: var(--ld-asset-dashboard-accent)",
-		`href="/workspaces/libredash/assets/semantic_model:olist/details">Olist Commerce</a>`,
+		`<ld-workspace-page`,
+		`"typeLabel":"Semantic model"`,
+		`"typeLabel":"Measure"`,
+		`"typeLabel":"Dashboard"`,
+		`"detailHref":"/workspaces/libredash/assets/semantic_model:olist/details"`,
+		`"title":"Olist Commerce"`,
 	} {
 		if !strings.Contains(rendered, want) {
-			t.Fatalf("workspace asset rows did not render token-backed icon style %q:\n%s", want, rendered)
+			t.Fatalf("workspace asset rows did not seed route payload %q:\n%s", want, rendered)
 		}
 	}
 }
@@ -752,9 +728,9 @@ func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, want := range []string{
-		`/static/workspace-access-control.js?v=dev`,
-		`<ld-workspace-access-control data-attr:access="$workspaceAccess"`,
-		`data-attr:search="$workspaceAccess.search"`,
+		`<ld-workspace-page`,
+		`workspaceaccess=`,
+		`data-attr:workspaceaccess="JSON.stringify($workspaceAccess)"`,
 		`data-on:ld-workspace-access-search__debounce.200ms=`,
 		`data-on:ld-workspace-access-upsert=`,
 		`data-on:ld-workspace-access-remove=`,
@@ -788,8 +764,7 @@ func TestWorkspaceAccessControlDoesNotRenderForViewers(t *testing.T) {
 	rendered := html.UnescapeString(out.String())
 
 	for _, notWant := range []string{
-		`/static/workspace-access-control.js?v=dev`,
-		`<ld-workspace-access-control`,
+		`workspaceaccess=`,
 		`data-on:ld-workspace-access-upsert=`,
 	} {
 		if strings.Contains(rendered, notWant) {
@@ -852,13 +827,28 @@ var testAssetAliases = map[string]string{
 	"table":           "table:executive-sales.orders",
 }
 
-func signalMetricGrid(t *testing.T, signals map[string]any, key string) metricGrid {
+func detailSectionGrid(t *testing.T, sections []uisignals.WorkspaceDetailSectionSignal, title string) metricGrid {
 	t.Helper()
-	grid, ok := signals[key].(metricGrid)
-	if !ok {
-		t.Fatalf("signal %s = %#v, want metricGrid", key, signals[key])
+	for _, section := range sections {
+		if detailSectionTitleMatches(section.Title, title) && len(section.Grid.Columns) > 0 {
+			return section.Grid
+		}
 	}
-	return grid
+	t.Fatalf("detail sections missing grid %q: %#v", title, sections)
+	return metricGrid{}
+}
+
+func assertNoDetailSection(t *testing.T, sections []uisignals.WorkspaceDetailSectionSignal, title string) {
+	t.Helper()
+	for _, section := range sections {
+		if detailSectionTitleMatches(section.Title, title) {
+			t.Fatalf("detail sections unexpectedly contained %q: %#v", title, sections)
+		}
+	}
+}
+
+func detailSectionTitleMatches(got, want string) bool {
+	return got == want || strings.HasPrefix(got, want+" (")
 }
 
 func assertLineageNodeKinds(t *testing.T, graph assetLineageGraph, expected []string) {

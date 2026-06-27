@@ -53,9 +53,9 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 		want []string
 	}{
 		{path: "/admin", want: []string{"General", "Principals", "Groups", "Role bindings", "Roles"}},
-		{path: "/admin/principals", want: []string{"Principals", "ld-data-grid", "Group count", "/admin/principals/" + analyst.ID, "analyst@example.com", "viewer", analyst.ID}},
+		{path: "/admin/principals", want: []string{"<ld-admin-page", "Principals", "sections", "Group count", "/admin/principals/" + analyst.ID, "analyst@example.com", "viewer", analyst.ID}},
 		{path: "/admin/principals/" + analyst.ID, want: []string{"Principals / Analyst", "Email", "analyst@example.com", "Principal ID", analyst.ID, "Direct roles", "viewer", "Group count", "Groups", "/admin/groups/group_finance", "Finance", "local", "finance", "editor"}},
-		{path: "/admin/groups", want: []string{"Groups", "ld-data-grid", "Member count", "/admin/groups/group_finance", "Finance", "local", "finance", "editor"}},
+		{path: "/admin/groups", want: []string{"<ld-admin-page", "Groups", "sections", "Member count", "/admin/groups/group_finance", "Finance", "local", "finance", "editor"}},
 		{path: "/admin/groups/group_finance", want: []string{"Groups / Finance", "Provider", "local", "External ID", "finance", "Group ID", "group_finance", "Members", "Principal ID", "analyst@example.com", "viewer", analyst.ID}},
 	}
 	for _, tc := range cases {

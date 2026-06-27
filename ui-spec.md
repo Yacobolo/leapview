@@ -6,6 +6,7 @@ Server routes remain real URLs and full document navigations:
 
 ```text
 /dashboards/{dashboard}/pages/{page}
+/
 /chat
 /workspaces
 /connections
@@ -96,6 +97,7 @@ Dashboard data UI:
 
 Other route roots:
 
+- `ld-catalog-page`
 - `ld-chat-page`
 - `ld-workspace-page`
 - `ld-workspace-asset-page`

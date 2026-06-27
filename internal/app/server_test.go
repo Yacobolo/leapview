@@ -232,11 +232,14 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `<ld-sub-sidebar`) {
-		t.Fatalf("report page did not render sub sidebar:\n%s", body)
+	if !strings.Contains(body, `<ld-app-shell`) || !strings.Contains(body, `<ld-dashboard-page`) {
+		t.Fatalf("report page did not render app shell and dashboard route root:\n%s", body)
 	}
 	if strings.Contains(body, `<ld-report-sidebar`) {
 		t.Fatalf("report page still rendered report sidebar:\n%s", body)
+	}
+	if strings.Contains(body, `<ld-sub-sidebar`) || strings.Contains(body, `<ld-report-canvas`) || strings.Contains(body, `<ld-echart`) || strings.Contains(body, `<ld-data-table`) {
+		t.Fatalf("report page rendered dashboard product internals below route root:\n%s", body)
 	}
 	if !strings.Contains(body, `&#34;compact&#34;:true`) {
 		t.Fatalf("report page did not compact the primary sidebar:\n%s", body)
@@ -349,26 +352,33 @@ func TestHomeRouteRendersDashboardCatalog(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `Dashboards`) {
+	rendered := html.UnescapeString(body)
+	if !strings.Contains(rendered, `<ld-app-shell`) || !strings.Contains(rendered, `<ld-catalog-page`) {
+		t.Fatalf("home did not mount catalog route root:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, `/static/catalog-page.js`) {
+		t.Fatalf("home missing catalog route bundle:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, `Dashboards`) {
 		t.Fatalf("home missing dashboard catalog title:\n%s", body)
 	}
-	if !strings.Contains(body, `Executive Sales Dashboard`) {
+	if !strings.Contains(rendered, `Executive Sales Dashboard`) {
 		t.Fatalf("home missing dashboard card:\n%s", body)
 	}
-	if !strings.Contains(body, `href="/dashboards/executive-sales"`) {
+	if !strings.Contains(rendered, `"href":"/dashboards/executive-sales"`) {
 		t.Fatalf("home missing dashboard link:\n%s", body)
 	}
 	for _, want := range []string{`Dashboards`, `/`, `Workspaces`, `/workspaces`, `Connections`, `/connections`, `Admin`, `/admin`} {
-		if !strings.Contains(body, want) {
+		if !strings.Contains(rendered, want) {
 			t.Fatalf("home sidebar missing %q:\n%s", want, body)
 		}
 	}
 	for _, notWant := range []string{`Metric Views`, `/metrics`, `Semantic Models`, `/models`, `Settings`, `/workspaces/test-workspace/permissions`} {
-		if strings.Contains(body, notWant) {
+		if strings.Contains(rendered, notWant) {
 			t.Fatalf("home sidebar rendered removed navigation %q:\n%s", notWant, body)
 		}
 	}
-	if strings.Contains(body, `<ld-sub-sidebar`) {
+	if strings.Contains(rendered, `<ld-sub-sidebar`) {
 		t.Fatalf("dashboard catalog should not render sub sidebar:\n%s", body)
 	}
 }
@@ -383,11 +393,11 @@ func TestLoginRouteRendersAzureADLogin(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `<ld-topology-background`) {
-		t.Fatalf("login page did not render topology background component:\n%s", body)
+	if !strings.Contains(body, `<ld-login-page`) {
+		t.Fatalf("login page did not mount login route root:\n%s", body)
 	}
 	if !strings.Contains(body, `Sign in with Azure Active Directory`) {
-		t.Fatalf("login page did not render Azure AD button:\n%s", body)
+		t.Fatalf("login page did not seed Azure AD provider label:\n%s", body)
 	}
 	if !strings.Contains(body, `data-init__delay`) {
 		t.Fatalf("login page did not include lazy background init:\n%s", body)
