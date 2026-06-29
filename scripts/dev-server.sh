@@ -130,6 +130,34 @@ same_worktree_pid() {
   [[ "$(pid_cwd "$pid")" == "$ROOT" ]]
 }
 
+recorded_port() {
+  [[ -f "$PORT_FILE" ]] && cat "$PORT_FILE" 2>/dev/null || true
+}
+
+same_worktree_port_pid() {
+  local port="${1:-}"
+  [[ -n "$port" ]] || return 1
+
+  local pids
+  pids="$(port_pids "$port")"
+  [[ -n "$pids" ]] || return 1
+
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    if same_worktree_pid "$pid"; then
+      echo "$pid"
+      return 0
+    fi
+  done <<< "$pids"
+  return 1
+}
+
+running_server_pid() {
+  local port
+  port="$(recorded_port)"
+  same_worktree_port_pid "$port"
+}
+
 ensure_port() {
   local candidate="$1"
   local end=$((PORT_START + PORT_COUNT - 1))
@@ -197,6 +225,21 @@ wait_for_port() {
 }
 
 start() {
+  if [[ "${LIBREDASH_DEV_RESTART:-}" != "1" ]]; then
+    local existing_pid
+    existing_pid="$(running_server_pid || true)"
+    if [[ -n "$existing_pid" ]]; then
+      local existing_port
+      existing_port="$(recorded_port)"
+      echo "LibreDash dev server already running"
+      echo "PID: $existing_pid"
+      echo "URL: http://localhost:$existing_port"
+      echo "Logs: $LOG_FILE"
+      echo "Set LIBREDASH_DEV_RESTART=1 to force a restart."
+      return 0
+    fi
+  fi
+
   stop_recorded
 
   local preferred

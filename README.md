@@ -8,7 +8,7 @@ LibreDash is a small fullstack Go dashboard demo using gomponents, Datastar sign
 task dev
 ```
 
-`task dev` installs JavaScript dependencies with Bun, builds Tailwind CSS and Bun-bundled browser assets, syncs the demo data, starts a managed dev server, chooses a worktree-safe port, stops this worktree's stale server if one is already running, and prints the URL. Use `task dev:status`, `task dev:logs`, and `task dev:stop` for lifecycle checks.
+`task dev` installs JavaScript dependencies with Bun, builds Tailwind CSS and Bun-bundled browser assets, syncs the demo data, starts or reuses a managed dev server, chooses a worktree-safe port, and prints the URL. Use `task dev:status`, `task dev:logs`, and `task dev:stop` for lifecycle checks. Set `LIBREDASH_DEV_RESTART=1` to force a restart.
 
 Generated files such as `static/app.css`, route entrypoints, and other bundled component assets are intentionally not checked in. If you run the app without `task dev`, build assets first:
 
