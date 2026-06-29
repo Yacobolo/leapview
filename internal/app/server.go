@@ -53,6 +53,7 @@ type Server struct {
 	auth               *Auth
 	reloader           runtimeReloader
 	artifactDir        string
+	duckDBDir          string
 	defaultWorkspaceID string
 	rateLimits         RateLimitConfig
 	securityHeaders    SecurityHeadersConfig
@@ -76,6 +77,7 @@ type Options struct {
 	Auth               *Auth
 	Reloader           runtimeReloader
 	ArtifactDir        string
+	DuckDBDir          string
 	DefaultWorkspaceID string
 	RateLimits         RateLimitConfig
 	SecurityHeaders    SecurityHeadersConfig
@@ -94,6 +96,7 @@ func NewWithOptions(metrics queryMetrics, options Options) *Server {
 	server.auth = options.Auth
 	server.reloader = options.Reloader
 	server.artifactDir = options.ArtifactDir
+	server.duckDBDir = options.DuckDBDir
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
 	server.rateLimits = options.RateLimits
 	server.securityHeaders = options.SecurityHeaders
