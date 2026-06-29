@@ -10,7 +10,7 @@ type LucideIconOptions = {
 }
 
 export function lucideIcon(iconNode: IconNode, options: LucideIconOptions = {}) {
-  const size = String(options.size ?? 24)
+  const size = String(options.size ?? 16)
   const strokeWidth = String(options.strokeWidth ?? 2)
 
   return svg`

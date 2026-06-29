@@ -1,6 +1,29 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property } from 'lit/decorators.js'
-import { ArrowLeft, ExternalLink, FileText, Search } from 'lucide'
+import {
+  ArrowLeft,
+  BookOpen,
+  Box,
+  Boxes,
+  Cable,
+  ChartColumn,
+  Component,
+  ExternalLink,
+  FileText,
+  GalleryVerticalEnd,
+  LayoutDashboard,
+  ListFilter,
+  PanelTop,
+  Plug,
+  Ruler,
+  Search,
+  Sigma,
+  SquareDashedMousePointer,
+  Table2,
+  TableProperties,
+  Workflow,
+  type IconNode,
+} from 'lucide'
 import type {
   ConnectionsPageSignal,
   DefinitionFactSignal,
@@ -34,7 +57,9 @@ class LibreDashWorkspacePage extends LitElement {
   @property({ converter: jsonAttribute<WorkspacePageSignal | null>(null) }) page: WorkspacePageSignal | null = null
   @property({ attribute: 'workspaceaccess', converter: jsonAttribute<WorkspaceAccessSignal>(emptyWorkspaceAccess) }) workspaceAccess: WorkspaceAccessSignal = emptyWorkspaceAccess
 
-  static styles = workspaceStyles
+  static get styles() {
+    return workspaceStyles
+  }
 
   updated(): void {
     checkSignalContract('workspace page', this.page, { kind: 'required', title: 'required' })
@@ -116,7 +141,9 @@ class LibreDashWorkspacePage extends LitElement {
 class LibreDashConnectionsPage extends LitElement {
   @property({ converter: jsonAttribute<ConnectionsPageSignal | null>(null) }) page: ConnectionsPageSignal | null = null
 
-  static styles = workspaceStyles
+  static get styles() {
+    return workspaceStyles
+  }
 
   updated(): void {
     checkSignalContract('connections page', this.page, { kind: 'required', title: 'required', assetList: 'required' })
@@ -144,7 +171,9 @@ class LibreDashConnectionsPage extends LitElement {
 class LibreDashWorkspaceAssetPage extends LitElement {
   @property({ converter: jsonAttribute<WorkspaceAssetPageSignal | null>(null) }) page: WorkspaceAssetPageSignal | null = null
 
-  static styles = workspaceStyles
+  static get styles() {
+    return workspaceStyles
+  }
 
   updated(): void {
     checkSignalContract('workspace asset page', this.page, { title: 'required', breadcrumbs: 'required', tabs: 'required' })
@@ -161,7 +190,7 @@ class LibreDashWorkspaceAssetPage extends LitElement {
               ${page.breadcrumbs.map((crumb) => html`
                 <li>
                   ${crumb.current
-                    ? html`<h1>${assetTypeGlyph(page.asset.type)}<span>${crumb.label}</span></h1>`
+                    ? html`<h1>${assetTypeGlyph(page.asset.type, 'inline')}<span>${crumb.label}</span></h1>`
                     : html`<a href=${crumb.href}>${crumb.label}</a>`}
                 </li>
               `)}
@@ -227,17 +256,17 @@ function renderAssetTable(assets: WorkspaceAssetSummarySignal[], empty: string) 
       <table class="asset-table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th class="hide-md">Key</th>
-            <th class="hide-lg">Parent</th>
-            <th class="right">Actions</th>
+            <th class="name-col">Name</th>
+            <th class="type-col">Type</th>
+            <th class="key-col hide-md">Key</th>
+            <th class="parent-col hide-lg">Parent</th>
+            <th class="action-col right">Actions</th>
           </tr>
         </thead>
         <tbody>
           ${assets.map((asset) => html`
             <tr>
-              <td>
+              <td class="name-col">
                 <div class="asset-name">
                   ${assetTypeGlyph(asset.type)}
                   <div>
@@ -246,14 +275,14 @@ function renderAssetTable(assets: WorkspaceAssetSummarySignal[], empty: string) 
                   </div>
                 </div>
               </td>
-              <td>${asset.typeLabel}</td>
-              <td class="hide-md"><code>${asset.key}</code></td>
-              <td class="hide-lg">
+              <td class="type-col">${asset.typeLabel}</td>
+              <td class="key-col hide-md"><code>${asset.key}</code></td>
+              <td class="parent-col hide-lg">
                 ${asset.parentHref
                   ? html`<a class="muted-link" href=${asset.parentHref}>${asset.parentTitle}</a>`
                   : html`<span class="muted">${asset.parentTitle || '-'}</span>`}
               </td>
-              <td class="right">
+              <td class="action-col right">
                 <span class="row-actions">
                   <a class="icon-link" href=${asset.detailHref} title="View details" aria-label="View details">${lucideIcon(FileText)}</a>
                   <a class="icon-link" href=${asset.openHref} title="Open asset" aria-label="Open asset">${lucideIcon(ExternalLink)}</a>
@@ -324,9 +353,91 @@ function renderGridSection(title: string, grid?: MetricGridSignal) {
   `
 }
 
-function assetTypeGlyph(type: string) {
-  const label = type?.slice(0, 1).toUpperCase() || 'A'
-  return html`<span class="asset-glyph" aria-hidden="true">${label}</span>`
+function assetTypeGlyph(type: string, size: 'table' | 'inline' = 'table') {
+  return html`
+    <span class=${`asset-glyph asset-kind-${assetPresentationToken(type)} ${size === 'inline' ? 'inline' : ''}`} aria-hidden="true">
+      ${lucideIcon(assetIconNode(type), { size: size === 'inline' ? 14 : 16, strokeWidth: 1.75 })}
+    </span>
+  `
+}
+
+function assetIconNode(type: string): IconNode {
+  switch (type) {
+    case 'catalog':
+      return BookOpen
+    case 'connection':
+      return Plug
+    case 'dashboard':
+      return LayoutDashboard
+    case 'field':
+      return Ruler
+    case 'filter':
+      return ListFilter
+    case 'measure':
+      return Sigma
+    case 'model_table':
+    case 'semantic_table':
+      return TableProperties
+    case 'page':
+      return PanelTop
+    case 'page_item':
+      return Component
+    case 'relationship':
+      return Workflow
+    case 'semantic_model':
+      return Box
+    case 'source':
+      return Cable
+    case 'table':
+      return Table2
+    case 'visual':
+      return ChartColumn
+    case 'visual_element':
+      return SquareDashedMousePointer
+    case 'workspace':
+      return Boxes
+    case 'workspace_group':
+      return GalleryVerticalEnd
+    default:
+      return Component
+  }
+}
+
+function assetPresentationToken(type: string): string {
+  switch (type) {
+    case 'catalog':
+    case 'workspace':
+    case 'workspace_group':
+      return 'catalog'
+    case 'connection':
+      return 'connection'
+    case 'dashboard':
+      return 'dashboard'
+    case 'field':
+    case 'relationship':
+      return 'dimension'
+    case 'filter':
+      return 'filter'
+    case 'measure':
+      return 'measure'
+    case 'model_table':
+    case 'semantic_table':
+      return 'model-table'
+    case 'page':
+    case 'page_item':
+      return 'page'
+    case 'semantic_model':
+      return 'semantic-model'
+    case 'source':
+      return 'source'
+    case 'table':
+      return 'table'
+    case 'visual':
+    case 'visual_element':
+      return 'visual'
+    default:
+      return 'default'
+  }
 }
 
 const workspaceStyles = css`
@@ -474,10 +585,7 @@ const workspaceStyles = css`
   .icon-button {
     display: inline-grid;
     place-items: center;
-    border: var(--ld-border-muted);
     border-radius: var(--ld-radius-default);
-    background: var(--ld-bg-panel);
-    color: var(--ld-fg-default);
     text-decoration: none;
   }
 
@@ -496,7 +604,27 @@ const workspaceStyles = css`
   .icon-button {
     width: var(--control-medium-size);
     height: var(--control-medium-size);
+    border: var(--ld-border-muted);
     padding: 0;
+  }
+
+  .icon-link {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ld-fg-muted);
+  }
+
+  .icon-link:hover,
+  .icon-link:focus-visible {
+    border-color: var(--ld-line-muted);
+    background: var(--ld-bg-control-hover);
+    color: var(--ld-fg-default);
+    outline: 0;
+  }
+
+  .icon-button {
+    background: var(--ld-bg-panel);
+    color: var(--ld-fg-default);
   }
 
   button,
@@ -611,6 +739,22 @@ const workspaceStyles = css`
     text-align: right;
   }
 
+  .type-col {
+    width: 10rem;
+  }
+
+  .key-col {
+    width: 14rem;
+  }
+
+  .parent-col {
+    width: 12rem;
+  }
+
+  .action-col {
+    width: 6rem;
+  }
+
   .asset-name {
     display: flex;
     min-width: 0;
@@ -622,6 +766,19 @@ const workspaceStyles = css`
   .muted-link {
     color: var(--ld-fg-default);
     text-decoration: none;
+  }
+
+  .asset-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--ld-font-weight-strong);
+  }
+
+  .asset-title:hover,
+  .muted-link:hover {
+    text-decoration: underline;
   }
 
   .muted-link {
@@ -644,8 +801,83 @@ const workspaceStyles = css`
     border-radius: var(--ld-radius-default);
     background: var(--ld-bg-panel-muted);
     color: var(--ld-fg-muted);
-    font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-strong);
+  }
+
+  .asset-glyph.inline {
+    width: var(--base-size-20);
+    height: var(--base-size-20);
+  }
+
+  .asset-kind-catalog {
+    background: var(--ld-asset-catalog-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-catalog-border, var(--ld-line-muted));
+    color: var(--ld-asset-catalog-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-connection {
+    background: var(--ld-asset-connection-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-connection-border, var(--ld-line-muted));
+    color: var(--ld-asset-connection-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-dashboard {
+    background: var(--ld-asset-dashboard-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-dashboard-border, var(--ld-line-muted));
+    color: var(--ld-asset-dashboard-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-dimension {
+    background: var(--ld-asset-dimension-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-dimension-border, var(--ld-line-muted));
+    color: var(--ld-asset-dimension-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-filter {
+    background: var(--ld-asset-filter-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-filter-border, var(--ld-line-muted));
+    color: var(--ld-asset-filter-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-measure {
+    background: var(--ld-asset-measure-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-measure-border, var(--ld-line-muted));
+    color: var(--ld-asset-measure-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-model-table {
+    background: var(--ld-asset-model-table-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-model-table-border, var(--ld-line-muted));
+    color: var(--ld-asset-model-table-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-page {
+    background: var(--ld-asset-page-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-page-border, var(--ld-line-muted));
+    color: var(--ld-asset-page-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-semantic-model {
+    background: var(--ld-asset-semantic-model-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-semantic-model-border, var(--ld-line-muted));
+    color: var(--ld-asset-semantic-model-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-source {
+    background: var(--ld-asset-source-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-source-border, var(--ld-line-muted));
+    color: var(--ld-asset-source-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-table {
+    background: var(--ld-asset-table-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-table-border, var(--ld-line-muted));
+    color: var(--ld-asset-table-accent, var(--ld-fg-muted));
+  }
+
+  .asset-kind-visual {
+    background: var(--ld-asset-visual-bg, var(--ld-bg-panel-muted));
+    border-color: var(--ld-asset-visual-border, var(--ld-line-muted));
+    color: var(--ld-asset-visual-accent, var(--ld-fg-muted));
   }
 
   .empty {

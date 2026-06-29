@@ -67,15 +67,31 @@ for (const viewport of [
         const workspace = document.querySelector('ld-workspace-page') as any
         const connections = document.querySelector('ld-connections-page') as any
         const asset = document.querySelector('ld-workspace-asset-page') as any
+        const workspacePage = workspace.shadowRoot.querySelector('.page') as HTMLElement
+        const workspaceToolbar = workspace.shadowRoot.querySelector('.toolbar') as HTMLElement
+        const workspaceGlyph = workspace.shadowRoot.querySelector('.asset-glyph') as HTMLElement
+        const workspaceRowActionIcon = workspace.shadowRoot.querySelector('.row-actions svg') as SVGElement
+        const workspaceRowActionLink = workspace.shadowRoot.querySelector('.row-actions .icon-link') as HTMLElement
+        const connectionsPage = connections.shadowRoot.querySelector('.page') as HTMLElement
+        const assetHeader = asset.shadowRoot.querySelector('.breadcrumb-header') as HTMLElement
         return {
           workspaceTitle: workspace.shadowRoot.querySelector('h1')?.textContent?.trim(),
           workspaceHasAsset: Boolean(workspace.shadowRoot.querySelector('.asset-title')),
           workspaceHasAccess: Boolean(workspace.shadowRoot.querySelector('ld-workspace-access-control')),
+          workspaceIsStyled: getComputedStyle(workspacePage).paddingTop !== '0px',
+          workspaceToolbarDisplay: getComputedStyle(workspaceToolbar).display,
+          workspaceGlyphText: workspaceGlyph.textContent?.trim(),
+          workspaceGlyphBackground: getComputedStyle(workspaceGlyph).backgroundColor,
+          workspaceGlyphHasIcon: Boolean(workspaceGlyph.querySelector('svg')),
+          workspaceRowActionIconWidth: getComputedStyle(workspaceRowActionIcon).width,
+          workspaceRowActionBorderColor: getComputedStyle(workspaceRowActionLink).borderTopColor,
           connectionsTitle: connections.shadowRoot.querySelector('h1')?.textContent?.trim(),
           connectionsHasSource: connections.shadowRoot.textContent?.includes('Orders source') ?? false,
+          connectionsIsStyled: getComputedStyle(connectionsPage).paddingTop !== '0px',
           assetTitle: asset.shadowRoot.querySelector('h1 span:last-child')?.textContent?.trim(),
           assetHasOverview: asset.shadowRoot.textContent?.includes('Overview') ?? false,
           assetHasGrid: Boolean(asset.shadowRoot.querySelector('ld-data-grid')),
+          assetHeaderDisplay: getComputedStyle(assetHeader).display,
         }
       })
 
@@ -83,11 +99,20 @@ for (const viewport of [
         workspaceTitle: 'LibreDash Workspace',
         workspaceHasAsset: true,
         workspaceHasAccess: true,
+        workspaceIsStyled: true,
+        workspaceToolbarDisplay: 'grid',
+        workspaceGlyphText: '',
+        workspaceGlyphBackground: 'rgb(221, 244, 255)',
+        workspaceGlyphHasIcon: true,
+        workspaceRowActionIconWidth: '16px',
+        workspaceRowActionBorderColor: 'rgba(0, 0, 0, 0)',
         connectionsTitle: 'Connections',
         connectionsHasSource: true,
+        connectionsIsStyled: true,
         assetTitle: 'Olist Commerce',
         assetHasOverview: true,
         assetHasGrid: true,
+        assetHeaderDisplay: 'grid',
       })
     } finally {
       await page.close()
@@ -183,7 +208,7 @@ function testDocument(): string {
       <head>
         <style>
           html, body { margin: 0; min-height: 100%; }
-          body { --fontStack-system: system-ui; --ld-bg-app: #f6f8fa; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-accent: #0969da; --ld-accent-fg: #fff; --ld-line-muted: #d8dee4; --ld-border-default: 1px solid #d0d7de; --ld-border-muted: 1px solid #d8dee4; --ld-border-transparent: 1px solid transparent; --ld-radius-default: 6px; --ld-radius-tight: 4px; --ld-radius-full: 999px; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --base-size-24: 24px; --control-medium-size: 32px; --control-xlarge-size: 40px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-title-sm: 16px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-line-height-tight: 1.2; --ld-line-height-compact: 1.3; --z-index-inspector: 1000; --ld-modal-backdrop: rgb(0 0 0 / .28); }
+          body { --fontStack-system: system-ui; --ld-bg-app: #f6f8fa; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-accent: #0969da; --ld-accent-fg: #fff; --ld-line-muted: #d8dee4; --ld-border-default: 1px solid #d0d7de; --ld-border-muted: 1px solid #d8dee4; --ld-border-transparent: 1px solid transparent; --ld-radius-default: 6px; --ld-radius-tight: 4px; --ld-radius-full: 999px; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --base-size-24: 24px; --control-medium-size: 32px; --control-xlarge-size: 40px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-title-sm: 16px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-line-height-tight: 1.2; --ld-line-height-compact: 1.3; --ld-asset-semantic-model-bg: #ddf4ff; --ld-asset-semantic-model-accent: #0969da; --ld-asset-semantic-model-border: #b6e3ff; --z-index-inspector: 1000; --ld-modal-backdrop: rgb(0 0 0 / .28); }
           ld-workspace-page, ld-connections-page, ld-workspace-asset-page { display: block; min-height: 720px; }
         </style>
       </head>

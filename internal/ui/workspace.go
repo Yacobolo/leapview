@@ -155,8 +155,9 @@ func workspaceCardSignals(workspaces []workspaceview.WorkspaceView) []uisignals.
 
 func workspaceAssetListSignal(workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query string, tabs []uisignals.WorkspaceTabSignal, empty, searchHref string) uisignals.WorkspaceAssetListSignal {
 	items := make([]uisignals.WorkspaceAssetSummarySignal, 0, len(assets))
-	assetIndex := assetsByID(assets)
-	for _, asset := range assets {
+	sortedAssets := sortedWorkspaceAssetList(assets)
+	assetIndex := assetsByID(sortedAssets)
+	for _, asset := range sortedAssets {
 		items = append(items, workspaceAssetSummarySignal(workspaceID, asset, assetIndex, edges))
 	}
 	return uisignals.WorkspaceAssetListSignal{
@@ -167,6 +168,41 @@ func workspaceAssetListSignal(workspaceID string, assets []workspaceview.AssetVi
 		Tabs:        tabs,
 		Assets:      items,
 		Empty:       empty,
+	}
+}
+
+func sortedWorkspaceAssetList(assets []workspaceview.AssetView) []workspaceview.AssetView {
+	out := append([]workspaceview.AssetView(nil), assets...)
+	sort.SliceStable(out, func(i, j int) bool {
+		leftPriority := workspaceAssetTypePriority(out[i].Type)
+		rightPriority := workspaceAssetTypePriority(out[j].Type)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		leftTitle := strings.ToLower(assetTitle(out[i]))
+		rightTitle := strings.ToLower(assetTitle(out[j]))
+		if leftTitle != rightTitle {
+			return leftTitle < rightTitle
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func workspaceAssetTypePriority(typ string) int {
+	switch typ {
+	case "dashboard":
+		return 0
+	case "model_table":
+		return 1
+	case "semantic_model":
+		return 2
+	case "connection":
+		return 3
+	case "source":
+		return 4
+	default:
+		return 10
 	}
 }
 

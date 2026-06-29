@@ -692,7 +692,7 @@ func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
 	visibleAssets := []workspaceview.AssetView{
 		testAssetByID(t, assets, "model"),
-		testAssetByID(t, assets, "measure"),
+		testAssetByID(t, assets, "table-model"),
 		testAssetByID(t, assets, "dashboard"),
 	}
 
@@ -705,15 +705,24 @@ func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 
 	for _, want := range []string{
 		`<ld-workspace-page`,
-		`"typeLabel":"Semantic model"`,
-		`"typeLabel":"Measure"`,
 		`"typeLabel":"Dashboard"`,
+		`"typeLabel":"Model table"`,
+		`"typeLabel":"Semantic model"`,
 		`"detailHref":"/workspaces/libredash/assets/semantic_model:olist/details"`,
 		`"title":"Olist Commerce"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("workspace asset rows did not seed route payload %q:\n%s", want, rendered)
 		}
+	}
+	dashboardIndex := strings.Index(rendered, `"title":"Executive Sales Dashboard"`)
+	tableIndex := strings.Index(rendered, `"title":"orders"`)
+	modelIndex := strings.Index(rendered, `"title":"Olist Commerce"`)
+	if dashboardIndex < 0 || tableIndex < 0 || modelIndex < 0 {
+		t.Fatalf("workspace asset rows missing expected titles:\n%s", rendered)
+	}
+	if !(dashboardIndex < tableIndex && tableIndex < modelIndex) {
+		t.Fatalf("workspace asset rows order = dashboard:%d table:%d model:%d, want dashboard, model table, semantic model:\n%s", dashboardIndex, tableIndex, modelIndex, rendered)
 	}
 }
 
