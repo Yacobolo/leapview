@@ -213,6 +213,61 @@ func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
 	}
 }
 
+func TestModelTableDependencyOrderIncludesUpstreamBeforeSelected(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name:      "test",
+		BaseTable: "daily_summary",
+		Tables: map[string]semanticmodel.Table{
+			"customers":     {PrimaryKey: "customer_id"},
+			"orders":        {PrimaryKey: "order_id"},
+			"order_summary": {PrimaryKey: "status", Transform: semanticmodel.Transform{SQL: "SELECT status FROM model.orders"}, ModelDependencies: []string{"orders"}},
+			"daily_summary": {PrimaryKey: "day", ModelDependencies: []string{"order_summary", "customers"}},
+		},
+	}
+
+	order, err := analyticsmaterialize.ModelTableDependencyOrder(model, "daily_summary")
+	if err != nil {
+		t.Fatalf("dependency order: %v", err)
+	}
+	want := []string{"orders", "order_summary", "customers", "daily_summary"}
+	if !reflect.DeepEqual(order, want) {
+		t.Fatalf("dependency order = %#v, want %#v", order, want)
+	}
+}
+
+func TestModelTablesNamedMaterializesOnlyRequestedOrder(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name: "test",
+		Connections: map[string]semanticmodel.Connection{
+			"local_files": {Kind: "local"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "order_summary",
+		Tables: map[string]semanticmodel.Table{
+			"orders":        {Source: "orders", PrimaryKey: "order_id"},
+			"customers":     {Source: "orders", PrimaryKey: "customer_id"},
+			"order_summary": {PrimaryKey: "status", Transform: semanticmodel.Transform{SQL: "SELECT status FROM model.orders"}, ModelDependencies: []string{"orders"}},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sources := &recordingSourceRegistrar{}
+	executor := &recordingStatementsExecutor{}
+
+	if _, err := analyticsmaterialize.RefreshModelTables(context.Background(), executor, sources, model, []string{"orders", "order_summary"}); err != nil {
+		t.Fatalf("refresh model tables: %v", err)
+	}
+	if !reflect.DeepEqual(sources.ops, []string{"prepare", "plan:orders", "plan:order_summary"}) {
+		t.Fatalf("source ops = %#v, want selected tables only", sources.ops)
+	}
+	if len(executor.statements) != 3 || strings.Contains(strings.Join(executor.statements, "\n"), "customers") {
+		t.Fatalf("statements = %#v, want schema plus selected table materializations", executor.statements)
+	}
+}
+
 func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "orders.csv", "order_id,revenue\no1,10.50\no2,20.25\n")
@@ -416,60 +471,264 @@ func TestValidateFilesUsesLocalConnectionRoot(t *testing.T) {
 	}
 }
 
-func TestRunServicePersistsQueuedRunningAndSucceededStates(t *testing.T) {
+func TestRunRepositoryPersistsPrincipalAttribution(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
 	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
-	runner := &recordingRefreshRunner{}
-	service := analyticsmaterialize.RunService{Repo: repo, Runner: runner}
+	seedMaterializationPrincipal(t, ctx, store, "principal_alice", "alice@example.com", "Alice")
 
-	queued, err := service.Enqueue(ctx, analyticsmaterialize.RunInput{
-		WorkspaceID:  "test",
-		ModelID:      "model.orders",
-		DeploymentID: "dep_1",
-	})
+	queued, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders", PrincipalID: "principal_alice"})
 	if err != nil {
-		t.Fatalf("enqueue run: %v", err)
+		t.Fatalf("create run: %v", err)
 	}
-	if queued.Status != analyticsmaterialize.RunStatusQueued || queued.ModelID != "model.orders" || queued.DeploymentID != "dep_1" {
-		t.Fatalf("queued run = %#v", queued)
+	if queued.PrincipalID != "principal_alice" || queued.PrincipalDisplayName != "Alice" {
+		t.Fatalf("queued attribution = %#v, want Alice principal", queued)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", queued.ID); err != nil {
+		t.Fatalf("mark succeeded: %v", err)
 	}
 
-	finished, err := service.Execute(ctx, "test", queued.ID)
-	if err != nil {
-		t.Fatalf("execute run: %v", err)
-	}
-	if finished.Status != analyticsmaterialize.RunStatusSucceeded || finished.FinishedAt == "" || runner.modelID != "model.orders" {
-		t.Fatalf("finished run = %#v runner=%#v", finished, runner)
-	}
 	stored, err := repo.GetRun(ctx, "test", queued.ID)
 	if err != nil {
 		t.Fatalf("get run: %v", err)
 	}
-	if stored.Status != analyticsmaterialize.RunStatusSucceeded || stored.ModelID != "model.orders" || stored.DeploymentID != "dep_1" {
-		t.Fatalf("stored run = %#v", stored)
+	if stored.PrincipalID != "principal_alice" || stored.PrincipalDisplayName != "Alice" {
+		t.Fatalf("stored attribution = %#v, want Alice principal", stored)
+	}
+	listed, err := repo.ListModelRuns(ctx, "test", "model.orders", analyticsmaterialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(listed) != 1 || listed[0].PrincipalID != "principal_alice" || listed[0].PrincipalDisplayName != "Alice" {
+		t.Fatalf("listed attribution = %#v, want Alice principal", listed)
+	}
+	latest, ok, err := repo.LatestSuccessfulModelRun(ctx, "test", "model.orders")
+	if err != nil || !ok || latest.PrincipalDisplayName != "Alice" {
+		t.Fatalf("latest attribution = %#v ok=%v err=%v, want Alice", latest, ok, err)
+	}
+
+	legacy, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.legacy"})
+	if err != nil {
+		t.Fatalf("create legacy run: %v", err)
+	}
+	if legacy.PrincipalID != "" || legacy.PrincipalDisplayName != "" {
+		t.Fatalf("legacy attribution = %#v, want empty principal fields", legacy)
 	}
 }
 
-func TestRunServicePersistsFailedStateWithError(t *testing.T) {
+func TestRunRepositoryListsAndFindsLatestByModel(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
 	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
-	service := analyticsmaterialize.RunService{Repo: repo, Runner: failingRefreshRunner{}}
-	queued, err := service.Enqueue(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+
+	ordersSucceeded, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
 	if err != nil {
-		t.Fatalf("enqueue run: %v", err)
+		t.Fatalf("create succeeded run: %v", err)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", ordersSucceeded.ID); err != nil {
+		t.Fatalf("mark succeeded: %v", err)
+	}
+	other, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.customers"})
+	if err != nil {
+		t.Fatalf("create other run: %v", err)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", other.ID); err != nil {
+		t.Fatalf("mark other succeeded: %v", err)
+	}
+	ordersFailed, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+	if err != nil {
+		t.Fatalf("create failed run: %v", err)
+	}
+	if _, err := repo.MarkRunFailed(ctx, "test", ordersFailed.ID, "boom"); err != nil {
+		t.Fatalf("mark failed: %v", err)
 	}
 
-	failed, err := service.Execute(ctx, "test", queued.ID)
-	if err == nil {
-		t.Fatal("execute run unexpectedly succeeded")
+	runs, err := repo.ListModelRuns(ctx, "test", "model.orders", analyticsmaterialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
 	}
-	if failed.Status != analyticsmaterialize.RunStatusFailed || failed.Error == "" || failed.FinishedAt == "" {
-		t.Fatalf("failed run = %#v err=%v", failed, err)
+	if len(runs) != 2 || runs[0].ID != ordersFailed.ID || runs[1].ID != ordersSucceeded.ID {
+		t.Fatalf("model runs = %#v, want failed then succeeded orders runs", runs)
 	}
+	for _, run := range runs {
+		if run.ModelID != "model.orders" {
+			t.Fatalf("list included wrong model run: %#v", run)
+		}
+	}
+
+	latest, ok, err := repo.LatestModelRun(ctx, "test", "model.orders")
+	if err != nil || !ok || latest.ID != ordersFailed.ID {
+		t.Fatalf("latest = %#v ok=%v err=%v, want failed latest", latest, ok, err)
+	}
+	latestSucceeded, ok, err := repo.LatestSuccessfulModelRun(ctx, "test", "model.orders")
+	if err != nil || !ok || latestSucceeded.ID != ordersSucceeded.ID {
+		t.Fatalf("latest succeeded = %#v ok=%v err=%v, want older succeeded", latestSucceeded, ok, err)
+	}
+}
+
+func TestRunRepositoryPagesRunsInSQLOrder(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	first, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+	if err != nil {
+		t.Fatalf("create first run: %v", err)
+	}
+	second, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.customers"})
+	if err != nil {
+		t.Fatalf("create second run: %v", err)
+	}
+	third, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+	if err != nil {
+		t.Fatalf("create third run: %v", err)
+	}
+
+	pageOne, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2})
+	if err != nil {
+		t.Fatalf("list first page: %v", err)
+	}
+	if got, want := runIDs(pageOne), []string{third.ID, second.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first page ids = %#v, want %#v", got, want)
+	}
+	pageTwo, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2, After: second.ID})
+	if err != nil {
+		t.Fatalf("list second page: %v", err)
+	}
+	if got, want := runIDs(pageTwo), []string{first.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second page ids = %#v, want %#v", got, want)
+	}
+	unknown, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2, After: "matrun_missing"})
+	if err != nil {
+		t.Fatalf("list unknown cursor: %v", err)
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("unknown cursor page = %#v, want empty", unknown)
+	}
+}
+
+func TestRunRepositoryPagesTargetRunsInSQLOrder(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	first, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.orders"})
+	if err != nil {
+		t.Fatalf("create first target run: %v", err)
+	}
+	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.customers"}); err != nil {
+		t.Fatalf("create other target run: %v", err)
+	}
+	second, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.orders"})
+	if err != nil {
+		t.Fatalf("create second target run: %v", err)
+	}
+	third, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.orders"})
+	if err != nil {
+		t.Fatalf("create third target run: %v", err)
+	}
+
+	pageOne, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 2})
+	if err != nil {
+		t.Fatalf("list first target page: %v", err)
+	}
+	if got, want := runIDs(pageOne), []string{third.ID, second.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first target page ids = %#v, want %#v", got, want)
+	}
+	pageTwo, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 2, After: second.ID})
+	if err != nil {
+		t.Fatalf("list second target page: %v", err)
+	}
+	if got, want := runIDs(pageTwo), []string{first.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second target page ids = %#v, want %#v", got, want)
+	}
+	unknown, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 2, After: "matrun_missing"})
+	if err != nil {
+		t.Fatalf("list unknown target cursor: %v", err)
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("unknown target cursor page = %#v, want empty", unknown)
+	}
+}
+
+func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	parent, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:  "test",
+		ModelID:      "olist",
+		TargetType:   analyticsmaterialize.TargetSemanticModel,
+		TargetID:     "olist",
+		TriggerType:  analyticsmaterialize.TriggerDirect,
+		DeploymentID: "dep_1",
+	})
+	if err != nil {
+		t.Fatalf("create parent run: %v", err)
+	}
+	child, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:  "test",
+		ModelID:      "olist",
+		TargetType:   analyticsmaterialize.TargetModelTable,
+		TargetID:     "olist.orders",
+		TriggerType:  analyticsmaterialize.TriggerSemanticModel,
+		ParentRunID:  parent.ID,
+		DeploymentID: "dep_1",
+	})
+	if err != nil {
+		t.Fatalf("create child run: %v", err)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", child.ID); err != nil {
+		t.Fatalf("mark child succeeded: %v", err)
+	}
+
+	stored, err := repo.GetRun(ctx, "test", child.ID)
+	if err != nil {
+		t.Fatalf("get child run: %v", err)
+	}
+	if stored.TargetType != analyticsmaterialize.TargetModelTable || stored.TargetID != "olist.orders" || stored.TriggerType != analyticsmaterialize.TriggerSemanticModel || stored.ParentRunID != parent.ID {
+		t.Fatalf("child run metadata = %#v", stored)
+	}
+	tableRuns, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list table runs: %v", err)
+	}
+	if len(tableRuns) != 1 || tableRuns[0].ID != child.ID {
+		t.Fatalf("table runs = %#v, want child only", tableRuns)
+	}
+	modelRuns, err := repo.ListModelRuns(ctx, "test", "olist", analyticsmaterialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(modelRuns) != 1 || modelRuns[0].ID != parent.ID {
+		t.Fatalf("semantic model runs = %#v, want parent only", modelRuns)
+	}
+	latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders")
+	if err != nil || !ok || latest.ID != child.ID {
+		t.Fatalf("latest successful table run = %#v ok=%v err=%v, want child", latest, ok, err)
+	}
+
+	legacy, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "legacy"})
+	if err != nil {
+		t.Fatalf("create legacy-shaped run: %v", err)
+	}
+	if legacy.TargetType != analyticsmaterialize.TargetSemanticModel || legacy.TargetID != "legacy" || legacy.TriggerType != analyticsmaterialize.TriggerDirect {
+		t.Fatalf("default target metadata = %#v", legacy)
+	}
+}
+
+func runIDs(runs []analyticsmaterialize.RunRecord) []string {
+	ids := make([]string, 0, len(runs))
+	for _, run := range runs {
+		ids = append(ids, run.ID)
+	}
+	return ids
 }
 
 func writeFixture(t *testing.T, dir, name, content string) {
@@ -481,21 +740,6 @@ func writeFixture(t *testing.T, dir, name, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-type recordingRefreshRunner struct {
-	modelID string
-}
-
-func (r *recordingRefreshRunner) RefreshMaterializations(_ context.Context, modelID string) error {
-	r.modelID = modelID
-	return nil
-}
-
-type failingRefreshRunner struct{}
-
-func (failingRefreshRunner) RefreshMaterializations(context.Context, string) error {
-	return errors.New("refresh failed")
 }
 
 func openMaterializationStore(t *testing.T, ctx context.Context) *platform.Store {
@@ -514,4 +758,14 @@ func openMaterializationStore(t *testing.T, ctx context.Context) *platform.Store
 		t.Fatalf("seed deployment: %v", err)
 	}
 	return store
+}
+
+func seedMaterializationPrincipal(t *testing.T, ctx context.Context, store *platform.Store, id, email, displayName string) {
+	t.Helper()
+	if _, err := store.SQLDB().ExecContext(ctx, `
+		INSERT INTO principals (id, email, display_name)
+		VALUES (?, ?, ?)
+	`, id, email, displayName); err != nil {
+		t.Fatalf("seed principal: %v", err)
+	}
 }

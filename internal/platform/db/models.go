@@ -172,12 +172,17 @@ type MaterializationJob struct {
 }
 
 type MaterializationJobRun struct {
-	ID         string         `json:"id"`
-	JobID      string         `json:"job_id"`
-	Status     string         `json:"status"`
-	StartedAt  string         `json:"started_at"`
-	FinishedAt sql.NullString `json:"finished_at"`
-	Error      string         `json:"error"`
+	ID          string         `json:"id"`
+	JobID       string         `json:"job_id"`
+	PrincipalID sql.NullString `json:"principal_id"`
+	TargetType  string         `json:"target_type"`
+	TargetID    string         `json:"target_id"`
+	TriggerType string         `json:"trigger_type"`
+	ParentRunID sql.NullString `json:"parent_run_id"`
+	Status      string         `json:"status"`
+	StartedAt   string         `json:"started_at"`
+	FinishedAt  sql.NullString `json:"finished_at"`
+	Error       string         `json:"error"`
 }
 
 type OauthState struct {
@@ -191,6 +196,13 @@ type OauthState struct {
 type Permission struct {
 	Name      string `json:"name"`
 	CreatedAt string `json:"created_at"`
+}
+
+type PlatformRoleBinding struct {
+	ID          string `json:"id"`
+	RoleID      string `json:"role_id"`
+	PrincipalID string `json:"principal_id"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type Principal struct {

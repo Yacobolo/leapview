@@ -9,6 +9,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
@@ -126,12 +127,26 @@ func (s *Server) accessRepository() (access.Repository, error) {
 	return s.accessRepo, nil
 }
 
-func (s *Server) upsertAuthenticatedPrincipal(ctx context.Context, principal Principal) error {
-	repo, err := s.accessRepository()
-	if err != nil || repo == nil {
-		return err
+func principalFromContext(ctx context.Context) (Principal, bool) {
+	principal, ok := ctx.Value(principalContextKey{}).(Principal)
+	return principal, ok
+}
+
+func localDeveloperPrincipal() Principal {
+	return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}
+}
+
+func SeedLocalDeveloperPlatformAdmin(ctx context.Context, repo access.Repository) error {
+	if repo == nil {
+		return nil
 	}
-	_, err = repo.UpsertPrincipal(ctx, accessPrincipalInput(principal))
+	principal := localDeveloperPrincipal()
+	_, err := repo.SetPlatformRole(ctx, access.PlatformRoleInput{
+		PrincipalID: principal.ID,
+		Email:       principal.Email,
+		DisplayName: principal.DisplayName,
+		Role:        access.RoleAdmin,
+	})
 	return err
 }
 
@@ -156,8 +171,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dashboardHTTP() dashboardhttp.Handler {
+	var metrics dashboardhttp.Metrics = s.metrics
+	if s.store != nil {
+		metrics = dashboardCommandMetrics{
+			queryMetrics: s.metrics,
+			refresh:      s.refreshMaterializationsWithRun,
+		}
+	}
 	return dashboardhttp.Handler{
-		Metrics: s.metrics,
+		Metrics: metrics,
 		Broker:  s.broker,
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
@@ -166,4 +188,37 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			return csrf.Token(r)
 		},
 	}
+}
+
+type dashboardCommandMetrics struct {
+	queryMetrics
+	refresh func(context.Context, string) error
+}
+
+func (m dashboardCommandMetrics) RefreshMaterializations(ctx context.Context, modelID string) error {
+	if m.refresh != nil {
+		return m.refresh(ctx, modelID)
+	}
+	return m.queryMetrics.RefreshMaterializations(ctx, modelID)
+}
+
+func (s *Server) refreshMaterializationsWithRun(ctx context.Context, modelID string) error {
+	return s.refreshMaterializationsWithRunForWorkspace(ctx, s.workspaceID(""), modelID)
+}
+
+func (s *Server) refreshMaterializationsWithRunForWorkspace(ctx context.Context, workspaceID, modelID string) error {
+	if s.store == nil {
+		return s.metrics.RefreshMaterializations(ctx, modelID)
+	}
+	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	principal, _ := principalFromContext(ctx)
+	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
+	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
+		WorkspaceID: workspaceID,
+		ModelID:     modelID,
+		PrincipalID: principal.ID,
+	}, refreshPublisher{
+		Root:   func() { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
+		Target: func(string) { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
+	})
 }

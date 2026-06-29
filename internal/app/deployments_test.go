@@ -17,6 +17,7 @@ import (
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
@@ -85,6 +86,13 @@ func (emptyPageRuntimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID st
 	if err != nil {
 		return nil, nil, false
 	}
+	modelTable, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.orders", model.ID, "orders", "", "model_table.v1", map[string]any{
+		"PrimaryKey": "order_id",
+		"Source":     "orders",
+	})
+	if err != nil {
+		return nil, nil, false
+	}
 	table, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticTable, "olist.orders", model.ID, "orders", "", "semantic_table.v1", map[string]any{})
 	if err != nil {
 		return nil, nil, false
@@ -93,12 +101,33 @@ func (emptyPageRuntimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID st
 	if err != nil {
 		return nil, nil, false
 	}
-	return []workspace.Asset{catalog, model, table, dashboard}, []workspace.AssetEdge{
+	return []workspace.Asset{catalog, model, modelTable, table, dashboard}, []workspace.AssetEdge{
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), catalog.ID, model.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), model.ID, modelTable.ID, workspace.AssetEdgeContains),
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), model.ID, table.ID, workspace.AssetEdgeContains),
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), catalog.ID, dashboard.ID, workspace.AssetEdgeContains),
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), dashboard.ID, model.ID, workspace.AssetEdgeUsesSemanticModel),
 	}, true
+}
+
+func (emptyPageRuntimeAssetMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
+	if modelID != "olist" {
+		return fakeMetrics{}.SemanticModel(modelID)
+	}
+	return &semanticmodel.Model{
+		Name: "olist",
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv"},
+		},
+		BaseTable: "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {Kind: "fact", Source: "orders", PrimaryKey: "order_id"},
+		},
+	}, true
+}
+
+func (emptyPageRuntimeAssetMetrics) RefreshModelTables(context.Context, string, []string) error {
+	return nil
 }
 
 func testWorkspaceAsset(workspaceID workspace.WorkspaceID, deploymentID workspace.DeploymentID, typ workspace.AssetType, key string, parentID workspace.AssetID, title, description, payloadSchema string, payload any) (workspace.Asset, error) {
@@ -1021,7 +1050,7 @@ func TestWorkspaceSourceAssetRedirectsToConnectionScopedSourceSurface(t *testing
 func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
-	auth := NewAuth(accesssqlite.NewRepository(store.SQLDB()), "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(runtimeAssetMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/connections", nil)
@@ -1067,7 +1096,7 @@ func TestWorkspaceAssetsDoesNotRefreshCleanGraphWithoutPageItems(t *testing.T) {
 	if _, err := deploymentRepo.Activate(ctx, "test", created.ID); err != nil {
 		t.Fatalf("activate: %v", err)
 	}
-	auth := NewAuth(accesssqlite.NewRepository(store.SQLDB()), "test", AuthConfig{DevBypass: true})
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test", nil)

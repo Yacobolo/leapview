@@ -28,6 +28,7 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 		"Olist Commerce",
 		"Details",
 		"Lineage",
+		"Refreshes",
 		"Overview",
 		"Model tables (1)",
 		"Measures (1)",
@@ -55,6 +56,170 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 	}
 	if strings.Contains(rendered, "Published from Git/YAML") {
 		t.Fatalf("semantic model details rendered hardcoded publication source:\n%s", rendered)
+	}
+	for _, notWant := range []string{
+		`>Model tables</span><span`,
+		`>Measures</span><span`,
+		`>Relationships</span><span`,
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("semantic model overview rendered count fact %q:\n%s", notWant, rendered)
+		}
+	}
+	assertTextOrder(t, rendered, "Details", "Refreshes", "Lineage")
+}
+
+func TestWorkspaceAssetDetailsRenderSemanticModelRefreshSummary(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "model")
+	refresh := AssetRefreshState{
+		CSRFToken: "csrf-token",
+		Runs: []AssetRefreshRun{
+			{ID: "run_failed", ModelID: "olist", Status: "failed", StartedAt: "2026-06-26 10:03:00", FinishedAt: "2026-06-26 10:03:05", Error: "missing source file"},
+			{ID: "run_ok", ModelID: "olist", Status: "succeeded", StartedAt: "2026-06-26 10:00:00", FinishedAt: "2026-06-26 10:00:12"},
+		},
+		Latest:           AssetRefreshRun{ID: "run_failed", ModelID: "olist", Status: "failed", StartedAt: "2026-06-26 10:03:00", FinishedAt: "2026-06-26 10:03:05", Error: "missing source file"},
+		LatestSuccessful: AssetRefreshRun{ID: "run_ok", ModelID: "olist", Status: "succeeded", StartedAt: "2026-06-26 10:00:00", FinishedAt: "2026-06-26 10:00:12"},
+	}
+
+	var out strings.Builder
+	err := WorkspaceAssetPageWithRefresh(catalog, workspace, asset, assets, edges, "details", "Owner", refresh).Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+	for _, want := range []string{
+		"Refresh status",
+		"failed",
+		`data-text="$assetRefresh.status"`,
+		`data-show="$assetRefresh.status === 'failed'"`,
+		`style="color: var(--ld-fg-danger)"`,
+		`fill-rule="evenodd"`,
+		"Last refreshed",
+		"2026-06-26 10:00:12",
+		`data-text="$assetRefresh.lastSuccessful || '-'"`,
+		`data-init="@get('/workspaces/libredash/assets/semantic_model:olist/updates?section=details', {openWhenHidden: true})"`,
+		`data-attr:disabled="$assetRefresh.running"`,
+		`data-class="{'animate-spin': $assetRefresh.running}"`,
+		`@post('/workspaces/libredash/assets/semantic_model:olist/refresh-materializations'`,
+		`title="Refresh materializations"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("semantic model refresh summary did not render %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, `method="post"`) {
+		t.Fatalf("semantic model refresh action should use Datastar, not a form submit:\n%s", rendered)
+	}
+	for _, notWant := range []string{
+		"Last successful refresh",
+		"Last attempt",
+		"Last duration",
+		"Last error",
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("semantic model details rendered noisy refresh fact %q:\n%s", notWant, rendered)
+		}
+	}
+
+	signals := workspaceAssetSignalsWithRefresh(workspace, asset, assets, edges, assetLineage(workspace.ID, asset, assets, edges), "details", refresh)
+	refreshSignal, ok := signals["assetRefresh"].(map[string]any)
+	if !ok {
+		t.Fatalf("assetRefresh signal missing: %#v", signals)
+	}
+	if got := fmt.Sprint(refreshSignal["status"]); got != "failed" {
+		t.Fatalf("assetRefresh status = %q", got)
+	}
+	if got := fmt.Sprint(refreshSignal["lastSuccessful"]); got != "2026-06-26 10:00:12" {
+		t.Fatalf("assetRefresh lastSuccessful = %q", got)
+	}
+	for _, key := range []string{"error", "lastAttempt", "lastDuration"} {
+		if _, ok := refreshSignal[key]; ok {
+			t.Fatalf("assetRefresh should not include unused field %q: %#v", key, refreshSignal)
+		}
+	}
+	if _, ok := signals["assetRefreshesGrid"]; ok {
+		t.Fatalf("details signals should not include refreshes grid: %#v", signals["assetRefreshesGrid"])
+	}
+	grid := signalMetricGrid(t, signals, "assetDetailsSemanticModelTablesGrid")
+	assertGridHeaders(t, grid, []string{"Name", "Primary key", "Fields", "Measures", "Last refreshed", "Refresh status", "Description"})
+	if got := fmt.Sprint(grid.Rows[0]["last_refreshed"]); got != "2026-06-26 10:00:12" {
+		t.Fatalf("model table last refreshed = %q", got)
+	}
+	if got := fmt.Sprint(grid.Rows[0]["refresh_status"]); got != "succeeded" {
+		t.Fatalf("model table refresh status = %q", got)
+	}
+
+	modelTable := testAssetByID(t, assets, "table-model")
+	out.Reset()
+	err = WorkspaceAssetPageWithRefresh(catalog, workspace, modelTable, assets, edges, "details", "Owner", AssetRefreshState{CSRFToken: "csrf-token"}).Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelTableRendered := html.UnescapeString(out.String())
+	for _, want := range []string{
+		"Refresh status",
+		"Last refreshed",
+		`data-init="@get('/workspaces/libredash/assets/model_table:olist.orders/updates?section=details', {openWhenHidden: true})"`,
+		`@post('/workspaces/libredash/assets/model_table:olist.orders/refresh-materializations'`,
+	} {
+		if !strings.Contains(modelTableRendered, want) {
+			t.Fatalf("model table refresh detail did not render %q:\n%s", want, modelTableRendered)
+		}
+	}
+	tableSignals := workspaceAssetSignalsWithRefresh(workspace, modelTable, assets, edges, assetLineage(workspace.ID, modelTable, assets, edges), "details", AssetRefreshState{})
+	if _, ok := tableSignals["assetRefresh"].(map[string]any); !ok {
+		t.Fatalf("model table details missing assetRefresh signal: %#v", tableSignals)
+	}
+}
+
+func TestWorkspaceAssetRefreshesTabRendersSemanticModelRuns(t *testing.T) {
+	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
+	asset := testAssetByID(t, assets, "model")
+	refresh := AssetRefreshState{
+		Runs: []AssetRefreshRun{
+			{ID: "matrun_1234567890abcdef", ModelID: "olist", Status: "failed", StartedAt: "2026-06-26 10:03:00", FinishedAt: "2026-06-26 10:03:05", Error: "missing source file", PrincipalDisplayName: "Alice"},
+			{ID: "run_ok", ModelID: "olist", Status: "succeeded", StartedAt: "2026-06-26 10:00:00", FinishedAt: "2026-06-26 10:00:12"},
+		},
+	}
+
+	var out strings.Builder
+	err := WorkspaceAssetPageWithRefresh(catalog, workspace, asset, assets, edges, "refreshes", "Owner", refresh).Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+	for _, want := range []string{
+		"Refreshes",
+		`data-attr:grid="$assetRefreshesGrid"`,
+		"missing source file",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("semantic model refreshes tab did not render %q:\n%s", want, rendered)
+		}
+	}
+	signals := workspaceAssetSignalsWithRefresh(workspace, asset, assets, edges, assetLineage(workspace.ID, asset, assets, edges), "refreshes", refresh)
+	grid := signalMetricGrid(t, signals, "assetRefreshesGrid")
+	assertGridHeaders(t, grid, []string{"Status", "Started", "Duration", "Triggered by", "Trigger", "Run ID", "Error"})
+	if len(grid.Rows) != 2 {
+		t.Fatalf("refresh rows = %#v, want 2", grid.Rows)
+	}
+	if grid.Columns[0].Kind != "status" {
+		t.Fatalf("status column kind = %q, want status", grid.Columns[0].Kind)
+	}
+	assertGridStatusValue(t, grid.Rows[0]["status"], "failed", "danger")
+	assertGridStatusValue(t, grid.Rows[1]["status"], "succeeded", "success")
+	if got := fmt.Sprint(grid.Rows[0]["triggered_by"]); got != "Alice" {
+		t.Fatalf("triggered by = %q, want Alice", got)
+	}
+	if got := fmt.Sprint(grid.Rows[1]["triggered_by"]); got != "-" {
+		t.Fatalf("missing triggered by = %q, want -", got)
+	}
+	if got := fmt.Sprint(grid.Rows[0]["trigger"]); got != "-" {
+		t.Fatalf("missing trigger = %q, want -", got)
+	}
+	if got := fmt.Sprint(grid.Rows[0]["run"]); got != "matrun_1234567890a" {
+		t.Fatalf("run = %q, want matrun_1234567890a", got)
 	}
 }
 
@@ -88,7 +253,7 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	}
 	modelTablesGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticModelTablesGrid")
 	relationshipsGrid := signalMetricGrid(t, semanticSignals, "assetDetailsSemanticRelationshipsGrid")
-	assertGridHeaders(t, modelTablesGrid, []string{"Name", "Primary key", "Fields", "Measures", "Description"})
+	assertGridHeaders(t, modelTablesGrid, []string{"Name", "Primary key", "Fields", "Measures", "Last refreshed", "Refresh status", "Description"})
 	assertGridHeaders(t, relationshipsGrid, []string{"ID", "From table", "From field", "To table", "To field", "Cardinality", "Active"})
 	assertGridMissingHeaders(t, modelTablesGrid, []string{"Source", "Reads", "SQL preview"})
 
@@ -132,6 +297,8 @@ func TestWorkspaceAssetDetailsRenderModelTableComposition(t *testing.T) {
 	}
 	for _, notWant := range []string{
 		"Source / transform",
+		`>Fields</span><span`,
+		`>Input sources</span><span`,
 		`data-attr:grid="$assetDetailsModelTableDefinitionGrid"`,
 	} {
 		if strings.Contains(rendered, notWant) {
@@ -168,6 +335,8 @@ func TestWorkspaceAssetDetailsRenderDirectSourceModelTableWithoutSQL(t *testing.
 		"Source / transform",
 		"/static/code-block.js",
 		`<ld-code-block language="sql"`,
+		`>Fields</span><span`,
+		`>Input sources</span><span`,
 		`data-attr:grid="$assetDetailsModelTableDefinitionGrid"`,
 	} {
 		if strings.Contains(rendered, notWant) {
@@ -195,6 +364,9 @@ func TestWorkspaceAssetDetailsRenderSourceSchema(t *testing.T) {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("source details did not render %q:\n%s", want, rendered)
 		}
+	}
+	if strings.Contains(rendered, `>Fields</span><span`) {
+		t.Fatalf("source overview rendered fields count fact:\n%s", rendered)
 	}
 	signals := workspaceAssetSignals(workspace, asset, assets, edges, assetLineage(workspace.ID, asset, assets, edges), "details")
 	grid := signalMetricGrid(t, signals, "assetDetailsSourceFieldsGrid")
@@ -576,6 +748,7 @@ func TestConnectionAssetDetailsRenderConnectionSurface(t *testing.T) {
 	for _, notWant := range []string{
 		"Published from Git/YAML",
 		">Parent</span>",
+		`>Sources</span><span`,
 		"Back to workspace",
 		`href="/workspaces/libredash/assets/connection:olist.olist/details"`,
 	} {
@@ -914,6 +1087,17 @@ func assertGridHeaders(t *testing.T, grid metricGrid, expected []string) {
 	}
 }
 
+func assertGridStatusValue(t *testing.T, value any, label, tone string) {
+	t.Helper()
+	status, ok := value.(metricGridBadge)
+	if !ok {
+		t.Fatalf("grid status value = %#v, want metricGridBadge", value)
+	}
+	if status.Label != label || status.Tone != tone {
+		t.Fatalf("grid status value = %#v, want label %q tone %q", status, label, tone)
+	}
+}
+
 func assertGridMissingHeaders(t *testing.T, grid metricGrid, unexpected []string) {
 	t.Helper()
 	got := map[string]struct{}{}
@@ -924,6 +1108,18 @@ func assertGridMissingHeaders(t *testing.T, grid metricGrid, unexpected []string
 		if _, ok := got[header]; ok {
 			t.Fatalf("grid unexpectedly includes header %q: %#v", header, grid.Columns)
 		}
+	}
+}
+
+func assertTextOrder(t *testing.T, text string, expected ...string) {
+	t.Helper()
+	position := -1
+	for _, value := range expected {
+		next := strings.Index(text[position+1:], value)
+		if next < 0 {
+			t.Fatalf("text missing %q after position %d", value, position)
+		}
+		position += next + 1
 	}
 }
 

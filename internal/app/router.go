@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/Yacobolo/libredash/internal/access"
@@ -21,7 +22,9 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/workspaces", s.protected(access.PermissionDashboardView, s.workspaces))
 		r.Get("/workspaces/{workspace}", s.protected(access.PermissionDashboardView, s.workspaceAssets))
 		r.Get("/workspaces/{workspace}/assets/{asset}", s.protected(access.PermissionDashboardView, s.workspaceAsset))
+		r.Get("/workspaces/{workspace}/assets/{asset}/updates", s.protected(access.PermissionDashboardView, s.workspaceAssetUpdates))
 		r.Get("/workspaces/{workspace}/assets/{asset}/{section}", s.protected(access.PermissionDashboardView, s.workspaceAssetSection))
+		r.Post("/workspaces/{workspace}/assets/{asset}/refresh-materializations", s.protected(access.PermissionMaterializationsRefresh, s.refreshWorkspaceAssetMaterializations))
 		r.Get("/chat", s.protected(access.PermissionDashboardView, s.chat))
 		r.Get("/chat/new", s.protected(access.PermissionDashboardView, s.chatNew))
 		r.Get("/chat/updates", s.protected(access.PermissionDashboardView, s.chatUpdates))
@@ -76,7 +79,10 @@ func (s *Server) protected(permission string, handler http.HandlerFunc) http.Han
 
 func (s *Server) protect(permission string, next http.Handler) http.Handler {
 	if s.auth == nil {
-		return next
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), principalContextKey{}, localDeveloperPrincipal())
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
 	}
 	return s.auth.Middleware(permission, next)
 }

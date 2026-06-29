@@ -2,18 +2,23 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"html"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 func fieldRefs(fields ...string) []reportdef.FieldRef {
@@ -33,6 +38,10 @@ type canceledTableMetrics struct {
 type recordingMetrics struct {
 	fakeMetrics
 	pageIDs []string
+}
+
+type failingRefreshAssetMetrics struct {
+	emptyPageRuntimeAssetMetrics
 }
 
 func (fakeMetrics) Catalog() dashboard.Catalog {
@@ -493,6 +502,172 @@ func (fakeMetrics) RefreshMaterializations(_ context.Context, _ string) error {
 	return nil
 }
 
+func (fakeMetrics) RefreshModelTables(_ context.Context, _ string, _ []string) error {
+	return nil
+}
+
+func (failingRefreshAssetMetrics) RefreshMaterializations(_ context.Context, _ string) error {
+	return errors.New("refresh failed")
+}
+
+func (failingRefreshAssetMetrics) RefreshModelTables(_ context.Context, _ string, _ []string) error {
+	return errors.New("refresh failed")
+}
+
+type dependentModelTableMetrics struct {
+	fakeMetrics
+	refreshed [][]string
+}
+
+type localDevStyleModelTableMetrics struct {
+	refreshed [][]string
+	done      chan []string
+}
+
+func (m *localDevStyleModelTableMetrics) Catalog() dashboard.Catalog {
+	return fakeMetrics{}.Catalog()
+}
+
+func (m *localDevStyleModelTableMetrics) DefaultDashboardID() string {
+	return fakeMetrics{}.DefaultDashboardID()
+}
+
+func (m *localDevStyleModelTableMetrics) ModelIDForDashboard(dashboardID string) string {
+	return fakeMetrics{}.ModelIDForDashboard(dashboardID)
+}
+
+func (m *localDevStyleModelTableMetrics) DataDir() string {
+	return fakeMetrics{}.DataDir()
+}
+
+func (m *localDevStyleModelTableMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+	return fakeMetrics{}.Report(dashboardID)
+}
+
+func (m *localDevStyleModelTableMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
+	return fakeMetrics{}.SemanticModel(modelID)
+}
+
+func (m *localDevStyleModelTableMetrics) QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
+	return fakeMetrics{}.QuerySemantic(ctx, modelID, request)
+}
+
+func (m *localDevStyleModelTableMetrics) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
+	return fakeMetrics{}.PreviewSemantic(ctx, modelID, request)
+}
+
+func (m *localDevStyleModelTableMetrics) DefaultFilters(dashboardID string) dashboard.Filters {
+	return fakeMetrics{}.DefaultFilters(dashboardID)
+}
+
+func (m *localDevStyleModelTableMetrics) NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest {
+	return fakeMetrics{}.NormalizeTableRequest(dashboardID, request)
+}
+
+func (m *localDevStyleModelTableMetrics) Pages(dashboardID string) []dashboard.Page {
+	return fakeMetrics{}.Pages(dashboardID)
+}
+
+func (m *localDevStyleModelTableMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return fakeMetrics{}.QueryDashboard(ctx, dashboardID, filters)
+}
+
+func (m *localDevStyleModelTableMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return fakeMetrics{}.QueryDashboardPage(ctx, dashboardID, pageID, filters)
+}
+
+func (m *localDevStyleModelTableMetrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return fakeMetrics{}.QueryTable(ctx, dashboardID, filters, request)
+}
+
+func (m *localDevStyleModelTableMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return fakeMetrics{}.QueryTablePage(ctx, dashboardID, pageID, filters, request)
+}
+
+func (m *localDevStyleModelTableMetrics) RefreshMaterializations(ctx context.Context, modelID string) error {
+	return fakeMetrics{}.RefreshMaterializations(ctx, modelID)
+}
+
+func (m *localDevStyleModelTableMetrics) RefreshTables(_ context.Context, modelID string, tableNames []string) error {
+	for _, tableName := range tableNames {
+		m.refreshed = append(m.refreshed, []string{modelID, tableName})
+	}
+	if m.done != nil {
+		m.done <- append([]string{modelID}, tableNames...)
+	}
+	return nil
+}
+
+func (m *dependentModelTableMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	catalog, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, workspaceID, "", "Catalog", "", "catalog.v1", map[string]any{})
+	if err != nil {
+		return nil, nil, false
+	}
+	model, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", "", "semantic_model.v1", map[string]any{})
+	if err != nil {
+		return nil, nil, false
+	}
+	orders, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.orders", model.ID, "orders", "", "model_table.v1", map[string]any{"PrimaryKey": "order_id", "Source": "orders"})
+	if err != nil {
+		return nil, nil, false
+	}
+	summary, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.order_summary", model.ID, "order_summary", "", "model_table.v1", map[string]any{"PrimaryKey": "status", "SQL": "SELECT status FROM model.orders"})
+	if err != nil {
+		return nil, nil, false
+	}
+	return []workspace.Asset{catalog, model, orders, summary}, []workspace.AssetEdge{
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), catalog.ID, model.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), model.ID, orders.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), model.ID, summary.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), summary.ID, orders.ID, workspace.AssetEdgeUsesModelTable),
+	}, true
+}
+
+func (m *dependentModelTableMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
+	if modelID != "olist" {
+		return fakeMetrics{}.SemanticModel(modelID)
+	}
+	return &semanticmodel.Model{
+		Name:      "olist",
+		BaseTable: "order_summary",
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv"},
+		},
+		Tables: map[string]semanticmodel.Table{
+			"orders":        {Kind: "fact", Source: "orders", PrimaryKey: "order_id"},
+			"order_summary": {PrimaryKey: "status", Transform: semanticmodel.Transform{SQL: "SELECT status FROM model.orders"}, ModelDependencies: []string{"orders"}},
+		},
+	}, true
+}
+
+func (m *dependentModelTableMetrics) RefreshModelTables(_ context.Context, _ string, tableNames []string) error {
+	m.refreshed = append(m.refreshed, append([]string(nil), tableNames...))
+	return nil
+}
+
+type failingDependencyModelTableMetrics struct {
+	dependentModelTableMetrics
+}
+
+func (m *failingDependencyModelTableMetrics) RefreshModelTables(_ context.Context, _ string, tableNames []string) error {
+	m.refreshed = append(m.refreshed, append([]string(nil), tableNames...))
+	if reflect.DeepEqual(tableNames, []string{"orders"}) {
+		return errors.New("dependency failed")
+	}
+	return nil
+}
+
+type missingSemanticModelAssetMetrics struct {
+	emptyPageRuntimeAssetMetrics
+}
+
+func (m missingSemanticModelAssetMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
+	if modelID == "olist" {
+		return nil, false
+	}
+	return m.emptyPageRuntimeAssetMetrics.SemanticModel(modelID)
+}
+
 func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
@@ -641,6 +816,442 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDashboardRefreshCommandPersistsMaterializationRun(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "editor@example.com", "Editor", "editor")
+	token := testAPIToken(t, ctx, store, principal.ID, "dashboard-refresh")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations","modelId":"test"},"filters":{},"tableCommand":{"block":"all","start":0,"count":50}}`)
+	req := httptest.NewRequest(http.MethodPost, "/commands/refresh-materializations", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	runs, err := repo.ListModelRuns(context.Background(), "test", "test", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != materialize.RunStatusSucceeded || runs[0].ModelID != "test" {
+		t.Fatalf("runs = %#v, want one succeeded test model run", runs)
+	}
+	if runs[0].PrincipalID != principal.ID || runs[0].PrincipalDisplayName != "Editor" {
+		t.Fatalf("run attribution = %#v, want Editor principal", runs[0])
+	}
+}
+
+func TestWorkspaceAssetUpdatesStreamsInitialRefreshState(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	queued, err := repo.CreateRun(context.Background(), materialize.RunInput{WorkspaceID: "test", ModelID: "olist"})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := repo.MarkRunSucceeded(context.Background(), "test", queued.ID); err != nil {
+		t.Fatalf("mark run succeeded: %v", err)
+	}
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=refreshes", nil)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	patches := ssetest.PatchSignals(t, body)
+	if len(patches) == 0 {
+		t.Fatalf("updates did not stream patches:\n%s", body)
+	}
+	var found bool
+	for _, patch := range patches {
+		if _, ok := patch["assetRefreshesGrid"]; ok {
+			found = true
+		}
+	}
+	if !found || !strings.Contains(body, `"status":"succeeded"`) {
+		t.Fatalf("updates did not stream succeeded refresh state:\n%s", body)
+	}
+}
+
+func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesGridAndUnusedRefreshFields(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=details", nil)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	patches := ssetest.PatchSignals(t, body)
+	if len(patches) == 0 {
+		t.Fatalf("details updates did not stream patches:\n%s", body)
+	}
+	for _, patch := range patches {
+		if _, ok := patch["assetRefreshesGrid"]; ok {
+			t.Fatalf("details updates streamed refreshes grid: %#v", patch["assetRefreshesGrid"])
+		}
+		refresh, ok := patch["assetRefresh"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"error", "lastAttempt", "lastDuration"} {
+			if _, ok := refresh[key]; ok {
+				t.Fatalf("details assetRefresh included unused field %q: %#v", key, refresh)
+			}
+		}
+	}
+}
+
+func TestWorkspaceAssetRefreshCommandPublishesRunningAndFinalState(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, principal.ID, "workspace-refresh")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
+	updates, unsubscribe := server.broker.Subscribe(workspaceAssetStreamID("test", string(assetID), "details"))
+	defer unsubscribe()
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	runs, err := repo.ListModelRuns(context.Background(), "test", "olist", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != materialize.RunStatusSucceeded {
+		t.Fatalf("runs = %#v, want one succeeded olist model run", runs)
+	}
+	if runs[0].PrincipalID != principal.ID || runs[0].PrincipalDisplayName != "Owner" {
+		t.Fatalf("run attribution = %#v, want Owner principal", runs[0])
+	}
+	patches := drainPatches(updates)
+	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusRunning) {
+		t.Fatalf("patches did not include running state: %#v", patches)
+	}
+	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusSucceeded) {
+		t.Fatalf("patches did not include succeeded state: %#v", patches)
+	}
+}
+
+func TestWorkspaceAssetRefreshCommandPublishesFailedError(t *testing.T) {
+	store := testStore(t)
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(failingRefreshAssetMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
+	updates, unsubscribe := server.broker.Subscribe(workspaceAssetStreamID("test", string(assetID), "refreshes"))
+	defer unsubscribe()
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	runs, err := repo.ListModelRuns(context.Background(), "test", "olist", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != materialize.RunStatusFailed || !strings.Contains(runs[0].Error, "refresh failed") {
+		t.Fatalf("runs = %#v, want one failed run with error", runs)
+	}
+	patches := drainPatches(updates)
+	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusFailed) || !strings.Contains(anyPatchesString(patches), "refresh failed") {
+		t.Fatalf("patches did not include failed error state: %#v", patches)
+	}
+}
+
+func TestWorkspaceModelTableRefreshCommandPersistsDirectAndDependencyRuns(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, principal.ID, "workspace-table-refresh")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	metrics := &dependentModelTableMetrics{}
+	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID(workspace.AssetTypeModelTable, "olist.order_summary")
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if got, want := metrics.refreshed, [][]string{{"orders"}, {"order_summary"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("refreshed tables = %#v, want %#v", got, want)
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	rootRuns, err := repo.ListTargetRuns(ctx, "test", materialize.TargetModelTable, "olist.order_summary", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list selected table runs: %v", err)
+	}
+	if len(rootRuns) != 1 || rootRuns[0].Status != materialize.RunStatusSucceeded || rootRuns[0].TriggerType != materialize.TriggerDirect || rootRuns[0].ParentRunID != "" {
+		t.Fatalf("selected table runs = %#v, want direct root run", rootRuns)
+	}
+	dependencyRuns, err := repo.ListTargetRuns(ctx, "test", materialize.TargetModelTable, "olist.orders", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list dependency table runs: %v", err)
+	}
+	if len(dependencyRuns) != 1 || dependencyRuns[0].Status != materialize.RunStatusSucceeded || dependencyRuns[0].TriggerType != materialize.TriggerDependency || dependencyRuns[0].ParentRunID != rootRuns[0].ID {
+		t.Fatalf("dependency table runs = %#v, want dependency child run", dependencyRuns)
+	}
+	if rootRuns[0].PrincipalID != principal.ID || dependencyRuns[0].PrincipalID != principal.ID {
+		t.Fatalf("principal attribution root=%#v dependency=%#v, want %s", rootRuns[0], dependencyRuns[0], principal.ID)
+	}
+}
+
+func TestMaterializationRunAPICanExecuteModelTableTargetWithLocalDevRuntimeShape(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "editor@example.com", "Editor", "editor")
+	token := testAPIToken(t, ctx, store, principal.ID, "materialization-table-test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	metrics := &localDevStyleModelTableMetrics{done: make(chan []string, 1)}
+	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+
+	createReq := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/materialization-runs", token, `{"modelId":"olist","targetType":"model_table","targetId":"olist.orders"}`)
+	createRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusAccepted {
+		t.Fatalf("create status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		ID         string `json:"id"`
+		TargetID   string `json:"targetId"`
+		TargetType string `json:"targetType"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if created.ID == "" || created.Status != materialize.RunStatusQueued || created.TargetType != materialize.TargetModelTable || created.TargetID != "olist.orders" {
+		t.Fatalf("created run = %#v", created)
+	}
+
+	select {
+	case refreshed := <-metrics.done:
+		if !reflect.DeepEqual(refreshed, []string{"olist", "orders"}) {
+			t.Fatalf("refreshed = %#v, want olist orders", refreshed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async model table refresh")
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	run, err := repo.GetRun(ctx, "test", created.ID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != materialize.RunStatusSucceeded || run.PrincipalID != principal.ID {
+		t.Fatalf("run = %#v, want succeeded model table run attributed to editor", run)
+	}
+}
+
+func TestMaterializationRunAPIMalformedModelTableTargetFailsPersistedRun(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "editor@example.com", "Editor", "editor")
+	token := testAPIToken(t, ctx, store, principal.ID, "materialization-table-invalid-test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(&localDevStyleModelTableMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+
+	createReq := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/materialization-runs", token, `{"modelId":"olist","targetType":"model_table","targetId":"other.orders"}`)
+	createRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusAccepted {
+		t.Fatalf("create status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	var run materialize.RunRecord
+	deadline := time.After(time.Second)
+	for {
+		var err error
+		run, err = repo.GetRun(ctx, "test", created.ID)
+		if err != nil {
+			t.Fatalf("get run: %v", err)
+		}
+		if run.Status != materialize.RunStatusQueued {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("run remained queued: %#v", run)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if run.Status != materialize.RunStatusFailed || !strings.Contains(run.Error, "does not belong to semantic model") {
+		t.Fatalf("run = %#v, want failed wrong-prefix target run", run)
+	}
+}
+
+func TestWorkspaceSemanticModelRefreshFailsWhenGraphMissing(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, principal.ID, "workspace-semantic-refresh-missing-graph")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(missingSemanticModelAssetMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	runs, err := repo.ListModelRuns(ctx, "test", "olist", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != materialize.RunStatusFailed || !strings.Contains(runs[0].Error, "unknown semantic model") {
+		t.Fatalf("runs = %#v, want failed missing graph run", runs)
+	}
+}
+
+func TestWorkspaceModelTableRefreshMarksDependencyAndRootFailedWhenDependencyFails(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, principal.ID, "workspace-table-refresh-failure")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	metrics := &failingDependencyModelTableMetrics{}
+	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID(workspace.AssetTypeModelTable, "olist.order_summary")
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	rootRuns, err := repo.ListTargetRuns(ctx, "test", materialize.TargetModelTable, "olist.order_summary", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list root runs: %v", err)
+	}
+	if len(rootRuns) != 1 || rootRuns[0].Status != materialize.RunStatusFailed || !strings.Contains(rootRuns[0].Error, "dependency failed") {
+		t.Fatalf("root runs = %#v, want failed selected table run", rootRuns)
+	}
+	dependencyRuns, err := repo.ListTargetRuns(ctx, "test", materialize.TargetModelTable, "olist.orders", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list dependency runs: %v", err)
+	}
+	if len(dependencyRuns) != 1 || dependencyRuns[0].Status != materialize.RunStatusFailed || dependencyRuns[0].ParentRunID != rootRuns[0].ID || !strings.Contains(dependencyRuns[0].Error, "dependency failed") {
+		t.Fatalf("dependency runs = %#v, want failed dependency linked to root", dependencyRuns)
+	}
+	if got, want := metrics.refreshed, [][]string{{"orders"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("refreshed tables = %#v, want only failed dependency", got)
+	}
+}
+
+func TestWorkspaceSemanticModelRefreshCommandPersistsTableChildRuns(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, principal.ID, "workspace-semantic-refresh")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	metrics := &dependentModelTableMetrics{}
+	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
+	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if got, want := metrics.refreshed, [][]string{{"orders"}, {"order_summary"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("refreshed tables = %#v, want %#v", got, want)
+	}
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	modelRuns, err := repo.ListModelRuns(ctx, "test", "olist", materialize.RunPage{Limit: 10})
+	if err != nil {
+		t.Fatalf("list model runs: %v", err)
+	}
+	if len(modelRuns) != 1 || modelRuns[0].Status != materialize.RunStatusSucceeded {
+		t.Fatalf("model runs = %#v, want succeeded parent run", modelRuns)
+	}
+	for _, targetID := range []string{"olist.orders", "olist.order_summary"} {
+		tableRuns, err := repo.ListTargetRuns(ctx, "test", materialize.TargetModelTable, targetID, materialize.RunPage{Limit: 10})
+		if err != nil {
+			t.Fatalf("list table runs for %s: %v", targetID, err)
+		}
+		if len(tableRuns) != 1 || tableRuns[0].TriggerType != materialize.TriggerSemanticModel || tableRuns[0].ParentRunID != modelRuns[0].ID {
+			t.Fatalf("table runs for %s = %#v, want semantic model child run", targetID, tableRuns)
+		}
+	}
+}
+
+func drainPatches(ch <-chan map[string]any) []map[string]any {
+	var patches []map[string]any
+	for {
+		select {
+		case patch := <-ch:
+			patches = append(patches, patch)
+		default:
+			return patches
+		}
+	}
+}
+
+func patchesContainAssetRefreshStatus(patches []map[string]any, status string) bool {
+	for _, patch := range patches {
+		refresh, ok := patch["assetRefresh"].(map[string]any)
+		if ok && refresh["status"] == status {
+			return true
+		}
+	}
+	return false
+}
+
+func anyPatchesString(patches []map[string]any) string {
+	bytes, _ := json.Marshal(patches)
+	return string(bytes)
 }
 
 func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {

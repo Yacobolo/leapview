@@ -1,18 +1,20 @@
-import { LitElement, html } from 'lit'
+import { LitElement, html, svg } from 'lit'
 import { property, state } from 'lit/decorators.js'
 
-type GridCellTone = 'default' | 'accent' | 'success' | 'attention' | 'muted'
+type GridCellTone = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'muted'
+type GridStatusIcon = 'check' | 'x' | 'clock' | 'dot'
 
 type GridCell = {
   label?: string
   value?: string | number
   tone?: GridCellTone
+  icon?: GridStatusIcon
 }
 
 type GridColumn = {
   id: string
   header: string
-  kind?: 'text' | 'code' | 'expression' | 'badge' | 'number' | 'link' | 'tags'
+  kind?: 'text' | 'code' | 'expression' | 'badge' | 'status' | 'number' | 'link' | 'tags'
   align?: 'left' | 'right'
   hrefKey?: string
   width?: string
@@ -49,6 +51,23 @@ function cellTone(value: unknown): GridCellTone {
     return (value as GridCell).tone ?? 'default'
   }
   return 'default'
+}
+
+function statusIcon(value: unknown, label: string): GridStatusIcon {
+  if (typeof value === 'object' && value && 'icon' in value) {
+    return (value as GridCell).icon ?? 'dot'
+  }
+  switch (label.toLowerCase()) {
+    case 'succeeded':
+      return 'check'
+    case 'failed':
+      return 'x'
+    case 'running':
+    case 'queued':
+      return 'clock'
+    default:
+      return 'dot'
+  }
 }
 
 function sortValue(value: unknown): string | number {
@@ -139,6 +158,8 @@ class DataGrid extends LitElement {
         return html`<code class="grid-expression">${label}</code>`
       case 'badge':
         return label === '-' ? html`<span class="grid-muted">-</span>` : html`<span class=${`grid-badge grid-badge-${cellTone(value)}`}>${label}</span>`
+      case 'status':
+        return label === '-' ? html`<span class="grid-muted">-</span>` : this.renderStatusCell(value, label)
       case 'number':
         return html`<span class="grid-number">${label}</span>`
       case 'link': {
@@ -151,6 +172,47 @@ class DataGrid extends LitElement {
           : html`<span class="grid-muted">-</span>`
       default:
         return html`<span>${label}</span>`
+    }
+  }
+
+  private renderStatusCell(value: unknown, label: string) {
+    const tone = cellTone(value)
+    const icon = statusIcon(value, label)
+    return html`
+      <span class=${`grid-status grid-status-${tone}`}>
+        <span class="grid-status-icon" aria-hidden="true">${this.renderStatusIcon(icon)}</span>
+        <span>${label}</span>
+      </span>
+    `
+  }
+
+  private renderStatusIcon(icon: GridStatusIcon) {
+    switch (icon) {
+      case 'check':
+        return svg`
+          <svg viewBox="0 0 16 16" focusable="false">
+            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm-1.4-4.9L3.8 8.3 5 7.1l1.6 1.6L11 4.3l1.2 1.2-5.6 5.6Z"></path>
+          </svg>
+        `
+      case 'x':
+        return svg`
+          <svg viewBox="0 0 16 16" focusable="false">
+            <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16ZM5.1 4 8 6.9 10.9 4 12 5.1 9.1 8l2.9 2.9-1.1 1.1L8 9.1 5.1 12 4 10.9 6.9 8 4 5.1 5.1 4Z"></path>
+          </svg>
+        `
+      case 'clock':
+        return svg`
+          <svg viewBox="0 0 16 16" focusable="false">
+            <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="2"></circle>
+            <path d="M8 4.5v3.8l2.6 1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"></path>
+          </svg>
+        `
+      default:
+        return svg`
+          <svg viewBox="0 0 16 16" focusable="false">
+            <circle cx="8" cy="8" r="4" fill="currentColor"></circle>
+          </svg>
+        `
     }
   }
 
@@ -349,6 +411,52 @@ const dataGridStyles = `
   ld-data-grid .grid-badge-default {
     border: var(--ld-border-muted);
     background: var(--ld-bg-panel-muted);
+    color: var(--ld-fg-muted);
+  }
+
+  ld-data-grid .grid-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--base-size-6);
+    color: var(--ld-fg-default);
+    font-weight: var(--ld-font-weight-medium);
+    white-space: nowrap;
+  }
+
+  ld-data-grid .grid-status-icon {
+    display: inline-flex;
+    width: var(--base-size-16);
+    height: var(--base-size-16);
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--ld-fg-muted);
+  }
+
+  ld-data-grid .grid-status-icon svg {
+    display: block;
+    width: var(--base-size-16);
+    height: var(--base-size-16);
+  }
+
+  ld-data-grid .grid-status-success .grid-status-icon {
+    color: var(--ld-fg-success);
+  }
+
+  ld-data-grid .grid-status-danger .grid-status-icon {
+    color: var(--ld-fg-danger);
+  }
+
+  ld-data-grid .grid-status-attention .grid-status-icon {
+    color: var(--ld-fg-warning);
+  }
+
+  ld-data-grid .grid-status-accent .grid-status-icon {
+    color: var(--ld-fg-link);
+  }
+
+  ld-data-grid .grid-status-muted .grid-status-icon,
+  ld-data-grid .grid-status-default .grid-status-icon {
     color: var(--ld-fg-muted);
   }
 
