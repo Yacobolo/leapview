@@ -578,7 +578,7 @@
     overscroll-behavior: none;
   }
 
-  ld-app-shell {
+  ld-app-shell:not(:defined) {
     display: grid;
     min-height: 100svh;
     grid-template-columns: var(--ld-sidebar-width, 248px) minmax(0, 1fr);
@@ -600,17 +600,17 @@
     min-width: 0;
   }
 
-  ld-app-shell > [slot='page'] {
+  ld-app-shell:not(:defined) > [slot='page'] {
     grid-column: 2;
     min-height: 100svh;
   }
 
   @media (max-width: 640px) {
-    ld-app-shell {
+    ld-app-shell:not(:defined) {
       grid-template-columns: 1fr;
     }
 
-    ld-app-shell > [slot='page'] {
+    ld-app-shell:not(:defined) > [slot='page'] {
       grid-column: 1;
     }
   }

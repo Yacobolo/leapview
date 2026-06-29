@@ -27,9 +27,11 @@ class LibreDashFilterDock extends LitElement {
     aside {
       display: grid;
       width: var(--ld-dashboard-filter-width, 44px);
+      box-sizing: border-box;
       min-width: 0;
       min-height: 0;
       height: 100%;
+      overflow: hidden;
       border-left: var(--ld-border-default);
       background: var(--ld-bg-panel-muted);
       transition:
@@ -38,6 +40,7 @@ class LibreDashFilterDock extends LitElement {
     }
 
     aside[data-open] {
+      grid-template-rows: minmax(0, 1fr);
       width: var(--ld-dashboard-filter-open-width, 320px);
       background: var(--ld-bg-app);
     }
@@ -48,16 +51,22 @@ class LibreDashFilterDock extends LitElement {
 
     .rail {
       display: flex;
-      min-height: var(--control-xlarge-size);
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      box-sizing: border-box;
       align-items: center;
-      justify-content: center;
+      align-content: start;
+      flex-direction: column;
+      justify-items: center;
+      justify-content: flex-start;
       gap: var(--base-size-8);
       border: 0;
-      border-bottom: var(--ld-border-default);
       background: transparent;
       color: var(--ld-fg-muted);
       cursor: pointer;
-      padding: var(--base-size-8);
+      padding: var(--base-size-16) 0;
       font-size: var(--ld-font-size-caption);
       font-weight: var(--ld-font-weight-strong);
       text-transform: uppercase;
@@ -69,8 +78,13 @@ class LibreDashFilterDock extends LitElement {
       outline: 0;
     }
 
+    aside[data-open] .rail {
+      display: none;
+    }
+
     .rail span {
       writing-mode: vertical-rl;
+      line-height: var(--ld-line-height-none, 1);
     }
 
     .panel {
@@ -87,6 +101,7 @@ class LibreDashFilterDock extends LitElement {
 
     aside[data-open] .rail span {
       writing-mode: horizontal-tb;
+      transform: none;
     }
 
     @media (max-width: 640px) {
@@ -100,6 +115,7 @@ class LibreDashFilterDock extends LitElement {
       .rail span,
       aside[data-open] .rail span {
         writing-mode: horizontal-tb;
+        transform: none;
       }
     }
   `

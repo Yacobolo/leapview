@@ -99,6 +99,45 @@ for (const viewport of [
         hasModal: true,
         canvasVisible: true,
       })
+
+      if (viewport.name === 'desktop') {
+        const dockState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+          const dock = element.shadowRoot.querySelector('ld-filter-dock') as HTMLElement
+          const root = dock.shadowRoot
+          const beforeAside = root.querySelector('aside') as HTMLElement
+          const beforeRail = root.querySelector('.rail') as HTMLElement
+          const rect = (node: HTMLElement) => {
+            const box = node.getBoundingClientRect()
+            return {
+              width: Math.round(box.width),
+              height: Math.round(box.height),
+              right: Math.round(box.right),
+            }
+          }
+          const closedAside = rect(beforeAside)
+          const closedRail = rect(beforeRail)
+          beforeRail.click()
+          await dock.updateComplete
+          await new Promise((resolve) => setTimeout(resolve, 220))
+          const afterAside = root.querySelector('aside') as HTMLElement
+          const afterRail = root.querySelector('.rail') as HTMLElement
+          const panel = root.querySelector('.panel') as HTMLElement
+          return {
+            closedAside,
+            closedRail,
+            openAside: rect(afterAside),
+            openRail: rect(afterRail),
+            openRailDisplay: getComputedStyle(afterRail).display,
+            panelDisplay: getComputedStyle(panel).display,
+          }
+        })
+
+        assert.equal(dockState.closedRail.width <= dockState.closedAside.width, true, JSON.stringify(dockState))
+        assert.equal(dockState.openAside.width >= 300, true, JSON.stringify(dockState))
+        assert.equal(dockState.openRailDisplay, 'none')
+        assert.equal(dockState.openRail.height, 0)
+        assert.equal(dockState.panelDisplay, 'block')
+      }
     } finally {
       await page.close()
     }

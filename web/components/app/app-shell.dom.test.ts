@@ -25,6 +25,11 @@ test.before(async () => {
       response.end(testDocument(true))
       return
     }
+    if (url.pathname === '/upgraded-compact-shell') {
+      response.setHeader('content-type', 'text/html')
+      response.end(testDocument(true, true))
+      return
+    }
 
     const fileRoot = url.pathname.startsWith('/tmp/') ? tmpRoot : root
     const path = url.pathname.startsWith('/tmp/') ? url.pathname.replace('/tmp/', '/') : url.pathname
@@ -94,11 +99,33 @@ test('app shell preserves slotted route geometry before route component upgrade'
   }
 })
 
+test('upgraded compact app shell does not keep the fallback route grid column', async () => {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/upgraded-compact-shell`)
+    await page.waitForFunction(() => customElements.get('ld-app-shell') && customElements.get('ld-sidebar'))
+    await page.locator('ld-app-shell').evaluate((element: any) => element.updateComplete)
+
+    const state = await shellGeometry(page)
+
+    assert.equal(state.routeDefined, false)
+    assert.equal(state.sidebar.width, 48)
+    assert.equal(state.shellMain.x, state.sidebar.right)
+    assert.equal(state.route.x, state.sidebar.right)
+    assert.equal(state.route.gridColumnStart, 'auto')
+  } finally {
+    await page.close()
+  }
+})
+
 async function shellGeometry(page: any) {
   return await page.evaluate(() => {
     const shell = document.querySelector('ld-app-shell') as HTMLElement
     const route = document.querySelector('ld-workspace-page') as HTMLElement
-    const box = (element: HTMLElement) => {
+    const sidebar = shell.shadowRoot?.querySelector('ld-sidebar') as HTMLElement
+    const shellMain = shell.shadowRoot?.querySelector('main') as HTMLElement
+    const box = (element?: HTMLElement | null) => {
+      if (!element) return null
       const rect = element.getBoundingClientRect()
       const style = getComputedStyle(element)
       return {
@@ -106,18 +133,35 @@ async function shellGeometry(page: any) {
         y: Math.round(rect.y),
         width: Math.round(rect.width),
         height: Math.round(rect.height),
+        right: Math.round(rect.right),
         display: style.display,
+        gridColumnStart: style.gridColumnStart,
       }
     }
     return {
       routeDefined: Boolean(customElements.get('ld-workspace-page')),
       shell: box(shell),
+      sidebar: box(sidebar),
+      shellMain: box(shellMain),
       route: box(route),
     }
   })
 }
 
-function testDocument(includeShellScript: boolean): string {
+function testDocument(includeShellScript: boolean, compact = false): string {
+  const chrome = compact ? ` chrome="${escapeHTML(JSON.stringify({
+    sidebar: {
+      workspaceTitle: 'LibreDash Workspace',
+      active: 'workspaces',
+      dashboardId: '',
+      dashboardTitle: '',
+      pageTitle: '',
+      modelId: '',
+      modelTitle: '',
+      compact: true,
+      groups: [],
+    },
+  }))}"` : ''
   return `
     <!doctype html>
     <html>
@@ -126,7 +170,7 @@ function testDocument(includeShellScript: boolean): string {
       </head>
       <body>
         <main class="min-h-svh bg-app text-fg-default">
-          <ld-app-shell>
+          <ld-app-shell${chrome}>
             <ld-workspace-page slot="page"></ld-workspace-page>
           </ld-app-shell>
         </main>
@@ -134,4 +178,12 @@ function testDocument(includeShellScript: boolean): string {
       </body>
     </html>
   `
+}
+
+function escapeHTML(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
 }
