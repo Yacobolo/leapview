@@ -395,6 +395,29 @@ const assetLineageGraphStyles = `
     flex-direction: column;
   }
 
+  ld-asset-lineage-graph .react-flow__controls.horizontal {
+    flex-direction: row;
+  }
+
+  ld-asset-lineage-graph .react-flow__controls-button {
+    display: flex;
+    width: 26px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    padding: 4px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  ld-asset-lineage-graph .react-flow__controls-button svg {
+    width: 100%;
+    max-width: 12px;
+    max-height: 12px;
+    fill: currentColor;
+  }
+
   ld-asset-lineage-graph .react-flow__attribution {
     display: none;
   }

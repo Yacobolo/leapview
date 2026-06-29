@@ -62,8 +62,12 @@ test('asset lineage graph carries React Flow layout styles inside shadow hosts',
       const viewport = graph.querySelector('.react-flow__viewport') as HTMLElement
       const node = graph.querySelector('.react-flow__node') as HTMLElement
       const edge = graph.querySelector('.react-flow__edges') as HTMLElement
+      const controlButton = graph.querySelector('.react-flow__controls-button') as HTMLElement
+      const controlIcon = controlButton.querySelector('svg') as SVGElement
       const flowRect = flow.getBoundingClientRect()
       const nodeRect = node.getBoundingClientRect()
+      const controlRect = controlButton.getBoundingClientRect()
+      const controlIconRect = controlIcon.getBoundingClientRect()
       return {
         flowHeight: Math.round(flowRect.height),
         viewportPosition: getComputedStyle(viewport).position,
@@ -71,6 +75,11 @@ test('asset lineage graph carries React Flow layout styles inside shadow hosts',
         edgePosition: getComputedStyle(edge).position,
         nodePosition: getComputedStyle(node).position,
         nodeInsideFlow: nodeRect.top >= flowRect.top && nodeRect.top < flowRect.bottom,
+        controlDisplay: getComputedStyle(controlButton).display,
+        controlWidth: Math.round(controlRect.width),
+        controlHeight: Math.round(controlRect.height),
+        controlIconWidth: Math.round(controlIconRect.width),
+        controlIconFill: getComputedStyle(controlIcon).fill,
       }
     })
 
@@ -81,6 +90,11 @@ test('asset lineage graph carries React Flow layout styles inside shadow hosts',
       edgePosition: 'absolute',
       nodePosition: 'absolute',
       nodeInsideFlow: true,
+      controlDisplay: 'flex',
+      controlWidth: 26,
+      controlHeight: 26,
+      controlIconWidth: 12,
+      controlIconFill: 'rgb(36, 41, 47)',
     })
   } finally {
     await page.close()

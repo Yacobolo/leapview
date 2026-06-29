@@ -61,6 +61,29 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 	}
 }
 
+func TestWorkspacePagesLoadThemeBeforeDeferredRouteModules(t *testing.T) {
+	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+
+	var out strings.Builder
+	err := WorkspacePage(catalog, workspace, assets, "", "", "Owner", WorkspaceAccessResponse{}, "").Render(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+
+	themeScript := `<script src="/static/theme.js?v=dev"></script>`
+	routeScript := `<script type="module" src="/static/workspace-page.js?v=dev"></script>`
+	if !strings.Contains(rendered, themeScript) {
+		t.Fatalf("workspace page did not render blocking theme script %q:\n%s", themeScript, rendered)
+	}
+	if strings.Contains(rendered, `<script type="module" src="/static/theme.js?v=dev"></script>`) {
+		t.Fatalf("workspace page rendered theme script as deferred module:\n%s", rendered)
+	}
+	if strings.Index(rendered, themeScript) > strings.Index(rendered, routeScript) {
+		t.Fatalf("workspace page rendered theme script after route module:\n%s", rendered)
+	}
+}
+
 func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 	byType := map[string]workspaceview.AssetView{}

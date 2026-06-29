@@ -762,6 +762,10 @@ const workspaceStyles = css`
     gap: var(--base-size-12);
   }
 
+  .asset-name > div {
+    min-width: 0;
+  }
+
   .asset-title,
   .muted-link {
     color: var(--ld-fg-default);
@@ -922,6 +926,10 @@ const workspaceStyles = css`
     min-width: 0;
     min-height: 0;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .asset-body > .tabs {
+    padding-inline: var(--base-size-16);
   }
 
   .section-body {

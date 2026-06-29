@@ -33,6 +33,14 @@ type WorkspaceAccess = {
   status?: AccessStatus
 }
 
+type WorkspaceAccessInput = {
+  workspace?: unknown
+  roles?: unknown
+  bindings?: unknown
+  canManage?: unknown
+  status?: unknown
+}
+
 type AccessCommand = {
   email?: string
   role?: string
@@ -56,7 +64,7 @@ const focusableSelector = [
 ].join(', ')
 
 class WorkspaceAccessControl extends LitElement {
-  @property({ attribute: false }) access: WorkspaceAccess | null = null
+  @property({ attribute: false }) access: WorkspaceAccessInput | null = null
   @property({ attribute: 'access' }) accessAttribute = ''
   @property({ attribute: 'search' }) searchAttribute = ''
 
@@ -635,7 +643,7 @@ class WorkspaceAccessControl extends LitElement {
     if (this.access) return normalizeAccess(this.access)
     if (this.accessAttribute) {
       try {
-        return normalizeAccess(JSON.parse(this.accessAttribute) as WorkspaceAccess)
+        return normalizeAccess(JSON.parse(this.accessAttribute) as WorkspaceAccessInput)
       } catch {
         return emptyAccess
       }
@@ -762,14 +770,72 @@ class WorkspaceAccessControl extends LitElement {
   }
 }
 
-function normalizeAccess(access: WorkspaceAccess): WorkspaceAccess {
+function normalizeAccess(access: WorkspaceAccessInput): WorkspaceAccess {
+  const raw = recordValue(access)
   return {
-    workspace: access.workspace ?? {},
-    roles: access.roles ?? [],
-    bindings: access.bindings ?? [],
-    canManage: Boolean(access.canManage),
-    status: access.status ?? {},
+    workspace: normalizeWorkspace(access.workspace),
+    roles: Array.isArray(access.roles) ? access.roles.map(normalizeRole).filter(isRole) : [],
+    bindings: Array.isArray(access.bindings) ? access.bindings.map(normalizeBinding).filter(isBinding) : [],
+    canManage: Boolean(access.canManage ?? raw.CanManage),
+    status: normalizeStatus(access.status ?? raw.Status),
   }
+}
+
+function normalizeWorkspace(workspace: unknown): Workspace {
+  const raw = recordValue(workspace)
+  return {
+    id: stringValue(raw.id ?? raw.ID),
+    title: stringValue(raw.title ?? raw.Title),
+  }
+}
+
+function normalizeRole(role: unknown): Role | null {
+  if (typeof role === 'string') {
+    const name = role.trim()
+    return name ? { name } : null
+  }
+  const raw = recordValue(role)
+  const name = stringValue(raw.name ?? raw.Name).trim()
+  return name ? { name } : null
+}
+
+function normalizeBinding(binding: unknown): Binding | null {
+  const raw = recordValue(binding)
+  const email = stringValue(raw.email ?? raw.Email)
+  const principalId = stringValue(raw.principalId ?? raw.PrincipalID)
+  const role = stringValue(raw.role ?? raw.Role)
+  if (!email && !principalId) return null
+  return {
+    principalId,
+    email,
+    displayName: stringValue(raw.displayName ?? raw.DisplayName),
+    role,
+  }
+}
+
+function normalizeStatus(status: unknown): AccessStatus {
+  const raw = recordValue(status)
+  return {
+    loading: Boolean(raw.loading ?? raw.Loading),
+    error: stringValue(raw.error ?? raw.Error),
+    message: stringValue(raw.message ?? raw.Message),
+  }
+}
+
+function isRole(role: Role | null): role is Role {
+  return role !== null
+}
+
+function isBinding(binding: Binding | null): binding is Binding {
+  return binding !== null
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {}
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : ''
 }
 
 function displayLabel(binding: Binding): string {

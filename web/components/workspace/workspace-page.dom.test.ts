@@ -72,8 +72,16 @@ for (const viewport of [
         const workspaceGlyph = workspace.shadowRoot.querySelector('.asset-glyph') as HTMLElement
         const workspaceRowActionIcon = workspace.shadowRoot.querySelector('.row-actions svg') as SVGElement
         const workspaceRowActionLink = workspace.shadowRoot.querySelector('.row-actions .icon-link') as HTMLElement
+        const workspaceNameCell = workspace.shadowRoot.querySelector('tbody tr:first-child .name-col') as HTMLElement
+        const workspaceTypeCell = workspace.shadowRoot.querySelector('tbody tr:first-child .type-col') as HTMLElement
+        const workspaceAssetTitle = workspace.shadowRoot.querySelector('tbody tr:first-child .asset-title') as HTMLElement
+        const workspaceAssetDescription = workspace.shadowRoot.querySelector('tbody tr:first-child .name-col p') as HTMLElement
         const connectionsPage = connections.shadowRoot.querySelector('.page') as HTMLElement
         const assetHeader = asset.shadowRoot.querySelector('.breadcrumb-header') as HTMLElement
+        const assetTabs = asset.shadowRoot.querySelector('.asset-body > .tabs') as HTMLElement
+        const assetFirstTab = asset.shadowRoot.querySelector('.asset-body > .tabs a') as HTMLElement
+        const nameCellRight = workspaceNameCell.getBoundingClientRect().right
+        const typeCellLeft = workspaceTypeCell.getBoundingClientRect().left
         return {
           workspaceTitle: workspace.shadowRoot.querySelector('h1')?.textContent?.trim(),
           workspaceHasAsset: Boolean(workspace.shadowRoot.querySelector('.asset-title')),
@@ -85,6 +93,8 @@ for (const viewport of [
           workspaceGlyphHasIcon: Boolean(workspaceGlyph.querySelector('svg')),
           workspaceRowActionIconWidth: getComputedStyle(workspaceRowActionIcon).width,
           workspaceRowActionBorderColor: getComputedStyle(workspaceRowActionLink).borderTopColor,
+          workspaceTitleFitsNameColumn: workspaceAssetTitle.getBoundingClientRect().right <= nameCellRight && workspaceAssetTitle.getBoundingClientRect().right <= typeCellLeft,
+          workspaceDescriptionFitsNameColumn: workspaceAssetDescription.getBoundingClientRect().right <= nameCellRight && workspaceAssetDescription.getBoundingClientRect().right <= typeCellLeft,
           connectionsTitle: connections.shadowRoot.querySelector('h1')?.textContent?.trim(),
           connectionsHasSource: connections.shadowRoot.textContent?.includes('Orders source') ?? false,
           connectionsIsStyled: getComputedStyle(connectionsPage).paddingTop !== '0px',
@@ -92,6 +102,8 @@ for (const viewport of [
           assetHasOverview: asset.shadowRoot.textContent?.includes('Overview') ?? false,
           assetHasGrid: Boolean(asset.shadowRoot.querySelector('ld-data-grid')),
           assetHeaderDisplay: getComputedStyle(assetHeader).display,
+          assetTabsPaddingLeft: getComputedStyle(assetTabs).paddingLeft,
+          assetFirstTabInset: Math.round(assetFirstTab.getBoundingClientRect().left - assetTabs.getBoundingClientRect().left),
         }
       })
 
@@ -106,6 +118,8 @@ for (const viewport of [
         workspaceGlyphHasIcon: true,
         workspaceRowActionIconWidth: '16px',
         workspaceRowActionBorderColor: 'rgba(0, 0, 0, 0)',
+        workspaceTitleFitsNameColumn: true,
+        workspaceDescriptionFitsNameColumn: true,
         connectionsTitle: 'Connections',
         connectionsHasSource: true,
         connectionsIsStyled: true,
@@ -113,12 +127,56 @@ for (const viewport of [
         assetHasOverview: true,
         assetHasGrid: true,
         assetHeaderDisplay: 'grid',
+        assetTabsPaddingLeft: '16px',
+        assetFirstTabInset: 16,
       })
     } finally {
       await page.close()
     }
   })
 }
+
+test('workspace access modal normalizes Go-shaped access signals', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-workspace-page'))
+    await page.locator('ld-workspace-page').evaluate((element: any) => element.updateComplete)
+
+    const state = await page.evaluate(async () => {
+      const workspace = document.querySelector('ld-workspace-page') as any
+      const accessControl = workspace.shadowRoot.querySelector('ld-workspace-access-control') as any
+      accessControl.shadowRoot.querySelector('.trigger').click()
+      await accessControl.updateComplete
+      const dialog = accessControl.shadowRoot.querySelector('[role="dialog"]')
+      const roleOptions = Array.from(accessControl.shadowRoot.querySelectorAll('.composer-role option')).map((option) => ({
+        value: (option as HTMLOptionElement).value,
+        label: option.textContent?.trim(),
+      }))
+      const rowRole = accessControl.shadowRoot.querySelector('.row select') as HTMLSelectElement | null
+      return {
+        hasDialog: Boolean(dialog),
+        title: accessControl.shadowRoot.querySelector('.subtitle')?.textContent?.trim(),
+        roleOptions,
+        rowRoleValue: rowRole?.value,
+        principal: accessControl.shadowRoot.querySelector('.name')?.textContent?.trim(),
+      }
+    })
+
+    assert.deepEqual(state, {
+      hasDialog: true,
+      title: 'LibreDash Workspace roles apply to every published asset in this workspace.',
+      roleOptions: [
+        { value: 'viewer', label: 'Viewer' },
+        { value: 'workspace_admin', label: 'Workspace Admin' },
+      ],
+      rowRoleValue: 'viewer',
+      principal: 'analyst@example.com',
+    })
+  } finally {
+    await page.close()
+  }
+})
 
 function testDocument(): string {
   const assetList = {
@@ -130,8 +188,8 @@ function testDocument(): string {
     ],
     assets: [{
       id: 'semantic_model:olist',
-      title: 'Olist Commerce',
-      description: 'Brazilian ecommerce model.',
+      title: 'Executive Sales Dashboard',
+      description: 'Sales, order, category, and delivery overview with deliberately long text for table fitting.',
       type: 'semantic_model',
       typeLabel: 'Semantic model',
       key: 'olist',
@@ -192,9 +250,14 @@ function testDocument(): string {
     },
   }
   const access = {
-    workspace: { id: 'libredash', title: 'LibreDash Workspace' },
-    roles: [{ name: 'viewer' }],
-    bindings: [],
+    workspace: { ID: 'libredash', Title: 'LibreDash Workspace' },
+    roles: [{ Name: 'viewer' }, { Name: 'workspace_admin' }],
+    bindings: [{
+      PrincipalID: 'principal:analyst@example.com',
+      Email: 'analyst@example.com',
+      DisplayName: '',
+      Role: 'viewer',
+    }],
     canManage: true,
     status: { loading: false, error: '', message: '' },
     csrfToken: 'token',

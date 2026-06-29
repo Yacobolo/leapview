@@ -42,7 +42,7 @@ func pageHead(extra ...g.Node) []g.Node {
 	nodes := []g.Node{
 		h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
-		h.Script(h.Type("module"), h.Src(staticAsset("/static/theme.js"))),
+		h.Script(h.Src(staticAsset("/static/theme.js"))),
 	}
 	return append(nodes, extra...)
 }

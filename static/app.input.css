@@ -44,6 +44,7 @@
   --ld-font-family-ui: var(--fontStack-system);
   --ld-font-family-display: var(--fontStack-sansSerifDisplay);
   --ld-font-family-mono: var(--fontStack-monospace);
+  --base-size-10: 0.625rem;
 }
 
 @theme {
@@ -83,7 +84,7 @@
   --spacing-1: var(--base-size-4);
   --spacing-1\.5: var(--base-size-6);
   --spacing-2: var(--base-size-8);
-  --spacing-2\.5: 0.625rem;
+  --spacing-2\.5: var(--base-size-10);
   --spacing-3: var(--base-size-12);
   --spacing-3\.5: 0.875rem;
   --spacing-4: var(--base-size-16);
@@ -590,6 +591,44 @@
       animation-duration: 0.001ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.001ms !important;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation-duration: 180ms;
+      animation-timing-function: var(--motion-easing-move, ease);
+    }
+
+    ::view-transition-old(root) {
+      animation-name: ld-page-out;
+    }
+
+    ::view-transition-new(root) {
+      animation-name: ld-page-in;
+    }
+  }
+
+  @keyframes ld-page-out {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  @keyframes ld-page-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
   }
 }
