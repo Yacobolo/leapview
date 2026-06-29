@@ -99,6 +99,23 @@ for (const viewport of [
         canvasVisible: true,
       })
 
+      const tableState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+        const table = element.shadowRoot.querySelector('ld-data-table') as any
+        await table.updateComplete
+        const root = table.shadowRoot
+        return {
+          text: root.textContent.replace(/\s+/g, ' ').trim(),
+          rows: root.querySelectorAll('[role="row"]').length,
+          cells: root.querySelectorAll('[role="cell"]').length,
+        }
+      })
+
+      expect(tableState.text).toContain('Orders')
+      expect(tableState.text).toContain('Order')
+      expect(tableState.text).toContain('o1')
+      expect(tableState.rows).toBeGreaterThan(0)
+      expect(tableState.cells).toBeGreaterThan(0)
+
       if (viewport.name === 'desktop') {
         const dockState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
           const dock = element.shadowRoot.querySelector('ld-filter-dock') as HTMLElement

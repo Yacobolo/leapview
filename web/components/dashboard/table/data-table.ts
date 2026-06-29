@@ -219,16 +219,16 @@ class DataTable extends LitElement {
     resizeGuideX: { state: true },
   }
 
-  tableId = ''
-  table: TableSignal = emptyTable
-  private selectedCellKey = ''
-  private viewportTop = 0
-  private viewportHeight = 0
-  private columnVisibility: ColumnVisibilityState = {}
-  private columnSizing: ColumnSizingState = {}
-  private rowSelection: RowSelectionState = {}
-  private hoveredRowId = ''
-  private resizeGuideX = -1
+  declare tableId: string
+  declare table: TableSignal
+  declare private selectedCellKey: string
+  declare private viewportTop: number
+  declare private viewportHeight: number
+  declare private columnVisibility: ColumnVisibilityState
+  declare private columnSizing: ColumnSizingState
+  declare private rowSelection: RowSelectionState
+  declare private hoveredRowId: string
+  declare private resizeGuideX: number
   private lastResetVersion = -1
   private shouldResetScroll = false
   private requestSeq = 0
@@ -257,6 +257,20 @@ class DataTable extends LitElement {
   }
   private handleResizeGuideEnd = () => {
     this.clearResizeGuide()
+  }
+
+  constructor() {
+    super()
+    this.tableId = ''
+    this.table = emptyTable
+    this.selectedCellKey = ''
+    this.viewportTop = 0
+    this.viewportHeight = 0
+    this.columnVisibility = {}
+    this.columnSizing = {}
+    this.rowSelection = {}
+    this.hoveredRowId = ''
+    this.resizeGuideX = -1
   }
 
   static styles = [visualActionStyles, css`
