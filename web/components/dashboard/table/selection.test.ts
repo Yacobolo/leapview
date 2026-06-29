@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { expect, test } from 'bun:test'
 import {
   UI_ROW_SELECTION_FIELD,
   buildRowSelectionCommand,
@@ -29,7 +28,7 @@ test('buildRowSelectionCommand emits configured semantic mappings', () => {
     selectionAction: { action: 'replace', toggle: false },
   })
 
-  assert.deepEqual(command, {
+  expect(command).toEqual({
     sourceKind: 'table',
     sourceId: 'orders_table',
     interactionKind: 'row_selection',
@@ -51,7 +50,7 @@ test('buildRowSelectionCommand emits UI-only row key mappings without semantic m
     selectionAction: { action: 'set', toggle: true },
   })
 
-  assert.deepEqual(command, {
+  expect(command).toEqual({
     sourceKind: 'table',
     sourceId: 'orders_table',
     interactionKind: 'row_selection',
@@ -70,27 +69,27 @@ test('buildRowSelectionCommand rejects incomplete semantic mapping payloads', ()
     selectionAction: { action: 'replace', toggle: false },
   })
 
-  assert.equal(command, null)
+  expect(command).toBe(null)
 })
 
 test('rowClickSelectionAction keeps the table gesture matrix server-driven', () => {
-  assert.deepEqual(rowClickSelectionAction({ selected: false, selectedCount: 0, metaKey: false, ctrlKey: false }), {
+  expect(rowClickSelectionAction({ selected: false, selectedCount: 0, metaKey: false, ctrlKey: false })).toEqual({
     action: 'replace',
     toggle: false,
   })
-  assert.deepEqual(rowClickSelectionAction({ selected: true, selectedCount: 1, metaKey: false, ctrlKey: false }), {
+  expect(rowClickSelectionAction({ selected: true, selectedCount: 1, metaKey: false, ctrlKey: false })).toEqual({
     action: 'set',
     toggle: true,
   })
-  assert.deepEqual(rowClickSelectionAction({ selected: true, selectedCount: 3, metaKey: false, ctrlKey: false }), {
+  expect(rowClickSelectionAction({ selected: true, selectedCount: 3, metaKey: false, ctrlKey: false })).toEqual({
     action: 'replace',
     toggle: false,
   })
-  assert.deepEqual(rowClickSelectionAction({ selected: false, selectedCount: 1, metaKey: false, ctrlKey: true }), {
+  expect(rowClickSelectionAction({ selected: false, selectedCount: 1, metaKey: false, ctrlKey: true })).toEqual({
     action: 'set',
     toggle: true,
   })
-  assert.deepEqual(rowClickSelectionAction({ selected: false, selectedCount: 1, metaKey: true, ctrlKey: false }), {
+  expect(rowClickSelectionAction({ selected: false, selectedCount: 1, metaKey: true, ctrlKey: false })).toEqual({
     action: 'set',
     toggle: true,
   })
@@ -111,8 +110,8 @@ test('rowSelectionFromEntries projects semantic selection entries to loaded rows
     },
   ]
 
-  assert.deepEqual(rowSelectionFromEntries(rows, semanticInteraction, selection), { o2: true })
-  assert.equal(rowIsSelected(rows[1].row, rows[1].key, semanticInteraction, selection), true)
+  expect(rowSelectionFromEntries(rows, semanticInteraction, selection)).toEqual({ o2: true })
+  expect(rowIsSelected(rows[1].row, rows[1].key, semanticInteraction, selection)).toBe(true)
 })
 
 test('rowSelectionFromEntries projects UI-only row-key entries to loaded rows', () => {
@@ -124,8 +123,8 @@ test('rowSelectionFromEntries projects UI-only row-key entries to loaded rows', 
     { mappings: [{ field: UI_ROW_SELECTION_FIELD, value: 'row-1', label: 'row-1' }], label: 'row-1' },
   ]
 
-  assert.deepEqual(rowSelectionFromEntries(rows, { kind: 'row_selection', mappings: [] }, selection), { 'row-1': true })
-  assert.equal(rowIsSelected(rows[1].row, rows[1].key, { kind: 'row_selection', mappings: [] }, selection), false)
+  expect(rowSelectionFromEntries(rows, { kind: 'row_selection', mappings: [] }, selection)).toEqual({ 'row-1': true })
+  expect(rowIsSelected(rows[1].row, rows[1].key, { kind: 'row_selection', mappings: [] }, selection)).toBe(false)
 })
 
 test('selected count and labels come only from server selection entries', () => {
@@ -134,8 +133,8 @@ test('selected count and labels come only from server selection entries', () => 
     { mappings: [{ field: 'orders.order_id', value: 'o2', label: 'o2' }] },
   ]
 
-  assert.equal(selectedRowCount(selection), 2)
-  assert.deepEqual(selectionLabels(selection), ['Delivered', 'o2'])
-  assert.equal(selectedRowCount(undefined), 0)
-  assert.deepEqual(selectionLabels(undefined), [])
+  expect(selectedRowCount(selection)).toBe(2)
+  expect(selectionLabels(selection)).toEqual(['Delivered', 'o2'])
+  expect(selectedRowCount(undefined)).toBe(0)
+  expect(selectionLabels(undefined)).toEqual([])
 })

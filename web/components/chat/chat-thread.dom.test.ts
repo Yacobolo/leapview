@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
@@ -9,7 +8,7 @@ let server: Server
 let browser: Browser
 let baseURL = ''
 
-test.before(async () => {
+beforeAll(async () => {
   const root = join(process.cwd(), '.tmp/chat-thread-test')
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -56,7 +55,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -167,12 +166,12 @@ test('chat thread renders visual artifacts with dashboard web components', async
       artifactBorderTopWidth: getComputedStyle(root.querySelector('ld-visual-artifact')!.shadowRoot!.querySelector('.artifact')!).borderTopWidth,
     }
   })
-  assert.equal(rendered.chart, true)
-  assert.equal(rendered.table, true)
-  assert.equal(rendered.jsonDetails, 0)
-  assert.equal(rendered.bodyText.includes('delivered'), false)
-  assert.equal(rendered.artifactBackground, 'rgb(1, 2, 3)')
-  assert.equal(rendered.artifactBorderTopWidth, '2px')
+  expect(rendered.chart).toBe(true)
+  expect(rendered.table).toBe(true)
+  expect(rendered.jsonDetails).toBe(0)
+  expect(rendered.bodyText.includes('delivered')).toBe(false)
+  expect(rendered.artifactBackground).toBe('rgb(1, 2, 3)')
+  expect(rendered.artifactBorderTopWidth).toBe('2px')
 
   await page.locator('ld-chat-thread').evaluate(async (element: any) => {
     const trigger = element.shadowRoot.querySelector('.tool-trigger') as HTMLButtonElement
@@ -180,8 +179,8 @@ test('chat thread renders visual artifacts with dashboard web components', async
     await element.updateComplete
   })
   const detailText = await page.locator('ld-chat-thread').evaluate((element: any) => element.shadowRoot.querySelector('.tool-details')?.textContent || '')
-  assert.equal(detailText.includes('"signal": "visuals.agent_chart_1"'), true)
-  assert.equal(detailText.includes('delivered'), false)
+  expect(detailText.includes('"signal": "visuals.agent_chart_1"')).toBe(true)
+  expect(detailText.includes('delivered')).toBe(false)
 
   await page.locator('ld-chat-thread').evaluate(async (element: any) => {
     const artifact = element.shadowRoot.querySelector('ld-visual-artifact[artifact-id="agent_chart_1"]') as any
@@ -200,8 +199,8 @@ test('chat thread renders visual artifacts with dashboard web components', async
       text: modal.shadowRoot.textContent || '',
     }
   })
-  assert.equal(showDataState.hasDialog, true)
-  assert.equal(showDataState.text.includes('1 row from current visual data'), true)
+  expect(showDataState.hasDialog).toBe(true)
+  expect(showDataState.text.includes('1 row from current visual data')).toBe(true)
   await page.locator('ld-visual-modal').evaluate(async (modal: any) => {
     modal.shadowRoot.querySelector('.close').click()
     await modal.updateComplete
@@ -225,7 +224,7 @@ test('chat thread renders visual artifacts with dashboard web components', async
       dialogBackground: dialog ? getComputedStyle(dialog).backgroundColor : '',
     }
   })
-  assert.deepEqual(focusState, {
+  expect(focusState).toEqual({
     chartParent: 'ld-visual-modal',
     slot: 'focus-visual',
     hasDialog: true,
@@ -236,7 +235,7 @@ test('chat thread renders visual artifacts with dashboard web components', async
     await modal.updateComplete
   })
   const restored = await page.locator('ld-chat-thread').evaluate((element: any) => Boolean(element.shadowRoot.querySelector('ld-visual-artifact[artifact-id="agent_chart_1"]')?.shadowRoot?.querySelector('ld-echart[visual-id="agent_chart_1"]')))
-  assert.equal(restored, true)
+  expect(restored).toBe(true)
   await page.close()
 })
 
@@ -290,6 +289,6 @@ test('chat thread still renders legacy embedded artifact patches', async () => {
   ))
 
   const hasChart = await page.evaluate(() => Boolean(document.querySelector('ld-chat-thread')!.shadowRoot!.querySelector('ld-visual-artifact[artifact-id="legacy_chart_1"]')?.shadowRoot?.querySelector('ld-echart[visual-id="legacy_chart_1"]')))
-  assert.equal(hasChart, true)
+  expect(hasChart).toBe(true)
   await page.close()
 })

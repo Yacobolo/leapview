@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { expect, test } from 'bun:test'
 import { mountVisualFocus, restoreVisualFocus, visualSourceFromEvent } from './visual-modal-focus'
 
 class FakeDocument {
@@ -82,10 +81,10 @@ test('mountVisualFocus moves the source element into the target and leaves a pla
 
   const mount = mountVisualFocus(source as unknown as Element, target as unknown as Node)
 
-  assert.ok(mount)
-  assert.equal(target.children[0], source)
-  assert.equal(source.parentNode, target)
-  assert.deepEqual(childNames(parent), ['#comment:ld-visual-focus-placeholder', 'after'])
+  expect(mount).toBeTruthy()
+  expect(target.children[0]).toBe(source)
+  expect(source.parentNode).toBe(target)
+  expect(childNames(parent)).toEqual(['#comment:ld-visual-focus-placeholder', 'after'])
 })
 
 test('mountVisualFocus can slot the source as a light DOM child of the modal host', () => {
@@ -96,16 +95,16 @@ test('mountVisualFocus can slot the source as a light DOM child of the modal hos
 
   const mount = mountVisualFocus(source as unknown as Element, modalHost as unknown as Node, { slot: 'focus-visual' })
 
-  assert.ok(mount)
-  assert.equal(source.parentNode, modalHost)
-  assert.equal(source.getAttribute('slot'), 'focus-visual')
-  assert.deepEqual(childNames(parent), ['#comment:ld-visual-focus-placeholder'])
+  expect(mount).toBeTruthy()
+  expect(source.parentNode).toBe(modalHost)
+  expect(source.getAttribute('slot')).toBe('focus-visual')
+  expect(childNames(parent)).toEqual(['#comment:ld-visual-focus-placeholder'])
 
   restoreVisualFocus(mount)
 
-  assert.equal(source.parentNode, parent)
-  assert.equal(source.getAttribute('slot'), null)
-  assert.deepEqual(childNames(parent), ['source'])
+  expect(source.parentNode).toBe(parent)
+  expect(source.getAttribute('slot')).toBe(null)
+  expect(childNames(parent)).toEqual(['source'])
 })
 
 test('restoreVisualFocus restores a previous slot value after fullscreen focus', () => {
@@ -116,13 +115,13 @@ test('restoreVisualFocus restores a previous slot value after fullscreen focus',
   parent.appendChild(source)
 
   const mount = mountVisualFocus(source as unknown as Element, modalHost as unknown as Node, { slot: 'focus-visual' })
-  assert.ok(mount)
-  assert.equal(source.getAttribute('slot'), 'focus-visual')
+  expect(mount).toBeTruthy()
+  expect(source.getAttribute('slot')).toBe('focus-visual')
 
   restoreVisualFocus(mount)
 
-  assert.equal(source.parentNode, parent)
-  assert.equal(source.getAttribute('slot'), 'dashboard-cell')
+  expect(source.parentNode).toBe(parent)
+  expect(source.getAttribute('slot')).toBe('dashboard-cell')
 })
 
 test('restoreVisualFocus restores the same source element before the placeholder', () => {
@@ -135,13 +134,13 @@ test('restoreVisualFocus restores the same source element before the placeholder
   parent.appendChild(source)
   parent.appendChild(after)
   const mount = mountVisualFocus(source as unknown as Element, target as unknown as Node)
-  assert.ok(mount)
+  expect(mount).toBeTruthy()
 
   restoreVisualFocus(mount)
 
-  assert.equal(source.parentNode, parent)
-  assert.deepEqual(childNames(parent), ['before', 'source', 'after'])
-  assert.deepEqual(childNames(target), [])
+  expect(source.parentNode).toBe(parent)
+  expect(childNames(parent)).toEqual(['before', 'source', 'after'])
+  expect(childNames(target)).toEqual([])
 })
 
 test('restoreVisualFocus falls back to the original next sibling when placeholder is gone', () => {
@@ -152,13 +151,13 @@ test('restoreVisualFocus falls back to the original next sibling when placeholde
   parent.appendChild(source)
   parent.appendChild(after)
   const mount = mountVisualFocus(source as unknown as Element, target as unknown as Node)
-  assert.ok(mount)
+  expect(mount).toBeTruthy()
   mount.placeholder.remove()
 
   restoreVisualFocus(mount)
 
-  assert.deepEqual(childNames(parent), ['source', 'after'])
-  assert.deepEqual(childNames(target), [])
+  expect(childNames(parent)).toEqual(['source', 'after'])
+  expect(childNames(target)).toEqual([])
 })
 
 test('focus can move from one source element to another after restoring the first', () => {
@@ -170,15 +169,15 @@ test('focus can move from one source element to another after restoring the firs
   firstParent.appendChild(first)
   secondParent.appendChild(second)
   const firstMount = mountVisualFocus(first as unknown as Element, target as unknown as Node)
-  assert.ok(firstMount)
+  expect(firstMount).toBeTruthy()
 
   restoreVisualFocus(firstMount)
   const secondMount = mountVisualFocus(second as unknown as Element, target as unknown as Node)
 
-  assert.ok(secondMount)
-  assert.deepEqual(childNames(firstParent), ['first'])
-  assert.deepEqual(childNames(secondParent), ['#comment:ld-visual-focus-placeholder'])
-  assert.deepEqual(childNames(target), ['second'])
+  expect(secondMount).toBeTruthy()
+  expect(childNames(firstParent)).toEqual(['first'])
+  expect(childNames(secondParent)).toEqual(['#comment:ld-visual-focus-placeholder'])
+  expect(childNames(target)).toEqual(['second'])
 })
 
 test('visualSourceFromEvent returns the first focusable visual in the composed path', () => {
@@ -193,7 +192,7 @@ test('visualSourceFromEvent returns the first focusable visual in the composed p
     const table = new TestHTMLElement('ld-data-table')
     const event = { composedPath: () => [button, chart, table] } as unknown as Event
 
-    assert.equal(visualSourceFromEvent(event), chart)
+    expect(visualSourceFromEvent(event)).toBe(chart)
   } finally {
     globalThis.HTMLElement = originalHTMLElement
   }

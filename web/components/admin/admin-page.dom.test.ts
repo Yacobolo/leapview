@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
@@ -11,7 +10,7 @@ let browser: Browser
 
 const root = join(process.cwd(), '.tmp/admin-page-test')
 
-test.before(async () => {
+beforeAll(async () => {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     if (url.pathname === '/') {
@@ -40,7 +39,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -70,10 +69,10 @@ for (const viewport of [
         }
       })
 
-      assert.equal(state.title, 'Principals')
-      assert.equal(state.hasSidebar, true)
-      assert.equal(state.hasGrid, true)
-      assert.match(state.text ?? '', /analyst@example\.com/)
+      expect(state.title).toBe('Principals')
+      expect(state.hasSidebar).toBe(true)
+      expect(state.hasGrid).toBe(true)
+      expect(state.text ?? '').toMatch(/analyst@example\.com/)
     } finally {
       await page.close()
     }
@@ -143,11 +142,11 @@ test('admin storage route renders storage explorer from typed signal data', asyn
       }
     })
 
-    assert.equal(state.title, 'Storage')
-    assert.equal(state.warning, true)
-    assert.equal(state.hasExplorer, true)
-    assert.match(state.explorerText ?? '', /orders/)
-    assert.match(state.explorerText ?? '', /Olist Commerce/)
+    expect(state.title).toBe('Storage')
+    expect(state.warning).toBe(true)
+    expect(state.hasExplorer).toBe(true)
+    expect(state.explorerText ?? '').toMatch(/orders/)
+    expect(state.explorerText ?? '').toMatch(/Olist Commerce/)
   } finally {
     await page.close()
   }

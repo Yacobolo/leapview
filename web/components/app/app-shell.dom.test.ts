@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
@@ -12,7 +11,7 @@ let browser: Browser
 const root = process.cwd()
 const tmpRoot = join(root, '.tmp/app-shell-test')
 
-test.before(async () => {
+beforeAll(async () => {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     if (url.pathname === '/fallback') {
@@ -54,7 +53,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -66,14 +65,14 @@ test('global CSS reserves app shell geometry before custom elements upgrade', as
 
     const state = await shellGeometry(page)
 
-    assert.equal(state.shell.display, 'grid')
-    assert.equal(state.shell.x, 0)
-    assert.equal(state.shell.width, 1320)
-    assert.equal(state.shell.height, 900)
-    assert.equal(state.route.display, 'block')
-    assert.equal(state.route.x, 248)
-    assert.equal(state.route.width, 1072)
-    assert.equal(state.route.height, 900)
+    expect(state.shell.display).toBe('grid')
+    expect(state.shell.x).toBe(0)
+    expect(state.shell.width).toBe(1320)
+    expect(state.shell.height).toBe(900)
+    expect(state.route.display).toBe('block')
+    expect(state.route.x).toBe(248)
+    expect(state.route.width).toBe(1072)
+    expect(state.route.height).toBe(900)
   } finally {
     await page.close()
   }
@@ -88,12 +87,12 @@ test('app shell preserves slotted route geometry before route component upgrade'
 
     const state = await shellGeometry(page)
 
-    assert.equal(state.routeDefined, false)
-    assert.equal(state.shell.display, 'grid')
-    assert.equal(state.route.display, 'block')
-    assert.equal(state.route.x, 248)
-    assert.equal(state.route.width, 1072)
-    assert.equal(state.route.height, 900)
+    expect(state.routeDefined).toBe(false)
+    expect(state.shell.display).toBe('grid')
+    expect(state.route.display).toBe('block')
+    expect(state.route.x).toBe(248)
+    expect(state.route.width).toBe(1072)
+    expect(state.route.height).toBe(900)
   } finally {
     await page.close()
   }
@@ -108,11 +107,11 @@ test('upgraded compact app shell does not keep the fallback route grid column', 
 
     const state = await shellGeometry(page)
 
-    assert.equal(state.routeDefined, false)
-    assert.equal(state.sidebar.width, 48)
-    assert.equal(state.shellMain.x, state.sidebar.right)
-    assert.equal(state.route.x, state.sidebar.right)
-    assert.equal(state.route.gridColumnStart, 'auto')
+    expect(state.routeDefined).toBe(false)
+    expect(state.sidebar.width).toBe(48)
+    expect(state.shellMain.x).toBe(state.sidebar.right)
+    expect(state.route.x).toBe(state.sidebar.right)
+    expect(state.route.gridColumnStart).toBe('auto')
   } finally {
     await page.close()
   }

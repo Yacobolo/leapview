@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
@@ -11,7 +10,7 @@ let browser: Browser
 
 const root = join(process.cwd(), '.tmp/asset-lineage-test')
 
-test.before(async () => {
+beforeAll(async () => {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     if (url.pathname === '/') {
@@ -40,7 +39,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -83,7 +82,7 @@ test('asset lineage graph carries React Flow layout styles inside shadow hosts',
       }
     })
 
-    assert.deepEqual(state, {
+    expect(state).toEqual({
       flowHeight: 420,
       viewportPosition: 'absolute',
       viewportMatchesFlowWidth: true,

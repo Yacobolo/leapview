@@ -15,7 +15,7 @@ if [[ -z "$DEEPSEEK_KEY" ]]; then
   exit 1
 fi
 
-python3 scripts/bootstrap_olist.py
+go run ./internal/tools/bootstrapolist
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {

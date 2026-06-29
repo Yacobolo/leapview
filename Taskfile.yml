@@ -21,7 +21,7 @@ tasks:
   bootstrap:
     desc: Download/sync Olist CSVs if missing
     cmds:
-      - python3 scripts/bootstrap_olist.py
+      - go run ./internal/tools/bootstrapolist
 
   dev:stop:
     desc: Stop the managed LibreDash dev server for this worktree
@@ -53,10 +53,17 @@ tasks:
     cmds:
       - ./scripts/dev-profile.sh quack logs
 
+  node:deps:
+    desc: Install JavaScript dependencies with Bun
+    cmds:
+      - bun install --frozen-lockfile
+
   build:
     desc: Build browser assets
+    deps:
+      - node:deps
     cmds:
-      - npm run build
+      - bun run build
 
   generate:
     desc: Generate all checked-out derived code needed for local development
@@ -67,6 +74,18 @@ tasks:
 
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - api/apigen.yaml
+      - api/typespec/**/*.tsp
+      - internal/tools/apigenpostprocess/**/*.go
+    generates:
+      - api/gen/json-ir.json
+      - api/gen/openapi.yaml
+      - internal/api/gen/request_models.gen.go
+      - internal/api/gen/server.apigen.gen.go
+      - internal/cli/gen/apigen_registry.gen.go
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.3.3 typespec-compile -manifest api/apigen.yaml -target libredash-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.3.3 all -manifest api/apigen.yaml -target libredash-v1
@@ -74,11 +93,31 @@ tasks:
 
   schema:generate:
     desc: Generate JSON Schema artifacts for LibreDash YAML contracts
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - cmd/libredash/**/*.go
+      - internal/cli/**/*.go
+      - internal/configschema/**/*.go
+      - internal/dashboard/report/**/*.go
+      - internal/semantic/**/*.go
+    generates:
+      - schemas/json/catalog.schema.json
+      - schemas/json/dashboard.schema.json
+      - schemas/json/semantic-model.schema.json
     cmds:
       - go run ./cmd/libredash schema export --format json-schema --out schemas/json
 
   ui-signals:generate:
     desc: Generate UI signal schemas and TypeScript types
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - internal/tools/uisignalsgen/**/*.go
+      - internal/ui/signals/**/*.go
+    generates:
+      - schemas/signals/ui-signals.schema.json
+      - web/generated/signals/index.ts
     cmds:
       - go run ./internal/tools/uisignalsgen
 
@@ -88,17 +127,18 @@ tasks:
       - generate
       - build
     cmds:
-      - npm run test:theme
-      - npm run test:app-shell
-      - npm run test:table-selection
-      - npm run test:visual-modal
-      - npm run test:catalog-page
-      - npm run test:dashboard-page
-      - npm run test:chat-page
-      - npm run test:chat-thread
-      - npm run test:workspace-page
-      - npm run test:admin-page
-      - npm run test:login-page
+      - bun run test:theme
+      - bun run test:app-shell
+      - bun run test:table-selection
+      - bun run test:visual-modal
+      - bun run test:catalog-page
+      - bun run test:dashboard-page
+      - bun run test:chat-page
+      - bun run test:chat-thread
+      - bun run test:workspace-page
+      - bun run test:admin-page
+      - bun run test:login-page
+      - bun run test:asset-lineage
       - go test ./...
 
   ci:

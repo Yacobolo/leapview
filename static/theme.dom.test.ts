@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -9,7 +8,7 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-test.before(async () => {
+beforeAll(async () => {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     if (url.pathname === '/') {
@@ -32,7 +31,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -51,7 +50,7 @@ test('theme bootstrap does not emit applied event during page reveal', async () 
       storedMode: localStorage.getItem('libredash-color-mode'),
     }))
 
-    assert.deepEqual(state, {
+    expect(state).toEqual({
       events: [],
       colorMode: 'light',
       colorScheme: 'light',
@@ -80,7 +79,7 @@ test('explicit theme changes still emit applied event', async () => {
       storedMode: localStorage.getItem('libredash-color-mode'),
     }))
 
-    assert.deepEqual(state, {
+    expect(state).toEqual({
       events: [{ mode: 'dark', resolvedMode: 'dark' }],
       colorMode: 'dark',
       colorScheme: 'dark',
@@ -110,7 +109,7 @@ test('view transition abort rejections are treated as progressive enhancement mi
     await page.waitForFunction(() => (window as any).unhandledRejectionMessages.length === 1)
 
     const messages = await page.evaluate(() => (window as any).unhandledRejectionMessages)
-    assert.deepEqual(messages, ['real failure'])
+    expect(messages).toEqual(['real failure'])
   } finally {
     await page.close()
   }

@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -9,7 +8,7 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-test.before(async () => {
+beforeAll(async () => {
   const root = join(process.cwd(), '.tmp')
   server = createServer(async (request, response) => {
     const url = request.url ?? '/'
@@ -41,7 +40,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -92,7 +91,7 @@ test('focus action moves the original source into the modal and close restores i
       }
     })
 
-    assert.deepEqual(focusedState, {
+    expect(focusedState).toEqual({
       sourceParent: 'ld-visual-modal',
       slot: 'focus-visual',
       placeholderAtSource: true,
@@ -100,9 +99,9 @@ test('focus action moves the original source into the modal and close restores i
     })
 
     await page.keyboard.press('Tab')
-    assert.equal(await page.locator('ld-visual-modal').evaluate((modal: any) => (
+    expect(await page.locator('ld-visual-modal').evaluate((modal: any) => (
       modal.shadowRoot.activeElement?.classList.contains('focus-close') ?? false
-    )), true)
+    ))).toBe(true)
 
     await page.locator('ld-visual-modal').evaluate((modal: any) => modal.shadowRoot.querySelector('.focus-close').click())
     await page.locator('ld-visual-modal').evaluate((modal: any) => modal.updateComplete)
@@ -118,7 +117,7 @@ test('focus action moves the original source into the modal and close restores i
       }
     })
 
-    assert.deepEqual(restoredState, {
+    expect(restoredState).toEqual({
       sourceParent: 'parent',
       slot: null,
       restoredPosition: true,
@@ -147,7 +146,7 @@ test('opening another focused source restores the previous element first', async
       }
     })
 
-    assert.deepEqual(state, {
+    expect(state).toEqual({
       firstParent: 'parent',
       firstPosition: true,
       secondParent: 'ld-visual-modal',
@@ -173,7 +172,7 @@ test('non-focus visual actions do not move the source element', async () => {
       }
     })
 
-    assert.deepEqual(state, {
+    expect(state).toEqual({
       sourceParent: 'parent',
       slot: null,
       hasFocusSlot: false,

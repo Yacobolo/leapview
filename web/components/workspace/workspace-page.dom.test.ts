@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
@@ -11,7 +10,7 @@ let browser: Browser
 
 const root = join(process.cwd(), '.tmp/workspace-page-test')
 
-test.before(async () => {
+beforeAll(async () => {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     if (url.pathname === '/') {
@@ -40,7 +39,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -107,7 +106,7 @@ for (const viewport of [
         }
       })
 
-      assert.deepEqual(state, {
+      expect(state).toEqual({
         workspaceTitle: 'LibreDash Workspace',
         workspaceHasAsset: true,
         workspaceHasAccess: true,
@@ -163,7 +162,7 @@ test('workspace access modal normalizes Go-shaped access signals', async () => {
       }
     })
 
-    assert.deepEqual(state, {
+    expect(state).toEqual({
       hasDialog: true,
       title: 'LibreDash Workspace roles apply to every published asset in this workspace.',
       roleOptions: [
@@ -244,10 +243,10 @@ test('workspace asset refresh page renders refresh tab and emits refresh events'
       }
     })
 
-    assert.equal(state.activeTab, 'Refreshes')
-    assert.equal(state.hasRefreshButton, true)
-    assert.match(state.gridText ?? '', /matrun_123/)
-    assert.equal(state.refreshEvents, 1)
+    expect(state.activeTab).toBe('Refreshes')
+    expect(state.hasRefreshButton).toBe(true)
+    expect(state.gridText ?? '').toMatch(/matrun_123/)
+    expect(state.refreshEvents).toBe(1)
   } finally {
     await page.close()
   }

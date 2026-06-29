@@ -1,5 +1,4 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
@@ -11,7 +10,7 @@ let browser: Browser
 
 const root = join(process.cwd(), '.tmp/dashboard-page-test')
 
-test.before(async () => {
+beforeAll(async () => {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     if (url.pathname === '/') {
@@ -40,7 +39,7 @@ test.before(async () => {
   browser = await chromium.launch()
 })
 
-test.after(async () => {
+afterAll(async () => {
   await browser?.close()
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 })
@@ -85,7 +84,7 @@ for (const viewport of [
         }
       })
 
-      assert.deepEqual(state, {
+      expect(state).toEqual({
         title: 'Executive Sales Dashboard',
         hasSubSidebar: true,
         hasCanvas: true,
@@ -99,6 +98,23 @@ for (const viewport of [
         hasModal: true,
         canvasVisible: true,
       })
+
+      const tableState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+        const table = element.shadowRoot.querySelector('ld-data-table') as any
+        await table.updateComplete
+        const root = table.shadowRoot
+        return {
+          text: root.textContent.replace(/\s+/g, ' ').trim(),
+          rows: root.querySelectorAll('[role="row"]').length,
+          cells: root.querySelectorAll('[role="cell"]').length,
+        }
+      })
+
+      expect(tableState.text).toContain('Orders')
+      expect(tableState.text).toContain('Order')
+      expect(tableState.text).toContain('o1')
+      expect(tableState.rows).toBeGreaterThan(0)
+      expect(tableState.cells).toBeGreaterThan(0)
 
       if (viewport.name === 'desktop') {
         const dockState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
@@ -132,11 +148,11 @@ for (const viewport of [
           }
         })
 
-        assert.equal(dockState.closedRail.width <= dockState.closedAside.width, true, JSON.stringify(dockState))
-        assert.equal(dockState.openAside.width >= 300, true, JSON.stringify(dockState))
-        assert.equal(dockState.openRailDisplay, 'none')
-        assert.equal(dockState.openRail.height, 0)
-        assert.equal(dockState.panelDisplay, 'block')
+        expect(dockState.closedRail.width <= dockState.closedAside.width).toBe(true)
+        expect(dockState.openAside.width >= 300).toBe(true)
+        expect(dockState.openRailDisplay).toBe('none')
+        expect(dockState.openRail.height).toBe(0)
+        expect(dockState.panelDisplay).toBe('block')
       }
     } finally {
       await page.close()
