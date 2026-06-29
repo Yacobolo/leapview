@@ -54,8 +54,8 @@ React Flow extracted CSS can remain as a page-specific asset where required, but
 
 For styling migrations, run:
 
-- `npm run build:css`
-- `npm run build`
+- `bun run build:css`
+- `bun run build`
 - `task test`
 
 Also inspect `static/app.css` or search sources to confirm removed custom product selectors did not return.
