@@ -578,6 +578,43 @@
     overscroll-behavior: none;
   }
 
+  ld-app-shell {
+    display: grid;
+    min-height: 100svh;
+    grid-template-columns: var(--ld-sidebar-width, 248px) minmax(0, 1fr);
+    background: var(--ld-bg-app);
+    color: var(--ld-fg-default);
+    font-family: var(--ld-font-family-ui, var(--fontStack-system));
+  }
+
+  ld-app-shell > [slot='page'],
+  ld-catalog-page,
+  ld-dashboard-page,
+  ld-chat-page,
+  ld-workspace-page,
+  ld-workspace-asset-page,
+  ld-connections-page,
+  ld-admin-page,
+  ld-login-page {
+    display: block;
+    min-width: 0;
+  }
+
+  ld-app-shell > [slot='page'] {
+    grid-column: 2;
+    min-height: 100svh;
+  }
+
+  @media (max-width: 640px) {
+    ld-app-shell {
+      grid-template-columns: 1fr;
+    }
+
+    ld-app-shell > [slot='page'] {
+      grid-column: 1;
+    }
+  }
+
   button,
   input,
   select {
@@ -594,43 +631,6 @@
     }
   }
 
-  @media (prefers-reduced-motion: no-preference) {
-    ::view-transition-old(root),
-    ::view-transition-new(root) {
-      animation-duration: 180ms;
-      animation-timing-function: var(--motion-easing-move, ease);
-    }
-
-    ::view-transition-old(root) {
-      animation-name: ld-page-out;
-    }
-
-    ::view-transition-new(root) {
-      animation-name: ld-page-in;
-    }
-  }
-
-  @keyframes ld-page-out {
-    from {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-  }
-
-  @keyframes ld-page-in {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
 }
 
 @utility shadow-inset {

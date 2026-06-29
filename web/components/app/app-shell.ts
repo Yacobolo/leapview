@@ -41,6 +41,12 @@ class LibreDashAppShell extends LitElement {
       min-height: 100svh;
     }
 
+    ::slotted([slot='page']) {
+      display: block;
+      min-width: 0;
+      min-height: 100svh;
+    }
+
     @media (max-width: 640px) {
       :host {
         grid-template-columns: 1fr;

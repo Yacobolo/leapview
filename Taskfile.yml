@@ -89,6 +89,7 @@ tasks:
       - build
     cmds:
       - npm run test:theme
+      - npm run test:app-shell
       - npm run test:table-selection
       - npm run test:visual-modal
       - npm run test:catalog-page
