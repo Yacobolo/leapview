@@ -229,16 +229,21 @@ func TestMaterializationRunAPIPersistsAsyncRefreshStatus(t *testing.T) {
 		t.Fatalf("create status=%d body=%s", createRec.Code, createRec.Body.String())
 	}
 	var created struct {
-		ID           string `json:"id"`
-		ModelID      string `json:"modelId"`
-		DeploymentID string `json:"deploymentId"`
-		Status       string `json:"status"`
+		ID                   string `json:"id"`
+		ModelID              string `json:"modelId"`
+		DeploymentID         string `json:"deploymentId"`
+		Status               string `json:"status"`
+		PrincipalID          string `json:"principalId"`
+		PrincipalDisplayName string `json:"principalDisplayName"`
 	}
 	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
 	if created.ID == "" || created.Status != "queued" || created.ModelID != "model.orders" || created.DeploymentID != "dep_1" {
 		t.Fatalf("created run = %#v", created)
+	}
+	if created.PrincipalID != principal.ID || created.PrincipalDisplayName != "Editor" {
+		t.Fatalf("created attribution = %#v, want Editor principal", created)
 	}
 
 	select {
@@ -253,13 +258,13 @@ func TestMaterializationRunAPIPersistsAsyncRefreshStatus(t *testing.T) {
 	getReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/materialization-runs/"+created.ID, token, "")
 	getRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(getRec, getReq)
-	if getRec.Code != http.StatusOK || !strings.Contains(getRec.Body.String(), `"status":"succeeded"`) {
+	if getRec.Code != http.StatusOK || !strings.Contains(getRec.Body.String(), `"status":"succeeded"`) || !strings.Contains(getRec.Body.String(), `"principalDisplayName":"Editor"`) {
 		t.Fatalf("get status=%d body=%s", getRec.Code, getRec.Body.String())
 	}
 	listReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/materialization-runs?limit=1", token, "")
 	listRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(listRec, listReq)
-	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), created.ID) {
+	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), created.ID) || !strings.Contains(listRec.Body.String(), `"principalDisplayName":"Editor"`) {
 		t.Fatalf("list status=%d body=%s", listRec.Code, listRec.Body.String())
 	}
 }

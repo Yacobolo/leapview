@@ -16,6 +16,7 @@ import (
 
 type AdminData struct {
 	Workspace         workspaceview.WorkspaceView
+	CSRFToken         string
 	AuthConfigured    bool
 	RBACConfigured    bool
 	RBACStatusLabel   string
@@ -27,6 +28,7 @@ type AdminData struct {
 	SelectedPrincipal *AdminPrincipal
 	Groups            []AdminGroup
 	SelectedGroup     *AdminGroup
+	Storage           AdminStorageData
 }
 
 type AdminPrincipal struct {
@@ -61,15 +63,42 @@ type AdminPrincipalRef struct {
 	DisplayName string
 }
 
+type AdminStorageData = uisignals.AdminStorageData
+type AdminStorageDatabase = uisignals.AdminStorageDatabase
+type AdminStorageTable = uisignals.AdminStorageTable
+type AdminStorageColumn = uisignals.AdminStorageColumn
+type AdminStorageSignal = uisignals.AdminStorageSignal
+type AdminStorageSummary = uisignals.AdminStorageSummary
+type AdminStorageTableSignal = uisignals.AdminStorageTableSignal
+type AdminStorageColumnSignal = uisignals.AdminStorageColumnSignal
+type AdminStorageCommand = uisignals.AdminStorageCommand
+
 func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminData) g.Node {
 	title := adminPageTitle(active)
 	page := adminPageSignal(active, data)
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
+	storageSignal := page.Storage
 	signals := map[string]any{
 		"chrome":  chrome,
 		"page":    page,
 		"runtime": uisignals.RouteRuntimeSignal{Kind: uisignals.RouteAdmin},
 		"status":  dashboard.Status{},
+	}
+	if active == "storage" {
+		signals["adminStorage"] = storageSignal
+		signals["adminStorageCommand"] = AdminStorageCommand{}
+	}
+	adminAttrs := []g.Node{
+		g.Attr("slot", "page"),
+		g.Attr("page", jsonString(page)),
+		g.Attr("data-attr:page", "JSON.stringify($page)"),
+	}
+	if active == "storage" {
+		adminAttrs = append(adminAttrs,
+			g.Attr("storage", jsonString(storageSignal)),
+			g.Attr("data-attr:storage", "JSON.stringify($adminStorage)"),
+			g.Attr("data-on:ld-storage-table-select", "$adminStorageCommand = evt.detail; "+postAction("/admin/storage/select-table")),
+		)
 	}
 	return c.HTML5(c.HTML5Props{
 		Title:    "Admin - " + title,
@@ -88,14 +117,11 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 		Body: []g.Node{
 			h.Main(h.Class(appRootClass),
 				ds.Signals(signals),
+				g.If(active == "storage", ds.Init("@get('/admin/storage/updates', {openWhenHidden: true})")),
 				g.El("ld-app-shell",
 					g.Attr("chrome", jsonString(chrome)),
 					g.Attr("data-attr:chrome", "JSON.stringify($chrome)"),
-					g.El("ld-admin-page",
-						g.Attr("slot", "page"),
-						g.Attr("page", jsonString(page)),
-						g.Attr("data-attr:page", "JSON.stringify($page)"),
-					),
+					g.El("ld-admin-page", adminAttrs...),
 				),
 				inspectorElement(),
 			),
@@ -158,6 +184,19 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 			{Label: "Member count", Value: fmt.Sprint(len(group.Members))},
 		}
 		page.Sections = []uisignals.AdminContentSectionSignal{{Title: "Members", Grid: adminGroupMembersGrid(group, data.Principals)}}
+	case "storage":
+		page.HeaderTitle = "Storage"
+		page.HeaderDetail = "Read-only DuckDB database and table inventory."
+		page.Storage = AdminStorageSignalFromData(data.Storage, AdminStorageCommand{})
+		if data.Storage.Status != "" {
+			page.Empty = data.Storage.Status
+		}
+		page.Metrics = []uisignals.AdminMetricSignal{
+			{Label: "DuckDB directory", Value: data.Storage.DuckDBDir},
+			{Label: "Database files", Value: fmt.Sprint(data.Storage.DatabaseCount)},
+			{Label: "Total size", Value: data.Storage.TotalSizeLabel},
+			{Label: "Tables and views", Value: fmt.Sprint(data.Storage.TableCount)},
+		}
 	default:
 		page.HeaderTitle = "General"
 		page.HeaderDetail = "Read-only workspace administration."
@@ -180,6 +219,7 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 func adminSidebarSignal(active string) uisignals.SubSidebarSignal {
 	principalsActive := active == "principals" || active == "principal-detail"
 	groupsActive := active == "groups" || active == "group-detail"
+	storageActive := active == "storage"
 	return uisignals.SubSidebarSignal{
 		Label:       "Admin",
 		RailLabel:   "Admin",
@@ -192,6 +232,7 @@ func adminSidebarSignal(active string) uisignals.SubSidebarSignal {
 			{ID: "general", Title: "General", Href: "/admin", Active: active == "general"},
 			{ID: "principals", Title: "Principals", Href: "/admin/principals", Active: principalsActive},
 			{ID: "groups", Title: "Groups", Href: "/admin/groups", Active: groupsActive},
+			{ID: "storage", Title: "Storage", Href: "/admin/storage", Active: storageActive},
 		},
 	}
 }
@@ -331,9 +372,81 @@ func adminPageTitle(active string) string {
 		return "Groups"
 	case "group-detail":
 		return "Group"
+	case "storage":
+		return "Storage"
 	default:
 		return "General"
 	}
+}
+
+func AdminStorageSignalFromData(data AdminStorageData, command AdminStorageCommand) AdminStorageSignal {
+	tables := make([]AdminStorageTableSignal, 0, len(data.Tables))
+	var selected *AdminStorageTableSignal
+	for _, table := range data.Tables {
+		signalTable := AdminStorageTableSignalFromTable(table)
+		tables = append(tables, signalTable)
+		if selected == nil && adminStorageCommandMatches(command, table) {
+			copy := signalTable
+			selected = &copy
+		}
+	}
+	if selected == nil && len(tables) > 0 {
+		copy := tables[0]
+		selected = &copy
+	}
+	selectedKey := ""
+	if selected != nil {
+		selectedKey = selected.Key
+	}
+	return AdminStorageSignal{
+		Summary: AdminStorageSummary{
+			DuckDBDir:      data.DuckDBDir,
+			DatabaseCount:  data.DatabaseCount,
+			TotalSizeLabel: data.TotalSizeLabel,
+			TableCount:     data.TableCount,
+		},
+		Status:        data.Status,
+		Warnings:      data.Warnings,
+		Tables:        tables,
+		SelectedKey:   selectedKey,
+		SelectedTable: selected,
+	}
+}
+
+func AdminStorageTableSignalFromTable(table AdminStorageTable) AdminStorageTableSignal {
+	columns := make([]AdminStorageColumnSignal, 0, len(table.Columns))
+	for _, column := range table.Columns {
+		columns = append(columns, AdminStorageColumnSignal{
+			Name:     column.Name,
+			Type:     column.Type,
+			Ordinal:  column.Ordinal,
+			Nullable: column.Nullable,
+			Default:  column.Default,
+		})
+	}
+	return AdminStorageTableSignal{
+		Key:           AdminStorageTableKey(table.DatabaseID, table.Schema, table.Name),
+		DatabaseID:    table.DatabaseID,
+		DatabaseName:  table.DatabaseName,
+		DatabasePath:  table.DatabasePath,
+		ModelID:       table.ModelID,
+		ModelName:     table.ModelName,
+		Schema:        table.Schema,
+		Name:          table.Name,
+		Type:          table.Type,
+		RowCountLabel: table.RowCountLabel,
+		ColumnCount:   table.ColumnCount,
+		SizeLabel:     table.SizeLabel,
+		Columns:       columns,
+	}
+}
+
+func AdminStorageTableKey(databaseID, schemaName, tableName string) string {
+	return databaseID + "\x00" + schemaName + "\x00" + tableName
+}
+
+func adminStorageCommandMatches(command AdminStorageCommand, table AdminStorageTable) bool {
+	return command.DatabaseID == table.DatabaseID && command.Schema == table.Schema && command.Table == table.Name
 }
 
 func configuredLabel(configured bool) string {

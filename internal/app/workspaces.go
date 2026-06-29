@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/assetnav"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -135,6 +137,10 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if section == "refreshes" && !workspaceAssetRefreshable(selected) {
+		http.NotFound(w, r)
+		return
+	}
 	if selected.Type == "connection" {
 		http.Redirect(w, r, assetnav.ConnectionAssetSectionHref(assetID, section), http.StatusFound)
 		return
@@ -148,11 +154,283 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspace := s.workspaceResponse(r, workspaceID)
+	refresh, err := s.assetRefreshState(r, workspaceID, selected)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	refresh.CSRFToken = csrfToken(r, s.auth)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.WorkspaceAssetPage(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r)).Render(w); err != nil {
+	if err := ui.WorkspaceAssetPageWithRefresh(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r), refresh).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) refreshWorkspaceAssetMaterializations(w http.ResponseWriter, r *http.Request) {
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	assetID := chi.URLParam(r, "asset")
+	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	selected, ok := workspace.AssetByID(assets, assetID)
+	if !ok || !workspaceAssetRefreshable(selected) {
+		http.NotFound(w, r)
+		return
+	}
+	if s.store == nil {
+		http.Error(w, "platform store is required", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.refreshWorkspaceAssetWithPatches(r, workspaceID, selected, assets, edges); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	assetID := chi.URLParam(r, "asset")
+	section := workspaceAssetUpdateSection(r)
+	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	selected, ok := workspace.AssetByID(assets, assetID)
+	if !ok || !workspaceAssetRefreshable(selected) {
+		http.NotFound(w, r)
+		return
+	}
+	if s.store == nil {
+		http.Error(w, "platform store is required", http.StatusServiceUnavailable)
+		return
+	}
+
+	sse := datastar.NewSSE(w, r)
+	if err := sse.MarshalAndPatchSignals(s.workspaceAssetRefreshPatch(r, workspaceID, selected, assets, edges, section)); err != nil {
+		return
+	}
+	updates, unsubscribe := s.broker.Subscribe(workspaceAssetStreamID(workspaceID, assetID, section))
+	defer unsubscribe()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case patch, ok := <-updates:
+			if !ok {
+				return
+			}
+			if err := sse.MarshalAndPatchSignals(patch); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) refreshWorkspaceAssetWithPatches(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
+	switch asset.Type {
+	case string(workspace.AssetTypeSemanticModel):
+		return s.refreshSemanticModelAssetWithPatches(r.Context(), r, workspaceID, asset, assets, edges)
+	case string(workspace.AssetTypeModelTable):
+		return s.refreshModelTableAssetWithPatches(r.Context(), r, workspaceID, asset, assets, edges)
+	default:
+		return http.ErrMissingFile
+	}
+}
+
+func (s *Server) refreshSemanticModelAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
+	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	principal, _ := currentPrincipal(s, r)
+	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
+	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
+		WorkspaceID: workspaceID,
+		ModelID:     asset.Key,
+		PrincipalID: principal.ID,
+	}, refreshPublisher{
+		Root: func() { s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges) },
+		Target: func(targetID string) {
+			s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
+		},
+	})
+}
+
+func (s *Server) refreshModelTableAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
+	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	principal, _ := currentPrincipal(s, r)
+	modelID, tableName := modelTableTargetParts(asset.Key)
+	if modelID == "" || tableName == "" {
+		return errors.New("model table asset key is invalid")
+	}
+	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
+	return orchestrator.RefreshModelTable(ctx, refreshRunInput{
+		WorkspaceID: workspaceID,
+		ModelID:     modelID,
+		PrincipalID: principal.ID,
+		TargetID:    asset.Key,
+	}, tableName, refreshPublisher{
+		Root: func() { s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges) },
+		Target: func(targetID string) {
+			s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
+		},
+	})
+}
+
+func (s *Server) publishWorkspaceAssetRefreshPatch(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) {
+	for _, section := range workspaceAssetRefreshSections() {
+		s.broker.Publish(workspaceAssetStreamID(workspaceID, asset.ID, section), s.workspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges, section))
+	}
+}
+
+func (s *Server) publishWorkspaceAssetRefreshPatchForTarget(r *http.Request, workspaceID, targetID string, assets []workspace.AssetView, edges []workspace.AssetEdgeView) {
+	for _, asset := range assets {
+		if asset.Key == targetID && workspaceAssetRefreshable(asset) {
+			s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
+		}
+	}
+}
+
+func (s *Server) publishModelRefreshPatches(ctx context.Context, workspaceID, modelID string) {
+	assets, edges, ok := s.workspaceAssetsAndEdgesForRefresh(ctx, workspaceID)
+	if !ok {
+		return
+	}
+	view := catalogWorkspaceView(s.metrics.Catalog())
+	view.ID = workspaceID
+	for _, asset := range assets {
+		if asset.Type == string(workspace.AssetTypeSemanticModel) && asset.Key != modelID {
+			continue
+		}
+		if asset.Type == string(workspace.AssetTypeModelTable) {
+			assetModelID, _ := modelTableTargetParts(asset.Key)
+			if assetModelID != modelID {
+				continue
+			}
+		}
+		if !workspaceAssetRefreshable(asset) {
+			continue
+		}
+		refresh, err := s.assetRefreshStateForContext(ctx, workspaceID, asset)
+		if err != nil {
+			continue
+		}
+		for _, section := range workspaceAssetRefreshSections() {
+			s.broker.Publish(workspaceAssetStreamID(workspaceID, asset.ID, section), ui.WorkspaceAssetRefreshSignals(view, asset, assets, edges, refresh, section))
+		}
+	}
+}
+
+func (s *Server) workspaceAssetsAndEdgesForRefresh(ctx context.Context, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
+	catalog, ok, err := s.workspaceAssetCatalog(ctx, workspaceID)
+	if err != nil || !ok {
+		return nil, nil, false
+	}
+	assets := make([]workspace.AssetView, 0, len(catalog.Assets))
+	for _, row := range catalog.Assets {
+		assets = append(assets, workspace.AssetViewFromCatalogRecord(row))
+	}
+	edges := make([]workspace.AssetEdgeView, 0, len(catalog.Edges))
+	for _, row := range catalog.Edges {
+		edges = append(edges, workspace.AssetEdgeViewFromCatalogRecord(row))
+	}
+	return assets, edges, true
+}
+
+func (s *Server) workspaceAssetRefreshPatch(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView, section string) map[string]any {
+	refresh, err := s.assetRefreshState(r, workspaceID, asset)
+	if err != nil {
+		refresh = ui.AssetRefreshState{Latest: ui.AssetRefreshRun{Status: "failed"}}
+	}
+	return ui.WorkspaceAssetRefreshSignals(s.workspaceResponse(r, workspaceID), asset, assets, edges, refresh, section)
+}
+
+func workspaceAssetStreamID(workspaceID, assetID, section string) string {
+	return "workspace-asset:" + workspaceID + ":" + assetID + ":" + section
+}
+
+func workspaceAssetRefreshSections() []string {
+	return []string{"details", "refreshes", "lineage"}
+}
+
+func workspaceAssetUpdateSection(r *http.Request) string {
+	switch strings.TrimSpace(r.URL.Query().Get("section")) {
+	case "refreshes":
+		return "refreshes"
+	case "lineage":
+		return "lineage"
+	default:
+		return "details"
+	}
+}
+
+func (s *Server) assetRefreshState(r *http.Request, workspaceID string, asset workspace.AssetView) (ui.AssetRefreshState, error) {
+	return s.assetRefreshStateForContext(r.Context(), workspaceID, asset)
+}
+
+func (s *Server) assetRefreshStateForContext(ctx context.Context, workspaceID string, asset workspace.AssetView) (ui.AssetRefreshState, error) {
+	if s.store == nil || !workspaceAssetRefreshable(asset) {
+		return ui.AssetRefreshState{}, nil
+	}
+	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	targetType := materialize.TargetSemanticModel
+	if asset.Type == string(workspace.AssetTypeModelTable) {
+		targetType = materialize.TargetModelTable
+	}
+	runs, err := repo.ListTargetRuns(ctx, workspaceID, targetType, asset.Key, materialize.RunPage{Limit: 50})
+	if err != nil {
+		return ui.AssetRefreshState{}, err
+	}
+	state := ui.AssetRefreshState{Runs: uiRefreshRuns(runs)}
+	if len(state.Runs) > 0 {
+		state.Latest = state.Runs[0]
+	}
+	if latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, workspaceID, targetType, asset.Key); err != nil {
+		return ui.AssetRefreshState{}, err
+	} else if ok {
+		state.LatestSuccessful = uiRefreshRun(latest)
+	}
+	return state, nil
+}
+
+func uiRefreshRuns(runs []materialize.RunRecord) []ui.AssetRefreshRun {
+	out := make([]ui.AssetRefreshRun, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, uiRefreshRun(run))
+	}
+	return out
+}
+
+func uiRefreshRun(run materialize.RunRecord) ui.AssetRefreshRun {
+	return ui.AssetRefreshRun{
+		ID:                   run.ID,
+		ModelID:              run.ModelID,
+		DeploymentID:         run.DeploymentID,
+		PrincipalID:          run.PrincipalID,
+		PrincipalDisplayName: run.PrincipalDisplayName,
+		TargetType:           run.TargetType,
+		TargetID:             run.TargetID,
+		TriggerType:          run.TriggerType,
+		ParentRunID:          run.ParentRunID,
+		Status:               run.Status,
+		StartedAt:            run.StartedAt,
+		FinishedAt:           run.FinishedAt,
+		Error:                run.Error,
+	}
+}
+
+func workspaceAssetRefreshable(asset workspace.AssetView) bool {
+	return asset.Type == string(workspace.AssetTypeSemanticModel) || asset.Type == string(workspace.AssetTypeModelTable)
+}
+
+func modelTableTargetParts(key string) (string, string) {
+	parts := strings.SplitN(strings.TrimSpace(key), ".", 2)
+	if len(parts) != 2 {
+		return "", strings.TrimSpace(key)
+	}
+	return parts[0], parts[1]
 }
 
 func (s *Server) connectionAsset(w http.ResponseWriter, r *http.Request) {
@@ -183,6 +461,10 @@ func (s *Server) connectionSourceAssetSection(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if !ui.ValidWorkspaceAssetSection(section) {
+		http.NotFound(w, r)
+		return
+	}
+	if section == "refreshes" {
 		http.NotFound(w, r)
 		return
 	}
@@ -224,6 +506,10 @@ func (s *Server) connectionAssetSection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !ui.ValidWorkspaceAssetSection(section) {
+		http.NotFound(w, r)
+		return
+	}
+	if section == "refreshes" {
 		http.NotFound(w, r)
 		return
 	}
@@ -643,9 +929,6 @@ func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) b
 	if !ok {
 		return false
 	}
-	if principal.DevBypass {
-		return true
-	}
 	allowed, err := repo.HasPermission(r.Context(), workspaceID, principal.ID, access.PermissionRBACManage)
 	return err == nil && allowed
 }
@@ -801,7 +1084,7 @@ func (s *Server) currentRoleLabel(r *http.Request) string {
 		return "Workspace access"
 	}
 	if principal.DevBypass {
-		return "Developer access"
+		return "Platform admin"
 	}
 	repo, err := s.accessRepository()
 	if err != nil || repo == nil {

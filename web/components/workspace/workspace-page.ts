@@ -15,6 +15,7 @@ import {
   ListFilter,
   PanelTop,
   Plug,
+  RefreshCw,
   Ruler,
   Search,
   Sigma,
@@ -197,20 +198,43 @@ class LibreDashWorkspaceAssetPage extends LitElement {
             </ol>
           </nav>
           <div class="actions">
-            ${page.actions?.map((action) => html`
-              <a class="icon-link" href=${action.href} title=${action.label} aria-label=${action.label}>
-                ${action.icon === 'open' ? lucideIcon(ExternalLink) : lucideIcon(ArrowLeft)}
-              </a>
-            `)}
+            ${page.actions?.map((action) => this.renderAction(action, page))}
           </div>
         </header>
         <div class="asset-body">
           ${renderTabs(page.tabs)}
           <div class=${page.activeSection === 'lineage' ? 'section-body lineage-body' : 'section-body'}>
-            ${page.activeSection === 'lineage' ? this.renderLineage(page) : this.renderDetails(page)}
+            ${page.activeSection === 'lineage'
+              ? this.renderLineage(page)
+              : page.activeSection === 'refreshes'
+                ? this.renderRefreshes(page)
+                : this.renderDetails(page)}
           </div>
         </div>
       </section>
+    `
+  }
+
+  private renderAction(action: NonNullable<WorkspaceAssetPageSignal['actions']>[number], page: WorkspaceAssetPageSignal) {
+    if (action.command === 'refresh-materializations') {
+      return html`
+        <button
+          type="button"
+          class="icon-link"
+          title=${action.label}
+          aria-label=${action.label}
+          ?disabled=${Boolean(action.disabled || page.refresh?.running)}
+          @click=${() => this.dispatchEvent(new CustomEvent('ld-refresh-materializations', { bubbles: true, composed: true }))}
+        >
+          ${lucideIcon(RefreshCw, { className: page.refresh?.running ? 'spin' : '' })}
+        </button>
+      `
+    }
+    const icon = action.icon === 'open' ? ExternalLink : ArrowLeft
+    return html`
+      <a class="icon-link" href=${action.href ?? '#'} title=${action.label} aria-label=${action.label}>
+        ${lucideIcon(icon)}
+      </a>
     `
   }
 
@@ -231,6 +255,14 @@ class LibreDashWorkspaceAssetPage extends LitElement {
           ${renderGridSection('Uses', page.lineage?.usesGrid)}
           ${renderGridSection('Used by', page.lineage?.usedByGrid)}
         </div>
+      </section>
+    `
+  }
+
+  private renderRefreshes(page: WorkspaceAssetPageSignal) {
+    return html`
+      <section class="details" id="refreshes" aria-label="Refresh runs">
+        ${renderGridSection('Refreshes', page.refresh?.runsGrid)}
       </section>
     `
   }
@@ -612,6 +644,7 @@ const workspaceStyles = css`
     border-color: transparent;
     background: transparent;
     color: var(--ld-fg-muted);
+    cursor: pointer;
   }
 
   .icon-link:hover,
@@ -620,6 +653,21 @@ const workspaceStyles = css`
     background: var(--ld-bg-control-hover);
     color: var(--ld-fg-default);
     outline: 0;
+  }
+
+  .icon-link:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  .spin {
+    animation: ld-spin 900ms linear infinite;
+  }
+
+  @keyframes ld-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .icon-button {

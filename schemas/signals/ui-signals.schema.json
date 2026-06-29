@@ -97,6 +97,9 @@
         "sidebar": {
           "$ref": "#/$defs/SubSidebarSignal"
         },
+        "storage": {
+          "$ref": "#/$defs/AdminStorageSignal"
+        },
         "title": {
           "type": "string"
         }
@@ -108,6 +111,178 @@
         "kind",
         "sidebar",
         "title"
+      ],
+      "type": "object"
+    },
+    "AdminStorageColumnSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nullable": {
+          "type": "string"
+        },
+        "ordinal": {
+          "type": "integer"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "default",
+        "name",
+        "nullable",
+        "ordinal",
+        "type"
+      ],
+      "type": "object"
+    },
+    "AdminStorageCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "databaseId": {
+          "type": "string"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "table": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "databaseId",
+        "schema",
+        "table"
+      ],
+      "type": "object"
+    },
+    "AdminStorageSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "selectedKey": {
+          "type": "string"
+        },
+        "selectedTable": {
+          "$ref": "#/$defs/AdminStorageTableSignal"
+        },
+        "status": {
+          "type": "string"
+        },
+        "summary": {
+          "$ref": "#/$defs/AdminStorageSummary"
+        },
+        "tables": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageTableSignal"
+          },
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "selectedKey",
+        "selectedTable",
+        "status",
+        "summary",
+        "tables",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "AdminStorageSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "databaseCount": {
+          "type": "integer"
+        },
+        "duckdbDir": {
+          "type": "string"
+        },
+        "tableCount": {
+          "type": "integer"
+        },
+        "totalSizeLabel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "databaseCount",
+        "duckdbDir",
+        "tableCount",
+        "totalSizeLabel"
+      ],
+      "type": "object"
+    },
+    "AdminStorageTableSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "columnCount": {
+          "type": "integer"
+        },
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageColumnSignal"
+          },
+          "type": "array"
+        },
+        "databaseId": {
+          "type": "string"
+        },
+        "databaseName": {
+          "type": "string"
+        },
+        "databasePath": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rowCountLabel": {
+          "type": "string"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "sizeLabel": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "columnCount",
+        "databaseId",
+        "databaseName",
+        "databasePath",
+        "key",
+        "modelId",
+        "modelName",
+        "name",
+        "rowCountLabel",
+        "schema",
+        "sizeLabel",
+        "type"
       ],
       "type": "object"
     },
@@ -2177,6 +2352,12 @@
     "WorkspaceActionSignal": {
       "additionalProperties": false,
       "properties": {
+        "command": {
+          "type": "string"
+        },
+        "disabled": {
+          "type": "boolean"
+        },
         "href": {
           "type": "string"
         },
@@ -2188,7 +2369,6 @@
         }
       },
       "required": [
-        "href",
         "label"
       ],
       "type": "object"
@@ -2335,6 +2515,9 @@
         "lineage": {
           "$ref": "#/$defs/WorkspaceAssetLineageSignal"
         },
+        "refresh": {
+          "$ref": "#/$defs/WorkspaceAssetRefreshSignal"
+        },
         "tabs": {
           "items": {
             "$ref": "#/$defs/WorkspaceTabSignal"
@@ -2357,6 +2540,29 @@
         "tabs",
         "title",
         "workspaceId"
+      ],
+      "type": "object"
+    },
+    "WorkspaceAssetRefreshSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "lastSuccessful": {
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "runsGrid": {
+          "$ref": "#/$defs/MetricGridSignal"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lastSuccessful",
+        "running",
+        "status"
       ],
       "type": "object"
     },
@@ -2580,6 +2786,21 @@
       "$ref": "#/$defs/AdminPageSignal"
     },
     {
+      "$ref": "#/$defs/AdminStorageColumnSignal"
+    },
+    {
+      "$ref": "#/$defs/AdminStorageCommand"
+    },
+    {
+      "$ref": "#/$defs/AdminStorageSignal"
+    },
+    {
+      "$ref": "#/$defs/AdminStorageSummary"
+    },
+    {
+      "$ref": "#/$defs/AdminStorageTableSignal"
+    },
+    {
       "$ref": "#/$defs/CatalogDashboardSignal"
     },
     {
@@ -2671,6 +2892,9 @@
     },
     {
       "$ref": "#/$defs/WorkspaceAssetPageSignal"
+    },
+    {
+      "$ref": "#/$defs/WorkspaceAssetRefreshSignal"
     },
     {
       "$ref": "#/$defs/WorkspaceAssetSummarySignal"

@@ -82,10 +82,6 @@ func (s *Server) apiListCurrentPermissions(w http.ResponseWriter, r *http.Reques
 	permissions := knownPermissions()
 	allowed := make([]string, 0, len(permissions))
 	for _, permission := range permissions {
-		if principal.DevBypass {
-			allowed = append(allowed, permission)
-			continue
-		}
 		if credential, ok := currentAPICredential(s, r); ok && !apiTokenAllows(credential.Token, workspaceID, permission) {
 			continue
 		}
@@ -498,7 +494,7 @@ func (s *Server) apiListAuditEvents(w http.ResponseWriter, r *http.Request) {
 
 func currentPrincipal(s *Server, r *http.Request) (Principal, bool) {
 	if s.auth == nil {
-		return Principal{ID: "dev", Email: "dev@localhost", DisplayName: "Local Developer", DevBypass: true}, true
+		return localDeveloperPrincipal(), true
 	}
 	return s.auth.Principal(r)
 }

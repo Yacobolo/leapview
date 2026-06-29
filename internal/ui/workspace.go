@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/assetnav"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -264,7 +265,11 @@ func workspaceAssetSummarySignal(workspaceID string, asset workspaceview.AssetVi
 }
 
 func workspaceAssetPageSignal(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection string, lineage assetLineageModel) uisignals.WorkspaceAssetPageSignal {
-	page := baseWorkspaceAssetPageSignal(workspace, asset, assets, edges, activeSection, lineage)
+	return workspaceAssetPageSignalWithRefresh(workspace, asset, assets, edges, activeSection, lineage, AssetRefreshState{})
+}
+
+func workspaceAssetPageSignalWithRefresh(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection string, lineage assetLineageModel, refresh AssetRefreshState) uisignals.WorkspaceAssetPageSignal {
+	page := baseWorkspaceAssetPageSignalWithRefresh(workspace, asset, assets, edges, activeSection, lineage, refresh)
 	page.Kind = uisignals.RouteWorkspaceAsset
 	page.Breadcrumbs = []uisignals.WorkspaceBreadcrumbSignal{
 		{Label: "Workspaces", Href: "/workspaces"},
@@ -272,13 +277,24 @@ func workspaceAssetPageSignal(workspace workspaceview.WorkspaceView, asset works
 		{Label: assetTitle(asset), Current: true},
 	}
 	page.Actions = []uisignals.WorkspaceActionSignal{{Label: "Back to workspace", Href: "/workspaces/" + workspace.ID, Icon: "back"}}
+	if assetRefreshable(asset.Type) {
+		page.Actions = append([]uisignals.WorkspaceActionSignal{{
+			Label:    "Refresh materializations",
+			Icon:     "refresh",
+			Command:  "refresh-materializations",
+			Disabled: assetRefreshSignal(refresh).Running,
+		}}, page.Actions...)
+	}
 	if asset.Href != "" {
 		page.Actions = append(page.Actions, uisignals.WorkspaceActionSignal{Label: "Open asset", Href: asset.Href, Icon: "open"})
 	}
 	page.Tabs = []uisignals.WorkspaceTabSignal{
 		{ID: "details", Label: "Details", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "details"), Active: activeSection == "details"},
-		{ID: "lineage", Label: "Lineage", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "lineage"), Active: activeSection == "lineage", Count: lineage.Count},
 	}
+	if assetRefreshable(asset.Type) {
+		page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "refreshes", Label: "Refreshes", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "refreshes"), Active: activeSection == "refreshes"})
+	}
+	page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "lineage", Label: "Lineage", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "lineage"), Active: activeSection == "lineage", Count: lineage.Count})
 	return page
 }
 
@@ -315,6 +331,10 @@ func connectionSourceAssetPageSignal(workspace workspaceview.WorkspaceView, conn
 }
 
 func baseWorkspaceAssetPageSignal(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection string, lineage assetLineageModel) uisignals.WorkspaceAssetPageSignal {
+	return baseWorkspaceAssetPageSignalWithRefresh(workspace, asset, assets, edges, activeSection, lineage, AssetRefreshState{})
+}
+
+func baseWorkspaceAssetPageSignalWithRefresh(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection string, lineage assetLineageModel, refresh AssetRefreshState) uisignals.WorkspaceAssetPageSignal {
 	activeSection = normalizeWorkspaceAssetSection(activeSection)
 	page := uisignals.WorkspaceAssetPageSignal{
 		Title:         assetTitle(asset),
@@ -323,8 +343,11 @@ func baseWorkspaceAssetPageSignal(workspace workspaceview.WorkspaceView, asset w
 		ActiveSection: activeSection,
 		Asset:         workspaceAssetSummarySignal(workspace.ID, asset, assetsByID(assets), edges),
 	}
+	if assetRefreshable(asset.Type) {
+		page.Refresh = assetRefreshSignal(refresh)
+	}
 	if activeSection == "details" {
-		page.Details = workspaceAssetDetailsSignal(workspace, asset, assets, edges)
+		page.Details = workspaceAssetDetailsSignalWithRefresh(workspace, asset, assets, edges, refresh)
 	}
 	if activeSection == "lineage" {
 		page.Lineage = uisignals.WorkspaceAssetLineageSignal{
@@ -334,11 +357,19 @@ func baseWorkspaceAssetPageSignal(workspace workspaceview.WorkspaceView, asset w
 			UsedByGrid: lineage.UsedBy,
 		}
 	}
+	if activeSection == "refreshes" && assetRefreshable(asset.Type) {
+		runsGrid := assetRefreshesGrid(refresh)
+		page.Refresh.RunsGrid = &runsGrid
+	}
 	return page
 }
 
 func workspaceAssetDetailsSignal(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView) uisignals.WorkspaceAssetDetailsSignal {
-	model := assetDetailModelForAsset(workspace, asset, assets, edges)
+	return workspaceAssetDetailsSignalWithRefresh(workspace, asset, assets, edges, AssetRefreshState{})
+}
+
+func workspaceAssetDetailsSignalWithRefresh(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, refresh AssetRefreshState) uisignals.WorkspaceAssetDetailsSignal {
+	model := assetDetailModelForAssetWithRefresh(workspace, asset, assets, edges, refresh)
 	sections := make([]uisignals.WorkspaceDetailSectionSignal, 0, len(model.Sections))
 	for _, section := range model.Sections {
 		sections = append(sections, uisignals.WorkspaceDetailSectionSignal{
@@ -367,9 +398,33 @@ func definitionFactSignals(facts []definitionFact) []uisignals.DefinitionFactSig
 }
 
 func WorkspaceAssetPage(catalog dashboard.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string) g.Node {
+	return WorkspaceAssetPageWithRefresh(catalog, workspace, asset, assets, edges, activeSection, roleLabel, AssetRefreshState{})
+}
+
+func WorkspaceAssetPageWithRefresh(catalog dashboard.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, refresh AssetRefreshState) g.Node {
 	activeSection = normalizeWorkspaceAssetSection(activeSection)
 	lineage := assetLineage(workspace.ID, asset, assets, edges)
-	page := workspaceAssetPageSignal(workspace, asset, assets, edges, activeSection, lineage)
+	page := workspaceAssetPageSignalWithRefresh(workspace, asset, assets, edges, activeSection, lineage, refresh)
+	extraSignals := map[string]any{}
+	attrs := []g.Node{
+		g.Attr("slot", "page"),
+		g.Attr("page", jsonString(page)),
+		g.Attr("data-attr:page", "JSON.stringify($page)"),
+	}
+	if assetRefreshable(asset.Type) {
+		refreshPath := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/refresh-materializations"
+		updatesURL := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/updates?section=" + activeSection
+		extraSignals["csrfToken"] = refresh.CSRFToken
+		attrs = append(attrs,
+			g.Attr("data-on:ld-refresh-materializations", "$page.refresh.status = 'running'; $page.refresh.running = true; "+postActionWithCSRFSignal(refreshPath, "$csrfToken")),
+		)
+		extraHeadInit := ds.Init("@get('" + updatesURL + "', {openWhenHidden: true})")
+		return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("ld-workspace-asset-page", attrs...), extraSignals, activeSection, extraHeadInit)
+	}
+	return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("ld-workspace-asset-page", attrs...), nil, activeSection)
+}
+
+func workspaceAssetRouteDocument(asset workspaceview.AssetView, catalog dashboard.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extraSignals map[string]any, activeSection string, bodyExtras ...g.Node) g.Node {
 	extraHead := []g.Node{}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
@@ -377,15 +432,7 @@ func WorkspaceAssetPage(catalog dashboard.Catalog, workspace workspaceview.Works
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/asset-lineage-graph.js"))),
 		)
 	}
-	return workspaceRouteDocument(asset.Title, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset,
-		g.El("ld-workspace-asset-page",
-			g.Attr("slot", "page"),
-			g.Attr("page", jsonString(page)),
-			g.Attr("data-attr:page", "JSON.stringify($page)"),
-		),
-		nil,
-		extraHead...,
-	)
+	return workspaceRouteDocumentWithBodyExtras(asset.Title, catalog, active, roleLabel, page, routeKind, routeRoot, extraSignals, bodyExtras, extraHead...)
 }
 
 func ConnectionAssetPage(catalog dashboard.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string) g.Node {
@@ -459,6 +506,10 @@ func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace workspaceview
 }
 
 func workspaceRouteDocument(title string, catalog dashboard.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extraSignals map[string]any, extraHead ...g.Node) g.Node {
+	return workspaceRouteDocumentWithBodyExtras(title, catalog, active, roleLabel, page, routeKind, routeRoot, extraSignals, nil, extraHead...)
+}
+
+func workspaceRouteDocumentWithBodyExtras(title string, catalog dashboard.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extraSignals map[string]any, bodyExtras []g.Node, extraHead ...g.Node) g.Node {
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, active, roleLabel)}
 	signals := map[string]any{
 		"chrome":  chrome,
@@ -476,6 +527,16 @@ func workspaceRouteDocument(title string, catalog dashboard.Catalog, active, rol
 		h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 	}
 	head = append(head, extraHead...)
+	mainChildren := []g.Node{ds.Signals(signals)}
+	mainChildren = append(mainChildren, bodyExtras...)
+	mainChildren = append(mainChildren,
+		g.El("ld-app-shell",
+			g.Attr("chrome", jsonString(chrome)),
+			g.Attr("data-attr:chrome", "JSON.stringify($chrome)"),
+			routeRoot,
+		),
+		inspectorElement(),
+	)
 	return c.HTML5(c.HTML5Props{
 		Title:    title,
 		Language: "en",
@@ -486,15 +547,7 @@ func workspaceRouteDocument(title string, catalog dashboard.Catalog, active, rol
 		},
 		Head: pageHead(head...),
 		Body: []g.Node{
-			h.Main(h.Class(appRootClass),
-				ds.Signals(signals),
-				g.El("ld-app-shell",
-					g.Attr("chrome", jsonString(chrome)),
-					g.Attr("data-attr:chrome", "JSON.stringify($chrome)"),
-					routeRoot,
-				),
-				inspectorElement(),
-			),
+			h.Main(append([]g.Node{h.Class(appRootClass)}, mainChildren...)...),
 		},
 	})
 }
@@ -538,11 +591,155 @@ func workspaceAssetHref(workspaceID, typ, query string) string {
 
 func ValidWorkspaceAssetSection(section string) bool {
 	switch section {
-	case "details", "lineage":
+	case "details", "lineage", "refreshes":
 		return true
 	default:
 		return false
 	}
+}
+
+type AssetRefreshState struct {
+	CSRFToken        string
+	UpdatesURL       string
+	Runs             []AssetRefreshRun
+	Latest           AssetRefreshRun
+	LatestSuccessful AssetRefreshRun
+}
+
+type AssetRefreshRun struct {
+	ID                   string
+	ModelID              string
+	DeploymentID         string
+	PrincipalID          string
+	PrincipalDisplayName string
+	TargetType           string
+	TargetID             string
+	TriggerType          string
+	ParentRunID          string
+	Status               string
+	StartedAt            string
+	FinishedAt           string
+	Error                string
+}
+
+func WorkspaceAssetRefreshSignals(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, refresh AssetRefreshState, activeSection string) map[string]any {
+	lineage := assetLineage(workspace.ID, asset, assets, edges)
+	return map[string]any{
+		"page": workspaceAssetPageSignalWithRefresh(workspace, asset, assets, edges, activeSection, lineage, refresh),
+	}
+}
+
+func assetRefreshSignal(refresh AssetRefreshState) uisignals.WorkspaceAssetRefreshSignal {
+	status := strings.TrimSpace(refresh.Latest.Status)
+	if status == "" {
+		status = "not refreshed"
+	}
+	return uisignals.WorkspaceAssetRefreshSignal{
+		Status:         status,
+		Running:        status == "queued" || status == "running",
+		LastSuccessful: refresh.LatestSuccessful.FinishedAt,
+	}
+}
+
+func assetRefreshesGrid(refresh AssetRefreshState) metricGrid {
+	rows := make([]map[string]any, 0, len(refresh.Runs))
+	for _, run := range refresh.Runs {
+		rows = append(rows, map[string]any{
+			"status":       refreshStatusGridValue(run.Status),
+			"started":      emptyDash(run.StartedAt),
+			"duration":     emptyDash(refreshRunDuration(run)),
+			"triggered_by": emptyDash(run.PrincipalDisplayName),
+			"trigger":      refreshTriggerLabel(run.TriggerType),
+			"run":          emptyDash(shortRefreshRunID(run.ID)),
+			"error":        emptyDash(run.Error),
+		})
+	}
+	return metricGrid{
+		Columns: []metricGridColumn{
+			{ID: "status", Header: "Status", Kind: "status", Width: "140px"},
+			{ID: "started", Header: "Started", Width: "180px"},
+			{ID: "duration", Header: "Duration", Width: "110px"},
+			{ID: "triggered_by", Header: "Triggered by", Width: "130px"},
+			{ID: "trigger", Header: "Trigger", Width: "130px"},
+			{ID: "run", Header: "Run ID", Kind: "code", Width: "160px"},
+			{ID: "error", Header: "Error"},
+		},
+		Rows:     rows,
+		Empty:    "No refresh runs have been recorded for this asset.",
+		MinWidth: "1040px",
+	}
+}
+
+func refreshTriggerLabel(trigger string) string {
+	switch strings.TrimSpace(trigger) {
+	case "direct":
+		return "Direct"
+	case "semantic_model":
+		return "Semantic model"
+	case "dependency":
+		return "Dependency"
+	default:
+		return "-"
+	}
+}
+
+func refreshStatusGridValue(status string) any {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "not refreshed"
+	}
+	return metricGridBadge{Label: status, Tone: refreshStatusBadgeTone(status)}
+}
+
+func refreshStatusBadgeTone(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "succeeded":
+		return "success"
+	case "running", "queued":
+		return "accent"
+	case "failed":
+		return "danger"
+	default:
+		return "muted"
+	}
+}
+
+func shortRefreshRunID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 18 {
+		return id
+	}
+	return id[:18]
+}
+
+func refreshRunDuration(run AssetRefreshRun) string {
+	started, ok := parseRefreshTime(run.StartedAt)
+	if !ok {
+		return ""
+	}
+	finished, ok := parseRefreshTime(run.FinishedAt)
+	if !ok || finished.Before(started) {
+		return ""
+	}
+	return finished.Sub(started).Round(time.Second).String()
+}
+
+func parseRefreshTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func assetRefreshable(assetType string) bool {
+	return assetType == "semantic_model" || assetType == "model_table"
 }
 
 func normalizeWorkspaceAssetSection(section string) string {
@@ -1244,14 +1441,18 @@ func assetDetailUsesCodeBlock(asset workspaceview.AssetView) bool {
 }
 
 func assetDetailModelForAsset(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView) assetDetailModel {
+	return assetDetailModelForAssetWithRefresh(workspace, asset, assets, edges, AssetRefreshState{})
+}
+
+func assetDetailModelForAssetWithRefresh(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, refresh AssetRefreshState) assetDetailModel {
 	model := assetDetailModel{
 		Overview: commonAssetOverviewFacts(asset, assets, shouldShowParentFact(asset.Type)),
 	}
 	switch asset.Type {
 	case "semantic_model":
-		semanticModelDetailModel(&model, workspace, asset, assets)
+		semanticModelDetailModel(&model, workspace, asset, assets, refresh)
 	case "model_table":
-		modelTableDetailModel(&model, workspace, asset, assets)
+		modelTableDetailModel(&model, workspace, asset, assets, refresh)
 	case "dashboard":
 		dashboardDetailModel(&model, asset, assets)
 	case "connection":
@@ -1289,7 +1490,7 @@ func shouldShowParentFact(typ string) bool {
 	}
 }
 
-func semanticModelDetailModel(model *assetDetailModel, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView) {
+func semanticModelDetailModel(model *assetDetailModel, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, refresh AssetRefreshState) {
 	meta := asset.Payload
 	modelTableMeta := metaMap(meta, "Tables", "tables", "Models", "models")
 	modelTables := sortedMapKeys(modelTableMeta)
@@ -1297,15 +1498,24 @@ func semanticModelDetailModel(model *assetDetailModel, workspace workspaceview.W
 	relationships := metaSlice(meta, "Relationships", "relationships")
 
 	model.Overview = append(model.Overview,
-		definitionFact{Label: "Model tables", Value: fmt.Sprint(len(modelTables))},
-		definitionFact{Label: "Measures", Value: fmt.Sprint(len(measures))},
-		definitionFact{Label: "Relationships", Value: fmt.Sprint(len(relationships))},
+		refreshOverviewFacts(refresh)...,
 	)
 	model.Sections = append(model.Sections,
-		assetDetailSection{Title: fmt.Sprintf("Model tables (%d)", len(modelTables)), Signal: "assetDetailsSemanticModelTablesGrid", Grid: semanticModelTablesGrid(workspace.ID, asset, assets, meta)},
+		assetDetailSection{Title: fmt.Sprintf("Model tables (%d)", len(modelTables)), Signal: "assetDetailsSemanticModelTablesGrid", Grid: semanticModelTablesGrid(workspace.ID, asset, assets, meta, refresh)},
 		assetDetailSection{Title: fmt.Sprintf("Measures (%d)", len(measures)), Signal: "assetDetailsSemanticMeasuresGrid", Grid: semanticMeasuresGrid(workspace.ID, asset, assets, meta)},
 		assetDetailSection{Title: fmt.Sprintf("Relationships (%d)", len(relationships)), Signal: "assetDetailsSemanticRelationshipsGrid", Grid: semanticRelationshipsGrid(workspace.ID, asset, assets, meta)},
 	)
+}
+
+func refreshOverviewFacts(refresh AssetRefreshState) []definitionFact {
+	status := strings.TrimSpace(refresh.Latest.Status)
+	if status == "" {
+		status = "not refreshed"
+	}
+	return []definitionFact{
+		{Label: "Refresh status", Value: status},
+		{Label: "Last refreshed", Value: emptyDash(refresh.LatestSuccessful.FinishedAt)},
+	}
 }
 
 func semanticFieldCount(tables map[string]any) int {
@@ -1383,20 +1593,27 @@ func semanticSourcesGrid(workspaceID string, parent workspaceview.AssetView, ass
 	}
 }
 
-func semanticModelTablesGrid(workspaceID string, parent workspaceview.AssetView, assets []workspaceview.AssetView, meta map[string]any) metricGrid {
+func semanticModelTablesGrid(workspaceID string, parent workspaceview.AssetView, assets []workspaceview.AssetView, meta map[string]any, refresh AssetRefreshState) metricGrid {
 	tables := metaMap(meta, "Tables", "tables", "Models", "models")
 	measureCounts := semanticMeasureCountsByTable(metaMap(meta, "Measures", "measures"))
 	rows := make([]map[string]any, 0, len(tables))
+	lastRefreshed := emptyDash(refresh.LatestSuccessful.FinishedAt)
+	refreshStatus := "not refreshed"
+	if strings.TrimSpace(refresh.LatestSuccessful.Status) != "" {
+		refreshStatus = refresh.LatestSuccessful.Status
+	}
 	for _, name := range sortedMapKeys(tables) {
 		table := asMap(tables[name])
 		child := semanticAssetByName(parent.Key, "model_table", name, assets)
 		rows = append(rows, map[string]any{
-			"name":        name,
-			"nameHref":    childHref(workspaceID, child),
-			"primary_key": emptyDash(metaString(table, "PrimaryKey", "primary_key")),
-			"fields":      len(metaMap(table, "Dimensions", "dimensions", "Fields", "fields")),
-			"measures":    measureCounts[name],
-			"description": emptyDash(metaString(table, "Description", "description")),
+			"name":           name,
+			"nameHref":       childHref(workspaceID, child),
+			"primary_key":    emptyDash(metaString(table, "PrimaryKey", "primary_key")),
+			"fields":         len(metaMap(table, "Dimensions", "dimensions", "Fields", "fields")),
+			"measures":       measureCounts[name],
+			"last_refreshed": lastRefreshed,
+			"refresh_status": refreshStatusGridValue(refreshStatus),
+			"description":    emptyDash(metaString(table, "Description", "description")),
 		})
 	}
 	return metricGrid{
@@ -1405,11 +1622,13 @@ func semanticModelTablesGrid(workspaceID string, parent workspaceview.AssetView,
 			{ID: "primary_key", Header: "Primary key", Kind: "code", Width: "150px"},
 			{ID: "fields", Header: "Fields", Width: "100px"},
 			{ID: "measures", Header: "Measures", Width: "110px"},
+			{ID: "last_refreshed", Header: "Last refreshed", Width: "180px"},
+			{ID: "refresh_status", Header: "Refresh status", Kind: "status", Width: "130px"},
 			{ID: "description", Header: "Description"},
 		},
 		Rows:     rows,
 		Empty:    "No model tables are defined for this semantic model.",
-		MinWidth: "860px",
+		MinWidth: "1120px",
 	}
 }
 
@@ -1430,7 +1649,7 @@ func semanticMeasureCountsByTable(measures map[string]any) map[string]int {
 	return counts
 }
 
-func modelTableDetailModel(model *assetDetailModel, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView) {
+func modelTableDetailModel(model *assetDetailModel, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, refresh AssetRefreshState) {
 	modelKey, tableName := modelTableKeyParts(asset)
 	fields := modelTableFields(asset.Payload)
 	sources := modelTableSourceNames(asset.Payload)
@@ -1449,6 +1668,7 @@ func modelTableDetailModel(model *assetDetailModel, workspace workspaceview.Work
 		definitionFact{Label: "Input sources", Value: fmt.Sprint(len(sources))},
 		definitionFact{Label: "Mode", Value: mode},
 	)
+	model.Overview = append(model.Overview, refreshOverviewFacts(refresh)...)
 	model.Sections = append(model.Sections,
 		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", len(fields)), Signal: "assetDetailsModelTableFieldsGrid", Grid: modelTableFieldsGrid(workspace.ID, modelKey, tableName, fields, metaMap(asset.Payload, "Schema", "schema"), assets)},
 	)

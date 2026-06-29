@@ -7,6 +7,10 @@ namespace LibreDashAPI;
 model MaterializationRunCreateRequest {
   modelId: string;
   deploymentId?: string;
+  targetType?: string;
+  targetId?: string;
+  triggerType?: string;
+  parentRunId?: string;
 }
 
 model MaterializationRunResponse {
@@ -14,6 +18,12 @@ model MaterializationRunResponse {
   workspaceId: string;
   modelId: string;
   deploymentId?: string;
+  principalId?: string;
+  principalDisplayName?: string;
+  targetType: string;
+  targetId: string;
+  triggerType: string;
+  parentRunId?: string;
   status: string;
   error?: string;
   createdAt: utcDateTime;

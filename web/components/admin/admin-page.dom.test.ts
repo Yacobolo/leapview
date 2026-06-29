@@ -80,6 +80,79 @@ for (const viewport of [
   })
 }
 
+test('admin storage route renders storage explorer from typed signal data', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-storage-explorer'))
+
+    const state = await page.evaluate(async () => {
+      const element = document.createElement('ld-admin-page') as any
+      const table = {
+        key: 'db\u0000main\u0000orders',
+        databaseId: 'db',
+        databaseName: 'libredash.duckdb',
+        databasePath: '/tmp/duckdb/libredash.duckdb',
+        modelId: 'olist',
+        modelName: 'Olist Commerce',
+        schema: 'main',
+        name: 'orders',
+        type: 'table',
+        rowCountLabel: '10',
+        columnCount: 1,
+        sizeLabel: '12 KiB',
+        columns: [{ name: 'order_id', type: 'VARCHAR', ordinal: 1, nullable: 'No', default: '' }],
+      }
+      const storage = {
+        summary: { duckdbDir: '/tmp/duckdb', databaseCount: 1, totalSizeLabel: '12 KiB', tableCount: 1 },
+        status: '',
+        warnings: ['Storage warning'],
+        selectedKey: 'db\u0000main\u0000orders',
+        tables: [table],
+        selectedTable: table,
+      }
+      element.page = {
+        kind: 'admin',
+        title: 'Storage',
+        active: 'storage',
+        sidebar: {
+          label: 'Admin',
+          railLabel: 'Admin',
+          ariaLabel: 'Admin navigation',
+          storageKey: 'libredash-admin-sidebar-collapsed',
+          activeId: 'storage',
+          collapsible: false,
+          numbered: false,
+          items: [{ id: 'storage', title: 'Storage', href: '/admin/storage', active: true }],
+        },
+        headerTitle: 'Storage',
+        headerDetail: 'Read-only DuckDB database and table inventory.',
+        metrics: [{ label: 'Tables and views', value: '1' }],
+        storage,
+      }
+      element.storage = storage
+      document.body.append(element)
+      await element.updateComplete
+      const explorer = element.shadowRoot.querySelector('ld-storage-explorer') as any
+      await explorer.updateComplete
+      return {
+        title: element.shadowRoot.querySelector('h1')?.textContent?.trim(),
+        warning: element.shadowRoot.textContent?.includes('Storage warning'),
+        hasExplorer: Boolean(explorer),
+        explorerText: explorer.shadowRoot.textContent,
+      }
+    })
+
+    assert.equal(state.title, 'Storage')
+    assert.equal(state.warning, true)
+    assert.equal(state.hasExplorer, true)
+    assert.match(state.explorerText ?? '', /orders/)
+    assert.match(state.explorerText ?? '', /Olist Commerce/)
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   const page = {
     kind: 'admin',

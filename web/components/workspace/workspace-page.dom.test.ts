@@ -178,6 +178,81 @@ test('workspace access modal normalizes Go-shaped access signals', async () => {
   }
 })
 
+test('workspace asset refresh page renders refresh tab and emits refresh events', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-workspace-asset-page') && customElements.get('ld-data-grid'))
+
+    const state = await page.evaluate(async () => {
+      const asset = document.querySelector('ld-workspace-asset-page') as any
+      let refreshEvents = 0
+      asset.addEventListener('ld-refresh-materializations', () => { refreshEvents += 1 })
+      asset.page = {
+        kind: 'workspace_asset',
+        title: 'Olist Commerce',
+        workspaceId: 'libredash',
+        assetId: 'semantic_model:olist',
+        activeSection: 'refreshes',
+        asset: {
+          id: 'semantic_model:olist',
+          title: 'Olist Commerce',
+          description: 'Brazilian ecommerce model.',
+          type: 'semantic_model',
+          typeLabel: 'Semantic model',
+          key: 'olist',
+          detailHref: '/workspaces/libredash/assets/semantic_model:olist/details',
+          openHref: '/workspaces/libredash/assets/semantic_model:olist/details',
+        },
+        breadcrumbs: [
+          { label: 'Workspaces', href: '/workspaces' },
+          { label: 'LibreDash Workspace', href: '/workspaces/libredash' },
+          { label: 'Olist Commerce', current: true },
+        ],
+        actions: [
+          { label: 'Refresh materializations', icon: 'refresh', command: 'refresh-materializations' },
+          { label: 'Back to workspace', href: '/workspaces/libredash', icon: 'back' },
+        ],
+        tabs: [
+          { id: 'details', label: 'Details', href: '/workspaces/libredash/assets/semantic_model:olist/details', active: false },
+          { id: 'refreshes', label: 'Refreshes', href: '/workspaces/libredash/assets/semantic_model:olist/refreshes', active: true },
+          { id: 'lineage', label: 'Lineage', href: '/workspaces/libredash/assets/semantic_model:olist/lineage', active: false, count: 1 },
+        ],
+        refresh: {
+          status: 'succeeded',
+          running: false,
+          lastSuccessful: '2026-06-26 10:00:12',
+          runsGrid: {
+            columns: [
+              { id: 'status', header: 'Status', kind: 'status' },
+              { id: 'started', header: 'Started' },
+              { id: 'run', header: 'Run ID', kind: 'code' },
+            ],
+            rows: [{ status: { label: 'succeeded', tone: 'success' }, started: '2026-06-26 10:00:00', run: 'matrun_123' }],
+            empty: 'No refresh runs.',
+          },
+        },
+      }
+      await asset.updateComplete
+      const button = asset.shadowRoot.querySelector('button[aria-label="Refresh materializations"]') as HTMLButtonElement
+      button.click()
+      return {
+        activeTab: asset.shadowRoot.querySelector('.tabs a.active')?.textContent?.trim(),
+        hasRefreshButton: Boolean(button),
+        gridText: asset.shadowRoot.querySelector('ld-data-grid')?.textContent,
+        refreshEvents,
+      }
+    })
+
+    assert.equal(state.activeTab, 'Refreshes')
+    assert.equal(state.hasRefreshButton, true)
+    assert.match(state.gridText ?? '', /matrun_123/)
+    assert.equal(state.refreshEvents, 1)
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   const assetList = {
     workspaceId: 'libredash',

@@ -96,7 +96,7 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	semanticPage := workspaceAssetPageSignal(workspace, byType["semantic_model"], assets, edges, "details", assetLineage(workspace.ID, byType["semantic_model"], assets, edges))
 	modelTablesGrid := detailSectionGrid(t, semanticPage.Details.Sections, "Model tables")
 	relationshipsGrid := detailSectionGrid(t, semanticPage.Details.Sections, "Relationships")
-	assertGridHeaders(t, modelTablesGrid, []string{"Name", "Primary key", "Fields", "Measures", "Description"})
+	assertGridHeaders(t, modelTablesGrid, []string{"Name", "Primary key", "Fields", "Measures", "Last refreshed", "Refresh status", "Description"})
 	assertGridHeaders(t, relationshipsGrid, []string{"ID", "From table", "From field", "To table", "To field", "Cardinality", "Active"})
 	assertGridMissingHeaders(t, modelTablesGrid, []string{"Source", "Reads", "SQL preview"})
 	assertNoDetailSection(t, semanticPage.Details.Sections, "Connections")

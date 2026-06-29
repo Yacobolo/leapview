@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/go-chi/chi/v5"
@@ -42,6 +43,11 @@ func (s *Server) adminPrincipalDetail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminGroups(w http.ResponseWriter, r *http.Request) {
 	s.renderAdminPage(w, r, "groups")
+}
+
+func (s *Server) adminStorage(w http.ResponseWriter, r *http.Request) {
+	_ = lddatastar.EnsureClientID(w, r)
+	s.renderAdminPage(w, r, "storage")
 }
 
 func (s *Server) adminGroupDetail(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +89,7 @@ func (s *Server) renderAdminPage(w http.ResponseWriter, r *http.Request, active 
 func (s *Server) adminData(r *http.Request, workspaceID string) (ui.AdminData, error) {
 	data := ui.AdminData{
 		Workspace:       s.workspaceResponse(r, workspaceID),
+		CSRFToken:       csrfToken(r, s.auth),
 		AuthConfigured:  s.auth != nil,
 		RBACConfigured:  s.store != nil,
 		RBACStatusLabel: "Configured",
@@ -95,6 +102,7 @@ func (s *Server) adminData(r *http.Request, workspaceID string) (ui.AdminData, e
 		data.RBACConfigured = false
 		data.RBACStatusLabel = "RBAC store is not configured"
 		data.RoleCount = len(defaultWorkspaceRoles())
+		data.Storage = s.adminStorageData(r)
 		return data, nil
 	}
 	principals, err := s.adminPrincipalsData(r)
@@ -129,6 +137,7 @@ func (s *Server) adminData(r *http.Request, workspaceID string) (ui.AdminData, e
 	data.BindingCount = len(bindings)
 	data.Principals = buildAdminPrincipals(principals, bindings, groupsByID, membersByGroup)
 	data.Groups = buildAdminGroups(groups, bindings, membersByGroup)
+	data.Storage = s.adminStorageData(r)
 	data.PrincipalCount = len(data.Principals)
 	data.GroupCount = len(data.Groups)
 	return data, nil

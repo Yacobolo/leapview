@@ -222,6 +222,7 @@ type WorkspaceAssetPageSignal struct {
 	Tabs          []WorkspaceTabSignal        `json:"tabs"`
 	Details       WorkspaceAssetDetailsSignal `json:"details,omitempty"`
 	Lineage       WorkspaceAssetLineageSignal `json:"lineage,omitempty"`
+	Refresh       WorkspaceAssetRefreshSignal `json:"refresh,omitempty"`
 }
 
 type ConnectionsPageEnvelope struct {
@@ -285,9 +286,11 @@ type WorkspaceBreadcrumbSignal struct {
 }
 
 type WorkspaceActionSignal struct {
-	Label string `json:"label"`
-	Href  string `json:"href"`
-	Icon  string `json:"icon,omitempty"`
+	Label    string `json:"label"`
+	Href     string `json:"href,omitempty"`
+	Icon     string `json:"icon,omitempty"`
+	Command  string `json:"command,omitempty"`
+	Disabled bool   `json:"disabled,omitempty"`
 }
 
 type WorkspaceAssetDetailsSignal struct {
@@ -315,6 +318,13 @@ type WorkspaceAssetLineageSignal struct {
 	Graph      AssetLineageGraphSignal `json:"graph"`
 	UsesGrid   MetricGridSignal        `json:"usesGrid"`
 	UsedByGrid MetricGridSignal        `json:"usedByGrid"`
+}
+
+type WorkspaceAssetRefreshSignal struct {
+	Status         string            `json:"status"`
+	Running        bool              `json:"running"`
+	LastSuccessful string            `json:"lastSuccessful"`
+	RunsGrid       *MetricGridSignal `json:"runsGrid,omitempty"`
 }
 
 type AssetLineageGraphSignal struct {
@@ -385,6 +395,7 @@ type AdminPageSignal struct {
 	Empty        string                      `json:"empty,omitempty"`
 	Metrics      []AdminMetricSignal         `json:"metrics,omitempty"`
 	Sections     []AdminContentSectionSignal `json:"sections,omitempty"`
+	Storage      AdminStorageSignal          `json:"storage,omitempty"`
 }
 
 type AdminMetricSignal struct {
@@ -397,6 +408,97 @@ type AdminContentSectionSignal struct {
 	Title string                 `json:"title"`
 	Facts []DefinitionFactSignal `json:"facts,omitempty"`
 	Grid  MetricGridSignal       `json:"grid,omitempty"`
+}
+
+type AdminStorageData struct {
+	DuckDBDir      string
+	Status         string
+	DatabaseCount  int
+	TotalSizeBytes int64
+	TotalSizeLabel string
+	TableCount     int
+	Databases      []AdminStorageDatabase
+	Tables         []AdminStorageTable
+	Warnings       []string
+}
+
+type AdminStorageDatabase struct {
+	ID        string
+	Name      string
+	Path      string
+	ModelID   string
+	ModelName string
+	SizeBytes int64
+	SizeLabel string
+}
+
+type AdminStorageTable struct {
+	DatabaseID    string
+	DatabaseName  string
+	DatabasePath  string
+	ModelID       string
+	ModelName     string
+	Schema        string
+	Name          string
+	Type          string
+	RowCountLabel string
+	ColumnCount   int
+	SizeLabel     string
+	Columns       []AdminStorageColumn
+}
+
+type AdminStorageColumn struct {
+	Name     string
+	Type     string
+	Ordinal  int
+	Nullable string
+	Default  string
+}
+
+type AdminStorageSignal struct {
+	Summary       AdminStorageSummary       `json:"summary"`
+	Status        string                    `json:"status"`
+	Warnings      []string                  `json:"warnings"`
+	Tables        []AdminStorageTableSignal `json:"tables"`
+	SelectedKey   string                    `json:"selectedKey"`
+	SelectedTable *AdminStorageTableSignal  `json:"selectedTable"`
+}
+
+type AdminStorageSummary struct {
+	DuckDBDir      string `json:"duckdbDir"`
+	DatabaseCount  int    `json:"databaseCount"`
+	TotalSizeLabel string `json:"totalSizeLabel"`
+	TableCount     int    `json:"tableCount"`
+}
+
+type AdminStorageTableSignal struct {
+	Key           string                     `json:"key"`
+	DatabaseID    string                     `json:"databaseId"`
+	DatabaseName  string                     `json:"databaseName"`
+	DatabasePath  string                     `json:"databasePath"`
+	ModelID       string                     `json:"modelId"`
+	ModelName     string                     `json:"modelName"`
+	Schema        string                     `json:"schema"`
+	Name          string                     `json:"name"`
+	Type          string                     `json:"type"`
+	RowCountLabel string                     `json:"rowCountLabel"`
+	ColumnCount   int                        `json:"columnCount"`
+	SizeLabel     string                     `json:"sizeLabel"`
+	Columns       []AdminStorageColumnSignal `json:"columns,omitempty"`
+}
+
+type AdminStorageColumnSignal struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Ordinal  int    `json:"ordinal"`
+	Nullable string `json:"nullable"`
+	Default  string `json:"default"`
+}
+
+type AdminStorageCommand struct {
+	DatabaseID string `json:"databaseId"`
+	Schema     string `json:"schema"`
+	Table      string `json:"table"`
 }
 
 type LoginPageEnvelope struct {

@@ -31,6 +31,53 @@ export interface AdminPageSignal {
   empty?: string
   metrics?: AdminMetricSignal[]
   sections?: AdminContentSectionSignal[]
+  storage?: AdminStorageSignal
+}
+
+export interface AdminStorageColumnSignal {
+  name: string
+  type: string
+  ordinal: number
+  nullable: string
+  default: string
+}
+
+export interface AdminStorageCommand {
+  databaseId: string
+  schema: string
+  table: string
+}
+
+export interface AdminStorageSignal {
+  summary: AdminStorageSummary
+  status: string
+  warnings: string[]
+  tables: AdminStorageTableSignal[]
+  selectedKey: string
+  selectedTable: AdminStorageTableSignal
+}
+
+export interface AdminStorageSummary {
+  duckdbDir: string
+  databaseCount: number
+  totalSizeLabel: string
+  tableCount: number
+}
+
+export interface AdminStorageTableSignal {
+  key: string
+  databaseId: string
+  databaseName: string
+  databasePath: string
+  modelId: string
+  modelName: string
+  schema: string
+  name: string
+  type: string
+  rowCountLabel: string
+  columnCount: number
+  sizeLabel: string
+  columns?: AdminStorageColumnSignal[]
 }
 
 export interface AssetLineageEdgeSignal {
@@ -608,8 +655,10 @@ export interface WorkspaceAccessStatus {
 
 export interface WorkspaceActionSignal {
   label: string
-  href: string
+  href?: string
   icon?: string
+  command?: string
+  disabled?: boolean
 }
 
 export interface WorkspaceAssetDetailsSignal {
@@ -653,6 +702,14 @@ export interface WorkspaceAssetPageSignal {
   tabs: WorkspaceTabSignal[]
   details?: WorkspaceAssetDetailsSignal
   lineage?: WorkspaceAssetLineageSignal
+  refresh?: WorkspaceAssetRefreshSignal
+}
+
+export interface WorkspaceAssetRefreshSignal {
+  status: string
+  running: boolean
+  lastSuccessful: string
+  runsGrid?: MetricGridSignal
 }
 
 export interface WorkspaceAssetSummarySignal {
@@ -715,4 +772,4 @@ export interface WorkspaceTabSignal {
   count?: number
 }
 
-export type UISignalEnvelope = AdminContentSectionSignal | AdminMetricSignal | AdminPageEnvelope | AdminPageSignal | CatalogDashboardSignal | CatalogPageEnvelope | CatalogPageSignal | ChatEnvelope | ChatPageSignal | ChatSignal | ChromeSignal | ConnectionsPageEnvelope | ConnectionsPageSignal | DashboardComponentSignal | DashboardEnvelope | DashboardPageNavSignal | DashboardPageSignal | DefinitionFactSignal | LoginPageEnvelope | LoginPageSignal | MetricGridBadgeSignal | MetricGridColumnSignal | MetricGridSignal | RouteRuntimeSignal | SidebarGroupSignal | SidebarItemSignal | SidebarSignal | SubSidebarItemSignal | SubSidebarSignal | WorkspaceAccessSignal | WorkspaceActionSignal | WorkspaceAssetDetailsSignal | WorkspaceAssetLineageSignal | WorkspaceAssetPageEnvelope | WorkspaceAssetPageSignal | WorkspaceAssetSummarySignal | WorkspaceBreadcrumbSignal | WorkspaceCardSignal | WorkspaceDetailSectionSignal | WorkspacePageEnvelope | WorkspacePageSignal | WorkspaceTabSignal
+export type UISignalEnvelope = AdminContentSectionSignal | AdminMetricSignal | AdminPageEnvelope | AdminPageSignal | AdminStorageColumnSignal | AdminStorageCommand | AdminStorageSignal | AdminStorageSummary | AdminStorageTableSignal | CatalogDashboardSignal | CatalogPageEnvelope | CatalogPageSignal | ChatEnvelope | ChatPageSignal | ChatSignal | ChromeSignal | ConnectionsPageEnvelope | ConnectionsPageSignal | DashboardComponentSignal | DashboardEnvelope | DashboardPageNavSignal | DashboardPageSignal | DefinitionFactSignal | LoginPageEnvelope | LoginPageSignal | MetricGridBadgeSignal | MetricGridColumnSignal | MetricGridSignal | RouteRuntimeSignal | SidebarGroupSignal | SidebarItemSignal | SidebarSignal | SubSidebarItemSignal | SubSidebarSignal | WorkspaceAccessSignal | WorkspaceActionSignal | WorkspaceAssetDetailsSignal | WorkspaceAssetLineageSignal | WorkspaceAssetPageEnvelope | WorkspaceAssetPageSignal | WorkspaceAssetRefreshSignal | WorkspaceAssetSummarySignal | WorkspaceBreadcrumbSignal | WorkspaceCardSignal | WorkspaceDetailSectionSignal | WorkspacePageEnvelope | WorkspacePageSignal | WorkspaceTabSignal
