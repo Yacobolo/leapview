@@ -136,6 +136,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		Auth:               auth,
 		Reloader:           manager,
 		ArtifactDir:        cfg.ArtifactDir(),
+		DuckDBDir:          cfg.DuckDBDirPath(),
 		DefaultWorkspaceID: opts.workspaceID,
 		RateLimits:         rateLimits,
 		SecurityHeaders:    app.SecurityHeaders(cfg.HSTSEnabled(cookieSecure)),
@@ -147,6 +148,13 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 }
 
 func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg config.Config, workspaceID string) (*app.Server, func(), error) {
+	duckDBDir := ""
+	if metrics != nil {
+		duckDBDir = metrics.DataDir()
+	}
+	if cfg.DuckDBDir != "" {
+		duckDBDir = cfg.DuckDBDirPath()
+	}
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return nil, nil, err
@@ -182,6 +190,7 @@ func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg 
 		AccessRepo:         accessRepo,
 		Agent:              agent,
 		Auth:               auth,
+		DuckDBDir:          duckDBDir,
 		DefaultWorkspaceID: workspaceID,
 	})
 	return server, cleanup, nil
