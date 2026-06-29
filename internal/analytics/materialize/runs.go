@@ -202,26 +202,32 @@ func (r *SQLRunRepository) ListRuns(ctx context.Context, workspaceID string, pag
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
+	limit := runPageLimit(page)
+	args := []any{workspaceID}
+	after := strings.TrimSpace(page.After)
+	cursorClause := ""
+	if after != "" {
+		cursor, ok, err := r.runPageCursor(ctx, workspaceID, "", "", after)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return []RunRecord{}, nil
+		}
+		cursorClause = " AND (j.created_at < ? OR (j.created_at = ? AND r.rowid < ?))"
+		args = append(args, cursor.CreatedAt, cursor.CreatedAt, cursor.RowID)
+	}
+	args = append(args, limit)
 	rows, err := r.db.QueryContext(ctx, materializationRunSelect()+`
-		WHERE j.workspace_id = ?
+		WHERE j.workspace_id = ?`+cursorClause+`
 		ORDER BY j.created_at DESC, r.rowid DESC
-	`, workspaceID)
+		LIMIT ?
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []RunRecord
-	for rows.Next() {
-		run, err := scanRun(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, run)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return pageRuns(out, page), nil
+	return scanRunRows(rows)
 }
 
 func (r *SQLRunRepository) ListModelRuns(ctx context.Context, workspaceID, modelID string, page RunPage) ([]RunRecord, error) {
@@ -241,26 +247,32 @@ func (r *SQLRunRepository) ListTargetRuns(ctx context.Context, workspaceID, targ
 	if targetID == "" {
 		return nil, fmt.Errorf("target id is required")
 	}
+	limit := runPageLimit(page)
+	args := []any{workspaceID, targetType, targetID}
+	after := strings.TrimSpace(page.After)
+	cursorClause := ""
+	if after != "" {
+		cursor, ok, err := r.runPageCursor(ctx, workspaceID, targetType, targetID, after)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return []RunRecord{}, nil
+		}
+		cursorClause = " AND (j.created_at < ? OR (j.created_at = ? AND r.rowid < ?))"
+		args = append(args, cursor.CreatedAt, cursor.CreatedAt, cursor.RowID)
+	}
+	args = append(args, limit)
 	rows, err := r.db.QueryContext(ctx, materializationRunSelect()+`
-		WHERE j.workspace_id = ? AND r.target_type = ? AND r.target_id = ?
+		WHERE j.workspace_id = ? AND r.target_type = ? AND r.target_id = ?`+cursorClause+`
 		ORDER BY j.created_at DESC, r.rowid DESC
-	`, workspaceID, targetType, targetID)
+		LIMIT ?
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []RunRecord
-	for rows.Next() {
-		run, err := scanRun(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, run)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return pageRuns(out, page), nil
+	return scanRunRows(rows)
 }
 
 func (r *SQLRunRepository) LatestModelRun(ctx context.Context, workspaceID, modelID string) (RunRecord, bool, error) {
@@ -372,6 +384,55 @@ func (r *SQLRunRepository) markRun(ctx context.Context, workspaceID, runID, stat
 
 type runScanner interface {
 	Scan(dest ...any) error
+}
+
+type runRows interface {
+	Next() bool
+	Err() error
+	runScanner
+}
+
+type runPageCursor struct {
+	CreatedAt string
+	RowID     int64
+}
+
+func (r *SQLRunRepository) runPageCursor(ctx context.Context, workspaceID, targetType, targetID, runID string) (runPageCursor, bool, error) {
+	args := []any{runID, workspaceID}
+	targetClause := ""
+	if targetType != "" || targetID != "" {
+		targetClause = " AND r.target_type = ? AND r.target_id = ?"
+		args = append(args, targetType, targetID)
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT j.created_at, r.rowid
+		FROM materialization_job_runs r
+		JOIN materialization_jobs j ON j.id = r.job_id
+		WHERE r.id = ? AND j.workspace_id = ?`+targetClause+`
+	`, args...)
+	var cursor runPageCursor
+	if err := row.Scan(&cursor.CreatedAt, &cursor.RowID); err != nil {
+		if err == sql.ErrNoRows {
+			return runPageCursor{}, false, nil
+		}
+		return runPageCursor{}, false, err
+	}
+	return cursor, true, nil
+}
+
+func scanRunRows(rows runRows) ([]RunRecord, error) {
+	var out []RunRecord
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func scanRun(row runScanner) (RunRecord, error) {
@@ -502,10 +563,7 @@ func validateRunTrigger(triggerType string) error {
 }
 
 func pageRuns(rows []RunRecord, page RunPage) []RunRecord {
-	limit := page.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 100
-	}
+	limit := runPageLimit(page)
 	start := 0
 	after := strings.TrimSpace(page.After)
 	if after != "" {
@@ -525,6 +583,14 @@ func pageRuns(rows []RunRecord, page RunPage) []RunRecord {
 		end = len(rows)
 	}
 	return append([]RunRecord(nil), rows[start:end]...)
+}
+
+func runPageLimit(page RunPage) int {
+	limit := page.Limit
+	if limit <= 0 || limit > 100 {
+		return 100
+	}
+	return limit
 }
 
 func newRunID(prefix string) string {

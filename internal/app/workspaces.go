@@ -244,64 +244,20 @@ func (s *Server) refreshWorkspaceAssetWithPatches(r *http.Request, workspaceID s
 	}
 }
 
-type modelTableRefreshMetrics interface {
-	RefreshModelTables(context.Context, string, []string) error
-}
-
-type modelTableRefreshRuntimeMetrics interface {
-	RefreshTables(context.Context, string, []string) error
-}
-
 func (s *Server) refreshSemanticModelAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
 	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
 	principal, _ := currentPrincipal(s, r)
-	run, err := repo.CreateRun(ctx, materialize.RunInput{
+	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
+	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
 		WorkspaceID: workspaceID,
 		ModelID:     asset.Key,
 		PrincipalID: principal.ID,
-		TargetType:  materialize.TargetSemanticModel,
-		TargetID:    asset.Key,
-		TriggerType: materialize.TriggerDirect,
+	}, refreshPublisher{
+		Root: func() { s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges) },
+		Target: func(targetID string) {
+			s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
+		},
 	})
-	if err != nil {
-		return err
-	}
-	s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-
-	if _, err := repo.MarkRunRunning(ctx, workspaceID, run.ID); err != nil {
-		return err
-	}
-	s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-
-	model, ok := s.metrics.SemanticModel(asset.Key)
-	if !ok {
-		err := errors.New("unknown semantic model " + asset.Key)
-		if _, finishErr := repo.MarkRunFailed(ctx, workspaceID, run.ID, err.Error()); finishErr != nil {
-			return finishErr
-		}
-		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-		return err
-	}
-	order, err := materialize.ModelTableOrder(model)
-	if err != nil {
-		if _, finishErr := repo.MarkRunFailed(ctx, workspaceID, run.ID, err.Error()); finishErr != nil {
-			return finishErr
-		}
-		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-		return err
-	}
-	if err := s.refreshModelTableRuns(ctx, r, repo, workspaceID, asset.Key, order, materialize.TriggerSemanticModel, run.ID, principal.ID, assets, edges); err != nil {
-		if _, finishErr := repo.MarkRunFailed(ctx, workspaceID, run.ID, err.Error()); finishErr != nil {
-			return finishErr
-		}
-		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-		return err
-	}
-	if _, err := repo.MarkRunSucceeded(ctx, workspaceID, run.ID); err != nil {
-		return err
-	}
-	s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-	return nil
 }
 
 func (s *Server) refreshModelTableAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
@@ -311,96 +267,18 @@ func (s *Server) refreshModelTableAssetWithPatches(ctx context.Context, r *http.
 	if modelID == "" || tableName == "" {
 		return errors.New("model table asset key is invalid")
 	}
-	model, ok := s.metrics.SemanticModel(modelID)
-	if !ok {
-		return errors.New("unknown semantic model " + modelID)
-	}
-	order, err := materialize.ModelTableDependencyOrder(model, tableName)
-	if err != nil {
-		return err
-	}
-	root, err := repo.CreateRun(ctx, materialize.RunInput{
+	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
+	return orchestrator.RefreshModelTable(ctx, refreshRunInput{
 		WorkspaceID: workspaceID,
 		ModelID:     modelID,
 		PrincipalID: principal.ID,
-		TargetType:  materialize.TargetModelTable,
 		TargetID:    asset.Key,
-		TriggerType: materialize.TriggerDirect,
-	})
-	if err != nil {
-		return err
-	}
-	s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-
-	dependencies := order[:len(order)-1]
-	if err := s.refreshModelTableRuns(ctx, r, repo, workspaceID, modelID, dependencies, materialize.TriggerDependency, root.ID, principal.ID, assets, edges); err != nil {
-		if _, finishErr := repo.MarkRunFailed(ctx, workspaceID, root.ID, err.Error()); finishErr != nil {
-			return finishErr
-		}
-		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-		return err
-	}
-	if _, err := repo.MarkRunRunning(ctx, workspaceID, root.ID); err != nil {
-		return err
-	}
-	s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-	if err := s.refreshModelTables(ctx, modelID, []string{tableName}); err != nil {
-		if _, finishErr := repo.MarkRunFailed(ctx, workspaceID, root.ID, err.Error()); finishErr != nil {
-			return finishErr
-		}
-		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-		return err
-	}
-	if _, err := repo.MarkRunSucceeded(ctx, workspaceID, root.ID); err != nil {
-		return err
-	}
-	s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-	return nil
-}
-
-func (s *Server) refreshModelTableRuns(ctx context.Context, r *http.Request, repo *materialize.SQLRunRepository, workspaceID, modelID string, tableNames []string, triggerType, parentRunID, principalID string, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
-	for _, tableName := range tableNames {
-		targetID := modelID + "." + tableName
-		tableRun, err := repo.CreateRun(ctx, materialize.RunInput{
-			WorkspaceID: workspaceID,
-			ModelID:     modelID,
-			PrincipalID: principalID,
-			TargetType:  materialize.TargetModelTable,
-			TargetID:    targetID,
-			TriggerType: triggerType,
-			ParentRunID: parentRunID,
-		})
-		if err != nil {
-			return err
-		}
-		s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
-		if _, err := repo.MarkRunRunning(ctx, workspaceID, tableRun.ID); err != nil {
-			return err
-		}
-		s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
-		if err := s.refreshModelTables(ctx, modelID, []string{tableName}); err != nil {
-			if _, finishErr := repo.MarkRunFailed(ctx, workspaceID, tableRun.ID, err.Error()); finishErr != nil {
-				return finishErr
-			}
+	}, tableName, refreshPublisher{
+		Root: func() { s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges) },
+		Target: func(targetID string) {
 			s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
-			return err
-		}
-		if _, err := repo.MarkRunSucceeded(ctx, workspaceID, tableRun.ID); err != nil {
-			return err
-		}
-		s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
-	}
-	return nil
-}
-
-func (s *Server) refreshModelTables(ctx context.Context, modelID string, tableNames []string) error {
-	if port, ok := s.metrics.(modelTableRefreshMetrics); ok {
-		return port.RefreshModelTables(ctx, modelID, tableNames)
-	}
-	if port, ok := s.metrics.(modelTableRefreshRuntimeMetrics); ok {
-		return port.RefreshTables(ctx, modelID, tableNames)
-	}
-	return errors.New("model table refresh is not configured")
+		},
+	})
 }
 
 func (s *Server) publishWorkspaceAssetRefreshPatch(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) {

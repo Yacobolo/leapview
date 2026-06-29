@@ -20,8 +20,12 @@ type materializationRunRequest struct {
 }
 
 func (s *Server) createMaterializationRun(w http.ResponseWriter, r *http.Request) {
-	service, workspaceID, ok := s.materializationRunService(w, r)
+	repo, workspaceID, ok := s.materializationRunRepository(w, r)
 	if !ok {
+		return
+	}
+	if s.metrics == nil {
+		writeJSONError(w, fmt.Errorf("materialization refresh runner is not configured"), http.StatusServiceUnavailable)
 		return
 	}
 	var input materializationRunRequest
@@ -30,7 +34,7 @@ func (s *Server) createMaterializationRun(w http.ResponseWriter, r *http.Request
 		return
 	}
 	principal, _ := currentPrincipal(s, r)
-	run, err := service.Enqueue(r.Context(), materialize.RunInput{
+	run, err := repo.CreateRun(r.Context(), materialize.RunInput{
 		WorkspaceID:  workspaceID,
 		ModelID:      input.ModelID,
 		DeploymentID: input.DeploymentID,
@@ -44,9 +48,10 @@ func (s *Server) createMaterializationRun(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
+	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
 	go func() {
 		ctx := context.Background()
-		if _, err := service.Execute(ctx, workspaceID, run.ID); err != nil && s.logger != nil {
+		if _, err := orchestrator.ExecuteRun(ctx, workspaceID, run.ID, refreshPublisher{}); err != nil && s.logger != nil {
 			s.logger.WarnContext(ctx, "async materialization refresh failed", "workspace", workspaceID, "run", run.ID, "error", err)
 		}
 	}()
@@ -89,18 +94,6 @@ func (s *Server) getMaterializationRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
-}
-
-func (s *Server) materializationRunService(w http.ResponseWriter, r *http.Request) (materialize.RunService, string, bool) {
-	repo, workspaceID, ok := s.materializationRunRepository(w, r)
-	if !ok {
-		return materialize.RunService{}, "", false
-	}
-	if s.metrics == nil {
-		writeJSONError(w, fmt.Errorf("materialization refresh runner is not configured"), http.StatusServiceUnavailable)
-		return materialize.RunService{}, "", false
-	}
-	return materialize.RunService{Repo: repo, Runner: s.metrics}, workspaceID, true
 }
 
 func (s *Server) materializationRunRepository(w http.ResponseWriter, r *http.Request) (*materialize.SQLRunRepository, string, bool) {

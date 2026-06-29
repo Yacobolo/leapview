@@ -1,4 +1,5 @@
 -- +goose Up
+-- Forward-only migration: platform migrations do not rebuild SQLite tables for rollback.
 
 CREATE TABLE IF NOT EXISTS platform_role_bindings (
   id TEXT PRIMARY KEY,

@@ -1,4 +1,6 @@
 -- +goose Up
+-- Forward-only migration: platform migrations do not rebuild SQLite tables for rollback.
+
 ALTER TABLE materialization_job_runs
   ADD COLUMN target_type TEXT NOT NULL DEFAULT 'semantic_model';
 
@@ -24,7 +26,3 @@ CREATE INDEX IF NOT EXISTS materialization_job_runs_target_idx
 
 CREATE INDEX IF NOT EXISTS materialization_job_runs_parent_idx
   ON materialization_job_runs(parent_run_id);
-
--- +goose Down
-DROP INDEX IF EXISTS materialization_job_runs_parent_idx;
-DROP INDEX IF EXISTS materialization_job_runs_target_idx;

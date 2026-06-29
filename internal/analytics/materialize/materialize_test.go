@@ -657,6 +657,93 @@ func TestRunRepositoryListsAndFindsLatestByModel(t *testing.T) {
 	}
 }
 
+func TestRunRepositoryPagesRunsInSQLOrder(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	first, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+	if err != nil {
+		t.Fatalf("create first run: %v", err)
+	}
+	second, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.customers"})
+	if err != nil {
+		t.Fatalf("create second run: %v", err)
+	}
+	third, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
+	if err != nil {
+		t.Fatalf("create third run: %v", err)
+	}
+
+	pageOne, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2})
+	if err != nil {
+		t.Fatalf("list first page: %v", err)
+	}
+	if got, want := runIDs(pageOne), []string{third.ID, second.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first page ids = %#v, want %#v", got, want)
+	}
+	pageTwo, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2, After: second.ID})
+	if err != nil {
+		t.Fatalf("list second page: %v", err)
+	}
+	if got, want := runIDs(pageTwo), []string{first.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second page ids = %#v, want %#v", got, want)
+	}
+	unknown, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2, After: "matrun_missing"})
+	if err != nil {
+		t.Fatalf("list unknown cursor: %v", err)
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("unknown cursor page = %#v, want empty", unknown)
+	}
+}
+
+func TestRunRepositoryPagesTargetRunsInSQLOrder(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	first, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.orders"})
+	if err != nil {
+		t.Fatalf("create first target run: %v", err)
+	}
+	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.customers"}); err != nil {
+		t.Fatalf("create other target run: %v", err)
+	}
+	second, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.orders"})
+	if err != nil {
+		t.Fatalf("create second target run: %v", err)
+	}
+	third, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.orders"})
+	if err != nil {
+		t.Fatalf("create third target run: %v", err)
+	}
+
+	pageOne, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 2})
+	if err != nil {
+		t.Fatalf("list first target page: %v", err)
+	}
+	if got, want := runIDs(pageOne), []string{third.ID, second.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first target page ids = %#v, want %#v", got, want)
+	}
+	pageTwo, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 2, After: second.ID})
+	if err != nil {
+		t.Fatalf("list second target page: %v", err)
+	}
+	if got, want := runIDs(pageTwo), []string{first.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second target page ids = %#v, want %#v", got, want)
+	}
+	unknown, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 2, After: "matrun_missing"})
+	if err != nil {
+		t.Fatalf("list unknown target cursor: %v", err)
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("unknown target cursor page = %#v, want empty", unknown)
+	}
+}
+
 func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
@@ -723,6 +810,14 @@ func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
 	if legacy.TargetType != analyticsmaterialize.TargetSemanticModel || legacy.TargetID != "legacy" || legacy.TriggerType != analyticsmaterialize.TriggerDirect {
 		t.Fatalf("default target metadata = %#v", legacy)
 	}
+}
+
+func runIDs(runs []analyticsmaterialize.RunRecord) []string {
+	ids := make([]string, 0, len(runs))
+	for _, run := range runs {
+		ids = append(ids, run.ID)
+	}
+	return ids
 }
 
 func writeFixture(t *testing.T, dir, name, content string) {
