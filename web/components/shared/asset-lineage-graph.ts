@@ -274,7 +274,125 @@ const assetLineageGraphStyles = `
   }
 
   ld-asset-lineage-graph .react-flow {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    direction: ltr;
     color: var(--ld-fg-default);
+    background-color: transparent;
+  }
+
+  ld-asset-lineage-graph .react-flow__container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  ld-asset-lineage-graph .react-flow__pane {
+    z-index: 1;
+    touch-action: none;
+  }
+
+  ld-asset-lineage-graph .react-flow__viewport {
+    z-index: 2;
+    pointer-events: none;
+    transform-origin: 0 0;
+  }
+
+  ld-asset-lineage-graph .react-flow__renderer {
+    z-index: 4;
+  }
+
+  ld-asset-lineage-graph .react-flow__nodes {
+    pointer-events: none;
+    transform-origin: 0 0;
+  }
+
+  ld-asset-lineage-graph .react-flow__node {
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: all;
+    transform-origin: 0 0;
+    user-select: none;
+  }
+
+  ld-asset-lineage-graph .react-flow .react-flow__edges,
+  ld-asset-lineage-graph .react-flow .react-flow__edges svg {
+    position: absolute;
+  }
+
+  ld-asset-lineage-graph .react-flow .react-flow__edges svg {
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  ld-asset-lineage-graph .react-flow__edge {
+    pointer-events: visibleStroke;
+  }
+
+  ld-asset-lineage-graph .react-flow__edge-path,
+  ld-asset-lineage-graph .react-flow__connection-path {
+    fill: none;
+  }
+
+  ld-asset-lineage-graph .react-flow__edge-textwrapper {
+    pointer-events: all;
+  }
+
+  ld-asset-lineage-graph .react-flow__edge .react-flow__edge-text {
+    pointer-events: none;
+    user-select: none;
+  }
+
+  ld-asset-lineage-graph .react-flow__background {
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  ld-asset-lineage-graph .react-flow__handle {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    min-width: 5px;
+    min-height: 5px;
+    border: 1px solid var(--ld-bg-panel);
+    border-radius: 100%;
+    background: var(--ld-fg-muted);
+    pointer-events: none;
+  }
+
+  ld-asset-lineage-graph .react-flow__handle-left {
+    top: 50%;
+    left: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  ld-asset-lineage-graph .react-flow__handle-right {
+    top: 50%;
+    right: 0;
+    transform: translate(50%, -50%);
+  }
+
+  ld-asset-lineage-graph .react-flow__panel {
+    position: absolute;
+    z-index: 5;
+    margin: var(--base-size-16);
+  }
+
+  ld-asset-lineage-graph .react-flow__panel.left {
+    left: 0;
+  }
+
+  ld-asset-lineage-graph .react-flow__panel.bottom {
+    bottom: 0;
+  }
+
+  ld-asset-lineage-graph .react-flow__controls {
+    display: flex;
+    flex-direction: column;
   }
 
   ld-asset-lineage-graph .react-flow__attribution {
