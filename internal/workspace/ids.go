@@ -9,10 +9,15 @@ import (
 type WorkspaceID string
 type DeploymentID string
 type AssetID string
+type AssetSnapshotID string
 type AssetEdgeID string
 
-func NewAssetID(deploymentID DeploymentID, typ AssetType, key string) AssetID {
-	return AssetID("asset_" + stableID(string(deploymentID)+"|"+string(typ)+"|"+key))
+func NewAssetID(typ AssetType, key string) AssetID {
+	return AssetID(strings.ToLower(string(typ) + ":" + strings.TrimSpace(key)))
+}
+
+func NewAssetSnapshotID(deploymentID DeploymentID, logicalID AssetID) AssetSnapshotID {
+	return AssetSnapshotID("asset_" + stableID(string(deploymentID)+"|"+string(logicalID)))
 }
 
 func NewAssetEdgeID(deploymentID DeploymentID, fromID, toID AssetID, typ AssetEdgeType) AssetEdgeID {

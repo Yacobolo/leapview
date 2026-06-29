@@ -367,12 +367,12 @@ func TestHomeRouteRendersDashboardCatalog(t *testing.T) {
 	if !strings.Contains(body, `href="/dashboards/executive-sales"`) {
 		t.Fatalf("home missing dashboard link:\n%s", body)
 	}
-	for _, want := range []string{`Dashboards`, `/`, `Workspaces`, `/workspaces`, `Connections`, `/connections`, `Settings`, `/workspaces/test-workspace/permissions`} {
+	for _, want := range []string{`Dashboards`, `/`, `Workspaces`, `/workspaces`, `Connections`, `/connections`, `Admin`, `/admin`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("home sidebar missing %q:\n%s", want, body)
 		}
 	}
-	for _, notWant := range []string{`Metric Views`, `/metrics`, `Semantic Models`, `/models`} {
+	for _, notWant := range []string{`Metric Views`, `/metrics`, `Semantic Models`, `/models`, `Settings`, `/workspaces/test-workspace/permissions`} {
 		if strings.Contains(body, notWant) {
 			t.Fatalf("home sidebar rendered removed navigation %q:\n%s", notWant, body)
 		}
@@ -599,19 +599,19 @@ func (m *localDevStyleModelTableMetrics) RefreshTables(_ context.Context, modelI
 }
 
 func (m *dependentModelTableMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
-	catalog, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, workspaceID, "", "Catalog", "", map[string]any{})
+	catalog, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, workspaceID, "", "Catalog", "", "catalog.v1", map[string]any{})
 	if err != nil {
 		return nil, nil, false
 	}
-	model, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", "", map[string]any{})
+	model, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", "", "semantic_model.v1", map[string]any{})
 	if err != nil {
 		return nil, nil, false
 	}
-	orders, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.orders", model.ID, "orders", "", map[string]any{"PrimaryKey": "order_id", "Source": "orders"})
+	orders, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.orders", model.ID, "orders", "", "model_table.v1", map[string]any{"PrimaryKey": "order_id", "Source": "orders"})
 	if err != nil {
 		return nil, nil, false
 	}
-	summary, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.order_summary", model.ID, "order_summary", "", map[string]any{"PrimaryKey": "status", "SQL": "SELECT status FROM model.orders"})
+	summary, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.order_summary", model.ID, "order_summary", "", "model_table.v1", map[string]any{"PrimaryKey": "status", "SQL": "SELECT status FROM model.orders"})
 	if err != nil {
 		return nil, nil, false
 	}
@@ -860,7 +860,7 @@ func TestWorkspaceAssetUpdatesStreamsInitialRefreshState(t *testing.T) {
 	if _, err := repo.MarkRunSucceeded(context.Background(), "test", queued.ID); err != nil {
 		t.Fatalf("mark run succeeded: %v", err)
 	}
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=refreshes", nil)
@@ -887,7 +887,7 @@ func TestWorkspaceAssetUpdatesStreamsInitialRefreshState(t *testing.T) {
 func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesGridAndUnusedRefreshFields(t *testing.T) {
 	store := testStore(t)
 	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=details", nil)
@@ -923,7 +923,7 @@ func TestWorkspaceAssetRefreshCommandPublishesRunningAndFinalState(t *testing.T)
 	token := testAPIToken(t, ctx, store, principal.ID, "workspace-refresh")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	updates, unsubscribe := server.broker.Subscribe(workspaceAssetStreamID("test", string(assetID), "details"))
 	defer unsubscribe()
 	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
@@ -960,7 +960,7 @@ func TestWorkspaceAssetRefreshCommandPublishesFailedError(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(failingRefreshAssetMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	updates, unsubscribe := server.broker.Subscribe(workspaceAssetStreamID("test", string(assetID), "refreshes"))
 	defer unsubscribe()
 	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
@@ -995,7 +995,7 @@ func TestWorkspaceModelTableRefreshCommandPersistsDirectAndDependencyRuns(t *tes
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	metrics := &dependentModelTableMetrics{}
 	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeModelTable, "olist.order_summary")
+	assetID := workspace.NewAssetID(workspace.AssetTypeModelTable, "olist.order_summary")
 	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
 	req := httptest.NewRequest(http.MethodPost, path, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1126,7 +1126,7 @@ func TestWorkspaceSemanticModelRefreshFailsWhenGraphMissing(t *testing.T) {
 	token := testAPIToken(t, ctx, store, principal.ID, "workspace-semantic-refresh-missing-graph")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(missingSemanticModelAssetMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
 	req := httptest.NewRequest(http.MethodPost, path, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1155,7 +1155,7 @@ func TestWorkspaceModelTableRefreshMarksDependencyAndRootFailedWhenDependencyFai
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	metrics := &failingDependencyModelTableMetrics{}
 	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeModelTable, "olist.order_summary")
+	assetID := workspace.NewAssetID(workspace.AssetTypeModelTable, "olist.order_summary")
 	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
 	req := httptest.NewRequest(http.MethodPost, path, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1194,7 +1194,7 @@ func TestWorkspaceSemanticModelRefreshCommandPersistsTableChildRuns(t *testing.T
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	metrics := &dependentModelTableMetrics{}
 	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	assetID := workspace.NewAssetID("local", workspace.AssetTypeSemanticModel, "olist")
+	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	path := "/workspaces/test/assets/" + string(assetID) + "/refresh-materializations"
 	req := httptest.NewRequest(http.MethodPost, path, nil)
 	req.Header.Set("Authorization", "Bearer "+token)

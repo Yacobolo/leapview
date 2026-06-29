@@ -10,16 +10,32 @@ type WorkspaceResponse struct {
 }
 
 type AssetResponse struct {
-	ID           string         `json:"id"`
-	WorkspaceID  string         `json:"workspaceId"`
-	DeploymentID string         `json:"deploymentId"`
-	Type         string         `json:"type"`
-	Key          string         `json:"key"`
-	ParentID     string         `json:"parentId,omitempty"`
-	Title        string         `json:"title"`
-	Description  string         `json:"description"`
-	Meta         map[string]any `json:"meta,omitempty"`
-	Href         string         `json:"href,omitempty"`
+	ID            string         `json:"id"`
+	SnapshotID    string         `json:"snapshotId"`
+	WorkspaceID   string         `json:"workspaceId"`
+	DeploymentID  string         `json:"deploymentId"`
+	Type          string         `json:"type"`
+	Key           string         `json:"key"`
+	ParentID      string         `json:"parentId,omitempty"`
+	Title         string         `json:"title"`
+	Description   string         `json:"description"`
+	PayloadSchema string         `json:"payloadSchema"`
+	Payload       map[string]any `json:"payload"`
+	Href          string         `json:"href,omitempty"`
+}
+
+type AssetSummaryResponse struct {
+	ID            string `json:"id"`
+	SnapshotID    string `json:"snapshotId"`
+	WorkspaceID   string `json:"workspaceId"`
+	DeploymentID  string `json:"deploymentId"`
+	Type          string `json:"type"`
+	Key           string `json:"key"`
+	ParentID      string `json:"parentId,omitempty"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	PayloadSchema string `json:"payloadSchema"`
+	Href          string `json:"href,omitempty"`
 }
 
 type AssetEdgeResponse struct {
@@ -29,6 +45,12 @@ type AssetEdgeResponse struct {
 	FromAssetID  string `json:"fromAssetId"`
 	ToAssetID    string `json:"toAssetId"`
 	Type         string `json:"type"`
+}
+
+type AssetLineageResponse struct {
+	AssetID    string   `json:"assetId"`
+	Upstream   []string `json:"upstream"`
+	Downstream []string `json:"downstream"`
 }
 
 type RoleResponse struct {

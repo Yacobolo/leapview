@@ -1,11 +1,9 @@
 package deployment
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"strings"
+
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 var ErrNotFound = errors.New("deployment not found")
@@ -57,73 +55,13 @@ type Artifact struct {
 	CreatedAt    string
 }
 
-type Asset struct {
-	ID             string
-	WorkspaceID    WorkspaceID
-	DeploymentID   ID
-	Type           string
-	Key            string
-	ParentID       string
-	Title          string
-	Description    string
-	ContentJSON    string
-	ContentHash    string
-	ContentVersion int
-}
-
-type AssetEdge struct {
-	ID           string
-	WorkspaceID  WorkspaceID
-	DeploymentID ID
-	FromAssetID  string
-	ToAssetID    string
-	Type         string
-}
-
 type Validation struct {
 	Digest       string
 	ManifestJSON string
 	RootDir      string
-	Assets       []Asset
-	Edges        []AssetEdge
+	Graph        workspace.AssetGraph
 }
 
 type PreparedRuntime interface {
 	Close() error
-}
-
-func NewAsset(workspaceID WorkspaceID, deploymentID ID, typ, key, parentID, title, description string, content any) (Asset, error) {
-	bytes, err := json.Marshal(content)
-	if err != nil {
-		return Asset{}, err
-	}
-	sum := sha256.Sum256(bytes)
-	return Asset{
-		ID:           "asset_" + stableID(string(deploymentID)+"|"+typ+"|"+key),
-		WorkspaceID:  workspaceID,
-		DeploymentID: deploymentID,
-		Type:         typ,
-		Key:          key,
-		ParentID:     parentID,
-		Title:        title,
-		Description:  description,
-		ContentJSON:  string(bytes),
-		ContentHash:  hex.EncodeToString(sum[:]),
-	}, nil
-}
-
-func NewAssetEdge(workspaceID WorkspaceID, deploymentID ID, fromID, toID, typ string) AssetEdge {
-	return AssetEdge{
-		ID:           "edge_" + stableID(string(deploymentID)+"|"+fromID+"|"+toID+"|"+typ),
-		WorkspaceID:  workspaceID,
-		DeploymentID: deploymentID,
-		FromAssetID:  fromID,
-		ToAssetID:    toID,
-		Type:         typ,
-	}
-}
-
-func stableID(value string) string {
-	sum := sha256.Sum256([]byte(strings.ToLower(value)))
-	return hex.EncodeToString(sum[:])[:32]
 }

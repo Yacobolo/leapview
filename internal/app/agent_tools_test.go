@@ -27,8 +27,11 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		"describe_model",
 		"get_deployment",
 		"get_materialization_run",
+		"asset_lineage",
+		"describe_asset",
 		"list_dashboard_components",
 		"list_dashboard_filter_options",
+		"list_assets",
 		"list_dashboards",
 		"list_deployments",
 		"list_materialization_runs",
@@ -36,7 +39,6 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		"list_semantic_fields",
 		"list_semantic_models",
 		"list_workspace_asset_edges",
-		"list_workspace_assets",
 		"list_workspaces",
 		"preview_semantic_dataset",
 		"query_dashboard_page",
@@ -69,15 +71,15 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		Properties map[string]any `json:"properties"`
 		Required   []string       `json:"required"`
 	}
-	if err := json.Unmarshal(names["list_workspace_assets"].InputSchema, &schema); err != nil {
-		t.Fatalf("decode list_workspace_assets schema: %v", err)
+	if err := json.Unmarshal(names["list_assets"].InputSchema, &schema); err != nil {
+		t.Fatalf("decode list_assets schema: %v", err)
 	}
 	if _, ok := schema.Properties["workspace"]; ok {
-		t.Fatalf("workspace should be injected from agent scope, not model arguments: %s", names["list_workspace_assets"].InputSchema)
+		t.Fatalf("workspace should be injected from agent scope, not model arguments: %s", names["list_assets"].InputSchema)
 	}
 	for _, want := range []string{"type", "q", "limit", "pageToken"} {
 		if _, ok := schema.Properties[want]; !ok {
-			t.Fatalf("schema missing query parameter %q: %s", want, names["list_workspace_assets"].InputSchema)
+			t.Fatalf("schema missing query parameter %q: %s", want, names["list_assets"].InputSchema)
 		}
 	}
 	if err := json.Unmarshal(names["search_workspace"].InputSchema, &schema); err != nil {
@@ -156,6 +158,8 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 	for toolName, wantProps := range map[string][]string{
 		"describe_dashboard":            {"dashboard"},
 		"describe_dashboard_visual":     {"dashboard", "page", "visual"},
+		"describe_asset":                {"assetId"},
+		"asset_lineage":                 {"assetId"},
 		"describe_model":                {"model"},
 		"list_dashboard_components":     {"dashboard", "page", "limit", "pageToken"},
 		"list_dashboard_filter_options": {"dashboard", "page", "filter", "filters", "limit", "pageToken"},
@@ -185,22 +189,22 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 }
 
 func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := NewWithOptions(manyEdgesMetrics{}, Options{DefaultWorkspaceID: "test"})
 	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
 	var listAssets agent.ToolDefinition
 	for _, tool := range tools {
-		if tool.Name == "list_workspace_assets" {
+		if tool.Name == "list_assets" {
 			listAssets = tool
 			break
 		}
 	}
 	if listAssets.Handler == nil {
-		t.Fatal("list_workspace_assets tool missing")
+		t.Fatal("list_assets tool missing")
 	}
 
 	result, err := listAssets.Handler.Run(context.Background(), agent.ToolCall{
 		ID:        "call_1",
-		Name:      "list_workspace_assets",
+		Name:      "list_assets",
 		Arguments: json.RawMessage(`{"type":"dashboard","limit":1}`),
 	})
 	if err != nil {
@@ -218,13 +222,87 @@ func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
 			ID          string `json:"id"`
 			WorkspaceID string `json:"workspaceId"`
 			Type        string `json:"type"`
+			Payload     any    `json:"payload"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("decode result: %v\n%s", err, body)
 	}
-	if len(decoded.Items) != 1 || decoded.Items[0].ID != "dashboard:executive-sales" || decoded.Items[0].WorkspaceID != "test" || decoded.Items[0].Type != "dashboard" {
+	if len(decoded.Items) != 1 || decoded.Items[0].ID != "dashboard:dashboard-0" || decoded.Items[0].WorkspaceID != "test" || decoded.Items[0].Type != "dashboard" {
 		t.Fatalf("tool result = %#v", decoded.Items)
+	}
+	if decoded.Items[0].Payload != nil {
+		t.Fatalf("list_assets returned payload in summary row: %#v", decoded.Items[0])
+	}
+}
+
+func TestAPIGenAgentAssetDescribeAndLineageToolsUseTypeSpecContracts(t *testing.T) {
+	catalog := testAgentAssetCatalog(t)
+	server := NewWithOptions(fakeMetrics{}, Options{
+		AssetCatalog:       fakeAssetCatalogReader{catalog: catalog},
+		DefaultWorkspaceID: "test",
+	})
+	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	names := map[string]agent.ToolDefinition{}
+	for _, tool := range tools {
+		names[tool.Name] = tool
+	}
+	for _, want := range []string{"describe_asset", "asset_lineage"} {
+		if names[want].Handler == nil {
+			t.Fatalf("missing asset tool %q in %#v", want, toolNames(tools))
+		}
+	}
+
+	result, err := names["describe_asset"].Handler.Run(context.Background(), agent.ToolCall{
+		ID:        "call_2",
+		Name:      "describe_asset",
+		Arguments: json.RawMessage(`{"assetId":"visual:executive-sales.revenue"}`),
+	})
+	if err != nil {
+		t.Fatalf("run describe_asset: %v", err)
+	}
+	body, err := json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("marshal describe_asset: %v", err)
+	}
+	var described struct {
+		ID            string         `json:"id"`
+		SnapshotID    string         `json:"snapshotId"`
+		PayloadSchema string         `json:"payloadSchema"`
+		Payload       map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(body, &described); err != nil {
+		t.Fatalf("decode describe_asset: %v body=%s", err, body)
+	}
+	if described.ID != "visual:executive-sales.revenue" || described.SnapshotID == "" || described.PayloadSchema != "visual.v1" || described.Payload["query_kind"] != "aggregate" {
+		t.Fatalf("describe_asset result = %#v", described)
+	}
+	if _, ok := described.Payload["auth"]; ok {
+		t.Fatalf("describe_asset leaked auth payload: %#v", described.Payload)
+	}
+
+	result, err = names["asset_lineage"].Handler.Run(context.Background(), agent.ToolCall{
+		ID:        "call_3",
+		Name:      "asset_lineage",
+		Arguments: json.RawMessage(`{"assetId":"visual:executive-sales.revenue"}`),
+	})
+	if err != nil {
+		t.Fatalf("run asset_lineage: %v", err)
+	}
+	body, err = json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("marshal asset_lineage: %v", err)
+	}
+	var lineage struct {
+		AssetID    string   `json:"assetId"`
+		Upstream   []string `json:"upstream"`
+		Downstream []string `json:"downstream"`
+	}
+	if err := json.Unmarshal(body, &lineage); err != nil {
+		t.Fatalf("decode asset_lineage: %v body=%s", err, body)
+	}
+	if lineage.AssetID != "visual:executive-sales.revenue" || !stringSliceHas(lineage.Upstream, "dashboard:executive-sales") || !stringSliceHas(lineage.Downstream, "measure:olist.revenue") {
+		t.Fatalf("asset_lineage result = %#v", lineage)
 	}
 }
 
@@ -462,6 +540,62 @@ func toolNames(tools []agent.ToolDefinition) []string {
 	return names
 }
 
+type fakeAssetCatalogReader struct {
+	catalog workspace.AssetCatalog
+	ok      bool
+	err     error
+}
+
+func (f fakeAssetCatalogReader) ActiveAssetCatalog(_ context.Context, _ workspace.WorkspaceID) (workspace.AssetCatalog, bool, error) {
+	if f.err != nil {
+		return workspace.AssetCatalog{}, false, f.err
+	}
+	ok := f.ok
+	if !ok && (len(f.catalog.Assets) > 0 || len(f.catalog.Edges) > 0) {
+		ok = true
+	}
+	return f.catalog, ok, nil
+}
+
+func testAgentAssetCatalog(t *testing.T) workspace.AssetCatalog {
+	t.Helper()
+	workspaceID := workspace.WorkspaceID("test")
+	deploymentID := workspace.DeploymentID("deploy_a")
+	dashboard, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeDashboard, "executive-sales", "", "Executive Sales", "", "dashboard.v1", map[string]any{"semantic_model": "olist"})
+	if err != nil {
+		t.Fatalf("dashboard asset: %v", err)
+	}
+	measure, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeMeasure, "olist.revenue", "", "Revenue", "", "measure.v1", map[string]any{"table": "orders"})
+	if err != nil {
+		t.Fatalf("measure asset: %v", err)
+	}
+	visual, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeVisual, "executive-sales.revenue", dashboard.ID, "Revenue", "", "visual.v1", map[string]any{"query_kind": "aggregate"})
+	if err != nil {
+		t.Fatalf("visual asset: %v", err)
+	}
+	graph := workspace.AssetGraph{
+		Assets: []workspace.Asset{dashboard, measure, visual},
+		Edges: []workspace.AssetEdge{
+			workspace.NewAssetEdge(workspaceID, deploymentID, dashboard.ID, visual.ID, workspace.AssetEdgeContains),
+			workspace.NewAssetEdge(workspaceID, deploymentID, visual.ID, measure.ID, workspace.AssetEdgeUsesMeasure),
+		},
+	}
+	catalog, err := workspace.DecodeAssetCatalog(graph)
+	if err != nil {
+		t.Fatalf("decode asset catalog: %v", err)
+	}
+	return catalog
+}
+
+func stringSliceHas(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 type manyEdgesMetrics struct {
 	fakeMetrics
 }
@@ -479,7 +613,7 @@ func (manySemanticRowsMetrics) QuerySemantic(_ context.Context, _ string, reques
 }
 
 func (manyEdgesMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
-	root, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, "catalog", "", "Catalog", "", map[string]any{})
+	root, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, "catalog", "", "Catalog", "", "catalog.v1", map[string]any{})
 	if err != nil {
 		return nil, nil, false
 	}
@@ -487,7 +621,7 @@ func (manyEdgesMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]wor
 	edges := make([]workspace.AssetEdge, 0, 30)
 	for i := 0; i < 30; i++ {
 		key := "dashboard-" + strconv.Itoa(i)
-		child, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeDashboard, key, root.ID, "Dashboard", "", map[string]any{"index": i})
+		child, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeDashboard, key, root.ID, "Dashboard", "", "dashboard.v1", map[string]any{"index": i})
 		if err != nil {
 			return nil, nil, false
 		}

@@ -547,8 +547,7 @@ func seedIntegrationActiveDeployment(t *testing.T, store *platform.Store, worksp
 	validation := deployment.Validation{
 		Digest:       "digest-" + string(created.ID),
 		ManifestJSON: "{}",
-		Assets:       integrationDeploymentAssets(graph.Assets),
-		Edges:        integrationDeploymentEdges(graph.Edges),
+		Graph:        graph,
 	}
 	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, integrationZeroArtifact(created.ID, workspaceID)); err != nil {
 		t.Fatalf("save validated deployment: %v", err)
@@ -587,41 +586,6 @@ func integrationZeroArtifact(deploymentID deployment.ID, workspaceID string) dep
 		Path:         "artifact.tar.gz",
 		ManifestJSON: "{}",
 	}
-}
-
-func integrationDeploymentAssets(rows []workspace.Asset) []deployment.Asset {
-	assets := make([]deployment.Asset, 0, len(rows))
-	for _, row := range rows {
-		assets = append(assets, deployment.Asset{
-			ID:             string(row.ID),
-			WorkspaceID:    deployment.WorkspaceID(row.WorkspaceID),
-			DeploymentID:   deployment.ID(row.DeploymentID),
-			Type:           string(row.Type),
-			Key:            row.Key,
-			ParentID:       string(row.ParentID),
-			Title:          row.Title,
-			Description:    row.Description,
-			ContentJSON:    row.ContentJSON,
-			ContentHash:    row.ContentHash,
-			ContentVersion: row.ContentVersion,
-		})
-	}
-	return assets
-}
-
-func integrationDeploymentEdges(rows []workspace.AssetEdge) []deployment.AssetEdge {
-	edges := make([]deployment.AssetEdge, 0, len(rows))
-	for _, row := range rows {
-		edges = append(edges, deployment.AssetEdge{
-			ID:           string(row.ID),
-			WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
-			DeploymentID: deployment.ID(row.DeploymentID),
-			FromAssetID:  string(row.FromAssetID),
-			ToAssetID:    string(row.ToAssetID),
-			Type:         string(row.Type),
-		})
-	}
-	return edges
 }
 
 type integrationDataRuntimeFactory struct{}

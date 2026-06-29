@@ -724,7 +724,7 @@ func WorkspaceAssetRefreshSignals(workspace workspaceview.WorkspaceView, asset w
 	switch activeSection {
 	case "details":
 		if asset.Type == "semantic_model" {
-			signals["assetDetailsSemanticModelTablesGrid"] = semanticModelTablesGrid(workspace.ID, asset, assets, asset.Meta, refresh)
+			signals["assetDetailsSemanticModelTablesGrid"] = semanticModelTablesGrid(workspace.ID, asset, assets, asset.Payload, refresh)
 		}
 	case "refreshes":
 		signals["assetRefreshesGrid"] = assetRefreshesGrid(refresh)
@@ -1573,7 +1573,7 @@ func assetDetailSectionNode(section assetDetailSection) g.Node {
 }
 
 func assetDetailUsesCodeBlock(asset workspaceview.AssetView) bool {
-	return asset.Type == "model_table" && modelTableSQL(asset.Meta) != ""
+	return asset.Type == "model_table" && modelTableSQL(asset.Payload) != ""
 }
 
 func assetDetailModelForAsset(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView) assetDetailModel {
@@ -1600,7 +1600,7 @@ func assetDetailModelForAssetWithRefresh(workspace workspaceview.WorkspaceView, 
 	case "field":
 		model.Overview = append(model.Overview, metricLeafFacts(asset)...)
 	default:
-		model.Overview = append(model.Overview, metaFacts(asset.Meta)...)
+		model.Overview = append(model.Overview, metaFacts(asset.Payload)...)
 	}
 	return model
 }
@@ -1627,7 +1627,7 @@ func shouldShowParentFact(typ string) bool {
 }
 
 func semanticModelDetailModel(model *assetDetailModel, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, refresh AssetRefreshState) {
-	meta := asset.Meta
+	meta := asset.Payload
 	modelTableMeta := metaMap(meta, "Tables", "tables", "Models", "models")
 	modelTables := sortedMapKeys(modelTableMeta)
 	measures := sortedMapKeys(metaMap(meta, "Measures", "measures"))
@@ -1812,25 +1812,25 @@ func semanticMeasureCountsByTable(measures map[string]any) map[string]int {
 
 func modelTableDetailModel(model *assetDetailModel, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, refresh AssetRefreshState) {
 	modelKey, tableName := modelTableKeyParts(asset)
-	fields := modelTableFields(asset.Meta)
+	fields := modelTableFields(asset.Payload)
 	mode := "Unspecified"
-	if modelTableSQL(asset.Meta) != "" {
+	if modelTableSQL(asset.Payload) != "" {
 		mode = "Transform"
-	} else if metaString(asset.Meta, "Source", "source") != "" {
+	} else if metaString(asset.Payload, "Source", "source") != "" {
 		mode = "Direct source"
 	}
 	semanticModel := assetByTypeKey("semantic_model", modelKey, assets)
 	model.Overview = append(model.Overview,
 		definitionFact{Label: "Semantic model", Value: assetTitle(semanticModel)},
-		definitionFact{Label: "Primary key", Value: metaString(asset.Meta, "PrimaryKey", "primary_key"), Code: true},
-		definitionFact{Label: "Grain", Value: metaString(asset.Meta, "Grain", "grain"), Code: true},
+		definitionFact{Label: "Primary key", Value: metaString(asset.Payload, "PrimaryKey", "primary_key"), Code: true},
+		definitionFact{Label: "Grain", Value: metaString(asset.Payload, "Grain", "grain"), Code: true},
 		definitionFact{Label: "Mode", Value: mode},
 	)
 	model.Overview = append(model.Overview, refreshOverviewFacts(refresh)...)
 	model.Sections = append(model.Sections,
-		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", len(fields)), Signal: "assetDetailsModelTableFieldsGrid", Grid: modelTableFieldsGrid(workspace.ID, modelKey, tableName, fields, metaMap(asset.Meta, "Schema", "schema"), assets)},
+		assetDetailSection{Title: fmt.Sprintf("Fields (%d)", len(fields)), Signal: "assetDetailsModelTableFieldsGrid", Grid: modelTableFieldsGrid(workspace.ID, modelKey, tableName, fields, metaMap(asset.Payload, "Schema", "schema"), assets)},
 	)
-	if sql := modelTableSQL(asset.Meta); sql != "" {
+	if sql := modelTableSQL(asset.Payload); sql != "" {
 		model.Sections = append(model.Sections, assetDetailSection{Title: "SQL", Lang: "sql", Code: sql})
 	}
 }
@@ -1852,8 +1852,8 @@ func modelTableFields(meta map[string]any) map[string]any {
 }
 
 func sourceDetailModel(model *assetDetailModel, asset workspaceview.AssetView) {
-	fields := metaMap(asset.Meta, "Fields", "fields")
-	schema := metaMap(asset.Meta, "Schema", "schema")
+	fields := metaMap(asset.Payload, "Fields", "fields")
+	schema := metaMap(asset.Payload, "Schema", "schema")
 	columns := modelTableSchemaColumns(fields, schema)
 	model.Overview = append(model.Overview, sourceFacts(asset)...)
 	model.Sections = append(model.Sections,
@@ -2082,8 +2082,8 @@ func dashboardDetailModel(model *assetDetailModel, asset workspaceview.AssetView
 	visuals := childrenByType(asset.ID, "visual", assets)
 	tables := childrenByType(asset.ID, "table", assets)
 	model.Overview = append(model.Overview,
-		definitionFact{Label: "Semantic model", Value: metaString(asset.Meta, "SemanticModel", "semantic_model")},
-		definitionFact{Label: "Tags", Value: strings.Join(stringSlice(metaValue(asset.Meta, "Tags", "tags")), ", ")},
+		definitionFact{Label: "Semantic model", Value: metaString(asset.Payload, "SemanticModel", "semantic_model")},
+		definitionFact{Label: "Tags", Value: strings.Join(stringSlice(metaValue(asset.Payload, "Tags", "tags")), ", ")},
 	)
 	model.Sections = append(model.Sections,
 		assetDetailSection{Title: fmt.Sprintf("Pages (%d)", len(pages)), Signal: "assetDetailsPagesGrid", Grid: dashboardPagesGrid(asset, pages)},
@@ -2127,8 +2127,8 @@ func dashboardFiltersGrid(parent workspaceview.AssetView, filters []workspacevie
 			"filter":     assetTitle(filter),
 			"filterHref": assetnav.WorkspaceAssetSectionHref(parent.WorkspaceID, filter.ID, "details"),
 			"key":        assetChildName(parent, filter),
-			"field":      emptyDash(metaString(filter.Meta, "Dimension", "dimension", "Field", "field")),
-			"type":       emptyDash(metaString(filter.Meta, "Type", "type", "Kind", "kind")),
+			"field":      emptyDash(metaString(filter.Payload, "Dimension", "dimension", "Field", "field")),
+			"type":       emptyDash(metaString(filter.Payload, "Type", "type", "Kind", "kind")),
 		})
 	}
 	return metricGrid{
@@ -2148,12 +2148,12 @@ func dashboardVisualsGrid(parent workspaceview.AssetView, visuals []workspacevie
 	sortAssetChildren(parent, visuals)
 	rows := make([]map[string]any, 0, len(visuals))
 	for _, visual := range visuals {
-		query := metaMap(visual.Meta, "Query", "query")
+		query := metaMap(visual.Payload, "Query", "query")
 		rows = append(rows, map[string]any{
 			"visual":     assetTitle(visual),
 			"visualHref": assetnav.WorkspaceAssetSectionHref(parent.WorkspaceID, visual.ID, "details"),
 			"key":        assetChildName(parent, visual),
-			"type":       emptyDash(firstNonEmpty(metaString(visual.Meta, "Shape", "shape"), metaString(visual.Meta, "Type", "type"), metaString(visual.Meta, "Kind", "kind"))),
+			"type":       emptyDash(firstNonEmpty(metaString(visual.Payload, "Shape", "shape"), metaString(visual.Payload, "Type", "type"), metaString(visual.Payload, "Kind", "kind"))),
 			"measures":   emptyDash(strings.Join(stringSlice(metaValue(query, "Measures", "measures")), ", ")),
 			"dimensions": emptyDash(strings.Join(stringSlice(metaValue(query, "Dimensions", "dimensions")), ", ")),
 		})
@@ -2180,9 +2180,9 @@ func dashboardTablesGrid(parent workspaceview.AssetView, tables []workspaceview.
 			"table":     assetTitle(table),
 			"tableHref": assetnav.WorkspaceAssetSectionHref(parent.WorkspaceID, table.ID, "details"),
 			"key":       assetChildName(parent, table),
-			"baseTable": emptyDash(metaString(metaMap(table.Meta, "Query", "query"), "Table", "table")),
-			"rows":      emptyDash(strings.Join(stringSlice(metaValue(table.Meta, "Rows", "rows")), ", ")),
-			"measures":  emptyDash(strings.Join(stringSlice(metaValue(table.Meta, "Measures", "measures")), ", ")),
+			"baseTable": emptyDash(metaString(metaMap(table.Payload, "Query", "query"), "Table", "table")),
+			"rows":      emptyDash(strings.Join(stringSlice(metaValue(table.Payload, "Rows", "rows")), ", ")),
+			"measures":  emptyDash(strings.Join(stringSlice(metaValue(table.Payload, "Measures", "measures")), ", ")),
 		})
 	}
 	return metricGrid{
@@ -2237,29 +2237,29 @@ func sourcesUsingConnection(connectionID string, assets []workspaceview.AssetVie
 
 func connectionFacts(asset workspaceview.AssetView) []definitionFact {
 	return []definitionFact{
-		{Label: "Kind", Value: metaString(asset.Meta, "Kind", "kind")},
-		{Label: "Scope", Value: metaString(asset.Meta, "Scope", "scope")},
-		{Label: "Root", Value: metaString(asset.Meta, "Root", "root")},
-		{Label: "Path", Value: metaString(asset.Meta, "Path", "path")},
-		{Label: "Credentials", Value: boolLabel(metaBool(asset.Meta, "credentials_configured"))},
-		{Label: "Options", Value: compactJSON(metaValue(asset.Meta, "Options", "options"))},
+		{Label: "Kind", Value: metaString(asset.Payload, "Kind", "kind")},
+		{Label: "Scope", Value: metaString(asset.Payload, "Scope", "scope")},
+		{Label: "Root", Value: metaString(asset.Payload, "Root", "root")},
+		{Label: "Path", Value: metaString(asset.Payload, "Path", "path")},
+		{Label: "Credentials", Value: boolLabel(metaBool(asset.Payload, "credentials_configured"))},
+		{Label: "Options", Value: compactJSON(metaValue(asset.Payload, "Options", "options"))},
 	}
 }
 
 func sourceFacts(asset workspaceview.AssetView) []definitionFact {
 	return []definitionFact{
-		{Label: "Connection", Value: metaString(asset.Meta, "Connection", "connection")},
-		{Label: "Format", Value: metaString(asset.Meta, "Format", "format")},
-		{Label: "Path", Value: metaString(asset.Meta, "Path", "path")},
-		{Label: "Object", Value: metaString(asset.Meta, "Object", "object")},
-		{Label: "Options", Value: compactJSON(metaValue(asset.Meta, "Options", "options"))},
+		{Label: "Connection", Value: metaString(asset.Payload, "Connection", "connection")},
+		{Label: "Format", Value: metaString(asset.Payload, "Format", "format")},
+		{Label: "Path", Value: metaString(asset.Payload, "Path", "path")},
+		{Label: "Object", Value: metaString(asset.Payload, "Object", "object")},
+		{Label: "Options", Value: compactJSON(metaValue(asset.Payload, "Options", "options"))},
 	}
 }
 
 func metricLeafFacts(asset workspaceview.AssetView) []definitionFact {
 	facts := []definitionFact{}
 	for _, key := range []string{"Expression", "expression", "Expr", "expr", "Where", "where", "OrderExpr", "order_expr", "Unit", "unit", "Format", "format"} {
-		if value := metaString(asset.Meta, key); strings.TrimSpace(value) != "" {
+		if value := metaString(asset.Payload, key); strings.TrimSpace(value) != "" {
 			facts = append(facts, definitionFact{Label: labelFromKey(key), Value: value, Code: strings.Contains(strings.ToLower(key), "expr") || strings.EqualFold(key, "expression")})
 		}
 	}

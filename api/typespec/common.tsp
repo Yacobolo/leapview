@@ -18,6 +18,8 @@ model StatusResponse {
   status: string;
 }
 
+alias JSONObject = Record<string>;
+
 model OkJson<T> {
   ...OkResponse;
   ...Body<T>;

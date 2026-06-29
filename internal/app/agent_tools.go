@@ -320,6 +320,10 @@ func (s *Server) authorizeAPIGenAgentTool(ctx context.Context, scope agentapp.Sc
 	if permission == "" {
 		return apigenAgentToolError("forbidden", "operation has no LibreDash permission mapping"), false
 	}
+	return s.authorizeAgentPermission(ctx, scope, permission)
+}
+
+func (s *Server) authorizeAgentPermission(ctx context.Context, scope agentapp.Scope, permission string) (agent.ToolResult, bool) {
 	if scope.PrincipalID == "" {
 		return apigenAgentToolError("unauthorized", "agent tool requires an authenticated principal"), false
 	}

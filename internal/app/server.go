@@ -47,6 +47,7 @@ type Server struct {
 	store              *platform.Store
 	deploymentRepo     deploymentRepository
 	workspaceRepo      workspace.Repository
+	assetCatalog       workspace.AssetCatalogReader
 	accessRepo         access.Repository
 	agent              *agentapp.Service
 	auth               *Auth
@@ -69,6 +70,7 @@ type Options struct {
 	Store              *platform.Store
 	DeploymentRepo     deploymentRepository
 	WorkspaceRepo      workspace.Repository
+	AssetCatalog       workspace.AssetCatalogReader
 	AccessRepo         access.Repository
 	Agent              *agentapp.Service
 	Auth               *Auth
@@ -86,6 +88,7 @@ func NewWithOptions(metrics queryMetrics, options Options) *Server {
 	server.store = options.Store
 	server.deploymentRepo = options.DeploymentRepo
 	server.workspaceRepo = options.WorkspaceRepo
+	server.assetCatalog = options.AssetCatalog
 	server.accessRepo = options.AccessRepo
 	server.agent = options.Agent
 	server.auth = options.Auth
