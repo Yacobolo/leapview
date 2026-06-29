@@ -21,7 +21,7 @@ tasks:
   bootstrap:
     desc: Download/sync Olist CSVs if missing
     cmds:
-      - python3 scripts/bootstrap_olist.py
+      - go run ./internal/tools/bootstrapolist
 
   dev:stop:
     desc: Stop the managed LibreDash dev server for this worktree

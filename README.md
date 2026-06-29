@@ -13,14 +13,13 @@ task dev
 Generated files such as `static/app.css`, route entrypoints, and other bundled component assets are intentionally not checked in. If you run the app without `task dev`, build assets first:
 
 ```sh
-python3 -m pip install -r scripts/requirements.txt
 bun install
 bun run build
-python3 scripts/bootstrap_olist.py
+go run ./internal/tools/bootstrapolist
 go run ./cmd/libredash
 ```
 
-By default, the bootstrap script copies CSVs into `.data/olist`. To use a different path:
+By default, the bootstrap tool copies CSVs into `.data/olist`. To use a different path:
 
 ```sh
 export LIBREDASH_DATA_DIR=/path/to/olist-csvs

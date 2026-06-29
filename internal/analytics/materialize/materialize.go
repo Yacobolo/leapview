@@ -44,7 +44,7 @@ type MissingDataError struct {
 }
 
 func (e *MissingDataError) Error() string {
-	return fmt.Sprintf("local source files are missing in %s: %s. Run the workspace bootstrap script or set LIBREDASH_DATA_DIR.", e.DataDir, strings.Join(e.Missing, ", "))
+	return fmt.Sprintf("local source files are missing in %s: %s. Run the workspace bootstrap tool or set LIBREDASH_DATA_DIR.", e.DataDir, strings.Join(e.Missing, ", "))
 }
 
 func (e *MissingDataError) SetupRequired() bool {

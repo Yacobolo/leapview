@@ -39,7 +39,7 @@ The current product goal is to feel like a small Power BI-style workspace: dashb
 - `dashboards/olist/executive-sales.yaml` is the main demo dashboard and report-page definition.
 - `web/components/` contains Lit source components; `web/components/chart/` contains the visual renderer registry, ECharts renderer, adapters, maps, and shared chart types/utilities.
 - `static/` contains the built browser assets served by Go.
-- `scripts/bootstrap_olist.py` downloads/syncs the Olist CSV dataset into `.data/olist` unless `LIBREDASH_DATA_DIR` is set.
+- `internal/tools/bootstrapolist` downloads/syncs the Olist CSV dataset into `.data/olist` unless `LIBREDASH_DATA_DIR` is set.
 
 ## Useful Commands
 
