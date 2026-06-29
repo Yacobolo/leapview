@@ -68,9 +68,9 @@ tasks:
   generate:
     desc: Generate all checked-out derived code needed for local development
     cmds:
-      - task api:generate
-      - task schema:generate
-      - task ui-signals:generate
+      - task: api:generate
+      - task: schema:generate
+      - task: ui-signals:generate
 
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces
