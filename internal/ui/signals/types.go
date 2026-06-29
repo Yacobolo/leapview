@@ -668,7 +668,7 @@ func DashboardInitialEnvelope(dataDir, clientID, csrfToken string, catalog dashb
 			ModelTitle:     modelTitle,
 			Canvas:         activePage.Canvas,
 			Grid:           activePage.Grid,
-			Pages:          dashboardPageNav(report.ID, pages, activePage),
+			Pages:          dashboardPageNav(catalog.Workspace.ID, report.ID, pages, activePage),
 			Components:     dashboardComponents(activePage),
 		},
 		Runtime: RouteRuntimeSignal{
@@ -936,13 +936,13 @@ func ValidateChatEnvelope(envelope ChatEnvelope) error {
 	return nil
 }
 
-func dashboardPageNav(reportID string, pages []dashboard.Page, activePage dashboard.Page) []DashboardPageNavSignal {
+func dashboardPageNav(workspaceID, reportID string, pages []dashboard.Page, activePage dashboard.Page) []DashboardPageNavSignal {
 	items := make([]DashboardPageNavSignal, 0, len(pages))
 	for _, page := range pages {
 		items = append(items, DashboardPageNavSignal{
 			ID:     page.ID,
 			Title:  page.Title,
-			Href:   "/dashboards/" + reportID + "/pages/" + page.ID,
+			Href:   "/workspaces/" + workspaceID + "/dashboards/" + reportID + "/pages/" + page.ID,
 			Active: page.ID == activePage.ID,
 		})
 	}

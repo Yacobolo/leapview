@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
@@ -53,16 +55,43 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	}
 	if !opts.production {
 		catalogPath := opts.localCatalog
-		if catalogPath != "" {
+		if catalogPath == "" {
+			catalogPath, err = dashboardruntime.DiscoverCatalogPath()
+			if err != nil {
+				return err
+			}
+		} else {
 			if err := os.Setenv("LIBREDASH_CATALOG_PATH", catalogPath); err != nil {
 				return err
 			}
 		}
-		metrics, err := dashboardruntime.New(dataDir, dashboardDataRuntimeFactory{})
+		var (
+			metrics   app.QueryMetrics
+			closeFunc func()
+		)
+		projectMetrics, err := dashboardruntime.NewFromProject(dataDir, catalogPath, duckDBDirPath(cfg), dashboardDataRuntimeFactory{})
 		if err != nil {
 			return fmt.Errorf("initializing DuckDB metrics: %w", err)
 		}
-		defer metrics.Close()
+		workspaceMetrics := make(map[string]app.QueryMetrics, len(projectMetrics))
+		workspaceIDs := make([]string, 0, len(projectMetrics))
+		for workspaceID, service := range projectMetrics {
+			workspaceIDs = append(workspaceIDs, workspaceID)
+			workspaceMetrics[workspaceID] = service
+		}
+		sort.Strings(workspaceIDs)
+		defaultWorkspaceID := opts.workspaceID
+		if len(workspaceIDs) > 0 && defaultWorkspaceID == "" {
+			defaultWorkspaceID = workspaceIDs[0]
+		}
+		metrics = app.NewMultiWorkspaceMetrics(defaultWorkspaceID, workspaceMetrics)
+		closeFunc = func() {
+			for _, service := range projectMetrics {
+				_ = service.Close()
+			}
+		}
+		opts.workspaceID = defaultWorkspaceID
+		defer closeFunc()
 		server, cleanup, err := localDevServer(ctx, metrics, cfg, opts.workspaceID)
 		if err != nil {
 			return err
@@ -147,7 +176,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	return http.ListenAndServe(addr, server.Routes())
 }
 
-func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg config.Config, workspaceID string) (*app.Server, func(), error) {
+func localDevServer(ctx context.Context, metrics app.QueryMetrics, cfg config.Config, workspaceID string) (*app.Server, func(), error) {
 	duckDBDir := ""
 	if metrics != nil {
 		duckDBDir = metrics.DataDir()
@@ -172,7 +201,10 @@ func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg 
 		return nil, nil, err
 	}
 	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
-	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo).WithRuntimeProvider(metrics)
+	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo)
+	if provider, ok := metrics.(workspace.RuntimeAssetGraphProvider); ok {
+		assetCatalog = assetCatalog.WithRuntimeProvider(provider)
+	}
 	auth := app.NewAuth(accessRepo, workspaceID, app.AuthConfig{
 		DevBypass:    true,
 		CSRFKey:      cfg.CSRFKey,
@@ -194,6 +226,13 @@ func localDevServer(ctx context.Context, metrics *dashboardruntime.Service, cfg 
 		DefaultWorkspaceID: workspaceID,
 	})
 	return server, cleanup, nil
+}
+
+func duckDBDirPath(cfg config.Config) string {
+	if cfg.DuckDBDir != "" {
+		return cfg.DuckDBDirPath()
+	}
+	return filepath.Join(cfg.DataDir, ".duckdb")
 }
 
 func agentConfig(cfg config.Config) agentapp.Config {

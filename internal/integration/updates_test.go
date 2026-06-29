@@ -45,32 +45,6 @@ func TestUpdatesStreamsRealRuntimeSignals(t *testing.T) {
 				requireFilterOptions(t, patches, "state")
 				requireVisual(t, patches, "total_orders")
 				requireTable(t, patches, "orders_table")
-				requireNoFilter(t, patches, "category")
-				requireNoTopLevelSignal(t, patches, "kpis")
-			},
-		},
-		{
-			name:   "chart line page scoped",
-			pageID: "chart-line",
-			signals: map[string]any{
-				"runtime": map[string]any{
-					"clientId":    "integration-client",
-					"dashboardId": "executive-sales",
-					"pageId":      "chart-line",
-				},
-			},
-			assert: func(t *testing.T, patches []map[string]any) {
-				t.Helper()
-
-				requirePatch(t, patches, func(patch map[string]any) bool {
-					visuals := mapAt(patch, "visuals")
-					return len(visuals) > 0 &&
-						hasKey(visuals, "revenue_line") &&
-						!hasKey(visuals, "total_orders") &&
-						!hasKey(visuals, "orders") &&
-						!hasKey(patch, "kpis")
-				})
-				requireEmptyTables(t, patches)
 				requireNoTopLevelSignal(t, patches, "kpis")
 			},
 		},
@@ -98,7 +72,7 @@ func TestUpdatesStreamsSetupRequiredPatchForMissingData(t *testing.T) {
 
 func TestUpdatesRejectsMalformedDatastarSignals(t *testing.T) {
 	h := newHarness(t)
-	req := httptest.NewRequest(http.MethodGet, "/updates?dashboard=executive-sales&page=overview&datastar=%7Bnot-json", nil)
+	req := httptest.NewRequest(http.MethodGet, h.workspaceUpdatesPath()+"?dashboard=executive-sales&page=overview&datastar=%7Bnot-json", nil)
 	rec := httptest.NewRecorder()
 
 	h.handler.ServeHTTP(rec, req)

@@ -248,7 +248,7 @@ func (s *Server) refreshSemanticModelAssetWithPatches(ctx context.Context, r *ht
 	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
 	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
 		WorkspaceID: workspaceID,
-		ModelID:     asset.Key,
+		ModelID:     semanticModelTargetID(asset),
 		PrincipalID: principal.ID,
 	}, refreshPublisher{
 		Root: func() { s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges) },
@@ -301,7 +301,7 @@ func (s *Server) publishModelRefreshPatches(ctx context.Context, workspaceID, mo
 	view := catalogWorkspaceView(s.metrics.Catalog())
 	view.ID = workspaceID
 	for _, asset := range assets {
-		if asset.Type == string(workspace.AssetTypeSemanticModel) && asset.Key != modelID {
+		if asset.Type == string(workspace.AssetTypeSemanticModel) && semanticModelTargetID(asset) != modelID {
 			continue
 		}
 		if asset.Type == string(workspace.AssetTypeModelTable) {
@@ -379,7 +379,8 @@ func (s *Server) assetRefreshStateForContext(ctx context.Context, workspaceID st
 	if asset.Type == string(workspace.AssetTypeModelTable) {
 		targetType = materialize.TargetModelTable
 	}
-	runs, err := repo.ListTargetRuns(ctx, workspaceID, targetType, asset.Key, materialize.RunPage{Limit: 50})
+	targetID := assetRefreshTargetID(asset)
+	runs, err := repo.ListTargetRuns(ctx, workspaceID, targetType, targetID, materialize.RunPage{Limit: 50})
 	if err != nil {
 		return ui.AssetRefreshState{}, err
 	}
@@ -387,7 +388,7 @@ func (s *Server) assetRefreshStateForContext(ctx context.Context, workspaceID st
 	if len(state.Runs) > 0 {
 		state.Latest = state.Runs[0]
 	}
-	if latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, workspaceID, targetType, asset.Key); err != nil {
+	if latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, workspaceID, targetType, targetID); err != nil {
 		return ui.AssetRefreshState{}, err
 	} else if ok {
 		state.LatestSuccessful = uiRefreshRun(latest)
@@ -423,6 +424,23 @@ func uiRefreshRun(run materialize.RunRecord) ui.AssetRefreshRun {
 
 func workspaceAssetRefreshable(asset workspace.AssetView) bool {
 	return asset.Type == string(workspace.AssetTypeSemanticModel) || asset.Type == string(workspace.AssetTypeModelTable)
+}
+
+func assetRefreshTargetID(asset workspace.AssetView) string {
+	if asset.Type == string(workspace.AssetTypeSemanticModel) {
+		return semanticModelTargetID(asset)
+	}
+	return asset.Key
+}
+
+func semanticModelTargetID(asset workspace.AssetView) string {
+	if name, ok := asset.Payload["Name"].(string); ok && strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
+	}
+	if name, ok := asset.Payload["name"].(string); ok && strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
+	}
+	return asset.Key
 }
 
 func modelTableTargetParts(key string) (string, string) {

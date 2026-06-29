@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -12,6 +13,23 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 	graph := workspace.AssetGraph{}
 	byKey := map[string]workspace.AssetID{}
 	seenEdges := map[string]struct{}{}
+	workspaceKey := func(name string) string {
+		return string(workspaceID) + "." + name
+	}
+	sourceKey := func(runtimeName string) string {
+		if definition.SourceIDs != nil {
+			if globalName, ok := definition.SourceIDs[runtimeName]; ok {
+				return globalName
+			}
+		}
+		return runtimeName
+	}
+	sourceTitle := func(sourceID string) string {
+		if _, title, ok := strings.Cut(sourceID, "."); ok && title != "" {
+			return title
+		}
+		return sourceID
+	}
 	add := func(typ workspace.AssetType, key string, parentID workspace.AssetID, title, description string, payload any) (workspace.AssetID, error) {
 		asset, err := workspace.NewAsset(workspaceID, deploymentID, typ, key, parentID, title, description, workspace.PayloadSchemaForAssetType(typ), payload)
 		if err != nil {
@@ -48,7 +66,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		model := definition.Models[modelEntry.ID]
 		for _, connectionName := range sortedMapKeys(model.Connections) {
 			connection := model.Connections[connectionName]
-			id, err := add(workspace.AssetTypeConnection, modelEntry.ID+"."+connectionName, catalogID, connectionName, connection.Description, connectionPayload(connection))
+			id, err := add(workspace.AssetTypeConnection, connectionName, catalogID, connectionName, connection.Description, connectionPayload(connection))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -56,12 +74,13 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, sourceName := range sortedMapKeys(model.Sources) {
 			source := model.Sources[sourceName]
-			id, err := add(workspace.AssetTypeSource, modelEntry.ID+"."+sourceName, catalogID, sourceName, source.Description, sourcePayload(source))
+			globalSourceName := sourceKey(sourceName)
+			id, err := add(workspace.AssetTypeSource, globalSourceName, catalogID, sourceTitle(globalSourceName), source.Description, sourcePayload(source))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
 			edge(catalogID, id, workspace.AssetEdgeContains)
-			connectionID, err := assetID(workspace.AssetTypeConnection, modelEntry.ID+"."+source.Connection)
+			connectionID, err := assetID(workspace.AssetTypeConnection, source.Connection)
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -69,7 +88,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, tableName := range sortedMapKeys(model.Tables) {
 			table := model.Tables[tableName]
-			id, err := add(workspace.AssetTypeModelTable, modelEntry.ID+"."+tableName, catalogID, tableName, table.Description, modelTablePayload(table))
+			id, err := add(workspace.AssetTypeModelTable, workspaceKey(tableName), catalogID, tableName, table.Description, modelTablePayload(table))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -77,38 +96,40 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, tableName := range sortedMapKeys(model.Tables) {
 			table := model.Tables[tableName]
-			id, err := assetID(workspace.AssetTypeModelTable, modelEntry.ID+"."+tableName)
+			id, err := assetID(workspace.AssetTypeModelTable, workspaceKey(tableName))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
 			for _, sourceName := range table.SourceDependencies {
-				sourceID, err := assetID(workspace.AssetTypeSource, modelEntry.ID+"."+sourceName)
+				sourceID, err := assetID(workspace.AssetTypeSource, sourceKey(sourceName))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
 				edge(id, sourceID, workspace.AssetEdgeReadsSource)
 			}
 			for _, dependency := range table.ModelDependencies {
-				dependencyID, err := assetID(workspace.AssetTypeModelTable, modelEntry.ID+"."+dependency)
+				dependencyID, err := assetID(workspace.AssetTypeModelTable, workspaceKey(dependency))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
 				edge(id, dependencyID, workspace.AssetEdgeUsesModelTable)
 			}
 		}
-		modelID, err := add(workspace.AssetTypeSemanticModel, modelEntry.ID, catalogID, modelEntry.Title, modelEntry.Description, semanticModelPayload(model))
+		modelKey := workspaceKey(modelEntry.ID)
+		modelID, err := add(workspace.AssetTypeSemanticModel, modelKey, catalogID, modelEntry.Title, modelEntry.Description, semanticModelPayload(model))
 		if err != nil {
 			return workspace.AssetGraph{}, err
 		}
 		edge(catalogID, modelID, workspace.AssetEdgeContains)
 		for _, tableName := range sortedMapKeys(model.Tables) {
 			table := model.Tables[tableName]
-			semanticTableID, err := add(workspace.AssetTypeSemanticTable, modelEntry.ID+"."+tableName, modelID, tableName, table.Description, semanticTablePayload(tableName, table))
+			semanticTableKey := modelKey + "." + tableName
+			semanticTableID, err := add(workspace.AssetTypeSemanticTable, semanticTableKey, modelID, tableName, table.Description, semanticTablePayload(tableName, table))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
 			edge(modelID, semanticTableID, workspace.AssetEdgeContains)
-			modelTableID, err := assetID(workspace.AssetTypeModelTable, modelEntry.ID+"."+tableName)
+			modelTableID, err := assetID(workspace.AssetTypeModelTable, workspaceKey(tableName))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -118,7 +139,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				field.Field = tableName + "." + table.PrimaryKey
 				field.Table = tableName
 				field.Name = table.PrimaryKey
-				fieldID, err := add(workspace.AssetTypeField, modelEntry.ID+"."+tableName+"."+table.PrimaryKey, semanticTableID, dimensionLabel(table.PrimaryKey, field.Label), field.Description, fieldPayload(field))
+				fieldID, err := add(workspace.AssetTypeField, semanticTableKey+"."+table.PrimaryKey, semanticTableID, dimensionLabel(table.PrimaryKey, field.Label), field.Description, fieldPayload(field))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
@@ -129,7 +150,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				if fieldName == table.PrimaryKey {
 					continue
 				}
-				fieldID, err := add(workspace.AssetTypeField, modelEntry.ID+"."+tableName+"."+fieldName, semanticTableID, dimensionLabel(fieldName, field.Label), field.Description, fieldPayload(field))
+				fieldID, err := add(workspace.AssetTypeField, semanticTableKey+"."+fieldName, semanticTableID, dimensionLabel(fieldName, field.Label), field.Description, fieldPayload(field))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
@@ -137,13 +158,13 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 			}
 		}
 		for _, relationship := range model.Relationships {
-			id, err := add(workspace.AssetTypeRelationship, modelEntry.ID+"."+relationship.ID, modelID, relationship.ID, relationship.Description, relationshipPayload(relationship))
+			id, err := add(workspace.AssetTypeRelationship, modelKey+"."+relationship.ID, modelID, relationship.ID, relationship.Description, relationshipPayload(relationship))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
 			edge(modelID, id, workspace.AssetEdgeContains)
 			for _, endpoint := range []string{relationship.From, relationship.To} {
-				fieldID, err := fieldAssetID(modelEntry.ID, model, endpoint, assetID)
+				fieldID, err := fieldAssetID(modelKey, model, endpoint, assetID)
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
@@ -152,18 +173,18 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, measureName := range sortedMapKeys(model.Measures) {
 			measure := model.Measures[measureName]
-			id, err := add(workspace.AssetTypeMeasure, modelEntry.ID+"."+measureName, modelID, measureLabel(measureName, measure.Label), measure.Description, measurePayload(measure))
+			id, err := add(workspace.AssetTypeMeasure, modelKey+"."+measureName, modelID, measureLabel(measureName, measure.Label), measure.Description, measurePayload(measure))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
 			edge(modelID, id, workspace.AssetEdgeContains)
-			tableID, err := assetID(workspace.AssetTypeSemanticTable, modelEntry.ID+"."+measure.Table)
+			tableID, err := assetID(workspace.AssetTypeSemanticTable, modelKey+"."+measure.Table)
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
 			edge(id, tableID, workspace.AssetEdgeUsesSemanticTable)
 			for _, ref := range lineageMeasureFieldRefs(model, measure) {
-				fieldID, err := assetID(workspace.AssetTypeField, modelEntry.ID+"."+ref)
+				fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+ref)
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
@@ -173,12 +194,14 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 	}
 	for _, reportEntry := range definition.Catalog.Dashboards {
 		report := definition.Dashboards[reportEntry.ID]
-		reportID, err := add(workspace.AssetTypeDashboard, reportEntry.ID, catalogID, reportEntry.Title, reportEntry.Description, dashboardPayload(*report, reportEntry.Tags))
+		reportKey := workspaceKey(reportEntry.ID)
+		reportID, err := add(workspace.AssetTypeDashboard, reportKey, catalogID, reportEntry.Title, reportEntry.Description, dashboardPayload(*report, reportEntry.Tags))
 		if err != nil {
 			return workspace.AssetGraph{}, err
 		}
 		edge(catalogID, reportID, workspace.AssetEdgeContains)
-		modelID, err := assetID(workspace.AssetTypeSemanticModel, report.SemanticModel)
+		modelKey := workspaceKey(report.SemanticModel)
+		modelID, err := assetID(workspace.AssetTypeSemanticModel, modelKey)
 		if err != nil {
 			return workspace.AssetGraph{}, err
 		}
@@ -188,7 +211,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 			if tableName == "" {
 				return nil
 			}
-			tableID, err := assetID(workspace.AssetTypeSemanticTable, report.SemanticModel+"."+tableName)
+			tableID, err := assetID(workspace.AssetTypeSemanticTable, modelKey+"."+tableName)
 			if err != nil {
 				return err
 			}
@@ -201,7 +224,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 					return err
 				}
 				for _, fieldRef := range lineageExpressionFieldRefs(model, ref.Measure.SQLExpression()) {
-					fieldID, err := assetID(workspace.AssetTypeField, report.SemanticModel+"."+fieldRef)
+					fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+fieldRef)
 					if err != nil {
 						return err
 					}
@@ -213,7 +236,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 			if err != nil {
 				return err
 			}
-			measureID, err := assetID(workspace.AssetTypeMeasure, report.SemanticModel+"."+measure.Name)
+			measureID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+measure.Name)
 			if err != nil {
 				return err
 			}
@@ -225,7 +248,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				return nil
 			}
 			if dimension, err := model.ResolveDimension(ref); err == nil {
-				fieldID, err := assetID(workspace.AssetTypeField, report.SemanticModel+"."+dimension.Field)
+				fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+dimension.Field)
 				if err != nil {
 					return err
 				}
@@ -236,7 +259,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 			if err != nil {
 				return err
 			}
-			measureID, err := assetID(workspace.AssetTypeMeasure, report.SemanticModel+"."+measure.Name)
+			measureID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+measure.Name)
 			if err != nil {
 				return err
 			}
@@ -245,7 +268,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, filterName := range sortedMapKeys(report.Filters) {
 			filter := report.Filters[filterName]
-			filterID, err := add(workspace.AssetTypeFilter, report.ID+"."+filterName, reportID, filter.Label, filter.Description, filterPayload(filter))
+			filterID, err := add(workspace.AssetTypeFilter, reportKey+"."+filterName, reportID, filter.Label, filter.Description, filterPayload(filter))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -256,7 +279,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, visualName := range sortedMapKeys(report.Visuals) {
 			visual := report.Visuals[visualName]
-			visualID, err := add(workspace.AssetTypeVisual, report.ID+"."+visualName, reportID, visual.Title, visual.Description, visualPayload(visual))
+			visualID, err := add(workspace.AssetTypeVisual, reportKey+"."+visualName, reportID, visual.Title, visual.Description, visualPayload(visual))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -284,7 +307,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 		}
 		for _, tableName := range sortedMapKeys(report.Tables) {
 			table := report.Tables[tableName]
-			tableID, err := add(workspace.AssetTypeTable, report.ID+"."+tableName, reportID, table.Title, table.Description, tableVisualPayload(table))
+			tableID, err := add(workspace.AssetTypeTable, reportKey+"."+tableName, reportID, table.Title, table.Description, tableVisualPayload(table))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -311,7 +334,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 			}
 		}
 		for _, page := range report.Pages {
-			pageID, err := add(workspace.AssetTypePage, report.ID+"."+page.ID, reportID, page.Title, page.Description, pagePayload(page))
+			pageID, err := add(workspace.AssetTypePage, reportKey+"."+page.ID, reportID, page.Title, page.Description, pagePayload(page))
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -321,27 +344,27 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 				if itemKey == "" {
 					itemKey = strconv.Itoa(index)
 				}
-				itemID, err := add(workspace.AssetTypePageItem, report.ID+"."+page.ID+"."+itemKey, pageID, pageItemTitle(item), item.Description, pageItemPayload(item))
+				itemID, err := add(workspace.AssetTypePageItem, reportKey+"."+page.ID+"."+itemKey, pageID, pageItemTitle(item), item.Description, pageItemPayload(item))
 				if err != nil {
 					return workspace.AssetGraph{}, err
 				}
 				edge(pageID, itemID, workspace.AssetEdgeContains)
 				if item.Visual != "" {
-					visualID, err := assetID(workspace.AssetTypeVisual, report.ID+"."+item.Visual)
+					visualID, err := assetID(workspace.AssetTypeVisual, reportKey+"."+item.Visual)
 					if err != nil {
 						return workspace.AssetGraph{}, err
 					}
 					edge(itemID, visualID, workspace.AssetEdgeUsesVisual)
 				}
 				if item.Table != "" {
-					tableID, err := assetID(workspace.AssetTypeTable, report.ID+"."+item.Table)
+					tableID, err := assetID(workspace.AssetTypeTable, reportKey+"."+item.Table)
 					if err != nil {
 						return workspace.AssetGraph{}, err
 					}
 					edge(itemID, tableID, workspace.AssetEdgeUsesTable)
 				}
 				if item.Filter != "" {
-					filterID, err := assetID(workspace.AssetTypeFilter, report.ID+"."+item.Filter)
+					filterID, err := assetID(workspace.AssetTypeFilter, reportKey+"."+item.Filter)
 					if err != nil {
 						return workspace.AssetGraph{}, err
 					}

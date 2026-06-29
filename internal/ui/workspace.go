@@ -1942,7 +1942,7 @@ func dashboardPagesGrid(parent workspaceview.AssetView, pages []workspaceview.As
 			"key":         key,
 			"description": emptyDash(page.Description),
 			"runtime":     "Open",
-			"runtimeHref": "/dashboards/" + parent.Key + "/pages/" + key,
+			"runtimeHref": "/workspaces/" + parent.WorkspaceID + "/dashboards/" + parent.Key + "/pages/" + key,
 		})
 	}
 	return metricGrid{

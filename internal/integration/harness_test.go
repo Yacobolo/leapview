@@ -35,9 +35,10 @@ import (
 )
 
 type harness struct {
-	handler http.Handler
-	server  *httptest.Server
-	store   *platform.Store
+	handler     http.Handler
+	server      *httptest.Server
+	store       *platform.Store
+	workspaceID string
 }
 
 type harnessConfig struct {
@@ -102,7 +103,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	duckDBDir := t.TempDir()
 	config.fixture(t, dataDir)
 
-	metrics, err := dashboardruntime.NewFromCatalog(dataDir, config.catalogPath, duckDBDir, integrationDataRuntimeFactory{})
+	metrics, err := newHarnessRuntime(dataDir, config.catalogPath, duckDBDir)
 	if err != nil {
 		t.Fatalf("create dashboard runtime: %v", err)
 	}
@@ -114,7 +115,8 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	}
 
 	h := &harness{
-		handler: app.New(metricsForApp).Routes(),
+		handler:     app.New(metricsForApp).Routes(),
+		workspaceID: metricsForApp.Catalog().Workspace.ID,
 	}
 	h.server = httptest.NewServer(h.handler)
 	t.Cleanup(h.server.Close)
@@ -176,7 +178,7 @@ func newHarnessWithMetrics(t *testing.T, opts ...harnessOption) (*harness, integ
 	duckDBDir := t.TempDir()
 	config.fixture(t, dataDir)
 
-	metrics, err := dashboardruntime.NewFromCatalog(dataDir, config.catalogPath, duckDBDir, integrationDataRuntimeFactory{})
+	metrics, err := newHarnessRuntime(dataDir, config.catalogPath, duckDBDir)
 	if err != nil {
 		t.Fatalf("create dashboard runtime: %v", err)
 	}
@@ -186,7 +188,19 @@ func newHarnessWithMetrics(t *testing.T, opts ...harnessOption) (*harness, integ
 	if config.wrapMetrics != nil {
 		metricsForApp = config.wrapMetrics(metrics)
 	}
-	return &harness{}, metricsForApp, config.catalogPath
+	return &harness{workspaceID: metricsForApp.Catalog().Workspace.ID}, metricsForApp, config.catalogPath
+}
+
+func newHarnessRuntime(dataDir, catalogPath, duckDBDir string) (*dashboardruntime.Service, error) {
+	services, err := dashboardruntime.NewFromProject(dataDir, catalogPath, duckDBDir, integrationDataRuntimeFactory{})
+	if err != nil {
+		return nil, err
+	}
+	service, ok := services["sales"]
+	if !ok {
+		return nil, fmt.Errorf("project has no sales workspace")
+	}
+	return service, nil
 }
 
 func (h *harness) getUpdates(t *testing.T, dashboardID, pageID string, signals map[string]any) string {
@@ -203,7 +217,7 @@ func (h *harness) getUpdates(t *testing.T, dashboardID, pageID string, signals m
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?"+values.Encode(), nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, h.workspaceUpdatesPath()+"?"+values.Encode(), nil)
 	rec := httptest.NewRecorder()
 
 	h.handler.ServeHTTP(rec, req)
@@ -241,7 +255,7 @@ func (h *harness) openUpdatesStream(t *testing.T, dashboardID, pageID string, si
 	values.Set("datastar", string(encodedSignals))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+"/updates?"+values.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+h.workspaceUpdatesPath()+"?"+values.Encode(), nil)
 	if err != nil {
 		cancel()
 		t.Fatalf("create updates request: %v", err)
@@ -281,7 +295,7 @@ func (h *harness) postCommand(t *testing.T, path string, signals map[string]any)
 	if err != nil {
 		t.Fatalf("marshal Datastar signals: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, h.serverURL(t)+path, bytes.NewReader(encodedSignals))
+	req, err := http.NewRequest(http.MethodPost, h.serverURL(t)+h.workspaceCommandPath(path), bytes.NewReader(encodedSignals))
 	if err != nil {
 		t.Fatalf("create command request: %v", err)
 	}
@@ -382,6 +396,27 @@ func (h *harness) serverURL(t *testing.T) string {
 	return h.server.URL
 }
 
+func (h *harness) workspaceUpdatesPath() string {
+	return "/workspaces/" + h.workspaceIDOrDefault() + "/updates"
+}
+
+func (h *harness) workspaceCommandPath(path string) string {
+	if strings.HasPrefix(path, "/workspaces/") {
+		return path
+	}
+	if strings.HasPrefix(path, "/commands/") {
+		return "/workspaces/" + h.workspaceIDOrDefault() + path
+	}
+	return path
+}
+
+func (h *harness) workspaceIDOrDefault() string {
+	if h.workspaceID != "" {
+		return h.workspaceID
+	}
+	return platform.DefaultWorkspaceID
+}
+
 type streamClient struct {
 	cancel  context.CancelFunc
 	body    io.ReadCloser
@@ -476,13 +511,13 @@ func discoverCatalogPath(t *testing.T) string {
 		t.Fatalf("get working directory: %v", err)
 	}
 	for {
-		candidate := filepath.Join(dir, "dashboards", "catalog.yaml")
+		candidate := filepath.Join(dir, "dashboards", "libredash.yaml")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("could not find dashboards/catalog.yaml")
+			t.Fatal("could not find dashboards/libredash.yaml")
 		}
 		dir = parent
 	}
@@ -536,9 +571,14 @@ func seedIntegrationActiveDeployment(t *testing.T, store *platform.Store, worksp
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}
-	workspaceDef, err := workspacecompiler.CompileDefinition(catalogPath)
+	compiled, err := workspacecompiler.CompileProject(catalogPath, workspacecompiler.Options{})
 	if err != nil {
-		t.Fatalf("compile workspace definition: %v", err)
+		t.Fatalf("compile project: %v", err)
+	}
+	selected := compiled.Workspaces[workspaceID]
+	workspaceDef := selected.Definition
+	if workspaceDef == nil {
+		t.Fatalf("compile project: missing workspace %q", workspaceID)
 	}
 	graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(created.ID), workspaceDef)
 	if err != nil {

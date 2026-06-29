@@ -1,0 +1,24 @@
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: sales
+  title: Sales Workspace
+  description: Revenue, orders, and product category analysis.
+spec:
+  uses:
+    sources:
+      - olist.orders
+      - olist.payments
+      - olist.order_items
+      - olist.products
+      - olist.translations
+      - olist.customers
+  models:
+    include:
+      - models/*.yaml
+  semanticModels:
+    include:
+      - semantic-models/*.yaml
+  dashboards:
+    include:
+      - dashboards/*.yaml

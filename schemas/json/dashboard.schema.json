@@ -1,7 +1,59 @@
 {
   "$defs": {
+    "#APIVersion": {
+      "const": "libredash.dev/v1"
+    },
     "#AnyObject": {
       "additionalProperties": true,
+      "type": "object"
+    },
+    "#DashboardSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "filters": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/%23Filter"
+            }
+          },
+          "type": "object"
+        },
+        "pages": {
+          "items": {
+            "$ref": "#/$defs/%23Page"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "semanticModel": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "tables": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/%23Table"
+            }
+          },
+          "type": "object"
+        },
+        "visuals": {
+          "additionalProperties": false,
+          "minProperties": 1,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/%23Visual"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "pages",
+        "semanticModel",
+        "visuals"
+      ],
       "type": "object"
     },
     "#FieldRef": {
@@ -316,6 +368,36 @@
         }
       ]
     },
+    "#Metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/%23ResourceID"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/%23ResourceID"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "#ObjectID": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$",
       "type": "string"
@@ -470,6 +552,10 @@
         "placement"
       ],
       "type": "object"
+    },
+    "#ResourceID": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+      "type": "string"
     },
     "#SelectionInteraction": {
       "additionalProperties": false,
@@ -920,60 +1006,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "description": {
-      "type": "string"
+    "apiVersion": {
+      "$ref": "#/$defs/%23APIVersion"
     },
-    "filters": {
-      "additionalProperties": false,
-      "patternProperties": {
-        "^[A-Za-z_][A-Za-z0-9_]*$": {
-          "$ref": "#/$defs/%23Filter"
-        }
-      },
-      "type": "object"
+    "kind": {
+      "const": "Dashboard"
     },
-    "id": {
-      "$ref": "#/$defs/%23ObjectID"
+    "metadata": {
+      "$ref": "#/$defs/%23Metadata"
     },
-    "pages": {
-      "items": {
-        "$ref": "#/$defs/%23Page"
-      },
-      "minItems": 1,
-      "type": "array"
-    },
-    "semantic_model": {
-      "$ref": "#/$defs/%23Identifier"
-    },
-    "tables": {
-      "additionalProperties": false,
-      "patternProperties": {
-        "^[A-Za-z_][A-Za-z0-9_]*$": {
-          "$ref": "#/$defs/%23Table"
-        }
-      },
-      "type": "object"
-    },
-    "title": {
-      "type": "string"
-    },
-    "visuals": {
-      "additionalProperties": false,
-      "minProperties": 1,
-      "patternProperties": {
-        "^[A-Za-z_][A-Za-z0-9_]*$": {
-          "$ref": "#/$defs/%23Visual"
-        }
-      },
-      "type": "object"
+    "spec": {
+      "$ref": "#/$defs/%23DashboardSpec"
     }
   },
   "required": [
-    "id",
-    "pages",
-    "semantic_model",
-    "title",
-    "visuals"
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
   ],
   "type": "object"
 }

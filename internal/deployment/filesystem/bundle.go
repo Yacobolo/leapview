@@ -17,7 +17,6 @@ import (
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/deployment"
-	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
@@ -43,43 +42,87 @@ type ValidateOptions struct {
 	DuckDBDir string
 }
 
-func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
-	catalogPath, err := filepath.Abs(catalogPath)
+func PackProject(projectPath, workspaceID string, out io.Writer) (Manifest, string, error) {
+	projectPath, err := filepath.Abs(projectPath)
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	workspaceDef, err := workspacecompiler.CompileDefinition(catalogPath)
+	if workspaceID == "" {
+		return Manifest{}, "", fmt.Errorf("project deploy requires explicit workspace")
+	}
+	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{})
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	baseDir := filepath.Dir(catalogPath)
-	relFiles := []string{CatalogFile}
-	for _, model := range workspaceDef.Catalog.SemanticModels {
-		relFiles = append(relFiles, cleanBundlePath(model.Path))
+	compiledWorkspace, ok := compiled.Workspaces[workspaceID]
+	if !ok {
+		return Manifest{}, "", fmt.Errorf("project %q has no workspace %q", projectPath, workspaceID)
 	}
-	for _, report := range workspaceDef.Catalog.Dashboards {
-		relFiles = append(relFiles, cleanBundlePath(report.Path))
+	baseDir := filepath.Dir(projectPath)
+	relFiles, err := collectProjectBundleFiles(baseDir, projectPath)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	manifest := Manifest{
+		Version:        1,
+		WorkspaceID:    workspaceID,
+		WorkspaceTitle: compiledWorkspace.Workspace.Title,
+		CatalogPath:    ProjectFile,
+		Files:          make([]ManifestFile, 0, len(relFiles)),
+	}
+	for _, model := range compiledWorkspace.Definition.Catalog.SemanticModels {
+		manifest.SemanticModels = append(manifest.SemanticModels, model.ID)
+	}
+	for _, report := range compiledWorkspace.Definition.Catalog.Dashboards {
+		manifest.Dashboards = append(manifest.Dashboards, report.ID)
+	}
+	return writeBundle(baseDir, relFiles, ProjectFile, projectPath, manifest, out)
+}
+
+func collectProjectBundleFiles(baseDir, projectPath string) ([]string, error) {
+	relProject, err := filepath.Rel(baseDir, projectPath)
+	if err != nil {
+		return nil, err
+	}
+	relFiles := []string{cleanBundlePath(relProject)}
+	for _, root := range []string{"connections", "sources", "workspaces"} {
+		dir := filepath.Join(baseDir, root)
+		if _, err := os.Stat(dir); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if filepath.Ext(path) != ".yaml" && filepath.Ext(path) != ".yml" {
+				return nil
+			}
+			rel, err := filepath.Rel(baseDir, path)
+			if err != nil {
+				return err
+			}
+			relFiles = append(relFiles, cleanBundlePath(rel))
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	sort.Strings(relFiles[1:])
+	return relFiles, nil
+}
 
+func writeBundle(baseDir string, relFiles []string, rootRel string, rootPath string, manifest Manifest, out io.Writer) (Manifest, string, error) {
 	hash := sha256.New()
 	mw := io.MultiWriter(out, hash)
 	gz := gzip.NewWriter(mw)
 	tw := tar.NewWriter(gz)
-	manifest := Manifest{
-		Version:        1,
-		WorkspaceID:    workspaceID(workspaceDef.Catalog.Workspace.ID),
-		WorkspaceTitle: workspaceTitle(workspaceDef.Catalog.Workspace.Title),
-		CatalogPath:    CatalogFile,
-		Files:          make([]ManifestFile, 0, len(relFiles)),
-	}
-	for _, model := range workspaceDef.Catalog.SemanticModels {
-		manifest.SemanticModels = append(manifest.SemanticModels, model.ID)
-	}
-	for _, report := range workspaceDef.Catalog.Dashboards {
-		manifest.Dashboards = append(manifest.Dashboards, report.ID)
-	}
-
 	seen := map[string]struct{}{}
 	for _, rel := range relFiles {
 		if _, ok := seen[rel]; ok {
@@ -87,8 +130,8 @@ func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
 		}
 		seen[rel] = struct{}{}
 		sourcePath := filepath.Join(baseDir, rel)
-		if rel == CatalogFile {
-			sourcePath = catalogPath
+		if rel == rootRel {
+			sourcePath = rootPath
 		}
 		info, err := os.Stat(sourcePath)
 		if err != nil {
@@ -161,16 +204,22 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 		return deployment.Validation{}, err
 	}
 	if workspaceID == "" {
-		workspaceID = deployment.WorkspaceID(workspaceIDOrDefault(manifest.WorkspaceID))
+		if strings.TrimSpace(manifest.WorkspaceID) == "" {
+			os.RemoveAll(root)
+			return deployment.Validation{}, fmt.Errorf("project artifact manifest requires workspaceId")
+		}
+		workspaceID = deployment.WorkspaceID(manifest.WorkspaceID)
 	}
-	catalogPath := filepath.Join(root, catalogRel)
-	compiled, err := workspacecompiler.Compile(catalogPath, workspacecompiler.Options{
-		WorkspaceID:  workspace.WorkspaceID(workspaceID),
-		DeploymentID: workspace.DeploymentID(deploymentID),
-	})
+	projectPath := filepath.Join(root, catalogRel)
+	project, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{DeploymentID: workspace.DeploymentID(deploymentID)})
 	if err != nil {
 		os.RemoveAll(root)
 		return deployment.Validation{}, err
+	}
+	compiled, ok := project.Workspaces[string(workspaceID)]
+	if !ok {
+		os.RemoveAll(root)
+		return deployment.Validation{}, fmt.Errorf("project artifact has no workspace %q", workspaceID)
 	}
 	if options.DataDir != "" {
 		if err := discoverSchemasForDefinition(context.Background(), compiled.Definition, options); err != nil {
@@ -298,7 +347,7 @@ func readManifest(root string) (Manifest, error) {
 		return Manifest{}, err
 	}
 	if manifest.CatalogPath == "" {
-		manifest.CatalogPath = CatalogFile
+		manifest.CatalogPath = ProjectFile
 	}
 	return manifest, nil
 }
@@ -372,17 +421,6 @@ func safeBundlePath(path string) (string, error) {
 		}
 	}
 	return clean, nil
-}
-
-func workspaceID(value string) string {
-	if strings.TrimSpace(value) != "" {
-		return value
-	}
-	return platform.DefaultWorkspaceID
-}
-
-func workspaceIDOrDefault(value string) string {
-	return workspaceID(value)
 }
 
 func workspaceTitle(value string) string {

@@ -2,12 +2,9 @@ package compiler
 
 import (
 	"fmt"
-	"path/filepath"
+	"sort"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/analytics/model"
-	"github.com/Yacobolo/libredash/internal/dashboard/report"
-	"github.com/Yacobolo/libredash/internal/semantic"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -21,69 +18,32 @@ type CompiledWorkspace struct {
 	Definition *workspace.Definition
 }
 
-func Compile(catalogPath string, opts Options) (CompiledWorkspace, error) {
-	definition, err := CompileDefinition(catalogPath)
+func Compile(projectPath string, opts Options) (CompiledWorkspace, error) {
+	compiled, err := CompileProject(projectPath, opts)
 	if err != nil {
 		return CompiledWorkspace{}, err
 	}
 	workspaceID := opts.WorkspaceID
 	if workspaceID == "" {
-		workspaceID = workspace.WorkspaceID(workspaceIDOrDefault(definition.Catalog.Workspace.ID))
+		return firstCompiledWorkspace(projectPath, compiled)
 	}
-	graph, err := ExtractLineage(workspaceID, opts.DeploymentID, definition)
-	if err != nil {
-		return CompiledWorkspace{}, err
+	selected, ok := compiled.Workspaces[string(workspaceID)]
+	if !ok {
+		return CompiledWorkspace{}, fmt.Errorf("project %q has no workspace %q", projectPath, workspaceID)
 	}
-	return CompiledWorkspace{
-		Workspace: workspace.Workspace{
-			ID:          workspaceID,
-			Title:       workspaceTitle(definition.Catalog.Workspace.Title),
-			Description: definition.Catalog.Workspace.Description,
-			BaseDir:     definition.BaseDir,
-			Graph:       graph,
-		},
-		Definition: definition,
-	}, nil
+	return selected, nil
 }
 
-func CompileDefinition(catalogPath string) (*workspace.Definition, error) {
-	catalog, baseDir, err := workspace.LoadCatalog(catalogPath)
-	if err != nil {
-		return nil, err
+func firstCompiledWorkspace(projectPath string, compiled CompiledProject) (CompiledWorkspace, error) {
+	ids := make([]string, 0, len(compiled.Workspaces))
+	for id := range compiled.Workspaces {
+		ids = append(ids, id)
 	}
-	definition := &workspace.Definition{
-		Catalog:    catalog,
-		Models:     map[string]*model.Model{},
-		Dashboards: map[string]*report.Dashboard{},
-		BaseDir:    baseDir,
+	sort.Strings(ids)
+	if len(ids) == 0 {
+		return CompiledWorkspace{}, fmt.Errorf("project %q has no workspaces", projectPath)
 	}
-
-	for _, entry := range catalog.SemanticModels {
-		model, err := semantic.Load(filepath.Join(baseDir, entry.Path))
-		if err != nil {
-			return nil, fmt.Errorf("loading semantic model %q: %w", entry.ID, err)
-		}
-		if model.Name != entry.ID {
-			return nil, fmt.Errorf("catalog model %q path loads model %q", entry.ID, model.Name)
-		}
-		definition.Models[entry.ID] = model
-	}
-
-	for _, entry := range catalog.Dashboards {
-		dashboard, err := semantic.LoadDashboard(filepath.Join(baseDir, entry.Path))
-		if err != nil {
-			return nil, fmt.Errorf("loading dashboard %q: %w", entry.ID, err)
-		}
-		if dashboard.ID != entry.ID {
-			return nil, fmt.Errorf("catalog dashboard %q path loads dashboard %q", entry.ID, dashboard.ID)
-		}
-		if err := ValidateDashboard(dashboard, definition.Models); err != nil {
-			return nil, fmt.Errorf("loading dashboard %q: %w", entry.ID, err)
-		}
-		definition.Dashboards[entry.ID] = dashboard
-	}
-
-	return definition, nil
+	return compiled.Workspaces[ids[0]], nil
 }
 
 func workspaceIDOrDefault(value string) string {

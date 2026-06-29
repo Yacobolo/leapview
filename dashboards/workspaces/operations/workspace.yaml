@@ -1,0 +1,21 @@
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: operations
+  title: Operations Workspace
+  description: Fulfillment, delivery, review, and geography analysis.
+spec:
+  uses:
+    sources:
+      - olist.orders
+      - olist.customers
+      - olist.reviews
+  models:
+    include:
+      - models/*.yaml
+  semanticModels:
+    include:
+      - semantic-models/*.yaml
+  dashboards:
+    include:
+      - dashboards/*.yaml

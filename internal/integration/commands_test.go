@@ -159,7 +159,7 @@ func TestRefreshMaterializationsCommandPublishesErrorPatch(t *testing.T) {
 
 func TestCommandRejectsMalformedDatastarBody(t *testing.T) {
 	h := newHarness(t)
-	req, err := http.NewRequest(http.MethodPost, h.serverURL(t)+"/commands/select", strings.NewReader("{not-json"))
+	req, err := http.NewRequest(http.MethodPost, h.serverURL(t)+h.workspaceCommandPath("/commands/select"), strings.NewReader("{not-json"))
 	if err != nil {
 		t.Fatalf("create command request: %v", err)
 	}

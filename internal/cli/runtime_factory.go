@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -35,7 +36,19 @@ func (f deploymentRuntimeFactory) Prepare(_ context.Context, input runtimehost.R
 		return nil, err
 	}
 	duckDir := filepath.Join(duckDBDir, string(input.Deployment.ID))
-	return dashboardruntime.NewFromCatalog(dataDir, filepath.Join(targetDir, deploymentfs.CatalogFile), duckDir, dashboardDataRuntimeFactory{})
+	projectPath := filepath.Join(targetDir, deploymentfs.ProjectFile)
+	if _, err := os.Stat(projectPath); err == nil {
+		services, err := dashboardruntime.NewFromProject(dataDir, projectPath, duckDir, dashboardDataRuntimeFactory{})
+		if err != nil {
+			return nil, err
+		}
+		service, ok := services[string(input.Deployment.WorkspaceID)]
+		if !ok {
+			return nil, fmt.Errorf("project artifact has no workspace %q", input.Deployment.WorkspaceID)
+		}
+		return service, nil
+	}
+	return nil, fmt.Errorf("deployment artifact is missing %s", deploymentfs.ProjectFile)
 }
 
 type dashboardDataRuntimeFactory struct{}

@@ -1,0 +1,149 @@
+apiVersion: libredash.dev/v1
+kind: Dashboard
+metadata:
+  workspace: operations
+  name: fulfillment-operations
+  title: Fulfillment Operations
+  description: Delivery speed, order status, reviews, and geography overview.
+  tags: [operations, fulfillment]
+spec:
+  semanticModel: operations
+  filters:
+    state:
+      type: multi_select
+      label: State
+      url_param: state
+      operator: in
+      values:
+        source: distinct
+        limit: 50
+      field: customers.state
+    status:
+      type: multi_select
+      label: Status
+      url_param: status
+      operator: in
+      values:
+        source: distinct
+        limit: 20
+      field: orders.status
+    delivery_bucket:
+      type: multi_select
+      label: Delivery speed
+      url_param: delivery
+      operator: in
+      values:
+        source: distinct
+        limit: 20
+      field: orders.delivery_bucket
+  visuals:
+    total_orders:
+      kind: kpi
+      shape: single_value
+      query:
+        measures:
+          order_count:
+      options:
+        note: Filtered order count
+        tone: ink
+    delivery_days:
+      kind: kpi
+      shape: single_value
+      query:
+        measures:
+          delivery_days:
+      options:
+        note: Average days
+        tone: amber
+    review_score:
+      kind: kpi
+      shape: single_value
+      query:
+        measures:
+          review_score:
+      options:
+        note: Average score
+        tone: coral
+    orders_by_status:
+      title: Orders by status
+      type: donut
+      query:
+        dimensions:
+          status: orders.status
+        measures:
+          order_count:
+        sort:
+          - field: value
+            direction: desc
+        limit: 10
+    delivery_speed:
+      title: Delivery speed
+      type: bar
+      query:
+        dimensions:
+          delivery_bucket: orders.delivery_bucket
+        measures:
+          order_count:
+        sort:
+          - field: delivery_bucket
+            direction: asc
+    review_by_status:
+      title: Review score by status
+      type: bar
+      query:
+        dimensions:
+          status: orders.status
+        measures:
+          review_score:
+        sort:
+          - field: value
+            direction: desc
+        limit: 10
+  pages:
+    - id: overview
+      title: Overview
+      canvas:
+        width: 1366
+        height: 900
+      grid:
+        columns: 12
+        row_height: 48
+        gap: 16
+        padding: 16
+      visuals:
+        - id: state-filter
+          kind: filter_card
+          filter: state
+          placement: {col: 1, row: 1, col_span: 4, row_span: 2}
+        - id: status-filter
+          kind: filter_card
+          filter: status
+          placement: {col: 5, row: 1, col_span: 4, row_span: 2}
+        - id: delivery-filter
+          kind: filter_card
+          filter: delivery_bucket
+          placement: {col: 9, row: 1, col_span: 4, row_span: 2}
+        - id: total-orders
+          kind: kpi_card
+          visual: total_orders
+          placement: {col: 1, row: 4, col_span: 4, row_span: 3}
+        - id: delivery-days
+          kind: kpi_card
+          visual: delivery_days
+          placement: {col: 5, row: 4, col_span: 4, row_span: 3}
+        - id: review-score
+          kind: kpi_card
+          visual: review_score
+          placement: {col: 9, row: 4, col_span: 4, row_span: 3}
+        - id: status
+          kind: donut_chart
+          visual: orders_by_status
+          placement: {col: 1, row: 8, col_span: 4, row_span: 6}
+        - id: delivery-speed
+          kind: bar_chart
+          visual: delivery_speed
+          placement: {col: 5, row: 8, col_span: 4, row_span: 6}
+        - id: reviews
+          kind: bar_chart
+          visual: review_by_status
+          placement: {col: 9, row: 8, col_span: 4, row_span: 6}

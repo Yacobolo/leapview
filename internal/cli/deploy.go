@@ -25,7 +25,7 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.target, "target", "", "LibreDash server URL")
 	cmd.Flags().StringVar(&opts.token, "token", "", "API token")
-	cmd.Flags().StringVar(&opts.catalog, "catalog", filepath.Join("dashboards", "catalog.yaml"), "catalog path")
+	cmd.Flags().StringVar(&opts.catalog, "catalog", filepath.Join("dashboards", "libredash.yaml"), "project path")
 	return cmd
 }
 
@@ -70,12 +70,17 @@ func rollbackCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 }
 
 func runDeploy(ctx context.Context, opts *rootOptions) error {
+	if opts.workspaceID == "" {
+		return fmt.Errorf("deploy requires --workspace")
+	}
 	target, token, err := clientTargetAndToken(opts)
 	if err != nil {
 		return err
 	}
 	var buf bytes.Buffer
-	manifest, digest, err := deploymentfs.PackCatalog(opts.catalog, &buf)
+	var manifest deploymentfs.Manifest
+	var digest string
+	manifest, digest, err = deploymentfs.PackProject(opts.catalog, opts.workspaceID, &buf)
 	if err != nil {
 		return err
 	}
@@ -119,6 +124,9 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 }
 
 func runDeploymentsList(ctx context.Context, opts *rootOptions) error {
+	if opts.workspaceID == "" {
+		return fmt.Errorf("deployments list requires --workspace")
+	}
 	target, token, err := clientTargetAndToken(opts)
 	if err != nil {
 		return err
@@ -143,6 +151,9 @@ func runDeploymentsList(ctx context.Context, opts *rootOptions) error {
 func runRollback(ctx context.Context, opts *rootOptions) error {
 	if opts.deployment == "" {
 		return fmt.Errorf("rollback requires --deployment")
+	}
+	if opts.workspaceID == "" {
+		return fmt.Errorf("rollback requires --workspace")
 	}
 	target, token, err := clientTargetAndToken(opts)
 	if err != nil {

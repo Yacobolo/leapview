@@ -2,34 +2,85 @@ package contracts
 
 #Identifier: =~"^[A-Za-z_][A-Za-z0-9_]*$"
 #ObjectID:   =~"^[A-Za-z_][A-Za-z0-9_-]*$"
+#ResourceID: =~"^[A-Za-z_][A-Za-z0-9_.-]*$"
 #FieldRef:   =~"^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"
 #AnyObject: {
 	[string]: _
 }
 
-#Catalog: close({
-	workspace?: close({
-		id?:          string
-		title?:       string
-		description?: string
-	})
-	semantic_models!: [...#CatalogAsset]
-	dashboards!: [...#CatalogDashboard]
-})
+#APIVersion: "libredash.dev/v1"
 
-#CatalogAsset: close({
-	id!:          #Identifier
-	title!:       string
-	path!:        string
+#Metadata: close({
+	name!:        #ResourceID
+	workspace?:   #ResourceID
+	title?:       string
 	description?: string
-})
-
-#CatalogDashboard: close({
-	id!:          #ObjectID
-	title!:       string
-	path!:        string
-	description?: string
+	owner?:       string
 	tags?: [...string]
+})
+
+#IncludeList: close({
+	include!: [...string]
+})
+
+#Project: close({
+	apiVersion!: #APIVersion
+	kind!:       "Project"
+	metadata!:   #Metadata
+	spec!: close({
+		connections!: #IncludeList
+		sources!:     #IncludeList
+		workspaces!:  #IncludeList
+	})
+})
+
+#ConnectionResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Connection"
+	metadata!:   #Metadata
+	spec!:        #Connection
+})
+
+#SourceResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Source"
+	metadata!:   #Metadata
+	spec!:        #Source
+})
+
+#WorkspaceResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Workspace"
+	metadata!:   #Metadata
+	spec!: close({
+		uses!: close({
+			sources!: [...#ResourceID]
+		})
+		models!:         #IncludeList
+		semanticModels!: #IncludeList
+		dashboards!:     #IncludeList
+	})
+})
+
+#ModelTableResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "ModelTable"
+	metadata!:   #Metadata
+	spec!:        #ModelTable
+})
+
+#SemanticModelResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "SemanticModel"
+	metadata!:   #Metadata
+	spec!:        #ProjectSemanticModelSpec
+})
+
+#DashboardResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Dashboard"
+	metadata!:   #Metadata
+	spec!:        #DashboardSpec
 })
 
 #SemanticModel: close({
@@ -47,7 +98,7 @@ package contracts
 		[#Identifier]: #ModelTable
 	})
 	semantic_models!: close({
-		[#Identifier]: #SemanticModelSpec
+		[#Identifier]: #LegacySemanticModelSpec
 	})
 })
 
@@ -73,6 +124,7 @@ package contracts
 	options?:     #AnyObject
 	fields?: close({
 		[#Identifier]: close({
+			type?:        string
 			description?: string
 		})
 	})
@@ -80,8 +132,8 @@ package contracts
 
 #ModelTable: close({
 	kind?:   string
-	source?: #Identifier
-	sources?: [...#Identifier]
+	source?: #ResourceID
+	sources?: [...#ResourceID]
 	sql?: string
 	transform?: close({
 		sql?: string
@@ -101,8 +153,18 @@ package contracts
 	description?: string
 })
 
-#SemanticModelSpec: close({
+#LegacySemanticModelSpec: close({
 	base_table: #Identifier
+	tables: [...#Identifier]
+	relationships?: [...#Relationship]
+	measures?: close({
+		defaults?:     #MeasureDefaults
+		[#Identifier]: #Measure | #MeasureDefaults
+	})
+})
+
+#ProjectSemanticModelSpec: close({
+	baseTable!: #Identifier
 	tables: [...#Identifier]
 	relationships?: [...#Relationship]
 	measures?: close({
@@ -145,6 +207,20 @@ package contracts
 	title!:          string
 	description?:    string
 	semantic_model!: #Identifier
+	filters?: close({
+		[#Identifier]: #Filter
+	})
+	visuals!: close({
+		[#Identifier]: #Visual
+	})
+	tables?: close({
+		[#Identifier]: #Table
+	})
+	pages!: [...#Page]
+})
+
+#DashboardSpec: close({
+	semanticModel!: #Identifier
 	filters?: close({
 		[#Identifier]: #Filter
 	})

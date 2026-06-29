@@ -7,32 +7,54 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/configschema"
-	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 	"github.com/spf13/cobra"
 )
 
 func validateCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "validate [catalog]",
-		Short: "Validate a dashboard-as-code catalog",
+		Use:   "validate [project]",
+		Short: "Validate a configuration-as-code project",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
-				return fmt.Errorf("validate accepts at most one positional catalog")
+				return fmt.Errorf("validate accepts at most one positional project")
 			}
 			if len(args) == 1 {
 				if cmd.Flags().Changed("catalog") {
-					return fmt.Errorf("choose either --catalog or positional catalog, not both")
+					return fmt.Errorf("choose either --catalog or positional project, not both")
 				}
 				opts.catalog = args[0]
 			}
 			return runValidate(ctx, opts, cmd.OutOrStdout())
 		},
 	}
-	cmd.Flags().StringVar(&opts.catalog, "catalog", filepath.Join("dashboards", "catalog.yaml"), "catalog path")
+	cmd.Flags().StringVar(&opts.catalog, "catalog", filepath.Join("dashboards", "libredash.yaml"), "project path")
 	cmd.Flags().BoolVar(&opts.jsonOutput, "json", false, "emit JSON diagnostics")
+	return cmd
+}
+
+func planCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "plan [project]",
+		Short: "Emit a deterministic configuration-as-code plan",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 1 {
+				return fmt.Errorf("plan accepts at most one positional project")
+			}
+			if len(args) == 1 {
+				if cmd.Flags().Changed("catalog") {
+					return fmt.Errorf("choose either --catalog or positional project, not both")
+				}
+				opts.catalog = args[0]
+			}
+			return runPlan(ctx, opts, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&opts.catalog, "catalog", filepath.Join("dashboards", "libredash.yaml"), "project path")
+	cmd.Flags().BoolVar(&opts.jsonOutput, "json", false, "emit JSON plan")
 	return cmd
 }
 
@@ -84,31 +106,33 @@ func runValidate(ctx context.Context, opts *rootOptions, out io.Writer) error {
 	return fmt.Errorf("validation failed")
 }
 
-func validateCatalog(ctx context.Context, catalogPath string) []configschema.Diagnostic {
-	if err := configschema.ValidateFile(configschema.KindCatalog, catalogPath); err != nil {
-		return configschema.Diagnostics(err)
-	}
-	catalog, baseDir, err := workspace.LoadCatalog(catalogPath)
+func runPlan(ctx context.Context, opts *rootOptions, out io.Writer) error {
+	plan, err := workspacecompiler.PlanProject(opts.catalog)
 	if err != nil {
-		return configschema.Diagnostics(err)
+		return err
 	}
-	var diagnostics []configschema.Diagnostic
-	for _, entry := range catalog.SemanticModels {
-		path := filepath.Join(baseDir, entry.Path)
-		if err := configschema.ValidateFile(configschema.KindSemanticModel, path); err != nil {
-			diagnostics = append(diagnostics, configschema.Diagnostics(err)...)
-		}
+	if opts.jsonOutput {
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(plan)
 	}
-	for _, entry := range catalog.Dashboards {
-		path := filepath.Join(baseDir, entry.Path)
-		if err := configschema.ValidateFile(configschema.KindDashboard, path); err != nil {
-			diagnostics = append(diagnostics, configschema.Diagnostics(err)...)
-		}
+	fmt.Fprintf(out, "project %s\n", plan.Project)
+	for _, workspace := range plan.Workspaces {
+		fmt.Fprintf(out, "workspace %s\n", workspace.ID)
+		fmt.Fprintf(out, "  connections %s\n", strings.Join(workspace.Connections, ","))
+		fmt.Fprintf(out, "  sources %s\n", strings.Join(workspace.Sources, ","))
+		fmt.Fprintf(out, "  model_tables %s\n", strings.Join(workspace.ModelTables, ","))
+		fmt.Fprintf(out, "  semantic_models %s\n", strings.Join(workspace.SemanticModels, ","))
+		fmt.Fprintf(out, "  dashboards %s\n", strings.Join(workspace.Dashboards, ","))
 	}
-	if len(diagnostics) > 0 {
-		return diagnostics
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if _, err := workspacecompiler.CompileDefinition(catalogPath); err != nil {
+	return nil
+}
+
+func validateCatalog(ctx context.Context, catalogPath string) []configschema.Diagnostic {
+	if _, err := workspacecompiler.CompileProject(catalogPath, workspacecompiler.Options{}); err != nil {
 		return configschema.Diagnostics(err)
 	}
 	if err := ctx.Err(); err != nil {

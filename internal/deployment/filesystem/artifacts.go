@@ -12,7 +12,7 @@ import (
 
 const (
 	BundleFormat = "tar.gz"
-	CatalogFile  = "catalog.yaml"
+	ProjectFile  = "libredash.yaml"
 )
 
 type ArtifactStore struct {

@@ -14,11 +14,11 @@ import (
 func TestLoadOlistModel(t *testing.T) {
 	model := loadOlistModel(t)
 
-	if model.Name != "olist" {
-		t.Fatalf("model name = %q, want olist", model.Name)
+	if model.Name != "sales" {
+		t.Fatalf("model name = %q, want sales", model.Name)
 	}
-	if len(model.Sources) != 7 {
-		t.Fatalf("source count = %d, want 7", len(model.Sources))
+	if len(model.Sources) != 6 {
+		t.Fatalf("source count = %d, want 6", len(model.Sources))
 	}
 	if got := model.DefaultConnection; got != "olist" {
 		t.Fatalf("default connection = %q, want olist", got)
@@ -26,13 +26,13 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.Connections["olist"].Kind; got != "local" {
 		t.Fatalf("olist connection kind = %q, want local", got)
 	}
-	if got := model.Sources["orders"].Format; got != "csv" {
+	if got := model.Sources["olist_orders"].Format; got != "csv" {
 		t.Fatalf("orders source format = %q, want csv", got)
 	}
-	if got := model.Sources["orders"].Connection; got != "olist" {
+	if got := model.Sources["olist_orders"].Connection; got != "olist" {
 		t.Fatalf("orders source connection = %q, want olist", got)
 	}
-	if got := model.Sources["orders"].Path; got != "olist_orders_dataset.csv" {
+	if got := model.Sources["olist_orders"].Path; got != "olist_orders_dataset.csv" {
 		t.Fatalf("orders source path = %q, want olist_orders_dataset.csv", got)
 	}
 	if _, ok := model.Tables["orders"]; !ok {
@@ -524,23 +524,15 @@ datasets:
 
 func loadOlistModel(t *testing.T) *Model {
 	t.Helper()
-	model, err := semantic.Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))
+	compiled, err := workspacecompiler.CompileProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), workspacecompiler.Options{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	model := compiled.Workspaces["sales"].Definition.Models["sales"]
+	if model == nil {
+		t.Fatal("sales model missing")
 	}
 	return model
-}
-
-func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
-	t.Helper()
-	report, err := semantic.LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
-		t.Fatal(err)
-	}
-	return report
 }
 
 func minimalSourceModel() *Model {

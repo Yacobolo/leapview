@@ -24,9 +24,15 @@ var contractsCUE string
 type Kind string
 
 const (
-	KindCatalog       Kind = "catalog"
-	KindSemanticModel Kind = "semantic-model"
-	KindDashboard     Kind = "dashboard"
+	KindProject               Kind = "project"
+	KindConnection            Kind = "connection"
+	KindSource                Kind = "source"
+	KindWorkspace             Kind = "workspace"
+	KindModelTable            Kind = "model-table"
+	KindSemanticModel         Kind = "semantic-model"
+	KindDashboard             Kind = "dashboard"
+	KindSemanticModelResource Kind = "semantic-model-resource"
+	KindDashboardResource     Kind = "dashboard-resource"
 )
 
 type Severity string
@@ -142,7 +148,7 @@ func compiledDefinition(kind Kind) (*cue.Context, cue.Value, string, error) {
 }
 
 func JSONSchemaFiles() (map[string][]byte, error) {
-	kinds := []Kind{KindCatalog, KindSemanticModel, KindDashboard}
+	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindModelTable, KindSemanticModelResource, KindDashboardResource}
 	files := map[string][]byte{}
 	for _, kind := range kinds {
 		content, err := JSONSchema(kind)
@@ -156,11 +162,23 @@ func JSONSchemaFiles() (map[string][]byte, error) {
 
 func JSONSchemaFilename(kind Kind) string {
 	switch kind {
-	case KindCatalog:
-		return "catalog.schema.json"
+	case KindProject:
+		return "project.schema.json"
+	case KindConnection:
+		return "connection.schema.json"
+	case KindSource:
+		return "source.schema.json"
+	case KindWorkspace:
+		return "workspace.schema.json"
+	case KindModelTable:
+		return "model-table.schema.json"
 	case KindSemanticModel:
 		return "semantic-model.schema.json"
 	case KindDashboard:
+		return "dashboard.schema.json"
+	case KindSemanticModelResource:
+		return "semantic-model.schema.json"
+	case KindDashboardResource:
 		return "dashboard.schema.json"
 	default:
 		return string(kind) + ".schema.json"
@@ -188,12 +206,24 @@ func DiagnosticForError(err error) Diagnostic {
 
 func definitionName(kind Kind) (string, error) {
 	switch kind {
-	case KindCatalog:
-		return "Catalog", nil
+	case KindProject:
+		return "Project", nil
+	case KindConnection:
+		return "ConnectionResource", nil
+	case KindSource:
+		return "SourceResource", nil
+	case KindWorkspace:
+		return "WorkspaceResource", nil
+	case KindModelTable:
+		return "ModelTableResource", nil
 	case KindSemanticModel:
 		return "SemanticModel", nil
 	case KindDashboard:
 		return "Dashboard", nil
+	case KindSemanticModelResource:
+		return "SemanticModelResource", nil
+	case KindDashboardResource:
+		return "DashboardResource", nil
 	default:
 		return "", fmt.Errorf("unknown schema kind %q", kind)
 	}
@@ -337,12 +367,25 @@ type schemaPath struct {
 }
 
 var schemaOverlays = map[Kind]schemaOverlay{
-	KindCatalog: {
-		required: []string{"semantic_models", "dashboards"},
+	KindProject: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
 		collections: []collectionRule{
-			rootCollection("semantic_models", collectionSequence),
-			rootCollection("dashboards", collectionSequence),
+			definitionCollection("#Project", "connections", collectionMapping),
+			definitionCollection("#Project", "sources", collectionMapping),
+			definitionCollection("#Project", "workspaces", collectionMapping),
 		},
+	},
+	KindConnection: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindSource: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspace: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindModelTable: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 	KindSemanticModel: {
 		required: []string{"name", "sources", "models", "semantic_models"},
@@ -350,7 +393,7 @@ var schemaOverlays = map[Kind]schemaOverlay{
 			rootCollection("sources", collectionMapping),
 			rootCollection("models", collectionMapping),
 			rootCollection("semantic_models", collectionMapping),
-			definitionCollection("#SemanticModelSpec", "tables", collectionSequence),
+			definitionCollection("#LegacySemanticModelSpec", "tables", collectionSequence),
 		},
 	},
 	KindDashboard: {
@@ -358,6 +401,19 @@ var schemaOverlays = map[Kind]schemaOverlay{
 		collections: []collectionRule{
 			rootCollection("visuals", collectionMapping),
 			rootCollection("pages", collectionSequence),
+		},
+	},
+	KindSemanticModelResource: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+		collections: []collectionRule{
+			definitionCollection("#ProjectSemanticModelSpec", "tables", collectionSequence),
+		},
+	},
+	KindDashboardResource: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+		collections: []collectionRule{
+			definitionCollection("#DashboardSpec", "visuals", collectionMapping),
+			definitionCollection("#DashboardSpec", "pages", collectionSequence),
 		},
 	},
 }

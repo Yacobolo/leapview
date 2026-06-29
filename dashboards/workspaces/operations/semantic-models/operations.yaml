@@ -1,0 +1,30 @@
+apiVersion: libredash.dev/v1
+kind: SemanticModel
+metadata:
+  workspace: operations
+  name: operations
+  title: Operations Semantic Model
+spec:
+  baseTable: orders
+  tables:
+    - orders
+    - customers
+  relationships:
+    - id: orders_customers
+      from: orders.customer_id
+      to: customers.customer_id
+      cardinality: many_to_one
+      active: true
+  measures:
+    defaults:
+      table: orders
+      grain: order_id
+    order_count:
+      label: Orders
+      expression: count_distinct(orders.order_id)
+    review_score:
+      label: Review score
+      expression: avg(orders.review_score)
+    delivery_days:
+      label: Delivery days
+      expression: avg(orders.delivery_days)

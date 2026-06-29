@@ -39,16 +39,21 @@ func (h Handler) RefreshMaterializations(w nethttp.ResponseWriter, r *nethttp.Re
 }
 
 func (h Handler) handleCommand(w nethttp.ResponseWriter, r *nethttp.Request, run func(command.Service, command.Request) []command.Event) {
+	metrics, ok := h.metricsForRequest(r)
+	if !ok {
+		nethttp.NotFound(w, r)
+		return
+	}
 	signals, ok := h.readSignals(w, r)
 	if !ok {
 		return
 	}
-	dashboardID := lddatastar.DashboardID(r, signals, h.Metrics.DefaultDashboardID())
+	dashboardID := lddatastar.DashboardID(r, signals, metrics.DefaultDashboardID())
 	pageID := lddatastar.PageID(r, signals)
-	modelID := lddatastar.ModelID(r, signals, dashboardID, h.Metrics.ModelIDForDashboard)
+	modelID := lddatastar.ModelID(r, signals, dashboardID, metrics.ModelIDForDashboard)
 	clientID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
 
-	events := run(command.Service{Metrics: h.Metrics}, command.Request{
+	events := run(command.Service{Metrics: metrics}, command.Request{
 		DashboardID:        dashboardID,
 		PageID:             pageID,
 		ModelID:            modelID,

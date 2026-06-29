@@ -251,7 +251,7 @@ func TestCSRFMiddlewareCookieCoversDashboardCommands(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	getReq := httptest.NewRequest(http.MethodGet, "http://localhost:8120/dashboards/executive-sales/pages/overview", nil)
+	getReq := httptest.NewRequest(http.MethodGet, "http://localhost:8120/workspaces/test-workspace/dashboards/executive-sales/pages/overview", nil)
 	getRec := httptest.NewRecorder()
 	handler.ServeHTTP(getRec, getReq)
 	if getRec.Code != http.StatusOK {
@@ -275,9 +275,9 @@ func TestCSRFMiddlewareCookieCoversDashboardCommands(t *testing.T) {
 		t.Fatalf("GET did not set %s cookie", csrfCookieName)
 	}
 
-	postReq := httptest.NewRequest(http.MethodPost, "http://localhost:8120/commands/table-window", nil)
+	postReq := httptest.NewRequest(http.MethodPost, "http://localhost:8120/workspaces/test/commands/table-window", nil)
 	postReq.Header.Set("X-CSRF-Token", getRec.Body.String())
-	postReq.Header.Set("Referer", "http://localhost:8120/dashboards/executive-sales/pages/overview")
+	postReq.Header.Set("Referer", "http://localhost:8120/workspaces/test-workspace/dashboards/executive-sales/pages/overview")
 	for _, cookie := range cookies {
 		postReq.AddCookie(cookie)
 	}
@@ -533,10 +533,10 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	artifactDir := t.TempDir()
 	dataDir := t.TempDir()
 	writeMinimalOlistFixture(t, dataDir)
-	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(dataDirMetrics{dataDir: dataDir}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "test"})
+	auth := testAuth(store, "sales", AuthConfig{DevBypass: true})
+	server := NewWithOptions(dataDirMetrics{dataDir: dataDir}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "sales"})
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/deployments", bytes.NewBufferString(`{"title":"Test"}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/deployments", bytes.NewBufferString(`{"title":"Test"}`))
 	createReq.Header.Set("Authorization", "Bearer dev")
 	createReq.Header.Set("Accept", "application/json")
 	createRec := httptest.NewRecorder()
@@ -550,10 +550,10 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	}
 
 	var bundle bytes.Buffer
-	if _, _, err := deploymentfs.PackCatalog(filepath.Join("..", "..", "dashboards", "catalog.yaml"), &bundle); err != nil {
-		t.Fatalf("pack catalog: %v", err)
+	if _, _, err := deploymentfs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), "sales", &bundle); err != nil {
+		t.Fatalf("pack project: %v", err)
 	}
-	uploadReq := httptest.NewRequest(http.MethodPut, "/api/v1/workspaces/test/deployments/"+created.ID+"/artifact", bytes.NewReader(bundle.Bytes()))
+	uploadReq := httptest.NewRequest(http.MethodPut, "/api/v1/workspaces/sales/deployments/"+created.ID+"/artifact", bytes.NewReader(bundle.Bytes()))
 	uploadReq.Header.Set("Authorization", "Bearer dev")
 	uploadReq.Header.Set("Accept", "application/json")
 	uploadReq.Header.Set("Content-Type", "application/octet-stream")
@@ -563,7 +563,7 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 		t.Fatalf("upload status = %d body=%s", uploadRec.Code, uploadRec.Body.String())
 	}
 
-	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/deployments/"+created.ID+"/validate", nil)
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/deployments/"+created.ID+"/validate", nil)
 	validateReq.Header.Set("Authorization", "Bearer dev")
 	validateReq.Header.Set("Accept", "application/json")
 	validateRec := httptest.NewRecorder()
@@ -572,7 +572,7 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 		t.Fatalf("validate status = %d body=%s", validateRec.Code, validateRec.Body.String())
 	}
 
-	activateReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/deployments/"+created.ID+"/activate", nil)
+	activateReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/deployments/"+created.ID+"/activate", nil)
 	activateReq.Header.Set("Authorization", "Bearer dev")
 	activateReq.Header.Set("Accept", "application/json")
 	activateRec := httptest.NewRecorder()
@@ -651,7 +651,7 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 		t.Fatalf("asset count = %d, want 1 body=%s", len(body.Items), rec.Body.String())
 	}
 	connection := body.Items[0]
-	if connection.ID != "connection:olist.olist" || connection.SnapshotID == "" || connection.SnapshotID == connection.ID {
+	if connection.ID != "connection:olist" || connection.SnapshotID == "" || connection.SnapshotID == connection.ID {
 		t.Fatalf("connection identity = %#v", connection)
 	}
 	if connection.PayloadSchema != "connection.v1" {
@@ -673,7 +673,7 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 		t.Fatalf("connection API leaked auth content:\n%s", rec.Body.String())
 	}
 
-	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/assets/connection:olist.olist", nil)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/assets/connection:olist", nil)
 	detailReq.Header.Set("Authorization", "Bearer dev")
 	detailReq.Header.Set("Accept", "application/json")
 	detailRec := httptest.NewRecorder()
@@ -692,7 +692,7 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 		t.Fatalf("asset detail payload = %#v", detail.Payload)
 	}
 
-	lineageReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/assets/connection:olist.olist/lineage", nil)
+	lineageReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/assets/connection:olist/lineage", nil)
 	lineageReq.Header.Set("Authorization", "Bearer dev")
 	lineageReq.Header.Set("Accept", "application/json")
 	lineageRec := httptest.NewRecorder()
@@ -704,7 +704,7 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 	if err := json.Unmarshal(lineageRec.Body.Bytes(), &lineage); err != nil {
 		t.Fatalf("decode asset lineage response: %v body=%s", err, lineageRec.Body.String())
 	}
-	if lineage.AssetID != "connection:olist.olist" || !stringSliceHas(lineage.Upstream, "source:olist.orders") {
+	if lineage.AssetID != "connection:olist" || !stringSliceHas(lineage.Upstream, "source:olist.orders") {
 		t.Fatalf("asset lineage = %#v", lineage)
 	}
 
@@ -752,7 +752,7 @@ func TestWorkspacePageDefaultsToTopLevelAssets(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Executive Sales Dashboard", "Olist Commerce", "orders"} {
+	for _, want := range []string{"Executive Sales", "Sales Semantic Model", "orders"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("workspace page missing top-level asset %q:\n%s", want, body)
 		}
@@ -842,12 +842,12 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"<ld-connections-page", "Connections", "Connection", "Source", "assetList", "Local CSV files for the Olist ecommerce demo dataset.", "Raw Olist order lifecycle records."} {
+	for _, want := range []string{"<ld-connections-page", "Connections", "Connection", "Source", "assetList", "Local CSV files for the Olist ecommerce demo dataset.", "orders"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("connections page missing %q:\n%s", want, body)
 		}
 	}
-	if !strings.Contains(body, `/connections/connection:olist.olist/details`) {
+	if !strings.Contains(body, `/connections/connection:olist/details`) {
 		t.Fatalf("connections page did not link to canonical connection details:\n%s", body)
 	}
 	if !strings.Contains(body, `/sources/source:olist.orders/details`) {
@@ -893,7 +893,7 @@ func TestConnectionAssetRoutesUseConnectionSurface(t *testing.T) {
 	seedActiveDeployment(t, store, "test")
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-	connectionID := activeAssetID(t, store, "test", "connection", "olist.olist")
+	connectionID := activeAssetID(t, store, "test", "connection", "olist")
 
 	redirectReq := httptest.NewRequest(http.MethodGet, "/connections/"+connectionID, nil)
 	redirectReq.Header.Set("Authorization", "Bearer dev")
@@ -945,7 +945,7 @@ func TestConnectionSourceAssetRoutesUseConnectionScopedSurface(t *testing.T) {
 	seedActiveDeployment(t, store, "test")
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-	connectionID := activeAssetID(t, store, "test", "connection", "olist.olist")
+	connectionID := activeAssetID(t, store, "test", "connection", "olist")
 	sourceID := activeAssetID(t, store, "test", "source", "olist.orders")
 
 	redirectReq := httptest.NewRequest(http.MethodGet, "/connections/"+connectionID+"/sources/"+sourceID, nil)
@@ -1014,7 +1014,7 @@ func TestWorkspaceConnectionAssetRedirectsToConnectionSurface(t *testing.T) {
 	seedActiveDeployment(t, store, "test")
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-	connectionID := activeAssetID(t, store, "test", "connection", "olist.olist")
+	connectionID := activeAssetID(t, store, "test", "connection", "olist")
 
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/assets/"+connectionID+"/details", nil)
 	req.Header.Set("Authorization", "Bearer dev")
@@ -1035,7 +1035,7 @@ func TestWorkspaceSourceAssetRedirectsToConnectionScopedSourceSurface(t *testing
 	seedActiveDeployment(t, store, "test")
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-	connectionID := activeAssetID(t, store, "test", "connection", "olist.olist")
+	connectionID := activeAssetID(t, store, "test", "connection", "olist")
 	sourceID := activeAssetID(t, store, "test", "source", "olist.orders")
 
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/assets/"+sourceID+"/details", nil)
@@ -1503,9 +1503,13 @@ func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID strin
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}
-	workspaceDef, err := workspacecompiler.CompileDefinition(filepath.Join("..", "..", "dashboards", "catalog.yaml"))
+	compiled, err := workspacecompiler.CompileProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), workspacecompiler.Options{})
 	if err != nil {
-		t.Fatalf("compile workspace definition: %v", err)
+		t.Fatalf("compile project: %v", err)
+	}
+	workspaceDef := compiled.Workspaces["sales"].Definition
+	if workspaceDef == nil {
+		t.Fatal("compile project: missing sales workspace definition")
 	}
 	graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(created.ID), workspaceDef)
 	if err != nil {

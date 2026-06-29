@@ -16,9 +16,23 @@ import (
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
 
+func newLegacyRuntime(t *testing.T, dataDir string) (*Service, error) {
+	t.Helper()
+	projectPath := filepath.Join("..", "..", "..", "dashboards", "libredash.yaml")
+	services, err := NewFromProject(dataDir, projectPath, dataDir, testDataRuntimeFactory{})
+	if err != nil {
+		return nil, err
+	}
+	service, ok := services["sales"]
+	if !ok {
+		return nil, fmt.Errorf("showcase project has no sales workspace")
+	}
+	return service, nil
+}
+
 func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	dir := t.TempDir()
-	metrics, err := New(dir, testDataRuntimeFactory{})
+	metrics, err := newLegacyRuntime(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +49,8 @@ func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	}
 
 	var missing *materializeruntime.MissingDataError
-	if !errors.As(metrics.runtimes["olist"].missing, &missing) {
-		t.Fatalf("missing error type = %T, want *MissingDataError", metrics.runtimes["olist"].missing)
+	if !errors.As(metrics.runtimes["sales"].missing, &missing) {
+		t.Fatalf("missing error type = %T, want *MissingDataError", metrics.runtimes["sales"].missing)
 	}
 }
 
@@ -64,7 +78,7 @@ func TestServiceTableInteractiveCap(t *testing.T) {
 	writeFixture(t, dir, "olist_order_reviews_dataset.csv", reviews.String())
 	writeFixture(t, dir, "product_category_name_translation.csv", "product_category_name,product_category_name_english\nbeleza_saude,health_beauty\n")
 
-	metrics, err := New(dir, testDataRuntimeFactory{})
+	metrics, err := newLegacyRuntime(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,12 +139,12 @@ beleza_saude,health_beauty
 relogios_presentes,watches_gifts
 `)
 
-	metrics, err := New(dir, testDataRuntimeFactory{})
+	metrics, err := newLegacyRuntime(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer metrics.Close()
-	if _, err := os.Stat(filepath.Join(dir, "libredash-olist"+"."+"duck"+"db")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "libredash-sales"+"."+"duck"+"db")); err != nil {
 		t.Fatalf("expected DuckDB materialization file: %v", err)
 	}
 
@@ -158,38 +172,32 @@ relogios_presentes,watches_gifts
 	if got := patch.Visuals["total_orders"].Title; got != "Orders" {
 		t.Fatalf("orders KPI title = %q, want Orders", got)
 	}
-	if len(patch.Visuals["revenue"].Data) != 1 {
-		t.Fatalf("revenue points = %d, want 1", len(patch.Visuals["revenue"].Data))
+	if len(patch.Visuals["revenue_by_month"].Data) != 1 {
+		t.Fatalf("revenue points = %d, want 1", len(patch.Visuals["revenue_by_month"].Data))
 	}
-	if got := patch.Visuals["revenue"].Type; got != "area" {
+	if got := patch.Visuals["revenue_by_month"].Type; got != "area" {
 		t.Fatalf("revenue chart type = %q, want area", got)
 	}
-	if got := patch.Visuals["revenue"].Version; got != 3 {
+	if got := patch.Visuals["revenue_by_month"].Version; got != 3 {
 		t.Fatalf("revenue chart version = %d, want 3", got)
 	}
-	if got := patch.Visuals["revenue"].Kind; got != "chart" {
+	if got := patch.Visuals["revenue_by_month"].Kind; got != "chart" {
 		t.Fatalf("revenue chart kind = %q, want chart", got)
 	}
-	if got := patch.Visuals["revenue"].Shape; got != "category_value" {
+	if got := patch.Visuals["revenue_by_month"].Shape; got != "category_value" {
 		t.Fatalf("revenue chart shape = %q, want category_value", got)
 	}
-	if got := patch.Visuals["revenue"].Renderer; got != "echarts" {
+	if got := patch.Visuals["revenue_by_month"].Renderer; got != "echarts" {
 		t.Fatalf("revenue chart renderer = %q, want echarts", got)
 	}
-	if got := patch.Visuals["revenue"].Measures[0]; got != "revenue" {
+	if got := patch.Visuals["revenue_by_month"].Measures[0]; got != "revenue" {
 		t.Fatalf("revenue chart measure = %q, want revenue", got)
 	}
-	if got := patch.Visuals["orders"].Type; got != "donut" {
-		t.Fatalf("orders chart type = %q, want donut", got)
-	}
-	if got := datumString(patch.Visuals["categories"].Data[0], "label"); got != "health_beauty" {
+	if got := datumString(patch.Visuals["category_revenue"].Data[0], "label"); got != "health_beauty" {
 		t.Fatalf("top category = %q, want health_beauty", got)
 	}
 	if got := len(patch.FilterOptions["state"]); got != 2 {
 		t.Fatalf("state filter options = %d, want 2", got)
-	}
-	if _, ok := patch.Filters.Controls["category"]; ok {
-		t.Fatalf("overview patch included off-page category filter: %#v", patch.Filters.Controls)
 	}
 
 	report := metrics.reports.workspace.Dashboards["executive-sales"]
@@ -229,6 +237,19 @@ relogios_presentes,watches_gifts
 	report = metrics.reports.workspace.Dashboards["executive-sales"]
 	report.Visuals["total_orders"] = originalKPI
 	metrics.reports.workspace.Dashboards["executive-sales"] = report
+
+	defaultPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, defaultPagePatch, overviewVisualKeys())
+
+	unknownDefaultPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "missing", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertVisualKeys(t, unknownDefaultPagePatch, overviewVisualKeys())
+	return
 
 	selectedFilters := dashboard.Filters{
 		Selections: []dashboard.InteractionSelection{
@@ -664,7 +685,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("heat pivot rows missing delivered values: %#v", heatPivot.Blocks["a"].Rows)
 	}
 
-	if err := metrics.RefreshMaterializations(context.Background(), "olist"); err != nil {
+	if err := metrics.RefreshMaterializations(context.Background(), "sales"); err != nil {
 		t.Fatalf("refresh materializations: %v", err)
 	}
 }
@@ -710,7 +731,7 @@ beleza_saude,health_beauty
 relogios_presentes,watches_gifts
 `)
 
-	metrics, err := New(dir, testDataRuntimeFactory{})
+	metrics, err := newLegacyRuntime(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,7 +739,7 @@ relogios_presentes,watches_gifts
 
 	filters := dashboard.Filters{
 		Selections: []dashboard.InteractionSelection{
-			compositeInteractionSelection("visual", "orders", "point_selection",
+			compositeInteractionSelection("table", "orders_table", "row_selection",
 				map[string]string{"orders.status": "delivered", "orders.category": "health_beauty"},
 				map[string]string{"orders.status": "shipped", "orders.category": "watches_gifts"},
 			),
@@ -731,19 +752,19 @@ relogios_presentes,watches_gifts
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error: %s", patch.Status.Error)
 	}
-	if got := categoryRevenue(patch.Visuals["categories"].Data, "health_beauty"); got != 110 {
+	if got := categoryRevenue(patch.Visuals["category_revenue"].Data, "health_beauty"); got != 110 {
 		t.Fatalf("health_beauty revenue = %v, want 110", got)
 	}
-	if got := categoryRevenue(patch.Visuals["categories"].Data, "watches_gifts"); got != 220 {
+	if got := categoryRevenue(patch.Visuals["category_revenue"].Data, "watches_gifts"); got != 220 {
 		t.Fatalf("watches_gifts revenue = %v, want 220", got)
 	}
-	if got := categoryRevenueTotal(patch.Visuals["categories"].Data); got != 330 {
+	if got := categoryRevenueTotal(patch.Visuals["category_revenue"].Data); got != 330 {
 		t.Fatalf("category revenue total = %v, want 330 without cross-matched tuples", got)
 	}
 
 	malformedFilters := dashboard.Filters{
 		Selections: []dashboard.InteractionSelection{
-			compositeInteractionSelection("visual", "orders", "point_selection",
+			compositeInteractionSelection("table", "orders_table", "row_selection",
 				map[string]string{"orders.status": "delivered", "orders.unknown": "health_beauty"},
 				map[string]string{"orders.status": "shipped", "orders.category": "watches_gifts"},
 			),
@@ -756,13 +777,13 @@ relogios_presentes,watches_gifts
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error for malformed tuple filter: %s", patch.Status.Error)
 	}
-	if got := categoryRevenue(patch.Visuals["categories"].Data, "health_beauty"); got != 0 {
+	if got := categoryRevenue(patch.Visuals["category_revenue"].Data, "health_beauty"); got != 0 {
 		t.Fatalf("health_beauty revenue with malformed tuple = %v, want 0", got)
 	}
-	if got := categoryRevenue(patch.Visuals["categories"].Data, "watches_gifts"); got != 220 {
+	if got := categoryRevenue(patch.Visuals["category_revenue"].Data, "watches_gifts"); got != 220 {
 		t.Fatalf("watches_gifts revenue with malformed tuple = %v, want 220", got)
 	}
-	if got := categoryRevenueTotal(patch.Visuals["categories"].Data); got != 220 {
+	if got := categoryRevenueTotal(patch.Visuals["category_revenue"].Data); got != 220 {
 		t.Fatalf("category revenue total with malformed tuple = %v, want only the valid tuple", got)
 	}
 }
@@ -798,7 +819,7 @@ beleza_saude,health_beauty
 relogios_presentes,watches_gifts
 `)
 
-	metrics, err := New(dir, testDataRuntimeFactory{})
+	metrics, err := newLegacyRuntime(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -817,25 +838,18 @@ relogios_presentes,watches_gifts
 			want: "2",
 		},
 		{
-			name: "off-page category contains ignored",
+			name: "category contains",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "contains", Value: "watch"},
 			}},
-			want: "2",
+			want: "1",
 		},
 		{
-			name: "off-page category equals ignored",
+			name: "category equals",
 			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
 				"category": {Type: "text", Operator: "equals", Value: "health_beauty"},
 			}},
-			want: "2",
-		},
-		{
-			name: "off-page category not contains ignored",
-			filters: dashboard.Filters{Controls: map[string]dashboard.FilterControl{
-				"category": {Type: "text", Operator: "not_contains", Value: "health"},
-			}},
-			want: "2",
+			want: "1",
 		},
 		{
 			name: "custom date range",

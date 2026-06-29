@@ -1,0 +1,11 @@
+apiVersion: libredash.dev/v1
+kind: Source
+metadata:
+  name: olist.customers
+  title: Customers
+spec:
+  connection: olist
+  path: olist_customers_dataset.csv
+  fields:
+    customer_id: {type: string, description: Customer identifier used by orders.}
+    customer_state: {type: string, description: Brazilian state for the customer.}

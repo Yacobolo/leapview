@@ -1,0 +1,11 @@
+apiVersion: libredash.dev/v1
+kind: Source
+metadata:
+  name: olist.reviews
+  title: Reviews
+spec:
+  connection: olist
+  path: olist_order_reviews_dataset.csv
+  fields:
+    order_id: {type: string, description: Order identifier associated with the review.}
+    review_score: {type: number, description: Customer review score.}

@@ -10,67 +10,79 @@ import (
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"gopkg.in/yaml.v3"
 )
 
-func TestValidateBytesRejectsUnknownField(t *testing.T) {
-	err := ValidateBytes(KindCatalog, "catalog.yaml", []byte(`
-workspace:
-  id: libredash
-semantic_models:
-  - id: olist
-    title: Olist
-    path: model.yaml
-dashboards: []
+func TestValidateBytesRejectsUnknownEnvelopeField(t *testing.T) {
+	err := ValidateBytes(KindProject, "libredash.yaml", []byte(`
+apiVersion: libredash.dev/v1
+kind: Project
+metadata:
+  name: test
+spec:
+  connections:
+    include: [connections/*.yaml]
+  sources:
+    include: [sources/*.yaml]
+  workspaces:
+    include: [workspaces/*/workspace.yaml]
 surprise: true
 `))
 	assertDiagnostic(t, err, "schema.unknown_field", "field not allowed")
 }
 
-func TestValidateBytesRejectsWrongType(t *testing.T) {
-	err := ValidateBytes(KindCatalog, "catalog.yaml", []byte(`
-semantic_models:
-  - id: 12
-    title: Olist
-    path: model.yaml
-dashboards: []
+func TestValidateBytesRejectsWrongEnvelopeType(t *testing.T) {
+	err := ValidateBytes(KindWorkspace, "workspace.yaml", []byte(`
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: sales
+spec:
+  uses:
+    sources: olist.orders
+  models:
+    include: [models/*.yaml]
+  semanticModels:
+    include: [semantic-models/*.yaml]
+  dashboards:
+    include: [dashboards/*.yaml]
 `))
 	assertDiagnostic(t, err, "schema.type", "mismatched types")
 }
 
 func TestValidateBytesRejectsUnsupportedEnum(t *testing.T) {
-	err := ValidateBytes(KindDashboard, "dashboard.yaml", []byte(`
-id: sales
-title: Sales
-semantic_model: olist
-visuals:
-  revenue:
-    type: volcano
-    query:
-      measures:
-        revenue:
-pages:
-  - id: overview
-    title: Overview
-    visuals: []
+	err := ValidateBytes(KindDashboardResource, "dashboard.yaml", []byte(`
+apiVersion: libredash.dev/v1
+kind: Dashboard
+metadata:
+  name: sales
+spec:
+  semanticModel: sales
+  visuals:
+    revenue:
+      type: volcano
+      query:
+        measures:
+          revenue:
+  pages:
+    - id: overview
+      title: Overview
+      visuals: []
 `))
 	assertDiagnostic(t, err, "schema.enum", "type")
 }
 
 func TestValidateBytesRejectsInvalidIdentifierKey(t *testing.T) {
-	err := ValidateBytes(KindSemanticModel, "model.yaml", []byte(`
-name: olist
-sources:
-  invalid-name:
-    connection: olist
-    path: orders.csv
-models:
-  orders:
-    source: invalid-name
-    primary_key: order_id
-semantic_models:
-  olist:
-    base_table: orders
-    tables: [orders]
+	err := ValidateBytes(KindModelTable, "orders.yaml", []byte(`
+apiVersion: libredash.dev/v1
+kind: ModelTable
+metadata:
+  name: orders
+spec:
+  primary_key: order_id
+  fields:
+    invalid-name:
+      label: Invalid
 `))
 	assertDiagnostic(t, err, "schema.unknown_field", "invalid-name")
 }
@@ -83,33 +95,47 @@ func TestValidateBytesRejectsMissingRequiredRootFields(t *testing.T) {
 		contains string
 	}{
 		{
-			name: "catalog semantic models",
-			kind: KindCatalog,
+			name: "project spec",
+			kind: KindProject,
 			content: `
-dashboards: []
+apiVersion: libredash.dev/v1
+kind: Project
+metadata:
+  name: test
 `,
-			contains: "semantic_models",
+			contains: "spec",
 		},
 		{
-			name: "semantic model sources",
-			kind: KindSemanticModel,
+			name: "workspace uses",
+			kind: KindWorkspace,
 			content: `
-name: olist
-models: {}
-semantic_models: {}
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: sales
+spec:
+  models:
+    include: [models/*.yaml]
+  semanticModels:
+    include: [semantic-models/*.yaml]
+  dashboards:
+    include: [dashboards/*.yaml]
 `,
-			contains: "sources",
+			contains: "uses",
 		},
 		{
 			name: "dashboard semantic model",
-			kind: KindDashboard,
+			kind: KindDashboardResource,
 			content: `
-id: sales
-title: Sales
-visuals: {}
-pages: []
+apiVersion: libredash.dev/v1
+kind: Dashboard
+metadata:
+  name: sales
+spec:
+  visuals: {}
+  pages: []
 `,
-			contains: "semantic_model",
+			contains: "semanticModel",
 		},
 	}
 	for _, tt := range tests {
@@ -120,19 +146,22 @@ pages: []
 	}
 }
 
-func TestValidateFileAcceptsOlistContracts(t *testing.T) {
-	root := filepath.Join("..", "..")
-	tests := []struct {
-		kind Kind
-		path string
-	}{
-		{KindCatalog, filepath.Join(root, "dashboards", "catalog.yaml")},
-		{KindSemanticModel, filepath.Join(root, "dashboards", "olist", "model.yaml")},
-		{KindDashboard, filepath.Join(root, "dashboards", "olist", "executive-sales.yaml")},
+func TestValidateFileAcceptsShowcaseResources(t *testing.T) {
+	root := filepath.Join("..", "..", "dashboards")
+	files, err := filepath.Glob(filepath.Join(root, "**", "*.yaml"))
+	if err == nil && len(files) == 0 {
+		err = filepath.SkipAll
 	}
-	for _, tt := range tests {
-		t.Run(string(tt.kind), func(t *testing.T) {
-			if err := ValidateFile(tt.kind, tt.path); err != nil {
+	if err != nil {
+		files = explicitShowcaseResourceFiles(root)
+	}
+	for _, path := range files {
+		kind, ok := kindForResourceFile(t, path)
+		if !ok {
+			continue
+		}
+		t.Run(path, func(t *testing.T) {
+			if err := ValidateFile(kind, path); err != nil {
 				t.Fatalf("ValidateFile() error = %v", err)
 			}
 		})
@@ -146,84 +175,50 @@ func TestGeneratedJSONSchemasRejectInvalidDocuments(t *testing.T) {
 		instance any
 	}{
 		{
-			name: "catalog missing semantic models",
-			kind: KindCatalog,
+			name: "project missing spec",
+			kind: KindProject,
 			instance: map[string]any{
-				"dashboards": []any{},
+				"apiVersion": "libredash.dev/v1",
+				"kind":       "Project",
+				"metadata":   map[string]any{"name": "test"},
 			},
 		},
 		{
-			name: "catalog empty dashboards",
-			kind: KindCatalog,
+			name: "workspace missing uses",
+			kind: KindWorkspace,
 			instance: map[string]any{
-				"semantic_models": []any{map[string]any{"id": "olist", "title": "Olist", "path": "model.yaml"}},
-				"dashboards":      []any{},
-			},
-		},
-		{
-			name: "semantic model missing sources",
-			kind: KindSemanticModel,
-			instance: map[string]any{
-				"name":            "olist",
-				"models":          map[string]any{"orders": map[string]any{"primary_key": "order_id"}},
-				"semantic_models": map[string]any{"olist": map[string]any{"base_table": "orders", "tables": []any{"orders"}}},
-			},
-		},
-		{
-			name: "semantic model invalid source key",
-			kind: KindSemanticModel,
-			instance: map[string]any{
-				"name": "olist",
-				"sources": map[string]any{
-					"invalid-name": map[string]any{"path": "orders.csv"},
+				"apiVersion": "libredash.dev/v1",
+				"kind":       "Workspace",
+				"metadata":   map[string]any{"name": "sales"},
+				"spec": map[string]any{
+					"models":         map[string]any{"include": []any{"models/*.yaml"}},
+					"semanticModels": map[string]any{"include": []any{"semantic-models/*.yaml"}},
+					"dashboards":     map[string]any{"include": []any{"dashboards/*.yaml"}},
 				},
-				"models":          map[string]any{"orders": map[string]any{"primary_key": "order_id"}},
-				"semantic_models": map[string]any{"olist": map[string]any{"base_table": "orders", "tables": []any{"orders"}}},
 			},
 		},
 		{
-			name: "dashboard missing semantic model",
-			kind: KindDashboard,
+			name: "model table missing primary key",
+			kind: KindModelTable,
 			instance: map[string]any{
-				"id":      "sales",
-				"title":   "Sales",
-				"visuals": map[string]any{"revenue": map[string]any{"query": map[string]any{}}},
-				"pages":   []any{map[string]any{"id": "overview", "title": "Overview", "visuals": []any{}}},
-			},
-		},
-		{
-			name: "dashboard empty visuals",
-			kind: KindDashboard,
-			instance: map[string]any{
-				"id":             "sales",
-				"title":          "Sales",
-				"semantic_model": "olist",
-				"visuals":        map[string]any{},
-				"pages":          []any{map[string]any{"id": "overview", "title": "Overview", "visuals": []any{}}},
-			},
-		},
-		{
-			name: "dashboard invalid visual key",
-			kind: KindDashboard,
-			instance: map[string]any{
-				"id":             "sales",
-				"title":          "Sales",
-				"semantic_model": "olist",
-				"visuals": map[string]any{
-					"bad-visual": map[string]any{"query": map[string]any{}},
-				},
-				"pages": []any{map[string]any{"id": "overview", "title": "Overview", "visuals": []any{}}},
+				"apiVersion": "libredash.dev/v1",
+				"kind":       "ModelTable",
+				"metadata":   map[string]any{"name": "orders"},
+				"spec":       map[string]any{},
 			},
 		},
 		{
 			name: "dashboard empty pages",
-			kind: KindDashboard,
+			kind: KindDashboardResource,
 			instance: map[string]any{
-				"id":             "sales",
-				"title":          "Sales",
-				"semantic_model": "olist",
-				"visuals":        map[string]any{"revenue": map[string]any{"query": map[string]any{}}},
-				"pages":          []any{},
+				"apiVersion": "libredash.dev/v1",
+				"kind":       "Dashboard",
+				"metadata":   map[string]any{"name": "sales"},
+				"spec": map[string]any{
+					"semanticModel": "sales",
+					"visuals":       map[string]any{"revenue": map[string]any{"query": map[string]any{}}},
+					"pages":         []any{},
+				},
 			},
 		},
 	}
@@ -251,6 +246,66 @@ func TestJSONSchemaFilesAreFresh(t *testing.T) {
 		if string(onDisk) != string(content) {
 			t.Fatalf("%s is stale; run libredash schema export --format json-schema --out schemas/json", path)
 		}
+	}
+}
+
+func explicitShowcaseResourceFiles(root string) []string {
+	return []string{
+		filepath.Join(root, "libredash.yaml"),
+		filepath.Join(root, "connections", "olist.yaml"),
+		filepath.Join(root, "sources", "olist.customers.yaml"),
+		filepath.Join(root, "sources", "olist.order_items.yaml"),
+		filepath.Join(root, "sources", "olist.orders.yaml"),
+		filepath.Join(root, "sources", "olist.payments.yaml"),
+		filepath.Join(root, "sources", "olist.products.yaml"),
+		filepath.Join(root, "sources", "olist.reviews.yaml"),
+		filepath.Join(root, "sources", "olist.translations.yaml"),
+		filepath.Join(root, "workspaces", "sales", "workspace.yaml"),
+		filepath.Join(root, "workspaces", "sales", "models", "customers.yaml"),
+		filepath.Join(root, "workspaces", "sales", "models", "orders.yaml"),
+		filepath.Join(root, "workspaces", "sales", "semantic-models", "sales.yaml"),
+		filepath.Join(root, "workspaces", "sales", "dashboards", "executive-sales.yaml"),
+		filepath.Join(root, "workspaces", "operations", "workspace.yaml"),
+		filepath.Join(root, "workspaces", "operations", "models", "customers.yaml"),
+		filepath.Join(root, "workspaces", "operations", "models", "orders.yaml"),
+		filepath.Join(root, "workspaces", "operations", "semantic-models", "operations.yaml"),
+		filepath.Join(root, "workspaces", "operations", "dashboards", "fulfillment-operations.yaml"),
+	}
+}
+
+func kindForResourceFile(t *testing.T, path string) (Kind, bool) {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header struct {
+		APIVersion string `yaml:"apiVersion"`
+		Kind       string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(content, &header); err != nil {
+		t.Fatal(err)
+	}
+	if header.APIVersion != "libredash.dev/v1" {
+		return "", false
+	}
+	switch header.Kind {
+	case "Project":
+		return KindProject, true
+	case "Connection":
+		return KindConnection, true
+	case "Source":
+		return KindSource, true
+	case "Workspace":
+		return KindWorkspace, true
+	case "ModelTable":
+		return KindModelTable, true
+	case "SemanticModel":
+		return KindSemanticModelResource, true
+	case "Dashboard":
+		return KindDashboardResource, true
+	default:
+		return "", false
 	}
 }
 

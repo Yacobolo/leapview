@@ -57,7 +57,7 @@ type materializationRuntime interface {
 	RefreshMaterializations(ctx context.Context, modelID string) error
 }
 
-func NewRuntimeMetrics(provider runtimeProvider, dataDir, workspaceID string) queryMetrics {
+func NewRuntimeMetrics(provider runtimeProvider, dataDir, workspaceID string) QueryMetrics {
 	return runtimeMetrics{provider: provider, dataDir: dataDir, workspaceID: workspaceID}
 }
 

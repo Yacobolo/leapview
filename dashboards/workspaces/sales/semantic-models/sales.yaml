@@ -1,0 +1,34 @@
+apiVersion: libredash.dev/v1
+kind: SemanticModel
+metadata:
+  workspace: sales
+  name: sales
+  title: Sales Semantic Model
+spec:
+  baseTable: orders
+  tables:
+    - orders
+    - customers
+  relationships:
+    - id: orders_customers
+      from: orders.customer_id
+      to: customers.customer_id
+      cardinality: many_to_one
+      active: true
+  measures:
+    defaults:
+      table: orders
+      grain: order_id
+      time: orders.purchase_timestamp
+      grains: [month]
+    order_count:
+      label: Orders
+      expression: count(DISTINCT orders.order_id)
+    revenue:
+      label: Revenue
+      expression: sum(orders.revenue)
+      format: currency
+    aov:
+      label: Average order value
+      expression: sum(orders.revenue) / nullif(count(DISTINCT orders.order_id), 0)
+      format: currency
