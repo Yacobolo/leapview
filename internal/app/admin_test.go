@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
 	"github.com/Yacobolo/libredash/internal/ui"
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -117,7 +116,7 @@ func TestAdminStorageDetailRouteIsDropped(t *testing.T) {
 	}
 }
 
-func TestAdminStorageUpdatesStreamsSignalPatch(t *testing.T) {
+func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleOwner)
@@ -125,26 +124,44 @@ func TestAdminStorageUpdatesStreamsSignalPatch(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedAdminStorageDuckDB(t)})
 
-	reqCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/admin/storage/updates", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(rec, req)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.Routes().ServeHTTP(rec, req)
+	}()
 
+	deadline := time.After(time.Second)
+	for server.broker.SubscriberCount("admin-storage:test-client") == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for storage updates subscriber")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	server.broker.Publish("admin-storage:test-client", map[string]any{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
+	deadline = time.After(time.Second)
+	for !strings.Contains(rec.Body.String(), "sentinel") {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for forwarded patch:\n%s", rec.Body.String())
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	<-done
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
 		t.Fatalf("content type = %q, want text/event-stream", got)
 	}
-	body := rec.Body.String()
-	ssetest.RequirePatchSignal(t, body, func(patch map[string]any) bool {
-		storage, ok := patch["adminStorage"].(map[string]any)
-		if !ok {
-			return false
-		}
-		return storage["selectedKey"] == "libredash-test.duckdb\x00model\x00order_totals" || storage["selectedKey"] == "libredash-test.duckdb\x00model\x00orders"
-	})
-	if !strings.Contains(body, `"tables"`) || !strings.Contains(body, `"selectedTable"`) {
-		t.Fatalf("storage updates missing table signal data:\n%s", body)
+	if strings.Contains(rec.Body.String(), `"tables"`) || strings.Contains(rec.Body.String(), `"selectedTable"`) {
+		t.Fatalf("storage updates should not send initial full table signal data:\n%s", rec.Body.String())
 	}
 }
 
@@ -187,6 +204,34 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for selected table patch")
+	}
+}
+
+func TestAdminStorageSelectTableRejectsInvalidCommand(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleOwner)
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedAdminStorageDuckDB(t)})
+	updates, unsubscribe := server.broker.Subscribe("admin-storage:test-client")
+	defer unsubscribe()
+
+	body := strings.NewReader(`{"adminStorageCommand":{"databaseId":"libredash-test.duckdb","schema":"model","table":"missing"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/admin/storage/select-table", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	select {
+	case patch := <-updates:
+		t.Fatalf("unexpected selected table patch for invalid command: %#v", patch)
+	default:
 	}
 }
 
@@ -301,4 +346,19 @@ CREATE VIEW model.order_totals AS SELECT customer_id, amount FROM model.orders;
 		t.Fatalf("seed duckdb: %v", err)
 	}
 	return dir
+}
+
+func TestDuckDBReadOnlyDSN(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{path: "/tmp/libredash.duckdb", want: "/tmp/libredash.duckdb?access_mode=READ_ONLY"},
+		{path: "/tmp/libredash.duckdb?threads=2", want: "/tmp/libredash.duckdb?threads=2&access_mode=READ_ONLY"},
+		{path: "/tmp/libredash.duckdb?access_mode=automatic", want: "/tmp/libredash.duckdb?access_mode=READ_ONLY"},
+	} {
+		if got := duckDBReadOnlyDSN(tc.path); got != tc.want {
+			t.Fatalf("duckDBReadOnlyDSN(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
 }

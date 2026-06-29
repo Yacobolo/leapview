@@ -1,4 +1,4 @@
-import { LitElement, html } from 'lit'
+import { LitElement, html, type PropertyValues } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { ChevronRight, Database, Search, Server, Table2, Waves } from 'lucide'
 import { lucideIcon } from './lucide-icons'
@@ -68,6 +68,14 @@ class StorageExplorer extends LitElement {
 
   createRenderRoot(): HTMLElement {
     return this
+  }
+
+  updated(changedProperties: PropertyValues<this>): void {
+    if (!changedProperties.has('storage') && !changedProperties.has('storageAttribute')) return
+    if (!this.selectedSchema) return
+    if (!this.resolveSelectedSchema(groupTables(this.resolvedStorage.tables ?? []))) {
+      this.selectedSchema = null
+    }
   }
 
   render() {
@@ -205,11 +213,11 @@ class StorageExplorer extends LitElement {
           <dd>${label(database.model)}</dd>
         </div>
         <div>
-          <dt>Rows</dt>
+          <dt>Known rows</dt>
           <dd>${sumKnownRows(schema.tables)}</dd>
         </div>
         <div>
-          <dt>Estimated size</dt>
+          <dt>Known size</dt>
           <dd>${sumKnownSizes(schema.tables)}</dd>
         </div>
       </dl>
@@ -354,10 +362,7 @@ class StorageExplorer extends LitElement {
     if (!selection) return null
     const database = groups.find((group) => group.id === selection.databaseId)
     const schema = database?.schemas.find((item) => item.schema === selection.schema)
-    if (!database || !schema) {
-      this.selectedSchema = null
-      return null
-    }
+    if (!database || !schema) return null
     return { database, schema }
   }
 }
@@ -413,7 +418,9 @@ function sumKnownRows(tables: StorageTable[]): string {
       known += 1
     }
   }
-  return known > 0 ? String(total) : '-'
+  if (known === 0) return '-'
+  const label = total.toLocaleString('en-US')
+  return known < tables.length ? `${label} + unknown` : label
 }
 
 function sumKnownSizes(tables: StorageTable[]): string {
@@ -426,7 +433,9 @@ function sumKnownSizes(tables: StorageTable[]): string {
       known += 1
     }
   }
-  return known > 0 ? formatBytes(total) : 'Unknown'
+  if (known === 0) return 'Unknown'
+  const label = formatBytes(total)
+  return known < tables.length ? `${label} + unknown` : label
 }
 
 function parseSizeLabel(value: string | undefined): number | null {

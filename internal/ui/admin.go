@@ -533,6 +533,10 @@ func AdminStorageSignalFromData(data AdminStorageData, command AdminStorageComma
 }
 
 func adminStorageTableSignal(table AdminStorageTable) AdminStorageTableSignal {
+	return AdminStorageTableSignalFromTable(table)
+}
+
+func AdminStorageTableSignalFromTable(table AdminStorageTable) AdminStorageTableSignal {
 	columns := make([]AdminStorageColumnSignal, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		columns = append(columns, AdminStorageColumnSignal{

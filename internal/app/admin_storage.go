@@ -73,11 +73,6 @@ func (s *Server) adminStorageData(r interface{ Context() context.Context }) ui.A
 func (s *Server) adminStorageUpdates(w http.ResponseWriter, r *http.Request) {
 	clientID := lddatastar.EnsureClientID(w, r)
 	sse := datastar.NewSSE(w, r)
-	if err := sse.MarshalAndPatchSignals(map[string]any{
-		"adminStorage": ui.AdminStorageSignalFromData(s.adminStorageData(r), ui.AdminStorageCommand{}),
-	}); err != nil {
-		return
-	}
 	updates, unsubscribe := s.broker.Subscribe(adminStorageStreamID(clientID))
 	defer unsubscribe()
 	for {
@@ -99,14 +94,51 @@ func (s *Server) adminStorageSelectTable(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	storageSignal := ui.AdminStorageSignalFromData(s.adminStorageData(r), signals.AdminStorageCommand)
+	selectedTable, err := s.adminStorageSelectedTable(r.Context(), signals.AdminStorageCommand)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	s.broker.Publish(adminStorageStreamID(clientID), map[string]any{
 		"adminStorage": map[string]any{
-			"selectedKey":   storageSignal.SelectedKey,
-			"selectedTable": storageSignal.SelectedTable,
+			"selectedKey":   selectedTable.Key,
+			"selectedTable": selectedTable,
 		},
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) adminStorageSelectedTable(ctx context.Context, command ui.AdminStorageCommand) (*ui.AdminStorageTableSignal, error) {
+	if strings.TrimSpace(command.DatabaseID) == "" || strings.TrimSpace(command.Schema) == "" || strings.TrimSpace(command.Table) == "" {
+		return nil, fmt.Errorf("storage table selection is incomplete")
+	}
+	if strings.TrimSpace(s.duckDBDir) == "" {
+		return nil, fmt.Errorf("DuckDB directory is not configured")
+	}
+	entries, err := discoverDuckDBFiles(s.duckDBDir)
+	if err != nil {
+		return nil, err
+	}
+	var selectedFile *duckDBFile
+	for i := range entries {
+		if entries[i].ID == command.DatabaseID {
+			selectedFile = &entries[i]
+			break
+		}
+	}
+	if selectedFile == nil {
+		return nil, fmt.Errorf("DuckDB database %q was not found", command.DatabaseID)
+	}
+	modelTitles := map[string]string{}
+	for _, model := range s.metrics.Catalog().Models {
+		modelTitles[model.ID] = model.Title
+	}
+	table, err := inspectDuckDBTable(ctx, *selectedFile, modelTitles, command.Schema, command.Table)
+	if err != nil {
+		return nil, err
+	}
+	selected := ui.AdminStorageTableSignalFromTable(table)
+	return &selected, nil
 }
 
 func adminStorageStreamID(clientID string) string {
@@ -198,7 +230,7 @@ func inspectDuckDBTables(ctx context.Context, file duckDBFile, modelTitles map[s
 }
 
 func openDuckDBForInspection(ctx context.Context, path string) (*sql.DB, error) {
-	db, err := sql.Open("duckdb", path)
+	db, err := sql.Open("duckdb", duckDBReadOnlyDSN(path))
 	if err == nil {
 		if pingErr := db.PingContext(ctx); pingErr == nil {
 			return db, nil
@@ -207,15 +239,23 @@ func openDuckDBForInspection(ctx context.Context, path string) (*sql.DB, error) 
 			err = pingErr
 		}
 	}
-	fallback, fallbackErr := sql.Open("duckdb", path+"?access_mode=READ_ONLY")
-	if fallbackErr != nil {
-		return nil, err
+	return nil, err
+}
+
+func duckDBReadOnlyDSN(path string) string {
+	before, query, hasQuery := strings.Cut(path, "?")
+	if !hasQuery {
+		return path + "?access_mode=READ_ONLY"
 	}
-	if fallbackErr := fallback.PingContext(ctx); fallbackErr != nil {
-		_ = fallback.Close()
-		return nil, err
+	values := strings.Split(query, "&")
+	for i, value := range values {
+		key, _, _ := strings.Cut(value, "=")
+		if key == "access_mode" {
+			values[i] = "access_mode=READ_ONLY"
+			return before + "?" + strings.Join(values, "&")
+		}
 	}
-	return fallback, nil
+	return path + "&access_mode=READ_ONLY"
 }
 
 func inspectDuckDBObjects(ctx context.Context, db *sql.DB, file duckDBFile, modelTitles map[string]string, columns map[string][]ui.AdminStorageColumn) ([]ui.AdminStorageTable, error) {
@@ -269,6 +309,66 @@ ORDER BY schema_name, table_name`)
 	return tables, rows.Err()
 }
 
+func inspectDuckDBTable(ctx context.Context, file duckDBFile, modelTitles map[string]string, schemaName, tableName string) (ui.AdminStorageTable, error) {
+	db, err := openDuckDBForInspection(ctx, file.Path)
+	if err != nil {
+		return ui.AdminStorageTable{}, fmt.Errorf("%s could not be opened: %w", file.Name, err)
+	}
+	defer db.Close()
+	columns, err := inspectDuckDBColumnsForTable(ctx, db, schemaName, tableName)
+	if err != nil {
+		return ui.AdminStorageTable{}, fmt.Errorf("%s columns could not be inspected: %w", file.Name, err)
+	}
+	table, err := inspectDuckDBObject(ctx, db, file, modelTitles, schemaName, tableName, columns)
+	if err != nil {
+		return ui.AdminStorageTable{}, err
+	}
+	return table, nil
+}
+
+func inspectDuckDBObject(ctx context.Context, db *sql.DB, file duckDBFile, modelTitles map[string]string, schemaName, tableName string, columns []ui.AdminStorageColumn) (ui.AdminStorageTable, error) {
+	row := db.QueryRowContext(ctx, `
+SELECT schema_name, table_name, 'table' AS object_type, column_count
+FROM duckdb_tables()
+WHERE internal = false AND temporary = false AND schema_name NOT IN ('information_schema', 'pg_catalog') AND schema_name = ? AND table_name = ?
+UNION ALL
+SELECT schema_name, view_name AS table_name, 'view' AS object_type, column_count
+FROM duckdb_views()
+WHERE internal = false AND temporary = false AND schema_name NOT IN ('information_schema', 'pg_catalog') AND schema_name = ? AND view_name = ?`, schemaName, tableName, schemaName, tableName)
+	var objectSchema, objectName, objectType string
+	var columnCount int
+	if err := row.Scan(&objectSchema, &objectName, &objectType, &columnCount); err != nil {
+		if err == sql.ErrNoRows {
+			return ui.AdminStorageTable{}, fmt.Errorf("DuckDB table %q.%q was not found", schemaName, tableName)
+		}
+		return ui.AdminStorageTable{}, err
+	}
+	rowCount := "-"
+	sizeLabel := "Unknown"
+	if objectType == "table" {
+		if count, err := countDuckDBRows(ctx, db, objectSchema, objectName); err == nil {
+			rowCount = fmt.Sprint(count)
+		}
+		if bytes, err := estimateDuckDBTableSize(ctx, db, objectSchema, objectName); err == nil {
+			sizeLabel = formatBytes(bytes)
+		}
+	}
+	return ui.AdminStorageTable{
+		DatabaseID:    file.ID,
+		DatabaseName:  file.Name,
+		DatabasePath:  file.Path,
+		ModelID:       file.ModelID,
+		ModelName:     firstNonEmpty(modelTitles[file.ModelID], file.ModelID, "-"),
+		Schema:        objectSchema,
+		Name:          objectName,
+		Type:          objectType,
+		RowCountLabel: rowCount,
+		ColumnCount:   columnCount,
+		SizeLabel:     sizeLabel,
+		Columns:       columns,
+	}, nil
+}
+
 func inspectDuckDBColumns(ctx context.Context, db *sql.DB) (map[string][]ui.AdminStorageColumn, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT schema_name, table_name, column_name, column_index, data_type, is_nullable, column_default
@@ -288,23 +388,55 @@ ORDER BY schema_name, table_name, column_index`)
 		if err := rows.Scan(&schemaName, &tableName, &columnName, &ordinal, &dataType, &nullable, &defaultValue); err != nil {
 			return nil, err
 		}
-		nullableLabel := "-"
-		if nullable.Valid {
-			if nullable.Bool {
-				nullableLabel = "Yes"
-			} else {
-				nullableLabel = "No"
-			}
-		}
 		columns[storageColumnKey(schemaName, tableName)] = append(columns[storageColumnKey(schemaName, tableName)], ui.AdminStorageColumn{
 			Name:     columnName,
 			Type:     dataType,
 			Ordinal:  ordinal,
-			Nullable: nullableLabel,
+			Nullable: duckDBNullableLabel(nullable),
 			Default:  defaultValue.String,
 		})
 	}
 	return columns, rows.Err()
+}
+
+func inspectDuckDBColumnsForTable(ctx context.Context, db *sql.DB, schemaName, tableName string) ([]ui.AdminStorageColumn, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT schema_name, table_name, column_name, column_index, data_type, is_nullable, column_default
+FROM duckdb_columns()
+WHERE internal = false AND schema_name NOT IN ('information_schema', 'pg_catalog') AND schema_name = ? AND table_name = ?
+ORDER BY column_index`, schemaName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var columns []ui.AdminStorageColumn
+	for rows.Next() {
+		var ignoredSchema, ignoredTable, columnName, dataType string
+		var ordinal int
+		var nullable sql.NullBool
+		var defaultValue sql.NullString
+		if err := rows.Scan(&ignoredSchema, &ignoredTable, &columnName, &ordinal, &dataType, &nullable, &defaultValue); err != nil {
+			return nil, err
+		}
+		columns = append(columns, ui.AdminStorageColumn{
+			Name:     columnName,
+			Type:     dataType,
+			Ordinal:  ordinal,
+			Nullable: duckDBNullableLabel(nullable),
+			Default:  defaultValue.String,
+		})
+	}
+	return columns, rows.Err()
+}
+
+func duckDBNullableLabel(nullable sql.NullBool) string {
+	if !nullable.Valid {
+		return "-"
+	}
+	if nullable.Bool {
+		return "Yes"
+	}
+	return "No"
 }
 
 func countDuckDBRows(ctx context.Context, db *sql.DB, schemaName, tableName string) (int64, error) {
