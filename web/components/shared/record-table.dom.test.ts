@@ -144,10 +144,12 @@ test('primary record table gives entity cells the full column width', async () =
       const link = element.querySelector('.record-entity-link') as HTMLElement
       const title = element.querySelector('.record-entity-label') as HTMLElement
       const description = element.querySelector('.record-entity-description') as HTMLElement
+      const cellStyle = getComputedStyle(cell)
+      const cellPadding = Number.parseFloat(cellStyle.paddingLeft) + Number.parseFloat(cellStyle.paddingRight)
       return {
         variant: element.getAttribute('variant'),
         linkWidth: Math.round(link.getBoundingClientRect().width),
-        cellInnerWidth: Math.round(cell.getBoundingClientRect().width - 16),
+        cellInnerWidth: Math.round(cell.getBoundingClientRect().width - cellPadding),
         titleFits: title.getBoundingClientRect().right <= cell.getBoundingClientRect().right,
         descriptionFits: description.getBoundingClientRect().right <= cell.getBoundingClientRect().right,
         iconBackground: getComputedStyle(element.querySelector('.record-entity-icon')!).backgroundColor,
@@ -158,6 +160,74 @@ test('primary record table gives entity cells the full column width', async () =
     expect(state.titleFits).toBe(true)
     expect(state.descriptionFits).toBe(true)
     expect(state.iconBackground).not.toBe('rgba(0, 0, 0, 0)')
+  } finally {
+    await page.close()
+  }
+})
+
+test('compact record table keeps metadata dense and scalar placeholders muted', async () => {
+  const page = await browser.newPage({ viewport: { width: 760, height: 520 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-record-table'))
+    await page.locator('ld-record-table').evaluate((element: any) => {
+      element.setAttribute('variant', 'compact')
+      element.table = {
+        columns: [
+          { id: 'name', header: 'Name', width: '220px' },
+          { id: 'email', header: 'Email', kind: 'link', hrefKey: 'emailHref', width: '260px' },
+          { id: 'roles', header: 'Roles', kind: 'number', width: '100px' },
+          { id: 'key', header: 'Key', kind: 'code', width: '160px' },
+        ],
+        rows: [
+          { name: 'Analyst', email: 'analyst@example.com', emailHref: 'mailto:analyst@example.com', roles: 3, key: 'analyst' },
+          { name: '', email: '', roles: null, key: '' },
+        ],
+        empty: 'No records.',
+        minWidth: '740px',
+      }
+    })
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    const initial = await page.locator('ld-record-table').evaluate((element) => {
+      const wrap = element.querySelector('.record-table-wrap') as HTMLElement
+      const firstHeader = element.querySelector('thead th') as HTMLElement
+      const firstCell = element.querySelector('tbody td') as HTMLElement
+      const numberHeader = element.querySelector('thead th:nth-child(3)') as HTMLElement
+      const numberCell = element.querySelector('tbody tr:first-child td:nth-child(3)') as HTMLElement
+      const unsortedIndicator = element.querySelector('thead th:first-child .record-table-sort-indicator') as HTMLElement
+      return {
+        variant: element.getAttribute('variant'),
+        hasCompactClass: wrap.classList.contains('variant-compact'),
+        headerPaddingTop: getComputedStyle(firstHeader).paddingTop,
+        cellPaddingTop: getComputedStyle(firstCell).paddingTop,
+        headerBackground: getComputedStyle(firstHeader).backgroundColor,
+        numberHeaderAlign: getComputedStyle(numberHeader).textAlign,
+        numberCellAlign: getComputedStyle(numberCell).textAlign,
+        mutedCount: element.querySelectorAll('.record-muted').length,
+        unsortedIndicatorOpacity: getComputedStyle(unsortedIndicator).opacity,
+      }
+    })
+    expect(initial.variant).toBe('compact')
+    expect(initial.hasCompactClass).toBe(true)
+    expect(initial.headerPaddingTop).toBe('8px')
+    expect(initial.cellPaddingTop).toBe('8px')
+    expect(initial.headerBackground).toBe('rgb(246, 248, 250)')
+    expect(initial.numberHeaderAlign).toBe('right')
+    expect(initial.numberCellAlign).toBe('right')
+    expect(initial.mutedCount).toBe(4)
+    expect(initial.unsortedIndicatorOpacity).toBe('0')
+
+    await page.locator('ld-record-table th:nth-child(3) button').click()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    const sorted = await page.locator('ld-record-table').evaluate((element) => {
+      const sortedIndicator = element.querySelector('thead th:nth-child(3) .record-table-sort-indicator') as HTMLElement
+      return {
+        sortedIndicatorOpacity: getComputedStyle(sortedIndicator).opacity,
+        sortedIndicatorText: sortedIndicator.textContent?.trim(),
+      }
+    })
+    expect(sorted.sortedIndicatorOpacity).toBe('1')
+    expect(sorted.sortedIndicatorText).toBe('↑')
   } finally {
     await page.close()
   }
@@ -206,7 +276,7 @@ function testDocument(): string {
     <html>
       <head>
         <style>
-          body { --fontStack-system: system-ui; --fontStack-monospace: monospace; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-line-muted: #d8dee4; --ld-border-muted: 1px solid #d8dee4; --ld-border-transparent: 1px solid transparent; --ld-radius-default: 6px; --ld-radius-full: 999px; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-16: 16px; --base-size-20: 20px; --control-medium-size: 32px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-body-md: 14px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-font-weight-regular: 400; --ld-line-height-normal: 1.5; --ld-line-height-compact: 1.3; }
+          body { --fontStack-system: system-ui; --fontStack-monospace: monospace; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-line-muted: #d8dee4; --ld-border-muted: 1px solid #d8dee4; --ld-border-transparent: 1px solid transparent; --ld-radius-default: 6px; --ld-radius-full: 999px; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --control-medium-size: 32px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-body-md: 14px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-font-weight-regular: 400; --ld-line-height-normal: 1.5; --ld-line-height-compact: 1.3; }
         </style>
       </head>
       <body>

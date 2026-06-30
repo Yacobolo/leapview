@@ -71,7 +71,7 @@ type RecordTablePayload = {
   minWidth?: string
 }
 
-type RecordTableVariant = 'minimal' | 'primary'
+type RecordTableVariant = 'minimal' | 'primary' | 'compact'
 
 const recordTableFeatures = tableFeatures({ rowSortingFeature, sortedRowModel: createSortedRowModel() })
 
@@ -150,6 +150,10 @@ function applyUpdater<T>(updater: unknown, current: T): T {
   return typeof updater === 'function' ? (updater as (old: T) => T)(current) : updater as T
 }
 
+function columnAlignClass(column: RecordColumn): string {
+  return column.align === 'right' || column.kind === 'number' ? 'is-right' : ''
+}
+
 class RecordTable extends LitElement {
   @property({ attribute: false }) table: RecordTablePayload | null = null
   @property({ attribute: 'table' }) tableAttribute = ''
@@ -184,7 +188,7 @@ class RecordTable extends LitElement {
                 const direction = this.sortDirection(column.id)
                 const sortable = column.sortable !== false && column.kind !== 'actions'
                 return html`
-                  <th style=${column.width ? `width: ${column.width}` : ''} class=${column.align === 'right' ? 'is-right' : ''}>
+                  <th style=${column.width ? `width: ${column.width}` : ''} class=${columnAlignClass(column)}>
                     <button
                       type="button"
                       class="record-table-sort"
@@ -194,7 +198,7 @@ class RecordTable extends LitElement {
                       @click=${() => sortable ? this.toggleSort(column.id) : undefined}
                     >
                       <span>${column.header}</span>
-                      <span class="record-table-sort-indicator" aria-hidden="true">${sortable ? this.sortIndicator(direction) : nothing}</span>
+                      <span class=${direction ? 'record-table-sort-indicator is-active' : 'record-table-sort-indicator'} aria-hidden="true">${sortable ? this.sortIndicator(direction) : nothing}</span>
                     </button>
                   </th>
                 `
@@ -205,7 +209,7 @@ class RecordTable extends LitElement {
             ${rows.map((row) => html`
               <tr>
                 ${table.columns.map((column) => html`
-                  <td class=${column.align === 'right' ? 'is-right' : ''}>
+                  <td class=${columnAlignClass(column)}>
                     ${this.renderCell(column, row[column.id], row)}
                   </td>
                 `)}
@@ -285,15 +289,15 @@ class RecordTable extends LitElement {
     const label = cellLabel(value)
     switch (column.kind) {
       case 'code':
-        return html`<code class="record-code">${label}</code>`
+        return label === '-' ? html`<span class="record-muted">-</span>` : html`<code class="record-code">${label}</code>`
       case 'expression':
-        return html`<code class="record-expression">${label}</code>`
+        return label === '-' ? html`<span class="record-muted">-</span>` : html`<code class="record-expression">${label}</code>`
       case 'badge':
         return label === '-' ? html`<span class="record-muted">-</span>` : html`<span class=${`record-badge record-badge-${cellTone(value)}`}>${label}</span>`
       case 'status':
         return label === '-' ? html`<span class="record-muted">-</span>` : this.renderStatusCell(value, label)
       case 'number':
-        return html`<span class="record-number">${label}</span>`
+        return label === '-' ? html`<span class="record-muted">-</span>` : html`<span class="record-number">${label}</span>`
       case 'link':
         return this.renderLink(column, value, row)
       case 'tags':
@@ -307,13 +311,14 @@ class RecordTable extends LitElement {
       case 'actions':
         return this.renderActions(value, row)
       default:
-        return html`<span>${label}</span>`
+        return label === '-' ? html`<span class="record-muted">-</span>` : html`<span>${label}</span>`
     }
   }
 
   private renderLink(column: RecordColumn, value: unknown, row: RecordRow) {
     const href = cellHref(column, value, row)
     const label = cellLabel(value)
+    if (label === '-') return html`<span class="record-muted">-</span>`
     return href && href !== '-' ? html`<a class="record-link" href=${href}>${label}</a>` : html`<span>${label}</span>`
   }
 
@@ -478,7 +483,8 @@ const recordTableStyles = `
     border-bottom: var(--ld-border-muted);
   }
 
-  ld-record-table .record-table-wrap.variant-primary {
+  ld-record-table .record-table-wrap.variant-primary,
+  ld-record-table .record-table-wrap.variant-compact {
     border: var(--ld-border-muted);
     border-radius: var(--ld-radius-default);
     background: var(--ld-bg-panel);
@@ -510,11 +516,17 @@ const recordTableStyles = `
     text-transform: uppercase;
   }
 
-  ld-record-table .variant-primary .record-table th {
+  ld-record-table .variant-primary .record-table th,
+  ld-record-table .variant-compact .record-table th {
     padding: var(--base-size-12) var(--base-size-16);
     background: var(--ld-bg-panel-muted);
     font-size: var(--ld-font-size-body-sm);
     font-weight: var(--ld-font-weight-strong);
+  }
+
+  ld-record-table .variant-compact .record-table th {
+    padding: var(--base-size-8) var(--base-size-12);
+    font-size: var(--ld-font-size-caption);
   }
 
   ld-record-table .record-table td {
@@ -528,6 +540,12 @@ const recordTableStyles = `
     padding: var(--base-size-12) var(--base-size-16);
     font-size: var(--ld-font-size-body-md);
     vertical-align: top;
+  }
+
+  ld-record-table .variant-compact .record-table td {
+    padding: var(--base-size-8) var(--base-size-12);
+    font-size: var(--ld-font-size-body-sm);
+    vertical-align: middle;
   }
 
   ld-record-table .variant-primary .record-table tbody tr {
@@ -549,6 +567,11 @@ const recordTableStyles = `
 
   ld-record-table .record-table tbody tr:hover {
     background: var(--ld-bg-hover, var(--ld-bg-panel-muted));
+  }
+
+  ld-record-table .variant-primary .record-table tbody tr:hover,
+  ld-record-table .variant-compact .record-table tbody tr:hover {
+    background: color-mix(in srgb, var(--ld-bg-panel-muted), transparent 35%);
   }
 
   ld-record-table .record-table-sort {
@@ -580,6 +603,13 @@ const recordTableStyles = `
     min-width: var(--base-size-16);
     justify-content: flex-end;
     color: var(--ld-fg-muted);
+    opacity: 0;
+  }
+
+  ld-record-table .record-table-sort:hover .record-table-sort-indicator,
+  ld-record-table .record-table-sort:focus-visible .record-table-sort-indicator,
+  ld-record-table .record-table-sort-indicator.is-active {
+    opacity: 1;
   }
 
   ld-record-table .record-code,

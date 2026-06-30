@@ -253,7 +253,7 @@ function renderSection(section: AdminContentSectionSignal) {
     <section class="section" aria-label=${section.title}>
       <h2>${section.title}</h2>
       ${section.table?.columns?.length
-        ? html`<div class="panel"><ld-record-table variant="primary" .table=${section.table}></ld-record-table></div>`
+        ? html`<div class="panel"><ld-record-table variant="compact" .table=${section.table}></ld-record-table></div>`
         : html`<div class="facts">${section.facts?.map((fact) => html`
           <div class="metric">
             <span class="label">${fact.label}</span>

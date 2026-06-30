@@ -93,7 +93,7 @@ for (const viewport of [
         expect(state.mainConstrained).toBe(true)
       }
       expect(state.hasRecordTable).toBe(true)
-      expect(state.recordTableVariant).toBe('primary')
+      expect(state.recordTableVariant).toBe('compact')
       expect(state.text ?? '').toMatch(/analyst@example\.com/)
     } finally {
       await page.close()
