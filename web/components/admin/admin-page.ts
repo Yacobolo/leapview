@@ -39,17 +39,22 @@ class LibreDashAdminPage extends LitElement {
 
     .main {
       display: grid;
+      width: min(100%, var(--ld-page-content-max-width, 72rem));
       min-width: 0;
       min-height: 100svh;
       align-content: start;
       gap: var(--base-size-12);
+      box-sizing: border-box;
+      justify-self: center;
       padding: var(--base-size-16);
     }
 
     .main-storage {
+      width: 100%;
       grid-template-rows: minmax(0, 1fr);
       align-content: stretch;
       gap: 0;
+      justify-self: stretch;
       padding: 0;
     }
 

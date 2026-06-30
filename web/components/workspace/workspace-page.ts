@@ -530,18 +530,23 @@ const workspaceStyles = css`
   .page,
   .asset-page {
     display: grid;
+    width: min(100%, var(--ld-page-content-max-width, 72rem));
     min-width: 0;
     min-height: 100svh;
     align-content: start;
     gap: var(--base-size-12);
+    box-sizing: border-box;
+    margin-inline: auto;
     background: var(--ld-bg-app);
     padding: var(--base-size-16);
   }
 
   .asset-page {
+    width: 100%;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 0;
     height: 100svh;
+    margin-inline: 0;
     padding: 0;
     overflow: hidden;
   }

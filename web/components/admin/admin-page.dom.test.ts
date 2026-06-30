@@ -45,7 +45,7 @@ afterAll(async () => {
 })
 
 for (const viewport of [
-  { name: 'desktop', width: 1280, height: 820 },
+  { name: 'desktop', width: 1440, height: 820 },
   { name: 'mobile', width: 390, height: 820 },
 ]) {
   test(`admin page composes route UI on ${viewport.name}`, async () => {
@@ -63,11 +63,21 @@ for (const viewport of [
         const root = element.shadowRoot
         const subSidebar = root.querySelector('ld-sub-sidebar') as HTMLElement
         const subSidebarAside = subSidebar?.shadowRoot?.querySelector('aside') as HTMLElement | null
+        const main = root.querySelector('.main') as HTMLElement
+        const mainRect = main.getBoundingClientRect()
+        const routeRect = root.querySelector('.route')!.getBoundingClientRect()
+        const sidebarRect = subSidebar.getBoundingClientRect()
+        const availableLeft = window.innerWidth <= 640 ? routeRect.left : sidebarRect.right
+        const availableRight = routeRect.right
+        const availableCenter = availableLeft + (availableRight - availableLeft) / 2
+        const isMobile = window.innerWidth <= 640
         return {
           title: root.querySelector('h1')?.textContent?.trim(),
           hasSidebar: Boolean(root.querySelector('ld-sub-sidebar')),
           sidebarBorderRight: subSidebar ? getComputedStyle(subSidebar).borderRight : '',
           sidebarBackground: subSidebarAside ? getComputedStyle(subSidebarAside).backgroundColor : '',
+          mainCentered: isMobile || Math.abs((mainRect.left + mainRect.width / 2) - availableCenter) <= 1,
+          mainConstrained: isMobile || Math.round(mainRect.width) < Math.round(availableRight - availableLeft),
           hasGrid: Boolean(root.querySelector('ld-data-grid')),
           text: root.textContent,
         }
@@ -78,6 +88,8 @@ for (const viewport of [
       if (viewport.width > 640) {
         expect(state.sidebarBorderRight).toContain('1px solid')
         expect(state.sidebarBackground).toBe('rgb(241, 243, 245)')
+        expect(state.mainCentered).toBe(true)
+        expect(state.mainConstrained).toBe(true)
       }
       expect(state.hasGrid).toBe(true)
       expect(state.text ?? '').toMatch(/analyst@example\.com/)

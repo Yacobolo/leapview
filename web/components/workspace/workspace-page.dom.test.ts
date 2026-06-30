@@ -85,11 +85,16 @@ for (const viewport of [
         const semanticGraphSection = asset.shadowRoot.querySelector('.semantic-model-section') as HTMLElement
         const nameCellRight = workspaceNameCell.getBoundingClientRect().right
         const typeCellLeft = workspaceTypeCell.getBoundingClientRect().left
+        const workspacePageRect = workspacePage.getBoundingClientRect()
+        const connectionsPageRect = connectionsPage.getBoundingClientRect()
+        const isMobile = window.innerWidth <= 720
         return {
           workspaceTitle: workspace.shadowRoot.querySelector('h1')?.textContent?.trim(),
           workspaceHasAsset: Boolean(workspace.shadowRoot.querySelector('.asset-title')),
           workspaceHasAccess: Boolean(workspace.shadowRoot.querySelector('ld-workspace-access-control')),
           workspaceIsStyled: getComputedStyle(workspacePage).paddingTop !== '0px',
+          workspacePageCentered: isMobile || Math.abs((workspacePageRect.left + workspacePageRect.width / 2) - window.innerWidth / 2) <= 1,
+          workspacePageConstrained: isMobile || Math.round(workspacePageRect.width) < window.innerWidth,
           workspaceToolbarDisplay: getComputedStyle(workspaceToolbar).display,
           workspaceGlyphText: workspaceGlyph.textContent?.trim(),
           workspaceGlyphBackground: getComputedStyle(workspaceGlyph).backgroundColor,
@@ -101,6 +106,8 @@ for (const viewport of [
           connectionsTitle: connections.shadowRoot.querySelector('h1')?.textContent?.trim(),
           connectionsHasSource: connections.shadowRoot.textContent?.includes('Orders source') ?? false,
           connectionsIsStyled: getComputedStyle(connectionsPage).paddingTop !== '0px',
+          connectionsPageCentered: isMobile || Math.abs((connectionsPageRect.left + connectionsPageRect.width / 2) - window.innerWidth / 2) <= 1,
+          connectionsPageConstrained: isMobile || Math.round(connectionsPageRect.width) < window.innerWidth,
           assetTitle: asset.shadowRoot.querySelector('h1 span:last-child')?.textContent?.trim(),
           assetHasOverview: asset.shadowRoot.textContent?.includes('Overview') ?? false,
           assetHasGrid: Boolean(asset.shadowRoot.querySelector('ld-data-grid')),
@@ -119,6 +126,8 @@ for (const viewport of [
         workspaceHasAsset: true,
         workspaceHasAccess: true,
         workspaceIsStyled: true,
+        workspacePageCentered: true,
+        workspacePageConstrained: true,
         workspaceToolbarDisplay: 'grid',
         workspaceGlyphText: '',
         workspaceGlyphBackground: 'rgb(221, 244, 255)',
@@ -130,6 +139,8 @@ for (const viewport of [
         connectionsTitle: 'Connections',
         connectionsHasSource: true,
         connectionsIsStyled: true,
+        connectionsPageCentered: true,
+        connectionsPageConstrained: true,
         assetTitle: 'Olist Commerce',
         assetHasOverview: true,
         assetHasGrid: true,
