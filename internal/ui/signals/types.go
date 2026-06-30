@@ -2,6 +2,7 @@ package signals
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -698,10 +699,10 @@ func DashboardInitialEnvelope(dataDir, clientID, csrfToken string, catalog dashb
 	}
 }
 
-func ChatInitialEnvelope(catalog dashboard.Catalog, csrfToken, roleLabel string, agent ChatSignal) ChatEnvelope {
+func ChatInitialEnvelope(catalog dashboard.Catalog, workspaceID, csrfToken, roleLabel string, agent ChatSignal) ChatEnvelope {
 	return ChatEnvelope{
-		Chrome:    ChromeSignal{Sidebar: SidebarConfigForChat(catalog, roleLabel)},
-		Page:      ChatPage(agent),
+		Chrome:    ChromeSignal{Sidebar: SidebarConfigForChat(catalog, workspaceID, roleLabel)},
+		Page:      ChatPage(workspaceID, agent),
 		Runtime:   RouteRuntimeSignal{Kind: RouteChat},
 		CSRFToken: csrfToken,
 		Agent:     agent,
@@ -710,17 +711,17 @@ func ChatInitialEnvelope(catalog dashboard.Catalog, csrfToken, roleLabel string,
 	}
 }
 
-func ChatPage(agent ChatSignal) ChatPageSignal {
+func ChatPage(workspaceID string, agent ChatSignal) ChatPageSignal {
 	return ChatPageSignal{
 		Kind:        RouteChat,
 		Title:       "Chats",
 		Description: "Ask read-only questions about dashboards, semantic models, measures, and fields.",
-		Sidebar:     ChatSubSidebar(agent),
+		Sidebar:     ChatSubSidebar(workspaceID, agent),
 	}
 }
 
-func ChatSubSidebar(agent ChatSignal) SubSidebarSignal {
-	items := []SubSidebarItemSignal{{ID: "new", Title: "New chat", Href: "/chat/new", Active: agent.ActiveConversationID == ""}}
+func ChatSubSidebar(workspaceID string, agent ChatSignal) SubSidebarSignal {
+	items := []SubSidebarItemSignal{{ID: "new", Title: "New chat", Href: chatPath(workspaceID, "new"), Active: agent.ActiveConversationID == ""}}
 	for _, conversation := range agent.Conversations {
 		title := conversation.Title
 		if title == "" {
@@ -729,7 +730,7 @@ func ChatSubSidebar(agent ChatSignal) SubSidebarSignal {
 		items = append(items, SubSidebarItemSignal{
 			ID:      conversation.ID,
 			Title:   title,
-			Href:    "/chat/" + conversation.ID,
+			Href:    chatPath(workspaceID, conversation.ID),
 			Active:  conversation.ID == agent.ActiveConversationID,
 			Pending: conversation.TitlePending,
 		})
@@ -770,7 +771,10 @@ func SidebarConfigForWorkspace(catalog dashboard.Catalog, active, roleLabel stri
 	return SidebarConfig(catalog, active, "", workspaceDisplayTitle(catalog), "Workspace", "Published assets", "", "", false, roleLabel)
 }
 
-func SidebarConfigForChat(catalog dashboard.Catalog, roleLabel string) SidebarSignal {
+func SidebarConfigForChat(catalog dashboard.Catalog, workspaceID, roleLabel string) SidebarSignal {
+	if strings.TrimSpace(workspaceID) != "" {
+		catalog.Workspace.ID = workspaceID
+	}
 	config := SidebarConfigForWorkspace(catalog, "chat", roleLabel)
 	config.Compact = true
 	return config
@@ -979,13 +983,28 @@ func sidebarGroups(catalog dashboard.Catalog) []SidebarGroupSignal {
 			Label: "Navigation",
 			Items: []SidebarItemSignal{
 				{ID: "dashboards", Label: "Dashboards", Href: "/", Icon: "dashboard", Meta: "Reports"},
-				{ID: "chat", Label: "Chats", Href: "/chat", Icon: "chat", Meta: "Agent interface"},
+				{ID: "chat", Label: "Chats", Href: chatPath(catalog.Workspace.ID), Icon: "chat", Meta: "Agent interface"},
 				{ID: "workspaces", Label: "Workspaces", Href: "/workspaces", Icon: "catalog", Meta: "Published assets"},
 				{ID: "connections", Label: "Connections", Href: "/connections", Icon: "data", Meta: "Data access"},
 				{ID: "admin", Label: "Admin", Href: "/admin", Icon: "settings", Meta: "Read-only administration"},
 			},
 		},
 	}
+}
+
+func chatPath(workspaceID string, parts ...string) string {
+	if strings.TrimSpace(workspaceID) == "" {
+		return "/workspaces"
+	}
+	path := "/workspaces/" + url.PathEscape(workspaceID) + "/chat"
+	for _, part := range parts {
+		part = strings.Trim(part, "/")
+		if part == "" {
+			continue
+		}
+		path += "/" + url.PathEscape(part)
+	}
+	return path
 }
 
 func workspaceDisplayTitle(catalog dashboard.Catalog) string {

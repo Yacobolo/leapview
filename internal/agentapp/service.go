@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	ErrDisabled = errors.New("agent is not configured")
-	ErrBusy     = errors.New("agent conversation already has a running turn")
+	ErrDisabled       = errors.New("agent is not configured")
+	ErrPolicyDisabled = errors.New("agent is disabled by workspace policy")
+	ErrBusy           = errors.New("agent conversation already has a running turn")
 )
 
 const (

@@ -136,6 +136,16 @@ func runPlan(ctx context.Context, opts *rootOptions, out io.Writer) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(plan)
 	}
+	if err := renderProjectPlan(out, plan); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func renderProjectPlan(out io.Writer, plan workspacecompiler.ProjectPlan) error {
 	fmt.Fprintf(out, "project %s\n", plan.Project)
 	for _, workspace := range plan.Workspaces {
 		fmt.Fprintf(out, "workspace %s\n", workspace.ID)
@@ -144,6 +154,9 @@ func runPlan(ctx context.Context, opts *rootOptions, out io.Writer) error {
 		fmt.Fprintf(out, "  model_tables %s\n", strings.Join(workspace.ModelTables, ","))
 		fmt.Fprintf(out, "  semantic_models %s\n", strings.Join(workspace.SemanticModels, ","))
 		fmt.Fprintf(out, "  dashboards %s\n", strings.Join(workspace.Dashboards, ","))
+		fmt.Fprintf(out, "  workspace_groups %s\n", strings.Join(workspace.WorkspaceGroups, ","))
+		fmt.Fprintf(out, "  workspace_role_bindings %s\n", strings.Join(workspace.WorkspaceRoleBindings, ","))
+		fmt.Fprintf(out, "  workspace_agent_policies %s\n", strings.Join(workspace.WorkspaceAgentPolicies, ","))
 		if len(workspace.Changes) > 0 || len(workspace.DependencyChanges) > 0 {
 			fmt.Fprintf(out, "  changes +%d ~%d -%d dependencies %d\n", workspace.Summary.Added, workspace.Summary.Changed, workspace.Summary.Removed, workspace.Summary.DependencyChanges)
 			for _, change := range workspace.Changes {
@@ -155,12 +168,13 @@ func runPlan(ctx context.Context, opts *rootOptions, out io.Writer) error {
 				fmt.Fprintln(out)
 			}
 			for _, change := range workspace.DependencyChanges {
-				fmt.Fprintf(out, "    %s dependency %s -> %s (%s)\n", change.Action, change.From, change.To, change.Type)
+				fmt.Fprintf(out, "    %s dependency %s -> %s (%s)", change.Action, change.From, change.To, change.Type)
+				if change.Breaking {
+					fmt.Fprint(out, " [breaking]")
+				}
+				fmt.Fprintln(out)
 			}
 		}
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	return nil
 }
@@ -286,6 +300,9 @@ func planChangeAnnotations(change workspacecompiler.ProjectPlanChange) string {
 	}
 	if change.AccessImpact {
 		parts = append(parts, "access")
+	}
+	if change.AgentPolicyImpact {
+		parts = append(parts, "agent_policy")
 	}
 	return strings.Join(parts, ",")
 }

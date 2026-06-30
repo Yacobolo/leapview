@@ -101,8 +101,30 @@ func TestServiceRejectsDisabledWorkspaceAgentPolicy(t *testing.T) {
 		ConversationID: "conv_test",
 		Input:          "hello",
 	})
+	if !errors.Is(err, ErrPolicyDisabled) {
+		t.Fatalf("Prompt() error = %v, want ErrPolicyDisabled", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "workspace policy") {
+		t.Fatalf("Prompt() error = %v, want policy-specific message", err)
+	}
+}
+
+func TestServiceRejectsGloballyDisabledAgentSeparatelyFromPolicy(t *testing.T) {
+	service := NewService(fakeAgentMetrics{}, nil, Config{})
+	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
+		return workspace.AgentPolicy{Enabled: true}, true
+	})
+
+	_, err := service.Prompt(context.Background(), PromptInput{
+		Scope:          Scope{WorkspaceID: "test", PrincipalID: "principal"},
+		ConversationID: "conv_test",
+		Input:          "hello",
+	})
 	if !errors.Is(err, ErrDisabled) {
 		t.Fatalf("Prompt() error = %v, want ErrDisabled", err)
+	}
+	if errors.Is(err, ErrPolicyDisabled) {
+		t.Fatalf("Prompt() error = %v, did not want ErrPolicyDisabled", err)
 	}
 }
 

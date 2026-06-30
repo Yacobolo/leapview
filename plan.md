@@ -6,7 +6,7 @@ Implement `cac-spec.md` as the new configuration contract. Remove the old single
 
 Assumptions:
 - No backwards compatibility is required.
-- Runtime/UI dashboard routes become workspace-scoped: `/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}`.
+- Runtime/UI dashboard and chat routes become workspace-scoped.
 - Use no major new dependencies for v1.
 
 ## Key Changes
@@ -15,7 +15,7 @@ Assumptions:
 - Add a project compiler that expands deterministic includes, validates references/scopes, builds a normalized graph, and emits per-workspace runtime definitions.
 - Move Olist connections/sources into global config; create `sales` and `operations` workspaces that both reference those global sources.
 - Update runtime, UI, API, Datastar signals, and asset lineage to require workspace context for dashboard/model operations.
-- Add deterministic plan output comparing authored config to the active workspace deployment.
+- Add deterministic plan output comparing authored config to the active workspace deployment, including access and agent policy resources.
 - Keep deployments immutable; rollback reactivates an artifact without recompiling.
 
 ## Library Decisions
@@ -41,15 +41,16 @@ Assumptions:
   - Verify `ModelTable.spec.sources` matches SQL `source."..."` references.
   - Generate fully qualified asset IDs such as `source:olist.orders`, `model_table:sales.orders`, and `dashboard:sales.executive-sales`.
 - Runtime/routes:
-  - Replace single-workspace assumptions with workspace-indexed runtime services.
+  - Replace single-workspace assumptions with workspace-indexed runtime services for every active workspace in the configured environment.
   - Remove unscoped `/dashboards/...` routes.
   - Scope dashboard rendering, queries, filters, tables, refreshes, search, and lineage by workspace ID.
   - Default query-less workspace/global asset pages to the server environment and enforce workspace agent policy for chat/tool exposure.
 - CLI/deployment:
   - Update `validate`, `plan`, and `deploy` to use the project graph.
+  - Print the target-backed plan before deploy mutation and require approval unless `--auto-approve` is set.
   - Deploy one explicit workspace to one environment.
   - Store active deployment state per `(workspace, environment)`.
-  - Serve active runtime from the configured environment, defaulting local development to `dev`.
+  - Serve all active workspace runtimes from the configured environment, defaulting local development to `dev`.
 
 ## Showcase Migration
 
@@ -70,5 +71,5 @@ Assumptions:
 - Two workspaces can reference the same global sources.
 - Duplicate dashboard IDs are allowed across workspaces and rejected within one workspace.
 - Workspace-scoped dashboard routes render the correct workspace assets and reject cross-workspace lookups.
-- Plan output is stable across repeated runs.
+- Plan output includes access and agent policy resources and is stable across repeated runs.
 - `task ci` passes.

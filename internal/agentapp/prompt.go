@@ -30,7 +30,7 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 		return PromptResult{}, ErrDisabled
 	}
 	if policy, ok := s.policyForScope(input.Scope); ok && !policy.Enabled {
-		return PromptResult{}, ErrDisabled
+		return PromptResult{}, ErrPolicyDisabled
 	}
 	if s.repo == nil {
 		return PromptResult{}, fmt.Errorf("agent store is required")

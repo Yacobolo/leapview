@@ -13,23 +13,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agenttools"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/go-chi/chi/v5"
 )
-
-const agentExtensionKey = "x-agent"
-
-type apigenAgentExtension struct {
-	Enabled      bool
-	Name         string
-	Risk         string
-	Tags         []string
-	DefaultLimit int
-}
 
 type apigenAgentParameter struct {
 	Name     string
@@ -40,7 +30,7 @@ type apigenAgentParameter struct {
 
 type apigenAgentOperation struct {
 	Contract           apigenapi.GenOperationContract
-	Extension          apigenAgentExtension
+	Extension          agenttools.Extension
 	Parameters         []apigenAgentParameter
 	BodyProperties     map[string]any
 	BodyRequiredFields []string
@@ -90,20 +80,16 @@ func apigenAgentOperations() []apigenAgentOperation {
 		return nil
 	}
 	paths, _ := spec["paths"].(map[string]any)
-	contracts := apigenapi.GetAPIGenOperationContracts()
-	operations := make([]apigenAgentOperation, 0, len(contracts))
-	for _, contract := range contracts {
-		extension, ok := parseAPIGenAgentExtension(contract.Extensions[agentExtensionKey])
-		if !ok || !apigenAgentOperationAllowed(contract, extension) {
-			continue
-		}
-		openapiOperation, ok := openAPIOperation(paths, contract)
+	registry := agenttools.APIGenOperations()
+	operations := make([]apigenAgentOperation, 0, len(registry))
+	for _, entry := range registry {
+		openapiOperation, ok := openAPIOperation(paths, entry.Contract)
 		if !ok {
 			continue
 		}
 		operations = append(operations, apigenAgentOperation{
-			Contract:           contract,
-			Extension:          extension,
+			Contract:           entry.Contract,
+			Extension:          entry.Extension,
 			Parameters:         apigenAgentParameters(openapiOperation),
 			BodyProperties:     apigenAgentBodyProperties(spec, openapiOperation),
 			BodyRequiredFields: apigenAgentBodyRequiredFields(spec, openapiOperation),
@@ -114,46 +100,6 @@ func apigenAgentOperations() []apigenAgentOperation {
 		return operations[i].Extension.Name < operations[j].Extension.Name
 	})
 	return operations
-}
-
-func apigenAgentOperationAllowed(contract apigenapi.GenOperationContract, extension apigenAgentExtension) bool {
-	if !extension.Enabled || extension.Name == "" || extension.Risk != "read" {
-		return false
-	}
-	if contract.Manual {
-		return false
-	}
-	if contract.Method != http.MethodGet && contract.Method != http.MethodPost {
-		return false
-	}
-	permission := apigenOperationPermissions[contract.OperationID]
-	switch permission {
-	case access.PermissionWorkspaceRead, access.PermissionAssetRead, access.PermissionDeploymentRead, access.PermissionMaterializationRun:
-		return true
-	default:
-		return false
-	}
-}
-
-func parseAPIGenAgentExtension(value any) (apigenAgentExtension, bool) {
-	raw, ok := value.(map[string]any)
-	if !ok {
-		return apigenAgentExtension{}, false
-	}
-	extension := apigenAgentExtension{
-		Enabled:      boolFromMap(raw, "enabled"),
-		Name:         stringFromMap(raw, "name"),
-		Risk:         stringFromMap(raw, "risk"),
-		DefaultLimit: intFromMap(raw, "defaultLimit"),
-	}
-	if tags, ok := raw["tags"].([]any); ok {
-		for _, tag := range tags {
-			if text, ok := tag.(string); ok && text != "" {
-				extension.Tags = append(extension.Tags, text)
-			}
-		}
-	}
-	return extension, true
 }
 
 func openAPIOperation(paths map[string]any, contract apigenapi.GenOperationContract) (map[string]any, bool) {

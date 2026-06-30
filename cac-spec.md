@@ -415,6 +415,7 @@ Rules:
 
 - `Workspace.spec.agentPolicy.include` is required and may be empty.
 - `enabled: false` disables chat turns for the workspace.
+- Chat routes are workspace-scoped: `/workspaces/{workspace}/chat...`.
 - Empty `tools.allow` means all read-only BI tools are eligible.
 - `tools.deny` is applied after `tools.allow`.
 - `tools.allow` and `tools.deny` must not contain the same tool.
@@ -458,17 +459,19 @@ Diagnostics must include resource ID, file path, and field path.
 
 ## Plan
 
-Before deployment, LibreDash must show a plan against the active deployment.
+Before deployment, LibreDash must show a plan against the active deployment and
+require explicit approval before activation.
 
 The plan must report:
 
 - Added resources
 - Changed resources
 - Removed resources
-- Dependency changes
+- Dependency changes, with `breaking` when a removed dependency changes an active BI contract
 - Breaking changes
 - Materialization impact
 - Access policy changes, if access is managed from code
+- Agent policy changes, if agent policy is managed from code
 
 The plan must be deterministic for the same inputs.
 

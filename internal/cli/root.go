@@ -29,6 +29,7 @@ type rootOptions struct {
 	limit        int
 	pageToken    string
 	searchTypes  []string
+	autoApprove  bool
 }
 
 func Execute(ctx context.Context) error {

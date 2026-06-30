@@ -121,36 +121,50 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	}
 	defer store.Close()
 	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
-	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(opts.workspaceID), Title: opts.workspaceID}); err != nil {
+	defaultWorkspaceID := opts.workspaceID
+	if defaultWorkspaceID == "" {
+		defaultWorkspaceID = platform.DefaultWorkspaceID
+	}
+	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(defaultWorkspaceID), Title: defaultWorkspaceID}); err != nil {
 		return err
 	}
 	accessRepo := accesssqlite.NewRepository(store.SQLDB())
-	if err := accessRepo.BootstrapAdmin(ctx, opts.workspaceID, cfg.BootstrapEmail); err != nil {
+	if err := accessRepo.BootstrapAdmin(ctx, defaultWorkspaceID, cfg.BootstrapEmail); err != nil {
 		return err
 	}
 	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
 	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
-	manager := runtimehost.NewManagerWithFactory(runtimehost.ManagerOptions{
-		Repo:        deploymentRepo,
-		WorkspaceID: deployment.WorkspaceID(opts.workspaceID),
-		Environment: environment,
-		DataDir:     dataDir,
+	summaries, err := workspaceRepo.List(ctx)
+	if err != nil {
+		return err
+	}
+	workspaceIDs := make([]deployment.WorkspaceID, 0, len(summaries))
+	for _, summary := range summaries {
+		workspaceIDs = append(workspaceIDs, deployment.WorkspaceID(summary.ID))
+	}
+	registry := runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
+		Repo:         deploymentRepo,
+		WorkspaceIDs: workspaceIDs,
+		Environment:  environment,
+		DataDir:      dataDir,
 		Factory: deploymentRuntimeFactory{
 			dataDir:    dataDir,
 			duckDBDir:  cfg.DuckDBDirPath(),
 			runtimeDir: cfg.RuntimeDir(),
 		},
 	})
-	if err := manager.Reload(ctx); err != nil {
+	if err := registry.Reload(ctx); err != nil {
 		return err
 	}
-	defer manager.Close()
-	runtimeMetrics := app.NewRuntimeMetrics(manager, dataDir, opts.workspaceID)
+	defer registry.Close()
+	runtimeMetrics := app.NewDynamicRuntimeMetrics(defaultWorkspaceID, dataDir, func(workspaceID string) app.RuntimeProvider {
+		return registry.ProviderForWorkspace(deployment.WorkspaceID(workspaceID))
+	})
 	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo)
 	if provider, ok := runtimeMetrics.(workspace.RuntimeAssetGraphProvider); ok {
 		assetCatalog.WithRuntimeProvider(provider)
 	}
-	auth := app.NewAuth(accessRepo, opts.workspaceID, app.AuthConfig{
+	auth := app.NewAuth(accessRepo, defaultWorkspaceID, app.AuthConfig{
 		DevBypass:       cfg.DevAuthBypass,
 		APITokenOnly:    cfg.APITokenOnlyAuth,
 		AzureClientID:   cfg.AzureClientID,
@@ -171,10 +185,10 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		AccessRepo:         accessRepo,
 		Agent:              agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
 		Auth:               auth,
-		Reloader:           manager,
+		Reloader:           registry,
 		ArtifactDir:        cfg.ArtifactDir(),
 		DuckDBDir:          cfg.DuckDBDirPath(),
-		DefaultWorkspaceID: opts.workspaceID,
+		DefaultWorkspaceID: defaultWorkspaceID,
 		DefaultEnvironment: string(environment),
 		RateLimits:         rateLimits,
 		SecurityHeaders:    app.SecurityHeaders(cfg.HSTSEnabled(cookieSecure)),

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/dashboard"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/go-chi/chi/v5"
@@ -37,10 +38,10 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(conversations) == 0 {
-		http.Redirect(w, r, "/chat/new", http.StatusFound)
+		http.Redirect(w, r, chatRoutePath(scope.WorkspaceID, "new"), http.StatusFound)
 		return
 	}
-	http.Redirect(w, r, "/chat/"+conversations[0].ID, http.StatusFound)
+	http.Redirect(w, r, chatRoutePath(scope.WorkspaceID, conversations[0].ID), http.StatusFound)
 }
 
 func (s *Server) chatNew(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +73,9 @@ func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, signal ui.Ch
 	_ = lddatastar.EnsureClientID(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.ChatPage(s.metrics.Catalog(), csrfToken(r, s.auth), s.currentRoleLabel(r), signal).Render(w); err != nil {
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	catalog := s.catalogForWorkspace(workspaceID)
+	if err := ui.ChatPage(catalog, workspaceID, csrfToken(r, s.auth), s.currentRoleLabel(r), signal).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -120,7 +123,7 @@ func (s *Server) runChatTurn(w http.ResponseWriter, r *http.Request, service *ag
 	transcript = appendServerUserTranscript(transcript, conversationID, input)
 	sse := datastar.NewSSE(w, r)
 	if createdConversation {
-		_ = sse.ReplaceURL(url.URL{Path: "/chat/" + conversationID})
+		_ = sse.ReplaceURL(url.URL{Path: chatRoutePath(scope.WorkspaceID, conversationID)})
 	}
 
 	streamActiveID := strings.TrimSpace(activeConversationID)
@@ -199,7 +202,29 @@ func (s *Server) chatScope(r *http.Request) agentapp.Scope {
 			devBypass = principal.DevBypass
 		}
 	}
-	return agentapp.Scope{WorkspaceID: s.workspaceID(""), PrincipalID: principalID, DevAuthBypass: devBypass}
+	return agentapp.Scope{WorkspaceID: s.workspaceID(strings.TrimSpace(chi.URLParam(r, "workspace"))), PrincipalID: principalID, DevAuthBypass: devBypass}
+}
+
+func (s *Server) catalogForWorkspace(workspaceID string) dashboard.Catalog {
+	if metrics, ok := s.metricsForWorkspace(workspaceID); ok && metrics != nil {
+		return metrics.Catalog()
+	}
+	if s.metrics == nil {
+		return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspaceID}}
+	}
+	return s.metrics.Catalog()
+}
+
+func chatRoutePath(workspaceID string, parts ...string) string {
+	path := "/workspaces/" + url.PathEscape(workspaceID) + "/chat"
+	for _, part := range parts {
+		part = strings.Trim(part, "/")
+		if part == "" {
+			continue
+		}
+		path += "/" + url.PathEscape(part)
+	}
+	return path
 }
 
 func chatClientID(r *http.Request) string {

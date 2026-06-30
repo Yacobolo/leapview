@@ -104,8 +104,8 @@ function testDocument(): string {
       collapsible: false,
       numbered: false,
       items: [
-        { id: 'new', title: 'New chat', href: '/chat/new', active: false },
-        { id: 'c1', title: 'Revenue check', href: '/chat/c1', active: true },
+        { id: 'new', title: 'New chat', href: '/workspaces/test/chat/new', active: false },
+        { id: 'c1', title: 'Revenue check', href: '/workspaces/test/chat/c1', active: true },
       ],
     },
   }

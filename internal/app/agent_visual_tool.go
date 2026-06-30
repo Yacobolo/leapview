@@ -10,13 +10,14 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agenttools"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
-const agentVisualToolName = "query_visual"
+const agentVisualToolName = agenttools.QueryVisualToolName
 
 type agentVisualInput struct {
 	Kind            string                    `json:"kind"`

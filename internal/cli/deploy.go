@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/Yacobolo/libredash/internal/api"
@@ -29,6 +32,7 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.token, "token", "", "API token")
 	cmd.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "libredash.yaml"), "project path")
 	cmd.Flags().StringVar(&opts.environment, "environment", "dev", "deployment environment")
+	cmd.Flags().BoolVar(&opts.autoApprove, "auto-approve", false, "approve and activate the deployment without prompting")
 	return cmd
 }
 
@@ -93,6 +97,16 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 	}
 	activeGraph, err := fetchActiveWorkspaceGraph(ctx, opts)
 	if err != nil {
+		return err
+	}
+	plan, err := workspacecompiler.PlanProjectAgainstGraph(opts.catalog, opts.workspaceID, activeGraph)
+	if err != nil {
+		return err
+	}
+	if err := renderProjectPlan(os.Stdout, plan); err != nil {
+		return err
+	}
+	if err := confirmDeploy(opts, os.Stdin, os.Stdout); err != nil {
 		return err
 	}
 	createBody, _ := json.Marshal(map[string]any{
@@ -194,4 +208,29 @@ func cliEnvironment(opts *rootOptions) string {
 		return "dev"
 	}
 	return opts.environment
+}
+
+func confirmDeploy(opts *rootOptions, in *os.File, out io.Writer) error {
+	if opts.autoApprove {
+		return nil
+	}
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeCharDevice == 0 {
+		return fmt.Errorf("deploy requires --auto-approve when stdin is not interactive")
+	}
+	fmt.Fprint(out, "Activate this deployment? Type yes to continue: ")
+	answer, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil {
+		if err == io.EOF {
+			return fmt.Errorf("deploy requires --auto-approve when stdin is not interactive")
+		}
+		return err
+	}
+	if strings.TrimSpace(strings.ToLower(answer)) != "yes" {
+		return fmt.Errorf("deployment activation cancelled")
+	}
+	return nil
 }

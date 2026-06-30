@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Yacobolo/libredash/internal/agenttools"
 	"github.com/Yacobolo/libredash/internal/configschema"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
@@ -321,7 +322,10 @@ func TestPlanProjectIsStableAndSorted(t *testing.T) {
 		"connections/olist.yaml":                           connectionYAML("olist"),
 		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
 		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
-		"workspaces/sales/workspace.yaml":                  workspaceYAML("sales"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccessAndAgentPolicy("sales"),
+		"workspaces/sales/access/analysts.yaml":            workspaceGroupYAML("sales", "analysts", "analyst@example.com"),
+		"workspaces/sales/access/analysts-viewer.yaml":     workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
+		"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{"list_assets"}, nil, "Answer from sales assets."),
 		"workspaces/sales/models/z-orders.yaml":            modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
 		"workspaces/sales/models/a-customers.yaml":         modelTableYAML("sales", "customers", "olist.customers", "customer_id", "SELECT customer_id, order_status AS status FROM source.\"olist.customers\""),
 		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
@@ -341,6 +345,15 @@ func TestPlanProjectIsStableAndSorted(t *testing.T) {
 	}
 	if got := first.Workspaces[0].ModelTables; !reflect.DeepEqual(got, []string{"customers", "orders"}) {
 		t.Fatalf("model tables = %#v, want sorted customers/orders", got)
+	}
+	if got := first.Workspaces[0].WorkspaceGroups; !reflect.DeepEqual(got, []string{"analysts"}) {
+		t.Fatalf("workspace groups = %#v, want analysts", got)
+	}
+	if got := first.Workspaces[0].WorkspaceRoleBindings; !reflect.DeepEqual(got, []string{"analysts-viewer"}) {
+		t.Fatalf("workspace role bindings = %#v, want analysts-viewer", got)
+	}
+	if got := first.Workspaces[0].WorkspaceAgentPolicies; !reflect.DeepEqual(got, []string{"default"}) {
+		t.Fatalf("workspace agent policies = %#v, want default", got)
 	}
 }
 
@@ -405,9 +418,10 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 		"connections/olist.yaml":                           connectionYAML("olist"),
 		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
 		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
-		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccess("sales"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccessAndAgentPolicy("sales"),
 		"workspaces/sales/access/analysts.yaml":            workspaceGroupYAML("sales", "analysts", "analyst@example.com"),
 		"workspaces/sales/access/analysts-viewer.yaml":     workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
+		"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{"list_assets"}, nil, "Answer from sales assets."),
 		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
 		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
 		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
@@ -433,6 +447,8 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 			activeGraph.Assets[index].ContentHash = "old-source-hash"
 		case "workspace_group:sales.analysts":
 			activeGraph.Assets[index].ContentHash = "old-access-hash"
+		case "workspace_agent_policy:sales.default":
+			activeGraph.Assets[index].ContentHash = "old-agent-policy-hash"
 		}
 	}
 
@@ -444,7 +460,10 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 	if !summary.Breaking || !summary.MaterializationImpact || !summary.AccessImpact {
 		t.Fatalf("summary = %#v, want breaking, materialization, and access impact", summary)
 	}
-	var sourceBreaking, groupAccess bool
+	if !summary.AgentPolicyImpact {
+		t.Fatalf("summary = %#v, want agent policy impact", summary)
+	}
+	var sourceBreaking, groupAccess, agentPolicyImpact bool
 	for _, change := range plan.Workspaces[0].Changes {
 		if change.ID == "source:olist.orders" {
 			sourceBreaking = change.Breaking && change.MaterializationImpact
@@ -452,9 +471,34 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 		if change.ID == "workspace_group:sales.analysts" {
 			groupAccess = change.AccessImpact
 		}
+		if change.ID == "workspace_agent_policy:sales.default" {
+			agentPolicyImpact = change.AgentPolicyImpact && !change.AccessImpact
+		}
 	}
 	if !sourceBreaking || !groupAccess {
 		t.Fatalf("changes = %#v, want source breaking/materialization and group access impact", plan.Workspaces[0].Changes)
+	}
+	if !agentPolicyImpact {
+		t.Fatalf("changes = %#v, want agent policy impact without access impact", plan.Workspaces[0].Changes)
+	}
+}
+
+func TestWorkspaceAgentPolicyValidationUsesRuntimeAgentToolRegistry(t *testing.T) {
+	for _, tool := range agenttools.ToolNames() {
+		projectPath := writeProjectFixture(t, map[string]string{
+			"libredash.yaml":                                   projectYAML(),
+			"connections/olist.yaml":                           connectionYAML("olist"),
+			"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+			"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+			"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAgentPolicy("sales"),
+			"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{tool}, nil, "Use allowed tools."),
+			"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
+			"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+			"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+		})
+		if _, err := CompileProject(projectPath, Options{}); err != nil {
+			t.Fatalf("CompileProject() rejected runtime agent tool %q: %v", tool, err)
+		}
 	}
 }
 
@@ -496,6 +540,81 @@ func TestDiffAssetGraphsMarksUsedSemanticChildrenBreaking(t *testing.T) {
 	}
 }
 
+func TestDiffAssetGraphsMarksRemovedDashboardDependencyBreaking(t *testing.T) {
+	workspaceID := workspace.WorkspaceID("sales")
+	activeDeployment := workspace.DeploymentID("dep_active")
+	authoredDeployment := workspace.DeploymentID("plan")
+	field := testPlanAsset(t, workspaceID, activeDeployment, workspace.AssetTypeField, "sales.orders.status", "semantic_table:sales.sales.orders")
+	authoredField := field
+	authoredField.DeploymentID = authoredDeployment
+	visual := testPlanAsset(t, workspaceID, activeDeployment, workspace.AssetTypeVisual, "sales.executive-sales.status", "dashboard:sales.executive-sales")
+	authoredVisual := visual
+	authoredVisual.DeploymentID = authoredDeployment
+	active := workspace.AssetGraph{
+		Assets: []workspace.Asset{field, visual},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, visual.ID, field.ID, workspace.AssetEdgeUsesField)},
+	}
+	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredField, authoredVisual}}
+
+	changes, dependencies, summary := diffAssetGraphs(authored, active)
+	if len(changes) != 0 {
+		t.Fatalf("changes = %#v, want no asset changes", changes)
+	}
+	if !summary.Breaking {
+		t.Fatalf("summary = %#v dependencies=%#v, want dependency breaking", summary, dependencies)
+	}
+	if len(dependencies) != 1 || dependencies[0].Action != "remove" || !dependencies[0].Breaking {
+		t.Fatalf("dependency changes = %#v, want one breaking removal", dependencies)
+	}
+}
+
+func TestDiffAssetGraphsMarksRemovedDashboardSemanticModelDependencyBreaking(t *testing.T) {
+	workspaceID := workspace.WorkspaceID("sales")
+	activeDeployment := workspace.DeploymentID("dep_active")
+	authoredDeployment := workspace.DeploymentID("plan")
+	model := testPlanAsset(t, workspaceID, activeDeployment, workspace.AssetTypeSemanticModel, "sales.sales", "catalog:sales")
+	authoredModel := model
+	authoredModel.DeploymentID = authoredDeployment
+	dashboard := testPlanAsset(t, workspaceID, activeDeployment, workspace.AssetTypeDashboard, "sales.executive-sales", "catalog:sales")
+	authoredDashboard := dashboard
+	authoredDashboard.DeploymentID = authoredDeployment
+	active := workspace.AssetGraph{
+		Assets: []workspace.Asset{model, dashboard},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, dashboard.ID, model.ID, workspace.AssetEdgeUsesSemanticModel)},
+	}
+	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredModel, authoredDashboard}}
+
+	_, dependencies, summary := diffAssetGraphs(authored, active)
+	if !summary.Breaking || len(dependencies) != 1 || !dependencies[0].Breaking {
+		t.Fatalf("summary = %#v dependencies=%#v, want semantic model dependency breaking", summary, dependencies)
+	}
+}
+
+func TestDiffAssetGraphsKeepsSourceDependencyRemovalMaterializationOnly(t *testing.T) {
+	workspaceID := workspace.WorkspaceID("sales")
+	activeDeployment := workspace.DeploymentID("dep_active")
+	authoredDeployment := workspace.DeploymentID("plan")
+	source := testPlanAsset(t, workspaceID, activeDeployment, workspace.AssetTypeSource, "olist.orders", "catalog:sales")
+	authoredSource := source
+	authoredSource.DeploymentID = authoredDeployment
+	modelTable := testPlanAsset(t, workspaceID, activeDeployment, workspace.AssetTypeModelTable, "sales.orders", "catalog:sales")
+	authoredModelTable := modelTable
+	authoredModelTable.DeploymentID = authoredDeployment
+	active := workspace.AssetGraph{
+		Assets: []workspace.Asset{source, modelTable},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, modelTable.ID, source.ID, workspace.AssetEdgeReadsSource)},
+	}
+	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredSource, authoredModelTable}}
+
+	_, dependencies, summary := diffAssetGraphs(authored, active)
+	if summary.Breaking || !summary.MaterializationImpact {
+		t.Fatalf("summary = %#v dependencies=%#v, want materialization impact without breaking", summary, dependencies)
+	}
+	if len(dependencies) != 1 || dependencies[0].Breaking {
+		t.Fatalf("dependency changes = %#v, want non-breaking source dependency removal", dependencies)
+	}
+}
+
 func TestDiffAssetGraphsTreatsUsedFieldLabelChangeAsNonBreaking(t *testing.T) {
 	workspaceID := workspace.WorkspaceID("sales")
 	activeDeployment := workspace.DeploymentID("dep_active")
@@ -511,7 +630,10 @@ func TestDiffAssetGraphsTreatsUsedFieldLabelChangeAsNonBreaking(t *testing.T) {
 		Assets: []workspace.Asset{activeField, visual},
 		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, visual.ID, activeField.ID, workspace.AssetEdgeUsesField)},
 	}
-	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredField, visual}}
+	authored := workspace.AssetGraph{
+		Assets: []workspace.Asset{authoredField, visual},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, authoredDeployment, visual.ID, authoredField.ID, workspace.AssetEdgeUsesField)},
+	}
 
 	changes, _, summary := diffAssetGraphs(authored, active)
 	if summary.Breaking {
@@ -537,7 +659,10 @@ func TestDiffAssetGraphsTreatsUsedFieldExpressionChangeAsBreaking(t *testing.T) 
 		Assets: []workspace.Asset{activeField, visual},
 		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, visual.ID, activeField.ID, workspace.AssetEdgeUsesField)},
 	}
-	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredField, visual}}
+	authored := workspace.AssetGraph{
+		Assets: []workspace.Asset{authoredField, visual},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, authoredDeployment, visual.ID, authoredField.ID, workspace.AssetEdgeUsesField)},
+	}
 
 	changes, _, summary := diffAssetGraphs(authored, active)
 	if !summary.Breaking || len(changes) != 1 || !changes[0].Breaking {
@@ -568,7 +693,10 @@ func TestDiffAssetGraphsTreatsUnusedSourceFieldChangeAsNonBreaking(t *testing.T)
 		Assets: []workspace.Asset{activeSource, modelTable},
 		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, modelTable.ID, activeSource.ID, workspace.AssetEdgeReadsSource)},
 	}
-	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredSource, modelTable}}
+	authored := workspace.AssetGraph{
+		Assets: []workspace.Asset{authoredSource, modelTable},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, authoredDeployment, modelTable.ID, authoredSource.ID, workspace.AssetEdgeReadsSource)},
+	}
 
 	changes, _, summary := diffAssetGraphs(authored, active)
 	if summary.Breaking || len(changes) != 1 || changes[0].Breaking {
@@ -597,7 +725,10 @@ func TestDiffAssetGraphsTreatsUsedSourceFieldChangeAsBreaking(t *testing.T) {
 		Assets: []workspace.Asset{activeSource, modelTable},
 		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, modelTable.ID, activeSource.ID, workspace.AssetEdgeReadsSource)},
 	}
-	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredSource, modelTable}}
+	authored := workspace.AssetGraph{
+		Assets: []workspace.Asset{authoredSource, modelTable},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, authoredDeployment, modelTable.ID, authoredSource.ID, workspace.AssetEdgeReadsSource)},
+	}
 
 	changes, _, summary := diffAssetGraphs(authored, active)
 	if !summary.Breaking || len(changes) != 1 || !changes[0].Breaking {
@@ -626,7 +757,10 @@ func TestDiffAssetGraphsTreatsUnusedModelColumnChangeAsNonBreaking(t *testing.T)
 		Assets: []workspace.Asset{activeModel, semanticTable},
 		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, activeDeployment, semanticTable.ID, activeModel.ID, workspace.AssetEdgeUsesModelTable)},
 	}
-	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredModel, semanticTable}}
+	authored := workspace.AssetGraph{
+		Assets: []workspace.Asset{authoredModel, semanticTable},
+		Edges:  []workspace.AssetEdge{workspace.NewAssetEdge(workspaceID, authoredDeployment, semanticTable.ID, authoredModel.ID, workspace.AssetEdgeUsesModelTable)},
+	}
 
 	changes, _, summary := diffAssetGraphs(authored, active)
 	if summary.Breaking || len(changes) != 1 || changes[0].Breaking {
@@ -655,7 +789,13 @@ func TestDiffAssetGraphsTreatsUsedModelColumnChangeAsBreaking(t *testing.T) {
 			workspace.NewAssetEdge(workspaceID, activeDeployment, semanticField.ID, semanticTable.ID, workspace.AssetEdgeUsesSemanticTable),
 		},
 	}
-	authored := workspace.AssetGraph{Assets: []workspace.Asset{authoredModel, semanticTable, semanticField}}
+	authored := workspace.AssetGraph{
+		Assets: []workspace.Asset{authoredModel, semanticTable, semanticField},
+		Edges: []workspace.AssetEdge{
+			workspace.NewAssetEdge(workspaceID, authoredDeployment, semanticTable.ID, authoredModel.ID, workspace.AssetEdgeUsesModelTable),
+			workspace.NewAssetEdge(workspaceID, authoredDeployment, semanticField.ID, semanticTable.ID, workspace.AssetEdgeUsesSemanticTable),
+		},
+	}
 
 	changes, _, summary := diffAssetGraphs(authored, active)
 	if !summary.Breaking || len(changes) != 1 || !changes[0].Breaking {
@@ -1066,6 +1206,10 @@ func workspaceYAMLWithAccess(name string) string {
 
 func workspaceYAMLWithAgentPolicy(name string) string {
 	return strings.Replace(workspaceYAML(name), "  agentPolicy:\n    include: []", "  agentPolicy:\n    include:\n      - agent/*.yaml", 1)
+}
+
+func workspaceYAMLWithAccessAndAgentPolicy(name string) string {
+	return strings.Replace(workspaceYAMLWithAccess(name), "  agentPolicy:\n    include: []", "  agentPolicy:\n    include:\n      - agent/*.yaml", 1)
 }
 
 func workspaceAgentPolicyYAML(workspaceID, name string, enabled bool, allow, deny []string, instructions string) string {

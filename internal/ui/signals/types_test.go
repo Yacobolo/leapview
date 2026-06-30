@@ -54,7 +54,7 @@ func TestDashboardEnvelopeRejectsUnusedPayload(t *testing.T) {
 }
 
 func TestChatInitialEnvelopeValidates(t *testing.T) {
-	envelope := ChatInitialEnvelope(dashboard.Catalog{}, "csrf", "", ChatSignal{
+	envelope := ChatInitialEnvelope(dashboard.Catalog{}, "test", "csrf", "", ChatSignal{
 		ActiveConversationID: "",
 		Conversations:        []ChatConversationSummary{},
 		Transcript:           nil,
@@ -65,7 +65,7 @@ func TestChatInitialEnvelopeValidates(t *testing.T) {
 	if err := ValidateChatEnvelope(envelope); err != nil {
 		t.Fatalf("validate chat envelope: %v", err)
 	}
-	if envelope.Page.Sidebar.Items[0].Href != "/chat/new" {
+	if envelope.Page.Sidebar.Items[0].Href != "/workspaces/test/chat/new" {
 		t.Fatalf("chat sidebar = %#v", envelope.Page.Sidebar)
 	}
 }

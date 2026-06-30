@@ -3,12 +3,15 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agenttools"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -100,11 +103,11 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 func TestAgentVisualToolIsCustomAgentOnlyTool(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
 	tools := server.agentVisualToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})
-	if len(tools) != 1 || tools[0].Name != "query_visual" || tools[0].Handler == nil {
+	if len(tools) != 1 || tools[0].Name != agenttools.QueryVisualToolName || tools[0].Handler == nil {
 		t.Fatalf("visual tools = %#v", tools)
 	}
 	for _, tool := range server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"}) {
-		if tool.Name == "query_visual" {
+		if tool.Name == agenttools.QueryVisualToolName {
 			t.Fatalf("query_visual should not be exposed through APIGen tools")
 		}
 	}
@@ -784,11 +787,28 @@ func TestAPIGenAgentToolEnforcesCredentialPermissionAllowlistAndWorkspace(t *tes
 	}
 }
 
+func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
+	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"}
+	var runtimeTools []agent.ToolDefinition
+	runtimeTools = append(runtimeTools, server.agentVisualToolDefinitions(scope)...)
+	runtimeTools = append(runtimeTools, server.agentAPIGenToolDefinitions(scope)...)
+	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("runtime tools = %#v, policy registry = %#v", got, want)
+	}
+}
+
 func toolNames(tools []agent.ToolDefinition) []string {
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)
 	}
+	return names
+}
+
+func sortedToolNames(tools []agent.ToolDefinition) []string {
+	names := toolNames(tools)
+	sort.Strings(names)
 	return names
 }
 
