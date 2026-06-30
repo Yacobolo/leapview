@@ -1,0 +1,10 @@
+apiVersion: libredash.dev/v1
+kind: WorkspaceGroup
+metadata:
+  workspace: sales
+  name: analysts
+  title: Sales Analysts
+spec:
+  members:
+    - email: analyst@example.com
+      displayName: Sales Analyst

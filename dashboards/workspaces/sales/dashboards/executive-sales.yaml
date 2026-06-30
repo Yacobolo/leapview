@@ -139,7 +139,7 @@ spec:
           label: Revenue
           align: right
   pages:
-    - id: overview
+    - name: overview
       title: Overview
       canvas:
         width: 1366

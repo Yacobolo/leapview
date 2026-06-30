@@ -5,7 +5,7 @@ metadata:
   name: customers
   title: Customers
 spec:
-  primary_key: customer_id
+  primaryKey: customer_id
   sources:
     - olist.customers
   fields:

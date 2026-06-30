@@ -438,7 +438,7 @@
           },
           "type": "object"
         },
-        "id": {
+        "name": {
           "$ref": "#/$defs/%23ObjectID"
         },
         "title": {
@@ -452,7 +452,7 @@
         }
       },
       "required": [
-        "id",
+        "name",
         "title",
         "visuals"
       ],

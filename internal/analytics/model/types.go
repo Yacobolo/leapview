@@ -26,6 +26,11 @@ type Connection struct {
 	Path        string                `yaml:"path"`
 	Root        string                `yaml:"root"`
 	Scope       string                `yaml:"scope"`
+	Host        string                `yaml:"host"`
+	Port        int                   `yaml:"port"`
+	Database    string                `yaml:"database"`
+	Username    string                `yaml:"username"`
+	SSLMode     string                `yaml:"sslMode"`
 	Auth        ConnectionAuth        `yaml:"auth" json:"-"`
 	Credentials ConnectionCredentials `yaml:"credentials" json:"credentials,omitempty"`
 	Options     map[string]any        `yaml:"options"`

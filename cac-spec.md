@@ -268,6 +268,9 @@ spec:
   dashboards:
     include:
       - dashboards/*.yaml
+  access:
+    include:
+      - access/*.yaml
 ```
 
 `spec.uses.sources` is an allowlist. Workspace model tables must not read sources
@@ -345,6 +348,32 @@ Dashboards must not reference physical sources or connections.
 ## Access
 
 Principals are global. Workspace permissions are scoped.
+
+Workspace access is authored with workspace-local resources.
+
+```yaml
+apiVersion: libredash.dev/v1
+kind: WorkspaceGroup
+metadata:
+  workspace: sales
+  name: analysts
+spec:
+  members:
+    - email: analyst@example.com
+```
+
+```yaml
+apiVersion: libredash.dev/v1
+kind: WorkspaceRoleBinding
+metadata:
+  workspace: sales
+  name: analysts-viewer
+spec:
+  role: viewer
+  subject:
+    kind: group
+    group: analysts
+```
 
 Rules:
 

@@ -2,12 +2,14 @@ package compiler
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/configschema"
@@ -37,6 +39,8 @@ type WorkspaceProject struct {
 	Models                map[string]semanticmodel.Table
 	SemanticModels        map[string]projectSemanticModelSpec
 	Dashboards            map[string]*report.Dashboard
+	AccessGroups          map[string]workspace.WorkspaceGroup
+	AccessRoleBindings    map[string]workspace.WorkspaceRoleBinding
 	ModelTitles           map[string]string
 	ModelDescriptions     map[string]string
 	DashboardTitles       map[string]string
@@ -46,6 +50,7 @@ type WorkspaceProject struct {
 	ModelPaths            map[string]string
 	SemanticModelPaths    map[string]string
 	DashboardPaths        map[string]string
+	AccessPaths           map[string]string
 }
 
 type CompiledProject struct {
@@ -129,6 +134,7 @@ type workspaceSpec struct {
 	Models         includeList   `yaml:"models"`
 	SemanticModels includeList   `yaml:"semanticModels"`
 	Dashboards     includeList   `yaml:"dashboards"`
+	Access         includeList   `yaml:"access"`
 }
 
 type workspaceUses struct {
@@ -167,7 +173,63 @@ type dashboardSpec struct {
 	Filters       map[string]report.FilterDefinition `yaml:"filters"`
 	Visuals       map[string]report.Visual           `yaml:"visuals"`
 	Tables        map[string]report.TableVisual      `yaml:"tables"`
-	Pages         []dashboard.Page                   `yaml:"pages"`
+	Pages         []projectDashboardPage             `yaml:"pages"`
+}
+
+type projectModelTableSpec struct {
+	Kind        string                                 `yaml:"kind"`
+	Source      string                                 `yaml:"source"`
+	Sources     []string                               `yaml:"sources"`
+	SourceReads map[string][]string                    `yaml:"sourceReads"`
+	SQL         string                                 `yaml:"sql"`
+	Transform   semanticmodel.Transform                `yaml:"transform"`
+	Columns     map[string]semanticmodel.ModelColumn   `yaml:"columns"`
+	PrimaryKey  string                                 `yaml:"primaryKey"`
+	Grain       string                                 `yaml:"grain"`
+	Fields      map[string]projectModelField           `yaml:"fields"`
+	Measures    map[string]semanticmodel.MetricMeasure `yaml:"measures"`
+	Description string                                 `yaml:"description"`
+}
+
+type projectModelField struct {
+	Label       string `yaml:"label"`
+	Description string `yaml:"description"`
+	Expr        string `yaml:"expr"`
+	Expression  string `yaml:"expression"`
+	Type        string `yaml:"type"`
+}
+
+type projectDashboardPage struct {
+	Name        string                 `yaml:"name"`
+	Title       string                 `yaml:"title"`
+	Description string                 `yaml:"description"`
+	Canvas      dashboard.PageCanvas   `yaml:"canvas"`
+	Grid        dashboard.PageGrid     `yaml:"grid"`
+	Visuals     []dashboard.PageVisual `yaml:"visuals"`
+}
+
+type workspaceGroupSpec struct {
+	Description string                     `yaml:"description"`
+	Members     []workspaceGroupMemberSpec `yaml:"members"`
+}
+
+type workspaceGroupMemberSpec struct {
+	PrincipalID string `yaml:"principalId"`
+	Email       string `yaml:"email"`
+	DisplayName string `yaml:"displayName"`
+}
+
+type workspaceRoleBindingSpec struct {
+	Role    string                          `yaml:"role"`
+	Subject workspaceRoleBindingSubjectSpec `yaml:"subject"`
+}
+
+type workspaceRoleBindingSubjectSpec struct {
+	Kind        string `yaml:"kind"`
+	PrincipalID string `yaml:"principalId"`
+	Email       string `yaml:"email"`
+	DisplayName string `yaml:"displayName"`
+	Group       string `yaml:"group"`
 }
 
 func CompileProject(projectPath string, opts Options) (CompiledProject, error) {
@@ -271,18 +333,18 @@ func diffAssetGraphs(authored, active workspace.AssetGraph) ([]ProjectPlanChange
 		asset := authoredAssets[id]
 		activeAsset, ok := activeAssets[id]
 		if !ok {
-			changes = append(changes, projectPlanChange("add", asset, "not in active deployment"))
+			changes = append(changes, projectPlanChange("add", asset, workspace.Asset{}, "not in active deployment"))
 			continue
 		}
 		if activeAsset.ContentHash != asset.ContentHash {
-			changes = append(changes, projectPlanChange("change", asset, "content hash changed"))
+			changes = append(changes, projectPlanChange("change", asset, activeAsset, "content hash changed"))
 		}
 	}
 	for _, id := range sortedAssetIDs(activeAssets) {
 		if _, ok := authoredAssets[id]; ok {
 			continue
 		}
-		changes = append(changes, projectPlanChange("remove", activeAssets[id], "not in authored config"))
+		changes = append(changes, projectPlanChange("remove", activeAssets[id], workspace.Asset{}, "not in authored config"))
 	}
 	dependencyChanges := diffAssetEdges(authored.Edges, active.Edges)
 	sort.Slice(changes, func(i, j int) bool {
@@ -331,15 +393,20 @@ func diffAssetGraphs(authored, active workspace.AssetGraph) ([]ProjectPlanChange
 	return changes, dependencyChanges, summary
 }
 
-func projectPlanChange(action string, asset workspace.Asset, reason string) ProjectPlanChange {
+func projectPlanChange(action string, asset, active workspace.Asset, reason string) ProjectPlanChange {
+	breaking := action == "remove" && breakingAssetType(asset.Type)
+	if action == "change" && semanticBreakingChange(asset, active) {
+		breaking = true
+	}
 	return ProjectPlanChange{
 		Action:                action,
 		ID:                    string(asset.ID),
 		Type:                  string(asset.Type),
 		Key:                   asset.Key,
 		Reason:                reason,
-		Breaking:              action == "remove" && breakingAssetType(asset.Type),
+		Breaking:              breaking,
 		MaterializationImpact: materializationAssetType(asset.Type),
+		AccessImpact:          accessAssetType(asset.Type),
 	}
 }
 
@@ -439,6 +506,72 @@ func materializationAssetType(typ workspace.AssetType) bool {
 	default:
 		return false
 	}
+}
+
+func accessAssetType(typ workspace.AssetType) bool {
+	switch typ {
+	case workspace.AssetTypeWorkspaceGroup, workspace.AssetTypeWorkspaceRoleBinding:
+		return true
+	default:
+		return false
+	}
+}
+
+func semanticBreakingChange(authored, active workspace.Asset) bool {
+	switch authored.Type {
+	case workspace.AssetTypeSource:
+		var next, prev sourcePayloadV1
+		if !decodeAssetPayload(authored, &next) || !decodeAssetPayload(active, &prev) {
+			return false
+		}
+		return sourceFieldsBreaking(next.Fields, prev.Fields)
+	case workspace.AssetTypeModelTable:
+		var next, prev modelTablePayloadV1
+		if !decodeAssetPayload(authored, &next) || !decodeAssetPayload(active, &prev) {
+			return false
+		}
+		return modelFieldsBreaking(next, prev)
+	default:
+		return false
+	}
+}
+
+func decodeAssetPayload(asset workspace.Asset, out any) bool {
+	if asset.PayloadJSON == "" {
+		return false
+	}
+	return json.Unmarshal([]byte(asset.PayloadJSON), out) == nil
+}
+
+func sourceFieldsBreaking(next, prev map[string]sourceFieldPayloadV1) bool {
+	for name, oldField := range prev {
+		newField, ok := next[name]
+		if !ok {
+			return true
+		}
+		if oldField.Type != "" && newField.Type != "" && oldField.Type != newField.Type {
+			return true
+		}
+	}
+	return false
+}
+
+func modelFieldsBreaking(next, prev modelTablePayloadV1) bool {
+	for name, oldColumn := range prev.Columns {
+		newColumn, ok := next.Columns[name]
+		if !ok {
+			return true
+		}
+		if oldColumn.Type != "" && newColumn.Type != "" && oldColumn.Type != newColumn.Type {
+			return true
+		}
+	}
+	for name := range prev.Fields {
+		if _, ok := next.Fields[name]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 func dependencyMaterializationImpact(edgeType string) bool {
@@ -592,6 +725,8 @@ func loadWorkspaces(project *Project, includes []string) error {
 			Models:                map[string]semanticmodel.Table{},
 			SemanticModels:        map[string]projectSemanticModelSpec{},
 			Dashboards:            map[string]*report.Dashboard{},
+			AccessGroups:          map[string]workspace.WorkspaceGroup{},
+			AccessRoleBindings:    map[string]workspace.WorkspaceRoleBinding{},
 			ModelTitles:           map[string]string{},
 			ModelDescriptions:     map[string]string{},
 			DashboardTitles:       map[string]string{},
@@ -601,6 +736,7 @@ func loadWorkspaces(project *Project, includes []string) error {
 			ModelPaths:            map[string]string{},
 			SemanticModelPaths:    map[string]string{},
 			DashboardPaths:        map[string]string{},
+			AccessPaths:           map[string]string{},
 		}
 		for _, source := range spec.Uses.Sources {
 			workspaceProject.AllowedSources[source] = struct{}{}
@@ -613,6 +749,9 @@ func loadWorkspaces(project *Project, includes []string) error {
 			return err
 		}
 		if err := loadWorkspaceDashboards(workspaceProject, workspaceDir, spec.Dashboards.Include); err != nil {
+			return err
+		}
+		if err := loadWorkspaceAccess(workspaceProject, workspaceDir, spec.Access.Include); err != nil {
 			return err
 		}
 		project.Workspaces[id] = workspaceProject
@@ -636,8 +775,8 @@ func loadWorkspaceModels(workspaceProject *WorkspaceProject, baseDir string, inc
 		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
 			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
 		}
-		var table semanticmodel.Table
-		if err := envelope.Spec.Decode(&table); err != nil {
+		var spec projectModelTableSpec
+		if err := envelope.Spec.Decode(&spec); err != nil {
 			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
 		}
 		name := envelope.Metadata.Name
@@ -647,7 +786,7 @@ func loadWorkspaceModels(workspaceProject *WorkspaceProject, baseDir string, inc
 		if _, exists := workspaceProject.Models[name]; exists {
 			return resourceError(path, "model_table:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate ModelTable %q in workspace %q", name, workspaceProject.ID)
 		}
-		workspaceProject.Models[name] = table
+		workspaceProject.Models[name] = projectModelTable(spec)
 		workspaceProject.ModelTitles[name] = envelope.Metadata.Title
 		workspaceProject.ModelDescriptions[name] = envelope.Metadata.Description
 		workspaceProject.ModelPaths[name] = path
@@ -725,7 +864,7 @@ func loadWorkspaceDashboards(workspaceProject *WorkspaceProject, baseDir string,
 			Filters:       spec.Filters,
 			Visuals:       spec.Visuals,
 			Tables:        spec.Tables,
-			Pages:         spec.Pages,
+			Pages:         projectDashboardPages(spec.Pages),
 		}
 		workspaceProject.Dashboards[name] = dashboard
 		workspaceProject.DashboardTitles[name] = envelope.Metadata.Title
@@ -734,6 +873,136 @@ func loadWorkspaceDashboards(workspaceProject *WorkspaceProject, baseDir string,
 		workspaceProject.DashboardPaths[name] = path
 	}
 	return nil
+}
+
+func loadWorkspaceAccess(workspaceProject *WorkspaceProject, baseDir string, includes []string) error {
+	paths, err := expandIncludes(baseDir, includes)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		envelope, err := readEnvelope(path)
+		if err != nil {
+			return err
+		}
+		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
+		}
+		name := envelope.Metadata.Name
+		if name == "" {
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
+		}
+		switch envelope.Kind {
+		case "WorkspaceGroup":
+			var spec workspaceGroupSpec
+			if err := envelope.Spec.Decode(&spec); err != nil {
+				return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
+			}
+			if _, exists := workspaceProject.AccessGroups[name]; exists {
+				return resourceError(path, "workspace_group:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate WorkspaceGroup %q in workspace %q", name, workspaceProject.ID)
+			}
+			workspaceProject.AccessGroups[name] = projectWorkspaceGroup(name, spec)
+			workspaceProject.AccessPaths["WorkspaceGroup:"+name] = path
+		case "WorkspaceRoleBinding":
+			var spec workspaceRoleBindingSpec
+			if err := envelope.Spec.Decode(&spec); err != nil {
+				return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
+			}
+			if _, exists := workspaceProject.AccessRoleBindings[name]; exists {
+				return resourceError(path, "workspace_role_binding:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate WorkspaceRoleBinding %q in workspace %q", name, workspaceProject.ID)
+			}
+			workspaceProject.AccessRoleBindings[name] = projectWorkspaceRoleBinding(name, spec)
+			workspaceProject.AccessPaths["WorkspaceRoleBinding:"+name] = path
+		default:
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "kind", "%s kind = %q, want WorkspaceGroup or WorkspaceRoleBinding", path, envelope.Kind)
+		}
+	}
+	return nil
+}
+
+func projectModelTable(spec projectModelTableSpec) semanticmodel.Table {
+	table := semanticmodel.Table{
+		Kind:        spec.Kind,
+		Source:      spec.Source,
+		Sources:     append([]string{}, spec.Sources...),
+		SourceReads: copyStringSliceMap(spec.SourceReads),
+		SQL:         spec.SQL,
+		Transform:   spec.Transform,
+		Columns:     copyModelColumns(spec.Columns),
+		PrimaryKey:  spec.PrimaryKey,
+		Grain:       spec.Grain,
+		Dimensions:  map[string]semanticmodel.MetricDimension{},
+		Measures:    copyMeasures(spec.Measures),
+		Description: spec.Description,
+	}
+	for name, field := range spec.Fields {
+		table.Dimensions[name] = semanticmodel.MetricDimension{
+			Label:       field.Label,
+			Description: field.Description,
+			Expr:        field.Expr,
+			Expression:  field.Expression,
+		}
+		if field.Type != "" {
+			if table.Columns == nil {
+				table.Columns = map[string]semanticmodel.ModelColumn{}
+			}
+			column := table.Columns[name]
+			column.Type = field.Type
+			column.Description = firstNonEmpty(column.Description, field.Description)
+			table.Columns[name] = column
+		}
+	}
+	return table
+}
+
+func projectDashboardPages(pages []projectDashboardPage) []dashboard.Page {
+	out := make([]dashboard.Page, 0, len(pages))
+	for _, page := range pages {
+		out = append(out, dashboard.Page{
+			ID:          page.Name,
+			Title:       page.Title,
+			Description: page.Description,
+			Canvas:      page.Canvas,
+			Grid:        page.Grid,
+			Visuals:     page.Visuals,
+		})
+	}
+	return out
+}
+
+func projectWorkspaceGroup(name string, spec workspaceGroupSpec) workspace.WorkspaceGroup {
+	group := workspace.WorkspaceGroup{
+		ID:          name,
+		Name:        name,
+		Description: spec.Description,
+		Members:     make([]workspace.WorkspaceGroupMember, 0, len(spec.Members)),
+	}
+	for _, member := range spec.Members {
+		group.Members = append(group.Members, workspace.WorkspaceGroupMember{
+			PrincipalID: strings.TrimSpace(member.PrincipalID),
+			Email:       strings.TrimSpace(member.Email),
+			DisplayName: strings.TrimSpace(member.DisplayName),
+		})
+	}
+	sort.SliceStable(group.Members, func(i, j int) bool {
+		return accessMemberSortKey(group.Members[i]) < accessMemberSortKey(group.Members[j])
+	})
+	return group
+}
+
+func projectWorkspaceRoleBinding(name string, spec workspaceRoleBindingSpec) workspace.WorkspaceRoleBinding {
+	return workspace.WorkspaceRoleBinding{
+		ID:   name,
+		Name: name,
+		Role: strings.TrimSpace(spec.Role),
+		Subject: workspace.WorkspaceRoleBindingSubject{
+			Kind:        strings.TrimSpace(spec.Subject.Kind),
+			PrincipalID: strings.TrimSpace(spec.Subject.PrincipalID),
+			Email:       strings.TrimSpace(spec.Subject.Email),
+			DisplayName: strings.TrimSpace(spec.Subject.DisplayName),
+			Group:       strings.TrimSpace(spec.Subject.Group),
+		},
+	}
 }
 
 func validateProject(project Project) error {
@@ -770,6 +1039,48 @@ func validateProject(project Project) error {
 			if _, ok := workspaceProject.SemanticModels[dashboard.SemanticModel]; !ok {
 				return resourceError(workspaceProject.DashboardPaths[name], "dashboard:"+workspaceProject.ID+"."+name, "spec.semanticModel", "Dashboard %q.%q references unknown SemanticModel %q", workspaceProject.ID, name, dashboard.SemanticModel)
 			}
+		}
+		if err := validateWorkspaceAccess(workspaceProject); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWorkspaceAccess(workspaceProject *WorkspaceProject) error {
+	validRoles := map[string]struct{}{
+		access.RoleOwner:    {},
+		access.RoleAdmin:    {},
+		access.RoleDeployer: {},
+		access.RoleEditor:   {},
+		access.RoleViewer:   {},
+	}
+	for name, group := range workspaceProject.AccessGroups {
+		for index, member := range group.Members {
+			if member.PrincipalID == "" && member.Email == "" {
+				return resourceError(workspaceProject.AccessPaths["WorkspaceGroup:"+name], "workspace_group:"+workspaceProject.ID+"."+name, fmt.Sprintf("spec.members[%d]", index), "WorkspaceGroup %q.%q member requires principalId or email", workspaceProject.ID, name)
+			}
+		}
+	}
+	for name, binding := range workspaceProject.AccessRoleBindings {
+		path := workspaceProject.AccessPaths["WorkspaceRoleBinding:"+name]
+		if _, ok := validRoles[binding.Role]; !ok {
+			return resourceError(path, "workspace_role_binding:"+workspaceProject.ID+"."+name, "spec.role", "WorkspaceRoleBinding %q.%q references unknown role %q", workspaceProject.ID, name, binding.Role)
+		}
+		switch binding.Subject.Kind {
+		case string(access.SubjectGroup):
+			if binding.Subject.Group == "" {
+				return resourceError(path, "workspace_role_binding:"+workspaceProject.ID+"."+name, "spec.subject.group", "WorkspaceRoleBinding %q.%q group subject requires group", workspaceProject.ID, name)
+			}
+			if _, ok := workspaceProject.AccessGroups[binding.Subject.Group]; !ok {
+				return resourceError(path, "workspace_role_binding:"+workspaceProject.ID+"."+name, "spec.subject.group", "WorkspaceRoleBinding %q.%q references unknown WorkspaceGroup %q", workspaceProject.ID, name, binding.Subject.Group)
+			}
+		case string(access.SubjectPrincipal):
+			if binding.Subject.PrincipalID == "" && binding.Subject.Email == "" {
+				return resourceError(path, "workspace_role_binding:"+workspaceProject.ID+"."+name, "spec.subject", "WorkspaceRoleBinding %q.%q principal subject requires principalId or email", workspaceProject.ID, name)
+			}
+		default:
+			return resourceError(path, "workspace_role_binding:"+workspaceProject.ID+"."+name, "spec.subject.kind", "WorkspaceRoleBinding %q.%q has unsupported subject kind %q", workspaceProject.ID, name, binding.Subject.Kind)
 		}
 	}
 	return nil
@@ -825,8 +1136,12 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 		Catalog:    catalog,
 		Models:     map[string]*semanticmodel.Model{},
 		Dashboards: workspaceProject.Dashboards,
-		BaseDir:    project.BaseDir,
-		SourceIDs:  sourceIDs,
+		Access: workspace.AccessPolicy{
+			Groups:       copyWorkspaceGroups(workspaceProject.AccessGroups),
+			RoleBindings: copyWorkspaceRoleBindings(workspaceProject.AccessRoleBindings),
+		},
+		BaseDir:   project.BaseDir,
+		SourceIDs: sourceIDs,
 	}
 	for _, modelName := range sortedMapKeys(workspaceProject.SemanticModels) {
 		semanticSpec := workspaceProject.SemanticModels[modelName]
@@ -1076,6 +1391,16 @@ func envelopeResourceID(envelope resourceEnvelope, fallbackWorkspace string) str
 			return ""
 		}
 		return "dashboard:" + workspaceID + "." + name
+	case "WorkspaceGroup":
+		if workspaceID == "" {
+			return ""
+		}
+		return "workspace_group:" + workspaceID + "." + name
+	case "WorkspaceRoleBinding":
+		if workspaceID == "" {
+			return ""
+		}
+		return "workspace_role_binding:" + workspaceID + "." + name
 	default:
 		return ""
 	}
@@ -1101,6 +1426,10 @@ func schemaKindForEnvelope(content []byte) (configschema.Kind, bool) {
 		return configschema.KindSource, true
 	case "Workspace":
 		return configschema.KindWorkspace, true
+	case "WorkspaceGroup":
+		return configschema.KindWorkspaceGroup, true
+	case "WorkspaceRoleBinding":
+		return configschema.KindWorkspaceRoleBinding, true
 	case "ModelTable":
 		return configschema.KindModelTable, true
 	case "SemanticModel":
@@ -1196,6 +1525,60 @@ func copyTables(in map[string]semanticmodel.Table) map[string]semanticmodel.Tabl
 		out[key] = value
 	}
 	return out
+}
+
+func copyStringSliceMap(in map[string][]string) map[string][]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string][]string, len(in))
+	for key, value := range in {
+		out[key] = append([]string{}, value...)
+	}
+	return out
+}
+
+func copyModelColumns(in map[string]semanticmodel.ModelColumn) map[string]semanticmodel.ModelColumn {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]semanticmodel.ModelColumn, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func copyMeasures(in map[string]semanticmodel.MetricMeasure) map[string]semanticmodel.MetricMeasure {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]semanticmodel.MetricMeasure, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func copyWorkspaceGroups(in map[string]workspace.WorkspaceGroup) map[string]workspace.WorkspaceGroup {
+	out := make(map[string]workspace.WorkspaceGroup, len(in))
+	for key, value := range in {
+		value.Members = append([]workspace.WorkspaceGroupMember{}, value.Members...)
+		out[key] = value
+	}
+	return out
+}
+
+func copyWorkspaceRoleBindings(in map[string]workspace.WorkspaceRoleBinding) map[string]workspace.WorkspaceRoleBinding {
+	out := make(map[string]workspace.WorkspaceRoleBinding, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func accessMemberSortKey(member workspace.WorkspaceGroupMember) string {
+	return member.Email + "\x00" + member.PrincipalID + "\x00" + member.DisplayName
 }
 
 func firstNonEmpty(values ...string) string {

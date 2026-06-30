@@ -5,7 +5,7 @@ metadata:
   name: orders
   title: Fulfillment Orders
 spec:
-  primary_key: order_id
+  primaryKey: order_id
   sources:
     - olist.orders
     - olist.reviews

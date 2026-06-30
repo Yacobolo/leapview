@@ -43,6 +43,20 @@ func TestPackProjectValidatesSelectedWorkspace(t *testing.T) {
 			t.Fatalf("asset workspace = %q, want operations: %#v", asset.WorkspaceID, asset)
 		}
 	}
+	root := t.TempDir()
+	if err := ExtractArtifact(path, root); err != nil {
+		t.Fatalf("ExtractArtifact() error = %v", err)
+	}
+	compiled, _, err := LoadCompiledWorkspaceArtifact(root)
+	if err != nil {
+		t.Fatalf("LoadCompiledWorkspaceArtifact() error = %v", err)
+	}
+	if compiled.Validation.Status != "passed" || compiled.Validation.SchemaVersion != "libredash.dev/v1" {
+		t.Fatalf("compiled validation = %#v, want passed libredash.dev/v1", compiled.Validation)
+	}
+	if compiled.Validation.GraphHash == "" || compiled.Validation.GraphHash != graphHash(compiled.Graph) {
+		t.Fatalf("compiled validation graph hash = %q, want %q", compiled.Validation.GraphHash, graphHash(compiled.Graph))
+	}
 }
 
 func TestValidateArtifactRejectsWrongDeploymentCompiledGraph(t *testing.T) {
@@ -173,6 +187,8 @@ spec:
   dashboards:
     include:
       - dashboards/*.yaml
+  access:
+    include: []
 `,
 		"workspaces/sales/models/orders.yaml": `
 apiVersion: libredash.dev/v1
@@ -181,7 +197,7 @@ metadata:
   workspace: sales
   name: orders
 spec:
-  primary_key: order_id
+  primaryKey: order_id
   sources:
     - crm.orders
   fields:
@@ -223,7 +239,7 @@ spec:
         measures:
           order_count:
   pages:
-    - id: overview
+    - name: overview
       title: Overview
       visuals:
         - id: total

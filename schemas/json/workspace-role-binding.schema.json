@@ -3,21 +3,6 @@
     "#APIVersion": {
       "const": "libredash.dev/v1"
     },
-    "#IncludeList": {
-      "additionalProperties": false,
-      "properties": {
-        "include": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "include"
-      ],
-      "type": "object"
-    },
     "#Metadata": {
       "additionalProperties": false,
       "properties": {
@@ -60,7 +45,7 @@
       "$ref": "#/$defs/%23APIVersion"
     },
     "kind": {
-      "const": "Workspace"
+      "const": "WorkspaceRoleBinding"
     },
     "metadata": {
       "$ref": "#/$defs/%23Metadata"
@@ -68,40 +53,46 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
-        "access": {
-          "$ref": "#/$defs/%23IncludeList"
+        "role": {
+          "enum": [
+            "owner",
+            "admin",
+            "deployer",
+            "editor",
+            "viewer"
+          ]
         },
-        "dashboards": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "models": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "semanticModels": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "uses": {
+        "subject": {
           "additionalProperties": false,
           "properties": {
-            "sources": {
-              "items": {
-                "$ref": "#/$defs/%23ResourceID"
-              },
-              "type": "array"
+            "displayName": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "group": {
+              "$ref": "#/$defs/%23ResourceID"
+            },
+            "kind": {
+              "enum": [
+                "principal",
+                "group"
+              ]
+            },
+            "principalId": {
+              "$ref": "#/$defs/%23ResourceID"
             }
           },
           "required": [
-            "sources"
+            "kind"
           ],
           "type": "object"
         }
       },
       "required": [
-        "access",
-        "dashboards",
-        "models",
-        "semanticModels",
-        "uses"
+        "role",
+        "subject"
       ],
       "type": "object"
     }

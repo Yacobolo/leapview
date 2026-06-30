@@ -6,7 +6,7 @@ metadata:
   title: Sales Orders
   description: Order-grain sales table with revenue, category, status, and customer.
 spec:
-  primary_key: order_id
+  primaryKey: order_id
   sources:
     - olist.orders
     - olist.payments

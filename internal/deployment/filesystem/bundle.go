@@ -49,9 +49,23 @@ type CompiledWorkspaceArtifact struct {
 	WorkspaceID    string                                 `json:"workspaceId"`
 	WorkspaceTitle string                                 `json:"workspaceTitle"`
 	DeploymentID   string                                 `json:"deploymentId"`
+	Validation     CompiledArtifactValidation             `json:"validation"`
 	Definition     *workspace.Definition                  `json:"definition"`
 	Graph          workspace.AssetGraph                   `json:"graph"`
 	Plan           workspacecompiler.ProjectPlanWorkspace `json:"plan"`
+}
+
+type CompiledArtifactValidation struct {
+	Status        string                       `json:"status"`
+	Diagnostics   []CompiledArtifactDiagnostic `json:"diagnostics,omitempty"`
+	GraphHash     string                       `json:"graphHash"`
+	SchemaVersion string                       `json:"schemaVersion"`
+}
+
+type CompiledArtifactDiagnostic struct {
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
 }
 
 func PackProject(projectPath, workspaceID string, deploymentID deployment.ID, out io.Writer) (Manifest, string, error) {
@@ -93,9 +107,14 @@ func PackProjectAgainstGraph(projectPath, workspaceID string, deploymentID deplo
 		WorkspaceID:    workspaceID,
 		WorkspaceTitle: compiledWorkspace.Workspace.Title,
 		DeploymentID:   string(deploymentID),
-		Definition:     compiledWorkspace.Definition,
-		Graph:          compiledWorkspace.Workspace.Graph,
-		Plan:           workspacePlan,
+		Validation: CompiledArtifactValidation{
+			Status:        "passed",
+			GraphHash:     graphHash(compiledWorkspace.Workspace.Graph),
+			SchemaVersion: "libredash.dev/v1",
+		},
+		Definition: compiledWorkspace.Definition,
+		Graph:      compiledWorkspace.Workspace.Graph,
+		Plan:       workspacePlan,
 	}
 	compiledBytes, err := json.MarshalIndent(compiledArtifact, "", "  ")
 	if err != nil {
@@ -292,6 +311,10 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 		os.RemoveAll(root)
 		return deployment.Validation{}, err
 	}
+	if err := validateCompiledArtifactValidation(compiled); err != nil {
+		os.RemoveAll(root)
+		return deployment.Validation{}, err
+	}
 	if options.DataDir != "" {
 		if err := discoverSchemasForDefinition(context.Background(), compiled.Definition, options); err != nil {
 			os.RemoveAll(root)
@@ -320,6 +343,21 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 		Graph:        compiled.Graph,
 	}, nil
 }
+
+func validateCompiledArtifactValidation(compiled CompiledWorkspaceArtifact) error {
+	if compiled.Validation.Status != "passed" {
+		return fmt.Errorf("compiled artifact validation status = %q, want passed", compiled.Validation.Status)
+	}
+	if compiled.Validation.SchemaVersion != projectAPIVersion {
+		return fmt.Errorf("compiled artifact validation schemaVersion = %q, want %q", compiled.Validation.SchemaVersion, projectAPIVersion)
+	}
+	if want := graphHash(compiled.Graph); compiled.Validation.GraphHash != want {
+		return fmt.Errorf("compiled artifact validation graphHash = %q, want %q", compiled.Validation.GraphHash, want)
+	}
+	return nil
+}
+
+const projectAPIVersion = "libredash.dev/v1"
 
 func discoverSchemasForDefinition(ctx context.Context, definition *workspace.Definition, options ValidateOptions) error {
 	duckDBRoot := options.DuckDBDir
@@ -518,6 +556,14 @@ func fileDigest(path string) (string, error) {
 func digestBytes(bytes []byte) string {
 	sum := sha256.Sum256(bytes)
 	return hex.EncodeToString(sum[:])
+}
+
+func graphHash(graph workspace.AssetGraph) string {
+	bytes, err := json.Marshal(graph)
+	if err != nil {
+		return ""
+	}
+	return digestBytes(bytes)
 }
 
 func projectPlanWorkspace(plan workspacecompiler.ProjectPlan, workspaceID string) (workspacecompiler.ProjectPlanWorkspace, bool) {

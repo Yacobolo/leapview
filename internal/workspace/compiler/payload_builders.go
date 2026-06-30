@@ -52,6 +52,11 @@ func connectionPayload(connection semanticmodel.Connection) connectionPayloadV1 
 		Path:                  connection.Path,
 		Root:                  connection.Root,
 		Scope:                 connection.Scope,
+		Host:                  connection.Host,
+		Port:                  connection.Port,
+		Database:              connection.Database,
+		Username:              connection.Username,
+		SSLMode:               connection.SSLMode,
 		Options:               connection.Options,
 		Defaults:              connectionDefaultsPayloadV1{Options: connection.Defaults.Options},
 		CredentialsConfigured: semanticmodel.ConnectionCredentialsConfigured(connection),
@@ -368,6 +373,38 @@ func pagePayload(page dashboard.Page) pagePayloadV1 {
 		Description: page.Description,
 		Canvas:      pageCanvasPayload(page.Canvas),
 		Grid:        pageGridPayload(page.Grid),
+	}
+}
+
+func workspaceGroupPayload(group workspace.WorkspaceGroup) workspaceGroupPayloadV1 {
+	members := make([]workspaceGroupMemberPayloadV1, 0, len(group.Members))
+	for _, member := range group.Members {
+		members = append(members, workspaceGroupMemberPayloadV1{
+			PrincipalID: member.PrincipalID,
+			Email:       member.Email,
+			DisplayName: member.DisplayName,
+		})
+	}
+	return workspaceGroupPayloadV1{
+		ID:          group.ID,
+		Name:        group.Name,
+		Description: group.Description,
+		Members:     members,
+	}
+}
+
+func workspaceRoleBindingPayload(binding workspace.WorkspaceRoleBinding) workspaceRoleBindingPayloadV1 {
+	return workspaceRoleBindingPayloadV1{
+		ID:   binding.ID,
+		Name: binding.Name,
+		Role: binding.Role,
+		Subject: workspaceRoleBindingSubjectPayloadV1{
+			Kind:        binding.Subject.Kind,
+			PrincipalID: binding.Subject.PrincipalID,
+			Email:       binding.Subject.Email,
+			DisplayName: binding.Subject.DisplayName,
+			Group:       binding.Subject.Group,
+		},
 	}
 }
 

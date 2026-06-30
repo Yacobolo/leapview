@@ -66,6 +66,29 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, deploymentID workspace.De
 	if err != nil {
 		return workspace.AssetGraph{}, err
 	}
+	for _, groupName := range sortedMapKeys(definition.Access.Groups) {
+		group := definition.Access.Groups[groupName]
+		id, err := add(workspace.AssetTypeWorkspaceGroup, workspaceKey(groupName), catalogID, group.Name, group.Description, workspaceGroupPayload(group))
+		if err != nil {
+			return workspace.AssetGraph{}, err
+		}
+		edge(catalogID, id, workspace.AssetEdgeContains)
+	}
+	for _, bindingName := range sortedMapKeys(definition.Access.RoleBindings) {
+		binding := definition.Access.RoleBindings[bindingName]
+		id, err := add(workspace.AssetTypeWorkspaceRoleBinding, workspaceKey(bindingName), catalogID, binding.Name, "", workspaceRoleBindingPayload(binding))
+		if err != nil {
+			return workspace.AssetGraph{}, err
+		}
+		edge(catalogID, id, workspace.AssetEdgeContains)
+		if binding.Subject.Kind == "group" && binding.Subject.Group != "" {
+			groupID, err := assetID(workspace.AssetTypeWorkspaceGroup, workspaceKey(binding.Subject.Group))
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			edge(id, groupID, workspace.AssetEdgeUsesGroup)
+		}
+	}
 	for _, modelEntry := range definition.Catalog.SemanticModels {
 		model := definition.Models[modelEntry.ID]
 		for _, connectionName := range sortedMapKeys(model.Connections) {

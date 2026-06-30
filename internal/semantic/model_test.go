@@ -58,7 +58,7 @@ sources:
 models:
   orders:
     source: orders
-    primary_key: order_id
+    primaryKey: order_id
     fields:
       order_id:
         expr: order_id

@@ -3,21 +3,23 @@ package workspace
 type AssetType string
 
 const (
-	AssetTypeCatalog       AssetType = "catalog"
-	AssetTypeSemanticModel AssetType = "semantic_model"
-	AssetTypeConnection    AssetType = "connection"
-	AssetTypeSource        AssetType = "source"
-	AssetTypeModelTable    AssetType = "model_table"
-	AssetTypeSemanticTable AssetType = "semantic_table"
-	AssetTypeRelationship  AssetType = "relationship"
-	AssetTypeField         AssetType = "field"
-	AssetTypeMeasure       AssetType = "measure"
-	AssetTypeDashboard     AssetType = "dashboard"
-	AssetTypePage          AssetType = "page"
-	AssetTypePageItem      AssetType = "page_item"
-	AssetTypeFilter        AssetType = "filter"
-	AssetTypeVisual        AssetType = "visual"
-	AssetTypeTable         AssetType = "table"
+	AssetTypeCatalog              AssetType = "catalog"
+	AssetTypeSemanticModel        AssetType = "semantic_model"
+	AssetTypeConnection           AssetType = "connection"
+	AssetTypeSource               AssetType = "source"
+	AssetTypeModelTable           AssetType = "model_table"
+	AssetTypeSemanticTable        AssetType = "semantic_table"
+	AssetTypeRelationship         AssetType = "relationship"
+	AssetTypeField                AssetType = "field"
+	AssetTypeMeasure              AssetType = "measure"
+	AssetTypeDashboard            AssetType = "dashboard"
+	AssetTypePage                 AssetType = "page"
+	AssetTypePageItem             AssetType = "page_item"
+	AssetTypeFilter               AssetType = "filter"
+	AssetTypeVisual               AssetType = "visual"
+	AssetTypeTable                AssetType = "table"
+	AssetTypeWorkspaceGroup       AssetType = "workspace_group"
+	AssetTypeWorkspaceRoleBinding AssetType = "workspace_role_binding"
 )
 
 type AssetEdgeType string
@@ -35,4 +37,5 @@ const (
 	AssetEdgeUsesTable         AssetEdgeType = "uses_table"
 	AssetEdgeUsesFilter        AssetEdgeType = "uses_filter"
 	AssetEdgeFiltersField      AssetEdgeType = "filters_field"
+	AssetEdgeUsesGroup         AssetEdgeType = "uses_group"
 )

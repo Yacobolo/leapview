@@ -65,7 +65,7 @@ spec:
         measures:
           revenue:
   pages:
-    - id: overview
+    - name: overview
       title: Overview
       visuals: []
 `))
@@ -79,7 +79,7 @@ kind: ModelTable
 metadata:
   name: orders
 spec:
-  primary_key: order_id
+  primaryKey: order_id
   fields:
     invalid-name:
       label: Invalid

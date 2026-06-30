@@ -25,11 +25,15 @@ spec:
 `,
 		"sources/olist.orders.yaml":                                    sourceYAML("olist.orders", "orders.csv", "order_id"),
 		"sources/olist.customers.yaml":                                 sourceYAML("olist.customers", "customers.csv", "customer_id"),
-		"workspaces/sales/workspace.yaml":                              workspaceYAML("sales"),
+		"workspaces/sales/workspace.yaml":                              workspaceYAMLWithAccess("sales"),
+		"workspaces/sales/access/analysts.yaml":                        workspaceGroupYAML("sales", "analysts", "analyst@example.com"),
+		"workspaces/sales/access/analysts-viewer.yaml":                 workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
 		"workspaces/sales/models/orders.yaml":                          modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
 		"workspaces/sales/semantic-models/sales.yaml":                  semanticModelYAML("sales", "orders", "order_count"),
 		"workspaces/sales/dashboards/executive-sales.yaml":             dashboardYAML("sales", "executive-sales", "sales"),
-		"workspaces/operations/workspace.yaml":                         workspaceYAML("operations"),
+		"workspaces/operations/workspace.yaml":                         workspaceYAMLWithAccess("operations"),
+		"workspaces/operations/access/operators.yaml":                  workspaceGroupYAML("operations", "operators", "operator@example.com"),
+		"workspaces/operations/access/operators-viewer.yaml":           workspaceRoleBindingGroupYAML("operations", "operators-viewer", "viewer", "operators"),
 		"workspaces/operations/models/orders.yaml":                     modelTableYAML("operations", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
 		"workspaces/operations/semantic-models/operations.yaml":        semanticModelYAML("operations", "orders", "order_count"),
 		"workspaces/operations/dashboards/fulfillment-operations.yaml": dashboardYAML("operations", "fulfillment-operations", "operations"),
@@ -58,6 +62,8 @@ spec:
 	assertGraphAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "source:olist.orders")
 	assertGraphAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "model_table:sales.orders")
 	assertGraphAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "dashboard:sales.executive-sales")
+	assertGraphAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "workspace_group:sales.analysts")
+	assertGraphAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "workspace_role_binding:sales.analysts-viewer")
 	assertGraphMissingAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "source:sales.olist_orders")
 	assertGraphAsset(t, compiled.Workspaces["operations"].Workspace.Graph, "source:olist.orders")
 	assertGraphAsset(t, compiled.Workspaces["operations"].Workspace.Graph, "model_table:operations.orders")
@@ -70,6 +76,90 @@ spec:
 	unmarshalGraphPayload(t, compiled.Workspaces["sales"].Workspace.Graph, "source:olist.orders", &payload)
 	if payload.Fields["order_id"].Type != "string" {
 		t.Fatalf("source payload field type = %q, want string", payload.Fields["order_id"].Type)
+	}
+	group := compiled.Workspaces["sales"].Definition.Access.Groups["analysts"]
+	if group.ID != "analysts" || len(group.Members) != 1 || group.Members[0].Email != "analyst@example.com" {
+		t.Fatalf("compiled access group = %#v, want analyst member", group)
+	}
+	binding := compiled.Workspaces["sales"].Definition.Access.RoleBindings["analysts-viewer"]
+	if binding.Role != "viewer" || binding.Subject.Kind != "group" || binding.Subject.Group != "analysts" {
+		t.Fatalf("compiled access binding = %#v, want analysts viewer group binding", binding)
+	}
+	if got := compiled.Workspaces["sales"].Definition.Dashboards["executive-sales"].Pages[0].ID; got != "overview" {
+		t.Fatalf("compiled dashboard page id = %q, want authored page name overview", got)
+	}
+}
+
+func TestCompileProjectRejectsInvalidAccessResources(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  string
+		field string
+	}{
+		{
+			name: "unknown role",
+			files: map[string]string{
+				"workspaces/sales/access/analysts.yaml":        workspaceGroupYAML("sales", "analysts", "analyst@example.com"),
+				"workspaces/sales/access/analysts-viewer.yaml": workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "superuser", "analysts"),
+			},
+			want:  `superuser`,
+			field: "spec",
+		},
+		{
+			name: "unknown group",
+			files: map[string]string{
+				"workspaces/sales/access/analysts-viewer.yaml": workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "missing"),
+			},
+			want:  `unknown WorkspaceGroup "missing"`,
+			field: "spec.subject.group",
+		},
+		{
+			name: "workspace mismatch",
+			files: map[string]string{
+				"workspaces/sales/access/analysts.yaml":        strings.Replace(workspaceGroupYAML("sales", "analysts", "analyst@example.com"), "workspace: sales", "workspace: operations", 1),
+				"workspaces/sales/access/analysts-viewer.yaml": workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
+			},
+			want:  `workspace = "operations", want "sales"`,
+			field: "metadata.workspace",
+		},
+		{
+			name: "duplicate group",
+			files: map[string]string{
+				"workspaces/sales/access/analysts-one.yaml":    workspaceGroupYAML("sales", "analysts", "one@example.com"),
+				"workspaces/sales/access/analysts-two.yaml":    workspaceGroupYAML("sales", "analysts", "two@example.com"),
+				"workspaces/sales/access/analysts-viewer.yaml": workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
+			},
+			want:  `duplicate WorkspaceGroup "analysts"`,
+			field: "metadata.name",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string]string{
+				"libredash.yaml":                                   projectYAML(),
+				"connections/olist.yaml":                           connectionYAML("olist"),
+				"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+				"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+				"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccess("sales"),
+				"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
+				"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+				"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+			}
+			for path, content := range tc.files {
+				files[path] = content
+			}
+			projectPath := writeProjectFixture(t, files)
+			_, err := CompileProject(projectPath, Options{DeploymentID: "dep_test"})
+			assertCompileErrorContains(t, err, tc.want)
+			if tc.field != "" {
+				diagnostics := configschema.Diagnostics(err)
+				if len(diagnostics) == 0 || diagnostics[0].FieldPath != tc.field {
+					t.Fatalf("diagnostics = %#v, want field %q", diagnostics, tc.field)
+				}
+			}
+		})
 	}
 }
 
@@ -206,6 +296,65 @@ func TestPlanProjectAgainstGraphReportsStableDiff(t *testing.T) {
 	}
 	if !workspacePlan.Summary.Breaking || !workspacePlan.Summary.MaterializationImpact {
 		t.Fatalf("summary impact = %#v, want breaking and materialization impact", workspacePlan.Summary)
+	}
+}
+
+func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
+	projectPath := writeProjectFixture(t, map[string]string{
+		"libredash.yaml":                                   projectYAML(),
+		"connections/olist.yaml":                           connectionYAML("olist"),
+		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccess("sales"),
+		"workspaces/sales/access/analysts.yaml":            workspaceGroupYAML("sales", "analysts", "analyst@example.com"),
+		"workspaces/sales/access/analysts-viewer.yaml":     workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
+		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
+		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+	})
+	active, err := CompileProject(projectPath, Options{DeploymentID: "dep_active"})
+	if err != nil {
+		t.Fatalf("CompileProject() error = %v", err)
+	}
+	activeGraph := active.Workspaces["sales"].Workspace.Graph
+	for index := range activeGraph.Assets {
+		switch activeGraph.Assets[index].ID {
+		case "source:olist.orders":
+			var payload sourcePayloadV1
+			unmarshalGraphPayload(t, activeGraph, string(activeGraph.Assets[index].ID), &payload)
+			field := payload.Fields["order_id"]
+			field.Type = "integer"
+			payload.Fields["order_id"] = field
+			raw, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			activeGraph.Assets[index].PayloadJSON = string(raw)
+			activeGraph.Assets[index].ContentHash = "old-source-hash"
+		case "workspace_group:sales.analysts":
+			activeGraph.Assets[index].ContentHash = "old-access-hash"
+		}
+	}
+
+	plan, err := PlanProjectAgainstGraph(projectPath, "sales", activeGraph)
+	if err != nil {
+		t.Fatalf("PlanProjectAgainstGraph() error = %v", err)
+	}
+	summary := plan.Workspaces[0].Summary
+	if !summary.Breaking || !summary.MaterializationImpact || !summary.AccessImpact {
+		t.Fatalf("summary = %#v, want breaking, materialization, and access impact", summary)
+	}
+	var sourceBreaking, groupAccess bool
+	for _, change := range plan.Workspaces[0].Changes {
+		if change.ID == "source:olist.orders" {
+			sourceBreaking = change.Breaking && change.MaterializationImpact
+		}
+		if change.ID == "workspace_group:sales.analysts" {
+			groupAccess = change.AccessImpact
+		}
+	}
+	if !sourceBreaking || !groupAccess {
+		t.Fatalf("changes = %#v, want source breaking/materialization and group access impact", plan.Workspaces[0].Changes)
 	}
 }
 
@@ -517,7 +666,13 @@ spec:
   dashboards:
     include:
       - dashboards/*.yaml
+  access:
+    include: []
 `
+}
+
+func workspaceYAMLWithAccess(name string) string {
+	return strings.Replace(workspaceYAML(name), "include: []", "include:\n      - access/*.yaml", 1)
 }
 
 func modelTableYAML(workspace, name, source, key, sql string) string {
@@ -528,12 +683,13 @@ metadata:
   workspace: ` + workspace + `
   name: ` + name + `
 spec:
-  primary_key: ` + key + `
+  primaryKey: ` + key + `
   sources:
     - ` + source + `
   fields:
     ` + key + `:
       label: ID
+      type: string
   transform:
     sql: |
       ` + sql + `
@@ -548,10 +704,11 @@ metadata:
   workspace: ` + workspace + `
   name: ` + name + `
 spec:
-  primary_key: ` + key + `
+  primaryKey: ` + key + `
   fields:
     ` + key + `:
       label: ID
+      type: string
   transform:
     sql: |
       ` + sql + `
@@ -626,7 +783,7 @@ spec:
         measures:
           order_count:
   pages:
-    - id: overview
+    - name: overview
       title: Overview
       visuals:
         - id: total
@@ -637,6 +794,34 @@ spec:
             row: 1
             col_span: 3
             row_span: 2
+`
+}
+
+func workspaceGroupYAML(workspace, name, email string) string {
+	return `
+apiVersion: libredash.dev/v1
+kind: WorkspaceGroup
+metadata:
+  workspace: ` + workspace + `
+  name: ` + name + `
+spec:
+  members:
+    - email: ` + email + `
+`
+}
+
+func workspaceRoleBindingGroupYAML(workspace, name, role, group string) string {
+	return `
+apiVersion: libredash.dev/v1
+kind: WorkspaceRoleBinding
+metadata:
+  workspace: ` + workspace + `
+  name: ` + name + `
+spec:
+  role: ` + role + `
+  subject:
+    kind: group
+    group: ` + group + `
 `
 }
 

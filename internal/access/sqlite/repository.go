@@ -10,11 +10,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 type Repository struct {
@@ -431,6 +433,103 @@ func (r *Repository) ListGroupMembers(ctx context.Context, workspaceID, groupID 
 	return members, nil
 }
 
+func (r *Repository) ReconcileWorkspacePolicy(ctx context.Context, workspaceID string, policy workspace.AccessPolicy) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	bindings, err := r.ListRoleBindings(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		if err := r.DeleteRoleBinding(ctx, workspaceID, binding.ID); err != nil {
+			return err
+		}
+	}
+	groups, err := r.ListGroups(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if err := r.DeleteGroup(ctx, workspaceID, group.ID); err != nil {
+			return err
+		}
+	}
+
+	groupIDs := map[string]string{}
+	for _, name := range sortedWorkspaceGroupNames(policy.Groups) {
+		groupPolicy := policy.Groups[name]
+		group, err := r.UpsertGroup(ctx, access.GroupInput{
+			ID:          stableAccessID("group", workspaceID, name),
+			WorkspaceID: workspaceID,
+			Provider:    "local",
+			ExternalID:  name,
+			Name:        firstNonEmpty(groupPolicy.Name, name),
+		})
+		if err != nil {
+			return err
+		}
+		groupIDs[name] = group.ID
+		for _, member := range groupPolicy.Members {
+			principal, err := r.policyPrincipal(ctx, member.PrincipalID, member.Email, member.DisplayName)
+			if err != nil {
+				return err
+			}
+			if err := r.AddGroupMember(ctx, workspaceID, group.ID, principal.ID); err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, name := range sortedWorkspaceRoleBindingNames(policy.RoleBindings) {
+		binding := policy.RoleBindings[name]
+		input := access.RoleBindingInput{
+			ID:          stableAccessID("rolebinding", workspaceID, name),
+			WorkspaceID: workspaceID,
+			Role:        binding.Role,
+		}
+		switch binding.Subject.Kind {
+		case string(access.SubjectGroup):
+			groupID := groupIDs[binding.Subject.Group]
+			if groupID == "" {
+				return fmt.Errorf("workspace role binding %q references unknown group %q", name, binding.Subject.Group)
+			}
+			input.SubjectType = access.SubjectGroup
+			input.SubjectID = groupID
+		case string(access.SubjectPrincipal):
+			principal, err := r.policyPrincipal(ctx, binding.Subject.PrincipalID, binding.Subject.Email, binding.Subject.DisplayName)
+			if err != nil {
+				return err
+			}
+			input.SubjectType = access.SubjectPrincipal
+			input.SubjectID = principal.ID
+		default:
+			return fmt.Errorf("workspace role binding %q has unsupported subject kind %q", name, binding.Subject.Kind)
+		}
+		if _, err := r.CreateRoleBinding(ctx, input); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Repository) policyPrincipal(ctx context.Context, id, email, displayName string) (access.Principal, error) {
+	email = access.NormalizeEmail(email)
+	id = strings.TrimSpace(id)
+	if id == "" && email != "" {
+		id = access.PrincipalIDForEmail(email)
+	}
+	if id == "" {
+		return access.Principal{}, fmt.Errorf("policy principal requires principalId or email")
+	}
+	return r.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          id,
+		Email:       email,
+		DisplayName: firstNonEmpty(strings.TrimSpace(displayName), email, id),
+	})
+}
+
 func (r *Repository) CreateSession(ctx context.Context, principalID string, ttl time.Duration) (string, error) {
 	token := newSecret()
 	expires := time.Now().Add(ttl).UTC().Format(time.RFC3339)
@@ -812,6 +911,28 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func stableAccessID(prefix, workspaceID, name string) string {
+	return "cac_" + prefix + "_" + stableID(workspaceID+"|"+name)
+}
+
+func sortedWorkspaceGroupNames(values map[string]workspace.WorkspaceGroup) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedWorkspaceRoleBindingNames(values map[string]workspace.WorkspaceRoleBinding) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func newID(prefix string) string {

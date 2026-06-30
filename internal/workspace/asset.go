@@ -205,6 +205,10 @@ func PayloadSchemaForAssetType(typ AssetType) string {
 		return "visual.v1"
 	case AssetTypeTable:
 		return "table.v1"
+	case AssetTypeWorkspaceGroup:
+		return "workspace_group.v1"
+	case AssetTypeWorkspaceRoleBinding:
+		return "workspace_role_binding.v1"
 	default:
 		return ""
 	}

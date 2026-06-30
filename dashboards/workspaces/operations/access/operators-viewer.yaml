@@ -1,0 +1,10 @@
+apiVersion: libredash.dev/v1
+kind: WorkspaceRoleBinding
+metadata:
+  workspace: operations
+  name: operators-viewer
+spec:
+  role: viewer
+  subject:
+    kind: group
+    group: operators

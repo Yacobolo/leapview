@@ -3,21 +3,6 @@
     "#APIVersion": {
       "const": "libredash.dev/v1"
     },
-    "#IncludeList": {
-      "additionalProperties": false,
-      "properties": {
-        "include": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "include"
-      ],
-      "type": "object"
-    },
     "#Metadata": {
       "additionalProperties": false,
       "properties": {
@@ -60,7 +45,7 @@
       "$ref": "#/$defs/%23APIVersion"
     },
     "kind": {
-      "const": "Workspace"
+      "const": "WorkspaceGroup"
     },
     "metadata": {
       "$ref": "#/$defs/%23Metadata"
@@ -68,41 +53,28 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
-        "access": {
-          "$ref": "#/$defs/%23IncludeList"
+        "description": {
+          "type": "string"
         },
-        "dashboards": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "models": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "semanticModels": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "uses": {
-          "additionalProperties": false,
-          "properties": {
-            "sources": {
-              "items": {
-                "$ref": "#/$defs/%23ResourceID"
+        "members": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "displayName": {
+                "type": "string"
               },
-              "type": "array"
-            }
+              "email": {
+                "type": "string"
+              },
+              "principalId": {
+                "$ref": "#/$defs/%23ResourceID"
+              }
+            },
+            "type": "object"
           },
-          "required": [
-            "sources"
-          ],
-          "type": "object"
+          "type": "array"
         }
       },
-      "required": [
-        "access",
-        "dashboards",
-        "models",
-        "semanticModels",
-        "uses"
-      ],
       "type": "object"
     }
   },

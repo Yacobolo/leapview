@@ -28,6 +28,8 @@ const (
 	KindConnection            Kind = "connection"
 	KindSource                Kind = "source"
 	KindWorkspace             Kind = "workspace"
+	KindWorkspaceGroup        Kind = "workspace-group"
+	KindWorkspaceRoleBinding  Kind = "workspace-role-binding"
 	KindModelTable            Kind = "model-table"
 	KindSemanticModel         Kind = "semantic-model"
 	KindDashboard             Kind = "dashboard"
@@ -157,7 +159,7 @@ func compiledDefinition(kind Kind) (*cue.Context, cue.Value, string, error) {
 }
 
 func JSONSchemaFiles() (map[string][]byte, error) {
-	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindModelTable, KindSemanticModelResource, KindDashboardResource}
+	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindModelTable, KindSemanticModelResource, KindDashboardResource}
 	files := map[string][]byte{}
 	for _, kind := range kinds {
 		content, err := JSONSchema(kind)
@@ -179,6 +181,10 @@ func JSONSchemaFilename(kind Kind) string {
 		return "source.schema.json"
 	case KindWorkspace:
 		return "workspace.schema.json"
+	case KindWorkspaceGroup:
+		return "workspace-group.schema.json"
+	case KindWorkspaceRoleBinding:
+		return "workspace-role-binding.schema.json"
 	case KindModelTable:
 		return "model-table.schema.json"
 	case KindSemanticModel:
@@ -229,6 +235,10 @@ func definitionName(kind Kind) (string, error) {
 		return "SourceResource", nil
 	case KindWorkspace:
 		return "WorkspaceResource", nil
+	case KindWorkspaceGroup:
+		return "WorkspaceGroupResource", nil
+	case KindWorkspaceRoleBinding:
+		return "WorkspaceRoleBindingResource", nil
 	case KindModelTable:
 		return "ModelTableResource", nil
 	case KindSemanticModel:
@@ -397,6 +407,12 @@ var schemaOverlays = map[Kind]schemaOverlay{
 		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 	KindWorkspace: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspaceGroup: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspaceRoleBinding: {
 		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 	KindModelTable: {

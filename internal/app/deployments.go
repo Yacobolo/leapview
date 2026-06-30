@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/deployment/activate"
@@ -30,6 +31,7 @@ type runtimeReloader interface {
 type deploymentRepository interface {
 	validate.Repository
 	activate.Repository
+	activate.ArtifactRepository
 	Create(ctx context.Context, input deployment.CreateInput) (deployment.Deployment, error)
 	List(ctx context.Context, workspaceID deployment.WorkspaceID) ([]deployment.Deployment, error)
 }
@@ -144,7 +146,18 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	service := activate.NewService(repo, s.reloader)
+	accessRepo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	var accessReconciler access.WorkspacePolicyReconciler
+	if accessRepo != nil {
+		if reconciler, ok := accessRepo.(access.WorkspacePolicyReconciler); ok {
+			accessReconciler = reconciler
+		}
+	}
+	service := activate.NewServiceWithAccess(repo, s.reloader, repo, accessReconciler)
 	deployment, err := service.Activate(r.Context(), deployment.ID(deploymentID))
 	if err != nil {
 		writeJSONError(w, err, statusForActivationError(err))

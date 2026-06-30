@@ -100,7 +100,7 @@ spec:
             direction: desc
         limit: 10
   pages:
-    - id: overview
+    - name: overview
       title: Overview
       canvas:
         width: 1366

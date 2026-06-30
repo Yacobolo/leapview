@@ -68,6 +68,37 @@ package contracts
 		models!:         #IncludeList
 		semanticModels!: #IncludeList
 		dashboards!:     #IncludeList
+		access!:         #IncludeList
+	})
+})
+
+#WorkspaceGroupResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "WorkspaceGroup"
+	metadata!:   #Metadata
+	spec!: close({
+		description?: string
+		members?: [...close({
+			principalId?: #ResourceID
+			email?:       string
+			displayName?: string
+		})]
+	})
+})
+
+#WorkspaceRoleBindingResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "WorkspaceRoleBinding"
+	metadata!:   #Metadata
+	spec!: close({
+		role!: "owner" | "admin" | "deployer" | "editor" | "viewer"
+		subject!: close({
+			kind!:        "principal" | "group"
+			principalId?: #ResourceID
+			email?:       string
+			displayName?: string
+			group?:       #ResourceID
+		})
 	})
 })
 
@@ -117,6 +148,11 @@ package contracts
 	path?:        string
 	root?:        string
 	scope?:       string
+	host?:        string
+	port?:        int
+	database?:    string
+	username?:    string
+	sslMode?:     string
 	credentials?: #NoCredentials | #EnvCredentials
 	options?:     #AnyObject
 	defaults?: close({
@@ -147,13 +183,15 @@ package contracts
 	transform?: close({
 		sql?: string
 	})
-	primary_key!: #Identifier
+	primaryKey!:  #Identifier
 	grain?:       #Identifier
 	fields?: close({
 		[#Identifier]: close({
 			label?:       string
 			description?: string
 			expr?:        string
+			expression?:  string
+			type?:        string
 		})
 	})
 	measures?: close({
@@ -411,7 +449,7 @@ package contracts
 })
 
 #Page: close({
-	id!:          #ObjectID
+	name!:        #ObjectID
 	title!:       string
 	description?: string
 	canvas?: close({

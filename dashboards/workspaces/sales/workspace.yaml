@@ -22,3 +22,6 @@ spec:
   dashboards:
     include:
       - dashboards/*.yaml
+  access:
+    include:
+      - access/*.yaml

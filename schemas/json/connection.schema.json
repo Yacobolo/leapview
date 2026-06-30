@@ -20,6 +20,9 @@
             }
           ]
         },
+        "database": {
+          "type": "string"
+        },
         "defaults": {
           "additionalProperties": false,
           "properties": {
@@ -32,6 +35,9 @@
         "description": {
           "type": "string"
         },
+        "host": {
+          "type": "string"
+        },
         "kind": {
           "type": "string"
         },
@@ -41,10 +47,19 @@
         "path": {
           "type": "string"
         },
+        "port": {
+          "type": "integer"
+        },
         "root": {
           "type": "string"
         },
         "scope": {
+          "type": "string"
+        },
+        "sslMode": {
+          "type": "string"
+        },
+        "username": {
           "type": "string"
         }
       },
