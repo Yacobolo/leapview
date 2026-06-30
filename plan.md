@@ -2,7 +2,7 @@
 
 ## Summary
 
-Implement `cac-spec.md` as the new configuration contract. Remove the old single-catalog format and migrate `dashboards/` to a two-workspace Olist showcase: `sales` and `operations`. Global connections/sources are defined once; each workspace owns its model tables, semantic models, dashboards, access policy, and immutable deployments.
+Implement `cac-spec.md` as the new configuration contract. Remove the old single-catalog format and migrate `dashboards/` to a two-workspace Olist showcase: `sales` and `operations`. Global connections/sources are defined once; each workspace owns its model tables, semantic models, dashboards, access policy, agent policy, and immutable deployments.
 
 Assumptions:
 - No backwards compatibility is required.
@@ -11,7 +11,7 @@ Assumptions:
 
 ## Key Changes
 
-- Replace `dashboards/catalog.yaml` with `dashboards/libredash.yaml` and resource-envelope files for `Connection`, `Source`, `Workspace`, `ModelTable`, `SemanticModel`, and `Dashboard`.
+- Replace `dashboards/catalog.yaml` with `dashboards/libredash.yaml` and resource-envelope files for `Connection`, `Source`, `Workspace`, `WorkspaceGroup`, `WorkspaceRoleBinding`, `WorkspaceAgentPolicy`, `ModelTable`, `SemanticModel`, and `Dashboard`.
 - Add a project compiler that expands deterministic includes, validates references/scopes, builds a normalized graph, and emits per-workspace runtime definitions.
 - Move Olist connections/sources into global config; create `sales` and `operations` workspaces that both reference those global sources.
 - Update runtime, UI, API, Datastar signals, and asset lineage to require workspace context for dashboard/model operations.
@@ -34,6 +34,7 @@ Assumptions:
 - Config/schema:
   - Replace old catalog schema with resource-envelope schemas.
   - Reject duplicate IDs, unknown references, non-deterministic includes, hidden imports, and unsupported schema versions.
+  - Include workspace access and agent policy resources in schemas and graph validation.
 - Compiler:
   - Compile platform resources first, then workspace resources.
   - Enforce `Workspace.spec.uses.sources` as the allowed source list.
@@ -43,6 +44,7 @@ Assumptions:
   - Replace single-workspace assumptions with workspace-indexed runtime services.
   - Remove unscoped `/dashboards/...` routes.
   - Scope dashboard rendering, queries, filters, tables, refreshes, search, and lineage by workspace ID.
+  - Default query-less workspace/global asset pages to the server environment and enforce workspace agent policy for chat/tool exposure.
 - CLI/deployment:
   - Update `validate`, `plan`, and `deploy` to use the project graph.
   - Deploy one explicit workspace to one environment.

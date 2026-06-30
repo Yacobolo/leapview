@@ -20,6 +20,7 @@ const (
 	AssetTypeTable                AssetType = "table"
 	AssetTypeWorkspaceGroup       AssetType = "workspace_group"
 	AssetTypeWorkspaceRoleBinding AssetType = "workspace_role_binding"
+	AssetTypeWorkspaceAgentPolicy AssetType = "workspace_agent_policy"
 )
 
 type AssetEdgeType string

@@ -1077,6 +1077,36 @@ func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testi
 	}
 }
 
+func TestAssetViewsDefaultToConfiguredEnvironment(t *testing.T) {
+	store := testStore(t)
+	seedEnvironmentAssetDeployment(t, store, "test", "dev", "Dev Dashboard", "Dev Connection")
+	seedEnvironmentAssetDeployment(t, store, "test", "prod", "Prod Dashboard", "Prod Connection")
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test", DefaultEnvironment: "prod"})
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "workspace assets", path: "/workspaces/test", want: "Prod Dashboard"},
+		{name: "global connections", path: "/connections", want: "Prod Connection"},
+		{name: "workspace search", path: "/api/v1/workspaces/test/search?q=dashboard", want: "Prod Dashboard"},
+		{name: "query override", path: "/workspaces/test?environment=dev", want: "Dev Dashboard"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			server.Routes().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.want) {
+				t.Fatalf("body missing %q:\n%s", tc.want, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestWorkspaceAssetsDoesNotRefreshCleanGraphWithoutPageItems(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
@@ -1531,6 +1561,42 @@ func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID strin
 	}
 	if _, err := deploymentRepo.Activate(ctx, deployment.WorkspaceID(workspaceID), deployment.DefaultEnvironment, created.ID); err != nil {
 		t.Fatalf("activate deployment: %v", err)
+	}
+}
+
+func seedEnvironmentAssetDeployment(t *testing.T, store *platform.Store, workspaceID string, environment deployment.Environment, dashboardTitle, connectionTitle string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: workspaceID}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	created, err := deploymentRepo.Create(ctx, deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), Environment: environment, CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	workspaceIDValue := workspace.WorkspaceID(workspaceID)
+	deploymentID := workspace.DeploymentID(created.ID)
+	catalog := mustWorkspaceAsset(t, workspaceIDValue, deploymentID, workspace.AssetTypeCatalog, workspaceID, "", workspaceID, map[string]any{"key": workspaceID})
+	connection := mustWorkspaceAsset(t, workspaceIDValue, deploymentID, workspace.AssetTypeConnection, string(environment)+"_conn", catalog.ID, connectionTitle, map[string]any{"key": string(environment) + "_conn"})
+	source := mustWorkspaceAsset(t, workspaceIDValue, deploymentID, workspace.AssetTypeSource, string(environment)+".orders", catalog.ID, string(environment)+" source", map[string]any{"key": string(environment) + ".orders"})
+	dashboard := mustWorkspaceAsset(t, workspaceIDValue, deploymentID, workspace.AssetTypeDashboard, string(environment)+"-dashboard", catalog.ID, dashboardTitle, map[string]any{"key": string(environment) + "-dashboard"})
+	graph := workspace.AssetGraph{
+		Assets: []workspace.Asset{catalog, connection, source, dashboard},
+		Edges: []workspace.AssetEdge{
+			workspace.NewAssetEdge(workspaceIDValue, deploymentID, catalog.ID, connection.ID, workspace.AssetEdgeContains),
+			workspace.NewAssetEdge(workspaceIDValue, deploymentID, catalog.ID, source.ID, workspace.AssetEdgeContains),
+			workspace.NewAssetEdge(workspaceIDValue, deploymentID, catalog.ID, dashboard.ID, workspace.AssetEdgeContains),
+			workspace.NewAssetEdge(workspaceIDValue, deploymentID, source.ID, connection.ID, workspace.AssetEdgeUsesConnection),
+		},
+	}
+	artifact := zeroArtifact(created.ID, workspaceID)
+	artifact.Environment = environment
+	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, deployment.Validation{Digest: "digest-" + string(environment), ManifestJSON: "{}", Graph: graph}, artifact); err != nil {
+		t.Fatalf("save validated: %v", err)
+	}
+	if _, err := deploymentRepo.Activate(ctx, deployment.WorkspaceID(workspaceID), environment, created.ID); err != nil {
+		t.Fatalf("activate: %v", err)
 	}
 }
 

@@ -315,6 +315,19 @@ type workspaceRoleBindingSubjectPayloadV1 struct {
 	Group       string `json:"Group"`
 }
 
+type workspaceAgentPolicyPayloadV1 struct {
+	ID           string                             `json:"ID"`
+	Name         string                             `json:"Name"`
+	Enabled      bool                               `json:"Enabled"`
+	Tools        workspaceAgentPolicyToolsPayloadV1 `json:"Tools"`
+	Instructions string                             `json:"Instructions"`
+}
+
+type workspaceAgentPolicyToolsPayloadV1 struct {
+	Allow []string `json:"Allow"`
+	Deny  []string `json:"Deny"`
+}
+
 type pageItemPayloadV1 struct {
 	ID          string          `json:"ID"`
 	Kind        string          `json:"Kind"`

@@ -255,14 +255,18 @@ func deploymentDTO(row deployment.Deployment) api.DeploymentResponse {
 }
 
 func requestDeploymentEnvironment(r *http.Request, fallback string) deployment.Environment {
-	if fallback == "" {
-		fallback = r.URL.Query().Get("environment")
+	if query := r.URL.Query().Get("environment"); query != "" {
+		fallback = query
 	}
 	return deployment.NormalizeEnvironment(deployment.Environment(fallback))
 }
 
 func (s *Server) defaultDeploymentEnvironment() deployment.Environment {
 	return deployment.NormalizeEnvironment(deployment.Environment(s.defaultEnvironment))
+}
+
+func (s *Server) requestDeploymentEnvironment(r *http.Request) deployment.Environment {
+	return requestDeploymentEnvironment(r, string(s.defaultDeploymentEnvironment()))
 }
 
 func pageDeployments(rows []api.DeploymentResponse, limit int, pageToken string) ([]api.DeploymentResponse, string) {

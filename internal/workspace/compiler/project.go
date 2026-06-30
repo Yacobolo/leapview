@@ -42,6 +42,7 @@ type WorkspaceProject struct {
 	Dashboards            map[string]*report.Dashboard
 	AccessGroups          map[string]workspace.WorkspaceGroup
 	AccessRoleBindings    map[string]workspace.WorkspaceRoleBinding
+	AgentPolicies         map[string]workspace.AgentPolicy
 	ModelTitles           map[string]string
 	ModelDescriptions     map[string]string
 	DashboardTitles       map[string]string
@@ -52,6 +53,7 @@ type WorkspaceProject struct {
 	SemanticModelPaths    map[string]string
 	DashboardPaths        map[string]string
 	AccessPaths           map[string]string
+	AgentPolicyPaths      map[string]string
 }
 
 type CompiledProject struct {
@@ -136,6 +138,7 @@ type workspaceSpec struct {
 	SemanticModels includeList   `yaml:"semanticModels"`
 	Dashboards     includeList   `yaml:"dashboards"`
 	Access         includeList   `yaml:"access"`
+	AgentPolicy    includeList   `yaml:"agentPolicy"`
 }
 
 type workspaceUses struct {
@@ -231,6 +234,17 @@ type workspaceRoleBindingSubjectSpec struct {
 	Email       string `yaml:"email"`
 	DisplayName string `yaml:"displayName"`
 	Group       string `yaml:"group"`
+}
+
+type workspaceAgentPolicySpec struct {
+	Enabled      bool                          `yaml:"enabled"`
+	Tools        workspaceAgentPolicyToolsSpec `yaml:"tools"`
+	Instructions string                        `yaml:"instructions"`
+}
+
+type workspaceAgentPolicyToolsSpec struct {
+	Allow []string `yaml:"allow"`
+	Deny  []string `yaml:"deny"`
 }
 
 func CompileProject(projectPath string, opts Options) (CompiledProject, error) {
@@ -910,6 +924,7 @@ func loadWorkspaces(project *Project, includes []string) error {
 			Dashboards:            map[string]*report.Dashboard{},
 			AccessGroups:          map[string]workspace.WorkspaceGroup{},
 			AccessRoleBindings:    map[string]workspace.WorkspaceRoleBinding{},
+			AgentPolicies:         map[string]workspace.AgentPolicy{},
 			ModelTitles:           map[string]string{},
 			ModelDescriptions:     map[string]string{},
 			DashboardTitles:       map[string]string{},
@@ -920,6 +935,7 @@ func loadWorkspaces(project *Project, includes []string) error {
 			SemanticModelPaths:    map[string]string{},
 			DashboardPaths:        map[string]string{},
 			AccessPaths:           map[string]string{},
+			AgentPolicyPaths:      map[string]string{},
 		}
 		for _, source := range spec.Uses.Sources {
 			workspaceProject.AllowedSources[source] = struct{}{}
@@ -935,6 +951,9 @@ func loadWorkspaces(project *Project, includes []string) error {
 			return err
 		}
 		if err := loadWorkspaceAccess(workspaceProject, workspaceDir, spec.Access.Include); err != nil {
+			return err
+		}
+		if err := loadWorkspaceAgentPolicies(workspaceProject, workspaceDir, spec.AgentPolicy.Include); err != nil {
 			return err
 		}
 		project.Workspaces[id] = workspaceProject
@@ -1103,6 +1122,39 @@ func loadWorkspaceAccess(workspaceProject *WorkspaceProject, baseDir string, inc
 	return nil
 }
 
+func loadWorkspaceAgentPolicies(workspaceProject *WorkspaceProject, baseDir string, includes []string) error {
+	paths, err := expandIncludes(baseDir, includes)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		envelope, err := readEnvelope(path)
+		if err != nil {
+			return err
+		}
+		if envelope.Kind != "WorkspaceAgentPolicy" {
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "kind", "%s kind = %q, want WorkspaceAgentPolicy", path, envelope.Kind)
+		}
+		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
+		}
+		var spec workspaceAgentPolicySpec
+		if err := envelope.Spec.Decode(&spec); err != nil {
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
+		}
+		name := envelope.Metadata.Name
+		if name == "" {
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
+		}
+		if _, exists := workspaceProject.AgentPolicies[name]; exists {
+			return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate WorkspaceAgentPolicy %q in workspace %q", name, workspaceProject.ID)
+		}
+		workspaceProject.AgentPolicies[name] = projectWorkspaceAgentPolicy(name, spec)
+		workspaceProject.AgentPolicyPaths[name] = path
+	}
+	return nil
+}
+
 func projectModelTable(spec projectModelTableSpec) semanticmodel.Table {
 	table := semanticmodel.Table{
 		Kind:        spec.Kind,
@@ -1189,6 +1241,36 @@ func projectWorkspaceRoleBinding(name string, spec workspaceRoleBindingSpec) wor
 	}
 }
 
+func projectWorkspaceAgentPolicy(name string, spec workspaceAgentPolicySpec) workspace.AgentPolicy {
+	return workspace.AgentPolicy{
+		ID:      name,
+		Name:    name,
+		Enabled: spec.Enabled,
+		Tools: workspace.AgentPolicyTools{
+			Allow: sortedUniqueTrimmed(spec.Tools.Allow),
+			Deny:  sortedUniqueTrimmed(spec.Tools.Deny),
+		},
+		Instructions: strings.TrimSpace(spec.Instructions),
+	}
+}
+
+func sortedUniqueTrimmed(values []string) []string {
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		seen[value] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for value := range seen {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func validateProject(project Project) error {
 	for connectionName, connection := range project.Connections {
 		if _, err := connection.Validate(connectionName); err != nil {
@@ -1241,6 +1323,31 @@ func validateProject(project Project) error {
 		}
 		if err := validateWorkspaceAccess(workspaceProject); err != nil {
 			return err
+		}
+		if err := validateWorkspaceAgentPolicies(workspaceProject); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWorkspaceAgentPolicies(workspaceProject *WorkspaceProject) error {
+	for name, policy := range workspaceProject.AgentPolicies {
+		path := workspaceProject.AgentPolicyPaths[name]
+		allow := map[string]struct{}{}
+		for _, tool := range policy.Tools.Allow {
+			if !workspace.IsKnownAgentTool(tool) {
+				return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "spec.tools.allow", "WorkspaceAgentPolicy %q.%q references unknown agent tool %q", workspaceProject.ID, name, tool)
+			}
+			allow[tool] = struct{}{}
+		}
+		for _, tool := range policy.Tools.Deny {
+			if !workspace.IsKnownAgentTool(tool) {
+				return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "spec.tools.deny", "WorkspaceAgentPolicy %q.%q references unknown agent tool %q", workspaceProject.ID, name, tool)
+			}
+			if _, ok := allow[tool]; ok {
+				return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "spec.tools", "WorkspaceAgentPolicy %q.%q agent tool %q is both allowed and denied", workspaceProject.ID, name, tool)
+			}
 		}
 	}
 	return nil
@@ -1339,9 +1446,11 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 			Groups:       copyWorkspaceGroups(workspaceProject.AccessGroups),
 			RoleBindings: copyWorkspaceRoleBindings(workspaceProject.AccessRoleBindings),
 		},
-		BaseDir:     project.BaseDir,
-		SourceIDs:   sourceIDs,
-		SourceFiles: workspaceProject.sourceFiles(project),
+		AgentPolicies: copyAgentPolicies(workspaceProject.AgentPolicies),
+		AgentPolicy:   effectiveAgentPolicy(workspaceProject.AgentPolicies),
+		BaseDir:       project.BaseDir,
+		SourceIDs:     sourceIDs,
+		SourceFiles:   workspaceProject.sourceFiles(project),
 	}
 	for _, modelName := range sortedMapKeys(workspaceProject.SemanticModels) {
 		semanticSpec := workspaceProject.SemanticModels[modelName]
@@ -1406,6 +1515,9 @@ func (workspaceProject *WorkspaceProject) sourceFiles(project Project) map[strin
 		case "WorkspaceRoleBinding":
 			sourceFiles[string(workspace.NewAssetID(workspace.AssetTypeWorkspaceRoleBinding, workspaceKey(name)))] = path
 		}
+	}
+	for name, path := range workspaceProject.AgentPolicyPaths {
+		sourceFiles[string(workspace.NewAssetID(workspace.AssetTypeWorkspaceAgentPolicy, workspaceKey(name)))] = path
 	}
 	return sourceFiles
 }
@@ -1637,6 +1749,11 @@ func envelopeResourceID(envelope resourceEnvelope, fallbackWorkspace string) str
 			return ""
 		}
 		return "workspace_role_binding:" + workspaceID + "." + name
+	case "WorkspaceAgentPolicy":
+		if workspaceID == "" {
+			return ""
+		}
+		return "workspace_agent_policy:" + workspaceID + "." + name
 	default:
 		return ""
 	}
@@ -1666,6 +1783,8 @@ func schemaKindForEnvelope(content []byte) (configschema.Kind, bool) {
 		return configschema.KindWorkspaceGroup, true
 	case "WorkspaceRoleBinding":
 		return configschema.KindWorkspaceRoleBinding, true
+	case "WorkspaceAgentPolicy":
+		return configschema.KindWorkspaceAgentPolicy, true
 	case "ModelTable":
 		return configschema.KindModelTable, true
 	case "SemanticModel":
@@ -1809,6 +1928,71 @@ func copyWorkspaceRoleBindings(in map[string]workspace.WorkspaceRoleBinding) map
 	out := make(map[string]workspace.WorkspaceRoleBinding, len(in))
 	for key, value := range in {
 		out[key] = value
+	}
+	return out
+}
+
+func copyAgentPolicies(in map[string]workspace.AgentPolicy) map[string]workspace.AgentPolicy {
+	out := make(map[string]workspace.AgentPolicy, len(in))
+	for key, value := range in {
+		value.Tools.Allow = append([]string{}, value.Tools.Allow...)
+		value.Tools.Deny = append([]string{}, value.Tools.Deny...)
+		out[key] = value
+	}
+	return out
+}
+
+func effectiveAgentPolicy(policies map[string]workspace.AgentPolicy) workspace.AgentPolicy {
+	effective := workspace.DefaultAgentPolicy()
+	included := sortedMapKeys(policies)
+	denySet := map[string]struct{}{}
+	var allowSet map[string]struct{}
+	var instructions []string
+	for _, name := range included {
+		policy := policies[name]
+		if !policy.Enabled {
+			effective.Enabled = false
+		}
+		if len(policy.Tools.Allow) > 0 {
+			next := stringSet(policy.Tools.Allow)
+			if allowSet == nil {
+				allowSet = next
+			} else {
+				allowSet = intersectStringSets(allowSet, next)
+			}
+		}
+		for _, tool := range policy.Tools.Deny {
+			denySet[tool] = struct{}{}
+		}
+		if policy.Instructions != "" {
+			instructions = append(instructions, policy.Instructions)
+		}
+	}
+	if allowSet != nil {
+		for tool := range denySet {
+			delete(allowSet, tool)
+		}
+		effective.Tools.Allow = sortedSetKeys(allowSet)
+	}
+	effective.Tools.Deny = sortedSetKeys(denySet)
+	effective.Instructions = strings.Join(instructions, "\n\n")
+	return effective
+}
+
+func stringSet(values []string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, value := range values {
+		out[value] = struct{}{}
+	}
+	return out
+}
+
+func intersectStringSets(left, right map[string]struct{}) map[string]struct{} {
+	out := map[string]struct{}{}
+	for value := range left {
+		if _, ok := right[value]; ok {
+			out[value] = struct{}{}
+		}
 	}
 	return out
 }

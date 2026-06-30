@@ -354,6 +354,8 @@ spec:
       - dashboards/*.yaml
   access:
     include: []
+  agentPolicy:
+    include: []
 `,
 		"workspaces/sales/models/orders.yaml": `
 apiVersion: libredash.dev/v1

@@ -3,21 +3,6 @@
     "#APIVersion": {
       "const": "libredash.dev/v1"
     },
-    "#IncludeList": {
-      "additionalProperties": false,
-      "properties": {
-        "include": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "include"
-      ],
-      "type": "object"
-    },
     "#Metadata": {
       "additionalProperties": false,
       "properties": {
@@ -60,7 +45,7 @@
       "$ref": "#/$defs/%23APIVersion"
     },
     "kind": {
-      "const": "Workspace"
+      "const": "WorkspaceAgentPolicy"
     },
     "metadata": {
       "$ref": "#/$defs/%23Metadata"
@@ -68,44 +53,34 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
-        "access": {
-          "$ref": "#/$defs/%23IncludeList"
+        "enabled": {
+          "type": "boolean"
         },
-        "agentPolicy": {
-          "$ref": "#/$defs/%23IncludeList"
+        "instructions": {
+          "type": "string"
         },
-        "dashboards": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "models": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "semanticModels": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
-        "uses": {
+        "tools": {
           "additionalProperties": false,
           "properties": {
-            "sources": {
+            "allow": {
+              "items": {
+                "$ref": "#/$defs/%23ResourceID"
+              },
+              "type": "array"
+            },
+            "deny": {
               "items": {
                 "$ref": "#/$defs/%23ResourceID"
               },
               "type": "array"
             }
           },
-          "required": [
-            "sources"
-          ],
           "type": "object"
         }
       },
       "required": [
-        "access",
-        "agentPolicy",
-        "dashboards",
-        "models",
-        "semanticModels",
-        "uses"
+        "enabled",
+        "tools"
       ],
       "type": "object"
     }

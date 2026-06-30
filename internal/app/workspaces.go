@@ -843,7 +843,7 @@ func (s *Server) workspaceResponse(r *http.Request, workspaceID string) workspac
 }
 
 func (s *Server) workspaceAssetsAndEdges(r *http.Request, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, error) {
-	catalog, ok, err := s.workspaceAssetCatalog(r.Context(), workspaceID, string(requestDeploymentEnvironment(r, "")))
+	catalog, ok, err := s.workspaceAssetCatalog(r.Context(), workspaceID, string(s.requestDeploymentEnvironment(r)))
 	if err != nil || !ok {
 		return nil, nil, err
 	}
@@ -859,7 +859,7 @@ func (s *Server) platformConnectionAssetsAndEdges(r *http.Request) ([]workspace.
 	if err != nil {
 		return nil, nil, err
 	}
-	environment := string(requestDeploymentEnvironment(r, ""))
+	environment := string(s.requestDeploymentEnvironment(r))
 	assetsByID := map[string]workspace.AssetView{}
 	edgeKeys := map[string]workspace.AssetEdgeView{}
 	for _, row := range rows {

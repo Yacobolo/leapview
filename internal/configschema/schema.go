@@ -30,6 +30,7 @@ const (
 	KindWorkspace             Kind = "workspace"
 	KindWorkspaceGroup        Kind = "workspace-group"
 	KindWorkspaceRoleBinding  Kind = "workspace-role-binding"
+	KindWorkspaceAgentPolicy  Kind = "workspace-agent-policy"
 	KindModelTable            Kind = "model-table"
 	KindSemanticModelResource Kind = "semantic-model-resource"
 	KindDashboardResource     Kind = "dashboard-resource"
@@ -157,7 +158,7 @@ func compiledDefinition(kind Kind) (*cue.Context, cue.Value, string, error) {
 }
 
 func JSONSchemaFiles() (map[string][]byte, error) {
-	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindModelTable, KindSemanticModelResource, KindDashboardResource}
+	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindWorkspaceAgentPolicy, KindModelTable, KindSemanticModelResource, KindDashboardResource}
 	files := map[string][]byte{}
 	for _, kind := range kinds {
 		content, err := JSONSchema(kind)
@@ -183,6 +184,8 @@ func JSONSchemaFilename(kind Kind) string {
 		return "workspace-group.schema.json"
 	case KindWorkspaceRoleBinding:
 		return "workspace-role-binding.schema.json"
+	case KindWorkspaceAgentPolicy:
+		return "workspace-agent-policy.schema.json"
 	case KindModelTable:
 		return "model-table.schema.json"
 	case KindSemanticModelResource:
@@ -233,6 +236,8 @@ func definitionName(kind Kind) (string, error) {
 		return "WorkspaceGroupResource", nil
 	case KindWorkspaceRoleBinding:
 		return "WorkspaceRoleBindingResource", nil
+	case KindWorkspaceAgentPolicy:
+		return "WorkspaceAgentPolicyResource", nil
 	case KindModelTable:
 		return "ModelTableResource", nil
 	case KindSemanticModelResource:
@@ -403,6 +408,9 @@ var schemaOverlays = map[Kind]schemaOverlay{
 		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 	KindWorkspaceRoleBinding: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspaceAgentPolicy: {
 		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 	KindModelTable: {

@@ -271,6 +271,9 @@ spec:
   access:
     include:
       - access/*.yaml
+  agentPolicy:
+    include:
+      - agent/*.yaml
 ```
 
 `spec.uses.sources` is an allowlist. Workspace model tables must not read sources
@@ -385,6 +388,37 @@ Rules:
 
 Global admin UI must not imply that users belong to one workspace. Workspace
 access UI manages workspace role bindings.
+
+## Agent Policy
+
+Workspace agent policy is authored with workspace-local resources. Provider
+credentials, model choice, and base URL remain runtime configuration.
+
+```yaml
+apiVersion: libredash.dev/v1
+kind: WorkspaceAgentPolicy
+metadata:
+  workspace: sales
+  name: default
+spec:
+  enabled: true
+  tools:
+    allow:
+      - search_workspace
+      - list_assets
+      - query_visual
+    deny: []
+  instructions: "Answer from sales workspace assets."
+```
+
+Rules:
+
+- `Workspace.spec.agentPolicy.include` is required and may be empty.
+- `enabled: false` disables chat turns for the workspace.
+- Empty `tools.allow` means all read-only BI tools are eligible.
+- `tools.deny` is applied after `tools.allow`.
+- `tools.allow` and `tools.deny` must not contain the same tool.
+- `instructions` are appended after the built-in safety prompt.
 
 ## Environments
 

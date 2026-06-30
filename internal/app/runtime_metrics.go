@@ -57,6 +57,10 @@ type materializationRuntime interface {
 	RefreshMaterializations(ctx context.Context, modelID string) error
 }
 
+type agentPolicyProvider interface {
+	AgentPolicy() workspace.AgentPolicy
+}
+
 func NewRuntimeMetrics(provider runtimeProvider, dataDir, workspaceID string) QueryMetrics {
 	return runtimeMetrics{provider: provider, dataDir: dataDir, workspaceID: workspaceID}
 }
@@ -291,6 +295,18 @@ func (m runtimeMetrics) materializationRuntime() (materializationRuntime, error)
 		return nil, fmt.Errorf("active runtime does not provide materialization refresh")
 	}
 	return port, nil
+}
+
+func (m runtimeMetrics) AgentPolicy() workspace.AgentPolicy {
+	runtime, err := m.active()
+	if err != nil {
+		return workspace.DefaultAgentPolicy()
+	}
+	provider, ok := runtime.(agentPolicyProvider)
+	if !ok {
+		return workspace.DefaultAgentPolicy()
+	}
+	return provider.AgentPolicy()
 }
 
 func (m runtimeMetrics) active() (runtimehost.Runtime, error) {

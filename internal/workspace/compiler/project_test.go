@@ -92,6 +92,104 @@ spec:
 	}
 }
 
+func TestCompileProjectCompilesWorkspaceAgentPolicy(t *testing.T) {
+	projectPath := writeProjectFixture(t, map[string]string{
+		"libredash.yaml":                                   projectYAML(),
+		"connections/olist.yaml":                           connectionYAML("olist"),
+		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAgentPolicy("sales"),
+		"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{"search_workspace", "query_visual"}, []string{"query_table"}, "Prefer concise BI answers."),
+		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
+		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+	})
+
+	compiled, err := CompileProject(projectPath, Options{DeploymentID: "dep_test"})
+	if err != nil {
+		t.Fatalf("CompileProject() error = %v", err)
+	}
+	definition := compiled.Workspaces["sales"].Definition
+	if !definition.AgentPolicy.Enabled {
+		t.Fatalf("effective agent policy disabled, want enabled")
+	}
+	if !reflect.DeepEqual(definition.AgentPolicy.Tools.Allow, []string{"query_visual", "search_workspace"}) {
+		t.Fatalf("allow = %#v, want sorted query_visual/search_workspace", definition.AgentPolicy.Tools.Allow)
+	}
+	if !reflect.DeepEqual(definition.AgentPolicy.Tools.Deny, []string{"query_table"}) {
+		t.Fatalf("deny = %#v, want query_table", definition.AgentPolicy.Tools.Deny)
+	}
+	if definition.AgentPolicy.Instructions != "Prefer concise BI answers." {
+		t.Fatalf("instructions = %q", definition.AgentPolicy.Instructions)
+	}
+	if _, ok := definition.AgentPolicies["default"]; !ok {
+		t.Fatalf("agent policies = %#v, want default", definition.AgentPolicies)
+	}
+	assertGraphAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "workspace_agent_policy:sales.default")
+	assertAssetSourceFileContains(t, compiled.Workspaces["sales"].Workspace.Graph, "workspace_agent_policy:sales.default", filepath.Join("workspaces", "sales", "agent", "default.yaml"))
+}
+
+func TestCompileProjectRejectsInvalidWorkspaceAgentPolicy(t *testing.T) {
+	cases := []struct {
+		name  string
+		file  string
+		want  string
+		field string
+		id    string
+	}{
+		{
+			name:  "unknown tool",
+			file:  workspaceAgentPolicyYAML("sales", "default", true, []string{"missing_tool"}, nil, ""),
+			want:  `unknown agent tool "missing_tool"`,
+			field: "spec.tools.allow",
+			id:    "workspace_agent_policy:sales.default",
+		},
+		{
+			name:  "allow deny conflict",
+			file:  workspaceAgentPolicyYAML("sales", "default", true, []string{"query_visual"}, []string{"query_visual"}, ""),
+			want:  `both allowed and denied`,
+			field: "spec.tools",
+			id:    "workspace_agent_policy:sales.default",
+		},
+		{
+			name:  "workspace mismatch",
+			file:  workspaceAgentPolicyYAML("operations", "default", true, []string{"query_visual"}, nil, ""),
+			want:  `workspace = "operations", want "sales"`,
+			field: "metadata.workspace",
+			id:    "workspace_agent_policy:operations.default",
+		},
+		{
+			name:  "duplicate policy",
+			file:  workspaceAgentPolicyYAML("sales", "default", true, []string{"query_visual"}, nil, ""),
+			want:  `duplicate WorkspaceAgentPolicy "default"`,
+			field: "metadata.name",
+			id:    "workspace_agent_policy:sales.default",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string]string{
+				"libredash.yaml":                                   projectYAML(),
+				"connections/olist.yaml":                           connectionYAML("olist"),
+				"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+				"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+				"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAgentPolicy("sales"),
+				"workspaces/sales/agent/default.yaml":              tc.file,
+				"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
+				"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+				"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+			}
+			if tc.name == "duplicate policy" {
+				files["workspaces/sales/agent/duplicate.yaml"] = tc.file
+			}
+			projectPath := writeProjectFixture(t, files)
+			_, err := CompileProject(projectPath, Options{DeploymentID: "dep_test"})
+			assertCompileErrorContains(t, err, tc.want)
+			assertDiagnostic(t, err, tc.id, tc.field)
+		})
+	}
+}
+
 func TestCompileProjectRejectsInvalidAccessResources(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -957,11 +1055,63 @@ spec:
       - dashboards/*.yaml
   access:
     include: []
+  agentPolicy:
+    include: []
 `
 }
 
 func workspaceYAMLWithAccess(name string) string {
 	return strings.Replace(workspaceYAML(name), "include: []", "include:\n      - access/*.yaml", 1)
+}
+
+func workspaceYAMLWithAgentPolicy(name string) string {
+	return strings.Replace(workspaceYAML(name), "  agentPolicy:\n    include: []", "  agentPolicy:\n    include:\n      - agent/*.yaml", 1)
+}
+
+func workspaceAgentPolicyYAML(workspaceID, name string, enabled bool, allow, deny []string, instructions string) string {
+	return `
+apiVersion: libredash.dev/v1
+kind: WorkspaceAgentPolicy
+metadata:
+  workspace: ` + workspaceID + `
+  name: ` + name + `
+spec:
+  enabled: ` + fmtBool(enabled) + `
+  tools:
+    allow:
+` + indentedStringList(allow, 6) + `    deny:
+` + indentedStringList(deny, 6) + `  instructions: ` + quoteYAML(instructions) + `
+`
+}
+
+func fmtBool(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+func indentedStringList(values []string, spaces int) string {
+	if len(values) == 0 {
+		return strings.Repeat(" ", spaces) + "[]\n"
+	}
+	var builder strings.Builder
+	prefix := strings.Repeat(" ", spaces)
+	for _, value := range values {
+		builder.WriteString(prefix)
+		builder.WriteString("- ")
+		builder.WriteString(value)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
+func quoteYAML(value string) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
 }
 
 func modelTableYAML(workspace, name, source, key, sql string) string {

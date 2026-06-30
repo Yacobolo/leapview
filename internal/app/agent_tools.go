@@ -16,6 +16,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/go-chi/chi/v5"
 )
@@ -50,7 +51,20 @@ func (s *Server) configureAgentTools() {
 	if s.agent == nil {
 		return
 	}
+	s.agent.SetPolicyProvider(s.agentPolicyForScope)
 	s.agent.AppendToolProviders(s.agentVisualToolDefinitions, s.agentAPIGenToolDefinitions)
+}
+
+func (s *Server) agentPolicyForScope(scope agentapp.Scope) (workspace.AgentPolicy, bool) {
+	metrics, ok := s.metricsForWorkspace(scope.WorkspaceID)
+	if !ok || metrics == nil {
+		return workspace.AgentPolicy{}, false
+	}
+	provider, ok := metrics.(agentPolicyProvider)
+	if !ok {
+		return workspace.AgentPolicy{}, false
+	}
+	return provider.AgentPolicy(), true
 }
 
 func (s *Server) agentAPIGenToolDefinitions(scope agentapp.Scope) []agent.ToolDefinition {

@@ -22,3 +22,6 @@ spec:
   access:
     include:
       - access/*.yaml
+  agentPolicy:
+    include:
+      - agent/*.yaml

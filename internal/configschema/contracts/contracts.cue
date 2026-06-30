@@ -69,6 +69,7 @@ package contracts
 		semanticModels!: #IncludeList
 		dashboards!:     #IncludeList
 		access!:         #IncludeList
+		agentPolicy!:    #IncludeList
 	})
 })
 
@@ -99,6 +100,20 @@ package contracts
 			displayName?: string
 			group?:       #ResourceID
 		})
+	})
+})
+
+#WorkspaceAgentPolicyResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "WorkspaceAgentPolicy"
+	metadata!:   #Metadata
+	spec!: close({
+		enabled!: bool
+		tools!: close({
+			allow?: [...#ResourceID]
+			deny?:  [...#ResourceID]
+		})
+		instructions?: string
 	})
 })
 

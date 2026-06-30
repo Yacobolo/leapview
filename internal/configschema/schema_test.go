@@ -261,11 +261,13 @@ func explicitShowcaseResourceFiles(root string) []string {
 		filepath.Join(root, "sources", "olist.reviews.yaml"),
 		filepath.Join(root, "sources", "olist.translations.yaml"),
 		filepath.Join(root, "workspaces", "sales", "workspace.yaml"),
+		filepath.Join(root, "workspaces", "sales", "agent", "default.yaml"),
 		filepath.Join(root, "workspaces", "sales", "models", "customers.yaml"),
 		filepath.Join(root, "workspaces", "sales", "models", "orders.yaml"),
 		filepath.Join(root, "workspaces", "sales", "semantic-models", "sales.yaml"),
 		filepath.Join(root, "workspaces", "sales", "dashboards", "executive-sales.yaml"),
 		filepath.Join(root, "workspaces", "operations", "workspace.yaml"),
+		filepath.Join(root, "workspaces", "operations", "agent", "default.yaml"),
 		filepath.Join(root, "workspaces", "operations", "models", "customers.yaml"),
 		filepath.Join(root, "workspaces", "operations", "models", "orders.yaml"),
 		filepath.Join(root, "workspaces", "operations", "semantic-models", "operations.yaml"),
@@ -298,6 +300,12 @@ func kindForResourceFile(t *testing.T, path string) (Kind, bool) {
 		return KindSource, true
 	case "Workspace":
 		return KindWorkspace, true
+	case "WorkspaceGroup":
+		return KindWorkspaceGroup, true
+	case "WorkspaceRoleBinding":
+		return KindWorkspaceRoleBinding, true
+	case "WorkspaceAgentPolicy":
+		return KindWorkspaceAgentPolicy, true
 	case "ModelTable":
 		return KindModelTable, true
 	case "SemanticModel":
