@@ -1004,6 +1004,10 @@ func validateConnectionCredentials(name string, credentials ConnectionCredential
 		return fmt.Errorf("connection %q credentials require provider", name)
 	}
 	switch credentials.Provider {
+	case "none":
+		if credentials.Secret != "" {
+			return fmt.Errorf("connection %q none credentials cannot set secret", name)
+		}
 	case "env":
 		if credentials.Secret == "" {
 			return fmt.Errorf("connection %q env credentials require secret", name)
@@ -1019,7 +1023,7 @@ func validateConnectionCredentials(name string, credentials ConnectionCredential
 
 func validateConnectionAuth(name string, connection Connection, spec ConnectionSpec) (ConnectionAuth, error) {
 	if len(connection.Auth) == 0 {
-		if connection.Credentials.Provider != "" {
+		if connection.Credentials.Provider != "" && connection.Credentials.Provider != "none" {
 			resolved, err := ResolveConnectionAuth(connection)
 			if err != nil {
 				return nil, fmt.Errorf("connection %q credentials: %w", name, err)
@@ -1072,7 +1076,7 @@ func ResolveConnectionAuth(connection Connection) (ConnectionAuth, error) {
 	if len(connection.Auth) > 0 {
 		return connection.Auth, nil
 	}
-	if connection.Credentials.Provider == "" {
+	if connection.Credentials.Provider == "" || connection.Credentials.Provider == "none" {
 		return nil, nil
 	}
 	switch connection.Credentials.Provider {
@@ -1101,7 +1105,7 @@ func ResolveConnectionAuth(connection Connection) (ConnectionAuth, error) {
 }
 
 func ConnectionCredentialsConfigured(connection Connection) bool {
-	return len(connection.Auth) > 0 || connection.Credentials.Provider != ""
+	return len(connection.Auth) > 0 || connection.Credentials.Provider != "" && connection.Credentials.Provider != "none"
 }
 
 func connectionAllowsAuthKey(connection ConnectionSpec, key string) bool {

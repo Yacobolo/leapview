@@ -10,24 +10,15 @@
     "#Connection": {
       "additionalProperties": false,
       "properties": {
-        "auth": {
-          "$ref": "#/$defs/%23AnyObject"
-        },
         "credentials": {
-          "additionalProperties": false,
-          "properties": {
-            "provider": {
-              "const": "env"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/%23NoCredentials"
             },
-            "secret": {
-              "type": "string"
+            {
+              "$ref": "#/$defs/%23EnvCredentials"
             }
-          },
-          "required": [
-            "provider",
-            "secret"
-          ],
-          "type": "object"
+          ]
         },
         "defaults": {
           "additionalProperties": false,
@@ -62,6 +53,22 @@
       ],
       "type": "object"
     },
+    "#EnvCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "const": "env"
+        },
+        "secret": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "secret"
+      ],
+      "type": "object"
+    },
     "#Metadata": {
       "additionalProperties": false,
       "properties": {
@@ -91,6 +98,11 @@
         "name"
       ],
       "type": "object"
+    },
+    "#NoCredentials": {
+      "const": {
+        "provider": "none"
+      }
     },
     "#ResourceID": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",

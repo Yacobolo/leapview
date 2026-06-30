@@ -55,6 +55,10 @@ type CompiledWorkspaceArtifact struct {
 }
 
 func PackProject(projectPath, workspaceID string, deploymentID deployment.ID, out io.Writer) (Manifest, string, error) {
+	return PackProjectAgainstGraph(projectPath, workspaceID, deploymentID, workspace.AssetGraph{}, out)
+}
+
+func PackProjectAgainstGraph(projectPath, workspaceID string, deploymentID deployment.ID, active workspace.AssetGraph, out io.Writer) (Manifest, string, error) {
 	projectPath, err := filepath.Abs(projectPath)
 	if err != nil {
 		return Manifest{}, "", err
@@ -76,7 +80,7 @@ func PackProject(projectPath, workspaceID string, deploymentID deployment.ID, ou
 	if err := workspace.ValidateAssetGraphForDeployment(compiledWorkspace.Workspace.Graph, workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID)); err != nil {
 		return Manifest{}, "", err
 	}
-	plan, err := workspacecompiler.PlanProject(projectPath)
+	plan, err := workspacecompiler.PlanProjectAgainstGraph(projectPath, workspaceID, active)
 	if err != nil {
 		return Manifest{}, "", err
 	}

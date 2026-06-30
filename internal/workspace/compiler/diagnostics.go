@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/Yacobolo/libredash/internal/configschema"
@@ -35,4 +36,24 @@ func resourceError(path, resourceID, fieldPath, format string, args ...any) erro
 		FieldPath:  fieldPath,
 		Message:    fmt.Sprintf(format, args...),
 	}
+}
+
+func annotateSchemaError(err error, path, resourceID, fieldPath string) error {
+	var schemaErr *configschema.Error
+	if !errors.As(err, &schemaErr) {
+		return err
+	}
+	diagnostics := append([]configschema.Diagnostic(nil), schemaErr.Diagnostics...)
+	for index := range diagnostics {
+		if diagnostics[index].File == "" {
+			diagnostics[index].File = path
+		}
+		if diagnostics[index].ResourceID == "" {
+			diagnostics[index].ResourceID = resourceID
+		}
+		if diagnostics[index].FieldPath == "" {
+			diagnostics[index].FieldPath = fieldPath
+		}
+	}
+	return &configschema.Error{Diagnostics: diagnostics}
 }

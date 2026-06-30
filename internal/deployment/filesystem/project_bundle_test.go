@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/deployment"
+	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
 
 func TestPackProjectValidatesSelectedWorkspace(t *testing.T) {
@@ -65,4 +68,207 @@ func TestPackProjectRejectsUnknownWorkspace(t *testing.T) {
 	if err == nil {
 		t.Fatal("PackProject() error = nil, want unknown workspace error")
 	}
+}
+
+func TestPackProjectStoresActiveDeploymentPlanDiff(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
+	active, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{DeploymentID: workspace.DeploymentID("dep_active")})
+	if err != nil {
+		t.Fatalf("CompileProject() error = %v", err)
+	}
+	activeGraph := active.Workspaces["operations"].Workspace.Graph
+	for index := range activeGraph.Assets {
+		if activeGraph.Assets[index].ID == "model_table:operations.orders" {
+			activeGraph.Assets[index].ContentHash = "changed"
+		}
+	}
+	activeGraph.Assets = append(activeGraph.Assets, workspace.Asset{
+		ID:            "dashboard:operations.removed",
+		WorkspaceID:   "operations",
+		DeploymentID:  "dep_active",
+		Type:          workspace.AssetTypeDashboard,
+		Key:           "operations.removed",
+		PayloadSchema: workspace.PayloadSchemaForAssetType(workspace.AssetTypeDashboard),
+		ContentHash:   "removed",
+	})
+
+	var bundle bytes.Buffer
+	if _, _, err := PackProjectAgainstGraph(projectPath, "operations", deployment.ID("dep_ops"), activeGraph, &bundle); err != nil {
+		t.Fatalf("PackProjectAgainstGraph() error = %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
+	if err := os.WriteFile(path, bundle.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := ExtractArtifact(path, root); err != nil {
+		t.Fatalf("ExtractArtifact() error = %v", err)
+	}
+	compiled, _, err := LoadCompiledWorkspaceArtifact(root)
+	if err != nil {
+		t.Fatalf("LoadCompiledWorkspaceArtifact() error = %v", err)
+	}
+	if compiled.Plan.Summary.Changed != 1 || compiled.Plan.Summary.Removed != 1 {
+		t.Fatalf("plan summary = %#v, want one changed and one removed", compiled.Plan.Summary)
+	}
+}
+
+func TestPackProjectDoesNotSerializeResolvedConnectionCredentials(t *testing.T) {
+	t.Setenv("LIBREDASH_TEST_CRM_URL", "postgres://secret-host/sales")
+	projectPath := writeBundleProjectFixture(t, map[string]string{
+		"libredash.yaml": `
+apiVersion: libredash.dev/v1
+kind: Project
+metadata:
+  name: test
+spec:
+  connections:
+    include:
+      - connections/*.yaml
+  sources:
+    include:
+      - sources/*.yaml
+  workspaces:
+    include:
+      - workspaces/*/workspace.yaml
+`,
+		"connections/crm.yaml": `
+apiVersion: libredash.dev/v1
+kind: Connection
+metadata:
+  name: crm
+spec:
+  kind: postgres
+  credentials:
+    provider: env
+    secret: LIBREDASH_TEST_CRM_URL
+`,
+		"sources/crm.orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: Source
+metadata:
+  name: crm.orders
+spec:
+  connection: crm
+  object: public.orders
+  fields:
+    order_id:
+      type: string
+`,
+		"workspaces/sales/workspace.yaml": `
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: sales
+spec:
+  uses:
+    sources:
+      - crm.orders
+  models:
+    include:
+      - models/*.yaml
+  semanticModels:
+    include:
+      - semantic-models/*.yaml
+  dashboards:
+    include:
+      - dashboards/*.yaml
+`,
+		"workspaces/sales/models/orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: ModelTable
+metadata:
+  workspace: sales
+  name: orders
+spec:
+  primary_key: order_id
+  sources:
+    - crm.orders
+  fields:
+    order_id:
+      label: ID
+  transform:
+    sql: |
+      SELECT order_id FROM source."crm.orders"
+`,
+		"workspaces/sales/semantic-models/sales.yaml": `
+apiVersion: libredash.dev/v1
+kind: SemanticModel
+metadata:
+  workspace: sales
+  name: sales
+spec:
+  baseTable: orders
+  tables:
+    - orders
+  measures:
+    defaults:
+      table: orders
+    order_count:
+      expression: count(orders.order_id)
+`,
+		"workspaces/sales/dashboards/sales.yaml": `
+apiVersion: libredash.dev/v1
+kind: Dashboard
+metadata:
+  workspace: sales
+  name: sales
+  title: Sales
+spec:
+  semanticModel: sales
+  visuals:
+    total:
+      kind: kpi
+      query:
+        measures:
+          order_count:
+  pages:
+    - id: overview
+      title: Overview
+      visuals:
+        - id: total
+          kind: kpi_card
+          visual: total
+          placement:
+            col: 1
+            row: 1
+            col_span: 3
+            row_span: 2
+`,
+	})
+
+	var bundle bytes.Buffer
+	if _, _, err := PackProject(projectPath, "sales", deployment.ID("dep_sales"), &bundle); err != nil {
+		t.Fatalf("PackProject() error = %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
+	if err := os.WriteFile(path, bundle.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := ExtractArtifact(path, root); err != nil {
+		t.Fatalf("ExtractArtifact() error = %v", err)
+	}
+	compiledBytes, err := os.ReadFile(filepath.Join(root, CompiledProjectFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(compiledBytes), "postgres://secret-host/sales") {
+		t.Fatalf("compiled artifact serialized resolved credential")
+	}
+}
+
+func writeBundleProjectFixture(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, ProjectFile)
 }

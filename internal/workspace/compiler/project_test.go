@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -61,6 +62,15 @@ spec:
 	assertGraphAsset(t, compiled.Workspaces["operations"].Workspace.Graph, "source:olist.orders")
 	assertGraphAsset(t, compiled.Workspaces["operations"].Workspace.Graph, "model_table:operations.orders")
 	assertGraphAsset(t, compiled.Workspaces["operations"].Workspace.Graph, "dashboard:operations.fulfillment-operations")
+	sourceField := compiled.Workspaces["sales"].Definition.Models["sales"].Sources["olist_orders"].Fields["order_id"]
+	if sourceField.Type != "string" {
+		t.Fatalf("source field type = %q, want string", sourceField.Type)
+	}
+	var payload sourcePayloadV1
+	unmarshalGraphPayload(t, compiled.Workspaces["sales"].Workspace.Graph, "source:olist.orders", &payload)
+	if payload.Fields["order_id"].Type != "string" {
+		t.Fatalf("source payload field type = %q, want string", payload.Fields["order_id"].Type)
+	}
 }
 
 func TestCompileProjectRejectsWorkspaceReadsOutsideAllowlist(t *testing.T) {
@@ -263,6 +273,7 @@ func TestCompileProjectRejectsDuplicateDashboardIDsWithinWorkspace(t *testing.T)
 
 	_, err := CompileProject(projectPath, Options{DeploymentID: "dep_test"})
 	assertCompileErrorContains(t, err, `duplicate Dashboard "executive-sales"`)
+	assertDiagnostic(t, err, "dashboard:sales.executive-sales", "metadata.name")
 }
 
 func TestCompileProjectRejectsUnknownReferences(t *testing.T) {
@@ -297,6 +308,43 @@ func TestCompileProjectRejectsUnknownReferences(t *testing.T) {
 		_, err := CompileProject(projectPath, Options{DeploymentID: "dep_test"})
 		assertCompileErrorContains(t, err, `references unknown SemanticModel "missing"`)
 	})
+}
+
+func TestCompileProjectRejectsInlineConnectionAuthWithResourceDiagnostic(t *testing.T) {
+	projectPath := writeProjectFixture(t, map[string]string{
+		"libredash.yaml": projectYAML(),
+		"connections/olist.yaml": `
+apiVersion: libredash.dev/v1
+kind: Connection
+metadata:
+  name: olist
+spec:
+  kind: local
+  auth:
+    token: secret
+`,
+	})
+
+	_, err := CompileProject(projectPath, Options{DeploymentID: "dep_test"})
+	assertCompileErrorContains(t, err, `field not allowed`)
+	assertDiagnostic(t, err, "connection:olist", "spec")
+}
+
+func TestCompileProjectRejectsWorkspaceMismatchWithResourceDiagnostic(t *testing.T) {
+	projectPath := writeProjectFixture(t, map[string]string{
+		"libredash.yaml":                                   projectYAML(),
+		"connections/olist.yaml":                           connectionYAML("olist"),
+		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAML("sales"),
+		"workspaces/sales/models/orders.yaml":              strings.Replace(modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""), "workspace: sales", "workspace: operations", 1),
+		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+	})
+
+	_, err := CompileProject(projectPath, Options{DeploymentID: "dep_test"})
+	assertCompileErrorContains(t, err, `workspace = "operations", want "sales"`)
+	assertDiagnostic(t, err, "model_table:operations.orders", "metadata.workspace")
 }
 
 func TestCompileProjectRejectsHiddenImportsAndUnsafeIncludes(t *testing.T) {
@@ -609,6 +657,18 @@ func assertCompileErrorContains(t *testing.T, err error, want string) {
 	}
 }
 
+func assertDiagnostic(t *testing.T, err error, resourceID, fieldPath string) {
+	t.Helper()
+	diagnostics := configschema.Diagnostics(err)
+	if len(diagnostics) == 0 {
+		t.Fatalf("diagnostics empty, want resource=%q field=%q", resourceID, fieldPath)
+	}
+	diagnostic := diagnostics[0]
+	if diagnostic.File == "" || diagnostic.ResourceID != resourceID || diagnostic.FieldPath != fieldPath {
+		t.Fatalf("diagnostic = %#v, want file, resource=%q, field=%q", diagnostic, resourceID, fieldPath)
+	}
+}
+
 func assertGraphAsset(t *testing.T, graph workspace.AssetGraph, id string) {
 	t.Helper()
 	for _, asset := range graph.Assets {
@@ -626,4 +686,18 @@ func assertGraphMissingAsset(t *testing.T, graph workspace.AssetGraph, id string
 			t.Fatalf("asset %q unexpectedly present in graph", id)
 		}
 	}
+}
+
+func unmarshalGraphPayload(t *testing.T, graph workspace.AssetGraph, id string, out any) {
+	t.Helper()
+	for _, asset := range graph.Assets {
+		if string(asset.ID) != id {
+			continue
+		}
+		if err := json.Unmarshal([]byte(asset.PayloadJSON), out); err != nil {
+			t.Fatalf("unmarshal payload %q: %v", id, err)
+		}
+		return
+	}
+	t.Fatalf("asset %q missing from graph", id)
 }

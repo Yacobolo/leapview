@@ -87,6 +87,10 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 	if !ok {
 		return fmt.Errorf("project %q has no workspace %q", opts.catalog, opts.workspaceID)
 	}
+	activeGraph, err := fetchActiveWorkspaceGraph(ctx, opts)
+	if err != nil {
+		return err
+	}
 	createBody, _ := json.Marshal(map[string]any{
 		"title": workspaceProject.Title,
 	})
@@ -101,7 +105,7 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 	}
 	var buf bytes.Buffer
 	var digest string
-	_, digest, err = deploymentfs.PackProject(opts.catalog, opts.workspaceID, deployment.ID(created.ID), &buf)
+	_, digest, err = deploymentfs.PackProjectAgainstGraph(opts.catalog, opts.workspaceID, deployment.ID(created.ID), activeGraph, &buf)
 	if err != nil {
 		return err
 	}

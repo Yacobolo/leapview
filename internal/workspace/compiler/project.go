@@ -460,11 +460,11 @@ func LoadProject(projectPath string) (Project, error) {
 		return Project{}, err
 	}
 	if envelope.Kind != "Project" {
-		return Project{}, fmt.Errorf("%s kind = %q, want Project", projectPath, envelope.Kind)
+		return Project{}, resourceError(projectPath, envelopeResourceID(envelope, ""), "kind", "%s kind = %q, want Project", projectPath, envelope.Kind)
 	}
 	var spec projectResource
 	if err := envelope.Spec.Decode(&spec); err != nil {
-		return Project{}, fmt.Errorf("%s spec: %w", projectPath, err)
+		return Project{}, resourceError(projectPath, envelopeResourceID(envelope, ""), "spec", "%s spec: %s", projectPath, err.Error())
 	}
 	baseDir := filepath.Dir(projectPath)
 	project := Project{
@@ -499,18 +499,18 @@ func loadConnections(project *Project, includes []string) error {
 			return err
 		}
 		if envelope.Kind != "Connection" {
-			return fmt.Errorf("%s kind = %q, want Connection", path, envelope.Kind)
+			return resourceError(path, envelopeResourceID(envelope, ""), "kind", "%s kind = %q, want Connection", path, envelope.Kind)
 		}
 		var spec semanticmodel.Connection
 		if err := envelope.Spec.Decode(&spec); err != nil {
-			return fmt.Errorf("%s spec: %w", path, err)
+			return resourceError(path, envelopeResourceID(envelope, ""), "spec", "%s spec: %s", path, err.Error())
 		}
 		name := envelope.Metadata.Name
 		if name == "" {
-			return fmt.Errorf("%s metadata.name is required", path)
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
 		}
 		if _, exists := project.Connections[name]; exists {
-			return fmt.Errorf("duplicate Connection %q", name)
+			return resourceError(path, "connection:"+name, "metadata.name", "duplicate Connection %q", name)
 		}
 		project.Connections[name] = spec
 		project.ConnectionPaths[name] = path
@@ -529,18 +529,18 @@ func loadSources(project *Project, includes []string) error {
 			return err
 		}
 		if envelope.Kind != "Source" {
-			return fmt.Errorf("%s kind = %q, want Source", path, envelope.Kind)
+			return resourceError(path, envelopeResourceID(envelope, ""), "kind", "%s kind = %q, want Source", path, envelope.Kind)
 		}
 		var spec sourceSpec
 		if err := envelope.Spec.Decode(&spec); err != nil {
-			return fmt.Errorf("%s spec: %w", path, err)
+			return resourceError(path, envelopeResourceID(envelope, ""), "spec", "%s spec: %s", path, err.Error())
 		}
 		name := envelope.Metadata.Name
 		if name == "" {
-			return fmt.Errorf("%s metadata.name is required", path)
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
 		}
 		if _, exists := project.Sources[name]; exists {
-			return fmt.Errorf("duplicate Source %q", name)
+			return resourceError(path, "source:"+name, "metadata.name", "duplicate Source %q", name)
 		}
 		source := semanticmodel.Source{
 			Format:      spec.Format,
@@ -552,7 +552,7 @@ func loadSources(project *Project, includes []string) error {
 			Fields:      map[string]semanticmodel.SourceField{},
 		}
 		for field, cfg := range spec.Fields {
-			source.Fields[field] = semanticmodel.SourceField{Description: cfg.Description}
+			source.Fields[field] = semanticmodel.SourceField{Type: cfg.Type, Description: cfg.Description}
 		}
 		project.Sources[name] = source
 		project.SourcePaths[name] = path
@@ -571,18 +571,18 @@ func loadWorkspaces(project *Project, includes []string) error {
 			return err
 		}
 		if envelope.Kind != "Workspace" {
-			return fmt.Errorf("%s kind = %q, want Workspace", path, envelope.Kind)
+			return resourceError(path, envelopeResourceID(envelope, ""), "kind", "%s kind = %q, want Workspace", path, envelope.Kind)
 		}
 		var spec workspaceSpec
 		if err := envelope.Spec.Decode(&spec); err != nil {
-			return fmt.Errorf("%s spec: %w", path, err)
+			return resourceError(path, envelopeResourceID(envelope, ""), "spec", "%s spec: %s", path, err.Error())
 		}
 		id := envelope.Metadata.Name
 		if id == "" {
-			return fmt.Errorf("%s metadata.name is required", path)
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
 		}
 		if _, exists := project.Workspaces[id]; exists {
-			return fmt.Errorf("duplicate Workspace %q", id)
+			return resourceError(path, "workspace:"+id, "metadata.name", "duplicate Workspace %q", id)
 		}
 		workspaceProject := &WorkspaceProject{
 			ID:                    id,
@@ -631,18 +631,21 @@ func loadWorkspaceModels(workspaceProject *WorkspaceProject, baseDir string, inc
 			return err
 		}
 		if envelope.Kind != "ModelTable" {
-			return fmt.Errorf("%s kind = %q, want ModelTable", path, envelope.Kind)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "kind", "%s kind = %q, want ModelTable", path, envelope.Kind)
 		}
 		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
-			return fmt.Errorf("%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
 		}
 		var table semanticmodel.Table
 		if err := envelope.Spec.Decode(&table); err != nil {
-			return fmt.Errorf("%s spec: %w", path, err)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
 		}
 		name := envelope.Metadata.Name
+		if name == "" {
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
+		}
 		if _, exists := workspaceProject.Models[name]; exists {
-			return fmt.Errorf("duplicate ModelTable %q in workspace %q", name, workspaceProject.ID)
+			return resourceError(path, "model_table:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate ModelTable %q in workspace %q", name, workspaceProject.ID)
 		}
 		workspaceProject.Models[name] = table
 		workspaceProject.ModelTitles[name] = envelope.Metadata.Title
@@ -663,18 +666,21 @@ func loadWorkspaceSemanticModels(workspaceProject *WorkspaceProject, baseDir str
 			return err
 		}
 		if envelope.Kind != "SemanticModel" {
-			return fmt.Errorf("%s kind = %q, want SemanticModel", path, envelope.Kind)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "kind", "%s kind = %q, want SemanticModel", path, envelope.Kind)
 		}
 		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
-			return fmt.Errorf("%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
 		}
 		var spec projectSemanticModelSpec
 		if err := envelope.Spec.Decode(&spec); err != nil {
-			return fmt.Errorf("%s spec: %w", path, err)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
 		}
 		name := envelope.Metadata.Name
+		if name == "" {
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
+		}
 		if _, exists := workspaceProject.SemanticModels[name]; exists {
-			return fmt.Errorf("duplicate SemanticModel %q in workspace %q", name, workspaceProject.ID)
+			return resourceError(path, "semantic_model:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate SemanticModel %q in workspace %q", name, workspaceProject.ID)
 		}
 		workspaceProject.SemanticModels[name] = spec
 		workspaceProject.ModelTitles[name] = envelope.Metadata.Title
@@ -695,18 +701,21 @@ func loadWorkspaceDashboards(workspaceProject *WorkspaceProject, baseDir string,
 			return err
 		}
 		if envelope.Kind != "Dashboard" {
-			return fmt.Errorf("%s kind = %q, want Dashboard", path, envelope.Kind)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "kind", "%s kind = %q, want Dashboard", path, envelope.Kind)
 		}
 		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
-			return fmt.Errorf("%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
 		}
 		var spec dashboardSpec
 		if err := envelope.Spec.Decode(&spec); err != nil {
-			return fmt.Errorf("%s spec: %w", path, err)
+			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
 		}
 		name := envelope.Metadata.Name
+		if name == "" {
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
+		}
 		if _, exists := workspaceProject.Dashboards[name]; exists {
-			return fmt.Errorf("duplicate Dashboard %q in workspace %q", name, workspaceProject.ID)
+			return resourceError(path, "dashboard:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate Dashboard %q in workspace %q", name, workspaceProject.ID)
 		}
 		dashboard := &report.Dashboard{
 			ID:            name,
@@ -1011,7 +1020,7 @@ func readEnvelope(path string) (resourceEnvelope, error) {
 	}
 	if kind, ok := schemaKindForEnvelope(content); ok {
 		if err := configschema.ValidateBytes(kind, path, content); err != nil {
-			return resourceEnvelope{}, err
+			return resourceEnvelope{}, annotateSchemaError(err, path, resourceIDForHeader(content, ""), "spec")
 		}
 	}
 	var envelope resourceEnvelope
@@ -1021,12 +1030,55 @@ func readEnvelope(path string) (resourceEnvelope, error) {
 		return resourceEnvelope{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if envelope.APIVersion != projectAPIVersion {
-		return resourceEnvelope{}, fmt.Errorf("%s apiVersion = %q, want %q", path, envelope.APIVersion, projectAPIVersion)
+		return resourceEnvelope{}, resourceError(path, envelopeResourceID(envelope, ""), "apiVersion", "%s apiVersion = %q, want %q", path, envelope.APIVersion, projectAPIVersion)
 	}
 	if envelope.Kind == "" {
-		return resourceEnvelope{}, fmt.Errorf("%s kind is required", path)
+		return resourceEnvelope{}, resourceError(path, envelopeResourceID(envelope, ""), "kind", "%s kind is required", path)
 	}
 	return envelope, nil
+}
+
+func resourceIDForHeader(content []byte, fallbackWorkspace string) string {
+	var envelope resourceEnvelope
+	if err := yaml.Unmarshal(content, &envelope); err != nil {
+		return ""
+	}
+	return envelopeResourceID(envelope, fallbackWorkspace)
+}
+
+func envelopeResourceID(envelope resourceEnvelope, fallbackWorkspace string) string {
+	name := envelope.Metadata.Name
+	if name == "" {
+		return ""
+	}
+	workspaceID := firstNonEmpty(envelope.Metadata.Workspace, fallbackWorkspace)
+	switch envelope.Kind {
+	case "Project":
+		return "project:" + name
+	case "Connection":
+		return "connection:" + name
+	case "Source":
+		return "source:" + name
+	case "Workspace":
+		return "workspace:" + name
+	case "ModelTable":
+		if workspaceID == "" {
+			return ""
+		}
+		return "model_table:" + workspaceID + "." + name
+	case "SemanticModel":
+		if workspaceID == "" {
+			return ""
+		}
+		return "semantic_model:" + workspaceID + "." + name
+	case "Dashboard":
+		if workspaceID == "" {
+			return ""
+		}
+		return "dashboard:" + workspaceID + "." + name
+	default:
+		return ""
+	}
 }
 
 func schemaKindForEnvelope(content []byte) (configschema.Kind, bool) {

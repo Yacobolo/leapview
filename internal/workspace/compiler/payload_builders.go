@@ -74,7 +74,7 @@ func sourceFieldsPayload(fields map[string]semanticmodel.SourceField) map[string
 	out := map[string]sourceFieldPayloadV1{}
 	for _, name := range sortedMapKeys(fields) {
 		field := fields[name]
-		out[name] = sourceFieldPayloadV1{Name: field.Name, Field: field.Field, Table: field.Table, Description: field.Description}
+		out[name] = sourceFieldPayloadV1{Name: field.Name, Field: field.Field, Table: field.Table, Type: field.Type, Description: field.Description}
 	}
 	return out
 }

@@ -8,6 +8,15 @@ package contracts
 	[string]: _
 }
 
+#NoCredentials: close({
+	provider!: "none"
+})
+
+#EnvCredentials: close({
+	provider!: "env"
+	secret!:   string
+})
+
 #APIVersion: "libredash.dev/v1"
 
 #Metadata: close({
@@ -108,11 +117,7 @@ package contracts
 	path?:        string
 	root?:        string
 	scope?:       string
-	auth?:        #AnyObject
-	credentials?: close({
-		provider!: "env"
-		secret!:   string
-	})
+	credentials?: #NoCredentials | #EnvCredentials
 	options?:     #AnyObject
 	defaults?: close({
 		options?: #AnyObject

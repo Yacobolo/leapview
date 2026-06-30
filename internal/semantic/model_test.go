@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/semantic"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
@@ -242,6 +243,29 @@ func TestModelValidateConnectionCredentialsEnvReference(t *testing.T) {
 	if len(model.Connections["crm"].Auth) != 0 {
 		t.Fatalf("compiled model stored resolved credentials in auth: %#v", model.Connections["crm"].Auth)
 	}
+}
+
+func TestModelValidateConnectionCredentialsNone(t *testing.T) {
+	model := minimalSourceModel()
+	model.Connections["default"] = Connection{
+		Kind:        "local",
+		Credentials: ConnectionCredentials{Provider: "none"},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if semanticmodel.ConnectionCredentialsConfigured(model.Connections["default"]) {
+		t.Fatalf("none credentials reported as configured")
+	}
+}
+
+func TestModelValidateRejectsConnectionCredentialsNoneSecret(t *testing.T) {
+	model := minimalSourceModel()
+	model.Connections["default"] = Connection{
+		Kind:        "local",
+		Credentials: ConnectionCredentials{Provider: "none", Secret: "LIBREDASH_TEST_SECRET"},
+	}
+	assertModelValidateError(t, model, `none credentials cannot set secret`)
 }
 
 func TestModelValidateRejectsMissingConnectionCredentialsEnv(t *testing.T) {

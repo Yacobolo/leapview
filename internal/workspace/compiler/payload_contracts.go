@@ -55,6 +55,7 @@ type sourceFieldPayloadV1 struct {
 	Name        string `json:"Name"`
 	Field       string `json:"Field"`
 	Table       string `json:"Table"`
+	Type        string `json:"Type"`
 	Description string `json:"Description"`
 }
 
