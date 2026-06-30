@@ -322,10 +322,9 @@ function renderAssetTable(assets: WorkspaceAssetSummarySignal[], empty: string) 
   if (!assets.length) return html`<div class="panel"><div class="empty">${empty}</div></div>`
   const table: RecordTableSignal = {
     columns: [
-      { id: 'name', header: 'Name', kind: 'entity', width: '38%' },
+      { id: 'name', header: 'Name', kind: 'entity', width: '42%' },
       { id: 'type', header: 'Type', width: '150px' },
       { id: 'key', header: 'Key', kind: 'code', width: '180px' },
-      { id: 'parent', header: 'Parent', kind: 'link', width: '200px' },
       { id: 'actions', header: 'Actions', kind: 'actions', align: 'right', width: '104px', sortable: false } as any,
     ],
     rows: assets.map((asset) => ({
@@ -337,17 +336,13 @@ function renderAssetTable(assets: WorkspaceAssetSummarySignal[], empty: string) 
       },
       type: asset.typeLabel,
       key: asset.key,
-      parent: {
-        label: asset.parentTitle || '-',
-        href: asset.parentHref,
-      },
       actions: [
         { label: 'View details', href: asset.detailHref, icon: 'details' },
         { label: 'Open asset', href: asset.openHref, icon: 'open' },
       ],
     })),
     empty,
-    minWidth: '1040px',
+    minWidth: '840px',
   }
   return html`
     <div class="panel table-panel">

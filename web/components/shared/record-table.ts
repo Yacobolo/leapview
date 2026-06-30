@@ -512,7 +512,7 @@ const recordTableStyles = `
 
   ld-record-table .variant-primary .record-table th {
     padding: var(--base-size-12) var(--base-size-16);
-    background: var(--ld-bg-panel);
+    background: var(--ld-bg-panel-muted);
     font-size: var(--ld-font-size-body-sm);
     font-weight: var(--ld-font-weight-strong);
   }
