@@ -327,6 +327,77 @@ test('workspace asset refresh page renders refresh tab and emits refresh events'
   }
 })
 
+test('workspace asset versions page renders record table', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-workspace-asset-page') && customElements.get('ld-record-table'))
+
+    const state = await page.evaluate(async () => {
+      const asset = document.querySelector('ld-workspace-asset-page') as any
+      asset.page = {
+        kind: 'workspace_asset',
+        title: 'Executive Sales Dashboard',
+        workspaceId: 'libredash',
+        assetId: 'dashboard:executive-sales',
+        activeSection: 'versions',
+        asset: {
+          id: 'dashboard:executive-sales',
+          title: 'Executive Sales Dashboard',
+          type: 'dashboard',
+          typeLabel: 'Dashboard',
+          key: 'executive-sales',
+          detailHref: '/workspaces/libredash/assets/dashboard:executive-sales/details',
+          openHref: '/dashboards/executive-sales',
+        },
+        breadcrumbs: [
+          { label: 'Workspaces', href: '/workspaces' },
+          { label: 'LibreDash Workspace', href: '/workspaces/libredash' },
+          { label: 'Executive Sales Dashboard', current: true },
+        ],
+        actions: [],
+        tabs: [
+          { id: 'details', label: 'Details', href: '/workspaces/libredash/assets/dashboard:executive-sales/details', active: false },
+          { id: 'lineage', label: 'Lineage', href: '/workspaces/libredash/assets/dashboard:executive-sales/lineage', active: false, count: 1 },
+          { id: 'versions', label: 'Versions', href: '/workspaces/libredash/assets/dashboard:executive-sales/versions', active: true },
+        ],
+        versions: {
+          currentDeploymentId: 'dep_current123456',
+          table: {
+            columns: [
+              { id: 'version', header: 'Version', kind: 'code' },
+              { id: 'status', header: 'Status', kind: 'badge' },
+              { id: 'asset_hash', header: 'Asset hash', kind: 'code' },
+              { id: 'deployment_digest', header: 'Deployment digest', kind: 'code' },
+            ],
+            rows: [{
+              version: 'dep_current1',
+              status: { label: 'current', tone: 'success' },
+              asset_hash: 'asset_hash_c',
+              deployment_digest: 'digest_curre',
+            }],
+            empty: 'No versions recorded for this asset yet.',
+          },
+        },
+      }
+      await asset.updateComplete
+      const table = asset.shadowRoot.querySelector('ld-record-table') as HTMLElement | null
+      return {
+        activeTab: asset.shadowRoot.querySelector('.tabs a.active')?.textContent?.trim(),
+        sectionTitle: asset.shadowRoot.querySelector('.detail-section h2')?.textContent?.trim(),
+        tableText: table?.textContent ?? '',
+      }
+    })
+
+    expect(state.activeTab).toBe('Versions')
+    expect(state.sectionTitle).toBe('Versions')
+    expect(state.tableText).toMatch(/Deployment digest/)
+    expect(state.tableText).toMatch(/current/)
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   const assetList = {
     workspaceId: 'libredash',

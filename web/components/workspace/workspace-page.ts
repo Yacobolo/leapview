@@ -218,7 +218,9 @@ class LibreDashWorkspaceAssetPage extends LitElement {
               ? this.renderLineage(page)
               : page.activeSection === 'refreshes'
                 ? this.renderRefreshes(page)
-                : this.renderDetails(page)}
+                : page.activeSection === 'versions'
+                  ? this.renderVersions(page)
+                  : this.renderDetails(page)}
           </div>
         </div>
       </section>
@@ -276,6 +278,14 @@ class LibreDashWorkspaceAssetPage extends LitElement {
     return html`
       <section class="details" id="refreshes" aria-label="Refresh runs">
         ${renderRecordTableSection('Refreshes', page.refresh?.runsTable)}
+      </section>
+    `
+  }
+
+  private renderVersions(page: WorkspaceAssetPageSignal) {
+    return html`
+      <section class="details" id="versions" aria-label="Asset versions">
+        ${renderRecordTableSection('Versions', page.versions?.table)}
       </section>
     `
   }

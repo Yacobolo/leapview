@@ -767,6 +767,7 @@ export interface WorkspaceAssetPageSignal {
   details?: WorkspaceAssetDetailsSignal
   lineage?: WorkspaceAssetLineageSignal
   refresh?: WorkspaceAssetRefreshSignal
+  versions?: WorkspaceAssetVersionsSignal
 }
 
 export interface WorkspaceAssetRefreshSignal {
@@ -787,6 +788,11 @@ export interface WorkspaceAssetSummarySignal {
   parentHref?: string
   detailHref: string
   openHref: string
+}
+
+export interface WorkspaceAssetVersionsSignal {
+  currentDeploymentId: string
+  table: RecordTableSignal
 }
 
 export interface WorkspaceBreadcrumbSignal {

@@ -91,6 +91,30 @@ SELECT * FROM assets WHERE deployment_id = ? ORDER BY asset_type, asset_key;
 -- name: ListAssetEdgesByDeployment :many
 SELECT * FROM asset_edges WHERE deployment_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id;
 
+-- name: ListAssetVersions :many
+SELECT
+  d.id AS deployment_id,
+  d.workspace_id,
+  d.environment,
+  d.status,
+  d.digest,
+  d.created_by,
+  d.created_at,
+  d.activated_at,
+  a.snapshot_id,
+  a.logical_asset_id,
+  a.content_hash
+FROM deployments d
+JOIN assets a ON a.deployment_id = d.id
+WHERE d.workspace_id = ?
+  AND d.environment = ?
+  AND a.logical_asset_id = ?
+  AND d.status IN ('active', 'inactive', 'validated')
+ORDER BY
+  COALESCE(d.activated_at, d.created_at) DESC,
+  d.created_at DESC,
+  d.id DESC;
+
 -- name: UpsertPrincipal :exec
 INSERT INTO principals (id, email, display_name, updated_at)
 VALUES (?, ?, ?, CURRENT_TIMESTAMP)

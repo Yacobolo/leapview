@@ -159,9 +159,14 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	refresh.CSRFToken = csrfToken(r, s.auth)
+	versions, err := s.assetVersionsStateForSection(r.Context(), workspaceID, string(s.requestDeploymentEnvironment(r)), selected, section)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.WorkspaceAssetPageWithRefresh(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r), refresh).Render(w); err != nil {
+	if err := ui.WorkspaceAssetPageWithRefreshAndVersions(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r), refresh, versions).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -387,6 +392,37 @@ func (s *Server) assetRefreshStateForContext(ctx context.Context, workspaceID st
 	return state, nil
 }
 
+func (s *Server) assetVersionsStateForSection(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
+	state := ui.AssetVersionsState{CurrentDeploymentID: asset.DeploymentID}
+	if section != "versions" {
+		return state, nil
+	}
+	if s.store == nil {
+		return state, nil
+	}
+	repo, err := s.workspaceRepository()
+	if err != nil || repo == nil {
+		return state, err
+	}
+	versions, err := repo.AssetVersions(ctx, workspace.WorkspaceID(workspaceID), environment, workspace.AssetID(asset.ID))
+	if err != nil {
+		return state, err
+	}
+	state.Versions = make([]ui.AssetVersionState, 0, len(versions))
+	for _, version := range versions {
+		state.Versions = append(state.Versions, ui.AssetVersionState{
+			DeploymentID: string(version.DeploymentID),
+			Status:       version.Status,
+			Digest:       version.Digest,
+			CreatedBy:    version.CreatedBy,
+			CreatedAt:    version.CreatedAt,
+			ActivatedAt:  version.ActivatedAt,
+			ContentHash:  version.ContentHash,
+		})
+	}
+	return state, nil
+}
+
 func uiRefreshRuns(runs []materialize.RunRecord) []ui.AssetRefreshRun {
 	out := make([]ui.AssetRefreshRun, 0, len(runs))
 	for _, run := range runs {
@@ -487,9 +523,14 @@ func (s *Server) connectionSourceAssetSection(w http.ResponseWriter, r *http.Req
 		return
 	}
 	workspace := platformAssetWorkspaceView()
+	versions, err := s.assetVersionsStateForSection(r.Context(), source.WorkspaceID, string(s.requestDeploymentEnvironment(r)), source, section)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.ConnectionSourceAssetPage(s.metrics.Catalog(), workspace, connection, source, assets, edges, section, s.currentRoleLabel(r)).Render(w); err != nil {
+	if err := ui.ConnectionSourceAssetPageWithVersions(s.metrics.Catalog(), workspace, connection, source, assets, edges, section, s.currentRoleLabel(r), versions).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -538,9 +579,14 @@ func (s *Server) connectionAssetSection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	workspace := platformAssetWorkspaceView()
+	versions, err := s.assetVersionsStateForSection(r.Context(), selected.WorkspaceID, string(s.requestDeploymentEnvironment(r)), selected, section)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.ConnectionAssetPage(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r)).Render(w); err != nil {
+	if err := ui.ConnectionAssetPageWithVersions(s.metrics.Catalog(), workspace, selected, assets, edges, section, s.currentRoleLabel(r), versions).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -956,9 +1002,6 @@ func (s *Server) workspaceAssetCatalogReader() (workspace.AssetCatalogReader, er
 		return nil, err
 	}
 	service := workspace.NewAssetCatalogService(repo)
-	if provider, ok := s.metrics.(workspace.RuntimeAssetGraphProvider); ok {
-		service.WithRuntimeProvider(provider)
-	}
 	s.assetCatalog = service
 	return s.assetCatalog, nil
 }

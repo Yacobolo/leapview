@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -57,6 +58,10 @@ type testRuntimeProvider struct {
 type testWorkspaceAssetRuntime struct {
 	assets []workspace.Asset
 	edges  []workspace.AssetEdge
+}
+
+type workspaceAssetGraphProvider interface {
+	WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool)
 }
 
 func (runtimeAssetMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
@@ -755,7 +760,7 @@ func TestWorkspacePageDefaultsToTopLevelAssets(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	body := rec.Body.String()
+	body := html.UnescapeString(rec.Body.String())
 	for _, want := range []string{"Executive Sales", "Sales Semantic Model", "orders"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("workspace page missing top-level asset %q:\n%s", want, body)
@@ -845,7 +850,7 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	body := rec.Body.String()
+	body := html.UnescapeString(rec.Body.String())
 	for _, want := range []string{"<ld-connections-page", "Connections", "Connection", "Source", "assetList", "Local CSV files for the Olist ecommerce demo dataset.", "orders"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("connections page missing %q:\n%s", want, body)
@@ -880,7 +885,7 @@ func TestConnectionsPageFiltersSources(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	body := rec.Body.String()
+	body := html.UnescapeString(rec.Body.String())
 	for _, want := range []string{"Source", "orders", `/connections/`, `/sources/`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("source-filtered connections page missing %q:\n%s", want, body)
@@ -1055,7 +1060,47 @@ func TestWorkspaceSourceAssetRedirectsToConnectionScopedSourceSurface(t *testing
 	}
 }
 
-func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testing.T) {
+func TestWorkspaceAssetVersionsRouteRendersDeploymentBackedVersions(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	seedActiveDeployment(t, store, "test")
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+	assetID := activeAssetIDByType(t, store, "test", "dashboard")
+
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/assets/"+assetID+"/versions", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("versions status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := html.UnescapeString(rec.Body.String())
+	for _, want := range []string{
+		`"activeSection":"versions"`,
+		`"label":"Versions"`,
+		`"currentDeploymentId":"dep_`,
+		`"header":"Asset hash"`,
+		`"header":"Deployment digest"`,
+		`"label":"current"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("versions page missing %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		`"version":"local"`,
+		`"label":"local"`,
+		`/updates?section=versions`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("versions page rendered forbidden %q:\n%s", forbidden, body)
+		}
+	}
+}
+
+func TestConnectionsPageDoesNotFallbackToRuntimeAssetsWithoutActiveDeployment(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
@@ -1070,9 +1115,12 @@ func TestConnectionsPageFallsBackToRuntimeAssetsWithoutActiveDeployment(t *testi
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Connections", "remote_quack", "Runtime connection"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("connections page missing runtime asset %q:\n%s", want, body)
+	if !strings.Contains(body, "Connections") {
+		t.Fatalf("connections page missing heading:\n%s", body)
+	}
+	for _, forbidden := range []string{"remote_quack", "Runtime connection"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("connections page rendered runtime-only asset %q without active deployment:\n%s", forbidden, body)
 		}
 	}
 }
@@ -1564,6 +1612,35 @@ func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID strin
 	}
 }
 
+func seedActiveDeploymentFromWorkspaceAssets(t *testing.T, store *platform.Store, workspaceID string, provider workspaceAssetGraphProvider) deployment.ID {
+	t.Helper()
+	ctx := context.Background()
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: workspaceID}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	created, err := deploymentRepo.Create(ctx, deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	assets, edges, ok := provider.WorkspaceAssets(workspaceID, string(created.ID))
+	if !ok {
+		t.Fatal("workspace asset graph unavailable")
+	}
+	validation := deployment.Validation{
+		Digest:       "digest-" + string(created.ID),
+		ManifestJSON: "{}",
+		Graph:        workspace.AssetGraph{Assets: assets, Edges: edges},
+	}
+	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, workspaceID)); err != nil {
+		t.Fatalf("validate deployment: %v", err)
+	}
+	if _, err := deploymentRepo.Activate(ctx, deployment.WorkspaceID(workspaceID), deployment.DefaultEnvironment, created.ID); err != nil {
+		t.Fatalf("activate deployment: %v", err)
+	}
+	return created.ID
+}
+
 func seedEnvironmentAssetDeployment(t *testing.T, store *platform.Store, workspaceID string, environment deployment.Environment, dashboardTitle, connectionTitle string) {
 	t.Helper()
 	ctx := context.Background()
@@ -1626,6 +1703,25 @@ func activeAssetID(t *testing.T, store *platform.Store, workspaceID, typ, key st
 		}
 	}
 	t.Fatalf("asset %s %q not found in active graph", typ, key)
+	return ""
+}
+
+func activeAssetIDByType(t *testing.T, store *platform.Store, workspaceID, typ string) string {
+	t.Helper()
+	repo := workspacesqlite.NewRepository(store.SQLDB())
+	graph, ok, err := repo.ActiveDeploymentGraph(context.Background(), workspace.WorkspaceID(workspaceID), string(deployment.DefaultEnvironment))
+	if err != nil {
+		t.Fatalf("active deployment graph: %v", err)
+	}
+	if !ok {
+		t.Fatalf("workspace %q has no active deployment graph", workspaceID)
+	}
+	for _, asset := range graph.Assets {
+		if string(asset.Type) == typ {
+			return string(asset.ID)
+		}
+	}
+	t.Fatalf("asset type %s not found in active graph", typ)
 	return ""
 }
 
