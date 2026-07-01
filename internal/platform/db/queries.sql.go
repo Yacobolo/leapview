@@ -1318,6 +1318,86 @@ func (q *Queries) ListAssetEdgesByDeployment(ctx context.Context, deploymentID s
 	return items, nil
 }
 
+const listAssetVersions = `-- name: ListAssetVersions :many
+SELECT
+  d.id AS deployment_id,
+  d.workspace_id,
+  d.environment,
+  d.status,
+  d.digest,
+  d.created_by,
+  d.created_at,
+  d.activated_at,
+  a.snapshot_id,
+  a.logical_asset_id,
+  a.content_hash
+FROM deployments d
+JOIN assets a ON a.deployment_id = d.id
+WHERE d.workspace_id = ?
+  AND d.environment = ?
+  AND a.logical_asset_id = ?
+  AND d.status IN ('active', 'inactive', 'validated')
+ORDER BY
+  COALESCE(d.activated_at, d.created_at) DESC,
+  d.created_at DESC,
+  d.id DESC
+`
+
+type ListAssetVersionsParams struct {
+	WorkspaceID    string `json:"workspace_id"`
+	Environment    string `json:"environment"`
+	LogicalAssetID string `json:"logical_asset_id"`
+}
+
+type ListAssetVersionsRow struct {
+	DeploymentID   string         `json:"deployment_id"`
+	WorkspaceID    string         `json:"workspace_id"`
+	Environment    string         `json:"environment"`
+	Status         string         `json:"status"`
+	Digest         string         `json:"digest"`
+	CreatedBy      string         `json:"created_by"`
+	CreatedAt      string         `json:"created_at"`
+	ActivatedAt    sql.NullString `json:"activated_at"`
+	SnapshotID     string         `json:"snapshot_id"`
+	LogicalAssetID string         `json:"logical_asset_id"`
+	ContentHash    string         `json:"content_hash"`
+}
+
+func (q *Queries) ListAssetVersions(ctx context.Context, arg ListAssetVersionsParams) ([]ListAssetVersionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetVersions, arg.WorkspaceID, arg.Environment, arg.LogicalAssetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAssetVersionsRow{}
+	for rows.Next() {
+		var i ListAssetVersionsRow
+		if err := rows.Scan(
+			&i.DeploymentID,
+			&i.WorkspaceID,
+			&i.Environment,
+			&i.Status,
+			&i.Digest,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.ActivatedAt,
+			&i.SnapshotID,
+			&i.LogicalAssetID,
+			&i.ContentHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAssetsByDeployment = `-- name: ListAssetsByDeployment :many
 SELECT snapshot_id, logical_asset_id, workspace_id, deployment_id, asset_type, asset_key, parent_logical_asset_id, title, description, source_file, payload_schema, payload_json, content_hash, created_at FROM assets WHERE deployment_id = ? ORDER BY asset_type, asset_key
 `

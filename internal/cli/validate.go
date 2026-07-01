@@ -180,15 +180,19 @@ func renderProjectPlan(out io.Writer, plan workspacecompiler.ProjectPlan) error 
 }
 
 func fetchActiveWorkspaceGraph(ctx context.Context, opts *rootOptions) (workspace.AssetGraph, error) {
+	return fetchActiveWorkspaceGraphForWorkspace(ctx, opts, opts.workspaceID)
+}
+
+func fetchActiveWorkspaceGraphForWorkspace(ctx context.Context, opts *rootOptions, workspaceID string) (workspace.AssetGraph, error) {
 	target, token, err := clientTargetAndToken(opts)
 	if err != nil {
 		return workspace.AssetGraph{}, err
 	}
-	assets, err := fetchAllWorkspaceAssets(ctx, target, token, opts.workspaceID, cliEnvironment(opts))
+	assets, err := fetchAllWorkspaceAssets(ctx, target, token, workspaceID, cliEnvironment(opts))
 	if err != nil {
 		return workspace.AssetGraph{}, err
 	}
-	edges, err := fetchAllWorkspaceAssetEdges(ctx, target, token, opts.workspaceID, cliEnvironment(opts))
+	edges, err := fetchAllWorkspaceAssetEdges(ctx, target, token, workspaceID, cliEnvironment(opts))
 	if err != nil {
 		return workspace.AssetGraph{}, err
 	}

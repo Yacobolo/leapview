@@ -2753,6 +2753,9 @@
         "title": {
           "type": "string"
         },
+        "versions": {
+          "$ref": "#/$defs/WorkspaceAssetVersionsSignal"
+        },
         "workspaceId": {
           "type": "string"
         }
@@ -2834,6 +2837,22 @@
         "title",
         "type",
         "typeLabel"
+      ],
+      "type": "object"
+    },
+    "WorkspaceAssetVersionsSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "currentDeploymentId": {
+          "type": "string"
+        },
+        "table": {
+          "$ref": "#/$defs/RecordTableSignal"
+        }
+      },
+      "required": [
+        "currentDeploymentId",
+        "table"
       ],
       "type": "object"
     },

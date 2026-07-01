@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 	"github.com/spf13/cobra"
 )
@@ -32,6 +34,7 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.token, "token", "", "API token")
 	cmd.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "libredash.yaml"), "project path")
 	cmd.Flags().StringVar(&opts.environment, "environment", "dev", "deployment environment")
+	cmd.Flags().BoolVar(&opts.allWorkspaces, "all-workspaces", false, "deploy every workspace in the project")
 	cmd.Flags().BoolVar(&opts.autoApprove, "auto-approve", false, "approve and activate the deployment without prompting")
 	return cmd
 }
@@ -79,9 +82,18 @@ func rollbackCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	return cmd
 }
 
+type workspaceDeployPlan struct {
+	workspaceID    string
+	workspaceTitle string
+	activeGraph    workspace.AssetGraph
+}
+
 func runDeploy(ctx context.Context, opts *rootOptions) error {
-	if opts.workspaceID == "" {
-		return fmt.Errorf("deploy requires --workspace")
+	if opts.workspaceID != "" && opts.allWorkspaces {
+		return fmt.Errorf("deploy accepts either --workspace or --all-workspaces, not both")
+	}
+	if opts.workspaceID == "" && !opts.allWorkspaces {
+		return fmt.Errorf("deploy requires --workspace or --all-workspaces")
 	}
 	target, token, err := clientTargetAndToken(opts)
 	if err != nil {
@@ -91,30 +103,60 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 	if err != nil {
 		return err
 	}
-	workspaceProject, ok := project.Workspaces[opts.workspaceID]
-	if !ok {
-		return fmt.Errorf("project %q has no workspace %q", opts.catalog, opts.workspaceID)
-	}
-	activeGraph, err := fetchActiveWorkspaceGraph(ctx, opts)
-	if err != nil {
-		return err
-	}
-	plan, err := workspacecompiler.PlanProjectAgainstGraph(opts.catalog, opts.workspaceID, activeGraph)
-	if err != nil {
-		return err
-	}
-	if err := renderProjectPlan(os.Stdout, plan); err != nil {
-		return err
+	workspaceIDs := deployWorkspaceIDs(opts, project.Workspaces)
+	plans := make([]workspaceDeployPlan, 0, len(workspaceIDs))
+	for _, workspaceID := range workspaceIDs {
+		workspaceProject, ok := project.Workspaces[workspaceID]
+		if !ok {
+			return fmt.Errorf("project %q has no workspace %q", opts.catalog, workspaceID)
+		}
+		activeGraph, err := fetchActiveWorkspaceGraphForWorkspace(ctx, opts, workspaceID)
+		if err != nil {
+			return err
+		}
+		plan, err := workspacecompiler.PlanProjectAgainstGraph(opts.catalog, workspaceID, activeGraph)
+		if err != nil {
+			return err
+		}
+		if err := renderProjectPlan(os.Stdout, plan); err != nil {
+			return err
+		}
+		plans = append(plans, workspaceDeployPlan{
+			workspaceID:    workspaceID,
+			workspaceTitle: workspaceProject.Title,
+			activeGraph:    activeGraph,
+		})
 	}
 	if err := confirmDeploy(opts, os.Stdin, os.Stdout); err != nil {
 		return err
 	}
+	for _, plan := range plans {
+		if err := deployWorkspace(ctx, opts, target, token, plan); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deployWorkspaceIDs(opts *rootOptions, projectWorkspaces map[string]*workspacecompiler.WorkspaceProject) []string {
+	if !opts.allWorkspaces {
+		return []string{opts.workspaceID}
+	}
+	workspaceIDs := make([]string, 0, len(projectWorkspaces))
+	for workspaceID := range projectWorkspaces {
+		workspaceIDs = append(workspaceIDs, workspaceID)
+	}
+	sort.Strings(workspaceIDs)
+	return workspaceIDs
+}
+
+func deployWorkspace(ctx context.Context, opts *rootOptions, target, token string, plan workspaceDeployPlan) error {
 	createBody, _ := json.Marshal(map[string]any{
-		"title":       workspaceProject.Title,
+		"title":       plan.workspaceTitle,
 		"environment": cliEnvironment(opts),
 	})
 	var created api.DeploymentResponse
-	workspacePathParams := map[string]string{"workspace": opts.workspaceID}
+	workspacePathParams := map[string]string{"workspace": plan.workspaceID}
 	createURL, err := apiOperationURL(target, "createDeployment", workspacePathParams, environmentQuery(opts, nil))
 	if err != nil {
 		return err
@@ -124,11 +166,11 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 	}
 	var buf bytes.Buffer
 	var digest string
-	_, digest, err = deploymentfs.PackProjectAgainstGraphForEnvironment(opts.catalog, opts.workspaceID, deployment.Environment(cliEnvironment(opts)), deployment.ID(created.ID), activeGraph, &buf)
+	_, digest, err = deploymentfs.PackProjectAgainstGraphForEnvironment(opts.catalog, plan.workspaceID, deployment.Environment(cliEnvironment(opts)), deployment.ID(created.ID), plan.activeGraph, &buf)
 	if err != nil {
 		return err
 	}
-	uploadURL, err := apiOperationURL(target, "uploadDeploymentArtifact", map[string]string{"workspace": opts.workspaceID, "deployment": created.ID}, environmentQuery(opts, nil))
+	uploadURL, err := apiOperationURL(target, "uploadDeploymentArtifact", map[string]string{"workspace": plan.workspaceID, "deployment": created.ID}, environmentQuery(opts, nil))
 	if err != nil {
 		return err
 	}
@@ -136,7 +178,7 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	var validated api.DeploymentResponse
-	validateURL, err := apiOperationURL(target, "validateDeployment", map[string]string{"workspace": opts.workspaceID, "deployment": created.ID}, environmentQuery(opts, nil))
+	validateURL, err := apiOperationURL(target, "validateDeployment", map[string]string{"workspace": plan.workspaceID, "deployment": created.ID}, environmentQuery(opts, nil))
 	if err != nil {
 		return err
 	}
@@ -144,14 +186,14 @@ func runDeploy(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	var activated api.DeploymentResponse
-	activateURL, err := apiOperationURL(target, "activateDeployment", map[string]string{"workspace": opts.workspaceID, "deployment": created.ID}, environmentQuery(opts, nil))
+	activateURL, err := apiOperationURL(target, "activateDeployment", map[string]string{"workspace": plan.workspaceID, "deployment": created.ID}, environmentQuery(opts, nil))
 	if err != nil {
 		return err
 	}
 	if err := doJSON(ctx, http.MethodPost, activateURL, token, nil, &activated); err != nil {
 		return err
 	}
-	fmt.Printf("deployed %s environment=%s digest=%s localDigest=%s status=%s\n", activated.ID, activated.Environment, activated.Digest, digest, activated.Status)
+	fmt.Printf("deployed %s environment=%s workspace=%s digest=%s localDigest=%s status=%s\n", activated.ID, activated.Environment, plan.workspaceID, activated.Digest, digest, activated.Status)
 	return nil
 }
 

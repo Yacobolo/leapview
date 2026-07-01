@@ -87,6 +87,37 @@ func (r *Repository) ActiveDeploymentGraph(ctx context.Context, id workspace.Wor
 	return graph, true, nil
 }
 
+func (r *Repository) AssetVersions(ctx context.Context, workspaceID workspace.WorkspaceID, environment string, assetID workspace.AssetID) ([]workspace.AssetVersion, error) {
+	rows, err := r.q.ListAssetVersions(ctx, platformdb.ListAssetVersionsParams{
+		WorkspaceID:    string(workspaceID),
+		Environment:    string(deployment.NormalizeEnvironment(deployment.Environment(environment))),
+		LogicalAssetID: string(assetID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	versions := make([]workspace.AssetVersion, 0, len(rows))
+	for _, row := range rows {
+		version := workspace.AssetVersion{
+			DeploymentID: workspace.DeploymentID(row.DeploymentID),
+			WorkspaceID:  workspace.WorkspaceID(row.WorkspaceID),
+			Environment:  row.Environment,
+			Status:       row.Status,
+			Digest:       row.Digest,
+			CreatedBy:    row.CreatedBy,
+			CreatedAt:    row.CreatedAt,
+			SnapshotID:   workspace.AssetSnapshotID(row.SnapshotID),
+			AssetID:      workspace.AssetID(row.LogicalAssetID),
+			ContentHash:  row.ContentHash,
+		}
+		if row.ActivatedAt.Valid {
+			version.ActivatedAt = row.ActivatedAt.String
+		}
+		versions = append(versions, version)
+	}
+	return versions, nil
+}
+
 func mapWorkspace(row platformdb.Workspace) workspace.Summary {
 	out := workspace.Summary{
 		ID:          workspace.WorkspaceID(row.ID),
