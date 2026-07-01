@@ -10,6 +10,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/agenttools"
 	"github.com/Yacobolo/libredash/internal/configschema"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -308,12 +309,24 @@ func TestCompileShowcaseProject(t *testing.T) {
 	if _, ok := compiled.Workspaces["operations"]; !ok {
 		t.Fatalf("compiled workspaces = %#v, want operations", compiled.Workspaces)
 	}
+	if _, ok := compiled.Workspaces["visuals"]; !ok {
+		t.Fatalf("compiled workspaces = %#v, want visuals", compiled.Workspaces)
+	}
 	if _, ok := compiled.Workspaces["sales"].Definition.Dashboards["executive-sales"]; !ok {
 		t.Fatalf("sales dashboards = %#v, want executive-sales", compiled.Workspaces["sales"].Definition.Dashboards)
 	}
 	if _, ok := compiled.Workspaces["operations"].Definition.Dashboards["fulfillment-operations"]; !ok {
 		t.Fatalf("operations dashboards = %#v, want fulfillment-operations", compiled.Workspaces["operations"].Definition.Dashboards)
 	}
+	visuals := compiled.Workspaces["visuals"]
+	showcase, ok := visuals.Definition.Dashboards["visual-showcase"]
+	if !ok {
+		t.Fatalf("visuals dashboards = %#v, want visual-showcase", visuals.Definition.Dashboards)
+	}
+	if _, ok := visuals.Definition.Models["visuals"]; !ok {
+		t.Fatalf("visuals semantic models = %#v, want visuals", visuals.Definition.Models)
+	}
+	assertVisualShowcaseCoverage(t, showcase)
 }
 
 func TestPlanProjectIsStableAndSorted(t *testing.T) {
@@ -1088,6 +1101,52 @@ func writeProjectFixture(t *testing.T, files map[string]string) string {
 		writeCompilerFixture(t, path, content)
 	}
 	return filepath.Join(dir, "libredash.yaml")
+}
+
+func assertVisualShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
+	t.Helper()
+	visualTypes := map[string]struct{}{}
+	for _, visual := range report.Visuals {
+		if visual.Type != "" {
+			visualTypes[visual.Type] = struct{}{}
+		}
+		if visual.Kind != "" {
+			visualTypes[visual.Kind] = struct{}{}
+		}
+	}
+	for _, typ := range []string{
+		"line", "area", "bar", "column", "pie", "donut", "scatter", "funnel", "treemap", "gauge", "heatmap",
+		"sankey", "graph", "map", "candlestick", "boxplot", "combo", "waterfall", "histogram", "radar", "tree", "sunburst",
+	} {
+		if _, ok := visualTypes[typ]; !ok {
+			t.Fatalf("visual-showcase missing visual type %q", typ)
+		}
+	}
+	tableKinds := map[string]struct{}{}
+	conditionalFormatting := map[string]struct{}{}
+	for _, table := range report.Tables {
+		tableKinds[table.Kind] = struct{}{}
+		for _, column := range table.Columns {
+			for _, rule := range column.Formatting {
+				conditionalFormatting[rule.Kind] = struct{}{}
+			}
+		}
+		for _, rules := range table.MeasureFormatting {
+			for _, rule := range rules {
+				conditionalFormatting[rule.Kind] = struct{}{}
+			}
+		}
+	}
+	for _, kind := range []string{"data_table", "matrix_table", "pivot_table"} {
+		if _, ok := tableKinds[kind]; !ok {
+			t.Fatalf("visual-showcase missing table kind %q", kind)
+		}
+	}
+	for _, kind := range []string{"badge", "data_bar", "text_color", "background_scale"} {
+		if _, ok := conditionalFormatting[kind]; !ok {
+			t.Fatalf("visual-showcase missing conditional formatting kind %q", kind)
+		}
+	}
 }
 
 func minimalProjectFiles(extra map[string]string) map[string]string {

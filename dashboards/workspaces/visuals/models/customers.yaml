@@ -1,0 +1,25 @@
+apiVersion: libredash.dev/v1
+kind: ModelTable
+metadata:
+  workspace: visuals
+  name: customers
+  title: Visual Customers
+  description: Customer model table with stable BI-facing customer fields.
+spec:
+  description: Customer model table with stable BI-facing customer fields.
+  primaryKey: customer_id
+  sources:
+  - olist.customers
+  fields:
+    customer_id:
+      label: Customer ID
+      description: Stable customer identifier from the Olist customers dataset.
+    state:
+      label: State
+      description: Brazilian state for the customer.
+  transform:
+    sql: |
+      SELECT
+        customer_id,
+        customer_state AS state
+      FROM source."olist.customers"
