@@ -21,6 +21,7 @@ type AssetView struct {
 	ParentID      string
 	Title         string
 	Description   string
+	SourceFile    string
 	PayloadSchema string
 	Payload       map[string]any
 	ContentHash   string
@@ -81,10 +82,11 @@ func AssetViewFromCatalogRecord(row AssetRecord) AssetView {
 		ParentID:      string(row.ParentID),
 		Title:         row.Title,
 		Description:   row.Description,
+		SourceFile:    row.SourceFile,
 		PayloadSchema: row.PayloadSchema,
 		Payload:       row.Payload,
 		ContentHash:   row.ContentHash,
-		Href:          AssetHref(string(row.Type), row.Key),
+		Href:          AssetHref(string(row.WorkspaceID), string(row.Type), row.Key),
 	}
 }
 
@@ -99,10 +101,10 @@ func AssetEdgeViewFromCatalogRecord(row AssetEdgeRecord) AssetEdgeView {
 	}
 }
 
-func AssetHref(assetType, key string) string {
+func AssetHref(workspaceID, assetType, key string) string {
 	switch assetType {
 	case string(AssetTypeDashboard):
-		return "/dashboards/" + key
+		return "/workspaces/" + workspaceID + "/dashboards/" + key
 	default:
 		return ""
 	}

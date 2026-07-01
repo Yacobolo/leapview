@@ -24,9 +24,16 @@ var contractsCUE string
 type Kind string
 
 const (
-	KindCatalog       Kind = "catalog"
-	KindSemanticModel Kind = "semantic-model"
-	KindDashboard     Kind = "dashboard"
+	KindProject               Kind = "project"
+	KindConnection            Kind = "connection"
+	KindSource                Kind = "source"
+	KindWorkspace             Kind = "workspace"
+	KindWorkspaceGroup        Kind = "workspace-group"
+	KindWorkspaceRoleBinding  Kind = "workspace-role-binding"
+	KindWorkspaceAgentPolicy  Kind = "workspace-agent-policy"
+	KindModelTable            Kind = "model-table"
+	KindSemanticModelResource Kind = "semantic-model-resource"
+	KindDashboardResource     Kind = "dashboard-resource"
 )
 
 type Severity string
@@ -36,12 +43,14 @@ const (
 )
 
 type Diagnostic struct {
-	File     string   `json:"file,omitempty"`
-	Line     int      `json:"line,omitempty"`
-	Column   int      `json:"column,omitempty"`
-	Severity Severity `json:"severity"`
-	Code     string   `json:"code"`
-	Message  string   `json:"message"`
+	File       string   `json:"file,omitempty"`
+	Line       int      `json:"line,omitempty"`
+	Column     int      `json:"column,omitempty"`
+	ResourceID string   `json:"resourceId,omitempty"`
+	FieldPath  string   `json:"fieldPath,omitempty"`
+	Severity   Severity `json:"severity"`
+	Code       string   `json:"code"`
+	Message    string   `json:"message"`
 }
 
 type Error struct {
@@ -66,7 +75,14 @@ func (d Diagnostic) String() string {
 	if location == "" {
 		return fmt.Sprintf("%s %s: %s", d.Severity, d.Code, d.Message)
 	}
-	return fmt.Sprintf("%s: %s %s: %s", location, d.Severity, d.Code, d.Message)
+	context := ""
+	if d.ResourceID != "" {
+		context += " resource=" + d.ResourceID
+	}
+	if d.FieldPath != "" {
+		context += " field=" + d.FieldPath
+	}
+	return fmt.Sprintf("%s: %s %s%s: %s", location, d.Severity, d.Code, context, d.Message)
 }
 
 func ValidateFile(kind Kind, path string) error {
@@ -142,7 +158,7 @@ func compiledDefinition(kind Kind) (*cue.Context, cue.Value, string, error) {
 }
 
 func JSONSchemaFiles() (map[string][]byte, error) {
-	kinds := []Kind{KindCatalog, KindSemanticModel, KindDashboard}
+	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindWorkspaceAgentPolicy, KindModelTable, KindSemanticModelResource, KindDashboardResource}
 	files := map[string][]byte{}
 	for _, kind := range kinds {
 		content, err := JSONSchema(kind)
@@ -156,11 +172,25 @@ func JSONSchemaFiles() (map[string][]byte, error) {
 
 func JSONSchemaFilename(kind Kind) string {
 	switch kind {
-	case KindCatalog:
-		return "catalog.schema.json"
-	case KindSemanticModel:
+	case KindProject:
+		return "project.schema.json"
+	case KindConnection:
+		return "connection.schema.json"
+	case KindSource:
+		return "source.schema.json"
+	case KindWorkspace:
+		return "workspace.schema.json"
+	case KindWorkspaceGroup:
+		return "workspace-group.schema.json"
+	case KindWorkspaceRoleBinding:
+		return "workspace-role-binding.schema.json"
+	case KindWorkspaceAgentPolicy:
+		return "workspace-agent-policy.schema.json"
+	case KindModelTable:
+		return "model-table.schema.json"
+	case KindSemanticModelResource:
 		return "semantic-model.schema.json"
-	case KindDashboard:
+	case KindDashboardResource:
 		return "dashboard.schema.json"
 	default:
 		return string(kind) + ".schema.json"
@@ -179,6 +209,12 @@ func Diagnostics(err error) []Diagnostic {
 }
 
 func DiagnosticForError(err error) Diagnostic {
+	var provider interface {
+		Diagnostic() Diagnostic
+	}
+	if errors.As(err, &provider) {
+		return provider.Diagnostic()
+	}
 	return Diagnostic{
 		Severity: SeverityError,
 		Code:     compilerCode(err),
@@ -188,12 +224,26 @@ func DiagnosticForError(err error) Diagnostic {
 
 func definitionName(kind Kind) (string, error) {
 	switch kind {
-	case KindCatalog:
-		return "Catalog", nil
-	case KindSemanticModel:
-		return "SemanticModel", nil
-	case KindDashboard:
-		return "Dashboard", nil
+	case KindProject:
+		return "Project", nil
+	case KindConnection:
+		return "ConnectionResource", nil
+	case KindSource:
+		return "SourceResource", nil
+	case KindWorkspace:
+		return "WorkspaceResource", nil
+	case KindWorkspaceGroup:
+		return "WorkspaceGroupResource", nil
+	case KindWorkspaceRoleBinding:
+		return "WorkspaceRoleBindingResource", nil
+	case KindWorkspaceAgentPolicy:
+		return "WorkspaceAgentPolicyResource", nil
+	case KindModelTable:
+		return "ModelTableResource", nil
+	case KindSemanticModelResource:
+		return "SemanticModelResource", nil
+	case KindDashboardResource:
+		return "DashboardResource", nil
 	default:
 		return "", fmt.Errorf("unknown schema kind %q", kind)
 	}
@@ -337,27 +387,46 @@ type schemaPath struct {
 }
 
 var schemaOverlays = map[Kind]schemaOverlay{
-	KindCatalog: {
-		required: []string{"semantic_models", "dashboards"},
+	KindProject: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
 		collections: []collectionRule{
-			rootCollection("semantic_models", collectionSequence),
-			rootCollection("dashboards", collectionSequence),
+			definitionCollection("#Project", "connections", collectionMapping),
+			definitionCollection("#Project", "sources", collectionMapping),
+			definitionCollection("#Project", "workspaces", collectionMapping),
 		},
 	},
-	KindSemanticModel: {
-		required: []string{"name", "sources", "models", "semantic_models"},
+	KindConnection: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindSource: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspace: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspaceGroup: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspaceRoleBinding: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindWorkspaceAgentPolicy: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindModelTable: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindSemanticModelResource: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
 		collections: []collectionRule{
-			rootCollection("sources", collectionMapping),
-			rootCollection("models", collectionMapping),
-			rootCollection("semantic_models", collectionMapping),
-			definitionCollection("#SemanticModelSpec", "tables", collectionSequence),
+			definitionCollection("#ProjectSemanticModelSpec", "tables", collectionSequence),
 		},
 	},
-	KindDashboard: {
-		required: []string{"id", "title", "semantic_model", "visuals", "pages"},
+	KindDashboardResource: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
 		collections: []collectionRule{
-			rootCollection("visuals", collectionMapping),
-			rootCollection("pages", collectionSequence),
+			definitionCollection("#DashboardSpec", "visuals", collectionMapping),
+			definitionCollection("#DashboardSpec", "pages", collectionSequence),
 		},
 	},
 }

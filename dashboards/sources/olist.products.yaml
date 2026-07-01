@@ -1,0 +1,11 @@
+apiVersion: libredash.dev/v1
+kind: Source
+metadata:
+  name: olist.products
+  title: Products
+spec:
+  connection: olist
+  path: olist_products_dataset.csv
+  fields:
+    product_id: {type: string, description: Stable product identifier.}
+    product_category_name: {type: string, description: Product category name in the source language.}

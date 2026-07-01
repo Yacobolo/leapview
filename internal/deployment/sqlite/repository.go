@@ -8,8 +8,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -29,6 +32,7 @@ func (r *Repository) Create(ctx context.Context, input deployment.CreateInput) (
 	if err := r.q.CreateDeployment(ctx, platformdb.CreateDeploymentParams{
 		ID:          string(id),
 		WorkspaceID: string(input.WorkspaceID),
+		Environment: string(deployment.NormalizeEnvironment(input.Environment)),
 		Status:      string(deployment.StatusPending),
 		CreatedBy:   input.CreatedBy,
 	}); err != nil {
@@ -45,8 +49,8 @@ func (r *Repository) ByID(ctx context.Context, id deployment.ID) (deployment.Dep
 	return mapDeployment(row), nil
 }
 
-func (r *Repository) List(ctx context.Context, workspaceID deployment.WorkspaceID) ([]deployment.Deployment, error) {
-	rows, err := r.q.ListDeployments(ctx, string(workspaceID))
+func (r *Repository) List(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) ([]deployment.Deployment, error) {
+	rows, err := r.q.ListDeployments(ctx, platformdb.ListDeploymentsParams{WorkspaceID: string(workspaceID), Environment: string(deployment.NormalizeEnvironment(environment))})
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +84,12 @@ func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.
 	if err != nil {
 		return deployment.Deployment{}, mapNotFound(err)
 	}
-	artifact.WorkspaceID = deployment.WorkspaceID(current.WorkspaceID)
+	if artifact.WorkspaceID != deployment.WorkspaceID(current.WorkspaceID) {
+		return deployment.Deployment{}, fmt.Errorf("artifact workspace = %q, want %q", artifact.WorkspaceID, current.WorkspaceID)
+	}
+	if deployment.NormalizeEnvironment(artifact.Environment) != deployment.Environment(current.Environment) {
+		return deployment.Deployment{}, fmt.Errorf("artifact environment = %q, want %q", deployment.NormalizeEnvironment(artifact.Environment), current.Environment)
+	}
 	if err := workspace.ValidateAssetGraphForDeployment(validation.Graph, workspace.WorkspaceID(current.WorkspaceID), workspace.DeploymentID(deploymentID)); err != nil {
 		return deployment.Deployment{}, err
 	}
@@ -104,6 +113,7 @@ func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.
 			ParentLogicalAssetID: string(asset.ParentID),
 			Title:                asset.Title,
 			Description:          asset.Description,
+			SourceFile:           asset.SourceFile,
 			PayloadSchema:        asset.PayloadSchema,
 			PayloadJson:          asset.PayloadJSON,
 			ContentHash:          asset.ContentHash,
@@ -137,7 +147,16 @@ func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.
 	return r.ByID(ctx, deploymentID)
 }
 
-func (r *Repository) Activate(ctx context.Context, workspaceID deployment.WorkspaceID, deploymentID deployment.ID) (deployment.Deployment, error) {
+func (r *Repository) Activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID) (deployment.Deployment, error) {
+	return r.activate(ctx, workspaceID, environment, deploymentID, nil)
+}
+
+func (r *Repository) ActivateWithWorkspacePolicy(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy workspace.AccessPolicy) (deployment.Deployment, error) {
+	return r.activate(ctx, workspaceID, environment, deploymentID, &policy)
+}
+
+func (r *Repository) activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy *workspace.AccessPolicy) (deployment.Deployment, error) {
+	environment = deployment.NormalizeEnvironment(environment)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return deployment.Deployment{}, err
@@ -152,18 +171,27 @@ func (r *Repository) Activate(ctx context.Context, workspaceID deployment.Worksp
 	if current.WorkspaceID != workspaceID {
 		return deployment.Deployment{}, fmt.Errorf("deployment %s is not in workspace %s", deploymentID, workspaceID)
 	}
+	if current.Environment != environment {
+		return deployment.Deployment{}, fmt.Errorf("deployment %s environment = %q, want %q", deploymentID, current.Environment, environment)
+	}
 	if !current.CanActivate() {
 		return deployment.Deployment{}, fmt.Errorf("deployment %s has status %q, want validated", deploymentID, current.Status)
 	}
-	if err := q.MarkOtherDeploymentsInactive(ctx, platformdb.MarkOtherDeploymentsInactiveParams{WorkspaceID: string(workspaceID), ID: string(deploymentID)}); err != nil {
+	if policy != nil {
+		if err := reconcileWorkspacePolicyTx(ctx, q, string(workspaceID), *policy); err != nil {
+			return deployment.Deployment{}, err
+		}
+	}
+	if err := q.MarkOtherDeploymentsInactive(ctx, platformdb.MarkOtherDeploymentsInactiveParams{WorkspaceID: string(workspaceID), Environment: string(environment), ID: string(deploymentID)}); err != nil {
 		return deployment.Deployment{}, err
 	}
 	if err := q.MarkDeploymentActive(ctx, string(deploymentID)); err != nil {
 		return deployment.Deployment{}, err
 	}
-	if err := q.SetWorkspaceActiveDeployment(ctx, platformdb.SetWorkspaceActiveDeploymentParams{
-		ActiveDeploymentID: sql.NullString{String: string(deploymentID), Valid: true},
-		ID:                 string(workspaceID),
+	if err := q.SetActiveDeployment(ctx, platformdb.SetActiveDeploymentParams{
+		WorkspaceID:  string(workspaceID),
+		Environment:  string(environment),
+		DeploymentID: string(deploymentID),
 	}); err != nil {
 		return deployment.Deployment{}, err
 	}
@@ -173,8 +201,110 @@ func (r *Repository) Activate(ctx context.Context, workspaceID deployment.Worksp
 	return r.ByID(ctx, deploymentID)
 }
 
-func (r *Repository) ActiveArtifact(ctx context.Context, workspaceID deployment.WorkspaceID) (deployment.Deployment, deployment.Artifact, error) {
-	row, err := r.q.GetActiveDeployment(ctx, string(workspaceID))
+func reconcileWorkspacePolicyTx(ctx context.Context, q *platformdb.Queries, workspaceID string, policy workspace.AccessPolicy) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	bindings, err := q.ListRoleBindingsByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		if err := q.DeleteRoleBindingByID(ctx, platformdb.DeleteRoleBindingByIDParams{WorkspaceID: workspaceID, ID: binding.ID}); err != nil {
+			return err
+		}
+	}
+	groups, err := q.ListGroupsByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if err := q.DeleteGroup(ctx, platformdb.DeleteGroupParams{WorkspaceID: workspaceID, ID: group.ID}); err != nil {
+			return err
+		}
+	}
+
+	groupIDs := map[string]string{}
+	for _, name := range sortedWorkspaceGroupNames(policy.Groups) {
+		group := policy.Groups[name]
+		id := stableAccessID("group", workspaceID, name)
+		if err := q.UpsertGroup(ctx, platformdb.UpsertGroupParams{
+			ID:          id,
+			WorkspaceID: workspaceID,
+			Provider:    "local",
+			ExternalID:  name,
+			Name:        firstNonEmpty(group.Name, name),
+		}); err != nil {
+			return err
+		}
+		groupIDs[name] = id
+		for _, member := range group.Members {
+			principalID, err := upsertPolicyPrincipalTx(ctx, q, member.PrincipalID, member.Email, member.DisplayName)
+			if err != nil {
+				return err
+			}
+			if err := q.InsertGroupMember(ctx, platformdb.InsertGroupMemberParams{WorkspaceID: workspaceID, GroupID: id, PrincipalID: principalID}); err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, name := range sortedWorkspaceRoleBindingNames(policy.RoleBindings) {
+		binding := policy.RoleBindings[name]
+		role, err := q.GetRoleByName(ctx, binding.Role)
+		if err != nil {
+			return err
+		}
+		params := platformdb.InsertRoleBindingParams{
+			ID:          stableAccessID("rolebinding", workspaceID, name),
+			WorkspaceID: workspaceID,
+			RoleID:      role.ID,
+		}
+		switch binding.Subject.Kind {
+		case string(access.SubjectGroup):
+			groupID := groupIDs[binding.Subject.Group]
+			if groupID == "" {
+				return fmt.Errorf("workspace role binding %q references unknown group %q", name, binding.Subject.Group)
+			}
+			params.GroupID = sql.NullString{String: groupID, Valid: true}
+		case string(access.SubjectPrincipal):
+			principalID, err := upsertPolicyPrincipalTx(ctx, q, binding.Subject.PrincipalID, binding.Subject.Email, binding.Subject.DisplayName)
+			if err != nil {
+				return err
+			}
+			params.PrincipalID = sql.NullString{String: principalID, Valid: true}
+		default:
+			return fmt.Errorf("workspace role binding %q has unsupported subject kind %q", name, binding.Subject.Kind)
+		}
+		if err := q.InsertRoleBinding(ctx, params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func upsertPolicyPrincipalTx(ctx context.Context, q *platformdb.Queries, id, email, displayName string) (string, error) {
+	email = access.NormalizeEmail(email)
+	id = strings.TrimSpace(id)
+	if id == "" && email != "" {
+		id = access.PrincipalIDForEmail(email)
+	}
+	if id == "" {
+		return "", fmt.Errorf("policy principal requires principalId or email")
+	}
+	if err := q.UpsertPrincipal(ctx, platformdb.UpsertPrincipalParams{
+		ID:          id,
+		Email:       email,
+		DisplayName: firstNonEmpty(strings.TrimSpace(displayName), email, id),
+	}); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func (r *Repository) ActiveArtifact(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) (deployment.Deployment, deployment.Artifact, error) {
+	row, err := r.q.GetActiveDeployment(ctx, platformdb.GetActiveDeploymentParams{WorkspaceID: string(workspaceID), Environment: string(deployment.NormalizeEnvironment(environment))})
 	if err != nil {
 		return deployment.Deployment{}, deployment.Artifact{}, mapNotFound(err)
 	}
@@ -197,6 +327,7 @@ func mapDeployment(row platformdb.Deployment) deployment.Deployment {
 	out := deployment.Deployment{
 		ID:           deployment.ID(row.ID),
 		WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
+		Environment:  deployment.Environment(row.Environment),
 		Status:       deployment.Status(row.Status),
 		Digest:       row.Digest,
 		ManifestJSON: row.ManifestJson,
@@ -215,6 +346,7 @@ func mapArtifact(row platformdb.DeploymentArtifact) deployment.Artifact {
 		ID:           row.ID,
 		DeploymentID: deployment.ID(row.DeploymentID),
 		WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
+		Environment:  deployment.Environment(row.Environment),
 		Digest:       row.Digest,
 		Format:       row.Format,
 		Path:         row.Path,
@@ -229,6 +361,7 @@ func mapArtifactParams(artifact deployment.Artifact) platformdb.InsertDeployment
 		ID:           artifact.ID,
 		DeploymentID: string(artifact.DeploymentID),
 		WorkspaceID:  string(artifact.WorkspaceID),
+		Environment:  string(deployment.NormalizeEnvironment(artifact.Environment)),
 		Digest:       artifact.Digest,
 		Format:       artifact.Format,
 		Path:         artifact.Path,
@@ -244,6 +377,37 @@ func mapNotFound(err error) error {
 	return err
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stableAccessID(prefix, workspaceID, name string) string {
+	return "cac_" + prefix + "_" + stableID(workspaceID+"|"+name)
+}
+
+func sortedWorkspaceGroupNames(values map[string]workspace.WorkspaceGroup) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedWorkspaceRoleBindingNames(values map[string]workspace.WorkspaceRoleBinding) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func newID(prefix string) string {
 	return prefix + "_" + newSecret()[:24]
 }
@@ -255,4 +419,9 @@ func newSecret() string {
 		return hex.EncodeToString(sum[:])
 	}
 	return hex.EncodeToString(b[:])
+}
+
+func stableID(value string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(value)))
+	return hex.EncodeToString(sum[:])[:32]
 }

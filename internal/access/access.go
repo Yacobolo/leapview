@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"strings"
 	"time"
+
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 const (
@@ -304,6 +306,10 @@ type Repository interface {
 	RevokeAPITokenForPrincipal(ctx context.Context, principalID, id string) error
 	RecordAuditEvent(ctx context.Context, input AuditEventInput) error
 	ListAuditEvents(ctx context.Context, filter AuditEventFilter) ([]AuditEvent, error)
+}
+
+type WorkspacePolicyReconciler interface {
+	ReconcileWorkspacePolicy(ctx context.Context, workspaceID string, policy workspace.AccessPolicy) error
 }
 
 func DefaultRoles() []Role {

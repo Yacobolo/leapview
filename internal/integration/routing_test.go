@@ -10,7 +10,7 @@ func TestCommandPatchesAreScopedToClientAndPage(t *testing.T) {
 	h := newHarness(t)
 	target := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("route-target", "overview"))
 	otherClient := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("route-other", "overview"))
-	otherPage := h.openUpdatesStream(t, "executive-sales", "chart-line", runtimeSignals("route-target", "chart-line"))
+	otherPage := h.openUpdatesStream(t, "executive-sales", "missing", runtimeSignals("route-target", "missing"))
 	drainInitialSnapshot(t, target)
 	drainInitialSnapshot(t, otherClient)
 	drainInitialSnapshot(t, otherPage)
@@ -35,7 +35,7 @@ func TestUpdatesQueryParamsTakePrecedenceOverRuntimeSignalIDs(t *testing.T) {
 		"runtime": map[string]any{
 			"clientId":    "route-precedence",
 			"dashboardId": "executive-sales",
-			"pageId":      "chart-line",
+			"pageId":      "missing",
 		},
 	})
 
@@ -43,6 +43,6 @@ func TestUpdatesQueryParamsTakePrecedenceOverRuntimeSignalIDs(t *testing.T) {
 	requireTable(t, patches, "orders_table")
 	requirePatch(t, patches, func(patch map[string]any) bool {
 		visuals := mapAt(patch, "visuals")
-		return len(visuals) > 0 && !hasKey(visuals, "revenue_line")
+		return len(visuals) > 0 && hasKey(visuals, "revenue_by_month")
 	})
 }

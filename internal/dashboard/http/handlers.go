@@ -30,20 +30,30 @@ type Metrics interface {
 }
 
 type Handler struct {
-	Metrics        Metrics
-	Broker         *stream.Broker
-	TickerInterval time.Duration
-	CSRFToken      func(r *nethttp.Request) string
+	Metrics             Metrics
+	MetricsForWorkspace func(workspaceID string) (Metrics, bool)
+	Broker              *stream.Broker
+	TickerInterval      time.Duration
+	CSRFToken           func(r *nethttp.Request) string
 }
 
 func (h Handler) Dashboard(w nethttp.ResponseWriter, r *nethttp.Request) {
+	workspaceID := chi.URLParam(r, "workspace")
+	metrics, ok := h.metricsForRequest(r)
+	if !ok {
+		nethttp.NotFound(w, r)
+		return
+	}
 	dashboardID := chi.URLParam(r, "dashboard")
-	pages := h.Metrics.Pages(dashboardID)
+	if workspaceID == "" {
+		workspaceID = metrics.Catalog().Workspace.ID
+	}
+	pages := metrics.Pages(dashboardID)
 	if len(pages) == 0 {
 		nethttp.NotFound(w, r)
 		return
 	}
-	nethttp.Redirect(w, r, "/dashboards/"+dashboardID+"/pages/"+pages[0].ID, nethttp.StatusFound)
+	nethttp.Redirect(w, r, "/workspaces/"+workspaceID+"/dashboards/"+dashboardID+"/pages/"+pages[0].ID, nethttp.StatusFound)
 }
 
 func (h Handler) Page(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -51,13 +61,18 @@ func (h Handler) Page(w nethttp.ResponseWriter, r *nethttp.Request) {
 }
 
 func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashboardID, pageID string) {
-	clientID := lddatastar.EnsureClientID(w, r)
-	reportDefinition, model, ok := h.Metrics.Report(dashboardID)
+	metrics, ok := h.metricsForRequest(r)
 	if !ok {
 		nethttp.NotFound(w, r)
 		return
 	}
-	pages := h.Metrics.Pages(dashboardID)
+	clientID := lddatastar.EnsureClientID(w, r)
+	reportDefinition, model, ok := metrics.Report(dashboardID)
+	if !ok {
+		nethttp.NotFound(w, r)
+		return
+	}
+	pages := metrics.Pages(dashboardID)
 	activePage, ok := report.ActivePage(pages, pageID)
 	if !ok {
 		nethttp.NotFound(w, r)
@@ -70,7 +85,18 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 	if h.CSRFToken != nil {
 		csrfToken = h.CSRFToken(r)
 	}
-	if err := reportui.Page(h.Metrics.DataDir(), clientID, csrfToken, h.Metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters).Render(w); err != nil {
+	if err := reportui.Page(metrics.DataDir(), clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
+}
+
+func (h Handler) metricsForRequest(r *nethttp.Request) (Metrics, bool) {
+	workspaceID := chi.URLParam(r, "workspace")
+	if workspaceID != "" && h.MetricsForWorkspace != nil {
+		return h.MetricsForWorkspace(workspaceID)
+	}
+	if h.Metrics == nil {
+		return nil, false
+	}
+	return h.Metrics, true
 }

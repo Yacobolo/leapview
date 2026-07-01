@@ -21,14 +21,25 @@ type Model struct {
 }
 
 type Connection struct {
-	Kind        string             `yaml:"kind"`
-	Description string             `yaml:"description"`
-	Path        string             `yaml:"path"`
-	Root        string             `yaml:"root"`
-	Scope       string             `yaml:"scope"`
-	Auth        ConnectionAuth     `yaml:"auth"`
-	Options     map[string]any     `yaml:"options"`
-	Defaults    ConnectionDefaults `yaml:"defaults"`
+	Kind        string                `yaml:"kind"`
+	Description string                `yaml:"description"`
+	Path        string                `yaml:"path"`
+	Root        string                `yaml:"root"`
+	Scope       string                `yaml:"scope"`
+	Host        string                `yaml:"host"`
+	Port        int                   `yaml:"port"`
+	Database    string                `yaml:"database"`
+	Username    string                `yaml:"username"`
+	SSLMode     string                `yaml:"sslMode"`
+	Auth        ConnectionAuth        `yaml:"auth" json:"-"`
+	Credentials ConnectionCredentials `yaml:"credentials" json:"credentials,omitempty"`
+	Options     map[string]any        `yaml:"options"`
+	Defaults    ConnectionDefaults    `yaml:"defaults"`
+}
+
+type ConnectionCredentials struct {
+	Provider string `yaml:"provider" json:"provider"`
+	Secret   string `yaml:"secret" json:"secret,omitempty"`
 }
 
 type ConnectionDefaults struct {
@@ -74,6 +85,7 @@ type SourceField struct {
 	Field       string `yaml:"-"`
 	Table       string `yaml:"-"`
 	Name        string `yaml:"-"`
+	Type        string `yaml:"type"`
 	Description string `yaml:"description"`
 }
 
@@ -98,6 +110,7 @@ type MetricDimension struct {
 	Name        string `yaml:"-"`
 	Label       string `yaml:"label"`
 	Description string `yaml:"description"`
+	Type        string `yaml:"-" json:"-"`
 	Expr        string `yaml:"-" json:"-"`
 	Expression  string `yaml:"-" json:"-"`
 }

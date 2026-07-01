@@ -61,20 +61,20 @@ func (fakeMetrics) RefreshMaterializations(context.Context, string) error {
 
 func TestDashboardRedirectsToFirstPage(t *testing.T) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(nethttp.MethodGet, "/dashboards/dash", nil)
+	req := httptest.NewRequest(nethttp.MethodGet, "/workspaces/workspace/dashboards/dash", nil)
 
 	testRouter(Handler{Metrics: fakeMetrics{}}).ServeHTTP(rec, req)
 
 	if rec.Code != nethttp.StatusFound {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); got != "/dashboards/dash/pages/overview" {
+	if got := rec.Header().Get("Location"); got != "/workspaces/workspace/dashboards/dash/pages/overview" {
 		t.Fatalf("Location = %q", got)
 	}
 }
 
 func TestPageNotFound(t *testing.T) {
-	for _, path := range []string{"/dashboards/missing/pages/overview", "/dashboards/dash/pages/missing"} {
+	for _, path := range []string{"/workspaces/workspace/dashboards/missing/pages/overview", "/workspaces/workspace/dashboards/dash/pages/missing"} {
 		t.Run(path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(nethttp.MethodGet, path, nil)
@@ -90,7 +90,7 @@ func TestPageNotFound(t *testing.T) {
 
 func TestPageSetsClientCookieAndRendersReport(t *testing.T) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(nethttp.MethodGet, "/dashboards/dash/pages/overview", nil)
+	req := httptest.NewRequest(nethttp.MethodGet, "/workspaces/workspace/dashboards/dash/pages/overview", nil)
 
 	testRouter(Handler{Metrics: fakeMetrics{}}).ServeHTTP(rec, req)
 
@@ -102,7 +102,7 @@ func TestPageSetsClientCookieAndRendersReport(t *testing.T) {
 		t.Fatalf("cookies = %#v", cookies)
 	}
 	body := html.UnescapeString(rec.Body.String())
-	if !strings.Contains(body, `<ld-dashboard-page`) || !strings.Contains(body, `/updates?dashboard=dash&page=overview`) {
+	if !strings.Contains(body, `<ld-dashboard-page`) || !strings.Contains(body, `/workspaces/workspace/updates?dashboard=dash&page=overview`) {
 		t.Fatalf("page did not render report shell:\n%s", body)
 	}
 	if strings.Contains(body, `<ld-report-canvas`) {
@@ -112,7 +112,7 @@ func TestPageSetsClientCookieAndRendersReport(t *testing.T) {
 
 func testRouter(handler Handler) nethttp.Handler {
 	r := chi.NewRouter()
-	r.Get("/dashboards/{dashboard}", handler.Dashboard)
-	r.Get("/dashboards/{dashboard}/pages/{page}", handler.Page)
+	r.Get("/workspaces/{workspace}/dashboards/{dashboard}", handler.Dashboard)
+	r.Get("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", handler.Page)
 	return r
 }

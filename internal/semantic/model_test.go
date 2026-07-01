@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/semantic"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
@@ -14,11 +15,11 @@ import (
 func TestLoadOlistModel(t *testing.T) {
 	model := loadOlistModel(t)
 
-	if model.Name != "olist" {
-		t.Fatalf("model name = %q, want olist", model.Name)
+	if model.Name != "sales" {
+		t.Fatalf("model name = %q, want sales", model.Name)
 	}
-	if len(model.Sources) != 7 {
-		t.Fatalf("source count = %d, want 7", len(model.Sources))
+	if len(model.Sources) != 6 {
+		t.Fatalf("source count = %d, want 6", len(model.Sources))
 	}
 	if got := model.DefaultConnection; got != "olist" {
 		t.Fatalf("default connection = %q, want olist", got)
@@ -26,13 +27,13 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.Connections["olist"].Kind; got != "local" {
 		t.Fatalf("olist connection kind = %q, want local", got)
 	}
-	if got := model.Sources["orders"].Format; got != "csv" {
+	if got := model.Sources["olist_orders"].Format; got != "csv" {
 		t.Fatalf("orders source format = %q, want csv", got)
 	}
-	if got := model.Sources["orders"].Connection; got != "olist" {
+	if got := model.Sources["olist_orders"].Connection; got != "olist" {
 		t.Fatalf("orders source connection = %q, want olist", got)
 	}
-	if got := model.Sources["orders"].Path; got != "olist_orders_dataset.csv" {
+	if got := model.Sources["olist_orders"].Path; got != "olist_orders_dataset.csv" {
 		t.Fatalf("orders source path = %q, want olist_orders_dataset.csv", got)
 	}
 	if _, ok := model.Tables["orders"]; !ok {
@@ -57,7 +58,7 @@ sources:
 models:
   orders:
     source: orders
-    primary_key: order_id
+    primaryKey: order_id
     fields:
       order_id:
         expr: order_id
@@ -73,8 +74,8 @@ semantic_models:
 		t.Fatal(err)
 	}
 	_, err := semantic.Load(path)
-	if err == nil || !strings.Contains(err.Error(), "field expr not found") {
-		t.Fatalf("semantic.Load() error = %v, want legacy expr rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "legacy semantic model files are not supported") {
+		t.Fatalf("semantic.Load() error = %v, want unsupported legacy format", err)
 	}
 }
 
@@ -224,6 +225,59 @@ func TestModelValidateResolvesConnectionAuthEnv(t *testing.T) {
 	if got := model.Connections["prod_lake"].Auth["access_key_id"]; got != "env-key" {
 		t.Fatalf("resolved access key = %#v, want env-key", got)
 	}
+}
+
+func TestModelValidateConnectionCredentialsEnvReference(t *testing.T) {
+	t.Setenv("LIBREDASH_TEST_CRM_URL", "postgres://crm")
+	model := minimalSourceModel()
+	model.Connections["crm"] = Connection{
+		Kind:        "postgres",
+		Credentials: ConnectionCredentials{Provider: "env", Secret: "LIBREDASH_TEST_CRM_URL"},
+	}
+	model.Sources = map[string]Source{
+		"orders": {Connection: "crm", Object: "public.orders"},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Connections["crm"].Auth) != 0 {
+		t.Fatalf("compiled model stored resolved credentials in auth: %#v", model.Connections["crm"].Auth)
+	}
+}
+
+func TestModelValidateConnectionCredentialsNone(t *testing.T) {
+	model := minimalSourceModel()
+	model.Connections["default"] = Connection{
+		Kind:        "local",
+		Credentials: ConnectionCredentials{Provider: "none"},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if semanticmodel.ConnectionCredentialsConfigured(model.Connections["default"]) {
+		t.Fatalf("none credentials reported as configured")
+	}
+}
+
+func TestModelValidateRejectsConnectionCredentialsNoneSecret(t *testing.T) {
+	model := minimalSourceModel()
+	model.Connections["default"] = Connection{
+		Kind:        "local",
+		Credentials: ConnectionCredentials{Provider: "none", Secret: "LIBREDASH_TEST_SECRET"},
+	}
+	assertModelValidateError(t, model, `none credentials cannot set secret`)
+}
+
+func TestModelValidateRejectsMissingConnectionCredentialsEnv(t *testing.T) {
+	model := minimalSourceModel()
+	model.Connections["crm"] = Connection{
+		Kind:        "postgres",
+		Credentials: ConnectionCredentials{Provider: "env", Secret: "LIBREDASH_TEST_MISSING_CRM_URL"},
+	}
+	model.Sources = map[string]Source{
+		"orders": {Connection: "crm", Object: "public.orders"},
+	}
+	assertModelValidateError(t, model, `env credential "LIBREDASH_TEST_MISSING_CRM_URL" is not set`)
 }
 
 func TestModelValidateRejectsMissingConnectionAuthEnv(t *testing.T) {
@@ -524,23 +578,15 @@ datasets:
 
 func loadOlistModel(t *testing.T) *Model {
 	t.Helper()
-	model, err := semantic.Load(filepath.Join("..", "..", "dashboards", "olist", "model.yaml"))
+	compiled, err := workspacecompiler.CompileProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), workspacecompiler.Options{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	model := compiled.Workspaces["sales"].Definition.Models["sales"]
+	if model == nil {
+		t.Fatal("sales model missing")
 	}
 	return model
-}
-
-func loadOlistDashboard(t *testing.T, model *Model) *Dashboard {
-	t.Helper()
-	report, err := semantic.LoadDashboard(filepath.Join("..", "..", "dashboards", "olist", "executive-sales.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := workspacecompiler.ValidateDashboard(report, map[string]*Model{"olist": model}); err != nil {
-		t.Fatal(err)
-	}
-	return report
 }
 
 func minimalSourceModel() *Model {

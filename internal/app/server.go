@@ -15,6 +15,7 @@ import (
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
+	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -22,7 +23,7 @@ import (
 	"github.com/gorilla/csrf"
 )
 
-type queryMetrics interface {
+type QueryMetrics interface {
 	Catalog() dashboard.Catalog
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
@@ -41,8 +42,43 @@ type queryMetrics interface {
 	Pages(dashboardID string) []dashboard.Page
 }
 
+type workspaceMetrics interface {
+	MetricsForWorkspace(workspaceID string) (QueryMetrics, bool)
+}
+
+type multiWorkspaceMetrics struct {
+	defaultID  string
+	workspaces map[string]QueryMetrics
+}
+
+func NewMultiWorkspaceMetrics(defaultWorkspaceID string, workspaces map[string]QueryMetrics) QueryMetrics {
+	copied := make(map[string]QueryMetrics, len(workspaces))
+	for id, metrics := range workspaces {
+		copied[id] = metrics
+	}
+	return multiWorkspaceMetrics{defaultID: defaultWorkspaceID, workspaces: copied}
+}
+
+func (m multiWorkspaceMetrics) MetricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
+	if workspaceID == "" {
+		workspaceID = m.defaultID
+	}
+	metrics, ok := m.workspaces[workspaceID]
+	return metrics, ok
+}
+
+func (m multiWorkspaceMetrics) defaultMetrics() QueryMetrics {
+	if metrics, ok := m.MetricsForWorkspace(m.defaultID); ok {
+		return metrics
+	}
+	for _, metrics := range m.workspaces {
+		return metrics
+	}
+	return nil
+}
+
 type Server struct {
-	metrics            queryMetrics
+	metrics            QueryMetrics
 	broker             *dashboardstream.Broker
 	store              *platform.Store
 	deploymentRepo     deploymentRepository
@@ -55,6 +91,7 @@ type Server struct {
 	artifactDir        string
 	duckDBDir          string
 	defaultWorkspaceID string
+	defaultEnvironment string
 	rateLimits         RateLimitConfig
 	securityHeaders    SecurityHeadersConfig
 	requestLogging     bool
@@ -63,7 +100,7 @@ type Server struct {
 	pendingChatTitles  map[string]struct{}
 }
 
-func New(metrics queryMetrics) *Server {
+func New(metrics QueryMetrics) *Server {
 	return &Server{metrics: metrics, broker: dashboardstream.NewBroker(), logger: slog.Default(), pendingChatTitles: map[string]struct{}{}}
 }
 
@@ -79,13 +116,14 @@ type Options struct {
 	ArtifactDir        string
 	DuckDBDir          string
 	DefaultWorkspaceID string
+	DefaultEnvironment string
 	RateLimits         RateLimitConfig
 	SecurityHeaders    SecurityHeadersConfig
 	RequestLogging     bool
 	Logger             *slog.Logger
 }
 
-func NewWithOptions(metrics queryMetrics, options Options) *Server {
+func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server := New(metrics)
 	server.store = options.Store
 	server.deploymentRepo = options.DeploymentRepo
@@ -98,6 +136,7 @@ func NewWithOptions(metrics queryMetrics, options Options) *Server {
 	server.artifactDir = options.ArtifactDir
 	server.duckDBDir = options.DuckDBDir
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
+	server.defaultEnvironment = string(deployment.NormalizeEnvironment(deployment.Environment(options.DefaultEnvironment)))
 	server.rateLimits = options.RateLimits
 	server.securityHeaders = options.SecurityHeaders
 	server.requestLogging = options.RequestLogging
@@ -177,13 +216,28 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 	var metrics dashboardhttp.Metrics = s.metrics
 	if s.store != nil {
 		metrics = dashboardCommandMetrics{
-			queryMetrics: s.metrics,
+			QueryMetrics: s.metrics,
 			refresh:      s.refreshMaterializationsWithRun,
 		}
 	}
 	return dashboardhttp.Handler{
 		Metrics: metrics,
-		Broker:  s.broker,
+		MetricsForWorkspace: func(workspaceID string) (dashboardhttp.Metrics, bool) {
+			selected, ok := s.metricsForWorkspace(workspaceID)
+			if !ok {
+				return nil, false
+			}
+			if s.store != nil {
+				selected = dashboardCommandMetrics{
+					QueryMetrics: selected,
+					refresh: func(ctx context.Context, modelID string) error {
+						return s.refreshMaterializationsWithRunForWorkspace(ctx, workspaceID, modelID)
+					},
+				}
+			}
+			return selected, true
+		},
+		Broker: s.broker,
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
 				return ""
@@ -193,8 +247,28 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 	}
 }
 
+func (s *Server) metricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
+	if provider, ok := s.metrics.(workspaceMetrics); ok {
+		return provider.MetricsForWorkspace(workspaceID)
+	}
+	if workspaceID == "" {
+		return s.metrics, s.metrics != nil
+	}
+	if s.metrics == nil {
+		return nil, false
+	}
+	if workspaceID == s.defaultWorkspaceID {
+		return s.metrics, true
+	}
+	catalog := s.metrics.Catalog()
+	if catalog.Workspace.ID == "" || catalog.Workspace.ID == workspaceID {
+		return s.metrics, true
+	}
+	return nil, false
+}
+
 type dashboardCommandMetrics struct {
-	queryMetrics
+	QueryMetrics
 	refresh func(context.Context, string) error
 }
 
@@ -202,7 +276,7 @@ func (m dashboardCommandMetrics) RefreshMaterializations(ctx context.Context, mo
 	if m.refresh != nil {
 		return m.refresh(ctx, modelID)
 	}
-	return m.queryMetrics.RefreshMaterializations(ctx, modelID)
+	return m.QueryMetrics.RefreshMaterializations(ctx, modelID)
 }
 
 func (s *Server) refreshMaterializationsWithRun(ctx context.Context, modelID string) error {

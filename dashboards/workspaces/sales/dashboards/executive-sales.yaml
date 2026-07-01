@@ -1,0 +1,188 @@
+apiVersion: libredash.dev/v1
+kind: Dashboard
+metadata:
+  workspace: sales
+  name: executive-sales
+  title: Executive Sales
+  description: Revenue, AOV, category, and order volume overview.
+  tags: [sales, revenue]
+spec:
+  semanticModel: sales
+  filters:
+    purchase_date:
+      type: date_range
+      label: Purchase date
+      url_param: period
+      from_url_param: from
+      to_url_param: to
+      field: orders.purchase_date
+      default:
+        preset: all
+      presets:
+        - value: all
+          label: All time
+        - value: "2018"
+          label: "2018"
+          from: "2018-01-01"
+          to: "2018-12-31"
+    state:
+      type: multi_select
+      label: State
+      url_param: state
+      operator: in
+      values:
+        source: distinct
+        limit: 50
+      field: customers.state
+    category:
+      type: text
+      label: Category
+      url_param: category
+      operator_url_param: category_op
+      default_operator: contains
+      operators: [contains, equals, starts_with, not_contains]
+      field: orders.category
+  visuals:
+    revenue_kpi:
+      kind: kpi
+      shape: single_value
+      query:
+        measures:
+          revenue:
+      options:
+        note: Payment value
+        tone: green
+    aov_kpi:
+      kind: kpi
+      shape: single_value
+      query:
+        measures:
+          aov:
+      options:
+        note: Revenue per order
+        tone: amber
+    total_orders:
+      kind: kpi
+      shape: single_value
+      query:
+        measures:
+          order_count:
+      options:
+        note: Filtered order count
+        tone: ink
+    revenue_by_month:
+      title: Revenue by month
+      type: area
+      query:
+        dimensions:
+          purchase_month: orders.purchase_month
+        measures:
+          revenue:
+        sort:
+          - field: purchase_month
+            direction: asc
+        limit: 30
+    category_revenue:
+      title: Top categories by revenue
+      type: bar
+      query:
+        dimensions:
+          category: orders.category
+        measures:
+          revenue:
+        sort:
+          - field: value
+            direction: desc
+        limit: 10
+  tables:
+    orders_table:
+      title: Orders
+      kind: data_table
+      query:
+        table: orders
+        fields:
+          - orders.order_id
+          - orders.purchase_date
+          - orders.status
+          - customers.state
+          - orders.category
+          - orders.revenue
+      default_sort:
+        key: purchase_date
+        direction: desc
+      interaction:
+        row_selection:
+          mappings:
+            - field: orders.order_id
+              value: order_id
+              label: order_id
+            - field: orders.status
+              value: status
+              label: status
+            - field: orders.category
+              value: category
+              label: category
+          targets:
+            - category_revenue
+      columns:
+        - key: order_id
+          label: Order
+        - key: purchase_date
+          label: Purchased
+        - key: status
+          label: Status
+        - key: state
+          label: State
+        - key: category
+          label: Category
+        - key: revenue
+          label: Revenue
+          align: right
+  pages:
+    - name: overview
+      title: Overview
+      canvas:
+        width: 1366
+        height: 900
+      grid:
+        columns: 12
+        row_height: 48
+        gap: 16
+        padding: 16
+      visuals:
+        - id: purchase-date-filter
+          kind: filter_card
+          filter: purchase_date
+          placement: {col: 1, row: 1, col_span: 4, row_span: 2}
+        - id: state-filter
+          kind: filter_card
+          filter: state
+          placement: {col: 5, row: 1, col_span: 4, row_span: 2}
+        - id: category-filter
+          kind: filter_card
+          filter: category
+          placement: {col: 9, row: 1, col_span: 2, row_span: 2}
+        - id: total-orders
+          kind: kpi_card
+          visual: total_orders
+          placement: {col: 11, row: 1, col_span: 1, row_span: 2}
+        - id: revenue
+          kind: kpi_card
+          visual: revenue_kpi
+          placement: {col: 12, row: 1, col_span: 1, row_span: 2}
+        - id: aov
+          kind: kpi_card
+          visual: aov_kpi
+          placement: {col: 1, row: 4, col_span: 3, row_span: 3}
+        - id: revenue-trend
+          kind: area_chart
+          visual: revenue_by_month
+          placement: {col: 4, row: 4, col_span: 9, row_span: 6}
+        - id: categories
+          kind: bar_chart
+          visual: category_revenue
+          placement: {col: 1, row: 10, col_span: 12, row_span: 6}
+        - id: orders_table
+          kind: table
+          table: orders_table
+          placement: {col: 1, row: 17, col_span: 12, row_span: 8}

@@ -200,7 +200,7 @@ func (s *Server) createAgentTurn(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, agentapp.ErrDisabled) {
+		if errors.Is(err, agentapp.ErrDisabled) || errors.Is(err, agentapp.ErrPolicyDisabled) {
 			status = http.StatusServiceUnavailable
 		} else if agentapp.IsBusy(err) {
 			status = http.StatusConflict

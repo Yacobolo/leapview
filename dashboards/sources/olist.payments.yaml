@@ -1,0 +1,11 @@
+apiVersion: libredash.dev/v1
+kind: Source
+metadata:
+  name: olist.payments
+  title: Payments
+spec:
+  connection: olist
+  path: olist_order_payments_dataset.csv
+  fields:
+    order_id: {type: string, description: Order identifier for the payment.}
+    payment_value: {type: number, description: Payment amount for the transaction.}

@@ -19,7 +19,7 @@ type modelTableRefreshRuntimeMetrics interface {
 }
 
 type appRefreshRunner struct {
-	metrics queryMetrics
+	metrics QueryMetrics
 }
 
 func (r appRefreshRunner) RefreshMaterializations(ctx context.Context, modelID string) error {
@@ -68,7 +68,7 @@ type RefreshOrchestrator struct {
 	allowDirectFallback bool
 }
 
-func NewRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics queryMetrics) RefreshOrchestrator {
+func NewRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics QueryMetrics) RefreshOrchestrator {
 	var lookup refreshModelLookup
 	if metrics != nil {
 		lookup = metrics.SemanticModel
@@ -80,7 +80,7 @@ func NewRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics queryMet
 	}
 }
 
-func NewGenericRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics queryMetrics) RefreshOrchestrator {
+func NewGenericRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics QueryMetrics) RefreshOrchestrator {
 	orchestrator := NewRefreshOrchestrator(repo, metrics)
 	orchestrator.allowDirectFallback = true
 	return orchestrator

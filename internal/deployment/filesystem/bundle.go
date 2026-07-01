@@ -17,7 +17,6 @@ import (
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/deployment"
-	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
@@ -26,7 +25,10 @@ type Manifest struct {
 	Version        int            `json:"version"`
 	WorkspaceID    string         `json:"workspaceId"`
 	WorkspaceTitle string         `json:"workspaceTitle"`
+	Environment    string         `json:"environment"`
 	CatalogPath    string         `json:"catalogPath"`
+	CompiledPath   string         `json:"compiledPath"`
+	GraphHash      string         `json:"graphHash"`
 	Files          []ManifestFile `json:"files"`
 	SemanticModels []string       `json:"semanticModels"`
 	Dashboards     []string       `json:"dashboards"`
@@ -39,47 +41,162 @@ type ManifestFile struct {
 }
 
 type ValidateOptions struct {
-	DataDir   string
-	DuckDBDir string
+	DataDir     string
+	DuckDBDir   string
+	Environment deployment.Environment
 }
 
-func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
-	catalogPath, err := filepath.Abs(catalogPath)
+type CompiledWorkspaceArtifact struct {
+	Version        int                                    `json:"version"`
+	WorkspaceID    string                                 `json:"workspaceId"`
+	WorkspaceTitle string                                 `json:"workspaceTitle"`
+	Environment    string                                 `json:"environment"`
+	DeploymentID   string                                 `json:"deploymentId"`
+	Validation     CompiledArtifactValidation             `json:"validation"`
+	Definition     *workspace.Definition                  `json:"definition"`
+	Graph          workspace.AssetGraph                   `json:"graph"`
+	Plan           workspacecompiler.ProjectPlanWorkspace `json:"plan"`
+}
+
+type CompiledArtifactValidation struct {
+	Status        string                       `json:"status"`
+	Diagnostics   []CompiledArtifactDiagnostic `json:"diagnostics,omitempty"`
+	GraphHash     string                       `json:"graphHash"`
+	SchemaVersion string                       `json:"schemaVersion"`
+}
+
+type CompiledArtifactDiagnostic struct {
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+}
+
+func PackProject(projectPath, workspaceID string, deploymentID deployment.ID, out io.Writer) (Manifest, string, error) {
+	return PackProjectAgainstGraphForEnvironment(projectPath, workspaceID, deployment.DefaultEnvironment, deploymentID, workspace.AssetGraph{}, out)
+}
+
+func PackProjectAgainstGraph(projectPath, workspaceID string, deploymentID deployment.ID, active workspace.AssetGraph, out io.Writer) (Manifest, string, error) {
+	return PackProjectAgainstGraphForEnvironment(projectPath, workspaceID, deployment.DefaultEnvironment, deploymentID, active, out)
+}
+
+func PackProjectAgainstGraphForEnvironment(projectPath, workspaceID string, environment deployment.Environment, deploymentID deployment.ID, active workspace.AssetGraph, out io.Writer) (Manifest, string, error) {
+	projectPath, err := filepath.Abs(projectPath)
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	workspaceDef, err := workspacecompiler.CompileDefinition(catalogPath)
+	environment = deployment.NormalizeEnvironment(environment)
+	if workspaceID == "" {
+		return Manifest{}, "", fmt.Errorf("project deploy requires explicit workspace")
+	}
+	if deploymentID == "" {
+		return Manifest{}, "", fmt.Errorf("project deploy requires deployment id")
+	}
+	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{DeploymentID: workspace.DeploymentID(deploymentID)})
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	baseDir := filepath.Dir(catalogPath)
-	relFiles := []string{CatalogFile}
-	for _, model := range workspaceDef.Catalog.SemanticModels {
-		relFiles = append(relFiles, cleanBundlePath(model.Path))
+	compiledWorkspace, ok := compiled.Workspaces[workspaceID]
+	if !ok {
+		return Manifest{}, "", fmt.Errorf("project %q has no workspace %q", projectPath, workspaceID)
 	}
-	for _, report := range workspaceDef.Catalog.Dashboards {
-		relFiles = append(relFiles, cleanBundlePath(report.Path))
+	if err := workspace.ValidateAssetGraphForDeployment(compiledWorkspace.Workspace.Graph, workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID)); err != nil {
+		return Manifest{}, "", err
+	}
+	plan, err := workspacecompiler.PlanProjectAgainstGraph(projectPath, workspaceID, active)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	workspacePlan, ok := projectPlanWorkspace(plan, workspaceID)
+	if !ok {
+		return Manifest{}, "", fmt.Errorf("project %q has no workspace %q in plan", projectPath, workspaceID)
+	}
+	compiledArtifact := CompiledWorkspaceArtifact{
+		Version:        1,
+		WorkspaceID:    workspaceID,
+		WorkspaceTitle: compiledWorkspace.Workspace.Title,
+		Environment:    string(environment),
+		DeploymentID:   string(deploymentID),
+		Validation: CompiledArtifactValidation{
+			Status:        "passed",
+			GraphHash:     graphHash(compiledWorkspace.Workspace.Graph),
+			SchemaVersion: "libredash.dev/v1",
+		},
+		Definition: compiledWorkspace.Definition,
+		Graph:      compiledWorkspace.Workspace.Graph,
+		Plan:       workspacePlan,
+	}
+	compiledBytes, err := json.MarshalIndent(compiledArtifact, "", "  ")
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	baseDir := filepath.Dir(projectPath)
+	relFiles, err := collectProjectBundleFiles(baseDir, projectPath)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	manifest := Manifest{
+		Version:        1,
+		WorkspaceID:    workspaceID,
+		WorkspaceTitle: compiledWorkspace.Workspace.Title,
+		Environment:    string(environment),
+		CatalogPath:    ProjectFile,
+		CompiledPath:   CompiledProjectFile,
+		GraphHash:      digestBytes(compiledBytes),
+		Files:          make([]ManifestFile, 0, len(relFiles)),
+	}
+	for _, model := range compiledWorkspace.Definition.Catalog.SemanticModels {
+		manifest.SemanticModels = append(manifest.SemanticModels, model.ID)
+	}
+	for _, report := range compiledWorkspace.Definition.Catalog.Dashboards {
+		manifest.Dashboards = append(manifest.Dashboards, report.ID)
+	}
+	return writeBundle(baseDir, relFiles, ProjectFile, projectPath, map[string][]byte{CompiledProjectFile: compiledBytes}, manifest, out)
+}
+
+func collectProjectBundleFiles(baseDir, projectPath string) ([]string, error) {
+	relProject, err := filepath.Rel(baseDir, projectPath)
+	if err != nil {
+		return nil, err
+	}
+	relFiles := []string{cleanBundlePath(relProject)}
+	for _, root := range []string{"connections", "sources", "workspaces"} {
+		dir := filepath.Join(baseDir, root)
+		if _, err := os.Stat(dir); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if filepath.Ext(path) != ".yaml" && filepath.Ext(path) != ".yml" {
+				return nil
+			}
+			rel, err := filepath.Rel(baseDir, path)
+			if err != nil {
+				return err
+			}
+			relFiles = append(relFiles, cleanBundlePath(rel))
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	sort.Strings(relFiles[1:])
+	return relFiles, nil
+}
 
+func writeBundle(baseDir string, relFiles []string, rootRel string, rootPath string, generatedFiles map[string][]byte, manifest Manifest, out io.Writer) (Manifest, string, error) {
 	hash := sha256.New()
 	mw := io.MultiWriter(out, hash)
 	gz := gzip.NewWriter(mw)
 	tw := tar.NewWriter(gz)
-	manifest := Manifest{
-		Version:        1,
-		WorkspaceID:    workspaceID(workspaceDef.Catalog.Workspace.ID),
-		WorkspaceTitle: workspaceTitle(workspaceDef.Catalog.Workspace.Title),
-		CatalogPath:    CatalogFile,
-		Files:          make([]ManifestFile, 0, len(relFiles)),
-	}
-	for _, model := range workspaceDef.Catalog.SemanticModels {
-		manifest.SemanticModels = append(manifest.SemanticModels, model.ID)
-	}
-	for _, report := range workspaceDef.Catalog.Dashboards {
-		manifest.Dashboards = append(manifest.Dashboards, report.ID)
-	}
-
 	seen := map[string]struct{}{}
 	for _, rel := range relFiles {
 		if _, ok := seen[rel]; ok {
@@ -87,8 +204,8 @@ func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
 		}
 		seen[rel] = struct{}{}
 		sourcePath := filepath.Join(baseDir, rel)
-		if rel == CatalogFile {
-			sourcePath = catalogPath
+		if rel == rootRel {
+			sourcePath = rootPath
 		}
 		info, err := os.Stat(sourcePath)
 		if err != nil {
@@ -108,6 +225,27 @@ func PackCatalog(catalogPath string, out io.Writer) (Manifest, string, error) {
 			Size:   info.Size(),
 		})
 		if err := tw.WriteHeader(&tar.Header{Name: rel, Mode: 0o644, Size: int64(len(bytes))}); err != nil {
+			return Manifest{}, "", err
+		}
+		if _, err := tw.Write(bytes); err != nil {
+			return Manifest{}, "", err
+		}
+	}
+	generatedPaths := make([]string, 0, len(generatedFiles))
+	for rel := range generatedFiles {
+		generatedPaths = append(generatedPaths, rel)
+	}
+	sort.Strings(generatedPaths)
+	for _, rel := range generatedPaths {
+		cleanRel, err := safeBundlePath(rel)
+		if err != nil {
+			return Manifest{}, "", err
+		}
+		if _, ok := seen[cleanRel]; ok {
+			return Manifest{}, "", fmt.Errorf("bundle generated path %s duplicates source file", cleanRel)
+		}
+		bytes := generatedFiles[rel]
+		if err := tw.WriteHeader(&tar.Header{Name: cleanRel, Mode: 0o644, Size: int64(len(bytes))}); err != nil {
 			return Manifest{}, "", err
 		}
 		if _, err := tw.Write(bytes); err != nil {
@@ -155,20 +293,54 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 		os.RemoveAll(root)
 		return deployment.Validation{}, err
 	}
-	catalogRel, err := validateManifestFiles(root, manifest)
+	if _, err := validateManifestFiles(root, manifest); err != nil {
+		os.RemoveAll(root)
+		return deployment.Validation{}, err
+	}
+	compiled, err := readCompiledWorkspaceArtifact(root, manifest)
 	if err != nil {
 		os.RemoveAll(root)
 		return deployment.Validation{}, err
 	}
 	if workspaceID == "" {
-		workspaceID = deployment.WorkspaceID(workspaceIDOrDefault(manifest.WorkspaceID))
+		if strings.TrimSpace(manifest.WorkspaceID) == "" {
+			os.RemoveAll(root)
+			return deployment.Validation{}, fmt.Errorf("project artifact manifest requires workspaceId")
+		}
+		workspaceID = deployment.WorkspaceID(manifest.WorkspaceID)
 	}
-	catalogPath := filepath.Join(root, catalogRel)
-	compiled, err := workspacecompiler.Compile(catalogPath, workspacecompiler.Options{
-		WorkspaceID:  workspace.WorkspaceID(workspaceID),
-		DeploymentID: workspace.DeploymentID(deploymentID),
-	})
-	if err != nil {
+	if compiled.WorkspaceID != string(workspaceID) {
+		os.RemoveAll(root)
+		return deployment.Validation{}, fmt.Errorf("compiled artifact workspace = %q, want %q", compiled.WorkspaceID, workspaceID)
+	}
+	if strings.TrimSpace(compiled.Environment) == "" {
+		os.RemoveAll(root)
+		return deployment.Validation{}, fmt.Errorf("compiled artifact requires environment")
+	}
+	if strings.TrimSpace(manifest.Environment) == "" {
+		os.RemoveAll(root)
+		return deployment.Validation{}, fmt.Errorf("project artifact manifest requires environment")
+	}
+	if compiled.Environment != manifest.Environment {
+		os.RemoveAll(root)
+		return deployment.Validation{}, fmt.Errorf("compiled artifact environment = %q, manifest environment = %q", compiled.Environment, manifest.Environment)
+	}
+	if options.Environment != "" {
+		expectedEnvironment := deployment.NormalizeEnvironment(options.Environment)
+		if deployment.Environment(compiled.Environment) != expectedEnvironment {
+			os.RemoveAll(root)
+			return deployment.Validation{}, fmt.Errorf("compiled artifact environment = %q, want %q", compiled.Environment, expectedEnvironment)
+		}
+	}
+	if compiled.DeploymentID != string(deploymentID) {
+		os.RemoveAll(root)
+		return deployment.Validation{}, fmt.Errorf("compiled artifact deployment = %q, want %q", compiled.DeploymentID, deploymentID)
+	}
+	if err := workspace.ValidateAssetGraphForDeployment(compiled.Graph, workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID)); err != nil {
+		os.RemoveAll(root)
+		return deployment.Validation{}, err
+	}
+	if err := validateCompiledArtifactValidation(compiled); err != nil {
 		os.RemoveAll(root)
 		return deployment.Validation{}, err
 	}
@@ -182,7 +354,21 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 			os.RemoveAll(root)
 			return deployment.Validation{}, err
 		}
-		compiled.Workspace.Graph = graph
+		compiled.Graph = graph
+		if err := workspace.ValidateAssetGraphForDeployment(compiled.Graph, workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID)); err != nil {
+			os.RemoveAll(root)
+			return deployment.Validation{}, err
+		}
+		compiled.Validation = CompiledArtifactValidation{
+			Status:        "passed",
+			GraphHash:     graphHash(compiled.Graph),
+			SchemaVersion: projectAPIVersion,
+		}
+		manifest, digest, err = persistValidatedArtifact(path, root, manifest, compiled)
+		if err != nil {
+			os.RemoveAll(root)
+			return deployment.Validation{}, err
+		}
 	}
 	manifestJSON, err := json.Marshal(manifest)
 	if err != nil {
@@ -193,9 +379,113 @@ func ValidateArtifactWithOptions(path string, workspaceID deployment.WorkspaceID
 		Digest:       digest,
 		ManifestJSON: string(manifestJSON),
 		RootDir:      root,
-		Graph:        compiled.Workspace.Graph,
+		Graph:        compiled.Graph,
 	}, nil
 }
+
+func persistValidatedArtifact(path, root string, manifest Manifest, compiled CompiledWorkspaceArtifact) (Manifest, string, error) {
+	compiledRel, err := safeBundlePath(manifest.CompiledPath)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	compiledBytes, err := json.MarshalIndent(compiled, "", "  ")
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	manifest.GraphHash = digestBytes(compiledBytes)
+	if err := os.WriteFile(filepath.Join(root, compiledRel), compiledBytes, 0o644); err != nil {
+		return Manifest{}, "", err
+	}
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestBytes, 0o644); err != nil {
+		return Manifest{}, "", err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".libredash-validated-*.tar.gz")
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	tmpPath := tmp.Name()
+	if err := writeExtractedRoot(root, tmp); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return Manifest{}, "", err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return Manifest{}, "", err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return Manifest{}, "", err
+	}
+	digest, err := fileDigest(path)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	return manifest, digest, nil
+}
+
+func writeExtractedRoot(root string, out io.Writer) error {
+	hash := sha256.New()
+	gz := gzip.NewWriter(io.MultiWriter(out, hash))
+	tw := tar.NewWriter(gz)
+	paths := []string{}
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, filepath.ToSlash(rel))
+		return nil
+	}); err != nil {
+		return err
+	}
+	sort.Strings(paths)
+	for _, rel := range paths {
+		bytes, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			return err
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: rel, Mode: 0o644, Size: int64(len(bytes))}); err != nil {
+			return err
+		}
+		if _, err := tw.Write(bytes); err != nil {
+			return err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return gz.Close()
+}
+
+func validateCompiledArtifactValidation(compiled CompiledWorkspaceArtifact) error {
+	if compiled.Validation.Status != "passed" {
+		return fmt.Errorf("compiled artifact validation status = %q, want passed", compiled.Validation.Status)
+	}
+	if compiled.Validation.SchemaVersion != projectAPIVersion {
+		return fmt.Errorf("compiled artifact validation schemaVersion = %q, want %q", compiled.Validation.SchemaVersion, projectAPIVersion)
+	}
+	if want := graphHash(compiled.Graph); compiled.Validation.GraphHash != want {
+		return fmt.Errorf("compiled artifact validation graphHash = %q, want %q", compiled.Validation.GraphHash, want)
+	}
+	return nil
+}
+
+func ValidateCompiledWorkspaceArtifact(compiled CompiledWorkspaceArtifact) error {
+	return validateCompiledArtifactValidation(compiled)
+}
+
+const projectAPIVersion = "libredash.dev/v1"
 
 func discoverSchemasForDefinition(ctx context.Context, definition *workspace.Definition, options ValidateOptions) error {
 	duckDBRoot := options.DuckDBDir
@@ -298,9 +588,49 @@ func readManifest(root string) (Manifest, error) {
 		return Manifest{}, err
 	}
 	if manifest.CatalogPath == "" {
-		manifest.CatalogPath = CatalogFile
+		manifest.CatalogPath = ProjectFile
+	}
+	if manifest.CompiledPath == "" {
+		manifest.CompiledPath = CompiledProjectFile
 	}
 	return manifest, nil
+}
+
+func LoadCompiledWorkspaceArtifact(root string) (CompiledWorkspaceArtifact, Manifest, error) {
+	manifest, err := readManifest(root)
+	if err != nil {
+		return CompiledWorkspaceArtifact{}, Manifest{}, err
+	}
+	compiled, err := readCompiledWorkspaceArtifact(root, manifest)
+	if err != nil {
+		return CompiledWorkspaceArtifact{}, Manifest{}, err
+	}
+	return compiled, manifest, nil
+}
+
+func readCompiledWorkspaceArtifact(root string, manifest Manifest) (CompiledWorkspaceArtifact, error) {
+	compiledRel, err := safeBundlePath(manifest.CompiledPath)
+	if err != nil {
+		return CompiledWorkspaceArtifact{}, fmt.Errorf("invalid compiled path: %w", err)
+	}
+	bytes, err := os.ReadFile(filepath.Join(root, compiledRel))
+	if err != nil {
+		return CompiledWorkspaceArtifact{}, err
+	}
+	if manifest.GraphHash != "" && digestBytes(bytes) != manifest.GraphHash {
+		return CompiledWorkspaceArtifact{}, fmt.Errorf("compiled artifact digest mismatch")
+	}
+	var compiled CompiledWorkspaceArtifact
+	if err := json.Unmarshal(bytes, &compiled); err != nil {
+		return CompiledWorkspaceArtifact{}, err
+	}
+	if compiled.Version != 1 {
+		return CompiledWorkspaceArtifact{}, fmt.Errorf("compiled artifact version = %d, want 1", compiled.Version)
+	}
+	if compiled.Definition == nil {
+		return CompiledWorkspaceArtifact{}, fmt.Errorf("compiled artifact definition is required")
+	}
+	return compiled, nil
 }
 
 func validateManifestFiles(root string, manifest Manifest) (string, error) {
@@ -351,6 +681,28 @@ func fileDigest(path string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+func digestBytes(bytes []byte) string {
+	sum := sha256.Sum256(bytes)
+	return hex.EncodeToString(sum[:])
+}
+
+func graphHash(graph workspace.AssetGraph) string {
+	bytes, err := json.Marshal(graph)
+	if err != nil {
+		return ""
+	}
+	return digestBytes(bytes)
+}
+
+func projectPlanWorkspace(plan workspacecompiler.ProjectPlan, workspaceID string) (workspacecompiler.ProjectPlanWorkspace, bool) {
+	for _, workspacePlan := range plan.Workspaces {
+		if workspacePlan.ID == workspaceID {
+			return workspacePlan, true
+		}
+	}
+	return workspacecompiler.ProjectPlanWorkspace{}, false
+}
+
 func cleanBundlePath(path string) string {
 	path = filepath.ToSlash(filepath.Clean(path))
 	path = strings.TrimPrefix(path, "/")
@@ -372,17 +724,6 @@ func safeBundlePath(path string) (string, error) {
 		}
 	}
 	return clean, nil
-}
-
-func workspaceID(value string) string {
-	if strings.TrimSpace(value) != "" {
-		return value
-	}
-	return platform.DefaultWorkspaceID
-}
-
-func workspaceIDOrDefault(value string) string {
-	return workspaceID(value)
 }
 
 func workspaceTitle(value string) string {

@@ -29,6 +29,9 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 	if !s.Enabled() {
 		return PromptResult{}, ErrDisabled
 	}
+	if policy, ok := s.policyForScope(input.Scope); ok && !policy.Enabled {
+		return PromptResult{}, ErrPolicyDisabled
+	}
 	if s.repo == nil {
 		return PromptResult{}, fmt.Errorf("agent store is required")
 	}
@@ -60,7 +63,7 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 	sink := &storeEventSink{repo: s.repo, scope: input.Scope, conversationID: input.ConversationID, runID: run.ID, onEvent: input.OnEvent}
 	def := agent.Definition{
 		Name:              "libredash-readonly",
-		SystemPrompt:      systemPrompt(),
+		SystemPrompt:      s.systemPrompt(input.Scope),
 		Model:             s.model,
 		Tools:             s.toolDefinitions(input.Scope),
 		InitialTranscript: initial,

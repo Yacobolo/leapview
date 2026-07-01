@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"net/url"
+
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	g "maragu.dev/gomponents"
@@ -9,8 +11,9 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal ChatSignal) g.Node {
-	envelope := uisignals.ChatInitialEnvelope(catalog, csrfToken, roleLabel, signal)
+func ChatPage(catalog dashboard.Catalog, workspaceID, csrfToken, roleLabel string, signal ChatSignal) g.Node {
+	envelope := uisignals.ChatInitialEnvelope(catalog, workspaceID, csrfToken, roleLabel, signal)
+	chatBasePath := "/workspaces/" + url.PathEscape(workspaceID) + "/chat"
 	return c.HTML5(c.HTML5Props{
 		Title:    "LibreDash Chat",
 		Language: "en",
@@ -36,7 +39,7 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal Cha
 					"visuals":   envelope.Visuals,
 					"tables":    envelope.Tables,
 				}),
-				g.If(signal.Status.Enabled, ds.Init("@get('/chat/updates', {openWhenHidden: true})")),
+				g.If(signal.Status.Enabled, ds.Init("@get('"+chatBasePath+"/updates', {openWhenHidden: true})")),
 				g.El("ld-app-shell",
 					g.Attr("chrome", jsonString(envelope.Chrome)),
 					g.Attr("data-attr:chrome", "JSON.stringify($chrome)"),
@@ -51,7 +54,7 @@ func ChatPage(catalog dashboard.Catalog, csrfToken, roleLabel string, signal Cha
 						g.Attr("data-attr:tables", "JSON.stringify($tables)"),
 						g.Attr("data-attr:pending", "$agentTurnPending || $agent.status.running"),
 						g.Attr("data-attr:composerdisabled", "$agentTurnPending || $agent.status.running || $agent.composer.disabled"),
-						g.Attr("data-on:ld-chat-submit", "$agent.composer.value = evt.detail.input; "+postAction("/chat/turns")),
+						g.Attr("data-on:ld-chat-submit", "$agent.composer.value = evt.detail.input; "+postAction(chatBasePath+"/turns")),
 					),
 				),
 				inspectorElement(),

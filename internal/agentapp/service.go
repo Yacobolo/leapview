@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
 var (
-	ErrDisabled = errors.New("agent is not configured")
-	ErrBusy     = errors.New("agent conversation already has a running turn")
+	ErrDisabled       = errors.New("agent is not configured")
+	ErrPolicyDisabled = errors.New("agent is disabled by workspace policy")
+	ErrBusy           = errors.New("agent conversation already has a running turn")
 )
 
 const (
@@ -40,13 +43,16 @@ type CredentialScope struct {
 
 type ToolProvider func(scope Scope) []agent.ToolDefinition
 
+type PolicyProvider func(scope Scope) (workspace.AgentPolicy, bool)
+
 type Service struct {
 	metrics any
 	repo    Repository
 	config  Config
 	model   agent.Model
 
-	toolProviders []ToolProvider
+	toolProviders  []ToolProvider
+	policyProvider PolicyProvider
 
 	mu      sync.Mutex
 	running map[string]struct{}
@@ -68,6 +74,10 @@ func (s *Service) SetToolProviders(providers ...ToolProvider) {
 
 func (s *Service) AppendToolProviders(providers ...ToolProvider) {
 	s.toolProviders = append(s.toolProviders, providers...)
+}
+
+func (s *Service) SetPolicyProvider(provider PolicyProvider) {
+	s.policyProvider = provider
 }
 
 func (s *Service) Enabled() bool {
@@ -204,4 +214,13 @@ func (s *Service) ConversationTranscriptState(ctx context.Context, scope Scope, 
 
 func systemPrompt() string {
 	return `You are LibreDash's read-only BI assistant. Answer using only the provided tools and conversation context. You can help users understand dashboards, semantic models, measures, fields, filters, visuals, and table snapshots they are allowed to access. Use progressive disclosure: start with compact summaries, then drill into specific pages, semantic models, or tables only when needed. Do not invent dashboard IDs, measure names, field names, or data values. You cannot write data, deploy changes, edit permissions, run raw SQL, access files, or call external services.`
+}
+
+func (s *Service) systemPrompt(scope Scope) string {
+	base := systemPrompt()
+	policy, ok := s.policyForScope(scope)
+	if !ok || strings.TrimSpace(policy.Instructions) == "" {
+		return base
+	}
+	return base + "\n\nWorkspace instructions:\n" + strings.TrimSpace(policy.Instructions)
 }

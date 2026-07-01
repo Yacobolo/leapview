@@ -32,6 +32,11 @@ type connectionPayloadV1 struct {
 	Path                  string                      `json:"Path"`
 	Root                  string                      `json:"Root"`
 	Scope                 string                      `json:"Scope"`
+	Host                  string                      `json:"Host"`
+	Port                  int                         `json:"Port"`
+	Database              string                      `json:"Database"`
+	Username              string                      `json:"Username"`
+	SSLMode               string                      `json:"SSLMode"`
 	Options               map[string]any              `json:"Options"`
 	Defaults              connectionDefaultsPayloadV1 `json:"Defaults"`
 	CredentialsConfigured bool                        `json:"credentials_configured"`
@@ -55,6 +60,7 @@ type sourceFieldPayloadV1 struct {
 	Name        string `json:"Name"`
 	Field       string `json:"Field"`
 	Table       string `json:"Table"`
+	Type        string `json:"Type"`
 	Description string `json:"Description"`
 }
 
@@ -103,6 +109,7 @@ type fieldPayloadV1 struct {
 	Name        string `json:"Name"`
 	Label       string `json:"Label"`
 	Description string `json:"Description"`
+	Type        string `json:"Type"`
 	Expr        string `json:"Expr"`
 	Expression  string `json:"Expression"`
 }
@@ -278,6 +285,47 @@ type pagePayloadV1 struct {
 	Description string       `json:"Description"`
 	Canvas      pageCanvasV1 `json:"Canvas"`
 	Grid        pageGridV1   `json:"Grid"`
+}
+
+type workspaceGroupPayloadV1 struct {
+	ID          string                          `json:"ID"`
+	Name        string                          `json:"Name"`
+	Description string                          `json:"Description"`
+	Members     []workspaceGroupMemberPayloadV1 `json:"Members"`
+}
+
+type workspaceGroupMemberPayloadV1 struct {
+	PrincipalID string `json:"PrincipalID"`
+	Email       string `json:"Email"`
+	DisplayName string `json:"DisplayName"`
+}
+
+type workspaceRoleBindingPayloadV1 struct {
+	ID      string                               `json:"ID"`
+	Name    string                               `json:"Name"`
+	Role    string                               `json:"Role"`
+	Subject workspaceRoleBindingSubjectPayloadV1 `json:"Subject"`
+}
+
+type workspaceRoleBindingSubjectPayloadV1 struct {
+	Kind        string `json:"Kind"`
+	PrincipalID string `json:"PrincipalID"`
+	Email       string `json:"Email"`
+	DisplayName string `json:"DisplayName"`
+	Group       string `json:"Group"`
+}
+
+type workspaceAgentPolicyPayloadV1 struct {
+	ID           string                             `json:"ID"`
+	Name         string                             `json:"Name"`
+	Enabled      bool                               `json:"Enabled"`
+	Tools        workspaceAgentPolicyToolsPayloadV1 `json:"Tools"`
+	Instructions string                             `json:"Instructions"`
+}
+
+type workspaceAgentPolicyToolsPayloadV1 struct {
+	Allow []string `json:"Allow"`
+	Deny  []string `json:"Deny"`
 }
 
 type pageItemPayloadV1 struct {

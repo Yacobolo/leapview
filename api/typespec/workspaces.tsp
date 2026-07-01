@@ -28,6 +28,7 @@ model AssetResponse {
   parentId?: string;
   title: string;
   description: string;
+  sourceFile?: string;
   payloadSchema: string;
   payload: JSONObject;
   href?: string;
@@ -43,7 +44,9 @@ model AssetSummaryResponse {
   parentId?: string;
   title: string;
   description: string;
+  sourceFile?: string;
   payloadSchema: string;
+  contentHash: string;
   href?: string;
 }
 

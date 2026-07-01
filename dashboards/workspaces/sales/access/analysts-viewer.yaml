@@ -1,0 +1,10 @@
+apiVersion: libredash.dev/v1
+kind: WorkspaceRoleBinding
+metadata:
+  workspace: sales
+  name: analysts-viewer
+spec:
+  role: viewer
+  subject:
+    kind: group
+    group: analysts

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
@@ -12,14 +13,24 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
-type runtimeProvider interface {
+type RuntimeProvider interface {
 	Active() (runtimehost.Runtime, error)
 }
+
+type runtimeProvider = RuntimeProvider
 
 type runtimeMetrics struct {
 	provider    runtimeProvider
 	dataDir     string
 	workspaceID string
+}
+
+type dynamicRuntimeMetrics struct {
+	defaultID string
+	dataDir   string
+	factory   func(workspaceID string) RuntimeProvider
+	mu        sync.Mutex
+	metrics   map[string]QueryMetrics
 }
 
 type catalogRuntime interface {
@@ -57,8 +68,49 @@ type materializationRuntime interface {
 	RefreshMaterializations(ctx context.Context, modelID string) error
 }
 
-func NewRuntimeMetrics(provider runtimeProvider, dataDir, workspaceID string) queryMetrics {
+type agentPolicyProvider interface {
+	AgentPolicy() workspace.AgentPolicy
+}
+
+func NewRuntimeMetrics(provider runtimeProvider, dataDir, workspaceID string) QueryMetrics {
 	return runtimeMetrics{provider: provider, dataDir: dataDir, workspaceID: workspaceID}
+}
+
+func NewDynamicRuntimeMetrics(defaultWorkspaceID, dataDir string, factory func(workspaceID string) RuntimeProvider) QueryMetrics {
+	return &dynamicRuntimeMetrics{
+		defaultID: defaultWorkspaceID,
+		dataDir:   dataDir,
+		factory:   factory,
+		metrics:   map[string]QueryMetrics{},
+	}
+}
+
+func (m *dynamicRuntimeMetrics) MetricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
+	if workspaceID == "" {
+		workspaceID = m.defaultID
+	}
+	if workspaceID == "" || m.factory == nil {
+		return nil, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if metrics := m.metrics[workspaceID]; metrics != nil {
+		return metrics, true
+	}
+	provider := m.factory(workspaceID)
+	if provider == nil {
+		return nil, false
+	}
+	metrics := NewRuntimeMetrics(provider, m.dataDir, workspaceID)
+	m.metrics[workspaceID] = metrics
+	return metrics, true
+}
+
+func (m *dynamicRuntimeMetrics) defaultMetrics() QueryMetrics {
+	if metrics, ok := m.MetricsForWorkspace(m.defaultID); ok {
+		return metrics
+	}
+	return nil
 }
 
 func (m runtimeMetrics) Catalog() dashboard.Catalog {
@@ -291,6 +343,18 @@ func (m runtimeMetrics) materializationRuntime() (materializationRuntime, error)
 		return nil, fmt.Errorf("active runtime does not provide materialization refresh")
 	}
 	return port, nil
+}
+
+func (m runtimeMetrics) AgentPolicy() workspace.AgentPolicy {
+	runtime, err := m.active()
+	if err != nil {
+		return workspace.DefaultAgentPolicy()
+	}
+	provider, ok := runtime.(agentPolicyProvider)
+	if !ok {
+		return workspace.DefaultAgentPolicy()
+	}
+	return provider.AgentPolicy()
 }
 
 func (m runtimeMetrics) active() (runtimehost.Runtime, error) {

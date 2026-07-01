@@ -11,10 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
 
 func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
@@ -22,7 +25,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
-	unauthReq := httptest.NewRequest(http.MethodGet, "/chat", nil)
+	unauthReq := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat", nil)
 	unauthRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(unauthRec, unauthReq)
 	if unauthRec.Code != http.StatusFound {
@@ -33,7 +36,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
 	token := testAPIToken(t, ctx, store, principal.ID, "chat-page")
 
-	req := httptest.NewRequest(http.MethodGet, "/chat/new", nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/new", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -60,8 +63,8 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 		`data-attr:composerdisabled="$agentTurnPending || $agent.status.running || $agent.composer.disabled"`,
 		`data-indicator="agentTurnPending"`,
 		`data-on:ld-chat-submit`,
-		`/chat/turns`,
-		`/chat/updates`,
+		`/workspaces/test/chat/turns`,
+		`/workspaces/test/chat/updates`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat page missing %q:\n%s", want, body)
@@ -78,7 +81,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	if strings.Contains(body, `<ld-chat-conversation-sidebar`) {
 		t.Fatalf("chat page still rendered chat-specific conversation sidebar:\n%s", body)
 	}
-	if strings.Contains(body, `data-on:ld-sub-sidebar-select`) || strings.Contains(body, `/chat/conversations/select`) {
+	if strings.Contains(body, `data-on:ld-sub-sidebar-select`) || strings.Contains(body, `/workspaces/test/chat/conversations/select`) {
 		t.Fatalf("chat page should use conversation URLs instead of select POST:\n%s", body)
 	}
 	if strings.Contains(body, `data-attr:events`) || strings.Contains(body, `$agent.events`) {
@@ -91,7 +94,7 @@ func TestChatPageDisabledState(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{}), DefaultWorkspaceID: "test"})
 
-	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -103,6 +106,64 @@ func TestChatPageDisabledState(t *testing.T) {
 	}
 }
 
+func TestUnscopedChatRoutesAreNotRegistered(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	for _, path := range []string{"/chat", "/chat/new", "/chat/updates", "/chat/turns", "/chat/agentconv_1"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if strings.HasSuffix(path, "/turns") {
+			req = httptest.NewRequest(http.MethodPost, path, nil)
+		}
+		rec := httptest.NewRecorder()
+		server.Routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want 404", path, rec.Code)
+		}
+	}
+}
+
+func TestWorkspaceChatPolicyIsScopedByRouteWorkspace(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	auth := testAuth(store, "sales", AuthConfig{APITokenOnly: true})
+	metrics := NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{
+		"sales":      policyMetrics{policy: workspace.AgentPolicy{Enabled: true}},
+		"operations": policyMetrics{policy: workspace.AgentPolicy{Enabled: false}},
+	})
+	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, Agent: agentapp.NewService(metrics, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "sales"})
+	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
+	for _, id := range []string{"sales", "operations"} {
+		if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(id), Title: id}); err != nil {
+			t.Fatalf("ensure workspace %s: %v", id, err)
+		}
+	}
+	principal, err := testAccessRepository(store).SetPrincipalRole(ctx, access.PrincipalRoleInput{WorkspaceID: "sales", Email: "viewer@example.com", DisplayName: "Viewer", Role: access.RoleViewer})
+	if err != nil {
+		t.Fatalf("bind sales role: %v", err)
+	}
+	if _, err := testAccessRepository(store).SetPrincipalRole(ctx, access.PrincipalRoleInput{WorkspaceID: "operations", Email: "viewer@example.com", DisplayName: "Viewer", Role: access.RoleViewer}); err != nil {
+		t.Fatalf("bind operations role: %v", err)
+	}
+	token := testAPIToken(t, ctx, store, principal.ID, "chat-policy")
+
+	salesReq := httptest.NewRequest(http.MethodGet, "/workspaces/sales/chat/new", nil)
+	salesReq.Header.Set("Authorization", "Bearer "+token)
+	salesRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(salesRec, salesReq)
+	if salesRec.Code != http.StatusOK || strings.Contains(salesRec.Body.String(), "workspace policy") {
+		t.Fatalf("sales chat status=%d body=%s", salesRec.Code, salesRec.Body.String())
+	}
+
+	operationsReq := httptest.NewRequest(http.MethodPost, "/workspaces/operations/chat/turns", strings.NewReader(`{"agent":{"composer":{"value":"hello"}}}`))
+	operationsReq.Header.Set("Accept", "text/event-stream")
+	operationsReq.Header.Set("Content-Type", "application/json")
+	operationsReq.Header.Set("Authorization", "Bearer "+token)
+	operationsRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(operationsRec, operationsReq)
+	if operationsRec.Code != http.StatusOK || !strings.Contains(operationsRec.Body.String(), "agent is disabled by workspace policy") {
+		t.Fatalf("operations chat status=%d body=%s", operationsRec.Code, operationsRec.Body.String())
+	}
+}
+
 func TestChatRootRedirectsToNewWhenNoConversations(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
@@ -110,11 +171,11 @@ func TestChatRootRedirectsToNewWhenNoConversations(t *testing.T) {
 	ctx := context.Background()
 	_, token := chatPrincipalAndToken(t, ctx, store)
 
-	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/chat/new" {
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/workspaces/test/chat/new" {
 		t.Fatalf("status=%d location=%q body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
 	}
 }
@@ -140,11 +201,11 @@ func TestChatRootRedirectsToLatestConversation(t *testing.T) {
 		t.Fatal("conversation IDs unexpectedly equal")
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/chat/"+latest.ID {
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/workspaces/test/chat/"+latest.ID {
 		t.Fatalf("status=%d location=%q body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
 	}
 }
@@ -156,7 +217,7 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 
-	req := httptest.NewRequest(http.MethodGet, "/chat/new", nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/new", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -164,7 +225,7 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`&#34;href&#34;:&#34;/chat/new&#34;`, `&#34;title&#34;:&#34;New chat&#34;`, `&#34;activeId&#34;:&#34;&#34;`} {
+	for _, want := range []string{`&#34;href&#34;:&#34;/workspaces/test/chat/new&#34;`, `&#34;title&#34;:&#34;New chat&#34;`, `&#34;activeId&#34;:&#34;&#34;`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("draft chat page missing %q:\n%s", want, body)
 		}
@@ -224,7 +285,7 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 		t.Fatalf("create hidden: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/chat/"+owned.ID, nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/"+owned.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -232,7 +293,7 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 		t.Fatalf("owned route status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	hiddenReq := httptest.NewRequest(http.MethodGet, "/chat/"+hidden.ID, nil)
+	hiddenReq := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/"+hidden.ID, nil)
 	hiddenReq.Header.Set("Authorization", "Bearer "+token)
 	hiddenRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(hiddenRec, hiddenReq)
@@ -265,7 +326,7 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 		t.Fatalf("append tool: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/chat/"+conversation.ID, nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/"+conversation.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -318,7 +379,7 @@ func TestChatConversationRouteQueuesMissingTitleRepair(t *testing.T) {
 		t.Fatalf("append message: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/chat/"+conversation.ID, nil)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/"+conversation.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-test"})
 	rec := httptest.NewRecorder()
@@ -366,7 +427,7 @@ func TestChatConversationRouteSkipsTitleRepairForManualAndMultiUserTitles(t *tes
 		}
 	}
 	for _, conversationID := range []string{manual.ID, multi.ID} {
-		req := httptest.NewRequest(http.MethodGet, "/chat/"+conversationID, nil)
+		req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/"+conversationID, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		rec := httptest.NewRecorder()
 		server.Routes().ServeHTTP(rec, req)
@@ -418,7 +479,7 @@ func TestChatTurnStreamsDatastarSignalsAndPersistsEvents(t *testing.T) {
 			"transcript": []map[string]any{},
 		},
 	}
-	req := chatSignalsRequest(http.MethodPost, "/chat/turns", token, signals)
+	req := chatSignalsRequest(http.MethodPost, "/workspaces/test/chat/turns", token, signals)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -452,7 +513,7 @@ func TestChatTurnStreamsDatastarSignalsAndPersistsEvents(t *testing.T) {
 	if strings.Contains(firstPatch, `"title":"New conversation"`) {
 		t.Fatalf("first streaming patch refreshed the draft conversation into the rail:\n%s", firstPatch)
 	}
-	for _, want := range []string{"window.history.replaceState", "/chat/" + conversations[0].ID} {
+	for _, want := range []string{"window.history.replaceState", "/workspaces/test/chat/" + conversations[0].ID} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("draft turn response missing URL replacement %q:\n%s", want, body)
 		}
@@ -484,7 +545,7 @@ func TestChatTurnWithActiveConversationDoesNotReplaceURL(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
-	req := chatSignalsRequest(http.MethodPost, "/chat/turns", token, map[string]any{"agent": map[string]any{
+	req := chatSignalsRequest(http.MethodPost, "/workspaces/test/chat/turns", token, map[string]any{"agent": map[string]any{
 		"activeConversationId": owned.ID,
 		"composer":             map[string]any{"value": "Continue"},
 	}})
@@ -509,7 +570,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	key := chatStreamID(scope, "client-test")
 
 	reqCtx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodGet, "/chat/updates", nil).WithContext(reqCtx)
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/chat/updates", nil).WithContext(reqCtx)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-test"})
 	rec := httptest.NewRecorder()
@@ -572,6 +633,15 @@ func waitForAgentConversationTitle(t *testing.T, store *platform.Store, workspac
 
 type testPrincipalRef struct {
 	ID string
+}
+
+type policyMetrics struct {
+	fakeMetrics
+	policy workspace.AgentPolicy
+}
+
+func (m policyMetrics) AgentPolicy() workspace.AgentPolicy {
+	return m.policy
 }
 
 func chatSignalsRequest(method, path, token string, signals map[string]any) *http.Request {

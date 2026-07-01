@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/deployment/activate"
@@ -30,8 +31,9 @@ type runtimeReloader interface {
 type deploymentRepository interface {
 	validate.Repository
 	activate.Repository
+	activate.ArtifactRepository
 	Create(ctx context.Context, input deployment.CreateInput) (deployment.Deployment, error)
-	List(ctx context.Context, workspaceID deployment.WorkspaceID) ([]deployment.Deployment, error)
+	List(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) ([]deployment.Deployment, error)
 }
 
 func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +67,8 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) {
 			createdBy = principal.ID
 		}
 	}
-	deployment, err := repo.Create(r.Context(), deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), CreatedBy: createdBy})
+	environment := requestDeploymentEnvironment(r, input.Environment)
+	deployment, err := repo.Create(r.Context(), deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), Environment: environment, CreatedBy: createdBy})
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
@@ -144,7 +147,18 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	service := activate.NewService(repo, s.reloader)
+	accessRepo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	var accessReconciler access.WorkspacePolicyReconciler
+	if accessRepo != nil {
+		if reconciler, ok := accessRepo.(access.WorkspacePolicyReconciler); ok {
+			accessReconciler = reconciler
+		}
+	}
+	service := activate.NewServiceWithAccess(repo, s.reloader, repo, accessReconciler)
 	deployment, err := service.Activate(r.Context(), deployment.ID(deploymentID))
 	if err != nil {
 		writeJSONError(w, err, statusForActivationError(err))
@@ -160,7 +174,7 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	rows, err := repo.List(r.Context(), deployment.WorkspaceID(workspaceID))
+	rows, err := repo.List(r.Context(), deployment.WorkspaceID(workspaceID), requestDeploymentEnvironment(r, ""))
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
@@ -199,6 +213,9 @@ func (s *Server) deploymentByIDForRequestWorkspace(r *http.Request, repo deploym
 	if workspaceID := chi.URLParam(r, "workspace"); workspaceID != "" && row.WorkspaceID != deployment.WorkspaceID(s.workspaceID(workspaceID)) {
 		return deployment.Deployment{}, deployment.ErrNotFound
 	}
+	if row.Environment != requestDeploymentEnvironment(r, "") {
+		return deployment.Deployment{}, deployment.ErrNotFound
+	}
 	return row, nil
 }
 
@@ -227,6 +244,7 @@ func deploymentDTO(row deployment.Deployment) api.DeploymentResponse {
 	out := api.DeploymentResponse{
 		ID:          string(row.ID),
 		WorkspaceID: string(row.WorkspaceID),
+		Environment: string(deployment.NormalizeEnvironment(row.Environment)),
 		Status:      string(row.Status),
 		Digest:      row.Digest,
 		CreatedAt:   row.CreatedAt,
@@ -234,6 +252,21 @@ func deploymentDTO(row deployment.Deployment) api.DeploymentResponse {
 	}
 	out.ActivatedAt = row.ActivatedAt
 	return out
+}
+
+func requestDeploymentEnvironment(r *http.Request, fallback string) deployment.Environment {
+	if query := r.URL.Query().Get("environment"); query != "" {
+		fallback = query
+	}
+	return deployment.NormalizeEnvironment(deployment.Environment(fallback))
+}
+
+func (s *Server) defaultDeploymentEnvironment() deployment.Environment {
+	return deployment.NormalizeEnvironment(deployment.Environment(s.defaultEnvironment))
+}
+
+func (s *Server) requestDeploymentEnvironment(r *http.Request) deployment.Environment {
+	return requestDeploymentEnvironment(r, string(s.defaultDeploymentEnvironment()))
 }
 
 func pageDeployments(rows []api.DeploymentResponse, limit int, pageToken string) ([]api.DeploymentResponse, string) {

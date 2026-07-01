@@ -52,9 +52,14 @@ func connectionPayload(connection semanticmodel.Connection) connectionPayloadV1 
 		Path:                  connection.Path,
 		Root:                  connection.Root,
 		Scope:                 connection.Scope,
+		Host:                  connection.Host,
+		Port:                  connection.Port,
+		Database:              connection.Database,
+		Username:              connection.Username,
+		SSLMode:               connection.SSLMode,
 		Options:               connection.Options,
 		Defaults:              connectionDefaultsPayloadV1{Options: connection.Defaults.Options},
-		CredentialsConfigured: len(connection.Auth) > 0,
+		CredentialsConfigured: semanticmodel.ConnectionCredentialsConfigured(connection),
 	}
 }
 
@@ -74,7 +79,7 @@ func sourceFieldsPayload(fields map[string]semanticmodel.SourceField) map[string
 	out := map[string]sourceFieldPayloadV1{}
 	for _, name := range sortedMapKeys(fields) {
 		field := fields[name]
-		out[name] = sourceFieldPayloadV1{Name: field.Name, Field: field.Field, Table: field.Table, Description: field.Description}
+		out[name] = sourceFieldPayloadV1{Name: field.Name, Field: field.Field, Table: field.Table, Type: field.Type, Description: field.Description}
 	}
 	return out
 }
@@ -137,6 +142,7 @@ func fieldPayload(field semanticmodel.MetricDimension) fieldPayloadV1 {
 		Name:        field.Name,
 		Label:       field.Label,
 		Description: field.Description,
+		Type:        field.Type,
 		Expr:        field.Expr,
 		Expression:  field.Expression,
 	}
@@ -368,6 +374,51 @@ func pagePayload(page dashboard.Page) pagePayloadV1 {
 		Description: page.Description,
 		Canvas:      pageCanvasPayload(page.Canvas),
 		Grid:        pageGridPayload(page.Grid),
+	}
+}
+
+func workspaceGroupPayload(group workspace.WorkspaceGroup) workspaceGroupPayloadV1 {
+	members := make([]workspaceGroupMemberPayloadV1, 0, len(group.Members))
+	for _, member := range group.Members {
+		members = append(members, workspaceGroupMemberPayloadV1{
+			PrincipalID: member.PrincipalID,
+			Email:       member.Email,
+			DisplayName: member.DisplayName,
+		})
+	}
+	return workspaceGroupPayloadV1{
+		ID:          group.ID,
+		Name:        group.Name,
+		Description: group.Description,
+		Members:     members,
+	}
+}
+
+func workspaceRoleBindingPayload(binding workspace.WorkspaceRoleBinding) workspaceRoleBindingPayloadV1 {
+	return workspaceRoleBindingPayloadV1{
+		ID:   binding.ID,
+		Name: binding.Name,
+		Role: binding.Role,
+		Subject: workspaceRoleBindingSubjectPayloadV1{
+			Kind:        binding.Subject.Kind,
+			PrincipalID: binding.Subject.PrincipalID,
+			Email:       binding.Subject.Email,
+			DisplayName: binding.Subject.DisplayName,
+			Group:       binding.Subject.Group,
+		},
+	}
+}
+
+func workspaceAgentPolicyPayload(policy workspace.AgentPolicy) workspaceAgentPolicyPayloadV1 {
+	return workspaceAgentPolicyPayloadV1{
+		ID:      policy.ID,
+		Name:    policy.Name,
+		Enabled: policy.Enabled,
+		Tools: workspaceAgentPolicyToolsPayloadV1{
+			Allow: append([]string{}, policy.Tools.Allow...),
+			Deny:  append([]string{}, policy.Tools.Deny...),
+		},
+		Instructions: policy.Instructions,
 	}
 }
 

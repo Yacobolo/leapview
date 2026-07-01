@@ -17,7 +17,11 @@ import (
 const maxAgentRows = 50
 
 func (s *Server) listDashboards(w http.ResponseWriter, r *http.Request) {
-	catalog := s.metrics.Catalog()
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
+	catalog := metrics.Catalog()
 	out := make([]api.DashboardSummary, 0, len(catalog.Dashboards))
 	for _, row := range catalog.Dashboards {
 		out = append(out, dashboardSummaryDTO(row))
@@ -30,13 +34,17 @@ func (s *Server) listDashboards(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	dashboardID := chi.URLParam(r, "dashboard")
-	report, model, ok := s.metrics.Report(dashboardID)
+	report, model, ok := metrics.Report(dashboardID)
 	if !ok {
 		writeJSONError(w, fmt.Errorf("dashboard %q not found", dashboardID), http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, dashboardManifest(report, model, s.metrics.Pages(dashboardID)))
+	writeJSON(w, http.StatusOK, dashboardManifest(report, model, metrics.Pages(dashboardID)))
 }
 
 func (s *Server) listDashboardComponents(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +83,11 @@ func (s *Server) getDashboardVisual(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listSemanticModels(w http.ResponseWriter, r *http.Request) {
-	catalog := s.metrics.Catalog()
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
+	catalog := metrics.Catalog()
 	out := make([]api.SemanticModelSummary, 0, len(catalog.Models))
 	for _, row := range catalog.Models {
 		out = append(out, semanticModelSummaryDTO(row))
@@ -88,8 +100,12 @@ func (s *Server) listSemanticModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getSemanticModel(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	modelID := chi.URLParam(r, "model")
-	model, ok := modelDescription(s.metrics, modelID)
+	model, ok := modelDescription(metrics, modelID)
 	if !ok {
 		writeJSONError(w, fmt.Errorf("model %q not found", modelID), http.StatusNotFound)
 		return
@@ -143,6 +159,10 @@ func (s *Server) listSemanticFields(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) querySemanticDataset(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.SemanticQueryRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -157,12 +177,12 @@ func (s *Server) querySemanticDataset(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	plan, err := semanticExplainAggregate(s.metrics, modelID, request)
+	plan, err := semanticExplainAggregate(metrics, modelID, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	rows, err := s.metrics.QuerySemantic(r.Context(), modelID, request)
+	rows, err := metrics.QuerySemantic(r.Context(), modelID, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -171,6 +191,10 @@ func (s *Server) querySemanticDataset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) previewSemanticDataset(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.SemanticPreviewRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -185,12 +209,12 @@ func (s *Server) previewSemanticDataset(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	plan, err := semanticExplainRows(s.metrics, modelID, request)
+	plan, err := semanticExplainRows(metrics, modelID, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	rows, err := s.metrics.PreviewSemantic(r.Context(), modelID, request)
+	rows, err := metrics.PreviewSemantic(r.Context(), modelID, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -199,6 +223,10 @@ func (s *Server) previewSemanticDataset(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) explainSemanticQuery(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.SemanticQueryRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -213,7 +241,7 @@ func (s *Server) explainSemanticQuery(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	plan, err := semanticExplainAggregate(s.metrics, modelID, request)
+	plan, err := semanticExplainAggregate(metrics, modelID, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -222,6 +250,10 @@ func (s *Server) explainSemanticQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) explainSemanticPreview(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.SemanticPreviewRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -236,7 +268,7 @@ func (s *Server) explainSemanticPreview(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	plan, err := semanticExplainRows(s.metrics, modelID, request)
+	plan, err := semanticExplainRows(metrics, modelID, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -245,6 +277,10 @@ func (s *Server) explainSemanticPreview(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) queryDashboardPage(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.DashboardPageQueryRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -253,9 +289,9 @@ func (s *Server) queryDashboardPage(w http.ResponseWriter, r *http.Request) {
 	dashboardID := chi.URLParam(r, "dashboard")
 	filters := dashboardFilters(input.Filters)
 	if filters.Controls == nil && filters.Selections == nil {
-		filters = s.metrics.DefaultFilters(dashboardID)
+		filters = metrics.DefaultFilters(dashboardID)
 	}
-	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, chi.URLParam(r, "page"), filters)
+	patch, err := metrics.QueryDashboardPage(r.Context(), dashboardID, chi.URLParam(r, "page"), filters)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -264,6 +300,10 @@ func (s *Server) queryDashboardPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) queryDashboardTable(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.DashboardTableQueryRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -276,11 +316,11 @@ func (s *Server) queryDashboardTable(w http.ResponseWriter, r *http.Request) {
 	}
 	filters := dashboardFilters(input.Filters)
 	if filters.Controls == nil && filters.Selections == nil {
-		filters = s.metrics.DefaultFilters(dashboardID)
+		filters = metrics.DefaultFilters(dashboardID)
 	}
-	request := s.metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: chi.URLParam(r, "table"), Block: "a", Count: count})
+	request := metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: chi.URLParam(r, "table"), Block: "a", Count: count})
 	request.Count = count
-	table, err := s.metrics.QueryTablePage(r.Context(), dashboardID, input.PageID, filters, request)
+	table, err := metrics.QueryTablePage(r.Context(), dashboardID, input.PageID, filters, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -289,6 +329,10 @@ func (s *Server) queryDashboardTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) queryDashboardVisualData(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.DashboardPageQueryRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -310,9 +354,9 @@ func (s *Server) queryDashboardVisualData(w http.ResponseWriter, r *http.Request
 	dashboardID := chi.URLParam(r, "dashboard")
 	filters := dashboardFilters(input.Filters)
 	if filters.Controls == nil && filters.Selections == nil {
-		filters = s.metrics.DefaultFilters(dashboardID)
+		filters = metrics.DefaultFilters(dashboardID)
 	}
-	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, page.ID, filters)
+	patch, err := metrics.QueryDashboardPage(r.Context(), dashboardID, page.ID, filters)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -326,6 +370,10 @@ func (s *Server) queryDashboardVisualData(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) queryDashboardTableData(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.DashboardTableDataRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -351,11 +399,11 @@ func (s *Server) queryDashboardTableData(w http.ResponseWriter, r *http.Request)
 	dashboardID := chi.URLParam(r, "dashboard")
 	filters := dashboardFilters(input.Filters)
 	if filters.Controls == nil && filters.Selections == nil {
-		filters = s.metrics.DefaultFilters(dashboardID)
+		filters = metrics.DefaultFilters(dashboardID)
 	}
-	request := s.metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: tableID, Block: "a", Count: count})
+	request := metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: tableID, Block: "a", Count: count})
 	request.Count = count
-	table, err := s.metrics.QueryTablePage(r.Context(), dashboardID, page.ID, filters, request)
+	table, err := metrics.QueryTablePage(r.Context(), dashboardID, page.ID, filters, request)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -364,6 +412,10 @@ func (s *Server) queryDashboardTableData(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) listDashboardFilterOptions(w http.ResponseWriter, r *http.Request) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return
+	}
 	var input api.DashboardPageQueryRequest
 	if err := decodeOptionalJSONBody(r, &input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -385,9 +437,9 @@ func (s *Server) listDashboardFilterOptions(w http.ResponseWriter, r *http.Reque
 	dashboardID := chi.URLParam(r, "dashboard")
 	filters := dashboardFilters(input.Filters)
 	if filters.Controls == nil && filters.Selections == nil {
-		filters = s.metrics.DefaultFilters(dashboardID)
+		filters = metrics.DefaultFilters(dashboardID)
 	}
-	patch, err := s.metrics.QueryDashboardPage(r.Context(), dashboardID, page.ID, filters)
+	patch, err := metrics.QueryDashboardPage(r.Context(), dashboardID, page.ID, filters)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -417,6 +469,15 @@ func dashboardFilters(raw map[string]any) dashboard.Filters {
 		return dashboard.Filters{}
 	}
 	return filters
+}
+
+func (s *Server) biMetrics(w http.ResponseWriter, r *http.Request) (QueryMetrics, bool) {
+	metrics, ok := s.metricsForWorkspace(chi.URLParam(r, "workspace"))
+	if !ok {
+		writeJSONError(w, fmt.Errorf("workspace %q not found", chi.URLParam(r, "workspace")), http.StatusNotFound)
+		return nil, false
+	}
+	return metrics, true
 }
 
 func boundedPatch(patch dashboard.Patch) dashboard.Patch {
@@ -462,8 +523,12 @@ func semanticModelSummaryDTO(row dashboard.CatalogModel) api.SemanticModelSummar
 }
 
 func (s *Server) semanticModelForRequest(w http.ResponseWriter, r *http.Request) (*semanticmodel.Model, bool) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return nil, false
+	}
 	modelID := chi.URLParam(r, "model")
-	model := semanticModelForID(s.metrics, modelID)
+	model := semanticModelForID(metrics, modelID)
 	if model == nil {
 		writeJSONError(w, fmt.Errorf("model %q not found", modelID), http.StatusNotFound)
 		return nil, false
@@ -630,7 +695,7 @@ func semanticQueryFields(fields []api.SemanticFieldRef) []reportdef.QueryField {
 	return out
 }
 
-func semanticExplainAggregate(metrics queryMetrics, modelID string, request reportdef.AggregateQuery) (semanticquery.Plan, error) {
+func semanticExplainAggregate(metrics QueryMetrics, modelID string, request reportdef.AggregateQuery) (semanticquery.Plan, error) {
 	model := semanticModelForID(metrics, modelID)
 	if model == nil {
 		return semanticquery.Plan{}, fmt.Errorf("unknown semantic model %q", modelID)
@@ -638,7 +703,7 @@ func semanticExplainAggregate(metrics queryMetrics, modelID string, request repo
 	return semanticquery.NewPlanner(model).Plan(reportdef.SemanticAggregateRequest(request))
 }
 
-func semanticExplainRows(metrics queryMetrics, modelID string, request reportdef.RowQuery) (semanticquery.Plan, error) {
+func semanticExplainRows(metrics QueryMetrics, modelID string, request reportdef.RowQuery) (semanticquery.Plan, error) {
 	model := semanticModelForID(metrics, modelID)
 	if model == nil {
 		return semanticquery.Plan{}, fmt.Errorf("unknown semantic model %q", modelID)
@@ -729,14 +794,18 @@ func sortedMapKeys[T any](items map[string]T) []string {
 }
 
 func (s *Server) dashboardReportPage(w http.ResponseWriter, r *http.Request) (reportdef.Dashboard, dashboard.Page, bool) {
+	metrics, ok := s.biMetrics(w, r)
+	if !ok {
+		return reportdef.Dashboard{}, dashboard.Page{}, false
+	}
 	dashboardID := chi.URLParam(r, "dashboard")
-	report, _, ok := s.metrics.Report(dashboardID)
+	report, _, ok := metrics.Report(dashboardID)
 	if !ok {
 		writeJSONError(w, fmt.Errorf("dashboard %q not found", dashboardID), http.StatusNotFound)
 		return reportdef.Dashboard{}, dashboard.Page{}, false
 	}
 	pageID := chi.URLParam(r, "page")
-	pages := s.metrics.Pages(dashboardID)
+	pages := metrics.Pages(dashboardID)
 	if pages == nil {
 		pages = report.Pages
 	}
@@ -849,7 +918,7 @@ func modelSummary(model *semanticmodel.Model) *api.ModelRef {
 	return &api.ModelRef{ID: model.Name, Title: model.Title}
 }
 
-func modelDescription(metrics queryMetrics, id string) (api.SemanticModelDescriptionResponse, bool) {
+func modelDescription(metrics QueryMetrics, id string) (api.SemanticModelDescriptionResponse, bool) {
 	catalog := metrics.Catalog()
 	var catalogModel dashboard.CatalogModel
 	for _, model := range catalog.Models {
@@ -895,7 +964,7 @@ func modelDescription(metrics queryMetrics, id string) (api.SemanticModelDescrip
 	return out, true
 }
 
-func dashboardsForModel(metrics queryMetrics, modelID string) []api.ModelDashboardUsage {
+func dashboardsForModel(metrics QueryMetrics, modelID string) []api.ModelDashboardUsage {
 	out := make([]api.ModelDashboardUsage, 0)
 	for _, dashboardSummary := range metrics.Catalog().Dashboards {
 		report, model, ok := metrics.Report(dashboardSummary.ID)
@@ -912,7 +981,7 @@ func dashboardsForModel(metrics queryMetrics, modelID string) []api.ModelDashboa
 	return out
 }
 
-func semanticModelForID(metrics queryMetrics, modelID string) *semanticmodel.Model {
+func semanticModelForID(metrics QueryMetrics, modelID string) *semanticmodel.Model {
 	if model, ok := metrics.SemanticModel(modelID); ok {
 		return model
 	}

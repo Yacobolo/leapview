@@ -2,62 +2,154 @@ package contracts
 
 #Identifier: =~"^[A-Za-z_][A-Za-z0-9_]*$"
 #ObjectID:   =~"^[A-Za-z_][A-Za-z0-9_-]*$"
+#ResourceID: =~"^[A-Za-z_][A-Za-z0-9_.-]*$"
 #FieldRef:   =~"^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"
 #AnyObject: {
 	[string]: _
 }
 
-#Catalog: close({
-	workspace?: close({
-		id?:          string
-		title?:       string
-		description?: string
-	})
-	semantic_models!: [...#CatalogAsset]
-	dashboards!: [...#CatalogDashboard]
+#NoCredentials: close({
+	provider!: "none"
 })
 
-#CatalogAsset: close({
-	id!:          #Identifier
-	title!:       string
-	path!:        string
-	description?: string
+#EnvCredentials: close({
+	provider!: "env"
+	secret!:   string
 })
 
-#CatalogDashboard: close({
-	id!:          #ObjectID
-	title!:       string
-	path!:        string
+#APIVersion: "libredash.dev/v1"
+
+#Metadata: close({
+	name!:        #ResourceID
+	workspace?:   #ResourceID
+	title?:       string
 	description?: string
+	owner?:       string
 	tags?: [...string]
 })
 
-#SemanticModel: close({
-	name!:               #Identifier
-	title?:              string
-	description?:        string
-	default_connection?: #Identifier
-	connections?: close({
-		[#Identifier]: #Connection
-	})
-	sources!: close({
-		[#Identifier]: #Source
-	})
-	models!: close({
-		[#Identifier]: #ModelTable
-	})
-	semantic_models!: close({
-		[#Identifier]: #SemanticModelSpec
+#IncludeList: close({
+	include!: [...string]
+})
+
+#Project: close({
+	apiVersion!: #APIVersion
+	kind!:       "Project"
+	metadata!:   #Metadata
+	spec!: close({
+		connections!: #IncludeList
+		sources!:     #IncludeList
+		workspaces!:  #IncludeList
 	})
 })
 
+#ConnectionResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Connection"
+	metadata!:   #Metadata
+	spec!:        #Connection
+})
+
+#SourceResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Source"
+	metadata!:   #Metadata
+	spec!:        #Source
+})
+
+#WorkspaceResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Workspace"
+	metadata!:   #Metadata
+	spec!: close({
+		uses!: close({
+			sources!: [...#ResourceID]
+		})
+		models!:         #IncludeList
+		semanticModels!: #IncludeList
+		dashboards!:     #IncludeList
+		access!:         #IncludeList
+		agentPolicy!:    #IncludeList
+	})
+})
+
+#WorkspaceGroupResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "WorkspaceGroup"
+	metadata!:   #Metadata
+	spec!: close({
+		description?: string
+		members?: [...close({
+			principalId?: #ResourceID
+			email?:       string
+			displayName?: string
+		})]
+	})
+})
+
+#WorkspaceRoleBindingResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "WorkspaceRoleBinding"
+	metadata!:   #Metadata
+	spec!: close({
+		role!: "owner" | "admin" | "deployer" | "editor" | "viewer"
+		subject!: close({
+			kind!:        "principal" | "group"
+			principalId?: #ResourceID
+			email?:       string
+			displayName?: string
+			group?:       #ResourceID
+		})
+	})
+})
+
+#WorkspaceAgentPolicyResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "WorkspaceAgentPolicy"
+	metadata!:   #Metadata
+	spec!: close({
+		enabled!: bool
+		tools!: close({
+			allow?: [...#ResourceID]
+			deny?:  [...#ResourceID]
+		})
+		instructions?: string
+	})
+})
+
+#ModelTableResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "ModelTable"
+	metadata!:   #Metadata
+	spec!:        #ModelTable
+})
+
+#SemanticModelResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "SemanticModel"
+	metadata!:   #Metadata
+	spec!:        #ProjectSemanticModelSpec
+})
+
+#DashboardResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "Dashboard"
+	metadata!:   #Metadata
+	spec!:        #DashboardSpec
+})
+
 #Connection: close({
-	kind!:        string
+	kind!:        "local" | "s3" | "r2" | "gcs" | "http" | "azure_blob" | "postgres" | "mysql" | "sqlite" | "ducklake" | "quack"
 	description?: string
 	path?:        string
 	root?:        string
 	scope?:       string
-	auth?:        #AnyObject
+	host?:        string
+	port?:        int
+	database?:    string
+	username?:    string
+	sslMode?:     string
+	credentials?: #NoCredentials | #EnvCredentials
 	options?:     #AnyObject
 	defaults?: close({
 		options?: #AnyObject
@@ -73,6 +165,7 @@ package contracts
 	options?:     #AnyObject
 	fields?: close({
 		[#Identifier]: close({
+			type?:        string
 			description?: string
 		})
 	})
@@ -80,19 +173,21 @@ package contracts
 
 #ModelTable: close({
 	kind?:   string
-	source?: #Identifier
-	sources?: [...#Identifier]
+	source?: #ResourceID
+	sources?: [...#ResourceID]
 	sql?: string
 	transform?: close({
 		sql?: string
 	})
-	primary_key!: #Identifier
+	primaryKey!:  #Identifier
 	grain?:       #Identifier
 	fields?: close({
 		[#Identifier]: close({
 			label?:       string
 			description?: string
 			expr?:        string
+			expression?:  string
+			type?:        string
 		})
 	})
 	measures?: close({
@@ -101,8 +196,8 @@ package contracts
 	description?: string
 })
 
-#SemanticModelSpec: close({
-	base_table: #Identifier
+#ProjectSemanticModelSpec: close({
+	baseTable!: #Identifier
 	tables: [...#Identifier]
 	relationships?: [...#Relationship]
 	measures?: close({
@@ -145,6 +240,20 @@ package contracts
 	title!:          string
 	description?:    string
 	semantic_model!: #Identifier
+	filters?: close({
+		[#Identifier]: #Filter
+	})
+	visuals!: close({
+		[#Identifier]: #Visual
+	})
+	tables?: close({
+		[#Identifier]: #Table
+	})
+	pages!: [...#Page]
+})
+
+#DashboardSpec: close({
+	semanticModel!: #Identifier
 	filters?: close({
 		[#Identifier]: #Filter
 	})
@@ -326,7 +435,7 @@ package contracts
 })
 
 #Page: close({
-	id!:          #ObjectID
+	name!:        #ObjectID
 	title!:       string
 	description?: string
 	canvas?: close({

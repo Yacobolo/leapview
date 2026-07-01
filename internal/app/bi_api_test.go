@@ -64,6 +64,28 @@ func TestBIAPIListResponsesUseStandardEnvelope(t *testing.T) {
 	}
 }
 
+func TestBIAPIUsesWorkspaceRouteScope(t *testing.T) {
+	metrics := NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{
+		"sales":      namedWorkspaceMetrics{workspaceID: "sales", dashboardID: "executive-sales", title: "Executive Sales"},
+		"operations": namedWorkspaceMetrics{workspaceID: "operations", dashboardID: "fulfillment-operations", title: "Fulfillment Operations"},
+	})
+	server := NewWithOptions(metrics, Options{Store: testStore(t), DefaultWorkspaceID: "sales"})
+
+	okReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/operations/dashboards/fulfillment-operations", nil)
+	okRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(okRec, okReq)
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("operations dashboard status=%d want=200 body=%s", okRec.Code, okRec.Body.String())
+	}
+
+	crossReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/operations/dashboards/executive-sales", nil)
+	crossRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(crossRec, crossReq)
+	if crossRec.Code != http.StatusNotFound {
+		t.Fatalf("cross-workspace dashboard status=%d want=404 body=%s", crossRec.Code, crossRec.Body.String())
+	}
+}
+
 func TestBIAPIListPaginationRejectsMalformedLimit(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards?limit=oops", nil)

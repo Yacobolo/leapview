@@ -1,0 +1,10 @@
+apiVersion: libredash.dev/v1
+kind: WorkspaceGroup
+metadata:
+  workspace: visuals
+  name: visuals-developers
+  title: Visuals Developers
+spec:
+  members:
+  - email: developer@example.com
+    displayName: Visuals Developer

@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,8 +18,17 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
+
+func toolNames(tools []agent.ToolDefinition) []string {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
 
 func TestServiceUsesHostProvidedTools(t *testing.T) {
 	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
@@ -51,6 +62,81 @@ func TestServiceAppendsHostProvidedTools(t *testing.T) {
 	}
 	if runTool(t, tools, "two", `{}`) != `{"name":"two"}` {
 		t.Fatalf("appended host-provided tool did not run")
+	}
+}
+
+func TestServiceAppliesWorkspaceAgentPolicyToTools(t *testing.T) {
+	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	service.SetToolProviders(func(Scope) []agent.ToolDefinition {
+		return []agent.ToolDefinition{
+			{Name: "query_visual"},
+			{Name: "query_table"},
+			{Name: "search_workspace"},
+		}
+	})
+	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
+		return workspace.AgentPolicy{
+			Enabled: true,
+			Tools: workspace.AgentPolicyTools{
+				Allow: []string{"query_table", "query_visual"},
+				Deny:  []string{"query_table"},
+			},
+		}, true
+	})
+
+	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	if got := toolNames(tools); !reflect.DeepEqual(got, []string{"query_visual"}) {
+		t.Fatalf("tools = %#v, want query_visual only", got)
+	}
+}
+
+func TestServiceRejectsDisabledWorkspaceAgentPolicy(t *testing.T) {
+	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
+		return workspace.AgentPolicy{Enabled: false}, true
+	})
+
+	_, err := service.Prompt(context.Background(), PromptInput{
+		Scope:          Scope{WorkspaceID: "test", PrincipalID: "principal"},
+		ConversationID: "conv_test",
+		Input:          "hello",
+	})
+	if !errors.Is(err, ErrPolicyDisabled) {
+		t.Fatalf("Prompt() error = %v, want ErrPolicyDisabled", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "workspace policy") {
+		t.Fatalf("Prompt() error = %v, want policy-specific message", err)
+	}
+}
+
+func TestServiceRejectsGloballyDisabledAgentSeparatelyFromPolicy(t *testing.T) {
+	service := NewService(fakeAgentMetrics{}, nil, Config{})
+	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
+		return workspace.AgentPolicy{Enabled: true}, true
+	})
+
+	_, err := service.Prompt(context.Background(), PromptInput{
+		Scope:          Scope{WorkspaceID: "test", PrincipalID: "principal"},
+		ConversationID: "conv_test",
+		Input:          "hello",
+	})
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("Prompt() error = %v, want ErrDisabled", err)
+	}
+	if errors.Is(err, ErrPolicyDisabled) {
+		t.Fatalf("Prompt() error = %v, did not want ErrPolicyDisabled", err)
+	}
+}
+
+func TestServiceAppendsWorkspaceAgentPolicyInstructions(t *testing.T) {
+	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
+		return workspace.AgentPolicy{Enabled: true, Instructions: "Prefer sales semantic models."}, true
+	})
+
+	prompt := service.systemPrompt(Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	if !strings.Contains(prompt, "read-only BI assistant") || !strings.Contains(prompt, "Prefer sales semantic models.") {
+		t.Fatalf("system prompt missing base or policy instructions: %q", prompt)
 	}
 }
 

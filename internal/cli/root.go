@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +13,7 @@ type rootOptions struct {
 	localCatalog string
 	production   bool
 	workspaceID  string
+	environment  string
 	target       string
 	token        string
 	catalog      string
@@ -29,6 +29,7 @@ type rootOptions struct {
 	limit        int
 	pageToken    string
 	searchTypes  []string
+	autoApprove  bool
 }
 
 func Execute(ctx context.Context) error {
@@ -40,10 +41,11 @@ func Execute(ctx context.Context) error {
 			return runServe(ctx, opts)
 		},
 	}
-	root.PersistentFlags().StringVar(&opts.workspaceID, "workspace", platform.DefaultWorkspaceID, "workspace id")
+	root.PersistentFlags().StringVar(&opts.workspaceID, "workspace", "", "workspace id")
 	root.AddCommand(serveCommand(ctx, opts))
 	root.AddCommand(deployCommand(ctx, opts))
 	root.AddCommand(validateCommand(ctx, opts))
+	root.AddCommand(planCommand(ctx, opts))
 	root.AddCommand(schemaCommand(opts))
 	root.AddCommand(apiCommand(ctx, opts))
 	root.AddCommand(agentCommand(ctx, opts))

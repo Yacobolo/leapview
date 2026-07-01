@@ -14,8 +14,8 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func updateAction(dashboardID, pageID string) string {
-	return "@get('/updates?dashboard=" + dashboardID + "&page=" + pageID + "', {openWhenHidden: true})"
+func updateAction(workspaceID, dashboardID, pageID string) string {
+	return "@get('/workspaces/" + workspaceID + "/updates?dashboard=" + dashboardID + "&page=" + pageID + "', {openWhenHidden: true})"
 }
 
 func postAction(path string) string {
@@ -51,7 +51,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
-	action := updateAction(report.ID, activePage.ID)
+	action := updateAction(catalog.Workspace.ID, report.ID, activePage.ID)
 	initAction := "window.DatastarURLSync && window.DatastarURLSync.bindPopstate($urlParamShape); " + action
 	tableReset := tableResetExpression()
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + tableReset
@@ -99,12 +99,12 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 						g.Attr("data-attr:tables", "JSON.stringify($tables)"),
 						g.Attr("data-attr:status", "JSON.stringify($status)"),
 						g.Attr("data-on:ld-filters-change", filtersUpdate+action),
-						g.Attr("data-on:ld-filters-reset", filtersUpdate+postAction("/commands/reset-filters")),
+						g.Attr("data-on:ld-filters-reset", filtersUpdate+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters")),
 						g.Attr("data-on:ld-filters-refresh", action),
-						g.Attr("data-on:ld-selection-clear", "$filters.selections = []; "+postAction("/commands/clear-selection")),
-						g.Attr("data-on:ld-interaction-select", "$interactionCommand = evt.detail; "+postAction("/commands/select")),
-						g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; "+postAction("/commands/table-window")),
-						g.Attr("data-on:ld-refresh-materializations", postAction("/commands/refresh-materializations?model="+model.Name+"&dashboard="+report.ID)),
+						g.Attr("data-on:ld-selection-clear", "$filters.selections = []; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection")),
+						g.Attr("data-on:ld-interaction-select", "$interactionCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/select")),
+						g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/table-window")),
+						g.Attr("data-on:ld-refresh-materializations", postAction("/workspaces/"+catalog.Workspace.ID+"/commands/refresh-materializations?model="+model.Name+"&dashboard="+report.ID)),
 					),
 				),
 				inspectorElement(),

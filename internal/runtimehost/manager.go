@@ -10,7 +10,7 @@ import (
 )
 
 type DeploymentRepository interface {
-	ActiveArtifact(ctx context.Context, workspaceID deployment.WorkspaceID) (deployment.Deployment, deployment.Artifact, error)
+	ActiveArtifact(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) (deployment.Deployment, deployment.Artifact, error)
 	ByID(ctx context.Context, id deployment.ID) (deployment.Deployment, error)
 	ArtifactByDeployment(ctx context.Context, deploymentID deployment.ID) (deployment.Artifact, error)
 }
@@ -35,12 +35,21 @@ type Manager struct {
 	mu          sync.RWMutex
 	repo        DeploymentRepository
 	workspaceID deployment.WorkspaceID
+	environment deployment.Environment
 	dataDir     string
 	factory     RuntimeFactory
 
 	activeDeployment deployment.ID
 	activeDigest     string
 	current          Runtime
+}
+
+type ManagerOptions struct {
+	Repo        DeploymentRepository
+	WorkspaceID deployment.WorkspaceID
+	Environment deployment.Environment
+	DataDir     string
+	Factory     RuntimeFactory
 }
 
 type Prepared struct {
@@ -57,17 +66,18 @@ func (p *Prepared) Close() error {
 	return p.runtime.Close()
 }
 
-func NewManagerWithFactory(repo DeploymentRepository, workspaceID deployment.WorkspaceID, dataDir string, factory RuntimeFactory) *Manager {
+func NewManagerWithFactory(options ManagerOptions) *Manager {
 	return &Manager{
-		repo:        repo,
-		workspaceID: workspaceID,
-		dataDir:     dataDir,
-		factory:     factory,
+		repo:        options.Repo,
+		workspaceID: options.WorkspaceID,
+		environment: deployment.NormalizeEnvironment(options.Environment),
+		dataDir:     options.DataDir,
+		factory:     options.Factory,
 	}
 }
 
 func (m *Manager) Reload(ctx context.Context) error {
-	current, artifact, err := m.repo.ActiveArtifact(ctx, m.workspaceID)
+	current, artifact, err := m.repo.ActiveArtifact(ctx, m.workspaceID, m.environment)
 	if err != nil {
 		if errors.Is(err, deployment.ErrNotFound) {
 			return nil

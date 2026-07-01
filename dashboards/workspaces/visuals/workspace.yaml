@@ -1,0 +1,31 @@
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: visuals
+  title: Visuals Workspace
+  description: Developer QA workspace for exhaustive dashboard visual and table renderer coverage.
+spec:
+  uses:
+    sources:
+    - olist.orders
+    - olist.payments
+    - olist.reviews
+    - olist.order_items
+    - olist.products
+    - olist.translations
+    - olist.customers
+  models:
+    include:
+    - models/*.yaml
+  semanticModels:
+    include:
+    - semantic-models/*.yaml
+  dashboards:
+    include:
+    - dashboards/*.yaml
+  access:
+    include:
+    - access/*.yaml
+  agentPolicy:
+    include:
+    - agent/*.yaml

@@ -9,11 +9,16 @@ import (
 )
 
 func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
+	metrics, ok := h.metricsForRequest(r)
+	if !ok {
+		nethttp.NotFound(w, r)
+		return
+	}
 	signals, ok := h.readSignals(w, r)
 	if !ok {
 		return
 	}
-	dashboardID := lddatastar.DashboardID(r, signals, h.Metrics.DefaultDashboardID())
+	dashboardID := lddatastar.DashboardID(r, signals, metrics.DefaultDashboardID())
 	pageID := lddatastar.PageID(r, signals)
 	clientID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
 	request := stream.SnapshotRequest{
@@ -27,10 +32,10 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	updates, unsubscribe := h.Broker.Subscribe(clientID)
 	defer unsubscribe()
 
-	if err := writer.Patch(lddatastar.LoadingPatch(h.Metrics.DataDir())); err != nil {
+	if err := writer.Patch(lddatastar.LoadingPatch(metrics.DataDir())); err != nil {
 		return
 	}
-	if !h.queryAndPatch(r, writer, request) {
+	if !h.queryAndPatch(r, metrics, writer, request) {
 		return
 	}
 
@@ -53,15 +58,15 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 				return
 			}
 		case <-ticker.C:
-			if !h.queryAndPatch(r, writer, request) {
+			if !h.queryAndPatch(r, metrics, writer, request) {
 				return
 			}
 		}
 	}
 }
 
-func (h Handler) queryAndPatch(r *nethttp.Request, writer lddatastar.SignalWriter, request stream.SnapshotRequest) bool {
-	snapshot := stream.Service{Metrics: h.Metrics}.Snapshot(r.Context(), request)
+func (h Handler) queryAndPatch(r *nethttp.Request, metrics Metrics, writer lddatastar.SignalWriter, request stream.SnapshotRequest) bool {
+	snapshot := stream.Service{Metrics: metrics}.Snapshot(r.Context(), request)
 	for _, patch := range lddatastar.SnapshotPatches(snapshot) {
 		if err := writer.Patch(patch); err != nil {
 			return false

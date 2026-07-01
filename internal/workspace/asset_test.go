@@ -20,6 +20,20 @@ func TestNewAssetRequiresAllowedPayloadSchema(t *testing.T) {
 	}
 }
 
+func TestNewAssetContentHashIgnoresSourceFile(t *testing.T) {
+	first, err := NewAssetWithSourceFile("test", "dep", AssetTypeDashboard, "sales", "", "Sales", "", "dashboards/a.yaml", "dashboard.v1", map[string]any{"key": "sales"})
+	if err != nil {
+		t.Fatalf("first asset: %v", err)
+	}
+	second, err := NewAssetWithSourceFile("test", "dep", AssetTypeDashboard, "sales", "", "Sales", "", "dashboards/moved.yaml", "dashboard.v1", map[string]any{"key": "sales"})
+	if err != nil {
+		t.Fatalf("second asset: %v", err)
+	}
+	if first.ContentHash != second.ContentHash {
+		t.Fatalf("content hashes differ for sourceFile-only change: %s != %s", first.ContentHash, second.ContentHash)
+	}
+}
+
 func TestValidateAssetGraphForDeploymentRejectsInvalidGraph(t *testing.T) {
 	workspaceID := WorkspaceID("test")
 	deploymentID := DeploymentID("dep")
@@ -30,6 +44,22 @@ func TestValidateAssetGraphForDeploymentRejectsInvalidGraph(t *testing.T) {
 		name   string
 		mutate func(*AssetGraph)
 	}{
+		{
+			name: "missing source file",
+			mutate: func(graph *AssetGraph) {
+				graph.Assets[1].SourceFile = ""
+			},
+		},
+		{
+			name: "generated child missing source file",
+			mutate: func(graph *AssetGraph) {
+				field, err := NewAsset(workspaceID, deploymentID, AssetTypeField, "sales.status", model.ID, "status", "", "field.v1", map[string]any{"key": "status"})
+				if err != nil {
+					panic(err)
+				}
+				graph.Assets = append(graph.Assets, field)
+			},
+		},
 		{
 			name: "duplicate logical asset",
 			mutate: func(graph *AssetGraph) {
@@ -90,7 +120,7 @@ func TestValidateAssetGraphForDeploymentAcceptsValidGraph(t *testing.T) {
 }
 
 func mustTestAsset(workspaceID WorkspaceID, deploymentID DeploymentID, typ AssetType, key string, parent AssetID) Asset {
-	asset, err := NewAsset(workspaceID, deploymentID, typ, key, parent, key, "", string(typ)+".v1", map[string]any{"key": key})
+	asset, err := NewAssetWithSourceFile(workspaceID, deploymentID, typ, key, parent, key, "", "testdata/"+string(typ)+"-"+key+".yaml", string(typ)+".v1", map[string]any{"key": key})
 	if err != nil {
 		panic(err)
 	}

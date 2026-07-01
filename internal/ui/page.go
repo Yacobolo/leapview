@@ -143,7 +143,7 @@ func catalogPageSignal(catalog dashboard.Catalog) uisignals.CatalogPageSignal {
 			SemanticModel: report.SemanticModel,
 			PageCount:     report.PageCount,
 			Tags:          report.Tags,
-			Href:          "/dashboards/" + report.ID,
+			Href:          "/workspaces/" + catalog.Workspace.ID + "/dashboards/" + report.ID,
 		})
 	}
 	return uisignals.CatalogPageSignal{
