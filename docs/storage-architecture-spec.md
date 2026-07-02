@@ -1,17 +1,21 @@
-# LibreDash Storage Architecture Spec
+# LibreDash DuckLake Storage Architecture Spec
 
 ## Summary
 
-LibreDash storage should follow a DuckLake-style split between metadata and data.
+LibreDash storage uses DuckLake as the analytical table catalog and DuckDB as the execution engine.
 
-SQLite is the catalog and source of truth. DuckDB is one environment-scoped physical data catalog used for materialized tables and query execution. Deployments are isolated by immutable DuckDB namespaces and SQLite metadata, not by separate DuckDB files.
+One metadata catalog stores both LibreDash control-plane tables and DuckLake analytical metadata. Parquet files hold analytical data. DuckDB attaches DuckLake, plans queries, and executes against local files.
+
+Deployments are isolated by immutable DuckLake snapshots, not by separate DuckDB database files or copied table sets.
 
 ## Goals
 
-- Use one DuckDB database per LibreDash environment/cache root.
-- Present storage as DuckDB databases, schemas, and tables enriched with catalog governance metadata.
-- Activate deployments by flipping a SQLite pointer, not by moving files.
-- Keep rollback cheap by preserving previous deployment table versions until retention removes them.
+- Use DuckLake for materialized model tables, snapshots, schema history, statistics, commit metadata, and physical data-file ownership.
+- Use the metadata catalog for LibreDash control-plane state: workspaces, environments, active deployment pointers, permissions, and application job state.
+- Store analytical data as DuckLake-managed Parquet files in the environment file store.
+- Execute BI queries through DuckDB attached to the active DuckLake snapshot.
+- Activate deployments by flipping a metadata pointer, not by moving files.
+- Keep rollback cheap by preserving previous DuckLake snapshots until retention removes them.
 - Make failed refreshes non-destructive to the active deployment.
 - Support deterministic cleanup of unreferenced physical data.
 
@@ -21,48 +25,86 @@ SQLite is the catalog and source of truth. DuckDB is one environment-scoped phys
 - Do not require one DuckDB file per semantic model.
 - Do not require one DuckDB file per deployment as the long-term architecture.
 - Do not use filesystem layout as the deployment isolation mechanism.
-- Do not implement full DuckLake compatibility in v1.
+- Do not duplicate DuckLake catalog semantics inside LibreDash metadata.
 
 ## Architecture
 
-SQLite catalog tables own governance metadata:
+Each environment has one metadata catalog and one analytical data store:
+
+```text
+environment/
+  catalog.sqlite            # LibreDash control-plane tables + DuckLake metadata tables
+  data/                     # DuckLake-managed Parquet files
+```
+
+The local default uses DuckLake's SQLite catalog backend because it supports multiple local clients better than a DuckDB-backed DuckLake catalog. The same architecture can use PostgreSQL as the metadata catalog when LibreDash needs a multi-user lakehouse deployment.
+
+LibreDash owns application metadata that DuckLake cannot own:
 
 - Workspaces and environments.
-- Deployments and active deployment pointers.
-- Logical tables from workspace model definitions.
-- Physical table references for each deployment.
-- Materialization runs, row counts, schema hashes, sizes, errors, and refresh timestamps.
-- Retention state for expired deployments and orphaned physical tables.
+- Active deployment pointer: workspace/environment -> DuckLake snapshot id.
+- Deployment intent and lifecycle state.
+- Semantic model, dashboard, and permission metadata.
+- Materialization job state for work not yet committed to DuckLake.
+- Audit records for application actions.
 
-DuckDB owns physical storage:
+LibreDash must not mirror DuckLake table schemas, row counts, file lists, schema versions, or cleanup queues.
 
-- Physical materialized tables.
-- Query execution.
-- System metadata for physical storage inspection.
+DuckLake owns analytical metadata:
 
-Physical tables are immutable after validation and addressed by stable internal IDs, not user-facing names. A deployment maps logical names such as `model.orders` to physical relations such as `dep_94b8ef633ecdee010579fc56.tbl_orders_01HF...`.
+- Schemas and tables used by LibreDash workspaces.
+- Snapshots, changesets, authors, commit messages, and commit extra info.
+- Table schema versions and schema evolution.
+- Data-file manifests and file-level ownership.
+- Table and file statistics exposed by DuckLake metadata functions.
+- Table layout settings such as compression, row-group size, target file size, partitioning, and sort order.
+- Snapshot expiration, files scheduled for deletion, orphan-file detection, and cleanup settings.
+
+Parquet stores physical table data:
+
+- Columnar storage for materialized model tables.
+- Local file-store layout managed by DuckLake.
+- Data files that DuckLake can compact, expire, copy, or inspect independently of application metadata.
+
+DuckDB owns execution:
+
+- Attaching DuckLake catalogs.
+- Running materialization SQL.
+- Running dashboard, export, API, and agent queries.
+- Reading DuckLake-managed Parquet files through the DuckLake catalog.
+
+A committed DuckLake snapshot is immutable. Later writes create new snapshots. A deployment maps a workspace/environment to one DuckLake snapshot id. That snapshot is the consistent analytical version for all tables in the deployment.
 
 ```text
 SQLite:
   workspace=sales
   environment=dev
   active_deployment=dep_94b8...
-  model.orders -> duckdb schema dep_94b8..., table tbl_orders_01HF...
+  dep_94b8... -> ducklake snapshot 42
+
+DuckLake:
+  snapshot 42:
+    model.orders -> data/model/orders/*.parquet
+    model.customers -> data/model/customers/*.parquet
 
 DuckDB:
-  dep_94b8ef633ecdee010579fc56.tbl_orders_01HF...
-  dep_94b8ef633ecdee010579fc56.tbl_customers_01HG...
+  ATTACH 'ducklake:sqlite:environment/catalog.sqlite' AS lake
+    (DATA_PATH 'environment/data', SNAPSHOT_VERSION 42)
+  SELECT ... FROM lake.model.orders
 ```
 
-Physical relation names are generated identifiers. Human-readable names come from SQLite metadata.
+Human-readable BI semantics and application ownership come from LibreDash metadata. Analytical table state and file ownership come from DuckLake.
 
 ## Deployment Model
 
-Deployments are immutable catalog versions.
+Deployments are immutable references to DuckLake snapshots.
 
-- Each deployment owns a complete set of physical table references for its required model tables.
-- A deployment is active only when SQLite marks it active for a workspace and environment.
-- Activation is a catalog state change, not a DuckDB file or table move.
+- Each deployment points to one DuckLake snapshot id.
+- Materialization commits all deployment table changes in one DuckLake transaction.
+- The DuckLake commit message or extra info records the LibreDash deployment id, workspace id, semantic model digest, and source data digest.
+- After commit, LibreDash reads the committed DuckLake snapshot id and records only that pointer in the control-plane tables.
+- A deployment is active only when LibreDash marks it active for a workspace and environment.
+- Activation is a metadata transaction that updates the active snapshot pointer.
 - Previous deployments remain addressable for rollback and audit until retention expires them.
 - Failed or incomplete deployments are never active and never serve queries.
 
@@ -73,19 +115,20 @@ staging -> validated -> active -> expired -> delete_scheduled -> deleted
                   \-> failed
 ```
 
-Physical tables that exist in DuckDB without SQLite ownership are `orphaned`.
+DuckLake snapshots that have no live LibreDash deployment reference are retention candidates.
 
 ## Query Resolution
 
-Runtime queries never hard-code physical DuckDB names.
+Runtime queries never hard-code deployment-specific physical files or table names.
 
 Resolution invariants:
 
 - Runtime resolves the active deployment pointer once per request.
-- Logical table refs are resolved through SQLite metadata.
-- Query planning rewrites logical refs to physical DuckDB refs before execution.
+- DuckDB attaches DuckLake at that snapshot version for the request.
+- Logical table refs are resolved through the semantic model to stable DuckLake schema/table names.
 - All DuckDB reads within one dashboard/page refresh, API request, export, or agent query use one deployment version.
 - Activation changes made during a request do not affect that request.
+- DuckDB connections attach DuckLake read-only for query serving when possible.
 
 Transform SQL that references `model.<table>` uses the same resolver during materialization.
 
@@ -94,27 +137,34 @@ Transform SQL that references `model.<table>` uses the same resolver during mate
 Cleanup is metadata-driven.
 
 - Retention policy determines when inactive deployments expire.
-- Expired deployments move to `delete_scheduled` before physical deletion.
-- Physical deletion respects a safety window and active-query grace period.
-- Physical DuckDB tables without SQLite ownership are orphans.
+- Expired deployments move to `delete_scheduled` before DuckLake snapshot expiration.
+- Physical file deletion respects a safety window and active-query grace period.
+- DuckLake snapshots not referenced by active, rollback, audit, or retention policy are candidates for expiration.
+- DuckLake cleanup functions identify files scheduled for deletion and orphaned Parquet files.
 - Cleanup supports dry-run inspection before destructive action.
-- Cleanup reconciles SQLite ownership against DuckDB system tables before deletion.
+- Cleanup reconciles LibreDash deployment references against DuckLake snapshots before expiration.
 
-This mirrors DuckLake’s separation of snapshot expiration from physical file cleanup.
+Snapshot expiration and physical file cleanup remain separate operations.
 
 ## Design Defaults
 
-- Use one DuckDB database per LibreDash environment/cache root.
-- Use immutable DuckDB schemas and generated physical table names for deployment/table isolation.
-- Use SQLite transactions for activation and rollback.
-- Treat DuckDB files, WALs, schemas, and physical relation names as governance facts, not user-managed authoring primitives.
-- Use SQLite as the authority for logical ownership, lifecycle state, and active deployment pointers.
+- Use one metadata catalog per LibreDash environment/cache root.
+- Use SQLite as the local metadata catalog backend and PostgreSQL as the server/multi-user backend.
+- Use DuckLake schemas for workspace/table namespaces.
+- Use immutable DuckLake snapshots for deployment isolation.
+- Use local Parquet as the analytical data format.
+- Use DuckLake DDL and scoped options for table layout; LibreDash should not own physical file-layout policy.
+- Use metadata transactions for activation and rollback.
+- Treat DuckDB as a stateless execution engine over DuckLake, not as the durable deployment container.
+- Use LibreDash control-plane tables as the authority for application ownership, lifecycle state, permissions, and active deployment pointers.
+- Use DuckLake as the authority for analytical table state, schema versions, snapshot history, statistics, and physical data-file ownership.
 
 ## Acceptance Criteria
 
-- DuckDB storage can be reconciled with SQLite ownership metadata.
+- LibreDash deployment pointers can be reconciled with DuckLake snapshots.
 - Rollback does not require rematerialization.
 - Failed materialization cannot alter active query results.
-- Cleanup can report and remove expired or orphaned physical data.
-- Tests prove query routing changes when only the SQLite active deployment pointer changes.
-- Tests prove one request cannot mix tables from different active deployment versions.
+- Cleanup can report and remove expired snapshots and orphaned physical data through DuckLake.
+- Tests prove query routing changes when only the active deployment pointer changes.
+- Tests prove one request attaches exactly one DuckLake snapshot version.
+- Tests prove DuckDB query serving does not depend on per-deployment DuckDB database files.
