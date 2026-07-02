@@ -5,6 +5,7 @@ import { jsonAttribute } from '../shared/json-attribute'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
 import '../shared/record-table'
+import './agent-tools'
 import './agent-prompt-editor'
 import './storage-explorer'
 
@@ -248,8 +249,11 @@ class LibreDashAdminPage extends LitElement {
             <ld-agent-prompt-editor value=${systemPrompt} .value=${systemPrompt} ?disabled=${!agent.canWrite}></ld-agent-prompt-editor>
           </slot>
         </section>
+        <section class="section" aria-label="Tools">
+          <h2>Tools</h2>
+          <ld-agent-tools .tools=${agent.tools}></ld-agent-tools>
+        </section>
       ` : nothing}
-      ${page.sections?.map(renderSection)}
     `
   }
 

@@ -198,11 +198,11 @@ test('admin storage route renders storage explorer from typed signal data', asyn
   }
 })
 
-test('admin agent route renders prompt editor and emits save command', async () => {
+test('admin agent route renders prompt editor, tools catalog, and emits save command', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(baseURL)
-    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-agent-prompt-editor'))
+    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-agent-prompt-editor') && customElements.get('ld-agent-tools'))
 
     const state = await page.evaluate(async () => {
       const waitFor = async (predicate: () => boolean, timeoutMs = 5000): Promise<void> => {
@@ -240,7 +240,15 @@ test('admin agent route renders prompt editor and emits save command', async () 
           tools: [{
             name: 'query_visual',
             description: 'Query visual data.',
-            inputSchema: { type: 'object', additionalProperties: false },
+            inputSchema: {
+              type: 'object',
+              required: ['dashboardId'],
+              properties: {
+                dashboardId: { type: 'string', description: 'Dashboard identifier.' },
+                mode: { enum: ['summary', 'detail'], description: 'Result detail level.' },
+              },
+              additionalProperties: false,
+            },
           }],
         },
         sections: [{
@@ -259,7 +267,9 @@ test('admin agent route renders prompt editor and emits save command', async () 
       element.addEventListener('ld-agent-system-prompt-save', (event: CustomEvent) => { command = event.detail })
       const root = element.shadowRoot
       const editor = root.querySelector('ld-agent-prompt-editor') as any
+      const toolsCatalog = root.querySelector('ld-agent-tools') as any
       await editor.updateComplete
+      await toolsCatalog.updateComplete
       const editorRoot = editor.shadowRoot
       await customElements.whenDefined('ld-code-editor')
       await waitFor(() => Boolean(editorRoot.querySelector('ld-code-editor')))
@@ -304,11 +314,34 @@ test('admin agent route renders prompt editor and emits save command', async () 
         saveText: editorRoot.querySelector('.save-button')?.textContent?.trim(),
         status: editorRoot.querySelector('.prompt-status')?.textContent?.trim(),
       }
+      codeEditor.value = 'Signal prompt'
+      codeEditor.dispatchEvent(new CustomEvent('ld-code-editor-change', {
+        bubbles: true,
+        composed: true,
+        detail: { value: 'Signal prompt' },
+      }))
+      await codeEditor.updateComplete
+      await editor.updateComplete
+      const revertedState = {
+        hasSaveButton: Boolean(editorRoot.querySelector('.save-button')),
+        status: editorRoot.querySelector('.prompt-status')?.textContent?.trim() ?? '',
+      }
+      codeEditor.value = 'Updated prompt'
+      codeEditor.dispatchEvent(new CustomEvent('ld-code-editor-change', {
+        bubbles: true,
+        composed: true,
+        detail: { value: 'Updated prompt' },
+      }))
+      await codeEditor.updateComplete
+      await editor.updateComplete
       editorRoot.querySelector<HTMLButtonElement>('.save-button')?.click()
       await editor.updateComplete
       return {
         title: root.querySelector('h1')?.textContent?.trim(),
         hasEditor: Boolean(editor),
+        hasToolsCatalog: Boolean(toolsCatalog),
+        hasGenericToolsRecordTable: Boolean(root.querySelector('section[aria-label="Tools"] ld-record-table')),
+        toolsCatalogText: toolsCatalog.shadowRoot.textContent,
         hasCodeEditor: Boolean(codeEditor),
         preSwitchState,
         immediateSwitchState,
@@ -316,12 +349,12 @@ test('admin agent route renders prompt editor and emits save command', async () 
         actionsBeforeBody: Boolean(actions.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING),
         actionsAfterBody: Boolean(actions.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_PRECEDING),
         dirtyState,
+        revertedState,
         editorFontSize,
         seededEditorValue,
         editorValue: codeEditor.value,
         hasSaveAfterSave: Boolean(editorRoot.querySelector('.save-button')),
         activeMode: editorRoot.querySelector('.mode-toggle button[aria-pressed="true"]')?.getAttribute('aria-label'),
-        toolText: root.textContent,
         status: editorRoot.querySelector('.prompt-status')?.textContent?.trim(),
         command,
       }
@@ -329,6 +362,10 @@ test('admin agent route renders prompt editor and emits save command', async () 
 
     expect(state.title).toBe('Agent')
     expect(state.hasEditor).toBe(true)
+    expect(state.hasToolsCatalog).toBe(true)
+    expect(state.hasGenericToolsRecordTable).toBe(false)
+    expect(state.toolsCatalogText ?? '').toMatch(/query_visual/)
+    expect(state.toolsCatalogText ?? '').toMatch(/dashboardId/)
     expect(state.hasCodeEditor).toBe(true)
     expect(state.preSwitchState).toEqual({
       hasCodeEditor: true,
@@ -347,10 +384,10 @@ test('admin agent route renders prompt editor and emits save command', async () 
     expect(state.editorFontSize).toBe('12px')
     expect(state.seededEditorValue).toBe('Signal prompt')
     expect(state.editorValue).toBe('Updated prompt')
-    expect(state.dirtyState).toEqual({ hasSaveButton: true, saveText: 'Save', status: 'Unsaved' })
+    expect(state.dirtyState).toEqual({ hasSaveButton: true, saveText: 'Save', status: 'Unsaved changes' })
+    expect(state.revertedState).toEqual({ hasSaveButton: false, status: '' })
     expect(state.hasSaveAfterSave).toBe(false)
     expect(state.activeMode).toBe('Edit')
-    expect(state.toolText ?? '').toMatch(/query_visual/)
     expect(state.status).toBe('Saved')
     expect(state.command).toEqual({ systemPrompt: 'Updated prompt' })
   } finally {
@@ -427,6 +464,120 @@ test('admin agent prompt editor disables saves for read-only users', async () =>
     expect(state.hasSaveButton).toBe(false)
     expect(state.status).toBe('Read-only')
     expect(state.command).toBeNull()
+  } finally {
+    await page.close()
+  }
+})
+
+test('admin agent tools catalog renders payload fields, JSON, empty, unsupported, and search', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-agent-tools'))
+
+    const state = await page.evaluate(async () => {
+      const element = document.createElement('ld-agent-tools') as any
+      element.tools = [{
+        name: 'query_visual',
+        description: 'Query visual data.',
+        inputSchema: {
+          type: 'object',
+          required: ['dashboardId', 'mode'],
+          properties: {
+            dashboardId: { type: 'string', description: 'Dashboard identifier.' },
+            filters: {
+              type: 'object',
+              properties: {
+                dateRange: {
+                  type: 'object',
+                  required: ['start'],
+                  properties: {
+                    start: { type: 'string', description: 'Start date.' },
+                    end: { type: 'string', description: 'End date.' },
+                  },
+                },
+              },
+            },
+            metrics: { type: 'array', items: { type: 'string' }, description: 'Metric IDs.' },
+            mode: { enum: ['summary', 'detail'], description: 'Result detail level.' },
+          },
+          additionalProperties: false,
+        },
+      }, {
+        name: 'no_input',
+        description: 'No payload required.',
+        inputSchema: { type: 'object', additionalProperties: false },
+      }, {
+        name: 'unsupported_input',
+        description: 'Composition schema.',
+        inputSchema: { oneOf: [{ type: 'string' }, { type: 'number' }] },
+      }]
+      document.body.append(element)
+      await element.updateComplete
+      const root = element.shadowRoot
+      const firstText = root.textContent ?? ''
+      const catalogHeight = Math.round(root.querySelector('.catalog')!.getBoundingClientRect().height)
+      const listOverflow = getComputedStyle(root.querySelector('.list')!).overflowY
+      const detailBodyOverflow = getComputedStyle(root.querySelector('.detail-body')!).overflowY
+      const toolButtons = Array.from(root.querySelectorAll('.tool-button')).map((button) => button.textContent?.trim())
+      const listText = root.querySelector('.list')?.textContent ?? ''
+      const firstRows = Array.from(root.querySelectorAll('.fields tbody tr')).map((row) => Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent?.trim()))
+      const detailMeta = Array.from(root.querySelectorAll('.detail-meta .required-count')).map((item) => item.textContent?.trim())
+
+      const jsonButton = root.querySelector<HTMLButtonElement>('.tabs button:nth-child(2)')!
+      jsonButton.click()
+      await element.updateComplete
+      const jsonText = root.querySelector('.json')?.textContent ?? ''
+
+      const noInputButton = Array.from(root.querySelectorAll<HTMLButtonElement>('.tool-button')).find((button) => button.textContent?.includes('no_input'))!
+      noInputButton.click()
+      await element.updateComplete
+      const noInputText = root.textContent ?? ''
+
+      const unsupportedButton = Array.from(root.querySelectorAll<HTMLButtonElement>('.tool-button')).find((button) => button.textContent?.includes('unsupported_input'))!
+      unsupportedButton.click()
+      await element.updateComplete
+      const unsupportedText = root.textContent ?? ''
+
+      const search = root.querySelector<HTMLInputElement>('input[type="search"]')!
+      search.value = 'filters.dateRange.start'
+      search.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
+      await element.updateComplete
+      const searchRows = Array.from(root.querySelectorAll('.tool-button')).map((button) => button.textContent?.trim())
+      return {
+        firstText,
+        catalogHeight,
+        listOverflow,
+        detailBodyOverflow,
+        toolButtons,
+        listText,
+        firstRows,
+        detailMeta,
+        jsonText,
+        noInputText,
+        unsupportedText,
+        searchRows,
+      }
+    })
+
+    expect(state.firstText).toMatch(/query_visual/)
+    expect(state.firstText).toMatch(/dashboardId, filters\.dateRange\.start, filters\.dateRange\.end \+2/)
+    expect(state.catalogHeight).toBeGreaterThan(440)
+    expect(state.listOverflow).toBe('auto')
+    expect(state.detailBodyOverflow).toBe('auto')
+    expect(state.toolButtons).toEqual(['query_visual', 'no_input', 'unsupported_input'])
+    expect(state.listText).not.toMatch(/Query visual data/)
+    expect(state.detailMeta).toEqual(['3 required', 'dashboardId, filters.dateRange.start, filters.dateRange.end +2'])
+    expect(state.firstRows).toContainEqual(['dashboardId', 'string', 'Yes', 'Dashboard identifier.'])
+    expect(state.firstRows).toContainEqual(['filters.dateRange.start', 'string', 'Yes', 'Start date.'])
+    expect(state.firstRows).toContainEqual(['filters.dateRange.end', 'string', 'No', 'End date.'])
+    expect(state.firstRows).toContainEqual(['metrics', 'array<string>', 'No', 'Metric IDs.'])
+    expect(state.firstRows).toContainEqual(['mode', 'enum: summary | detail', 'Yes', 'Result detail level.'])
+    expect(state.jsonText).toMatch(/"dashboardId"/)
+    expect(state.noInputText).toMatch(/No input/)
+    expect(state.unsupportedText).toMatch(/Schema is only available as JSON/)
+    expect(state.searchRows).toHaveLength(1)
+    expect(state.searchRows[0] ?? '').toMatch(/query_visual/)
   } finally {
     await page.close()
   }

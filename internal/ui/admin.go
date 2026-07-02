@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -235,7 +234,6 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 			{Label: "Model", Value: data.Agent.Model},
 			{Label: "Tools", Value: fmt.Sprint(len(data.Agent.Tools))},
 		}
-		page.Sections = []uisignals.AdminContentSectionSignal{{Title: "Tools", Table: adminAgentToolsGrid(data.Agent.Tools)}}
 	case "storage":
 		page.HeaderTitle = "Storage"
 		page.HeaderDetail = "Read-only DuckDB database and table inventory."
@@ -308,28 +306,6 @@ func adminAgentSignal(data AdminAgentData) uisignals.AdminAgentSignal {
 		CSRFToken:    data.CSRFToken,
 		UpdatePath:   data.UpdatePath,
 		Tools:        tools,
-	}
-}
-
-func adminAgentToolsGrid(tools []AdminAgentTool) recordTable {
-	rows := make([]map[string]any, 0, len(tools))
-	for _, tool := range tools {
-		schema, _ := json.Marshal(tool.InputSchema)
-		rows = append(rows, map[string]any{
-			"name":        tool.Name,
-			"description": tool.Description,
-			"schema":      string(schema),
-		})
-	}
-	return recordTable{
-		Columns: []recordTableColumn{
-			{ID: "name", Header: "Name", Kind: "code", Width: "220px"},
-			{ID: "description", Header: "Description", Width: "360px"},
-			{ID: "schema", Header: "Input schema", Kind: "code", Width: "420px"},
-		},
-		Rows:     rows,
-		Empty:    "No tools configured.",
-		MinWidth: "1000px",
 	}
 }
 

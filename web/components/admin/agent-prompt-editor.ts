@@ -12,7 +12,6 @@ class AgentPromptEditor extends LitElement {
   @property({ type: Boolean, reflect: true }) disabled = false
   @state() private mode: PromptMode = 'preview'
   @state() private draft = ''
-  @state() private dirty = false
   @state() private status = ''
   private draftInitialized = false
 
@@ -272,8 +271,8 @@ class AgentPromptEditor extends LitElement {
 
   private updateDraftFromCodeEditor(event: CustomEvent<{ value: string }>): void {
     this.draft = event.detail.value
-    this.dirty = true
-    this.status = 'unsaved'
+    this.draftInitialized = true
+    this.status = this.dirty ? 'unsaved' : ''
   }
 
   private savePrompt(): void {
@@ -284,19 +283,25 @@ class AgentPromptEditor extends LitElement {
       composed: true,
       detail: { systemPrompt },
     }))
-    this.dirty = false
+    this.value = systemPrompt
+    this.draft = systemPrompt
     this.status = 'saved'
   }
 
   private get statusLabel(): string {
     if (this.disabled) return 'Read-only'
-    if (this.dirty) return 'Unsaved'
+    if (this.dirty) return 'Unsaved changes'
     if (this.status === 'saved' && this.mode === 'edit') return 'Saved'
     return ''
   }
 
   private get promptSource(): string {
     return this.value || this.getAttribute('value') || ''
+  }
+
+  private get dirty(): boolean {
+    if (!this.draftInitialized) return false
+    return this.draft !== this.promptSource
   }
 
   private get currentPrompt(): string {

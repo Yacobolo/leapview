@@ -320,9 +320,9 @@ function rootFontSize(): number {
   return Number.isFinite(size) ? size : 16
 }
 
-function currentTheme(): 'libredash-light' | 'libredash-dark' {
-  if (document.documentElement.style.colorScheme === 'dark') return 'libredash-dark'
-  return 'libredash-light'
+function currentTheme(): 'github-light' | 'github-dark' {
+  if (document.documentElement.style.colorScheme === 'dark') return 'github-dark'
+  return 'github-light'
 }
 
 if (!customElements.get('ld-code-editor')) customElements.define('ld-code-editor', CodeEditor)

@@ -9,22 +9,11 @@ import sql from '@shikijs/langs/sql'
 import githubDark from '@shikijs/themes/github-dark'
 import githubLight from '@shikijs/themes/github-light'
 
-type MonacoTheme = 'libredash-light' | 'libredash-dark'
+type MonacoTheme = 'github-light' | 'github-dark'
 
 let runtimePromise: Promise<typeof monaco> | null = null
 let highlighter: HighlighterCore | null = null
 let themeListenerRegistered = false
-
-type LibreDashThemeColors = {
-  background: string
-  foreground: string
-  lineNumber: string
-  activeLineNumber: string
-  selection: string
-  inactiveSelection: string
-  cursor: string
-  lineHighlight: string
-}
 
 export function loadMonacoRuntime(): Promise<typeof monaco> {
   runtimePromise ??= initializeMonaco()
@@ -35,10 +24,7 @@ async function initializeMonaco(): Promise<typeof monaco> {
   registerWorker()
   registerLanguages()
   highlighter = await createHighlighterCore({
-    themes: [
-      libreDashTheme(githubLight, 'libredash-light', 'light'),
-      libreDashTheme(githubDark, 'libredash-dark', 'dark'),
-    ],
+    themes: [githubLight, githubDarkWithPanelBackground()],
     langs: [markdown, yaml, json, sql],
     engine: createJavaScriptRegexEngine(),
   })
@@ -80,57 +66,26 @@ function applyTheme(): void {
 }
 
 function currentTheme(): MonacoTheme {
-  if (document.documentElement.style.colorScheme === 'dark') return 'libredash-dark'
-  return 'libredash-light'
+  if (document.documentElement.style.colorScheme === 'dark') return 'github-dark'
+  return 'github-light'
 }
 
-function libreDashTheme<T extends typeof githubLight | typeof githubDark>(theme: T, name: MonacoTheme, mode: 'light' | 'dark'): T {
-  return withLibreDashColors(theme, {
-    name,
-    ...libreDashThemeColors(mode),
-  })
-}
-
-function withLibreDashColors<T extends typeof githubLight | typeof githubDark>(theme: T, colors: {
-  name: MonacoTheme
-  background: string
-  foreground: string
-  lineNumber: string
-  activeLineNumber: string
-  selection: string
-  inactiveSelection: string
-  cursor: string
-  lineHighlight: string
-}): T {
+function githubDarkWithPanelBackground(): typeof githubDark {
+  const background = darkPanelBackground()
   return {
-    ...theme,
-    name: colors.name,
+    ...githubDark,
     colors: {
-      ...theme.colors,
-      'editor.background': colors.background,
-      'editor.foreground': colors.foreground,
-      'editorGutter.background': colors.background,
-      'editorLineNumber.foreground': colors.lineNumber,
-      'editorLineNumber.activeForeground': colors.activeLineNumber,
-      'editorCursor.foreground': colors.cursor,
-      'editor.selectionBackground': colors.selection,
-      'editor.inactiveSelectionBackground': colors.inactiveSelection,
-      'editor.lineHighlightBackground': colors.lineHighlight,
-      'editorLineNumber.dimmedForeground': colors.lineNumber,
-      'input.background': colors.background,
-      'input.foreground': colors.foreground,
-      'dropdown.background': colors.background,
-      'dropdown.foreground': colors.foreground,
-      'editorWidget.background': colors.background,
-      'editorWidget.foreground': colors.foreground,
+      ...githubDark.colors,
+      'editor.background': background,
+      'editorGutter.background': background,
     },
-  } as T
+  }
 }
 
-function libreDashThemeColors(mode: 'light' | 'dark'): LibreDashThemeColors {
+function darkPanelBackground(): string {
   const scope = document.createElement('div')
   const probe = document.createElement('div')
-  scope.dataset.colorMode = mode
+  scope.dataset.colorMode = 'dark'
   scope.dataset.lightTheme = 'light'
   scope.dataset.darkTheme = 'dark'
   scope.style.position = 'absolute'
@@ -140,28 +95,19 @@ function libreDashThemeColors(mode: 'light' | 'dark'): LibreDashThemeColors {
   scope.append(probe)
   ;(document.body || document.documentElement).append(scope)
   try {
-    return {
-      background: cssColorToken(probe, '--ld-bg-panel', 'backgroundColor'),
-      foreground: cssColorToken(probe, '--ld-fg-default', 'color'),
-      lineNumber: cssColorToken(probe, '--ld-icon-muted', 'color'),
-      activeLineNumber: cssColorToken(probe, '--ld-fg-accent', 'color'),
-      selection: cssColorToken(probe, '--ld-bg-accent-muted', 'backgroundColor'),
-      inactiveSelection: cssColorToken(probe, '--ld-bg-panel-muted', 'backgroundColor'),
-      cursor: cssColorToken(probe, '--ld-fg-default', 'color'),
-      lineHighlight: cssColorToken(probe, '--ld-bg-panel-muted', 'backgroundColor'),
-    }
+    return cssColorToken(probe, '--ld-bg-panel')
   } finally {
     scope.remove()
   }
 }
 
-function cssColorToken(element: HTMLElement, token: string, property: 'color' | 'backgroundColor'): string {
+function cssColorToken(element: HTMLElement, token: string): string {
   if (!getComputedStyle(element).getPropertyValue(token).trim()) {
     throw new Error(`${token} is not defined`)
   }
-  element.style[property] = `var(${token})`
-  const color = getComputedStyle(element)[property]
-  element.style[property] = ''
+  element.style.backgroundColor = `var(${token})`
+  const color = getComputedStyle(element).backgroundColor
+  element.style.backgroundColor = ''
   return colorToHex(color, token)
 }
 

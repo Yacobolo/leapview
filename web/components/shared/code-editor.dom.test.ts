@@ -70,17 +70,6 @@ test('code editor initializes Monaco, syncs values, emits changes, and disposes'
       await waitFor(() => Boolean(element.shadowRoot.querySelector('.view-line')))
 
       const root = element.shadowRoot
-      const resolveToken = (token: string, property: 'color' | 'backgroundColor'): string => {
-        const probe = document.createElement('div')
-        document.body.append(probe)
-        probe.style[property] = `var(${token})`
-        const value = getComputedStyle(probe)[property]
-        probe.remove()
-        return value
-      }
-      const panelBackground = resolveToken('--ld-bg-panel', 'backgroundColor')
-      const defaultColor = resolveToken('--ld-fg-default', 'color')
-      const accentColor = resolveToken('--ld-fg-accent', 'color')
       const stylesheetLoaded = Boolean(root.querySelector<HTMLLinkElement>('link[data-monaco-styles]')?.sheet)
       const monacoSurface = root.querySelector('.monaco-editor')
       const monacoBackground = getComputedStyle(monacoSurface!).backgroundColor
@@ -90,6 +79,13 @@ test('code editor initializes Monaco, syncs values, emits changes, and disposes'
       const cursorBackground = getComputedStyle(root.querySelector('.cursors-layer > .cursor')!).backgroundColor
       const cursorWidth = getComputedStyle(root.querySelector('.cursors-layer > .cursor')!).width
       const activeLineNumberColor = getComputedStyle(root.querySelector('.line-numbers.active-line-number')!).color
+      document.documentElement.style.colorScheme = 'dark'
+      document.dispatchEvent(new CustomEvent('libredash-theme-applied', { detail: { mode: 'dark', resolvedMode: 'dark' } }))
+      await waitFor(() => getComputedStyle(monacoSurface!).backgroundColor === 'rgb(13, 17, 23)')
+      const darkMonacoBackground = getComputedStyle(monacoSurface!).backgroundColor
+      const darkGutterBackground = getComputedStyle(root.querySelector('.margin')!).backgroundColor
+      const darkCursorBackground = getComputedStyle(root.querySelector('.cursors-layer > .cursor')!).backgroundColor
+      const darkActiveLineNumberColor = getComputedStyle(root.querySelector('.line-numbers.active-line-number')!).color
       const shellRect = root.querySelector('.editor-shell')!.getBoundingClientRect()
       const firstLineRect = root.querySelector('.view-line')!.getBoundingClientRect()
       const initialValue = element.editor.getValue()
@@ -107,15 +103,16 @@ test('code editor initializes Monaco, syncs values, emits changes, and disposes'
       element.remove()
       return {
         hasMonacoSurface: Boolean(monacoSurface),
-        panelBackground,
-        defaultColor,
-        accentColor,
         monacoBackground,
         monacoFontSize,
         gutterWidth: Math.round(gutterWidth),
         cursorBackground,
         cursorWidth,
         activeLineNumberColor,
+        darkMonacoBackground,
+        darkGutterBackground,
+        darkCursorBackground,
+        darkActiveLineNumberColor,
         stylesheetLoaded,
         overflowGuardPosition,
         firstLineInsideShell: firstLineRect.top >= shellRect.top && firstLineRect.bottom <= shellRect.bottom,
@@ -128,13 +125,17 @@ test('code editor initializes Monaco, syncs values, emits changes, and disposes'
     })
 
     expect(state.hasMonacoSurface).toBe(true)
-    expect(state.monacoBackground).toBe(state.panelBackground)
+    expect(state.monacoBackground).toBe('rgb(255, 255, 255)')
     expect(state.monacoFontSize).toBe('14px')
     expect(state.gutterWidth).toBeGreaterThanOrEqual(32)
     expect(state.gutterWidth).toBeLessThanOrEqual(46)
-    expect(state.cursorBackground).toBe(state.defaultColor)
+    expect(state.cursorBackground).toBe('rgb(4, 66, 137)')
     expect(state.cursorWidth).toBe('1px')
-    expect(state.activeLineNumberColor).toBe(state.accentColor)
+    expect(state.activeLineNumberColor).toBe('rgb(36, 41, 46)')
+    expect(state.darkMonacoBackground).toBe('rgb(13, 17, 23)')
+    expect(state.darkGutterBackground).toBe('rgb(13, 17, 23)')
+    expect(state.darkCursorBackground).toBe('rgb(200, 225, 255)')
+    expect(state.darkActiveLineNumberColor).toBe('rgb(225, 228, 232)')
     expect(state.stylesheetLoaded).toBe(true)
     expect(state.overflowGuardPosition).toBe('relative')
     expect(state.firstLineInsideShell).toBe(true)
@@ -199,6 +200,7 @@ function testDocument(): string {
         <style>
           html, body { margin: 0; min-height: 100%; }
           body { --fontStack-system: system-ui; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-accent-muted: #ddf4ff; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-accent: #0969da; --ld-icon-muted: #57606a; --ld-border-muted: 1px solid #d8dee4; --ld-radius-default: 6px; --base-size-8: 8px; --base-size-16: 16px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-weight-medium: 500; --ld-line-height-relaxed: 1.55; }
+          [data-color-mode='dark'] { --ld-bg-panel: #0d1117; }
           ld-code-editor { display: block; width: 760px; margin: 24px; }
         </style>
       </head>
