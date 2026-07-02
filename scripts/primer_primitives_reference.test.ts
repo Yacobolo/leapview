@@ -22,10 +22,10 @@ describe("parsePrimerPrimitiveTokens", () => {
     `);
 
     expect(tokens).toEqual([
-      {token: "--viewportRange-wide", value: "(min-width: 87.5rem)"},
-      {token: "--base-size-4", value: "0.25rem"},
-      {token: "--shadow-resting-small", value: "0 1px 0 #0000001f"},
-      {token: "--bgColor-default", value: "#0d1117"},
+      {kind: "custom-media", token: "--viewportRange-wide", value: "(min-width: 87.5rem)"},
+      {kind: "property", token: "--base-size-4", value: "0.25rem"},
+      {kind: "property", token: "--shadow-resting-small", value: "0 1px 0 #0000001f"},
+      {kind: "property", token: "--bgColor-default", value: "#0d1117"},
     ]);
   });
 });
@@ -35,6 +35,7 @@ describe("generatePrimerPrimitivesReference", () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "primer-primitives-reference-"));
     const sourceRoot = path.join(workspace, "source");
     const outputRoot = path.join(workspace, "output");
+    const cssOutputRoot = path.join(workspace, "css-output");
 
     try {
       await mkdir(path.join(sourceRoot, "base", "motion"), {recursive: true});
@@ -52,10 +53,12 @@ describe("generatePrimerPrimitivesReference", () => {
       );
       await writeFile(path.join(sourceRoot, "primitives.css"), "@import './base/size/size.css';\n");
 
-      await generatePrimerPrimitivesReference({sourceRoot, outputRoot});
+      await generatePrimerPrimitivesReference({sourceRoot, outputRoot, cssOutputRoot});
 
       const entries = await readdir(outputRoot);
+      const cssEntries = await readdir(cssOutputRoot);
       expect(entries.sort()).toEqual(["motion.md", "size.md", "theme-dark.md", "theme-light.md"]);
+      expect(cssEntries.sort()).toEqual(["motion.css", "size.css", "theme-dark.css", "theme-light.css"]);
       expect(await readFile(path.join(outputRoot, "size.md"), "utf8")).toBe(
         [
           "# Size",
@@ -67,6 +70,24 @@ describe("generatePrimerPrimitivesReference", () => {
           "Source: `@primer/primitives/dist/css/functional/spacing/space.css`",
           "",
           "--stack-gap-normal: 1rem",
+          "",
+        ].join("\n"),
+      );
+      expect(await readFile(path.join(cssOutputRoot, "size.css"), "utf8")).toBe(
+        [
+          "/* Size */",
+          "",
+          "/* Source: @primer/primitives/dist/css/base/size/size.css */",
+          "",
+          ":root {",
+          "  --base-size-4: 0.25rem;",
+          "}",
+          "",
+          "/* Source: @primer/primitives/dist/css/functional/spacing/space.css */",
+          "",
+          ":root {",
+          "  --stack-gap-normal: 1rem;",
+          "}",
           "",
         ].join("\n"),
       );
