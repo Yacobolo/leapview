@@ -101,6 +101,63 @@ func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 	}
 }
 
+func TestOpenMigratesSQLiteCatalogDataPath(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "libredash.db")
+	oldDataPath := filepath.Join(dir, "duckdb", "dev", "data")
+	newDataPath := filepath.Join(dir, "data")
+
+	writer, err := Open(ctx, Config{RootDir: filepath.Join(dir, "duckdb", "dev"), CatalogPath: catalogPath, DataPath: oldDataPath})
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("open old writer: %v", err)
+	}
+	snapshotID, err := writer.Commit(ctx, "dep_1", nil, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS model"); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, "CREATE OR REPLACE TABLE model.orders AS SELECT 42 AS id")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("commit old snapshot: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close old writer: %v", err)
+	}
+	if _, err := os.Stat(oldDataPath); err != nil {
+		t.Fatalf("old data path missing before migration: %v", err)
+	}
+	if err := os.MkdirAll(newDataPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	reader, err := OpenSnapshot(ctx, Config{RootDir: dir, CatalogPath: catalogPath, DataPath: newDataPath, SnapshotID: snapshotID})
+	if err != nil {
+		t.Fatalf("open migrated snapshot: %v", err)
+	}
+	defer reader.Close()
+	var id int
+	if err := reader.SQLDB().QueryRowContext(ctx, "SELECT id FROM model.orders").Scan(&id); err != nil {
+		t.Fatalf("query migrated snapshot: %v", err)
+	}
+	if id != 42 {
+		t.Fatalf("id = %d, want 42", id)
+	}
+	if _, err := os.Stat(newDataPath); err != nil {
+		t.Fatalf("new data path missing after migration: %v", err)
+	}
+	if _, err := os.Stat(oldDataPath); !os.IsNotExist(err) {
+		t.Fatalf("old data path still exists or stat failed: %v", err)
+	}
+	if got := duckLakeMetadataDataPath(t, ctx, catalogPath); got != duckLakeMetadataPath(newDataPath) {
+		t.Fatalf("metadata data_path = %q, want %q", got, duckLakeMetadataPath(newDataPath))
+	}
+}
+
 func TestOpenSnapshotRejectsMissingSnapshot(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -123,6 +180,20 @@ func TestOpenSnapshotRejectsMissingSnapshot(t *testing.T) {
 	if _, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: 999}); err == nil {
 		t.Fatal("OpenSnapshot missing snapshot error = nil")
 	}
+}
+
+func duckLakeMetadataDataPath(t *testing.T, ctx context.Context, catalogPath string) string {
+	t.Helper()
+	db, err := sql.Open("sqlite", sqliteFileDSN(catalogPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var value string
+	if err := db.QueryRowContext(ctx, `SELECT value FROM ducklake_metadata WHERE "key" = 'data_path' AND scope IS NULL`).Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 func TestFailedCommitDoesNotAdvanceVisibleSnapshot(t *testing.T) {

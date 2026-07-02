@@ -13,6 +13,7 @@ type DeploymentRepository interface {
 	ActiveArtifact(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) (deployment.Deployment, deployment.Artifact, error)
 	ByID(ctx context.Context, id deployment.ID) (deployment.Deployment, error)
 	ArtifactByDeployment(ctx context.Context, deploymentID deployment.ID) (deployment.Artifact, error)
+	RecordDuckLakeSnapshot(ctx context.Context, deploymentID deployment.ID, snapshotID int64) error
 }
 
 type Runtime interface {
@@ -100,6 +101,12 @@ func (m *Manager) Reload(ctx context.Context) error {
 	prepared, err := m.prepare(ctx, current, artifact)
 	if err != nil {
 		return err
+	}
+	if current.DuckLakeSnapshotID == 0 && prepared.DuckLakeSnapshotID() > 0 {
+		if err := m.repo.RecordDuckLakeSnapshot(ctx, current.ID, prepared.DuckLakeSnapshotID()); err != nil {
+			_ = prepared.Close()
+			return err
+		}
 	}
 	return m.CommitPrepared(prepared)
 }

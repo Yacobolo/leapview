@@ -114,6 +114,28 @@ func TestManagerPreparedRuntimeExposesDuckLakeSnapshot(t *testing.T) {
 	}
 }
 
+func TestManagerReloadBackfillsMissingDeploymentSnapshot(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: deployment.StatusActive},
+		artifact:   deployment.Artifact{DeploymentID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest"},
+	}
+	manager := NewManagerWithFactory(ManagerOptions{
+		Repo:        repo,
+		WorkspaceID: "test",
+		Environment: "dev",
+		DataDir:     "/data",
+		Factory:     &fakeFactory{snapshotID: 42},
+	})
+
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if repo.recordedDeploymentID != "dep_1" || repo.recordedSnapshotID != 42 {
+		t.Fatalf("recorded snapshot = (%s, %d), want (dep_1, 42)", repo.recordedDeploymentID, repo.recordedSnapshotID)
+	}
+}
+
 func TestManagerReloadRoutesWhenOnlyActiveDeploymentPointerChanges(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeRepo{
@@ -357,10 +379,12 @@ func TestRegistryCloseClosesEveryActiveWorkspaceRuntime(t *testing.T) {
 }
 
 type fakeRepo struct {
-	deployment        deployment.Deployment
-	artifact          deployment.Artifact
-	activeErr         error
-	activeEnvironment deployment.Environment
+	deployment           deployment.Deployment
+	artifact             deployment.Artifact
+	activeErr            error
+	activeEnvironment    deployment.Environment
+	recordedDeploymentID deployment.ID
+	recordedSnapshotID   int64
 }
 
 func (r *fakeRepo) ActiveArtifact(_ context.Context, _ deployment.WorkspaceID, environment deployment.Environment) (deployment.Deployment, deployment.Artifact, error) {
@@ -383,6 +407,13 @@ func (r *fakeRepo) ArtifactByDeployment(context.Context, deployment.ID) (deploym
 		return deployment.Artifact{}, deployment.ErrNotFound
 	}
 	return r.artifact, nil
+}
+
+func (r *fakeRepo) RecordDuckLakeSnapshot(_ context.Context, deploymentID deployment.ID, snapshotID int64) error {
+	r.recordedDeploymentID = deploymentID
+	r.recordedSnapshotID = snapshotID
+	r.deployment.DuckLakeSnapshotID = snapshotID
+	return nil
 }
 
 type fakeFactory struct {
@@ -464,6 +495,19 @@ func (r *fakeRegistryRepo) ArtifactByDeployment(_ context.Context, id deployment
 		return deployment.Artifact{}, deployment.ErrNotFound
 	}
 	return artifact, nil
+}
+
+func (r *fakeRegistryRepo) RecordDuckLakeSnapshot(_ context.Context, deploymentID deployment.ID, snapshotID int64) error {
+	current := r.deployments[deploymentID]
+	current.DuckLakeSnapshotID = snapshotID
+	r.deployments[deploymentID] = current
+	for key, pair := range r.active {
+		if pair.deployment.ID == deploymentID {
+			pair.deployment.DuckLakeSnapshotID = snapshotID
+			r.active[key] = pair
+		}
+	}
+	return nil
 }
 
 type recordingRegistryFactory struct {

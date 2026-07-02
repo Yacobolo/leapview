@@ -5,10 +5,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
+	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/deployment"
@@ -72,6 +74,12 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, err
 		}
+	}
+	if err := analyticsducklake.MigrateSQLiteCatalogDataPath(ctx, cfg.DBPath(), cfg.DuckLakeDataDir()); err != nil {
+		return nil, nil, err
+	}
+	if err := removeLegacyDuckLakeArtifacts(cfg.DuckDBDirPath()); err != nil {
+		return nil, nil, err
 	}
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
@@ -159,4 +167,38 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		Logger:              slog.Default(),
 	})
 	return server, cleanupWithRegistry, nil
+}
+
+func removeLegacyDuckLakeArtifacts(root string) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() || entry.Name() != "catalog.sqlite" {
+			return nil
+		}
+		dir := filepath.Dir(path)
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		if err := os.RemoveAll(filepath.Join(dir, "data")); err != nil {
+			return err
+		}
+		return nil
+	})
 }

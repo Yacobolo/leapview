@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -247,6 +248,13 @@ func TestAdminStorageInspectsConfiguredDuckLakeCatalog(t *testing.T) {
 	catalogPath := filepath.Join(dir, "libredash.db")
 	dataPath := filepath.Join(dir, "data")
 	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
+	legacyCatalogPath := filepath.Join(dir, "duckdb", "dev", "catalog.sqlite")
+	if err := os.MkdirAll(filepath.Dir(legacyCatalogPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyCatalogPath, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	server := NewWithOptions(fakeMetrics{}, Options{
 		DefaultWorkspaceID:  "test",
 		DuckDBDir:           filepath.Join(dir, "duckdb"),

@@ -165,7 +165,7 @@ func (s *Server) discoverStorageFiles() ([]duckDBFile, error) {
 	if !ok {
 		return discoverDuckDBFiles(s.duckDBDir)
 	}
-	return discoverDuckDBFiles(s.duckDBDir, extra)
+	return discoverDuckDBFilesExcludingDuckLakeCatalogs(s.duckDBDir, extra)
 }
 
 func (s *Server) duckLakeCatalogFile() (duckDBFile, bool) {
@@ -196,6 +196,14 @@ func (s *Server) duckLakeCatalogFile() (duckDBFile, bool) {
 }
 
 func discoverDuckDBFiles(root string, extraFiles ...duckDBFile) ([]duckDBFile, error) {
+	return discoverDuckDBFilesWithOptions(root, true, extraFiles...)
+}
+
+func discoverDuckDBFilesExcludingDuckLakeCatalogs(root string, extraFiles ...duckDBFile) ([]duckDBFile, error) {
+	return discoverDuckDBFilesWithOptions(root, false, extraFiles...)
+}
+
+func discoverDuckDBFilesWithOptions(root string, includeDuckLakeCatalogs bool, extraFiles ...duckDBFile) ([]duckDBFile, error) {
 	info, err := os.Stat(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -214,7 +222,7 @@ func discoverDuckDBFiles(root string, extraFiles ...duckDBFile) ([]duckDBFile, e
 		if entry.IsDir() {
 			return nil
 		}
-		if filepath.Ext(entry.Name()) != ".duckdb" && entry.Name() != "catalog.sqlite" {
+		if filepath.Ext(entry.Name()) != ".duckdb" && (entry.Name() != "catalog.sqlite" || !includeDuckLakeCatalogs) {
 			return nil
 		}
 		info, err := entry.Info()
