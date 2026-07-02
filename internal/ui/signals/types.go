@@ -763,7 +763,7 @@ func DashboardInitialEnvelope(dataDir, clientID, csrfToken string, catalog dashb
 }
 
 func ChatInitialEnvelope(catalog dashboard.Catalog, workspaceID, csrfToken, roleLabel, view string, agent ChatSignal) ChatEnvelope {
-	chrome := ChromeSignal{Sidebar: SidebarConfigForChat(catalog, workspaceID, roleLabel)}
+	chrome := ChromeSignal{Sidebar: SidebarConfigForChat(catalog, workspaceID, roleLabel, view)}
 	AttachChatSidebar(&chrome.Sidebar, agent)
 	return ChatEnvelope{
 		Chrome:    chrome,
@@ -840,11 +840,15 @@ func SidebarConfigForWorkspace(catalog dashboard.Catalog, active, roleLabel stri
 	return SidebarConfig(catalog, active, "", workspaceDisplayTitle(catalog), "Workspace", "Published assets", "", "", false, roleLabel)
 }
 
-func SidebarConfigForChat(catalog dashboard.Catalog, workspaceID, roleLabel string) SidebarSignal {
+func SidebarConfigForChat(catalog dashboard.Catalog, workspaceID, roleLabel, view string) SidebarSignal {
 	if strings.TrimSpace(workspaceID) != "" {
 		catalog.Workspace.ID = workspaceID
 	}
-	config := SidebarConfigForWorkspace(catalog, "chat", roleLabel)
+	active := ""
+	if strings.TrimSpace(view) == "list" {
+		active = "chat"
+	}
+	config := SidebarConfigForWorkspace(catalog, active, roleLabel)
 	return config
 }
 

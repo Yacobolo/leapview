@@ -79,6 +79,47 @@ func TestChatInitialEnvelopeValidates(t *testing.T) {
 	}
 }
 
+func TestChatInitialEnvelopeOnlyListActivatesChatNav(t *testing.T) {
+	list := ChatInitialEnvelope(dashboard.Catalog{}, "test", "csrf", "", "list", ChatSignal{
+		ActiveConversationID: "",
+		Conversations:        []ChatConversationSummary{},
+		Transcript:           nil,
+		Status:               ChatStatus{Enabled: true},
+		Composer:             ComposerSignal{Placeholder: "Ask"},
+	})
+	if list.Chrome.Sidebar.Active != "chat" {
+		t.Fatalf("list chat sidebar active = %q, want chat", list.Chrome.Sidebar.Active)
+	}
+
+	draft := ChatInitialEnvelope(dashboard.Catalog{}, "test", "csrf", "", "new", ChatSignal{
+		ActiveConversationID: "",
+		Conversations:        []ChatConversationSummary{},
+		Transcript:           nil,
+		Status:               ChatStatus{Enabled: true},
+		Composer:             ComposerSignal{Placeholder: "Ask"},
+	})
+	if draft.Chrome.Sidebar.Active != "" {
+		t.Fatalf("draft chat sidebar active = %q, want none", draft.Chrome.Sidebar.Active)
+	}
+
+	conversation := ChatInitialEnvelope(dashboard.Catalog{}, "test", "csrf", "", "conversation", ChatSignal{
+		ActiveConversationID: "agentconv_1",
+		Conversations: []ChatConversationSummary{{
+			ID:    "agentconv_1",
+			Title: "Conversation",
+		}},
+		Transcript: nil,
+		Status:     ChatStatus{Enabled: true},
+		Composer:   ComposerSignal{Placeholder: "Ask"},
+	})
+	if conversation.Chrome.Sidebar.Active != "" {
+		t.Fatalf("conversation chat sidebar active = %q, want none", conversation.Chrome.Sidebar.Active)
+	}
+	if len(conversation.Chrome.Sidebar.History.Items) != 1 || !conversation.Chrome.Sidebar.History.Items[0].Active {
+		t.Fatalf("conversation history item not active: %#v", conversation.Chrome.Sidebar.History.Items)
+	}
+}
+
 func testDashboardReport() reportdef.Dashboard {
 	return reportdef.Dashboard{
 		ID:            "report",

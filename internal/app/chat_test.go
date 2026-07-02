@@ -217,6 +217,9 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 			t.Fatalf("draft chat page missing %q:\n%s", want, body)
 		}
 	}
+	if strings.Contains(body, `&#34;active&#34;:&#34;chat&#34;`) {
+		t.Fatalf("draft chat page should not activate the Chats nav item:\n%s", body)
+	}
 	conversations, err := testAgentRepository(store).ListConversations(ctx, "test", principal.ID)
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
@@ -276,8 +279,15 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `&#34;kind&#34;:&#34;user&#34;`) || !strings.Contains(rec.Body.String(), "hello") {
-		t.Fatalf("owned route status=%d body=%s", rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `&#34;kind&#34;:&#34;user&#34;`) || !strings.Contains(body, "hello") {
+		t.Fatalf("owned route status=%d body=%s", rec.Code, body)
+	}
+	if strings.Contains(body, `&#34;active&#34;:&#34;chat&#34;`) {
+		t.Fatalf("conversation route should not activate the Chats nav item:\n%s", body)
+	}
+	if !strings.Contains(body, `&#34;id&#34;:&#34;`+owned.ID+`&#34;`) || !strings.Contains(body, `&#34;active&#34;:true`) {
+		t.Fatalf("conversation route should keep its history item active:\n%s", body)
 	}
 
 	hiddenReq := httptest.NewRequest(http.MethodGet, "/chat/"+hidden.ID, nil)
