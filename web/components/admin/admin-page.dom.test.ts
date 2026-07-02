@@ -101,6 +101,74 @@ for (const viewport of [
   })
 }
 
+test('admin navigation remains pinned while content scrolls on desktop', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-sub-sidebar') && customElements.get('ld-record-table'))
+
+    const state = await page.evaluate(async () => {
+      const element = document.createElement('ld-admin-page') as any
+      element.style.minHeight = '1600px'
+      element.page = {
+        kind: 'admin',
+        title: 'Principals',
+        active: 'principals',
+        sidebar: {
+          label: 'Admin',
+          railLabel: 'Admin',
+          ariaLabel: 'Admin navigation',
+          storageKey: 'libredash-admin-sidebar-collapsed',
+          activeId: 'principals',
+          collapsible: false,
+          numbered: false,
+          items: [
+            { id: 'general', title: 'General', href: '/admin', active: false },
+            { id: 'principals', title: 'Principals', href: '/admin/principals', active: true },
+            { id: 'groups', title: 'Groups', href: '/admin/groups', active: false },
+            { id: 'agent', title: 'Agent', href: '/admin/agent', active: false },
+            { id: 'storage', title: 'Storage', href: '/admin/storage', active: false },
+          ],
+        },
+        headerTitle: 'Principals',
+        headerDetail: 'Users and service principals known to LibreDash.',
+        sections: Array.from({ length: 40 }, (_, index) => ({
+          title: `Section ${index + 1}`,
+          facts: [
+            { label: 'Principals', value: `${index + 1}` },
+            { label: 'Groups', value: `${index + 2}` },
+            { label: 'Roles', value: `${index + 3}` },
+          ],
+        })),
+      }
+      const spacer = document.createElement('div')
+      spacer.style.height = '1600px'
+      document.body.replaceChildren(element, spacer)
+      document.documentElement.style.minHeight = '2400px'
+      document.body.style.minHeight = '2400px'
+      await element.updateComplete
+      const subSidebar = element.shadowRoot.querySelector('ld-sub-sidebar') as HTMLElement
+      const before = subSidebar.getBoundingClientRect()
+      window.scrollTo(0, 420)
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const after = subSidebar.getBoundingClientRect()
+      return {
+        scrollY: window.scrollY,
+        beforeTop: Math.round(before.top),
+        afterTop: Math.round(after.top),
+        afterHeight: Math.round(after.height),
+      }
+    })
+
+    expect(state.scrollY).toBeGreaterThan(300)
+    expect(state.beforeTop).toBe(0)
+    expect(state.afterTop).toBe(0)
+    expect(state.afterHeight).toBe(720)
+  } finally {
+    await page.close()
+  }
+})
+
 test('admin storage route renders storage explorer from typed signal data', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {

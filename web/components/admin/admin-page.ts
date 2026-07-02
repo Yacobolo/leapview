@@ -37,7 +37,15 @@ class LibreDashAdminPage extends LitElement {
       display: grid;
       min-height: 100svh;
       grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
       background: var(--ld-bg-app);
+    }
+
+    ld-sub-sidebar {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100svh;
     }
 
     .main {
@@ -194,6 +202,12 @@ class LibreDashAdminPage extends LitElement {
     @media (max-width: 640px) {
       .route {
         grid-template-columns: 1fr;
+      }
+
+      ld-sub-sidebar {
+        position: relative;
+        width: 100%;
+        height: auto;
       }
 
       .main {
