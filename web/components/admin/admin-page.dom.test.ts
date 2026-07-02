@@ -500,6 +500,35 @@ test('admin agent tools catalog renders payload fields, JSON, empty, unsupported
             },
             metrics: { type: 'array', items: { type: 'string' }, description: 'Metric IDs.' },
             mode: { enum: ['summary', 'detail'], description: 'Result detail level.' },
+            dimensions: { type: 'array', items: { $ref: '#/$defs/fieldRef' }, description: 'Dimension fields.' },
+            series: { $ref: '#/$defs/fieldRef', description: 'Series field.' },
+            sort: { type: 'array', items: { $ref: '#/$defs/sort' } },
+            options: { type: 'object', additionalProperties: true, description: 'Renderer options.' },
+            rendererOptions: {
+              type: 'object',
+              additionalProperties: { type: 'object', additionalProperties: true },
+              description: 'Renderer-specific options.',
+            },
+          },
+          $defs: {
+            fieldRef: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['field'],
+              properties: {
+                field: { type: 'string', minLength: 1, description: 'Semantic field ID.' },
+                alias: { type: 'string', description: 'Display alias.' },
+              },
+            },
+            sort: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['field'],
+              properties: {
+                field: { type: 'string', minLength: 1 },
+                direction: { type: 'string', enum: ['asc', 'desc'] },
+              },
+            },
           },
           additionalProperties: false,
         },
@@ -561,18 +590,24 @@ test('admin agent tools catalog renders payload fields, JSON, empty, unsupported
     })
 
     expect(state.firstText).toMatch(/query_visual/)
-    expect(state.firstText).toMatch(/dashboardId, filters\.dateRange\.start, filters\.dateRange\.end \+2/)
+    expect(state.firstText).toMatch(/dashboardId, filters\.dateRange\.start, filters\.dateRange\.end \+10/)
     expect(state.catalogHeight).toBeGreaterThan(440)
     expect(state.listOverflow).toBe('auto')
     expect(state.detailBodyOverflow).toBe('auto')
     expect(state.toolButtons).toEqual(['query_visual', 'no_input', 'unsupported_input'])
     expect(state.listText).not.toMatch(/Query visual data/)
-    expect(state.detailMeta).toEqual(['3 required', 'dashboardId, filters.dateRange.start, filters.dateRange.end +2'])
+    expect(state.detailMeta).toEqual(['6 required', 'dashboardId, filters.dateRange.start, filters.dateRange.end +10'])
     expect(state.firstRows).toContainEqual(['dashboardId', 'string', 'Yes', 'Dashboard identifier.'])
     expect(state.firstRows).toContainEqual(['filters.dateRange.start', 'string', 'Yes', 'Start date.'])
     expect(state.firstRows).toContainEqual(['filters.dateRange.end', 'string', 'No', 'End date.'])
     expect(state.firstRows).toContainEqual(['metrics', 'array<string>', 'No', 'Metric IDs.'])
     expect(state.firstRows).toContainEqual(['mode', 'enum: summary | detail', 'Yes', 'Result detail level.'])
+    expect(state.firstRows).toContainEqual(['dimensions[].field', 'string', 'Yes', 'Semantic field ID.'])
+    expect(state.firstRows).toContainEqual(['dimensions[].alias', 'string', 'No', 'Display alias.'])
+    expect(state.firstRows).toContainEqual(['series.field', 'string', 'Yes', 'Semantic field ID.'])
+    expect(state.firstRows).toContainEqual(['sort[].direction', 'enum: asc | desc', 'No', '-'])
+    expect(state.firstRows).toContainEqual(['options', 'object<string, any>', 'No', 'Renderer options.'])
+    expect(state.firstRows).toContainEqual(['rendererOptions', 'object<string, object>', 'No', 'Renderer-specific options.'])
     expect(state.jsonText).toMatch(/"dashboardId"/)
     expect(state.noInputText).toMatch(/No input/)
     expect(state.unsupportedText).toMatch(/Schema is only available as JSON/)

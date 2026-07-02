@@ -503,64 +503,132 @@ function inputSummary(parsed: ParsedSchema): string {
 
 function parseSchema(schema: SchemaObject): ParsedSchema {
   const fields: SchemaField[] = []
-  const result = flattenObjectSchema(schema, '', false, fields)
+  const result = flattenSchema(schema, '', false, fields, { root: schema, refs: new Set() })
   if (result === 'unsupported') return { kind: 'unsupported' }
   if (fields.length === 0) return { kind: 'empty' }
   return { kind: 'fields', fields }
 }
 
-function flattenObjectSchema(schema: unknown, prefix: string, required: boolean, fields: SchemaField[]): 'ok' | 'unsupported' {
-  if (!isSchemaObject(schema) || hasUnsupportedComposition(schema)) return 'unsupported'
+type SchemaParseContext = {
+  root: SchemaObject
+  refs: Set<string>
+}
+
+function flattenSchema(schema: unknown, prefix: string, required: boolean, fields: SchemaField[], context: SchemaParseContext): 'ok' | 'unsupported' {
+  const resolved = resolveSchema(schema, context)
+  if (!resolved || hasUnsupportedComposition(resolved)) return 'unsupported'
+  if (resolved.type === 'array') return flattenArraySchema(resolved, prefix, required, fields, context)
+  if (isObjectSchema(resolved)) return flattenObjectSchema(resolved, prefix, required, fields, context)
+  if (prefix) fields.push(schemaField(prefix, resolved, required, context))
+  return 'ok'
+}
+
+function flattenObjectSchema(schema: SchemaObject, prefix: string, required: boolean, fields: SchemaField[], context: SchemaParseContext): 'ok' | 'unsupported' {
   const properties = schema.properties
   if (properties === undefined) {
-    if (prefix) fields.push(schemaField(prefix, schema, required))
+    if (prefix) fields.push(schemaField(prefix, schema, required, context))
     return 'ok'
   }
   if (!isSchemaObject(properties)) return 'unsupported'
   const requiredFields = stringSet(schema.required)
   for (const [name, child] of Object.entries(properties)) {
     const path = prefix ? `${prefix}.${name}` : name
-    if (!isSchemaObject(child) || hasUnsupportedComposition(child)) return 'unsupported'
     const childRequired = requiredFields.has(name)
-    if (isObjectSchema(child) && isSchemaObject(child.properties)) {
-      if (flattenObjectSchema(child, path, childRequired, fields) === 'unsupported') return 'unsupported'
-      continue
-    }
-    fields.push(schemaField(path, child, childRequired))
+    if (flattenSchema(child, path, childRequired, fields, context) === 'unsupported') return 'unsupported'
   }
   return 'ok'
 }
 
-function schemaField(path: string, schema: SchemaObject, required: boolean): SchemaField {
+function flattenArraySchema(schema: SchemaObject, prefix: string, required: boolean, fields: SchemaField[], context: SchemaParseContext): 'ok' | 'unsupported' {
+  if (!prefix) return 'unsupported'
+  const items = resolveSchema(schema.items, context)
+  if (!items || hasUnsupportedComposition(items)) {
+    fields.push(schemaField(prefix, schema, required, context))
+    return 'ok'
+  }
+  if (isObjectSchema(items) && isSchemaObject(items.properties)) {
+    return flattenObjectSchema(items, `${prefix}[]`, required, fields, context)
+  }
+  fields.push(schemaField(prefix, schema, required, context))
+  return 'ok'
+}
+
+function schemaField(path: string, schema: SchemaObject, required: boolean, context: SchemaParseContext): SchemaField {
   return {
     path,
-    type: schemaType(schema),
+    type: schemaType(schema, context),
     required,
     description: typeof schema.description === 'string' ? schema.description : '',
   }
 }
 
-function schemaType(schema: SchemaObject): string {
+function schemaType(schema: SchemaObject, context: SchemaParseContext): string {
   if (Array.isArray(schema.enum)) return `enum: ${schema.enum.map(String).join(' | ')}`
   const type = schema.type
-  if (type === 'array') return `array<${arrayItemType(schema.items)}>`
+  if (type === 'array') return `array<${arrayItemType(schema.items, context)}>`
+  if (isObjectSchema(schema)) return objectType(schema, context)
   if (Array.isArray(type)) return type.map(String).join(' | ')
   if (typeof type === 'string') return type
   return 'any'
 }
 
-function arrayItemType(items: unknown): string {
-  if (!isSchemaObject(items) || hasUnsupportedComposition(items)) return 'any'
-  if (isObjectSchema(items)) return 'object'
-  return schemaType(items)
+function arrayItemType(items: unknown, context: SchemaParseContext): string {
+  const resolved = resolveSchema(items, context)
+  if (!resolved || hasUnsupportedComposition(resolved)) return 'any'
+  if (Array.isArray(resolved.enum)) return `enum: ${resolved.enum.map(String).join(' | ')}`
+  if (isObjectSchema(resolved)) return 'object'
+  return schemaType(resolved, context)
+}
+
+function objectType(schema: SchemaObject, context: SchemaParseContext): string {
+  const additionalProperties = schema.additionalProperties
+  if (additionalProperties === true) return 'object<string, any>'
+  if (isSchemaObject(additionalProperties)) {
+    const resolved = resolveSchema(additionalProperties, context)
+    if (!resolved || hasUnsupportedComposition(resolved)) return 'object<string, any>'
+    if (isObjectSchema(resolved)) return 'object<string, object>'
+    return `object<string, ${schemaType(resolved, context)}>`
+  }
+  return 'object'
+}
+
+function resolveSchema(schema: unknown, context: SchemaParseContext): SchemaObject | null {
+  if (!isSchemaObject(schema)) return null
+  const ref = schema.$ref
+  if (typeof ref !== 'string') return schema
+  if (!ref.startsWith('#/')) return null
+  if (context.refs.has(ref)) return null
+  context.refs.add(ref)
+  const resolved = schemaAtPointer(context.root, ref)
+  const nested = resolveSchema(resolved, context)
+  context.refs.delete(ref)
+  if (!nested) return null
+  return { ...nested, ...withoutRef(schema) }
+}
+
+function schemaAtPointer(root: SchemaObject, ref: string): unknown {
+  return ref
+    .slice(2)
+    .split('/')
+    .reduce<unknown>((current, segment) => {
+      if (!isSchemaObject(current)) return undefined
+      return current[segment.replace(/~1/g, '/').replace(/~0/g, '~')]
+    }, root)
+}
+
+function withoutRef(schema: SchemaObject): SchemaObject {
+  const { $ref: _ref, ...rest } = schema
+  return rest
 }
 
 function isObjectSchema(schema: SchemaObject): boolean {
-  return schema.type === 'object' || schema.properties !== undefined
+  if (schema.type === 'object' || schema.properties !== undefined) return true
+  const additionalProperties = schema.additionalProperties
+  return additionalProperties === true || isSchemaObject(additionalProperties)
 }
 
 function hasUnsupportedComposition(schema: SchemaObject): boolean {
-  return Boolean(schema.$ref || schema.oneOf || schema.anyOf || schema.allOf)
+  return Boolean(schema.oneOf || schema.anyOf || schema.allOf)
 }
 
 function stringSet(value: unknown): Set<string> {
