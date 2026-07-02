@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
@@ -25,28 +26,57 @@ type PromptResult struct {
 	Content        string           `json:"content"`
 }
 
+type StartedPrompt struct {
+	Scope          Scope
+	ConversationID string
+	RunID          string
+	Input          string
+	CorrelationID  string
+
+	service *Service
+	initial []agent.Message
+	mu      sync.Mutex
+	closed  bool
+}
+
 func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, error) {
-	if !s.Enabled() {
-		return PromptResult{}, ErrDisabled
-	}
-	if policy, ok := s.policyForScope(input.Scope); ok && !policy.Enabled {
-		return PromptResult{}, ErrPolicyDisabled
-	}
-	if s.repo == nil {
-		return PromptResult{}, fmt.Errorf("agent store is required")
-	}
-	if err := s.acquire(input.ConversationID); err != nil {
+	started, err := s.StartPrompt(ctx, input)
+	if err != nil {
 		return PromptResult{}, err
 	}
-	defer s.release(input.ConversationID)
+	return started.Complete(ctx, input.OnEvent)
+}
+
+func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedPrompt, error) {
+	if !s.Enabled() {
+		return nil, ErrDisabled
+	}
+	if policy, ok := s.policyForScope(input.Scope); ok && !policy.Enabled {
+		return nil, ErrPolicyDisabled
+	}
+	if s.repo == nil {
+		return nil, fmt.Errorf("agent store is required")
+	}
+	if strings.TrimSpace(input.Input) == "" {
+		return nil, fmt.Errorf("prompt input is required")
+	}
+	if err := s.acquire(input.ConversationID); err != nil {
+		return nil, err
+	}
+	release := true
+	defer func() {
+		if release {
+			s.release(input.ConversationID)
+		}
+	}()
 
 	conversation, err := s.repo.GetConversation(ctx, input.Scope.WorkspaceID, input.Scope.PrincipalID, input.ConversationID)
 	if err != nil {
-		return PromptResult{}, err
+		return nil, err
 	}
 	initial, err := decodeTranscript(conversation.TranscriptJSON)
 	if err != nil {
-		return PromptResult{}, err
+		return nil, err
 	}
 	runID := newID("run")
 	run, err := s.repo.CreateRun(ctx, RunInput{
@@ -58,26 +88,76 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 		MetadataJSON:   metadataJSON(map[string]any{"base_url": s.config.normalizedBaseURL(), "model": s.config.Model}),
 	})
 	if err != nil {
+		return nil, err
+	}
+	userMessage := agent.Message{
+		ID:      newID("msg"),
+		Role:    agent.RoleUser,
+		Content: input.Input,
+	}
+	if err := s.appendMessage(ctx, PromptInput{
+		Scope:          input.Scope,
+		ConversationID: input.ConversationID,
+	}, run.ID, userMessage); err != nil {
+		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agent.Usage{}, err)
+		return nil, err
+	}
+	initial = append(initial, userMessage)
+	if err := s.persistTranscript(ctx, input, initial); err != nil {
+		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agent.Usage{}, err)
+		return nil, err
+	}
+	release = false
+	return &StartedPrompt{
+		Scope:          input.Scope,
+		ConversationID: input.ConversationID,
+		RunID:          run.ID,
+		Input:          input.Input,
+		CorrelationID:  input.CorrelationID,
+		service:        s,
+		initial:        initial,
+	}, nil
+}
+
+func (s *Service) CompletePrompt(ctx context.Context, started *StartedPrompt, onEvent func(EventEnvelope)) (PromptResult, error) {
+	if started == nil {
+		return PromptResult{}, fmt.Errorf("started prompt is required")
+	}
+	return started.Complete(ctx, onEvent)
+}
+
+func (p *StartedPrompt) Complete(ctx context.Context, onEvent func(EventEnvelope)) (PromptResult, error) {
+	if err := p.claim(); err != nil {
 		return PromptResult{}, err
 	}
-	sink := &storeEventSink{repo: s.repo, scope: input.Scope, conversationID: input.ConversationID, runID: run.ID, onEvent: input.OnEvent}
+	defer p.release()
+	s := p.service
+	input := PromptInput{
+		Scope:          p.Scope,
+		ConversationID: p.ConversationID,
+		Input:          p.Input,
+		CorrelationID:  p.CorrelationID,
+		OnEvent:        onEvent,
+	}
+
+	sink := &storeEventSink{repo: s.repo, scope: input.Scope, conversationID: input.ConversationID, runID: p.RunID, onEvent: input.OnEvent}
 	def := agent.Definition{
 		Name:              "libredash-readonly",
 		SystemPrompt:      s.systemPrompt(input.Scope),
 		Model:             s.model,
 		Tools:             s.toolDefinitions(input.Scope),
-		InitialTranscript: initial,
+		InitialTranscript: p.initial,
 		Events:            sink,
-		IDGenerator:       fixedRunIDGenerator{runID: run.ID},
+		IDGenerator:       fixedRunIDGenerator{runID: p.RunID},
 	}
 	harness, err := agent.New(def)
 	if err != nil {
-		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", sink.usage, err)
+		_ = s.finishRun(ctx, input, p.RunID, RunStatusFailed, "", sink.usage, err)
 		return PromptResult{}, err
 	}
-	result, promptErr := harness.Prompt(ctx, agent.PromptRequest{Input: input.Input, CorrelationID: input.CorrelationID})
+	result, promptErr := promptFromPersistedUser(ctx, harness, input)
 	transcript := harness.Transcript()
-	if err := s.persistNewMessages(ctx, input, run.ID, initial, transcript); err != nil && promptErr == nil {
+	if err := s.persistNewMessages(ctx, input, p.RunID, p.initial, transcript); err != nil && promptErr == nil {
 		promptErr = err
 	}
 	if err := s.persistTranscript(ctx, input, transcript); err != nil && promptErr == nil {
@@ -90,7 +170,7 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 			status = RunStatusCanceled
 		}
 	}
-	if err := s.finishRun(ctx, input, run.ID, status, result.StopReason, sink.usage, promptErr); err != nil && promptErr == nil {
+	if err := s.finishRun(ctx, input, p.RunID, status, result.StopReason, sink.usage, promptErr); err != nil && promptErr == nil {
 		promptErr = err
 	}
 	if promptErr != nil {
@@ -102,6 +182,46 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 		StopReason:     result.StopReason,
 		Content:        result.FinalMessage.Content,
 	}, nil
+}
+
+func (p *StartedPrompt) Abort(ctx context.Context, runErr error) error {
+	if p == nil {
+		return nil
+	}
+	if err := p.claim(); err != nil {
+		return nil
+	}
+	defer p.release()
+	if runErr == nil {
+		runErr = fmt.Errorf("prompt aborted")
+	}
+	input := PromptInput{
+		Scope:          p.Scope,
+		ConversationID: p.ConversationID,
+		Input:          p.Input,
+		CorrelationID:  p.CorrelationID,
+	}
+	return p.service.finishRun(ctx, input, p.RunID, RunStatusFailed, "", agent.Usage{}, runErr)
+}
+
+func (p *StartedPrompt) claim() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return fmt.Errorf("started prompt is already closed")
+	}
+	p.closed = true
+	return nil
+}
+
+func (p *StartedPrompt) release() {
+	if p.service != nil {
+		p.service.release(p.ConversationID)
+	}
+}
+
+func promptFromPersistedUser(ctx context.Context, harness *agent.Agent, input PromptInput) (agent.RunResult, error) {
+	return harness.Prompt(ctx, agent.PromptRequest{Input: input.Input, CorrelationID: input.CorrelationID, InputAlreadyAppended: true})
 }
 
 func (s *Service) acquire(conversationID string) error {

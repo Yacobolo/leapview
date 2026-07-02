@@ -1,9 +1,11 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -24,6 +26,16 @@ type chatTurnCommandAgentSignal struct {
 
 type chatTurnCommandComposerSignal struct {
 	Value string `json:"value"`
+}
+
+type chatTurnEmitter func(ui.ChatSignal) error
+
+type chatTurnExecution struct {
+	emitInitialRunning bool
+	generateTitle      bool
+	clientID           string
+	liveConversations  []ui.ChatConversationSummary
+	emit               chatTurnEmitter
 }
 
 func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +73,7 @@ func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.queueMissingChatTitle(r.Context(), scope, conversationID, chatClientID(r))
-	s.renderChat(w, r, "conversation", s.chatSignalWith(r.Context(), scope, conversationID, state.Transcript, state.Artifacts, "", false))
+	s.renderChat(w, r, "conversation", s.chatSignalWith(r.Context(), scope, conversationID, state.Transcript, state.Artifacts, "", s.agent.ConversationRunning(conversationID)))
 }
 
 func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, view string, signal ui.ChatSignal) {
@@ -91,22 +103,53 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "input is required", http.StatusBadRequest)
 		return
 	}
-	s.runChatTurn(w, r, service, scope, clientID, strings.TrimSpace(signals.Agent.ActiveConversationID), input)
+	activeConversationID := strings.TrimSpace(signals.Agent.ActiveConversationID)
+	if activeConversationID == "" {
+		s.startDraftChatTurn(w, r, service, scope, clientID, input)
+		return
+	}
+	s.runChatTurn(w, r, service, scope, clientID, activeConversationID, input)
+}
+
+func (s *Server) startDraftChatTurn(w http.ResponseWriter, r *http.Request, service *agentapp.Service, scope agentapp.Scope, clientID, input string) {
+	conversation, err := service.CreateConversation(r.Context(), scope, "New conversation")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	started, err := service.StartPrompt(r.Context(), agentapp.PromptInput{
+		Scope:          scope,
+		ConversationID: conversation.ID,
+		Input:          input,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	go s.completeDraftChatTurn(service, scope, clientID, started)
+	sse := datastar.NewSSE(w, r)
+	if err := sse.Redirect(chatRoutePath(scope.WorkspaceID, conversation.ID)); err != nil {
+		return
+	}
+}
+
+func (s *Server) completeDraftChatTurn(service *agentapp.Service, scope agentapp.Scope, clientID string, started *agentapp.StartedPrompt) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	_, _ = s.executeStartedChatTurn(ctx, service, scope, started, chatTurnExecution{
+		emitInitialRunning: true,
+		generateTitle:      true,
+		clientID:           clientID,
+		emit: func(signal ui.ChatSignal) error {
+			s.broker.Publish(chatStreamID(scope, clientID), chatSignalPatch(signal))
+			return nil
+		},
+	})
 }
 
 func (s *Server) runChatTurn(w http.ResponseWriter, r *http.Request, service *agentapp.Service, scope agentapp.Scope, clientID, activeConversationID, input string) {
 	streamConversations := s.chatConversations(r.Context(), scope)
 	conversationID := strings.TrimSpace(activeConversationID)
-	createdConversation := false
-	if conversationID == "" {
-		conversation, err := service.CreateConversation(r.Context(), scope, "New conversation")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		conversationID = conversation.ID
-		createdConversation = true
-	}
 
 	state, err := service.ConversationTranscriptState(r.Context(), scope, conversationID)
 	if err != nil {
@@ -115,44 +158,81 @@ func (s *Server) runChatTurn(w http.ResponseWriter, r *http.Request, service *ag
 	}
 	transcript := state.Transcript
 	streamArtifacts := state.Artifacts
-	transcript = appendServerUserTranscript(transcript, conversationID, input)
 	sse := datastar.NewSSE(w, r)
-	if createdConversation {
-		_ = sse.ReplaceURL(url.URL{Path: chatRoutePath(scope.WorkspaceID, conversationID)})
-	}
 
-	streamActiveID := strings.TrimSpace(activeConversationID)
-	emit := func(event agentapp.EventEnvelope) {
-		transcript = applyLiveTranscriptEvent(transcript, conversationID, event)
-		_ = sse.MarshalAndPatchSignals(chatSignalPatch(chatSignalWithConversations(streamConversations, streamActiveID, transcript, streamArtifacts, "", true, true)))
-	}
-	result, err := service.Prompt(r.Context(), agentapp.PromptInput{
+	started, err := service.StartPrompt(r.Context(), agentapp.PromptInput{
 		Scope:          scope,
 		ConversationID: conversationID,
 		Input:          input,
-		OnEvent:        emit,
 	})
-	statusErr := ""
 	if err != nil {
-		statusErr = err.Error()
-		if agentapp.IsBusy(err) {
-			statusErr = "A turn is already running for this conversation."
+		_ = sse.MarshalAndPatchSignals(chatSignalPatch(s.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, chatTurnStatusError(err), false)))
+		return
+	}
+	_, _ = s.executeStartedChatTurn(r.Context(), service, scope, started, chatTurnExecution{
+		liveConversations: streamConversations,
+		emit: func(signal ui.ChatSignal) error {
+			return sse.MarshalAndPatchSignals(chatSignalPatch(signal))
+		},
+	})
+}
+
+func (s *Server) executeStartedChatTurn(ctx context.Context, service *agentapp.Service, scope agentapp.Scope, started *agentapp.StartedPrompt, execution chatTurnExecution) (agentapp.PromptResult, error) {
+	state, err := service.ConversationTranscriptState(ctx, scope, started.ConversationID)
+	if err != nil {
+		_ = started.Abort(ctx, err)
+		return agentapp.PromptResult{}, err
+	}
+	transcript := state.Transcript
+	streamArtifacts := state.Artifacts
+	emit := func(signal ui.ChatSignal) {
+		if execution.emit != nil {
+			_ = execution.emit(signal)
 		}
 	}
+	liveSignal := func(statusErr string, running bool) ui.ChatSignal {
+		conversations := execution.liveConversations
+		if conversations == nil {
+			conversations = s.chatConversations(ctx, scope)
+		}
+		return chatSignalWithConversations(conversations, started.ConversationID, transcript, streamArtifacts, statusErr, running, true)
+	}
+	finalSignal := func(statusErr string, running bool) ui.ChatSignal {
+		return s.chatSignalWith(ctx, scope, started.ConversationID, transcript, streamArtifacts, statusErr, running)
+	}
+	if execution.emitInitialRunning {
+		emit(finalSignal("", true))
+	}
+	result, err := started.Complete(ctx, func(event agentapp.EventEnvelope) {
+		transcript = applyLiveTranscriptEvent(transcript, started.ConversationID, event)
+		emit(liveSignal("", true))
+	})
+	statusErr := chatTurnStatusError(err)
 	if result.RunID != "" {
-		if refreshed, refreshErr := service.ConversationTranscriptState(r.Context(), scope, conversationID); refreshErr == nil {
+		if refreshed, refreshErr := service.ConversationTranscriptState(ctx, scope, started.ConversationID); refreshErr == nil {
 			transcript = refreshed.Transcript
 			streamArtifacts = refreshed.Artifacts
 		}
 	}
-	shouldGenerateTitle := createdConversation && err == nil && result.RunID != ""
+	shouldGenerateTitle := execution.generateTitle && err == nil && result.RunID != ""
 	if shouldGenerateTitle {
-		s.markChatTitlePending(conversationID)
+		s.markChatTitlePending(started.ConversationID)
 	}
-	_ = sse.MarshalAndPatchSignals(chatSignalPatch(s.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, statusErr, false)))
+	emit(finalSignal(statusErr, false))
 	if shouldGenerateTitle {
-		s.generateConversationTitleAsync(scope, conversationID, clientID)
+		s.generateConversationTitleAsync(scope, started.ConversationID, execution.clientID)
 	}
+	return result, err
+}
+
+func chatTurnStatusError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if agentapp.IsBusy(err) {
+		return "A turn is already running for this conversation."
+	}
+	return err.Error()
 }
 
 func (s *Server) chatUpdates(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +243,15 @@ func (s *Server) chatUpdates(w http.ResponseWriter, r *http.Request) {
 	sse := datastar.NewSSE(w, r)
 	updates, unsubscribe := s.broker.Subscribe(chatStreamID(scope, chatClientID(r)))
 	defer unsubscribe()
+	signals := chatTurnCommandSignals{}
+	if err := datastar.ReadSignals(r, &signals); err == nil {
+		activeID := strings.TrimSpace(signals.Agent.ActiveConversationID)
+		if activeID != "" {
+			if state, stateErr := s.agent.ConversationTranscriptState(r.Context(), scope, activeID); stateErr == nil {
+				_ = sse.MarshalAndPatchSignals(chatSignalPatch(s.chatSignalWith(r.Context(), scope, activeID, state.Transcript, state.Artifacts, "", s.agent.ConversationRunning(activeID))))
+			}
+		}
+	}
 	for {
 		select {
 		case <-r.Context().Done():

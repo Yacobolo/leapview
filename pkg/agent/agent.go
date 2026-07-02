@@ -21,8 +21,9 @@ type Agent struct {
 }
 
 type PromptRequest struct {
-	Input         string
-	CorrelationID string
+	Input                string
+	CorrelationID        string
+	InputAlreadyAppended bool
 }
 
 type RunResult struct {
@@ -80,11 +81,13 @@ func (a *Agent) Prompt(ctx context.Context, req PromptRequest) (RunResult, error
 	}
 	a.running = true
 	a.cancel = cancel
-	a.transcript = append(a.transcript, Message{
-		ID:      a.def.IDGenerator.NewID("msg"),
-		Role:    RoleUser,
-		Content: req.Input,
-	})
+	if !req.InputAlreadyAppended {
+		a.transcript = append(a.transcript, Message{
+			ID:      a.def.IDGenerator.NewID("msg"),
+			Role:    RoleUser,
+			Content: req.Input,
+		})
+	}
 	a.mu.Unlock()
 
 	defer func() {

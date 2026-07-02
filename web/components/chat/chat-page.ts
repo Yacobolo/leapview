@@ -57,6 +57,10 @@ class LibreDashChatPage extends LitElement {
       overflow: visible;
     }
 
+    .main.new-main {
+      grid-template-rows: minmax(0, 1fr);
+    }
+
     .conversation-titlebar {
       display: grid;
       min-width: 0;
@@ -100,6 +104,52 @@ class LibreDashChatPage extends LitElement {
       background: var(--ld-bg-app);
     }
 
+    .new-chat-stage {
+      display: flex;
+      min-width: 0;
+      min-height: 100%;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--ld-space-lg);
+      background: var(--ld-bg-app);
+    }
+
+    .new-chat-stage > * {
+      animation: new-chat-enter var(--ld-transition-medium, 260ms ease) both;
+    }
+
+    .new-chat-stage ld-chat-composer {
+      width: 100%;
+      animation-delay: 70ms;
+    }
+
+    .new-chat-title {
+      box-sizing: border-box;
+      width: min(100%, var(--ld-chat-stack-width));
+      padding-inline: var(--ld-space-lg);
+      text-align: center;
+      font-size: var(--ld-font-size-title-md);
+    }
+
+    @keyframes new-chat-enter {
+      from {
+        opacity: 0;
+        transform: translateY(var(--ld-space-sm));
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .new-chat-stage > * {
+        animation: none;
+      }
+    }
+
     ld-chat-thread {
       display: block;
       min-width: 0;
@@ -120,6 +170,10 @@ class LibreDashChatPage extends LitElement {
       .main {
         height: auto;
         min-height: 100svh;
+      }
+
+      .main.new-main {
+        height: 100svh;
       }
     }
   `
@@ -142,42 +196,70 @@ class LibreDashChatPage extends LitElement {
     const composer = agent.composer ?? emptyAgent.composer
     const view = page?.view ?? 'conversation'
     const isList = view === 'list'
+    const isNew = view === 'new'
     const title = conversationTitle(agent)
     return html`
       <div class="route">
-        <section class=${isList ? 'main list-main' : 'main'} aria-label="LibreDash chats">
-          ${isList ? null : html`
-            <div class="conversation-titlebar">
-              <h1>${title}</h1>
-            </div>
-          `}
+        <section class=${['main', isList ? 'list-main' : '', isNew ? 'new-main' : ''].filter(Boolean).join(' ')} aria-label="LibreDash chats">
+          ${isList || isNew ? null : this.renderConversationTitlebar(title)}
           <div class="body">
-            ${isList ? html`
-              <ld-chat-list
-                .conversations=${agent.conversations ?? []}
-                active-conversation-id=${agent.activeConversationId ?? ''}
-              ></ld-chat-list>
-            ` : html`
-              <div class="thread-stack">
-                <ld-chat-thread
-                  .transcript=${agent.transcript ?? []}
-                  .visuals=${this.visuals ?? {}}
-                  .tables=${this.tables ?? {}}
-                  .status=${status}
-                  conversation-id=${agent.activeConversationId ?? ''}
-                >${status.error ?? ''}</ld-chat-thread>
-                <ld-chat-composer
-                  .value=${composer.value ?? ''}
-                  .disabled=${this.composerDisabled || status.running || composer.disabled}
-                  .pending=${this.pending || status.running}
-                  .placeholder=${composer.placeholder ?? emptyAgent.composer.placeholder}
-                ></ld-chat-composer>
-              </div>
-            `}
+            ${isList ? this.renderListView(agent) : isNew ? this.renderNewView(composer, status) : this.renderConversationView(agent, status, composer)}
           </div>
           <ld-visual-modal></ld-visual-modal>
         </section>
       </div>
+    `
+  }
+
+  private renderConversationTitlebar(title: string) {
+    return html`
+      <div class="conversation-titlebar">
+        <h1>${title}</h1>
+      </div>
+    `
+  }
+
+  private renderListView(agent: ChatSignal) {
+    return html`
+      <ld-chat-list
+        .conversations=${agent.conversations ?? []}
+        active-conversation-id=${agent.activeConversationId ?? ''}
+      ></ld-chat-list>
+    `
+  }
+
+  private renderNewView(composer: ChatSignal['composer'], status: ChatSignal['status']) {
+    return html`
+      <div class="new-chat-stage">
+        <h1 class="new-chat-title">Ask about your data</h1>
+        ${this.renderComposer(composer, status)}
+      </div>
+    `
+  }
+
+  private renderConversationView(agent: ChatSignal, status: ChatSignal['status'], composer: ChatSignal['composer']) {
+    return html`
+      <div class="thread-stack">
+        <ld-chat-thread
+          .transcript=${agent.transcript ?? []}
+          .visuals=${this.visuals ?? {}}
+          .tables=${this.tables ?? {}}
+          .status=${status}
+          conversation-id=${agent.activeConversationId ?? ''}
+        >${status.error ?? ''}</ld-chat-thread>
+        ${this.renderComposer(composer, status)}
+      </div>
+    `
+  }
+
+  private renderComposer(composer: ChatSignal['composer'], status: ChatSignal['status']) {
+    return html`
+      <ld-chat-composer
+        .value=${composer.value ?? ''}
+        .disabled=${this.composerDisabled || status.running || composer.disabled}
+        .pending=${this.pending || status.running}
+        .placeholder=${composer.placeholder ?? emptyAgent.composer.placeholder}
+      ></ld-chat-composer>
     `
   }
 }

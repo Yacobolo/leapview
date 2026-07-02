@@ -18,7 +18,7 @@ class ChatComposer extends LitElement {
     }
 
     form {
-      width: min(100%, var(--ld-chat-stack-width));
+      width: min(calc(100% - var(--ld-space-lg) - var(--ld-space-lg)), var(--ld-chat-stack-width));
       margin-inline: auto;
       padding: var(--ld-space-lg) var(--ld-space-lg) var(--ld-space-md);
     }
@@ -158,6 +158,7 @@ class ChatComposer extends LitElement {
     }
     @media (max-width: 560px) {
       form {
+        width: min(calc(100% - var(--ld-space-md) - var(--ld-space-md)), var(--ld-chat-stack-width));
         padding-inline: var(--ld-space-md);
       }
     }

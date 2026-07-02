@@ -25,7 +25,7 @@ beforeAll(async () => {
     }
     if (url.pathname === '/new') {
       response.setHeader('content-type', 'text/html')
-      response.end(testDocument('conversation', 'new'))
+      response.end(testDocument('new', 'new'))
       return
     }
     const file = normalize(join(root, url.pathname))
@@ -106,65 +106,91 @@ for (const viewport of [
   })
 }
 
-test('new chat page keeps the composer and removes the empty prompt box', async () => {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
-  try {
-    await page.goto(`${baseURL}/new`)
-    await page.waitForFunction(() => (
-      customElements.get('ld-chat-page')
-        && customElements.get('ld-chat-thread')
-        && customElements.get('ld-chat-composer')
-    ))
-    await page.locator('ld-chat-page').evaluate((element: any) => element.updateComplete)
+for (const viewport of [
+  { name: 'desktop', width: 1280, height: 820, expectedSurfaceWidth: 760 },
+  { name: 'mobile', width: 390, height: 820, expectedSurfaceWidth: 366 },
+]) {
+  test(`new chat page centers the title and composer on ${viewport.name}`, async () => {
+    const page = await browser.newPage({ viewport })
+    try {
+      await page.goto(`${baseURL}/new`)
+      await page.waitForFunction(() => (
+        customElements.get('ld-chat-page')
+          && customElements.get('ld-chat-composer')
+      ))
+      await page.locator('ld-chat-page').evaluate((element: any) => element.updateComplete)
 
-    const state = await page.locator('ld-chat-page').evaluate((element: any) => {
-      const root = element.shadowRoot
-      const title = root.querySelector('h1') as HTMLElement
-      const thread = root.querySelector('ld-chat-thread') as any
-      const composer = root.querySelector('ld-chat-composer') as any
-      const composerRoot = composer?.shadowRoot
-      const composerSurface = composerRoot?.querySelector('.composer-surface') as HTMLElement
-      const titleRect = title.getBoundingClientRect()
-      const composerRect = composer.getBoundingClientRect()
-      const surfaceRect = composerSurface.getBoundingClientRect()
-      return {
-        title: title.textContent?.trim(),
-        hasRouteHeader: Boolean(root.querySelector('header')),
-        hasDescription: Boolean(root.querySelector('.conversation-description')),
-        hasStartConversationBox: Boolean(thread?.shadowRoot?.querySelector('.empty')),
-        hasComposer: Boolean(composer),
-        conversationId: thread?.conversationId,
-        composerDisabled: composer?.disabled,
-        titleLeft: Math.round(titleRect.left),
-        titleTop: Math.round(titleRect.top),
-        composerBottomDistance: Math.round(window.innerHeight - composerRect.bottom),
-        composerBorderTopWidth: getComputedStyle(composer).borderTopWidth,
-        composerSurfaceWidth: Math.round(surfaceRect.width),
-        composerSurfaceLeft: Math.round(surfaceRect.left),
-        hasVerticalOverflow: document.documentElement.scrollHeight > window.innerHeight,
-      }
-    })
+      const state = await page.locator('ld-chat-page').evaluate((element: any) => {
+        const root = element.shadowRoot
+        const title = root.querySelector('h1') as HTMLElement
+        const stage = root.querySelector('.new-chat-stage') as HTMLElement
+        const composer = root.querySelector('ld-chat-composer') as any
+        const composerRoot = composer?.shadowRoot
+        const composerSurface = composerRoot?.querySelector('.composer-surface') as HTMLElement
+        const titleRect = title.getBoundingClientRect()
+        const stageRect = stage.getBoundingClientRect()
+        const composerRect = composer.getBoundingClientRect()
+        const surfaceRect = composerSurface.getBoundingClientRect()
+        const titleStyle = getComputedStyle(title)
+        const composerStyle = getComputedStyle(composer)
+        const clusterTop = titleRect.top
+        const clusterBottom = composerRect.bottom
+        return {
+          title: title.textContent?.trim(),
+          hasRouteHeader: Boolean(root.querySelector('header')),
+          hasDescription: Boolean(root.querySelector('.conversation-description')),
+          hasStartConversationBox: Boolean(root.querySelector('ld-chat-thread')?.shadowRoot?.querySelector('.empty')),
+          hasThread: Boolean(root.querySelector('ld-chat-thread')),
+          hasConversationTitlebar: Boolean(root.querySelector('.conversation-titlebar')),
+          hasNewStage: Boolean(stage),
+          hasComposer: Boolean(composer),
+          composerDisabled: composer?.disabled,
+          titleCenterOffset: Math.round(Math.abs((titleRect.left + titleRect.width / 2) - window.innerWidth / 2)),
+          composerBottomDistance: Math.round(window.innerHeight - composerRect.bottom),
+          composerBorderTopWidth: getComputedStyle(composer).borderTopWidth,
+          composerSurfaceWidth: Math.round(surfaceRect.width),
+          composerSurfaceLeft: Math.round(surfaceRect.left),
+          surfaceCenterOffset: Math.round(Math.abs((surfaceRect.left + surfaceRect.width / 2) - window.innerWidth / 2)),
+          clusterCenterOffset: Math.round(Math.abs((clusterTop + (clusterBottom - clusterTop) / 2) - (stageRect.top + stageRect.height / 2))),
+          titleAnimationName: titleStyle.animationName,
+          titleAnimationDuration: titleStyle.animationDuration,
+          composerAnimationName: composerStyle.animationName,
+          composerAnimationDelay: composerStyle.animationDelay,
+          hasVerticalOverflow: document.documentElement.scrollHeight > window.innerHeight,
+          hasHorizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
+        }
+      })
 
-    expect(state).toEqual({
-      title: 'New chat',
-      hasRouteHeader: false,
-      hasDescription: false,
-      hasStartConversationBox: false,
-      hasComposer: true,
-      conversationId: '',
-      composerDisabled: false,
-      titleLeft: 16,
-      titleTop: 14,
-      composerBottomDistance: 0,
-      composerBorderTopWidth: '0px',
-      composerSurfaceWidth: 760,
-      composerSurfaceLeft: 260,
-      hasVerticalOverflow: false,
-    })
-  } finally {
-    await page.close()
-  }
-})
+      expect(state).toMatchObject({
+        title: 'Ask about your data',
+        hasRouteHeader: false,
+        hasDescription: false,
+        hasStartConversationBox: false,
+        hasThread: false,
+        hasConversationTitlebar: false,
+        hasNewStage: true,
+        hasComposer: true,
+        composerDisabled: false,
+        titleCenterOffset: 0,
+        composerBorderTopWidth: '0px',
+        composerSurfaceWidth: viewport.expectedSurfaceWidth,
+        composerSurfaceLeft: Math.round((viewport.width - viewport.expectedSurfaceWidth) / 2),
+        surfaceCenterOffset: 0,
+        titleAnimationName: 'new-chat-enter',
+        titleAnimationDuration: '0.26s',
+        composerAnimationName: 'new-chat-enter',
+        composerAnimationDelay: '0.07s',
+        hasVerticalOverflow: false,
+        hasHorizontalOverflow: false,
+      })
+      expect(state.clusterCenterOffset).toBeLessThanOrEqual(8)
+      expect(state.composerBottomDistance).toBeGreaterThan(0)
+      expect(state.composerBottomDistance).toBeLessThan(viewport.height / 2)
+    } finally {
+      await page.close()
+    }
+  })
+}
 
 test('chat list page renders searchable conversation history', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })

@@ -84,6 +84,16 @@ func (s *Service) Enabled() bool {
 	return s != nil && s.config.Enabled()
 }
 
+func (s *Service) ConversationRunning(conversationID string) bool {
+	if s == nil || strings.TrimSpace(conversationID) == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.running[conversationID]
+	return ok
+}
+
 func (s *Service) CreateConversation(ctx context.Context, scope Scope, title string) (Conversation, error) {
 	if s.repo == nil {
 		return Conversation{}, fmt.Errorf("agent store is required")

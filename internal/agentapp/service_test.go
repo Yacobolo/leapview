@@ -228,6 +228,142 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 	}
 }
 
+func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
+	ctx := context.Background()
+	store := openAgentAppStore(t, ctx)
+	defer store.Close()
+	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, openAIChatResponse{Choices: []openAIChoice{{
+			Message:      openAIMessage{Role: "assistant", Content: "Done."},
+			FinishReason: "stop",
+		}}})
+	}))
+	defer modelServer.Close()
+
+	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	conversation, err := service.CreateConversation(ctx, scope, "Draft")
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	started, err := service.StartPrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "Persist me first"})
+	if err != nil {
+		t.Fatalf("start prompt: %v", err)
+	}
+	if !service.ConversationRunning(conversation.ID) {
+		t.Fatal("conversation should be marked running after start")
+	}
+	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Role != MessageRoleUser || messages[0].ContentText != "Persist me first" {
+		t.Fatalf("messages after start = %#v, want one persisted user prompt", messages)
+	}
+
+	result, err := service.CompletePrompt(ctx, started, nil)
+	if err != nil {
+		t.Fatalf("complete prompt: %v", err)
+	}
+	if result.RunID != started.RunID {
+		t.Fatalf("result run = %q, want started run %q", result.RunID, started.RunID)
+	}
+	if service.ConversationRunning(conversation.ID) {
+		t.Fatal("conversation should not be running after completion")
+	}
+	messages, err = store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatalf("list completed messages: %v", err)
+	}
+	if len(messages) != 2 || messages[0].Role != MessageRoleUser || messages[1].Role != MessageRoleAssistant {
+		t.Fatalf("messages after completion = %#v, want user and assistant only", messages)
+	}
+}
+
+func TestServiceCompletePromptFailureLeavesSubmittedUserMessage(t *testing.T) {
+	ctx := context.Background()
+	store := openAgentAppStore(t, ctx)
+	defer store.Close()
+	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "model down", http.StatusInternalServerError)
+	}))
+	defer modelServer.Close()
+
+	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	conversation, err := service.CreateConversation(ctx, scope, "Draft")
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	started, err := service.StartPrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "Keep failed input"})
+	if err != nil {
+		t.Fatalf("start prompt: %v", err)
+	}
+	if _, err := service.CompletePrompt(ctx, started, nil); err == nil {
+		t.Fatal("complete prompt succeeded against failing model")
+	}
+	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Role != MessageRoleUser || messages[0].ContentText != "Keep failed input" {
+		t.Fatalf("messages after failure = %#v, want submitted user prompt", messages)
+	}
+	runs, err := store.ListRuns(ctx, "test", principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != RunStatusFailed || runs[0].Error == "" {
+		t.Fatalf("runs after failure = %#v, want failed run with error", runs)
+	}
+}
+
+func TestServiceStartedPromptAbortReleasesRunningAndFailsRun(t *testing.T) {
+	ctx := context.Background()
+	store := openAgentAppStore(t, ctx)
+	defer store.Close()
+	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
+
+	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: "http://127.0.0.1", Model: "fake-model"})
+	conversation, err := service.CreateConversation(ctx, scope, "Draft")
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	started, err := service.StartPrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "Abort me"})
+	if err != nil {
+		t.Fatalf("start prompt: %v", err)
+	}
+	if !service.ConversationRunning(conversation.ID) {
+		t.Fatal("conversation should be running after start")
+	}
+	if err := started.Abort(ctx, errors.New("background startup failed")); err != nil {
+		t.Fatalf("abort prompt: %v", err)
+	}
+	if err := started.Abort(ctx, errors.New("second abort")); err != nil {
+		t.Fatalf("second abort should be harmless: %v", err)
+	}
+	if service.ConversationRunning(conversation.ID) {
+		t.Fatal("conversation should not be running after abort")
+	}
+	runs, err := store.ListRuns(ctx, "test", principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != RunStatusFailed || !strings.Contains(runs[0].Error, "background startup failed") {
+		t.Fatalf("runs after abort = %#v, want failed run with first abort error", runs)
+	}
+	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Role != MessageRoleUser || messages[0].ContentText != "Abort me" {
+		t.Fatalf("messages after abort = %#v, want submitted user prompt", messages)
+	}
+}
+
 func TestServicePromptPersistsDisplayContentButSendsCompactToolResult(t *testing.T) {
 	ctx := context.Background()
 	store := openAgentAppStore(t, ctx)
