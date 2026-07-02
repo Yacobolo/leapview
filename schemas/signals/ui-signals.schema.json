@@ -1827,6 +1827,378 @@
       ],
       "type": "object"
     },
+    "DataExplorerCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "block": {
+          "type": "string"
+        },
+        "columnWidths": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "objectKey": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "requestSeq": {
+          "type": "integer"
+        },
+        "resetVersion": {
+          "type": "integer"
+        },
+        "sort": {
+          "$ref": "#/$defs/DataPreviewSortSignal"
+        },
+        "start": {
+          "type": "integer"
+        },
+        "visibleColumns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "count",
+        "limit",
+        "offset",
+        "requestSeq",
+        "resetVersion",
+        "sort",
+        "start"
+      ],
+      "type": "object"
+    },
+    "DataExplorerObjectSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "columnCount": {
+          "type": "integer"
+        },
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/DataPreviewColumnSignal"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "detailHref": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "layer": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "rowCountLabel": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "table": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "workspaceTitle": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "columnCount",
+        "key",
+        "layer",
+        "title",
+        "workspaceId"
+      ],
+      "type": "object"
+    },
+    "DataExplorerPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "chrome": {
+          "$ref": "#/$defs/ChromeSignal"
+        },
+        "dataExplorer": {
+          "$ref": "#/$defs/DataExplorerSignal"
+        },
+        "page": {
+          "$ref": "#/$defs/DataExplorerPageSignal"
+        },
+        "runtime": {
+          "$ref": "#/$defs/RouteRuntimeSignal"
+        },
+        "status": {
+          "$ref": "#/$defs/DashboardStatus"
+        }
+      },
+      "required": [
+        "chrome",
+        "dataExplorer",
+        "page",
+        "runtime",
+        "status"
+      ],
+      "type": "object"
+    },
+    "DataExplorerPageSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "selectedObject": {
+          "type": "string"
+        },
+        "selectedWorkspaceId": {
+          "type": "string"
+        },
+        "tabs": {
+          "items": {
+            "$ref": "#/$defs/WorkspaceTabSignal"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "workspaces": {
+          "items": {
+            "$ref": "#/$defs/DataExplorerWorkspaceSignal"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "tabs",
+        "title",
+        "workspaces"
+      ],
+      "type": "object"
+    },
+    "DataExplorerSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/DataExplorerCommand"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/$defs/DataExplorerObjectSignal"
+          },
+          "type": "array"
+        },
+        "preview": {
+          "$ref": "#/$defs/DataPreviewSignal"
+        },
+        "selectedKey": {
+          "type": "string"
+        },
+        "selectedObject": {
+          "$ref": "#/$defs/DataExplorerObjectSignal"
+        },
+        "selectedWorkspaceId": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "command",
+        "objects",
+        "preview"
+      ],
+      "type": "object"
+    },
+    "DataExplorerWorkspaceSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "href": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "objectCount": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "active",
+        "href",
+        "id",
+        "objectCount",
+        "title"
+      ],
+      "type": "object"
+    },
+    "DataPreviewBlockSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "requestSeq": {
+          "type": "integer"
+        },
+        "resetVersion": {
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "sort": {
+          "$ref": "#/$defs/DataPreviewSortSignal"
+        },
+        "start": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requestSeq",
+        "resetVersion",
+        "rows",
+        "sort",
+        "start"
+      ],
+      "type": "object"
+    },
+    "DataPreviewColumnSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label"
+      ],
+      "type": "object"
+    },
+    "DataPreviewSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "availableRows": {
+          "type": "integer"
+        },
+        "blocks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DataPreviewBlockSignal"
+          },
+          "type": "object"
+        },
+        "chunkSize": {
+          "type": "integer"
+        },
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/DataPreviewColumnSignal"
+          },
+          "type": "array"
+        },
+        "error": {
+          "type": "string"
+        },
+        "loadingBlock": {
+          "type": "string"
+        },
+        "resetVersion": {
+          "type": "integer"
+        },
+        "rowHeight": {
+          "type": "integer"
+        },
+        "sort": {
+          "$ref": "#/$defs/DataPreviewSortSignal"
+        },
+        "sql": {
+          "type": "string"
+        },
+        "totalRowLabel": {
+          "type": "string"
+        },
+        "totalRows": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "availableRows",
+        "blocks",
+        "chunkSize",
+        "columns",
+        "resetVersion",
+        "rowHeight",
+        "sort",
+        "totalRows"
+      ],
+      "type": "object"
+    },
+    "DataPreviewSortSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "DefinitionFactSignal": {
       "additionalProperties": false,
       "properties": {
@@ -3232,6 +3604,36 @@
     },
     {
       "$ref": "#/$defs/DashboardPageSignal"
+    },
+    {
+      "$ref": "#/$defs/DataExplorerCommand"
+    },
+    {
+      "$ref": "#/$defs/DataExplorerObjectSignal"
+    },
+    {
+      "$ref": "#/$defs/DataExplorerPageEnvelope"
+    },
+    {
+      "$ref": "#/$defs/DataExplorerPageSignal"
+    },
+    {
+      "$ref": "#/$defs/DataExplorerSignal"
+    },
+    {
+      "$ref": "#/$defs/DataExplorerWorkspaceSignal"
+    },
+    {
+      "$ref": "#/$defs/DataPreviewBlockSignal"
+    },
+    {
+      "$ref": "#/$defs/DataPreviewColumnSignal"
+    },
+    {
+      "$ref": "#/$defs/DataPreviewSignal"
+    },
+    {
+      "$ref": "#/$defs/DataPreviewSortSignal"
     },
     {
       "$ref": "#/$defs/DefinitionFactSignal"

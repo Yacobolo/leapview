@@ -23,6 +23,7 @@ const (
 	RouteWorkspaceAsset  RouteKind = "workspace_asset"
 	RouteConnections     RouteKind = "connections"
 	RouteConnectionAsset RouteKind = "connection_asset"
+	RouteData            RouteKind = "data"
 	RouteAdmin           RouteKind = "admin"
 	RouteLogin           RouteKind = "login"
 )
@@ -264,6 +265,109 @@ type ConnectionsPageSignal struct {
 	Description string                   `json:"description,omitempty"`
 	WorkspaceID string                   `json:"workspaceId,omitempty"`
 	AssetList   WorkspaceAssetListSignal `json:"assetList,omitempty"`
+}
+
+type DataExplorerPageEnvelope struct {
+	Chrome       ChromeSignal           `json:"chrome"`
+	Page         DataExplorerPageSignal `json:"page"`
+	DataExplorer DataExplorerSignal     `json:"dataExplorer"`
+	Runtime      RouteRuntimeSignal     `json:"runtime"`
+	Status       StatusSignal           `json:"status"`
+}
+
+type DataExplorerPageSignal struct {
+	Kind                RouteKind                     `json:"kind"`
+	Title               string                        `json:"title"`
+	Description         string                        `json:"description,omitempty"`
+	WorkspaceID         string                        `json:"workspaceId,omitempty"`
+	SelectedWorkspaceID string                        `json:"selectedWorkspaceId,omitempty"`
+	SelectedObject      string                        `json:"selectedObject,omitempty"`
+	Workspaces          []DataExplorerWorkspaceSignal `json:"workspaces"`
+	Tabs                []WorkspaceTabSignal          `json:"tabs"`
+}
+
+type DataExplorerWorkspaceSignal struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Href        string `json:"href"`
+	ObjectCount int    `json:"objectCount"`
+	Active      bool   `json:"active"`
+}
+
+type DataExplorerSignal struct {
+	Objects             []DataExplorerObjectSignal `json:"objects"`
+	SelectedWorkspaceID string                     `json:"selectedWorkspaceId,omitempty"`
+	SelectedKey         string                     `json:"selectedKey,omitempty"`
+	SelectedObject      *DataExplorerObjectSignal  `json:"selectedObject,omitempty"`
+	Preview             DataPreviewSignal          `json:"preview"`
+	Command             DataExplorerCommand        `json:"command"`
+	Warnings            []string                   `json:"warnings,omitempty"`
+}
+
+type DataExplorerObjectSignal struct {
+	Key            string                    `json:"key"`
+	WorkspaceID    string                    `json:"workspaceId"`
+	WorkspaceTitle string                    `json:"workspaceTitle,omitempty"`
+	AssetID        string                    `json:"assetId,omitempty"`
+	Layer          string                    `json:"layer"`
+	ModelID        string                    `json:"modelId,omitempty"`
+	Table          string                    `json:"table,omitempty"`
+	Source         string                    `json:"source,omitempty"`
+	Title          string                    `json:"title"`
+	Description    string                    `json:"description,omitempty"`
+	DetailHref     string                    `json:"detailHref,omitempty"`
+	ColumnCount    int                       `json:"columnCount"`
+	RowCountLabel  string                    `json:"rowCountLabel,omitempty"`
+	Columns        []DataPreviewColumnSignal `json:"columns,omitempty"`
+}
+
+type DataPreviewSignal struct {
+	Columns       []DataPreviewColumnSignal         `json:"columns"`
+	TotalRows     int                               `json:"totalRows"`
+	AvailableRows int                               `json:"availableRows"`
+	ChunkSize     int                               `json:"chunkSize"`
+	RowHeight     int                               `json:"rowHeight"`
+	ResetVersion  int                               `json:"resetVersion"`
+	Blocks        map[string]DataPreviewBlockSignal `json:"blocks"`
+	LoadingBlock  string                            `json:"loadingBlock,omitempty"`
+	TotalRowLabel string                            `json:"totalRowLabel,omitempty"`
+	Sort          DataPreviewSortSignal             `json:"sort"`
+	SQL           string                            `json:"sql,omitempty"`
+	Error         string                            `json:"error,omitempty"`
+}
+
+type DataPreviewBlockSignal struct {
+	Start        int                   `json:"start"`
+	RequestSeq   int                   `json:"requestSeq"`
+	ResetVersion int                   `json:"resetVersion"`
+	Sort         DataPreviewSortSignal `json:"sort"`
+	Rows         []map[string]any      `json:"rows"`
+}
+
+type DataPreviewColumnSignal struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Type  string `json:"type,omitempty"`
+}
+
+type DataPreviewSortSignal struct {
+	Column    string `json:"column,omitempty"`
+	Direction string `json:"direction,omitempty"`
+}
+
+type DataExplorerCommand struct {
+	WorkspaceID    string                `json:"workspaceId,omitempty"`
+	ObjectKey      string                `json:"objectKey,omitempty"`
+	Offset         int                   `json:"offset"`
+	Limit          int                   `json:"limit"`
+	Block          string                `json:"block,omitempty"`
+	Start          int                   `json:"start"`
+	Count          int                   `json:"count"`
+	RequestSeq     int                   `json:"requestSeq"`
+	ResetVersion   int                   `json:"resetVersion"`
+	Sort           DataPreviewSortSignal `json:"sort"`
+	VisibleColumns []string              `json:"visibleColumns,omitempty"`
+	ColumnWidths   map[string]float64    `json:"columnWidths,omitempty"`
 }
 
 type WorkspaceCardSignal struct {
@@ -1082,6 +1186,7 @@ func sidebarGroups(catalog dashboard.Catalog, includeWorkspaceScoped bool) []Sid
 				{ID: "dashboards", Label: "Dashboards", Href: "/", Icon: "dashboard", Meta: "Reports"},
 				{ID: "chat", Label: "Chats", Href: chatPath(), Icon: "chat", Meta: "Agent interface"},
 				{ID: "workspaces", Label: "Workspaces", Href: "/workspaces", Icon: "catalog", Meta: "Published assets"},
+				{ID: "data", Label: "Data", Href: "/data", Icon: "cache", Meta: "Inspect rows"},
 				{ID: "connections", Label: "Connections", Href: "/connections", Icon: "data", Meta: "Data access"},
 				{ID: "admin", Label: "Admin", Href: "/admin", Icon: "settings", Meta: "Read-only administration"},
 			},
