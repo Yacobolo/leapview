@@ -417,6 +417,17 @@ func (q *Queries) DeleteSessionByTokenHash(ctx context.Context, tokenHash string
 	return err
 }
 
+const expireInactiveDeployments = `-- name: ExpireInactiveDeployments :exec
+UPDATE deployments
+SET status = 'expired', error = ''
+WHERE status = 'inactive'
+`
+
+func (q *Queries) ExpireInactiveDeployments(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, expireInactiveDeployments)
+	return err
+}
+
 const finishAgentRun = `-- name: FinishAgentRun :one
 UPDATE agent_runs
 SET status = ?1,
@@ -1776,13 +1787,13 @@ func (q *Queries) ListPrincipalRolePermissions(ctx context.Context, arg ListPrin
 const listReferencedDuckLakeSnapshots = `-- name: ListReferencedDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
 FROM deployments
-WHERE environment = ?
-  AND ducklake_snapshot_id > 0
+WHERE ducklake_snapshot_id > 0
+  AND status <> 'deleted'
 ORDER BY ducklake_snapshot_id
 `
 
-func (q *Queries) ListReferencedDuckLakeSnapshots(ctx context.Context, environment string) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listReferencedDuckLakeSnapshots, environment)
+func (q *Queries) ListReferencedDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listReferencedDuckLakeSnapshots)
 	if err != nil {
 		return nil, err
 	}
@@ -2028,6 +2039,17 @@ func (q *Queries) ListWorkspacesWithActiveMetadata(ctx context.Context, environm
 	return items, nil
 }
 
+const markDeleteScheduledDeploymentsDeleted = `-- name: MarkDeleteScheduledDeploymentsDeleted :exec
+UPDATE deployments
+SET status = 'deleted', error = ''
+WHERE status = 'delete_scheduled'
+`
+
+func (q *Queries) MarkDeleteScheduledDeploymentsDeleted(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, markDeleteScheduledDeploymentsDeleted)
+	return err
+}
+
 const markDeploymentActive = `-- name: MarkDeploymentActive :exec
 UPDATE deployments
 SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
@@ -2133,6 +2155,17 @@ func (q *Queries) RevokeSessionForPrincipal(ctx context.Context, arg RevokeSessi
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const scheduleExpiredDeploymentDeletion = `-- name: ScheduleExpiredDeploymentDeletion :exec
+UPDATE deployments
+SET status = 'delete_scheduled', error = ''
+WHERE status = 'expired'
+`
+
+func (q *Queries) ScheduleExpiredDeploymentDeletion(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, scheduleExpiredDeploymentDeletion)
+	return err
 }
 
 const setActiveDeployment = `-- name: SetActiveDeployment :exec

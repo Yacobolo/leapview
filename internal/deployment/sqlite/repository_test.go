@@ -274,12 +274,15 @@ func TestRepositoryListsReferencedDuckLakeSnapshots(t *testing.T) {
 	if err := repo.RecordDuckLakeSnapshot(ctx, prod.ID, 11); err != nil {
 		t.Fatalf("record prod: %v", err)
 	}
+	if _, err := store.SQLDB().ExecContext(ctx, "UPDATE deployments SET status = ? WHERE id = ?", string(deployment.StatusDeleted), string(second.ID)); err != nil {
+		t.Fatalf("mark second deleted: %v", err)
+	}
 
-	got, err := repo.ReferencedDuckLakeSnapshots(ctx, deployment.DefaultEnvironment)
+	got, err := repo.ReferencedDuckLakeSnapshots(ctx)
 	if err != nil {
 		t.Fatalf("referenced snapshots: %v", err)
 	}
-	want := []int64{7, 9}
+	want := []int64{7, 11}
 	if len(got) != len(want) {
 		t.Fatalf("referenced snapshots = %#v, want %#v", got, want)
 	}
@@ -288,6 +291,48 @@ func TestRepositoryListsReferencedDuckLakeSnapshots(t *testing.T) {
 			t.Fatalf("referenced snapshots = %#v, want %#v", got, want)
 		}
 	}
+}
+
+func TestRepositoryDeploymentRetentionLifecycle(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	first, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	second, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	if _, err := repo.SaveValidated(ctx, first.ID, validationGraph(first.ID), artifact(first.ID, "test")); err != nil {
+		t.Fatalf("save first: %v", err)
+	}
+	if _, err := repo.SaveValidated(ctx, second.ID, validationGraph(second.ID), artifact(second.ID, "test")); err != nil {
+		t.Fatalf("save second: %v", err)
+	}
+	if _, err := repo.Activate(ctx, "test", deployment.DefaultEnvironment, first.ID); err != nil {
+		t.Fatalf("activate first: %v", err)
+	}
+	if _, err := repo.Activate(ctx, "test", deployment.DefaultEnvironment, second.ID); err != nil {
+		t.Fatalf("activate second: %v", err)
+	}
+	if err := repo.ExpireInactiveDeployments(ctx); err != nil {
+		t.Fatalf("expire inactive: %v", err)
+	}
+	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusExpired)
+	requireDeploymentStatus(t, ctx, repo, second.ID, deployment.StatusActive)
+	if err := repo.ScheduleExpiredDeploymentDeletion(ctx); err != nil {
+		t.Fatalf("schedule delete: %v", err)
+	}
+	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDeleteScheduled)
+	if err := repo.MarkDeleteScheduledDeploymentsDeleted(ctx); err != nil {
+		t.Fatalf("mark deleted: %v", err)
+	}
+	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDeleted)
+	requireDeploymentStatus(t, ctx, repo, second.ID, deployment.StatusActive)
 }
 
 func TestRepositorySaveValidatedRejectsMismatchedArtifactEnvironment(t *testing.T) {
@@ -484,6 +529,17 @@ func openRepo(t *testing.T, ctx context.Context) (*platform.Store, *Repository) 
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store, NewRepository(store.SQLDB())
+}
+
+func requireDeploymentStatus(t *testing.T, ctx context.Context, repo *Repository, id deployment.ID, want deployment.Status) {
+	t.Helper()
+	got, err := repo.ByID(ctx, id)
+	if err != nil {
+		t.Fatalf("deployment %s: %v", id, err)
+	}
+	if got.Status != want {
+		t.Fatalf("deployment %s status = %q, want %q", id, got.Status, want)
+	}
 }
 
 func validationGraph(deploymentID deployment.ID) deployment.Validation {

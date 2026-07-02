@@ -12,7 +12,7 @@ Deployments are isolated by immutable DuckLake snapshots, not by separate DuckDB
 
 - Use DuckLake for materialized model tables, snapshots, schema history, statistics, commit metadata, and physical data-file ownership.
 - Use the metadata catalog for LibreDash control-plane state: workspaces, environments, active deployment pointers, permissions, and application job state.
-- Store analytical data as DuckLake-managed Parquet files in the environment file store.
+- Store analytical data as DuckLake-managed Parquet files in the LibreDash data store.
 - Execute BI queries through DuckDB attached to the active DuckLake snapshot.
 - Activate deployments by flipping a metadata pointer, not by moving files.
 - Keep rollback cheap by preserving previous DuckLake snapshots until retention removes them.
@@ -29,15 +29,17 @@ Deployments are isolated by immutable DuckLake snapshots, not by separate DuckDB
 
 ## Architecture
 
-Each environment has one metadata catalog and one analytical data store:
+Each LibreDash instance has one metadata catalog and one analytical data store:
 
 ```text
-environment/
-  catalog.sqlite            # LibreDash control-plane tables + DuckLake metadata tables
+.libredash/
+  libredash.db              # LibreDash control-plane tables + DuckLake metadata tables
   data/                     # DuckLake-managed Parquet files
+  artifacts/                # deployment bundles
+  runtime/                  # ephemeral extracted/runtime files
 ```
 
-The local default uses DuckLake's SQLite catalog backend because it supports multiple local clients better than a DuckDB-backed DuckLake catalog. The same architecture can use PostgreSQL as the metadata catalog when LibreDash needs a multi-user lakehouse deployment.
+Local and production use the same storage topology. Development mode changes application behavior such as auth bypass, inspectors, logging, and bootstrapping; it does not change catalog or data-store isolation. The local default uses DuckLake's SQLite catalog backend because it supports multiple local clients better than a DuckDB-backed DuckLake catalog. The same architecture can use PostgreSQL as the metadata catalog when LibreDash needs a multi-user lakehouse deployment.
 
 LibreDash owns application metadata that DuckLake cannot own:
 
@@ -73,7 +75,7 @@ DuckDB owns execution:
 - Running dashboard, export, API, and agent queries.
 - Reading DuckLake-managed Parquet files through the DuckLake catalog.
 
-A committed DuckLake snapshot is immutable. Later writes create new snapshots. A deployment maps a workspace/environment to one DuckLake snapshot id. That snapshot is the consistent analytical version for all tables in the deployment.
+A committed DuckLake snapshot is immutable. Later writes create new snapshots. A deployment maps a workspace/environment to one DuckLake snapshot id. Environment is a deployment dimension, not a physical catalog boundary. That snapshot is the consistent analytical version for all tables in the deployment.
 
 ```text
 SQLite:
@@ -88,8 +90,8 @@ DuckLake:
     model.customers -> data/model/customers/*.parquet
 
 DuckDB:
-  ATTACH 'ducklake:sqlite:environment/catalog.sqlite' AS lake
-    (DATA_PATH 'environment/data', SNAPSHOT_VERSION 42)
+  ATTACH 'ducklake:sqlite:.libredash/libredash.db' AS lake
+    (DATA_PATH '.libredash/data', SNAPSHOT_VERSION 42)
   SELECT ... FROM lake.model.orders
 ```
 
@@ -117,6 +119,8 @@ staging -> validated -> active -> expired -> delete_scheduled -> deleted
 
 DuckLake snapshots that have no live LibreDash deployment reference are retention candidates.
 
+Snapshot ids are scoped to the metadata catalog. Because environments share the catalog, cleanup must protect every live deployment reference in the catalog, not only references for the environment currently being served or inspected.
+
 ## Query Resolution
 
 Runtime queries never hard-code deployment-specific physical files or table names.
@@ -139,18 +143,18 @@ Cleanup is metadata-driven.
 - Retention policy determines when inactive deployments expire.
 - Expired deployments move to `delete_scheduled` before DuckLake snapshot expiration.
 - Physical file deletion respects a safety window and active-query grace period.
-- DuckLake snapshots not referenced by active, rollback, audit, or retention policy are candidates for expiration.
+- DuckLake snapshots not referenced by any active, rollback, audit, or retention policy in the catalog are candidates for expiration.
 - DuckLake cleanup functions identify files scheduled for deletion and orphaned Parquet files.
 - Cleanup supports dry-run inspection before destructive action.
-- Cleanup reconciles LibreDash deployment references against DuckLake snapshots before expiration.
+- Cleanup reconciles all LibreDash deployment references in the metadata catalog against DuckLake snapshots before expiration.
 
 Snapshot expiration and physical file cleanup remain separate operations.
 
 ## Design Defaults
 
-- Use one metadata catalog per LibreDash environment/cache root.
+- Use one metadata catalog per LibreDash instance.
 - Use SQLite as the local metadata catalog backend and PostgreSQL as the server/multi-user backend.
-- Use DuckLake schemas for workspace/table namespaces.
+- Use DuckLake schemas for workspace/table namespaces and metadata columns for environment-specific deployment pointers.
 - Use immutable DuckLake snapshots for deployment isolation.
 - Use local Parquet as the analytical data format.
 - Use DuckLake DDL and scoped options for table layout; LibreDash should not own physical file-layout policy.

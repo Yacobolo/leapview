@@ -144,7 +144,7 @@ func (m dataDirMetrics) DataDir() string {
 	return m.dataDir
 }
 
-func (p testRuntimeProvider) Active() (runtimehost.Runtime, error) {
+func (p testRuntimeProvider) Active(context.Context) (runtimehost.Runtime, error) {
 	if p.err != nil {
 		return nil, p.err
 	}

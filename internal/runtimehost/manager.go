@@ -45,6 +45,7 @@ type Manager struct {
 
 	activeDeployment deployment.ID
 	activeDigest     string
+	activeSnapshotID int64
 	current          Runtime
 }
 
@@ -92,7 +93,7 @@ func (m *Manager) Reload(ctx context.Context) error {
 	current, artifact, err := m.repo.ActiveArtifact(ctx, m.workspaceID, m.environment)
 	if err != nil {
 		if errors.Is(err, deployment.ErrNotFound) {
-			return nil
+			return m.Close()
 		}
 		return err
 	}
@@ -120,7 +121,7 @@ func (m *Manager) PrepareDeployment(ctx context.Context, deploymentID string) (d
 
 func (m *Manager) prepare(ctx context.Context, current deployment.Deployment, artifact deployment.Artifact) (*Prepared, error) {
 	m.mu.RLock()
-	if m.current != nil && m.activeDeployment == current.ID && m.activeDigest == artifact.Digest {
+	if m.current != nil && m.activeDeployment == current.ID && m.activeDigest == artifact.Digest && m.activeSnapshotID == current.DuckLakeSnapshotID {
 		m.mu.RUnlock()
 		return &Prepared{deploymentID: current.ID, digest: artifact.Digest, noChange: true}, nil
 	}
@@ -137,6 +138,9 @@ func (m *Manager) prepare(ctx context.Context, current deployment.Deployment, ar
 	var snapshotID int64
 	if snapshot, ok := runtime.(RuntimeSnapshot); ok {
 		snapshotID = snapshot.DuckLakeSnapshotID()
+	}
+	if snapshotID == 0 {
+		snapshotID = current.DuckLakeSnapshotID
 	}
 	return &Prepared{deploymentID: current.ID, digest: artifact.Digest, runtime: runtime, snapshotID: snapshotID}, nil
 }
@@ -158,6 +162,7 @@ func (m *Manager) CommitPrepared(candidate deployment.PreparedRuntime) error {
 	m.current = prepared.runtime
 	m.activeDeployment = prepared.deploymentID
 	m.activeDigest = prepared.digest
+	m.activeSnapshotID = prepared.snapshotID
 	prepared.runtime = nil
 	m.mu.Unlock()
 	if old != nil {
@@ -172,6 +177,7 @@ func (m *Manager) Close() error {
 	m.current = nil
 	m.activeDeployment = ""
 	m.activeDigest = ""
+	m.activeSnapshotID = 0
 	m.mu.Unlock()
 	if current == nil {
 		return nil

@@ -15,7 +15,7 @@ import (
 )
 
 type RuntimeProvider interface {
-	Active() (runtimehost.Runtime, error)
+	Active(ctx context.Context) (runtimehost.Runtime, error)
 }
 
 type runtimeProvider = RuntimeProvider
@@ -107,7 +107,7 @@ func (m *dynamicRuntimeMetrics) defaultMetrics() QueryMetrics {
 }
 
 func (m runtimeMetrics) Catalog() dashboard.Catalog {
-	runtime, err := m.catalogRuntime()
+	runtime, err := m.catalogRuntime(context.Background())
 	if err != nil {
 		title := strings.TrimSpace(m.workspaceID)
 		if title == "" {
@@ -121,7 +121,7 @@ func (m runtimeMetrics) Catalog() dashboard.Catalog {
 }
 
 func (m runtimeMetrics) DefaultDashboardID() string {
-	runtime, err := m.catalogRuntime()
+	runtime, err := m.catalogRuntime(context.Background())
 	if err != nil {
 		return ""
 	}
@@ -129,7 +129,7 @@ func (m runtimeMetrics) DefaultDashboardID() string {
 }
 
 func (m runtimeMetrics) ModelIDForDashboard(dashboardID string) string {
-	runtime, err := m.catalogRuntime()
+	runtime, err := m.catalogRuntime(context.Background())
 	if err != nil {
 		return ""
 	}
@@ -137,7 +137,7 @@ func (m runtimeMetrics) ModelIDForDashboard(dashboardID string) string {
 }
 
 func (m runtimeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
-	runtime, err := m.reportRuntime()
+	runtime, err := m.reportRuntime(context.Background())
 	if err != nil {
 		return reportdef.Dashboard{}, nil, false
 	}
@@ -145,7 +145,7 @@ func (m runtimeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semant
 }
 
 func (m runtimeMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
-	runtime, err := m.reportRuntime()
+	runtime, err := m.reportRuntime(context.Background())
 	if err != nil {
 		return nil, false
 	}
@@ -153,7 +153,7 @@ func (m runtimeMetrics) SemanticModel(modelID string) (*semanticmodel.Model, boo
 }
 
 func (m runtimeMetrics) DefaultFilters(dashboardID string) dashboard.Filters {
-	runtime, err := m.reportRuntime()
+	runtime, err := m.reportRuntime(context.Background())
 	if err != nil {
 		return dashboard.Filters{}.WithDefaults()
 	}
@@ -161,7 +161,7 @@ func (m runtimeMetrics) DefaultFilters(dashboardID string) dashboard.Filters {
 }
 
 func (m runtimeMetrics) NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest {
-	runtime, err := m.tableRuntime()
+	runtime, err := m.tableRuntime(context.Background())
 	if err != nil {
 		return request.WithDefaults()
 	}
@@ -173,7 +173,7 @@ func (m runtimeMetrics) QueryDashboard(ctx context.Context, dashboardID string, 
 }
 
 func (m runtimeMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
-	runtime, err := m.dashboardRuntime()
+	runtime, err := m.dashboardRuntime(ctx)
 	if err != nil {
 		return dashboard.EmptyPatch(filters.WithDefaults(), m.dataDir, err), nil
 	}
@@ -185,7 +185,7 @@ func (m runtimeMetrics) QueryTable(ctx context.Context, dashboardID string, filt
 }
 
 func (m runtimeMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
-	runtime, err := m.tableRuntime()
+	runtime, err := m.tableRuntime(ctx)
 	if err != nil {
 		return dashboard.EmptyTable(request.WithDefaults(), err), nil
 	}
@@ -193,7 +193,7 @@ func (m runtimeMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID 
 }
 
 func (m runtimeMetrics) QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
-	runtime, err := m.semanticQueryRuntime()
+	runtime, err := m.semanticQueryRuntime(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func (m runtimeMetrics) QuerySemantic(ctx context.Context, modelID string, reque
 }
 
 func (m runtimeMetrics) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
-	runtime, err := m.semanticQueryRuntime()
+	runtime, err := m.semanticQueryRuntime(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (m runtimeMetrics) ExplainSemanticPreview(modelID string, request reportdef
 }
 
 func (m runtimeMetrics) RefreshMaterializations(ctx context.Context, modelID string) error {
-	runtime, err := m.materializationRuntime()
+	runtime, err := m.materializationRuntime(ctx)
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func (m runtimeMetrics) RefreshMaterializations(ctx context.Context, modelID str
 }
 
 func (m runtimeMetrics) RefreshModelTables(ctx context.Context, modelID string, tableNames []string) error {
-	runtime, err := m.materializationRuntime()
+	runtime, err := m.materializationRuntime(ctx)
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (m runtimeMetrics) DataDir() string {
 }
 
 func (m runtimeMetrics) Pages(dashboardID string) []dashboard.Page {
-	runtime, err := m.catalogRuntime()
+	runtime, err := m.catalogRuntime(context.Background())
 	if err != nil {
 		return nil
 	}
@@ -259,7 +259,7 @@ func (m runtimeMetrics) Pages(dashboardID string) []dashboard.Page {
 }
 
 func (m runtimeMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
-	runtime, err := m.active()
+	runtime, err := m.active(context.Background())
 	if err != nil {
 		return nil, nil, false
 	}
@@ -270,8 +270,8 @@ func (m runtimeMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]wor
 	return port.WorkspaceAssets(workspaceID, deploymentID)
 }
 
-func (m runtimeMetrics) catalogRuntime() (catalogRuntime, error) {
-	runtime, err := m.active()
+func (m runtimeMetrics) catalogRuntime(ctx context.Context) (catalogRuntime, error) {
+	runtime, err := m.active(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -282,8 +282,8 @@ func (m runtimeMetrics) catalogRuntime() (catalogRuntime, error) {
 	return port, nil
 }
 
-func (m runtimeMetrics) reportRuntime() (reportRuntime, error) {
-	runtime, err := m.active()
+func (m runtimeMetrics) reportRuntime(ctx context.Context) (reportRuntime, error) {
+	runtime, err := m.active(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -294,8 +294,8 @@ func (m runtimeMetrics) reportRuntime() (reportRuntime, error) {
 	return port, nil
 }
 
-func (m runtimeMetrics) dashboardRuntime() (dashboardRuntime, error) {
-	runtime, err := m.active()
+func (m runtimeMetrics) dashboardRuntime(ctx context.Context) (dashboardRuntime, error) {
+	runtime, err := m.active(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -306,8 +306,8 @@ func (m runtimeMetrics) dashboardRuntime() (dashboardRuntime, error) {
 	return port, nil
 }
 
-func (m runtimeMetrics) tableRuntime() (tableRuntime, error) {
-	runtime, err := m.active()
+func (m runtimeMetrics) tableRuntime(ctx context.Context) (tableRuntime, error) {
+	runtime, err := m.active(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -318,8 +318,8 @@ func (m runtimeMetrics) tableRuntime() (tableRuntime, error) {
 	return port, nil
 }
 
-func (m runtimeMetrics) semanticQueryRuntime() (semanticQueryRuntime, error) {
-	runtime, err := m.active()
+func (m runtimeMetrics) semanticQueryRuntime(ctx context.Context) (semanticQueryRuntime, error) {
+	runtime, err := m.active(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -330,8 +330,8 @@ func (m runtimeMetrics) semanticQueryRuntime() (semanticQueryRuntime, error) {
 	return port, nil
 }
 
-func (m runtimeMetrics) materializationRuntime() (materializationRuntime, error) {
-	runtime, err := m.active()
+func (m runtimeMetrics) materializationRuntime(ctx context.Context) (materializationRuntime, error) {
+	runtime, err := m.active(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (m runtimeMetrics) materializationRuntime() (materializationRuntime, error)
 }
 
 func (m runtimeMetrics) AgentPolicy() workspace.AgentPolicy {
-	runtime, err := m.active()
+	runtime, err := m.active(context.Background())
 	if err != nil {
 		return workspace.DefaultAgentPolicy()
 	}
@@ -354,9 +354,9 @@ func (m runtimeMetrics) AgentPolicy() workspace.AgentPolicy {
 	return provider.AgentPolicy()
 }
 
-func (m runtimeMetrics) active() (runtimehost.Runtime, error) {
+func (m runtimeMetrics) active(ctx context.Context) (runtimehost.Runtime, error) {
 	if m.provider == nil {
 		return nil, fmt.Errorf("runtime provider is not configured")
 	}
-	return m.provider.Active()
+	return m.provider.Active(ctx)
 }

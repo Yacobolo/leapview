@@ -74,9 +74,24 @@ ORDER BY created_at DESC;
 -- name: ListReferencedDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
 FROM deployments
-WHERE environment = ?
-  AND ducklake_snapshot_id > 0
+WHERE ducklake_snapshot_id > 0
+  AND status <> 'deleted'
 ORDER BY ducklake_snapshot_id;
+
+-- name: ExpireInactiveDeployments :exec
+UPDATE deployments
+SET status = 'expired', error = ''
+WHERE status = 'inactive';
+
+-- name: ScheduleExpiredDeploymentDeletion :exec
+UPDATE deployments
+SET status = 'delete_scheduled', error = ''
+WHERE status = 'expired';
+
+-- name: MarkDeleteScheduledDeploymentsDeleted :exec
+UPDATE deployments
+SET status = 'deleted', error = ''
+WHERE status = 'delete_scheduled';
 
 -- name: UpdateDeploymentValidated :exec
 UPDATE deployments

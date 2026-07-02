@@ -17,6 +17,25 @@ func TestManagerReloadIgnoresMissingActiveDeployment(t *testing.T) {
 	}
 }
 
+func TestManagerReloadClearsStaleRuntimeWhenActiveDeploymentMissing(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: deployment.StatusActive},
+		artifact:   deployment.Artifact{DeploymentID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest"},
+	}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", DataDir: "/data", Factory: &fakeFactory{}})
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("reload active: %v", err)
+	}
+	repo.activeErr = deployment.ErrNotFound
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("reload missing active: %v", err)
+	}
+	if _, err := manager.Active(); err == nil {
+		t.Fatal("active runtime survived missing active deployment")
+	}
+}
+
 func TestManagerReloadUsesConfiguredEnvironment(t *testing.T) {
 	repo := &fakeRepo{
 		deployment: deployment.Deployment{ID: "dep_prod", WorkspaceID: "test", Environment: "prod", Status: deployment.StatusValidated},
@@ -132,6 +151,54 @@ func TestManagerReloadRoutesWhenOnlyActiveDeploymentPointerChanges(t *testing.T)
 	}
 }
 
+func TestManagerReloadRoutesWhenOnlyDuckLakeSnapshotPointerChanges(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: deployment.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   deployment.Artifact{DeploymentID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "same-digest"},
+	}
+	factory := &fakeFactory{}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", DataDir: "/data", Factory: factory})
+
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("first reload: %v", err)
+	}
+	repo.deployment.DuckLakeSnapshotID = 22
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("second reload: %v", err)
+	}
+	active, err := manager.Active()
+	if err != nil {
+		t.Fatalf("active: %v", err)
+	}
+	if got := active.(RuntimeSnapshot).DuckLakeSnapshotID(); got != 22 {
+		t.Fatalf("active snapshot = %d, want 22", got)
+	}
+	if factory.prepareCalls != 2 {
+		t.Fatalf("prepare calls = %d, want snapshot pointer change to reload runtime", factory.prepareCalls)
+	}
+}
+
+func TestManagerReloadReusesRuntimeWhenDeploymentDigestAndSnapshotMatch(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: deployment.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   deployment.Artifact{DeploymentID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "same-digest"},
+	}
+	factory := &fakeFactory{}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", DataDir: "/data", Factory: factory})
+
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("first reload: %v", err)
+	}
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("second reload: %v", err)
+	}
+	if factory.prepareCalls != 1 {
+		t.Fatalf("prepare calls = %d, want matching pointer to reuse runtime", factory.prepareCalls)
+	}
+}
+
 func TestManagerRejectsPreparedFromDifferentHost(t *testing.T) {
 	manager := NewManagerWithFactory(ManagerOptions{Repo: &fakeRepo{}, WorkspaceID: "test", Environment: "dev", DataDir: "/data", Factory: &fakeFactory{}})
 	if err := manager.CommitPrepared(fakePrepared{}); err == nil {
@@ -191,13 +258,13 @@ func TestRegistryReloadLoadsConfiguredEnvironmentForEachWorkspace(t *testing.T) 
 	if got := repo.activeCalls; !equalStrings(got, []string{"empty/prod", "operations/prod", "sales/prod"}) {
 		t.Fatalf("active calls = %#v, want configured prod workspaces only", got)
 	}
-	if _, err := registry.ActiveForWorkspace("sales"); err != nil {
+	if _, err := registry.ActiveForWorkspace(context.Background(), "sales"); err != nil {
 		t.Fatalf("sales active: %v", err)
 	}
-	if _, err := registry.ActiveForWorkspace("operations"); err != nil {
+	if _, err := registry.ActiveForWorkspace(context.Background(), "operations"); err != nil {
 		t.Fatalf("operations active: %v", err)
 	}
-	if _, err := registry.ActiveForWorkspace("empty"); err == nil {
+	if _, err := registry.ActiveForWorkspace(context.Background(), "empty"); err == nil {
 		t.Fatal("empty workspace active error = nil, want no active deployment")
 	}
 	if got := factory.inputs; !equalStrings(got, []string{"operations/prod/dep_ops_prod", "sales/prod/dep_sales_prod"}) {
@@ -225,10 +292,14 @@ func TestRegistryPrepareCommitRoutesDeploymentByWorkspace(t *testing.T) {
 	if err := registry.CommitPrepared(prepared); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
-	if _, err := registry.ActiveForWorkspace("operations"); err != nil {
+	repo.active["operations/prod"] = registryDeploymentArtifact{
+		deployment: deployment.Deployment{ID: "dep_ops_prod", WorkspaceID: "operations", Environment: "prod", Status: deployment.StatusActive},
+		artifact:   deployment.Artifact{DeploymentID: "dep_ops_prod", WorkspaceID: "operations", Environment: "prod", Digest: "ops-prod"},
+	}
+	if _, err := registry.ActiveForWorkspace(context.Background(), "operations"); err != nil {
 		t.Fatalf("operations active after commit: %v", err)
 	}
-	if _, err := registry.ActiveForWorkspace("sales"); err == nil {
+	if _, err := registry.ActiveForWorkspace(context.Background(), "sales"); err == nil {
 		t.Fatal("sales active error = nil, want only operations runtime committed")
 	}
 	if got := factory.inputs; !equalStrings(got, []string{"operations/prod/dep_ops_prod"}) {

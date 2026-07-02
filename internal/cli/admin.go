@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	"github.com/Yacobolo/libredash/internal/config"
-	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/spf13/cobra"
@@ -56,7 +54,6 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			return runAdminStorageCleanup(ctx, opts, cmd.OutOrStdout())
 		},
 	}
-	cleanup.Flags().StringVar(&opts.environment, "environment", string(deployment.DefaultEnvironment), "deployment environment")
 	cleanup.Flags().BoolVar(&opts.apply, "apply", false, "perform destructive cleanup instead of dry-run")
 	storage.AddCommand(cleanup)
 	parent.AddCommand(bootstrap, storage)
@@ -65,20 +62,17 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 
 func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Writer) error {
 	cfg := config.MustLoad()
-	environment := deployment.NormalizeEnvironment(deployment.Environment(opts.environment))
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return err
 	}
 	defer store.Close()
 	repo := deploymentsqlite.NewRepository(store.SQLDB())
-	referenced, err := repo.ReferencedDuckLakeSnapshots(ctx, environment)
+	referenced, err := repo.ReferencedDuckLakeSnapshots(ctx)
 	if err != nil {
 		return err
 	}
-	root := filepath.Join(cfg.DuckDBDirPath(), string(environment))
-	dataPath := filepath.Join(root, "data")
-	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: root, CatalogPath: cfg.DBPath(), DataPath: dataPath})
+	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: cfg.HomeDir, CatalogPath: cfg.DBPath(), DataPath: cfg.DuckLakeDataDir()})
 	if err != nil {
 		return err
 	}
@@ -107,7 +101,8 @@ func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Write
 		return err
 	}
 	dryRun := !opts.apply
-	fmt.Fprintf(out, "ducklake root: %s\n", root)
+	fmt.Fprintf(out, "ducklake catalog: %s\n", cfg.DBPath())
+	fmt.Fprintf(out, "ducklake data: %s\n", cfg.DuckLakeDataDir())
 	fmt.Fprintf(out, "mode: %s\n", cleanupMode(dryRun))
 	fmt.Fprintf(out, "protected snapshots: %s\n", formatSnapshotIDs(referenced))
 	fmt.Fprintf(out, "expiration candidates: %s\n", formatSnapshotIDs(candidates))

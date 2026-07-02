@@ -20,15 +20,16 @@ func TestAdminStorageCleanupDryRunReconcilesReferencedSnapshots(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
 	setAdminStorageEnv(t, home)
-	root := filepath.Join(home, "duckdb", string(deployment.DefaultEnvironment))
+	root := home
 	first, second := seedAdminDuckLakeSnapshots(t, ctx, home, root)
-	recordAdminDeploymentSnapshot(t, ctx, home, second)
+	recordAdminDeploymentSnapshot(t, ctx, home, "dev", second)
+	recordAdminDeploymentSnapshot(t, ctx, home, "prod", second)
 
 	opts := &rootOptions{}
 	cmd := adminCommand(ctx, opts)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"storage", "cleanup", "--environment", string(deployment.DefaultEnvironment)})
+	cmd.SetArgs([]string{"storage", "cleanup"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("admin storage cleanup: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestAdminStorageCleanupDryRunReconcilesReferencedSnapshots(t *testing.T) {
 		}
 	}
 
-	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: root, CatalogPath: filepath.Join(home, "libredash.db"), DataPath: filepath.Join(root, "data")})
+	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: root, CatalogPath: filepath.Join(home, "libredash.db"), DataPath: filepath.Join(home, "data")})
 	if adminDuckLakeUnavailable(err) {
 		t.Skipf("ducklake extension unavailable: %v", err)
 	}
@@ -70,15 +71,15 @@ func TestAdminStorageCleanupRejectsMissingReferencedSnapshot(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
 	setAdminStorageEnv(t, home)
-	root := filepath.Join(home, "duckdb", string(deployment.DefaultEnvironment))
+	root := home
 	seedAdminDuckLakeSnapshots(t, ctx, home, root)
-	recordAdminDeploymentSnapshot(t, ctx, home, 999)
+	recordAdminDeploymentSnapshot(t, ctx, home, "prod", 999)
 
 	opts := &rootOptions{}
 	cmd := adminCommand(ctx, opts)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"storage", "cleanup", "--environment", string(deployment.DefaultEnvironment)})
+	cmd.SetArgs([]string{"storage", "cleanup"})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "deployment references missing DuckLake snapshots: 999") {
 		t.Fatalf("admin storage cleanup error = %v, want missing snapshot reconciliation error", err)
@@ -93,7 +94,7 @@ func setAdminStorageEnv(t *testing.T, home string) {
 
 func seedAdminDuckLakeSnapshots(t *testing.T, ctx context.Context, home, root string) (int64, int64) {
 	t.Helper()
-	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: root, CatalogPath: filepath.Join(home, "libredash.db"), DataPath: filepath.Join(root, "data")})
+	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: root, CatalogPath: filepath.Join(home, "libredash.db"), DataPath: filepath.Join(home, "data")})
 	if adminDuckLakeUnavailable(err) {
 		t.Skipf("ducklake extension unavailable: %v", err)
 	}
@@ -118,7 +119,7 @@ func seedAdminDuckLakeSnapshots(t *testing.T, ctx context.Context, home, root st
 	return first, second
 }
 
-func recordAdminDeploymentSnapshot(t *testing.T, ctx context.Context, home string, snapshotID int64) {
+func recordAdminDeploymentSnapshot(t *testing.T, ctx context.Context, home string, environment deployment.Environment, snapshotID int64) {
 	t.Helper()
 	store, err := platform.Open(ctx, filepath.Join(home, "libredash.db"))
 	if err != nil {
@@ -129,7 +130,7 @@ func recordAdminDeploymentSnapshot(t *testing.T, ctx context.Context, home strin
 		t.Fatalf("ensure workspace: %v", err)
 	}
 	repo := deploymentsqlite.NewRepository(store.SQLDB())
-	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", Environment: environment, CreatedBy: "tester"})
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}

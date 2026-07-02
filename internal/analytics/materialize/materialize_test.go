@@ -408,12 +408,13 @@ func TestWorkspaceRuntimeUsesPlatformDBAsDuckLakeCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	duckRoot := filepath.Join(dir, "duckdb", "dev")
+	duckLakeDataPath := filepath.Join(dir, ".libredash", "data")
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
 		Models:           map[string]*semanticmodel.Model{"sales": model},
 		DataDir:          dataDir,
 		DBDir:            duckRoot,
 		CatalogPath:      catalogPath,
-		DuckLakeDataPath: filepath.Join(duckRoot, "data"),
+		DuckLakeDataPath: duckLakeDataPath,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -437,7 +438,7 @@ func TestWorkspaceRuntimeUsesPlatformDBAsDuckLakeCatalog(t *testing.T) {
 	for _, stmt := range []string{
 		"LOAD sqlite",
 		"LOAD ducklake",
-		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(catalogPath, "'", "''") + "' AS lake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(catalogPath, "'", "''") + "' AS lake (DATA_PATH '" + strings.ReplaceAll(duckLakeDataPath, "'", "''") + "')",
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatal(err)
@@ -472,7 +473,7 @@ func TestWorkspaceRuntimeQueriesPinnedDuckLakeSnapshots(t *testing.T) {
 		DataDir:          dataDir,
 		DBDir:            duckRoot,
 		CatalogPath:      catalogPath,
-		DuckLakeDataPath: filepath.Join(duckRoot, "data"),
+		DuckLakeDataPath: filepath.Join(dir, ".libredash", "data"),
 	}
 
 	writeOrdersCSV(t, dataDir, 10, 15)
@@ -512,6 +513,109 @@ func TestWorkspaceRuntimeQueriesPinnedDuckLakeSnapshots(t *testing.T) {
 	if got := queryRevenue(t, ctx, second); got != 250 {
 		t.Fatalf("second snapshot revenue = %v, want 250", got)
 	}
+}
+
+func TestWorkspaceRuntimeWritesDuckLakeDataUnderConfiguredInstanceStore(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "source")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeOrdersCSV(t, dataDir, 10, 15)
+	catalogPath := filepath.Join(dir, ".libredash", "libredash.db")
+	dataPath := filepath.Join(dir, ".libredash", "data")
+	oldEnvironmentDataPath := filepath.Join(dir, ".libredash", "duckdb", "dev", "data")
+
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t)},
+		DataDir:          dataDir,
+		DBDir:            filepath.Join(dir, ".libredash", "duckdb", "dev"),
+		CatalogPath:      catalogPath,
+		DuckLakeDataPath: dataPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	info, err := os.Stat(dataPath)
+	if err != nil {
+		t.Fatalf("DuckLake data path was not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("DuckLake data path %s is not a directory", dataPath)
+	}
+	if _, err := os.Stat(oldEnvironmentDataPath); !os.IsNotExist(err) {
+		t.Fatalf("old environment-scoped DuckLake data path exists or stat failed: %v", err)
+	}
+}
+
+func TestWorkspaceRuntimeWritesDuckLakeCommitMetadata(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "source")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeOrdersCSV(t, dataDir, 10, 15)
+	catalogPath := filepath.Join(dir, ".libredash", "libredash.db")
+	dataPath := filepath.Join(dir, ".libredash", "data")
+
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t)},
+		DataDir:          dataDir,
+		DBDir:            filepath.Join(dir, ".libredash", "duckdb", "dev"),
+		CatalogPath:      catalogPath,
+		DuckLakeDataPath: dataPath,
+		DeploymentID:     "dep_123",
+		WorkspaceID:      "sales",
+		Environment:      "prod",
+		SemanticDigest:   "semantic-digest",
+		ArtifactDigest:   "artifact-digest",
+		SourceDataDigest: "source-digest",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotID := runtime.DuckLakeSnapshotID()
+	defer runtime.Close()
+
+	extra := duckLakeSnapshotExtraInfo(t, ctx, catalogPath, dataPath, snapshotID)
+	for _, want := range []string{
+		`"deploymentId":"dep_123"`,
+		`"workspaceId":"sales"`,
+		`"environment":"prod"`,
+		`"semanticModelDigest":"semantic-digest"`,
+		`"artifactDigest":"artifact-digest"`,
+		`"sourceDataDigest":"source-digest"`,
+	} {
+		if !strings.Contains(extra, want) {
+			t.Fatalf("DuckLake snapshot metadata missing %s in %s", want, extra)
+		}
+	}
+}
+
+func duckLakeSnapshotExtraInfo(t *testing.T, ctx context.Context, catalogPath, dataPath string, snapshotID int64) string {
+	t.Helper()
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(catalogPath, "'", "''") + "' AS lake (DATA_PATH '" + strings.ReplaceAll(dataPath, "'", "''") + "')",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var extra string
+	if err := db.QueryRowContext(ctx, "SELECT CAST(commit_extra_info AS VARCHAR) FROM lake.snapshots() WHERE snapshot_id = ?", snapshotID).Scan(&extra); err != nil {
+		t.Fatal(err)
+	}
+	return extra
 }
 
 func simpleOrdersModel(t *testing.T) *semanticmodel.Model {

@@ -29,6 +29,9 @@ func TestDeploymentBackedDevServerAlwaysOpensPlatformStore(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, "artifacts")); err != nil {
 		t.Fatalf("artifact directory was not created: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(home, "data")); err != nil {
+		t.Fatalf("DuckLake data directory was not created: %v", err)
+	}
 }
 
 func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {

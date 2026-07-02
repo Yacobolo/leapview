@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,6 +71,12 @@ type WorkspaceRuntimeConfig struct {
 	CatalogPath      string
 	DuckLakeDataPath string
 	SnapshotID       int64
+	DeploymentID     string
+	WorkspaceID      string
+	Environment      string
+	SemanticDigest   string
+	ArtifactDigest   string
+	SourceDataDigest string
 }
 
 type WorkspaceRuntime struct {
@@ -84,6 +91,7 @@ type WorkspaceRuntime struct {
 	queries              map[string]*semanticquery.Service
 	lastRefresh          time.Time
 	lastSnapshotID       int64
+	commitMetadata       map[string]string
 }
 
 type duckLakeCommitter interface {
@@ -140,6 +148,7 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 		models:               config.Models,
 		materializationModel: materializationModel,
 		queries:              map[string]*semanticquery.Service{},
+		commitMetadata:       workspaceCommitMetadata(config),
 	}
 	for modelID, model := range config.Models {
 		runtime.queries[modelID] = semanticquery.NewService(semanticquery.NewPlanner(model), db)
@@ -225,7 +234,12 @@ func (r *WorkspaceRuntime) refreshModel(ctx context.Context, model *semanticmode
 	if err := r.sources.PrepareSourceRuntime(ctx, model); err != nil {
 		return time.Time{}, 0, err
 	}
-	snapshotID, err := r.committer.Commit(ctx, "workspace-refresh", map[string]string{"workspace": model.Name}, func(tx *sql.Tx) error {
+	metadata := map[string]string{"workspace": model.Name}
+	for key, value := range r.commitMetadata {
+		metadata[key] = value
+	}
+	deploymentID := firstNonEmpty(r.commitMetadata["deploymentId"], "workspace-refresh")
+	snapshotID, err := r.committer.Commit(ctx, deploymentID, metadata, func(tx *sql.Tx) error {
 		executor := txExecutor{tx: tx}
 		sources := txSourceRuntime{SourceRuntime: r.sources, tx: tx}
 		if len(tableNames) > 0 {
@@ -237,6 +251,33 @@ func (r *WorkspaceRuntime) refreshModel(ctx context.Context, model *semanticmode
 		return time.Time{}, 0, err
 	}
 	return time.Now(), snapshotID, nil
+}
+
+func workspaceCommitMetadata(config WorkspaceRuntimeConfig) map[string]string {
+	metadata := map[string]string{}
+	addCommitMetadata(metadata, "deploymentId", config.DeploymentID)
+	addCommitMetadata(metadata, "workspaceId", config.WorkspaceID)
+	addCommitMetadata(metadata, "environment", config.Environment)
+	addCommitMetadata(metadata, "semanticModelDigest", config.SemanticDigest)
+	addCommitMetadata(metadata, "artifactDigest", config.ArtifactDigest)
+	addCommitMetadata(metadata, "sourceDataDigest", config.SourceDataDigest)
+	return metadata
+}
+
+func addCommitMetadata(metadata map[string]string, key, value string) {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		metadata[key] = value
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (r *WorkspaceRuntime) Close() error {

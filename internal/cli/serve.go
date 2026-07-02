@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
@@ -69,7 +68,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, dir := range []string{cfg.ArtifactDir(), cfg.DuckDBDirPath(), cfg.RuntimeDir()} {
+	for _, dir := range []string{cfg.ArtifactDir(), cfg.DuckDBDirPath(), cfg.RuntimeDir(), cfg.DuckLakeDataDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, err
 		}
@@ -104,10 +103,11 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		Environment:  environment,
 		DataDir:      dataDir,
 		Factory: deploymentRuntimeFactory{
-			dataDir:     dataDir,
-			duckDBDir:   cfg.DuckDBDirPath(),
-			runtimeDir:  cfg.RuntimeDir(),
-			catalogPath: cfg.DBPath(),
+			dataDir:          dataDir,
+			duckDBDir:        cfg.DuckDBDirPath(),
+			runtimeDir:       cfg.RuntimeDir(),
+			catalogPath:      cfg.DBPath(),
+			duckLakeDataPath: cfg.DuckLakeDataDir(),
 		},
 	})
 	if err := registry.Reload(ctx); err != nil {
@@ -151,7 +151,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		ArtifactDir:         cfg.ArtifactDir(),
 		DuckDBDir:           cfg.DuckDBDirPath(),
 		DuckLakeCatalogPath: cfg.DBPath(),
-		DuckLakeDataPath:    filepath.Join(cfg.DuckDBDirPath(), string(environment), "data"),
+		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
 		DefaultEnvironment:  string(environment),
 		RateLimits:          rateLimits,
 		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),

@@ -82,8 +82,20 @@ func (r *Repository) RecordDuckLakeSnapshot(ctx context.Context, deploymentID de
 	})
 }
 
-func (r *Repository) ReferencedDuckLakeSnapshots(ctx context.Context, environment deployment.Environment) ([]int64, error) {
-	return r.q.ListReferencedDuckLakeSnapshots(ctx, string(deployment.NormalizeEnvironment(environment)))
+func (r *Repository) ReferencedDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
+	return r.q.ListReferencedDuckLakeSnapshots(ctx)
+}
+
+func (r *Repository) ExpireInactiveDeployments(ctx context.Context) error {
+	return r.q.ExpireInactiveDeployments(ctx)
+}
+
+func (r *Repository) ScheduleExpiredDeploymentDeletion(ctx context.Context) error {
+	return r.q.ScheduleExpiredDeploymentDeletion(ctx)
+}
+
+func (r *Repository) MarkDeleteScheduledDeploymentsDeleted(ctx context.Context) error {
+	return r.q.MarkDeleteScheduledDeploymentsDeleted(ctx)
 }
 
 func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.ID, validation deployment.Validation, artifact deployment.Artifact) (deployment.Deployment, error) {

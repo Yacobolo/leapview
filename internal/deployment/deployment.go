@@ -17,11 +17,14 @@ type Environment string
 type Status string
 
 const (
-	StatusPending   Status = "pending"
-	StatusValidated Status = "validated"
-	StatusActive    Status = "active"
-	StatusInactive  Status = "inactive"
-	StatusFailed    Status = "failed"
+	StatusPending         Status = "pending"
+	StatusValidated       Status = "validated"
+	StatusActive          Status = "active"
+	StatusInactive        Status = "inactive"
+	StatusFailed          Status = "failed"
+	StatusExpired         Status = "expired"
+	StatusDeleteScheduled Status = "delete_scheduled"
+	StatusDeleted         Status = "deleted"
 )
 
 const DefaultEnvironment Environment = "dev"

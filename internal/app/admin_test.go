@@ -245,7 +245,7 @@ func TestAdminStorageInspectsDuckLakeCatalog(t *testing.T) {
 func TestAdminStorageInspectsConfiguredDuckLakeCatalog(t *testing.T) {
 	dir := t.TempDir()
 	catalogPath := filepath.Join(dir, "libredash.db")
-	dataPath := filepath.Join(dir, "duckdb", "dev", "data")
+	dataPath := filepath.Join(dir, "data")
 	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
 	server := NewWithOptions(fakeMetrics{}, Options{
 		DefaultWorkspaceID:  "test",

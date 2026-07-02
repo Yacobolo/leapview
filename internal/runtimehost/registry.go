@@ -105,12 +105,15 @@ func (r *Registry) Close() error {
 	return first
 }
 
-func (r *Registry) ActiveForWorkspace(workspaceID deployment.WorkspaceID) (Runtime, error) {
+func (r *Registry) ActiveForWorkspace(ctx context.Context, workspaceID deployment.WorkspaceID) (Runtime, error) {
 	r.mu.RLock()
 	manager := r.managers[workspaceID]
 	r.mu.RUnlock()
 	if manager == nil {
 		return nil, fmt.Errorf("no active LibreDash deployment")
+	}
+	if err := manager.Reload(ctx); err != nil {
+		return nil, err
 	}
 	return manager.Active()
 }
@@ -120,11 +123,11 @@ func (r *Registry) ProviderForWorkspace(workspaceID deployment.WorkspaceID) *Wor
 	return &WorkspaceProvider{registry: r, workspaceID: workspaceID}
 }
 
-func (p *WorkspaceProvider) Active() (Runtime, error) {
+func (p *WorkspaceProvider) Active(ctx context.Context) (Runtime, error) {
 	if p == nil || p.registry == nil {
 		return nil, fmt.Errorf("runtime provider is not configured")
 	}
-	return p.registry.ActiveForWorkspace(p.workspaceID)
+	return p.registry.ActiveForWorkspace(ctx, p.workspaceID)
 }
 
 func (r *Registry) managerForWorkspace(workspaceID deployment.WorkspaceID) *Manager {
