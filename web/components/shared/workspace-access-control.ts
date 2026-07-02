@@ -103,7 +103,7 @@ class WorkspaceAccessControl extends LitElement {
       font-size: var(--ld-font-size-body-sm);
       font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-tight);
-      padding: 0 var(--base-size-10);
+      padding: 0 var(--ld-space-control);
       transition:
         color var(--ld-transition-fast),
         background-color var(--ld-transition-fast),
@@ -218,7 +218,7 @@ class WorkspaceAccessControl extends LitElement {
 
     .card {
       display: grid;
-      gap: var(--base-size-10);
+      gap: var(--ld-space-control);
     }
 
     .section-title {
@@ -246,7 +246,7 @@ class WorkspaceAccessControl extends LitElement {
       border-radius: var(--ld-radius-default);
       background: var(--ld-bg-control);
       color: var(--ld-fg-muted);
-      padding: 0 var(--base-size-10);
+      padding: 0 var(--ld-space-control);
       transition:
         background-color var(--ld-transition-fast),
         border-color var(--ld-transition-fast);
@@ -401,7 +401,7 @@ class WorkspaceAccessControl extends LitElement {
       align-items: center;
       gap: var(--base-size-12);
       border-bottom: var(--ld-border-muted);
-      padding: var(--base-size-10) var(--base-size-12);
+      padding: var(--ld-space-control) var(--base-size-12);
     }
 
     .person {

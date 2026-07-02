@@ -96,7 +96,7 @@ class LibreDashLoginPage extends LitElement {
       position: relative;
       z-index: var(--zIndex-modal, 30);
       display: grid;
-      width: min(100%, var(--ld-login-panel-width, 24rem));
+      width: min(100%, var(--ld-login-panel-width));
       justify-items: center;
       gap: var(--base-size-20);
       border: var(--ld-border-default);
@@ -111,7 +111,7 @@ class LibreDashLoginPage extends LitElement {
     h1 {
       margin: 0;
       color: var(--ld-fg-default);
-      font-size: var(--ld-font-size-title-md, 1.25rem);
+      font-size: var(--ld-font-size-title-md);
       font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-compact);
     }
@@ -130,14 +130,14 @@ class LibreDashLoginPage extends LitElement {
       cursor: pointer;
       padding: 0 var(--base-size-16);
       font: inherit;
-      font-size: var(--ld-font-size-body-md, 1rem);
+      font-size: var(--ld-font-size-body-md);
       font-weight: var(--ld-font-weight-medium);
       box-shadow: var(--shadow-resting-small);
     }
 
     .provider:hover,
     .provider:focus-visible {
-      border-color: var(--ld-accent, #0969da);
+      border-color: var(--ld-accent);
       background: var(--ld-bg-control-hover);
       outline: 0;
     }
@@ -151,10 +151,10 @@ class LibreDashLoginPage extends LitElement {
       gap: 1px;
     }
 
-    .provider-mark span:nth-child(1) { background: var(--ld-danger, #cf222e); }
-    .provider-mark span:nth-child(2) { background: var(--ld-success, #1a7f37); }
-    .provider-mark span:nth-child(3) { background: var(--ld-accent, #0969da); }
-    .provider-mark span:nth-child(4) { background: var(--ld-warning, #bf8700); }
+    .provider-mark span:nth-child(1) { background: var(--ld-fg-danger); }
+    .provider-mark span:nth-child(2) { background: var(--ld-fg-success); }
+    .provider-mark span:nth-child(3) { background: var(--ld-accent); }
+    .provider-mark span:nth-child(4) { background: var(--ld-fg-warning); }
 
     @media (max-width: 520px) {
       :host {

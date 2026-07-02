@@ -77,7 +77,7 @@ class SubSidebar extends LitElement {
 
   static styles = css`
     :host {
-      --ld-sub-sidebar-width: 144px;
+      --ld-sub-sidebar-width: var(--ld-sub-sidebar-width-expanded);
       display: block;
       width: var(--ld-sub-sidebar-width);
       height: 100%;
@@ -92,7 +92,7 @@ class SubSidebar extends LitElement {
     }
 
     :host([data-collapsed]) {
-      --ld-sub-sidebar-width: 38px;
+      --ld-sub-sidebar-width: var(--ld-sub-sidebar-width-collapsed);
       z-index: var(--zIndex-sticky);
       overflow: visible;
     }
@@ -311,13 +311,13 @@ class SubSidebar extends LitElement {
     }
 
     .pending-spinner {
-      width: 10px;
-      height: 10px;
+      width: var(--ld-spinner-size-sm);
+      height: var(--ld-spinner-size-sm);
       flex: 0 0 auto;
-      border: 1.5px solid var(--ld-line-muted);
+      border: var(--ld-spinner-border-width) solid var(--ld-line-muted);
       border-top-color: var(--ld-fg-muted);
       border-radius: var(--ld-radius-full);
-      animation: pending-spin var(--ld-transition-slow, 700ms) linear infinite;
+      animation: pending-spin var(--ld-duration-slow) linear infinite;
     }
 
     .item-link:hover .item-title,
@@ -478,7 +478,7 @@ class SubSidebar extends LitElement {
       }
 
       .top-row {
-        padding-block: var(--base-size-10) var(--base-size-6);
+        padding-block: var(--ld-space-control) var(--base-size-6);
       }
 
       nav {
@@ -486,7 +486,7 @@ class SubSidebar extends LitElement {
         gap: var(--base-size-4);
         overflow-x: auto;
         overflow-y: hidden;
-        padding-block: var(--base-size-6) var(--base-size-10);
+        padding-block: var(--base-size-6) var(--ld-space-control);
         scrollbar-gutter: auto;
       }
 

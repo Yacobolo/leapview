@@ -582,7 +582,7 @@ const storageExplorerStyles = `
     min-width: 0;
     align-items: center;
     border-bottom: var(--ld-border-muted);
-    padding: var(--base-size-12, 0.75rem) var(--base-size-16, 1rem);
+    padding: var(--base-size-12) var(--base-size-16);
     background: var(--ld-bg-panel);
   }
 
@@ -606,7 +606,7 @@ const storageExplorerStyles = `
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    gap: var(--base-size-4, 0.25rem);
+    gap: var(--base-size-4);
   }
 
   .storage-detail-header,
@@ -626,7 +626,7 @@ const storageExplorerStyles = `
 
   h2 {
     color: var(--ld-fg-default);
-    font-size: var(--ld-font-size-title-sm, 1rem);
+    font-size: var(--ld-font-size-title-sm);
     line-height: var(--ld-line-height-tight, 1.2);
     font-weight: var(--ld-font-weight-strong, 600);
   }
@@ -636,7 +636,7 @@ const storageExplorerStyles = `
     color: var(--ld-fg-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--ld-font-size-caption, 0.75rem);
+    font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-medium, 500);
     line-height: var(--ld-line-height-tight, 1.2);
   }
@@ -674,7 +674,7 @@ const storageExplorerStyles = `
   .storage-browser-menu {
     border-bottom: var(--ld-border-muted);
     background: var(--ld-bg-panel);
-    padding: var(--base-size-4, 0.25rem) var(--base-size-8, 0.5rem);
+    padding: var(--base-size-4) var(--base-size-8);
   }
 
   .storage-search-icon {
@@ -709,10 +709,10 @@ const storageExplorerStyles = `
   .storage-warnings {
     grid-area: warnings;
     display: grid;
-    gap: var(--base-size-8, 0.5rem);
+    gap: var(--base-size-8);
     border-bottom: var(--ld-border-muted);
     background: var(--ld-bg-panel);
-    padding: var(--base-size-8, 0.5rem) var(--base-size-12, 0.75rem);
+    padding: var(--base-size-8) var(--base-size-12);
   }
 
   .storage-warnings-empty {
@@ -723,9 +723,9 @@ const storageExplorerStyles = `
     border: var(--ld-border-attention, var(--ld-border-muted));
     border-radius: var(--ld-radius-default);
     background: var(--ld-bg-attention-muted, var(--ld-bg-panel-muted));
-    padding: var(--base-size-8, 0.5rem) var(--base-size-12, 0.75rem);
+    padding: var(--base-size-8) var(--base-size-12);
     color: var(--ld-fg-default);
-    font-size: var(--ld-font-size-body-sm, 0.875rem);
+    font-size: var(--ld-font-size-body-sm);
     font-weight: var(--ld-font-weight-medium, 500);
   }
 

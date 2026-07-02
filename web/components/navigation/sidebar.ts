@@ -136,7 +136,7 @@ class LibreDashSidebar extends LitElement {
 
   static styles = css`
     :host {
-      --ld-sidebar-width: 248px;
+      --ld-sidebar-width: var(--ld-sidebar-width-expanded);
       display: block;
       width: var(--ld-sidebar-width);
       min-height: 100svh;
@@ -146,7 +146,7 @@ class LibreDashSidebar extends LitElement {
     }
 
     :host([data-collapsed]) {
-      --ld-sidebar-width: 48px;
+      --ld-sidebar-width: var(--ld-sidebar-width-collapsed);
     }
 
     aside {
@@ -202,7 +202,7 @@ class LibreDashSidebar extends LitElement {
     .collapse-button:hover,
     .collapse-button:focus-visible {
       border-color: var(--ld-line-muted);
-      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
+      background: var(--control-bgColor-hover);
       color: var(--ld-fg-default);
       outline: 0;
     }
@@ -229,7 +229,7 @@ class LibreDashSidebar extends LitElement {
 
     .nav-group {
       display: grid;
-      gap: var(--base-size-2, 2px);
+      gap: var(--base-size-2);
     }
 
     .primary-action {
@@ -247,7 +247,7 @@ class LibreDashSidebar extends LitElement {
     .primary-action .nav-item:hover,
     .primary-action .nav-item:focus-visible {
       border-color: transparent;
-      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
+      background: var(--control-bgColor-hover);
       color: var(--ld-fg-default);
     }
 
@@ -255,7 +255,7 @@ class LibreDashSidebar extends LitElement {
       width: calc(var(--control-xsmall-size) + var(--base-size-2));
       height: calc(var(--control-xsmall-size) + var(--base-size-2));
       border-radius: var(--ld-radius-full);
-      background: var(--control-bgColor-active, #e6eaef);
+      background: var(--control-bgColor-hover);
       color: var(--ld-fg-default);
       transition:
         background var(--motion-transition-stateChange),
@@ -264,7 +264,7 @@ class LibreDashSidebar extends LitElement {
 
     .primary-action .nav-item:hover .nav-icon,
     .primary-action .nav-item:focus-visible .nav-icon {
-      background: var(--ld-bg-selected, #ddf4ff);
+      background: var(--ld-bg-selected);
       transform: rotate(-3deg) scale(1.06);
     }
 
@@ -279,9 +279,9 @@ class LibreDashSidebar extends LitElement {
       overflow: hidden;
       margin:
         0
-        var(--control-xsmall-paddingInline-normal, 8px)
+        var(--control-xsmall-paddingInline-normal)
         0
-        calc(var(--control-xsmall-paddingInline-normal, 8px) + var(--ld-border-width, 1px));
+        calc(var(--control-xsmall-paddingInline-normal) + var(--ld-border-width));
       color: color-mix(in srgb, var(--ld-fg-muted), transparent 32%);
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -292,7 +292,7 @@ class LibreDashSidebar extends LitElement {
 
     .history-list {
       display: grid;
-      gap: var(--base-size-2, 2px);
+      gap: var(--base-size-2);
       min-height: 0;
     }
 
@@ -317,12 +317,12 @@ class LibreDashSidebar extends LitElement {
     }
 
     .pending-spinner {
-      width: 10px;
-      height: 10px;
-      border: 1.5px solid var(--ld-line-muted);
+      width: var(--ld-spinner-size-sm);
+      height: var(--ld-spinner-size-sm);
+      border: var(--ld-spinner-border-width) solid var(--ld-line-muted);
       border-top-color: var(--ld-fg-muted);
       border-radius: var(--ld-radius-full);
-      animation: pending-spin var(--ld-transition-slow, 700ms) linear infinite;
+      animation: pending-spin var(--ld-duration-slow) linear infinite;
     }
 
     a,
@@ -364,14 +364,14 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item:hover,
     .nav-item:focus-visible {
-      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
+      background: var(--control-bgColor-hover);
       color: var(--ld-fg-default);
       outline: 0;
     }
 
     .nav-item[aria-current='page'] {
       border-color: transparent;
-      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
+      background: var(--control-bgColor-hover);
       color: var(--ld-fg-default);
     }
 
@@ -655,10 +655,10 @@ class LibreDashSidebar extends LitElement {
   private syncCollapsedState(): void {
     if (this.effectiveCollapsed) {
       this.setAttribute('data-collapsed', '')
-      this.style.setProperty('--ld-sidebar-width', '48px')
+      this.style.setProperty('--ld-sidebar-width', 'var(--ld-sidebar-width-collapsed)')
     } else {
       this.removeAttribute('data-collapsed')
-      this.style.setProperty('--ld-sidebar-width', '248px')
+      this.style.setProperty('--ld-sidebar-width', 'var(--ld-sidebar-width-expanded)')
     }
   }
 

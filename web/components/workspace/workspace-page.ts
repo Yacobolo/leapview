@@ -526,7 +526,7 @@ const workspaceStyles = css`
   .page,
   .asset-page {
     display: grid;
-    width: min(100%, var(--ld-page-content-max-width, 72rem));
+    width: min(100%, var(--ld-page-content-max-width));
     min-width: 0;
     min-height: 100svh;
     align-content: start;
@@ -562,7 +562,7 @@ const workspaceStyles = css`
 
   .breadcrumb-header {
     border-bottom: var(--ld-border-muted);
-    padding: var(--base-size-10) var(--base-size-16);
+    padding: var(--ld-space-control) var(--base-size-16);
   }
 
   .title-block {
@@ -673,12 +673,12 @@ const workspaceStyles = css`
   }
 
   .primary-link {
-    min-height: var(--control-small-size, 28px);
+    min-height: var(--control-small-size);
     grid-auto-flow: column;
     gap: var(--base-size-6);
-    background: var(--ld-accent, #0969da);
-    color: var(--ld-accent-fg, #fff);
-    padding: 0 var(--base-size-10);
+    background: var(--ld-accent);
+    color: var(--ld-accent-fg);
+    padding: 0 var(--ld-space-control);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-strong);
   }
@@ -767,7 +767,7 @@ const workspaceStyles = css`
   .search-icon {
     position: absolute;
     top: 50%;
-    right: var(--base-size-10);
+    right: var(--ld-space-control);
     display: grid;
     width: var(--base-size-16);
     height: var(--base-size-16);
@@ -802,7 +802,7 @@ const workspaceStyles = css`
   }
 
   .tabs a.active {
-    border-bottom-color: var(--ld-accent, #0969da);
+    border-bottom-color: var(--ld-accent);
     color: var(--ld-fg-default);
     font-weight: var(--ld-font-weight-strong);
   }
@@ -995,7 +995,7 @@ const workspaceStyles = css`
 
   .lineage-graph {
     display: block;
-    height: var(--ld-lineage-graph-height, 32rem);
+    height: var(--ld-lineage-graph-height);
     min-height: 0;
     border-bottom: var(--ld-border-muted);
     background: var(--ld-bg-panel);
