@@ -12,6 +12,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
@@ -29,8 +30,7 @@ type DataRuntimeFactory interface {
 
 type DataRuntime interface {
 	reportdef.DataService
-	CountModelTable(ctx context.Context, table string) (int, error)
-	PreviewModelTable(ctx context.Context, request reportdef.ModelTableQuery) (reportdef.QueryRows, error)
+	ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error)
 	Refresh(ctx context.Context) error
 	Close() error
 	LastRefresh() time.Time

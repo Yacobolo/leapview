@@ -7,6 +7,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
+	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/go-chi/chi/v5"
@@ -52,6 +53,10 @@ func (s *Server) adminAgent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) adminStorage(w http.ResponseWriter, r *http.Request) {
 	_ = lddatastar.EnsureClientID(w, r)
 	s.renderAdminPage(w, r, "storage")
+}
+
+func (s *Server) adminQueries(w http.ResponseWriter, r *http.Request) {
+	s.renderAdminPage(w, r, "queries")
 }
 
 func (s *Server) adminGroupDetail(w http.ResponseWriter, r *http.Request) {
@@ -153,9 +158,41 @@ func (s *Server) adminData(r *http.Request) (ui.AdminData, error) {
 	data.Principals = buildAdminPrincipals(principals, bindings, groupsByID, membersByGroup)
 	data.Groups = buildAdminGroups(groups, bindings, membersByGroup)
 	data.Storage = s.adminStorageData(r)
+	data.QueryEvents = s.adminQueryEventsData(r)
 	data.PrincipalCount = len(data.Principals)
 	data.GroupCount = len(data.Groups)
 	return data, nil
+}
+
+func (s *Server) adminQueryEventsData(r *http.Request) []ui.AdminQueryEvent {
+	repo, err := s.queryAuditRepository()
+	if err != nil || repo == nil {
+		return nil
+	}
+	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{Limit: 100})
+	if err != nil {
+		return nil
+	}
+	out := make([]ui.AdminQueryEvent, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ui.AdminQueryEvent{
+			ID:           row.ID,
+			WorkspaceID:  row.WorkspaceID,
+			PrincipalID:  row.PrincipalID,
+			Surface:      row.Surface,
+			Operation:    row.Operation,
+			QueryKind:    row.QueryKind,
+			ModelID:      row.ModelID,
+			Target:       row.Target,
+			Status:       row.Status,
+			DurationMS:   row.DurationMS,
+			RowsReturned: row.RowsReturned,
+			Error:        row.Error,
+			SQL:          row.SQL,
+			CreatedAt:    row.CreatedAt,
+		})
+	}
+	return out
 }
 
 func (s *Server) adminAgentData(r *http.Request) (ui.AdminAgentData, error) {

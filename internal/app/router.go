@@ -48,6 +48,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/admin/storage", s.protected(access.PermissionRBACRead, s.adminStorage))
 		r.Get("/admin/storage/updates", s.protected(access.PermissionRBACRead, s.adminStorageUpdates))
 		r.Post("/admin/storage/select-table", s.protected(access.PermissionRBACRead, s.adminStorageSelectTable))
+		r.Get("/admin/queries", s.protected(access.PermissionAuditRead, s.adminQueries))
 		r.Post("/workspaces/{workspace}/access/upsert", s.protected(access.PermissionRBACManage, s.upsertWorkspaceAccess))
 		r.Post("/workspaces/{workspace}/access/remove", s.protected(access.PermissionRBACManage, s.removeWorkspaceAccess))
 		r.Get("/workspaces/{workspace}/permissions", s.protected(access.PermissionRBACManage, s.workspacePermissions))

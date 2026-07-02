@@ -9,9 +9,9 @@ import (
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
-	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
 )
@@ -65,7 +65,7 @@ func (dashboardDataRuntimeFactory) OpenDashboardDataRuntime(ctx context.Context,
 	}
 	return dashboardDataRuntime{
 		runtime: runtime,
-		data:    reportdef.NewAnalyticsDataService(runtime.Queries()),
+		data:    reportdef.NewDataQueryService(config.ModelID, reportdef.NewAnalyticsDataService(runtime.Queries()), runtime),
 	}, nil
 }
 
@@ -94,26 +94,8 @@ func (r dashboardDataRuntime) Distribution(ctx context.Context, request reportde
 	return r.data.Distribution(ctx, request, sort, limit)
 }
 
-func (r dashboardDataRuntime) CountModelTable(ctx context.Context, table string) (int, error) {
-	return r.runtime.CountModelTable(ctx, table)
-}
-
-func (r dashboardDataRuntime) PreviewModelTable(ctx context.Context, request reportdef.ModelTableQuery) (reportdef.QueryRows, error) {
-	rows, err := r.runtime.ModelTableRows(ctx, analyticsmaterialize.ModelTableQuery{
-		Table:   request.Table,
-		Columns: request.Columns,
-		Sort:    reportSortToSemanticSort(request.Sort),
-		Limit:   request.Limit,
-		Offset:  request.Offset,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make(reportdef.QueryRows, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, reportdef.QueryRow(row))
-	}
-	return out, nil
+func (r dashboardDataRuntime) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+	return r.runtime.ExecuteDataQuery(ctx, request)
 }
 
 func (r dashboardDataRuntime) Refresh(ctx context.Context) error {
@@ -139,12 +121,4 @@ func runtimeFirstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func reportSortToSemanticSort(sort []reportdef.QuerySort) []semanticquery.Sort {
-	out := make([]semanticquery.Sort, 0, len(sort))
-	for _, item := range sort {
-		out = append(out, semanticquery.Sort{Field: item.Field, Direction: item.Direction})
-	}
-	return out
 }

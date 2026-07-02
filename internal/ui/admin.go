@@ -30,6 +30,7 @@ type AdminData struct {
 	SelectedGroup     *AdminGroup
 	Agent             AdminAgentData
 	Storage           AdminStorageData
+	QueryEvents       []AdminQueryEvent
 }
 
 type AdminAgentData struct {
@@ -72,6 +73,23 @@ type AdminGroup struct {
 	CreatedAt  string
 	Roles      []string
 	Members    []AdminPrincipalRef
+}
+
+type AdminQueryEvent struct {
+	ID           string
+	WorkspaceID  string
+	PrincipalID  string
+	Surface      string
+	Operation    string
+	QueryKind    string
+	ModelID      string
+	Target       string
+	Status       string
+	DurationMS   int64
+	RowsReturned int
+	Error        string
+	SQL          string
+	CreatedAt    string
 }
 
 type AdminPrincipalRef struct {
@@ -248,6 +266,11 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 			{Label: "Total size", Value: data.Storage.TotalSizeLabel},
 			{Label: "Tables and views", Value: fmt.Sprint(data.Storage.TableCount)},
 		}
+	case "queries":
+		page.HeaderTitle = "Queries"
+		page.HeaderDetail = "Product query audit across dashboards, API, agents, and Data Explorer."
+		page.Sections = []uisignals.AdminContentSectionSignal{{Title: "Recent query events", Table: adminQueryEventsGrid(data.QueryEvents)}}
+		page.Metrics = adminQueryMetrics(data.QueryEvents)
 	default:
 		page.HeaderTitle = "General"
 		page.HeaderDetail = "Read-only workspace administration."
@@ -272,6 +295,7 @@ func adminSidebarSignal(active string) uisignals.SubSidebarSignal {
 	groupsActive := active == "groups" || active == "group-detail"
 	agentActive := active == "agent"
 	storageActive := active == "storage"
+	queriesActive := active == "queries"
 	return uisignals.SubSidebarSignal{
 		Label:       "Admin",
 		RailLabel:   "Admin",
@@ -286,6 +310,7 @@ func adminSidebarSignal(active string) uisignals.SubSidebarSignal {
 			{ID: "groups", Title: "Groups", Href: "/admin/groups", Active: groupsActive},
 			{ID: "agent", Title: "Agent", Href: "/admin/agent", Active: agentActive},
 			{ID: "storage", Title: "Storage", Href: "/admin/storage", Active: storageActive},
+			{ID: "queries", Title: "Queries", Href: "/admin/queries", Active: queriesActive},
 		},
 	}
 }
@@ -427,6 +452,84 @@ func adminGroupMembersGrid(group AdminGroup, principals []AdminPrincipal) record
 	}
 }
 
+func adminQueryEventsGrid(events []AdminQueryEvent) recordTable {
+	rows := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		errorLabel := event.Error
+		if len(errorLabel) > 140 {
+			errorLabel = errorLabel[:140] + "..."
+		}
+		rows = append(rows, map[string]any{
+			"created_at":    event.CreatedAt,
+			"workspace_id":  event.WorkspaceID,
+			"principal_id":  event.PrincipalID,
+			"surface":       recordTableBadgeValue(event.Surface, "muted"),
+			"operation":     event.Operation,
+			"query_kind":    event.QueryKind,
+			"model_id":      event.ModelID,
+			"target":        event.Target,
+			"status":        recordTableBadgeValue(event.Status, queryEventStatusTone(event.Status)),
+			"duration_ms":   event.DurationMS,
+			"rows_returned": event.RowsReturned,
+			"error":         errorLabel,
+			"sql":           event.SQL,
+		})
+	}
+	return recordTable{
+		Columns: []recordTableColumn{
+			{ID: "created_at", Header: "Created", Width: "150px"},
+			{ID: "workspace_id", Header: "Workspace", Kind: "code", Width: "120px"},
+			{ID: "surface", Header: "Surface", Kind: "badge", Width: "115px"},
+			{ID: "operation", Header: "Operation", Width: "155px"},
+			{ID: "query_kind", Header: "Kind", Width: "155px"},
+			{ID: "model_id", Header: "Model", Kind: "code", Width: "110px"},
+			{ID: "target", Header: "Target", Kind: "code", Width: "160px"},
+			{ID: "status", Header: "Status", Kind: "badge", Width: "95px"},
+			{ID: "duration_ms", Header: "Duration ms", Kind: "number", Align: "right", Width: "120px"},
+			{ID: "rows_returned", Header: "Rows", Kind: "number", Align: "right", Width: "90px"},
+			{ID: "principal_id", Header: "Principal", Kind: "code", Width: "160px"},
+			{ID: "error", Header: "Error", Width: "260px"},
+			{ID: "sql", Header: "SQL", Kind: "code", Width: "420px"},
+		},
+		Rows:     rows,
+		Empty:    "No query events found.",
+		MinWidth: "2310px",
+	}
+}
+
+func queryEventStatusTone(status string) string {
+	switch status {
+	case "success":
+		return "success"
+	case "canceled":
+		return "muted"
+	case "timeout":
+		return "attention"
+	default:
+		return "danger"
+	}
+}
+
+func adminQueryMetrics(events []AdminQueryEvent) []uisignals.AdminMetricSignal {
+	failures := 0
+	totalDuration := int64(0)
+	for _, event := range events {
+		if event.Status != "success" {
+			failures++
+		}
+		totalDuration += event.DurationMS
+	}
+	avg := int64(0)
+	if len(events) > 0 {
+		avg = totalDuration / int64(len(events))
+	}
+	return []uisignals.AdminMetricSignal{
+		{Label: "Recent events", Value: fmt.Sprint(len(events))},
+		{Label: "Failures", Value: fmt.Sprint(failures)},
+		{Label: "Average duration", Value: fmt.Sprintf("%d ms", avg)},
+	}
+}
+
 func adminGroupHref(groupID string) string {
 	return "/admin/groups/" + url.PathEscape(groupID)
 }
@@ -449,6 +552,8 @@ func adminPageTitle(active string) string {
 		return "Agent"
 	case "storage":
 		return "Storage"
+	case "queries":
+		return "Queries"
 	default:
 		return "General"
 	}

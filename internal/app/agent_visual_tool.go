@@ -14,6 +14,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -74,6 +75,14 @@ func (s *Server) runAgentVisualTool(ctx context.Context, scope agentapp.Scope, c
 	if err != nil {
 		return apigenAgentToolError("invalid_arguments", err.Error())
 	}
+	metadata := dataquery.Metadata{
+		Surface:    dataquery.SurfaceAgent,
+		Operation:  dataquery.OperationAgentQuery,
+		ObjectType: "semantic_dataset",
+		ObjectID:   input.Model + ":" + input.Dataset,
+		RequestID:  call.ID,
+	}
+	ctx = dataquery.WithMetadata(ctx, metadata)
 	result, err := s.queryAgentVisual(ctx, input, agentVisualID(input.Kind, call.ID))
 	if err != nil {
 		return apigenAgentToolError("query_visual_failed", err.Error())
@@ -210,7 +219,7 @@ func (s *Server) queryAgentChart(ctx context.Context, model *semanticmodel.Model
 
 func (s *Server) agentChartData(ctx context.Context, input agentVisualInput, shape string, model *semanticmodel.Model) ([]dashboard.Datum, error) {
 	if shape == "single_value" {
-		rows, err := s.metrics.QuerySemantic(ctx, input.Model, reportdef.AggregateQuery{
+		rows, err := executeAggregateRows(ctx, s.metrics, input.Model, reportdef.AggregateQuery{
 			Table:    input.Dataset,
 			Measures: []reportdef.QueryField{{Field: input.Measures[0].Field, Alias: "value"}},
 			Limit:    1,
@@ -227,7 +236,7 @@ func (s *Server) agentChartData(ctx context.Context, input agentVisualInput, sha
 	if shape == "category_multi_measure" || len(input.Measures) > 1 {
 		out := []dashboard.Datum{}
 		for _, measureRef := range input.Measures {
-			rows, err := s.metrics.QuerySemantic(ctx, input.Model, reportdef.AggregateQuery{
+			rows, err := executeAggregateRows(ctx, s.metrics, input.Model, reportdef.AggregateQuery{
 				Table:      input.Dataset,
 				Dimensions: []reportdef.QueryField{{Field: input.Dimensions[0].Field, Alias: "label"}},
 				Measures:   []reportdef.QueryField{{Field: measureRef.Field, Alias: "value"}},
@@ -252,7 +261,7 @@ func (s *Server) agentChartData(ctx context.Context, input agentVisualInput, sha
 	if input.Series != nil && input.Series.Field != "" {
 		dimensions = append(dimensions, reportdef.QueryField{Field: input.Series.Field, Alias: "series"})
 	}
-	rows, err := s.metrics.QuerySemantic(ctx, input.Model, reportdef.AggregateQuery{
+	rows, err := executeAggregateRows(ctx, s.metrics, input.Model, reportdef.AggregateQuery{
 		Table:      input.Dataset,
 		Dimensions: dimensions,
 		Measures:   []reportdef.QueryField{{Field: input.Measures[0].Field, Alias: "value"}},
@@ -289,7 +298,7 @@ func (s *Server) queryAgentTable(ctx context.Context, model *semanticmodel.Model
 	}
 	var rows reportdef.QueryRows
 	if aggregate {
-		rows, err = s.metrics.QuerySemantic(ctx, input.Model, reportdef.AggregateQuery{
+		rows, err = executeAggregateRows(ctx, s.metrics, input.Model, reportdef.AggregateQuery{
 			Table:      input.Dataset,
 			Dimensions: dimensions,
 			Measures:   measures,
@@ -297,7 +306,7 @@ func (s *Server) queryAgentTable(ctx context.Context, model *semanticmodel.Model
 			Limit:      input.Limit,
 		})
 	} else {
-		rows, err = s.metrics.PreviewSemantic(ctx, input.Model, reportdef.RowQuery{
+		rows, err = executePreviewRows(ctx, s.metrics, input.Model, reportdef.RowQuery{
 			Table:      input.Dataset,
 			Dimensions: dimensions,
 			Measures:   measures,

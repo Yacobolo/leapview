@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ import (
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -33,7 +32,7 @@ type dataExplorerFixtureMetrics struct {
 	modelID              string
 	sourceKey            string
 	semanticPreviewError error
-	semanticRequests     *[]reportdef.RowQuery
+	dataQueries          *[]dataquery.Query
 }
 
 func (m dataExplorerFixtureMetrics) DataDir() string {
@@ -103,17 +102,69 @@ func (m dataExplorerFixtureMetrics) SemanticModel(modelID string) (*semanticmode
 	}, true
 }
 
-func (m dataExplorerFixtureMetrics) PreviewSemantic(_ context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
-	if m.semanticRequests != nil {
-		*m.semanticRequests = append(*m.semanticRequests, request)
+func (m dataExplorerFixtureMetrics) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+	if m.dataQueries != nil {
+		*m.dataQueries = append(*m.dataQueries, request)
 	}
 	if m.semanticPreviewError != nil {
-		return nil, m.semanticPreviewError
+		return dataquery.Result{}, m.semanticPreviewError
 	}
-	if modelID != firstNonEmpty(m.modelID, "olist") || request.Table != "orders" {
-		return nil, nil
+	if request.ModelID != firstNonEmpty(m.modelID, "olist") {
+		return dataquery.Result{}, nil
 	}
-	return reportdef.QueryRows{{"order_id": "o1", "status": "delivered"}}, nil
+	switch request.Kind {
+	case dataquery.KindSemanticRows:
+		if request.Target != "orders" {
+			return dataquery.Result{}, nil
+		}
+		return dataquery.Result{Columns: dataquery.ColumnsFromNames([]string{"order_id", "status"}), Rows: []dataquery.Row{{"order_id": "o1", "status": "delivered"}}, SQL: "semantic rows: " + request.ModelID + "." + request.Target}, nil
+	case dataquery.KindSourceRows:
+		return dataquery.Result{Columns: dataquery.ColumnsFromNames([]string{"order_id", "status"}), Rows: []dataquery.Row{{"order_id": "o1", "status": "delivered"}}, TotalRows: 1, TotalRowsKnown: request.IncludeTotal, SQL: "source rows: " + request.Target}, nil
+	case dataquery.KindModelTableRows:
+		if strings.TrimSpace(m.duckDBDir) == "" {
+			return dataquery.Result{Columns: dataquery.ColumnsFromNames([]string{"order_id", "status"}), Rows: []dataquery.Row{{"order_id": "o2", "status": "shipped"}}, TotalRows: 1, TotalRowsKnown: request.IncludeTotal, SQL: "model rows: " + request.Target}, nil
+		}
+		db, err := m.openModelTableDB(ctx, request.ModelID)
+		if err != nil {
+			return dataquery.Result{}, err
+		}
+		defer db.Close()
+		sqlText := "SELECT order_id, status FROM model." + quoteDuckDBIdentifier(request.Target)
+		if request.Limit > 0 {
+			sqlText += fmt.Sprintf(" LIMIT %d", request.Limit)
+		}
+		if request.Offset > 0 {
+			sqlText += fmt.Sprintf(" OFFSET %d", request.Offset)
+		}
+		rows, err := db.QueryContext(ctx, sqlText)
+		if err != nil {
+			return dataquery.Result{}, err
+		}
+		defer rows.Close()
+		out := []dataquery.Row{}
+		for rows.Next() {
+			var orderID, status string
+			if err := rows.Scan(&orderID, &status); err != nil {
+				return dataquery.Result{}, err
+			}
+			out = append(out, dataquery.Row{"order_id": orderID, "status": status})
+		}
+		if err := rows.Err(); err != nil {
+			return dataquery.Result{}, err
+		}
+		result := dataquery.Result{Columns: dataquery.ColumnsFromNames([]string{"order_id", "status"}), Rows: out, SQL: sqlText}
+		if request.IncludeTotal {
+			var total int
+			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM model."+quoteDuckDBIdentifier(request.Target)).Scan(&total); err != nil {
+				return dataquery.Result{}, err
+			}
+			result.TotalRows = total
+			result.TotalRowsKnown = true
+		}
+		return result, nil
+	default:
+		return dataquery.Result{}, fmt.Errorf("unsupported query kind %q", request.Kind)
+	}
 }
 
 func (m dataExplorerFixtureMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
@@ -148,45 +199,6 @@ func (m dataExplorerFixtureMetrics) WorkspaceAssets(workspaceID, deploymentID st
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), source.ID, connection.ID, workspace.AssetEdgeUsesConnection),
 		workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), table.ID, source.ID, workspace.AssetEdgeReadsSource),
 	}, true
-}
-
-func (m dataExplorerFixtureMetrics) CountModelTable(ctx context.Context, modelID, table string) (int, error) {
-	db, err := m.openModelTableDB(ctx, modelID)
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
-	label := countPreviewRows(ctx, db, "SELECT * FROM model."+quoteDuckDBIdentifier(table))
-	total, err := strconv.Atoi(label)
-	if err != nil {
-		return 0, err
-	}
-	return total, nil
-}
-
-func (m dataExplorerFixtureMetrics) PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error) {
-	db, err := m.openModelTableDB(ctx, modelID)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	columns := make([]uisignals.DataPreviewColumnSignal, 0, len(request.Columns))
-	for _, column := range request.Columns {
-		columns = append(columns, uisignals.DataPreviewColumnSignal{Key: column, Label: column})
-	}
-	sortSignal := uisignals.DataPreviewSortSignal{}
-	if len(request.Sort) > 0 {
-		sortSignal = uisignals.DataPreviewSortSignal{Column: request.Sort[0].Field, Direction: request.Sort[0].Direction}
-	}
-	rows, err := queryDataRows(ctx, db, dataPreviewSQL("SELECT * FROM model."+quoteDuckDBIdentifier(request.Table), columns, uisignals.DataExplorerCommand{Sort: sortSignal}, request.Offset, request.Limit), request.Limit)
-	if err != nil {
-		return nil, err
-	}
-	out := make(reportdef.QueryRows, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, reportdef.QueryRow(row))
-	}
-	return out, nil
 }
 
 func (m dataExplorerFixtureMetrics) openModelTableDB(ctx context.Context, modelID string) (*sql.DB, error) {
@@ -450,9 +462,9 @@ func TestDataExplorerCommandPublishesPatch(t *testing.T) {
 }
 
 func TestDataExplorerSemanticPreviewIgnoresInvalidSortColumn(t *testing.T) {
-	requests := []reportdef.RowQuery{}
+	requests := []dataquery.Query{}
 	store := testStore(t)
-	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), semanticRequests: &requests}
+	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), dataQueries: &requests}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)})
 
@@ -477,9 +489,9 @@ func TestDataExplorerSemanticPreviewIgnoresInvalidSortColumn(t *testing.T) {
 }
 
 func TestDataExplorerSemanticPreviewAcceptsExposedSortColumn(t *testing.T) {
-	requests := []reportdef.RowQuery{}
+	requests := []dataquery.Query{}
 	store := testStore(t)
-	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), semanticRequests: &requests}
+	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), dataQueries: &requests}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)})
 

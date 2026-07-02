@@ -14,6 +14,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 )
 
 func newLegacyRuntime(t *testing.T, dataDir string) (*Service, error) {
@@ -142,26 +143,21 @@ r2,o2,4,,,2018-01-16,2018-01-16 10:00:00
 	}
 	defer metrics.Close()
 
-	total, err := metrics.CountModelTable(context.Background(), "sales", "orders")
+	modelResult, err := metrics.ExecuteDataQuery(context.Background(), dataquery.ModelTableRows("sales", "orders", []string{"order_id", "status"}, []dataquery.Sort{{Field: "status", Direction: "desc"}}, 0, 1, true))
 	if err != nil {
-		t.Fatalf("count model table: %v", err)
+		t.Fatalf("unified model table query: %v", err)
 	}
-	if total != 2 {
-		t.Fatalf("model table row count = %d, want 2", total)
+	if modelResult.TotalRows != 2 || len(modelResult.Rows) != 1 || modelResult.Rows[0]["order_id"] != "o2" {
+		t.Fatalf("unified model table result = %#v", modelResult)
 	}
-	rows, err := metrics.PreviewModelTable(context.Background(), "sales", reportdef.ModelTableQuery{
-		Table:   "orders",
-		Columns: []string{"order_id", "status", "revenue"},
-		Sort:    []reportdef.QuerySort{{Field: "status", Direction: "desc"}},
-		Limit:   1,
-	})
+	sourceResult, err := metrics.ExecuteDataQuery(context.Background(), dataquery.SourceRows("sales", "olist.orders", []string{"order_id", "order_status"}, []dataquery.Sort{{Field: "order_status", Direction: "desc"}}, 0, 1, true))
 	if err != nil {
-		t.Fatalf("preview model table: %v", err)
+		t.Fatalf("unified source query: %v", err)
 	}
-	if len(rows) != 1 || rows[0]["order_id"] != "o2" || rows[0]["status"] != "shipped" {
-		t.Fatalf("preview rows = %#v, want shipped order first", rows)
+	if sourceResult.TotalRows != 2 || len(sourceResult.Rows) != 1 || sourceResult.Rows[0]["order_id"] != "o2" {
+		t.Fatalf("unified source result = %#v", sourceResult)
 	}
-	if _, err := metrics.PreviewModelTable(context.Background(), "sales", reportdef.ModelTableQuery{Table: "missing", Limit: 1}); err == nil {
+	if _, err := metrics.ExecuteDataQuery(context.Background(), dataquery.ModelTableRows("sales", "missing", nil, nil, 0, 1, false)); err == nil {
 		t.Fatal("missing model table preview error = nil")
 	}
 }

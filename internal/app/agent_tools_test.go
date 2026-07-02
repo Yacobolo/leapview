@@ -14,6 +14,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/agenttools"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/agent"
 )
@@ -1252,6 +1253,21 @@ func (manySemanticRowsMetrics) QuerySemantic(_ context.Context, _ string, reques
 		rows = append(rows, reportdef.QueryRow{"status": "s" + strconv.Itoa(i), "order_count": i})
 	}
 	return rows, nil
+}
+
+func (m manySemanticRowsMetrics) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+	if request.Kind != dataquery.KindSemanticAggregate {
+		return m.fakeMetrics.ExecuteDataQuery(ctx, request)
+	}
+	rows, err := m.QuerySemantic(ctx, request.ModelID, reportdef.AggregateQuery{Limit: request.Limit})
+	if err != nil {
+		return dataquery.Result{}, err
+	}
+	out := make([]dataquery.Row, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, dataquery.Row(row))
+	}
+	return dataquery.Result{Columns: dataquery.ColumnsFromNames([]string{"status", "order_count"}), Rows: out}, nil
 }
 
 func (manyEdgesMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {

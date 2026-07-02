@@ -8,6 +8,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -33,43 +34,23 @@ func (m *Service) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
 }
 
 func (m *Service) QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
-	runtime, err := m.semanticRuntime(modelID)
-	if err != nil {
-		return nil, err
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return runtime.data.Query(ctx, request)
+	result, err := m.ExecuteDataQuery(ctx, reportAggregateDataQuery(modelID, request))
+	return reportRowsFromDataQuery(result.Rows), err
 }
 
 func (m *Service) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
-	runtime, err := m.semanticRuntime(modelID)
-	if err != nil {
-		return nil, err
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return runtime.data.Rows(ctx, request)
+	result, err := m.ExecuteDataQuery(ctx, reportRowDataQuery(modelID, request, false))
+	return reportRowsFromDataQuery(result.Rows), err
 }
 
-func (m *Service) CountModelTable(ctx context.Context, modelID, table string) (int, error) {
-	runtime, err := m.semanticRuntime(modelID)
+func (m *Service) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+	runtime, err := m.semanticRuntime(request.ModelID)
 	if err != nil {
-		return 0, err
+		return dataquery.Result{}, err
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return runtime.data.CountModelTable(ctx, table)
-}
-
-func (m *Service) PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error) {
-	runtime, err := m.semanticRuntime(modelID)
-	if err != nil {
-		return nil, err
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return runtime.data.PreviewModelTable(ctx, request)
+	return runtime.data.ExecuteDataQuery(ctx, request)
 }
 
 func (m *Service) NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest {

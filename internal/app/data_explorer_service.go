@@ -2,19 +2,16 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/assetnav"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
@@ -527,39 +524,15 @@ func dataPreviewCanceled(preview uisignals.DataPreviewSignal) bool {
 
 func (s *Server) countDataPreview(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal) (string, error) {
 	switch object.Layer {
-	case "source":
-		model, ok := metrics.SemanticModel(object.ModelID)
-		if !ok || model == nil {
-			return "Unknown", fmt.Errorf("semantic model %q was not found", object.ModelID)
-		}
-		source, ok := dataExplorerSourceInModel(model, object.Source)
-		if !ok {
-			return "Unknown", fmt.Errorf("source %q was not found", object.Source)
-		}
-		db, err := analyticsduckdb.Open(ctx, "")
+	case "source", "model_table":
+		result, err := metrics.ExecuteDataQuery(ctx, dataPreviewQuery(object, uisignals.DataExplorerCommand{}, 0, 1, true))
 		if err != nil {
 			return "Unknown", err
 		}
-		defer db.Close()
-		runtime := analyticsduckdb.NewSourceRuntime(db, metrics.DataDir())
-		if err := runtime.PrepareSourceRuntime(ctx, model); err != nil {
-			return "Unknown", err
+		if !result.TotalRowsKnown {
+			return "Unknown", nil
 		}
-		relation, err := analyticsduckdb.SourceRelation(model, source, metrics.DataDir())
-		if err != nil {
-			return "Unknown", err
-		}
-		return countPreviewRows(ctx, db.SQLDB(), relation), nil
-	case "model_table":
-		counter, ok := metrics.(dataExplorerModelTablePreviewMetrics)
-		if !ok {
-			return "Unknown", fmt.Errorf("model table %q.%s is not available in the active deployment", object.ModelID, object.Table)
-		}
-		count, err := counter.CountModelTable(ctx, object.ModelID, object.Table)
-		if err != nil {
-			return "Unknown", err
-		}
-		return strconv.Itoa(count), nil
+		return strconv.Itoa(result.TotalRows), nil
 	case "semantic_view":
 		return firstNonEmpty(object.RowCountLabel, "Unknown"), nil
 	default:
@@ -568,71 +541,11 @@ func (s *Server) countDataPreview(ctx context.Context, metrics QueryMetrics, obj
 }
 
 func (s *Server) previewRows(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int) ([]map[string]any, string, error) {
-	switch object.Layer {
-	case "source":
-		return s.previewSource(ctx, metrics, object, command, start, count)
-	case "model_table":
-		return s.previewModelTable(ctx, metrics, object, command, start, count)
-	case "semantic_view":
-		return previewSemanticView(ctx, metrics, object, command, start, count)
-	default:
-		return nil, "", fmt.Errorf("unsupported data layer %q", object.Layer)
-	}
-}
-
-func (s *Server) previewSource(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int) ([]map[string]any, string, error) {
-	model, ok := metrics.SemanticModel(object.ModelID)
-	if !ok || model == nil {
-		return nil, "", fmt.Errorf("semantic model %q was not found", object.ModelID)
-	}
-	source, ok := dataExplorerSourceInModel(model, object.Source)
-	if !ok {
-		return nil, "", fmt.Errorf("source %q was not found", object.Source)
-	}
-	db, err := analyticsduckdb.Open(ctx, "")
+	result, err := metrics.ExecuteDataQuery(ctx, dataPreviewQuery(object, command, start, count, false))
 	if err != nil {
 		return nil, "", err
 	}
-	defer db.Close()
-	runtime := analyticsduckdb.NewSourceRuntime(db, metrics.DataDir())
-	if err := runtime.PrepareSourceRuntime(ctx, model); err != nil {
-		return nil, "", err
-	}
-	relation, err := analyticsduckdb.SourceRelation(model, source, metrics.DataDir())
-	if err != nil {
-		return nil, "", err
-	}
-	sqlText := dataPreviewSQL(relation, object.Columns, command, start, count)
-	rows, err := queryDataRows(ctx, db.SQLDB(), sqlText, count)
-	if err != nil {
-		return nil, sqlText, err
-	}
-	return rows, sqlText, nil
-}
-
-func (s *Server) previewModelTable(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int) ([]map[string]any, string, error) {
-	relation := "SELECT * FROM model." + quoteDuckDBIdentifier(object.Table)
-	sqlText := dataPreviewSQL(relation, object.Columns, command, start, count)
-	previewer, ok := metrics.(dataExplorerModelTablePreviewMetrics)
-	if !ok {
-		return nil, sqlText, fmt.Errorf("model table %q.%s is not available in the active deployment", object.ModelID, object.Table)
-	}
-	rows, err := previewer.PreviewModelTable(ctx, object.ModelID, reportdef.ModelTableQuery{
-		Table:   object.Table,
-		Columns: dataPreviewColumnKeys(object.Columns),
-		Sort:    dataPreviewModelTableSort(command.Sort),
-		Limit:   count,
-		Offset:  start,
-	})
-	if err != nil {
-		return nil, sqlText, err
-	}
-	return reportRowsToDataRows(rows), sqlText, nil
-}
-
-type dataExplorerModelTablePreviewMetrics interface {
-	CountModelTable(ctx context.Context, modelID, table string) (int, error)
-	PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error)
+	return dataRowsFromQuery(result.Rows), result.SQL, nil
 }
 
 func dataPreviewColumnKeys(columns []uisignals.DataPreviewColumnSignal) []string {
@@ -645,54 +558,52 @@ func dataPreviewColumnKeys(columns []uisignals.DataPreviewColumnSignal) []string
 	return keys
 }
 
-func dataPreviewModelTableSort(sort uisignals.DataPreviewSortSignal) []reportdef.QuerySort {
+func dataPreviewQuery(object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int, includeTotal bool) dataquery.Query {
+	columns := dataPreviewColumnKeys(object.Columns)
+	sortSpec := dataPreviewSort(command.Sort)
+	metadata := dataquery.Metadata{
+		Surface:    dataquery.SurfaceDataExplorer,
+		Operation:  dataquery.OperationPreviewWindow,
+		ObjectType: object.Layer,
+		ObjectID:   object.WorkspaceID + ":" + object.Key,
+	}
+	withMetadata := func(query dataquery.Query) dataquery.Query {
+		query.WorkspaceID = object.WorkspaceID
+		return query.WithMetadata(metadata)
+	}
+	switch object.Layer {
+	case "source":
+		return withMetadata(dataquery.SourceRows(object.ModelID, object.Source, columns, sortSpec, start, count, includeTotal))
+	case "model_table":
+		return withMetadata(dataquery.ModelTableRows(object.ModelID, object.Table, columns, sortSpec, start, count, includeTotal))
+	case "semantic_view":
+		fields := make([]dataquery.Field, 0, len(columns))
+		for _, column := range columns {
+			fields = append(fields, dataquery.Field{Field: object.Table + "." + column, Alias: column})
+		}
+		return withMetadata(dataquery.SemanticRows(object.ModelID, object.Table, fields, nil, nil, sortSpec, start, count, includeTotal))
+	default:
+		return withMetadata(dataquery.Query{ModelID: object.ModelID, Kind: dataquery.Kind(object.Layer), Target: object.Table, Limit: count, Offset: start, IncludeTotal: includeTotal})
+	}
+}
+
+func dataPreviewSort(sort uisignals.DataPreviewSortSignal) []dataquery.Sort {
 	if sort.Column == "" {
 		return nil
 	}
-	return []reportdef.QuerySort{{Field: sort.Column, Direction: sort.Direction}}
+	return []dataquery.Sort{{Field: sort.Column, Direction: sort.Direction}}
 }
 
-func reportRowsToDataRows(rows reportdef.QueryRows) []map[string]any {
+func dataRowsFromQuery(rows []dataquery.Row) []map[string]any {
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, map[string]any(row))
+		converted := map[string]any{}
+		for key, value := range row {
+			converted[key] = value
+		}
+		out = append(out, converted)
 	}
 	return out
-}
-
-func previewSemanticView(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int) ([]map[string]any, string, error) {
-	dimensions := make([]reportdef.QueryField, 0, len(object.Columns))
-	for _, column := range object.Columns {
-		dimensions = append(dimensions, reportdef.QueryField{Field: object.Table + "." + column.Key, Alias: column.Key})
-	}
-	sortSpec := []reportdef.QuerySort{}
-	if command.Sort.Column != "" {
-		sortSpec = append(sortSpec, reportdef.QuerySort{Field: command.Sort.Column, Direction: command.Sort.Direction})
-	}
-	rows, err := metrics.PreviewSemantic(ctx, object.ModelID, reportdef.RowQuery{
-		Table:      object.Table,
-		Dimensions: dimensions,
-		Sort:       sortSpec,
-		Limit:      count,
-		Offset:     start,
-	})
-	if err != nil {
-		return nil, "", err
-	}
-	out := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, map[string]any(row))
-	}
-	sqlText := "semantic rows: " + object.ModelID + "." + object.Table
-	return out, sqlText, nil
-}
-
-func dataPreviewSQL(relation string, columns []uisignals.DataPreviewColumnSignal, command uisignals.DataExplorerCommand, start, count int) string {
-	order := ""
-	if command.Sort.Column != "" && dataColumnExists(columns, command.Sort.Column) {
-		order = "\nORDER BY " + quoteDuckDBIdentifier(command.Sort.Column) + " " + strings.ToUpper(command.Sort.Direction)
-	}
-	return fmt.Sprintf("WITH data AS (%s)\nSELECT * FROM data%s\nLIMIT %d OFFSET %d", relation, order, count, start)
 }
 
 func dataPreviewSortForColumns(columns []uisignals.DataPreviewColumnSignal, sort uisignals.DataPreviewSortSignal) uisignals.DataPreviewSortSignal {
@@ -703,57 +614,6 @@ func dataPreviewSortForColumns(columns []uisignals.DataPreviewColumnSignal, sort
 		return uisignals.DataPreviewSortSignal{}
 	}
 	return sort
-}
-
-func queryDataRows(ctx context.Context, db *sql.DB, sqlText string, limit int) ([]map[string]any, error) {
-	rows, err := db.QueryContext(ctx, sqlText)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-	values := make([]any, len(columns))
-	scans := make([]any, len(columns))
-	for i := range values {
-		scans[i] = &values[i]
-	}
-	out := []map[string]any{}
-	for rows.Next() {
-		if err := rows.Scan(scans...); err != nil {
-			return nil, err
-		}
-		row := map[string]any{}
-		for i, column := range columns {
-			row[column] = dataCellValue(values[i])
-		}
-		out = append(out, row)
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out, rows.Err()
-}
-
-func countPreviewRows(ctx context.Context, db *sql.DB, relation string) string {
-	var count int64
-	if err := db.QueryRowContext(ctx, "WITH data AS ("+relation+") SELECT COUNT(*) FROM data").Scan(&count); err != nil {
-		return "Unknown"
-	}
-	return fmt.Sprint(count)
-}
-
-func dataCellValue(value any) any {
-	switch typed := value.(type) {
-	case []byte:
-		return string(typed)
-	case time.Time:
-		return typed.Format(time.RFC3339)
-	default:
-		return typed
-	}
 }
 
 func dataColumnsFromSource(source semanticmodel.Source) []uisignals.DataPreviewColumnSignal {
