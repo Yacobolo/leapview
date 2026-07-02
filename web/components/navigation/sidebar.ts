@@ -10,6 +10,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   Plug,
   Settings,
   Sun,
@@ -42,7 +43,29 @@ type SidebarConfig = {
   dashboardId?: string
   userRole?: string
   compact?: boolean
+  primaryAction?: SidebarAction
+  history?: SidebarHistory
   groups: NavGroup[]
+}
+
+type SidebarAction = {
+  label: string
+  href: string
+  icon: IconName
+}
+
+type SidebarHistory = {
+  label: string
+  emptyText?: string
+  items: SidebarHistoryItem[]
+}
+
+type SidebarHistoryItem = {
+  id: string
+  title: string
+  href: string
+  active?: boolean
+  pending?: boolean
 }
 
 type SidebarStatus = {
@@ -67,6 +90,7 @@ type IconName =
   | 'activity'
   | 'collapse'
   | 'expand'
+  | 'plus'
 
 const defaultConfig: SidebarConfig = {
   active: 'dashboards',
@@ -178,7 +202,7 @@ class LibreDashSidebar extends LitElement {
     .collapse-button:hover,
     .collapse-button:focus-visible {
       border-color: var(--ld-line-muted);
-      background: var(--control-bgColor-hover);
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
       color: var(--ld-fg-default);
       outline: 0;
     }
@@ -205,7 +229,100 @@ class LibreDashSidebar extends LitElement {
 
     .nav-group {
       display: grid;
+      gap: var(--base-size-2, 2px);
+    }
+
+    .primary-action {
+      margin-bottom: var(--base-size-4);
+    }
+
+    .primary-action .nav-item {
+      min-height: var(--control-medium-size);
+      border-color: transparent;
+      background: transparent;
+      color: var(--ld-fg-default);
+      font-weight: var(--ld-font-weight-strong);
+    }
+
+    .primary-action .nav-item:hover,
+    .primary-action .nav-item:focus-visible {
+      border-color: transparent;
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
+      color: var(--ld-fg-default);
+    }
+
+    .primary-action .nav-icon {
+      width: calc(var(--control-xsmall-size) + var(--base-size-2));
+      height: calc(var(--control-xsmall-size) + var(--base-size-2));
+      border-radius: var(--ld-radius-full);
+      background: var(--control-bgColor-active, #e6eaef);
+      color: var(--ld-fg-default);
+      transition:
+        background var(--motion-transition-stateChange),
+        transform var(--motion-transition-stateChange);
+    }
+
+    .primary-action .nav-item:hover .nav-icon,
+    .primary-action .nav-item:focus-visible .nav-icon {
+      background: var(--ld-bg-selected, #ddf4ff);
+      transform: rotate(-3deg) scale(1.06);
+    }
+
+    .history {
+      display: grid;
       gap: var(--base-size-4);
+      min-height: 0;
+      padding-top: var(--base-size-8);
+    }
+
+    .history-label {
+      overflow: hidden;
+      margin:
+        0
+        var(--control-xsmall-paddingInline-normal, 8px)
+        0
+        calc(var(--control-xsmall-paddingInline-normal, 8px) + var(--ld-border-width, 1px));
+      color: color-mix(in srgb, var(--ld-fg-muted), transparent 32%);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-strong);
+      letter-spacing: 0;
+    }
+
+    .history-list {
+      display: grid;
+      gap: var(--base-size-2, 2px);
+      min-height: 0;
+    }
+
+    .nav-item.history-item {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .history-title {
+      overflow: hidden;
+      min-width: 0;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-medium);
+    }
+
+    .history-empty {
+      padding: var(--base-size-4) var(--control-xsmall-paddingInline-normal);
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      line-height: var(--ld-line-height-compact);
+    }
+
+    .pending-spinner {
+      width: 10px;
+      height: 10px;
+      border: 1.5px solid var(--ld-line-muted);
+      border-top-color: var(--ld-fg-muted);
+      border-radius: var(--ld-radius-full);
+      animation: pending-spin var(--ld-transition-slow, 700ms) linear infinite;
     }
 
     a,
@@ -215,9 +332,10 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item {
       position: relative;
+      box-sizing: border-box;
       display: grid;
       grid-template-columns: calc(var(--control-xsmall-size) + var(--base-size-2)) minmax(0, 1fr) auto;
-      min-height: calc(var(--control-medium-size) + var(--base-size-2));
+      min-height: var(--control-medium-size);
       align-items: center;
       gap: var(--base-size-8);
       border: var(--ld-border-transparent);
@@ -246,25 +364,19 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item:hover,
     .nav-item:focus-visible {
-      background: var(--ld-bg-hover);
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
       color: var(--ld-fg-default);
       outline: 0;
     }
 
     .nav-item[aria-current='page'] {
       border-color: transparent;
-      background: var(--ld-bg-hover);
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
       color: var(--ld-fg-default);
     }
 
     .nav-item[aria-current='page']::before {
-      content: '';
-      position: absolute;
-      inset-block: var(--base-size-8);
-      left: 0;
-      width: var(--base-size-2);
-      border-radius: var(--ld-radius-full);
-      background: var(--ld-accent);
+      content: none;
     }
 
     .nav-item.disabled {
@@ -279,11 +391,6 @@ class LibreDashSidebar extends LitElement {
       place-items: center;
       border-radius: var(--ld-radius-default);
       background: transparent;
-    }
-
-    .nav-item[aria-current='page'] .nav-icon {
-      background: color-mix(in srgb, var(--ld-fg-muted), transparent 88%);
-      color: var(--ld-fg-default);
     }
 
     svg {
@@ -318,7 +425,7 @@ class LibreDashSidebar extends LitElement {
     }
 
     .user-card:hover {
-      background: var(--ld-bg-hover);
+      background: var(--control-bgColor-hover);
     }
 
     .avatar {
@@ -412,6 +519,7 @@ class LibreDashSidebar extends LitElement {
     :host([data-collapsed]) .name,
     :host([data-collapsed]) .nav-group-label,
     :host([data-collapsed]) .nav-text,
+    :host([data-collapsed]) .history,
     :host([data-collapsed]) .user-text {
       display: none;
     }
@@ -496,12 +604,22 @@ class LibreDashSidebar extends LitElement {
         overflow-x: auto;
       }
 
+      .history {
+        display: none;
+      }
+
       .nav-group {
         min-width: max-content;
       }
 
       .footer {
         display: none;
+      }
+    }
+
+    @keyframes pending-spin {
+      to {
+        transform: rotate(360deg);
       }
     }
   `
@@ -581,11 +699,22 @@ class LibreDashSidebar extends LitElement {
         </header>
 
         <nav aria-label="Primary">
+          ${this.config.primaryAction ? html`
+            <section class="nav-group primary-action" aria-label="Chat action">
+              ${this.renderLink({
+                id: 'primary-action',
+                label: this.config.primaryAction.label,
+                href: this.config.primaryAction.href,
+                icon: this.config.primaryAction.icon,
+              })}
+            </section>
+          ` : null}
           ${this.config.groups.map((group) => html`
             <section class="nav-group" aria-label=${group.label}>
               ${group.items.map((item) => item.disabled ? this.renderDisabledItem(item) : this.renderLink(item))}
             </section>
           `)}
+          ${this.renderHistory()}
         </nav>
 
         <footer class="footer">
@@ -636,9 +765,8 @@ class LibreDashSidebar extends LitElement {
 
   private renderLink(item: NavItem) {
     const current = item.id === this.config.active
-    const label = item.meta ? `${item.label}: ${item.meta}` : item.label
     return html`
-      <a class="nav-item" href=${item.href} aria-current=${current ? 'page' : 'false'} aria-label=${label} title=${label}>
+      <a class="nav-item" href=${item.href} aria-current=${current ? 'page' : 'false'} aria-label=${item.label} title=${item.label} @click=${(event: MouseEvent) => this.followInternalLink(event, item.href)}>
         <span class="nav-icon">${icon(item.icon)}</span>
         <span class="nav-text">
           <strong>${item.label}</strong>
@@ -648,15 +776,47 @@ class LibreDashSidebar extends LitElement {
   }
 
   private renderDisabledItem(item: NavItem) {
-    const label = item.meta ? `${item.label}: ${item.meta}` : item.label
     return html`
-      <span class="nav-item disabled" aria-disabled="true" aria-label=${label} title=${label}>
+      <span class="nav-item disabled" aria-disabled="true" aria-label=${item.label} title=${item.label}>
         <span class="nav-icon">${icon(item.icon)}</span>
         <span class="nav-text">
           <strong>${item.label}</strong>
         </span>
       </span>
     `
+  }
+
+  private renderHistory() {
+    const history = this.config.history
+    if (!history) return null
+    const items = Array.isArray(history.items) ? history.items : []
+    return html`
+      <section class="history" aria-label=${history.label || 'Chats'}>
+        <strong class="history-label">${history.label || 'Chats'}</strong>
+        <div class="history-list">
+          ${items.length === 0 ? html`<span class="history-empty">${history.emptyText || 'No chats yet.'}</span>` : null}
+          ${items.map((item) => this.renderHistoryItem(item))}
+        </div>
+      </section>
+    `
+  }
+
+  private renderHistoryItem(item: SidebarHistoryItem) {
+    const title = item.title || 'Conversation'
+    return html`
+      <a class="nav-item history-item" href=${item.href} aria-current=${item.active ? 'page' : 'false'} aria-label=${title} title=${title} @click=${(event: MouseEvent) => this.followInternalLink(event, item.href)}>
+        <span class="history-title">${title}</span>
+        ${item.pending ? html`<span class="pending-spinner" aria-label="Title loading"></span>` : null}
+      </a>
+    `
+  }
+
+  private followInternalLink(event: MouseEvent, href: string): void {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const target = new URL(href, window.location.href)
+    if (target.origin !== window.location.origin || target.href === window.location.href) return
+    event.preventDefault()
+    window.location.assign(target.href)
   }
 }
 
@@ -675,6 +835,7 @@ function icon(name: IconName) {
     activity: Activity,
     collapse: PanelLeftClose,
     expand: PanelLeftOpen,
+    plus: Plus,
   }
 
   return lucideIcon(icons[name])

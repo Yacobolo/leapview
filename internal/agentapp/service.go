@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Yacobolo/libredash/internal/agentconfig"
@@ -89,6 +90,16 @@ func (s *Service) SetSystemPromptProvider(provider SystemPromptProvider) {
 
 func (s *Service) Enabled() bool {
 	return s != nil && s.config.Enabled()
+}
+
+func (s *Service) ConversationRunning(conversationID string) bool {
+	if s == nil || strings.TrimSpace(conversationID) == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.running[conversationID]
+	return ok
 }
 
 func (s *Service) Model() string {
