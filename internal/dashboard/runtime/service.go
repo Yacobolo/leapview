@@ -29,6 +29,8 @@ type DataRuntimeFactory interface {
 
 type DataRuntime interface {
 	reportdef.DataService
+	CountModelTable(ctx context.Context, table string) (int, error)
+	PreviewModelTable(ctx context.Context, request reportdef.ModelTableQuery) (reportdef.QueryRows, error)
 	Refresh(ctx context.Context) error
 	Close() error
 	LastRefresh() time.Time

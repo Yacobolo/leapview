@@ -52,6 +52,26 @@ func (m *Service) PreviewSemantic(ctx context.Context, modelID string, request r
 	return runtime.data.Rows(ctx, request)
 }
 
+func (m *Service) CountModelTable(ctx context.Context, modelID, table string) (int, error) {
+	runtime, err := m.semanticRuntime(modelID)
+	if err != nil {
+		return 0, err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return runtime.data.CountModelTable(ctx, table)
+}
+
+func (m *Service) PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error) {
+	runtime, err := m.semanticRuntime(modelID)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return runtime.data.PreviewModelTable(ctx, request)
+}
+
 func (m *Service) NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest {
 	return m.reports.NormalizeTableRequest(dashboardID, request)
 }

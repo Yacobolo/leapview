@@ -12,12 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -27,6 +29,9 @@ import (
 type dataExplorerFixtureMetrics struct {
 	fakeMetrics
 	dataDir              string
+	duckDBDir            string
+	modelID              string
+	sourceKey            string
 	semanticPreviewError error
 	semanticRequests     *[]reportdef.RowQuery
 }
@@ -35,19 +40,34 @@ func (m dataExplorerFixtureMetrics) DataDir() string {
 	return m.dataDir
 }
 
+func (m dataExplorerFixtureMetrics) Catalog() dashboard.Catalog {
+	modelID := firstNonEmpty(m.modelID, "olist")
+	return dashboard.Catalog{
+		Workspace: dashboard.CatalogWorkspace{ID: "test-workspace", Title: "Test Workspace", Description: "Fixture workspace"},
+		Models: []dashboard.CatalogModel{
+			{ID: modelID, Title: modelID, Description: "Fixture model"},
+		},
+		Dashboards: []dashboard.CatalogDashboard{
+			{ID: "executive-sales", Title: "Executive Sales Dashboard", Description: "Fixture report", SemanticModel: modelID, Tags: []string{"sales"}, PageCount: 2},
+		},
+	}
+}
+
 func (m dataExplorerFixtureMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
-	if modelID != "olist" {
+	expectedModelID := firstNonEmpty(m.modelID, "olist")
+	sourceKey := firstNonEmpty(m.sourceKey, "orders")
+	if modelID != expectedModelID {
 		return m.fakeMetrics.SemanticModel(modelID)
 	}
 	return &semanticmodel.Model{
-		Name:              "olist",
-		Title:             "Olist",
+		Name:              expectedModelID,
+		Title:             expectedModelID,
 		DefaultConnection: "local",
 		Connections: map[string]semanticmodel.Connection{
 			"local": {Kind: "local"},
 		},
 		Sources: map[string]semanticmodel.Source{
-			"orders": {
+			sourceKey: {
 				Path:       "orders.csv",
 				Format:     "csv",
 				Connection: "local",
@@ -90,7 +110,7 @@ func (m dataExplorerFixtureMetrics) PreviewSemantic(_ context.Context, modelID s
 	if m.semanticPreviewError != nil {
 		return nil, m.semanticPreviewError
 	}
-	if modelID != "olist" || request.Table != "orders" {
+	if modelID != firstNonEmpty(m.modelID, "olist") || request.Table != "orders" {
 		return nil, nil
 	}
 	return reportdef.QueryRows{{"order_id": "o1", "status": "delivered"}}, nil
@@ -105,15 +125,18 @@ func (m dataExplorerFixtureMetrics) WorkspaceAssets(workspaceID, deploymentID st
 	if err != nil {
 		return nil, nil, false
 	}
-	source, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSource, "olist.orders", catalog.ID, "orders source", "", "source.v1", map[string]any{"Connection": "local", "Format": "csv", "Path": "orders.csv"})
+	modelID := firstNonEmpty(m.modelID, "olist")
+	sourceKey := firstNonEmpty(m.sourceKey, "orders")
+	sourceAssetKey := firstNonEmpty(m.sourceKey, "olist.orders")
+	source, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSource, sourceAssetKey, catalog.ID, "orders source", "", "source.v1", map[string]any{"Connection": "local", "Format": "csv", "Path": "orders.csv"})
 	if err != nil {
 		return nil, nil, false
 	}
-	model, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticModel, "olist", catalog.ID, "Olist", "", "semantic_model.v1", map[string]any{})
+	model, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeSemanticModel, modelID, catalog.ID, modelID, "", "semantic_model.v1", map[string]any{})
 	if err != nil {
 		return nil, nil, false
 	}
-	table, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, "olist.orders", model.ID, "orders", "", "model_table.v1", map[string]any{"Source": "orders"})
+	table, err := testWorkspaceAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeModelTable, modelID+".orders", model.ID, "orders", "", "model_table.v1", map[string]any{"Source": sourceKey})
 	if err != nil {
 		return nil, nil, false
 	}
@@ -127,12 +150,59 @@ func (m dataExplorerFixtureMetrics) WorkspaceAssets(workspaceID, deploymentID st
 	}, true
 }
 
+func (m dataExplorerFixtureMetrics) CountModelTable(ctx context.Context, modelID, table string) (int, error) {
+	db, err := m.openModelTableDB(ctx, modelID)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	label := countPreviewRows(ctx, db, "SELECT * FROM model."+quoteDuckDBIdentifier(table))
+	total, err := strconv.Atoi(label)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (m dataExplorerFixtureMetrics) PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error) {
+	db, err := m.openModelTableDB(ctx, modelID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	columns := make([]uisignals.DataPreviewColumnSignal, 0, len(request.Columns))
+	for _, column := range request.Columns {
+		columns = append(columns, uisignals.DataPreviewColumnSignal{Key: column, Label: column})
+	}
+	sortSignal := uisignals.DataPreviewSortSignal{}
+	if len(request.Sort) > 0 {
+		sortSignal = uisignals.DataPreviewSortSignal{Column: request.Sort[0].Field, Direction: request.Sort[0].Direction}
+	}
+	rows, err := queryDataRows(ctx, db, dataPreviewSQL("SELECT * FROM model."+quoteDuckDBIdentifier(request.Table), columns, uisignals.DataExplorerCommand{Sort: sortSignal}, request.Offset, request.Limit), request.Limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make(reportdef.QueryRows, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, reportdef.QueryRow(row))
+	}
+	return out, nil
+}
+
+func (m dataExplorerFixtureMetrics) openModelTableDB(ctx context.Context, modelID string) (*sql.DB, error) {
+	if strings.TrimSpace(m.duckDBDir) == "" {
+		return nil, fmt.Errorf("fixture DuckDB directory is not configured")
+	}
+	return openDuckDBForInspection(ctx, analyticsmaterialize.DatabasePath(m.duckDBDir, modelID))
+}
+
 func TestDataExplorerRouteRendersSignalsAndWiring(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t)}
+	duckDBDir := seedDataExplorerDuckDB(t)
+	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), duckDBDir: duckDBDir}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
-	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)})
+	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: duckDBDir})
 
 	req := httptest.NewRequest(http.MethodGet, "/data?workspace=test&object=model_table:model_table:olist.orders", nil)
 	rec := httptest.NewRecorder()
@@ -182,13 +252,14 @@ func TestWorkspaceDataExplorerRouteRedirectsToGlobalRoute(t *testing.T) {
 
 func TestGlobalDataExplorerSelectsDuplicateKeysByWorkspace(t *testing.T) {
 	store := testStore(t)
-	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t)}
+	duckDBDir := seedDataExplorerDuckDB(t)
+	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), duckDBDir: duckDBDir}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "ops", metrics)
 	server := NewWithOptions(NewMultiWorkspaceMetrics("test", map[string]QueryMetrics{
 		"test": metrics,
 		"ops":  metrics,
-	}), Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)})
+	}), Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: duckDBDir})
 
 	req := httptest.NewRequest(http.MethodGet, "/data?workspace=ops&object=model_table:model_table:olist.orders", nil)
 	_, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("ops", "model_table:model_table:olist.orders"))
@@ -232,7 +303,7 @@ func TestDataExplorerPreviewsSourceModelTableAndSemanticRows(t *testing.T) {
 	store := testStore(t)
 	dataDir := seedDataExplorerCSV(t)
 	duckDBDir := seedDataExplorerDuckDB(t)
-	metrics := dataExplorerFixtureMetrics{dataDir: dataDir}
+	metrics := dataExplorerFixtureMetrics{dataDir: dataDir, duckDBDir: duckDBDir}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: duckDBDir})
 
@@ -269,6 +340,76 @@ func TestDataExplorerPreviewsSourceModelTableAndSemanticRows(t *testing.T) {
 				t.Fatalf("semantic preview included aggregate measure:\n%#v", explorer.Preview)
 			}
 		})
+	}
+}
+
+func TestDataExplorerSourceUsesOwningWorkspaceModelForImportedSourceKeys(t *testing.T) {
+	store := testStore(t)
+	dataDir := seedDataExplorerCSV(t)
+	metrics := dataExplorerFixtureMetrics{dataDir: dataDir, modelID: "sales", sourceKey: "olist.payments"}
+	seedActiveDeploymentFromWorkspaceAssets(t, store, "sales", metrics)
+	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "sales", DuckDBDir: seedDataExplorerDuckDBForModel(t, "sales")})
+
+	req := httptest.NewRequest(http.MethodGet, "/data?workspace=sales&object=source:source:olist.payments", nil)
+	_, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("sales", "source:source:olist.payments"))
+	if err != nil {
+		t.Fatalf("globalDataExplorerState() error = %v", err)
+	}
+	if explorer.SelectedObject == nil {
+		t.Fatal("selected object is nil")
+	}
+	if explorer.SelectedObject.ModelID != "sales" || explorer.SelectedObject.Source != "olist.payments" {
+		t.Fatalf("selected source resolved to model/source %#v", explorer.SelectedObject)
+	}
+	if explorer.SelectedObject.Key == "source:source:olist.payments" {
+		t.Fatalf("selected source kept legacy key: %#v", explorer.SelectedObject)
+	}
+	if explorer.SelectedKey != explorer.SelectedObject.Key || explorer.Command.ObjectKey != explorer.SelectedObject.Key {
+		t.Fatalf("command did not canonicalize selected key: selected=%q command=%q object=%q", explorer.SelectedKey, explorer.Command.ObjectKey, explorer.SelectedObject.Key)
+	}
+	if explorer.SelectedObject.ColumnCount == 0 || len(explorer.Preview.Columns) == 0 {
+		t.Fatalf("source columns were not resolved: object=%#v preview=%#v", explorer.SelectedObject, explorer.Preview)
+	}
+	if explorer.Preview.Error != "" {
+		t.Fatalf("preview error = %q", explorer.Preview.Error)
+	}
+	if len(explorer.Preview.Blocks["a"].Rows) == 0 || fmt.Sprint(explorer.Preview.Blocks["a"].Rows[0]["status"]) != "delivered" {
+		t.Fatalf("source preview rows missing delivered row: %#v", explorer.Preview.Blocks)
+	}
+	rendered := fmtSprint(explorer)
+	if strings.Contains(rendered, `semantic model "olist" was not found`) {
+		t.Fatalf("source preview still used imported source namespace as model id:\n%#v", explorer)
+	}
+}
+
+func TestDataExplorerModelTablePreviewUsesRuntimeBackedModelTable(t *testing.T) {
+	store := testStore(t)
+	dataDir := seedDataExplorerCSV(t)
+	runtimeDuckDBDir := seedDataExplorerDuckDBForModel(t, "sales")
+	appDuckDBDir := t.TempDir()
+	metrics := dataExplorerFixtureMetrics{dataDir: dataDir, duckDBDir: runtimeDuckDBDir, modelID: "sales", sourceKey: "olist.payments"}
+	seedActiveDeploymentFromWorkspaceAssets(t, store, "sales", metrics)
+	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "sales", DuckDBDir: appDuckDBDir})
+
+	req := httptest.NewRequest(http.MethodGet, "/data?workspace=sales&object=model_table:model_table:sales.orders", nil)
+	_, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("sales", "model_table:model_table:sales.orders"))
+	if err != nil {
+		t.Fatalf("globalDataExplorerState() error = %v", err)
+	}
+	if explorer.SelectedObject == nil || explorer.SelectedObject.ModelID != "sales" || explorer.SelectedObject.Table != "orders" {
+		t.Fatalf("selected model table = %#v", explorer.SelectedObject)
+	}
+	if explorer.Preview.Error != "" {
+		t.Fatalf("preview error = %q", explorer.Preview.Error)
+	}
+	if len(explorer.Preview.Blocks["a"].Rows) == 0 || fmt.Sprint(explorer.Preview.Blocks["a"].Rows[0]["status"]) != "delivered" {
+		t.Fatalf("model table preview rows missing delivered row: %#v", explorer.Preview.Blocks)
+	}
+	if _, err := os.Stat(analyticsmaterialize.DatabasePath(appDuckDBDir, "sales")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("data explorer should not create/open app-level model DB, stat err = %v", err)
+	}
+	if _, err := os.Stat(analyticsmaterialize.DatabasePath(runtimeDuckDBDir, "sales")); err != nil {
+		t.Fatalf("runtime fixture DB missing: %v", err)
 	}
 }
 
@@ -631,8 +772,13 @@ func seedDataExplorerCSV(t *testing.T) string {
 
 func seedDataExplorerDuckDB(t *testing.T) string {
 	t.Helper()
+	return seedDataExplorerDuckDBForModel(t, "olist")
+}
+
+func seedDataExplorerDuckDBForModel(t *testing.T, modelID string) string {
+	t.Helper()
 	dir := t.TempDir()
-	db, err := sql.Open("duckdb", analyticsmaterialize.DatabasePath(dir, "olist"))
+	db, err := sql.Open("duckdb", analyticsmaterialize.DatabasePath(dir, modelID))
 	if err != nil {
 		t.Fatalf("open duckdb: %v", err)
 	}

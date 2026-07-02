@@ -6,6 +6,7 @@ import (
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	materializeruntime "github.com/Yacobolo/libredash/internal/analytics/materialize"
+	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
 
@@ -53,6 +54,28 @@ func (r testDataRuntime) Distribution(ctx context.Context, request reportdef.Raw
 	return r.data.Distribution(ctx, request, sort, limit)
 }
 
+func (r testDataRuntime) CountModelTable(ctx context.Context, table string) (int, error) {
+	return r.runtime.CountModelTable(ctx, table)
+}
+
+func (r testDataRuntime) PreviewModelTable(ctx context.Context, request reportdef.ModelTableQuery) (reportdef.QueryRows, error) {
+	rows, err := r.runtime.ModelTableRows(ctx, materializeruntime.ModelTableQuery{
+		Table:   request.Table,
+		Columns: request.Columns,
+		Sort:    testReportSortToSemanticSort(request.Sort),
+		Limit:   request.Limit,
+		Offset:  request.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make(reportdef.QueryRows, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, reportdef.QueryRow(row))
+	}
+	return out, nil
+}
+
 func (r testDataRuntime) Refresh(ctx context.Context) error {
 	return r.runtime.Refresh(ctx)
 }
@@ -67,4 +90,12 @@ func (r testDataRuntime) Close() error {
 
 func (r testDataRuntime) LastRefresh() time.Time {
 	return r.runtime.LastRefresh()
+}
+
+func testReportSortToSemanticSort(sort []reportdef.QuerySort) []semanticquery.Sort {
+	out := make([]semanticquery.Sort, 0, len(sort))
+	for _, item := range sort {
+		out = append(out, semanticquery.Sort{Field: item.Field, Direction: item.Direction})
+	}
+	return out
 }

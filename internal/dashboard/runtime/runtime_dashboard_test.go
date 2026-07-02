@@ -105,6 +105,67 @@ c2,RJ
 	}
 }
 
+func TestServicePreviewsRawModelTableRows(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_approved_at,order_delivered_carrier_date,order_delivered_customer_date,order_estimated_delivery_date
+o1,c1,delivered,2018-01-10 10:00:00,2018-01-10 11:00:00,2018-01-11 10:00:00,2018-01-14 10:00:00,2018-01-20 10:00:00
+o2,c2,shipped,2018-01-11 10:00:00,2018-01-11 11:00:00,2018-01-12 10:00:00,2018-01-15 10:00:00,2018-01-20 10:00:00
+`)
+	writeFixture(t, dir, "olist_order_items_dataset.csv", `order_id,order_item_id,product_id,seller_id,shipping_limit_date,price,freight_value
+o1,1,p1,s1,2018-01-12 10:00:00,100.00,10.00
+o2,1,p2,s2,2018-01-13 10:00:00,150.00,15.00
+`)
+	writeFixture(t, dir, "olist_order_payments_dataset.csv", `order_id,payment_sequential,payment_type,payment_installments,payment_value
+o1,1,credit_card,1,110.00
+o2,1,credit_card,1,165.00
+`)
+	writeFixture(t, dir, "olist_products_dataset.csv", `product_id,product_category_name,product_name_lenght,product_description_lenght,product_photos_qty,product_weight_g,product_length_cm,product_height_cm,product_width_cm
+p1,beleza_saude,10,20,1,500,20,10,15
+p2,relogios_presentes,12,24,1,600,22,11,16
+`)
+	writeFixture(t, dir, "product_category_name_translation.csv", `product_category_name,product_category_name_english
+beleza_saude,health_beauty
+relogios_presentes,watches_gifts
+`)
+	writeFixture(t, dir, "olist_customers_dataset.csv", `customer_id,customer_unique_id,customer_zip_code_prefix,customer_city,customer_state
+c1,u1,01001,Sao Paulo,SP
+c2,u2,01002,Sao Paulo,SP
+`)
+	writeFixture(t, dir, "olist_order_reviews_dataset.csv", `review_id,order_id,review_score,review_comment_title,review_comment_message,review_creation_date,review_answer_timestamp
+r1,o1,5,,,2018-01-15,2018-01-15 10:00:00
+r2,o2,4,,,2018-01-16,2018-01-16 10:00:00
+`)
+
+	metrics, err := newLegacyRuntime(t, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metrics.Close()
+
+	total, err := metrics.CountModelTable(context.Background(), "sales", "orders")
+	if err != nil {
+		t.Fatalf("count model table: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("model table row count = %d, want 2", total)
+	}
+	rows, err := metrics.PreviewModelTable(context.Background(), "sales", reportdef.ModelTableQuery{
+		Table:   "orders",
+		Columns: []string{"order_id", "status", "revenue"},
+		Sort:    []reportdef.QuerySort{{Field: "status", Direction: "desc"}},
+		Limit:   1,
+	})
+	if err != nil {
+		t.Fatalf("preview model table: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["order_id"] != "o2" || rows[0]["status"] != "shipped" {
+		t.Fatalf("preview rows = %#v, want shipped order first", rows)
+	}
+	if _, err := metrics.PreviewModelTable(context.Background(), "sales", reportdef.ModelTableQuery{Table: "missing", Limit: 1}); err == nil {
+		t.Fatal("missing model table preview error = nil")
+	}
+}
+
 func TestServiceTableInteractiveCap(t *testing.T) {
 	dir := t.TempDir()
 	const rows = dashboard.TableInteractiveRowCap + 5

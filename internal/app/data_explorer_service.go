@@ -12,7 +12,6 @@ import (
 	"time"
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
-	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/assetnav"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -56,7 +55,9 @@ func (s *Server) globalDataExplorerStateWithCurrent(r *http.Request, command uis
 			objects = append(objects, fallback...)
 			continue
 		}
-		objects = append(objects, dataExplorerObjects(workspace.ID, firstNonEmpty(workspace.Title, workspace.ID), metrics, assets, edges)...)
+		workspaceObjects, objectWarnings := dataExplorerObjects(workspace.ID, firstNonEmpty(workspace.Title, workspace.ID), metrics, assets, edges)
+		objects = append(objects, workspaceObjects...)
+		warnings = append(warnings, objectWarnings...)
 	}
 	selected, selectionWarnings := selectGlobalDataExplorerObject(objects, command.WorkspaceID, command.ObjectKey)
 	warnings = append(warnings, selectionWarnings...)
@@ -117,26 +118,27 @@ func (s *Server) workspaceAssetsAndEdgesForData(ctx context.Context, workspaceID
 	return nil, nil, fmt.Errorf("workspace %q assets were not found", workspaceID)
 }
 
-func dataExplorerObjects(workspaceID, workspaceTitle string, metrics QueryMetrics, assets []workspace.AssetView, edges []workspace.AssetEdgeView) []uisignals.DataExplorerObjectSignal {
+func dataExplorerObjects(workspaceID, workspaceTitle string, metrics QueryMetrics, assets []workspace.AssetView, edges []workspace.AssetEdgeView) ([]uisignals.DataExplorerObjectSignal, []string) {
 	out := []uisignals.DataExplorerObjectSignal{}
+	warnings := []string{}
 	for _, asset := range assets {
 		modelID, name := keyParts(asset.Key)
 		switch asset.Type {
 		case string(workspace.AssetTypeSource):
-			model, _ := metrics.SemanticModel(modelID)
-			source := semanticmodel.Source{}
-			if model != nil {
-				source = model.Sources[name]
+			modelID, sourceKey, source, ok := dataExplorerSourceForAsset(metrics, asset.Key)
+			if !ok {
+				warnings = append(warnings, fmt.Sprintf("Source %q in workspace %q is not exposed by an active semantic model.", asset.Key, workspaceID))
+				continue
 			}
 			columns := dataColumnsFromSource(source)
 			out = append(out, uisignals.DataExplorerObjectSignal{
-				Key:            dataObjectKey("source", asset.ID),
+				Key:            dataObjectKey("source", modelID+"."+asset.Key),
 				WorkspaceID:    workspaceID,
 				WorkspaceTitle: workspaceTitle,
 				AssetID:        asset.ID,
 				Layer:          "source",
 				ModelID:        modelID,
-				Source:         name,
+				Source:         sourceKey,
 				Title:          asset.Title,
 				Description:    asset.Description,
 				DetailHref:     assetnav.CanonicalAssetSectionHref(workspaceID, asset, "details", edges),
@@ -193,6 +195,66 @@ func dataExplorerObjects(workspaceID, workspaceTitle string, metrics QueryMetric
 		}
 		return out[i].Title < out[j].Title
 	})
+	return out, warnings
+}
+
+func dataExplorerSourceForAsset(metrics QueryMetrics, sourceKey string) (string, string, semanticmodel.Source, bool) {
+	sourceKey = strings.TrimSpace(sourceKey)
+	if sourceKey == "" || metrics == nil {
+		return "", "", semanticmodel.Source{}, false
+	}
+	for _, modelSummary := range metrics.Catalog().Models {
+		model, ok := metrics.SemanticModel(modelSummary.ID)
+		if !ok || model == nil {
+			continue
+		}
+		source, ok := dataExplorerSourceInModel(model, sourceKey)
+		if ok {
+			return modelSummary.ID, sourceKey, source, true
+		}
+	}
+	modelID, name := keyParts(sourceKey)
+	if modelID == "" || name == "" {
+		return "", "", semanticmodel.Source{}, false
+	}
+	model, ok := metrics.SemanticModel(modelID)
+	if !ok || model == nil {
+		return "", "", semanticmodel.Source{}, false
+	}
+	source, ok := model.Sources[name]
+	if !ok {
+		return "", "", semanticmodel.Source{}, false
+	}
+	return modelID, name, source, true
+}
+
+func dataExplorerSourceInModel(model *semanticmodel.Model, sourceKey string) (semanticmodel.Source, bool) {
+	if model == nil {
+		return semanticmodel.Source{}, false
+	}
+	if source, ok := model.Sources[sourceKey]; ok {
+		return source, true
+	}
+	if source, ok := model.Sources[dataExplorerLocalSourceName(sourceKey)]; ok {
+		return source, true
+	}
+	return semanticmodel.Source{}, false
+}
+
+func dataExplorerLocalSourceName(sourceID string) string {
+	var builder strings.Builder
+	for index, char := range sourceID {
+		valid := char == '_' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || index > 0 && char >= '0' && char <= '9'
+		if valid {
+			builder.WriteRune(char)
+			continue
+		}
+		builder.WriteByte('_')
+	}
+	out := builder.String()
+	if out == "" || out[0] >= '0' && out[0] <= '9' {
+		out = "source_" + out
+	}
 	return out
 }
 
@@ -301,7 +363,7 @@ func selectGlobalDataExplorerObject(objects []uisignals.DataExplorerObjectSignal
 	warnings := []string{}
 	if workspaceID != "" && key != "" {
 		for i := range objects {
-			if objects[i].WorkspaceID == workspaceID && (objects[i].Key == key || objects[i].AssetID == key) {
+			if objects[i].WorkspaceID == workspaceID && dataExplorerObjectMatchesKey(objects[i], key) {
 				return &objects[i], warnings
 			}
 		}
@@ -317,7 +379,7 @@ func selectGlobalDataExplorerObject(objects []uisignals.DataExplorerObjectSignal
 	}
 	if key != "" {
 		for i := range objects {
-			if objects[i].Key == key || objects[i].AssetID == key {
+			if dataExplorerObjectMatchesKey(objects[i], key) {
 				return &objects[i], warnings
 			}
 		}
@@ -327,6 +389,16 @@ func selectGlobalDataExplorerObject(objects []uisignals.DataExplorerObjectSignal
 		return nil, warnings
 	}
 	return &objects[0], warnings
+}
+
+func dataExplorerObjectMatchesKey(object uisignals.DataExplorerObjectSignal, key string) bool {
+	if object.Key == key || object.AssetID == key {
+		return true
+	}
+	if object.Layer == "source" && dataObjectKey("source", object.AssetID) == key {
+		return true
+	}
+	return false
 }
 
 func (s *Server) dataPreview(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, current *uisignals.DataExplorerSignal) uisignals.DataPreviewSignal {
@@ -460,7 +532,7 @@ func (s *Server) countDataPreview(ctx context.Context, metrics QueryMetrics, obj
 		if !ok || model == nil {
 			return "Unknown", fmt.Errorf("semantic model %q was not found", object.ModelID)
 		}
-		source, ok := model.Sources[object.Source]
+		source, ok := dataExplorerSourceInModel(model, object.Source)
 		if !ok {
 			return "Unknown", fmt.Errorf("source %q was not found", object.Source)
 		}
@@ -479,18 +551,15 @@ func (s *Server) countDataPreview(ctx context.Context, metrics QueryMetrics, obj
 		}
 		return countPreviewRows(ctx, db.SQLDB(), relation), nil
 	case "model_table":
-		dbDir := s.duckDBDir
-		if strings.TrimSpace(dbDir) == "" {
-			dbDir = metrics.DataDir()
+		counter, ok := metrics.(dataExplorerModelTablePreviewMetrics)
+		if !ok {
+			return "Unknown", fmt.Errorf("model table %q.%s is not available in the active deployment", object.ModelID, object.Table)
 		}
-		dbPath := analyticsmaterialize.DatabasePath(dbDir, object.ModelID)
-		db, err := openDuckDBForInspection(ctx, dbPath)
+		count, err := counter.CountModelTable(ctx, object.ModelID, object.Table)
 		if err != nil {
 			return "Unknown", err
 		}
-		defer db.Close()
-		relation := "SELECT * FROM model." + quoteDuckDBIdentifier(object.Table)
-		return countPreviewRows(ctx, db, relation), nil
+		return strconv.Itoa(count), nil
 	case "semantic_view":
 		return firstNonEmpty(object.RowCountLabel, "Unknown"), nil
 	default:
@@ -516,7 +585,7 @@ func (s *Server) previewSource(ctx context.Context, metrics QueryMetrics, object
 	if !ok || model == nil {
 		return nil, "", fmt.Errorf("semantic model %q was not found", object.ModelID)
 	}
-	source, ok := model.Sources[object.Source]
+	source, ok := dataExplorerSourceInModel(model, object.Source)
 	if !ok {
 		return nil, "", fmt.Errorf("source %q was not found", object.Source)
 	}
@@ -542,23 +611,53 @@ func (s *Server) previewSource(ctx context.Context, metrics QueryMetrics, object
 }
 
 func (s *Server) previewModelTable(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int) ([]map[string]any, string, error) {
-	dbDir := s.duckDBDir
-	if strings.TrimSpace(dbDir) == "" {
-		dbDir = metrics.DataDir()
-	}
-	dbPath := analyticsmaterialize.DatabasePath(dbDir, object.ModelID)
-	db, err := openDuckDBForInspection(ctx, dbPath)
-	if err != nil {
-		return nil, "", err
-	}
-	defer db.Close()
 	relation := "SELECT * FROM model." + quoteDuckDBIdentifier(object.Table)
 	sqlText := dataPreviewSQL(relation, object.Columns, command, start, count)
-	rows, err := queryDataRows(ctx, db, sqlText, count)
+	previewer, ok := metrics.(dataExplorerModelTablePreviewMetrics)
+	if !ok {
+		return nil, sqlText, fmt.Errorf("model table %q.%s is not available in the active deployment", object.ModelID, object.Table)
+	}
+	rows, err := previewer.PreviewModelTable(ctx, object.ModelID, reportdef.ModelTableQuery{
+		Table:   object.Table,
+		Columns: dataPreviewColumnKeys(object.Columns),
+		Sort:    dataPreviewModelTableSort(command.Sort),
+		Limit:   count,
+		Offset:  start,
+	})
 	if err != nil {
 		return nil, sqlText, err
 	}
-	return rows, sqlText, nil
+	return reportRowsToDataRows(rows), sqlText, nil
+}
+
+type dataExplorerModelTablePreviewMetrics interface {
+	CountModelTable(ctx context.Context, modelID, table string) (int, error)
+	PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error)
+}
+
+func dataPreviewColumnKeys(columns []uisignals.DataPreviewColumnSignal) []string {
+	keys := make([]string, 0, len(columns))
+	for _, column := range columns {
+		if strings.TrimSpace(column.Key) != "" {
+			keys = append(keys, column.Key)
+		}
+	}
+	return keys
+}
+
+func dataPreviewModelTableSort(sort uisignals.DataPreviewSortSignal) []reportdef.QuerySort {
+	if sort.Column == "" {
+		return nil
+	}
+	return []reportdef.QuerySort{{Field: sort.Column, Direction: sort.Direction}}
+}
+
+func reportRowsToDataRows(rows reportdef.QueryRows) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, map[string]any(row))
+	}
+	return out
 }
 
 func previewSemanticView(ctx context.Context, metrics QueryMetrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int) ([]map[string]any, string, error) {

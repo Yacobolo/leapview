@@ -64,6 +64,11 @@ type semanticQueryRuntime interface {
 	PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error)
 }
 
+type modelTablePreviewRuntime interface {
+	CountModelTable(ctx context.Context, modelID, table string) (int, error)
+	PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error)
+}
+
 type materializationRuntime interface {
 	RefreshMaterializations(ctx context.Context, modelID string) error
 }
@@ -208,6 +213,22 @@ func (m runtimeMetrics) PreviewSemantic(ctx context.Context, modelID string, req
 	return runtime.PreviewSemantic(ctx, modelID, request)
 }
 
+func (m runtimeMetrics) CountModelTable(ctx context.Context, modelID, table string) (int, error) {
+	runtime, err := m.modelTablePreviewRuntime()
+	if err != nil {
+		return 0, err
+	}
+	return runtime.CountModelTable(ctx, modelID, table)
+}
+
+func (m runtimeMetrics) PreviewModelTable(ctx context.Context, modelID string, request reportdef.ModelTableQuery) (reportdef.QueryRows, error) {
+	runtime, err := m.modelTablePreviewRuntime()
+	if err != nil {
+		return nil, err
+	}
+	return runtime.PreviewModelTable(ctx, modelID, request)
+}
+
 func (m runtimeMetrics) ExplainSemanticQuery(modelID string, request reportdef.AggregateQuery) (semanticquery.Plan, error) {
 	model, ok := m.SemanticModel(modelID)
 	if !ok {
@@ -338,6 +359,18 @@ func (m runtimeMetrics) materializationRuntime() (materializationRuntime, error)
 	port, ok := runtime.(materializationRuntime)
 	if !ok {
 		return nil, fmt.Errorf("active runtime does not provide materialization refresh")
+	}
+	return port, nil
+}
+
+func (m runtimeMetrics) modelTablePreviewRuntime() (modelTablePreviewRuntime, error) {
+	runtime, err := m.active()
+	if err != nil {
+		return nil, err
+	}
+	port, ok := runtime.(modelTablePreviewRuntime)
+	if !ok {
+		return nil, fmt.Errorf("active runtime does not provide model table preview data")
 	}
 	return port, nil
 }
