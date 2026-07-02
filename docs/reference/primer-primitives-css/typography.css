@@ -1,0 +1,71 @@
+/* Typography */
+
+/* Source: @primer/primitives/dist/css/base/typography/typography.css */
+
+:root {
+  --base-text-lineHeight-loose: 1.75; /** Use sparingly for very small text or when maximum readability is critical. Best for footnotes, legal text, or content requiring high accessibility. */
+  --base-text-lineHeight-normal: 1.5; /** Default choice for body text and general UI content. Provides optimal readability for paragraphs, descriptions, and most multi-line text. Use when unsure which line-height to pick. */
+  --base-text-lineHeight-relaxed: 1.625; /** Use for longer-form content, smaller text sizes (12-13px), or when increased readability is desired. Good for text that needs extra breathing room. */
+  --base-text-lineHeight-snug: 1.375; /** Use for display text, large headings, or short multi-line text where moderate density is needed. Good for hero sections and marketing headlines. */
+  --base-text-lineHeight-tight: 1.25; /** Use for single-line text in compact UI elements like labels, badges, buttons, or captions where vertical space is limited. Not recommended for multi-line body text due to reduced readability. */
+  --base-text-size-2xl: 2.5rem; /** 40px - Display text for hero sections. */
+  --base-text-size-lg: 1.25rem; /** 20px - Medium titles and subtitles. */
+  --base-text-size-md: 1rem; /** 16px - Large body text and small titles. */
+  --base-text-size-sm: 0.875rem; /** 14px - Default body text size for UI. */
+  --base-text-size-xl: 2rem; /** 32px - Large titles and page headings. */
+  --base-text-size-xs: 0.75rem; /** 12px - Smallest text size for captions and compact UI elements. */
+  --base-text-weight-light: 300;
+  --base-text-weight-medium: 500;
+  --base-text-weight-normal: 400;
+  --base-text-weight-semibold: 600;
+}
+
+/* Source: @primer/primitives/dist/css/functional/typography/typography.css */
+
+:root {
+  --fontStack-monospace: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace; /** Monospace font stack for code, technical content, and tabular data. */
+  --fontStack-sansSerif: "Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; /** Sans-serif font stack for body text and general UI elements. */
+  --fontStack-sansSerifDisplay: "Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; /** Display font stack for headings and titles. Same as sansSerif but semantically distinct. */
+  --fontStack-system: "Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; /** Mona Sans–first font stack with system fallbacks, optimized for cross-platform rendering. Primary font stack for all UI text where Mona Sans is available. */
+  --text-codeBlock-size: 0.8125rem;
+  --text-codeInline-size: 0.9285em;
+  --text-body-lineHeight-large: var(--base-text-lineHeight-normal);
+  --text-body-lineHeight-medium: var(--base-text-lineHeight-normal);
+  --text-body-lineHeight-small: var(--base-text-lineHeight-relaxed);
+  --text-body-size-large: var(--base-text-size-md);
+  --text-body-size-medium: var(--base-text-size-sm);
+  --text-body-size-small: var(--base-text-size-xs);
+  --text-body-weight: var(--base-text-weight-normal);
+  --text-caption-lineHeight: var(--base-text-lineHeight-tight);
+  --text-caption-size: var(--base-text-size-xs);
+  --text-caption-weight: var(--base-text-weight-normal);
+  --text-codeBlock-lineHeight: var(--base-text-lineHeight-normal);
+  --text-codeBlock-weight: var(--base-text-weight-normal);
+  --text-codeInline-weight: var(--base-text-weight-normal);
+  --text-display-lineHeight: var(--base-text-lineHeight-snug);
+  --text-display-size: var(--base-text-size-2xl);
+  --text-display-weight: var(--base-text-weight-medium);
+  --text-subtitle-lineHeight: var(--base-text-lineHeight-relaxed);
+  --text-subtitle-size: var(--base-text-size-lg);
+  --text-subtitle-weight: var(--base-text-weight-normal);
+  --text-title-lineHeight-large: var(--base-text-lineHeight-normal);
+  --text-title-lineHeight-medium: var(--base-text-lineHeight-relaxed);
+  --text-title-lineHeight-small: var(--base-text-lineHeight-normal);
+  --text-title-size-large: var(--base-text-size-xl);
+  --text-title-size-medium: var(--base-text-size-lg);
+  --text-title-size-small: var(--base-text-size-md);
+  --text-title-weight-large: var(--base-text-weight-semibold);
+  --text-title-weight-medium: var(--base-text-weight-semibold);
+  --text-title-weight-small: var(--base-text-weight-semibold);
+  --text-body-shorthand-large: var(--text-body-weight) var(--text-body-size-large) / var(--text-body-lineHeight-large) var(--fontStack-sansSerif); /** User-generated content, markdown rendering. */
+  --text-body-shorthand-medium: var(--text-body-weight) var(--text-body-size-medium) / var(--text-body-lineHeight-medium) var(--fontStack-sansSerif); /** Default UI font. Most commonly used for body text. */
+  --text-body-shorthand-small: var(--text-body-weight) var(--text-body-size-small) / var(--text-body-lineHeight-small) var(--fontStack-sansSerif); /** Small body text for discrete UI applications, such as helper, footnote text. Should be used sparingly across pages. Line-height matches Body (medium) at 20px. */
+  --text-caption-shorthand: var(--text-caption-weight) var(--text-caption-size) / var(--text-caption-lineHeight) var(--fontStack-sansSerif); /** Compact small font with a smaller line height of 16px. Use it for single-line scenarios, as the small sizing doesn’t pass accessibility requirements. */
+  --text-codeBlock-shorthand: var(--text-codeBlock-weight) var(--text-codeBlock-size) / var(--text-codeBlock-lineHeight) var(--fontStack-monospace); /** Default style for rendering code blocks. */
+  --text-codeInline-shorthand: var(--text-codeInline-weight) var(--text-codeInline-size) var(--fontStack-monospace); /** Inline code blocks using em units to inherit size from its parent. */
+  --text-display-shorthand: var(--text-display-weight) var(--text-display-size) / var(--text-display-lineHeight) var(--fontStack-sansSerifDisplay); /** Hero-style text for brand to product transition pages. Utilize Title (large) styles on narrow viewports. */
+  --text-subtitle-shorthand: var(--text-subtitle-weight) var(--text-subtitle-size) / var(--text-subtitle-lineHeight) var(--fontStack-sansSerifDisplay); /** Page sections/sub headings, or less important object names in page titles (automated action titles, for example). Same line-height as title (medium). */
+  --text-title-shorthand-large: var(--text-title-weight-large) var(--text-title-size-large) / var(--text-title-lineHeight-large) var(--fontStack-sansSerifDisplay); /** Page headings for user-created objects, such as issues or pull requests. Utilize title (medium) styles on narrow viewports. */
+  --text-title-shorthand-medium: var(--text-title-weight-medium) var(--text-title-size-medium) / var(--text-title-lineHeight-medium) var(--fontStack-sansSerifDisplay); /** Default page title. The 32px-equivalent line-height matches with button and other medium control heights. Great for page header composition. */
+  --text-title-shorthand-small: var(--text-title-weight-small) var(--text-title-size-small) / var(--text-title-lineHeight-small) var(--fontStack-sansSerif); /** Uses the same size as body (large) with a heavier weight of semibold (600). */
+}
