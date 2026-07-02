@@ -153,6 +153,9 @@ func TestDataExplorerRouteRendersSignalsAndWiring(t *testing.T) {
 		"workspaceId",
 		"model_table:model_table:olist.orders",
 		"semantic_view:olist.orders",
+		`"active":"data"`,
+		`"primaryAction":{"label":"New chat","href":"/chat/new","icon":"plus"}`,
+		`"history":{"label":"Chats"`,
 	} {
 		body = html.UnescapeString(body)
 		if !strings.Contains(body, want) {

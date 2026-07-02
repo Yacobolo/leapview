@@ -11,12 +11,10 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel, csrfToken string) g.Node {
-	workspaceTitle := catalog.Workspace.Title
-	if workspaceTitle == "" {
-		workspaceTitle = catalog.Workspace.ID
-	}
-	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfig(catalog, "data", "", workspaceTitle, "Data", "Explorer", "", "", false, roleLabel)}
+func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel, csrfToken string, chromeOptions ...ChromeOption) g.Node {
+	catalog = catalogWithoutWorkspaceContext(catalog)
+	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "data", roleLabel)}
+	applyChromeOptions(&chrome, chromeOptions)
 	signals := map[string]any{
 		"chrome":              chrome,
 		"page":                page,

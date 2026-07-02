@@ -33,7 +33,7 @@ func (s *Server) dataExplorer(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.DataExplorerPage(s.catalogForWorkspacesPage(r, nil), page, explorer, s.currentRoleLabel(r), csrfToken(r, s.auth)).Render(w); err != nil {
+	if err := ui.DataExplorerPage(s.catalogForWorkspacesPage(r, nil), page, explorer, s.currentRoleLabel(r), csrfToken(r, s.auth), s.chatChromeOption(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

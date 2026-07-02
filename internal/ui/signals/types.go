@@ -843,7 +843,7 @@ func DashboardInitialEnvelope(dataDir, clientID, csrfToken string, catalog dashb
 		modelTitle = model.Title
 	}
 	return DashboardEnvelope{
-		Chrome: ChromeSignal{Sidebar: SidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "")},
+		Chrome: ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
 		Page: DashboardPageSignal{
 			Kind:           RouteDashboard,
 			Title:          report.Title,
@@ -975,10 +975,6 @@ func SidebarConfigForChat(catalog dashboard.Catalog, workspaceID, roleLabel, vie
 	}
 	config := SidebarConfigForWorkspace(catalog, active, roleLabel)
 	return config
-}
-
-func SidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, compact bool, roleLabel string) SidebarSignal {
-	return sidebarConfig(catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle, compact, roleLabel, strings.TrimSpace(catalog.Workspace.ID) != "")
 }
 
 func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, compact bool, roleLabel string, includeWorkspaceScoped bool) SidebarSignal {
