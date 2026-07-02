@@ -229,7 +229,7 @@ class LibreDashSidebar extends LitElement {
 
     .nav-group {
       display: grid;
-      gap: var(--base-size-4);
+      gap: var(--base-size-2, 2px);
     }
 
     .primary-action {
@@ -273,13 +273,16 @@ class LibreDashSidebar extends LitElement {
       gap: var(--base-size-4);
       min-height: 0;
       padding-top: var(--base-size-8);
-      border-top: var(--ld-border-muted);
     }
 
     .history-label {
       overflow: hidden;
-      padding: 0 var(--control-xsmall-paddingInline-normal);
-      color: var(--ld-fg-muted);
+      margin:
+        0
+        var(--control-xsmall-paddingInline-normal, 8px)
+        0
+        calc(var(--control-xsmall-paddingInline-normal, 8px) + var(--ld-border-width, 1px));
+      color: color-mix(in srgb, var(--ld-fg-muted), transparent 32%);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--ld-font-size-caption);
@@ -289,7 +292,7 @@ class LibreDashSidebar extends LitElement {
 
     .history-list {
       display: grid;
-      gap: var(--base-size-4);
+      gap: var(--base-size-2, 2px);
       min-height: 0;
     }
 
@@ -329,9 +332,10 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item {
       position: relative;
+      box-sizing: border-box;
       display: grid;
       grid-template-columns: calc(var(--control-xsmall-size) + var(--base-size-2)) minmax(0, 1fr) auto;
-      min-height: calc(var(--control-medium-size) + var(--base-size-2));
+      min-height: var(--control-medium-size);
       align-items: center;
       gap: var(--base-size-8);
       border: var(--ld-border-transparent);
@@ -761,9 +765,8 @@ class LibreDashSidebar extends LitElement {
 
   private renderLink(item: NavItem) {
     const current = item.id === this.config.active
-    const label = item.meta ? `${item.label}: ${item.meta}` : item.label
     return html`
-      <a class="nav-item" href=${item.href} aria-current=${current ? 'page' : 'false'} aria-label=${label} title=${label} @click=${(event: MouseEvent) => this.followInternalLink(event, item.href)}>
+      <a class="nav-item" href=${item.href} aria-current=${current ? 'page' : 'false'} aria-label=${item.label} title=${item.label} @click=${(event: MouseEvent) => this.followInternalLink(event, item.href)}>
         <span class="nav-icon">${icon(item.icon)}</span>
         <span class="nav-text">
           <strong>${item.label}</strong>
@@ -773,9 +776,8 @@ class LibreDashSidebar extends LitElement {
   }
 
   private renderDisabledItem(item: NavItem) {
-    const label = item.meta ? `${item.label}: ${item.meta}` : item.label
     return html`
-      <span class="nav-item disabled" aria-disabled="true" aria-label=${label} title=${label}>
+      <span class="nav-item disabled" aria-disabled="true" aria-label=${item.label} title=${item.label}>
         <span class="nav-icon">${icon(item.icon)}</span>
         <span class="nav-text">
           <strong>${item.label}</strong>

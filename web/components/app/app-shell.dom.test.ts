@@ -147,7 +147,19 @@ test('sidebar renders global chat action and recent history', async () => {
           href: link.getAttribute('href'),
           text: link.textContent.trim(),
           current: link.getAttribute('aria-current'),
+          ariaLabel: link.getAttribute('aria-label'),
+          title: link.getAttribute('title'),
         })),
+        spacing: (() => {
+          const group = root.querySelector('.nav-group:not(.primary-action)') as HTMLElement
+          const navItem = root.querySelector('a[href="/chat"]') as HTMLElement
+          const historyList = root.querySelector('.history-list') as HTMLElement
+          return {
+            navGroupGap: getComputedStyle(group).gap,
+            historyListGap: getComputedStyle(historyList).gap,
+            navItemHeight: Math.round(navItem.getBoundingClientRect().height),
+          }
+        })(),
         primaryStyle: (() => {
           const link = root.querySelector('.primary-action .nav-item') as HTMLElement
           const icon = root.querySelector('.primary-action .nav-icon') as HTMLElement
@@ -160,24 +172,53 @@ test('sidebar renders global chat action and recent history', async () => {
         })(),
         historyLabel: root.querySelector('.history-label')?.textContent?.trim(),
         hasHistorySearch: Boolean(root.querySelector('.history-search')),
+        historyStyle: (() => {
+          const history = root.querySelector('.history') as HTMLElement
+          const style = getComputedStyle(history)
+          return {
+            borderTopWidth: style.borderTopWidth,
+            paddingTop: style.paddingTop,
+          }
+        })(),
         historyItemMetrics: (() => {
           const item = root.querySelector('.history-item') as HTMLElement
           const title = item?.querySelector('.history-title') as HTMLElement
+          const navIcon = root.querySelector('a[href="/chat"] .nav-icon') as HTMLElement
+          const navText = root.querySelector('a[href="/chat"] .nav-text') as HTMLElement
+          const label = root.querySelector('.history-label') as HTMLElement
+          const mutedProbe = document.createElement('span')
+          mutedProbe.style.color = 'var(--ld-fg-muted)'
+          root.append(mutedProbe)
+          const mutedColor = getComputedStyle(mutedProbe).color
+          mutedProbe.remove()
           return {
             gridTemplateColumns: getComputedStyle(item).gridTemplateColumns,
+            labelLeft: Math.round(label.getBoundingClientRect().left),
+            titleLeft: Math.round(title.getBoundingClientRect().left),
+            navIconLeft: Math.round(navIcon.getBoundingClientRect().left),
+            navTextLeft: Math.round(navText.getBoundingClientRect().left),
             titleWidth: Math.round(title.getBoundingClientRect().width),
             titleScrollWidth: title.scrollWidth,
+            labelColor: getComputedStyle(label).color,
+            mutedColor,
           }
         })(),
       }
     })
 
     expect(state.historyLabel).toBe('Chats')
-    expect(state.links).toContainEqual({ href: '/chat/new', text: 'New chat', current: 'false' })
-    expect(state.links).toContainEqual({ href: '/chat/c1', text: 'Revenue check', current: 'page' })
+    expect(state.links).toContainEqual({ href: '/chat/new', text: 'New chat', current: 'false', ariaLabel: 'New chat', title: 'New chat' })
+    expect(state.links).toContainEqual({ href: '/chat', text: 'Chats', current: 'page', ariaLabel: 'Chats', title: 'Chats' })
+    expect(state.links).toContainEqual({ href: '/chat/c1', text: 'Revenue check', current: 'page', ariaLabel: 'Revenue check', title: 'Revenue check' })
+    expect(state.spacing).toEqual({ navGroupGap: '2px', historyListGap: '2px', navItemHeight: 32 })
     expect(state.hasHistorySearch).toBe(false)
+    expect(state.historyStyle).toEqual({ borderTopWidth: '0px', paddingTop: '8px' })
     expect(state.historyItemMetrics.gridTemplateColumns).not.toMatch(/^26px /)
+    expect(state.historyItemMetrics.labelLeft).toBe(state.historyItemMetrics.navIconLeft)
+    expect(state.historyItemMetrics.titleLeft).toBe(state.historyItemMetrics.navIconLeft)
+    expect(state.historyItemMetrics.titleLeft).toBeLessThan(state.historyItemMetrics.navTextLeft)
     expect(state.historyItemMetrics.titleWidth).toBeGreaterThanOrEqual(state.historyItemMetrics.titleScrollWidth)
+    expect(state.historyItemMetrics.labelColor).not.toBe(state.historyItemMetrics.mutedColor)
     expect(state.primaryStyle.background).toBe('rgba(0, 0, 0, 0)')
     expect(state.primaryStyle.iconBackground).not.toBe('rgba(0, 0, 0, 0)')
     expect(state.primaryStyle.iconRadius).not.toBe('0px')
@@ -203,6 +244,8 @@ test('sidebar active nav item uses a full-row highlight without selector rail', 
       const before = getComputedStyle(active, '::before')
       return {
         text: active.textContent.trim(),
+        label: active.getAttribute('aria-label'),
+        title: active.getAttribute('title'),
         current: active.getAttribute('aria-current'),
         background: style.backgroundColor,
         controlHoverBackground: getComputedStyle(document.documentElement).getPropertyValue('--control-bgColor-hover').trim(),
@@ -214,6 +257,8 @@ test('sidebar active nav item uses a full-row highlight without selector rail', 
     })
 
     expect(state.text).toBe('Workspaces')
+    expect(state.label).toBe('Workspaces')
+    expect(state.title).toBe('Workspaces')
     expect(state.current).toBe('page')
     expect(state.background).toBe('rgb(239, 242, 245)')
     expect(state.controlHoverBackground).toBe('#eff2f5')
@@ -339,7 +384,12 @@ function testDocument(includeShellScript: boolean, compact = false, history = fa
       <head>
         <link rel="stylesheet" href="/static/app.css">
         <style>
-          :root { --control-bgColor-hover: #eff2f5; }
+          :root {
+            --control-bgColor-hover: #eff2f5;
+            --ld-border-transparent: 1px solid transparent;
+            --ld-border-width: 1px;
+            --ld-fg-muted: #57606a;
+          }
         </style>
       </head>
       <body>
