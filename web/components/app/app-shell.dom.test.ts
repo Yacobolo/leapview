@@ -160,6 +160,15 @@ test('sidebar renders global chat action and recent history', async () => {
         })(),
         historyLabel: root.querySelector('.history-label')?.textContent?.trim(),
         hasHistorySearch: Boolean(root.querySelector('.history-search')),
+        historyItemMetrics: (() => {
+          const item = root.querySelector('.history-item') as HTMLElement
+          const title = item?.querySelector('.history-title') as HTMLElement
+          return {
+            gridTemplateColumns: getComputedStyle(item).gridTemplateColumns,
+            titleWidth: Math.round(title.getBoundingClientRect().width),
+            titleScrollWidth: title.scrollWidth,
+          }
+        })(),
       }
     })
 
@@ -167,6 +176,8 @@ test('sidebar renders global chat action and recent history', async () => {
     expect(state.links).toContainEqual({ href: '/chat/new', text: 'New chat', current: 'false' })
     expect(state.links).toContainEqual({ href: '/chat/c1', text: 'Revenue check', current: 'page' })
     expect(state.hasHistorySearch).toBe(false)
+    expect(state.historyItemMetrics.gridTemplateColumns).not.toMatch(/^26px /)
+    expect(state.historyItemMetrics.titleWidth).toBeGreaterThanOrEqual(state.historyItemMetrics.titleScrollWidth)
     expect(state.primaryStyle.background).toBe('rgba(0, 0, 0, 0)')
     expect(state.primaryStyle.iconBackground).not.toBe('rgba(0, 0, 0, 0)')
     expect(state.primaryStyle.iconRadius).not.toBe('0px')
@@ -186,13 +197,17 @@ test('sidebar active nav item uses a full-row highlight without selector rail', 
       const sidebar = element.shadowRoot.querySelector('ld-sidebar') as HTMLElement
       const root = sidebar.shadowRoot
       const active = root.querySelector('a[href="/workspaces"]') as HTMLElement
+      const icon = active.querySelector('.nav-icon') as HTMLElement
       const style = getComputedStyle(active)
+      const iconStyle = getComputedStyle(icon)
       const before = getComputedStyle(active, '::before')
       return {
         text: active.textContent.trim(),
         current: active.getAttribute('aria-current'),
         background: style.backgroundColor,
+        controlHoverBackground: getComputedStyle(document.documentElement).getPropertyValue('--control-bgColor-hover').trim(),
         border: style.borderTopColor,
+        iconBackground: iconStyle.backgroundColor,
         beforeContent: before.content,
         beforeWidth: before.width,
       }
@@ -200,8 +215,10 @@ test('sidebar active nav item uses a full-row highlight without selector rail', 
 
     expect(state.text).toBe('Workspaces')
     expect(state.current).toBe('page')
-    expect(state.background).not.toBe('rgba(0, 0, 0, 0)')
+    expect(state.background).toBe('rgb(239, 242, 245)')
+    expect(state.controlHoverBackground).toBe('#eff2f5')
     expect(state.border).toBe('rgba(0, 0, 0, 0)')
+    expect(state.iconBackground).toBe('rgba(0, 0, 0, 0)')
     expect(state.beforeContent).toBe('none')
     expect(state.beforeWidth).toBe('auto')
   } finally {
@@ -321,6 +338,9 @@ function testDocument(includeShellScript: boolean, compact = false, history = fa
     <html>
       <head>
         <link rel="stylesheet" href="/static/app.css">
+        <style>
+          :root { --control-bgColor-hover: #eff2f5; }
+        </style>
       </head>
       <body>
         <main class="min-h-svh bg-app text-fg-default">

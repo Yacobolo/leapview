@@ -202,7 +202,7 @@ class LibreDashSidebar extends LitElement {
     .collapse-button:hover,
     .collapse-button:focus-visible {
       border-color: var(--ld-line-muted);
-      background: var(--control-bgColor-hover);
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
       color: var(--ld-fg-default);
       outline: 0;
     }
@@ -247,7 +247,7 @@ class LibreDashSidebar extends LitElement {
     .primary-action .nav-item:hover,
     .primary-action .nav-item:focus-visible {
       border-color: transparent;
-      background: var(--ld-bg-hover, #f6f8fa);
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
       color: var(--ld-fg-default);
     }
 
@@ -293,7 +293,7 @@ class LibreDashSidebar extends LitElement {
       min-height: 0;
     }
 
-    .history-item {
+    .nav-item.history-item {
       grid-template-columns: minmax(0, 1fr) auto;
     }
 
@@ -360,14 +360,14 @@ class LibreDashSidebar extends LitElement {
 
     .nav-item:hover,
     .nav-item:focus-visible {
-      background: var(--ld-bg-hover);
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
       color: var(--ld-fg-default);
       outline: 0;
     }
 
     .nav-item[aria-current='page'] {
       border-color: transparent;
-      background: var(--ld-bg-hover, #f6f8fa);
+      background: var(--control-bgColor-hover, var(--ld-bg-hover, #f6f8fa));
       color: var(--ld-fg-default);
     }
 
@@ -387,11 +387,6 @@ class LibreDashSidebar extends LitElement {
       place-items: center;
       border-radius: var(--ld-radius-default);
       background: transparent;
-    }
-
-    .nav-item[aria-current='page'] .nav-icon {
-      background: color-mix(in srgb, var(--ld-fg-muted), transparent 88%);
-      color: var(--ld-fg-default);
     }
 
     svg {
@@ -426,7 +421,7 @@ class LibreDashSidebar extends LitElement {
     }
 
     .user-card:hover {
-      background: var(--ld-bg-hover);
+      background: var(--control-bgColor-hover);
     }
 
     .avatar {
