@@ -3,6 +3,8 @@ package signals
 func ContractTypes() map[string]any {
 	return map[string]any{
 		"AdminContentSectionSignal":     AdminContentSectionSignal{},
+		"AdminAgentSignal":              AdminAgentSignal{},
+		"AdminAgentToolSignal":          AdminAgentToolSignal{},
 		"AdminMetricSignal":             AdminMetricSignal{},
 		"AdminPageEnvelope":             AdminPageEnvelope{},
 		"AdminPageSignal":               AdminPageSignal{},

@@ -33,10 +33,11 @@ type StartedPrompt struct {
 	Input          string
 	CorrelationID  string
 
-	service *Service
-	initial []agent.Message
-	mu      sync.Mutex
-	closed  bool
+	service      *Service
+	systemPrompt string
+	initial      []agent.Message
+	mu           sync.Mutex
+	closed       bool
 }
 
 func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, error) {
@@ -78,6 +79,10 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 	if err != nil {
 		return nil, err
 	}
+	systemPrompt, err := s.systemPrompt(ctx)
+	if err != nil {
+		return nil, err
+	}
 	runID := newID("run")
 	run, err := s.repo.CreateRun(ctx, RunInput{
 		WorkspaceID:    input.Scope.WorkspaceID,
@@ -115,6 +120,7 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		Input:          input.Input,
 		CorrelationID:  input.CorrelationID,
 		service:        s,
+		systemPrompt:   systemPrompt,
 		initial:        initial,
 	}, nil
 }
@@ -143,7 +149,7 @@ func (p *StartedPrompt) Complete(ctx context.Context, onEvent func(EventEnvelope
 	sink := &storeEventSink{repo: s.repo, scope: input.Scope, conversationID: input.ConversationID, runID: p.RunID, onEvent: input.OnEvent}
 	def := agent.Definition{
 		Name:              "libredash-readonly",
-		SystemPrompt:      s.systemPrompt(input.Scope),
+		SystemPrompt:      p.systemPrompt,
 		Model:             s.model,
 		Tools:             s.toolDefinitions(input.Scope),
 		InitialTranscript: p.initial,
