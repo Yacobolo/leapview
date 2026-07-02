@@ -2,6 +2,7 @@ package duckdb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,18 +10,19 @@ import (
 	"sync"
 	"time"
 
+	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 )
 
 type SourceRuntime struct {
-	db                  *Database
+	db                  sqlDBProvider
 	dataDir             string
 	attachedConnections map[string]struct{}
 }
 
-func NewSourceRuntime(db *Database, dataDir string) *SourceRuntime {
+func NewSourceRuntime(db sqlDBProvider, dataDir string) *SourceRuntime {
 	return &SourceRuntime{
 		db:                  db,
 		dataDir:             dataDir,
@@ -62,36 +64,58 @@ func OpenMaterializeRuntime(ctx context.Context, config analyticsmaterialize.Run
 }
 
 type WorkspaceRuntimeConfig struct {
-	Models  map[string]*semanticmodel.Model
-	DataDir string
-	DBDir   string
+	Models           map[string]*semanticmodel.Model
+	DataDir          string
+	DBDir            string
+	CatalogPath      string
+	DuckLakeDataPath string
+	SnapshotID       int64
 }
 
 type WorkspaceRuntime struct {
 	mu                   sync.Mutex
-	db                   *Database
+	db                   analyticsmaterialize.Database
+	sqlDB                sqlDBProvider
+	committer            duckLakeCommitter
 	sources              *SourceRuntime
 	dataDir              string
 	models               map[string]*semanticmodel.Model
 	materializationModel *semanticmodel.Model
 	queries              map[string]*semanticquery.Service
 	lastRefresh          time.Time
+	lastSnapshotID       int64
+}
+
+type duckLakeCommitter interface {
+	Commit(ctx context.Context, deploymentID string, extra map[string]string, fn func(*sql.Tx) error) (int64, error)
 }
 
 func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntimeConfig) (*WorkspaceRuntime, error) {
 	if len(config.Models) == 0 {
 		return nil, fmt.Errorf("workspace semantic models are required")
 	}
-	dbPath := analyticsmaterialize.WorkspaceDatabasePath(config.DBDir)
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+	layout := analyticsducklake.NewLayout(config.DBDir)
+	if config.CatalogPath != "" {
+		layout.CatalogPath = config.CatalogPath
+	}
+	if config.DuckLakeDataPath != "" {
+		layout.DataPath = config.DuckLakeDataPath
+	}
+	if err := os.MkdirAll(layout.RootDir, 0o755); err != nil {
 		return nil, err
 	}
 	if os.Getenv("LIBREDASH_DUCKDB_PATH") == "" {
-		if err := removeStaleModelDatabases(config.DBDir, dbPath); err != nil {
+		if err := removeStaleDuckDBDatabases(config.DBDir); err != nil {
 			return nil, err
 		}
 	}
-	db, err := Open(ctx, dbPath)
+	var db *analyticsducklake.Environment
+	var err error
+	if config.SnapshotID > 0 {
+		db, err = analyticsducklake.OpenSnapshot(ctx, analyticsducklake.Config{RootDir: config.DBDir, CatalogPath: layout.CatalogPath, DataPath: layout.DataPath, SnapshotID: config.SnapshotID})
+	} else {
+		db, err = analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: config.DBDir, CatalogPath: layout.CatalogPath, DataPath: layout.DataPath})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +133,8 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 	}
 	runtime := &WorkspaceRuntime{
 		db:                   db,
+		sqlDB:                db,
+		committer:            db,
 		sources:              sources,
 		dataDir:              config.DataDir,
 		models:               config.Models,
@@ -118,9 +144,13 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 	for modelID, model := range config.Models {
 		runtime.queries[modelID] = semanticquery.NewService(semanticquery.NewPlanner(model), db)
 	}
-	if err := runtime.Refresh(ctx); err != nil {
-		db.Close()
-		return nil, err
+	if config.SnapshotID > 0 {
+		runtime.lastSnapshotID = config.SnapshotID
+	} else {
+		if err := runtime.Refresh(ctx); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	return runtime, nil
 }
@@ -143,16 +173,17 @@ func (r *WorkspaceRuntime) Refresh(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	lastRefresh, err := analyticsmaterialize.Refresh(ctx, r.db, r.sources, r.materializationModel)
+	lastRefresh, snapshotID, err := r.refreshModel(ctx, r.materializationModel, nil)
 	if err != nil {
 		return err
 	}
 	for modelID, model := range r.models {
-		if err := DiscoverSchemasWithDataDir(ctx, r.db, model, r.dataDir); err != nil {
+		if err := DiscoverSchemasWithDataDir(ctx, r.sqlDB, model, r.dataDir); err != nil {
 			return fmt.Errorf("discovering semantic model %q schemas: %w", modelID, err)
 		}
 	}
 	r.lastRefresh = lastRefresh
+	r.lastSnapshotID = snapshotID
 	return nil
 }
 
@@ -168,17 +199,44 @@ func (r *WorkspaceRuntime) RefreshModelTables(ctx context.Context, modelID strin
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	lastRefresh, err := analyticsmaterialize.RefreshModelTables(ctx, r.db, r.sources, model, tableNames)
+	lastRefresh, snapshotID, err := r.refreshModel(ctx, model, tableNames)
 	if err != nil {
 		return err
 	}
 	for discoverModelID, discoverModel := range r.models {
-		if err := DiscoverSchemasWithDataDir(ctx, r.db, discoverModel, r.dataDir); err != nil {
+		if err := DiscoverSchemasWithDataDir(ctx, r.sqlDB, discoverModel, r.dataDir); err != nil {
 			return fmt.Errorf("discovering semantic model %q schemas: %w", discoverModelID, err)
 		}
 	}
 	r.lastRefresh = lastRefresh
+	r.lastSnapshotID = snapshotID
 	return nil
+}
+
+func (r *WorkspaceRuntime) refreshModel(ctx context.Context, model *semanticmodel.Model, tableNames []string) (time.Time, int64, error) {
+	if r.committer == nil {
+		if len(tableNames) > 0 {
+			lastRefresh, err := analyticsmaterialize.RefreshModelTables(ctx, r.db, r.sources, model, tableNames)
+			return lastRefresh, 0, err
+		}
+		lastRefresh, err := analyticsmaterialize.Refresh(ctx, r.db, r.sources, model)
+		return lastRefresh, 0, err
+	}
+	if err := r.sources.PrepareSourceRuntime(ctx, model); err != nil {
+		return time.Time{}, 0, err
+	}
+	snapshotID, err := r.committer.Commit(ctx, "workspace-refresh", map[string]string{"workspace": model.Name}, func(tx *sql.Tx) error {
+		executor := txExecutor{tx: tx}
+		sources := txSourceRuntime{SourceRuntime: r.sources, tx: tx}
+		if len(tableNames) > 0 {
+			return analyticsmaterialize.ModelTablesNamed(ctx, executor, sources, model, tableNames)
+		}
+		return analyticsmaterialize.ModelTables(ctx, executor, sources, model)
+	})
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	return time.Now(), snapshotID, nil
 }
 
 func (r *WorkspaceRuntime) Close() error {
@@ -204,17 +262,39 @@ func (r *WorkspaceRuntime) DBPath() string {
 	return r.db.Path()
 }
 
-func removeStaleModelDatabases(dbDir, workspacePath string) error {
+func (r *WorkspaceRuntime) DuckLakeSnapshotID() int64 {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastSnapshotID
+}
+
+type txExecutor struct {
+	tx *sql.Tx
+}
+
+func (e txExecutor) Exec(ctx context.Context, statement string) error {
+	_, err := e.tx.ExecContext(ctx, statement)
+	return err
+}
+
+type txSourceRuntime struct {
+	*SourceRuntime
+	tx *sql.Tx
+}
+
+func (r txSourceRuntime) PlanModelTable(ctx context.Context, model *semanticmodel.Model, tableName string, table semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {
+	return PlanModelTable(ctx, r.tx, model, r.dataDir, tableName, table)
+}
+
+func removeStaleDuckDBDatabases(dbDir string) error {
 	matches, err := filepath.Glob(filepath.Join(dbDir, "libredash-*.duckdb*"))
 	if err != nil {
 		return err
 	}
-	workspaceBase := filepath.Base(workspacePath)
 	for _, match := range matches {
-		base := filepath.Base(match)
-		if base == workspaceBase || base == workspaceBase+".wal" {
-			continue
-		}
 		if err := os.Remove(match); err != nil && !os.IsNotExist(err) {
 			return err
 		}

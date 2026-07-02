@@ -2,6 +2,7 @@ package materialize_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 func TestModelTableExecutesPlannedSQL(t *testing.T) {
@@ -273,6 +275,88 @@ func TestMovieLensModelTableOrderMaterializesDimensionsBeforeFacts(t *testing.T)
 	}
 	if ratingGenresIndex < ratingsIndex || ratingGenresIndex < moviesIndex {
 		t.Fatalf("order = %#v, want rating_genres after ratings and movies", order)
+	}
+}
+
+func TestWorkspaceRuntimeCommitsModelTablesInOneDuckLakeSnapshot(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "orders.csv"), []byte("order_id,status,revenue\no1,paid,10\no2,paid,15\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	model := &semanticmodel.Model{
+		Name:        "workspace",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "order_summary",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+			"order_summary": {
+				ModelDependencies: []string{"orders"},
+				Transform:         semanticmodel.Transform{SQL: "SELECT status, SUM(revenue) AS revenue FROM model.orders GROUP BY status"},
+				PrimaryKey:        "status",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"status":  {Label: "Status"},
+					"revenue": {Label: "Revenue"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "order_summary", Grain: "status", Expression: "SUM(order_summary.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:  map[string]*semanticmodel.Model{"sales": model},
+		DataDir: dir,
+		DBDir:   dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	if runtime.DuckLakeSnapshotID() <= 0 {
+		t.Fatalf("DuckLakeSnapshotID = %d, want committed snapshot", runtime.DuckLakeSnapshotID())
+	}
+
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(filepath.Join(dir, "catalog.sqlite"), "'", "''") + "' AS lake",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var matchingSnapshots int
+	if err := db.QueryRowContext(ctx, `
+SELECT count(*)
+FROM lake.snapshots()
+WHERE snapshot_id = ?
+  AND CAST(changes AS VARCHAR) LIKE '%model.orders%'
+  AND CAST(changes AS VARCHAR) LIKE '%model.order_summary%'`, runtime.DuckLakeSnapshotID()).Scan(&matchingSnapshots); err != nil {
+		t.Fatal(err)
+	}
+	if matchingSnapshots != 1 {
+		t.Fatalf("matching committed snapshots = %d, want 1", matchingSnapshots)
 	}
 }
 

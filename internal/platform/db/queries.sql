@@ -76,6 +76,11 @@ UPDATE deployments
 SET status = ?, digest = ?, manifest_json = ?, error = ''
 WHERE id = ?;
 
+-- name: UpdateDeploymentDuckLakeSnapshot :exec
+UPDATE deployments
+SET ducklake_snapshot_id = ?
+WHERE id = ?;
+
 -- name: UpdateDeploymentStatus :exec
 UPDATE deployments
 SET status = ?, error = ?

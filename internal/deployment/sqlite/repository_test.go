@@ -205,6 +205,41 @@ func TestRepositoryTracksActiveDeploymentsPerEnvironment(t *testing.T) {
 	}
 }
 
+func TestRepositoryRecordsDuckLakeSnapshot(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := repo.RecordDuckLakeSnapshot(ctx, created.ID, 42); err != nil {
+		t.Fatalf("record snapshot: %v", err)
+	}
+	got, err := repo.ByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("by id: %v", err)
+	}
+	if got.DuckLakeSnapshotID != 42 {
+		t.Fatalf("snapshot = %d, want 42", got.DuckLakeSnapshotID)
+	}
+	if _, err := repo.SaveValidated(ctx, created.ID, validationGraph(created.ID), artifact(created.ID, "test")); err != nil {
+		t.Fatalf("save validated: %v", err)
+	}
+	if _, err := repo.Activate(ctx, "test", deployment.DefaultEnvironment, created.ID); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	active, _, err := repo.ActiveArtifact(ctx, "test", deployment.DefaultEnvironment)
+	if err != nil {
+		t.Fatalf("active artifact: %v", err)
+	}
+	if active.DuckLakeSnapshotID != 42 {
+		t.Fatalf("active snapshot = %d, want 42", active.DuckLakeSnapshotID)
+	}
+}
+
 func TestRepositorySaveValidatedRejectsMismatchedArtifactEnvironment(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)

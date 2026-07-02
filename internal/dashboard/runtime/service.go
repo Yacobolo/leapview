@@ -44,6 +44,10 @@ type DataRuntime interface {
 	LastRefresh() time.Time
 }
 
+type DataRuntimeSnapshot interface {
+	DuckLakeSnapshotID() int64
+}
+
 type setupRequiredError interface {
 	SetupRequired() bool
 }
@@ -232,6 +236,36 @@ func (m *Service) Close() error {
 
 func (m *Service) DataDir() string {
 	return m.dataDir
+}
+
+func (m *Service) DuckLakeSnapshotID() int64 {
+	if m == nil {
+		return 0
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var snapshotID int64
+	for _, runtime := range m.runtimes {
+		if runtime == nil || runtime.data == nil {
+			continue
+		}
+		snapshot, ok := runtime.data.(DataRuntimeSnapshot)
+		if !ok {
+			continue
+		}
+		current := snapshot.DuckLakeSnapshotID()
+		if current == 0 {
+			continue
+		}
+		if snapshotID == 0 {
+			snapshotID = current
+			continue
+		}
+		if snapshotID != current {
+			return 0
+		}
+	}
+	return snapshotID
 }
 
 func discoverCatalogPath() (string, error) {

@@ -19,6 +19,10 @@ type Runtime interface {
 	Close() error
 }
 
+type RuntimeSnapshot interface {
+	DuckLakeSnapshotID() int64
+}
+
 type RuntimeFactory interface {
 	Prepare(ctx context.Context, input RuntimeInput) (Runtime, error)
 }
@@ -57,6 +61,7 @@ type Prepared struct {
 	digest       string
 	runtime      Runtime
 	noChange     bool
+	snapshotID   int64
 }
 
 func (p *Prepared) Close() error {
@@ -64,6 +69,13 @@ func (p *Prepared) Close() error {
 		return nil
 	}
 	return p.runtime.Close()
+}
+
+func (p *Prepared) DuckLakeSnapshotID() int64 {
+	if p == nil {
+		return 0
+	}
+	return p.snapshotID
 }
 
 func NewManagerWithFactory(options ManagerOptions) *Manager {
@@ -122,7 +134,11 @@ func (m *Manager) prepare(ctx context.Context, current deployment.Deployment, ar
 	if err != nil {
 		return nil, err
 	}
-	return &Prepared{deploymentID: current.ID, digest: artifact.Digest, runtime: runtime}, nil
+	var snapshotID int64
+	if snapshot, ok := runtime.(RuntimeSnapshot); ok {
+		snapshotID = snapshot.DuckLakeSnapshotID()
+	}
+	return &Prepared{deploymentID: current.ID, digest: artifact.Digest, runtime: runtime, snapshotID: snapshotID}, nil
 }
 
 func (m *Manager) CommitPrepared(candidate deployment.PreparedRuntime) error {

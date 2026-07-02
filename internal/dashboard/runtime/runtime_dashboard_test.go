@@ -58,6 +58,9 @@ o2,20
 	if err := os.WriteFile(filepath.Join(dir, "libredash-model_b.duckdb.wal"), []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "libredash-workspace.duckdb"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	definition := sharedOrdersWorkspaceDefinition(t)
 	metrics, err := NewFromDefinition(dir, dir, testDataRuntimeFactory{}, definition)
@@ -85,29 +88,38 @@ o2,20
 		t.Fatalf("close runtime: %v", err)
 	}
 
-	matches, err := filepath.Glob(filepath.Join(dir, "libredash-*.duckdb"))
-	if err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "catalog.sqlite")); err != nil {
+		t.Fatalf("catalog.sqlite stat error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "data")); err != nil {
+		t.Fatalf("data dir stat error = %v", err)
+	}
+	if matches, err := filepath.Glob(filepath.Join(dir, "libredash-*.duckdb*")); err != nil {
 		t.Fatal(err)
-	}
-	sort.Strings(matches)
-	if len(matches) != 1 || filepath.Base(matches[0]) != "libredash-workspace.duckdb" {
-		t.Fatalf("duckdb files = %v, want only libredash-workspace.duckdb", matches)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "libredash-model_b.duckdb.wal")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("stale model WAL stat error = %v, want not exist", err)
+	} else if len(matches) != 0 {
+		t.Fatalf("legacy DuckDB files = %v, want none", matches)
 	}
 
-	db, err := sql.Open("duckdb", matches[0])
+	db, err := sql.Open("duckdb", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(filepath.Join(dir, "catalog.sqlite"), "'", "''") + "' AS lake",
+	} {
+		if _, err := db.ExecContext(context.Background(), stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var physicalTables int
-	if err := db.QueryRowContext(context.Background(), "SELECT count(*) FROM duckdb_tables() WHERE schema_name = 'model' AND table_name = 'orders'").Scan(&physicalTables); err != nil {
+	if err := db.QueryRowContext(context.Background(), "SELECT count(*) FROM ducklake_table_info('lake') WHERE table_name = 'orders'").Scan(&physicalTables); err != nil {
 		t.Fatal(err)
 	}
 	if physicalTables != 1 {
-		t.Fatalf("physical model.orders tables = %d, want 1", physicalTables)
+		t.Fatalf("ducklake model.orders tables = %d, want 1", physicalTables)
 	}
 }
 
@@ -318,8 +330,11 @@ relogios_presentes,watches_gifts
 		t.Fatal(err)
 	}
 	defer metrics.Close()
-	if _, err := os.Stat(filepath.Join(dir, "sales", "libredash-workspace"+"."+"duck"+"db")); err != nil {
-		t.Fatalf("expected DuckDB materialization file: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "sales", "catalog.sqlite")); err != nil {
+		t.Fatalf("expected DuckLake catalog: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sales", "data")); err != nil {
+		t.Fatalf("expected DuckLake data directory: %v", err)
 	}
 
 	patch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", dashboard.Filters{Controls: map[string]dashboard.FilterControl{

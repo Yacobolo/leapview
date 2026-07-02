@@ -15,7 +15,7 @@ import (
 
 const rowPresenceColumn = "__libredash_row_present"
 
-func PlanModelTable(ctx context.Context, runtimeDB *sql.DB, model *semanticmodel.Model, dataDir string, tableName string, table semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {
+func PlanModelTable(ctx context.Context, runtimeDB queryContext, model *semanticmodel.Model, dataDir string, tableName string, table semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {
 	if err := validateIdentifier(tableName); err != nil {
 		return analyticsmaterialize.ModelTablePlan{}, err
 	}
@@ -90,7 +90,7 @@ func PlanModelTable(ctx context.Context, runtimeDB *sql.DB, model *semanticmodel
 	return materializationPlan(analyticsmaterialize.PlanModeProjectedSourceInline, tableName, rewritten), nil
 }
 
-func planDirectSourceTable(ctx context.Context, runtimeDB *sql.DB, model *semanticmodel.Model, dataDir string, tableName string, table semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {
+func planDirectSourceTable(ctx context.Context, runtimeDB queryContext, model *semanticmodel.Model, dataDir string, tableName string, table semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {
 	source, ok := model.Sources[table.Source]
 	if !ok {
 		return analyticsmaterialize.ModelTablePlan{}, fmt.Errorf("unknown source %q", table.Source)
@@ -139,7 +139,7 @@ func modelTableReadColumns(table semanticmodel.Table) []sourceReadColumn {
 	return columns
 }
 
-func discoverPlanningSourceSchemas(ctx context.Context, db *sql.DB, model *semanticmodel.Model, dataDir string, sources []string) (map[string][]semanticmodel.ColumnSchema, error) {
+func discoverPlanningSourceSchemas(ctx context.Context, db queryContext, model *semanticmodel.Model, dataDir string, sources []string) (map[string][]semanticmodel.ColumnSchema, error) {
 	result := map[string][]semanticmodel.ColumnSchema{}
 	for _, sourceName := range sources {
 		source, ok := model.Sources[sourceName]
@@ -164,7 +164,7 @@ func discoverPlanningSourceSchemas(ctx context.Context, db *sql.DB, model *seman
 	return result, nil
 }
 
-func discoverPlanningModelSchemas(ctx context.Context, db *sql.DB, model *semanticmodel.Model, dependencies []string) (map[string][]semanticmodel.ColumnSchema, error) {
+func discoverPlanningModelSchemas(ctx context.Context, db queryContext, model *semanticmodel.Model, dependencies []string) (map[string][]semanticmodel.ColumnSchema, error) {
 	result := map[string][]semanticmodel.ColumnSchema{}
 	for _, tableName := range dependencies {
 		columns, err := describeRelationSchema(ctx, db, "model."+tableName)

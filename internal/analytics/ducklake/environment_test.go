@@ -1,0 +1,196 @@
+package ducklake
+
+import (
+	"context"
+	"database/sql"
+	"os"
+	"path/filepath"
+	"testing"
+
+	_ "github.com/duckdb/duckdb-go/v2"
+)
+
+func TestLayoutUsesOneCatalogAndDataStore(t *testing.T) {
+	layout := NewLayout(filepath.Join("tmp", "env"))
+
+	if layout.CatalogPath != filepath.Join("tmp", "env", "catalog.sqlite") {
+		t.Fatalf("CatalogPath = %q", layout.CatalogPath)
+	}
+	if layout.DataPath != filepath.Join("tmp", "env", "data") {
+		t.Fatalf("DataPath = %q", layout.DataPath)
+	}
+	if layout.LegacyDuckDBPath != filepath.Join("tmp", "env", "libredash-workspace.duckdb") {
+		t.Fatalf("LegacyDuckDBPath = %q", layout.LegacyDuckDBPath)
+	}
+}
+
+func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	env, err := Open(ctx, Config{RootDir: dir})
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("open writer: %v", err)
+	}
+	defer env.Close()
+
+	snapshot1, err := env.Commit(ctx, "dep_1", map[string]string{"workspace": "test"}, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS model"); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, "CREATE OR REPLACE TABLE model.orders AS SELECT 1 AS id, 'first' AS label")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("commit first snapshot: %v", err)
+	}
+	if snapshot1 <= 0 {
+		t.Fatalf("snapshot1 = %d, want positive committed snapshot", snapshot1)
+	}
+
+	snapshot2, err := env.Commit(ctx, "dep_2", map[string]string{"workspace": "test"}, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "CREATE OR REPLACE TABLE model.orders AS SELECT 2 AS id, 'second' AS label")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("commit second snapshot: %v", err)
+	}
+	if snapshot2 <= snapshot1 {
+		t.Fatalf("snapshot2 = %d, want > snapshot1 %d", snapshot2, snapshot1)
+	}
+
+	first, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: snapshot1})
+	if err != nil {
+		t.Fatalf("open first snapshot: %v", err)
+	}
+	defer first.Close()
+	second, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: snapshot2})
+	if err != nil {
+		t.Fatalf("open second snapshot: %v", err)
+	}
+	defer second.Close()
+
+	assertOrder := func(t *testing.T, db *Environment, wantID int, wantLabel string) {
+		t.Helper()
+		var gotID int
+		var gotLabel string
+		if err := db.SQLDB().QueryRowContext(ctx, "SELECT id, label FROM model.orders").Scan(&gotID, &gotLabel); err != nil {
+			t.Fatalf("query order: %v", err)
+		}
+		if gotID != wantID || gotLabel != wantLabel {
+			t.Fatalf("order = (%d, %q), want (%d, %q)", gotID, gotLabel, wantID, wantLabel)
+		}
+	}
+	assertOrder(t, first, 1, "first")
+	assertOrder(t, second, 2, "second")
+
+	if _, err := os.Stat(filepath.Join(dir, "catalog.sqlite")); err != nil {
+		t.Fatalf("catalog.sqlite missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "data")); err != nil {
+		t.Fatalf("data dir missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "libredash-workspace.duckdb")); !os.IsNotExist(err) {
+		t.Fatalf("legacy DuckDB workspace file exists or stat failed: %v", err)
+	}
+}
+
+func TestOpenSnapshotRejectsMissingSnapshot(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	env, err := Open(ctx, Config{RootDir: dir})
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("open writer: %v", err)
+	}
+	defer env.Close()
+
+	if _, err := env.Commit(ctx, "dep_1", nil, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "CREATE TABLE model_check AS SELECT 1 AS id")
+		return err
+	}); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if _, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: 999}); err == nil {
+		t.Fatal("OpenSnapshot missing snapshot error = nil")
+	}
+}
+
+func TestRetentionCandidatesPreserveProtectedSnapshots(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	env, err := Open(ctx, Config{RootDir: dir})
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("open writer: %v", err)
+	}
+	defer env.Close()
+
+	snapshot1, err := env.Commit(ctx, "dep_1", nil, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "CREATE TABLE model_orders AS SELECT 1 AS id")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("commit first: %v", err)
+	}
+	snapshot2, err := env.Commit(ctx, "dep_2", nil, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "CREATE OR REPLACE TABLE model_orders AS SELECT 2 AS id")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("commit second: %v", err)
+	}
+
+	candidates, err := env.RetentionCandidates(ctx, map[int64]struct{}{snapshot2: {}})
+	if err != nil {
+		t.Fatalf("retention candidates: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0] != snapshot1 {
+		t.Fatalf("candidates = %#v, want only %d", candidates, snapshot1)
+	}
+}
+
+func TestMaintenanceDryRunsUseDuckLakeMetadata(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	env, err := Open(ctx, Config{RootDir: dir})
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("open writer: %v", err)
+	}
+	defer env.Close()
+
+	snapshot1, err := env.Commit(ctx, "dep_1", nil, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "CREATE TABLE model_orders AS SELECT 1 AS id")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if err := env.ExpireSnapshots(ctx, []int64{snapshot1}, true); err != nil {
+		t.Fatalf("expire dry run: %v", err)
+	}
+	if err := env.CleanupOldFiles(ctx, true); err != nil {
+		t.Fatalf("cleanup dry run: %v", err)
+	}
+	if err := env.DeleteOrphanedFiles(ctx, true); err != nil {
+		t.Fatalf("orphan dry run: %v", err)
+	}
+	snapshots, err := env.Snapshots(ctx)
+	if err != nil {
+		t.Fatalf("snapshots after dry run: %v", err)
+	}
+	if len(snapshots) == 0 {
+		t.Fatal("dry-run maintenance removed snapshots")
+	}
+}

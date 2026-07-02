@@ -12,6 +12,7 @@ import (
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
+	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
 )
@@ -36,7 +37,7 @@ func (f deploymentRuntimeFactory) Prepare(_ context.Context, input runtimehost.R
 	if err := deploymentfs.ExtractArtifact(input.Artifact.Path, targetDir); err != nil {
 		return nil, err
 	}
-	duckDir := filepath.Join(duckDBDir, string(input.Deployment.ID))
+	duckDir := filepath.Join(duckDBDir, string(deployment.NormalizeEnvironment(input.Deployment.Environment)))
 	compiled, _, err := deploymentfs.LoadCompiledWorkspaceArtifact(targetDir)
 	if err != nil {
 		return nil, err
@@ -44,23 +45,38 @@ func (f deploymentRuntimeFactory) Prepare(_ context.Context, input runtimehost.R
 	if compiled.WorkspaceID != string(input.Deployment.WorkspaceID) {
 		return nil, fmt.Errorf("compiled artifact workspace = %q, want %q", compiled.WorkspaceID, input.Deployment.WorkspaceID)
 	}
-	service, err := dashboardruntime.NewFromDefinition(dataDir, duckDir, dashboardDataRuntimeFactory{}, compiled.Definition)
+	service, err := dashboardruntime.NewFromDefinition(dataDir, duckDir, dashboardDataRuntimeFactory{snapshotID: input.Deployment.DuckLakeSnapshotID}, compiled.Definition)
 	if err != nil {
 		return nil, err
+	}
+	if input.Deployment.DuckLakeSnapshotID == 0 {
+		snapshotID := service.DuckLakeSnapshotID()
+		if snapshotID > 0 {
+			if err := service.Close(); err != nil {
+				return nil, err
+			}
+			service, err = dashboardruntime.NewFromDefinition(dataDir, duckDir, dashboardDataRuntimeFactory{snapshotID: snapshotID}, compiled.Definition)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	return service, nil
 }
 
-type dashboardDataRuntimeFactory struct{}
+type dashboardDataRuntimeFactory struct {
+	snapshotID int64
+}
 
-func (dashboardDataRuntimeFactory) OpenDashboardWorkspaceDataRuntimes(ctx context.Context, config dashboardruntime.WorkspaceDataRuntimeConfig) (map[string]dashboardruntime.DataRuntime, error) {
+func (f dashboardDataRuntimeFactory) OpenDashboardWorkspaceDataRuntimes(ctx context.Context, config dashboardruntime.WorkspaceDataRuntimeConfig) (map[string]dashboardruntime.DataRuntime, error) {
 	if config.Definition == nil {
 		return nil, fmt.Errorf("workspace definition is required")
 	}
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:  config.Definition.Models,
-		DataDir: config.DataDir,
-		DBDir:   config.DBDir,
+		Models:     config.Definition.Models,
+		DataDir:    config.DataDir,
+		DBDir:      config.DBDir,
+		SnapshotID: f.snapshotID,
 	})
 	if err != nil {
 		return nil, err
@@ -156,6 +172,10 @@ func (r dashboardWorkspaceDataRuntime) Close() error {
 
 func (r dashboardWorkspaceDataRuntime) LastRefresh() time.Time {
 	return r.runtime.LastRefresh()
+}
+
+func (r dashboardWorkspaceDataRuntime) DuckLakeSnapshotID() int64 {
+	return r.runtime.DuckLakeSnapshotID()
 }
 
 type dashboardDataRuntime struct {

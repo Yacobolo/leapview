@@ -27,16 +27,17 @@ const (
 const DefaultEnvironment Environment = "dev"
 
 type Deployment struct {
-	ID           ID
-	WorkspaceID  WorkspaceID
-	Environment  Environment
-	Status       Status
-	Digest       string
-	ManifestJSON string
-	CreatedBy    string
-	CreatedAt    string
-	ActivatedAt  string
-	Error        string
+	ID                 ID
+	WorkspaceID        WorkspaceID
+	Environment        Environment
+	Status             Status
+	Digest             string
+	ManifestJSON       string
+	CreatedBy          string
+	CreatedAt          string
+	ActivatedAt        string
+	Error              string
+	DuckLakeSnapshotID int64
 }
 
 func (d Deployment) CanActivate() bool {

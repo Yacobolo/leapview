@@ -156,6 +156,8 @@ type duckDBFile struct {
 	Path      string
 	ModelID   string
 	SizeBytes int64
+	Kind      string
+	DataPath  string
 }
 
 func discoverDuckDBFiles(root string) ([]duckDBFile, error) {
@@ -177,7 +179,7 @@ func discoverDuckDBFiles(root string) ([]duckDBFile, error) {
 		if entry.IsDir() {
 			return nil
 		}
-		if filepath.Ext(entry.Name()) != ".duckdb" {
+		if filepath.Ext(entry.Name()) != ".duckdb" && entry.Name() != "catalog.sqlite" {
 			return nil
 		}
 		info, err := entry.Info()
@@ -188,13 +190,23 @@ func discoverDuckDBFiles(root string) ([]duckDBFile, error) {
 		if err != nil {
 			relPath = entry.Name()
 		}
-		files = append(files, duckDBFile{
+		file := duckDBFile{
 			Name:      entry.Name(),
 			RelPath:   relPath,
 			Path:      path,
-			ModelID:   modelIDFromDuckDBFile(entry.Name()),
+			ModelID:   modelIDFromStorageFile(entry.Name(), relPath),
 			SizeBytes: info.Size(),
-		})
+			Kind:      "duckdb",
+		}
+		if entry.Name() == "catalog.sqlite" {
+			file.Kind = "ducklake"
+			file.Name = duckLakeCatalogName(relPath)
+			file.DataPath = filepath.Join(filepath.Dir(path), "data")
+			if size, err := directorySize(file.DataPath); err == nil {
+				file.SizeBytes += size
+			}
+		}
+		files = append(files, file)
 		return nil
 	})
 	nameCounts := map[string]int{}
@@ -214,7 +226,7 @@ func discoverDuckDBFiles(root string) ([]duckDBFile, error) {
 }
 
 func inspectDuckDBTables(ctx context.Context, file duckDBFile, modelTitles map[string]string) ([]ui.AdminStorageTable, string) {
-	db, err := openDuckDBForInspection(ctx, file.Path)
+	db, err := openStorageForInspection(ctx, file)
 	if err != nil {
 		return nil, fmt.Sprintf("%s could not be opened: %v", file.Name, err)
 	}
@@ -242,9 +254,33 @@ func openDuckDBForInspection(ctx context.Context, path string) (*sql.DB, error) 
 	return nil, errors.Join(err, fallbackErr)
 }
 
+func openStorageForInspection(ctx context.Context, file duckDBFile) (*sql.DB, error) {
+	if file.Kind != "ducklake" {
+		return openDuckDBForInspection(ctx, file.Path)
+	}
+	db, err := openDuckDBConnection(ctx, ":memory:")
+	if err != nil {
+		return nil, err
+	}
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		fmt.Sprintf("ATTACH 'ducklake:sqlite:%s' AS lake (DATA_PATH '%s')", sqlString(file.Path), sqlString(file.DataPath)),
+		"USE lake",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+	return db, nil
+}
+
 func openDuckDBConnection(ctx context.Context, dsn string) (*sql.DB, error) {
 	db, err := sql.Open("duckdb", dsn)
 	if err == nil {
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
 		if pingErr := db.PingContext(ctx); pingErr == nil {
 			return db, nil
 		} else {
@@ -286,44 +322,66 @@ ORDER BY schema_name, table_name`)
 	}
 	defer rows.Close()
 
-	var tables []ui.AdminStorageTable
+	type storageObject struct {
+		schemaName  string
+		tableName   string
+		objectType  string
+		columnCount int
+	}
+	var objects []storageObject
 	for rows.Next() {
 		var schemaName, tableName, objectType string
 		var columnCount int
 		if err := rows.Scan(&schemaName, &tableName, &objectType, &columnCount); err != nil {
 			return nil, err
 		}
+		objects = append(objects, storageObject{
+			schemaName:  schemaName,
+			tableName:   tableName,
+			objectType:  objectType,
+			columnCount: columnCount,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	var tables []ui.AdminStorageTable
+	for _, object := range objects {
 		rowCount := "-"
 		sizeLabel := "Unknown"
-		if objectType == "table" {
-			if count, err := countDuckDBRows(ctx, db, schemaName, tableName); err == nil {
+		if object.objectType == "table" {
+			if count, err := countDuckDBRows(ctx, db, object.schemaName, object.tableName); err == nil {
 				rowCount = fmt.Sprint(count)
 			}
-			if bytes, err := estimateDuckDBTableSize(ctx, db, schemaName, tableName); err == nil {
+			if bytes, err := estimateDuckDBTableSize(ctx, db, object.schemaName, object.tableName); err == nil {
 				sizeLabel = formatBytes(bytes)
 			}
 		}
-		key := storageColumnKey(schemaName, tableName)
+		key := storageColumnKey(object.schemaName, object.tableName)
 		tables = append(tables, ui.AdminStorageTable{
 			DatabaseID:    file.ID,
 			DatabaseName:  file.Name,
 			DatabasePath:  file.Path,
 			ModelID:       file.ModelID,
 			ModelName:     firstNonEmpty(modelTitles[file.ModelID], file.ModelID, "-"),
-			Schema:        schemaName,
-			Name:          tableName,
-			Type:          objectType,
+			Schema:        object.schemaName,
+			Name:          object.tableName,
+			Type:          object.objectType,
 			RowCountLabel: rowCount,
-			ColumnCount:   columnCount,
+			ColumnCount:   object.columnCount,
 			SizeLabel:     sizeLabel,
 			Columns:       columns[key],
 		})
 	}
-	return tables, rows.Err()
+	return tables, nil
 }
 
 func inspectDuckDBTable(ctx context.Context, file duckDBFile, modelTitles map[string]string, schemaName, tableName string) (ui.AdminStorageTable, error) {
-	db, err := openDuckDBForInspection(ctx, file.Path)
+	db, err := openStorageForInspection(ctx, file)
 	if err != nil {
 		return ui.AdminStorageTable{}, fmt.Errorf("%s could not be opened: %w", file.Name, err)
 	}
@@ -487,9 +545,43 @@ FROM blocks CROSS JOIN db`, sqlStringLiteral(tableRef), sqlStringLiteral(tableRe
 	return bytes.Int64, nil
 }
 
-func modelIDFromDuckDBFile(name string) string {
+func modelIDFromStorageFile(name, relPath string) string {
+	if name == "catalog.sqlite" {
+		dir := filepath.Base(filepath.Dir(relPath))
+		if dir == "." || dir == "" {
+			return "workspace"
+		}
+		return dir
+	}
 	base := strings.TrimSuffix(name, filepath.Ext(name))
 	return strings.TrimPrefix(base, "libredash-")
+}
+
+func duckLakeCatalogName(relPath string) string {
+	dir := filepath.Dir(relPath)
+	if dir == "." || dir == "" {
+		return "catalog.sqlite"
+	}
+	return filepath.ToSlash(filepath.Join(dir, "catalog.sqlite"))
+}
+
+func directorySize(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(_ string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err
 }
 
 func storageDatabaseID(relPath string) string {
@@ -506,6 +598,10 @@ func quoteDuckDBIdentifier(identifier string) string {
 
 func sqlStringLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func sqlString(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
 }
 
 func formatBytes(bytes int64) string {

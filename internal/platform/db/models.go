@@ -112,16 +112,17 @@ type AuditEvent struct {
 }
 
 type Deployment struct {
-	ID           string         `json:"id"`
-	WorkspaceID  string         `json:"workspace_id"`
-	Environment  string         `json:"environment"`
-	Status       string         `json:"status"`
-	Digest       string         `json:"digest"`
-	ManifestJson string         `json:"manifest_json"`
-	CreatedBy    string         `json:"created_by"`
-	CreatedAt    string         `json:"created_at"`
-	ActivatedAt  sql.NullString `json:"activated_at"`
-	Error        string         `json:"error"`
+	ID                 string         `json:"id"`
+	WorkspaceID        string         `json:"workspace_id"`
+	Environment        string         `json:"environment"`
+	Status             string         `json:"status"`
+	Digest             string         `json:"digest"`
+	ManifestJson       string         `json:"manifest_json"`
+	DucklakeSnapshotID int64          `json:"ducklake_snapshot_id"`
+	CreatedBy          string         `json:"created_by"`
+	CreatedAt          string         `json:"created_at"`
+	ActivatedAt        sql.NullString `json:"activated_at"`
+	Error              string         `json:"error"`
 }
 
 type DeploymentArtifact struct {
@@ -206,6 +207,13 @@ type PlatformRoleBinding struct {
 	RoleID      string `json:"role_id"`
 	PrincipalID string `json:"principal_id"`
 	CreatedAt   string `json:"created_at"`
+}
+
+type PlatformSetting struct {
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type Principal struct {

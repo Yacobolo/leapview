@@ -210,6 +210,38 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 	}
 }
 
+func TestAdminStorageInspectsDuckLakeCatalog(t *testing.T) {
+	dir := seedAdminStorageDuckLake(t)
+	entries, err := discoverDuckDBFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v, want one DuckLake catalog", entries)
+	}
+	if entries[0].Kind != "ducklake" || entries[0].Name != "catalog.sqlite" {
+		t.Fatalf("entry = %#v, want DuckLake catalog", entries[0])
+	}
+
+	tables, warning := inspectDuckDBTables(context.Background(), entries[0], nil)
+	if warning != "" {
+		t.Fatalf("warning = %q", warning)
+	}
+	var found *ui.AdminStorageTable
+	for i := range tables {
+		if tables[i].Schema == "model" && tables[i].Name == "orders" {
+			found = &tables[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("tables = %#v, want model.orders", tables)
+	}
+	if found.RowCountLabel != "3" || found.ColumnCount != 3 || len(found.Columns) != 3 {
+		t.Fatalf("orders table = %#v, want row/column details", *found)
+	}
+}
+
 func TestAdminStorageSelectTableRejectsInvalidCommand(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
@@ -380,6 +412,32 @@ CREATE VIEW model.order_totals AS SELECT customer_id, amount FROM model.orders;
 `)
 	if err != nil {
 		t.Fatalf("seed duckdb: %v", err)
+	}
+	return dir
+}
+
+func seedAdminStorageDuckLake(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatalf("open duckdb: %v", err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(filepath.Join(dir, "catalog.sqlite"), "'", "''") + "' AS lake (DATA_PATH '" + strings.ReplaceAll(filepath.Join(dir, "data"), "'", "''") + "')",
+		"USE lake",
+		"CREATE SCHEMA model",
+		`CREATE TABLE model.orders AS
+		 SELECT 1 AS id, 'c_1' AS customer_id, 10.5 AS amount
+		 UNION ALL SELECT 2, 'c_2', 20.5
+		 UNION ALL SELECT 3, 'c_3', 30.5`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed ducklake %q: %v", stmt, err)
+		}
 	}
 	return dir
 }

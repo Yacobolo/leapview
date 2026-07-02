@@ -68,6 +68,33 @@ func TestManagerPrepareCommitSwapsRuntimeAndClosesOld(t *testing.T) {
 	}
 }
 
+func TestManagerPreparedRuntimeExposesDuckLakeSnapshot(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Status: deployment.StatusValidated},
+		artifact:   deployment.Artifact{DeploymentID: "dep_1", Digest: "digest"},
+	}
+	manager := NewManagerWithFactory(ManagerOptions{
+		Repo:        repo,
+		WorkspaceID: "test",
+		Environment: "dev",
+		DataDir:     "/data",
+		Factory:     &fakeFactory{snapshotID: 42},
+	})
+
+	prepared, err := manager.PrepareDeployment(ctx, "dep_1")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	snapshot, ok := prepared.(interface{ DuckLakeSnapshotID() int64 })
+	if !ok {
+		t.Fatalf("prepared runtime does not expose DuckLakeSnapshotID")
+	}
+	if snapshot.DuckLakeSnapshotID() != 42 {
+		t.Fatalf("snapshot = %d, want 42", snapshot.DuckLakeSnapshotID())
+	}
+}
+
 func TestManagerRejectsPreparedFromDifferentHost(t *testing.T) {
 	manager := NewManagerWithFactory(ManagerOptions{Repo: &fakeRepo{}, WorkspaceID: "test", Environment: "dev", DataDir: "/data", Factory: &fakeFactory{}})
 	if err := manager.CommitPrepared(fakePrepared{}); err == nil {
@@ -253,6 +280,7 @@ func (r *fakeRepo) ArtifactByDeployment(context.Context, deployment.ID) (deploym
 type fakeFactory struct {
 	prepareCalls int
 	err          error
+	snapshotID   int64
 }
 
 func (f *fakeFactory) Prepare(context.Context, RuntimeInput) (Runtime, error) {
@@ -260,16 +288,21 @@ func (f *fakeFactory) Prepare(context.Context, RuntimeInput) (Runtime, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &fakeRuntime{}, nil
+	return &fakeRuntime{snapshotID: f.snapshotID}, nil
 }
 
 type fakeRuntime struct {
-	closed bool
+	closed     bool
+	snapshotID int64
 }
 
 func (r *fakeRuntime) Close() error {
 	r.closed = true
 	return nil
+}
+
+func (r *fakeRuntime) DuckLakeSnapshotID() int64 {
+	return r.snapshotID
 }
 
 type fakePrepared struct{}

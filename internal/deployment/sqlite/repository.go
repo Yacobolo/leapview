@@ -72,6 +72,16 @@ func (r *Repository) MarkFailed(ctx context.Context, deploymentID deployment.ID,
 	})
 }
 
+func (r *Repository) RecordDuckLakeSnapshot(ctx context.Context, deploymentID deployment.ID, snapshotID int64) error {
+	if snapshotID <= 0 {
+		return fmt.Errorf("ducklake snapshot id must be positive")
+	}
+	return r.q.UpdateDeploymentDuckLakeSnapshot(ctx, platformdb.UpdateDeploymentDuckLakeSnapshotParams{
+		DucklakeSnapshotID: snapshotID,
+		ID:                 string(deploymentID),
+	})
+}
+
 func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.ID, validation deployment.Validation, artifact deployment.Artifact) (deployment.Deployment, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -325,15 +335,16 @@ func (r *Repository) ArtifactByDeployment(ctx context.Context, deploymentID depl
 
 func mapDeployment(row platformdb.Deployment) deployment.Deployment {
 	out := deployment.Deployment{
-		ID:           deployment.ID(row.ID),
-		WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
-		Environment:  deployment.Environment(row.Environment),
-		Status:       deployment.Status(row.Status),
-		Digest:       row.Digest,
-		ManifestJSON: row.ManifestJson,
-		CreatedBy:    row.CreatedBy,
-		CreatedAt:    row.CreatedAt,
-		Error:        row.Error,
+		ID:                 deployment.ID(row.ID),
+		WorkspaceID:        deployment.WorkspaceID(row.WorkspaceID),
+		Environment:        deployment.Environment(row.Environment),
+		Status:             deployment.Status(row.Status),
+		Digest:             row.Digest,
+		ManifestJSON:       row.ManifestJson,
+		CreatedBy:          row.CreatedBy,
+		CreatedAt:          row.CreatedAt,
+		Error:              row.Error,
+		DuckLakeSnapshotID: row.DucklakeSnapshotID,
 	}
 	if row.ActivatedAt.Valid {
 		out.ActivatedAt = row.ActivatedAt.String

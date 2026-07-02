@@ -163,7 +163,7 @@ func compileSourceRelation(plan sourcePlan) (string, error) {
 
 type sourceAdapter interface {
 	CompileRead(sourcePlan) (string, error)
-	Discover(ctx context.Context, db *sql.DB, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error)
+	Discover(ctx context.Context, db queryContext, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error)
 }
 
 type pathSourceAdapter struct{}

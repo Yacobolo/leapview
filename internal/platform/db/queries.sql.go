@@ -507,7 +507,7 @@ func (q *Queries) GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiT
 }
 
 const getActiveDeployment = `-- name: GetActiveDeployment :one
-SELECT d.id, d.workspace_id, d.environment, d.status, d.digest, d.manifest_json, d.created_by, d.created_at, d.activated_at, d.error
+SELECT d.id, d.workspace_id, d.environment, d.status, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.error
 FROM deployments d
 JOIN workspace_active_deployments active ON active.deployment_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?
@@ -528,6 +528,7 @@ func (q *Queries) GetActiveDeployment(ctx context.Context, arg GetActiveDeployme
 		&i.Status,
 		&i.Digest,
 		&i.ManifestJson,
+		&i.DucklakeSnapshotID,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ActivatedAt,
@@ -588,7 +589,7 @@ func (q *Queries) GetArtifactByDeployment(ctx context.Context, deploymentID stri
 }
 
 const getDeployment = `-- name: GetDeployment :one
-SELECT id, workspace_id, environment, status, digest, manifest_json, created_by, created_at, activated_at, error FROM deployments WHERE id = ?
+SELECT id, workspace_id, environment, status, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, error FROM deployments WHERE id = ?
 `
 
 func (q *Queries) GetDeployment(ctx context.Context, id string) (Deployment, error) {
@@ -601,6 +602,7 @@ func (q *Queries) GetDeployment(ctx context.Context, id string) (Deployment, err
 		&i.Status,
 		&i.Digest,
 		&i.ManifestJson,
+		&i.DucklakeSnapshotID,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ActivatedAt,
@@ -1547,7 +1549,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 }
 
 const listDeployments = `-- name: ListDeployments :many
-SELECT id, workspace_id, environment, status, digest, manifest_json, created_by, created_at, activated_at, error FROM deployments
+SELECT id, workspace_id, environment, status, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, error FROM deployments
 WHERE workspace_id = ? AND environment = ?
 ORDER BY created_at DESC
 `
@@ -1573,6 +1575,7 @@ func (q *Queries) ListDeployments(ctx context.Context, arg ListDeploymentsParams
 			&i.Status,
 			&i.Digest,
 			&i.ManifestJson,
+			&i.DucklakeSnapshotID,
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.ActivatedAt,
@@ -2204,6 +2207,22 @@ func (q *Queries) UpdateDefaultAgentConversationTitle(ctx context.Context, arg U
 		&i.ArchivedAt,
 	)
 	return i, err
+}
+
+const updateDeploymentDuckLakeSnapshot = `-- name: UpdateDeploymentDuckLakeSnapshot :exec
+UPDATE deployments
+SET ducklake_snapshot_id = ?
+WHERE id = ?
+`
+
+type UpdateDeploymentDuckLakeSnapshotParams struct {
+	DucklakeSnapshotID int64  `json:"ducklake_snapshot_id"`
+	ID                 string `json:"id"`
+}
+
+func (q *Queries) UpdateDeploymentDuckLakeSnapshot(ctx context.Context, arg UpdateDeploymentDuckLakeSnapshotParams) error {
+	_, err := q.db.ExecContext(ctx, updateDeploymentDuckLakeSnapshot, arg.DucklakeSnapshotID, arg.ID)
+	return err
 }
 
 const updateDeploymentStatus = `-- name: UpdateDeploymentStatus :exec

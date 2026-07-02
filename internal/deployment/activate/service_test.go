@@ -33,6 +33,29 @@ func TestServiceActivatesPreparedRuntime(t *testing.T) {
 	}
 }
 
+func TestServiceRecordsPreparedDuckLakeSnapshotBeforeActivation(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Status: deployment.StatusValidated},
+	}
+	runtime := &fakeRuntime{snapshotID: 42}
+	service := NewService(repo, runtime)
+
+	activated, err := service.Activate(ctx, "dep_1")
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	if activated.DuckLakeSnapshotID != 42 {
+		t.Fatalf("activated snapshot = %d, want 42", activated.DuckLakeSnapshotID)
+	}
+	if repo.snapshotDeploymentID != "dep_1" || repo.snapshotID != 42 {
+		t.Fatalf("recorded snapshot = %s/%d, want dep_1/42", repo.snapshotDeploymentID, repo.snapshotID)
+	}
+	if repo.snapshotRecordOrder == 0 || repo.activateOrder == 0 || repo.snapshotRecordOrder > repo.activateOrder {
+		t.Fatalf("record/activate order = %d/%d, want record before activate", repo.snapshotRecordOrder, repo.activateOrder)
+	}
+}
+
 func TestServiceReconcilesAccessPolicyFromValidatedArtifact(t *testing.T) {
 	ctx := context.Background()
 	deploymentID := deployment.ID("dep_access")
@@ -105,6 +128,11 @@ type fakeRepo struct {
 	activateCalls           int
 	activateWithPolicyCalls int
 	policy                  workspace.AccessPolicy
+	snapshotDeploymentID    deployment.ID
+	snapshotID              int64
+	snapshotRecordOrder     int
+	activateOrder           int
+	order                   int
 }
 
 func (r *fakeRepo) ByID(context.Context, deployment.ID) (deployment.Deployment, error) {
@@ -113,6 +141,8 @@ func (r *fakeRepo) ByID(context.Context, deployment.ID) (deployment.Deployment, 
 
 func (r *fakeRepo) Activate(context.Context, deployment.WorkspaceID, deployment.Environment, deployment.ID) (deployment.Deployment, error) {
 	r.activateCalls++
+	r.order++
+	r.activateOrder = r.order
 	if r.activateErr != nil {
 		return deployment.Deployment{}, r.activateErr
 	}
@@ -122,12 +152,23 @@ func (r *fakeRepo) Activate(context.Context, deployment.WorkspaceID, deployment.
 
 func (r *fakeRepo) ActivateWithWorkspacePolicy(_ context.Context, _ deployment.WorkspaceID, _ deployment.Environment, _ deployment.ID, policy workspace.AccessPolicy) (deployment.Deployment, error) {
 	r.activateWithPolicyCalls++
+	r.order++
+	r.activateOrder = r.order
 	r.policy = policy
 	if r.activateErr != nil {
 		return deployment.Deployment{}, r.activateErr
 	}
 	r.deployment.Status = deployment.StatusActive
 	return r.deployment, nil
+}
+
+func (r *fakeRepo) RecordDuckLakeSnapshot(_ context.Context, deploymentID deployment.ID, snapshotID int64) error {
+	r.order++
+	r.snapshotRecordOrder = r.order
+	r.snapshotDeploymentID = deploymentID
+	r.snapshotID = snapshotID
+	r.deployment.DuckLakeSnapshotID = snapshotID
+	return nil
 }
 
 func (r *fakeRepo) ArtifactByDeployment(context.Context, deployment.ID) (deployment.Artifact, error) {
@@ -138,6 +179,7 @@ type fakeRuntime struct {
 	prepareID   string
 	prepareErr  error
 	commitCalls int
+	snapshotID  int64
 }
 
 func (r *fakeRuntime) PrepareDeployment(_ context.Context, deploymentID string) (deployment.PreparedRuntime, error) {
@@ -145,7 +187,7 @@ func (r *fakeRuntime) PrepareDeployment(_ context.Context, deploymentID string) 
 	if r.prepareErr != nil {
 		return nil, r.prepareErr
 	}
-	return fakePrepared{}, nil
+	return fakePrepared{snapshotID: r.snapshotID}, nil
 }
 
 func (r *fakeRuntime) CommitPrepared(deployment.PreparedRuntime) error {
@@ -153,9 +195,13 @@ func (r *fakeRuntime) CommitPrepared(deployment.PreparedRuntime) error {
 	return nil
 }
 
-type fakePrepared struct{}
+type fakePrepared struct {
+	snapshotID int64
+}
 
 func (fakePrepared) Close() error { return nil }
+
+func (p fakePrepared) DuckLakeSnapshotID() int64 { return p.snapshotID }
 
 type fakeAccessReconciler struct {
 	workspaceID string
