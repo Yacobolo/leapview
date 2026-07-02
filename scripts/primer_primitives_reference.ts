@@ -74,31 +74,10 @@ function renderReference(reference: PrimerPrimitiveReference): Promise<string> {
   ).then(sections => `# ${reference.title}\n\n${sections.join("\n\n")}\n`);
 }
 
-function titleFromThemeFile(relativeSource: string): string {
-  const themeName = path.basename(relativeSource, ".css");
-  const title = themeName
-    .split("-")
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-
-  return `${title} Theme`;
-}
-
 function referenceGroups(sources: PrimerPrimitiveSource[]): PrimerPrimitiveReference[] {
   const byRelativeSource = new Map(sources.map(source => [source.relativeSource.split(path.sep).join("/"), source]));
   const source = (relativeSource: string) => byRelativeSource.get(relativeSource);
   const pick = (relativeSources: string[]) => relativeSources.map(relativeSource => source(relativeSource)).filter(Boolean);
-  const themes = sources
-    .filter(source => source.relativeSource.split(path.sep).join("/").startsWith("functional/themes/"))
-    .map(source => {
-      const themeName = path.basename(source.relativeSource, ".css");
-
-      return {
-        title: titleFromThemeFile(source.relativeSource),
-        outputPath: `themes/${themeName}.md`,
-        sources: [source],
-      };
-    });
 
   return [
     {
@@ -128,7 +107,16 @@ function referenceGroups(sources: PrimerPrimitiveSource[]): PrimerPrimitiveRefer
       outputPath: "typography.md",
       sources: pick(["base/typography/typography.css", "functional/typography/typography.css"]),
     },
-    ...themes.sort((left, right) => left.outputPath.localeCompare(right.outputPath)),
+    {
+      title: "Dark Theme",
+      outputPath: "theme-dark.md",
+      sources: pick(["functional/themes/dark.css"]),
+    },
+    {
+      title: "Light Theme",
+      outputPath: "theme-light.md",
+      sources: pick(["functional/themes/light.css"]),
+    },
   ].filter(reference => reference.sources.length > 0);
 }
 
