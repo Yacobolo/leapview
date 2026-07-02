@@ -1,12 +1,6 @@
 import {mkdir, readdir, readFile, rm, writeFile} from "node:fs/promises";
 import path from "node:path";
 
-export type PrimerPrimitiveToken = {
-  kind: "custom-media" | "property";
-  token: string;
-  value: string;
-};
-
 type PrimerPrimitiveSource = {
   sourcePath: string;
   relativeSource: string;
@@ -17,23 +11,6 @@ type PrimerPrimitiveReference = {
   outputPath: string;
   sources: PrimerPrimitiveSource[];
 };
-
-export function parsePrimerPrimitiveTokens(css: string): PrimerPrimitiveToken[] {
-  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const declarationPattern =
-    /@custom-media\s+(--[-_a-zA-Z0-9]+)\s+([^;]+);|(?:^|[{\n;])\s*(--[-_a-zA-Z0-9]+)\s*:\s*([^;{}]+);/g;
-  const tokens: PrimerPrimitiveToken[] = [];
-
-  for (const match of withoutComments.matchAll(declarationPattern)) {
-    tokens.push({
-      kind: match[1] ? "custom-media" : "property",
-      token: match[1] ?? match[3],
-      value: (match[2] ?? match[4]).trim().replace(/\s+/g, " "),
-    });
-  }
-
-  return tokens;
-}
 
 async function listCssSources(root: string): Promise<string[]> {
   const entries = await readdir(root, {withFileTypes: true});
@@ -56,54 +33,20 @@ async function listCssSources(root: string): Promise<string[]> {
   return files.flat().sort((left, right) => left.localeCompare(right));
 }
 
-function renderTokens(tokens: PrimerPrimitiveToken[]): string {
-  if (tokens.length === 0) {
-    return "";
-  }
-
-  return `${tokens.map(({token, value}) => `${token}: ${value}`).join("\n")}\n`;
-}
-
 function primitiveSourcePath(source: PrimerPrimitiveSource): string {
   return `@primer/primitives/dist/css/${source.relativeSource.split(path.sep).join("/")}`;
 }
 
-function renderMarkdownReference(reference: PrimerPrimitiveReference): Promise<string> {
-  return Promise.all(
+async function renderReference(reference: PrimerPrimitiveReference): Promise<string> {
+  const sections = await Promise.all(
     reference.sources.map(async source => {
-      const css = await readFile(source.sourcePath, "utf8");
-      const tokens = parsePrimerPrimitiveTokens(css);
+      const css = (await readFile(source.sourcePath, "utf8")).trimEnd();
 
-      return `Source: \`${primitiveSourcePath(source)}\`\n\n${renderTokens(tokens)}`.trimEnd();
+      return `/* Source: ${primitiveSourcePath(source)} */\n\n${css}`;
     }),
-  ).then(sections => `# ${reference.title}\n\n${sections.join("\n\n")}\n`);
-}
+  );
 
-function renderCssTokens(tokens: PrimerPrimitiveToken[]): string {
-  const customMedia = tokens.filter(token => token.kind === "custom-media");
-  const properties = tokens.filter(token => token.kind === "property");
-  const sections: string[] = [];
-
-  if (customMedia.length > 0) {
-    sections.push(customMedia.map(({token, value}) => `@custom-media ${token} ${value};`).join("\n"));
-  }
-
-  if (properties.length > 0) {
-    sections.push([":root {", ...properties.map(({token, value}) => `  ${token}: ${value};`), "}"].join("\n"));
-  }
-
-  return `${sections.join("\n\n")}\n`;
-}
-
-function renderCssReference(reference: PrimerPrimitiveReference): Promise<string> {
-  return Promise.all(
-    reference.sources.map(async source => {
-      const css = await readFile(source.sourcePath, "utf8");
-      const tokens = parsePrimerPrimitiveTokens(css);
-
-      return `/* Source: ${primitiveSourcePath(source)} */\n\n${renderCssTokens(tokens)}`.trimEnd();
-    }),
-  ).then(sections => `/* ${reference.title} */\n\n${sections.join("\n\n")}\n`);
+  return `/* ${reference.title} */\n\n${sections.join("\n\n")}\n`;
 }
 
 function referenceGroups(sources: PrimerPrimitiveSource[]): PrimerPrimitiveReference[] {
@@ -114,12 +57,12 @@ function referenceGroups(sources: PrimerPrimitiveSource[]): PrimerPrimitiveRefer
   return [
     {
       title: "Motion",
-      outputPath: "motion.md",
+      outputPath: "motion.css",
       sources: pick(["base/motion/motion.css", "functional/motion/motion.css"]),
     },
     {
       title: "Size",
-      outputPath: "size.md",
+      outputPath: "size.css",
       sources: pick([
         "base/size/size.css",
         "base/size/z-index.css",
@@ -136,32 +79,29 @@ function referenceGroups(sources: PrimerPrimitiveSource[]): PrimerPrimitiveRefer
     },
     {
       title: "Typography",
-      outputPath: "typography.md",
+      outputPath: "typography.css",
       sources: pick(["base/typography/typography.css", "functional/typography/typography.css"]),
     },
     {
       title: "Dark Theme",
-      outputPath: "theme-dark.md",
+      outputPath: "theme-dark.css",
       sources: pick(["functional/themes/dark.css"]),
     },
     {
       title: "Light Theme",
-      outputPath: "theme-light.md",
+      outputPath: "theme-light.css",
       sources: pick(["functional/themes/light.css"]),
     },
   ].filter(reference => reference.sources.length > 0);
 }
 
 export async function generatePrimerPrimitivesReference(options?: {
-  cssOutputRoot?: string;
   sourceRoot?: string;
   outputRoot?: string;
 }): Promise<string[]> {
   const sourceRoot =
     options?.sourceRoot ?? path.join(process.cwd(), "node_modules", "@primer", "primitives", "dist", "css");
-  const outputRoot = options?.outputRoot ?? path.join(process.cwd(), "docs", "reference", "primer-primitives");
-  const cssOutputRoot =
-    options?.cssOutputRoot ?? path.join(process.cwd(), "docs", "reference", "primer-primitives-css");
+  const outputRoot = options?.outputRoot ?? path.join(process.cwd(), "docs", "reference", "primer-primitives-css");
   const sources = (await listCssSources(sourceRoot)).map(sourcePath => {
     const relativeSource = path.relative(sourceRoot, sourcePath);
 
@@ -174,22 +114,15 @@ export async function generatePrimerPrimitivesReference(options?: {
   const writtenFiles: string[] = [];
 
   await rm(outputRoot, {recursive: true, force: true});
-  await rm(cssOutputRoot, {recursive: true, force: true});
   await mkdir(outputRoot, {recursive: true});
-  await mkdir(cssOutputRoot, {recursive: true});
 
   for (const reference of references) {
     const outputPath = path.join(outputRoot, reference.outputPath);
-    const cssOutputPath = path.join(cssOutputRoot, reference.outputPath.replace(/\.md$/, ".css"));
-    const markdown = await renderMarkdownReference(reference);
-    const css = await renderCssReference(reference);
+    const css = await renderReference(reference);
 
     await mkdir(path.dirname(outputPath), {recursive: true});
-    await mkdir(path.dirname(cssOutputPath), {recursive: true});
-    await writeFile(outputPath, markdown, "utf8");
-    await writeFile(cssOutputPath, css, "utf8");
+    await writeFile(outputPath, css, "utf8");
     writtenFiles.push(outputPath);
-    writtenFiles.push(cssOutputPath);
   }
 
   return writtenFiles;
@@ -197,5 +130,5 @@ export async function generatePrimerPrimitivesReference(options?: {
 
 if (import.meta.main) {
   const files = await generatePrimerPrimitivesReference();
-  console.log(`Generated ${files.length} Primer primitive reference files.`);
+  console.log(`Generated ${files.length} Primer primitive CSS reference files.`);
 }
