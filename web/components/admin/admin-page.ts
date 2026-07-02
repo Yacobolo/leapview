@@ -1,6 +1,6 @@
 import { LitElement, css, html, nothing } from 'lit'
-import { property } from 'lit/decorators.js'
-import type { AdminPageSignal, AdminContentSectionSignal, AdminStorageSignal } from '../../generated/signals'
+import { property, state } from 'lit/decorators.js'
+import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryEventSignal, AdminStorageSignal } from '../../generated/signals'
 import { jsonAttribute } from '../shared/json-attribute'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
@@ -22,6 +22,8 @@ class LibreDashAdminPage extends LitElement {
   @property({ converter: jsonAttribute<AdminPageSignal | null>(null) }) page: AdminPageSignal | null = null
   @property({ converter: jsonAttribute<AdminStorageSignal>(emptyStorage) }) storage: AdminStorageSignal = emptyStorage
   @property({ attribute: 'agent-prompt' }) agentPrompt = ''
+  @state() private queryFilters: QueryAuditFilters = {}
+  @state() private selectedQueryEventID = ''
 
   static styles = css`
     :host {
@@ -199,6 +201,128 @@ class LibreDashAdminPage extends LitElement {
       gap: var(--base-size-12);
     }
 
+    .query-audit {
+      display: grid;
+      min-width: 0;
+      gap: var(--base-size-12);
+    }
+
+    .query-filters {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+      gap: var(--base-size-8);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
+      padding: var(--base-size-12);
+    }
+
+    .query-filter {
+      display: grid;
+      gap: var(--base-size-4);
+      min-width: 0;
+    }
+
+    .query-filter label {
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-medium);
+      text-transform: uppercase;
+    }
+
+    .query-filter input,
+    .query-filter select {
+      min-width: 0;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-small, 6px);
+      background: var(--ld-bg-input, var(--ld-bg-app));
+      color: var(--ld-fg-default);
+      font: inherit;
+      font-size: var(--ld-font-size-body-sm);
+      line-height: var(--ld-line-height-compact);
+      padding: var(--base-size-8) var(--base-size-10);
+    }
+
+    .query-detail {
+      display: grid;
+      gap: var(--base-size-12);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
+      padding: var(--base-size-12);
+    }
+
+    .query-detail-header {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: var(--base-size-12);
+    }
+
+    .query-detail-title {
+      display: grid;
+      gap: var(--base-size-4);
+      min-width: 0;
+    }
+
+    .query-detail-title strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .query-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      gap: var(--base-size-8);
+    }
+
+    .query-detail-grid div {
+      min-width: 0;
+    }
+
+    .query-detail-grid span {
+      display: block;
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-medium);
+      text-transform: uppercase;
+    }
+
+    .query-detail-grid code,
+    .query-detail pre {
+      overflow: auto;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-small, 6px);
+      background: var(--ld-bg-app);
+      color: var(--ld-fg-default);
+      font-size: var(--ld-font-size-caption);
+    }
+
+    .query-detail-grid code {
+      display: block;
+      padding: var(--base-size-6) var(--base-size-8);
+      white-space: nowrap;
+    }
+
+    .query-detail pre {
+      max-height: 18rem;
+      margin: 0;
+      padding: var(--base-size-10);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .query-detail-close {
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-small, 6px);
+      background: var(--ld-bg-panel-muted);
+      color: var(--ld-fg-default);
+      cursor: pointer;
+      font: inherit;
+      padding: var(--base-size-6) var(--base-size-10);
+    }
+
     @media (max-width: 640px) {
       .route {
         grid-template-columns: 1fr;
@@ -246,7 +370,7 @@ class LibreDashAdminPage extends LitElement {
               `)}
             </div>
           ` : nothing}
-          ${page.active === 'storage' ? this.renderStorage(page) : page.active === 'agent' ? this.renderAgent(page) : page.sections?.map(renderSection)}
+          ${page.active === 'storage' ? this.renderStorage(page) : page.active === 'agent' ? this.renderAgent(page) : page.active === 'queries' ? this.renderQueries(page) : page.sections?.map(renderSection)}
         </section>
       </div>
     `
@@ -278,6 +402,214 @@ class LibreDashAdminPage extends LitElement {
     `
   }
 
+  private renderQueries(page: AdminPageSignal) {
+    const events = page.queryEvents ?? []
+    const filtered = filterQueryEvents(events, this.queryFilters)
+    const selected = filtered.find((event) => event.id === this.selectedQueryEventID) ?? events.find((event) => event.id === this.selectedQueryEventID) ?? null
+    return html`
+      <section class="query-audit" aria-label="Query audit">
+        <div class="query-filters" aria-label="Query event filters">
+          ${this.renderTextFilter('workspace', 'Workspace')}
+          ${this.renderTextFilter('principal', 'Principal')}
+          ${this.renderSelectFilter('surface', 'Surface', uniqueValues(events.map((event) => event.surface)))}
+          ${this.renderSelectFilter('kind', 'Kind', uniqueValues(events.map((event) => event.queryKind)))}
+          ${this.renderSelectFilter('status', 'Status', uniqueValues(events.map((event) => event.status)))}
+          ${this.renderTextFilter('target', 'Target')}
+          ${this.renderTextFilter('search', 'SQL / text')}
+        </div>
+        <div class="panel" @ld-record-table-action=${this.handleQueryTableAction}>
+          <ld-record-table variant="compact" .table=${queryEventsTable(filtered)}></ld-record-table>
+        </div>
+        ${selected ? this.renderQueryDetail(selected) : nothing}
+      </section>
+    `
+  }
+
+  private renderTextFilter(key: keyof QueryAuditFilters, label: string) {
+    return html`
+      <div class="query-filter">
+        <label for=${`query-filter-${key}`}>${label}</label>
+        <input
+          id=${`query-filter-${key}`}
+          type="search"
+          .value=${this.queryFilters[key] ?? ''}
+          @input=${(event: Event) => this.setQueryFilter(key, (event.currentTarget as HTMLInputElement).value)}
+        >
+      </div>
+    `
+  }
+
+  private renderSelectFilter(key: keyof QueryAuditFilters, label: string, values: string[]) {
+    return html`
+      <div class="query-filter">
+        <label for=${`query-filter-${key}`}>${label}</label>
+        <select
+          id=${`query-filter-${key}`}
+          .value=${this.queryFilters[key] ?? ''}
+          @change=${(event: Event) => this.setQueryFilter(key, (event.currentTarget as HTMLSelectElement).value)}
+        >
+          <option value="">All</option>
+          ${values.map((value) => html`<option value=${value}>${value}</option>`)}
+        </select>
+      </div>
+    `
+  }
+
+  private setQueryFilter(key: keyof QueryAuditFilters, value: string) {
+    this.queryFilters = { ...this.queryFilters, [key]: value }
+  }
+
+  private handleQueryTableAction = (event: CustomEvent) => {
+    if (event.detail?.action !== 'detail') return
+    this.selectedQueryEventID = String(event.detail.row?.id ?? '')
+  }
+
+  private renderQueryDetail(event: AdminQueryEventSignal) {
+    return html`
+      <aside class="query-detail" aria-label="Query event detail">
+        <div class="query-detail-header">
+          <div class="query-detail-title">
+            <strong>${event.surface || '-'} · ${event.operation || '-'}</strong>
+            <span class="meta">${event.createdAt || '-'}</span>
+          </div>
+          <button class="query-detail-close" type="button" @click=${() => { this.selectedQueryEventID = '' }}>Close</button>
+        </div>
+        <div class="query-detail-grid">
+          ${queryDetailFact('Workspace', event.workspaceId)}
+          ${queryDetailFact('Principal', event.principalId)}
+          ${queryDetailFact('Kind', event.queryKind)}
+          ${queryDetailFact('Model', event.modelId)}
+          ${queryDetailFact('Target', event.target)}
+          ${queryDetailFact('Object', [event.objectType, event.objectId].filter(Boolean).join(':'))}
+          ${queryDetailFact('Status', event.status)}
+          ${queryDetailFact('Duration', `${event.durationMs ?? 0} ms`)}
+          ${queryDetailFact('Rows', String(event.rowsReturned ?? 0))}
+          ${queryDetailFact('Request ID', event.requestId)}
+          ${queryDetailFact('Correlation ID', event.correlationId)}
+        </div>
+        ${event.error ? html`<pre>${event.error}</pre>` : nothing}
+        ${event.sql ? html`<pre>${event.sql}</pre>` : nothing}
+        ${event.planText ? html`<pre>${event.planText}</pre>` : nothing}
+        ${event.queryJson ? html`<pre>${formatQueryJSON(event.queryJson)}</pre>` : nothing}
+      </aside>
+    `
+  }
+
+}
+
+type QueryAuditFilters = {
+  workspace?: string
+  principal?: string
+  surface?: string
+  kind?: string
+  status?: string
+  target?: string
+  search?: string
+}
+
+function filterQueryEvents(events: AdminQueryEventSignal[], filters: QueryAuditFilters): AdminQueryEventSignal[] {
+  return events.filter((event) => {
+    if (!matchesText(event.workspaceId, filters.workspace)) return false
+    if (!matchesText(event.principalId, filters.principal)) return false
+    if (!matchesExact(event.surface, filters.surface)) return false
+    if (!matchesExact(event.queryKind, filters.kind)) return false
+    if (!matchesExact(event.status, filters.status)) return false
+    if (!matchesText(event.target, filters.target)) return false
+    if (!matchesText(querySearchText(event), filters.search)) return false
+    return true
+  })
+}
+
+function queryEventsTable(events: AdminQueryEventSignal[]) {
+  return {
+    columns: [
+      { id: 'created_at', header: 'Created', width: '150px' },
+      { id: 'workspace_id', header: 'Workspace', kind: 'code', width: '120px' },
+      { id: 'surface', header: 'Surface', kind: 'badge', width: '115px' },
+      { id: 'operation', header: 'Operation', width: '155px' },
+      { id: 'query_kind', header: 'Kind', width: '155px' },
+      { id: 'model_id', header: 'Model', kind: 'code', width: '110px' },
+      { id: 'target', header: 'Target', kind: 'code', width: '160px' },
+      { id: 'status', header: 'Status', kind: 'badge', width: '95px' },
+      { id: 'duration_ms', header: 'Duration ms', kind: 'number', align: 'right', width: '120px' },
+      { id: 'rows_returned', header: 'Rows', kind: 'number', align: 'right', width: '90px' },
+      { id: 'actions', header: '', kind: 'actions', sortable: false, width: '64px' },
+    ],
+    rows: events.map((event) => ({
+      id: event.id,
+      created_at: event.createdAt,
+      workspace_id: event.workspaceId,
+      surface: { label: event.surface, tone: 'muted' },
+      operation: event.operation,
+      query_kind: event.queryKind,
+      model_id: event.modelId,
+      target: event.target,
+      status: { label: event.status, tone: queryEventStatusTone(event.status) },
+      duration_ms: event.durationMs,
+      rows_returned: event.rowsReturned,
+      actions: [{ label: 'Details', icon: 'external', action: 'detail' }],
+    })),
+    empty: 'No query events match these filters.',
+    minWidth: '1320px',
+  }
+}
+
+function queryEventStatusTone(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'success'
+    case 'canceled':
+      return 'muted'
+    case 'timeout':
+      return 'attention'
+    default:
+      return 'danger'
+  }
+}
+
+function queryDetailFact(label: string, value: string | number | undefined | null) {
+  return html`<div><span>${label}</span><code>${value == null || value === '' ? '-' : String(value)}</code></div>`
+}
+
+function formatQueryJSON(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
+  }
+}
+
+function uniqueValues(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))).sort()
+}
+
+function matchesExact(value: string, filter = ''): boolean {
+  return !filter || value === filter
+}
+
+function matchesText(value: string, filter = ''): boolean {
+  return !filter || String(value ?? '').toLowerCase().includes(filter.toLowerCase())
+}
+
+function querySearchText(event: AdminQueryEventSignal): string {
+  return [
+    event.workspaceId,
+    event.principalId,
+    event.surface,
+    event.operation,
+    event.queryKind,
+    event.modelId,
+    event.target,
+    event.objectType,
+    event.objectId,
+    event.requestId,
+    event.correlationId,
+    event.status,
+    event.error,
+    event.sql,
+    event.planText,
+    event.queryJson,
+  ].join(' ')
 }
 
 function storageHasPayload(storage: AdminStorageSignal | null | undefined): storage is AdminStorageSignal {

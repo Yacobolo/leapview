@@ -150,6 +150,12 @@
           },
           "type": "array"
         },
+        "queryEvents": {
+          "items": {
+            "$ref": "#/$defs/AdminQueryEventSignal"
+          },
+          "type": "array"
+        },
         "sections": {
           "items": {
             "$ref": "#/$defs/AdminContentSectionSignal"
@@ -173,6 +179,94 @@
         "kind",
         "sidebar",
         "title"
+      ],
+      "type": "object"
+    },
+    "AdminQueryEventSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "correlationId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "error": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "objectId": {
+          "type": "string"
+        },
+        "objectType": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "planText": {
+          "type": "string"
+        },
+        "principalId": {
+          "type": "string"
+        },
+        "queryJson": {
+          "type": "string"
+        },
+        "queryKind": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "rowsReturned": {
+          "type": "integer"
+        },
+        "sql": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "surface": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "correlationId",
+        "createdAt",
+        "durationMs",
+        "error",
+        "id",
+        "modelId",
+        "objectId",
+        "objectType",
+        "operation",
+        "planText",
+        "principalId",
+        "queryJson",
+        "queryKind",
+        "requestId",
+        "rowsReturned",
+        "sql",
+        "status",
+        "surface",
+        "target",
+        "workspaceId"
       ],
       "type": "object"
     },
@@ -3550,6 +3644,9 @@
     },
     {
       "$ref": "#/$defs/AdminPageSignal"
+    },
+    {
+      "$ref": "#/$defs/AdminQueryEventSignal"
     },
     {
       "$ref": "#/$defs/AdminStorageColumnSignal"

@@ -44,13 +44,18 @@ func (m *Service) PreviewSemantic(ctx context.Context, modelID string, request r
 }
 
 func (m *Service) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	runtime, err := m.semanticRuntime(request.ModelID)
-	if err != nil {
-		return dataquery.Result{}, err
+	if request.WorkspaceID == "" && m.reports != nil && m.reports.workspace != nil {
+		request.WorkspaceID = m.reports.workspace.Catalog.Workspace.ID
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return runtime.data.ExecuteDataQuery(ctx, request)
+	return dataquery.ExecuteAudited(ctx, request, func(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+		runtime, err := m.semanticRuntime(request.ModelID)
+		if err != nil {
+			return dataquery.Result{}, err
+		}
+		m.mu.RLock()
+		defer m.mu.RUnlock()
+		return runtime.data.ExecuteDataQuery(ctx, request)
+	})
 }
 
 func (m *Service) NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest {

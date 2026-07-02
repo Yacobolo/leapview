@@ -129,6 +129,7 @@ const (
 )
 
 type Metadata struct {
+	WorkspaceID   string
 	Surface       string
 	Operation     string
 	PrincipalID   string
@@ -150,6 +151,9 @@ func MetadataFromContext(ctx context.Context) Metadata {
 }
 
 func (q Query) WithMetadata(metadata Metadata) Query {
+	if metadata.WorkspaceID != "" {
+		q.WorkspaceID = metadata.WorkspaceID
+	}
 	if metadata.Surface != "" {
 		q.Surface = metadata.Surface
 	}

@@ -76,20 +76,26 @@ type AdminGroup struct {
 }
 
 type AdminQueryEvent struct {
-	ID           string
-	WorkspaceID  string
-	PrincipalID  string
-	Surface      string
-	Operation    string
-	QueryKind    string
-	ModelID      string
-	Target       string
-	Status       string
-	DurationMS   int64
-	RowsReturned int
-	Error        string
-	SQL          string
-	CreatedAt    string
+	ID            string
+	WorkspaceID   string
+	PrincipalID   string
+	Surface       string
+	Operation     string
+	QueryKind     string
+	ModelID       string
+	Target        string
+	ObjectType    string
+	ObjectID      string
+	RequestID     string
+	CorrelationID string
+	Status        string
+	DurationMS    int64
+	RowsReturned  int
+	Error         string
+	SQL           string
+	PlanText      string
+	QueryJSON     string
+	CreatedAt     string
 }
 
 type AdminPrincipalRef struct {
@@ -269,7 +275,7 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 	case "queries":
 		page.HeaderTitle = "Queries"
 		page.HeaderDetail = "Product query audit across dashboards, API, agents, and Data Explorer."
-		page.Sections = []uisignals.AdminContentSectionSignal{{Title: "Recent query events", Table: adminQueryEventsGrid(data.QueryEvents)}}
+		page.QueryEvents = adminQueryEventSignals(data.QueryEvents)
 		page.Metrics = adminQueryMetrics(data.QueryEvents)
 	default:
 		page.HeaderTitle = "General"
@@ -288,6 +294,35 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 		}
 	}
 	return page
+}
+
+func adminQueryEventSignals(events []AdminQueryEvent) []uisignals.AdminQueryEventSignal {
+	out := make([]uisignals.AdminQueryEventSignal, 0, len(events))
+	for _, event := range events {
+		out = append(out, uisignals.AdminQueryEventSignal{
+			ID:            event.ID,
+			WorkspaceID:   event.WorkspaceID,
+			PrincipalID:   event.PrincipalID,
+			Surface:       event.Surface,
+			Operation:     event.Operation,
+			QueryKind:     event.QueryKind,
+			ModelID:       event.ModelID,
+			Target:        event.Target,
+			ObjectType:    event.ObjectType,
+			ObjectID:      event.ObjectID,
+			RequestID:     event.RequestID,
+			CorrelationID: event.CorrelationID,
+			Status:        event.Status,
+			DurationMS:    event.DurationMS,
+			RowsReturned:  event.RowsReturned,
+			Error:         event.Error,
+			SQL:           event.SQL,
+			PlanText:      event.PlanText,
+			QueryJSON:     event.QueryJSON,
+			CreatedAt:     event.CreatedAt,
+		})
+	}
+	return out
 }
 
 func adminSidebarSignal(active string) uisignals.SubSidebarSignal {

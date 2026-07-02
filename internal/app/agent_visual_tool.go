@@ -76,11 +76,13 @@ func (s *Server) runAgentVisualTool(ctx context.Context, scope agentapp.Scope, c
 		return apigenAgentToolError("invalid_arguments", err.Error())
 	}
 	metadata := dataquery.Metadata{
-		Surface:    dataquery.SurfaceAgent,
-		Operation:  dataquery.OperationAgentQuery,
-		ObjectType: "semantic_dataset",
-		ObjectID:   input.Model + ":" + input.Dataset,
-		RequestID:  call.ID,
+		WorkspaceID: scope.WorkspaceID,
+		Surface:     dataquery.SurfaceAgent,
+		Operation:   dataquery.OperationAgentQuery,
+		PrincipalID: scope.PrincipalID,
+		ObjectType:  "semantic_dataset",
+		ObjectID:    input.Model + ":" + input.Dataset,
+		RequestID:   call.ID,
 	}
 	ctx = dataquery.WithMetadata(ctx, metadata)
 	result, err := s.queryAgentVisual(ctx, input, agentVisualID(input.Kind, call.ID))

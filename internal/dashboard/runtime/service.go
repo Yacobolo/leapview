@@ -171,7 +171,7 @@ func newFromDefinition(dataDir, duckDBDir string, factory DataRuntimeFactory, de
 			}
 			return nil, err
 		}
-		runtime.data = dataRuntime
+		runtime.data = newGovernedDataRuntime(definition.Catalog.Workspace.ID, modelID, dataRuntime)
 		runtime.ready = true
 	}
 

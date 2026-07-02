@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
-	"time"
 
+	"github.com/Yacobolo/libredash/internal/dashboard"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
+	"github.com/go-chi/chi/v5"
 )
+
+const cliClientHeader = "X-LibreDash-Client"
 
 type queryAuditMetrics struct {
 	QueryMetrics
@@ -62,31 +65,75 @@ func (m queryAuditMetrics) ExecuteDataQuery(ctx context.Context, request dataque
 	if m.QueryMetrics == nil {
 		return dataquery.Result{}, errors.New("query metrics are not configured")
 	}
-	request = request.WithMetadata(dataquery.MetadataFromContext(ctx))
-	if request.PrincipalID == "" {
+	ctx = m.auditContext(ctx)
+	if request.WorkspaceID == "" {
+		request.WorkspaceID = m.defaultWorkspaceID
+	}
+	return dataquery.ExecuteAudited(ctx, request, m.QueryMetrics.ExecuteDataQuery)
+}
+
+func (m queryAuditMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return m.QueryDashboardPage(ctx, dashboardID, "", filters)
+}
+
+func (m queryAuditMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	if m.QueryMetrics == nil {
+		return dashboard.EmptyPatch(filters.WithDefaults(), "", errors.New("query metrics are not configured")), nil
+	}
+	return m.QueryMetrics.QueryDashboardPage(m.auditContext(ctx), dashboardID, pageID, filters)
+}
+
+func (m queryAuditMetrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return m.QueryTablePage(ctx, dashboardID, "", filters, request)
+}
+
+func (m queryAuditMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	if m.QueryMetrics == nil {
+		return dashboard.EmptyTable(request.WithDefaults(), errors.New("query metrics are not configured")), nil
+	}
+	return m.QueryMetrics.QueryTablePage(m.auditContext(ctx), dashboardID, pageID, filters, request)
+}
+
+func (m queryAuditMetrics) QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
+	if m.QueryMetrics == nil {
+		return nil, errors.New("query metrics are not configured")
+	}
+	return m.QueryMetrics.QuerySemantic(m.auditContext(ctx), modelID, request)
+}
+
+func (m queryAuditMetrics) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
+	if m.QueryMetrics == nil {
+		return nil, errors.New("query metrics are not configured")
+	}
+	return m.QueryMetrics.PreviewSemantic(m.auditContext(ctx), modelID, request)
+}
+
+func (m queryAuditMetrics) auditContext(ctx context.Context) context.Context {
+	metadata := dataquery.MetadataFromContext(ctx)
+	if metadata.WorkspaceID == "" {
+		metadata.WorkspaceID = m.defaultWorkspaceID
+	}
+	if metadata.PrincipalID == "" {
 		if principal, ok := principalFromContext(ctx); ok {
-			request.PrincipalID = principal.ID
+			metadata.PrincipalID = principal.ID
 		}
 	}
-	start := time.Now()
-	result, err := m.QueryMetrics.ExecuteDataQuery(ctx, request)
-	duration := time.Since(start).Milliseconds()
-	if result.DurationMS == 0 {
-		result.DurationMS = duration
-	}
-	if result.RowsReturned == 0 && len(result.Rows) > 0 {
-		result.RowsReturned = len(result.Rows)
-	}
-	if err == nil {
-		result.Status = queryFirstNonEmpty(result.Status, dataquery.StatusSuccess)
-	} else {
-		result.Status = queryStatus(ctx, err)
-		result.Error = sanitizeQueryError(err)
-	}
+	ctx = dataquery.WithMetadata(ctx, metadata)
 	if m.recorder != nil {
-		_ = m.recorder.RecordQueryEvent(ctx, queryEventInput(request, result))
+		ctx = dataquery.WithAuditRecorder(ctx, queryEventRecorder{repo: m.recorder})
 	}
-	return result, err
+	return ctx
+}
+
+type queryEventRecorder struct {
+	repo queryaudit.Repository
+}
+
+func (r queryEventRecorder) RecordDataQuery(ctx context.Context, request dataquery.Query, result dataquery.Result) error {
+	if r.repo == nil {
+		return nil
+	}
+	return r.repo.RecordQueryEvent(ctx, queryEventInput(request, result))
 }
 
 func queryEventInput(request dataquery.Query, result dataquery.Result) queryaudit.EventInput {
@@ -111,27 +158,6 @@ func queryEventInput(request dataquery.Query, result dataquery.Result) queryaudi
 		PlanText:      result.PlanText,
 		QueryJSON:     queryShapeJSON(request),
 	}
-}
-
-func queryStatus(ctx context.Context, err error) string {
-	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-		return dataquery.StatusCanceled
-	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return dataquery.StatusTimeout
-	}
-	return dataquery.StatusError
-}
-
-func sanitizeQueryError(err error) string {
-	if err == nil {
-		return ""
-	}
-	message := strings.TrimSpace(err.Error())
-	if len(message) > 1000 {
-		message = message[:1000]
-	}
-	return message
 }
 
 func queryShapeJSON(request dataquery.Query) string {
@@ -186,7 +212,11 @@ func queryShapeJSON(request dataquery.Query) string {
 }
 
 func requestQueryMetadata(r *http.Request, surface, operation, objectType, objectID string) dataquery.Metadata {
+	if surface == dataquery.SurfaceAPI && r.Header.Get(cliClientHeader) == dataquery.SurfaceCLI {
+		surface = dataquery.SurfaceCLI
+	}
 	metadata := dataquery.Metadata{
+		WorkspaceID:   chi.URLParam(r, "workspace"),
 		Surface:       surface,
 		Operation:     operation,
 		ObjectType:    objectType,
@@ -196,6 +226,31 @@ func requestQueryMetadata(r *http.Request, surface, operation, objectType, objec
 	}
 	if principal, ok := principalFromContext(r.Context()); ok {
 		metadata.PrincipalID = principal.ID
+	}
+	existing := dataquery.MetadataFromContext(r.Context())
+	if existing.WorkspaceID != "" {
+		metadata.WorkspaceID = existing.WorkspaceID
+	}
+	if existing.Surface != "" {
+		metadata.Surface = existing.Surface
+	}
+	if existing.Operation != "" {
+		metadata.Operation = existing.Operation
+	}
+	if existing.PrincipalID != "" {
+		metadata.PrincipalID = existing.PrincipalID
+	}
+	if existing.RequestID != "" {
+		metadata.RequestID = existing.RequestID
+	}
+	if existing.ObjectType != "" {
+		metadata.ObjectType = existing.ObjectType
+	}
+	if existing.ObjectID != "" {
+		metadata.ObjectID = existing.ObjectID
+	}
+	if existing.CorrelationID != "" {
+		metadata.CorrelationID = existing.CorrelationID
 	}
 	return metadata
 }

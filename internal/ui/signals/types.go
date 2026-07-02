@@ -567,6 +567,7 @@ type AdminPageSignal struct {
 	Sections     []AdminContentSectionSignal `json:"sections,omitempty"`
 	Agent        AdminAgentSignal            `json:"agent,omitempty"`
 	Storage      AdminStorageSignal          `json:"storage,omitempty"`
+	QueryEvents  []AdminQueryEventSignal     `json:"queryEvents,omitempty"`
 }
 
 type AdminAgentSignal struct {
@@ -595,6 +596,29 @@ type AdminContentSectionSignal struct {
 	Title string                 `json:"title"`
 	Facts []DefinitionFactSignal `json:"facts,omitempty"`
 	Table RecordTableSignal      `json:"table,omitempty"`
+}
+
+type AdminQueryEventSignal struct {
+	ID            string `json:"id"`
+	WorkspaceID   string `json:"workspaceId"`
+	PrincipalID   string `json:"principalId"`
+	Surface       string `json:"surface"`
+	Operation     string `json:"operation"`
+	QueryKind     string `json:"queryKind"`
+	ModelID       string `json:"modelId"`
+	Target        string `json:"target"`
+	ObjectType    string `json:"objectType"`
+	ObjectID      string `json:"objectId"`
+	RequestID     string `json:"requestId"`
+	CorrelationID string `json:"correlationId"`
+	Status        string `json:"status"`
+	DurationMS    int64  `json:"durationMs"`
+	RowsReturned  int    `json:"rowsReturned"`
+	Error         string `json:"error"`
+	SQL           string `json:"sql"`
+	PlanText      string `json:"planText"`
+	QueryJSON     string `json:"queryJson"`
+	CreatedAt     string `json:"createdAt"`
 }
 
 type AdminStorageData struct {

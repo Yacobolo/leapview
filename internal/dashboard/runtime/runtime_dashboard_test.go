@@ -17,6 +17,17 @@ import (
 	"github.com/Yacobolo/libredash/internal/dataquery"
 )
 
+type runtimeAuditRecorder struct {
+	queries []dataquery.Query
+	results []dataquery.Result
+}
+
+func (r *runtimeAuditRecorder) RecordDataQuery(_ context.Context, query dataquery.Query, result dataquery.Result) error {
+	r.queries = append(r.queries, query)
+	r.results = append(r.results, result)
+	return nil
+}
+
 func newLegacyRuntime(t *testing.T, dataDir string) (*Service, error) {
 	t.Helper()
 	projectPath := filepath.Join("..", "..", "..", "dashboards", "libredash.yaml")
@@ -103,6 +114,49 @@ c2,RJ
 	}
 	if len(patch.Visuals["orders_by_status"].Data) == 0 {
 		t.Fatal("orders by status chart has no data")
+	}
+}
+
+func TestDashboardPageQueriesFlowThroughAuditedDataQueryBoundary(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_delivered_customer_date
+o1,c1,delivered,2018-01-01 10:00:00,2018-01-03 10:00:00
+o2,c2,shipped,2018-01-05 10:00:00,2018-01-15 10:00:00
+`)
+	writeFixture(t, dir, "olist_order_reviews_dataset.csv", `order_id,review_score
+o1,5
+o2,3
+`)
+	writeFixture(t, dir, "olist_customers_dataset.csv", `customer_id,customer_state
+c1,SP
+c2,RJ
+`)
+
+	metrics, err := newOperationsRuntime(t, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metrics.Close()
+
+	recorder := &runtimeAuditRecorder{}
+	ctx := dataquery.WithAuditRecorder(context.Background(), recorder)
+	patch, err := metrics.QueryDashboardPage(ctx, "fulfillment-operations", "overview", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.Status.Error != "" {
+		t.Fatalf("unexpected status error: %s", patch.Status.Error)
+	}
+	if len(recorder.queries) == 0 {
+		t.Fatal("dashboard page query recorded no dataquery events")
+	}
+	for _, query := range recorder.queries {
+		if query.WorkspaceID != "operations" {
+			t.Fatalf("query workspace = %q, want operations: %#v", query.WorkspaceID, query)
+		}
+		if query.Surface != dataquery.SurfaceDashboard {
+			t.Fatalf("query surface = %q, want dashboard: %#v", query.Surface, query)
+		}
 	}
 }
 

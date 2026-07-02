@@ -169,6 +169,108 @@ test('admin navigation remains pinned while content scrolls on desktop', async (
   }
 })
 
+test('query audit page filters rows and opens detail drawer', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
+    const state = await page.evaluate(async () => {
+      const element = document.createElement('ld-admin-page') as any
+      element.page = {
+        kind: 'admin',
+        title: 'Queries',
+        active: 'queries',
+        sidebar: {
+          label: 'Admin',
+          railLabel: 'Admin',
+          ariaLabel: 'Admin navigation',
+          storageKey: 'libredash-admin-sidebar-collapsed',
+          activeId: 'queries',
+          collapsible: false,
+          numbered: false,
+          items: [{ id: 'queries', title: 'Queries', href: '/admin/queries', active: true }],
+        },
+        headerTitle: 'Queries',
+        headerDetail: 'Product query audit.',
+        metrics: [{ label: 'Recent events', value: '2' }],
+        queryEvents: [
+          {
+            id: 'queryevent_1',
+            workspaceId: 'sales',
+            principalId: 'analyst',
+            surface: 'api',
+            operation: 'api_query',
+            queryKind: 'semantic_aggregate',
+            modelId: 'sales',
+            target: 'orders',
+            objectType: 'semantic_dataset',
+            objectId: 'sales:orders',
+            requestId: 'req_1',
+            correlationId: 'corr_1',
+            status: 'success',
+            durationMs: 12,
+            rowsReturned: 2,
+            error: '',
+            sql: 'select status from orders',
+            planText: 'orders plan',
+            queryJson: '{"workspaceId":"sales","target":"orders"}',
+            createdAt: '2026-07-02T10:00:00Z',
+          },
+          {
+            id: 'queryevent_2',
+            workspaceId: 'operations',
+            principalId: 'agent',
+            surface: 'agent',
+            operation: 'agent_query',
+            queryKind: 'semantic_rows',
+            modelId: 'operations',
+            target: 'customers',
+            objectType: 'agent_tool',
+            objectId: 'query_semantic_dataset',
+            requestId: 'call_1',
+            correlationId: '',
+            status: 'error',
+            durationMs: 4,
+            rowsReturned: 0,
+            error: 'invalid field',
+            sql: '',
+            planText: '',
+            queryJson: '{"workspaceId":"operations","target":"customers"}',
+            createdAt: '2026-07-02T10:01:00Z',
+          },
+        ],
+      }
+      document.body.replaceChildren(element)
+      await element.updateComplete
+      const root = element.shadowRoot
+      const search = root.querySelector<HTMLInputElement>('#query-filter-search')!
+      search.value = 'select status'
+      search.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+      await element.updateComplete
+      const rowText = root.querySelector('ld-record-table')?.textContent ?? ''
+      root.querySelector<HTMLButtonElement>('ld-record-table .record-icon-action')?.click()
+      await element.updateComplete
+      const detailText = root.querySelector('.query-detail')?.textContent ?? ''
+      return {
+        title: root.querySelector('h1')?.textContent?.trim(),
+        hasFilters: root.querySelectorAll('.query-filter').length >= 7,
+        rowText,
+        detailText,
+      }
+    })
+
+    expect(state.title).toBe('Queries')
+    expect(state.hasFilters).toBe(true)
+    expect(state.rowText).toMatch(/orders/)
+    expect(state.rowText).not.toMatch(/customers/)
+    expect(state.detailText).toMatch(/select status from orders/)
+    expect(state.detailText).toMatch(/req_1/)
+    expect(state.detailText).toMatch(/corr_1/)
+  } finally {
+    await page.close()
+  }
+})
+
 test('admin storage route renders storage explorer from typed signal data', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
