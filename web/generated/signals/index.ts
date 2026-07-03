@@ -675,6 +675,7 @@ export interface RecordTableSignal {
   empty: string
   minWidth?: string
   columnSelector?: RecordTableColumnSelector
+  density?: string
 }
 
 export interface ReportFilterConfig {

@@ -260,6 +260,9 @@ test('query audit page filters rows and opens detail drawer', async () => {
       const visibleHeaderLabels = (recordTable: Element) => Array.from(recordTable.querySelectorAll('thead th')).map((header: Element) => header.querySelector('.record-table-sort span:first-child')?.textContent?.trim() ?? '')
       const hiddenRuntimeHeaders = visibleHeaderLabels(table)
       const hiddenRuntimeHasDetailAction = Boolean(table.querySelector('.record-icon-action[aria-label="Details"]'))
+      table.querySelector<HTMLButtonElement>('.record-query-expand')?.click()
+      await table.updateComplete
+      const expandedQueryText = table.querySelector('.record-query-expanded-cell')?.textContent ?? ''
       root.querySelector<HTMLButtonElement>('ld-record-table .record-icon-action')?.click()
       await element.updateComplete
       const detailText = root.querySelector('.query-detail')?.textContent ?? ''
@@ -273,10 +276,14 @@ test('query audit page filters rows and opens detail drawer', async () => {
         title: root.querySelector('h1')?.textContent?.trim(),
         hasFilters: root.querySelectorAll('.query-filter').length >= 7,
         hasColumnSelector: Boolean(table.querySelector('.record-table-column-selector')),
+        queryStatusLabel: table.querySelector('.record-query-status')?.getAttribute('aria-label'),
+        hasStatusHeader: visibleHeaderLabels(table).includes('Status'),
+        rowHeight: Math.round(table.querySelector('tbody tr:first-child')?.getBoundingClientRect().height ?? 0),
         rowText,
         hiddenRuntimeText,
         hiddenRuntimeHeaders,
         hiddenRuntimeHasDetailAction,
+        expandedQueryText,
         detailText,
         persistedHeaders,
       }
@@ -285,21 +292,30 @@ test('query audit page filters rows and opens detail drawer', async () => {
     expect(state.title).toBe('Queries')
     expect(state.hasFilters).toBe(true)
     expect(state.rowText).toMatch(/Query/)
+    expect(state.rowText).not.toMatch(/Status/)
     expect(state.rowText).toMatch(/Started/)
     expect(state.rowText).toMatch(/Source/)
     expect(state.rowText).toMatch(/Runtime/)
     expect(state.rowText).toMatch(/User/)
     expect(state.rowText).toMatch(/analyst/)
     expect(state.rowText).toMatch(/select status from orders/)
-    expect(state.rowText).toMatch(/semantic_dataset:sales:orders/)
     expect(state.rowText).toMatch(/orders/)
     expect(state.rowText).not.toMatch(/customers/)
     expect(state.hasColumnSelector).toBe(true)
+    expect(state.hasStatusHeader).toBe(false)
+    expect(state.queryStatusLabel).toBe('success')
+    expect(state.rowHeight).toBeLessThanOrEqual(44)
     expect(state.hiddenRuntimeHeaders).not.toContain('Runtime')
+    expect(state.hiddenRuntimeHeaders).not.toContain('Status')
+    expect(state.hiddenRuntimeHeaders[0]).toBe('Query')
     expect(state.hiddenRuntimeText).toMatch(/select status from orders/)
     expect(state.hiddenRuntimeHasDetailAction).toBe(true)
+    expect(state.expandedQueryText).toMatch(/select status from orders/)
     expect(state.persistedHeaders).not.toContain('Runtime')
+    expect(state.persistedHeaders).not.toContain('Status')
     expect(state.detailText).toMatch(/select status from orders/)
+    expect(state.detailText).toMatch(/semantic_dataset/)
+    expect(state.detailText).toMatch(/sales:orders/)
     expect(state.detailText).toMatch(/req_1/)
     expect(state.detailText).toMatch(/corr_1/)
   } finally {

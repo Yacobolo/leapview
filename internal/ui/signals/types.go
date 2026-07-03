@@ -533,6 +533,7 @@ type RecordTableSignal struct {
 	Empty          string                     `json:"empty"`
 	MinWidth       string                     `json:"minWidth,omitempty"`
 	ColumnSelector *RecordTableColumnSelector `json:"columnSelector,omitempty"`
+	Density        string                     `json:"density,omitempty"`
 }
 
 type RecordTableColumnSignal struct {

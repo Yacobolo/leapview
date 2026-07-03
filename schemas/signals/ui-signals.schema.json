@@ -2441,6 +2441,9 @@
           },
           "type": "array"
         },
+        "density": {
+          "type": "string"
+        },
         "empty": {
           "type": "string"
         },

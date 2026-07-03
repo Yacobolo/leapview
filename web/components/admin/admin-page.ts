@@ -523,8 +523,7 @@ function filterQueryEvents(events: AdminQueryEventSignal[], filters: QueryAuditF
 function queryEventsTable(events: AdminQueryEventSignal[]) {
   return {
     columns: [
-      { id: 'status', header: 'Status', kind: 'status', width: '115px' },
-      { id: 'query', header: 'Query', kind: 'entity', width: '480px' },
+      { id: 'query', header: 'Query', kind: 'query', width: '560px', toggleable: false },
       { id: 'started_at', header: 'Started', width: '150px' },
       { id: 'duration_ms', header: 'Duration', kind: 'number', align: 'right', width: '105px' },
       { id: 'source', header: 'Source', kind: 'badge', width: '120px' },
@@ -535,11 +534,13 @@ function queryEventsTable(events: AdminQueryEventSignal[]) {
     ],
     rows: events.map((event) => ({
       id: event.id,
-      status: { label: event.status, tone: queryEventStatusTone(event.status), icon: queryEventStatusIcon(event.status) },
       query: {
         label: queryEventStatement(event),
         description: queryEventDescription(event),
-        icon: queryEventIcon(event),
+        statusLabel: event.status,
+        tone: queryEventStatusTone(event.status),
+        icon: queryEventStatusIcon(event.status),
+        expandedContent: queryEventExpandedContent(event),
       },
       started_at: event.createdAt,
       duration_ms: { label: `${event.durationMs ?? 0} ms`, value: event.durationMs ?? 0 },
@@ -550,12 +551,13 @@ function queryEventsTable(events: AdminQueryEventSignal[]) {
       actions: [{ label: 'Details', icon: 'external', action: 'detail' }],
     })),
     empty: 'No query events match these filters.',
-    minWidth: '1350px',
+    minWidth: '1270px',
+    density: 'tight',
     columnSelector: {
       enabled: true,
       storageKey: 'libredash-admin-query-events-columns',
       label: 'Columns',
-      defaultColumns: ['status', 'query', 'started_at', 'duration_ms', 'source', 'runtime', 'principal_id', 'rows_returned'],
+      defaultColumns: ['started_at', 'duration_ms', 'source', 'runtime', 'principal_id', 'rows_returned'],
     },
   }
 }
@@ -577,6 +579,10 @@ function queryEventDescription(event: AdminQueryEventSignal): string {
   ].filter(Boolean).join(' · ')
 }
 
+function queryEventExpandedContent(event: AdminQueryEventSignal): string {
+  return event.sql || queryEventStatement(event)
+}
+
 function queryEventObjectLabel(event: AdminQueryEventSignal): string {
   const object = [event.objectType, event.objectId].filter(Boolean).join(':')
   if (object) return object
@@ -594,21 +600,6 @@ function shortQueryEventID(event: AdminQueryEventSignal): string {
 
 function collapseWhitespace(value: string | undefined | null): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim()
-}
-
-function queryEventIcon(event: AdminQueryEventSignal): string {
-  switch (event.queryKind) {
-    case 'model_table_rows':
-      return 'table'
-    case 'source_rows':
-      return 'database'
-    case 'semantic_aggregate':
-    case 'semantic_histogram':
-    case 'semantic_distribution':
-      return 'dashboard'
-    default:
-      return 'page'
-  }
 }
 
 function queryEventStatusTone(status: string): string {

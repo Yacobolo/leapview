@@ -234,6 +234,67 @@ test('compact record table keeps metadata dense and scalar placeholders muted', 
   }
 })
 
+test('record table renders tight expandable query rows', async () => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 620 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-record-table'))
+    await page.evaluate(() => localStorage.removeItem('record-table-query-columns'))
+    await page.locator('ld-record-table').evaluate((element: any) => {
+      element.setAttribute('variant', 'compact')
+      element.table = {
+        density: 'tight',
+        columns: [
+          { id: 'query', header: 'Query', kind: 'query', width: '520px', toggleable: false },
+          { id: 'runtime', header: 'Runtime', width: '160px' },
+          { id: 'actions', header: '', kind: 'actions', sortable: false, toggleable: false, width: '64px' },
+        ],
+        rows: [{
+          id: 'query_1',
+          query: {
+            label: 'select customer_id, customer_city from customers where customer_state = $1 order by customer_id',
+            statusLabel: 'success',
+            tone: 'success',
+            icon: 'check',
+            expandedContent: 'select customer_id, customer_city\nfrom customers\nwhere customer_state = $1\norder by customer_id',
+          },
+          runtime: 'sales',
+          actions: [{ label: 'Details', action: 'detail' }],
+        }],
+        columnSelector: {
+          enabled: true,
+          storageKey: 'record-table-query-columns',
+          defaultColumns: ['runtime'],
+        },
+      }
+    })
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+
+    const collapsed = await queryRowState(page)
+    expect(collapsed.headers).toEqual(['Query', 'Runtime', ''])
+    expect(collapsed.menuLabels).toEqual(['Runtime'])
+    expect(collapsed.statusLabel).toBe('success')
+    expect(collapsed.queryText).toContain('select customer_id')
+    expect(collapsed.hasExpandedRow).toBe(false)
+    expect(collapsed.wrapHasTightDensity).toBe(true)
+    expect(collapsed.cellPaddingTop).toBe('4px')
+    expect(collapsed.rowHeight).toBeLessThanOrEqual(40)
+
+    await page.locator('ld-record-table .record-query-expand').click()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    const expanded = await queryRowState(page)
+    expect(expanded.hasExpandedRow).toBe(true)
+    expect(expanded.expandedText).toContain('from customers')
+    expect(expanded.expandedColspan).toBe(3)
+
+    await page.locator('ld-record-table .record-query-expand').click()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect((await queryRowState(page)).hasExpandedRow).toBe(false)
+  } finally {
+    await page.close()
+  }
+})
+
 test('record table renders configured empty state', async () => {
   const page = await browser.newPage({ viewport: { width: 500, height: 360 } })
   try {
@@ -359,6 +420,27 @@ async function tableState(page: Page) {
       minWidth: getComputedStyle(table).minWidth,
       headerPosition: getComputedStyle(header).position,
       hasSelector: Boolean(element.querySelector('.record-table-column-selector')),
+    }
+  })
+}
+
+async function queryRowState(page: Page) {
+  return page.locator('ld-record-table').evaluate((element) => {
+    const wrap = element.querySelector('.record-table-wrap') as HTMLElement
+    const firstCell = element.querySelector('tbody tr:first-child td:first-child') as HTMLElement
+    const firstRow = element.querySelector('tbody tr:first-child') as HTMLElement
+    const expandedCell = element.querySelector('.record-query-expanded-cell') as HTMLTableCellElement | null
+    return {
+      headers: Array.from(element.querySelectorAll('thead th')).map((header) => header.querySelector('.record-table-sort span:first-child')?.textContent?.trim() ?? ''),
+      menuLabels: Array.from(element.querySelectorAll('.record-table-column-menu label')).map((label) => label.textContent?.trim() ?? ''),
+      statusLabel: element.querySelector('.record-query-status')?.getAttribute('aria-label'),
+      queryText: element.querySelector('.record-query-text')?.textContent?.trim(),
+      hasExpandedRow: Boolean(expandedCell),
+      expandedText: expandedCell?.textContent ?? '',
+      expandedColspan: expandedCell?.colSpan ?? 0,
+      wrapHasTightDensity: wrap.classList.contains('density-tight'),
+      cellPaddingTop: getComputedStyle(firstCell).paddingTop,
+      rowHeight: Math.round(firstRow.getBoundingClientRect().height),
     }
   })
 }
