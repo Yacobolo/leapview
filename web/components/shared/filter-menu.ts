@@ -39,26 +39,26 @@ class FilterMenu extends LitElement {
     .trigger {
       display: inline-flex;
       min-width: 0;
-      min-height: var(--control-medium-size, 32px);
+      min-height: var(--ld-control-medium);
       align-items: center;
       justify-content: space-between;
       gap: var(--base-size-8);
       border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-small, 6px);
+      border-radius: var(--ld-radius-small);
       background: var(--ld-bg-panel);
       color: var(--ld-fg-default);
       cursor: pointer;
       font: inherit;
       font-size: var(--ld-font-size-body-sm);
       line-height: var(--ld-line-height-compact);
-      padding: 0 var(--base-size-10);
+      padding: 0 var(--ld-space-control);
       white-space: nowrap;
     }
 
     .trigger:hover,
     .trigger:focus-visible,
     .trigger[aria-expanded="true"] {
-      border-color: var(--ld-border-accent, var(--ld-line-accent));
+      border-color: var(--ld-border-accent);
       outline: 0;
     }
 
@@ -81,7 +81,7 @@ class FilterMenu extends LitElement {
       border: var(--ld-border-muted);
       border-radius: var(--ld-radius-default);
       background: var(--ld-bg-panel);
-      box-shadow: var(--ld-shadow-floating, 0 12px 32px rgba(31, 35, 40, 0.18));
+      box-shadow: var(--ld-shadow-floating-lg);
     }
 
     .search {
@@ -97,12 +97,12 @@ class FilterMenu extends LitElement {
     .search input {
       min-width: 0;
       border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-small, 6px);
-      background: var(--ld-bg-input, var(--ld-bg-app));
+      border-radius: var(--ld-radius-small);
+      background: var(--ld-bg-input);
       color: var(--ld-fg-default);
       font: inherit;
       font-size: var(--ld-font-size-body-sm);
-      padding: var(--base-size-8) var(--base-size-10);
+      padding: var(--base-size-8) var(--ld-space-control);
     }
 
     .options {
@@ -117,9 +117,9 @@ class FilterMenu extends LitElement {
       grid-template-columns: auto auto minmax(0, 1fr) auto;
       align-items: center;
       gap: var(--base-size-8);
-      border-radius: var(--ld-radius-small, 6px);
+      border-radius: var(--ld-radius-small);
       cursor: pointer;
-      padding: var(--base-size-7) var(--base-size-8);
+      padding: var(--ld-space-sm) var(--base-size-8);
       font-size: var(--ld-font-size-body-sm);
     }
 
@@ -181,11 +181,11 @@ class FilterMenu extends LitElement {
 
     .clear {
       display: inline-flex;
-      min-height: var(--control-small-size, 28px);
+      min-height: var(--ld-control-small);
       align-items: center;
       gap: var(--base-size-6);
       border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-small, 6px);
+      border-radius: var(--ld-radius-small);
       background: var(--ld-bg-panel);
       color: var(--ld-fg-default);
       cursor: pointer;

@@ -241,13 +241,13 @@ class LibreDashAdminPage extends LitElement {
     .query-filter input {
       min-width: 0;
       border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-small, 6px);
-      background: var(--ld-bg-input, var(--ld-bg-app));
+      border-radius: var(--ld-radius-small);
+      background: var(--ld-bg-input);
       color: var(--ld-fg-default);
       font: inherit;
       font-size: var(--ld-font-size-body-sm);
       line-height: var(--ld-line-height-compact);
-      padding: var(--base-size-8) var(--base-size-10);
+      padding: var(--base-size-8) var(--ld-space-control);
     }
 
     .query-history-footer {
@@ -264,11 +264,11 @@ class LibreDashAdminPage extends LitElement {
     }
 
     .query-history-error {
-      color: var(--ld-fg-danger, var(--ld-fg-default));
+      color: var(--ld-fg-danger);
     }
 
     .query-history-load-more {
-      min-height: var(--control-medium-size, 32px);
+      min-height: var(--ld-control-medium);
       border: var(--ld-border-muted);
       border-radius: var(--ld-radius-default);
       background: var(--ld-bg-panel);
@@ -298,7 +298,7 @@ class LibreDashAdminPage extends LitElement {
       grid-template-rows: auto minmax(0, 1fr);
       border-left: var(--ld-border-muted);
       background: var(--ld-bg-panel);
-      box-shadow: var(--ld-shadow-floating, -12px 0 36px rgba(31, 35, 40, 0.18));
+      box-shadow: var(--ld-shadow-floating-lg);
       color: var(--ld-fg-default);
       animation: query-detail-slide-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
     }
@@ -336,15 +336,15 @@ class LibreDashAdminPage extends LitElement {
     }
 
     .query-detail-status-success svg {
-      color: var(--ld-fg-success, #1a7f37);
+      color: var(--ld-fg-success);
     }
 
     .query-detail-status-danger svg {
-      color: var(--ld-fg-danger, #d1242f);
+      color: var(--ld-fg-danger);
     }
 
     .query-detail-status-attention svg {
-      color: var(--ld-fg-warning, #9a6700);
+      color: var(--ld-fg-warning);
     }
 
     .query-detail-status-muted svg {
@@ -356,7 +356,7 @@ class LibreDashAdminPage extends LitElement {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: var(--ld-border-transparent, 1px solid transparent);
+      border: var(--ld-border-transparent);
       border-radius: var(--ld-radius-default);
       background: transparent;
       color: var(--ld-fg-muted);
@@ -365,8 +365,8 @@ class LibreDashAdminPage extends LitElement {
     }
 
     .query-detail-close {
-      width: var(--control-medium-size, 32px);
-      height: var(--control-medium-size, 32px);
+      width: var(--ld-control-medium);
+      height: var(--ld-control-medium);
     }
 
     .query-detail-copy {
@@ -512,7 +512,7 @@ class LibreDashAdminPage extends LitElement {
         height: min(88svh, 44rem);
         border-top: var(--ld-border-muted);
         border-left: 0;
-        box-shadow: var(--ld-shadow-floating, 0 -12px 36px rgba(31, 35, 40, 0.18));
+        box-shadow: var(--ld-shadow-floating-lg);
         animation-name: query-detail-mobile-slide-in;
       }
     }

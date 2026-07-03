@@ -234,13 +234,13 @@ class WindowedTable extends LitElement {
 
     .options summary {
       display: grid;
-      width: var(--control-small-size);
-      height: var(--control-small-size);
+      width: var(--ld-button-height-sm);
+      height: var(--ld-button-height-sm);
       place-items: center;
       border: var(--ld-border-default);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-control);
-      color: var(--ld-fg-default);
+      border-radius: var(--ld-button-radius);
+      background: var(--ld-button-bg-rest);
+      color: var(--ld-button-fg-rest);
       cursor: pointer;
       list-style: none;
     }
@@ -260,7 +260,7 @@ class WindowedTable extends LitElement {
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
       background: var(--ld-bg-panel);
-      box-shadow: var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 14%));
+      box-shadow: var(--ld-shadow-floating-sm);
       padding: var(--base-size-8);
     }
 
