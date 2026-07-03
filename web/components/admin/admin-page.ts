@@ -261,14 +261,11 @@ class LibreDashAdminPage extends LitElement {
     }
 
     .query-detail-header {
-      display: grid;
-      gap: var(--base-size-8);
       border-bottom: var(--ld-border-muted);
       padding: var(--base-size-16);
     }
 
     .query-detail-header-row,
-    .query-detail-subtitle,
     .query-detail-copy-row {
       display: flex;
       min-width: 0;
@@ -285,6 +282,7 @@ class LibreDashAdminPage extends LitElement {
       min-width: 0;
       align-items: center;
       gap: var(--base-size-6);
+      color: var(--ld-fg-default);
       font-weight: var(--ld-font-weight-strong);
     }
 
@@ -294,31 +292,20 @@ class LibreDashAdminPage extends LitElement {
       height: var(--base-size-16);
     }
 
-    .query-detail-status-success {
-      color: var(--ld-fg-success);
+    .query-detail-status-success svg {
+      color: var(--ld-fg-success, #1a7f37);
     }
 
-    .query-detail-status-danger {
-      color: var(--ld-fg-danger);
+    .query-detail-status-danger svg {
+      color: var(--ld-fg-danger, #d1242f);
     }
 
-    .query-detail-status-attention {
-      color: var(--ld-fg-warning);
+    .query-detail-status-attention svg {
+      color: var(--ld-fg-warning, #9a6700);
     }
 
-    .query-detail-status-muted {
+    .query-detail-status-muted svg {
       color: var(--ld-fg-muted);
-    }
-
-    .query-detail-subtitle {
-      flex-wrap: wrap;
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-body-sm);
-      line-height: var(--ld-line-height-compact);
-    }
-
-    .query-detail-subtitle code {
-      font-family: var(--fontStack-monospace);
     }
 
     .query-detail-close,
@@ -647,13 +634,6 @@ class LibreDashAdminPage extends LitElement {
               ${lucideIcon(X, { size: 18, strokeWidth: 2 })}
             </button>
           </div>
-          <div class="query-detail-subtitle">
-            <code>${event.principalId || '-'}</code>
-            <span>·</span>
-            <span>${event.workspaceId || '-'}</span>
-            <span>·</span>
-            <span>${event.surface || '-'}</span>
-          </div>
         </header>
         <div class="query-detail-body">
           <section class="query-detail-section" aria-label="Query identity">
@@ -681,6 +661,8 @@ class LibreDashAdminPage extends LitElement {
             <h2>Query target</h2>
             <div class="query-detail-facts">
               ${queryDetailFact('Workspace', event.workspaceId)}
+              ${queryDetailFact('Principal', event.principalId)}
+              ${queryDetailFact('Source type', event.surface)}
               ${queryDetailFact('Model', event.modelId)}
               ${queryDetailFact('Target', event.target)}
               ${queryDetailFact('Object', queryEventObjectLabel(event))}

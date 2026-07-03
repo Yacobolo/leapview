@@ -172,7 +172,7 @@ test('admin navigation remains pinned while content scrolls on desktop', async (
 function queryAuditFixturePage() {
   return {
     kind: 'admin',
-    title: 'Queries',
+    title: 'Query History',
     active: 'queries',
     sidebar: {
       label: 'Admin',
@@ -182,9 +182,9 @@ function queryAuditFixturePage() {
       activeId: 'queries',
       collapsible: false,
       numbered: false,
-      items: [{ id: 'queries', title: 'Queries', href: '/admin/queries', active: true }],
+      items: [{ id: 'queries', title: 'Query History', href: '/admin/queries', active: true }],
     },
-    headerTitle: 'Queries',
+    headerTitle: 'Query History',
     headerDetail: 'Product query audit.',
     metrics: [{ label: 'Recent events', value: '2' }],
     queryEvents: [
@@ -274,6 +274,13 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const drawer = root.querySelector('.query-detail-drawer') as HTMLElement | null
       const drawerText = drawer?.textContent ?? ''
       const drawerAnimationName = drawer ? getComputedStyle(drawer).animationName : ''
+      const status = drawer?.querySelector('.query-detail-status') as HTMLElement | null
+      const statusIcon = status?.querySelector('svg') as SVGElement | null
+      const statusText = status?.querySelector('span') as HTMLElement | null
+      const statusColor = status ? getComputedStyle(status).color : ''
+      const statusTextColor = statusText ? getComputedStyle(statusText).color : ''
+      const statusIconColor = statusIcon ? getComputedStyle(statusIcon).color : ''
+      const hasSubtitle = Boolean(drawer?.querySelector('.query-detail-subtitle'))
       root.querySelector<HTMLButtonElement>('.query-detail-close')?.click()
       await element.updateComplete
       const hasDrawerAfterClose = Boolean(root.querySelector('.query-detail-drawer'))
@@ -312,6 +319,10 @@ test('query audit page filters table rows and exposes optional metadata columns'
         drawerAfterExpand,
         drawerText,
         drawerAnimationName,
+        statusColor,
+        statusTextColor,
+        statusIconColor,
+        hasSubtitle,
         hasDrawerAfterClose,
         hasDrawerAfterEscape,
         operationHeaders,
@@ -321,7 +332,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
       }
     }, queryAuditFixturePage())
 
-    expect(state.title).toBe('Queries')
+    expect(state.title).toBe('Query History')
     expect(state.hasFilters).toBe(true)
     expect(state.hasMetrics).toBe(false)
     expect(state.rowText).toMatch(/Query/)
@@ -349,6 +360,9 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.drawerText).toMatch(/analyst/)
     expect(state.drawerText).toMatch(/api/)
     expect(state.drawerText).toMatch(/sales/)
+    expect(state.hasSubtitle).toBe(false)
+    expect(state.statusTextColor).toBe(state.statusColor)
+    expect(state.statusIconColor).not.toBe(state.statusColor)
     expect(state.drawerText).toMatch(/queryevent_1/)
     expect(state.drawerText).toMatch(/req_1/)
     expect(state.drawerText).toMatch(/corr_1/)

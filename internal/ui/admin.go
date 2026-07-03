@@ -273,7 +273,7 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 			{Label: "Tables and views", Value: fmt.Sprint(data.Storage.TableCount)},
 		}
 	case "queries":
-		page.HeaderTitle = "Queries"
+		page.HeaderTitle = "Query History"
 		page.HeaderDetail = "Product query audit across dashboards, API, agents, and Data Explorer."
 		page.QueryEvents = adminQueryEventSignals(data.QueryEvents)
 		page.Metrics = adminQueryMetrics(data.QueryEvents)
@@ -345,7 +345,7 @@ func adminSidebarSignal(active string) uisignals.SubSidebarSignal {
 			{ID: "groups", Title: "Groups", Href: "/admin/groups", Active: groupsActive},
 			{ID: "agent", Title: "Agent", Href: "/admin/agent", Active: agentActive},
 			{ID: "storage", Title: "Storage", Href: "/admin/storage", Active: storageActive},
-			{ID: "queries", Title: "Queries", Href: "/admin/queries", Active: queriesActive},
+			{ID: "queries", Title: "Query History", Href: "/admin/queries", Active: queriesActive},
 		},
 	}
 }
@@ -588,7 +588,7 @@ func adminPageTitle(active string) string {
 	case "storage":
 		return "Storage"
 	case "queries":
-		return "Queries"
+		return "Query History"
 	default:
 		return "General"
 	}
