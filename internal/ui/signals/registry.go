@@ -8,6 +8,7 @@ func ContractTypes() map[string]any {
 		"AdminMetricSignal":             AdminMetricSignal{},
 		"AdminPageEnvelope":             AdminPageEnvelope{},
 		"AdminPageSignal":               AdminPageSignal{},
+		"AdminQueryDetailSignal":        AdminQueryDetailSignal{},
 		"AdminQueryEventSignal":         AdminQueryEventSignal{},
 		"AdminQueryHistoryCommand":      AdminQueryHistoryCommand{},
 		"AdminQueryHistoryFilters":      AdminQueryHistoryFilters{},

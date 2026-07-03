@@ -30,7 +30,6 @@ type AdminData struct {
 	SelectedGroup     *AdminGroup
 	Agent             AdminAgentData
 	Storage           AdminStorageData
-	QueryEvents       []AdminQueryEvent
 	QueryHistory      AdminQueryHistoryData
 }
 
@@ -147,6 +146,7 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 	if active == "queries" {
 		queryHistory := AdminQueryHistorySignalFromData(data.QueryHistory)
 		signals["adminQueryHistory"] = queryHistory
+		signals["adminQueryDetail"] = uisignals.AdminQueryDetailSignal{}
 		signals["adminQueryHistoryCommand"] = uisignals.AdminQueryHistoryCommand{Action: "load_more", Filters: queryHistory.Filters, PageToken: queryHistory.NextCursor, Limit: queryHistory.Limit}
 	}
 	adminAttrs := []g.Node{
@@ -171,8 +171,10 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 	if active == "queries" {
 		adminAttrs = append(adminAttrs,
 			g.Attr("query-history", jsonString(AdminQueryHistorySignalFromData(data.QueryHistory))),
+			g.Attr("query-detail", jsonString(uisignals.AdminQueryDetailSignal{})),
 			g.Attr("data-attr:query-history", "JSON.stringify($adminQueryHistory)"),
-			g.Attr("data-on:ld-query-history-command", "$adminQueryHistoryCommand = evt.detail; $adminQueryHistory.loading = true; $adminQueryHistory.error = ''; "+postAction("/admin/queries/command")),
+			g.Attr("data-attr:query-detail", "JSON.stringify($adminQueryDetail)"),
+			g.Attr("data-on:ld-query-history-command", "$adminQueryHistoryCommand = evt.detail; evt.detail.action == 'select_detail' ? ($adminQueryDetail = {eventId: evt.detail.eventId, loading: true, error: ''}) : evt.detail.action == 'close_detail' ? ($adminQueryDetail = {eventId: '', loading: false, error: ''}) : ($adminQueryHistory.loading = true, $adminQueryHistory.error = ''); "+postAction("/admin/queries/command")),
 		)
 	}
 	adminChildren := []g.Node{}
@@ -298,8 +300,6 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 	case "queries":
 		page.HeaderTitle = "Query History"
 		page.HeaderDetail = "Product query audit across dashboards, API, agents, and Data Explorer."
-		page.QueryEvents = adminQueryEventSignals(data.QueryEvents)
-		page.Metrics = adminQueryMetrics(data.QueryEvents)
 	default:
 		page.HeaderTitle = "General"
 		page.HeaderDetail = "Read-only workspace administration."
@@ -325,7 +325,7 @@ func AdminQueryHistorySignalFromData(data AdminQueryHistoryData) uisignals.Admin
 		limit = 50
 	}
 	return uisignals.AdminQueryHistorySignal{
-		Events:           adminQueryEventSignals(data.Events),
+		Table:            adminQueryEventsGrid(data.Events),
 		Filters:          data.Filters,
 		NextCursor:       data.NextCursor,
 		LoadedCountLabel: queryHistoryCountLabel(len(data.Events)),
@@ -333,6 +333,51 @@ func AdminQueryHistorySignalFromData(data AdminQueryHistoryData) uisignals.Admin
 		Loading:          false,
 		Error:            data.Error,
 		Limit:            limit,
+	}
+}
+
+func AdminQueryDetailSignalFromEvent(event AdminQueryEvent) uisignals.AdminQueryDetailSignal {
+	return uisignals.AdminQueryDetailSignal{
+		EventID:       event.ID,
+		Loading:       false,
+		Error:         event.Error,
+		Status:        event.Status,
+		StatusLabel:   queryEventStatusLabel(event.Status),
+		WorkspaceID:   event.WorkspaceID,
+		PrincipalID:   event.PrincipalID,
+		Surface:       event.Surface,
+		Operation:     event.Operation,
+		QueryKind:     event.QueryKind,
+		ModelID:       event.ModelID,
+		Target:        event.Target,
+		ObjectType:    event.ObjectType,
+		ObjectID:      event.ObjectID,
+		RequestID:     event.RequestID,
+		CorrelationID: event.CorrelationID,
+		DurationMS:    event.DurationMS,
+		RowsReturned:  event.RowsReturned,
+		QueryError:    event.Error,
+		SQL:           event.SQL,
+		PlanText:      event.PlanText,
+		QueryJSON:     event.QueryJSON,
+		CreatedAt:     event.CreatedAt,
+	}
+}
+
+func queryEventStatusLabel(status string) string {
+	switch status {
+	case "success":
+		return "Success"
+	case "canceled":
+		return "Canceled"
+	case "timeout":
+		return "Timeout"
+	case "validation_failed":
+		return "Validation failed"
+	case "":
+		return "Unknown"
+	default:
+		return status
 	}
 }
 
@@ -537,46 +582,119 @@ func adminGroupMembersGrid(group AdminGroup, principals []AdminPrincipal) record
 func adminQueryEventsGrid(events []AdminQueryEvent) recordTable {
 	rows := make([]map[string]any, 0, len(events))
 	for _, event := range events {
-		errorLabel := event.Error
-		if len(errorLabel) > 140 {
-			errorLabel = errorLabel[:140] + "..."
-		}
 		rows = append(rows, map[string]any{
-			"created_at":    event.CreatedAt,
-			"workspace_id":  event.WorkspaceID,
-			"principal_id":  event.PrincipalID,
-			"surface":       recordTableBadgeValue(event.Surface, "muted"),
-			"operation":     event.Operation,
-			"query_kind":    event.QueryKind,
-			"model_id":      event.ModelID,
-			"target":        event.Target,
-			"status":        recordTableBadgeValue(event.Status, queryEventStatusTone(event.Status)),
-			"duration_ms":   event.DurationMS,
-			"rows_returned": event.RowsReturned,
-			"error":         errorLabel,
-			"sql":           event.SQL,
+			"id": event.ID,
+			"query": map[string]any{
+				"label":           queryEventStatement(event),
+				"statusLabel":     event.Status,
+				"tone":            queryEventStatusTone(event.Status),
+				"icon":            queryEventStatusIcon(event.Status),
+				"expandedContent": queryEventExpandedContent(event),
+			},
+			"started_at":     event.CreatedAt,
+			"duration_ms":    map[string]any{"label": fmt.Sprintf("%d ms", event.DurationMS), "value": event.DurationMS},
+			"source":         event.Surface,
+			"runtime":        queryEventRuntimeLabel(event),
+			"principal_id":   event.PrincipalID,
+			"rows_returned":  event.RowsReturned,
+			"operation":      event.Operation,
+			"kind":           event.QueryKind,
+			"model":          event.ModelID,
+			"target":         event.Target,
+			"object":         queryEventObjectLabel(event),
+			"request_id":     event.RequestID,
+			"correlation_id": event.CorrelationID,
+			"error":          event.Error,
 		})
 	}
+	falseValue := false
 	return recordTable{
 		Columns: []recordTableColumn{
-			{ID: "created_at", Header: "Created", Width: "150px"},
-			{ID: "workspace_id", Header: "Workspace", Kind: "code", Width: "120px"},
-			{ID: "surface", Header: "Surface", Kind: "badge", Width: "115px"},
-			{ID: "operation", Header: "Operation", Width: "155px"},
-			{ID: "query_kind", Header: "Kind", Width: "155px"},
-			{ID: "model_id", Header: "Model", Kind: "code", Width: "110px"},
-			{ID: "target", Header: "Target", Kind: "code", Width: "160px"},
-			{ID: "status", Header: "Status", Kind: "badge", Width: "95px"},
-			{ID: "duration_ms", Header: "Duration ms", Kind: "number", Align: "right", Width: "120px"},
+			{ID: "query", Header: "Query", Kind: "query", Width: "560px", Toggleable: &falseValue},
+			{ID: "started_at", Header: "Started", Width: "150px"},
+			{ID: "duration_ms", Header: "Duration", Kind: "number", Align: "right", Width: "105px"},
+			{ID: "source", Header: "Source type", Width: "120px"},
+			{ID: "runtime", Header: "Runtime", Kind: "code", Width: "130px"},
+			{ID: "principal_id", Header: "User", Kind: "code", Width: "150px"},
 			{ID: "rows_returned", Header: "Rows", Kind: "number", Align: "right", Width: "90px"},
-			{ID: "principal_id", Header: "Principal", Kind: "code", Width: "160px"},
-			{ID: "error", Header: "Error", Width: "260px"},
-			{ID: "sql", Header: "SQL", Kind: "code", Width: "420px"},
+			{ID: "operation", Header: "Operation", Kind: "code", Width: "145px"},
+			{ID: "kind", Header: "Kind", Kind: "code", Width: "170px"},
+			{ID: "model", Header: "Model", Kind: "code", Width: "130px"},
+			{ID: "target", Header: "Target", Kind: "code", Width: "150px"},
+			{ID: "object", Header: "Object", Kind: "code", Width: "220px"},
+			{ID: "request_id", Header: "Request ID", Kind: "code", Width: "170px"},
+			{ID: "correlation_id", Header: "Correlation ID", Kind: "code", Width: "170px"},
+			{ID: "error", Header: "Error", Kind: "code", Width: "220px"},
 		},
-		Rows:     rows,
-		Empty:    "No query events found.",
-		MinWidth: "2310px",
+		Rows:      rows,
+		Empty:     "No query events match these filters.",
+		MinWidth:  "1305px",
+		Density:   "tight",
+		RowAction: "detail",
+		ColumnSelector: &uisignals.RecordTableColumnSelector{
+			Enabled:        true,
+			Label:          "Columns",
+			DefaultColumns: []string{"started_at", "duration_ms", "source", "runtime", "principal_id", "rows_returned"},
+		},
 	}
+}
+
+func queryEventStatement(event AdminQueryEvent) string {
+	sql := collapseWhitespace(event.SQL)
+	if sql != "" {
+		return sql
+	}
+	parts := []string{event.Operation, event.QueryKind, strings.Join(nonEmptyStrings(event.ModelID, event.Target), ".")}
+	labels := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if label := collapseWhitespace(part); label != "" {
+			labels = append(labels, label)
+		}
+	}
+	if len(labels) > 0 {
+		return strings.Join(labels, " · ")
+	}
+	return event.ID
+}
+
+func queryEventExpandedContent(event AdminQueryEvent) string {
+	if event.SQL != "" {
+		return event.SQL
+	}
+	return queryEventStatement(event)
+}
+
+func queryEventObjectLabel(event AdminQueryEvent) string {
+	object := strings.Join(nonEmptyStrings(event.ObjectType, event.ObjectID), ":")
+	if object != "" {
+		return object
+	}
+	object = strings.Join(nonEmptyStrings(event.ModelID, event.Target), ":")
+	if object != "" {
+		return object
+	}
+	return "-"
+}
+
+func queryEventRuntimeLabel(event AdminQueryEvent) string {
+	if event.WorkspaceID == "" {
+		return "-"
+	}
+	return event.WorkspaceID
+}
+
+func collapseWhitespace(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func nonEmptyStrings(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			out = append(out, strings.TrimSpace(value))
+		}
+	}
+	return out
 }
 
 func queryEventStatusTone(status string) string {
@@ -589,6 +707,17 @@ func queryEventStatusTone(status string) string {
 		return "attention"
 	default:
 		return "danger"
+	}
+}
+
+func queryEventStatusIcon(status string) string {
+	switch status {
+	case "success":
+		return "check"
+	case "canceled", "timeout":
+		return "clock"
+	default:
+		return "x"
 	}
 }
 

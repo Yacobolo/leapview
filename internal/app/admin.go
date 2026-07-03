@@ -21,6 +21,7 @@ const adminQueryHistoryDefaultLimit = 50
 
 type adminQueryHistoryCommandSignals struct {
 	AdminQueryHistory        uisignals.AdminQueryHistorySignal  `json:"adminQueryHistory"`
+	AdminQueryDetail         uisignals.AdminQueryDetailSignal   `json:"adminQueryDetail"`
 	AdminQueryHistoryCommand uisignals.AdminQueryHistoryCommand `json:"adminQueryHistoryCommand"`
 }
 
@@ -171,7 +172,6 @@ func (s *Server) adminData(r *http.Request) (ui.AdminData, error) {
 	data.Groups = buildAdminGroups(groups, bindings, membersByGroup)
 	data.Storage = s.adminStorageData(r)
 	data.QueryHistory = s.adminQueryHistoryData(r, uisignals.AdminQueryHistoryFilters{}, "", adminQueryHistoryDefaultLimit)
-	data.QueryEvents = data.QueryHistory.Events
 	data.PrincipalCount = len(data.Principals)
 	data.GroupCount = len(data.Groups)
 	return data, nil
@@ -226,27 +226,60 @@ func (s *Server) adminQueryHistoryCommand(w http.ResponseWriter, r *http.Request
 	command := normalizeAdminQueryHistoryCommand(signals.AdminQueryHistoryCommand)
 	repo, err := s.queryAuditRepository()
 	if err != nil || repo == nil {
+		errorText := queryHistoryErrorText(err)
+		if errorText == "" {
+			errorText = "Query audit repository is not configured."
+		}
+		if command.Action == "select_detail" {
+			detail := signals.AdminQueryDetail
+			detail.EventID = command.EventID
+			detail.Loading = false
+			detail.Error = errorText
+			s.publishAdminQueryDetailPatch(clientID, detail)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		history := signals.AdminQueryHistory
 		history.Loading = false
-		history.Error = queryHistoryErrorText(err)
-		if history.Error == "" {
-			history.Error = "Query audit repository is not configured."
-		}
+		history.Error = errorText
 		s.publishAdminQueryHistoryPatch(clientID, history)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	switch command.Action {
+	case "select_detail":
+		event, err := repo.GetQueryEvent(r.Context(), command.EventID)
+		if err != nil {
+			detail := signals.AdminQueryDetail
+			detail.EventID = command.EventID
+			detail.Loading = false
+			detail.Error = err.Error()
+			s.publishAdminQueryDetailPatch(clientID, detail)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		s.publishAdminQueryDetailPatch(clientID, ui.AdminQueryDetailSignalFromEvent(adminQueryEventFromAudit(event)))
+		w.WriteHeader(http.StatusNoContent)
+		return
+	case "close_detail":
+		s.publishAdminQueryDetailPatch(clientID, uisignals.AdminQueryDetailSignal{})
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	events, nextCursor, hasMore, err := s.listAdminQueryHistoryPage(r, repo, command.Filters, command.PageToken, command.Limit)
 	history := signals.AdminQueryHistory
+	incomingCount := len(history.Table.Rows)
 	if command.Action == "load_more" {
-		history.Events = append(history.Events, ui.AdminQueryHistorySignalFromData(ui.AdminQueryHistoryData{Events: events}).Events...)
+		nextTable := ui.AdminQueryHistorySignalFromData(ui.AdminQueryHistoryData{Events: events}).Table
+		history.Table.Rows = append(history.Table.Rows, nextTable.Rows...)
 	} else {
-		history.Events = ui.AdminQueryHistorySignalFromData(ui.AdminQueryHistoryData{Events: events}).Events
+		history.Table = ui.AdminQueryHistorySignalFromData(ui.AdminQueryHistoryData{Events: events}).Table
+		incomingCount = 0
 	}
 	history.Filters = command.Filters
 	history.NextCursor = nextCursor
 	history.HasMore = hasMore
-	history.LoadedCountLabel = queryHistoryLoadedCountLabel(len(history.Events))
+	history.LoadedCountLabel = queryHistoryLoadedCountLabel(incomingCount + len(events))
 	history.Loading = false
 	history.Error = ""
 	history.Limit = normalizeAdminQueryHistoryLimit(command.Limit)
@@ -270,15 +303,24 @@ func (s *Server) publishAdminQueryHistoryPatch(clientID string, history uisignal
 	})
 }
 
+func (s *Server) publishAdminQueryDetailPatch(clientID string, detail uisignals.AdminQueryDetailSignal) {
+	s.broker.Publish(adminQueryHistoryStreamID(clientID), map[string]any{
+		"adminQueryDetail": detail,
+	})
+}
+
 func normalizeAdminQueryHistoryCommand(command uisignals.AdminQueryHistoryCommand) uisignals.AdminQueryHistoryCommand {
 	action := strings.TrimSpace(command.Action)
-	if action != "load_more" {
+	switch action {
+	case "load_more", "select_detail", "close_detail":
+	default:
 		action = "reset"
 		command.PageToken = ""
 	}
 	command.Action = action
 	command.Limit = normalizeAdminQueryHistoryLimit(command.Limit)
 	command.PageToken = strings.TrimSpace(command.PageToken)
+	command.EventID = strings.TrimSpace(command.EventID)
 	command.Filters = normalizeAdminQueryHistoryFilters(command.Filters)
 	return command
 }

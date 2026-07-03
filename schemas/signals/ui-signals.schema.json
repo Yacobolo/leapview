@@ -150,12 +150,6 @@
           },
           "type": "array"
         },
-        "queryEvents": {
-          "items": {
-            "$ref": "#/$defs/AdminQueryEventSignal"
-          },
-          "type": "array"
-        },
         "sections": {
           "items": {
             "$ref": "#/$defs/AdminContentSectionSignal"
@@ -179,6 +173,86 @@
         "kind",
         "sidebar",
         "title"
+      ],
+      "type": "object"
+    },
+    "AdminQueryDetailSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "correlationId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "error": {
+          "type": "string"
+        },
+        "eventId": {
+          "type": "string"
+        },
+        "loading": {
+          "type": "boolean"
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "objectId": {
+          "type": "string"
+        },
+        "objectType": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "planText": {
+          "type": "string"
+        },
+        "principalId": {
+          "type": "string"
+        },
+        "queryError": {
+          "type": "string"
+        },
+        "queryJson": {
+          "type": "string"
+        },
+        "queryKind": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "rowsReturned": {
+          "type": "integer"
+        },
+        "sql": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusLabel": {
+          "type": "string"
+        },
+        "surface": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "durationMs",
+        "loading",
+        "rowsReturned"
       ],
       "type": "object"
     },
@@ -276,6 +350,9 @@
         "action": {
           "type": "string"
         },
+        "eventId": {
+          "type": "string"
+        },
         "filters": {
           "$ref": "#/$defs/AdminQueryHistoryFilters"
         },
@@ -331,12 +408,6 @@
         "error": {
           "type": "string"
         },
-        "events": {
-          "items": {
-            "$ref": "#/$defs/AdminQueryEventSignal"
-          },
-          "type": "array"
-        },
         "filters": {
           "$ref": "#/$defs/AdminQueryHistoryFilters"
         },
@@ -354,17 +425,20 @@
         },
         "nextCursor": {
           "type": "string"
+        },
+        "table": {
+          "$ref": "#/$defs/RecordTableSignal"
         }
       },
       "required": [
         "error",
-        "events",
         "filters",
         "hasMore",
         "limit",
         "loadedCountLabel",
         "loading",
-        "nextCursor"
+        "nextCursor",
+        "table"
       ],
       "type": "object"
     },
@@ -3778,6 +3852,9 @@
     },
     {
       "$ref": "#/$defs/AdminPageSignal"
+    },
+    {
+      "$ref": "#/$defs/AdminQueryDetailSignal"
     },
     {
       "$ref": "#/$defs/AdminQueryEventSignal"

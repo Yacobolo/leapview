@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { CheckCircle2, Clock3, Copy, X, XCircle } from 'lucide'
-import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryEventSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal } from '../../generated/signals'
+import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, RecordTableSignal } from '../../generated/signals'
 import { jsonAttribute } from '../shared/json-attribute'
 import { lucideIcon } from '../shared/lucide-icons'
 import { checkSignalContract } from '../shared/signal-contract'
@@ -25,9 +25,9 @@ class LibreDashAdminPage extends LitElement {
   @property({ converter: jsonAttribute<AdminPageSignal | null>(null) }) page: AdminPageSignal | null = null
   @property({ converter: jsonAttribute<AdminStorageSignal>(emptyStorage) }) storage: AdminStorageSignal = emptyStorage
   @property({ attribute: 'query-history', converter: jsonAttribute<AdminQueryHistorySignal | null>(null) }) queryHistory: AdminQueryHistorySignal | null = null
+  @property({ attribute: 'query-detail', converter: jsonAttribute<AdminQueryDetailSignal | null>(null) }) queryDetail: AdminQueryDetailSignal | null = null
   @property({ attribute: 'agent-prompt' }) agentPrompt = ''
   @state() private queryFilters: AdminQueryHistoryFilters = {}
-  @state() private selectedQueryEventID = ''
   @state() private copiedQueryDetailValue = ''
 
   static styles = css`
@@ -531,7 +531,7 @@ class LibreDashAdminPage extends LitElement {
     if (changed.has('queryHistory')) {
       const history = this.currentQueryHistory()
       this.queryFilters = { ...history.filters }
-      if (this.selectedQueryEventID && !history.events.some((event) => event.id === this.selectedQueryEventID)) {
+      if (this.queryDetail?.eventId && !tableRows(history.table).some((row) => String(row.id ?? '') === this.queryDetail?.eventId)) {
         this.closeQueryDetail()
       }
     }
@@ -597,23 +597,23 @@ class LibreDashAdminPage extends LitElement {
 
   private renderQueries(page: AdminPageSignal) {
     const history = this.currentQueryHistory(page)
-    const events = history.events ?? []
-    const selected = events.find((event) => event.id === this.selectedQueryEventID) ?? null
+    const rows = tableRows(history.table)
+    const detail = this.queryDetail ?? emptyQueryDetail
     return html`
       <section class="query-audit" aria-label="Query audit">
         <div class="query-filters" aria-label="Query event filters">
           ${this.renderTextFilter('workspace', 'Workspace')}
           ${this.renderTextFilter('principal', 'User')}
-          ${this.renderSelectFilter('surface', 'Source', uniqueValues(events.map((event) => event.surface)))}
-          ${this.renderSelectFilter('kind', 'Kind', uniqueValues(events.map((event) => event.queryKind)))}
-          ${this.renderSelectFilter('status', 'Status', uniqueValues(events.map((event) => event.status)))}
+          ${this.renderSelectFilter('surface', 'Source', uniqueValues(rows.map((row) => cellText(row.source))))}
+          ${this.renderSelectFilter('kind', 'Kind', uniqueValues(rows.map((row) => cellText(row.kind))))}
+          ${this.renderSelectFilter('status', 'Status', uniqueValues(rows.map((row) => cellText((row.query as Record<string, unknown> | undefined)?.statusLabel))))}
           ${this.renderTextFilter('target', 'Target')}
           ${this.renderTextFilter('search', 'Statement / ID')}
         </div>
         <div class="panel" @ld-record-table-action=${this.handleQueryTableAction}>
-          <ld-record-table variant="compact" .table=${queryEventsTable(events)}></ld-record-table>
+          <ld-record-table variant="compact" .table=${history.table}></ld-record-table>
           <div class="query-history-footer" aria-live="polite">
-            <span class=${history.error ? 'query-history-error' : ''}>${history.error || history.loadedCountLabel || `${events.length} queries loaded`}</span>
+            <span class=${history.error ? 'query-history-error' : ''}>${history.error || history.loadedCountLabel || `${rows.length} queries loaded`}</span>
             ${history.hasMore ? html`
               <button
                 type="button"
@@ -626,7 +626,7 @@ class LibreDashAdminPage extends LitElement {
             ` : nothing}
           </div>
         </div>
-        ${selected ? this.renderQueryDetail(selected) : nothing}
+        ${detail.eventId || detail.loading || detail.error ? this.renderQueryDetail(detail) : nothing}
       </section>
     `
   }
@@ -673,7 +673,7 @@ class LibreDashAdminPage extends LitElement {
     this.emitQueryHistoryCommand('load_more', history.filters, history.nextCursor)
   }
 
-  private emitQueryHistoryCommand(action: 'reset' | 'load_more', filters: AdminQueryHistoryFilters, pageToken: string) {
+  private emitQueryHistoryCommand(action: 'reset' | 'load_more' | 'select_detail' | 'close_detail', filters: AdminQueryHistoryFilters, pageToken: string, eventId = '') {
     const history = this.currentQueryHistory()
     this.dispatchEvent(new CustomEvent('ld-query-history-command', {
       bubbles: true,
@@ -683,6 +683,7 @@ class LibreDashAdminPage extends LitElement {
         filters,
         pageToken,
         limit: history.limit || 50,
+        eventId,
       },
     }))
   }
@@ -691,12 +692,11 @@ class LibreDashAdminPage extends LitElement {
     const pageHistory = page ? (page as AdminPageSignal & { queryHistory?: AdminQueryHistorySignal }).queryHistory : null
     const history = this.queryHistory ?? pageHistory ?? null
     if (history) return history
-    const events = page?.queryEvents ?? []
     return {
-      events,
+      table: emptyQueryHistoryTable,
       filters: {},
       nextCursor: '',
-      loadedCountLabel: `${events.length} queries loaded`,
+      loadedCountLabel: '0 queries loaded',
       hasMore: false,
       loading: false,
       error: '',
@@ -706,29 +706,32 @@ class LibreDashAdminPage extends LitElement {
 
   private handleQueryTableAction = (event: CustomEvent) => {
     if (event.detail?.action !== 'detail') return
-    this.selectedQueryEventID = String(event.detail.row?.id ?? '')
+    const eventId = String(event.detail.row?.id ?? '')
+    if (!eventId) return
     this.copiedQueryDetailValue = ''
+    this.emitQueryHistoryCommand('select_detail', this.currentQueryHistory().filters, '', eventId)
   }
 
   private closeQueryDetail = () => {
-    this.selectedQueryEventID = ''
     this.copiedQueryDetailValue = ''
+    this.emitQueryHistoryCommand('close_detail', this.currentQueryHistory().filters, '')
   }
 
   private handleWindowKeydown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || !this.selectedQueryEventID) return
+    const detail = this.queryDetail ?? emptyQueryDetail
+    if (event.key !== 'Escape' || (!detail.eventId && !detail.loading && !detail.error)) return
     this.closeQueryDetail()
   }
 
-  private renderQueryDetail(event: AdminQueryEventSignal) {
-    const statusTone = queryEventStatusTone(event.status)
+  private renderQueryDetail(event: AdminQueryDetailSignal) {
+    const statusTone = queryEventStatusTone(event.status ?? '')
     return html`
       <aside class="query-detail-drawer" role="dialog" aria-modal="true" aria-label="Query event detail">
         <header class="query-detail-header">
           <div class="query-detail-header-row">
             <div class=${`query-detail-status query-detail-status-${statusTone}`}>
-              ${lucideIcon(queryEventStatusIconComponent(event.status), { size: 16, strokeWidth: 2 })}
-              <span>${queryEventStatusLabel(event.status)}</span>
+              ${lucideIcon(queryEventStatusIconComponent(event.status ?? ''), { size: 16, strokeWidth: 2 })}
+              <span>${event.loading ? 'Loading' : event.statusLabel || queryEventStatusLabel(event.status ?? '')}</span>
             </div>
             <button class="query-detail-close" type="button" aria-label="Close query details" @click=${this.closeQueryDetail}>
               ${lucideIcon(X, { size: 18, strokeWidth: 2 })}
@@ -736,17 +739,19 @@ class LibreDashAdminPage extends LitElement {
           </div>
         </header>
         <div class="query-detail-body">
+          ${event.loading ? html`<section class="query-detail-section"><p class="detail">Loading query details...</p></section>` : nothing}
+          ${event.error && !event.status ? html`<section class="query-detail-section"><pre class="query-detail-code query-detail-error"><code>${event.error}</code></pre></section>` : nothing}
           <section class="query-detail-section" aria-label="Query identity">
             <h2>Query identity</h2>
             <div class="query-detail-facts">
-              ${this.renderCopyableFact('ID', event.id)}
+              ${this.renderCopyableFact('ID', event.eventId)}
               ${this.renderCopyableFact('Request ID', event.requestId)}
               ${this.renderCopyableFact('Correlation ID', event.correlationId)}
             </div>
           </section>
           <section class="query-detail-section" aria-label="Query text">
             <h2>Query text</h2>
-            <ld-code-block language="sql" format copy .code=${queryEventExpandedContent(event)}></ld-code-block>
+            <ld-code-block language="sql" format copy .code=${event.sql || event.eventId || ''}></ld-code-block>
           </section>
           <section class="query-detail-section" aria-label="Timing">
             <h2>Timing</h2>
@@ -765,7 +770,7 @@ class LibreDashAdminPage extends LitElement {
               ${queryDetailFact('Source type', event.surface)}
               ${queryDetailFact('Model', event.modelId)}
               ${queryDetailFact('Target', event.target)}
-              ${queryDetailFact('Object', queryEventObjectLabel(event))}
+              ${queryDetailFact('Object', queryDetailObjectLabel(event))}
             </div>
           </section>
           <section class="query-detail-section" aria-label="Result">
@@ -774,7 +779,7 @@ class LibreDashAdminPage extends LitElement {
               ${queryDetailFact('Rows returned', String(event.rowsReturned ?? 0))}
               ${queryDetailFact('Status', event.status)}
             </div>
-            ${event.error ? html`<pre class="query-detail-code query-detail-error"><code>${event.error}</code></pre>` : nothing}
+            ${event.queryError ? html`<pre class="query-detail-code query-detail-error"><code>${event.queryError}</code></pre>` : nothing}
           </section>
           ${event.planText || event.queryJson ? html`
             <details class="query-detail-raw">
@@ -822,86 +827,32 @@ class LibreDashAdminPage extends LitElement {
 
 }
 
-function queryEventsTable(events: AdminQueryEventSignal[]) {
-  return {
-    columns: [
-      { id: 'query', header: 'Query', kind: 'query', width: '560px', toggleable: false },
-      { id: 'started_at', header: 'Started', width: '150px' },
-      { id: 'duration_ms', header: 'Duration', kind: 'number', align: 'right', width: '105px' },
-      { id: 'source', header: 'Source type', width: '120px' },
-      { id: 'runtime', header: 'Runtime', kind: 'code', width: '130px' },
-      { id: 'principal_id', header: 'User', kind: 'code', width: '150px' },
-      { id: 'rows_returned', header: 'Rows', kind: 'number', align: 'right', width: '90px' },
-      { id: 'operation', header: 'Operation', kind: 'code', width: '145px' },
-      { id: 'kind', header: 'Kind', kind: 'code', width: '170px' },
-      { id: 'model', header: 'Model', kind: 'code', width: '130px' },
-      { id: 'target', header: 'Target', kind: 'code', width: '150px' },
-      { id: 'object', header: 'Object', kind: 'code', width: '220px' },
-      { id: 'request_id', header: 'Request ID', kind: 'code', width: '170px' },
-      { id: 'correlation_id', header: 'Correlation ID', kind: 'code', width: '170px' },
-      { id: 'error', header: 'Error', kind: 'code', width: '220px' },
-    ],
-    rows: events.map((event) => ({
-      id: event.id,
-      query: {
-        label: queryEventStatement(event),
-        statusLabel: event.status,
-        tone: queryEventStatusTone(event.status),
-        icon: queryEventStatusIcon(event.status),
-        expandedContent: queryEventExpandedContent(event),
-      },
-      started_at: event.createdAt,
-      duration_ms: { label: `${event.durationMs ?? 0} ms`, value: event.durationMs ?? 0 },
-      source: event.surface,
-      runtime: queryEventRuntimeLabel(event),
-      principal_id: event.principalId,
-      rows_returned: event.rowsReturned,
-      operation: event.operation,
-      kind: event.queryKind,
-      model: event.modelId,
-      target: event.target,
-      object: queryEventObjectLabel(event),
-      request_id: event.requestId,
-      correlation_id: event.correlationId,
-      error: event.error,
-    })),
-    empty: 'No query events match these filters.',
-    minWidth: '1305px',
-    density: 'tight',
-    rowAction: 'detail',
-    columnSelector: {
-      enabled: true,
-      label: 'Columns',
-      defaultColumns: ['started_at', 'duration_ms', 'source', 'runtime', 'principal_id', 'rows_returned'],
-    },
-  }
+const emptyQueryHistoryTable: RecordTableSignal = {
+  columns: [],
+  rows: [],
+  empty: 'No query events match these filters.',
 }
 
-function queryEventStatement(event: AdminQueryEventSignal): string {
-  const sql = collapseWhitespace(event.sql)
-  if (sql) return sql
-  const parts = [event.operation, event.queryKind, [event.modelId, event.target].filter(Boolean).join('.')]
-    .map((part) => collapseWhitespace(part))
-    .filter(Boolean)
-  return parts.join(' · ') || event.id
+const emptyQueryDetail: AdminQueryDetailSignal = {
+  eventId: '',
+  loading: false,
+  error: '',
 }
 
-function queryEventExpandedContent(event: AdminQueryEventSignal): string {
-  return event.sql || queryEventStatement(event)
+function tableRows(table: RecordTableSignal | undefined | null): Array<Record<string, unknown>> {
+  return Array.isArray(table?.rows) ? table.rows as Array<Record<string, unknown>> : []
 }
 
-function queryEventObjectLabel(event: AdminQueryEventSignal): string {
+function cellText(value: unknown): string {
+  if (value == null || value === '') return ''
+  if (typeof value === 'object' && 'label' in value) return String((value as Record<string, unknown>).label ?? '')
+  return String(value)
+}
+
+function queryDetailObjectLabel(event: AdminQueryDetailSignal): string {
   const object = [event.objectType, event.objectId].filter(Boolean).join(':')
   if (object) return object
   return [event.modelId, event.target].filter(Boolean).join(':') || '-'
-}
-
-function queryEventRuntimeLabel(event: AdminQueryEventSignal): string {
-  return event.workspaceId || '-'
-}
-
-function collapseWhitespace(value: string | undefined | null): string {
-  return String(value ?? '').replace(/\s+/g, ' ').trim()
 }
 
 function queryEventStatusTone(status: string): string {

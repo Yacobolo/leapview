@@ -52,6 +52,14 @@ func (r *Repository) RecordQueryEvent(ctx context.Context, input queryaudit.Even
 	})
 }
 
+func (r *Repository) GetQueryEvent(ctx context.Context, id string) (queryaudit.Event, error) {
+	row, err := r.q.GetQueryEvent(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return queryaudit.Event{}, err
+	}
+	return queryEventFromDB(row), nil
+}
+
 func (r *Repository) ListQueryEvents(ctx context.Context, filter queryaudit.Filter) ([]queryaudit.Event, error) {
 	limit := filter.Limit
 	if limit <= 0 {
@@ -84,33 +92,37 @@ func (r *Repository) ListQueryEvents(ctx context.Context, filter queryaudit.Filt
 	}
 	events := make([]queryaudit.Event, 0, len(rows))
 	for _, row := range rows {
-		events = append(events, queryaudit.Event{
-			ID: row.ID,
-			EventInput: queryaudit.EventInput{
-				WorkspaceID:   row.WorkspaceID,
-				PrincipalID:   row.PrincipalID,
-				Surface:       row.Surface,
-				Operation:     row.Operation,
-				QueryKind:     row.QueryKind,
-				ModelID:       row.ModelID,
-				Target:        row.Target,
-				ObjectType:    row.ObjectType,
-				ObjectID:      row.ObjectID,
-				RequestID:     row.RequestID,
-				CorrelationID: row.CorrelationID,
-				Status:        row.Status,
-				DurationMS:    row.DurationMs,
-				RowsReturned:  int(row.RowsReturned),
-				BytesEstimate: row.BytesEstimate,
-				Error:         row.Error,
-				SQL:           row.SqlText,
-				PlanText:      row.PlanText,
-				QueryJSON:     row.QueryJson,
-			},
-			CreatedAt: row.CreatedAt,
-		})
+		events = append(events, queryEventFromDB(row))
 	}
 	return events, nil
+}
+
+func queryEventFromDB(row db.QueryEvent) queryaudit.Event {
+	return queryaudit.Event{
+		ID: row.ID,
+		EventInput: queryaudit.EventInput{
+			WorkspaceID:   row.WorkspaceID,
+			PrincipalID:   row.PrincipalID,
+			Surface:       row.Surface,
+			Operation:     row.Operation,
+			QueryKind:     row.QueryKind,
+			ModelID:       row.ModelID,
+			Target:        row.Target,
+			ObjectType:    row.ObjectType,
+			ObjectID:      row.ObjectID,
+			RequestID:     row.RequestID,
+			CorrelationID: row.CorrelationID,
+			Status:        row.Status,
+			DurationMS:    row.DurationMs,
+			RowsReturned:  int(row.RowsReturned),
+			BytesEstimate: row.BytesEstimate,
+			Error:         row.Error,
+			SQL:           row.SqlText,
+			PlanText:      row.PlanText,
+			QueryJSON:     row.QueryJson,
+		},
+		CreatedAt: row.CreatedAt,
+	}
 }
 
 func newID(prefix string) string {

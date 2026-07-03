@@ -582,6 +582,11 @@ VALUES (
   sqlc.arg(query_json)
 );
 
+-- name: GetQueryEvent :one
+SELECT *
+FROM query_events
+WHERE id = sqlc.arg(id);
+
 -- name: ListQueryEvents :many
 SELECT *
 FROM query_events

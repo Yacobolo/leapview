@@ -49,7 +49,32 @@ export interface AdminPageSignal {
   sections?: AdminContentSectionSignal[]
   agent?: AdminAgentSignal
   storage?: AdminStorageSignal
-  queryEvents?: AdminQueryEventSignal[]
+}
+
+export interface AdminQueryDetailSignal {
+  eventId?: string
+  loading: boolean
+  error?: string
+  status?: string
+  statusLabel?: string
+  workspaceId?: string
+  principalId?: string
+  surface?: string
+  operation?: string
+  queryKind?: string
+  modelId?: string
+  target?: string
+  objectType?: string
+  objectId?: string
+  requestId?: string
+  correlationId?: string
+  durationMs: number
+  rowsReturned: number
+  queryError?: string
+  sql?: string
+  planText?: string
+  queryJson?: string
+  createdAt?: string
 }
 
 export interface AdminQueryEventSignal {
@@ -80,6 +105,7 @@ export interface AdminQueryHistoryCommand {
   filters: AdminQueryHistoryFilters
   pageToken?: string
   limit?: number
+  eventId?: string
 }
 
 export interface AdminQueryHistoryFilters {
@@ -95,7 +121,7 @@ export interface AdminQueryHistoryFilters {
 }
 
 export interface AdminQueryHistorySignal {
-  events: AdminQueryEventSignal[]
+  table: RecordTableSignal
   filters: AdminQueryHistoryFilters
   nextCursor: string
   loadedCountLabel: string
@@ -1051,4 +1077,4 @@ export interface WorkspaceTabSignal {
   count?: number
 }
 
-export type UISignalEnvelope = AdminAgentSignal | AdminAgentToolSignal | AdminContentSectionSignal | AdminMetricSignal | AdminPageEnvelope | AdminPageSignal | AdminQueryEventSignal | AdminQueryHistoryCommand | AdminQueryHistoryFilters | AdminQueryHistorySignal | AdminStorageColumnSignal | AdminStorageCommand | AdminStorageSignal | AdminStorageSummary | AdminStorageTableSignal | CatalogDashboardSignal | CatalogPageEnvelope | CatalogPageSignal | ChatEnvelope | ChatPageSignal | ChatSignal | ChromeSignal | ConnectionsPageEnvelope | ConnectionsPageSignal | DashboardComponentSignal | DashboardEnvelope | DashboardPageNavSignal | DashboardPageSignal | DataExplorerCommand | DataExplorerObjectSignal | DataExplorerPageEnvelope | DataExplorerPageSignal | DataExplorerSignal | DataExplorerWorkspaceSignal | DataPreviewBlockSignal | DataPreviewColumnSignal | DataPreviewSignal | DataPreviewSortSignal | DefinitionFactSignal | LoginPageEnvelope | LoginPageSignal | RecordTableBadgeSignal | RecordTableColumnSignal | RecordTableSignal | RouteRuntimeSignal | SemanticModelGraphEdgeSignal | SemanticModelGraphFieldSignal | SemanticModelGraphNodeSignal | SemanticModelGraphSignal | SidebarActionSignal | SidebarGroupSignal | SidebarHistoryItemSignal | SidebarHistorySignal | SidebarItemSignal | SidebarSignal | SubSidebarItemSignal | SubSidebarSignal | WorkspaceAccessSignal | WorkspaceActionSignal | WorkspaceAssetDetailsSignal | WorkspaceAssetLineageSignal | WorkspaceAssetPageEnvelope | WorkspaceAssetPageSignal | WorkspaceAssetRefreshSignal | WorkspaceAssetSummarySignal | WorkspaceBreadcrumbSignal | WorkspaceCardSignal | WorkspaceDetailSectionSignal | WorkspacePageEnvelope | WorkspacePageSignal | WorkspaceTabSignal
+export type UISignalEnvelope = AdminAgentSignal | AdminAgentToolSignal | AdminContentSectionSignal | AdminMetricSignal | AdminPageEnvelope | AdminPageSignal | AdminQueryDetailSignal | AdminQueryEventSignal | AdminQueryHistoryCommand | AdminQueryHistoryFilters | AdminQueryHistorySignal | AdminStorageColumnSignal | AdminStorageCommand | AdminStorageSignal | AdminStorageSummary | AdminStorageTableSignal | CatalogDashboardSignal | CatalogPageEnvelope | CatalogPageSignal | ChatEnvelope | ChatPageSignal | ChatSignal | ChromeSignal | ConnectionsPageEnvelope | ConnectionsPageSignal | DashboardComponentSignal | DashboardEnvelope | DashboardPageNavSignal | DashboardPageSignal | DataExplorerCommand | DataExplorerObjectSignal | DataExplorerPageEnvelope | DataExplorerPageSignal | DataExplorerSignal | DataExplorerWorkspaceSignal | DataPreviewBlockSignal | DataPreviewColumnSignal | DataPreviewSignal | DataPreviewSortSignal | DefinitionFactSignal | LoginPageEnvelope | LoginPageSignal | RecordTableBadgeSignal | RecordTableColumnSignal | RecordTableSignal | RouteRuntimeSignal | SemanticModelGraphEdgeSignal | SemanticModelGraphFieldSignal | SemanticModelGraphNodeSignal | SemanticModelGraphSignal | SidebarActionSignal | SidebarGroupSignal | SidebarHistoryItemSignal | SidebarHistorySignal | SidebarItemSignal | SidebarSignal | SubSidebarItemSignal | SubSidebarSignal | WorkspaceAccessSignal | WorkspaceActionSignal | WorkspaceAssetDetailsSignal | WorkspaceAssetLineageSignal | WorkspaceAssetPageEnvelope | WorkspaceAssetPageSignal | WorkspaceAssetRefreshSignal | WorkspaceAssetSummarySignal | WorkspaceBreadcrumbSignal | WorkspaceCardSignal | WorkspaceDetailSectionSignal | WorkspacePageEnvelope | WorkspacePageSignal | WorkspaceTabSignal

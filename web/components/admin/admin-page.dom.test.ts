@@ -232,23 +232,8 @@ function queryAuditFixturePage() {
     },
     headerTitle: 'Query History',
     headerDetail: 'Product query audit.',
-    metrics: [{ label: 'Recent events', value: '2' }],
-    queryEvents: [{
-      id: 'stale_page_event',
-      workspaceId: 'stale',
-      principalId: 'stale',
-      surface: 'api',
-      operation: 'api_query',
-      queryKind: 'semantic_rows',
-      modelId: 'stale',
-      target: 'stale',
-      status: 'success',
-      durationMs: 1,
-      rowsReturned: 1,
-      createdAt: '2026-07-02T09:00:00Z',
-    }],
     queryHistory: {
-      events: queryEvents,
+      table: queryAuditTableFixture(queryEvents),
       filters: {},
       nextCursor: 'cursor_next',
       loadedCountLabel: '2 queries loaded',
@@ -256,6 +241,86 @@ function queryAuditFixturePage() {
       loading: false,
       error: '',
       limit: 50,
+    },
+    queryDetail: {
+      eventId: 'queryevent_1',
+      loading: false,
+      error: '',
+      status: 'success',
+      statusLabel: 'Success',
+      workspaceId: 'sales',
+      principalId: 'analyst',
+      surface: 'api',
+      operation: 'api_query',
+      queryKind: 'semantic_aggregate',
+      modelId: 'sales',
+      target: 'orders',
+      objectType: 'semantic_dataset',
+      objectId: 'sales:orders',
+      requestId: 'req_1',
+      correlationId: 'corr_1',
+      durationMs: 12,
+      rowsReturned: 2,
+      queryError: '',
+      sql: 'select status from orders',
+      planText: 'orders plan',
+      queryJson: '{"workspaceId":"sales","target":"orders"}',
+      createdAt: '2026-07-02T10:00:00Z',
+    },
+  }
+}
+
+function queryAuditTableFixture(events: any[]) {
+  return {
+    columns: [
+      { id: 'query', header: 'Query', kind: 'query', width: '560px', toggleable: false },
+      { id: 'started_at', header: 'Started', width: '150px' },
+      { id: 'duration_ms', header: 'Duration', kind: 'number', align: 'right', width: '105px' },
+      { id: 'source', header: 'Source type', width: '120px' },
+      { id: 'runtime', header: 'Runtime', kind: 'code', width: '130px' },
+      { id: 'principal_id', header: 'User', kind: 'code', width: '150px' },
+      { id: 'rows_returned', header: 'Rows', kind: 'number', align: 'right', width: '90px' },
+      { id: 'operation', header: 'Operation', kind: 'code', width: '145px' },
+      { id: 'kind', header: 'Kind', kind: 'code', width: '170px' },
+      { id: 'model', header: 'Model', kind: 'code', width: '130px' },
+      { id: 'target', header: 'Target', kind: 'code', width: '150px' },
+      { id: 'object', header: 'Object', kind: 'code', width: '220px' },
+      { id: 'request_id', header: 'Request ID', kind: 'code', width: '170px' },
+      { id: 'correlation_id', header: 'Correlation ID', kind: 'code', width: '170px' },
+      { id: 'error', header: 'Error', kind: 'code', width: '220px' },
+    ],
+    rows: events.map((event) => ({
+      id: event.id,
+      query: {
+        label: event.sql || `${event.operation} · ${event.queryKind} · ${event.modelId}.${event.target}`,
+        statusLabel: event.status,
+        tone: event.status === 'success' ? 'success' : 'danger',
+        icon: event.status === 'success' ? 'check' : 'x',
+        expandedContent: event.sql || `${event.operation} · ${event.queryKind}`,
+      },
+      started_at: event.createdAt,
+      duration_ms: { label: `${event.durationMs ?? 0} ms`, value: event.durationMs ?? 0 },
+      source: event.surface,
+      runtime: event.workspaceId || '-',
+      principal_id: event.principalId,
+      rows_returned: event.rowsReturned,
+      operation: event.operation,
+      kind: event.queryKind,
+      model: event.modelId,
+      target: event.target,
+      object: [event.objectType, event.objectId].filter(Boolean).join(':') || '-',
+      request_id: event.requestId,
+      correlation_id: event.correlationId,
+      error: event.error,
+    })),
+    empty: 'No query events match these filters.',
+    minWidth: '1305px',
+    density: 'tight',
+    rowAction: 'detail',
+    columnSelector: {
+      enabled: true,
+      label: 'Columns',
+      defaultColumns: ['started_at', 'duration_ms', 'source', 'runtime', 'principal_id', 'rows_returned'],
     },
   }
 }
@@ -304,6 +369,9 @@ test('query audit page filters table rows and exposes optional metadata columns'
       await table.updateComplete
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
       await element.updateComplete
+      const detailCommand = (window as any).queryHistoryCommands.at(-1)
+      element.queryDetail = fixture.queryDetail
+      await element.updateComplete
       const drawer = root.querySelector('.query-detail-drawer') as HTMLElement | null
       const drawerText = drawer?.textContent ?? ''
       const drawerCodeBlock = drawer?.querySelector('ld-code-block') as HTMLElement | null
@@ -318,10 +386,18 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const hasSubtitle = Boolean(drawer?.querySelector('.query-detail-subtitle'))
       root.querySelector<HTMLButtonElement>('.query-detail-close')?.click()
       await element.updateComplete
+      const closeCommand = (window as any).queryHistoryCommands.at(-1)
+      element.queryDetail = { eventId: '', loading: false, error: '' }
+      await element.updateComplete
       const hasDrawerAfterClose = Boolean(root.querySelector('.query-detail-drawer'))
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
       await element.updateComplete
+      element.queryDetail = fixture.queryDetail
+      await element.updateComplete
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await element.updateComplete
+      const escapeCommand = (window as any).queryHistoryCommands.at(-1)
+      element.queryDetail = { eventId: '', loading: false, error: '' }
       await element.updateComplete
       const hasDrawerAfterEscape = Boolean(root.querySelector('.query-detail-drawer'))
       Array.from(table.querySelectorAll('label'))
@@ -355,6 +431,9 @@ test('query audit page filters table rows and exposes optional metadata columns'
         expandedQueryText,
         drawerAfterExpand,
         drawerText,
+        detailCommand,
+        closeCommand,
+        escapeCommand,
         drawerHasCodeBlock: Boolean(drawerCodeBlock),
         drawerCode,
         drawerAnimationName,
@@ -397,6 +476,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.hiddenRuntimeText).toMatch(/select status from orders/)
     expect(state.expandedQueryText).toMatch(/SELECT\s+status\s+FROM\s+orders/i)
     expect(state.drawerAfterExpand).toBe('')
+    expect(state.detailCommand).toMatchObject({ action: 'select_detail', eventId: 'queryevent_1', limit: 50 })
     expect(state.drawerText).toMatch(/Finished|Success|success/i)
     expect(state.drawerText).toMatch(/analyst/)
     expect(state.drawerText).toMatch(/api/)
@@ -415,6 +495,8 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.drawerText).toMatch(/semantic_dataset:sales:orders/)
     expect(state.drawerText).toMatch(/Rows returned/)
     expect(state.drawerAnimationName).toContain('query-detail-slide-in')
+    expect(state.closeCommand).toMatchObject({ action: 'close_detail' })
+    expect(state.escapeCommand).toMatchObject({ action: 'close_detail' })
     expect(state.hasDrawerAfterClose).toBe(false)
     expect(state.hasDrawerAfterEscape).toBe(false)
     expect(state.operationHeaders).toContain('Operation')
@@ -450,7 +532,10 @@ test('query audit emits load more commands from backend-driven history state', a
       const command = (window as any).queryHistoryCommands.at(-1)
       element.queryHistory = {
         ...fixture.queryHistory,
-        events: [fixture.queryHistory.events[1]],
+        table: {
+          ...fixture.queryHistory.table,
+          rows: [fixture.queryHistory.table.rows[1]],
+        },
         filters: { workspace: 'operations' },
         nextCursor: '',
         hasMore: false,
@@ -492,6 +577,8 @@ test('query audit detail drawer behaves as a mobile overlay', async () => {
       const table = root.querySelector('ld-record-table') as any
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
       await element.updateComplete
+      element.queryDetail = fixture.queryDetail
+      await element.updateComplete
       const drawer = root.querySelector('.query-detail-drawer') as HTMLElement
       const drawerRect = drawer.getBoundingClientRect()
       const tableRect = table.getBoundingClientRect()
@@ -528,9 +615,36 @@ test('query audit drawer does not block selecting another row', async () => {
       const rows = Array.from(table.querySelectorAll<HTMLElement>('tbody tr.record-row'))
       rows[0]?.click()
       await element.updateComplete
+      element.queryDetail = fixture.queryDetail
+      await element.updateComplete
       const firstDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
       const hasBackdrop = Boolean(root.querySelector('.query-detail-backdrop'))
       rows[1]?.click()
+      await element.updateComplete
+      element.queryDetail = {
+        ...fixture.queryDetail,
+        eventId: 'queryevent_2',
+        status: 'error',
+        statusLabel: 'Error',
+        workspaceId: 'operations',
+        principalId: 'agent',
+        surface: 'agent',
+        operation: 'agent_query',
+        queryKind: 'semantic_rows',
+        modelId: 'operations',
+        target: 'customers',
+        objectType: 'agent_tool',
+        objectId: 'query_semantic_dataset',
+        requestId: 'call_1',
+        correlationId: '',
+        durationMs: 4,
+        rowsReturned: 0,
+        queryError: 'invalid field',
+        sql: '',
+        planText: '',
+        queryJson: '{"workspaceId":"operations","target":"customers"}',
+        createdAt: '2026-07-02T10:01:00Z',
+      }
       await element.updateComplete
       const secondDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
       return {

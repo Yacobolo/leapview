@@ -1132,6 +1132,41 @@ func (q *Queries) InsertQueryEvent(ctx context.Context, arg InsertQueryEventPara
 	return err
 }
 
+const getQueryEvent = `-- name: GetQueryEvent :one
+SELECT id, workspace_id, principal_id, surface, operation, query_kind, model_id, target, object_type, object_id, request_id, correlation_id, status, duration_ms, rows_returned, bytes_estimate, error, sql_text, plan_text, query_json, created_at
+FROM query_events
+WHERE id = ?
+`
+
+func (q *Queries) GetQueryEvent(ctx context.Context, id string) (QueryEvent, error) {
+	row := q.db.QueryRowContext(ctx, getQueryEvent, id)
+	var i QueryEvent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.PrincipalID,
+		&i.Surface,
+		&i.Operation,
+		&i.QueryKind,
+		&i.ModelID,
+		&i.Target,
+		&i.ObjectType,
+		&i.ObjectID,
+		&i.RequestID,
+		&i.CorrelationID,
+		&i.Status,
+		&i.DurationMs,
+		&i.RowsReturned,
+		&i.BytesEstimate,
+		&i.Error,
+		&i.SqlText,
+		&i.PlanText,
+		&i.QueryJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertRoleBinding = `-- name: InsertRoleBinding :exec
 INSERT OR IGNORE INTO role_bindings (id, workspace_id, role_id, principal_id, group_id)
 VALUES (?, ?, ?, ?, ?)

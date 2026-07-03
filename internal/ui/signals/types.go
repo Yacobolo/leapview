@@ -578,11 +578,10 @@ type AdminPageSignal struct {
 	Sections     []AdminContentSectionSignal `json:"sections,omitempty"`
 	Agent        AdminAgentSignal            `json:"agent,omitempty"`
 	Storage      AdminStorageSignal          `json:"storage,omitempty"`
-	QueryEvents  []AdminQueryEventSignal     `json:"queryEvents,omitempty"`
 }
 
 type AdminQueryHistorySignal struct {
-	Events           []AdminQueryEventSignal  `json:"events"`
+	Table            RecordTableSignal        `json:"table"`
 	Filters          AdminQueryHistoryFilters `json:"filters"`
 	NextCursor       string                   `json:"nextCursor"`
 	LoadedCountLabel string                   `json:"loadedCountLabel"`
@@ -609,6 +608,33 @@ type AdminQueryHistoryCommand struct {
 	Filters   AdminQueryHistoryFilters `json:"filters"`
 	PageToken string                   `json:"pageToken,omitempty"`
 	Limit     int                      `json:"limit,omitempty"`
+	EventID   string                   `json:"eventId,omitempty"`
+}
+
+type AdminQueryDetailSignal struct {
+	EventID       string `json:"eventId,omitempty"`
+	Loading       bool   `json:"loading"`
+	Error         string `json:"error,omitempty"`
+	Status        string `json:"status,omitempty"`
+	StatusLabel   string `json:"statusLabel,omitempty"`
+	WorkspaceID   string `json:"workspaceId,omitempty"`
+	PrincipalID   string `json:"principalId,omitempty"`
+	Surface       string `json:"surface,omitempty"`
+	Operation     string `json:"operation,omitempty"`
+	QueryKind     string `json:"queryKind,omitempty"`
+	ModelID       string `json:"modelId,omitempty"`
+	Target        string `json:"target,omitempty"`
+	ObjectType    string `json:"objectType,omitempty"`
+	ObjectID      string `json:"objectId,omitempty"`
+	RequestID     string `json:"requestId,omitempty"`
+	CorrelationID string `json:"correlationId,omitempty"`
+	DurationMS    int64  `json:"durationMs"`
+	RowsReturned  int    `json:"rowsReturned"`
+	QueryError    string `json:"queryError,omitempty"`
+	SQL           string `json:"sql,omitempty"`
+	PlanText      string `json:"planText,omitempty"`
+	QueryJSON     string `json:"queryJson,omitempty"`
+	CreatedAt     string `json:"createdAt,omitempty"`
 }
 
 type AdminAgentSignal struct {

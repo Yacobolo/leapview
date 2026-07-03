@@ -54,6 +54,7 @@ type Filter struct {
 
 type Repository interface {
 	RecordQueryEvent(ctx context.Context, input EventInput) error
+	GetQueryEvent(ctx context.Context, id string) (Event, error)
 	ListQueryEvents(ctx context.Context, filter Filter) ([]Event, error)
 }
 
