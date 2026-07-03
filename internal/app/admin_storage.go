@@ -3,12 +3,12 @@ package app
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
@@ -21,53 +21,71 @@ type adminStorageCommandSignals struct {
 	AdminStorageCommand ui.AdminStorageCommand `json:"adminStorageCommand"`
 }
 
+const duckLakeStorageCatalogID = "ducklake-catalog"
+
 func (s *Server) adminStorageData(r interface{ Context() context.Context }) ui.AdminStorageData {
-	data := ui.AdminStorageData{DuckDBDir: s.duckDBDir}
-	if strings.TrimSpace(data.DuckDBDir) == "" {
-		data.Status = "DuckDB directory is not configured."
+	data := ui.AdminStorageData{
+		CatalogPath: s.duckLakeCatalogPath,
+		DataPath:    s.duckLakeDataPath,
+	}
+	if strings.TrimSpace(data.CatalogPath) == "" {
+		data.Status = "No DuckLake catalog has been initialized."
 		return data
 	}
-	entries, err := s.discoverStorageFiles()
+	catalogInfo, err := os.Stat(data.CatalogPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			data.Status = "No DuckLake catalog has been initialized."
+		} else {
+			data.Status = fmt.Sprintf("DuckLake catalog cannot be read: %v", err)
+		}
+		return data
+	}
+	if catalogInfo.IsDir() {
+		data.Status = "DuckLake catalog path is a directory."
+		return data
+	}
+	if strings.TrimSpace(data.DataPath) == "" {
+		data.Status = "DuckLake data path is not configured."
+		return data
+	}
+	data.CatalogSizeBytes = catalogInfo.Size()
+	data.CatalogSizeLabel = formatBytes(data.CatalogSizeBytes)
+	if size, err := directorySize(data.DataPath); err == nil {
+		data.DataSizeBytes = size
+		data.DataSizeLabel = formatBytes(size)
+	}
+	data.TotalSizeBytes = data.CatalogSizeBytes + data.DataSizeBytes
+	data.TotalSizeLabel = formatBytes(data.TotalSizeBytes)
+	data.DatabaseCount = 1
+	data.Databases = []ui.AdminStorageDatabase{{
+		ID:        duckLakeStorageCatalogID,
+		Name:      "DuckLake catalog",
+		Path:      data.CatalogPath,
+		ModelID:   "ducklake",
+		ModelName: "DuckLake",
+		SizeBytes: data.TotalSizeBytes,
+		SizeLabel: data.TotalSizeLabel,
+	}}
+	metadata, err := inspectDuckLakeStorage(r.Context(), data.CatalogPath, data.DataPath)
 	if err != nil {
 		data.Status = err.Error()
 		return data
 	}
-	if len(entries) == 0 {
-		data.Status = "No DuckDB database files found."
-		return data
-	}
-	data.DatabaseCount = len(entries)
-	modelTitles := map[string]string{}
-	for _, model := range s.metrics.Catalog().Models {
-		modelTitles[model.ID] = model.Title
-	}
-	for _, entry := range entries {
-		data.TotalSizeBytes += entry.SizeBytes
-		data.Databases = append(data.Databases, ui.AdminStorageDatabase{
-			ID:        entry.ID,
-			Name:      entry.Name,
-			Path:      entry.Path,
-			ModelID:   entry.ModelID,
-			ModelName: firstNonEmpty(modelTitles[entry.ModelID], entry.ModelID, "-"),
-			SizeBytes: entry.SizeBytes,
-			SizeLabel: formatBytes(entry.SizeBytes),
-		})
-		tables, warning := inspectDuckDBTables(r.Context(), entry, modelTitles)
-		if warning != "" {
-			data.Warnings = append(data.Warnings, warning)
-		}
-		data.Tables = append(data.Tables, tables...)
-	}
-	sort.SliceStable(data.Databases, func(i, j int) bool {
-		return data.Databases[i].Name < data.Databases[j].Name
-	})
+	data.Tables = metadata.Tables
+	data.Snapshots = metadata.Snapshots
+	data.Deployments = metadata.Deployments
+	data.Warnings = metadata.Warnings
+	data.SnapshotCount = metadata.SnapshotCount
+	data.DataFileCount = metadata.DataFileCount
+	data.TotalDataSizeBytes = metadata.TotalDataSizeBytes
+	data.TotalDataSizeLabel = formatBytes(metadata.TotalDataSizeBytes)
 	sort.SliceStable(data.Tables, func(i, j int) bool {
 		left := data.Tables[i]
 		right := data.Tables[j]
-		return strings.Join([]string{left.DatabaseName, left.Schema, left.Name}, "\x00") < strings.Join([]string{right.DatabaseName, right.Schema, right.Name}, "\x00")
+		return strings.Join([]string{left.Schema, left.Name}, "\x00") < strings.Join([]string{right.Schema, right.Name}, "\x00")
 	})
 	data.TableCount = len(data.Tables)
-	data.TotalSizeLabel = formatBytes(data.TotalSizeBytes)
 	return data
 }
 
@@ -113,33 +131,23 @@ func (s *Server) adminStorageSelectedTable(ctx context.Context, command ui.Admin
 	if strings.TrimSpace(command.DatabaseID) == "" || strings.TrimSpace(command.Schema) == "" || strings.TrimSpace(command.Table) == "" {
 		return nil, fmt.Errorf("storage table selection is incomplete")
 	}
-	if strings.TrimSpace(s.duckDBDir) == "" {
-		return nil, fmt.Errorf("DuckDB directory is not configured")
+	if command.DatabaseID != duckLakeStorageCatalogID {
+		return nil, fmt.Errorf("DuckLake catalog %q was not found", command.DatabaseID)
 	}
-	entries, err := s.discoverStorageFiles()
+	if strings.TrimSpace(s.duckLakeCatalogPath) == "" || strings.TrimSpace(s.duckLakeDataPath) == "" {
+		return nil, fmt.Errorf("DuckLake catalog is not configured")
+	}
+	metadata, err := inspectDuckLakeStorage(ctx, s.duckLakeCatalogPath, s.duckLakeDataPath)
 	if err != nil {
 		return nil, err
 	}
-	var selectedFile *duckDBFile
-	for i := range entries {
-		if entries[i].ID == command.DatabaseID {
-			selectedFile = &entries[i]
-			break
+	for _, table := range metadata.Tables {
+		if table.Schema == command.Schema && table.Name == command.Table {
+			selected := ui.AdminStorageTableSignalFromTable(table)
+			return &selected, nil
 		}
 	}
-	if selectedFile == nil {
-		return nil, fmt.Errorf("DuckDB database %q was not found", command.DatabaseID)
-	}
-	modelTitles := map[string]string{}
-	for _, model := range s.metrics.Catalog().Models {
-		modelTitles[model.ID] = model.Title
-	}
-	table, err := inspectDuckDBTable(ctx, *selectedFile, modelTitles, command.Schema, command.Table)
-	if err != nil {
-		return nil, err
-	}
-	selected := ui.AdminStorageTableSignalFromTable(table)
-	return &selected, nil
+	return nil, fmt.Errorf("DuckLake table %q.%q was not found", command.Schema, command.Table)
 }
 
 func adminStorageStreamID(clientID string) string {
@@ -149,182 +157,53 @@ func adminStorageStreamID(clientID string) string {
 	return "admin-storage:" + clientID
 }
 
-type duckDBFile struct {
-	ID        string
-	Name      string
-	RelPath   string
-	Path      string
-	ModelID   string
-	SizeBytes int64
-	Kind      string
-	DataPath  string
+type duckLakeStorageMetadata struct {
+	Tables             []ui.AdminStorageTable
+	Snapshots          []ui.AdminStorageSnapshot
+	Deployments        []ui.AdminStorageDeployment
+	Warnings           []string
+	SnapshotCount      int
+	DataFileCount      int
+	TotalDataSizeBytes int64
 }
 
-func (s *Server) discoverStorageFiles() ([]duckDBFile, error) {
-	extra, ok := s.duckLakeCatalogFile()
-	if !ok {
-		return discoverDuckDBFiles(s.duckDBDir)
-	}
-	return discoverDuckDBFilesExcludingDuckLakeCatalogs(s.duckDBDir, extra)
-}
-
-func (s *Server) duckLakeCatalogFile() (duckDBFile, bool) {
-	if strings.TrimSpace(s.duckLakeCatalogPath) == "" || strings.TrimSpace(s.duckLakeDataPath) == "" {
-		return duckDBFile{}, false
-	}
-	info, err := os.Stat(s.duckLakeCatalogPath)
-	if err != nil || info.IsDir() {
-		return duckDBFile{}, false
-	}
-	relPath, err := filepath.Rel(s.duckDBDir, s.duckLakeCatalogPath)
-	if err != nil || relPath == "." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) || relPath == ".." {
-		relPath = filepath.Base(s.duckLakeCatalogPath)
-	}
-	file := duckDBFile{
-		Name:      duckLakeCatalogName(relPath),
-		RelPath:   relPath,
-		Path:      s.duckLakeCatalogPath,
-		ModelID:   modelIDFromStorageFile(filepath.Base(s.duckLakeCatalogPath), relPath),
-		SizeBytes: info.Size(),
-		Kind:      "ducklake",
-		DataPath:  s.duckLakeDataPath,
-	}
-	if size, err := directorySize(file.DataPath); err == nil {
-		file.SizeBytes += size
-	}
-	return file, true
-}
-
-func discoverDuckDBFiles(root string, extraFiles ...duckDBFile) ([]duckDBFile, error) {
-	return discoverDuckDBFilesWithOptions(root, true, extraFiles...)
-}
-
-func discoverDuckDBFilesExcludingDuckLakeCatalogs(root string, extraFiles ...duckDBFile) ([]duckDBFile, error) {
-	return discoverDuckDBFilesWithOptions(root, false, extraFiles...)
-}
-
-func discoverDuckDBFilesWithOptions(root string, includeDuckLakeCatalogs bool, extraFiles ...duckDBFile) ([]duckDBFile, error) {
-	info, err := os.Stat(root)
+func inspectDuckLakeStorage(ctx context.Context, catalogPath, dataPath string) (duckLakeStorageMetadata, error) {
+	db, err := openDuckLakeMetadataForInspection(ctx, catalogPath, dataPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return finalizeStorageFiles(extraFiles), nil
-		}
-		return nil, fmt.Errorf("DuckDB directory cannot be read: %w", err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("DuckDB path is not a directory.")
-	}
-	files := append([]duckDBFile(nil), extraFiles...)
-	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if filepath.Ext(entry.Name()) != ".duckdb" && (entry.Name() != "catalog.sqlite" || !includeDuckLakeCatalogs) {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		relPath, err := filepath.Rel(root, path)
-		if err != nil {
-			relPath = entry.Name()
-		}
-		file := duckDBFile{
-			Name:      entry.Name(),
-			RelPath:   relPath,
-			Path:      path,
-			ModelID:   modelIDFromStorageFile(entry.Name(), relPath),
-			SizeBytes: info.Size(),
-			Kind:      "duckdb",
-		}
-		if entry.Name() == "catalog.sqlite" {
-			file.Kind = "ducklake"
-			file.Name = duckLakeCatalogName(relPath)
-			file.DataPath = filepath.Join(filepath.Dir(path), "data")
-			if size, err := directorySize(file.DataPath); err == nil {
-				file.SizeBytes += size
-			}
-		}
-		files = append(files, file)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return finalizeStorageFiles(files), nil
-}
-
-func finalizeStorageFiles(files []duckDBFile) []duckDBFile {
-	if len(files) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	deduped := files[:0]
-	for _, file := range files {
-		if strings.TrimSpace(file.Path) == "" {
-			continue
-		}
-		key := file.Kind + "\x00" + file.Path
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		deduped = append(deduped, file)
-	}
-	files = deduped
-	nameCounts := map[string]int{}
-	for _, file := range files {
-		nameCounts[file.Name]++
-	}
-	for i := range files {
-		files[i].ID = files[i].Name
-		if nameCounts[files[i].Name] > 1 {
-			files[i].ID = storageDatabaseID(files[i].RelPath)
-		}
-	}
-	sort.SliceStable(files, func(i, j int) bool {
-		return files[i].RelPath < files[j].RelPath
-	})
-	return files
-}
-
-func inspectDuckDBTables(ctx context.Context, file duckDBFile, modelTitles map[string]string) ([]ui.AdminStorageTable, string) {
-	db, err := openStorageForInspection(ctx, file)
-	if err != nil {
-		return nil, fmt.Sprintf("%s could not be opened: %v", file.Name, err)
+		return duckLakeStorageMetadata{}, fmt.Errorf("DuckLake catalog could not be opened: %w", err)
 	}
 	defer db.Close()
-	columns, err := inspectDuckDBColumns(ctx, db)
+
+	deployments, err := inspectDuckLakeDeployments(ctx, db)
 	if err != nil {
-		return nil, fmt.Sprintf("%s columns could not be inspected: %v", file.Name, err)
+		return duckLakeStorageMetadata{}, err
 	}
-	tables, err := inspectDuckDBObjects(ctx, db, file, modelTitles, columns)
+	tables, err := inspectDuckLakeTables(ctx, db, deployments)
 	if err != nil {
-		return nil, fmt.Sprintf("%s tables could not be inspected: %v", file.Name, err)
+		return duckLakeStorageMetadata{}, err
 	}
-	return tables, ""
+	for i := range tables {
+		tables[i].DatabasePath = catalogPath
+	}
+	snapshots, err := inspectDuckLakeSnapshots(ctx, db, deployments)
+	if err != nil {
+		return duckLakeStorageMetadata{}, err
+	}
+	summary, err := inspectDuckLakeSummary(ctx, db)
+	if err != nil {
+		return duckLakeStorageMetadata{}, err
+	}
+	return duckLakeStorageMetadata{
+		Tables:             tables,
+		Snapshots:          snapshots,
+		Deployments:        deployments,
+		SnapshotCount:      summary.SnapshotCount,
+		DataFileCount:      summary.DataFileCount,
+		TotalDataSizeBytes: summary.TotalDataSizeBytes,
+	}, nil
 }
 
-func openDuckDBForInspection(ctx context.Context, path string) (*sql.DB, error) {
-	db, err := openDuckDBConnection(ctx, duckDBReadOnlyDSN(path))
-	if err == nil {
-		return db, nil
-	}
-	fallbackDB, fallbackErr := openDuckDBConnection(ctx, path)
-	if fallbackErr == nil {
-		return fallbackDB, nil
-	}
-	return nil, errors.Join(err, fallbackErr)
-}
-
-func openStorageForInspection(ctx context.Context, file duckDBFile) (*sql.DB, error) {
-	if file.Kind != "ducklake" {
-		return openDuckDBForInspection(ctx, file.Path)
-	}
+func openDuckLakeMetadataForInspection(ctx context.Context, catalogPath, dataPath string) (*sql.DB, error) {
 	db, err := openDuckDBConnection(ctx, ":memory:")
 	if err != nil {
 		return nil, err
@@ -332,8 +211,8 @@ func openStorageForInspection(ctx context.Context, file duckDBFile) (*sql.DB, er
 	for _, stmt := range []string{
 		"LOAD sqlite",
 		"LOAD ducklake",
-		fmt.Sprintf("ATTACH 'ducklake:sqlite:%s' AS lake (DATA_PATH '%s')", sqlString(file.Path), sqlString(file.DataPath)),
-		"USE lake",
+		fmt.Sprintf("ATTACH 'ducklake:sqlite:%s' AS lake (DATA_PATH '%s')", sqlString(catalogPath), sqlString(dataPath)),
+		fmt.Sprintf("ATTACH '%s' AS meta (TYPE sqlite)", sqlString(catalogPath)),
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			_ = db.Close()
@@ -341,6 +220,265 @@ func openStorageForInspection(ctx context.Context, file duckDBFile) (*sql.DB, er
 		}
 	}
 	return db, nil
+}
+
+type duckLakeStorageSummary struct {
+	SnapshotCount      int
+	DataFileCount      int
+	TotalDataSizeBytes int64
+}
+
+func inspectDuckLakeSummary(ctx context.Context, db *sql.DB) (duckLakeStorageSummary, error) {
+	row := db.QueryRowContext(ctx, `
+SELECT
+	(SELECT count(*) FROM meta.ducklake_snapshot),
+	(SELECT count(*) FROM meta.ducklake_data_file WHERE end_snapshot IS NULL),
+	(SELECT coalesce(sum(file_size_bytes), 0) FROM meta.ducklake_data_file WHERE end_snapshot IS NULL)`)
+	var summary duckLakeStorageSummary
+	if err := row.Scan(&summary.SnapshotCount, &summary.DataFileCount, &summary.TotalDataSizeBytes); err != nil {
+		return duckLakeStorageSummary{}, duckLakeMetadataError(err)
+	}
+	return summary, nil
+}
+
+func inspectDuckLakeTables(ctx context.Context, db *sql.DB, deployments []ui.AdminStorageDeployment) ([]ui.AdminStorageTable, error) {
+	columns, err := inspectDuckLakeColumns(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	files, err := inspectDuckLakeFiles(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := db.QueryContext(ctx, `
+WITH active_tables AS (
+	SELECT s.schema_name, t.table_name, t.table_id, t.table_uuid, t.begin_snapshot, t.end_snapshot
+	FROM meta.ducklake_table t
+	JOIN meta.ducklake_schema s ON s.schema_id = t.schema_id
+	WHERE t.end_snapshot IS NULL
+), file_rollup AS (
+	SELECT table_id, count(*) AS file_count, coalesce(sum(record_count), 0) AS row_count, coalesce(sum(file_size_bytes), 0) AS byte_count
+	FROM meta.ducklake_data_file
+	WHERE end_snapshot IS NULL
+	GROUP BY table_id
+), column_rollup AS (
+	SELECT table_id, count(*) AS column_count
+	FROM meta.ducklake_column
+	WHERE end_snapshot IS NULL AND parent_column IS NULL
+	GROUP BY table_id
+)
+SELECT a.schema_name, a.table_name, a.table_id, a.table_uuid, a.begin_snapshot, a.end_snapshot,
+       coalesce(f.row_count, 0), coalesce(c.column_count, 0), coalesce(f.file_count, 0), coalesce(f.byte_count, 0)
+FROM active_tables a
+LEFT JOIN file_rollup f ON f.table_id = a.table_id
+LEFT JOIN column_rollup c ON c.table_id = a.table_id
+ORDER BY a.schema_name, a.table_name`)
+	if err != nil {
+		return nil, duckLakeMetadataError(err)
+	}
+	defer rows.Close()
+
+	var tables []ui.AdminStorageTable
+	for rows.Next() {
+		var schemaName, tableName, tableUUID string
+		var tableID, beginSnapshot, rowCount, sizeBytes int64
+		var endSnapshot sql.NullInt64
+		var columnCount, fileCount int
+		if err := rows.Scan(&schemaName, &tableName, &tableID, &tableUUID, &beginSnapshot, &endSnapshot, &rowCount, &columnCount, &fileCount, &sizeBytes); err != nil {
+			return nil, err
+		}
+		end := int64(0)
+		if endSnapshot.Valid {
+			end = endSnapshot.Int64
+		}
+		table := ui.AdminStorageTable{
+			DatabaseID:    duckLakeStorageCatalogID,
+			DatabaseName:  "DuckLake catalog",
+			DatabasePath:  "",
+			ModelID:       "ducklake",
+			ModelName:     "DuckLake",
+			Schema:        schemaName,
+			Name:          tableName,
+			Type:          "table",
+			TableID:       tableID,
+			TableUUID:     tableUUID,
+			BeginSnapshot: beginSnapshot,
+			EndSnapshot:   end,
+			RowCount:      rowCount,
+			RowCountLabel: formatCount(rowCount),
+			ColumnCount:   columnCount,
+			FileCount:     fileCount,
+			SizeBytes:     sizeBytes,
+			SizeLabel:     formatBytes(sizeBytes),
+			Columns:       columns[tableID],
+			Files:         files[tableID],
+			Deployments:   deploymentsVisibleForTable(deployments, beginSnapshot, end),
+		}
+		tables = append(tables, table)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tables, nil
+}
+
+func inspectDuckLakeColumns(ctx context.Context, db *sql.DB) (map[int64][]ui.AdminStorageColumn, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT table_id, column_name, column_type, column_order, nulls_allowed, default_value
+FROM meta.ducklake_column
+WHERE end_snapshot IS NULL AND parent_column IS NULL
+ORDER BY table_id, column_order`)
+	if err != nil {
+		return nil, duckLakeMetadataError(err)
+	}
+	defer rows.Close()
+	columns := map[int64][]ui.AdminStorageColumn{}
+	for rows.Next() {
+		var tableID int64
+		var name, columnType string
+		var ordinal int
+		var nullable sql.NullInt64
+		var defaultValue sql.NullString
+		if err := rows.Scan(&tableID, &name, &columnType, &ordinal, &nullable, &defaultValue); err != nil {
+			return nil, err
+		}
+		nullableLabel := "-"
+		if nullable.Valid {
+			if nullable.Int64 == 0 {
+				nullableLabel = "No"
+			} else {
+				nullableLabel = "Yes"
+			}
+		}
+		columns[tableID] = append(columns[tableID], ui.AdminStorageColumn{
+			Name:     name,
+			Type:     columnType,
+			Ordinal:  ordinal,
+			Nullable: nullableLabel,
+			Default:  defaultValue.String,
+		})
+	}
+	return columns, rows.Err()
+}
+
+func inspectDuckLakeFiles(ctx context.Context, db *sql.DB) (map[int64][]ui.AdminStorageFile, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT table_id, data_file_id, path, file_format, record_count, file_size_bytes, begin_snapshot, end_snapshot
+FROM meta.ducklake_data_file
+WHERE end_snapshot IS NULL
+ORDER BY table_id, file_order, data_file_id`)
+	if err != nil {
+		return nil, duckLakeMetadataError(err)
+	}
+	defer rows.Close()
+	files := map[int64][]ui.AdminStorageFile{}
+	for rows.Next() {
+		var tableID int64
+		var file ui.AdminStorageFile
+		var endSnapshot sql.NullInt64
+		if err := rows.Scan(&tableID, &file.ID, &file.Path, &file.Format, &file.RecordCount, &file.SizeBytes, &file.BeginSnapshot, &endSnapshot); err != nil {
+			return nil, err
+		}
+		if endSnapshot.Valid {
+			file.EndSnapshot = endSnapshot.Int64
+		}
+		file.RecordCountLabel = formatCount(file.RecordCount)
+		file.SizeLabel = formatBytes(file.SizeBytes)
+		files[tableID] = append(files[tableID], file)
+	}
+	return files, rows.Err()
+}
+
+func inspectDuckLakeSnapshots(ctx context.Context, db *sql.DB, deployments []ui.AdminStorageDeployment) ([]ui.AdminStorageSnapshot, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT s.snapshot_id, s.snapshot_time, s.schema_version,
+       coalesce(c.changes_made, ''), coalesce(c.author, ''), coalesce(c.commit_message, ''), coalesce(c.commit_extra_info, '')
+FROM meta.ducklake_snapshot s
+LEFT JOIN meta.ducklake_snapshot_changes c ON c.snapshot_id = s.snapshot_id
+ORDER BY s.snapshot_id`)
+	if err != nil {
+		return nil, duckLakeMetadataError(err)
+	}
+	defer rows.Close()
+	deploymentCounts := map[int64]int{}
+	for _, deployment := range deployments {
+		if deployment.SnapshotID > 0 && deployment.Status != "deleted" {
+			deploymentCounts[deployment.SnapshotID]++
+		}
+	}
+	var snapshots []ui.AdminStorageSnapshot
+	for rows.Next() {
+		var snapshot ui.AdminStorageSnapshot
+		if err := rows.Scan(&snapshot.ID, &snapshot.Time, &snapshot.SchemaVersion, &snapshot.Changes, &snapshot.Author, &snapshot.Message, &snapshot.ExtraInfo); err != nil {
+			return nil, err
+		}
+		snapshot.DeploymentCount = deploymentCounts[snapshot.ID]
+		snapshot.Protected = snapshot.DeploymentCount > 0
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, rows.Err()
+}
+
+func inspectDuckLakeDeployments(ctx context.Context, db *sql.DB) ([]ui.AdminStorageDeployment, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT d.workspace_id, d.environment, d.id, d.status, d.ducklake_snapshot_id, d.digest,
+       coalesce(d.activated_at, ''),
+       CASE WHEN active.deployment_id IS NOT NULL THEN 1 ELSE 0 END
+FROM meta.deployments d
+LEFT JOIN meta.workspace_active_deployments active
+  ON active.workspace_id = d.workspace_id
+ AND active.environment = d.environment
+ AND active.deployment_id = d.id
+WHERE d.ducklake_snapshot_id > 0
+ORDER BY d.workspace_id, d.environment, d.created_at, d.id`)
+	if err != nil {
+		if isMissingSQLiteTableError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer rows.Close()
+	var deployments []ui.AdminStorageDeployment
+	for rows.Next() {
+		var deployment ui.AdminStorageDeployment
+		var active int
+		if err := rows.Scan(&deployment.WorkspaceID, &deployment.Environment, &deployment.DeploymentID, &deployment.Status, &deployment.SnapshotID, &deployment.Digest, &deployment.ActivatedAt, &active); err != nil {
+			return nil, err
+		}
+		deployment.Active = active == 1
+		deployments = append(deployments, deployment)
+	}
+	return deployments, rows.Err()
+}
+
+func deploymentsVisibleForTable(deployments []ui.AdminStorageDeployment, beginSnapshot, endSnapshot int64) []ui.AdminStorageDeployment {
+	var out []ui.AdminStorageDeployment
+	for _, deployment := range deployments {
+		if deployment.SnapshotID < beginSnapshot {
+			continue
+		}
+		if endSnapshot > 0 && deployment.SnapshotID >= endSnapshot {
+			continue
+		}
+		out = append(out, deployment)
+	}
+	return out
+}
+
+func duckLakeMetadataError(err error) error {
+	if isMissingSQLiteTableError(err) {
+		return fmt.Errorf("No DuckLake catalog has been initialized.")
+	}
+	return err
+}
+
+func isMissingSQLiteTableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no such table") || strings.Contains(message, "does not exist")
 }
 
 func openDuckDBConnection(ctx context.Context, dsn string) (*sql.DB, error) {
@@ -356,280 +494,6 @@ func openDuckDBConnection(ctx context.Context, dsn string) (*sql.DB, error) {
 		}
 	}
 	return nil, err
-}
-
-func duckDBReadOnlyDSN(path string) string {
-	before, query, hasQuery := strings.Cut(path, "?")
-	if !hasQuery {
-		return path + "?access_mode=READ_ONLY"
-	}
-	values := strings.Split(query, "&")
-	for i, value := range values {
-		key, _, _ := strings.Cut(value, "=")
-		if key == "access_mode" {
-			values[i] = "access_mode=READ_ONLY"
-			return before + "?" + strings.Join(values, "&")
-		}
-	}
-	return path + "&access_mode=READ_ONLY"
-}
-
-func inspectDuckDBObjects(ctx context.Context, db *sql.DB, file duckDBFile, modelTitles map[string]string, columns map[string][]ui.AdminStorageColumn) ([]ui.AdminStorageTable, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT schema_name, table_name, 'table' AS object_type, column_count
-FROM duckdb_tables()
-WHERE internal = false AND temporary = false AND schema_name NOT IN ('information_schema', 'pg_catalog')
-UNION ALL
-SELECT schema_name, view_name AS table_name, 'view' AS object_type, column_count
-FROM duckdb_views()
-WHERE internal = false AND temporary = false AND schema_name NOT IN ('information_schema', 'pg_catalog')
-ORDER BY schema_name, table_name`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type storageObject struct {
-		schemaName  string
-		tableName   string
-		objectType  string
-		columnCount int
-	}
-	var objects []storageObject
-	for rows.Next() {
-		var schemaName, tableName, objectType string
-		var columnCount int
-		if err := rows.Scan(&schemaName, &tableName, &objectType, &columnCount); err != nil {
-			return nil, err
-		}
-		objects = append(objects, storageObject{
-			schemaName:  schemaName,
-			tableName:   tableName,
-			objectType:  objectType,
-			columnCount: columnCount,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-
-	var tables []ui.AdminStorageTable
-	for _, object := range objects {
-		rowCount := "-"
-		sizeLabel := "Unknown"
-		if object.objectType == "table" {
-			if count, err := countDuckDBRows(ctx, db, object.schemaName, object.tableName); err == nil {
-				rowCount = fmt.Sprint(count)
-			}
-			if bytes, err := estimateDuckDBTableSize(ctx, db, object.schemaName, object.tableName); err == nil {
-				sizeLabel = formatBytes(bytes)
-			}
-		}
-		key := storageColumnKey(object.schemaName, object.tableName)
-		tables = append(tables, ui.AdminStorageTable{
-			DatabaseID:    file.ID,
-			DatabaseName:  file.Name,
-			DatabasePath:  file.Path,
-			ModelID:       file.ModelID,
-			ModelName:     firstNonEmpty(modelTitles[file.ModelID], file.ModelID, "-"),
-			Schema:        object.schemaName,
-			Name:          object.tableName,
-			Type:          object.objectType,
-			RowCountLabel: rowCount,
-			ColumnCount:   object.columnCount,
-			SizeLabel:     sizeLabel,
-			Columns:       columns[key],
-		})
-	}
-	return tables, nil
-}
-
-func inspectDuckDBTable(ctx context.Context, file duckDBFile, modelTitles map[string]string, schemaName, tableName string) (ui.AdminStorageTable, error) {
-	db, err := openStorageForInspection(ctx, file)
-	if err != nil {
-		return ui.AdminStorageTable{}, fmt.Errorf("%s could not be opened: %w", file.Name, err)
-	}
-	defer db.Close()
-	columns, err := inspectDuckDBColumnsForTable(ctx, db, schemaName, tableName)
-	if err != nil {
-		return ui.AdminStorageTable{}, fmt.Errorf("%s columns could not be inspected: %w", file.Name, err)
-	}
-	table, err := inspectDuckDBObject(ctx, db, file, modelTitles, schemaName, tableName, columns)
-	if err != nil {
-		return ui.AdminStorageTable{}, err
-	}
-	return table, nil
-}
-
-func inspectDuckDBObject(ctx context.Context, db *sql.DB, file duckDBFile, modelTitles map[string]string, schemaName, tableName string, columns []ui.AdminStorageColumn) (ui.AdminStorageTable, error) {
-	row := db.QueryRowContext(ctx, `
-SELECT schema_name, table_name, 'table' AS object_type, column_count
-FROM duckdb_tables()
-WHERE internal = false AND temporary = false AND schema_name NOT IN ('information_schema', 'pg_catalog') AND schema_name = ? AND table_name = ?
-UNION ALL
-SELECT schema_name, view_name AS table_name, 'view' AS object_type, column_count
-FROM duckdb_views()
-WHERE internal = false AND temporary = false AND schema_name NOT IN ('information_schema', 'pg_catalog') AND schema_name = ? AND view_name = ?`, schemaName, tableName, schemaName, tableName)
-	var objectSchema, objectName, objectType string
-	var columnCount int
-	if err := row.Scan(&objectSchema, &objectName, &objectType, &columnCount); err != nil {
-		if err == sql.ErrNoRows {
-			return ui.AdminStorageTable{}, fmt.Errorf("DuckDB table %q.%q was not found", schemaName, tableName)
-		}
-		return ui.AdminStorageTable{}, err
-	}
-	rowCount := "-"
-	sizeLabel := "Unknown"
-	if objectType == "table" {
-		if count, err := countDuckDBRows(ctx, db, objectSchema, objectName); err == nil {
-			rowCount = fmt.Sprint(count)
-		}
-		if bytes, err := estimateDuckDBTableSize(ctx, db, objectSchema, objectName); err == nil {
-			sizeLabel = formatBytes(bytes)
-		}
-	}
-	return ui.AdminStorageTable{
-		DatabaseID:    file.ID,
-		DatabaseName:  file.Name,
-		DatabasePath:  file.Path,
-		ModelID:       file.ModelID,
-		ModelName:     firstNonEmpty(modelTitles[file.ModelID], file.ModelID, "-"),
-		Schema:        objectSchema,
-		Name:          objectName,
-		Type:          objectType,
-		RowCountLabel: rowCount,
-		ColumnCount:   columnCount,
-		SizeLabel:     sizeLabel,
-		Columns:       columns,
-	}, nil
-}
-
-func inspectDuckDBColumns(ctx context.Context, db *sql.DB) (map[string][]ui.AdminStorageColumn, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT schema_name, table_name, column_name, column_index, data_type, is_nullable, column_default
-FROM duckdb_columns()
-WHERE internal = false AND schema_name NOT IN ('information_schema', 'pg_catalog')
-ORDER BY schema_name, table_name, column_index`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	columns := map[string][]ui.AdminStorageColumn{}
-	for rows.Next() {
-		var schemaName, tableName, columnName, dataType string
-		var ordinal int
-		var nullable sql.NullBool
-		var defaultValue sql.NullString
-		if err := rows.Scan(&schemaName, &tableName, &columnName, &ordinal, &dataType, &nullable, &defaultValue); err != nil {
-			return nil, err
-		}
-		columns[storageColumnKey(schemaName, tableName)] = append(columns[storageColumnKey(schemaName, tableName)], ui.AdminStorageColumn{
-			Name:     columnName,
-			Type:     dataType,
-			Ordinal:  ordinal,
-			Nullable: duckDBNullableLabel(nullable),
-			Default:  defaultValue.String,
-		})
-	}
-	return columns, rows.Err()
-}
-
-func inspectDuckDBColumnsForTable(ctx context.Context, db *sql.DB, schemaName, tableName string) ([]ui.AdminStorageColumn, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT schema_name, table_name, column_name, column_index, data_type, is_nullable, column_default
-FROM duckdb_columns()
-WHERE internal = false AND schema_name NOT IN ('information_schema', 'pg_catalog') AND schema_name = ? AND table_name = ?
-ORDER BY column_index`, schemaName, tableName)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var columns []ui.AdminStorageColumn
-	for rows.Next() {
-		var ignoredSchema, ignoredTable, columnName, dataType string
-		var ordinal int
-		var nullable sql.NullBool
-		var defaultValue sql.NullString
-		if err := rows.Scan(&ignoredSchema, &ignoredTable, &columnName, &ordinal, &dataType, &nullable, &defaultValue); err != nil {
-			return nil, err
-		}
-		columns = append(columns, ui.AdminStorageColumn{
-			Name:     columnName,
-			Type:     dataType,
-			Ordinal:  ordinal,
-			Nullable: duckDBNullableLabel(nullable),
-			Default:  defaultValue.String,
-		})
-	}
-	return columns, rows.Err()
-}
-
-func duckDBNullableLabel(nullable sql.NullBool) string {
-	if !nullable.Valid {
-		return "-"
-	}
-	if nullable.Bool {
-		return "Yes"
-	}
-	return "No"
-}
-
-func countDuckDBRows(ctx context.Context, db *sql.DB, schemaName, tableName string) (int64, error) {
-	query := fmt.Sprintf("SELECT count(*) FROM %s.%s", quoteDuckDBIdentifier(schemaName), quoteDuckDBIdentifier(tableName))
-	var count int64
-	if err := db.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		return 0, err
-	}
-	return count, nil
-}
-
-func estimateDuckDBTableSize(ctx context.Context, db *sql.DB, schemaName, tableName string) (int64, error) {
-	tableRef := quoteDuckDBIdentifier(schemaName) + "." + quoteDuckDBIdentifier(tableName)
-	query := fmt.Sprintf(`
-WITH db AS (
-	SELECT block_size FROM pragma_database_size()
-), blocks AS (
-	SELECT block_id
-	FROM pragma_storage_info(%s)
-	WHERE persistent AND block_id >= 0
-	UNION ALL
-	SELECT unnest(additional_block_ids) AS block_id
-	FROM pragma_storage_info(%s)
-	WHERE persistent AND additional_block_ids IS NOT NULL
-)
-SELECT count(DISTINCT block_id) * any_value(block_size)
-FROM blocks CROSS JOIN db`, sqlStringLiteral(tableRef), sqlStringLiteral(tableRef))
-	var bytes sql.NullInt64
-	if err := db.QueryRowContext(ctx, query).Scan(&bytes); err != nil {
-		return 0, err
-	}
-	if !bytes.Valid {
-		return 0, nil
-	}
-	return bytes.Int64, nil
-}
-
-func modelIDFromStorageFile(name, relPath string) string {
-	if name == "catalog.sqlite" {
-		dir := filepath.Base(filepath.Dir(relPath))
-		if dir == "." || dir == "" {
-			return "workspace"
-		}
-		return dir
-	}
-	base := strings.TrimSuffix(name, filepath.Ext(name))
-	return strings.TrimPrefix(base, "libredash-")
-}
-
-func duckLakeCatalogName(relPath string) string {
-	dir := filepath.Dir(relPath)
-	if dir == "." || dir == "" {
-		return "catalog.sqlite"
-	}
-	return filepath.ToSlash(filepath.Join(dir, "catalog.sqlite"))
 }
 
 func directorySize(root string) (int64, error) {
@@ -687,4 +551,20 @@ func formatBytes(bytes int64) string {
 		}
 	}
 	return fmt.Sprintf("%.1f PiB", value/unit)
+}
+
+func formatCount(value int64) string {
+	if value < 0 {
+		return "-"
+	}
+	parts := []string{}
+	for value >= 1000 {
+		parts = append(parts, fmt.Sprintf("%03d", value%1000))
+		value /= 1000
+	}
+	parts = append(parts, strconv.FormatInt(value, 10))
+	for left, right := 0, len(parts)-1; left < right; left, right = left+1, right-1 {
+		parts[left], parts[right] = parts[right], parts[left]
+	}
+	return strings.Join(parts, ",")
 }

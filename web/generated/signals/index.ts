@@ -65,20 +65,63 @@ export interface AdminStorageCommand {
   table: string
 }
 
+export interface AdminStorageDeploymentSignal {
+  workspaceId: string
+  environment: string
+  deploymentId: string
+  status: string
+  snapshotId: number
+  digest: string
+  active: boolean
+  activatedAt: string
+}
+
+export interface AdminStorageFileSignal {
+  id: number
+  path: string
+  format: string
+  recordCount: number
+  recordCountLabel: string
+  sizeBytes: number
+  sizeLabel: string
+  beginSnapshot: number
+  endSnapshot: number
+}
+
 export interface AdminStorageSignal {
   summary: AdminStorageSummary
   status: string
   warnings: string[]
   tables: AdminStorageTableSignal[]
+  snapshots: AdminStorageSnapshotSignal[]
+  deployments: AdminStorageDeploymentSignal[]
   selectedKey: string
   selectedTable: AdminStorageTableSignal
 }
 
+export interface AdminStorageSnapshotSignal {
+  id: number
+  time: string
+  schemaVersion: number
+  author: string
+  message: string
+  changes: string
+  extraInfo: string
+  protected: boolean
+  deploymentCount: number
+}
+
 export interface AdminStorageSummary {
-  duckdbDir: string
-  databaseCount: number
+  catalogPath: string
+  dataPath: string
+  catalogSizeLabel: string
+  dataSizeLabel: string
   totalSizeLabel: string
+  totalDataSizeLabel: string
+  databaseCount: number
   tableCount: number
+  snapshotCount: number
+  dataFileCount: number
 }
 
 export interface AdminStorageTableSignal {
@@ -91,10 +134,19 @@ export interface AdminStorageTableSignal {
   schema: string
   name: string
   type: string
+  tableId: number
+  tableUuid: string
+  beginSnapshot: number
+  endSnapshot: number
+  rowCount: number
   rowCountLabel: string
   columnCount: number
+  fileCount: number
+  sizeBytes: number
   sizeLabel: string
   columns?: AdminStorageColumnSignal[]
+  files?: AdminStorageFileSignal[]
+  deployments?: AdminStorageDeploymentSignal[]
 }
 
 export interface AssetLineageEdgeSignal {
