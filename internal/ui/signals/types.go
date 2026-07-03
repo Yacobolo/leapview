@@ -646,8 +646,10 @@ type ChatTranscriptItemSignal struct {
 	Summary        string              `json:"summary,omitempty"`
 	ResultSummary  string              `json:"resultSummary,omitempty"`
 	InputJSON      string              `json:"inputJson,omitempty"`
+	InputFormat    string              `json:"inputFormat,omitempty"`
 	ArgumentsJSON  string              `json:"argumentsJson,omitempty"`
 	ResultJSON     string              `json:"resultJson,omitempty"`
+	ResultFormat   string              `json:"resultFormat,omitempty"`
 	Artifact       *ChatArtifactSignal `json:"artifact,omitempty"`
 	Error          string              `json:"error,omitempty"`
 	ConversationID string              `json:"conversationId,omitempty"`
@@ -682,8 +684,10 @@ func ChatTranscriptItem(item agentapp.ChatTranscriptItem) ChatTranscriptItemSign
 		Summary:        item.Summary,
 		ResultSummary:  item.ResultSummary,
 		InputJSON:      item.InputJSON,
+		InputFormat:    item.InputFormat,
 		ArgumentsJSON:  item.ArgumentsJSON,
 		ResultJSON:     item.ResultJSON,
+		ResultFormat:   item.ResultFormat,
 		Error:          item.Error,
 		ConversationID: item.ConversationID,
 		RunID:          item.RunID,

@@ -1,23 +1,45 @@
 import { LitElement, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { unsafeHTML } from 'lit/directives/unsafe-html.js'
-import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
-import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
-import sql from '@shikijs/langs/sql'
-import githubDark from '@shikijs/themes/github-dark'
-import githubLight from '@shikijs/themes/github-light'
+import type { HighlighterCore } from 'shiki/core'
 
 type CodeTheme = 'github-light' | 'github-dark'
+type SupportedLanguage = 'json' | 'sql' | 'toon'
 
-const highlighterPromise: Promise<HighlighterCore> = createHighlighterCore({
-  themes: [githubLight, githubDark],
-  langs: [sql],
-  engine: createJavaScriptRegexEngine(),
-})
+let highlighterPromise: Promise<HighlighterCore> | null = null
+
+function loadHighlighter(): Promise<HighlighterCore> {
+  highlighterPromise ??= (async () => {
+    const [
+      { createHighlighterCore },
+      { createJavaScriptRegexEngine },
+      { default: sql },
+      { default: json },
+      { default: githubDark },
+      { default: githubLight },
+      { toonLanguage },
+    ] = await Promise.all([
+      import('shiki/core'),
+      import('shiki/engine/javascript'),
+      import('@shikijs/langs/sql'),
+      import('@shikijs/langs/json'),
+      import('@shikijs/themes/github-dark'),
+      import('@shikijs/themes/github-light'),
+      import('./toon-language'),
+    ])
+    return createHighlighterCore({
+      themes: [githubLight, githubDark],
+      langs: [json, sql, toonLanguage],
+      engine: createJavaScriptRegexEngine(),
+    })
+  })()
+  return highlighterPromise
+}
 
 class CodeBlock extends LitElement {
   @property({ type: String }) code = ''
   @property({ type: String }) language = 'sql'
+  @property({ type: Boolean, reflect: true }) compact = false
   @state() private highlighted = ''
   @state() private error = ''
   private renderToken = 0
@@ -47,7 +69,7 @@ class CodeBlock extends LitElement {
   }
 
   render() {
-    const code = this.code.trim()
+    const code = this.code
     return html`
       <style>
         ${codeBlockStyles}
@@ -69,17 +91,18 @@ class CodeBlock extends LitElement {
 
   private async highlight(): Promise<void> {
     const token = ++this.renderToken
-    const code = this.code.trim()
-    if (!code) {
+    const code = this.code
+    const language = supportedLanguage(this.language)
+    if (!code.trim() || !language) {
       this.highlighted = ''
       this.error = ''
       return
     }
     try {
-      const highlighter = await highlighterPromise
+      const highlighter = await loadHighlighter()
       if (token !== this.renderToken) return
       this.highlighted = highlighter.codeToHtml(code, {
-        lang: this.language || 'sql',
+        lang: language,
         theme: this.theme,
       })
       this.error = ''
@@ -95,6 +118,12 @@ class CodeBlock extends LitElement {
     if (colorScheme === 'dark') return 'github-dark'
     return 'github-light'
   }
+}
+
+function supportedLanguage(language: string): SupportedLanguage | '' {
+  const normalized = language.trim().toLowerCase()
+  if (normalized === 'json' || normalized === 'sql' || normalized === 'toon') return normalized
+  return ''
 }
 
 const codeBlockStyles = `
@@ -125,6 +154,15 @@ const codeBlockStyles = `
     font-size: var(--ld-font-size-body-sm);
     line-height: 1.65;
     tab-size: 2;
+  }
+
+  ld-code-block[compact] .shiki,
+  ld-code-block[compact] .code-block-fallback {
+    max-height: var(--ld-chat-tool-max-height, 18rem);
+    padding: var(--ld-chat-pre-padding-block, var(--base-size-8)) var(--ld-chat-pre-padding-inline, var(--base-size-12));
+    font-size: var(--ld-font-size-caption, 0.75rem);
+    line-height: var(--ld-line-height-snug, 1.35);
+    white-space: pre;
   }
 
   ld-code-block .shiki code,
