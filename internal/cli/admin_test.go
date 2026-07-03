@@ -86,6 +86,58 @@ func TestAdminStorageCleanupRejectsMissingReferencedSnapshot(t *testing.T) {
 	}
 }
 
+func TestAdminStorageCleanupApplyExpiresElapsedDrainingSnapshots(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	setAdminStorageEnv(t, home)
+	root := home
+	first, second := seedAdminDuckLakeSnapshots(t, ctx, home, root)
+	recordAdminDeploymentSnapshotWithStatus(t, ctx, home, "dev", first, deployment.StatusDraining, "2000-01-01T00:00:00Z")
+	recordAdminDeploymentSnapshot(t, ctx, home, "dev", second)
+
+	opts := &rootOptions{}
+	cmd := adminCommand(ctx, opts)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"storage", "cleanup", "--apply"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("admin storage cleanup apply: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{
+		"mode: apply",
+		"protected snapshots: " + formatSnapshotIDs([]int64{second}),
+		"expiration candidates: " + formatSnapshotIDs([]int64{first}),
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q:\n%s", want, output)
+		}
+	}
+
+	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: root, CatalogPath: filepath.Join(home, "libredash.db"), DataPath: filepath.Join(home, "data")})
+	if adminDuckLakeUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("reopen ducklake: %v", err)
+	}
+	defer env.Close()
+	snapshots, err := env.Snapshots(ctx)
+	if err != nil {
+		t.Fatalf("snapshots after apply: %v", err)
+	}
+	ids := map[int64]struct{}{}
+	for _, snapshot := range snapshots {
+		ids[snapshot.ID] = struct{}{}
+	}
+	if _, ok := ids[first]; ok {
+		t.Fatalf("expired snapshot %d still present after cleanup apply; snapshots=%#v", first, snapshots)
+	}
+	if _, ok := ids[second]; !ok {
+		t.Fatalf("protected snapshot %d missing after cleanup apply; snapshots=%#v", second, snapshots)
+	}
+}
+
 func setAdminStorageEnv(t *testing.T, home string) {
 	t.Helper()
 	t.Setenv("LIBREDASH_HOME", home)
@@ -121,6 +173,11 @@ func seedAdminDuckLakeSnapshots(t *testing.T, ctx context.Context, home, root st
 
 func recordAdminDeploymentSnapshot(t *testing.T, ctx context.Context, home string, environment deployment.Environment, snapshotID int64) {
 	t.Helper()
+	recordAdminDeploymentSnapshotWithStatus(t, ctx, home, environment, snapshotID, deployment.StatusActive, "")
+}
+
+func recordAdminDeploymentSnapshotWithStatus(t *testing.T, ctx context.Context, home string, environment deployment.Environment, snapshotID int64, status deployment.Status, cleanupAfter string) {
+	t.Helper()
 	store, err := platform.Open(ctx, filepath.Join(home, "libredash.db"))
 	if err != nil {
 		t.Fatalf("open platform store: %v", err)
@@ -136,6 +193,9 @@ func recordAdminDeploymentSnapshot(t *testing.T, ctx context.Context, home strin
 	}
 	if err := repo.RecordDuckLakeSnapshot(ctx, created.ID, snapshotID); err != nil {
 		t.Fatalf("record snapshot: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, "UPDATE deployments SET status = ?, cleanup_after = NULLIF(?, '') WHERE id = ?", string(status), cleanupAfter, string(created.ID)); err != nil {
+		t.Fatalf("mark deployment %s: %v", status, err)
 	}
 }
 

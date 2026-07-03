@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
@@ -94,6 +95,7 @@ type Server struct {
 	duckLakeDataPath    string
 	defaultWorkspaceID  string
 	defaultEnvironment  string
+	refreshDrainGrace   time.Duration
 	rateLimits          RateLimitConfig
 	securityHeaders     SecurityHeadersConfig
 	requestLogging      bool
@@ -121,6 +123,7 @@ type Options struct {
 	DuckLakeDataPath    string
 	DefaultWorkspaceID  string
 	DefaultEnvironment  string
+	RefreshDrainGrace   time.Duration
 	RateLimits          RateLimitConfig
 	SecurityHeaders     SecurityHeadersConfig
 	RequestLogging      bool
@@ -143,6 +146,10 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.duckLakeDataPath = options.DuckLakeDataPath
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
 	server.defaultEnvironment = string(deployment.NormalizeEnvironment(deployment.Environment(options.DefaultEnvironment)))
+	server.refreshDrainGrace = options.RefreshDrainGrace
+	if server.refreshDrainGrace == 0 {
+		server.refreshDrainGrace = deployment.DefaultRetentionPolicy().QueryDrainGrace
+	}
 	server.rateLimits = options.RateLimits
 	server.securityHeaders = options.SecurityHeaders
 	server.requestLogging = options.RequestLogging

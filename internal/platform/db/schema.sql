@@ -11,12 +11,15 @@ CREATE TABLE IF NOT EXISTS deployments (
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   environment TEXT NOT NULL DEFAULT 'dev',
   status TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'publish',
   digest TEXT NOT NULL DEFAULT '',
   manifest_json TEXT NOT NULL DEFAULT '{}',
   ducklake_snapshot_id INTEGER NOT NULL DEFAULT 0,
   created_by TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   activated_at TEXT,
+  superseded_at TEXT,
+  cleanup_after TEXT,
   error TEXT NOT NULL DEFAULT ''
 );
 

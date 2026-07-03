@@ -116,12 +116,15 @@ type Deployment struct {
 	WorkspaceID        string         `json:"workspace_id"`
 	Environment        string         `json:"environment"`
 	Status             string         `json:"status"`
+	Source             string         `json:"source"`
 	Digest             string         `json:"digest"`
 	ManifestJson       string         `json:"manifest_json"`
 	DucklakeSnapshotID int64          `json:"ducklake_snapshot_id"`
 	CreatedBy          string         `json:"created_by"`
 	CreatedAt          string         `json:"created_at"`
 	ActivatedAt        sql.NullString `json:"activated_at"`
+	SupersededAt       sql.NullString `json:"superseded_at"`
+	CleanupAfter       sql.NullString `json:"cleanup_after"`
 	Error              string         `json:"error"`
 }
 

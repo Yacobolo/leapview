@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
@@ -68,6 +69,9 @@ func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Write
 	}
 	defer store.Close()
 	repo := deploymentsqlite.NewRepository(store.SQLDB())
+	if err := repo.ReconcileRetention(ctx, time.Now()); err != nil {
+		return err
+	}
 	referenced, err := repo.ReferencedDuckLakeSnapshots(ctx)
 	if err != nil {
 		return err

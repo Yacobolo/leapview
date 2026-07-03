@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
@@ -31,6 +32,14 @@ var errWorkspaceRBACNotConfigured = errors.New("Workspace RBAC store is not conf
 type activeWorkspaceMetadataRepository interface {
 	ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error)
 	ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error)
+}
+
+type servingStateActivator interface {
+	ActivateWithCleanupAfter(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, cleanupAfter time.Time) (deployment.Deployment, error)
+}
+
+type servingRetentionReconciler interface {
+	ReconcileRetention(ctx context.Context, now time.Time) error
 }
 
 func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
@@ -278,10 +287,12 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		return err
 	}
 	environment := s.requestDeploymentEnvironment(r)
-	active, artifact, err := repo.ActiveArtifact(ctx, deployment.WorkspaceID(workspaceID), environment)
+	serving := newServingStateService(repo, s.refreshDrainGrace)
+	activeState, err := serving.Active(ctx, workspaceID, environment)
 	if err != nil {
 		return err
 	}
+	artifact := activeState.Artifact
 	if strings.TrimSpace(artifact.Path) == "" {
 		return s.refreshWorkspaceAssetWithPatches(r, workspaceID, asset, assets, edges)
 	}
@@ -311,37 +322,24 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		return err
 	}
 	principal, _ := currentPrincipal(s, r)
-	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), Environment: environment, CreatedBy: principal.ID})
-	if err != nil {
-		return err
-	}
-	newDeploymentID := created.ID
+	candidate := servingState{}
 	finalized := false
 	defer func() {
 		if !finalized {
-			_ = repo.MarkFailed(context.Background(), newDeploymentID, fmt.Errorf("refresh did not complete"))
+			_ = serving.MarkFailed(context.Background(), candidate, fmt.Errorf("refresh did not complete"))
 		}
 	}()
-	validated, err := repo.SaveValidated(ctx, newDeploymentID, deployment.Validation{
-		Digest:       active.Digest,
-		ManifestJSON: active.ManifestJSON,
-		Graph:        retargetAssetGraph(compiled.Graph, workspace.WorkspaceID(workspaceID), workspace.DeploymentID(newDeploymentID)),
-	}, deployment.Artifact{
-		ID:           "artifact_" + string(newDeploymentID),
-		DeploymentID: newDeploymentID,
-		WorkspaceID:  deployment.WorkspaceID(workspaceID),
-		Environment:  environment,
-		Digest:       artifact.Digest,
-		Format:       artifact.Format,
-		Path:         artifact.Path,
-		ManifestJSON: artifact.ManifestJSON,
-		SizeBytes:    artifact.SizeBytes,
-		CreatedAt:    artifact.CreatedAt,
+	candidate, err = serving.CreateRefreshCandidate(ctx, servingRefreshCandidateInput{
+		WorkspaceID:   workspaceID,
+		Environment:   environment,
+		CreatedBy:     principal.ID,
+		Active:        activeState,
+		ArtifactGraph: compiled.Graph,
 	})
 	if err != nil {
-		_ = repo.MarkFailed(ctx, newDeploymentID, err)
 		return err
 	}
+	newDeploymentID := candidate.Deployment.ID
 
 	runRepo := materialize.NewSQLRunRepository(s.store.SQLDB())
 	rootRun, err := runRepo.CreateRun(ctx, materialize.RunInput{
@@ -354,7 +352,7 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		TriggerType:  materialize.TriggerDirect,
 	})
 	if err != nil {
-		_ = repo.MarkFailed(ctx, newDeploymentID, err)
+		_ = serving.MarkFailed(ctx, candidate, err)
 		return err
 	}
 	dependencyRuns := make([]materialize.RunRecord, 0, len(plan.DependencyTables))
@@ -371,38 +369,38 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		})
 		if err != nil {
 			_, _ = runRepo.MarkRunFailed(ctx, workspaceID, rootRun.ID, err.Error())
-			_ = repo.MarkFailed(ctx, newDeploymentID, err)
+			_ = serving.MarkFailed(ctx, candidate, err)
 			return err
 		}
 		dependencyRuns = append(dependencyRuns, run)
 	}
 	if _, err := runRepo.MarkRunRunning(ctx, workspaceID, rootRun.ID); err != nil {
-		_ = repo.MarkFailed(ctx, newDeploymentID, err)
+		_ = serving.MarkFailed(ctx, candidate, err)
 		return err
 	}
 	for _, run := range dependencyRuns {
 		if _, err := runRepo.MarkRunRunning(ctx, workspaceID, run.ID); err != nil {
-			_ = repo.MarkFailed(ctx, newDeploymentID, err)
+			_ = serving.MarkFailed(ctx, candidate, err)
 			return err
 		}
 		s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, run.TargetID, assets, edges)
 	}
 	s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
 
-	snapshotID, err := s.executeWorkspaceAssetRefreshPlan(ctx, compiled.Definition, active, validated, artifact, environment, plan)
+	snapshotID, err := s.executeWorkspaceAssetRefreshPlan(ctx, compiled.Definition, activeState.Deployment, candidate.Deployment, artifact, environment, plan)
 	if err != nil {
 		_, _ = runRepo.MarkRunFailed(ctx, workspaceID, rootRun.ID, err.Error())
 		for _, run := range dependencyRuns {
 			_, _ = runRepo.MarkRunFailed(ctx, workspaceID, run.ID, err.Error())
 			s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, run.TargetID, assets, edges)
 		}
-		_ = repo.MarkFailed(ctx, newDeploymentID, err)
+		_ = serving.MarkFailed(ctx, candidate, err)
 		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
 		return err
 	}
-	if err := repo.RecordDuckLakeSnapshot(ctx, newDeploymentID, snapshotID); err != nil {
+	if err := serving.RecordSnapshot(ctx, candidate, snapshotID); err != nil {
 		_, _ = runRepo.MarkRunFailed(ctx, workspaceID, rootRun.ID, err.Error())
-		_ = repo.MarkFailed(ctx, newDeploymentID, err)
+		_ = serving.MarkFailed(ctx, candidate, err)
 		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
 		return err
 	}
@@ -411,19 +409,24 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		prepared, err = s.reloader.PrepareDeployment(ctx, string(newDeploymentID))
 		if err != nil {
 			_, _ = runRepo.MarkRunFailed(ctx, workspaceID, rootRun.ID, err.Error())
-			_ = repo.MarkFailed(ctx, newDeploymentID, err)
+			_ = serving.MarkFailed(ctx, candidate, err)
 			s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
 			return err
 		}
 	}
-	if _, err := repo.Activate(ctx, deployment.WorkspaceID(workspaceID), environment, newDeploymentID); err != nil {
+	cleanupAfter := time.Now().Add(s.refreshDrainGrace)
+	_, err = serving.Activate(ctx, candidate, cleanupAfter)
+	if err != nil {
 		if prepared != nil {
 			_ = prepared.Close()
 		}
 		_, _ = runRepo.MarkRunFailed(ctx, workspaceID, rootRun.ID, err.Error())
-		_ = repo.MarkFailed(ctx, newDeploymentID, err)
+		_ = serving.MarkFailed(ctx, candidate, err)
 		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
 		return err
+	}
+	if err := serving.ReconcileRetention(ctx, time.Now()); err != nil && s.logger != nil {
+		s.logger.WarnContext(ctx, "serving retention reconciliation failed", "workspace", workspaceID, "environment", environment, "error", err)
 	}
 	finalized = true
 	if prepared != nil {

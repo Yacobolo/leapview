@@ -160,7 +160,7 @@ func workspaceCardSignals(workspaces []workspaceview.WorkspaceView) []uisignals.
 			Title:           workspace.Title,
 			Description:     description,
 			Href:            "/workspaces/" + workspace.ID,
-			DeploymentLabel: activeDeploymentLabel(workspace),
+			DeploymentLabel: workspaceServingLabel(workspace),
 		})
 	}
 	return cards
@@ -311,7 +311,6 @@ func workspaceAssetPageSignalWithRefreshAndVersions(workspace workspaceview.Work
 		page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "refreshes", Label: "Refreshes", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "refreshes"), Active: activeSection == "refreshes"})
 	}
 	page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "lineage", Label: "Lineage", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "lineage"), Active: activeSection == "lineage", Count: lineage.Count})
-	page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "versions", Label: "Versions", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "versions"), Active: activeSection == "versions"})
 	return page
 }
 
@@ -330,7 +329,6 @@ func connectionAssetPageSignalWithVersions(workspace workspaceview.WorkspaceView
 	page.Tabs = []uisignals.WorkspaceTabSignal{
 		{ID: "details", Label: "Details", Href: assetnav.ConnectionAssetSectionHref(asset.ID, "details"), Active: activeSection == "details"},
 		{ID: "lineage", Label: "Lineage", Href: assetnav.ConnectionAssetSectionHref(asset.ID, "lineage"), Active: activeSection == "lineage", Count: lineage.Count},
-		{ID: "versions", Label: "Versions", Href: assetnav.ConnectionAssetSectionHref(asset.ID, "versions"), Active: activeSection == "versions"},
 	}
 	return page
 }
@@ -352,7 +350,6 @@ func connectionSourceAssetPageSignalWithVersions(workspace workspaceview.Workspa
 	page.Tabs = []uisignals.WorkspaceTabSignal{
 		{ID: "details", Label: "Details", Href: assetnav.ConnectionSourceAssetSectionHref(connection.ID, source.ID, "details"), Active: activeSection == "details"},
 		{ID: "lineage", Label: "Lineage", Href: assetnav.ConnectionSourceAssetSectionHref(connection.ID, source.ID, "lineage"), Active: activeSection == "lineage", Count: lineage.Count},
-		{ID: "versions", Label: "Versions", Href: assetnav.ConnectionSourceAssetSectionHref(connection.ID, source.ID, "versions"), Active: activeSection == "versions"},
 	}
 	return page
 }
@@ -393,7 +390,8 @@ func baseWorkspaceAssetPageSignalWithRefreshAndVersions(workspace workspaceview.
 		page.Refresh.RunsTable = &runsTable
 	}
 	if activeSection == "versions" {
-		page.Versions = assetVersionsSignal(versions)
+		versionSignal := assetVersionsSignal(versions)
+		page.Versions = &versionSignal
 	}
 	return page
 }
@@ -626,11 +624,11 @@ func workspaceRouteDocumentWithBodyExtras(title string, catalog dashboard.Catalo
 	})
 }
 
-func activeDeploymentLabel(workspace workspaceview.WorkspaceView) string {
+func workspaceServingLabel(workspace workspaceview.WorkspaceView) string {
 	if workspace.ActiveDeploymentID == "" {
-		return "No active deployment"
+		return "Not serving"
 	}
-	return "Published deployment"
+	return "Serving"
 }
 
 func connectionAssetListHref(typ, query string) string {
@@ -665,7 +663,7 @@ func workspaceAssetHref(workspaceID, typ, query string) string {
 
 func ValidWorkspaceAssetSection(section string) bool {
 	switch section {
-	case "details", "lineage", "refreshes", "versions":
+	case "details", "lineage", "refreshes":
 		return true
 	default:
 		return false

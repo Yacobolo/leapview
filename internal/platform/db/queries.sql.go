@@ -302,8 +302,8 @@ func (q *Queries) CreateAgentRun(ctx context.Context, arg CreateAgentRunParams) 
 }
 
 const createDeployment = `-- name: CreateDeployment :exec
-INSERT INTO deployments (id, workspace_id, environment, status, created_by)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO deployments (id, workspace_id, environment, status, source, created_by)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateDeploymentParams struct {
@@ -311,6 +311,7 @@ type CreateDeploymentParams struct {
 	WorkspaceID string `json:"workspace_id"`
 	Environment string `json:"environment"`
 	Status      string `json:"status"`
+	Source      string `json:"source"`
 	CreatedBy   string `json:"created_by"`
 }
 
@@ -320,6 +321,7 @@ func (q *Queries) CreateDeployment(ctx context.Context, arg CreateDeploymentPara
 		arg.WorkspaceID,
 		arg.Environment,
 		arg.Status,
+		arg.Source,
 		arg.CreatedBy,
 	)
 	return err
@@ -518,7 +520,7 @@ func (q *Queries) GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiT
 }
 
 const getActiveDeployment = `-- name: GetActiveDeployment :one
-SELECT d.id, d.workspace_id, d.environment, d.status, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.error
+SELECT d.id, d.workspace_id, d.environment, d.status, d.source, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.superseded_at, d.cleanup_after, d.error
 FROM deployments d
 JOIN workspace_active_deployments active ON active.deployment_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?
@@ -537,12 +539,15 @@ func (q *Queries) GetActiveDeployment(ctx context.Context, arg GetActiveDeployme
 		&i.WorkspaceID,
 		&i.Environment,
 		&i.Status,
+		&i.Source,
 		&i.Digest,
 		&i.ManifestJson,
 		&i.DucklakeSnapshotID,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.SupersededAt,
+		&i.CleanupAfter,
 		&i.Error,
 	)
 	return i, err
@@ -600,7 +605,7 @@ func (q *Queries) GetArtifactByDeployment(ctx context.Context, deploymentID stri
 }
 
 const getDeployment = `-- name: GetDeployment :one
-SELECT id, workspace_id, environment, status, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, error FROM deployments WHERE id = ?
+SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, cleanup_after, error FROM deployments WHERE id = ?
 `
 
 func (q *Queries) GetDeployment(ctx context.Context, id string) (Deployment, error) {
@@ -611,12 +616,15 @@ func (q *Queries) GetDeployment(ctx context.Context, id string) (Deployment, err
 		&i.WorkspaceID,
 		&i.Environment,
 		&i.Status,
+		&i.Source,
 		&i.Digest,
 		&i.ManifestJson,
 		&i.DucklakeSnapshotID,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.SupersededAt,
+		&i.CleanupAfter,
 		&i.Error,
 	)
 	return i, err
@@ -1367,7 +1375,7 @@ JOIN assets a ON a.deployment_id = d.id
 WHERE d.workspace_id = ?
   AND d.environment = ?
   AND a.logical_asset_id = ?
-  AND d.status IN ('active', 'inactive', 'validated')
+  AND d.status IN ('active', 'draining', 'inactive', 'validated')
 ORDER BY
   COALESCE(d.activated_at, d.created_at) DESC,
   d.created_at DESC,
@@ -1560,7 +1568,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 }
 
 const listDeployments = `-- name: ListDeployments :many
-SELECT id, workspace_id, environment, status, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, error FROM deployments
+SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, cleanup_after, error FROM deployments
 WHERE workspace_id = ? AND environment = ?
 ORDER BY created_at DESC
 `
@@ -1584,12 +1592,15 @@ func (q *Queries) ListDeployments(ctx context.Context, arg ListDeploymentsParams
 			&i.WorkspaceID,
 			&i.Environment,
 			&i.Status,
+			&i.Source,
 			&i.Digest,
 			&i.ManifestJson,
 			&i.DucklakeSnapshotID,
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.ActivatedAt,
+			&i.SupersededAt,
+			&i.CleanupAfter,
 			&i.Error,
 		); err != nil {
 			return nil, err
@@ -1788,7 +1799,7 @@ const listReferencedDuckLakeSnapshots = `-- name: ListReferencedDuckLakeSnapshot
 SELECT DISTINCT ducklake_snapshot_id
 FROM deployments
 WHERE ducklake_snapshot_id > 0
-  AND status <> 'deleted'
+  AND status IN ('active', 'draining')
 ORDER BY ducklake_snapshot_id
 `
 
@@ -2058,6 +2069,48 @@ WHERE id = ?
 
 func (q *Queries) MarkDeploymentActive(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, markDeploymentActive, id)
+	return err
+}
+
+const markDrainingDeploymentsDeleteScheduled = `-- name: MarkDrainingDeploymentsDeleteScheduled :exec
+UPDATE deployments
+SET status = 'delete_scheduled', error = ''
+WHERE status = 'draining'
+  AND cleanup_after IS NOT NULL
+  AND cleanup_after <= ?
+`
+
+func (q *Queries) MarkDrainingDeploymentsDeleteScheduled(ctx context.Context, cleanupAfter sql.NullString) error {
+	_, err := q.db.ExecContext(ctx, markDrainingDeploymentsDeleteScheduled, cleanupAfter)
+	return err
+}
+
+const markOtherDeploymentsDraining = `-- name: MarkOtherDeploymentsDraining :exec
+UPDATE deployments
+SET status = 'draining',
+    superseded_at = CURRENT_TIMESTAMP,
+    cleanup_after = ?,
+    error = ''
+WHERE workspace_id = ?
+  AND environment = ?
+  AND id <> ?
+  AND status = 'active'
+`
+
+type MarkOtherDeploymentsDrainingParams struct {
+	CleanupAfter sql.NullString `json:"cleanup_after"`
+	WorkspaceID  string         `json:"workspace_id"`
+	Environment  string         `json:"environment"`
+	ID           string         `json:"id"`
+}
+
+func (q *Queries) MarkOtherDeploymentsDraining(ctx context.Context, arg MarkOtherDeploymentsDrainingParams) error {
+	_, err := q.db.ExecContext(ctx, markOtherDeploymentsDraining,
+		arg.CleanupAfter,
+		arg.WorkspaceID,
+		arg.Environment,
+		arg.ID,
+	)
 	return err
 }
 

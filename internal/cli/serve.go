@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
@@ -95,6 +96,10 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		}
 	}
 	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	if err := deploymentRepo.ReconcileRetention(ctx, time.Now()); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
 	summaries, err := workspaceRepo.List(ctx)
 	if err != nil {
@@ -147,6 +152,11 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	auth := app.NewAuth(accessRepo, "", authConfig)
 	rateLimits := app.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
+	refreshDrainGrace, err := cfg.RefreshDrainGrace()
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	server := app.NewWithOptions(runtimeMetrics, app.Options{
 		Store:               store,
 		DeploymentRepo:      deploymentRepo,
@@ -161,6 +171,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		DuckLakeCatalogPath: cfg.DBPath(),
 		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
 		DefaultEnvironment:  string(environment),
+		RefreshDrainGrace:   refreshDrainGrace,
 		RateLimits:          rateLimits,
 		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 		RequestLogging:      production && cfg.RequestLoggingEnabled(),

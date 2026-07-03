@@ -54,8 +54,8 @@ ON CONFLICT(workspace_id, environment) DO UPDATE SET
   updated_at = CURRENT_TIMESTAMP;
 
 -- name: CreateDeployment :exec
-INSERT INTO deployments (id, workspace_id, environment, status, created_by)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO deployments (id, workspace_id, environment, status, source, created_by)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetDeployment :one
 SELECT * FROM deployments WHERE id = ?;
@@ -75,13 +75,31 @@ ORDER BY created_at DESC;
 SELECT DISTINCT ducklake_snapshot_id
 FROM deployments
 WHERE ducklake_snapshot_id > 0
-  AND status <> 'deleted'
+  AND status IN ('active', 'draining')
 ORDER BY ducklake_snapshot_id;
 
 -- name: ExpireInactiveDeployments :exec
 UPDATE deployments
 SET status = 'expired', error = ''
 WHERE status = 'inactive';
+
+-- name: MarkOtherDeploymentsDraining :exec
+UPDATE deployments
+SET status = 'draining',
+    superseded_at = CURRENT_TIMESTAMP,
+    cleanup_after = ?,
+    error = ''
+WHERE workspace_id = ?
+  AND environment = ?
+  AND id <> ?
+  AND status = 'active';
+
+-- name: MarkDrainingDeploymentsDeleteScheduled :exec
+UPDATE deployments
+SET status = 'delete_scheduled', error = ''
+WHERE status = 'draining'
+  AND cleanup_after IS NOT NULL
+  AND cleanup_after <= ?;
 
 -- name: ScheduleExpiredDeploymentDeletion :exec
 UPDATE deployments
@@ -170,7 +188,7 @@ JOIN assets a ON a.deployment_id = d.id
 WHERE d.workspace_id = ?
   AND d.environment = ?
   AND a.logical_asset_id = ?
-  AND d.status IN ('active', 'inactive', 'validated')
+  AND d.status IN ('active', 'draining', 'inactive', 'validated')
 ORDER BY
   COALESCE(d.activated_at, d.created_at) DESC,
   d.created_at DESC,

@@ -20,6 +20,7 @@ const (
 	StatusPending         Status = "pending"
 	StatusValidated       Status = "validated"
 	StatusActive          Status = "active"
+	StatusDraining        Status = "draining"
 	StatusInactive        Status = "inactive"
 	StatusFailed          Status = "failed"
 	StatusExpired         Status = "expired"
@@ -29,16 +30,26 @@ const (
 
 const DefaultEnvironment Environment = "dev"
 
+type Source string
+
+const (
+	SourcePublish Source = "publish"
+	SourceRefresh Source = "refresh"
+)
+
 type Deployment struct {
 	ID                 ID
 	WorkspaceID        WorkspaceID
 	Environment        Environment
 	Status             Status
+	Source             Source
 	Digest             string
 	ManifestJSON       string
 	CreatedBy          string
 	CreatedAt          string
 	ActivatedAt        string
+	SupersededAt       string
+	CleanupAfter       string
 	Error              string
 	DuckLakeSnapshotID int64
 }
@@ -51,6 +62,7 @@ type CreateInput struct {
 	WorkspaceID WorkspaceID
 	Environment Environment
 	CreatedBy   string
+	Source      Source
 }
 
 type Artifact struct {
@@ -80,6 +92,13 @@ type PreparedRuntime interface {
 func NormalizeEnvironment(value Environment) Environment {
 	if value == "" {
 		return DefaultEnvironment
+	}
+	return value
+}
+
+func NormalizeSource(value Source) Source {
+	if value == "" {
+		return SourcePublish
 	}
 	return value
 }

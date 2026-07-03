@@ -6,26 +6,26 @@ LibreDash storage uses DuckLake as the analytical table catalog and DuckDB as th
 
 One metadata catalog stores both LibreDash control-plane tables and DuckLake analytical metadata. Parquet files hold analytical data. DuckDB attaches DuckLake, plans queries, and executes against local files.
 
-Deployments are isolated by immutable DuckLake snapshots, not by separate DuckDB database files or copied table sets.
+Refreshes replace the served data atomically. DuckLake snapshots provide internal consistency and cleanup boundaries; they are not a customer-facing data-versioning model in v1.
 
 ## Goals
 
 - Use DuckLake for materialized model tables, snapshots, schema history, statistics, commit metadata, and physical data-file ownership.
-- Use the metadata catalog for LibreDash control-plane state: workspaces, environments, active deployment pointers, permissions, and application job state.
+- Use the metadata catalog for LibreDash control-plane state: workspaces, environments, active serving pointers, permissions, and application job state.
 - Store analytical data as DuckLake-managed Parquet files in the LibreDash data store.
 - Execute BI queries through DuckDB attached to the active DuckLake snapshot.
-- Activate deployments by flipping a metadata pointer, not by moving files.
-- Keep rollback cheap by preserving previous DuckLake snapshots until retention removes them.
-- Make failed refreshes non-destructive to the active deployment.
-- Support deterministic cleanup of unreferenced physical data.
+- Activate refreshed data by flipping a metadata pointer, not by moving files.
+- Keep failed refreshes non-destructive by serving the previous active snapshot until the new snapshot is committed and validated.
+- Support deterministic cleanup of superseded physical data.
 
 ## Non-Goals
 
-- Do not expose DuckDB files as the primary storage abstraction.
+- Do not expose DuckDB files, deployments, or historical snapshots as the normal BI user abstraction.
 - Do not require one DuckDB file per semantic model.
-- Do not require one DuckDB file per deployment as the long-term architecture.
-- Do not use filesystem layout as the deployment isolation mechanism.
+- Do not require one DuckDB file per serving state as the long-term architecture.
+- Do not use filesystem layout as the serving isolation mechanism.
 - Do not duplicate DuckLake catalog semantics inside LibreDash metadata.
+- Do not make rollback, time travel, or last-N data-version retention a v1 default.
 
 ## Architecture
 
@@ -35,7 +35,7 @@ Each LibreDash instance has one metadata catalog and one analytical data store:
 .libredash/
   libredash.db              # LibreDash control-plane tables + DuckLake metadata tables
   data/                     # DuckLake-managed Parquet files
-  artifacts/                # deployment bundles
+  artifacts/                # workspace bundles
   runtime/                  # ephemeral extracted/runtime files
 ```
 
@@ -44,8 +44,8 @@ Local and production use the same storage topology. Development mode changes app
 LibreDash owns application metadata that DuckLake cannot own:
 
 - Workspaces and environments.
-- Active deployment pointer: workspace/environment -> DuckLake snapshot id.
-- Deployment intent and lifecycle state.
+- Active serving pointer: workspace/environment -> DuckLake snapshot id.
+- Refresh intent, run history, and serving-state lifecycle.
 - Semantic model, dashboard, and permission metadata.
 - Materialization job state for work not yet committed to DuckLake.
 - Audit records for application actions.
@@ -75,14 +75,14 @@ DuckDB owns execution:
 - Running dashboard, export, API, and agent queries.
 - Reading DuckLake-managed Parquet files through the DuckLake catalog.
 
-A committed DuckLake snapshot is immutable. Later writes create new snapshots. A deployment maps a workspace/environment to one DuckLake snapshot id. Environment is a deployment dimension, not a physical catalog boundary. That snapshot is the consistent analytical version for all tables in the deployment.
+A committed DuckLake snapshot is immutable. Later writes create new snapshots. LibreDash maps a workspace/environment to the currently served DuckLake snapshot id. Environment is a serving dimension, not a physical catalog boundary. That snapshot is the consistent analytical state for the current served data.
 
 ```text
 SQLite:
   workspace=sales
   environment=dev
-  active_deployment=dep_94b8...
-  dep_94b8... -> ducklake snapshot 42
+  active_serving_state=state_94b8...
+  state_94b8... -> ducklake snapshot 42
 
 DuckLake:
   snapshot 42:
@@ -97,41 +97,40 @@ DuckDB:
 
 Human-readable BI semantics and application ownership come from LibreDash metadata. Analytical table state and file ownership come from DuckLake.
 
-## Deployment Model
+## Serving Model
 
-Deployments are immutable references to DuckLake snapshots.
+LibreDash is a BI serving layer. Assets define what can be queried. Refreshes replace the served data atomically.
 
-- Each deployment points to one DuckLake snapshot id.
-- Materialization commits all deployment table changes in one DuckLake transaction.
-- The DuckLake commit message or extra info records the LibreDash deployment id, workspace id, semantic model digest, and source data digest.
-- After commit, LibreDash reads the committed DuckLake snapshot id and records only that pointer in the control-plane tables.
-- A deployment is active only when LibreDash marks it active for a workspace and environment.
-- Activation is a metadata transaction that updates the active snapshot pointer.
-- Previous deployments remain addressable for rollback and audit until retention expires them.
-- Failed or incomplete deployments are never active and never serve queries.
+- Each active serving state points to one DuckLake snapshot id.
+- Materialization commits all planned table changes in one DuckLake transaction.
+- The DuckLake commit message or extra info records workspace id, environment, target asset, semantic digest, artifact digest, source data digest when available, and internal serving-state id.
+- After commit and schema validation, LibreDash records the committed DuckLake snapshot id and flips the active serving pointer.
+- Failed or incomplete refreshes are never active and never serve queries.
+- Refresh history is job history, not retained data-version history.
+- Old snapshots are retained only for the active-query drain window unless a future policy explicitly enables rollback/time travel.
 
-Deployment states are explicit:
+Serving states are explicit:
 
 ```text
-staging -> validated -> active -> expired -> delete_scheduled -> deleted
+staging -> validated -> active -> draining -> delete_scheduled -> deleted
                   \-> failed
 ```
 
-DuckLake snapshots that have no live LibreDash deployment reference are retention candidates.
+DuckLake snapshots that are not active or draining are retention candidates.
 
-Snapshot ids are scoped to the metadata catalog. Because environments share the catalog, cleanup must protect every live deployment reference in the catalog, not only references for the environment currently being served or inspected.
+Snapshot ids are scoped to the metadata catalog. Because environments share the catalog, cleanup must protect every active or draining serving reference in the catalog, not only references for the environment currently being served or inspected.
 
 ## Query Resolution
 
-Runtime queries never hard-code deployment-specific physical files or table names.
+Runtime queries never hard-code serving-state-specific physical files or table names.
 
 Resolution invariants:
 
-- Runtime resolves the active deployment pointer once per request.
+- Runtime resolves the active serving pointer once per request.
 - DuckDB attaches DuckLake at that snapshot version for the request.
 - Logical table refs are resolved through the semantic model to stable DuckLake schema/table names.
-- All DuckDB reads within one dashboard/page refresh, API request, export, or agent query use one deployment version.
-- Activation changes made during a request do not affect that request.
+- All DuckDB reads within one dashboard/page refresh, API request, export, or agent query use one resolved DuckLake snapshot.
+- Active pointer changes made during a request do not affect that request.
 - DuckDB connections attach DuckLake read-only for query serving when possible.
 
 Transform SQL that references `model.<table>` uses the same resolver during materialization.
@@ -140,13 +139,14 @@ Transform SQL that references `model.<table>` uses the same resolver during mate
 
 Cleanup is metadata-driven.
 
-- Retention policy determines when inactive deployments expire.
-- Expired deployments move to `delete_scheduled` before DuckLake snapshot expiration.
+- Default retention protects the active snapshot and superseded snapshots during a short active-query drain window.
+- Superseded serving states move to `draining` with `cleanup_after = superseded_at + drain_grace`.
+- Elapsed draining states move to `delete_scheduled`/`deleted` before DuckLake snapshot expiration.
 - Physical file deletion respects a safety window and active-query grace period.
-- DuckLake snapshots not referenced by any active, rollback, audit, or retention policy in the catalog are candidates for expiration.
+- DuckLake snapshots not referenced by any active or draining serving state in the catalog are candidates for expiration.
 - DuckLake cleanup functions identify files scheduled for deletion and orphaned Parquet files.
 - Cleanup supports dry-run inspection before destructive action.
-- Cleanup reconciles all LibreDash deployment references in the metadata catalog against DuckLake snapshots before expiration.
+- Cleanup reconciles all LibreDash serving references in the metadata catalog against DuckLake snapshots before expiration.
 
 Snapshot expiration and physical file cleanup remain separate operations.
 
@@ -154,21 +154,20 @@ Snapshot expiration and physical file cleanup remain separate operations.
 
 - Use one metadata catalog per LibreDash instance.
 - Use SQLite as the local metadata catalog backend and PostgreSQL as the server/multi-user backend.
-- Use DuckLake schemas for workspace/table namespaces and metadata columns for environment-specific deployment pointers.
-- Use immutable DuckLake snapshots for deployment isolation.
+- Use DuckLake schemas for workspace/table namespaces and metadata columns for environment-specific serving pointers.
+- Use immutable DuckLake snapshots for atomic refresh isolation.
 - Use local Parquet as the analytical data format.
 - Use DuckLake DDL and scoped options for table layout; LibreDash should not own physical file-layout policy.
-- Use metadata transactions for activation and rollback.
-- Treat DuckDB as a stateless execution engine over DuckLake, not as the durable deployment container.
-- Use LibreDash control-plane tables as the authority for application ownership, lifecycle state, permissions, and active deployment pointers.
+- Use metadata transactions for active pointer flips.
+- Treat DuckDB as a stateless execution engine over DuckLake, not as the durable serving container.
+- Use LibreDash control-plane tables as the authority for application ownership, lifecycle state, permissions, and active serving pointers.
 - Use DuckLake as the authority for analytical table state, schema versions, snapshot history, statistics, and physical data-file ownership.
 
 ## Acceptance Criteria
 
-- LibreDash deployment pointers can be reconciled with DuckLake snapshots.
-- Rollback does not require rematerialization.
+- LibreDash active serving pointers can be reconciled with DuckLake snapshots.
 - Failed materialization cannot alter active query results.
 - Cleanup can report and remove expired snapshots and orphaned physical data through DuckLake.
-- Tests prove query routing changes when only the active deployment pointer changes.
+- Tests prove query routing changes when only the active serving pointer changes.
 - Tests prove one request attaches exactly one DuckLake snapshot version.
-- Tests prove DuckDB query serving does not depend on per-deployment DuckDB database files.
+- Tests prove DuckDB query serving does not depend on per-serving-state DuckDB database files.

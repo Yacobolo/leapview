@@ -1276,7 +1276,7 @@ func TestWorkspaceSourceAssetRedirectsToConnectionScopedSourceSurface(t *testing
 	}
 }
 
-func TestWorkspaceAssetVersionsRouteRendersDeploymentBackedVersions(t *testing.T) {
+func TestWorkspaceAssetVersionsRouteIsHiddenForV1(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	seedActiveDeployment(t, store, "test")
@@ -1289,30 +1289,8 @@ func TestWorkspaceAssetVersionsRouteRendersDeploymentBackedVersions(t *testing.T
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("versions status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	body := html.UnescapeString(rec.Body.String())
-	for _, want := range []string{
-		`"activeSection":"versions"`,
-		`"label":"Versions"`,
-		`"currentDeploymentId":"dep_`,
-		`"header":"Asset hash"`,
-		`"header":"Deployment digest"`,
-		`"label":"current"`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("versions page missing %q:\n%s", want, body)
-		}
-	}
-	for _, forbidden := range []string{
-		`"version":"local"`,
-		`"label":"local"`,
-		`/updates?section=versions`,
-	} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("versions page rendered forbidden %q:\n%s", forbidden, body)
-		}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("versions status = %d, want 404 body=%s", rec.Code, rec.Body.String())
 	}
 }
 

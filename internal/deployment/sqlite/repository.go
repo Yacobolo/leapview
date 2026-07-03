@@ -34,6 +34,7 @@ func (r *Repository) Create(ctx context.Context, input deployment.CreateInput) (
 		WorkspaceID: string(input.WorkspaceID),
 		Environment: string(deployment.NormalizeEnvironment(input.Environment)),
 		Status:      string(deployment.StatusPending),
+		Source:      string(deployment.NormalizeSource(input.Source)),
 		CreatedBy:   input.CreatedBy,
 	}); err != nil {
 		return deployment.Deployment{}, err
@@ -95,6 +96,16 @@ func (r *Repository) ScheduleExpiredDeploymentDeletion(ctx context.Context) erro
 }
 
 func (r *Repository) MarkDeleteScheduledDeploymentsDeleted(ctx context.Context) error {
+	return r.q.MarkDeleteScheduledDeploymentsDeleted(ctx)
+}
+
+func (r *Repository) ReconcileRetention(ctx context.Context, now time.Time) error {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if err := r.q.MarkDrainingDeploymentsDeleteScheduled(ctx, sql.NullString{String: formatSQLiteTime(now), Valid: true}); err != nil {
+		return err
+	}
 	return r.q.MarkDeleteScheduledDeploymentsDeleted(ctx)
 }
 
@@ -174,14 +185,18 @@ func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.
 }
 
 func (r *Repository) Activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID) (deployment.Deployment, error) {
-	return r.activate(ctx, workspaceID, environment, deploymentID, nil)
+	return r.activate(ctx, workspaceID, environment, deploymentID, nil, nil)
 }
 
 func (r *Repository) ActivateWithWorkspacePolicy(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy workspace.AccessPolicy) (deployment.Deployment, error) {
-	return r.activate(ctx, workspaceID, environment, deploymentID, &policy)
+	return r.activate(ctx, workspaceID, environment, deploymentID, &policy, nil)
 }
 
-func (r *Repository) activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy *workspace.AccessPolicy) (deployment.Deployment, error) {
+func (r *Repository) ActivateWithCleanupAfter(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, cleanupAfter time.Time) (deployment.Deployment, error) {
+	return r.activate(ctx, workspaceID, environment, deploymentID, nil, &cleanupAfter)
+}
+
+func (r *Repository) activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy *workspace.AccessPolicy, cleanupAfterOverride *time.Time) (deployment.Deployment, error) {
 	environment = deployment.NormalizeEnvironment(environment)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -208,7 +223,16 @@ func (r *Repository) activate(ctx context.Context, workspaceID deployment.Worksp
 			return deployment.Deployment{}, err
 		}
 	}
-	if err := q.MarkOtherDeploymentsInactive(ctx, platformdb.MarkOtherDeploymentsInactiveParams{WorkspaceID: string(workspaceID), Environment: string(environment), ID: string(deploymentID)}); err != nil {
+	cleanupAfter := time.Now().Add(deployment.DefaultRetentionPolicy().QueryDrainGrace)
+	if cleanupAfterOverride != nil && !cleanupAfterOverride.IsZero() {
+		cleanupAfter = *cleanupAfterOverride
+	}
+	if err := q.MarkOtherDeploymentsDraining(ctx, platformdb.MarkOtherDeploymentsDrainingParams{
+		WorkspaceID:  string(workspaceID),
+		Environment:  string(environment),
+		ID:           string(deploymentID),
+		CleanupAfter: sql.NullString{String: formatSQLiteTime(cleanupAfter), Valid: true},
+	}); err != nil {
 		return deployment.Deployment{}, err
 	}
 	if err := q.MarkDeploymentActive(ctx, string(deploymentID)); err != nil {
@@ -355,6 +379,7 @@ func mapDeployment(row platformdb.Deployment) deployment.Deployment {
 		WorkspaceID:        deployment.WorkspaceID(row.WorkspaceID),
 		Environment:        deployment.Environment(row.Environment),
 		Status:             deployment.Status(row.Status),
+		Source:             deployment.NormalizeSource(deployment.Source(row.Source)),
 		Digest:             row.Digest,
 		ManifestJSON:       row.ManifestJson,
 		CreatedBy:          row.CreatedBy,
@@ -364,6 +389,12 @@ func mapDeployment(row platformdb.Deployment) deployment.Deployment {
 	}
 	if row.ActivatedAt.Valid {
 		out.ActivatedAt = row.ActivatedAt.String
+	}
+	if row.SupersededAt.Valid {
+		out.SupersededAt = row.SupersededAt.String
+	}
+	if row.CleanupAfter.Valid {
+		out.CleanupAfter = row.CleanupAfter.String
 	}
 	return out
 }
@@ -451,4 +482,8 @@ func newSecret() string {
 func stableID(value string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(value)))
 	return hex.EncodeToString(sum[:])[:32]
+}
+
+func formatSQLiteTime(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
 }

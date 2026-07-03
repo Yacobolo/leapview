@@ -4,16 +4,18 @@ import "time"
 
 type RetentionPolicy struct {
 	ProtectActive              bool
-	ProtectInactive            bool
-	InactiveRetention          time.Duration
+	ProtectDraining            bool
+	QueryDrainGrace            time.Duration
 	RequireApplyForDestructive bool
 }
+
+const DefaultQueryDrainGrace = 15 * time.Minute
 
 func DefaultRetentionPolicy() RetentionPolicy {
 	return RetentionPolicy{
 		ProtectActive:              true,
-		ProtectInactive:            true,
-		InactiveRetention:          30 * 24 * time.Hour,
+		ProtectDraining:            true,
+		QueryDrainGrace:            DefaultQueryDrainGrace,
 		RequireApplyForDestructive: true,
 	}
 }

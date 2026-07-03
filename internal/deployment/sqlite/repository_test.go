@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/deployment"
@@ -205,6 +206,28 @@ func TestRepositoryTracksActiveDeploymentsPerEnvironment(t *testing.T) {
 	}
 }
 
+func TestRepositoryCreateDefaultsToPublishSource(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.Source != deployment.SourcePublish {
+		t.Fatalf("source = %q, want publish", created.Source)
+	}
+	refresh, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester", Source: deployment.SourceRefresh})
+	if err != nil {
+		t.Fatalf("create refresh: %v", err)
+	}
+	if refresh.Source != deployment.SourceRefresh {
+		t.Fatalf("refresh source = %q, want refresh", refresh.Source)
+	}
+}
+
 func TestRepositoryRecordsDuckLakeSnapshot(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)
@@ -274,15 +297,21 @@ func TestRepositoryListsReferencedDuckLakeSnapshots(t *testing.T) {
 	if err := repo.RecordDuckLakeSnapshot(ctx, prod.ID, 11); err != nil {
 		t.Fatalf("record prod: %v", err)
 	}
-	if _, err := store.SQLDB().ExecContext(ctx, "UPDATE deployments SET status = ? WHERE id = ?", string(deployment.StatusDeleted), string(second.ID)); err != nil {
-		t.Fatalf("mark second deleted: %v", err)
+	if _, err := store.SQLDB().ExecContext(ctx, "UPDATE deployments SET status = ? WHERE id = ?", string(deployment.StatusActive), string(first.ID)); err != nil {
+		t.Fatalf("mark first active: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, "UPDATE deployments SET status = ? WHERE id = ?", string(deployment.StatusDraining), string(third.ID)); err != nil {
+		t.Fatalf("mark third draining: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, "UPDATE deployments SET status = ? WHERE id = ?", string(deployment.StatusInactive), string(prod.ID)); err != nil {
+		t.Fatalf("mark prod inactive: %v", err)
 	}
 
 	got, err := repo.ReferencedDuckLakeSnapshots(ctx)
 	if err != nil {
 		t.Fatalf("referenced snapshots: %v", err)
 	}
-	want := []int64{7, 11}
+	want := []int64{7}
 	if len(got) != len(want) {
 		t.Fatalf("referenced snapshots = %#v, want %#v", got, want)
 	}
@@ -293,7 +322,7 @@ func TestRepositoryListsReferencedDuckLakeSnapshots(t *testing.T) {
 	}
 }
 
-func TestRepositoryDeploymentRetentionLifecycle(t *testing.T) {
+func TestRepositoryActivationMarksPreviousActiveDeploymentDraining(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
@@ -319,17 +348,47 @@ func TestRepositoryDeploymentRetentionLifecycle(t *testing.T) {
 	if _, err := repo.Activate(ctx, "test", deployment.DefaultEnvironment, second.ID); err != nil {
 		t.Fatalf("activate second: %v", err)
 	}
-	if err := repo.ExpireInactiveDeployments(ctx); err != nil {
-		t.Fatalf("expire inactive: %v", err)
-	}
-	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusExpired)
+	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDraining)
 	requireDeploymentStatus(t, ctx, repo, second.ID, deployment.StatusActive)
-	if err := repo.ScheduleExpiredDeploymentDeletion(ctx); err != nil {
-		t.Fatalf("schedule delete: %v", err)
+	firstAfter, err := repo.ByID(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("first after: %v", err)
 	}
-	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDeleteScheduled)
-	if err := repo.MarkDeleteScheduledDeploymentsDeleted(ctx); err != nil {
-		t.Fatalf("mark deleted: %v", err)
+	if firstAfter.SupersededAt == "" || firstAfter.CleanupAfter == "" {
+		t.Fatalf("first lifecycle = superseded %q cleanup %q, want both set", firstAfter.SupersededAt, firstAfter.CleanupAfter)
+	}
+}
+
+func TestRepositoryReconcileRetentionDeletesElapsedDrainingDeployments(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	first, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	second, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	if _, err := repo.SaveValidated(ctx, first.ID, validationGraph(first.ID), artifact(first.ID, "test")); err != nil {
+		t.Fatalf("save first: %v", err)
+	}
+	if _, err := repo.SaveValidated(ctx, second.ID, validationGraph(second.ID), artifact(second.ID, "test")); err != nil {
+		t.Fatalf("save second: %v", err)
+	}
+	now := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
+	if _, err := repo.ActivateWithCleanupAfter(ctx, "test", deployment.DefaultEnvironment, first.ID, now.Add(-time.Hour)); err != nil {
+		t.Fatalf("activate first: %v", err)
+	}
+	if _, err := repo.ActivateWithCleanupAfter(ctx, "test", deployment.DefaultEnvironment, second.ID, now.Add(-time.Minute)); err != nil {
+		t.Fatalf("activate second: %v", err)
+	}
+	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDraining)
+	if err := repo.ReconcileRetention(ctx, now); err != nil {
+		t.Fatalf("reconcile retention: %v", err)
 	}
 	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDeleted)
 	requireDeploymentStatus(t, ctx, repo, second.ID, deployment.StatusActive)
