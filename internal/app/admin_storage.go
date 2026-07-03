@@ -257,7 +257,7 @@ func inspectDuckLakeTables(ctx context.Context, db *sql.DB, deployments []ui.Adm
 
 	rows, err := db.QueryContext(ctx, `
 WITH active_tables AS (
-	SELECT s.schema_name, t.table_name, t.table_id, t.table_uuid, t.begin_snapshot, t.end_snapshot
+	SELECT s.schema_name, s.path AS schema_path, t.table_name, t.path AS table_path, t.table_id, t.table_uuid, t.begin_snapshot, t.end_snapshot
 	FROM meta.ducklake_table t
 	JOIN meta.ducklake_schema s ON s.schema_id = t.schema_id
 	WHERE t.end_snapshot IS NULL
@@ -272,7 +272,7 @@ WITH active_tables AS (
 	WHERE end_snapshot IS NULL AND parent_column IS NULL
 	GROUP BY table_id
 )
-SELECT a.schema_name, a.table_name, a.table_id, a.table_uuid, a.begin_snapshot, a.end_snapshot,
+SELECT a.schema_name, a.schema_path, a.table_name, a.table_path, a.table_id, a.table_uuid, a.begin_snapshot, a.end_snapshot,
        coalesce(f.row_count, 0), coalesce(c.column_count, 0), coalesce(f.file_count, 0), coalesce(f.byte_count, 0)
 FROM active_tables a
 LEFT JOIN file_rollup f ON f.table_id = a.table_id
@@ -285,11 +285,11 @@ ORDER BY a.schema_name, a.table_name`)
 
 	var tables []ui.AdminStorageTable
 	for rows.Next() {
-		var schemaName, tableName, tableUUID string
+		var schemaName, schemaPath, tableName, tablePath, tableUUID string
 		var tableID, beginSnapshot, rowCount, sizeBytes int64
 		var endSnapshot sql.NullInt64
 		var columnCount, fileCount int
-		if err := rows.Scan(&schemaName, &tableName, &tableID, &tableUUID, &beginSnapshot, &endSnapshot, &rowCount, &columnCount, &fileCount, &sizeBytes); err != nil {
+		if err := rows.Scan(&schemaName, &schemaPath, &tableName, &tablePath, &tableID, &tableUUID, &beginSnapshot, &endSnapshot, &rowCount, &columnCount, &fileCount, &sizeBytes); err != nil {
 			return nil, err
 		}
 		end := int64(0)
@@ -307,6 +307,7 @@ ORDER BY a.schema_name, a.table_name`)
 			Type:          "table",
 			TableID:       tableID,
 			TableUUID:     tableUUID,
+			DuckLakePath:  duckLakeTablePath(schemaPath, tablePath),
 			BeginSnapshot: beginSnapshot,
 			EndSnapshot:   end,
 			RowCount:      rowCount,
@@ -329,8 +330,13 @@ ORDER BY a.schema_name, a.table_name`)
 }
 
 func inspectDuckLakeColumns(ctx context.Context, db *sql.DB) (map[int64][]ui.AdminStorageColumn, error) {
+	stats, err := inspectDuckLakeColumnStats(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := db.QueryContext(ctx, `
-SELECT table_id, column_name, column_type, column_order, nulls_allowed, default_value
+SELECT table_id, column_id, column_name, column_type, column_order, nulls_allowed, default_value,
+       initial_default, default_value_type, default_value_dialect, begin_snapshot
 FROM meta.ducklake_column
 WHERE end_snapshot IS NULL AND parent_column IS NULL
 ORDER BY table_id, column_order`)
@@ -343,9 +349,10 @@ ORDER BY table_id, column_order`)
 		var tableID int64
 		var name, columnType string
 		var ordinal int
+		var columnID, beginSnapshot int64
 		var nullable sql.NullInt64
-		var defaultValue sql.NullString
-		if err := rows.Scan(&tableID, &name, &columnType, &ordinal, &nullable, &defaultValue); err != nil {
+		var defaultValue, initialDefault, defaultValueType, defaultValueDialect sql.NullString
+		if err := rows.Scan(&tableID, &columnID, &name, &columnType, &ordinal, &nullable, &defaultValue, &initialDefault, &defaultValueType, &defaultValueDialect, &beginSnapshot); err != nil {
 			return nil, err
 		}
 		nullableLabel := "-"
@@ -356,15 +363,87 @@ ORDER BY table_id, column_order`)
 				nullableLabel = "Yes"
 			}
 		}
+		stat := stats[columnStatsKey(tableID, columnID)]
 		columns[tableID] = append(columns[tableID], ui.AdminStorageColumn{
-			Name:     name,
-			Type:     columnType,
-			Ordinal:  ordinal,
-			Nullable: nullableLabel,
-			Default:  defaultValue.String,
+			ID:                  columnID,
+			Name:                name,
+			Type:                columnType,
+			Ordinal:             ordinal,
+			Nullable:            nullableLabel,
+			Default:             defaultValue.String,
+			InitialDefault:      initialDefault.String,
+			DefaultValueType:    defaultValueType.String,
+			DefaultValueDialect: defaultValueDialect.String,
+			BeginSnapshot:       beginSnapshot,
+			ContainsNull:        stat.ContainsNull,
+			ContainsNaN:         stat.ContainsNaN,
+			MinValue:            stat.MinValue,
+			MaxValue:            stat.MaxValue,
+			ExtraStats:          stat.ExtraStats,
 		})
 	}
 	return columns, rows.Err()
+}
+
+type duckLakeColumnStats struct {
+	ContainsNull string
+	ContainsNaN  string
+	MinValue     string
+	MaxValue     string
+	ExtraStats   string
+}
+
+func inspectDuckLakeColumnStats(ctx context.Context, db *sql.DB) (map[string]duckLakeColumnStats, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT table_id, column_id, contains_null, contains_nan, min_value, max_value, extra_stats
+FROM meta.ducklake_table_column_stats`)
+	if err != nil {
+		return nil, duckLakeMetadataError(err)
+	}
+	defer rows.Close()
+	stats := map[string]duckLakeColumnStats{}
+	for rows.Next() {
+		var tableID, columnID int64
+		var containsNull, containsNaN sql.NullInt64
+		var minValue, maxValue, extraStats sql.NullString
+		if err := rows.Scan(&tableID, &columnID, &containsNull, &containsNaN, &minValue, &maxValue, &extraStats); err != nil {
+			return nil, err
+		}
+		stats[columnStatsKey(tableID, columnID)] = duckLakeColumnStats{
+			ContainsNull: ternaryStatLabel(containsNull),
+			ContainsNaN:  ternaryStatLabel(containsNaN),
+			MinValue:     minValue.String,
+			MaxValue:     maxValue.String,
+			ExtraStats:   extraStats.String,
+		}
+	}
+	return stats, rows.Err()
+}
+
+func columnStatsKey(tableID, columnID int64) string {
+	return strconv.FormatInt(tableID, 10) + "\x00" + strconv.FormatInt(columnID, 10)
+}
+
+func duckLakeTablePath(schemaPath, tablePath string) string {
+	schemaPath = strings.TrimSpace(schemaPath)
+	tablePath = strings.TrimSpace(tablePath)
+	if schemaPath == "" {
+		return tablePath
+	}
+	if tablePath == "" {
+		return schemaPath
+	}
+	return strings.TrimRight(schemaPath, "/") + "/" + strings.TrimLeft(tablePath, "/")
+}
+
+func ternaryStatLabel(value sql.NullInt64) string {
+	if !value.Valid {
+		return "-"
+	}
+	if value.Int64 == 0 {
+		return "No"
+	}
+	return "Yes"
 }
 
 func inspectDuckLakeFiles(ctx context.Context, db *sql.DB) (map[int64][]ui.AdminStorageFile, error) {

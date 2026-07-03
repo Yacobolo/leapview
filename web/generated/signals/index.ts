@@ -52,11 +52,21 @@ export interface AdminPageSignal {
 }
 
 export interface AdminStorageColumnSignal {
+  id: number
   name: string
   type: string
   ordinal: number
   nullable: string
   default: string
+  initialDefault: string
+  defaultValueType: string
+  defaultValueDialect: string
+  beginSnapshot: number
+  containsNull: string
+  containsNan: string
+  minValue: string
+  maxValue: string
+  extraStats: string
 }
 
 export interface AdminStorageCommand {
@@ -147,6 +157,7 @@ export interface AdminStorageTableSignal {
   type: string
   tableId: number
   tableUuid: string
+  duckLakePath: string
   beginSnapshot: number
   endSnapshot: number
   rowCount: number

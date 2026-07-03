@@ -179,7 +179,37 @@
     "AdminStorageColumnSignal": {
       "additionalProperties": false,
       "properties": {
+        "beginSnapshot": {
+          "type": "integer"
+        },
+        "containsNan": {
+          "type": "string"
+        },
+        "containsNull": {
+          "type": "string"
+        },
         "default": {
+          "type": "string"
+        },
+        "defaultValueDialect": {
+          "type": "string"
+        },
+        "defaultValueType": {
+          "type": "string"
+        },
+        "extraStats": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "initialDefault": {
+          "type": "string"
+        },
+        "maxValue": {
+          "type": "string"
+        },
+        "minValue": {
           "type": "string"
         },
         "name": {
@@ -196,7 +226,17 @@
         }
       },
       "required": [
+        "beginSnapshot",
+        "containsNan",
+        "containsNull",
         "default",
+        "defaultValueDialect",
+        "defaultValueType",
+        "extraStats",
+        "id",
+        "initialDefault",
+        "maxValue",
+        "minValue",
         "name",
         "nullable",
         "ordinal",
@@ -522,6 +562,9 @@
           },
           "type": "array"
         },
+        "duckLakePath": {
+          "type": "string"
+        },
         "endSnapshot": {
           "type": "integer"
         },
@@ -583,6 +626,7 @@
         "databaseId",
         "databaseName",
         "databasePath",
+        "duckLakePath",
         "endSnapshot",
         "fileCount",
         "key",

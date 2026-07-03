@@ -537,6 +537,7 @@ type AdminStorageTable struct {
 	Type          string
 	TableID       int64
 	TableUUID     string
+	DuckLakePath  string
 	BeginSnapshot int64
 	EndSnapshot   int64
 	RowCount      int64
@@ -552,11 +553,21 @@ type AdminStorageTable struct {
 }
 
 type AdminStorageColumn struct {
-	Name     string
-	Type     string
-	Ordinal  int
-	Nullable string
-	Default  string
+	ID                  int64
+	Name                string
+	Type                string
+	Ordinal             int
+	Nullable            string
+	Default             string
+	InitialDefault      string
+	DefaultValueType    string
+	DefaultValueDialect string
+	BeginSnapshot       int64
+	ContainsNull        string
+	ContainsNaN         string
+	MinValue            string
+	MaxValue            string
+	ExtraStats          string
 }
 
 type AdminStorageFile struct {
@@ -641,6 +652,7 @@ type AdminStorageTableSignal struct {
 	Type          string                           `json:"type"`
 	TableID       int64                            `json:"tableId"`
 	TableUUID     string                           `json:"tableUuid"`
+	DuckLakePath  string                           `json:"duckLakePath"`
 	BeginSnapshot int64                            `json:"beginSnapshot"`
 	EndSnapshot   int64                            `json:"endSnapshot"`
 	RowCount      int64                            `json:"rowCount"`
@@ -656,11 +668,21 @@ type AdminStorageTableSignal struct {
 }
 
 type AdminStorageColumnSignal struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Ordinal  int    `json:"ordinal"`
-	Nullable string `json:"nullable"`
-	Default  string `json:"default"`
+	ID                  int64  `json:"id"`
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	Ordinal             int    `json:"ordinal"`
+	Nullable            string `json:"nullable"`
+	Default             string `json:"default"`
+	InitialDefault      string `json:"initialDefault"`
+	DefaultValueType    string `json:"defaultValueType"`
+	DefaultValueDialect string `json:"defaultValueDialect"`
+	BeginSnapshot       int64  `json:"beginSnapshot"`
+	ContainsNull        string `json:"containsNull"`
+	ContainsNaN         string `json:"containsNan"`
+	MinValue            string `json:"minValue"`
+	MaxValue            string `json:"maxValue"`
+	ExtraStats          string `json:"extraStats"`
 }
 
 type AdminStorageFileSignal struct {

@@ -508,11 +508,21 @@ func AdminStorageTableSignalFromTable(table AdminStorageTable) AdminStorageTable
 	columns := make([]AdminStorageColumnSignal, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		columns = append(columns, AdminStorageColumnSignal{
-			Name:     column.Name,
-			Type:     column.Type,
-			Ordinal:  column.Ordinal,
-			Nullable: column.Nullable,
-			Default:  column.Default,
+			ID:                  column.ID,
+			Name:                column.Name,
+			Type:                column.Type,
+			Ordinal:             column.Ordinal,
+			Nullable:            column.Nullable,
+			Default:             column.Default,
+			InitialDefault:      column.InitialDefault,
+			DefaultValueType:    column.DefaultValueType,
+			DefaultValueDialect: column.DefaultValueDialect,
+			BeginSnapshot:       column.BeginSnapshot,
+			ContainsNull:        column.ContainsNull,
+			ContainsNaN:         column.ContainsNaN,
+			MinValue:            column.MinValue,
+			MaxValue:            column.MaxValue,
+			ExtraStats:          column.ExtraStats,
 		})
 	}
 	files := make([]AdminStorageFileSignal, 0, len(table.Files))
@@ -554,6 +564,7 @@ func AdminStorageTableSignalFromTable(table AdminStorageTable) AdminStorageTable
 		Type:          table.Type,
 		TableID:       table.TableID,
 		TableUUID:     table.TableUUID,
+		DuckLakePath:  table.DuckLakePath,
 		BeginSnapshot: table.BeginSnapshot,
 		EndSnapshot:   table.EndSnapshot,
 		RowCount:      table.RowCount,

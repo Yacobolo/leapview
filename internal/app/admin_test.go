@@ -249,6 +249,9 @@ func TestAdminStorageReadsDuckLakeMetadata(t *testing.T) {
 	if table.DatabaseID != "ducklake-catalog" || table.DatabaseName != "DuckLake catalog" {
 		t.Fatalf("table database = %#v, want DuckLake catalog identity", table)
 	}
+	if table.TableUUID == "" || table.DuckLakePath != "model/orders/" {
+		t.Fatalf("table identity = %#v, want DuckLake uuid and metadata path", table)
+	}
 	if table.Schema != "model" || table.Name != "orders" || table.RowCountLabel != "10,000" || table.ColumnCount != 3 {
 		t.Fatalf("table = %#v, want DuckLake row/column metadata", table)
 	}
@@ -257,6 +260,12 @@ func TestAdminStorageReadsDuckLakeMetadata(t *testing.T) {
 	}
 	if table.Files[0].RecordCountLabel != "10,000" {
 		t.Fatalf("file record count label = %q, want thousands separator", table.Files[0].RecordCountLabel)
+	}
+	if table.Columns[0].ID == 0 || table.Columns[0].BeginSnapshot == 0 || table.Columns[0].DefaultValueType == "" || table.Columns[0].DefaultValueDialect == "" {
+		t.Fatalf("column metadata = %#v, want DuckLake column id, snapshot, default type, and dialect", table.Columns[0])
+	}
+	if table.Columns[0].ContainsNull == "" || table.Columns[0].ContainsNaN == "" || table.Columns[0].MinValue == "" || table.Columns[0].MaxValue == "" {
+		t.Fatalf("column stats = %#v, want DuckLake table column stats", table.Columns[0])
 	}
 	if len(table.History) == 0 || table.History[0].SnapshotID != table.BeginSnapshot || !strings.Contains(table.History[0].Source, "table") {
 		t.Fatalf("table history = %#v, want table-scoped DuckLake snapshot metadata", table.History)

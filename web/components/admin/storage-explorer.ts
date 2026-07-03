@@ -50,6 +50,7 @@ type DatabaseSelection = {
 }
 
 type TableDetailTab = 'schema' | 'files' | 'history'
+type CatalogDetailTab = 'schemas' | 'deployments' | 'snapshots'
 
 class StorageExplorer extends LitElement {
   @property({ converter: jsonAttribute<AdminStorageSignal>(emptyStorage) }) storage: AdminStorageSignal = emptyStorage
@@ -58,6 +59,7 @@ class StorageExplorer extends LitElement {
   @state() private selectedSchema: SchemaSelection | null = null
   @state() private localSelectedTable: AdminStorageTableSignal | null = null
   @state() private tableDetailTab: TableDetailTab = 'schema'
+  @state() private catalogDetailTab: CatalogDetailTab = 'schemas'
 
   updated(changedProperties: PropertyValues<this>): void {
     if (!changedProperties.has('storage')) return
@@ -244,28 +246,45 @@ class StorageExplorer extends LitElement {
           <dd>${storage.summary?.dataFileCount ?? 0}</dd>
         </div>
       </dl>
-      <div class="storage-columns">
-        <div class="storage-columns-header">
-          <h3>Schemas</h3>
+      <div class="storage-detail-body">
+        <div class="storage-tabs" role="tablist" aria-label="Catalog metadata">
+          ${this.renderCatalogTabButton('schemas', 'Schemas', database.schemas.length)}
+          ${this.renderCatalogTabButton('deployments', 'Deployments', storage.deployments?.length ?? 0)}
+          ${this.renderCatalogTabButton('snapshots', 'Snapshots', storage.snapshots?.length ?? 0)}
         </div>
-        <div class="storage-column-table-wrap">
-          <ld-record-table .table=${this.databaseSchemasTable(database)}></ld-record-table>
-        </div>
-      </div>
-      <div class="storage-columns">
-        <div class="storage-columns-header">
-          <h3>Active Deployments</h3>
-        </div>
-        <div class="storage-column-table-wrap">
-          <ld-record-table .table=${this.deploymentsTable(storage.deployments ?? [])}></ld-record-table>
-        </div>
-      </div>
-      <div class="storage-columns">
-        <div class="storage-columns-header">
-          <h3>Snapshots</h3>
-        </div>
-        <div class="storage-column-table-wrap">
-          <ld-record-table .table=${this.snapshotsTable(storage.snapshots ?? [])}></ld-record-table>
+        <div class="storage-tab-panel" role="tabpanel">
+          ${this.catalogDetailTab === 'deployments'
+            ? html`
+              <div class="storage-columns">
+                <div class="storage-columns-header">
+                  <h3>Active deployments</h3>
+                </div>
+                <div class="storage-column-table-wrap">
+                  <ld-record-table .table=${this.deploymentsTable(storage.deployments ?? [])}></ld-record-table>
+                </div>
+              </div>
+            `
+            : this.catalogDetailTab === 'snapshots'
+              ? html`
+                <div class="storage-columns">
+                  <div class="storage-columns-header">
+                    <h3>Snapshots</h3>
+                  </div>
+                  <div class="storage-column-table-wrap">
+                    <ld-record-table .table=${this.snapshotsTable(storage.snapshots ?? [])}></ld-record-table>
+                  </div>
+                </div>
+              `
+              : html`
+                <div class="storage-columns">
+                  <div class="storage-columns-header">
+                    <h3>Schemas</h3>
+                  </div>
+                  <div class="storage-column-table-wrap">
+                    <ld-record-table .table=${this.databaseSchemasTable(database)}></ld-record-table>
+                  </div>
+                </div>
+              `}
         </div>
       </div>
     `
@@ -344,6 +363,14 @@ class StorageExplorer extends LitElement {
           <dt>Table ID</dt>
           <dd>${table.tableId ?? '-'}</dd>
         </div>
+        <div class="storage-metric-uuid">
+          <dt>Table UUID</dt>
+          <dd>${label(table.tableUuid)}</dd>
+        </div>
+        <div class="storage-metric-path">
+          <dt>DuckLake path</dt>
+          <dd>${label(table.duckLakePath)}</dd>
+        </div>
         <div>
           <dt>Begin snapshot</dt>
           <dd>${table.beginSnapshot || '-'}</dd>
@@ -365,7 +392,7 @@ class StorageExplorer extends LitElement {
           <dd>${label(table.sizeLabel)}</dd>
         </div>
       </dl>
-      <div class="storage-table-body">
+      <div class="storage-detail-body">
         <div class="storage-tabs" role="tablist" aria-label="Table metadata">
           ${this.renderTableTabButton('schema', 'Schema', columns.length)}
           ${this.renderTableTabButton('files', 'Data files', files.length)}
@@ -429,6 +456,22 @@ class StorageExplorer extends LitElement {
     `
   }
 
+  private renderCatalogTabButton(tab: CatalogDetailTab, labelText: string, count: number) {
+    const active = this.catalogDetailTab === tab
+    return html`
+      <button
+        type="button"
+        role="tab"
+        class=${active ? 'storage-tab is-active' : 'storage-tab'}
+        aria-selected=${active ? 'true' : 'false'}
+        @click=${() => { this.catalogDetailTab = tab }}
+      >
+        <span>${labelText}</span>
+        <em>${count.toLocaleString('en-US')}</em>
+      </button>
+    `
+  }
+
   private databaseSchemasTable(database: DatabaseGroup): RecordTableSignal {
     return {
       columns: [
@@ -484,20 +527,40 @@ class StorageExplorer extends LitElement {
     return {
       columns: [
         { id: 'ordinal', header: '#', kind: 'number', align: 'right', width: '64px' },
+        { id: 'id', header: 'Column ID', kind: 'number', align: 'right', width: '110px' },
         { id: 'name', header: 'Name', kind: 'code', width: '220px' },
         { id: 'type', header: 'Type', kind: 'code', width: '180px' },
         { id: 'nullable', header: 'Nullable', width: '120px' },
-        { id: 'default', header: 'Default', kind: 'code' },
+        { id: 'default', header: 'Default', kind: 'code', width: '180px' },
+        { id: 'initialDefault', header: 'Initial default', kind: 'code', width: '180px' },
+        { id: 'defaultType', header: 'Default type', width: '140px' },
+        { id: 'dialect', header: 'Dialect', width: '120px' },
+        { id: 'snapshot', header: 'Begin snapshot', align: 'right', width: '150px' },
+        { id: 'containsNull', header: 'Nulls', width: '100px' },
+        { id: 'containsNan', header: 'NaN', width: '100px' },
+        { id: 'min', header: 'Min', kind: 'code', width: '180px' },
+        { id: 'max', header: 'Max', kind: 'code', width: '180px' },
+        { id: 'extraStats', header: 'Extra stats', kind: 'code', width: '180px' },
       ],
       rows: (table.columns ?? []).map((column) => ({
         ordinal: column.ordinal ?? '',
+        id: column.id ?? '-',
         name: label(column.name),
         type: label(column.type),
         nullable: label(column.nullable),
         default: column.default || '-',
+        initialDefault: column.initialDefault || '-',
+        defaultType: label(column.defaultValueType),
+        dialect: label(column.defaultValueDialect),
+        snapshot: column.beginSnapshot || '-',
+        containsNull: label(column.containsNull),
+        containsNan: label(column.containsNan),
+        min: label(column.minValue),
+        max: label(column.maxValue),
+        extraStats: label(column.extraStats),
       })),
       empty: 'No column metadata available.',
-      minWidth: '760px',
+      minWidth: '2060px',
     }
   }
 
@@ -628,6 +691,7 @@ class StorageExplorer extends LitElement {
     this.selectedDatabase = { databaseId }
     this.selectedSchema = null
     this.localSelectedTable = null
+    this.catalogDetailTab = 'schemas'
   }
 
   private selectSchema(event: Event, databaseId: string, schema: string): void {
@@ -1235,22 +1299,33 @@ const storageExplorerStyles = `
 
   .storage-metrics {
     display: flex;
-    min-height: 2.5rem;
-    align-items: center;
-    gap: 1rem;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.75rem 1.5rem;
+    overflow: hidden;
     border-bottom: var(--ld-border-muted);
-    padding: 0 0.75rem;
+    padding: 0.625rem 0.75rem;
   }
 
   .storage-metrics div {
-    display: flex;
-    min-width: max-content;
-    align-items: baseline;
-    gap: 0.375rem;
+    display: grid;
+    min-width: 5.5rem;
+    max-width: min(100%, 12rem);
+    gap: 0.1875rem;
+    align-content: start;
   }
 
-  .storage-table-body {
+  .storage-metrics .storage-metric-uuid {
+    min-width: min(100%, 16rem);
+    max-width: min(100%, 28rem);
+  }
+
+  .storage-metrics .storage-metric-path {
+    min-width: 8rem;
+    max-width: min(100%, 24rem);
+  }
+
+  .storage-detail-body {
     display: grid;
     min-width: 0;
     min-height: 0;
