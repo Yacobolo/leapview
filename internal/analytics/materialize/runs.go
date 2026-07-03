@@ -265,6 +265,46 @@ func (r *SQLRunRepository) MarkRunFailed(ctx context.Context, workspaceID, runID
 	return r.markRun(ctx, workspaceID, runID, RunStatusFailed, message)
 }
 
+func (r *SQLRunRepository) FailRunsForTerminalDeployments(ctx context.Context, message string) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("materialization run database is required")
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "refresh did not complete"
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE materialization_job_runs
+		SET status = ?, finished_at = CURRENT_TIMESTAMP,
+		    error = CASE WHEN error <> '' THEN error ELSE ? END
+		WHERE status IN (?, ?)
+		  AND job_id IN (
+		    SELECT j.id
+		    FROM materialization_jobs j
+		    JOIN deployments d ON d.id = j.deployment_id
+		    WHERE d.status IN ('failed', 'delete_scheduled', 'deleted')
+		  )
+	`, RunStatusFailed, message, RunStatusQueued, RunStatusRunning); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE materialization_jobs
+		SET status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE status IN (?, ?)
+		  AND deployment_id IN (
+		    SELECT id FROM deployments WHERE status IN ('failed', 'delete_scheduled', 'deleted')
+		  )
+	`, RunStatusFailed, RunStatusQueued, RunStatusRunning); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *SQLRunRepository) markRun(ctx context.Context, workspaceID, runID, status, message string) (RunRecord, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	runID = strings.TrimSpace(runID)

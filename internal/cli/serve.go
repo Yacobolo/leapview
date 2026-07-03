@@ -6,18 +6,19 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
 	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
+	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 	"github.com/spf13/cobra"
@@ -96,7 +97,16 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		}
 	}
 	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
-	if err := deploymentRepo.ReconcileRetention(ctx, time.Now()); err != nil {
+	if err := materialize.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalDeployments(ctx, "refresh did not complete"); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	if _, err := storagemaintenance.Run(ctx, deploymentRepo, storagemaintenance.Options{
+		RootDir:     cfg.HomeDir,
+		CatalogPath: cfg.DBPath(),
+		DataPath:    cfg.DuckLakeDataDir(),
+		DryRun:      false,
+	}); err != nil {
 		cleanup()
 		return nil, nil, err
 	}
@@ -110,11 +120,29 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	for _, summary := range summaries {
 		workspaceIDs = append(workspaceIDs, deployment.WorkspaceID(summary.ID))
 	}
-	registry := runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
+	var registry *runtimehost.Registry
+	registry = runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
 		Repo:         deploymentRepo,
 		WorkspaceIDs: workspaceIDs,
 		Environment:  environment,
 		DataDir:      dataDir,
+		OnDrained: func(deployment.ID, int64) {
+			go func() {
+				protected := []int64(nil)
+				if registry != nil {
+					protected = registry.LeasedSnapshots()
+				}
+				if _, err := storagemaintenance.Run(context.Background(), deploymentRepo, storagemaintenance.Options{
+					RootDir:                      cfg.HomeDir,
+					CatalogPath:                  cfg.DBPath(),
+					DataPath:                     cfg.DuckLakeDataDir(),
+					AdditionalProtectedSnapshots: protected,
+					DryRun:                       false,
+				}); err != nil {
+					slog.Default().Warn("storage retention cleanup failed after runtime drain", "error", err)
+				}
+			}()
+		},
 		Factory: deploymentRuntimeFactory{
 			dataDir:          dataDir,
 			duckDBDir:        cfg.DuckDBDirPath(),
@@ -152,11 +180,6 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	auth := app.NewAuth(accessRepo, "", authConfig)
 	rateLimits := app.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
-	refreshDrainGrace, err := cfg.RefreshDrainGrace()
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
 	server := app.NewWithOptions(runtimeMetrics, app.Options{
 		Store:               store,
 		DeploymentRepo:      deploymentRepo,
@@ -171,7 +194,6 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		DuckLakeCatalogPath: cfg.DBPath(),
 		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
 		DefaultEnvironment:  string(environment),
-		RefreshDrainGrace:   refreshDrainGrace,
 		RateLimits:          rateLimits,
 		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 		RequestLogging:      production && cfg.RequestLoggingEnabled(),

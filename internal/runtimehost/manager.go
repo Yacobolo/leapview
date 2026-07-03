@@ -24,6 +24,13 @@ type RuntimeSnapshot interface {
 	DuckLakeSnapshotID() int64
 }
 
+type Lease interface {
+	Runtime() Runtime
+	DeploymentID() deployment.ID
+	DuckLakeSnapshotID() int64
+	Release()
+}
+
 type RuntimeFactory interface {
 	Prepare(ctx context.Context, input RuntimeInput) (Runtime, error)
 }
@@ -43,11 +50,13 @@ type Manager struct {
 	environment deployment.Environment
 	dataDir     string
 	factory     RuntimeFactory
+	onDrained   func(deployment.ID, int64)
 
 	activeDeployment deployment.ID
 	activeDigest     string
 	activeSnapshotID int64
-	current          Runtime
+	current          *managedRuntime
+	retired          []*managedRuntime
 }
 
 type ManagerOptions struct {
@@ -56,6 +65,7 @@ type ManagerOptions struct {
 	Environment deployment.Environment
 	DataDir     string
 	Factory     RuntimeFactory
+	OnDrained   func(deployment.ID, int64)
 }
 
 type Prepared struct {
@@ -87,6 +97,7 @@ func NewManagerWithFactory(options ManagerOptions) *Manager {
 		environment: deployment.NormalizeEnvironment(options.Environment),
 		dataDir:     options.DataDir,
 		factory:     options.Factory,
+		onDrained:   options.OnDrained,
 	}
 }
 
@@ -166,15 +177,19 @@ func (m *Manager) CommitPrepared(candidate deployment.PreparedRuntime) error {
 
 	m.mu.Lock()
 	old := m.current
-	m.current = prepared.runtime
+	m.current = &managedRuntime{
+		deploymentID: prepared.deploymentID,
+		digest:       prepared.digest,
+		runtime:      prepared.runtime,
+		snapshotID:   prepared.snapshotID,
+	}
 	m.activeDeployment = prepared.deploymentID
 	m.activeDigest = prepared.digest
 	m.activeSnapshotID = prepared.snapshotID
 	prepared.runtime = nil
+	oldToClose := m.retireLocked(old)
 	m.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
+	m.closeManaged(oldToClose)
 	return nil
 }
 
@@ -185,18 +200,147 @@ func (m *Manager) Close() error {
 	m.activeDeployment = ""
 	m.activeDigest = ""
 	m.activeSnapshotID = 0
+	currentToClose := m.retireLocked(current)
 	m.mu.Unlock()
-	if current == nil {
+	if currentToClose == nil {
 		return nil
 	}
-	return current.Close()
+	return m.closeManaged(currentToClose)
 }
 
 func (m *Manager) Active() (Runtime, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.current == nil {
+	lease, err := m.Acquire()
+	if err != nil {
+		return nil, err
+	}
+	runtime := lease.Runtime()
+	lease.Release()
+	return runtime, nil
+}
+
+func (m *Manager) Acquire() (Lease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == nil || m.current.closing {
 		return nil, fmt.Errorf("no active LibreDash deployment")
 	}
-	return m.current, nil
+	m.current.refs++
+	return &runtimeLease{manager: m, managed: m.current}, nil
+}
+
+func (m *Manager) LeasedSnapshots() []int64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	snapshots := map[int64]struct{}{}
+	if m.current != nil && m.current.refs > 0 && m.current.snapshotID > 0 {
+		snapshots[m.current.snapshotID] = struct{}{}
+	}
+	for _, runtime := range m.retired {
+		if runtime.refs > 0 && runtime.snapshotID > 0 {
+			snapshots[runtime.snapshotID] = struct{}{}
+		}
+	}
+	return snapshotKeys(snapshots)
+}
+
+func (m *Manager) retireLocked(runtime *managedRuntime) *managedRuntime {
+	if runtime == nil {
+		return nil
+	}
+	runtime.closing = true
+	if runtime.refs > 0 {
+		m.retired = append(m.retired, runtime)
+		return nil
+	}
+	return runtime
+}
+
+func (m *Manager) release(runtime *managedRuntime) {
+	var drained *managedRuntime
+	m.mu.Lock()
+	if runtime != nil && runtime.refs > 0 {
+		runtime.refs--
+		if runtime.refs == 0 && runtime.closing {
+			drained = runtime
+			m.removeRetiredLocked(runtime)
+		}
+	}
+	m.mu.Unlock()
+	_ = m.closeManaged(drained)
+}
+
+func (m *Manager) removeRetiredLocked(runtime *managedRuntime) {
+	for index, retired := range m.retired {
+		if retired == runtime {
+			m.retired = append(m.retired[:index], m.retired[index+1:]...)
+			return
+		}
+	}
+}
+
+func (m *Manager) closeManaged(runtime *managedRuntime) error {
+	if runtime == nil || runtime.runtime == nil {
+		return nil
+	}
+	err := runtime.runtime.Close()
+	if runtime.closing && m.onDrained != nil {
+		m.onDrained(runtime.deploymentID, runtime.snapshotID)
+	}
+	return err
+}
+
+type managedRuntime struct {
+	deploymentID deployment.ID
+	digest       string
+	runtime      Runtime
+	snapshotID   int64
+	refs         int
+	closing      bool
+}
+
+type runtimeLease struct {
+	manager *Manager
+	managed *managedRuntime
+	once    sync.Once
+}
+
+func (l *runtimeLease) Runtime() Runtime {
+	if l == nil || l.managed == nil {
+		return nil
+	}
+	return l.managed.runtime
+}
+
+func (l *runtimeLease) DeploymentID() deployment.ID {
+	if l == nil || l.managed == nil {
+		return ""
+	}
+	return l.managed.deploymentID
+}
+
+func (l *runtimeLease) DuckLakeSnapshotID() int64 {
+	if l == nil || l.managed == nil {
+		return 0
+	}
+	return l.managed.snapshotID
+}
+
+func (l *runtimeLease) Release() {
+	if l == nil || l.manager == nil || l.managed == nil {
+		return
+	}
+	l.once.Do(func() {
+		l.manager.release(l.managed)
+	})
+}
+
+func snapshotKeys(values map[int64]struct{}) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]int64, 0, len(values))
+	for value := range values {
+		keys = append(keys, value)
+	}
+	return keys
 }

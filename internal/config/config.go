@@ -6,37 +6,35 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caarlos0/env/v11"
 )
 
 type Config struct {
-	HomeDir              string `env:"LIBREDASH_HOME" envDefault:".libredash"`
-	Addr                 string `env:"LIBREDASH_ADDR"`
-	AddrFallback         string `env:"ADDR"`
-	Port                 string `env:"PORT"`
-	DataDir              string `env:"LIBREDASH_DATA_DIR" envDefault:".data/olist"`
-	CatalogPath          string `env:"LIBREDASH_CATALOG_PATH"`
-	DuckDBPath           string `env:"LIBREDASH_DUCKDB_PATH"`
-	DuckDBDir            string `env:"LIBREDASH_DUCKDB_DIR"`
-	Production           bool   `env:"LIBREDASH_PRODUCTION"`
-	DevAuthBypass        bool   `env:"LIBREDASH_DEV_AUTH_BYPASS"`
-	APITokenOnlyAuth     bool   `env:"LIBREDASH_API_TOKEN_ONLY_AUTH"`
-	BootstrapEmail       string `env:"LIBREDASH_BOOTSTRAP_ADMIN_EMAIL"`
-	AzureClientID        string `env:"LIBREDASH_AZURE_CLIENT_ID"`
-	AzureSecret          string `env:"LIBREDASH_AZURE_CLIENT_SECRET"`
-	AzureCallbackURL     string `env:"LIBREDASH_AZURE_CALLBACK_URL"`
-	AzureTenant          string `env:"LIBREDASH_AZURE_TENANT"`
-	CSRFKey              string `env:"LIBREDASH_CSRF_KEY"`
-	CookieSecureRaw      string `env:"LIBREDASH_COOKIE_SECURE"`
-	Target               string `env:"LIBREDASH_TARGET"`
-	APIToken             string `env:"LIBREDASH_API_TOKEN"`
-	CLIConfig            string `env:"LIBREDASH_CLI_CONFIG"`
-	AgentAPIKey          string `env:"LIBREDASH_AGENT_API_KEY"`
-	AgentBaseURL         string `env:"LIBREDASH_AGENT_BASE_URL" envDefault:"https://api.openai.com/v1"`
-	AgentModel           string `env:"LIBREDASH_AGENT_MODEL"`
-	RefreshDrainGraceRaw string `env:"LIBREDASH_REFRESH_DRAIN_GRACE" envDefault:"15m"`
+	HomeDir          string `env:"LIBREDASH_HOME" envDefault:".libredash"`
+	Addr             string `env:"LIBREDASH_ADDR"`
+	AddrFallback     string `env:"ADDR"`
+	Port             string `env:"PORT"`
+	DataDir          string `env:"LIBREDASH_DATA_DIR" envDefault:".data/olist"`
+	CatalogPath      string `env:"LIBREDASH_CATALOG_PATH"`
+	DuckDBPath       string `env:"LIBREDASH_DUCKDB_PATH"`
+	DuckDBDir        string `env:"LIBREDASH_DUCKDB_DIR"`
+	Production       bool   `env:"LIBREDASH_PRODUCTION"`
+	DevAuthBypass    bool   `env:"LIBREDASH_DEV_AUTH_BYPASS"`
+	APITokenOnlyAuth bool   `env:"LIBREDASH_API_TOKEN_ONLY_AUTH"`
+	BootstrapEmail   string `env:"LIBREDASH_BOOTSTRAP_ADMIN_EMAIL"`
+	AzureClientID    string `env:"LIBREDASH_AZURE_CLIENT_ID"`
+	AzureSecret      string `env:"LIBREDASH_AZURE_CLIENT_SECRET"`
+	AzureCallbackURL string `env:"LIBREDASH_AZURE_CALLBACK_URL"`
+	AzureTenant      string `env:"LIBREDASH_AZURE_TENANT"`
+	CSRFKey          string `env:"LIBREDASH_CSRF_KEY"`
+	CookieSecureRaw  string `env:"LIBREDASH_COOKIE_SECURE"`
+	Target           string `env:"LIBREDASH_TARGET"`
+	APIToken         string `env:"LIBREDASH_API_TOKEN"`
+	CLIConfig        string `env:"LIBREDASH_CLI_CONFIG"`
+	AgentAPIKey      string `env:"LIBREDASH_AGENT_API_KEY"`
+	AgentBaseURL     string `env:"LIBREDASH_AGENT_BASE_URL" envDefault:"https://api.openai.com/v1"`
+	AgentModel       string `env:"LIBREDASH_AGENT_MODEL"`
 }
 
 func Load() (Config, error) {
@@ -144,19 +142,4 @@ func (c Config) RateLimitingEnabled() bool {
 
 func (c Config) HSTSEnabled(cookieSecure bool) bool {
 	return c.Production && cookieSecure
-}
-
-func (c Config) RefreshDrainGrace() (time.Duration, error) {
-	value := strings.TrimSpace(c.RefreshDrainGraceRaw)
-	if value == "" {
-		value = "15m"
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("LIBREDASH_REFRESH_DRAIN_GRACE must be a Go duration such as 15m: %w", err)
-	}
-	if parsed < 0 {
-		return 0, fmt.Errorf("LIBREDASH_REFRESH_DRAIN_GRACE must be non-negative")
-	}
-	return parsed, nil
 }

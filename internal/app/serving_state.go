@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -15,8 +14,7 @@ type servingState struct {
 }
 
 type servingStateService struct {
-	repo       deploymentRepository
-	drainGrace time.Duration
+	repo deploymentRepository
 }
 
 type servingRefreshCandidateInput struct {
@@ -27,11 +25,8 @@ type servingRefreshCandidateInput struct {
 	ArtifactGraph workspace.AssetGraph
 }
 
-func newServingStateService(repo deploymentRepository, drainGrace time.Duration) servingStateService {
-	if drainGrace == 0 {
-		drainGrace = deployment.DefaultRetentionPolicy().QueryDrainGrace
-	}
-	return servingStateService{repo: repo, drainGrace: drainGrace}
+func newServingStateService(repo deploymentRepository) servingStateService {
+	return servingStateService{repo: repo}
 }
 
 func (s servingStateService) Active(ctx context.Context, workspaceID string, environment deployment.Environment) (servingState, error) {
@@ -85,17 +80,11 @@ func (s servingStateService) RecordSnapshot(ctx context.Context, candidate servi
 	return s.repo.RecordDuckLakeSnapshot(ctx, candidate.Deployment.ID, snapshotID)
 }
 
-func (s servingStateService) Activate(ctx context.Context, candidate servingState, cleanupAfter time.Time) (deployment.Deployment, error) {
-	return s.MarkSuperseded(ctx, candidate, cleanupAfter)
+func (s servingStateService) Activate(ctx context.Context, candidate servingState) (deployment.Deployment, error) {
+	return s.MarkSuperseded(ctx, candidate)
 }
 
-func (s servingStateService) MarkSuperseded(ctx context.Context, replacement servingState, cleanupAfter time.Time) (deployment.Deployment, error) {
-	if cleanupAfter.IsZero() {
-		cleanupAfter = time.Now().Add(s.drainGrace)
-	}
-	if activator, ok := s.repo.(servingStateActivator); ok {
-		return activator.ActivateWithCleanupAfter(ctx, replacement.Deployment.WorkspaceID, replacement.Deployment.Environment, replacement.Deployment.ID, cleanupAfter)
-	}
+func (s servingStateService) MarkSuperseded(ctx context.Context, replacement servingState) (deployment.Deployment, error) {
 	return s.repo.Activate(ctx, replacement.Deployment.WorkspaceID, replacement.Deployment.Environment, replacement.Deployment.ID)
 }
 
@@ -104,12 +93,4 @@ func (s servingStateService) MarkFailed(ctx context.Context, state servingState,
 		return nil
 	}
 	return s.repo.MarkFailed(ctx, state.Deployment.ID, cause)
-}
-
-func (s servingStateService) ReconcileRetention(ctx context.Context, now time.Time) error {
-	reconciler, ok := s.repo.(servingRetentionReconciler)
-	if !ok {
-		return nil
-	}
-	return reconciler.ReconcileRetention(ctx, now)
 }

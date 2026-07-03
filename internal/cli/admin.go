@@ -4,17 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
-	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	"github.com/Yacobolo/libredash/internal/config"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
+	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
 	"github.com/spf13/cobra"
 )
 
@@ -69,75 +65,15 @@ func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Write
 	}
 	defer store.Close()
 	repo := deploymentsqlite.NewRepository(store.SQLDB())
-	if err := repo.ReconcileRetention(ctx, time.Now()); err != nil {
-		return err
-	}
-	referenced, err := repo.ReferencedDuckLakeSnapshots(ctx)
+	_, err = storagemaintenance.Run(ctx, repo, storagemaintenance.Options{
+		RootDir:     cfg.HomeDir,
+		CatalogPath: cfg.DBPath(),
+		DataPath:    cfg.DuckLakeDataDir(),
+		DryRun:      !opts.apply,
+		Out:         out,
+	})
 	if err != nil {
-		return err
-	}
-	env, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: cfg.HomeDir, CatalogPath: cfg.DBPath(), DataPath: cfg.DuckLakeDataDir()})
-	if err != nil {
-		return err
-	}
-	defer env.Close()
-	snapshots, err := env.Snapshots(ctx)
-	if err != nil {
-		return err
-	}
-	snapshotSet := map[int64]struct{}{}
-	for _, snapshot := range snapshots {
-		snapshotSet[snapshot.ID] = struct{}{}
-	}
-	var missing []int64
-	protected := map[int64]struct{}{}
-	for _, snapshotID := range referenced {
-		protected[snapshotID] = struct{}{}
-		if _, ok := snapshotSet[snapshotID]; !ok {
-			missing = append(missing, snapshotID)
-		}
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("deployment references missing DuckLake snapshots: %s", formatSnapshotIDs(missing))
-	}
-	candidates, err := env.RetentionCandidates(ctx, protected)
-	if err != nil {
-		return err
-	}
-	dryRun := !opts.apply
-	fmt.Fprintf(out, "ducklake catalog: %s\n", cfg.DBPath())
-	fmt.Fprintf(out, "ducklake data: %s\n", cfg.DuckLakeDataDir())
-	fmt.Fprintf(out, "mode: %s\n", cleanupMode(dryRun))
-	fmt.Fprintf(out, "protected snapshots: %s\n", formatSnapshotIDs(referenced))
-	fmt.Fprintf(out, "expiration candidates: %s\n", formatSnapshotIDs(candidates))
-	if err := env.ExpireSnapshots(ctx, candidates, dryRun); err != nil {
-		return fmt.Errorf("expire snapshots: %w", err)
-	}
-	if err := env.CleanupOldFiles(ctx, dryRun); err != nil {
-		return fmt.Errorf("cleanup old files: %w", err)
-	}
-	if err := env.DeleteOrphanedFiles(ctx, dryRun); err != nil {
-		return fmt.Errorf("delete orphaned files: %w", err)
+		return fmt.Errorf("storage cleanup: %w", err)
 	}
 	return nil
-}
-
-func cleanupMode(dryRun bool) string {
-	if dryRun {
-		return "dry-run"
-	}
-	return "apply"
-}
-
-func formatSnapshotIDs(ids []int64) string {
-	if len(ids) == 0 {
-		return "none"
-	}
-	ids = append([]int64(nil), ids...)
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	parts := make([]string, 0, len(ids))
-	for _, id := range ids {
-		parts = append(parts, strconv.FormatInt(id, 10))
-	}
-	return strings.Join(parts, ",")
 }

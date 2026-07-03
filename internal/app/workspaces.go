@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
@@ -32,14 +31,6 @@ var errWorkspaceRBACNotConfigured = errors.New("Workspace RBAC store is not conf
 type activeWorkspaceMetadataRepository interface {
 	ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error)
 	ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error)
-}
-
-type servingStateActivator interface {
-	ActivateWithCleanupAfter(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, cleanupAfter time.Time) (deployment.Deployment, error)
-}
-
-type servingRetentionReconciler interface {
-	ReconcileRetention(ctx context.Context, now time.Time) error
 }
 
 func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
@@ -287,7 +278,7 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		return err
 	}
 	environment := s.requestDeploymentEnvironment(r)
-	serving := newServingStateService(repo, s.refreshDrainGrace)
+	serving := newServingStateService(repo)
 	activeState, err := serving.Active(ctx, workspaceID, environment)
 	if err != nil {
 		return err
@@ -323,10 +314,23 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 	}
 	principal, _ := currentPrincipal(s, r)
 	candidate := servingState{}
+	runRepo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	rootRun := materialize.RunRecord{}
+	dependencyRuns := []materialize.RunRecord(nil)
 	finalized := false
 	defer func() {
 		if !finalized {
-			_ = serving.MarkFailed(context.Background(), candidate, fmt.Errorf("refresh did not complete"))
+			cause := fmt.Errorf("refresh did not complete")
+			background := context.Background()
+			if rootRun.ID != "" {
+				_, _ = runRepo.MarkRunFailed(background, workspaceID, rootRun.ID, cause.Error())
+			}
+			for _, run := range dependencyRuns {
+				if run.ID != "" {
+					_, _ = runRepo.MarkRunFailed(background, workspaceID, run.ID, cause.Error())
+				}
+			}
+			_ = serving.MarkFailed(background, candidate, cause)
 		}
 	}()
 	candidate, err = serving.CreateRefreshCandidate(ctx, servingRefreshCandidateInput{
@@ -341,8 +345,7 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 	}
 	newDeploymentID := candidate.Deployment.ID
 
-	runRepo := materialize.NewSQLRunRepository(s.store.SQLDB())
-	rootRun, err := runRepo.CreateRun(ctx, materialize.RunInput{
+	rootRun, err = runRepo.CreateRun(ctx, materialize.RunInput{
 		WorkspaceID:  workspaceID,
 		ModelID:      plan.ModelID,
 		DeploymentID: string(newDeploymentID),
@@ -355,7 +358,7 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		_ = serving.MarkFailed(ctx, candidate, err)
 		return err
 	}
-	dependencyRuns := make([]materialize.RunRecord, 0, len(plan.DependencyTables))
+	dependencyRuns = make([]materialize.RunRecord, 0, len(plan.DependencyTables))
 	for _, table := range plan.DependencyTables {
 		run, err := runRepo.CreateRun(ctx, materialize.RunInput{
 			WorkspaceID:  workspaceID,
@@ -414,8 +417,7 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 			return err
 		}
 	}
-	cleanupAfter := time.Now().Add(s.refreshDrainGrace)
-	_, err = serving.Activate(ctx, candidate, cleanupAfter)
+	_, err = serving.Activate(ctx, candidate)
 	if err != nil {
 		if prepared != nil {
 			_ = prepared.Close()
@@ -425,8 +427,8 @@ func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, wor
 		s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
 		return err
 	}
-	if err := serving.ReconcileRetention(ctx, time.Now()); err != nil && s.logger != nil {
-		s.logger.WarnContext(ctx, "serving retention reconciliation failed", "workspace", workspaceID, "environment", environment, "error", err)
+	if err := s.reconcileStorageRetention(ctx, false); err != nil && s.logger != nil {
+		s.logger.WarnContext(ctx, "storage retention reconciliation failed", "workspace", workspaceID, "environment", environment, "error", err)
 	}
 	finalized = true
 	if prepared != nil {

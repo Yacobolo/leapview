@@ -1799,7 +1799,7 @@ const listReferencedDuckLakeSnapshots = `-- name: ListReferencedDuckLakeSnapshot
 SELECT DISTINCT ducklake_snapshot_id
 FROM deployments
 WHERE ducklake_snapshot_id > 0
-  AND status IN ('active', 'draining')
+  AND status = 'active'
 ORDER BY ducklake_snapshot_id
 `
 
@@ -2076,12 +2076,10 @@ const markDrainingDeploymentsDeleteScheduled = `-- name: MarkDrainingDeployments
 UPDATE deployments
 SET status = 'delete_scheduled', error = ''
 WHERE status = 'draining'
-  AND cleanup_after IS NOT NULL
-  AND cleanup_after <= ?
 `
 
-func (q *Queries) MarkDrainingDeploymentsDeleteScheduled(ctx context.Context, cleanupAfter sql.NullString) error {
-	_, err := q.db.ExecContext(ctx, markDrainingDeploymentsDeleteScheduled, cleanupAfter)
+func (q *Queries) MarkDrainingDeploymentsDeleteScheduled(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, markDrainingDeploymentsDeleteScheduled)
 	return err
 }
 
@@ -2089,7 +2087,7 @@ const markOtherDeploymentsDraining = `-- name: MarkOtherDeploymentsDraining :exe
 UPDATE deployments
 SET status = 'draining',
     superseded_at = CURRENT_TIMESTAMP,
-    cleanup_after = ?,
+    cleanup_after = NULL,
     error = ''
 WHERE workspace_id = ?
   AND environment = ?
@@ -2098,19 +2096,13 @@ WHERE workspace_id = ?
 `
 
 type MarkOtherDeploymentsDrainingParams struct {
-	CleanupAfter sql.NullString `json:"cleanup_after"`
-	WorkspaceID  string         `json:"workspace_id"`
-	Environment  string         `json:"environment"`
-	ID           string         `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	Environment string `json:"environment"`
+	ID          string `json:"id"`
 }
 
 func (q *Queries) MarkOtherDeploymentsDraining(ctx context.Context, arg MarkOtherDeploymentsDrainingParams) error {
-	_, err := q.db.ExecContext(ctx, markOtherDeploymentsDraining,
-		arg.CleanupAfter,
-		arg.WorkspaceID,
-		arg.Environment,
-		arg.ID,
-	)
+	_, err := q.db.ExecContext(ctx, markOtherDeploymentsDraining, arg.WorkspaceID, arg.Environment, arg.ID)
 	return err
 }
 

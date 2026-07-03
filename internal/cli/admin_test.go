@@ -12,6 +12,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
+	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
@@ -36,8 +37,8 @@ func TestAdminStorageCleanupDryRunReconcilesReferencedSnapshots(t *testing.T) {
 	output := out.String()
 	for _, want := range []string{
 		"mode: dry-run",
-		"protected snapshots: " + formatSnapshotIDs([]int64{second}),
-		"expiration candidates: " + formatSnapshotIDs([]int64{first}),
+		"protected snapshots: " + storagemaintenance.FormatSnapshotIDs([]int64{second}),
+		"expiration candidates: " + storagemaintenance.FormatSnapshotIDs([]int64{first}),
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output missing %q:\n%s", want, output)
@@ -86,7 +87,7 @@ func TestAdminStorageCleanupRejectsMissingReferencedSnapshot(t *testing.T) {
 	}
 }
 
-func TestAdminStorageCleanupApplyExpiresElapsedDrainingSnapshots(t *testing.T) {
+func TestAdminStorageCleanupApplyExpiresDrainingSnapshots(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
 	setAdminStorageEnv(t, home)
@@ -106,8 +107,8 @@ func TestAdminStorageCleanupApplyExpiresElapsedDrainingSnapshots(t *testing.T) {
 	output := out.String()
 	for _, want := range []string{
 		"mode: apply",
-		"protected snapshots: " + formatSnapshotIDs([]int64{second}),
-		"expiration candidates: " + formatSnapshotIDs([]int64{first}),
+		"protected snapshots: " + storagemaintenance.FormatSnapshotIDs([]int64{second}),
+		"expiration candidates: " + storagemaintenance.FormatSnapshotIDs([]int64{first}),
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output missing %q:\n%s", want, output)

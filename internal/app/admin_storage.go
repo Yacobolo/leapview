@@ -524,7 +524,7 @@ ORDER BY s.snapshot_id`)
 	defer rows.Close()
 	deploymentCounts := map[int64]int{}
 	for _, deployment := range deployments {
-		if deployment.SnapshotID > 0 && (deployment.Status == "active" || deployment.Status == "draining") {
+		if deployment.SnapshotID > 0 && deployment.Status == "active" {
 			deploymentCounts[deployment.SnapshotID]++
 		}
 	}

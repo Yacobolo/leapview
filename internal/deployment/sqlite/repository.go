@@ -103,7 +103,7 @@ func (r *Repository) ReconcileRetention(ctx context.Context, now time.Time) erro
 	if now.IsZero() {
 		now = time.Now()
 	}
-	if err := r.q.MarkDrainingDeploymentsDeleteScheduled(ctx, sql.NullString{String: formatSQLiteTime(now), Valid: true}); err != nil {
+	if err := r.q.MarkDrainingDeploymentsDeleteScheduled(ctx); err != nil {
 		return err
 	}
 	return r.q.MarkDeleteScheduledDeploymentsDeleted(ctx)
@@ -185,18 +185,14 @@ func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.
 }
 
 func (r *Repository) Activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID) (deployment.Deployment, error) {
-	return r.activate(ctx, workspaceID, environment, deploymentID, nil, nil)
+	return r.activate(ctx, workspaceID, environment, deploymentID, nil)
 }
 
 func (r *Repository) ActivateWithWorkspacePolicy(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy workspace.AccessPolicy) (deployment.Deployment, error) {
-	return r.activate(ctx, workspaceID, environment, deploymentID, &policy, nil)
+	return r.activate(ctx, workspaceID, environment, deploymentID, &policy)
 }
 
-func (r *Repository) ActivateWithCleanupAfter(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, cleanupAfter time.Time) (deployment.Deployment, error) {
-	return r.activate(ctx, workspaceID, environment, deploymentID, nil, &cleanupAfter)
-}
-
-func (r *Repository) activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy *workspace.AccessPolicy, cleanupAfterOverride *time.Time) (deployment.Deployment, error) {
+func (r *Repository) activate(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy *workspace.AccessPolicy) (deployment.Deployment, error) {
 	environment = deployment.NormalizeEnvironment(environment)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -223,15 +219,10 @@ func (r *Repository) activate(ctx context.Context, workspaceID deployment.Worksp
 			return deployment.Deployment{}, err
 		}
 	}
-	cleanupAfter := time.Now().Add(deployment.DefaultRetentionPolicy().QueryDrainGrace)
-	if cleanupAfterOverride != nil && !cleanupAfterOverride.IsZero() {
-		cleanupAfter = *cleanupAfterOverride
-	}
 	if err := q.MarkOtherDeploymentsDraining(ctx, platformdb.MarkOtherDeploymentsDrainingParams{
-		WorkspaceID:  string(workspaceID),
-		Environment:  string(environment),
-		ID:           string(deploymentID),
-		CleanupAfter: sql.NullString{String: formatSQLiteTime(cleanupAfter), Valid: true},
+		WorkspaceID: string(workspaceID),
+		Environment: string(environment),
+		ID:          string(deploymentID),
 	}); err != nil {
 		return deployment.Deployment{}, err
 	}

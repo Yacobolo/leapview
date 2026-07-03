@@ -1203,6 +1203,65 @@ func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
 	}
 }
 
+func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	if _, err := store.SQLDB().ExecContext(ctx, `
+		INSERT INTO deployments (id, workspace_id, status, digest, manifest_json, created_by)
+		VALUES ('dep_failed', 'test', 'failed', 'sha256:failed', '{}', 'test')
+	`); err != nil {
+		t.Fatalf("seed failed deployment: %v", err)
+	}
+
+	failedDeploymentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:  "test",
+		ModelID:      "olist",
+		DeploymentID: "dep_failed",
+		TargetType:   analyticsmaterialize.TargetModelTable,
+		TargetID:     "olist.orders",
+	})
+	if err != nil {
+		t.Fatalf("create terminal deployment run: %v", err)
+	}
+	if _, err := repo.MarkRunRunning(ctx, "test", failedDeploymentRun.ID); err != nil {
+		t.Fatalf("mark terminal deployment run running: %v", err)
+	}
+	activeDeploymentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:  "test",
+		ModelID:      "olist",
+		DeploymentID: "dep_1",
+		TargetType:   analyticsmaterialize.TargetModelTable,
+		TargetID:     "olist.customers",
+	})
+	if err != nil {
+		t.Fatalf("create active deployment run: %v", err)
+	}
+	if _, err := repo.MarkRunRunning(ctx, "test", activeDeploymentRun.ID); err != nil {
+		t.Fatalf("mark active deployment run running: %v", err)
+	}
+
+	if err := repo.FailRunsForTerminalDeployments(ctx, "refresh did not complete"); err != nil {
+		t.Fatalf("fail terminal deployment runs: %v", err)
+	}
+
+	storedFailed, err := repo.GetRun(ctx, "test", failedDeploymentRun.ID)
+	if err != nil {
+		t.Fatalf("get failed deployment run: %v", err)
+	}
+	if storedFailed.Status != analyticsmaterialize.RunStatusFailed || storedFailed.Error != "refresh did not complete" || storedFailed.FinishedAt == "" {
+		t.Fatalf("failed deployment run = %#v, want failed with message and finish time", storedFailed)
+	}
+	storedActive, err := repo.GetRun(ctx, "test", activeDeploymentRun.ID)
+	if err != nil {
+		t.Fatalf("get active deployment run: %v", err)
+	}
+	if storedActive.Status != analyticsmaterialize.RunStatusRunning || storedActive.Error != "" || storedActive.FinishedAt != "" {
+		t.Fatalf("active deployment run = %#v, want still running", storedActive)
+	}
+}
+
 func runIDs(runs []analyticsmaterialize.RunRecord) []string {
 	ids := make([]string, 0, len(runs))
 	for _, run := range runs {

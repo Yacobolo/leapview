@@ -354,12 +354,15 @@ func TestRepositoryActivationMarksPreviousActiveDeploymentDraining(t *testing.T)
 	if err != nil {
 		t.Fatalf("first after: %v", err)
 	}
-	if firstAfter.SupersededAt == "" || firstAfter.CleanupAfter == "" {
-		t.Fatalf("first lifecycle = superseded %q cleanup %q, want both set", firstAfter.SupersededAt, firstAfter.CleanupAfter)
+	if firstAfter.SupersededAt == "" {
+		t.Fatalf("first superseded_at = empty, want set")
+	}
+	if firstAfter.CleanupAfter != "" {
+		t.Fatalf("first cleanup_after = %q, want empty legacy field", firstAfter.CleanupAfter)
 	}
 }
 
-func TestRepositoryReconcileRetentionDeletesElapsedDrainingDeployments(t *testing.T) {
+func TestRepositoryReconcileRetentionDeletesDrainingDeploymentsWithoutGrace(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
@@ -379,15 +382,14 @@ func TestRepositoryReconcileRetentionDeletesElapsedDrainingDeployments(t *testin
 	if _, err := repo.SaveValidated(ctx, second.ID, validationGraph(second.ID), artifact(second.ID, "test")); err != nil {
 		t.Fatalf("save second: %v", err)
 	}
-	now := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
-	if _, err := repo.ActivateWithCleanupAfter(ctx, "test", deployment.DefaultEnvironment, first.ID, now.Add(-time.Hour)); err != nil {
+	if _, err := repo.Activate(ctx, "test", deployment.DefaultEnvironment, first.ID); err != nil {
 		t.Fatalf("activate first: %v", err)
 	}
-	if _, err := repo.ActivateWithCleanupAfter(ctx, "test", deployment.DefaultEnvironment, second.ID, now.Add(-time.Minute)); err != nil {
+	if _, err := repo.Activate(ctx, "test", deployment.DefaultEnvironment, second.ID); err != nil {
 		t.Fatalf("activate second: %v", err)
 	}
 	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDraining)
-	if err := repo.ReconcileRetention(ctx, now); err != nil {
+	if err := repo.ReconcileRetention(ctx, time.Now()); err != nil {
 		t.Fatalf("reconcile retention: %v", err)
 	}
 	requireDeploymentStatus(t, ctx, repo, first.ID, deployment.StatusDeleted)

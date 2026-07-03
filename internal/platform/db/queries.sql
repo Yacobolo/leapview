@@ -75,7 +75,7 @@ ORDER BY created_at DESC;
 SELECT DISTINCT ducklake_snapshot_id
 FROM deployments
 WHERE ducklake_snapshot_id > 0
-  AND status IN ('active', 'draining')
+  AND status = 'active'
 ORDER BY ducklake_snapshot_id;
 
 -- name: ExpireInactiveDeployments :exec
@@ -87,7 +87,7 @@ WHERE status = 'inactive';
 UPDATE deployments
 SET status = 'draining',
     superseded_at = CURRENT_TIMESTAMP,
-    cleanup_after = ?,
+    cleanup_after = NULL,
     error = ''
 WHERE workspace_id = ?
   AND environment = ?
@@ -97,9 +97,7 @@ WHERE workspace_id = ?
 -- name: MarkDrainingDeploymentsDeleteScheduled :exec
 UPDATE deployments
 SET status = 'delete_scheduled', error = ''
-WHERE status = 'draining'
-  AND cleanup_after IS NOT NULL
-  AND cleanup_after <= ?;
+WHERE status = 'draining';
 
 -- name: ScheduleExpiredDeploymentDeletion :exec
 UPDATE deployments

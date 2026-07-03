@@ -15,6 +15,7 @@ type RegistryOptions struct {
 	Environment  deployment.Environment
 	DataDir      string
 	Factory      RuntimeFactory
+	OnDrained    func(deployment.ID, int64)
 }
 
 type Registry struct {
@@ -23,6 +24,7 @@ type Registry struct {
 	environment deployment.Environment
 	dataDir     string
 	factory     RuntimeFactory
+	onDrained   func(deployment.ID, int64)
 	managers    map[deployment.WorkspaceID]*Manager
 }
 
@@ -50,6 +52,7 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 		environment: deployment.NormalizeEnvironment(options.Environment),
 		dataDir:     options.DataDir,
 		factory:     options.Factory,
+		onDrained:   options.OnDrained,
 		managers:    map[deployment.WorkspaceID]*Manager{},
 	}
 	for _, workspaceID := range options.WorkspaceIDs {
@@ -106,6 +109,16 @@ func (r *Registry) Close() error {
 }
 
 func (r *Registry) ActiveForWorkspace(ctx context.Context, workspaceID deployment.WorkspaceID) (Runtime, error) {
+	lease, err := r.AcquireForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	runtime := lease.Runtime()
+	lease.Release()
+	return runtime, nil
+}
+
+func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID deployment.WorkspaceID) (Lease, error) {
 	r.mu.RLock()
 	manager := r.managers[workspaceID]
 	r.mu.RUnlock()
@@ -115,7 +128,7 @@ func (r *Registry) ActiveForWorkspace(ctx context.Context, workspaceID deploymen
 	if err := manager.Reload(ctx); err != nil {
 		return nil, err
 	}
-	return manager.Active()
+	return manager.Acquire()
 }
 
 func (r *Registry) ProviderForWorkspace(workspaceID deployment.WorkspaceID) *WorkspaceProvider {
@@ -130,6 +143,29 @@ func (p *WorkspaceProvider) Active(ctx context.Context) (Runtime, error) {
 	return p.registry.ActiveForWorkspace(ctx, p.workspaceID)
 }
 
+func (p *WorkspaceProvider) Acquire(ctx context.Context) (Lease, error) {
+	if p == nil || p.registry == nil {
+		return nil, fmt.Errorf("runtime provider is not configured")
+	}
+	return p.registry.AcquireForWorkspace(ctx, p.workspaceID)
+}
+
+func (r *Registry) LeasedSnapshots() []int64 {
+	r.mu.RLock()
+	managers := make([]*Manager, 0, len(r.managers))
+	for _, manager := range r.managers {
+		managers = append(managers, manager)
+	}
+	r.mu.RUnlock()
+	snapshots := map[int64]struct{}{}
+	for _, manager := range managers {
+		for _, snapshotID := range manager.LeasedSnapshots() {
+			snapshots[snapshotID] = struct{}{}
+		}
+	}
+	return snapshotKeys(snapshots)
+}
+
 func (r *Registry) managerForWorkspace(workspaceID deployment.WorkspaceID) *Manager {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -142,6 +178,7 @@ func (r *Registry) managerForWorkspace(workspaceID deployment.WorkspaceID) *Mana
 		Environment: r.environment,
 		DataDir:     r.dataDir,
 		Factory:     r.factory,
+		OnDrained:   r.onDrained,
 	})
 	r.managers[workspaceID] = manager
 	return manager

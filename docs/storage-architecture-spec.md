@@ -107,7 +107,7 @@ LibreDash is a BI serving layer. Assets define what can be queried. Refreshes re
 - After commit and schema validation, LibreDash records the committed DuckLake snapshot id and flips the active serving pointer.
 - Failed or incomplete refreshes are never active and never serve queries.
 - Refresh history is job history, not retained data-version history.
-- Old snapshots are retained only for the active-query drain window unless a future policy explicitly enables rollback/time travel.
+- Old snapshots are retained only while active query/runtime leases still reference them unless a future policy explicitly enables rollback/time travel.
 
 Serving states are explicit:
 
@@ -116,9 +116,9 @@ staging -> validated -> active -> draining -> delete_scheduled -> deleted
                   \-> failed
 ```
 
-DuckLake snapshots that are not active or draining are retention candidates.
+DuckLake snapshots that are not active and not protected by an in-process query lease are retention candidates.
 
-Snapshot ids are scoped to the metadata catalog. Because environments share the catalog, cleanup must protect every active or draining serving reference in the catalog, not only references for the environment currently being served or inspected.
+Snapshot ids are scoped to the metadata catalog. Because environments share the catalog, cleanup must protect every active serving reference in the catalog plus every in-process query lease, not only references for the environment currently being served or inspected.
 
 ## Query Resolution
 
@@ -128,6 +128,7 @@ Resolution invariants:
 
 - Runtime resolves the active serving pointer once per request.
 - DuckDB attaches DuckLake at that snapshot version for the request.
+- Each request holds a runtime lease until the query completes, so refresh cutover cannot close or expire the snapshot being read.
 - Logical table refs are resolved through the semantic model to stable DuckLake schema/table names.
 - All DuckDB reads within one dashboard/page refresh, API request, export, or agent query use one resolved DuckLake snapshot.
 - Active pointer changes made during a request do not affect that request.
@@ -139,11 +140,11 @@ Transform SQL that references `model.<table>` uses the same resolver during mate
 
 Cleanup is metadata-driven.
 
-- Default retention protects the active snapshot and superseded snapshots during a short active-query drain window.
-- Superseded serving states move to `draining` with `cleanup_after = superseded_at + drain_grace`.
-- Elapsed draining states move to `delete_scheduled`/`deleted` before DuckLake snapshot expiration.
-- Physical file deletion respects a safety window and active-query grace period.
-- DuckLake snapshots not referenced by any active or draining serving state in the catalog are candidates for expiration.
+- Default retention protects the active snapshot and any snapshot currently held by a query/runtime lease.
+- Superseded serving states move to `draining` with `superseded_at`; `cleanup_after` is legacy nullable metadata, not the cleanup authority.
+- Draining states move to `delete_scheduled`/`deleted` once retention reconciliation runs without an active lease protecting their snapshot.
+- Server startup treats existing draining states as cleanup-eligible because no in-process query leases survive restart.
+- DuckLake snapshots not referenced by the active serving state or an in-process lease are candidates for expiration.
 - DuckLake cleanup functions identify files scheduled for deletion and orphaned Parquet files.
 - Cleanup supports dry-run inspection before destructive action.
 - Cleanup reconciles all LibreDash serving references in the metadata catalog against DuckLake snapshots before expiration.

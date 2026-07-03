@@ -87,6 +87,94 @@ func TestManagerPrepareCommitSwapsRuntimeAndClosesOld(t *testing.T) {
 	}
 }
 
+func TestManagerKeepsOldRuntimeOpenUntilLeaseRelease(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: deployment.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   deployment.Artifact{DeploymentID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest-1"},
+	}
+	var drained []int64
+	manager := NewManagerWithFactory(ManagerOptions{
+		Repo:        repo,
+		WorkspaceID: "test",
+		Environment: "dev",
+		DataDir:     "/data",
+		Factory:     &fakeFactory{},
+		OnDrained: func(_ deployment.ID, snapshotID int64) {
+			drained = append(drained, snapshotID)
+		},
+	})
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("reload first: %v", err)
+	}
+	oldLease, err := manager.Acquire()
+	if err != nil {
+		t.Fatalf("acquire old: %v", err)
+	}
+	oldRuntime := oldLease.Runtime().(*fakeRuntime)
+
+	repo.deployment = deployment.Deployment{ID: "dep_2", WorkspaceID: "test", Environment: "dev", Status: deployment.StatusActive, DuckLakeSnapshotID: 22}
+	repo.artifact = deployment.Artifact{DeploymentID: "dep_2", WorkspaceID: "test", Environment: "dev", Digest: "digest-2"}
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("reload second: %v", err)
+	}
+	if oldRuntime.closed {
+		t.Fatal("old runtime closed while lease was still active")
+	}
+	newLease, err := manager.Acquire()
+	if err != nil {
+		t.Fatalf("acquire new: %v", err)
+	}
+	if got := newLease.DuckLakeSnapshotID(); got != 22 {
+		t.Fatalf("new lease snapshot = %d, want 22", got)
+	}
+	newLease.Release()
+	if got := oldLease.DuckLakeSnapshotID(); got != 11 {
+		t.Fatalf("old lease snapshot = %d, want 11", got)
+	}
+	if got := manager.LeasedSnapshots(); !equalInt64s(got, []int64{11}) {
+		t.Fatalf("leased snapshots = %#v, want old snapshot only", got)
+	}
+
+	oldLease.Release()
+	if !oldRuntime.closed {
+		t.Fatal("old runtime was not closed after final lease release")
+	}
+	if !equalInt64s(drained, []int64{11}) {
+		t.Fatalf("drained snapshots = %#v, want [11]", drained)
+	}
+}
+
+func TestManagerCloseDefersRuntimeCloseUntilLeaseRelease(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: deployment.Deployment{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: deployment.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   deployment.Artifact{DeploymentID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest"},
+	}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", DataDir: "/data", Factory: &fakeFactory{}})
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	lease, err := manager.Acquire()
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	runtime := lease.Runtime().(*fakeRuntime)
+	if err := manager.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if runtime.closed {
+		t.Fatal("runtime closed while close waited on active lease")
+	}
+	if _, err := manager.Acquire(); err == nil {
+		t.Fatal("acquire after close error = nil")
+	}
+	lease.Release()
+	if !runtime.closed {
+		t.Fatal("runtime was not closed after leased close release")
+	}
+}
+
 func TestManagerPreparedRuntimeExposesDuckLakeSnapshot(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeRepo{
@@ -532,6 +620,18 @@ func (r *recordingRuntime) Close() error {
 }
 
 func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalInt64s(got, want []int64) bool {
 	if len(got) != len(want) {
 		return false
 	}
