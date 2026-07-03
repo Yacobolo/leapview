@@ -1,13 +1,7 @@
 import { LitElement, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { unsafeHTML } from 'lit/directives/unsafe-html.js'
-import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
-import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
-import sql from '@shikijs/langs/sql'
-import json from '@shikijs/langs/json'
-import githubDark from '@shikijs/themes/github-dark'
-import githubLight from '@shikijs/themes/github-light'
-import { toonLanguage } from './toon-language'
+import type { HighlighterCore } from 'shiki/core'
 
 type CodeTheme = 'github-light' | 'github-dark'
 type SupportedLanguage = 'json' | 'sql' | 'toon'
@@ -15,11 +9,30 @@ type SupportedLanguage = 'json' | 'sql' | 'toon'
 let highlighterPromise: Promise<HighlighterCore> | null = null
 
 function loadHighlighter(): Promise<HighlighterCore> {
-  highlighterPromise ??= createHighlighterCore({
-    themes: [githubLight, githubDark],
-    langs: [json, sql, toonLanguage],
-    engine: createJavaScriptRegexEngine(),
-  })
+  highlighterPromise ??= (async () => {
+    const [
+      { createHighlighterCore },
+      { createJavaScriptRegexEngine },
+      { default: sql },
+      { default: json },
+      { default: githubDark },
+      { default: githubLight },
+      { toonLanguage },
+    ] = await Promise.all([
+      import('shiki/core'),
+      import('shiki/engine/javascript'),
+      import('@shikijs/langs/sql'),
+      import('@shikijs/langs/json'),
+      import('@shikijs/themes/github-dark'),
+      import('@shikijs/themes/github-light'),
+      import('./toon-language'),
+    ])
+    return createHighlighterCore({
+      themes: [githubLight, githubDark],
+      langs: [json, sql, toonLanguage],
+      engine: createJavaScriptRegexEngine(),
+    })
+  })()
   return highlighterPromise
 }
 

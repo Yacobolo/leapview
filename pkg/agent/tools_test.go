@@ -350,6 +350,45 @@ func TestToolResultTruncatesArraysAndStrings(t *testing.T) {
 	}
 }
 
+func TestToolResultTOONQuotesAmbiguousScalarsAndKeys(t *testing.T) {
+	model := &fakeModel{responses: []ModelResponse{
+		{ToolCalls: []ToolCall{{ID: "call_1", Name: "lookup", Arguments: json.RawMessage(`{}`)}}, FinishReason: FinishReasonToolCalls},
+		{Content: "done", FinishReason: FinishReasonStop},
+	}}
+	a := mustAgent(t, Definition{
+		Name:         "test",
+		SystemPrompt: "x",
+		Model:        model,
+		Tools: []ToolDefinition{{
+			Name:        "lookup",
+			Description: "lookup",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+			Handler: ToolHandlerFunc(func(context.Context, ToolCall) (ToolResult, error) {
+				return ToolResult{Content: map[string]any{
+					"quoted:key": `He said "hi" \ ok`,
+					"items": []any{
+						map[string]any{"name": "true", "value": "123", "bad,field": "a,b"},
+					},
+				}}, nil
+			}),
+		}},
+	})
+
+	if _, err := a.Prompt(context.Background(), PromptRequest{Input: "go"}); err != nil {
+		t.Fatalf("Prompt returned error: %v", err)
+	}
+	tool := onlyToolMessage(t, a.Transcript())
+	for _, want := range []string{
+		`"quoted:key": "He said \"hi\" \\ ok"`,
+		`items[1]{"bad,field",name,value}:`,
+		`"a,b","true","123"`,
+	} {
+		if !strings.Contains(tool.Content, want) {
+			t.Fatalf("tool result missing quoted fragment %q:\n%s", want, tool.Content)
+		}
+	}
+}
+
 func TestToolResultTopLevelEmptyArrayIsExplicit(t *testing.T) {
 	model := &fakeModel{responses: []ModelResponse{
 		{ToolCalls: []ToolCall{{ID: "call_1", Name: "lookup", Arguments: json.RawMessage(`{}`)}}, FinishReason: FinishReasonToolCalls},
