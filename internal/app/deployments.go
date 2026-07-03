@@ -31,6 +31,7 @@ type deploymentRepository interface {
 	validate.Repository
 	activate.Repository
 	activate.ArtifactRepository
+	ActiveArtifact(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) (deployment.Deployment, deployment.Artifact, error)
 	Create(ctx context.Context, input deployment.CreateInput) (deployment.Deployment, error)
 	List(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) ([]deployment.Deployment, error)
 }

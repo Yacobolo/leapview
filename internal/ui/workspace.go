@@ -451,11 +451,11 @@ func WorkspaceAssetPageWithRefreshAndVersions(catalog dashboard.Catalog, workspa
 		g.Attr("data-attr:page", "JSON.stringify($page)"),
 	}
 	if assetRefreshable(asset.Type) {
-		refreshPath := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/refresh-materializations"
+		refreshPath := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/refresh"
 		updatesURL := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/updates?section=" + activeSection
 		extraSignals["csrfToken"] = refresh.CSRFToken
 		attrs = append(attrs,
-			g.Attr("data-on:ld-refresh-materializations", "$page.refresh.status = 'running'; $page.refresh.running = true; "+postActionWithCSRFSignal(refreshPath, "$csrfToken")),
+			g.Attr("data-on:ld-refresh-materializations", postActionWithCSRFSignal(refreshPath, "$csrfToken")),
 		)
 		if activeSection == "versions" {
 			return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("ld-workspace-asset-page", attrs...), extraSignals, activeSection, chromeOptions)

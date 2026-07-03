@@ -65,18 +65,21 @@ func OpenMaterializeRuntime(ctx context.Context, config analyticsmaterialize.Run
 }
 
 type WorkspaceRuntimeConfig struct {
-	Models           map[string]*semanticmodel.Model
-	DataDir          string
-	DBDir            string
-	CatalogPath      string
-	DuckLakeDataPath string
-	SnapshotID       int64
-	DeploymentID     string
-	WorkspaceID      string
-	Environment      string
-	SemanticDigest   string
-	ArtifactDigest   string
-	SourceDataDigest string
+	Models             map[string]*semanticmodel.Model
+	DataDir            string
+	DBDir              string
+	CatalogPath        string
+	DuckLakeDataPath   string
+	SnapshotID         int64
+	DeploymentID       string
+	WorkspaceID        string
+	Environment        string
+	TargetType         string
+	TargetID           string
+	SemanticDigest     string
+	ArtifactDigest     string
+	SourceDataDigest   string
+	SkipInitialRefresh bool
 }
 
 type WorkspaceRuntime struct {
@@ -155,7 +158,7 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 	}
 	if config.SnapshotID > 0 {
 		runtime.lastSnapshotID = config.SnapshotID
-	} else {
+	} else if !config.SkipInitialRefresh {
 		if err := runtime.Refresh(ctx); err != nil {
 			db.Close()
 			return nil, err
@@ -222,6 +225,39 @@ func (r *WorkspaceRuntime) RefreshModelTables(ctx context.Context, modelID strin
 	return nil
 }
 
+func (r *WorkspaceRuntime) RefreshWorkspaceTables(ctx context.Context, tableNames []string) error {
+	if r == nil {
+		return fmt.Errorf("workspace runtime is not initialized")
+	}
+	if len(tableNames) == 0 {
+		return fmt.Errorf("model table refresh plan is empty")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	lastRefresh, snapshotID, err := r.refreshModel(ctx, r.materializationModel, tableNames)
+	if err != nil {
+		return err
+	}
+	for discoverModelID, discoverModel := range r.models {
+		if err := DiscoverSchemasWithDataDir(ctx, r.sqlDB, discoverModel, r.dataDir); err != nil {
+			return fmt.Errorf("discovering semantic model %q schemas: %w", discoverModelID, err)
+		}
+	}
+	r.lastRefresh = lastRefresh
+	r.lastSnapshotID = snapshotID
+	return nil
+}
+
+func WorkspaceModelTableDependencyOrder(models map[string]*semanticmodel.Model, selectedTable string) ([]string, error) {
+	model, err := physicalWorkspaceModel(models)
+	if err != nil {
+		return nil, err
+	}
+	return analyticsmaterialize.ModelTableDependencyOrder(model, selectedTable)
+}
+
 func (r *WorkspaceRuntime) refreshModel(ctx context.Context, model *semanticmodel.Model, tableNames []string) (time.Time, int64, error) {
 	if r.committer == nil {
 		if len(tableNames) > 0 {
@@ -258,6 +294,8 @@ func workspaceCommitMetadata(config WorkspaceRuntimeConfig) map[string]string {
 	addCommitMetadata(metadata, "deploymentId", config.DeploymentID)
 	addCommitMetadata(metadata, "workspaceId", config.WorkspaceID)
 	addCommitMetadata(metadata, "environment", config.Environment)
+	addCommitMetadata(metadata, "targetType", config.TargetType)
+	addCommitMetadata(metadata, "targetId", config.TargetID)
 	addCommitMetadata(metadata, "semanticModelDigest", config.SemanticDigest)
 	addCommitMetadata(metadata, "artifactDigest", config.ArtifactDigest)
 	addCommitMetadata(metadata, "sourceDataDigest", config.SourceDataDigest)
