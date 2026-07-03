@@ -278,7 +278,7 @@ class LibreDashAdminPage extends LitElement {
             </header>
           `}
           ${page.empty && page.active !== 'storage' ? html`<div class="panel"><div class="empty">${page.empty}</div></div>` : nothing}
-          ${page.metrics?.length && page.active !== 'storage' ? html`
+          ${page.metrics?.length && page.active !== 'storage' && page.active !== 'queries' ? html`
             <div class="metrics">
               ${page.metrics.map((metric) => html`
                 <div class="metric">
@@ -407,7 +407,7 @@ function queryEventsTable(events: AdminQueryEventSignal[]) {
       { id: 'query', header: 'Query', kind: 'query', width: '560px', toggleable: false },
       { id: 'started_at', header: 'Started', width: '150px' },
       { id: 'duration_ms', header: 'Duration', kind: 'number', align: 'right', width: '105px' },
-      { id: 'source', header: 'Source', kind: 'badge', width: '120px' },
+      { id: 'source', header: 'Source type', width: '120px' },
       { id: 'runtime', header: 'Runtime', kind: 'code', width: '130px' },
       { id: 'principal_id', header: 'User', kind: 'code', width: '150px' },
       { id: 'rows_returned', header: 'Rows', kind: 'number', align: 'right', width: '90px' },
@@ -431,7 +431,7 @@ function queryEventsTable(events: AdminQueryEventSignal[]) {
       },
       started_at: event.createdAt,
       duration_ms: { label: `${event.durationMs ?? 0} ms`, value: event.durationMs ?? 0 },
-      source: { label: event.surface, tone: 'muted' },
+      source: event.surface,
       runtime: queryEventRuntimeLabel(event),
       principal_id: event.principalId,
       rows_returned: event.rowsReturned,

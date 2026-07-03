@@ -280,10 +280,12 @@ test('query audit page filters table rows and exposes optional metadata columns'
       return {
         title: root.querySelector('h1')?.textContent?.trim(),
         hasFilters: root.querySelectorAll('.query-filter').length >= 7,
-        hasColumnSelector: Boolean(table.querySelector('.record-table-column-selector')),
-        queryStatusLabel: table.querySelector('.record-query-status')?.getAttribute('aria-label'),
-        hasStatusHeader: visibleHeaderLabels(table).includes('Status'),
-        rowHeight: Math.round(table.querySelector('tbody tr:first-child')?.getBoundingClientRect().height ?? 0),
+        hasMetrics: Boolean(root.querySelector('.metrics')),
+      hasColumnSelector: Boolean(table.querySelector('.record-table-column-selector')),
+      queryStatusLabel: table.querySelector('.record-query-status')?.getAttribute('aria-label'),
+      hasStatusHeader: visibleHeaderLabels(table).includes('Status'),
+      sourceBadgeCount: table.querySelectorAll('.record-badge').length,
+      rowHeight: Math.round(table.querySelector('tbody tr:first-child')?.getBoundingClientRect().height ?? 0),
         rowText,
         hiddenRuntimeText,
         hiddenRuntimeHeaders,
@@ -298,10 +300,11 @@ test('query audit page filters table rows and exposes optional metadata columns'
 
     expect(state.title).toBe('Queries')
     expect(state.hasFilters).toBe(true)
+    expect(state.hasMetrics).toBe(false)
     expect(state.rowText).toMatch(/Query/)
     expect(state.rowText).not.toMatch(/Status/)
     expect(state.rowText).toMatch(/Started/)
-    expect(state.rowText).toMatch(/Source/)
+    expect(state.rowText).toMatch(/Source type/)
     expect(state.rowText).toMatch(/Runtime/)
     expect(state.rowText).toMatch(/User/)
     expect(state.rowText).toMatch(/analyst/)
@@ -310,6 +313,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.rowText).not.toMatch(/customers/)
     expect(state.hasColumnSelector).toBe(true)
     expect(state.hasStatusHeader).toBe(false)
+    expect(state.sourceBadgeCount).toBe(0)
     expect(state.queryStatusLabel).toBe('success')
     expect(state.rowHeight).toBeLessThanOrEqual(44)
     expect(state.hiddenRuntimeHeaders).not.toContain('Runtime')
