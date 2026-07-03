@@ -336,6 +336,7 @@ func (manyRowsMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ d
 	}
 	return dashboard.Table{
 		Title:         "Orders",
+		Columns:       []dashboard.TableColumn{{Key: "order_id", Label: "Order"}},
 		AvailableRows: len(rows),
 		Blocks:        map[string]dashboard.TableBlock{"a": {Rows: rows}},
 	}, nil

@@ -146,6 +146,7 @@ tasks:
       - bun run test:chat-composer
       - bun run test:chat-page
       - bun run test:chat-thread
+      - bun run test:code-block
       - bun run test:workspace-page
       - bun run test:admin-page
       - bun run test:code-editor

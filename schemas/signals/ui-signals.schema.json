@@ -747,6 +747,9 @@
         "id": {
           "type": "string"
         },
+        "inputFormat": {
+          "type": "string"
+        },
         "inputJson": {
           "type": "string"
         },
@@ -757,6 +760,9 @@
           "type": "string"
         },
         "name": {
+          "type": "string"
+        },
+        "resultFormat": {
           "type": "string"
         },
         "resultJson": {

@@ -214,8 +214,10 @@ export interface ChatTranscriptItemSignal {
   summary?: string
   resultSummary?: string
   inputJson?: string
+  inputFormat?: string
   argumentsJson?: string
   resultJson?: string
+  resultFormat?: string
   artifact?: ChatArtifactSignal
   error?: string
   conversationId?: string

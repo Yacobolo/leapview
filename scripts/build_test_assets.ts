@@ -29,6 +29,7 @@ const fixtures = new Map<string, FixtureBuild>([
     single('chat-composer', 'web/components/chat/chat-composer.ts', '.tmp/chat-composer-test/chat-composer-under-test.js'),
   ],
   ['chat-thread', split('chat-thread', 'web/components/chat/chat-page.ts', '.tmp/chat-thread-test', 'chat-under-test.js', 'chunks/[name]-[hash].[ext]')],
+  ['code-block', single('code-block', 'web/components/shared/code-block.ts', '.tmp/code-block-test/code-block-under-test.js')],
   ['workspace-page', single('workspace-page', 'web/components/workspace/workspace-page.ts', '.tmp/workspace-page-test/workspace-page-under-test.js')],
   ['admin-page', pageWithMonacoWorker('admin-page', 'web/components/admin/admin-page.ts', '.tmp/admin-page-test', 'admin-page-under-test.js')],
   ['code-editor', pageWithMonacoWorker('code-editor', 'web/components/shared/code-editor.ts', '.tmp/code-editor-test', 'code-editor-under-test.js')],

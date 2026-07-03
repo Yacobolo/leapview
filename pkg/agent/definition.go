@@ -18,6 +18,7 @@ type Definition struct {
 
 	Tools             []ToolDefinition
 	Limits            Limits
+	ToolOutput        ToolOutputConfig
 	Compaction        CompactionConfig
 	InitialTranscript []Message
 
@@ -28,6 +29,7 @@ type Definition struct {
 
 func (d Definition) withDefaults() Definition {
 	d.Limits = defaultLimits(d.Limits)
+	d.ToolOutput = defaultToolOutputConfig(d.ToolOutput)
 	d.Compaction = defaultCompaction(d.Compaction)
 	if d.Events == nil {
 		d.Events = noopEventSink{}
