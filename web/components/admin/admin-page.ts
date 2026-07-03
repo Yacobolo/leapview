@@ -1,12 +1,13 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { CheckCircle2, Clock3, Copy, X, XCircle } from 'lucide'
-import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, RecordTableSignal } from '../../generated/signals'
+import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, FilterMenuCommand, FilterMenuSignal, RecordTableSignal } from '../../generated/signals'
 import { jsonAttribute } from '../shared/json-attribute'
 import { lucideIcon } from '../shared/lucide-icons'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
 import '../shared/code-block'
+import '../shared/filter-menu'
 import '../shared/record-table'
 import './agent-tools'
 import './agent-prompt-editor'
@@ -29,6 +30,7 @@ class LibreDashAdminPage extends LitElement {
   @property({ attribute: 'agent-prompt' }) agentPrompt = ''
   @state() private queryFilters: AdminQueryHistoryFilters = {}
   @state() private copiedQueryDetailValue = ''
+  private queryFilterTimer: ReturnType<typeof setTimeout> | null = null
 
   static styles = css`
     :host {
@@ -213,8 +215,8 @@ class LibreDashAdminPage extends LitElement {
     }
 
     .query-filters {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+      display: flex;
+      flex-wrap: wrap;
       gap: var(--base-size-8);
       border: var(--ld-border-muted);
       border-radius: var(--ld-radius-default);
@@ -224,6 +226,7 @@ class LibreDashAdminPage extends LitElement {
 
     .query-filter {
       display: grid;
+      flex: 1 1 16rem;
       gap: var(--base-size-4);
       min-width: 0;
     }
@@ -235,8 +238,7 @@ class LibreDashAdminPage extends LitElement {
       text-transform: uppercase;
     }
 
-    .query-filter input,
-    .query-filter select {
+    .query-filter input {
       min-width: 0;
       border: var(--ld-border-muted);
       border-radius: var(--ld-radius-small, 6px);
@@ -523,6 +525,7 @@ class LibreDashAdminPage extends LitElement {
 
   disconnectedCallback(): void {
     window.removeEventListener('keydown', this.handleWindowKeydown)
+    if (this.queryFilterTimer) clearTimeout(this.queryFilterTimer)
     super.disconnectedCallback()
   }
 
@@ -601,13 +604,8 @@ class LibreDashAdminPage extends LitElement {
     const detail = this.queryDetail ?? emptyQueryDetail
     return html`
       <section class="query-audit" aria-label="Query audit">
-        <div class="query-filters" aria-label="Query event filters">
-          ${this.renderTextFilter('workspace', 'Workspace')}
-          ${this.renderTextFilter('principal', 'User')}
-          ${this.renderSelectFilter('surface', 'Source', uniqueValues(rows.map((row) => cellText(row.source))))}
-          ${this.renderSelectFilter('kind', 'Kind', uniqueValues(rows.map((row) => cellText(row.kind))))}
-          ${this.renderSelectFilter('status', 'Status', uniqueValues(rows.map((row) => cellText((row.query as Record<string, unknown> | undefined)?.statusLabel))))}
-          ${this.renderTextFilter('target', 'Target')}
+        <div class="query-filters" aria-label="Query event filters" @ld-filter-menu-command=${this.handleFilterMenuCommand}>
+          ${history.filterMenus?.map((menu) => this.renderFilterMenu(menu))}
           ${this.renderTextFilter('search', 'Statement / ID')}
         </div>
         <div class="panel" @ld-record-table-action=${this.handleQueryTableAction}>
@@ -645,26 +643,24 @@ class LibreDashAdminPage extends LitElement {
     `
   }
 
-  private renderSelectFilter(key: keyof AdminQueryHistoryFilters, label: string, values: string[]) {
-    return html`
-      <div class="query-filter">
-        <label for=${`query-filter-${key}`}>${label}</label>
-        <select
-          id=${`query-filter-${key}`}
-          .value=${this.queryFilters[key] ?? this.currentQueryHistory().filters[key] ?? ''}
-          @change=${(event: Event) => this.setQueryFilter(key, (event.currentTarget as HTMLSelectElement).value)}
-        >
-          <option value="">All</option>
-          ${values.map((value) => html`<option value=${value}>${value}</option>`)}
-        </select>
-      </div>
-    `
+  private renderFilterMenu(menu: FilterMenuSignal) {
+    return html`<ld-filter-menu .menu=${menu}></ld-filter-menu>`
   }
 
   private setQueryFilter(key: keyof AdminQueryHistoryFilters, value: string) {
     const filters = { ...this.queryFilters, [key]: value }
     this.queryFilters = filters
-    this.emitQueryHistoryCommand('reset', filters, '')
+    if (this.queryFilterTimer) clearTimeout(this.queryFilterTimer)
+    this.queryFilterTimer = setTimeout(() => {
+      this.emitQueryHistoryCommand('reset', filters, '')
+    }, 200)
+  }
+
+  private handleFilterMenuCommand = (event: CustomEvent<FilterMenuCommand>): void => {
+    const command = event.detail
+    if (!command?.menuId) return
+    const action = command.action === 'search' ? 'filter_search' : command.action === 'clear' ? 'filter_clear' : 'filter_toggle'
+    this.emitQueryHistoryCommand(action, this.currentQueryHistory().filters, '', '', command)
   }
 
   private loadMoreQueryHistory = () => {
@@ -673,7 +669,7 @@ class LibreDashAdminPage extends LitElement {
     this.emitQueryHistoryCommand('load_more', history.filters, history.nextCursor)
   }
 
-  private emitQueryHistoryCommand(action: 'reset' | 'load_more' | 'select_detail' | 'close_detail', filters: AdminQueryHistoryFilters, pageToken: string, eventId = '') {
+  private emitQueryHistoryCommand(action: 'reset' | 'load_more' | 'select_detail' | 'close_detail' | 'filter_search' | 'filter_toggle' | 'filter_clear', filters: AdminQueryHistoryFilters, pageToken: string, eventId = '', filterMenu?: FilterMenuCommand) {
     const history = this.currentQueryHistory()
     this.dispatchEvent(new CustomEvent('ld-query-history-command', {
       bubbles: true,
@@ -684,6 +680,7 @@ class LibreDashAdminPage extends LitElement {
         pageToken,
         limit: history.limit || 50,
         eventId,
+        filterMenu,
       },
     }))
   }
@@ -843,12 +840,6 @@ function tableRows(table: RecordTableSignal | undefined | null): Array<Record<st
   return Array.isArray(table?.rows) ? table.rows as Array<Record<string, unknown>> : []
 }
 
-function cellText(value: unknown): string {
-  if (value == null || value === '') return ''
-  if (typeof value === 'object' && 'label' in value) return String((value as Record<string, unknown>).label ?? '')
-  return String(value)
-}
-
 function queryDetailObjectLabel(event: AdminQueryDetailSignal): string {
   const object = [event.objectType, event.objectId].filter(Boolean).join(':')
   if (object) return object
@@ -919,10 +910,6 @@ function formatQueryJSON(value: string): string {
   } catch {
     return value
   }
-}
-
-function uniqueValues(values: Array<string | undefined | null>): string[] {
-  return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))).sort()
 }
 
 function storageHasPayload(storage: AdminStorageSignal | null | undefined): storage is AdminStorageSignal {

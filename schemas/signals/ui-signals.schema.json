@@ -353,6 +353,9 @@
         "eventId": {
           "type": "string"
         },
+        "filterMenu": {
+          "$ref": "#/$defs/FilterMenuCommand"
+        },
         "filters": {
           "$ref": "#/$defs/AdminQueryHistoryFilters"
         },
@@ -375,20 +378,32 @@
         "from": {
           "type": "string"
         },
-        "kind": {
-          "type": "string"
+        "kinds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
-        "principal": {
-          "type": "string"
+        "principals": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "search": {
           "type": "string"
         },
-        "status": {
-          "type": "string"
+        "statuses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
-        "surface": {
-          "type": "string"
+        "surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "target": {
           "type": "string"
@@ -396,8 +411,11 @@
         "to": {
           "type": "string"
         },
-        "workspace": {
-          "type": "string"
+        "workspaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -407,6 +425,12 @@
       "properties": {
         "error": {
           "type": "string"
+        },
+        "filterMenus": {
+          "items": {
+            "$ref": "#/$defs/FilterMenuSignal"
+          },
+          "type": "array"
         },
         "filters": {
           "$ref": "#/$defs/AdminQueryHistoryFilters"
@@ -2487,6 +2511,113 @@
       ],
       "type": "object"
     },
+    "FilterMenuCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "menuId": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        },
+        "selected": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "FilterMenuOptionSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "countLabel": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "disabled",
+        "label",
+        "selected",
+        "value"
+      ],
+      "type": "object"
+    },
+    "FilterMenuSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "emptyLabel": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "loading": {
+          "type": "boolean"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/FilterMenuOptionSignal"
+          },
+          "type": "array"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        },
+        "selected": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "summaryLabel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "loading"
+      ],
+      "type": "object"
+    },
     "LoginPageEnvelope": {
       "additionalProperties": false,
       "properties": {
@@ -3954,6 +4085,15 @@
     },
     {
       "$ref": "#/$defs/DefinitionFactSignal"
+    },
+    {
+      "$ref": "#/$defs/FilterMenuCommand"
+    },
+    {
+      "$ref": "#/$defs/FilterMenuOptionSignal"
+    },
+    {
+      "$ref": "#/$defs/FilterMenuSignal"
     },
     {
       "$ref": "#/$defs/LoginPageEnvelope"

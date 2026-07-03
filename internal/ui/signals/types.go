@@ -582,6 +582,7 @@ type AdminPageSignal struct {
 
 type AdminQueryHistorySignal struct {
 	Table            RecordTableSignal        `json:"table"`
+	FilterMenus      []FilterMenuSignal       `json:"filterMenus,omitempty"`
 	Filters          AdminQueryHistoryFilters `json:"filters"`
 	NextCursor       string                   `json:"nextCursor"`
 	LoadedCountLabel string                   `json:"loadedCountLabel"`
@@ -592,23 +593,56 @@ type AdminQueryHistorySignal struct {
 }
 
 type AdminQueryHistoryFilters struct {
-	Workspace string `json:"workspace,omitempty"`
-	Principal string `json:"principal,omitempty"`
-	Surface   string `json:"surface,omitempty"`
-	Kind      string `json:"kind,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Target    string `json:"target,omitempty"`
-	Search    string `json:"search,omitempty"`
-	From      string `json:"from,omitempty"`
-	To        string `json:"to,omitempty"`
+	Workspaces []string `json:"workspaces,omitempty"`
+	Principals []string `json:"principals,omitempty"`
+	Surfaces   []string `json:"surfaces,omitempty"`
+	Kinds      []string `json:"kinds,omitempty"`
+	Statuses   []string `json:"statuses,omitempty"`
+	Target     string   `json:"target,omitempty"`
+	Search     string   `json:"search,omitempty"`
+	From       string   `json:"from,omitempty"`
+	To         string   `json:"to,omitempty"`
 }
 
 type AdminQueryHistoryCommand struct {
-	Action    string                   `json:"action"`
-	Filters   AdminQueryHistoryFilters `json:"filters"`
-	PageToken string                   `json:"pageToken,omitempty"`
-	Limit     int                      `json:"limit,omitempty"`
-	EventID   string                   `json:"eventId,omitempty"`
+	Action     string                   `json:"action"`
+	Filters    AdminQueryHistoryFilters `json:"filters"`
+	FilterMenu FilterMenuCommand        `json:"filterMenu,omitempty"`
+	PageToken  string                   `json:"pageToken,omitempty"`
+	Limit      int                      `json:"limit,omitempty"`
+	EventID    string                   `json:"eventId,omitempty"`
+}
+
+type FilterMenuSignal struct {
+	ID           string                   `json:"id"`
+	Label        string                   `json:"label"`
+	SummaryLabel string                   `json:"summaryLabel,omitempty"`
+	Mode         string                   `json:"mode,omitempty"`
+	Search       string                   `json:"search,omitempty"`
+	Selected     []string                 `json:"selected,omitempty"`
+	Options      []FilterMenuOptionSignal `json:"options,omitempty"`
+	Loading      bool                     `json:"loading"`
+	Error        string                   `json:"error,omitempty"`
+	Placeholder  string                   `json:"placeholder,omitempty"`
+	EmptyLabel   string                   `json:"emptyLabel,omitempty"`
+}
+
+type FilterMenuOptionSignal struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	CountLabel  string `json:"countLabel,omitempty"`
+	Selected    bool   `json:"selected"`
+	Disabled    bool   `json:"disabled"`
+}
+
+type FilterMenuCommand struct {
+	MenuID   string   `json:"menuId,omitempty"`
+	Action   string   `json:"action,omitempty"`
+	Search   string   `json:"search,omitempty"`
+	Value    string   `json:"value,omitempty"`
+	Selected []string `json:"selected,omitempty"`
 }
 
 type AdminQueryDetailSignal struct {

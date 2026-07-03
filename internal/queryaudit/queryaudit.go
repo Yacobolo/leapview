@@ -35,27 +35,38 @@ type Event struct {
 }
 
 type Filter struct {
-	WorkspaceID string
-	PrincipalID string
-	Surface     string
-	Operation   string
-	QueryKind   string
-	ModelID     string
-	Target      string
-	Status      string
-	Search      string
-	From        string
-	To          string
-	CursorTime  string
-	CursorID    string
-	PageToken   string
-	Limit       int
+	WorkspaceID  string
+	WorkspaceIDs []string
+	PrincipalID  string
+	PrincipalIDs []string
+	Surface      string
+	Surfaces     []string
+	Operation    string
+	QueryKind    string
+	QueryKinds   []string
+	ModelID      string
+	Target       string
+	Status       string
+	Statuses     []string
+	Search       string
+	From         string
+	To           string
+	CursorTime   string
+	CursorID     string
+	PageToken    string
+	Limit        int
+}
+
+type FilterOption struct {
+	Value string
+	Count int
 }
 
 type Repository interface {
 	RecordQueryEvent(ctx context.Context, input EventInput) error
 	GetQueryEvent(ctx context.Context, id string) (Event, error)
 	ListQueryEvents(ctx context.Context, filter Filter) ([]Event, error)
+	ListQueryEventFilterOptions(ctx context.Context, field, search string, limit int) ([]FilterOption, error)
 }
 
 func (input EventInput) Validate() error {

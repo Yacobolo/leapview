@@ -234,6 +234,7 @@ function queryAuditFixturePage() {
     headerDetail: 'Product query audit.',
     queryHistory: {
       table: queryAuditTableFixture(queryEvents),
+      filterMenus: queryAuditFilterMenusFixture(),
       filters: {},
       nextCursor: 'cursor_next',
       loadedCountLabel: '2 queries loaded',
@@ -268,6 +269,91 @@ function queryAuditFixturePage() {
       createdAt: '2026-07-02T10:00:00Z',
     },
   }
+}
+
+function queryAuditFilterMenusFixture() {
+  return [
+    {
+      id: 'workspace',
+      label: 'Workspace',
+      summaryLabel: 'Workspace',
+      mode: 'multi',
+      search: '',
+      selected: [],
+      loading: false,
+      error: '',
+      placeholder: 'Search workspaces',
+      emptyLabel: 'No workspaces found.',
+      options: [
+        { value: 'sales', label: 'sales', icon: 'workspace', countLabel: '1', selected: false, disabled: false },
+        { value: 'operations', label: 'operations', icon: 'workspace', countLabel: '1', selected: false, disabled: false },
+      ],
+    },
+    {
+      id: 'principal',
+      label: 'User',
+      summaryLabel: 'User',
+      mode: 'multi',
+      search: '',
+      selected: [],
+      loading: false,
+      error: '',
+      placeholder: 'Search users',
+      emptyLabel: 'No users found.',
+      options: [
+        { value: 'analyst', label: 'Me (analyst@example.com)', icon: 'user', countLabel: '1', selected: false, disabled: false },
+        { value: 'agent', label: 'agent', icon: 'user', countLabel: '1', selected: false, disabled: false },
+      ],
+    },
+    {
+      id: 'surface',
+      label: 'Source type',
+      summaryLabel: 'Source type',
+      mode: 'multi',
+      search: '',
+      selected: [],
+      loading: false,
+      error: '',
+      placeholder: 'Search source types',
+      emptyLabel: 'No source types found.',
+      options: [
+        { value: 'api', label: 'api', icon: 'source', countLabel: '1', selected: false, disabled: false },
+        { value: 'agent', label: 'agent', icon: 'source', countLabel: '1', selected: false, disabled: false },
+      ],
+    },
+    {
+      id: 'kind',
+      label: 'Kind',
+      summaryLabel: 'Kind',
+      mode: 'multi',
+      search: '',
+      selected: [],
+      loading: false,
+      error: '',
+      placeholder: 'Search kinds',
+      emptyLabel: 'No kinds found.',
+      options: [
+        { value: 'semantic_aggregate', label: 'semantic_aggregate', icon: 'kind', countLabel: '1', selected: false, disabled: false },
+        { value: 'semantic_rows', label: 'semantic_rows', icon: 'kind', countLabel: '1', selected: false, disabled: false },
+      ],
+    },
+    {
+      id: 'status',
+      label: 'Status',
+      summaryLabel: 'Status',
+      mode: 'multi',
+      search: '',
+      selected: [],
+      loading: false,
+      error: '',
+      placeholder: 'Search statuses',
+      emptyLabel: 'No statuses found.',
+      options: [
+        { value: 'success', label: 'success', icon: 'status', countLabel: '1', selected: false, disabled: false },
+        { value: 'error', label: 'error', icon: 'status', countLabel: '1', selected: false, disabled: false },
+      ],
+    },
+  ]
 }
 
 function queryAuditTableFixture(events: any[]) {
@@ -345,10 +431,27 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const search = root.querySelector<HTMLInputElement>('#query-filter-search')!
       search.value = 'select status'
       search.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+      await new Promise((resolve) => setTimeout(resolve, 250))
       await element.updateComplete
+      const commandAfterSearch = (window as any).queryHistoryCommands.at(-1)
+      const menus = Array.from(root.querySelectorAll('ld-filter-menu')) as any[]
+      menus[0]?.shadowRoot?.querySelector<HTMLButtonElement>('.trigger')?.click()
+      await menus[0]?.updateComplete
+      const workspaceMenuSearch = menus[0]?.shadowRoot?.querySelector<HTMLInputElement>('.search input')
+      if (workspaceMenuSearch) {
+        workspaceMenuSearch.value = 'oper'
+        workspaceMenuSearch.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      await element.updateComplete
+      const filterSearchCommand = (window as any).queryHistoryCommands.at(-1)
+      menus[2]?.shadowRoot?.querySelector<HTMLButtonElement>('.trigger')?.click()
+      await menus[2]?.updateComplete
+      menus[2]?.shadowRoot?.querySelector<HTMLInputElement>('.option input')?.click()
+      await element.updateComplete
+      const filterToggleCommand = (window as any).queryHistoryCommands.at(-1)
       const table = root.querySelector('ld-record-table') as any
       const rowText = table?.textContent ?? ''
-      const commandAfterSearch = (window as any).queryHistoryCommands.at(-1)
       table.querySelector('.record-table-column-selector summary')?.click()
       Array.from(table.querySelectorAll('label'))
         .find((label) => label.textContent?.includes('Runtime'))
@@ -417,15 +520,18 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const refreshedHeaders = visibleHeaderLabels(recreatedTable)
       return {
         title: root.querySelector('h1')?.textContent?.trim(),
-        hasFilters: root.querySelectorAll('.query-filter').length >= 7,
+        hasFilters: root.querySelectorAll('ld-filter-menu').length === 5,
+        firstMenuText: menus[0]?.shadowRoot?.textContent ?? '',
         hasMetrics: Boolean(root.querySelector('.metrics')),
-      hasColumnSelector: Boolean(table.querySelector('.record-table-column-selector')),
-      queryStatusLabel: table.querySelector('.record-query-status')?.getAttribute('aria-label'),
-      hasStatusHeader: visibleHeaderLabels(table).includes('Status'),
-      sourceBadgeCount: table.querySelectorAll('.record-badge').length,
-      rowHeight: Math.round(table.querySelector('tbody tr:first-child')?.getBoundingClientRect().height ?? 0),
+        hasColumnSelector: Boolean(table.querySelector('.record-table-column-selector')),
+        queryStatusLabel: table.querySelector('.record-query-status')?.getAttribute('aria-label'),
+        hasStatusHeader: visibleHeaderLabels(table).includes('Status'),
+        sourceBadgeCount: table.querySelectorAll('.record-badge').length,
+        rowHeight: Math.round(table.querySelector('tbody tr:first-child')?.getBoundingClientRect().height ?? 0),
         rowText,
         commandAfterSearch,
+        filterSearchCommand,
+        filterToggleCommand,
         hiddenRuntimeText,
         hiddenRuntimeHeaders,
         expandedQueryText,
@@ -452,6 +558,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
 
     expect(state.title).toBe('Query History')
     expect(state.hasFilters).toBe(true)
+    expect(state.firstMenuText).toMatch(/Workspace/)
     expect(state.hasMetrics).toBe(false)
     expect(state.rowText).toMatch(/Query/)
     expect(state.rowText).not.toMatch(/Status/)
@@ -465,6 +572,8 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.rowText).toMatch(/customers/)
     expect(state.rowText).not.toMatch(/stale_page_event/)
     expect(state.commandAfterSearch).toMatchObject({ action: 'reset', limit: 50, filters: { search: 'select status' } })
+    expect(state.filterSearchCommand).toMatchObject({ action: 'filter_search', filterMenu: { menuId: 'workspace', action: 'search', search: 'oper' } })
+    expect(state.filterToggleCommand).toMatchObject({ action: 'filter_toggle', filterMenu: { menuId: 'surface', action: 'toggle', value: 'api' } })
     expect(state.hasColumnSelector).toBe(true)
     expect(state.hasStatusHeader).toBe(false)
     expect(state.sourceBadgeCount).toBe(0)
@@ -536,19 +645,26 @@ test('query audit emits load more commands from backend-driven history state', a
           ...fixture.queryHistory.table,
           rows: [fixture.queryHistory.table.rows[1]],
         },
-        filters: { workspace: 'operations' },
+        filterMenus: fixture.queryHistory.filterMenus.map((menu: any) => menu.id === 'workspace' ? {
+          ...menu,
+          summaryLabel: 'operations',
+          selected: ['operations'],
+          options: menu.options.map((option: any) => ({ ...option, selected: option.value === 'operations' })),
+        } : menu),
+        filters: { workspaces: ['operations'] },
         nextCursor: '',
         hasMore: false,
         loadedCountLabel: '1 query loaded',
       }
       await element.updateComplete
       const updatedText = root.textContent ?? ''
+      const workspaceMenu = root.querySelector('ld-filter-menu') as HTMLElement | null
       return {
         footerText,
         command,
         updatedText,
         hasLoadMoreAfterPatch: Boolean(root.querySelector('.query-history-load-more')),
-        workspaceFilterValue: (root.querySelector('#query-filter-workspace') as HTMLInputElement)?.value,
+        workspaceFilterText: workspaceMenu?.shadowRoot?.textContent ?? '',
       }
     }, queryAuditFixturePage())
 
@@ -557,7 +673,7 @@ test('query audit emits load more commands from backend-driven history state', a
     expect(state.updatedText).toMatch(/customers/)
     expect(state.updatedText).not.toMatch(/orders/)
     expect(state.hasLoadMoreAfterPatch).toBe(false)
-    expect(state.workspaceFilterValue).toBe('operations')
+    expect(state.workspaceFilterText).toMatch(/operations/)
   } finally {
     await page.close()
   }

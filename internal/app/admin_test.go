@@ -188,7 +188,7 @@ func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
 	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
-	body := strings.NewReader(`{"adminQueryHistoryCommand":{"action":"reset","limit":50,"filters":{"workspace":"sales","surface":"api","status":"success","search":"orders"}}}`)
+	body := strings.NewReader(`{"adminQueryHistoryCommand":{"action":"reset","limit":50,"filters":{"workspaces":["sales"],"surfaces":["api"],"statuses":["success"],"search":"orders"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
@@ -208,12 +208,122 @@ func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
 		if len(history.Table.Rows) != 1 || history.Table.Rows[0]["runtime"] != "sales" || history.Table.Rows[0]["target"] != "orders" {
 			t.Fatalf("filtered reset rows = %#v", history.Table.Rows)
 		}
-		if history.Filters.Workspace != "sales" || history.Filters.Surface != "api" || history.Filters.Status != "success" || history.Filters.Search != "orders" {
+		if len(history.Filters.Workspaces) != 1 || history.Filters.Workspaces[0] != "sales" || len(history.Filters.Surfaces) != 1 || history.Filters.Surfaces[0] != "api" || len(history.Filters.Statuses) != 1 || history.Filters.Statuses[0] != "success" || history.Filters.Search != "orders" {
 			t.Fatalf("filters were not preserved: %#v", history.Filters)
+		}
+		if len(history.FilterMenus) == 0 || history.FilterMenus[0].SummaryLabel == "" {
+			t.Fatalf("filter menus were not patched: %#v", history.FilterMenus)
 		}
 		command, ok := patch["adminQueryHistoryCommand"].(uisignals.AdminQueryHistoryCommand)
 		if !ok || command.PageToken != history.NextCursor || command.Action != "load_more" {
 			t.Fatalf("command patch = %#v", patch["adminQueryHistoryCommand"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for query history patch")
+	}
+}
+
+func TestAdminQueryHistoryCommandSearchesFilterMenuOptions(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	repo, err := server.queryAuditRepository()
+	if err != nil || repo == nil {
+		t.Fatalf("query audit repository: %v", err)
+	}
+	for _, event := range []queryaudit.EventInput{
+		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select orders"},
+		{WorkspaceID: "operations", PrincipalID: owner.ID, Surface: "agent", Operation: "agent_query", QueryKind: "semantic_rows", ModelID: "operations", Target: "reviews", Status: "error", SQL: "select reviews"},
+	} {
+		if err := repo.RecordQueryEvent(ctx, event); err != nil {
+			t.Fatalf("record query event: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	defer unsubscribe()
+
+	body := strings.NewReader(`{"adminQueryHistory":{"filterMenus":[{"id":"workspace","label":"Workspace"}]},"adminQueryHistoryCommand":{"action":"filter_search","limit":50,"filterMenu":{"menuId":"workspace","action":"search","search":"oper"}}}`)
+	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case patch := <-updates:
+		history, ok := patch["adminQueryHistory"].(uisignals.AdminQueryHistorySignal)
+		if !ok {
+			t.Fatalf("patch missing adminQueryHistory: %#v", patch)
+		}
+		workspaceMenu := queryHistoryMenuForTest(history.FilterMenus, "workspace")
+		if workspaceMenu.Search != "oper" || len(workspaceMenu.Options) != 1 || workspaceMenu.Options[0].Value != "operations" {
+			t.Fatalf("workspace menu = %#v", workspaceMenu)
+		}
+		if len(history.Table.Rows) != 0 {
+			t.Fatalf("filter search should not patch table rows: %#v", history.Table.Rows)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for query history patch")
+	}
+}
+
+func TestAdminQueryHistoryCommandTogglesFilterAndResetsTable(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	repo, err := server.queryAuditRepository()
+	if err != nil || repo == nil {
+		t.Fatalf("query audit repository: %v", err)
+	}
+	for _, event := range []queryaudit.EventInput{
+		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select orders"},
+		{WorkspaceID: "operations", PrincipalID: owner.ID, Surface: "agent", Operation: "agent_query", QueryKind: "semantic_rows", ModelID: "operations", Target: "reviews", Status: "error", SQL: "select reviews"},
+	} {
+		if err := repo.RecordQueryEvent(ctx, event); err != nil {
+			t.Fatalf("record query event: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	defer unsubscribe()
+
+	body := strings.NewReader(`{"adminQueryHistory":{"table":{"rows":[{"id":"old"}]}},"adminQueryHistoryCommand":{"action":"filter_toggle","limit":50,"filterMenu":{"menuId":"surface","action":"toggle","value":"agent","selected":[]}}}`)
+	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case patch := <-updates:
+		history, ok := patch["adminQueryHistory"].(uisignals.AdminQueryHistorySignal)
+		if !ok {
+			t.Fatalf("patch missing adminQueryHistory: %#v", patch)
+		}
+		if len(history.Filters.Surfaces) != 1 || history.Filters.Surfaces[0] != "agent" {
+			t.Fatalf("surface filter = %#v", history.Filters)
+		}
+		if len(history.Table.Rows) != 1 || history.Table.Rows[0]["target"] != "reviews" {
+			t.Fatalf("filtered table rows = %#v", history.Table.Rows)
+		}
+		surfaceMenu := queryHistoryMenuForTest(history.FilterMenus, "surface")
+		if surfaceMenu.SummaryLabel != "agent" || len(surfaceMenu.Selected) != 1 || surfaceMenu.Selected[0] != "agent" {
+			t.Fatalf("surface menu = %#v", surfaceMenu)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for query history patch")
@@ -285,6 +395,15 @@ func TestAdminQueryHistoryCommandPublishesDetailPatch(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for query detail patch")
 	}
+}
+
+func queryHistoryMenuForTest(menus []uisignals.FilterMenuSignal, id string) uisignals.FilterMenuSignal {
+	for _, menu := range menus {
+		if menu.ID == id {
+			return menu
+		}
+	}
+	return uisignals.FilterMenuSignal{}
 }
 
 func TestAdminQueryHistoryCommandRequiresCSRF(t *testing.T) {

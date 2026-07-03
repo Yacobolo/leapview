@@ -51,6 +51,30 @@ func TestRepositoryRecordsAndFiltersQueryEvents(t *testing.T) {
 	if len(search) != 1 || search[0].Target != "orders" {
 		t.Fatalf("search events = %#v, want orders", search)
 	}
+
+	multi, err := repo.ListQueryEvents(ctx, queryaudit.Filter{WorkspaceIDs: []string{"sales", "operations"}, Surfaces: []string{"api", "agent"}, Statuses: []string{"success"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(multi) != 2 {
+		t.Fatalf("multi-filter events = %d, want 2: %#v", len(multi), multi)
+	}
+	for _, event := range multi {
+		if event.Status != "success" || (event.Surface != "api" && event.Surface != "agent") {
+			t.Fatalf("unexpected multi-filter event: %#v", event)
+		}
+	}
+
+	options, err := repo.ListQueryEventFilterOptions(ctx, "surface", "data", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(options) != 1 || options[0].Value != "data_explorer" || options[0].Count != 1 {
+		t.Fatalf("surface options = %#v, want data_explorer count", options)
+	}
+	if _, err := repo.ListQueryEventFilterOptions(ctx, "sql", "", 10); err == nil {
+		t.Fatal("expected unsupported filter option field error")
+	}
 }
 
 func TestRepositoryRejectsQueryEventWithoutPrincipal(t *testing.T) {

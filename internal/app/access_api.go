@@ -509,20 +509,24 @@ func (s *Server) apiListQueryEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	cursorTime, cursorID := decodeCursor(r.URL.Query().Get("pageToken"))
 	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{
-		WorkspaceID: s.workspaceID(chi.URLParam(r, "workspace")),
-		PrincipalID: r.URL.Query().Get("principal"),
-		Surface:     r.URL.Query().Get("surface"),
-		Operation:   r.URL.Query().Get("operation"),
-		QueryKind:   r.URL.Query().Get("kind"),
-		ModelID:     firstNonEmpty(r.URL.Query().Get("modelId"), r.URL.Query().Get("model")),
-		Target:      r.URL.Query().Get("target"),
-		Status:      r.URL.Query().Get("status"),
-		Search:      r.URL.Query().Get("search"),
-		From:        r.URL.Query().Get("from"),
-		To:          r.URL.Query().Get("to"),
-		CursorTime:  cursorTime,
-		CursorID:    cursorID,
-		Limit:       limit + 1,
+		WorkspaceID:  s.workspaceID(chi.URLParam(r, "workspace")),
+		PrincipalID:  r.URL.Query().Get("principal"),
+		PrincipalIDs: cleanQueryValues(r.URL.Query()["principal"]),
+		Surface:      r.URL.Query().Get("surface"),
+		Surfaces:     cleanQueryValues(r.URL.Query()["surface"]),
+		Operation:    r.URL.Query().Get("operation"),
+		QueryKind:    r.URL.Query().Get("kind"),
+		QueryKinds:   cleanQueryValues(r.URL.Query()["kind"]),
+		ModelID:      firstNonEmpty(r.URL.Query().Get("modelId"), r.URL.Query().Get("model")),
+		Target:       r.URL.Query().Get("target"),
+		Status:       r.URL.Query().Get("status"),
+		Statuses:     cleanQueryValues(r.URL.Query()["status"]),
+		Search:       r.URL.Query().Get("search"),
+		From:         r.URL.Query().Get("from"),
+		To:           r.URL.Query().Get("to"),
+		CursorTime:   cursorTime,
+		CursorID:     cursorID,
+		Limit:        limit + 1,
 	})
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -784,6 +788,26 @@ func decodeIndexCursor(token string) (int, error) {
 		return 0, fmt.Errorf("pageToken is invalid")
 	}
 	return value, nil
+}
+
+func cleanQueryValues(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func encodeCursor(createdAt, id string) string {

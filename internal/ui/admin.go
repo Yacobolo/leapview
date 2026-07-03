@@ -99,12 +99,13 @@ type AdminQueryEvent struct {
 }
 
 type AdminQueryHistoryData struct {
-	Events     []AdminQueryEvent
-	Filters    uisignals.AdminQueryHistoryFilters
-	NextCursor string
-	HasMore    bool
-	Limit      int
-	Error      string
+	Events      []AdminQueryEvent
+	FilterMenus []uisignals.FilterMenuSignal
+	Filters     uisignals.AdminQueryHistoryFilters
+	NextCursor  string
+	HasMore     bool
+	Limit       int
+	Error       string
 }
 
 type AdminPrincipalRef struct {
@@ -326,6 +327,7 @@ func AdminQueryHistorySignalFromData(data AdminQueryHistoryData) uisignals.Admin
 	}
 	return uisignals.AdminQueryHistorySignal{
 		Table:            adminQueryEventsGrid(data.Events),
+		FilterMenus:      data.FilterMenus,
 		Filters:          data.Filters,
 		NextCursor:       data.NextCursor,
 		LoadedCountLabel: queryHistoryCountLabel(len(data.Events)),
