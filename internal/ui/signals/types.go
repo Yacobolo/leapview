@@ -534,6 +534,7 @@ type RecordTableSignal struct {
 	MinWidth       string                     `json:"minWidth,omitempty"`
 	ColumnSelector *RecordTableColumnSelector `json:"columnSelector,omitempty"`
 	Density        string                     `json:"density,omitempty"`
+	RowAction      string                     `json:"rowAction,omitempty"`
 }
 
 type RecordTableColumnSignal struct {

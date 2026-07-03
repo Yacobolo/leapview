@@ -1,7 +1,9 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { CheckCircle2, Clock3, Copy, X, XCircle } from 'lucide'
 import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryEventSignal, AdminStorageSignal } from '../../generated/signals'
 import { jsonAttribute } from '../shared/json-attribute'
+import { lucideIcon } from '../shared/lucide-icons'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
 import '../shared/record-table'
@@ -23,6 +25,8 @@ class LibreDashAdminPage extends LitElement {
   @property({ converter: jsonAttribute<AdminStorageSignal>(emptyStorage) }) storage: AdminStorageSignal = emptyStorage
   @property({ attribute: 'agent-prompt' }) agentPrompt = ''
   @state() private queryFilters: QueryAuditFilters = {}
+  @state() private selectedQueryEventID = ''
+  @state() private copiedQueryDetailValue = ''
 
   static styles = css`
     :host {
@@ -242,6 +246,203 @@ class LibreDashAdminPage extends LitElement {
       padding: var(--base-size-8) var(--base-size-10);
     }
 
+    .query-detail-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      background: color-mix(in srgb, var(--ld-bg-app), transparent 38%);
+    }
+
+    .query-detail-drawer {
+      position: fixed;
+      z-index: 31;
+      inset: 0 0 0 auto;
+      display: grid;
+      width: min(34rem, 100vw);
+      grid-template-rows: auto minmax(0, 1fr);
+      border-left: var(--ld-border-muted);
+      background: var(--ld-bg-panel);
+      box-shadow: var(--ld-shadow-floating, -12px 0 36px rgba(31, 35, 40, 0.18));
+      color: var(--ld-fg-default);
+    }
+
+    .query-detail-header {
+      display: grid;
+      gap: var(--base-size-8);
+      border-bottom: var(--ld-border-muted);
+      padding: var(--base-size-16);
+    }
+
+    .query-detail-header-row,
+    .query-detail-subtitle,
+    .query-detail-copy-row {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: var(--base-size-8);
+    }
+
+    .query-detail-header-row {
+      justify-content: space-between;
+    }
+
+    .query-detail-status {
+      display: inline-flex;
+      min-width: 0;
+      align-items: center;
+      gap: var(--base-size-6);
+      font-weight: var(--ld-font-weight-strong);
+    }
+
+    .query-detail-status svg {
+      display: block;
+      width: var(--base-size-16);
+      height: var(--base-size-16);
+    }
+
+    .query-detail-status-success {
+      color: var(--ld-fg-success);
+    }
+
+    .query-detail-status-danger {
+      color: var(--ld-fg-danger);
+    }
+
+    .query-detail-status-attention {
+      color: var(--ld-fg-warning);
+    }
+
+    .query-detail-status-muted {
+      color: var(--ld-fg-muted);
+    }
+
+    .query-detail-subtitle {
+      flex-wrap: wrap;
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-body-sm);
+      line-height: var(--ld-line-height-compact);
+    }
+
+    .query-detail-subtitle code {
+      font-family: var(--fontStack-monospace);
+    }
+
+    .query-detail-close,
+    .query-detail-copy {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: var(--ld-border-transparent, 1px solid transparent);
+      border-radius: var(--ld-radius-default);
+      background: transparent;
+      color: var(--ld-fg-muted);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .query-detail-close {
+      width: var(--control-medium-size, 32px);
+      height: var(--control-medium-size, 32px);
+    }
+
+    .query-detail-copy {
+      width: var(--base-size-20);
+      height: var(--base-size-20);
+      flex: none;
+      padding: 0;
+    }
+
+    .query-detail-close:hover,
+    .query-detail-close:focus-visible,
+    .query-detail-copy:hover,
+    .query-detail-copy:focus-visible {
+      border-color: var(--ld-line-muted);
+      background: var(--ld-bg-control-hover, var(--ld-bg-panel-muted));
+      color: var(--ld-fg-default);
+      outline: 0;
+    }
+
+    .query-detail-body {
+      display: grid;
+      align-content: start;
+      gap: var(--base-size-16);
+      min-width: 0;
+      overflow: auto;
+      padding: var(--base-size-16);
+    }
+
+    .query-detail-section {
+      display: grid;
+      gap: var(--base-size-8);
+      min-width: 0;
+    }
+
+    .query-detail-section h2,
+    .query-detail-section summary {
+      color: var(--ld-fg-default);
+      font-size: var(--ld-font-size-body-sm);
+      font-weight: var(--ld-font-weight-strong);
+    }
+
+    .query-detail-facts {
+      display: grid;
+      gap: var(--base-size-6);
+    }
+
+    .query-detail-fact {
+      display: grid;
+      grid-template-columns: minmax(7rem, 0.44fr) minmax(0, 1fr);
+      gap: var(--base-size-12);
+      min-width: 0;
+      align-items: start;
+      font-size: var(--ld-font-size-body-sm);
+      line-height: var(--ld-line-height-compact);
+    }
+
+    .query-detail-fact span {
+      color: var(--ld-fg-muted);
+    }
+
+    .query-detail-fact code,
+    .query-detail-fact strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .query-detail-fact code,
+    .query-detail-code {
+      font-family: var(--fontStack-monospace);
+    }
+
+    .query-detail-code {
+      max-height: 15rem;
+      min-width: 0;
+      overflow: auto;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel-muted);
+      color: var(--ld-fg-default);
+      margin: 0;
+      padding: var(--base-size-12);
+      font-size: var(--ld-font-size-body-sm);
+      line-height: var(--ld-line-height-normal);
+      white-space: pre;
+    }
+
+    .query-detail-error {
+      border-color: var(--ld-line-danger-muted, var(--ld-line-muted));
+      background: var(--ld-bg-danger-muted, var(--ld-bg-panel-muted));
+    }
+
+    .query-detail-raw {
+      border-top: var(--ld-border-muted);
+      padding-top: var(--base-size-12);
+    }
+
+    .query-detail-raw summary {
+      cursor: pointer;
+    }
+
     @media (max-width: 640px) {
       .route {
         grid-template-columns: 1fr;
@@ -255,6 +456,15 @@ class LibreDashAdminPage extends LitElement {
 
       .main {
         padding: var(--base-size-12);
+      }
+
+      .query-detail-drawer {
+        inset: auto 0 0 0;
+        width: 100vw;
+        height: min(88svh, 44rem);
+        border-top: var(--ld-border-muted);
+        border-left: 0;
+        box-shadow: var(--ld-shadow-floating, 0 -12px 36px rgba(31, 35, 40, 0.18));
       }
     }
   `
@@ -324,6 +534,7 @@ class LibreDashAdminPage extends LitElement {
   private renderQueries(page: AdminPageSignal) {
     const events = page.queryEvents ?? []
     const filtered = filterQueryEvents(events, this.queryFilters)
+    const selected = filtered.find((event) => event.id === this.selectedQueryEventID) ?? events.find((event) => event.id === this.selectedQueryEventID) ?? null
     return html`
       <section class="query-audit" aria-label="Query audit">
         <div class="query-filters" aria-label="Query event filters">
@@ -335,9 +546,10 @@ class LibreDashAdminPage extends LitElement {
           ${this.renderTextFilter('target', 'Target')}
           ${this.renderTextFilter('search', 'Statement / ID')}
         </div>
-        <div class="panel">
+        <div class="panel" @ld-record-table-action=${this.handleQueryTableAction}>
           <ld-record-table variant="compact" .table=${queryEventsTable(filtered)}></ld-record-table>
         </div>
+        ${selected ? this.renderQueryDetail(selected) : nothing}
       </section>
     `
   }
@@ -374,6 +586,123 @@ class LibreDashAdminPage extends LitElement {
 
   private setQueryFilter(key: keyof QueryAuditFilters, value: string) {
     this.queryFilters = { ...this.queryFilters, [key]: value }
+  }
+
+  private handleQueryTableAction = (event: CustomEvent) => {
+    if (event.detail?.action !== 'detail') return
+    this.selectedQueryEventID = String(event.detail.row?.id ?? '')
+    this.copiedQueryDetailValue = ''
+  }
+
+  private closeQueryDetail = () => {
+    this.selectedQueryEventID = ''
+    this.copiedQueryDetailValue = ''
+  }
+
+  private renderQueryDetail(event: AdminQueryEventSignal) {
+    const statusTone = queryEventStatusTone(event.status)
+    return html`
+      <div class="query-detail-backdrop" @click=${this.closeQueryDetail}></div>
+      <aside class="query-detail-drawer" role="dialog" aria-modal="true" aria-label="Query event detail">
+        <header class="query-detail-header">
+          <div class="query-detail-header-row">
+            <div class=${`query-detail-status query-detail-status-${statusTone}`}>
+              ${lucideIcon(queryEventStatusIconComponent(event.status), { size: 16, strokeWidth: 2 })}
+              <span>${queryEventStatusLabel(event.status)}</span>
+            </div>
+            <button class="query-detail-close" type="button" aria-label="Close query details" @click=${this.closeQueryDetail}>
+              ${lucideIcon(X, { size: 18, strokeWidth: 2 })}
+            </button>
+          </div>
+          <div class="query-detail-subtitle">
+            <code>${event.principalId || '-'}</code>
+            <span>·</span>
+            <span>${event.workspaceId || '-'}</span>
+            <span>·</span>
+            <span>${event.surface || '-'}</span>
+          </div>
+        </header>
+        <div class="query-detail-body">
+          <section class="query-detail-section" aria-label="Query identity">
+            <h2>Query identity</h2>
+            <div class="query-detail-facts">
+              ${this.renderCopyableFact('ID', event.id)}
+              ${this.renderCopyableFact('Request ID', event.requestId)}
+              ${this.renderCopyableFact('Correlation ID', event.correlationId)}
+            </div>
+          </section>
+          <section class="query-detail-section" aria-label="Query text">
+            <h2>Query text</h2>
+            <pre class="query-detail-code"><code>${queryEventExpandedContent(event)}</code></pre>
+          </section>
+          <section class="query-detail-section" aria-label="Timing">
+            <h2>Timing</h2>
+            <div class="query-detail-facts">
+              ${queryDetailFact('Duration', `${event.durationMs ?? 0} ms`)}
+              ${queryDetailFact('Started at', event.createdAt)}
+              ${queryDetailFact('Operation', event.operation)}
+              ${queryDetailFact('Kind', event.queryKind)}
+            </div>
+          </section>
+          <section class="query-detail-section" aria-label="Query target">
+            <h2>Query target</h2>
+            <div class="query-detail-facts">
+              ${queryDetailFact('Workspace', event.workspaceId)}
+              ${queryDetailFact('Model', event.modelId)}
+              ${queryDetailFact('Target', event.target)}
+              ${queryDetailFact('Object', queryEventObjectLabel(event))}
+            </div>
+          </section>
+          <section class="query-detail-section" aria-label="Result">
+            <h2>Result</h2>
+            <div class="query-detail-facts">
+              ${queryDetailFact('Rows returned', String(event.rowsReturned ?? 0))}
+              ${queryDetailFact('Status', event.status)}
+            </div>
+            ${event.error ? html`<pre class="query-detail-code query-detail-error"><code>${event.error}</code></pre>` : nothing}
+          </section>
+          ${event.planText || event.queryJson ? html`
+            <details class="query-detail-raw">
+              <summary>Raw metadata</summary>
+              ${event.planText ? html`<pre class="query-detail-code"><code>${event.planText}</code></pre>` : nothing}
+              ${event.queryJson ? html`<pre class="query-detail-code"><code>${formatQueryJSON(event.queryJson)}</code></pre>` : nothing}
+            </details>
+          ` : nothing}
+        </div>
+      </aside>
+    `
+  }
+
+  private renderCopyableFact(label: string, value: string | undefined | null) {
+    const normalized = value == null || value === '' ? '-' : String(value)
+    return html`
+      <div class="query-detail-fact">
+        <span>${label}</span>
+        <div class="query-detail-copy-row">
+          <code>${normalized}</code>
+          ${normalized !== '-' ? html`
+            <button
+              type="button"
+              class="query-detail-copy"
+              aria-label=${`Copy ${label}`}
+              title=${this.copiedQueryDetailValue === normalized ? 'Copied' : `Copy ${label}`}
+              @click=${() => this.copyQueryDetailValue(normalized)}
+            >
+              ${lucideIcon(Copy, { size: 13, strokeWidth: 2 })}
+            </button>
+          ` : nothing}
+        </div>
+      </div>
+    `
+  }
+
+  private async copyQueryDetailValue(value: string): Promise<void> {
+    try {
+      await navigator.clipboard?.writeText(value)
+      this.copiedQueryDetailValue = value
+    } catch {
+      this.copiedQueryDetailValue = ''
+    }
   }
 
 }
@@ -447,6 +776,7 @@ function queryEventsTable(events: AdminQueryEventSignal[]) {
     empty: 'No query events match these filters.',
     minWidth: '1305px',
     density: 'tight',
+    rowAction: 'detail',
     columnSelector: {
       enabled: true,
       label: 'Columns',
@@ -504,6 +834,47 @@ function queryEventStatusIcon(status: string): string {
       return 'clock'
     default:
       return 'x'
+  }
+}
+
+function queryEventStatusIconComponent(status: string): any {
+  switch (queryEventStatusIcon(status)) {
+    case 'check':
+      return CheckCircle2
+    case 'clock':
+      return Clock3
+    default:
+      return XCircle
+  }
+}
+
+function queryEventStatusLabel(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'Finished'
+    case 'canceled':
+      return 'Canceled'
+    case 'timeout':
+      return 'Timeout'
+    default:
+      return status || 'Error'
+  }
+}
+
+function queryDetailFact(label: string, value: string | number | undefined | null) {
+  return html`
+    <div class="query-detail-fact">
+      <span>${label}</span>
+      <code>${value == null || value === '' ? '-' : String(value)}</code>
+    </div>
+  `
+}
+
+function formatQueryJSON(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
   }
 }
 

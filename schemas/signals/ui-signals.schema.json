@@ -2450,6 +2450,9 @@
         "minWidth": {
           "type": "string"
         },
+        "rowAction": {
+          "type": "string"
+        },
         "rows": {
           "items": {
             "additionalProperties": {},

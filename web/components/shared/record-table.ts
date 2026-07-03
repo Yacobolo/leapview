@@ -87,6 +87,7 @@ type RecordTablePayload = {
   minWidth?: string
   columnSelector?: RecordColumnSelector
   density?: RecordTableDensity
+  rowAction?: string
 }
 
 type RecordTableVariant = 'minimal' | 'primary' | 'compact'
@@ -100,6 +101,7 @@ const emptyRecordTable: Required<RecordTablePayload> = {
   minWidth: '0',
   columnSelector: { enabled: false, storageKey: '', label: 'Columns', defaultColumns: [] },
   density: 'normal',
+  rowAction: '',
 }
 
 function cellLabel(value: unknown): string {
@@ -173,6 +175,7 @@ function normalizeTable(table: RecordTablePayload): Required<RecordTablePayload>
       defaultColumns: table.columnSelector?.defaultColumns ?? [],
     },
     density: table.density ?? emptyRecordTable.density,
+    rowAction: table.rowAction ?? emptyRecordTable.rowAction,
   }
 }
 
@@ -247,7 +250,7 @@ class RecordTable extends LitElement {
             </tr>
           </thead>
           <tbody>
-            ${rows.map((row, index) => this.renderRow(row, columns, index))}
+            ${rows.map((row, index) => this.renderRow(row, columns, table.rowAction, index))}
           </tbody>
         </table>
       </div>
@@ -442,12 +445,23 @@ class RecordTable extends LitElement {
     }
   }
 
-  private renderRow(row: RecordRow, columns: RecordColumn[], index: number): TemplateResult {
+  private renderRow(row: RecordRow, columns: RecordColumn[], rowAction: string, index: number): TemplateResult {
     const rowID = this.rowID(row, index)
     const expandedContent = this.rowExpandedContent(row, columns)
     const expanded = Boolean(expandedContent) && this.expandedRowIDs.includes(rowID)
+    const actionable = Boolean(rowAction)
     return html`
-      <tr class=${expanded ? 'record-row is-expanded' : 'record-row'}>
+      <tr
+        class=${[
+          'record-row',
+          expanded ? 'is-expanded' : '',
+          actionable ? 'is-actionable' : '',
+        ].filter(Boolean).join(' ')}
+        tabindex=${actionable ? '0' : nothing}
+        aria-label=${actionable ? this.rowAriaLabel(row, columns) : nothing}
+        @click=${() => this.emitRowAction(rowAction, row)}
+        @keydown=${(event: KeyboardEvent) => this.handleRowKeydown(event, rowAction, row)}
+      >
         ${columns.map((column) => html`
           <td class=${columnAlignClass(column)}>
             ${this.renderCell(column, row[column.id], row)}
@@ -462,7 +476,10 @@ class RecordTable extends LitElement {
               <button
                 type="button"
                 class="record-query-copy"
-                @click=${() => this.copyExpandedContent(rowID, expandedContent)}
+                @click=${(event: Event) => {
+                  event.stopPropagation()
+                  this.copyExpandedContent(rowID, expandedContent)
+                }}
               >
                 ${lucideIcon(Copy, { size: 14, strokeWidth: 2 })}
                 <span>${this.copiedRowID === rowID ? 'Copied' : this.rowCopyLabel(row, columns)}</span>
@@ -501,7 +518,14 @@ class RecordTable extends LitElement {
     const label = cellLabel(value)
     const action = cellAction(value)
     return html`
-      <button type="button" class="record-button-cell" @click=${() => this.emitAction(action || column.id, row)}>
+      <button
+        type="button"
+        class="record-button-cell"
+        @click=${(event: Event) => {
+          event.stopPropagation()
+          this.emitAction(action || column.id, row)
+        }}
+      >
         ${this.renderIcon(cellIcon(value), 'record-button-icon')}
         <span>${label}</span>
       </button>
@@ -546,7 +570,13 @@ class RecordTable extends LitElement {
       <span class="record-actions">
         ${actions.map((action) => action.href
           ? html`
-            <a class="record-icon-action" href=${action.href} title=${action.label} aria-label=${action.label}>
+            <a
+              class="record-icon-action"
+              href=${action.href}
+              title=${action.label}
+              aria-label=${action.label}
+              @click=${(event: Event) => event.stopPropagation()}
+            >
               ${this.renderIcon(action.icon || 'external', '')}
             </a>
           `
@@ -557,7 +587,10 @@ class RecordTable extends LitElement {
               title=${action.label}
               aria-label=${action.label}
               ?disabled=${action.disabled}
-              @click=${() => this.emitAction(action.action || action.label, row)}
+              @click=${(event: Event) => {
+                event.stopPropagation()
+                this.emitAction(action.action || action.label, row)
+              }}
             >
               ${this.renderIcon(action.icon || 'external', '')}
             </button>
@@ -594,6 +627,13 @@ class RecordTable extends LitElement {
     const id = row.id
     if (id != null && id !== '') return String(id)
     return index >= 0 ? `row-${index}` : JSON.stringify(row)
+  }
+
+  private rowAriaLabel(row: RecordRow, columns: RecordColumn[]): string {
+    const queryColumn = columns.find((column) => column.kind === 'query')
+    if (queryColumn) return `Open query details for ${cellLabel(row[queryColumn.id])}`
+    const firstColumn = columns.find((column) => column.kind !== 'actions') ?? columns[0]
+    return `Open row details for ${firstColumn ? cellLabel(row[firstColumn.id]) : this.rowID(row)}`
   }
 
   private rowExpandedContent(row: RecordRow, columns: RecordColumn[]): string {
@@ -641,6 +681,18 @@ class RecordTable extends LitElement {
     } catch {
       this.copiedRowID = ''
     }
+  }
+
+  private handleRowKeydown(event: KeyboardEvent, action: string, row: RecordRow): void {
+    if (!action) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    this.emitAction(action, row)
+  }
+
+  private emitRowAction(action: string, row: RecordRow): void {
+    if (!action) return
+    this.emitAction(action, row)
   }
 
   private renderIcon(name: string, className: string): TemplateResult {
@@ -904,6 +956,15 @@ const recordTableStyles = `
 
   ld-record-table .record-table tbody tr:hover {
     background: var(--ld-bg-hover, var(--ld-bg-panel-muted));
+  }
+
+  ld-record-table .record-table tbody tr.is-actionable {
+    cursor: pointer;
+  }
+
+  ld-record-table .record-table tbody tr.is-actionable:focus-visible {
+    outline: 2px solid var(--ld-fg-link);
+    outline-offset: -2px;
   }
 
   ld-record-table .variant-primary .record-table tbody tr:hover,

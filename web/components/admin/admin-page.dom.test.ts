@@ -169,78 +169,82 @@ test('admin navigation remains pinned while content scrolls on desktop', async (
   }
 })
 
+function queryAuditFixturePage() {
+  return {
+    kind: 'admin',
+    title: 'Queries',
+    active: 'queries',
+    sidebar: {
+      label: 'Admin',
+      railLabel: 'Admin',
+      ariaLabel: 'Admin navigation',
+      storageKey: 'libredash-admin-sidebar-collapsed',
+      activeId: 'queries',
+      collapsible: false,
+      numbered: false,
+      items: [{ id: 'queries', title: 'Queries', href: '/admin/queries', active: true }],
+    },
+    headerTitle: 'Queries',
+    headerDetail: 'Product query audit.',
+    metrics: [{ label: 'Recent events', value: '2' }],
+    queryEvents: [
+      {
+        id: 'queryevent_1',
+        workspaceId: 'sales',
+        principalId: 'analyst',
+        surface: 'api',
+        operation: 'api_query',
+        queryKind: 'semantic_aggregate',
+        modelId: 'sales',
+        target: 'orders',
+        objectType: 'semantic_dataset',
+        objectId: 'sales:orders',
+        requestId: 'req_1',
+        correlationId: 'corr_1',
+        status: 'success',
+        durationMs: 12,
+        rowsReturned: 2,
+        error: '',
+        sql: 'select status from orders',
+        planText: 'orders plan',
+        queryJson: '{"workspaceId":"sales","target":"orders"}',
+        createdAt: '2026-07-02T10:00:00Z',
+      },
+      {
+        id: 'queryevent_2',
+        workspaceId: 'operations',
+        principalId: 'agent',
+        surface: 'agent',
+        operation: 'agent_query',
+        queryKind: 'semantic_rows',
+        modelId: 'operations',
+        target: 'customers',
+        objectType: 'agent_tool',
+        objectId: 'query_semantic_dataset',
+        requestId: 'call_1',
+        correlationId: '',
+        status: 'error',
+        durationMs: 4,
+        rowsReturned: 0,
+        error: 'invalid field',
+        sql: '',
+        planText: '',
+        queryJson: '{"workspaceId":"operations","target":"customers"}',
+        createdAt: '2026-07-02T10:01:00Z',
+      },
+    ],
+  }
+}
+
 test('query audit page filters table rows and exposes optional metadata columns', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
-    const state = await page.evaluate(async () => {
+    const state = await page.evaluate(async (fixture) => {
       localStorage.removeItem('libredash-admin-query-events-columns')
       const element = document.createElement('ld-admin-page') as any
-      element.page = {
-        kind: 'admin',
-        title: 'Queries',
-        active: 'queries',
-        sidebar: {
-          label: 'Admin',
-          railLabel: 'Admin',
-          ariaLabel: 'Admin navigation',
-          storageKey: 'libredash-admin-sidebar-collapsed',
-          activeId: 'queries',
-          collapsible: false,
-          numbered: false,
-          items: [{ id: 'queries', title: 'Queries', href: '/admin/queries', active: true }],
-        },
-        headerTitle: 'Queries',
-        headerDetail: 'Product query audit.',
-        metrics: [{ label: 'Recent events', value: '2' }],
-        queryEvents: [
-          {
-            id: 'queryevent_1',
-            workspaceId: 'sales',
-            principalId: 'analyst',
-            surface: 'api',
-            operation: 'api_query',
-            queryKind: 'semantic_aggregate',
-            modelId: 'sales',
-            target: 'orders',
-            objectType: 'semantic_dataset',
-            objectId: 'sales:orders',
-            requestId: 'req_1',
-            correlationId: 'corr_1',
-            status: 'success',
-            durationMs: 12,
-            rowsReturned: 2,
-            error: '',
-            sql: 'select status from orders',
-            planText: 'orders plan',
-            queryJson: '{"workspaceId":"sales","target":"orders"}',
-            createdAt: '2026-07-02T10:00:00Z',
-          },
-          {
-            id: 'queryevent_2',
-            workspaceId: 'operations',
-            principalId: 'agent',
-            surface: 'agent',
-            operation: 'agent_query',
-            queryKind: 'semantic_rows',
-            modelId: 'operations',
-            target: 'customers',
-            objectType: 'agent_tool',
-            objectId: 'query_semantic_dataset',
-            requestId: 'call_1',
-            correlationId: '',
-            status: 'error',
-            durationMs: 4,
-            rowsReturned: 0,
-            error: 'invalid field',
-            sql: '',
-            planText: '',
-            queryJson: '{"workspaceId":"operations","target":"customers"}',
-            createdAt: '2026-07-02T10:01:00Z',
-          },
-        ],
-      }
+      element.page = fixture
       document.body.replaceChildren(element)
       await element.updateComplete
       const root = element.shadowRoot
@@ -262,6 +266,16 @@ test('query audit page filters table rows and exposes optional metadata columns'
       table.querySelector<HTMLButtonElement>('.record-query-expand')?.click()
       await table.updateComplete
       const expandedQueryText = table.querySelector('.record-query-expanded-cell')?.textContent ?? ''
+      const drawerAfterExpand = root.querySelector('.query-detail-drawer')?.textContent ?? ''
+      table.querySelector<HTMLButtonElement>('.record-query-expand')?.click()
+      await table.updateComplete
+      table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
+      await element.updateComplete
+      const drawer = root.querySelector('.query-detail-drawer') as HTMLElement | null
+      const drawerText = drawer?.textContent ?? ''
+      root.querySelector<HTMLButtonElement>('.query-detail-close')?.click()
+      await element.updateComplete
+      const hasDrawerAfterClose = Boolean(root.querySelector('.query-detail-drawer'))
       Array.from(table.querySelectorAll('label'))
         .find((label) => label.textContent?.includes('Operation'))
         ?.querySelector('input')
@@ -269,7 +283,6 @@ test('query audit page filters table rows and exposes optional metadata columns'
       await table.updateComplete
       const operationHeaders = visibleHeaderLabels(table)
       const operationText = table.textContent ?? ''
-      const hasDetailPanel = Boolean(root.querySelector('.query-detail'))
       const hasDetailAction = Boolean(table.querySelector('.record-icon-action[aria-label="Details"]'))
       const recreated = document.createElement('ld-admin-page') as any
       recreated.page = element.page
@@ -290,13 +303,15 @@ test('query audit page filters table rows and exposes optional metadata columns'
         hiddenRuntimeText,
         hiddenRuntimeHeaders,
         expandedQueryText,
+        drawerAfterExpand,
+        drawerText,
+        hasDrawerAfterClose,
         operationHeaders,
         operationText,
-        hasDetailPanel,
         hasDetailAction,
         refreshedHeaders,
       }
-    })
+    }, queryAuditFixturePage())
 
     expect(state.title).toBe('Queries')
     expect(state.hasFilters).toBe(true)
@@ -321,13 +336,61 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.hiddenRuntimeHeaders[0]).toBe('Query')
     expect(state.hiddenRuntimeText).toMatch(/select status from orders/)
     expect(state.expandedQueryText).toMatch(/select status from orders/)
+    expect(state.drawerAfterExpand).toBe('')
+    expect(state.drawerText).toMatch(/Finished|Success|success/i)
+    expect(state.drawerText).toMatch(/analyst/)
+    expect(state.drawerText).toMatch(/api/)
+    expect(state.drawerText).toMatch(/sales/)
+    expect(state.drawerText).toMatch(/queryevent_1/)
+    expect(state.drawerText).toMatch(/req_1/)
+    expect(state.drawerText).toMatch(/corr_1/)
+    expect(state.drawerText).toMatch(/select status from orders/)
+    expect(state.drawerText).toMatch(/12 ms/)
+    expect(state.drawerText).toMatch(/semantic_aggregate/)
+    expect(state.drawerText).toMatch(/semantic_dataset:sales:orders/)
+    expect(state.drawerText).toMatch(/Rows returned/)
+    expect(state.hasDrawerAfterClose).toBe(false)
     expect(state.operationHeaders).toContain('Operation')
     expect(state.operationText).toMatch(/api_query/)
-    expect(state.hasDetailPanel).toBe(false)
     expect(state.hasDetailAction).toBe(false)
     expect(state.refreshedHeaders).toContain('Runtime')
     expect(state.refreshedHeaders).not.toContain('Operation')
     expect(state.refreshedHeaders).not.toContain('Status')
+  } finally {
+    await page.close()
+  }
+})
+
+test('query audit detail drawer behaves as a mobile overlay', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
+    const state = await page.evaluate(async (fixture) => {
+      const element = document.createElement('ld-admin-page') as any
+      element.page = fixture
+      document.body.replaceChildren(element)
+      await element.updateComplete
+      const root = element.shadowRoot
+      const table = root.querySelector('ld-record-table') as any
+      table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
+      await element.updateComplete
+      const drawer = root.querySelector('.query-detail-drawer') as HTMLElement
+      const drawerRect = drawer.getBoundingClientRect()
+      const tableRect = table.getBoundingClientRect()
+      return {
+        drawerText: drawer.textContent ?? '',
+        drawerPosition: getComputedStyle(drawer).position,
+        drawerWidth: Math.round(drawerRect.width),
+        viewportWidth: window.innerWidth,
+        drawerCoversTableHorizontally: drawerRect.left <= tableRect.left && drawerRect.right >= tableRect.right,
+      }
+    }, queryAuditFixturePage())
+
+    expect(state.drawerText).toMatch(/queryevent_1/)
+    expect(state.drawerPosition).toBe('fixed')
+    expect(state.drawerWidth).toBe(state.viewportWidth)
+    expect(state.drawerCoversTableHorizontally).toBe(true)
   } finally {
     await page.close()
   }

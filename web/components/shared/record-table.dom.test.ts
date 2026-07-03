@@ -295,6 +295,69 @@ test('record table renders tight expandable query rows', async () => {
   }
 })
 
+test('record table emits configured row actions without stealing interactive controls', async () => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 620 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-record-table'))
+    await page.locator('ld-record-table').evaluate((element: any) => {
+      element.table = {
+        rowAction: 'detail',
+        columns: [
+          { id: 'query', header: 'Query', kind: 'query', width: '520px', toggleable: false },
+          { id: 'runtime', header: 'Runtime', width: '160px' },
+        ],
+        rows: [{
+          id: 'query_1',
+          query: {
+            label: 'select * from orders',
+            statusLabel: 'success',
+            tone: 'success',
+            icon: 'check',
+            expandedContent: 'select *\nfrom orders',
+          },
+          runtime: 'sales',
+        }],
+      }
+      ;(window as any).recordTableActions = []
+      element.addEventListener('ld-record-table-action', (event: CustomEvent) => {
+        ;(window as any).recordTableActions.push(event.detail)
+      })
+    })
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+
+    await page.locator('ld-record-table tbody tr.record-row').click()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect(await rowActionState(page)).toEqual({ count: 1, action: 'detail', rowID: 'query_1', expanded: false })
+
+    await page.locator('ld-record-table .record-query-expand').click()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect(await rowActionState(page)).toEqual({ count: 1, action: 'detail', rowID: 'query_1', expanded: true })
+
+    await page.locator('ld-record-table tbody tr.record-row').focus()
+    await page.keyboard.press('Enter')
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect(await rowActionState(page)).toEqual({ count: 2, action: 'detail', rowID: 'query_1', expanded: true })
+
+    await page.keyboard.press('Space')
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect(await rowActionState(page)).toEqual({ count: 3, action: 'detail', rowID: 'query_1', expanded: true })
+
+    await page.locator('ld-record-table').evaluate((element: any) => {
+      element.table = {
+        columns: [{ id: 'name', header: 'Name' }],
+        rows: [{ id: 'plain_1', name: 'Plain row' }],
+      }
+      ;(window as any).recordTableActions = []
+    })
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    await page.locator('ld-record-table tbody tr.record-row').click()
+    expect(await rowActionState(page)).toEqual({ count: 0, action: '', rowID: '', expanded: false })
+  } finally {
+    await page.close()
+  }
+})
+
 test('record table renders configured empty state', async () => {
   const page = await browser.newPage({ viewport: { width: 500, height: 360 } })
   try {
@@ -420,6 +483,19 @@ async function tableState(page: Page) {
       minWidth: getComputedStyle(table).minWidth,
       headerPosition: getComputedStyle(header).position,
       hasSelector: Boolean(element.querySelector('.record-table-column-selector')),
+    }
+  })
+}
+
+async function rowActionState(page: Page) {
+  return page.locator('ld-record-table').evaluate((element) => {
+    const actions = (window as any).recordTableActions ?? []
+    const last = actions[actions.length - 1] ?? {}
+    return {
+      count: actions.length,
+      action: last.action ?? '',
+      rowID: last.row?.id ?? '',
+      expanded: Boolean(element.querySelector('.record-query-expanded-cell')),
     }
   })
 }
