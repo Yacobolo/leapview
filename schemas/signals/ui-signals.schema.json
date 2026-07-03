@@ -270,6 +270,104 @@
       ],
       "type": "object"
     },
+    "AdminQueryHistoryCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "filters": {
+          "$ref": "#/$defs/AdminQueryHistoryFilters"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "pageToken": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "filters"
+      ],
+      "type": "object"
+    },
+    "AdminQueryHistoryFilters": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "principal": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "surface": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AdminQueryHistorySignal": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/AdminQueryEventSignal"
+          },
+          "type": "array"
+        },
+        "filters": {
+          "$ref": "#/$defs/AdminQueryHistoryFilters"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "loadedCountLabel": {
+          "type": "string"
+        },
+        "loading": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "events",
+        "filters",
+        "hasMore",
+        "limit",
+        "loadedCountLabel",
+        "loading",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
     "AdminStorageColumnSignal": {
       "additionalProperties": false,
       "properties": {
@@ -3683,6 +3781,15 @@
     },
     {
       "$ref": "#/$defs/AdminQueryEventSignal"
+    },
+    {
+      "$ref": "#/$defs/AdminQueryHistoryCommand"
+    },
+    {
+      "$ref": "#/$defs/AdminQueryHistoryFilters"
+    },
+    {
+      "$ref": "#/$defs/AdminQueryHistorySignal"
     },
     {
       "$ref": "#/$defs/AdminStorageColumnSignal"

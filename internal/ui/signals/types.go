@@ -581,6 +581,36 @@ type AdminPageSignal struct {
 	QueryEvents  []AdminQueryEventSignal     `json:"queryEvents,omitempty"`
 }
 
+type AdminQueryHistorySignal struct {
+	Events           []AdminQueryEventSignal  `json:"events"`
+	Filters          AdminQueryHistoryFilters `json:"filters"`
+	NextCursor       string                   `json:"nextCursor"`
+	LoadedCountLabel string                   `json:"loadedCountLabel"`
+	HasMore          bool                     `json:"hasMore"`
+	Loading          bool                     `json:"loading"`
+	Error            string                   `json:"error"`
+	Limit            int                      `json:"limit"`
+}
+
+type AdminQueryHistoryFilters struct {
+	Workspace string `json:"workspace,omitempty"`
+	Principal string `json:"principal,omitempty"`
+	Surface   string `json:"surface,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Target    string `json:"target,omitempty"`
+	Search    string `json:"search,omitempty"`
+	From      string `json:"from,omitempty"`
+	To        string `json:"to,omitempty"`
+}
+
+type AdminQueryHistoryCommand struct {
+	Action    string                   `json:"action"`
+	Filters   AdminQueryHistoryFilters `json:"filters"`
+	PageToken string                   `json:"pageToken,omitempty"`
+	Limit     int                      `json:"limit,omitempty"`
+}
+
 type AdminAgentSignal struct {
 	Enabled      bool                   `json:"enabled"`
 	Model        string                 `json:"model,omitempty"`

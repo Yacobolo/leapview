@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { CheckCircle2, Clock3, Copy, X, XCircle } from 'lucide'
-import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryEventSignal, AdminStorageSignal } from '../../generated/signals'
+import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryEventSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal } from '../../generated/signals'
 import { jsonAttribute } from '../shared/json-attribute'
 import { lucideIcon } from '../shared/lucide-icons'
 import { checkSignalContract } from '../shared/signal-contract'
@@ -24,8 +24,9 @@ const emptyStorage: AdminStorageSignal = {
 class LibreDashAdminPage extends LitElement {
   @property({ converter: jsonAttribute<AdminPageSignal | null>(null) }) page: AdminPageSignal | null = null
   @property({ converter: jsonAttribute<AdminStorageSignal>(emptyStorage) }) storage: AdminStorageSignal = emptyStorage
+  @property({ attribute: 'query-history', converter: jsonAttribute<AdminQueryHistorySignal | null>(null) }) queryHistory: AdminQueryHistorySignal | null = null
   @property({ attribute: 'agent-prompt' }) agentPrompt = ''
-  @state() private queryFilters: QueryAuditFilters = {}
+  @state() private queryFilters: AdminQueryHistoryFilters = {}
   @state() private selectedQueryEventID = ''
   @state() private copiedQueryDetailValue = ''
 
@@ -245,6 +246,45 @@ class LibreDashAdminPage extends LitElement {
       font-size: var(--ld-font-size-body-sm);
       line-height: var(--ld-line-height-compact);
       padding: var(--base-size-8) var(--base-size-10);
+    }
+
+    .query-history-footer {
+      display: flex;
+      min-height: 2.75rem;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--base-size-12);
+      border-top: var(--ld-border-muted);
+      padding: var(--base-size-8) var(--base-size-12);
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-body-sm);
+      font-weight: var(--ld-font-weight-medium);
+    }
+
+    .query-history-error {
+      color: var(--ld-fg-danger, var(--ld-fg-default));
+    }
+
+    .query-history-load-more {
+      min-height: var(--control-medium-size, 32px);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
+      color: var(--ld-fg-default);
+      cursor: pointer;
+      font: inherit;
+      padding: 0 var(--base-size-12);
+    }
+
+    .query-history-load-more:hover,
+    .query-history-load-more:focus-visible {
+      background: var(--ld-bg-control-hover, var(--ld-bg-panel-muted));
+      outline: 0;
+    }
+
+    .query-history-load-more:disabled {
+      cursor: not-allowed;
+      opacity: 0.64;
     }
 
     .query-detail-drawer {
@@ -486,8 +526,15 @@ class LibreDashAdminPage extends LitElement {
     super.disconnectedCallback()
   }
 
-  updated(): void {
+  updated(changed: Map<string, unknown>): void {
     checkSignalContract('admin page', this.page, { kind: 'required', title: 'required', sidebar: 'required' })
+    if (changed.has('queryHistory')) {
+      const history = this.currentQueryHistory()
+      this.queryFilters = { ...history.filters }
+      if (this.selectedQueryEventID && !history.events.some((event) => event.id === this.selectedQueryEventID)) {
+        this.closeQueryDetail()
+      }
+    }
   }
 
   render() {
@@ -549,9 +596,9 @@ class LibreDashAdminPage extends LitElement {
   }
 
   private renderQueries(page: AdminPageSignal) {
-    const events = page.queryEvents ?? []
-    const filtered = filterQueryEvents(events, this.queryFilters)
-    const selected = filtered.find((event) => event.id === this.selectedQueryEventID) ?? events.find((event) => event.id === this.selectedQueryEventID) ?? null
+    const history = this.currentQueryHistory(page)
+    const events = history.events ?? []
+    const selected = events.find((event) => event.id === this.selectedQueryEventID) ?? null
     return html`
       <section class="query-audit" aria-label="Query audit">
         <div class="query-filters" aria-label="Query event filters">
@@ -564,34 +611,47 @@ class LibreDashAdminPage extends LitElement {
           ${this.renderTextFilter('search', 'Statement / ID')}
         </div>
         <div class="panel" @ld-record-table-action=${this.handleQueryTableAction}>
-          <ld-record-table variant="compact" .table=${queryEventsTable(filtered)}></ld-record-table>
+          <ld-record-table variant="compact" .table=${queryEventsTable(events)}></ld-record-table>
+          <div class="query-history-footer" aria-live="polite">
+            <span class=${history.error ? 'query-history-error' : ''}>${history.error || history.loadedCountLabel || `${events.length} queries loaded`}</span>
+            ${history.hasMore ? html`
+              <button
+                type="button"
+                class="query-history-load-more"
+                ?disabled=${history.loading}
+                @click=${this.loadMoreQueryHistory}
+              >
+                ${history.loading ? 'Loading...' : 'Load more'}
+              </button>
+            ` : nothing}
+          </div>
         </div>
         ${selected ? this.renderQueryDetail(selected) : nothing}
       </section>
     `
   }
 
-  private renderTextFilter(key: keyof QueryAuditFilters, label: string) {
+  private renderTextFilter(key: keyof AdminQueryHistoryFilters, label: string) {
     return html`
       <div class="query-filter">
         <label for=${`query-filter-${key}`}>${label}</label>
         <input
           id=${`query-filter-${key}`}
           type="search"
-          .value=${this.queryFilters[key] ?? ''}
+          .value=${this.queryFilters[key] ?? this.currentQueryHistory().filters[key] ?? ''}
           @input=${(event: Event) => this.setQueryFilter(key, (event.currentTarget as HTMLInputElement).value)}
         >
       </div>
     `
   }
 
-  private renderSelectFilter(key: keyof QueryAuditFilters, label: string, values: string[]) {
+  private renderSelectFilter(key: keyof AdminQueryHistoryFilters, label: string, values: string[]) {
     return html`
       <div class="query-filter">
         <label for=${`query-filter-${key}`}>${label}</label>
         <select
           id=${`query-filter-${key}`}
-          .value=${this.queryFilters[key] ?? ''}
+          .value=${this.queryFilters[key] ?? this.currentQueryHistory().filters[key] ?? ''}
           @change=${(event: Event) => this.setQueryFilter(key, (event.currentTarget as HTMLSelectElement).value)}
         >
           <option value="">All</option>
@@ -601,8 +661,47 @@ class LibreDashAdminPage extends LitElement {
     `
   }
 
-  private setQueryFilter(key: keyof QueryAuditFilters, value: string) {
-    this.queryFilters = { ...this.queryFilters, [key]: value }
+  private setQueryFilter(key: keyof AdminQueryHistoryFilters, value: string) {
+    const filters = { ...this.queryFilters, [key]: value }
+    this.queryFilters = filters
+    this.emitQueryHistoryCommand('reset', filters, '')
+  }
+
+  private loadMoreQueryHistory = () => {
+    const history = this.currentQueryHistory()
+    if (!history.hasMore || history.loading || !history.nextCursor) return
+    this.emitQueryHistoryCommand('load_more', history.filters, history.nextCursor)
+  }
+
+  private emitQueryHistoryCommand(action: 'reset' | 'load_more', filters: AdminQueryHistoryFilters, pageToken: string) {
+    const history = this.currentQueryHistory()
+    this.dispatchEvent(new CustomEvent('ld-query-history-command', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        action,
+        filters,
+        pageToken,
+        limit: history.limit || 50,
+      },
+    }))
+  }
+
+  private currentQueryHistory(page = this.page): AdminQueryHistorySignal {
+    const pageHistory = page ? (page as AdminPageSignal & { queryHistory?: AdminQueryHistorySignal }).queryHistory : null
+    const history = this.queryHistory ?? pageHistory ?? null
+    if (history) return history
+    const events = page?.queryEvents ?? []
+    return {
+      events,
+      filters: {},
+      nextCursor: '',
+      loadedCountLabel: `${events.length} queries loaded`,
+      hasMore: false,
+      loading: false,
+      error: '',
+      limit: 50,
+    }
   }
 
   private handleQueryTableAction = (event: CustomEvent) => {
@@ -721,29 +820,6 @@ class LibreDashAdminPage extends LitElement {
     }
   }
 
-}
-
-type QueryAuditFilters = {
-  workspace?: string
-  principal?: string
-  surface?: string
-  kind?: string
-  status?: string
-  target?: string
-  search?: string
-}
-
-function filterQueryEvents(events: AdminQueryEventSignal[], filters: QueryAuditFilters): AdminQueryEventSignal[] {
-  return events.filter((event) => {
-    if (!matchesText(event.workspaceId, filters.workspace)) return false
-    if (!matchesText(event.principalId, filters.principal)) return false
-    if (!matchesExact(event.surface, filters.surface)) return false
-    if (!matchesExact(event.queryKind, filters.kind)) return false
-    if (!matchesExact(event.status, filters.status)) return false
-    if (!matchesText(event.target, filters.target)) return false
-    if (!matchesText(querySearchText(event), filters.search)) return false
-    return true
-  })
 }
 
 function queryEventsTable(events: AdminQueryEventSignal[]) {
@@ -896,35 +972,6 @@ function formatQueryJSON(value: string): string {
 
 function uniqueValues(values: Array<string | undefined | null>): string[] {
   return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))).sort()
-}
-
-function matchesExact(value: string, filter = ''): boolean {
-  return !filter || value === filter
-}
-
-function matchesText(value: string, filter = ''): boolean {
-  return !filter || String(value ?? '').toLowerCase().includes(filter.toLowerCase())
-}
-
-function querySearchText(event: AdminQueryEventSignal): string {
-  return [
-    event.workspaceId,
-    event.principalId,
-    event.surface,
-    event.operation,
-    event.queryKind,
-    event.modelId,
-    event.target,
-    event.objectType,
-    event.objectId,
-    event.requestId,
-    event.correlationId,
-    event.status,
-    event.error,
-    event.sql,
-    event.planText,
-    event.queryJson,
-  ].join(' ')
 }
 
 function storageHasPayload(storage: AdminStorageSignal | null | undefined): storage is AdminStorageSignal {

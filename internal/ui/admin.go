@@ -31,6 +31,7 @@ type AdminData struct {
 	Agent             AdminAgentData
 	Storage           AdminStorageData
 	QueryEvents       []AdminQueryEvent
+	QueryHistory      AdminQueryHistoryData
 }
 
 type AdminAgentData struct {
@@ -98,6 +99,15 @@ type AdminQueryEvent struct {
 	CreatedAt     string
 }
 
+type AdminQueryHistoryData struct {
+	Events     []AdminQueryEvent
+	Filters    uisignals.AdminQueryHistoryFilters
+	NextCursor string
+	HasMore    bool
+	Limit      int
+	Error      string
+}
+
 type AdminPrincipalRef struct {
 	ID          string
 	Email       string
@@ -134,6 +144,11 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 		signals["adminStorage"] = storageSignal
 		signals["adminStorageCommand"] = AdminStorageCommand{}
 	}
+	if active == "queries" {
+		queryHistory := AdminQueryHistorySignalFromData(data.QueryHistory)
+		signals["adminQueryHistory"] = queryHistory
+		signals["adminQueryHistoryCommand"] = uisignals.AdminQueryHistoryCommand{Action: "load_more", Filters: queryHistory.Filters, PageToken: queryHistory.NextCursor, Limit: queryHistory.Limit}
+	}
 	adminAttrs := []g.Node{
 		g.Attr("slot", "page"),
 		g.Attr("page", jsonString(page)),
@@ -151,6 +166,13 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 			g.Attr("agent-prompt", data.Agent.SystemPrompt),
 			g.Attr("data-attr:agent-prompt", "$adminAgentCommand.systemPrompt"),
 			g.Attr("data-on:ld-agent-system-prompt-save", "$adminAgentCommand = evt.detail; "+patchAction("/api/v1/admin/agent/config")),
+		)
+	}
+	if active == "queries" {
+		adminAttrs = append(adminAttrs,
+			g.Attr("query-history", jsonString(AdminQueryHistorySignalFromData(data.QueryHistory))),
+			g.Attr("data-attr:query-history", "JSON.stringify($adminQueryHistory)"),
+			g.Attr("data-on:ld-query-history-command", "$adminQueryHistoryCommand = evt.detail; $adminQueryHistory.loading = true; $adminQueryHistory.error = ''; "+postAction("/admin/queries/command")),
 		)
 	}
 	adminChildren := []g.Node{}
@@ -184,6 +206,7 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 			h.Main(h.Class(appRootClass),
 				ds.Signals(signals),
 				g.If(active == "storage", ds.Init("@get('/admin/storage/updates', {openWhenHidden: true})")),
+				g.If(active == "queries", ds.Init("@get('/admin/queries/updates', {openWhenHidden: true})")),
 				g.El("ld-app-shell",
 					g.Attr("chrome", jsonString(chrome)),
 					g.Attr("data-attr:chrome", "JSON.stringify($chrome)"),
@@ -294,6 +317,30 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 		}
 	}
 	return page
+}
+
+func AdminQueryHistorySignalFromData(data AdminQueryHistoryData) uisignals.AdminQueryHistorySignal {
+	limit := data.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	return uisignals.AdminQueryHistorySignal{
+		Events:           adminQueryEventSignals(data.Events),
+		Filters:          data.Filters,
+		NextCursor:       data.NextCursor,
+		LoadedCountLabel: queryHistoryCountLabel(len(data.Events)),
+		HasMore:          data.HasMore,
+		Loading:          false,
+		Error:            data.Error,
+		Limit:            limit,
+	}
+}
+
+func queryHistoryCountLabel(count int) string {
+	if count == 1 {
+		return "1 query loaded"
+	}
+	return fmt.Sprintf("%d queries loaded", count)
 }
 
 func adminQueryEventSignals(events []AdminQueryEvent) []uisignals.AdminQueryEventSignal {

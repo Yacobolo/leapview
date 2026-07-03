@@ -4,14 +4,25 @@ import (
 	"database/sql"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
+	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/go-chi/chi/v5"
+	"github.com/starfederation/datastar-go/datastar"
 )
+
+const adminQueryHistoryDefaultLimit = 50
+
+type adminQueryHistoryCommandSignals struct {
+	AdminQueryHistory        uisignals.AdminQueryHistorySignal  `json:"adminQueryHistory"`
+	AdminQueryHistoryCommand uisignals.AdminQueryHistoryCommand `json:"adminQueryHistoryCommand"`
+}
 
 func (s *Server) adminGeneral(w http.ResponseWriter, r *http.Request) {
 	s.renderAdminPage(w, r, "general")
@@ -56,6 +67,7 @@ func (s *Server) adminStorage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminQueries(w http.ResponseWriter, r *http.Request) {
+	_ = lddatastar.EnsureClientID(w, r)
 	s.renderAdminPage(w, r, "queries")
 }
 
@@ -158,47 +170,219 @@ func (s *Server) adminData(r *http.Request) (ui.AdminData, error) {
 	data.Principals = buildAdminPrincipals(principals, bindings, groupsByID, membersByGroup)
 	data.Groups = buildAdminGroups(groups, bindings, membersByGroup)
 	data.Storage = s.adminStorageData(r)
-	data.QueryEvents = s.adminQueryEventsData(r)
+	data.QueryHistory = s.adminQueryHistoryData(r, uisignals.AdminQueryHistoryFilters{}, "", adminQueryHistoryDefaultLimit)
+	data.QueryEvents = data.QueryHistory.Events
 	data.PrincipalCount = len(data.Principals)
 	data.GroupCount = len(data.Groups)
 	return data, nil
 }
 
 func (s *Server) adminQueryEventsData(r *http.Request) []ui.AdminQueryEvent {
+	return s.adminQueryHistoryData(r, uisignals.AdminQueryHistoryFilters{}, "", 100).Events
+}
+
+func (s *Server) adminQueryHistoryData(r *http.Request, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ui.AdminQueryHistoryData {
 	repo, err := s.queryAuditRepository()
 	if err != nil || repo == nil {
-		return nil
+		return ui.AdminQueryHistoryData{Filters: filters, Limit: normalizeAdminQueryHistoryLimit(limit), Error: queryHistoryErrorText(err)}
 	}
-	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{Limit: 100})
+	events, nextCursor, hasMore, err := s.listAdminQueryHistoryPage(r, repo, filters, pageToken, limit)
 	if err != nil {
-		return nil
+		return ui.AdminQueryHistoryData{Filters: filters, Limit: normalizeAdminQueryHistoryLimit(limit), Error: err.Error()}
+	}
+	return ui.AdminQueryHistoryData{
+		Events:     events,
+		Filters:    filters,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Limit:      normalizeAdminQueryHistoryLimit(limit),
+	}
+}
+
+func (s *Server) adminQueryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
+	clientID := lddatastar.EnsureClientID(w, r)
+	sse := datastar.NewSSE(w, r)
+	updates, unsubscribe := s.broker.Subscribe(adminQueryHistoryStreamID(clientID))
+	defer unsubscribe()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case patch := <-updates:
+			if err := sse.MarshalAndPatchSignals(patch); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) adminQueryHistoryCommand(w http.ResponseWriter, r *http.Request) {
+	clientID := lddatastar.EnsureClientID(w, r)
+	var signals adminQueryHistoryCommandSignals
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	command := normalizeAdminQueryHistoryCommand(signals.AdminQueryHistoryCommand)
+	repo, err := s.queryAuditRepository()
+	if err != nil || repo == nil {
+		history := signals.AdminQueryHistory
+		history.Loading = false
+		history.Error = queryHistoryErrorText(err)
+		if history.Error == "" {
+			history.Error = "Query audit repository is not configured."
+		}
+		s.publishAdminQueryHistoryPatch(clientID, history)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	events, nextCursor, hasMore, err := s.listAdminQueryHistoryPage(r, repo, command.Filters, command.PageToken, command.Limit)
+	history := signals.AdminQueryHistory
+	if command.Action == "load_more" {
+		history.Events = append(history.Events, ui.AdminQueryHistorySignalFromData(ui.AdminQueryHistoryData{Events: events}).Events...)
+	} else {
+		history.Events = ui.AdminQueryHistorySignalFromData(ui.AdminQueryHistoryData{Events: events}).Events
+	}
+	history.Filters = command.Filters
+	history.NextCursor = nextCursor
+	history.HasMore = hasMore
+	history.LoadedCountLabel = queryHistoryLoadedCountLabel(len(history.Events))
+	history.Loading = false
+	history.Error = ""
+	history.Limit = normalizeAdminQueryHistoryLimit(command.Limit)
+	if err != nil {
+		history.Loading = false
+		history.Error = err.Error()
+	}
+	s.publishAdminQueryHistoryPatch(clientID, history)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) publishAdminQueryHistoryPatch(clientID string, history uisignals.AdminQueryHistorySignal) {
+	s.broker.Publish(adminQueryHistoryStreamID(clientID), map[string]any{
+		"adminQueryHistory": history,
+		"adminQueryHistoryCommand": uisignals.AdminQueryHistoryCommand{
+			Action:    "load_more",
+			Filters:   history.Filters,
+			PageToken: history.NextCursor,
+			Limit:     history.Limit,
+		},
+	})
+}
+
+func normalizeAdminQueryHistoryCommand(command uisignals.AdminQueryHistoryCommand) uisignals.AdminQueryHistoryCommand {
+	action := strings.TrimSpace(command.Action)
+	if action != "load_more" {
+		action = "reset"
+		command.PageToken = ""
+	}
+	command.Action = action
+	command.Limit = normalizeAdminQueryHistoryLimit(command.Limit)
+	command.PageToken = strings.TrimSpace(command.PageToken)
+	command.Filters = normalizeAdminQueryHistoryFilters(command.Filters)
+	return command
+}
+
+func normalizeAdminQueryHistoryFilters(filters uisignals.AdminQueryHistoryFilters) uisignals.AdminQueryHistoryFilters {
+	return uisignals.AdminQueryHistoryFilters{
+		Workspace: strings.TrimSpace(filters.Workspace),
+		Principal: strings.TrimSpace(filters.Principal),
+		Surface:   strings.TrimSpace(filters.Surface),
+		Kind:      strings.TrimSpace(filters.Kind),
+		Status:    strings.TrimSpace(filters.Status),
+		Target:    strings.TrimSpace(filters.Target),
+		Search:    strings.TrimSpace(filters.Search),
+		From:      strings.TrimSpace(filters.From),
+		To:        strings.TrimSpace(filters.To),
+	}
+}
+
+func queryHistoryLoadedCountLabel(count int) string {
+	if count == 1 {
+		return "1 query loaded"
+	}
+	return strconv.Itoa(count) + " queries loaded"
+}
+
+func adminQueryHistoryStreamID(clientID string) string {
+	if strings.TrimSpace(clientID) == "" {
+		clientID = "default"
+	}
+	return "admin-queries:" + clientID
+}
+
+func (s *Server) listAdminQueryHistoryPage(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ([]ui.AdminQueryEvent, string, bool, error) {
+	limit = normalizeAdminQueryHistoryLimit(limit)
+	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{
+		WorkspaceID: strings.TrimSpace(filters.Workspace),
+		PrincipalID: strings.TrimSpace(filters.Principal),
+		Surface:     strings.TrimSpace(filters.Surface),
+		QueryKind:   strings.TrimSpace(filters.Kind),
+		Target:      strings.TrimSpace(filters.Target),
+		Status:      strings.TrimSpace(filters.Status),
+		Search:      strings.TrimSpace(filters.Search),
+		From:        strings.TrimSpace(filters.From),
+		To:          strings.TrimSpace(filters.To),
+		PageToken:   strings.TrimSpace(pageToken),
+		Limit:       limit + 1,
+	})
+	if err != nil {
+		return nil, "", false, err
+	}
+	nextCursor := ""
+	hasMore := len(rows) > limit
+	if hasMore {
+		last := rows[limit-1]
+		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+		rows = rows[:limit]
 	}
 	out := make([]ui.AdminQueryEvent, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, ui.AdminQueryEvent{
-			ID:            row.ID,
-			WorkspaceID:   row.WorkspaceID,
-			PrincipalID:   row.PrincipalID,
-			Surface:       row.Surface,
-			Operation:     row.Operation,
-			QueryKind:     row.QueryKind,
-			ModelID:       row.ModelID,
-			Target:        row.Target,
-			ObjectType:    row.ObjectType,
-			ObjectID:      row.ObjectID,
-			RequestID:     row.RequestID,
-			CorrelationID: row.CorrelationID,
-			Status:        row.Status,
-			DurationMS:    row.DurationMS,
-			RowsReturned:  row.RowsReturned,
-			Error:         row.Error,
-			SQL:           row.SQL,
-			PlanText:      row.PlanText,
-			QueryJSON:     row.QueryJSON,
-			CreatedAt:     row.CreatedAt,
-		})
+		out = append(out, adminQueryEventFromAudit(row))
 	}
-	return out
+	return out, nextCursor, hasMore, nil
+}
+
+func adminQueryEventFromAudit(row queryaudit.Event) ui.AdminQueryEvent {
+	return ui.AdminQueryEvent{
+		ID:            row.ID,
+		WorkspaceID:   row.WorkspaceID,
+		PrincipalID:   row.PrincipalID,
+		Surface:       row.Surface,
+		Operation:     row.Operation,
+		QueryKind:     row.QueryKind,
+		ModelID:       row.ModelID,
+		Target:        row.Target,
+		ObjectType:    row.ObjectType,
+		ObjectID:      row.ObjectID,
+		RequestID:     row.RequestID,
+		CorrelationID: row.CorrelationID,
+		Status:        row.Status,
+		DurationMS:    row.DurationMS,
+		RowsReturned:  row.RowsReturned,
+		Error:         row.Error,
+		SQL:           row.SQL,
+		PlanText:      row.PlanText,
+		QueryJSON:     row.QueryJSON,
+		CreatedAt:     row.CreatedAt,
+	}
+}
+
+func queryHistoryErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func normalizeAdminQueryHistoryLimit(limit int) int {
+	if limit <= 0 {
+		return adminQueryHistoryDefaultLimit
+	}
+	if limit > maxAPILimit {
+		return maxAPILimit
+	}
+	return limit
 }
 
 func (s *Server) adminAgentData(r *http.Request) (ui.AdminAgentData, error) {

@@ -12,7 +12,9 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
+	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
@@ -78,6 +80,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 		{path: "/admin/groups/group_finance", want: []string{"Groups / Finance", "Provider", "local", "External ID", "finance", "Group ID", "group_finance", "Members", "Principal ID", "analyst@example.com", "viewer", analyst.ID}},
 		{path: "/admin/agent", want: []string{"<ld-admin-page", "<ld-agent-prompt-editor", "slot=\"agent-prompt\"", `data-attr:value="$adminAgentCommand.systemPrompt"`, "agent-prompt", `data-attr:agent-prompt="$adminAgentCommand.systemPrompt"`, "systemPrompt", "You are LibreDash", "Tools", "query_visual", "/api/v1/admin/agent/config"}},
 		{path: "/admin/storage", want: []string{"<ld-admin-page", "Storage", "DuckDB directory", "Database files", "Total size", "Tables and views", "adminStorage", "storage=", "/admin/storage/updates", "/admin/storage/select-table", "libredash-test.duckdb", "orders", "rowCountLabel", "columnCount", "sizeLabel", "KiB", "customer_id", "VARCHAR", "amount", "DOUBLE"}},
+		{path: "/admin/queries", want: []string{"<ld-admin-page", "Query History", "adminQueryHistory", "adminQueryHistoryCommand", "/admin/queries/updates", "/admin/queries/command", "csrfToken"}},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -98,6 +101,186 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 				t.Fatalf("%s rendered write control %q:\n%s", tc.path, notWant, body)
 			}
 		}
+	}
+}
+
+func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	repo, err := server.queryAuditRepository()
+	if err != nil || repo == nil {
+		t.Fatalf("query audit repository: %v", err)
+	}
+	for _, event := range []queryaudit.EventInput{
+		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select 1"},
+		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "dashboard", Operation: "dashboard_table", QueryKind: "semantic_rows", ModelID: "sales", Target: "customers", Status: "success", SQL: "select 2"},
+		{WorkspaceID: "operations", PrincipalID: owner.ID, Surface: "agent", Operation: "agent_query", QueryKind: "semantic_rows", ModelID: "operations", Target: "reviews", Status: "error", SQL: "select 3"},
+	} {
+		if err := repo.RecordQueryEvent(ctx, event); err != nil {
+			t.Fatalf("record query event: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	first, err := repo.ListQueryEvents(ctx, queryaudit.Filter{Limit: 2})
+	if err != nil || len(first) != 2 {
+		t.Fatalf("first page = %d, err=%v", len(first), err)
+	}
+	nextCursor := encodeCursor(first[1].CreatedAt, first[1].ID)
+	expectedNext, err := repo.ListQueryEvents(ctx, queryaudit.Filter{PageToken: nextCursor, Limit: 2})
+	if err != nil || len(expectedNext) != 1 {
+		t.Fatalf("next page = %d, err=%v", len(expectedNext), err)
+	}
+	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	defer unsubscribe()
+
+	body := strings.NewReader(`{"adminQueryHistory":{"events":[{"id":"existing","workspaceId":"sales","principalId":"owner","surface":"api","operation":"api_query","queryKind":"semantic_rows","modelId":"sales","target":"orders","status":"success","createdAt":"now"}]},"adminQueryHistoryCommand":{"action":"load_more","pageToken":"` + nextCursor + `","limit":2}}`)
+	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case patch := <-updates:
+		history, ok := patch["adminQueryHistory"].(uisignals.AdminQueryHistorySignal)
+		if !ok {
+			t.Fatalf("patch missing adminQueryHistory: %#v", patch)
+		}
+		if len(history.Events) != 2 || history.Events[0].ID != "existing" || history.Events[1].ID != expectedNext[0].ID {
+			t.Fatalf("events were not appended correctly: %#v", history.Events)
+		}
+		if history.HasMore || history.NextCursor != "" || history.LoadedCountLabel != "2 queries loaded" || history.Loading {
+			t.Fatalf("unexpected pagination state: %#v", history)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for query history patch")
+	}
+}
+
+func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	repo, err := server.queryAuditRepository()
+	if err != nil || repo == nil {
+		t.Fatalf("query audit repository: %v", err)
+	}
+	for _, event := range []queryaudit.EventInput{
+		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select orders"},
+		{WorkspaceID: "operations", PrincipalID: owner.ID, Surface: "agent", Operation: "agent_query", QueryKind: "semantic_rows", ModelID: "operations", Target: "reviews", Status: "error", SQL: "select reviews"},
+	} {
+		if err := repo.RecordQueryEvent(ctx, event); err != nil {
+			t.Fatalf("record query event: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	defer unsubscribe()
+
+	body := strings.NewReader(`{"adminQueryHistoryCommand":{"action":"reset","limit":50,"filters":{"workspace":"sales","surface":"api","status":"success","search":"orders"}}}`)
+	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case patch := <-updates:
+		history, ok := patch["adminQueryHistory"].(uisignals.AdminQueryHistorySignal)
+		if !ok {
+			t.Fatalf("patch missing adminQueryHistory: %#v", patch)
+		}
+		if len(history.Events) != 1 || history.Events[0].WorkspaceID != "sales" || history.Events[0].Target != "orders" {
+			t.Fatalf("filtered reset events = %#v", history.Events)
+		}
+		if history.Filters.Workspace != "sales" || history.Filters.Surface != "api" || history.Filters.Status != "success" || history.Filters.Search != "orders" {
+			t.Fatalf("filters were not preserved: %#v", history.Filters)
+		}
+		command, ok := patch["adminQueryHistoryCommand"].(uisignals.AdminQueryHistoryCommand)
+		if !ok || command.PageToken != history.NextCursor || command.Action != "load_more" {
+			t.Fatalf("command patch = %#v", patch["adminQueryHistoryCommand"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for query history patch")
+	}
+}
+
+func TestAdminQueryHistoryCommandRequiresCSRF(t *testing.T) {
+	store := testStore(t)
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8150/admin/queries/command", strings.NewReader(`{"adminQueryHistoryCommand":{"action":"reset","limit":50}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Referer", "http://localhost:8150/admin/queries")
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("POST without CSRF status = %d, want %d body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/admin/queries/updates", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.Routes().ServeHTTP(rec, req)
+	}()
+
+	deadline := time.After(time.Second)
+	for server.broker.SubscriberCount("admin-queries:test-client") == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for query history updates subscriber")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	server.broker.Publish("admin-queries:test-client", map[string]any{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
+	deadline = time.After(time.Second)
+	for !strings.Contains(rec.Body.String(), "sentinel") {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for forwarded patch:\n%s", rec.Body.String())
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	<-done
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("content type = %q, want text/event-stream", got)
 	}
 }
 

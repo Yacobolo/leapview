@@ -170,6 +170,52 @@ test('admin navigation remains pinned while content scrolls on desktop', async (
 })
 
 function queryAuditFixturePage() {
+  const queryEvents = [
+    {
+      id: 'queryevent_1',
+      workspaceId: 'sales',
+      principalId: 'analyst',
+      surface: 'api',
+      operation: 'api_query',
+      queryKind: 'semantic_aggregate',
+      modelId: 'sales',
+      target: 'orders',
+      objectType: 'semantic_dataset',
+      objectId: 'sales:orders',
+      requestId: 'req_1',
+      correlationId: 'corr_1',
+      status: 'success',
+      durationMs: 12,
+      rowsReturned: 2,
+      error: '',
+      sql: 'select status from orders',
+      planText: 'orders plan',
+      queryJson: '{"workspaceId":"sales","target":"orders"}',
+      createdAt: '2026-07-02T10:00:00Z',
+    },
+    {
+      id: 'queryevent_2',
+      workspaceId: 'operations',
+      principalId: 'agent',
+      surface: 'agent',
+      operation: 'agent_query',
+      queryKind: 'semantic_rows',
+      modelId: 'operations',
+      target: 'customers',
+      objectType: 'agent_tool',
+      objectId: 'query_semantic_dataset',
+      requestId: 'call_1',
+      correlationId: '',
+      status: 'error',
+      durationMs: 4,
+      rowsReturned: 0,
+      error: 'invalid field',
+      sql: '',
+      planText: '',
+      queryJson: '{"workspaceId":"operations","target":"customers"}',
+      createdAt: '2026-07-02T10:01:00Z',
+    },
+  ]
   return {
     kind: 'admin',
     title: 'Query History',
@@ -187,52 +233,30 @@ function queryAuditFixturePage() {
     headerTitle: 'Query History',
     headerDetail: 'Product query audit.',
     metrics: [{ label: 'Recent events', value: '2' }],
-    queryEvents: [
-      {
-        id: 'queryevent_1',
-        workspaceId: 'sales',
-        principalId: 'analyst',
-        surface: 'api',
-        operation: 'api_query',
-        queryKind: 'semantic_aggregate',
-        modelId: 'sales',
-        target: 'orders',
-        objectType: 'semantic_dataset',
-        objectId: 'sales:orders',
-        requestId: 'req_1',
-        correlationId: 'corr_1',
-        status: 'success',
-        durationMs: 12,
-        rowsReturned: 2,
-        error: '',
-        sql: 'select status from orders',
-        planText: 'orders plan',
-        queryJson: '{"workspaceId":"sales","target":"orders"}',
-        createdAt: '2026-07-02T10:00:00Z',
-      },
-      {
-        id: 'queryevent_2',
-        workspaceId: 'operations',
-        principalId: 'agent',
-        surface: 'agent',
-        operation: 'agent_query',
-        queryKind: 'semantic_rows',
-        modelId: 'operations',
-        target: 'customers',
-        objectType: 'agent_tool',
-        objectId: 'query_semantic_dataset',
-        requestId: 'call_1',
-        correlationId: '',
-        status: 'error',
-        durationMs: 4,
-        rowsReturned: 0,
-        error: 'invalid field',
-        sql: '',
-        planText: '',
-        queryJson: '{"workspaceId":"operations","target":"customers"}',
-        createdAt: '2026-07-02T10:01:00Z',
-      },
-    ],
+    queryEvents: [{
+      id: 'stale_page_event',
+      workspaceId: 'stale',
+      principalId: 'stale',
+      surface: 'api',
+      operation: 'api_query',
+      queryKind: 'semantic_rows',
+      modelId: 'stale',
+      target: 'stale',
+      status: 'success',
+      durationMs: 1,
+      rowsReturned: 1,
+      createdAt: '2026-07-02T09:00:00Z',
+    }],
+    queryHistory: {
+      events: queryEvents,
+      filters: {},
+      nextCursor: 'cursor_next',
+      loadedCountLabel: '2 queries loaded',
+      hasMore: true,
+      loading: false,
+      error: '',
+      limit: 50,
+    },
   }
 }
 
@@ -245,6 +269,11 @@ test('query audit page filters table rows and exposes optional metadata columns'
       localStorage.removeItem('libredash-admin-query-events-columns')
       const element = document.createElement('ld-admin-page') as any
       element.page = fixture
+      element.queryHistory = fixture.queryHistory
+      ;(window as any).queryHistoryCommands = []
+      element.addEventListener('ld-query-history-command', (event: CustomEvent) => {
+        ;(window as any).queryHistoryCommands.push(event.detail)
+      })
       document.body.replaceChildren(element)
       await element.updateComplete
       const root = element.shadowRoot
@@ -254,6 +283,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
       await element.updateComplete
       const table = root.querySelector('ld-record-table') as any
       const rowText = table?.textContent ?? ''
+      const commandAfterSearch = (window as any).queryHistoryCommands.at(-1)
       table.querySelector('.record-table-column-selector summary')?.click()
       Array.from(table.querySelectorAll('label'))
         .find((label) => label.textContent?.includes('Runtime'))
@@ -304,6 +334,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const hasDetailAction = Boolean(table.querySelector('.record-icon-action[aria-label="Details"]'))
       const recreated = document.createElement('ld-admin-page') as any
       recreated.page = element.page
+      recreated.queryHistory = element.queryHistory
       document.body.replaceChildren(recreated)
       await recreated.updateComplete
       const recreatedTable = recreated.shadowRoot.querySelector('ld-record-table') as any
@@ -318,6 +349,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
       sourceBadgeCount: table.querySelectorAll('.record-badge').length,
       rowHeight: Math.round(table.querySelector('tbody tr:first-child')?.getBoundingClientRect().height ?? 0),
         rowText,
+        commandAfterSearch,
         hiddenRuntimeText,
         hiddenRuntimeHeaders,
         expandedQueryText,
@@ -351,7 +383,9 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.rowText).toMatch(/analyst/)
     expect(state.rowText).toMatch(/select status from orders/)
     expect(state.rowText).toMatch(/orders/)
-    expect(state.rowText).not.toMatch(/customers/)
+    expect(state.rowText).toMatch(/customers/)
+    expect(state.rowText).not.toMatch(/stale_page_event/)
+    expect(state.commandAfterSearch).toMatchObject({ action: 'reset', limit: 50, filters: { search: 'select status' } })
     expect(state.hasColumnSelector).toBe(true)
     expect(state.hasStatusHeader).toBe(false)
     expect(state.sourceBadgeCount).toBe(0)
@@ -389,6 +423,56 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.refreshedHeaders).toContain('Runtime')
     expect(state.refreshedHeaders).not.toContain('Operation')
     expect(state.refreshedHeaders).not.toContain('Status')
+  } finally {
+    await page.close()
+  }
+})
+
+test('query audit emits load more commands from backend-driven history state', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
+    const state = await page.evaluate(async (fixture) => {
+      const element = document.createElement('ld-admin-page') as any
+      element.page = fixture
+      element.queryHistory = fixture.queryHistory
+      ;(window as any).queryHistoryCommands = []
+      element.addEventListener('ld-query-history-command', (event: CustomEvent) => {
+        ;(window as any).queryHistoryCommands.push(event.detail)
+      })
+      document.body.replaceChildren(element)
+      await element.updateComplete
+      const root = element.shadowRoot
+      const footerText = root.querySelector('.query-history-footer')?.textContent ?? ''
+      root.querySelector<HTMLButtonElement>('.query-history-load-more')?.click()
+      await element.updateComplete
+      const command = (window as any).queryHistoryCommands.at(-1)
+      element.queryHistory = {
+        ...fixture.queryHistory,
+        events: [fixture.queryHistory.events[1]],
+        filters: { workspace: 'operations' },
+        nextCursor: '',
+        hasMore: false,
+        loadedCountLabel: '1 query loaded',
+      }
+      await element.updateComplete
+      const updatedText = root.textContent ?? ''
+      return {
+        footerText,
+        command,
+        updatedText,
+        hasLoadMoreAfterPatch: Boolean(root.querySelector('.query-history-load-more')),
+        workspaceFilterValue: (root.querySelector('#query-filter-workspace') as HTMLInputElement)?.value,
+      }
+    }, queryAuditFixturePage())
+
+    expect(state.footerText).toMatch(/2 queries loaded/)
+    expect(state.command).toMatchObject({ action: 'load_more', pageToken: 'cursor_next', limit: 50 })
+    expect(state.updatedText).toMatch(/customers/)
+    expect(state.updatedText).not.toMatch(/orders/)
+    expect(state.hasLoadMoreAfterPatch).toBe(false)
+    expect(state.workspaceFilterValue).toBe('operations')
   } finally {
     await page.close()
   }
