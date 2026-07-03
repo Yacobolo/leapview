@@ -273,9 +273,15 @@ test('query audit page filters table rows and exposes optional metadata columns'
       await element.updateComplete
       const drawer = root.querySelector('.query-detail-drawer') as HTMLElement | null
       const drawerText = drawer?.textContent ?? ''
+      const drawerAnimationName = drawer ? getComputedStyle(drawer).animationName : ''
       root.querySelector<HTMLButtonElement>('.query-detail-close')?.click()
       await element.updateComplete
       const hasDrawerAfterClose = Boolean(root.querySelector('.query-detail-drawer'))
+      table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
+      await element.updateComplete
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await element.updateComplete
+      const hasDrawerAfterEscape = Boolean(root.querySelector('.query-detail-drawer'))
       Array.from(table.querySelectorAll('label'))
         .find((label) => label.textContent?.includes('Operation'))
         ?.querySelector('input')
@@ -305,7 +311,9 @@ test('query audit page filters table rows and exposes optional metadata columns'
         expandedQueryText,
         drawerAfterExpand,
         drawerText,
+        drawerAnimationName,
         hasDrawerAfterClose,
+        hasDrawerAfterEscape,
         operationHeaders,
         operationText,
         hasDetailAction,
@@ -349,7 +357,9 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.drawerText).toMatch(/semantic_aggregate/)
     expect(state.drawerText).toMatch(/semantic_dataset:sales:orders/)
     expect(state.drawerText).toMatch(/Rows returned/)
+    expect(state.drawerAnimationName).toContain('query-detail-slide-in')
     expect(state.hasDrawerAfterClose).toBe(false)
+    expect(state.hasDrawerAfterEscape).toBe(false)
     expect(state.operationHeaders).toContain('Operation')
     expect(state.operationText).toMatch(/api_query/)
     expect(state.hasDetailAction).toBe(false)
@@ -391,6 +401,44 @@ test('query audit detail drawer behaves as a mobile overlay', async () => {
     expect(state.drawerPosition).toBe('fixed')
     expect(state.drawerWidth).toBe(state.viewportWidth)
     expect(state.drawerCoversTableHorizontally).toBe(true)
+  } finally {
+    await page.close()
+  }
+})
+
+test('query audit drawer does not block selecting another row', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
+    const state = await page.evaluate(async (fixture) => {
+      const element = document.createElement('ld-admin-page') as any
+      element.page = fixture
+      document.body.replaceChildren(element)
+      await element.updateComplete
+      const root = element.shadowRoot
+      const table = root.querySelector('ld-record-table') as any
+      const rows = Array.from(table.querySelectorAll<HTMLElement>('tbody tr.record-row'))
+      rows[0]?.click()
+      await element.updateComplete
+      const firstDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
+      const hasBackdrop = Boolean(root.querySelector('.query-detail-backdrop'))
+      rows[1]?.click()
+      await element.updateComplete
+      const secondDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
+      return {
+        hasBackdrop,
+        firstDrawerText,
+        secondDrawerText,
+      }
+    }, queryAuditFixturePage())
+
+    expect(state.hasBackdrop).toBe(false)
+    expect(state.firstDrawerText).toMatch(/queryevent_1/)
+    expect(state.firstDrawerText).toMatch(/analyst/)
+    expect(state.secondDrawerText).toMatch(/queryevent_2/)
+    expect(state.secondDrawerText).toMatch(/agent/)
+    expect(state.secondDrawerText).toMatch(/invalid field/)
   } finally {
     await page.close()
   }

@@ -246,13 +246,6 @@ class LibreDashAdminPage extends LitElement {
       padding: var(--base-size-8) var(--base-size-10);
     }
 
-    .query-detail-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 30;
-      background: color-mix(in srgb, var(--ld-bg-app), transparent 38%);
-    }
-
     .query-detail-drawer {
       position: fixed;
       z-index: 31;
@@ -264,6 +257,7 @@ class LibreDashAdminPage extends LitElement {
       background: var(--ld-bg-panel);
       box-shadow: var(--ld-shadow-floating, -12px 0 36px rgba(31, 35, 40, 0.18));
       color: var(--ld-fg-default);
+      animation: query-detail-slide-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
     }
 
     .query-detail-header {
@@ -443,6 +437,30 @@ class LibreDashAdminPage extends LitElement {
       cursor: pointer;
     }
 
+    @keyframes query-detail-slide-in {
+      from {
+        transform: translateX(100%);
+      }
+      to {
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes query-detail-mobile-slide-in {
+      from {
+        transform: translateY(100%);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .query-detail-drawer {
+        animation-duration: 1ms;
+      }
+    }
+
     @media (max-width: 640px) {
       .route {
         grid-template-columns: 1fr;
@@ -465,9 +483,20 @@ class LibreDashAdminPage extends LitElement {
         border-top: var(--ld-border-muted);
         border-left: 0;
         box-shadow: var(--ld-shadow-floating, 0 -12px 36px rgba(31, 35, 40, 0.18));
+        animation-name: query-detail-mobile-slide-in;
       }
     }
   `
+
+  connectedCallback(): void {
+    super.connectedCallback()
+    window.addEventListener('keydown', this.handleWindowKeydown)
+  }
+
+  disconnectedCallback(): void {
+    window.removeEventListener('keydown', this.handleWindowKeydown)
+    super.disconnectedCallback()
+  }
 
   updated(): void {
     checkSignalContract('admin page', this.page, { kind: 'required', title: 'required', sidebar: 'required' })
@@ -599,10 +628,14 @@ class LibreDashAdminPage extends LitElement {
     this.copiedQueryDetailValue = ''
   }
 
+  private handleWindowKeydown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !this.selectedQueryEventID) return
+    this.closeQueryDetail()
+  }
+
   private renderQueryDetail(event: AdminQueryEventSignal) {
     const statusTone = queryEventStatusTone(event.status)
     return html`
-      <div class="query-detail-backdrop" @click=${this.closeQueryDetail}></div>
       <aside class="query-detail-drawer" role="dialog" aria-modal="true" aria-label="Query event detail">
         <header class="query-detail-header">
           <div class="query-detail-header-row">
