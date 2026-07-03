@@ -2374,6 +2374,30 @@
       ],
       "type": "object"
     },
+    "RecordTableColumnSelector": {
+      "additionalProperties": false,
+      "properties": {
+        "defaultColumns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "storageKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
     "RecordTableColumnSignal": {
       "additionalProperties": false,
       "properties": {
@@ -2392,6 +2416,9 @@
         "kind": {
           "type": "string"
         },
+        "toggleable": {
+          "type": "boolean"
+        },
         "width": {
           "type": "string"
         }
@@ -2405,6 +2432,9 @@
     "RecordTableSignal": {
       "additionalProperties": false,
       "properties": {
+        "columnSelector": {
+          "$ref": "#/$defs/RecordTableColumnSelector"
+        },
         "columns": {
           "items": {
             "$ref": "#/$defs/RecordTableColumnSignal"

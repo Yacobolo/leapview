@@ -652,6 +652,13 @@ export interface RecordTableBadgeSignal {
   tone?: string
 }
 
+export interface RecordTableColumnSelector {
+  enabled: boolean
+  storageKey?: string
+  label?: string
+  defaultColumns?: string[]
+}
+
 export interface RecordTableColumnSignal {
   id: string
   header: string
@@ -659,6 +666,7 @@ export interface RecordTableColumnSignal {
   align?: string
   hrefKey?: string
   width?: string
+  toggleable?: boolean
 }
 
 export interface RecordTableSignal {
@@ -666,6 +674,7 @@ export interface RecordTableSignal {
   rows: Record<string, unknown>[]
   empty: string
   minWidth?: string
+  columnSelector?: RecordTableColumnSelector
 }
 
 export interface ReportFilterConfig {

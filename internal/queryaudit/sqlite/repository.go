@@ -22,6 +22,9 @@ func NewRepository(sqlDB *sql.DB) *Repository {
 }
 
 func (r *Repository) RecordQueryEvent(ctx context.Context, input queryaudit.EventInput) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(input.QueryJSON) == "" {
 		input.QueryJSON = "{}"
 	}

@@ -52,3 +52,27 @@ func TestRepositoryRecordsAndFiltersQueryEvents(t *testing.T) {
 		t.Fatalf("search events = %#v, want orders", search)
 	}
 }
+
+func TestRepositoryRejectsQueryEventWithoutPrincipal(t *testing.T) {
+	ctx := context.Background()
+	store, err := platform.Open(ctx, t.TempDir()+"/libredash.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	repo := NewRepository(store.SQLDB())
+	err = repo.RecordQueryEvent(ctx, queryaudit.EventInput{
+		WorkspaceID: "sales",
+		Surface:     "api",
+		Operation:   "api_query",
+		QueryKind:   "semantic_rows",
+		ModelID:     "sales",
+		Target:      "orders",
+		Status:      "success",
+		QueryJSON:   `{"target":"orders"}`,
+	})
+	if err == nil {
+		t.Fatal("expected missing principal error")
+	}
+}

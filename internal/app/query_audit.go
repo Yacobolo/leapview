@@ -218,7 +218,7 @@ func requestQueryMetadata(r *http.Request, surface, operation, objectType, objec
 	metadata := dataquery.Metadata{
 		WorkspaceID:   chi.URLParam(r, "workspace"),
 		Surface:       surface,
-		Operation:     operation,
+		Operation:     requestQueryOperation(operation, objectType),
 		ObjectType:    objectType,
 		ObjectID:      objectID,
 		RequestID:     r.Header.Get("X-Request-ID"),
@@ -253,6 +253,18 @@ func requestQueryMetadata(r *http.Request, surface, operation, objectType, objec
 		metadata.CorrelationID = existing.CorrelationID
 	}
 	return metadata
+}
+
+func requestQueryOperation(operation, objectType string) string {
+	if operation != dataquery.OperationAPIQuery {
+		return operation
+	}
+	switch objectType {
+	case "dashboard_page", "dashboard_table", "dashboard_visual", "dashboard_filter":
+		return ""
+	default:
+		return operation
+	}
 }
 
 func queryFirstNonEmpty(values ...string) string {

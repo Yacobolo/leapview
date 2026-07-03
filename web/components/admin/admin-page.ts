@@ -410,12 +410,12 @@ class LibreDashAdminPage extends LitElement {
       <section class="query-audit" aria-label="Query audit">
         <div class="query-filters" aria-label="Query event filters">
           ${this.renderTextFilter('workspace', 'Workspace')}
-          ${this.renderTextFilter('principal', 'Principal')}
-          ${this.renderSelectFilter('surface', 'Surface', uniqueValues(events.map((event) => event.surface)))}
+          ${this.renderTextFilter('principal', 'User')}
+          ${this.renderSelectFilter('surface', 'Source', uniqueValues(events.map((event) => event.surface)))}
           ${this.renderSelectFilter('kind', 'Kind', uniqueValues(events.map((event) => event.queryKind)))}
           ${this.renderSelectFilter('status', 'Status', uniqueValues(events.map((event) => event.status)))}
           ${this.renderTextFilter('target', 'Target')}
-          ${this.renderTextFilter('search', 'SQL / text')}
+          ${this.renderTextFilter('search', 'Statement / ID')}
         </div>
         <div class="panel" @ld-record-table-action=${this.handleQueryTableAction}>
           <ld-record-table variant="compact" .table=${queryEventsTable(filtered)}></ld-record-table>
@@ -523,34 +523,91 @@ function filterQueryEvents(events: AdminQueryEventSignal[], filters: QueryAuditF
 function queryEventsTable(events: AdminQueryEventSignal[]) {
   return {
     columns: [
-      { id: 'created_at', header: 'Created', width: '150px' },
-      { id: 'workspace_id', header: 'Workspace', kind: 'code', width: '120px' },
-      { id: 'surface', header: 'Surface', kind: 'badge', width: '115px' },
-      { id: 'operation', header: 'Operation', width: '155px' },
-      { id: 'query_kind', header: 'Kind', width: '155px' },
-      { id: 'model_id', header: 'Model', kind: 'code', width: '110px' },
-      { id: 'target', header: 'Target', kind: 'code', width: '160px' },
-      { id: 'status', header: 'Status', kind: 'badge', width: '95px' },
-      { id: 'duration_ms', header: 'Duration ms', kind: 'number', align: 'right', width: '120px' },
+      { id: 'status', header: 'Status', kind: 'status', width: '115px' },
+      { id: 'query', header: 'Query', kind: 'entity', width: '480px' },
+      { id: 'started_at', header: 'Started', width: '150px' },
+      { id: 'duration_ms', header: 'Duration', kind: 'number', align: 'right', width: '105px' },
+      { id: 'source', header: 'Source', kind: 'badge', width: '120px' },
+      { id: 'runtime', header: 'Runtime', kind: 'code', width: '130px' },
+      { id: 'principal_id', header: 'User', kind: 'code', width: '150px' },
       { id: 'rows_returned', header: 'Rows', kind: 'number', align: 'right', width: '90px' },
-      { id: 'actions', header: '', kind: 'actions', sortable: false, width: '64px' },
+      { id: 'actions', header: '', kind: 'actions', sortable: false, toggleable: false, width: '64px' },
     ],
     rows: events.map((event) => ({
       id: event.id,
-      created_at: event.createdAt,
-      workspace_id: event.workspaceId,
-      surface: { label: event.surface, tone: 'muted' },
-      operation: event.operation,
-      query_kind: event.queryKind,
-      model_id: event.modelId,
-      target: event.target,
-      status: { label: event.status, tone: queryEventStatusTone(event.status) },
-      duration_ms: event.durationMs,
+      status: { label: event.status, tone: queryEventStatusTone(event.status), icon: queryEventStatusIcon(event.status) },
+      query: {
+        label: queryEventStatement(event),
+        description: queryEventDescription(event),
+        icon: queryEventIcon(event),
+      },
+      started_at: event.createdAt,
+      duration_ms: { label: `${event.durationMs ?? 0} ms`, value: event.durationMs ?? 0 },
+      source: { label: event.surface, tone: 'muted' },
+      runtime: queryEventRuntimeLabel(event),
+      principal_id: event.principalId,
       rows_returned: event.rowsReturned,
       actions: [{ label: 'Details', icon: 'external', action: 'detail' }],
     })),
     empty: 'No query events match these filters.',
-    minWidth: '1320px',
+    minWidth: '1350px',
+    columnSelector: {
+      enabled: true,
+      storageKey: 'libredash-admin-query-events-columns',
+      label: 'Columns',
+      defaultColumns: ['status', 'query', 'started_at', 'duration_ms', 'source', 'runtime', 'principal_id', 'rows_returned'],
+    },
+  }
+}
+
+function queryEventStatement(event: AdminQueryEventSignal): string {
+  const sql = collapseWhitespace(event.sql)
+  if (sql) return sql
+  const parts = [event.operation, event.queryKind, [event.modelId, event.target].filter(Boolean).join('.')]
+    .map((part) => collapseWhitespace(part))
+    .filter(Boolean)
+  return parts.join(' · ') || event.id
+}
+
+function queryEventDescription(event: AdminQueryEventSignal): string {
+  return [
+    queryEventObjectLabel(event),
+    event.queryKind,
+    shortQueryEventID(event),
+  ].filter(Boolean).join(' · ')
+}
+
+function queryEventObjectLabel(event: AdminQueryEventSignal): string {
+  const object = [event.objectType, event.objectId].filter(Boolean).join(':')
+  if (object) return object
+  return [event.modelId, event.target].filter(Boolean).join(':') || '-'
+}
+
+function queryEventRuntimeLabel(event: AdminQueryEventSignal): string {
+  return event.workspaceId || '-'
+}
+
+function shortQueryEventID(event: AdminQueryEventSignal): string {
+  const id = event.requestId || event.correlationId || event.id
+  return id ? `id ${id}` : ''
+}
+
+function collapseWhitespace(value: string | undefined | null): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim()
+}
+
+function queryEventIcon(event: AdminQueryEventSignal): string {
+  switch (event.queryKind) {
+    case 'model_table_rows':
+      return 'table'
+    case 'source_rows':
+      return 'database'
+    case 'semantic_aggregate':
+    case 'semantic_histogram':
+    case 'semantic_distribution':
+      return 'dashboard'
+    default:
+      return 'page'
   }
 }
 
@@ -564,6 +621,18 @@ function queryEventStatusTone(status: string): string {
       return 'attention'
     default:
       return 'danger'
+  }
+}
+
+function queryEventStatusIcon(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'check'
+    case 'canceled':
+    case 'timeout':
+      return 'clock'
+    default:
+      return 'x'
   }
 }
 

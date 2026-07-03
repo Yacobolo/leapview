@@ -528,19 +528,28 @@ type AssetLineageEdgeSignal struct {
 }
 
 type RecordTableSignal struct {
-	Columns  []RecordTableColumnSignal `json:"columns"`
-	Rows     []map[string]any          `json:"rows"`
-	Empty    string                    `json:"empty"`
-	MinWidth string                    `json:"minWidth,omitempty"`
+	Columns        []RecordTableColumnSignal  `json:"columns"`
+	Rows           []map[string]any           `json:"rows"`
+	Empty          string                     `json:"empty"`
+	MinWidth       string                     `json:"minWidth,omitempty"`
+	ColumnSelector *RecordTableColumnSelector `json:"columnSelector,omitempty"`
 }
 
 type RecordTableColumnSignal struct {
-	ID      string `json:"id"`
-	Header  string `json:"header"`
-	Kind    string `json:"kind,omitempty"`
-	Align   string `json:"align,omitempty"`
-	HrefKey string `json:"hrefKey,omitempty"`
-	Width   string `json:"width,omitempty"`
+	ID         string `json:"id"`
+	Header     string `json:"header"`
+	Kind       string `json:"kind,omitempty"`
+	Align      string `json:"align,omitempty"`
+	HrefKey    string `json:"hrefKey,omitempty"`
+	Width      string `json:"width,omitempty"`
+	Toggleable *bool  `json:"toggleable,omitempty"`
+}
+
+type RecordTableColumnSelector struct {
+	Enabled        bool     `json:"enabled"`
+	StorageKey     string   `json:"storageKey,omitempty"`
+	Label          string   `json:"label,omitempty"`
+	DefaultColumns []string `json:"defaultColumns,omitempty"`
 }
 
 type RecordTableBadgeSignal struct {

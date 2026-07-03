@@ -100,6 +100,7 @@ test('record table renders cells and sorts through TanStack headers', async () =
     expect(initial.actionHref).toBe('/orders/open')
     expect(initial.minWidth).toBe('1300px')
     expect(initial.headerPosition).toBe('sticky')
+    expect(initial.hasSelector).toBe(false)
 
     await page.locator('ld-record-table th:nth-child(3) button').click()
     await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
@@ -249,6 +250,97 @@ test('record table renders configured empty state', async () => {
   }
 })
 
+test('record table column selector hides, restores, and persists columns', async () => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 620 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-record-table'))
+    await page.evaluate(() => localStorage.removeItem('record-table-test-columns'))
+    await page.locator('ld-record-table').evaluate((element: any) => {
+      element.table = {
+        columns: [
+          { id: 'name', header: 'Name', width: '220px' },
+          { id: 'runtime', header: 'Runtime', width: '160px' },
+          { id: 'rows', header: 'Rows', kind: 'number', width: '100px' },
+          { id: 'actions', header: '', kind: 'actions', toggleable: false, width: '64px' },
+        ],
+        rows: [
+          { name: 'select * from orders', runtime: 'sales', rows: 10, actions: [{ label: 'Details', action: 'detail' }] },
+        ],
+        columnSelector: {
+          enabled: true,
+          storageKey: 'record-table-test-columns',
+          defaultColumns: ['name', 'runtime', 'rows'],
+        },
+      }
+    })
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+
+    const initial = await columnSelectorState(page)
+    expect(initial.hasSelector).toBe(true)
+    expect(initial.selectorInCorner).toBe(true)
+    expect(initial.hasSeparateToolbar).toBe(false)
+    expect(initial.headers).toEqual(['Name', 'Runtime', 'Rows', ''])
+    expect(initial.menuLabels).toEqual(['Name', 'Runtime', 'Rows'])
+    expect(initial.hasActionsColumn).toBe(true)
+
+    await page.locator('ld-record-table .record-table-column-selector summary').click()
+    await page.locator('ld-record-table .record-table-column-menu label', { hasText: 'Runtime' }).locator('input').uncheck()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    const hidden = await columnSelectorState(page)
+    expect(hidden.headers).toEqual(['Name', 'Rows', ''])
+    expect(hidden.hasRuntimeCell).toBe(false)
+    expect(hidden.hasActionsColumn).toBe(true)
+    expect(hidden.storedColumns).toEqual(['name', 'rows'])
+
+    await page.locator('ld-record-table .record-table-column-menu label', { hasText: 'Runtime' }).locator('input').check()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect((await columnSelectorState(page)).headers).toEqual(['Name', 'Runtime', 'Rows', ''])
+
+    await page.locator('ld-record-table .record-table-column-menu label', { hasText: 'Runtime' }).locator('input').uncheck()
+    await page.locator('ld-record-table .record-table-column-menu label', { hasText: 'Rows' }).locator('input').uncheck()
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    const lastVisible = await columnSelectorState(page)
+    expect(lastVisible.headers).toEqual(['Name', ''])
+    expect(lastVisible.disabledChecks).toEqual(['Name'])
+
+    await page.reload()
+    await page.waitForFunction(() => customElements.get('ld-record-table'))
+    await page.locator('ld-record-table').evaluate((element: any) => {
+      element.table = {
+        columns: [
+          { id: 'name', header: 'Name', width: '220px' },
+          { id: 'runtime', header: 'Runtime', width: '160px' },
+          { id: 'rows', header: 'Rows', kind: 'number', width: '100px' },
+          { id: 'actions', header: '', kind: 'actions', toggleable: false, width: '64px' },
+        ],
+        rows: [
+          { name: 'select * from orders', runtime: 'sales', rows: 10, actions: [{ label: 'Details', action: 'detail' }] },
+        ],
+        columnSelector: {
+          enabled: true,
+          storageKey: 'record-table-test-columns',
+          defaultColumns: ['name', 'runtime', 'rows'],
+        },
+      }
+    })
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect((await columnSelectorState(page)).headers).toEqual(['Name', ''])
+
+    await page.evaluate(() => localStorage.setItem('record-table-test-columns', JSON.stringify(['missing'])))
+    await page.locator('ld-record-table').evaluate((element: any) => {
+      element.table = {
+        ...element.table,
+        columns: [...element.table.columns, { id: 'request', header: 'Request', width: '120px' }],
+      }
+    })
+    await page.locator('ld-record-table').evaluate((element: any) => element.updateComplete)
+    expect((await columnSelectorState(page)).headers).toEqual(['Name', 'Runtime', 'Rows', '', 'Request'])
+  } finally {
+    await page.close()
+  }
+})
+
 async function tableState(page: Page) {
   return page.locator('ld-record-table').evaluate((element) => {
     const rows = Array.from(element.querySelectorAll('tbody tr'))
@@ -266,8 +358,23 @@ async function tableState(page: Page) {
       actionHref: element.querySelector<HTMLAnchorElement>('.record-icon-action')?.getAttribute('href'),
       minWidth: getComputedStyle(table).minWidth,
       headerPosition: getComputedStyle(header).position,
+      hasSelector: Boolean(element.querySelector('.record-table-column-selector')),
     }
   })
+}
+
+async function columnSelectorState(page: Page) {
+  return page.locator('ld-record-table').evaluate((element) => ({
+    hasSelector: Boolean(element.querySelector('.record-table-column-selector')),
+    selectorInCorner: Boolean(element.querySelector('.record-table-corner-selector .record-table-column-selector')),
+    hasSeparateToolbar: Boolean(element.querySelector('.record-table-toolbar')),
+    headers: Array.from(element.querySelectorAll('thead th')).map((header) => header.querySelector('.record-table-sort span:first-child')?.textContent?.trim() ?? ''),
+    menuLabels: Array.from(element.querySelectorAll('.record-table-column-menu label')).map((label) => label.textContent?.trim() ?? ''),
+    disabledChecks: Array.from(element.querySelectorAll<HTMLInputElement>('.record-table-column-menu input:disabled')).map((input) => input.closest('label')?.textContent?.trim() ?? ''),
+    hasRuntimeCell: Array.from(element.querySelectorAll('tbody td')).some((cell) => cell.textContent?.trim() === 'sales'),
+    hasActionsColumn: Boolean(element.querySelector('.record-icon-action')),
+    storedColumns: JSON.parse(localStorage.getItem('record-table-test-columns') ?? '[]'),
+  }))
 }
 
 function testDocument(): string {

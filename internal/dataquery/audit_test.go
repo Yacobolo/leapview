@@ -57,6 +57,7 @@ func TestExecuteAuditedNormalizesMetadataAndRecordsOnce(t *testing.T) {
 func TestExecuteAuditedRecordsValidationFailure(t *testing.T) {
 	recorder := &recordingAuditRecorder{}
 	ctx := WithAuditRecorder(context.Background(), recorder)
+	ctx = WithMetadata(ctx, Metadata{PrincipalID: "principal_1"})
 	_, err := ExecuteAudited(ctx, Query{WorkspaceID: "sales", Surface: SurfaceAPI, Operation: OperationAPIQuery}, func(context.Context, Query) (Result, error) {
 		return Result{}, errors.New("should not execute invalid query")
 	})
@@ -68,5 +69,28 @@ func TestExecuteAuditedRecordsValidationFailure(t *testing.T) {
 	}
 	if recorder.results[0].Status != StatusError || recorder.results[0].Error == "" {
 		t.Fatalf("recorded validation result = %#v", recorder.results[0])
+	}
+}
+
+func TestExecuteAuditedRequiresPrincipalBeforeExecution(t *testing.T) {
+	recorder := &recordingAuditRecorder{}
+	ctx := WithAuditRecorder(context.Background(), recorder)
+	executed := false
+
+	_, err := ExecuteAudited(ctx, SemanticRows("sales", "orders", []Field{{Field: "orders.status"}}, nil, nil, nil, 0, 10, false), func(context.Context, Query) (Result, error) {
+		executed = true
+		return Result{}, nil
+	})
+	if err == nil {
+		t.Fatal("expected missing principal error")
+	}
+	if !errors.Is(err, ErrMissingPrincipal) {
+		t.Fatalf("error = %v, want ErrMissingPrincipal", err)
+	}
+	if executed {
+		t.Fatal("query executed without a principal")
+	}
+	if len(recorder.queries) != 0 {
+		t.Fatalf("recorded anonymous queries = %#v, want none", recorder.queries)
 	}
 }

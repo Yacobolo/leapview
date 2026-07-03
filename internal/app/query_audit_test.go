@@ -62,6 +62,7 @@ func TestAuditedQueryMetricsRecordsExecutionError(t *testing.T) {
 	defer store.Close()
 
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	ctx = context.WithValue(ctx, principalContextKey{}, Principal{ID: "principal_admin@example.test"})
 	request := dataquery.Query{
 		WorkspaceID: "test",
 		Surface:     dataquery.SurfaceAPI,

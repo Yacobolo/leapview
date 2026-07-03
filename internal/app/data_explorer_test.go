@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,6 +34,11 @@ type dataExplorerFixtureMetrics struct {
 	sourceKey            string
 	semanticPreviewError error
 	dataQueries          *[]dataquery.Query
+}
+
+func dataExplorerTestRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	return req.WithContext(context.WithValue(req.Context(), principalContextKey{}, Principal{ID: "test_principal"}))
 }
 
 func (m dataExplorerFixtureMetrics) DataDir() string {
@@ -216,7 +222,7 @@ func TestDataExplorerRouteRendersSignalsAndWiring(t *testing.T) {
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: duckDBDir})
 
-	req := httptest.NewRequest(http.MethodGet, "/data?workspace=test&object=model_table:model_table:olist.orders", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/data?workspace=test&object=model_table:model_table:olist.orders", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -249,7 +255,7 @@ func TestDataExplorerRouteRendersSignalsAndWiring(t *testing.T) {
 func TestWorkspaceDataExplorerRouteRedirectsToGlobalRoute(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
 
-	req := httptest.NewRequest(http.MethodGet, "/workspaces/test/data?object=source:olist.orders", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/workspaces/test/data?object=source:olist.orders", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -273,7 +279,7 @@ func TestGlobalDataExplorerSelectsDuplicateKeysByWorkspace(t *testing.T) {
 		"ops":  metrics,
 	}), Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: duckDBDir})
 
-	req := httptest.NewRequest(http.MethodGet, "/data?workspace=ops&object=model_table:model_table:olist.orders", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/data?workspace=ops&object=model_table:model_table:olist.orders", nil)
 	_, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("ops", "model_table:model_table:olist.orders"))
 	if err != nil {
 		t.Fatalf("globalDataExplorerState() error = %v", err)
@@ -291,7 +297,7 @@ func TestGlobalDataExplorerSelectsDuplicateKeysByWorkspace(t *testing.T) {
 
 func TestGlobalDataExplorerFallsBackToRuntimeCatalogWithoutActiveAssetDeployment(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test-workspace"})
-	req := httptest.NewRequest(http.MethodGet, "/data", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/data", nil)
 
 	page, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("", ""))
 	if err != nil {
@@ -330,7 +336,7 @@ func TestDataExplorerPreviewsSourceModelTableAndSemanticRows(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/data?workspace=test&object="+tc.object, nil)
+			req := dataExplorerTestRequest(http.MethodGet, "/data?workspace=test&object="+tc.object, nil)
 			_, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("test", tc.object))
 			if err != nil {
 				t.Fatalf("globalDataExplorerState() error = %v", err)
@@ -362,7 +368,7 @@ func TestDataExplorerSourceUsesOwningWorkspaceModelForImportedSourceKeys(t *test
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "sales", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "sales", DuckDBDir: seedDataExplorerDuckDBForModel(t, "sales")})
 
-	req := httptest.NewRequest(http.MethodGet, "/data?workspace=sales&object=source:source:olist.payments", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/data?workspace=sales&object=source:source:olist.payments", nil)
 	_, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("sales", "source:source:olist.payments"))
 	if err != nil {
 		t.Fatalf("globalDataExplorerState() error = %v", err)
@@ -403,7 +409,7 @@ func TestDataExplorerModelTablePreviewUsesRuntimeBackedModelTable(t *testing.T) 
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "sales", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "sales", DuckDBDir: appDuckDBDir})
 
-	req := httptest.NewRequest(http.MethodGet, "/data?workspace=sales&object=model_table:model_table:sales.orders", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/data?workspace=sales&object=model_table:model_table:sales.orders", nil)
 	_, explorer, err := server.globalDataExplorerState(req, dataExplorerCommandFromQuery("sales", "model_table:model_table:sales.orders"))
 	if err != nil {
 		t.Fatalf("globalDataExplorerState() error = %v", err)
@@ -434,7 +440,7 @@ func TestDataExplorerCommandPublishesPatch(t *testing.T) {
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"dataExplorerCommand":{"workspaceId":"test","objectKey":"semantic_view:olist.orders","block":"b","start":100,"count":100,"requestSeq":7,"resetVersion":2,"sort":{"column":"status","direction":"asc"}}}`)
-	req := httptest.NewRequest(http.MethodPost, "/data/command", body)
+	req := dataExplorerTestRequest(http.MethodPost, "/data/command", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
@@ -468,7 +474,7 @@ func TestDataExplorerSemanticPreviewIgnoresInvalidSortColumn(t *testing.T) {
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)})
 
-	req := httptest.NewRequest(http.MethodGet, "/data?workspace=test&object=semantic_view:olist.orders", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/data?workspace=test&object=semantic_view:olist.orders", nil)
 	command := dataExplorerCommandFromQuery("test", "semantic_view:olist.orders")
 	command.Sort = uisignals.DataPreviewSortSignal{Column: "order_count", Direction: "desc"}
 	_, explorer, err := server.globalDataExplorerState(req, command)
@@ -495,7 +501,7 @@ func TestDataExplorerSemanticPreviewAcceptsExposedSortColumn(t *testing.T) {
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)})
 
-	req := httptest.NewRequest(http.MethodGet, "/data?workspace=test&object=semantic_view:olist.orders", nil)
+	req := dataExplorerTestRequest(http.MethodGet, "/data?workspace=test&object=semantic_view:olist.orders", nil)
 	command := dataExplorerCommandFromQuery("test", "semantic_view:olist.orders")
 	command.Sort = uisignals.DataPreviewSortSignal{Column: "status", Direction: "asc"}
 	_, explorer, err := server.globalDataExplorerState(req, command)
@@ -574,7 +580,7 @@ func TestDataExplorerCommandReusesPostedPreviewTotalsForScroll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal command: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/data/command", strings.NewReader(string(bodyBytes)))
+	req := dataExplorerTestRequest(http.MethodPost, "/data/command", strings.NewReader(string(bodyBytes)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
@@ -612,7 +618,7 @@ func TestDataExplorerCommandDoesNotPublishCanceledPreview(t *testing.T) {
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"dataExplorerCommand":{"workspaceId":"test","objectKey":"semantic_view:olist.orders","block":"b","start":100,"count":100,"requestSeq":7,"resetVersion":2}}`)
-	req := httptest.NewRequest(http.MethodPost, "/data/command", body)
+	req := dataExplorerTestRequest(http.MethodPost, "/data/command", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
@@ -676,7 +682,7 @@ func TestDataExplorerCommandColumnWidthsReuseCurrentPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal command: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/data/command", strings.NewReader(string(bodyBytes)))
+	req := dataExplorerTestRequest(http.MethodPost, "/data/command", strings.NewReader(string(bodyBytes)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
@@ -715,7 +721,7 @@ func TestDataExplorerBrowserCommandRequiresAndAcceptsCSRF(t *testing.T) {
 	defer unsubscribe()
 
 	commandBody := `{"dataExplorerCommand":{"workspaceId":"test","objectKey":"semantic_view:olist.orders","block":"b","start":100,"count":100,"requestSeq":7,"resetVersion":2,"sort":{"column":"status","direction":"asc"}}}`
-	forbiddenReq := httptest.NewRequest(http.MethodPost, "http://localhost:8150/data/command", strings.NewReader(commandBody))
+	forbiddenReq := dataExplorerTestRequest(http.MethodPost, "http://localhost:8150/data/command", strings.NewReader(commandBody))
 	forbiddenReq.Header.Set("Content-Type", "application/json")
 	forbiddenReq.Header.Set("Accept", "application/json")
 	forbiddenReq.Header.Set("Referer", "http://localhost:8150/data?workspace=test")
@@ -726,7 +732,7 @@ func TestDataExplorerBrowserCommandRequiresAndAcceptsCSRF(t *testing.T) {
 		t.Fatalf("POST without CSRF status = %d, want %d body=%s", forbiddenRec.Code, http.StatusForbidden, forbiddenRec.Body.String())
 	}
 
-	getReq := httptest.NewRequest(http.MethodGet, "http://localhost:8150/data?workspace=test&object=semantic_view:olist.orders", nil)
+	getReq := dataExplorerTestRequest(http.MethodGet, "http://localhost:8150/data?workspace=test&object=semantic_view:olist.orders", nil)
 	getRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(getRec, getReq)
 	if getRec.Code != http.StatusOK {
@@ -734,7 +740,7 @@ func TestDataExplorerBrowserCommandRequiresAndAcceptsCSRF(t *testing.T) {
 	}
 	token := dataExplorerCSRFToken(t, getRec.Body.String())
 
-	allowedReq := httptest.NewRequest(http.MethodPost, "http://localhost:8150/data/command", strings.NewReader(commandBody))
+	allowedReq := dataExplorerTestRequest(http.MethodPost, "http://localhost:8150/data/command", strings.NewReader(commandBody))
 	allowedReq.Header.Set("Content-Type", "application/json")
 	allowedReq.Header.Set("Accept", "application/json")
 	allowedReq.Header.Set("X-CSRF-Token", token)

@@ -11,6 +11,8 @@ type AuditRecorder interface {
 	RecordDataQuery(ctx context.Context, query Query, result Result) error
 }
 
+var ErrMissingPrincipal = errors.New("data query requires principal id")
+
 type auditRecorderContextKey struct{}
 type auditRecordedContextKey struct{}
 
@@ -28,6 +30,10 @@ func AuditRecorderFromContext(ctx context.Context) (AuditRecorder, bool) {
 
 func ExecuteAudited(ctx context.Context, request Query, execute func(context.Context, Query) (Result, error)) (Result, error) {
 	request = request.WithMetadata(MetadataFromContext(ctx))
+	_, hasRecorder := AuditRecorderFromContext(ctx)
+	if hasRecorder && strings.TrimSpace(request.PrincipalID) == "" {
+		return queryResultForError(ctx, Result{}, ErrMissingPrincipal, 0), ErrMissingPrincipal
+	}
 	if err := request.Validate(); err != nil {
 		result := queryResultForError(ctx, Result{}, err, 0)
 		recordDataQuery(ctx, request, result)

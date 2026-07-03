@@ -140,6 +140,7 @@ c2,RJ
 
 	recorder := &runtimeAuditRecorder{}
 	ctx := dataquery.WithAuditRecorder(context.Background(), recorder)
+	ctx = dataquery.WithMetadata(ctx, dataquery.Metadata{PrincipalID: "test_principal"})
 	patch, err := metrics.QueryDashboardPage(ctx, "fulfillment-operations", "overview", dashboard.Filters{})
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +157,9 @@ c2,RJ
 		}
 		if query.Surface != dataquery.SurfaceDashboard {
 			t.Fatalf("query surface = %q, want dashboard: %#v", query.Surface, query)
+		}
+		if query.PrincipalID != "test_principal" {
+			t.Fatalf("query principal = %q, want test_principal: %#v", query.PrincipalID, query)
 		}
 	}
 }
@@ -197,21 +201,22 @@ r2,o2,4,,,2018-01-16,2018-01-16 10:00:00
 	}
 	defer metrics.Close()
 
-	modelResult, err := metrics.ExecuteDataQuery(context.Background(), dataquery.ModelTableRows("sales", "orders", []string{"order_id", "status"}, []dataquery.Sort{{Field: "status", Direction: "desc"}}, 0, 1, true))
+	ctx := dataquery.WithMetadata(context.Background(), dataquery.Metadata{PrincipalID: "test_principal"})
+	modelResult, err := metrics.ExecuteDataQuery(ctx, dataquery.ModelTableRows("sales", "orders", []string{"order_id", "status"}, []dataquery.Sort{{Field: "status", Direction: "desc"}}, 0, 1, true))
 	if err != nil {
 		t.Fatalf("unified model table query: %v", err)
 	}
 	if modelResult.TotalRows != 2 || len(modelResult.Rows) != 1 || modelResult.Rows[0]["order_id"] != "o2" {
 		t.Fatalf("unified model table result = %#v", modelResult)
 	}
-	sourceResult, err := metrics.ExecuteDataQuery(context.Background(), dataquery.SourceRows("sales", "olist.orders", []string{"order_id", "order_status"}, []dataquery.Sort{{Field: "order_status", Direction: "desc"}}, 0, 1, true))
+	sourceResult, err := metrics.ExecuteDataQuery(ctx, dataquery.SourceRows("sales", "olist.orders", []string{"order_id", "order_status"}, []dataquery.Sort{{Field: "order_status", Direction: "desc"}}, 0, 1, true))
 	if err != nil {
 		t.Fatalf("unified source query: %v", err)
 	}
 	if sourceResult.TotalRows != 2 || len(sourceResult.Rows) != 1 || sourceResult.Rows[0]["order_id"] != "o2" {
 		t.Fatalf("unified source result = %#v", sourceResult)
 	}
-	if _, err := metrics.ExecuteDataQuery(context.Background(), dataquery.ModelTableRows("sales", "missing", nil, nil, 0, 1, false)); err == nil {
+	if _, err := metrics.ExecuteDataQuery(ctx, dataquery.ModelTableRows("sales", "missing", nil, nil, 0, 1, false)); err == nil {
 		t.Fatal("missing model table preview error = nil")
 	}
 }

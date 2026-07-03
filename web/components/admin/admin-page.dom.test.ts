@@ -175,6 +175,7 @@ test('query audit page filters rows and opens detail drawer', async () => {
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
     const state = await page.evaluate(async () => {
+      localStorage.removeItem('libredash-admin-query-events-columns')
       const element = document.createElement('ld-admin-page') as any
       element.page = {
         kind: 'admin',
@@ -247,22 +248,57 @@ test('query audit page filters rows and opens detail drawer', async () => {
       search.value = 'select status'
       search.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
       await element.updateComplete
-      const rowText = root.querySelector('ld-record-table')?.textContent ?? ''
+      const table = root.querySelector('ld-record-table') as any
+      const rowText = table?.textContent ?? ''
+      table.querySelector('.record-table-column-selector summary')?.click()
+      Array.from(table.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Runtime'))
+        ?.querySelector('input')
+        ?.click()
+      await table.updateComplete
+      const hiddenRuntimeText = table.textContent ?? ''
+      const visibleHeaderLabels = (recordTable: Element) => Array.from(recordTable.querySelectorAll('thead th')).map((header: Element) => header.querySelector('.record-table-sort span:first-child')?.textContent?.trim() ?? '')
+      const hiddenRuntimeHeaders = visibleHeaderLabels(table)
+      const hiddenRuntimeHasDetailAction = Boolean(table.querySelector('.record-icon-action[aria-label="Details"]'))
       root.querySelector<HTMLButtonElement>('ld-record-table .record-icon-action')?.click()
       await element.updateComplete
       const detailText = root.querySelector('.query-detail')?.textContent ?? ''
+      const recreated = document.createElement('ld-admin-page') as any
+      recreated.page = element.page
+      document.body.replaceChildren(recreated)
+      await recreated.updateComplete
+      const recreatedTable = recreated.shadowRoot.querySelector('ld-record-table') as any
+      const persistedHeaders = visibleHeaderLabels(recreatedTable)
       return {
         title: root.querySelector('h1')?.textContent?.trim(),
         hasFilters: root.querySelectorAll('.query-filter').length >= 7,
+        hasColumnSelector: Boolean(table.querySelector('.record-table-column-selector')),
         rowText,
+        hiddenRuntimeText,
+        hiddenRuntimeHeaders,
+        hiddenRuntimeHasDetailAction,
         detailText,
+        persistedHeaders,
       }
     })
 
     expect(state.title).toBe('Queries')
     expect(state.hasFilters).toBe(true)
+    expect(state.rowText).toMatch(/Query/)
+    expect(state.rowText).toMatch(/Started/)
+    expect(state.rowText).toMatch(/Source/)
+    expect(state.rowText).toMatch(/Runtime/)
+    expect(state.rowText).toMatch(/User/)
+    expect(state.rowText).toMatch(/analyst/)
+    expect(state.rowText).toMatch(/select status from orders/)
+    expect(state.rowText).toMatch(/semantic_dataset:sales:orders/)
     expect(state.rowText).toMatch(/orders/)
     expect(state.rowText).not.toMatch(/customers/)
+    expect(state.hasColumnSelector).toBe(true)
+    expect(state.hiddenRuntimeHeaders).not.toContain('Runtime')
+    expect(state.hiddenRuntimeText).toMatch(/select status from orders/)
+    expect(state.hiddenRuntimeHasDetailAction).toBe(true)
+    expect(state.persistedHeaders).not.toContain('Runtime')
     expect(state.detailText).toMatch(/select status from orders/)
     expect(state.detailText).toMatch(/req_1/)
     expect(state.detailText).toMatch(/corr_1/)

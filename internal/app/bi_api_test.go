@@ -253,7 +253,7 @@ func TestDashboardPageQueryWritesQueryEvents(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("events = %d, want 1: %#v", len(events), events)
 	}
-	if events[0].Surface != dataquery.SurfaceAPI || events[0].ObjectType != "dashboard_page" {
+	if events[0].Surface != dataquery.SurfaceAPI || events[0].Operation != dataquery.OperationDashboardAggregate || events[0].ObjectType != "dashboard_page" {
 		t.Fatalf("dashboard page event = %#v", events[0])
 	}
 }
@@ -275,7 +275,7 @@ func TestDashboardTableWindowWritesQueryEvents(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("events = %d, want 1: %#v", len(events), events)
 	}
-	if events[0].Surface != dataquery.SurfaceAPI || events[0].ObjectType != "dashboard_table" {
+	if events[0].Surface != dataquery.SurfaceAPI || events[0].Operation != dataquery.OperationDashboardRows || events[0].ObjectType != "dashboard_table" {
 		t.Fatalf("dashboard table event = %#v", events[0])
 	}
 }

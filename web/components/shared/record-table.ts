@@ -7,6 +7,7 @@ import {
   Braces,
   CheckCircle2,
   Clock3,
+  Columns3,
   Database,
   ExternalLink,
   FileText,
@@ -61,6 +62,14 @@ type RecordColumn = {
   hrefKey?: string
   width?: string
   sortable?: boolean
+  toggleable?: boolean
+}
+
+type RecordColumnSelector = {
+  enabled?: boolean
+  storageKey?: string
+  label?: string
+  defaultColumns?: string[]
 }
 
 type RecordRow = Record<string, unknown>
@@ -69,6 +78,7 @@ type RecordTablePayload = {
   rows?: RecordRow[]
   empty?: string
   minWidth?: string
+  columnSelector?: RecordColumnSelector
 }
 
 type RecordTableVariant = 'minimal' | 'primary' | 'compact'
@@ -80,6 +90,7 @@ const emptyRecordTable: Required<RecordTablePayload> = {
   rows: [],
   empty: 'No rows to show.',
   minWidth: '0',
+  columnSelector: { enabled: false, storageKey: '', label: 'Columns', defaultColumns: [] },
 }
 
 function cellLabel(value: unknown): string {
@@ -134,6 +145,9 @@ function statusIcon(value: unknown, label: string): RecordStatusIcon {
 
 function sortPrimitive(value: unknown): string | number {
   if (typeof value === 'number') return value
+  if (typeof value === 'object' && value && 'value' in value && typeof (value as RecordCell).value === 'number') {
+    return (value as RecordCell).value as number
+  }
   return cellLabel(value).toLowerCase()
 }
 
@@ -143,6 +157,12 @@ function normalizeTable(table: RecordTablePayload): Required<RecordTablePayload>
     rows: table.rows ?? [],
     empty: table.empty ?? emptyRecordTable.empty,
     minWidth: table.minWidth ?? emptyRecordTable.minWidth,
+    columnSelector: {
+      enabled: Boolean(table.columnSelector?.enabled),
+      storageKey: table.columnSelector?.storageKey ?? '',
+      label: table.columnSelector?.label ?? 'Columns',
+      defaultColumns: table.columnSelector?.defaultColumns ?? [],
+    },
   }
 }
 
@@ -159,8 +179,12 @@ class RecordTable extends LitElement {
   @property({ attribute: 'table' }) tableAttribute = ''
   @property() variant: RecordTableVariant = 'minimal'
   @state() private sorting: SortingState = []
+  @state() private visibleColumnIDs: string[] = []
+  @state() private columnSelectorOpen = false
 
   private tableController = new TableController<typeof recordTableFeatures, RecordRow>(this)
+  private columnVisibilityKey = ''
+  private columnVisibilityFingerprint = ''
 
   createRenderRoot(): HTMLElement {
     return this
@@ -168,7 +192,9 @@ class RecordTable extends LitElement {
 
   render() {
     const table = this.resolvedTable
-    const model = this.tanstackTable(table)
+    this.syncColumnVisibility(table)
+    const columns = this.visibleColumns(table)
+    const model = this.tanstackTable({ ...table, columns })
     const rows = model.getRowModel().rows.map((row: any) => row.original as RecordRow)
 
     if (table.rows.length === 0) {
@@ -180,26 +206,29 @@ class RecordTable extends LitElement {
 
     return html`
       <style>${recordTableStyles}</style>
+      ${this.hasColumnSelector(table) ? html`<span class="record-table-corner-selector">${this.renderColumnSelector(table, columns)}</span>` : nothing}
       <div class=${`record-table-wrap variant-${this.variant}`}>
         <table class="record-table" style=${table.minWidth ? `min-width: ${table.minWidth}` : ''}>
           <thead>
             <tr>
-              ${table.columns.map((column) => {
+              ${columns.map((column) => {
                 const direction = this.sortDirection(column.id)
                 const sortable = column.sortable !== false && column.kind !== 'actions'
                 return html`
                   <th style=${column.width ? `width: ${column.width}` : ''} class=${columnAlignClass(column)}>
-                    <button
-                      type="button"
-                      class="record-table-sort"
-                      aria-label=${`Sort by ${column.header}`}
-                      aria-sort=${direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
-                      ?disabled=${!sortable}
-                      @click=${() => sortable ? this.toggleSort(column.id) : undefined}
-                    >
-                      <span>${column.header}</span>
-                      <span class=${direction ? 'record-table-sort-indicator is-active' : 'record-table-sort-indicator'} aria-hidden="true">${sortable ? this.sortIndicator(direction) : nothing}</span>
-                    </button>
+                    <span class="record-table-header-content">
+                      <button
+                        type="button"
+                        class="record-table-sort"
+                        aria-label=${`Sort by ${column.header || 'column'}`}
+                        aria-sort=${direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
+                        ?disabled=${!sortable}
+                        @click=${() => sortable ? this.toggleSort(column.id) : undefined}
+                      >
+                        <span>${column.header}</span>
+                        <span class=${direction ? 'record-table-sort-indicator is-active' : 'record-table-sort-indicator'} aria-hidden="true">${sortable ? this.sortIndicator(direction) : nothing}</span>
+                      </button>
+                    </span>
                   </th>
                 `
               })}
@@ -208,7 +237,7 @@ class RecordTable extends LitElement {
           <tbody>
             ${rows.map((row) => html`
               <tr>
-                ${table.columns.map((column) => html`
+                ${columns.map((column) => html`
                   <td class=${columnAlignClass(column)}>
                     ${this.renderCell(column, row[column.id], row)}
                   </td>
@@ -231,6 +260,98 @@ class RecordTable extends LitElement {
       }
     }
     return emptyRecordTable
+  }
+
+  private renderColumnSelector(table: Required<RecordTablePayload>, visibleColumns: RecordColumn[]) {
+    const toggleableColumns = table.columns.filter(isToggleableColumn)
+    const visibleToggleableIDs = new Set(visibleColumns.filter(isToggleableColumn).map((column) => column.id))
+    const label = table.columnSelector.label || 'Columns'
+    return html`
+      <details class="record-table-column-selector" .open=${this.columnSelectorOpen} @toggle=${this.handleColumnSelectorToggle}>
+        <summary title=${label} aria-label=${label}>
+          ${lucideIcon(Columns3, { size: 15, strokeWidth: 2 })}
+        </summary>
+        <div class="record-table-column-menu">
+          ${toggleableColumns.map((column) => {
+            const checked = visibleToggleableIDs.has(column.id)
+            return html`
+              <label>
+                <input
+                  type="checkbox"
+                  .checked=${checked}
+                  ?disabled=${checked && visibleToggleableIDs.size <= 1}
+                  @change=${(event: Event) => this.toggleColumn(table, column.id, (event.currentTarget as HTMLInputElement).checked)}
+                >
+                <span>${column.header}</span>
+              </label>
+            `
+          })}
+        </div>
+      </details>
+    `
+  }
+
+  private hasColumnSelector(table: Required<RecordTablePayload>): boolean {
+    return table.columnSelector.enabled && table.columns.some(isToggleableColumn)
+  }
+
+  private syncColumnVisibility(table: Required<RecordTablePayload>): void {
+    if (!table.columnSelector.enabled) {
+      this.columnVisibilityKey = ''
+      this.columnVisibilityFingerprint = ''
+      if (this.visibleColumnIDs.length) this.visibleColumnIDs = []
+      return
+    }
+    const fingerprint = table.columns.map((column) => `${column.id}:${isToggleableColumn(column) ? '1' : '0'}`).join('|')
+    const storageKey = table.columnSelector.storageKey
+    if (storageKey === this.columnVisibilityKey && fingerprint === this.columnVisibilityFingerprint) return
+    this.columnVisibilityKey = storageKey
+    this.columnVisibilityFingerprint = fingerprint
+    this.visibleColumnIDs = this.initialVisibleColumnIDs(table)
+  }
+
+  private initialVisibleColumnIDs(table: Required<RecordTablePayload>): string[] {
+    const toggleableIDs = table.columns.filter(isToggleableColumn).map((column) => column.id)
+    const stored = this.storedVisibleColumnIDs(table.columnSelector.storageKey)
+    const configured = stored.length ? stored : table.columnSelector.defaultColumns
+    const sanitized = sanitizeVisibleColumnIDs(configured, toggleableIDs)
+    return sanitized.length ? sanitized : toggleableIDs
+  }
+
+  private storedVisibleColumnIDs(storageKey: string): string[] {
+    if (!storageKey) return []
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]')
+      return Array.isArray(parsed) ? parsed.map((value) => String(value)) : []
+    } catch {
+      return []
+    }
+  }
+
+  private visibleColumns(table: Required<RecordTablePayload>): RecordColumn[] {
+    if (!table.columnSelector.enabled) return table.columns
+    const visible = new Set(this.visibleColumnIDs)
+    return table.columns.filter((column) => !isToggleableColumn(column) || visible.has(column.id))
+  }
+
+  private toggleColumn(table: Required<RecordTablePayload>, columnID: string, checked: boolean): void {
+    const toggleableIDs = table.columns.filter(isToggleableColumn).map((column) => column.id)
+    const current = sanitizeVisibleColumnIDs(this.visibleColumnIDs, toggleableIDs)
+    const currentSet = new Set(current.length ? current : toggleableIDs)
+    if (checked) {
+      currentSet.add(columnID)
+    } else if (currentSet.size > 1) {
+      currentSet.delete(columnID)
+    }
+    const next = toggleableIDs.filter((id) => currentSet.has(id))
+    this.visibleColumnIDs = next
+    if (table.columnSelector.storageKey) {
+      window.localStorage.setItem(table.columnSelector.storageKey, JSON.stringify(next))
+    }
+  }
+
+  private handleColumnSelectorToggle = (event: Event): void => {
+    this.columnSelectorOpen = (event.currentTarget as HTMLDetailsElement).open
   }
 
   private tanstackTable(table: Required<RecordTablePayload>) {
@@ -419,6 +540,16 @@ class RecordTable extends LitElement {
   }
 }
 
+function isToggleableColumn(column: RecordColumn): boolean {
+  if (column.toggleable != null) return column.toggleable
+  return column.kind !== 'actions'
+}
+
+function sanitizeVisibleColumnIDs(values: string[], allowedIDs: string[]): string[] {
+  const allowed = new Set(allowedIDs)
+  return values.filter((value, index, all) => allowed.has(value) && all.indexOf(value) === index)
+}
+
 function iconForName(name: string): any {
   switch (name) {
     case 'catalog':
@@ -470,6 +601,7 @@ function iconToken(name: string): string {
 const recordTableStyles = `
   ld-record-table {
     display: block;
+    position: relative;
     min-width: 0;
     max-width: 100%;
   }
@@ -481,6 +613,71 @@ const recordTableStyles = `
     overflow-x: auto;
     border-top: var(--ld-border-muted);
     border-bottom: var(--ld-border-muted);
+  }
+
+  ld-record-table .record-table-column-selector {
+    position: relative;
+    flex: none;
+  }
+
+  ld-record-table .record-table-corner-selector {
+    position: absolute;
+    z-index: 5;
+    top: var(--base-size-6);
+    right: var(--base-size-8);
+    display: inline-flex;
+  }
+
+  ld-record-table .record-table-column-selector summary {
+    display: inline-flex;
+    width: var(--control-medium-size, 32px);
+    height: var(--control-medium-size, 32px);
+    align-items: center;
+    justify-content: center;
+    border: var(--ld-border-muted);
+    border-radius: var(--ld-radius-default);
+    background: var(--ld-bg-panel);
+    color: var(--ld-fg-muted);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  ld-record-table .record-table-column-selector summary::-webkit-details-marker {
+    display: none;
+  }
+
+  ld-record-table .record-table-column-selector summary:hover {
+    background: var(--ld-bg-control-hover, var(--ld-bg-panel-muted));
+    color: var(--ld-fg-default);
+  }
+
+  ld-record-table .record-table-column-menu {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + var(--base-size-4));
+    right: 0;
+    display: grid;
+    min-width: 13rem;
+    gap: var(--base-size-4);
+    border: var(--ld-border-muted);
+    border-radius: var(--ld-radius-default);
+    background: var(--ld-bg-panel);
+    box-shadow: var(--ld-shadow-floating, 0 8px 24px rgba(31, 35, 40, 0.12));
+    padding: var(--base-size-8);
+  }
+
+  ld-record-table .record-table-column-menu label {
+    display: grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    gap: var(--base-size-8);
+    align-items: center;
+    color: var(--ld-fg-default);
+    font-size: var(--ld-font-size-body-sm);
+    line-height: var(--ld-line-height-compact);
+  }
+
+  ld-record-table .record-table-column-menu input {
+    margin: 0;
   }
 
   ld-record-table .record-table-wrap.variant-primary,
@@ -590,6 +787,19 @@ const recordTableStyles = `
     letter-spacing: inherit;
     text-align: inherit;
     text-transform: inherit;
+  }
+
+  ld-record-table .record-table-header-content {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--base-size-6);
+  }
+
+  ld-record-table .record-table-header-content .record-table-sort {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   ld-record-table .record-table-sort:hover,

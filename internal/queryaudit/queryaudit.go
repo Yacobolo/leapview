@@ -2,6 +2,8 @@ package queryaudit
 
 import (
 	"context"
+	"fmt"
+	"strings"
 )
 
 type EventInput struct {
@@ -53,4 +55,11 @@ type Filter struct {
 type Repository interface {
 	RecordQueryEvent(ctx context.Context, input EventInput) error
 	ListQueryEvents(ctx context.Context, filter Filter) ([]Event, error)
+}
+
+func (input EventInput) Validate() error {
+	if strings.TrimSpace(input.PrincipalID) == "" {
+		return fmt.Errorf("query event principal id is required")
+	}
+	return nil
 }
