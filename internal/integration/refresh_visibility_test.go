@@ -44,7 +44,7 @@ func TestRefreshVisibilityStreamsAndPersistsSemanticModelRuns(t *testing.T) {
 	requireStreamText(t, ordersStream, "Semantic model")
 
 	repo := materialize.NewSQLRunRepository(h.store.SQLDB())
-	modelRuns, err := repo.ListTargetRuns(ctx, workspaceID, materialize.TargetSemanticModel, "sales", materialize.RunPage{Limit: 10})
+	modelRuns, err := repo.ListTargetRuns(ctx, workspaceID, materialize.TargetSemanticModel, "sales.sales", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list semantic model runs: %v", err)
 	}

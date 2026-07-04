@@ -99,7 +99,7 @@ func (o RefreshOrchestrator) RefreshSemanticModel(ctx context.Context, input ref
 		ModelID:     input.ModelID,
 		PrincipalID: input.PrincipalID,
 		TargetType:  materialize.TargetSemanticModel,
-		TargetID:    input.ModelID,
+		TargetID:    firstNonEmpty(input.TargetID, input.ModelID),
 		TriggerType: materialize.TriggerDirect,
 	})
 	if err != nil {

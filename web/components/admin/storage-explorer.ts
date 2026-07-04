@@ -7,10 +7,23 @@ import { lucideIcon } from '../shared/lucide-icons'
 import '../shared/record-table'
 
 const emptyStorage: AdminStorageSignal = {
-  summary: { duckdbDir: '', databaseCount: 0, totalSizeLabel: '', tableCount: 0 },
+  summary: {
+    catalogPath: '',
+    dataPath: '',
+    catalogSizeLabel: '',
+    dataSizeLabel: '',
+    totalSizeLabel: '',
+    totalDataSizeLabel: '',
+    databaseCount: 0,
+    tableCount: 0,
+    snapshotCount: 0,
+    dataFileCount: 0,
+  },
   status: '',
   warnings: [],
   tables: [],
+  snapshots: [],
+  deployments: [],
   selectedKey: '',
   selectedTable: null,
 }
@@ -36,12 +49,17 @@ type DatabaseSelection = {
   databaseId: string
 }
 
+type TableDetailTab = 'schema' | 'files' | 'history'
+type CatalogDetailTab = 'schemas' | 'deployments' | 'snapshots'
+
 class StorageExplorer extends LitElement {
   @property({ converter: jsonAttribute<AdminStorageSignal>(emptyStorage) }) storage: AdminStorageSignal = emptyStorage
   @state() private search = ''
   @state() private selectedDatabase: DatabaseSelection | null = null
   @state() private selectedSchema: SchemaSelection | null = null
   @state() private localSelectedTable: AdminStorageTableSignal | null = null
+  @state() private tableDetailTab: TableDetailTab = 'schema'
+  @state() private catalogDetailTab: CatalogDetailTab = 'schemas'
 
   updated(changedProperties: PropertyValues<this>): void {
     if (!changedProperties.has('storage')) return
@@ -76,8 +94,14 @@ class StorageExplorer extends LitElement {
             <span class="storage-logo" aria-hidden="true">${lucideIcon(Database, { size: 18 })}</span>
             <div>
               <h2>Storage</h2>
-              <p>DuckDB inventory · <span>${label(storage.summary?.duckdbDir)}</span></p>
+              <p>DuckLake catalog · <span>${label(storage.summary?.catalogPath)}</span></p>
             </div>
+          </div>
+          <div class="storage-summary" aria-label="DuckLake storage summary">
+            ${this.summaryMetric('Tables', storage.summary?.tableCount)}
+            ${this.summaryMetric('Snapshots', storage.summary?.snapshotCount)}
+            ${this.summaryMetric('Data files', storage.summary?.dataFileCount)}
+            ${this.summaryMetric('Data size', storage.summary?.totalDataSizeLabel)}
           </div>
         </div>
         ${storage.warnings?.length ? html`
@@ -85,7 +109,7 @@ class StorageExplorer extends LitElement {
             ${storage.warnings.map((warning) => html`<p class="storage-warning">${warning}</p>`)}
           </div>
         ` : html`<div class="storage-warnings storage-warnings-empty" aria-hidden="true"></div>`}
-        <aside class="storage-browser" aria-label="DuckDB table browser">
+        <aside class="storage-browser" aria-label="DuckLake table browser">
           <div class="storage-browser-menu">
             <label class="storage-search">
               <span class="storage-search-icon" aria-hidden="true">${lucideIcon(Search, { size: 15 })}</span>
@@ -106,7 +130,7 @@ class StorageExplorer extends LitElement {
                 : this.renderDatabaseGroups(groupTables(filtered), selectedKey)}
           </div>
         </aside>
-        <section class="storage-detail" aria-label="Selected DuckDB table details">
+        <section class="storage-detail" aria-label="Selected DuckLake table details">
           ${selectedDatabase
             ? this.renderSelectedDatabase(selectedDatabase.database)
             : selectedSchema
@@ -133,7 +157,7 @@ class StorageExplorer extends LitElement {
         <summary>
           <span class="storage-chevron" aria-hidden="true">${lucideIcon(ChevronRight, { size: 14 })}</span>
           <span class="storage-node-icon" aria-hidden="true">${lucideIcon(Database, { size: 15 })}</span>
-          <span>${label(database.name)}</span>
+          <span>Catalog</span>
         </summary>
         ${database.schemas.map((schema) => html`
           <details class="storage-schema" open>
@@ -144,7 +168,6 @@ class StorageExplorer extends LitElement {
               <span class="storage-chevron" aria-hidden="true">${lucideIcon(ChevronRight, { size: 14 })}</span>
               <span class="storage-node-icon" aria-hidden="true">${lucideIcon(Server, { size: 14 })}</span>
               <span>${label(schema.schema)}</span>
-              <em>${schema.tables.length}</em>
             </summary>
             <div class="storage-table-list">
               ${schema.tables.map((table) => this.renderTableButton(table, selectedKey))}
@@ -169,48 +192,99 @@ class StorageExplorer extends LitElement {
         </span>
         <span>
           <strong>${label(table.name)}</strong>
-          <small>${label(table.schema)}.${label(table.name)}</small>
+          <small>${label(table.schema)}.${label(table.name)} · ${label(table.rowCountLabel)} rows · ${table.fileCount ?? 0} files</small>
         </span>
         <span class="storage-table-size">${label(table.sizeLabel)}</span>
       </button>
     `
   }
 
+  private summaryMetric(labelText: string, value: unknown) {
+    return html`
+      <div>
+        <span>${labelText}</span>
+        <strong>${label(value)}</strong>
+      </div>
+    `
+  }
+
   private renderSelectedDatabase(database: DatabaseGroup) {
     const tables = database.schemas.flatMap((schema) => schema.tables)
+    const storage = this.resolvedStorage
     return html`
       <div class="storage-detail-header">
         <nav aria-label="Selected database location">
           <span class="storage-breadcrumb-current">
             ${lucideIcon(Database, { size: 16 })}
-            <strong>${label(database.name)}</strong>
+            <strong>DuckLake catalog</strong>
           </span>
         </nav>
       </div>
       <dl class="storage-metrics">
         <div>
-          <dt>Database</dt>
-          <dd>${label(database.name)}</dd>
+          <dt>Catalog path</dt>
+          <dd>${label(storage.summary?.catalogPath)}</dd>
         </div>
         <div>
-          <dt>Model</dt>
-          <dd>${label(database.model)}</dd>
+          <dt>Data path</dt>
+          <dd>${label(storage.summary?.dataPath)}</dd>
         </div>
         <div>
           <dt>Schemas</dt>
           <dd>${database.schemas.length}</dd>
         </div>
         <div>
-          <dt>Known size</dt>
-          <dd>${sumKnownSizes(tables)}</dd>
+          <dt>Data size</dt>
+          <dd>${label(storage.summary?.totalDataSizeLabel || sumKnownSizes(tables))}</dd>
+        </div>
+        <div>
+          <dt>Snapshots</dt>
+          <dd>${storage.summary?.snapshotCount ?? 0}</dd>
+        </div>
+        <div>
+          <dt>Data files</dt>
+          <dd>${storage.summary?.dataFileCount ?? 0}</dd>
         </div>
       </dl>
-      <div class="storage-columns">
-        <div class="storage-columns-header">
-          <h3>Schemas</h3>
+      <div class="storage-detail-body">
+        <div class="storage-tabs" role="tablist" aria-label="Catalog metadata">
+          ${this.renderCatalogTabButton('schemas', 'Schemas', database.schemas.length)}
+          ${this.renderCatalogTabButton('deployments', 'Deployments', storage.deployments?.length ?? 0)}
+          ${this.renderCatalogTabButton('snapshots', 'Snapshots', storage.snapshots?.length ?? 0)}
         </div>
-        <div class="storage-column-table-wrap">
-          <ld-record-table .table=${this.databaseSchemasTable(database)}></ld-record-table>
+        <div class="storage-tab-panel" role="tabpanel">
+          ${this.catalogDetailTab === 'deployments'
+            ? html`
+              <div class="storage-columns">
+                <div class="storage-columns-header">
+                  <h3>Active deployments</h3>
+                </div>
+                <div class="storage-column-table-wrap">
+                  <ld-record-table .table=${this.deploymentsTable(storage.deployments ?? [])}></ld-record-table>
+                </div>
+              </div>
+            `
+            : this.catalogDetailTab === 'snapshots'
+              ? html`
+                <div class="storage-columns">
+                  <div class="storage-columns-header">
+                    <h3>Snapshots</h3>
+                  </div>
+                  <div class="storage-column-table-wrap">
+                    <ld-record-table .table=${this.snapshotsTable(storage.snapshots ?? [])}></ld-record-table>
+                  </div>
+                </div>
+              `
+              : html`
+                <div class="storage-columns">
+                  <div class="storage-columns-header">
+                    <h3>Schemas</h3>
+                  </div>
+                  <div class="storage-column-table-wrap">
+                    <ld-record-table .table=${this.databaseSchemasTable(database)}></ld-record-table>
+                  </div>
+                </div>
+              `}
         </div>
       </div>
     `
@@ -232,20 +306,24 @@ class StorageExplorer extends LitElement {
       </div>
       <dl class="storage-metrics">
         <div>
-          <dt>Database</dt>
-          <dd>${label(database.name)}</dd>
+          <dt>Catalog</dt>
+          <dd>DuckLake</dd>
         </div>
         <div>
-          <dt>Model</dt>
-          <dd>${label(database.model)}</dd>
+          <dt>Tables</dt>
+          <dd>${schema.tables.length}</dd>
         </div>
         <div>
-          <dt>Known rows</dt>
+          <dt>Rows</dt>
           <dd>${sumKnownRows(schema.tables)}</dd>
         </div>
         <div>
-          <dt>Known size</dt>
+          <dt>Data size</dt>
           <dd>${sumKnownSizes(schema.tables)}</dd>
+        </div>
+        <div>
+          <dt>Data files</dt>
+          <dd>${sumKnownFiles(schema.tables)}</dd>
         </div>
       </dl>
       <div class="storage-columns">
@@ -261,11 +339,13 @@ class StorageExplorer extends LitElement {
 
   private renderSelectedTable(table: AdminStorageTableSignal) {
     const columns = table.columns ?? []
+    const files = table.files ?? []
+    const history = table.history ?? []
     return html`
       <div class="storage-detail-header">
         <nav aria-label="Selected table location">
           <button type="button" class="storage-breadcrumb-button" data-breadcrumb-kind="database" @click=${() => this.selectDatabase(table.databaseId)}>
-            ${label(table.databaseName)}
+            DuckLake catalog
           </button>
           <span class="storage-breadcrumb-separator" aria-hidden="true">${lucideIcon(ChevronRight, { size: 15 })}</span>
           <button type="button" class="storage-breadcrumb-button" data-breadcrumb-kind="schema" @click=${() => this.selectSchemaByID(table.databaseId, table.schema)}>
@@ -280,8 +360,20 @@ class StorageExplorer extends LitElement {
       </div>
       <dl class="storage-metrics">
         <div>
-          <dt>Model</dt>
-          <dd>${label(table.modelName)}</dd>
+          <dt>Table ID</dt>
+          <dd>${table.tableId ?? '-'}</dd>
+        </div>
+        <div class="storage-metric-uuid">
+          <dt>Table UUID</dt>
+          <dd>${label(table.tableUuid)}</dd>
+        </div>
+        <div class="storage-metric-path">
+          <dt>DuckLake path</dt>
+          <dd>${label(table.duckLakePath)}</dd>
+        </div>
+        <div>
+          <dt>Begin snapshot</dt>
+          <dd>${table.beginSnapshot || '-'}</dd>
         </div>
         <div>
           <dt>Rows</dt>
@@ -292,22 +384,91 @@ class StorageExplorer extends LitElement {
           <dd>${table.columnCount ?? columns.length}</dd>
         </div>
         <div>
-          <dt>Estimated size</dt>
+          <dt>Data files</dt>
+          <dd>${table.fileCount ?? files.length}</dd>
+        </div>
+        <div>
+          <dt>Data size</dt>
           <dd>${label(table.sizeLabel)}</dd>
         </div>
       </dl>
-      <div class="storage-columns">
-        <div class="storage-columns-header">
-          <h3>Columns</h3>
+      <div class="storage-detail-body">
+        <div class="storage-tabs" role="tablist" aria-label="Table metadata">
+          ${this.renderTableTabButton('schema', 'Schema', columns.length)}
+          ${this.renderTableTabButton('files', 'Data files', files.length)}
+          ${this.renderTableTabButton('history', 'History', history.length)}
         </div>
-        ${columns.length === 0
-          ? html`<p class="storage-empty">No column metadata available.</p>`
-          : html`
-            <div class="storage-column-table-wrap">
-              <ld-record-table .table=${this.tableColumnsTable(table)}></ld-record-table>
-            </div>
-          `}
+        <div class="storage-tab-panel" role="tabpanel">
+          ${this.tableDetailTab === 'files'
+            ? html`
+              <div class="storage-columns">
+                <div class="storage-columns-header">
+                  <h3>Data files</h3>
+                </div>
+                <div class="storage-column-table-wrap">
+                  <ld-record-table .table=${this.tableFilesTable(table)}></ld-record-table>
+                </div>
+              </div>
+            `
+            : this.tableDetailTab === 'history'
+              ? html`
+                <div class="storage-columns">
+                  <div class="storage-columns-header">
+                    <h3>History</h3>
+                  </div>
+                  <div class="storage-column-table-wrap">
+                    <ld-record-table .table=${this.tableHistoryTable(table)}></ld-record-table>
+                  </div>
+                </div>
+              `
+              : html`
+                <div class="storage-columns">
+                  <div class="storage-columns-header">
+                    <h3>Schema</h3>
+                  </div>
+                  ${columns.length === 0
+                    ? html`<p class="storage-empty">No column metadata available.</p>`
+                    : html`
+                      <div class="storage-column-table-wrap">
+                        <ld-record-table .table=${this.tableColumnsTable(table)}></ld-record-table>
+                      </div>
+                    `}
+                </div>
+              `}
+        </div>
       </div>
+    `
+  }
+
+  private renderTableTabButton(tab: TableDetailTab, labelText: string, count: number) {
+    const active = this.tableDetailTab === tab
+    return html`
+      <button
+        type="button"
+        role="tab"
+        class=${active ? 'storage-tab is-active' : 'storage-tab'}
+        aria-selected=${active ? 'true' : 'false'}
+        @click=${() => { this.tableDetailTab = tab }}
+      >
+        <span>${labelText}</span>
+        <em>${count.toLocaleString('en-US')}</em>
+      </button>
+    `
+  }
+
+  private renderCatalogTabButton(tab: CatalogDetailTab, labelText: string, count: number) {
+    const active = this.catalogDetailTab === tab
+    return html`
+      <button
+        type="button"
+        role="tab"
+        class=${active ? 'storage-tab is-active' : 'storage-tab'}
+        aria-selected=${active ? 'true' : 'false'}
+        @click=${() => { this.catalogDetailTab = tab }}
+      >
+        <span>${labelText}</span>
+        <em>${count.toLocaleString('en-US')}</em>
+      </button>
     `
   }
 
@@ -339,22 +500,26 @@ class StorageExplorer extends LitElement {
       columns: [
         { id: 'index', header: '#', kind: 'number', align: 'right', width: '64px' },
         { id: 'table', header: 'Table', kind: 'button', width: '240px' },
-        { id: 'type', header: 'Type', width: '110px' },
+        { id: 'tableId', header: 'Table ID', kind: 'number', align: 'right', width: '100px' },
         { id: 'rows', header: 'Rows', align: 'right', width: '130px' },
         { id: 'columns', header: 'Columns', kind: 'number', align: 'right', width: '120px' },
-        { id: 'size', header: 'Estimated size', align: 'right', width: '150px' },
+        { id: 'files', header: 'Files', kind: 'number', align: 'right', width: '100px' },
+        { id: 'size', header: 'Data size', align: 'right', width: '150px' },
+        { id: 'snapshot', header: 'Begin snapshot', align: 'right', width: '150px' },
       ],
       rows: schema.tables.map((table, index) => ({
         index: index + 1,
         table: { label: table.name, icon: table.type === 'view' ? 'view' : 'table', action: 'select-table' },
-        type: label(table.type),
+        tableId: table.tableId ?? '-',
         rows: label(table.rowCountLabel),
         columns: table.columnCount ?? '-',
+        files: table.fileCount ?? 0,
         size: label(table.sizeLabel),
+        snapshot: table.beginSnapshot || '-',
         tableKey: table.key,
       })),
       empty: 'No tables found.',
-      minWidth: '820px',
+      minWidth: '980px',
     }
   }
 
@@ -362,20 +527,134 @@ class StorageExplorer extends LitElement {
     return {
       columns: [
         { id: 'ordinal', header: '#', kind: 'number', align: 'right', width: '64px' },
+        { id: 'id', header: 'Column ID', kind: 'number', align: 'right', width: '110px' },
         { id: 'name', header: 'Name', kind: 'code', width: '220px' },
         { id: 'type', header: 'Type', kind: 'code', width: '180px' },
         { id: 'nullable', header: 'Nullable', width: '120px' },
-        { id: 'default', header: 'Default', kind: 'code' },
+        { id: 'default', header: 'Default', kind: 'code', width: '180px' },
+        { id: 'initialDefault', header: 'Initial default', kind: 'code', width: '180px' },
+        { id: 'defaultType', header: 'Default type', width: '140px' },
+        { id: 'dialect', header: 'Dialect', width: '120px' },
+        { id: 'snapshot', header: 'Begin snapshot', align: 'right', width: '150px' },
+        { id: 'containsNull', header: 'Nulls', width: '100px' },
+        { id: 'containsNan', header: 'NaN', width: '100px' },
+        { id: 'min', header: 'Min', kind: 'code', width: '180px' },
+        { id: 'max', header: 'Max', kind: 'code', width: '180px' },
+        { id: 'extraStats', header: 'Extra stats', kind: 'code', width: '180px' },
       ],
       rows: (table.columns ?? []).map((column) => ({
         ordinal: column.ordinal ?? '',
+        id: column.id ?? '-',
         name: label(column.name),
         type: label(column.type),
         nullable: label(column.nullable),
         default: column.default || '-',
+        initialDefault: column.initialDefault || '-',
+        defaultType: label(column.defaultValueType),
+        dialect: label(column.defaultValueDialect),
+        snapshot: column.beginSnapshot || '-',
+        containsNull: label(column.containsNull),
+        containsNan: label(column.containsNan),
+        min: label(column.minValue),
+        max: label(column.maxValue),
+        extraStats: label(column.extraStats),
       })),
       empty: 'No column metadata available.',
-      minWidth: '760px',
+      minWidth: '2060px',
+    }
+  }
+
+  private tableFilesTable(table: AdminStorageTableSignal): RecordTableSignal {
+    const files = table.files ?? []
+    return {
+      columns: [
+        { id: 'id', header: 'File ID', kind: 'number', align: 'right', width: '90px' },
+        { id: 'path', header: 'Path', kind: 'code', width: '320px' },
+        { id: 'format', header: 'Format', width: '100px' },
+        { id: 'records', header: 'Rows', align: 'right', width: '130px' },
+        { id: 'size', header: 'Size', align: 'right', width: '130px' },
+        { id: 'snapshot', header: 'Begin snapshot', align: 'right', width: '150px' },
+      ],
+      rows: files.map((file) => ({
+        id: file.id,
+        path: label(file.path),
+        format: label(file.format),
+        records: label(file.recordCountLabel),
+        size: label(file.sizeLabel),
+        snapshot: file.beginSnapshot || '-',
+      })),
+      empty: 'No DuckLake data files recorded for this table.',
+      minWidth: '920px',
+    }
+  }
+
+  private tableHistoryTable(table: AdminStorageTableSignal): RecordTableSignal {
+    const history = table.history ?? []
+    return {
+      columns: [
+        { id: 'snapshot', header: 'Snapshot', kind: 'number', align: 'right', width: '110px' },
+        { id: 'time', header: 'Time', width: '220px' },
+        { id: 'source', header: 'Source', width: '140px' },
+        { id: 'changes', header: 'Changes', width: '220px' },
+        { id: 'message', header: 'Message', width: '260px' },
+        { id: 'author', header: 'Author', width: '160px' },
+      ],
+      rows: history.map((event) => ({
+        snapshot: event.snapshotId,
+        time: label(event.time),
+        source: label(event.source),
+        changes: label(event.changes),
+        message: label(event.message || event.extraInfo),
+        author: label(event.author),
+      })),
+      empty: 'No DuckLake snapshot history recorded for this table.',
+      minWidth: '1100px',
+    }
+  }
+
+  private deploymentsTable(deployments: NonNullable<AdminStorageSignal['deployments']>): RecordTableSignal {
+    return {
+      columns: [
+        { id: 'workspace', header: 'Workspace', kind: 'code', width: '160px' },
+        { id: 'environment', header: 'Environment', width: '130px' },
+        { id: 'deployment', header: 'Deployment', kind: 'code', width: '220px' },
+        { id: 'status', header: 'Status', width: '120px' },
+        { id: 'snapshot', header: 'Snapshot', kind: 'number', align: 'right', width: '120px' },
+        { id: 'active', header: 'Active', width: '100px' },
+      ],
+      rows: deployments.map((deployment) => ({
+        workspace: label(deployment.workspaceId),
+        environment: label(deployment.environment),
+        deployment: label(deployment.deploymentId),
+        status: label(deployment.status),
+        snapshot: deployment.snapshotId || '-',
+        active: deployment.active ? 'Yes' : 'No',
+      })),
+      empty: 'No deployments reference this snapshot.',
+      minWidth: '860px',
+    }
+  }
+
+  private snapshotsTable(snapshots: NonNullable<AdminStorageSignal['snapshots']>): RecordTableSignal {
+    return {
+      columns: [
+        { id: 'snapshot', header: 'Snapshot', kind: 'number', align: 'right', width: '110px' },
+        { id: 'time', header: 'Time', width: '220px' },
+        { id: 'version', header: 'Schema version', kind: 'number', align: 'right', width: '150px' },
+        { id: 'protected', header: 'Protected', width: '110px' },
+        { id: 'deployments', header: 'Deployments', kind: 'number', align: 'right', width: '130px' },
+        { id: 'message', header: 'Message', width: '260px' },
+      ],
+      rows: snapshots.map((snapshot) => ({
+        snapshot: snapshot.id,
+        time: label(snapshot.time),
+        version: snapshot.schemaVersion,
+        protected: snapshot.protected ? 'Yes' : 'No',
+        deployments: snapshot.deploymentCount,
+        message: label(snapshot.message || snapshot.author || snapshot.changes),
+      })),
+      empty: 'No DuckLake snapshots recorded.',
+      minWidth: '980px',
     }
   }
 
@@ -396,6 +675,7 @@ class StorageExplorer extends LitElement {
     this.selectedDatabase = null
     this.selectedSchema = null
     this.localSelectedTable = table
+    this.tableDetailTab = 'schema'
     this.dispatchEvent(new CustomEvent('ld-storage-table-select', {
       bubbles: true,
       composed: true,
@@ -411,6 +691,7 @@ class StorageExplorer extends LitElement {
     this.selectedDatabase = { databaseId }
     this.selectedSchema = null
     this.localSelectedTable = null
+    this.catalogDetailTab = 'schemas'
   }
 
   private selectSchema(event: Event, databaseId: string, schema: string): void {
@@ -463,6 +744,13 @@ function filterTables(tables: AdminStorageTableSignal[], query: string): AdminSt
     table.schema,
     table.name,
     table.type,
+    table.tableId,
+    table.tableUuid,
+    table.beginSnapshot,
+    table.rowCountLabel,
+    table.sizeLabel,
+    ...(table.files ?? []).flatMap((file) => [file.id, file.path, file.format, file.sizeLabel, file.recordCountLabel]),
+    ...(table.history ?? []).flatMap((event) => [event.snapshotId, event.time, event.source, event.changes, event.author, event.message, event.extraInfo]),
   ].some((value) => String(value ?? '').toLowerCase().includes(normalized)))
 }
 
@@ -525,6 +813,12 @@ function sumKnownSizes(tables: AdminStorageTableSignal[]): string {
   return known < tables.length ? `${label} + unknown` : label
 }
 
+function sumKnownFiles(tables: AdminStorageTableSignal[]): string {
+  let total = 0
+  for (const table of tables) total += Number(table.fileCount ?? 0)
+  return total.toLocaleString('en-US')
+}
+
 function parseSizeLabel(value: string | undefined): number | null {
   if (!value || value === 'Unknown' || value === '-') return null
   const match = value.match(/^([\d.]+)\s*(B|KiB|MiB|GiB|TiB)$/)
@@ -580,6 +874,8 @@ const storageExplorerStyles = `
     grid-area: header;
     display: grid;
     min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--base-size-16, 1rem);
     align-items: center;
     border-bottom: var(--ld-border-muted);
     padding: var(--base-size-12) var(--base-size-16);
@@ -645,6 +941,38 @@ const storageExplorerStyles = `
     color: var(--ld-fg-default);
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
     font-weight: var(--ld-font-weight-medium, 500);
+  }
+
+  .storage-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(5.75rem, auto));
+    gap: var(--base-size-8, 0.5rem);
+    align-items: center;
+  }
+
+  .storage-summary div {
+    display: grid;
+    gap: 0.125rem;
+    min-width: 0;
+    border-left: var(--ld-border-muted);
+    padding-left: var(--base-size-12, 0.75rem);
+  }
+
+  .storage-summary span {
+    color: var(--ld-fg-muted);
+    font-size: 0.6875rem;
+    font-weight: 650;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .storage-summary strong {
+    overflow: hidden;
+    color: var(--ld-fg-default);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    line-height: 1.2;
   }
 
   h3 {
@@ -979,19 +1307,91 @@ const storageExplorerStyles = `
 
   .storage-metrics {
     display: flex;
-    min-height: 2.5rem;
-    align-items: center;
-    gap: 1rem;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.75rem 1.5rem;
+    overflow: hidden;
     border-bottom: var(--ld-border-muted);
-    padding: 0 0.75rem;
+    padding: 0.625rem 0.75rem;
   }
 
   .storage-metrics div {
+    display: grid;
+    min-width: 5.5rem;
+    max-width: min(100%, 12rem);
+    gap: 0.1875rem;
+    align-content: start;
+  }
+
+  .storage-metrics .storage-metric-uuid {
+    min-width: min(100%, 16rem);
+    max-width: min(100%, 28rem);
+  }
+
+  .storage-metrics .storage-metric-path {
+    min-width: 8rem;
+    max-width: min(100%, 24rem);
+  }
+
+  .storage-detail-body {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .storage-tabs {
     display: flex;
-    min-width: max-content;
-    align-items: baseline;
+    min-width: 0;
+    gap: 0.25rem;
+    overflow-x: auto;
+    border-bottom: var(--ld-border-muted);
+    padding: 0.25rem 0.75rem 0;
+  }
+
+  .storage-tab {
+    display: inline-flex;
+    min-height: 2rem;
+    flex: none;
+    align-items: center;
     gap: 0.375rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    padding: 0 0.5rem;
+    color: var(--ld-fg-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .storage-tab:hover,
+  .storage-tab:focus-visible {
+    color: var(--ld-fg-default);
+    outline: 0;
+  }
+
+  .storage-tab.is-active {
+    border-bottom-color: var(--ld-line-accent);
+    color: var(--ld-fg-default);
+  }
+
+  .storage-tab em {
+    border-radius: var(--ld-radius-small);
+    background: var(--ld-bg-panel-muted);
+    padding: 0.0625rem 0.3125rem;
+    color: var(--ld-fg-muted);
+    font-size: 0.6875rem;
+    font-style: normal;
+    font-weight: 750;
+    line-height: 1.2;
+  }
+
+  .storage-tab-panel {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
 
   dt {
@@ -1143,6 +1543,14 @@ const storageExplorerStyles = `
         "detail";
       height: auto;
       min-height: 0;
+    }
+
+    .storage-explorer-header {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .storage-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .storage-browser {

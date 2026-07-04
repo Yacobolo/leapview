@@ -118,10 +118,18 @@ type AdminStorageData = uisignals.AdminStorageData
 type AdminStorageDatabase = uisignals.AdminStorageDatabase
 type AdminStorageTable = uisignals.AdminStorageTable
 type AdminStorageColumn = uisignals.AdminStorageColumn
+type AdminStorageFile = uisignals.AdminStorageFile
+type AdminStorageTableHistory = uisignals.AdminStorageTableHistory
+type AdminStorageSnapshot = uisignals.AdminStorageSnapshot
+type AdminStorageDeployment = uisignals.AdminStorageDeployment
 type AdminStorageSignal = uisignals.AdminStorageSignal
 type AdminStorageSummary = uisignals.AdminStorageSummary
 type AdminStorageTableSignal = uisignals.AdminStorageTableSignal
 type AdminStorageColumnSignal = uisignals.AdminStorageColumnSignal
+type AdminStorageFileSignal = uisignals.AdminStorageFileSignal
+type AdminStorageTableHistorySignal = uisignals.AdminStorageTableHistorySignal
+type AdminStorageSnapshotSignal = uisignals.AdminStorageSnapshotSignal
+type AdminStorageDeploymentSignal = uisignals.AdminStorageDeploymentSignal
 type AdminStorageCommand = uisignals.AdminStorageCommand
 
 func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) g.Node {
@@ -287,16 +295,16 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 		}
 	case "storage":
 		page.HeaderTitle = "Storage"
-		page.HeaderDetail = "Read-only DuckDB database and table inventory."
+		page.HeaderDetail = "Read-only DuckLake catalog and table metadata."
 		page.Storage = AdminStorageSignalFromData(data.Storage, AdminStorageCommand{})
 		if data.Storage.Status != "" {
 			page.Empty = data.Storage.Status
 		}
 		page.Metrics = []uisignals.AdminMetricSignal{
-			{Label: "DuckDB directory", Value: data.Storage.DuckDBDir},
-			{Label: "Database files", Value: fmt.Sprint(data.Storage.DatabaseCount)},
-			{Label: "Total size", Value: data.Storage.TotalSizeLabel},
-			{Label: "Tables and views", Value: fmt.Sprint(data.Storage.TableCount)},
+			{Label: "Catalog path", Value: data.Storage.CatalogPath},
+			{Label: "Data path", Value: data.Storage.DataPath},
+			{Label: "Snapshots", Value: fmt.Sprint(data.Storage.SnapshotCount)},
+			{Label: "Tables", Value: fmt.Sprint(data.Storage.TableCount)},
 		}
 	case "queries":
 		page.HeaderTitle = "Query History"
@@ -793,14 +801,22 @@ func AdminStorageSignalFromData(data AdminStorageData, command AdminStorageComma
 	}
 	return AdminStorageSignal{
 		Summary: AdminStorageSummary{
-			DuckDBDir:      data.DuckDBDir,
-			DatabaseCount:  data.DatabaseCount,
-			TotalSizeLabel: data.TotalSizeLabel,
-			TableCount:     data.TableCount,
+			CatalogPath:        data.CatalogPath,
+			DataPath:           data.DataPath,
+			CatalogSizeLabel:   data.CatalogSizeLabel,
+			DataSizeLabel:      data.DataSizeLabel,
+			TotalSizeLabel:     data.TotalSizeLabel,
+			TotalDataSizeLabel: data.TotalDataSizeLabel,
+			DatabaseCount:      data.DatabaseCount,
+			TableCount:         data.TableCount,
+			SnapshotCount:      data.SnapshotCount,
+			DataFileCount:      data.DataFileCount,
 		},
 		Status:        data.Status,
 		Warnings:      data.Warnings,
 		Tables:        tables,
+		Snapshots:     adminStorageSnapshotSignals(data.Snapshots),
+		Deployments:   adminStorageDeploymentSignals(data.Deployments),
 		SelectedKey:   selectedKey,
 		SelectedTable: selected,
 	}
@@ -810,11 +826,48 @@ func AdminStorageTableSignalFromTable(table AdminStorageTable) AdminStorageTable
 	columns := make([]AdminStorageColumnSignal, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		columns = append(columns, AdminStorageColumnSignal{
-			Name:     column.Name,
-			Type:     column.Type,
-			Ordinal:  column.Ordinal,
-			Nullable: column.Nullable,
-			Default:  column.Default,
+			ID:                  column.ID,
+			Name:                column.Name,
+			Type:                column.Type,
+			Ordinal:             column.Ordinal,
+			Nullable:            column.Nullable,
+			Default:             column.Default,
+			InitialDefault:      column.InitialDefault,
+			DefaultValueType:    column.DefaultValueType,
+			DefaultValueDialect: column.DefaultValueDialect,
+			BeginSnapshot:       column.BeginSnapshot,
+			ContainsNull:        column.ContainsNull,
+			ContainsNaN:         column.ContainsNaN,
+			MinValue:            column.MinValue,
+			MaxValue:            column.MaxValue,
+			ExtraStats:          column.ExtraStats,
+		})
+	}
+	files := make([]AdminStorageFileSignal, 0, len(table.Files))
+	for _, file := range table.Files {
+		files = append(files, AdminStorageFileSignal{
+			ID:               file.ID,
+			Path:             file.Path,
+			Format:           file.Format,
+			RecordCount:      file.RecordCount,
+			RecordCountLabel: file.RecordCountLabel,
+			SizeBytes:        file.SizeBytes,
+			SizeLabel:        file.SizeLabel,
+			BeginSnapshot:    file.BeginSnapshot,
+			EndSnapshot:      file.EndSnapshot,
+		})
+	}
+	history := make([]AdminStorageTableHistorySignal, 0, len(table.History))
+	for _, event := range table.History {
+		history = append(history, AdminStorageTableHistorySignal{
+			SnapshotID:    event.SnapshotID,
+			Time:          event.Time,
+			SchemaVersion: event.SchemaVersion,
+			Source:        event.Source,
+			Changes:       event.Changes,
+			Author:        event.Author,
+			Message:       event.Message,
+			ExtraInfo:     event.ExtraInfo,
 		})
 	}
 	return AdminStorageTableSignal{
@@ -827,11 +880,57 @@ func AdminStorageTableSignalFromTable(table AdminStorageTable) AdminStorageTable
 		Schema:        table.Schema,
 		Name:          table.Name,
 		Type:          table.Type,
+		TableID:       table.TableID,
+		TableUUID:     table.TableUUID,
+		DuckLakePath:  table.DuckLakePath,
+		BeginSnapshot: table.BeginSnapshot,
+		EndSnapshot:   table.EndSnapshot,
+		RowCount:      table.RowCount,
 		RowCountLabel: table.RowCountLabel,
 		ColumnCount:   table.ColumnCount,
+		FileCount:     table.FileCount,
+		SizeBytes:     table.SizeBytes,
 		SizeLabel:     table.SizeLabel,
 		Columns:       columns,
+		Files:         files,
+		History:       history,
+		Deployments:   adminStorageDeploymentSignals(table.Deployments),
 	}
+}
+
+func adminStorageSnapshotSignals(snapshots []AdminStorageSnapshot) []AdminStorageSnapshotSignal {
+	out := make([]AdminStorageSnapshotSignal, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		out = append(out, AdminStorageSnapshotSignal{
+			ID:              snapshot.ID,
+			Time:            snapshot.Time,
+			SchemaVersion:   snapshot.SchemaVersion,
+			Author:          snapshot.Author,
+			Message:         snapshot.Message,
+			Changes:         snapshot.Changes,
+			ExtraInfo:       snapshot.ExtraInfo,
+			Protected:       snapshot.Protected,
+			DeploymentCount: snapshot.DeploymentCount,
+		})
+	}
+	return out
+}
+
+func adminStorageDeploymentSignals(deployments []AdminStorageDeployment) []AdminStorageDeploymentSignal {
+	out := make([]AdminStorageDeploymentSignal, 0, len(deployments))
+	for _, deployment := range deployments {
+		out = append(out, AdminStorageDeploymentSignal{
+			WorkspaceID:  deployment.WorkspaceID,
+			Environment:  deployment.Environment,
+			DeploymentID: deployment.DeploymentID,
+			Status:       deployment.Status,
+			SnapshotID:   deployment.SnapshotID,
+			Digest:       deployment.Digest,
+			Active:       deployment.Active,
+			ActivatedAt:  deployment.ActivatedAt,
+		})
+	}
+	return out
 }
 
 func AdminStorageTableKey(databaseID, schemaName, tableName string) string {

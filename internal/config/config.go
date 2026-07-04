@@ -81,6 +81,10 @@ func (c Config) RuntimeDir() string {
 	return filepath.Join(c.HomeDir, "runtime")
 }
 
+func (c Config) DuckLakeDataDir() string {
+	return filepath.Join(c.HomeDir, "data")
+}
+
 func (c Config) DuckDBDirPath() string {
 	if c.DuckDBDir != "" {
 		return c.DuckDBDir

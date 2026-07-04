@@ -4,7 +4,10 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
@@ -17,6 +20,7 @@ import (
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/deployment"
+	"github.com/Yacobolo/libredash/internal/execution"
 	"github.com/Yacobolo/libredash/internal/platform"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
 	"github.com/Yacobolo/libredash/internal/ui"
@@ -81,26 +85,32 @@ func (m multiWorkspaceMetrics) defaultMetrics() QueryMetrics {
 }
 
 type Server struct {
-	metrics            QueryMetrics
-	broker             *dashboardstream.Broker
-	store              *platform.Store
-	deploymentRepo     deploymentRepository
-	workspaceRepo      workspace.Repository
-	assetCatalog       workspace.AssetCatalogReader
-	accessRepo         access.Repository
-	agent              *agentapp.Service
-	auth               *Auth
-	reloader           runtimeReloader
-	artifactDir        string
-	duckDBDir          string
-	defaultWorkspaceID string
-	defaultEnvironment string
-	rateLimits         RateLimitConfig
-	securityHeaders    SecurityHeadersConfig
-	requestLogging     bool
-	logger             *slog.Logger
-	chatTitleMu        sync.Mutex
-	pendingChatTitles  map[string]struct{}
+	metrics             QueryMetrics
+	executor            *execution.Service
+	broker              *dashboardstream.Broker
+	store               *platform.Store
+	deploymentRepo      deploymentRepository
+	workspaceRepo       workspace.Repository
+	assetCatalog        workspace.AssetCatalogReader
+	accessRepo          access.Repository
+	agent               *agentapp.Service
+	auth                *Auth
+	reloader            runtimeReloader
+	artifactDir         string
+	duckDBDir           string
+	duckLakeCatalogPath string
+	duckLakeDataPath    string
+	defaultWorkspaceID  string
+	defaultEnvironment  string
+	rateLimits          RateLimitConfig
+	securityHeaders     SecurityHeadersConfig
+	requestLogging      bool
+	logger              *slog.Logger
+	jobLeaseTimeout     time.Duration
+	jobDispatchMu       sync.Mutex
+	jobDispatching      bool
+	chatTitleMu         sync.Mutex
+	pendingChatTitles   map[string]struct{}
 }
 
 func New(metrics QueryMetrics) *Server {
@@ -108,25 +118,36 @@ func New(metrics QueryMetrics) *Server {
 }
 
 type Options struct {
-	Store              *platform.Store
-	DeploymentRepo     deploymentRepository
-	WorkspaceRepo      workspace.Repository
-	AssetCatalog       workspace.AssetCatalogReader
-	AccessRepo         access.Repository
-	Agent              *agentapp.Service
-	Auth               *Auth
-	Reloader           runtimeReloader
-	ArtifactDir        string
-	DuckDBDir          string
-	DefaultWorkspaceID string
-	DefaultEnvironment string
-	RateLimits         RateLimitConfig
-	SecurityHeaders    SecurityHeadersConfig
-	RequestLogging     bool
-	Logger             *slog.Logger
+	Store               *platform.Store
+	DeploymentRepo      deploymentRepository
+	WorkspaceRepo       workspace.Repository
+	AssetCatalog        workspace.AssetCatalogReader
+	AccessRepo          access.Repository
+	Agent               *agentapp.Service
+	Auth                *Auth
+	Reloader            runtimeReloader
+	ArtifactDir         string
+	DuckDBDir           string
+	DuckLakeCatalogPath string
+	DuckLakeDataPath    string
+	DefaultWorkspaceID  string
+	DefaultEnvironment  string
+	RateLimits          RateLimitConfig
+	SecurityHeaders     SecurityHeadersConfig
+	RequestLogging      bool
+	Logger              *slog.Logger
+	Executor            *execution.Service
+	JobLeaseTimeout     time.Duration
 }
 
 func NewWithOptions(metrics QueryMetrics, options Options) *Server {
+	executor := options.Executor
+	if executor == nil {
+		executor = execution.New(executionConfigFromEnv())
+	}
+	if metrics != nil {
+		metrics = executionMetrics{QueryMetrics: metrics, executor: executor, defaultWorkspaceID: options.DefaultWorkspaceID}
+	}
 	if metrics != nil && options.Store != nil {
 		metrics = queryAuditMetrics{
 			QueryMetrics:       metrics,
@@ -135,6 +156,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 		}
 	}
 	server := New(metrics)
+	server.executor = executor
 	server.store = options.Store
 	server.deploymentRepo = options.DeploymentRepo
 	server.workspaceRepo = options.WorkspaceRepo
@@ -145,16 +167,61 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.reloader = options.Reloader
 	server.artifactDir = options.ArtifactDir
 	server.duckDBDir = options.DuckDBDir
+	server.duckLakeCatalogPath = options.DuckLakeCatalogPath
+	server.duckLakeDataPath = options.DuckLakeDataPath
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
 	server.defaultEnvironment = string(deployment.NormalizeEnvironment(deployment.Environment(options.DefaultEnvironment)))
 	server.rateLimits = options.RateLimits
 	server.securityHeaders = options.SecurityHeaders
 	server.requestLogging = options.RequestLogging
+	server.jobLeaseTimeout = options.JobLeaseTimeout
+	if server.jobLeaseTimeout <= 0 {
+		server.jobLeaseTimeout = durationEnv("LIBREDASH_EXEC_JOB_LEASE_TIMEOUT", 2*time.Minute)
+	}
 	if options.Logger != nil {
 		server.logger = options.Logger
 	}
 	server.configureAgentTools()
 	return server
+}
+
+func (s *Server) StartBackgroundJobs(ctx context.Context) {
+	s.dispatchQueuedMaterializationJobs(ctx)
+}
+
+func executionConfigFromEnv() execution.Config {
+	defaults := execution.DefaultConfig()
+	return execution.Config{
+		MaxRunningReads: intEnv("LIBREDASH_EXEC_MAX_RUNNING_READS", defaults.MaxRunningReads),
+		MaxQueuedReads:  intEnv("LIBREDASH_EXEC_MAX_QUEUED_READS", defaults.MaxQueuedReads),
+		ReadQueueWait:   durationEnv("LIBREDASH_EXEC_READ_QUEUE_TIMEOUT", defaults.ReadQueueWait),
+		MaxRunningJobs:  intEnv("LIBREDASH_EXEC_MAX_RUNNING_WRITES", defaults.MaxRunningJobs),
+		MaxQueuedJobs:   intEnv("LIBREDASH_EXEC_MAX_QUEUED_WRITES", defaults.MaxQueuedJobs),
+	}
+}
+
+func intEnv(name string, fallback int) int {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func durationEnv(name string, fallback time.Duration) time.Duration {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func (s *Server) workspaceRepository() (workspace.Repository, error) {

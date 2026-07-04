@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
@@ -66,8 +68,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 	}
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	duckDBDir := seedAdminStorageDuckDB(t)
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test", DuckDBDir: duckDBDir})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
 	cases := []struct {
 		path string
@@ -79,7 +80,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 		{path: "/admin/groups", want: []string{"<ld-admin-page", "Groups", "sections", "Member count", "/admin/groups/group_finance", "Finance", "local", "finance", "editor"}},
 		{path: "/admin/groups/group_finance", want: []string{"Groups / Finance", "Provider", "local", "External ID", "finance", "Group ID", "group_finance", "Members", "Principal ID", "analyst@example.com", "viewer", analyst.ID}},
 		{path: "/admin/agent", want: []string{"<ld-admin-page", "<ld-agent-prompt-editor", "slot=\"agent-prompt\"", `data-attr:value="$adminAgentCommand.systemPrompt"`, "agent-prompt", `data-attr:agent-prompt="$adminAgentCommand.systemPrompt"`, "systemPrompt", "You are LibreDash", "Tools", "query_visual", "/api/v1/admin/agent/config"}},
-		{path: "/admin/storage", want: []string{"<ld-admin-page", "Storage", "DuckDB directory", "Database files", "Total size", "Tables and views", "adminStorage", "storage=", "/admin/storage/updates", "/admin/storage/select-table", "libredash-test.duckdb", "orders", "rowCountLabel", "columnCount", "sizeLabel", "KiB", "customer_id", "VARCHAR", "amount", "DOUBLE"}},
+		{path: "/admin/storage", want: []string{"<ld-admin-page", "Storage", "Catalog path", "Data path", "Snapshots", "Tables", "adminStorage", "storage=", "/admin/storage/updates", "/admin/storage/select-table", "No DuckLake catalog has been initialized."}},
 		{path: "/admin/queries", want: []string{"<ld-admin-page", "Query History", "adminQueryHistory", "adminQueryDetail", "adminQueryHistoryCommand", "/admin/queries/updates", "/admin/queries/command", "csrfToken"}},
 	}
 	for _, tc := range cases {
@@ -476,7 +477,7 @@ func TestAdminStorageDetailRouteIsDropped(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedAdminStorageDuckDB(t)})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/storage/libredash-test.duckdb/model/orders", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -494,7 +495,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedAdminStorageDuckDB(t)})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -543,11 +544,15 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedAdminStorageDuckDB(t)})
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "libredash.db")
+	dataPath := filepath.Join(dir, "data")
+	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath})
 	updates, unsubscribe := server.broker.Subscribe("admin-storage:test-client")
 	defer unsubscribe()
 
-	body := strings.NewReader(`{"adminStorageCommand":{"databaseId":"libredash-test.duckdb","schema":"model","table":"orders"}}`)
+	body := strings.NewReader(`{"adminStorageCommand":{"databaseId":"ducklake-catalog","schema":"model","table":"orders"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/admin/storage/select-table", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
@@ -564,18 +569,116 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 		if !ok {
 			t.Fatalf("patch missing adminStorage: %#v", patch)
 		}
-		if storage["selectedKey"] != "libredash-test.duckdb\x00model\x00orders" {
+		if storage["selectedKey"] != "ducklake-catalog\x00model\x00orders" {
 			t.Fatalf("selectedKey = %#v", storage["selectedKey"])
 		}
 		table, ok := storage["selectedTable"].(*ui.AdminStorageTableSignal)
 		if !ok {
 			t.Fatalf("selectedTable = %#v, want *ui.AdminStorageTableSignal", storage["selectedTable"])
 		}
-		if table.Name != "orders" || table.Schema != "model" || len(table.Columns) != 3 {
+		if table.Name != "orders" || table.Schema != "model" || len(table.Columns) != 3 || len(table.Files) == 0 {
 			t.Fatalf("selectedTable = %#v", table)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for selected table patch")
+	}
+}
+
+func TestAdminStorageReadsDuckLakeMetadata(t *testing.T) {
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "libredash.db")
+	dataPath := filepath.Join(dir, "data")
+	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
+	legacyDir := filepath.Join(dir, "duckdb")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "libredash-stale.duckdb"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test", DuckDBDir: legacyDir, DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath})
+
+	data := server.adminStorageData(httptest.NewRequest(http.MethodGet, "/admin/storage", nil))
+	if data.Status != "" {
+		t.Fatalf("status = %q", data.Status)
+	}
+	if data.CatalogPath != catalogPath || data.DataPath != dataPath {
+		t.Fatalf("paths = %q %q, want %q %q", data.CatalogPath, data.DataPath, catalogPath, dataPath)
+	}
+	if data.DatabaseCount != 1 || data.TableCount != 1 || data.SnapshotCount == 0 || data.DataFileCount == 0 {
+		t.Fatalf("summary = %#v, want one DuckLake catalog with snapshots and data files", data)
+	}
+	if data.TotalDataSizeBytes == 0 || data.TotalSizeBytes == 0 {
+		t.Fatalf("summary sizes = %#v, want DuckLake file sizes", data)
+	}
+	if len(data.Tables) != 1 {
+		t.Fatalf("tables = %#v, want only DuckLake metadata tables and no legacy duckdb entries", data.Tables)
+	}
+	table := data.Tables[0]
+	if table.DatabaseID != "ducklake-catalog" || table.DatabaseName != "DuckLake catalog" {
+		t.Fatalf("table database = %#v, want DuckLake catalog identity", table)
+	}
+	if table.TableUUID == "" || table.DuckLakePath != "model/orders/" {
+		t.Fatalf("table identity = %#v, want DuckLake uuid and metadata path", table)
+	}
+	if table.Schema != "model" || table.Name != "orders" || table.RowCountLabel != "10,000" || table.ColumnCount != 3 {
+		t.Fatalf("table = %#v, want DuckLake row/column metadata", table)
+	}
+	if table.FileCount == 0 || table.SizeBytes == 0 || table.SizeLabel == "0 B" || len(table.Files) == 0 {
+		t.Fatalf("table storage = %#v, want DuckLake data-file metadata", table)
+	}
+	if table.Files[0].RecordCountLabel != "10,000" {
+		t.Fatalf("file record count label = %q, want thousands separator", table.Files[0].RecordCountLabel)
+	}
+	if table.Columns[0].ID == 0 || table.Columns[0].BeginSnapshot == 0 || table.Columns[0].DefaultValueType == "" || table.Columns[0].DefaultValueDialect == "" {
+		t.Fatalf("column metadata = %#v, want DuckLake column id, snapshot, default type, and dialect", table.Columns[0])
+	}
+	if table.Columns[0].ContainsNull == "" || table.Columns[0].ContainsNaN == "" || table.Columns[0].MinValue == "" || table.Columns[0].MaxValue == "" {
+		t.Fatalf("column stats = %#v, want DuckLake table column stats", table.Columns[0])
+	}
+	if len(table.History) == 0 || table.History[0].SnapshotID != table.BeginSnapshot || !strings.Contains(table.History[0].Source, "table") {
+		t.Fatalf("table history = %#v, want table-scoped DuckLake snapshot metadata", table.History)
+	}
+}
+
+func TestAdminStorageIncludesDeploymentSnapshotContext(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "libredash.db")
+	dataPath := filepath.Join(dir, "data")
+	store, err := platform.Open(ctx, catalogPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
+	snapshotID := latestAdminStorageDuckLakeSnapshot(t, catalogPath)
+	if _, err := store.SQLDB().ExecContext(ctx, `
+INSERT INTO workspaces (id, title) VALUES ('test', 'Test') ON CONFLICT(id) DO NOTHING;
+INSERT INTO deployments (id, workspace_id, environment, status, digest, ducklake_snapshot_id, created_by, activated_at)
+VALUES ('dep_test', 'test', 'dev', 'active', 'digest_test', ?, 'tester', CURRENT_TIMESTAMP);
+INSERT INTO workspace_active_deployments (workspace_id, environment, deployment_id)
+VALUES ('test', 'dev', 'dep_test')`, snapshotID); err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewWithOptions(fakeMetrics{}, Options{
+		Store:               store,
+		DefaultWorkspaceID:  "test",
+		DuckLakeCatalogPath: catalogPath,
+		DuckLakeDataPath:    dataPath,
+	})
+
+	data := server.adminStorageData(httptest.NewRequest(http.MethodGet, "/admin/storage", nil))
+	if len(data.Deployments) != 1 {
+		t.Fatalf("deployments = %#v, want active deployment context", data.Deployments)
+	}
+	deployment := data.Deployments[0]
+	if deployment.WorkspaceID != "test" || deployment.Environment != "dev" || deployment.DeploymentID != "dep_test" || deployment.SnapshotID != snapshotID || !deployment.Active {
+		t.Fatalf("deployment = %#v, want active snapshot deployment", deployment)
+	}
+	if len(data.Snapshots) == 0 || data.Snapshots[len(data.Snapshots)-1].ID != snapshotID {
+		t.Fatalf("snapshots = %#v, want latest snapshot metadata", data.Snapshots)
 	}
 }
 
@@ -585,7 +688,11 @@ func TestAdminStorageSelectTableRejectsInvalidCommand(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedAdminStorageDuckDB(t)})
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "libredash.db")
+	dataPath := filepath.Join(dir, "data")
+	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath})
 	updates, unsubscribe := server.broker.Subscribe("admin-storage:test-client")
 	defer unsubscribe()
 
@@ -688,82 +795,46 @@ func TestAdminStorageRendersEmptyStateWithoutDuckDBFiles(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Storage", "No DuckDB database files found.", "DuckDB directory"} {
+	for _, want := range []string{"Storage", "No DuckLake catalog has been initialized.", "Catalog path"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin storage missing %q:\n%s", want, body)
 		}
 	}
 }
 
-func TestAdminStorageInspectsDuckDBAlreadyOpenByRuntime(t *testing.T) {
-	dir := seedAdminStorageDuckDB(t)
-	dbPath := filepath.Join(dir, "libredash-test.duckdb")
-	runtimeDB, err := sql.Open("duckdb", dbPath)
+func latestAdminStorageDuckLakeSnapshot(t *testing.T, catalogPath string) int64 {
+	t.Helper()
+	db, err := sql.Open("sqlite", catalogPath)
 	if err != nil {
-		t.Fatalf("open runtime duckdb: %v", err)
+		t.Fatalf("open sqlite catalog: %v", err)
 	}
-	defer runtimeDB.Close()
-	if err := runtimeDB.PingContext(context.Background()); err != nil {
-		t.Fatalf("ping runtime duckdb: %v", err)
+	defer db.Close()
+	var snapshotID int64
+	if err := db.QueryRow(`SELECT max(snapshot_id) FROM ducklake_snapshot`).Scan(&snapshotID); err != nil {
+		t.Fatalf("latest DuckLake snapshot: %v", err)
 	}
-
-	tables, warning := inspectDuckDBTables(context.Background(), duckDBFile{
-		ID:      "libredash-test.duckdb",
-		Name:    "libredash-test.duckdb",
-		Path:    dbPath,
-		ModelID: "test",
-	}, nil)
-	if warning != "" {
-		t.Fatalf("warning = %q", warning)
-	}
-	var found bool
-	for _, table := range tables {
-		if table.Schema == "model" && table.Name == "orders" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("tables = %#v, want model.orders", tables)
-	}
+	return snapshotID
 }
 
-func seedAdminStorageDuckDB(t *testing.T) string {
+func seedAdminStorageDuckLakeAt(t *testing.T, catalogPath, dataPath string) {
 	t.Helper()
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "libredash-test.duckdb")
-	db, err := sql.Open("duckdb", dbPath)
+	db, err := sql.Open("duckdb", ":memory:")
 	if err != nil {
 		t.Fatalf("open duckdb: %v", err)
 	}
 	defer db.Close()
-	_, err = db.Exec(`
-CREATE SCHEMA model;
-CREATE TABLE model.orders (
-	id INTEGER NOT NULL,
-	customer_id VARCHAR,
-	amount DOUBLE DEFAULT 0
-);
-INSERT INTO model.orders VALUES (1, 'c_1', 10.5), (2, 'c_2', 20.5), (3, 'c_3', 30.5);
-CREATE VIEW model.order_totals AS SELECT customer_id, amount FROM model.orders;
-`)
-	if err != nil {
-		t.Fatalf("seed duckdb: %v", err)
-	}
-	return dir
-}
-
-func TestDuckDBReadOnlyDSN(t *testing.T) {
-	for _, tc := range []struct {
-		path string
-		want string
-	}{
-		{path: "/tmp/libredash.duckdb", want: "/tmp/libredash.duckdb?access_mode=READ_ONLY"},
-		{path: "/tmp/libredash.duckdb?threads=2", want: "/tmp/libredash.duckdb?threads=2&access_mode=READ_ONLY"},
-		{path: "/tmp/libredash.duckdb?access_mode=automatic", want: "/tmp/libredash.duckdb?access_mode=READ_ONLY"},
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(catalogPath, "'", "''") + "' AS lake (DATA_PATH '" + strings.ReplaceAll(dataPath, "'", "''") + "')",
+		"USE lake",
+		"CREATE SCHEMA model",
+		`CREATE TABLE model.orders AS
+		 SELECT i AS id, 'c_' || i::VARCHAR AS customer_id, i * 1.5 AS amount
+		 FROM range(1, 10001) t(i)`,
 	} {
-		if got := duckDBReadOnlyDSN(tc.path); got != tc.want {
-			t.Fatalf("duckDBReadOnlyDSN(%q) = %q, want %q", tc.path, got, tc.want)
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed ducklake %q: %v", stmt, err)
 		}
 	}
 }

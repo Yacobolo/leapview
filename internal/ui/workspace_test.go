@@ -113,73 +113,50 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	}
 }
 
-func TestWorkspaceAssetVersionsSignalUsesRecordTable(t *testing.T) {
+func TestWorkspaceAssetPageHidesVersionsSurface(t *testing.T) {
 	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
 	asset := testAssetByID(t, assets, "dashboard")
-	versions := AssetVersionsState{
-		CurrentDeploymentID: "dep_current123456",
-		Versions: []AssetVersionState{{
-			DeploymentID: "dep_current123456",
-			Status:       "active",
-			Digest:       "digest_current1234567890",
-			ContentHash:  "asset_hash_current123456",
-			CreatedAt:    "2026-07-01 10:00:00",
-			ActivatedAt:  "2026-07-01 10:01:00",
-			CreatedBy:    "tester",
-		}},
-	}
 
-	page := workspaceAssetPageSignalWithRefreshAndVersions(workspace, asset, assets, edges, "versions", assetLineage(workspace.ID, asset, assets, edges), AssetRefreshState{}, versions)
-	if page.ActiveSection != "versions" || page.Versions.CurrentDeploymentID != "dep_current123456" {
-		t.Fatalf("versions page = %#v", page)
+	page := workspaceAssetPageSignalWithRefresh(workspace, asset, assets, edges, "details", assetLineage(workspace.ID, asset, assets, edges), AssetRefreshState{})
+	for _, tab := range page.Tabs {
+		if tab.ID == "versions" || tab.Label == "Versions" {
+			t.Fatalf("workspace asset tabs include versions: %#v", page.Tabs)
+		}
 	}
-	assertTab(t, page.Tabs, "versions", "/workspaces/libredash/assets/dashboard:executive-sales/versions", true)
-	assertTableHeaders(t, page.Versions.Table, []string{"Version", "Created", "Activated", "Status", "Asset hash", "Deployment digest", "Created by"})
-	if len(page.Versions.Table.Rows) != 1 {
-		t.Fatalf("versions rows = %#v, want one row", page.Versions.Table.Rows)
-	}
-	status, ok := page.Versions.Table.Rows[0]["status"].(uisignals.RecordTableBadgeSignal)
-	if !ok || status.Label != "current" {
-		t.Fatalf("versions status = %#v, want current badge", page.Versions.Table.Rows[0]["status"])
+	if ValidWorkspaceAssetSection("versions") {
+		t.Fatal("versions section is valid, want hidden v1 surface")
 	}
 
 	var out strings.Builder
-	err := WorkspaceAssetPageWithRefreshAndVersions(catalog, workspace, asset, assets, edges, "versions", "Owner", AssetRefreshState{}, versions).Render(&out)
+	err := WorkspaceAssetPageWithRefresh(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}).Render(&out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
-	for _, want := range []string{
-		`"activeSection":"versions"`,
-		`"label":"Versions"`,
-		`"header":"Deployment digest"`,
-		`"currentDeploymentId":"dep_current123456"`,
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("versions page did not render %q:\n%s", want, rendered)
+	for _, notWant := range []string{`"label":"Versions"`, `"versions":`, "Deployment digest", `/updates?section=versions`} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("workspace asset page rendered versions surface %q:\n%s", notWant, rendered)
 		}
-	}
-	if strings.Contains(rendered, `/updates?section=versions`) {
-		t.Fatalf("versions page started asset update stream:\n%s", rendered)
 	}
 }
 
-func TestConnectionAssetVersionsTabsUseConnectionRoutes(t *testing.T) {
+func TestConnectionAssetPagesHideVersionsSurface(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 	connection := testAssetByID(t, assets, "connection")
 	source := testAssetByID(t, assets, "source")
-	versions := AssetVersionsState{CurrentDeploymentID: "dep_connection", Versions: []AssetVersionState{{DeploymentID: "dep_connection", Status: "active"}}}
 
-	connectionPage := connectionAssetPageSignalWithVersions(workspace, connection, assets, edges, "versions", assetLineage(workspace.ID, connection, assets, edges), versions)
-	assertTab(t, connectionPage.Tabs, "versions", "/connections/connection:olist.olist/versions", true)
-	if connectionPage.Versions.CurrentDeploymentID != "dep_connection" {
-		t.Fatalf("connection versions = %#v", connectionPage.Versions)
+	connectionPage := connectionAssetPageSignal(workspace, connection, assets, edges, "details", assetLineage(workspace.ID, connection, assets, edges))
+	for _, tab := range connectionPage.Tabs {
+		if tab.ID == "versions" || tab.Label == "Versions" {
+			t.Fatalf("connection asset tabs include versions: %#v", connectionPage.Tabs)
+		}
 	}
 
-	sourcePage := connectionSourceAssetPageSignalWithVersions(workspace, connection, source, assets, edges, "versions", assetLineage(workspace.ID, source, assets, edges), versions)
-	assertTab(t, sourcePage.Tabs, "versions", "/connections/connection:olist.olist/sources/source:olist.orders/versions", true)
-	if sourcePage.Versions.CurrentDeploymentID != "dep_connection" {
-		t.Fatalf("source versions = %#v", sourcePage.Versions)
+	sourcePage := connectionSourceAssetPageSignal(workspace, connection, source, assets, edges, "details", assetLineage(workspace.ID, source, assets, edges))
+	for _, tab := range sourcePage.Tabs {
+		if tab.ID == "versions" || tab.Label == "Versions" {
+			t.Fatalf("source asset tabs include versions: %#v", sourcePage.Tabs)
+		}
 	}
 }
 

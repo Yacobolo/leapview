@@ -790,26 +790,50 @@ test('admin storage route renders storage explorer from typed signal data', asyn
     const state = await page.evaluate(async () => {
       const element = document.createElement('ld-admin-page') as any
       const table = {
-        key: 'db\u0000main\u0000orders',
-        databaseId: 'db',
-        databaseName: 'libredash.duckdb',
-        databasePath: '/tmp/duckdb/libredash.duckdb',
-        modelId: 'olist',
-        modelName: 'Olist Commerce',
-        schema: 'main',
+        key: 'ducklake-catalog\u0000model\u0000orders',
+        databaseId: 'ducklake-catalog',
+        databaseName: 'DuckLake catalog',
+        databasePath: '/tmp/libredash/libredash.db',
+        modelId: 'ducklake',
+        modelName: 'DuckLake',
+        schema: 'model',
         name: 'orders',
         type: 'table',
-        rowCountLabel: '10',
+        tableId: 42,
+        tableUuid: 'table-uuid',
+        duckLakePath: 'model/orders/',
+        beginSnapshot: 7,
+        endSnapshot: 0,
+        rowCount: 32000204,
+        rowCountLabel: '32,000,204',
         columnCount: 1,
+        fileCount: 1,
+        sizeBytes: 12288,
         sizeLabel: '12 KiB',
-        columns: [{ name: 'order_id', type: 'VARCHAR', ordinal: 1, nullable: 'No', default: '' }],
+        columns: [{ id: 91, name: 'order_id', type: 'VARCHAR', ordinal: 1, nullable: 'No', default: '', initialDefault: '', defaultValueType: 'literal', defaultValueDialect: 'duckdb', beginSnapshot: 7, containsNull: 'No', containsNan: '-', minValue: 'o_001', maxValue: 'o_999', extraStats: '' }],
+        files: [{ id: 9, path: 'model/orders/file.parquet', format: 'parquet', recordCount: 32000204, recordCountLabel: '32,000,204', sizeBytes: 12288, sizeLabel: '12 KiB', beginSnapshot: 7, endSnapshot: 0 }],
+        history: [{ snapshotId: 7, time: '2026-07-03T10:00:00Z', schemaVersion: 1, source: 'table,data_file', changes: 'tables_inserted_into', author: 'tester', message: 'materialize orders', extraInfo: '{}' }],
+        deployments: [{ workspaceId: 'sales', environment: 'dev', deploymentId: 'dep_1', status: 'active', snapshotId: 7, digest: 'digest', active: true, activatedAt: 'now' }],
       }
       const storage = {
-        summary: { duckdbDir: '/tmp/duckdb', databaseCount: 1, totalSizeLabel: '12 KiB', tableCount: 1 },
+        summary: {
+          catalogPath: '/tmp/libredash/libredash.db',
+          dataPath: '/tmp/libredash/data',
+          catalogSizeLabel: '32 KiB',
+          dataSizeLabel: '12 KiB',
+          totalSizeLabel: '44 KiB',
+          totalDataSizeLabel: '12 KiB',
+          databaseCount: 1,
+          tableCount: 1,
+          snapshotCount: 1,
+          dataFileCount: 1,
+        },
         status: '',
         warnings: ['Storage warning'],
-        selectedKey: 'db\u0000main\u0000orders',
+        selectedKey: 'ducklake-catalog\u0000model\u0000orders',
         tables: [table],
+        snapshots: [{ id: 7, time: '2026-07-03T10:00:00Z', schemaVersion: 1, author: 'tester', message: 'materialize', changes: 'tables_inserted_into', extraInfo: '{}', protected: true, deploymentCount: 1 }],
+        deployments: [{ workspaceId: 'sales', environment: 'dev', deploymentId: 'dep_1', status: 'active', snapshotId: 7, digest: 'digest', active: true, activatedAt: 'now' }],
         selectedTable: table,
       }
       element.page = {
@@ -827,8 +851,8 @@ test('admin storage route renders storage explorer from typed signal data', asyn
           items: [{ id: 'storage', title: 'Storage', href: '/admin/storage', active: true }],
         },
         headerTitle: 'Storage',
-        headerDetail: 'Read-only DuckDB database and table inventory.',
-        metrics: [{ label: 'Tables and views', value: '1' }],
+        headerDetail: 'Read-only DuckLake catalog and table metadata.',
+        metrics: [{ label: 'Tables', value: '1' }],
         storage,
       }
       element.storage = storage
@@ -836,6 +860,11 @@ test('admin storage route renders storage explorer from typed signal data', asyn
       await element.updateComplete
       const explorer = element.shadowRoot.querySelector('ld-storage-explorer') as any
       await explorer.updateComplete
+      const schemaText = explorer.shadowRoot.textContent
+      const filesTab = Array.from(explorer.shadowRoot.querySelectorAll<HTMLButtonElement>('.storage-tab')).find((button) => button.textContent?.includes('Data files'))
+      filesTab?.click()
+      await explorer.updateComplete
+      const filesText = explorer.shadowRoot.textContent
       return {
         hasPageTitle: Boolean(element.shadowRoot.querySelector('h1')),
         explorerTitle: explorer.shadowRoot.querySelector('h2')?.textContent?.trim(),
@@ -847,11 +876,15 @@ test('admin storage route renders storage explorer from typed signal data', asyn
         searchInPageHeader: Boolean(explorer.shadowRoot.querySelector('.storage-explorer-header .storage-search input')),
         hasGlobalSummary: Boolean(explorer.shadowRoot.querySelector('.storage-summary')),
         detailBadges: explorer.shadowRoot.querySelectorAll('.storage-detail-header > span, .storage-columns-header > span').length,
-        databaseTreeCounts: explorer.shadowRoot.querySelectorAll('.storage-db > summary em').length,
-        schemaTreeCounts: explorer.shadowRoot.querySelectorAll('.storage-schema > summary em').length,
+        databaseTreeBadges: Array.from(explorer.shadowRoot.querySelectorAll('.storage-db > summary em')).map((badge) => badge.textContent?.trim()),
+        schemaTreeBadges: Array.from(explorer.shadowRoot.querySelectorAll('.storage-schema > summary em')).map((badge) => badge.textContent?.trim()),
         tableListSizes: Array.from(explorer.shadowRoot.querySelectorAll('.storage-table-size')).map((size) => size.textContent?.trim()),
         searchBorder: getComputedStyle(explorer.shadowRoot.querySelector('.storage-search input')!).border,
+        metricsOverflow: getComputedStyle(explorer.shadowRoot.querySelector('.storage-metrics')!).overflowX,
+        metricsWrap: getComputedStyle(explorer.shadowRoot.querySelector('.storage-metrics')!).flexWrap,
         explorerText: explorer.shadowRoot.textContent,
+        schemaText,
+        filesText,
       }
     })
 
@@ -863,15 +896,31 @@ test('admin storage route renders storage explorer from typed signal data', asyn
     expect(state.explorerHeight).toBeGreaterThan(500)
     expect(state.searchInBrowserMenu).toBe(true)
     expect(state.searchInPageHeader).toBe(false)
-    expect(state.hasGlobalSummary).toBe(false)
+    expect(state.hasGlobalSummary).toBe(true)
     expect(state.detailBadges).toBe(0)
-    expect(state.databaseTreeCounts).toBe(0)
-    expect(state.schemaTreeCounts).toBe(1)
+    expect(state.databaseTreeBadges).toEqual([])
+    expect(state.schemaTreeBadges).toEqual([])
     expect(state.tableListSizes).toEqual(['12 KiB'])
     expect(state.searchBorder).toContain('0px')
+    expect(state.metricsOverflow).toBe('hidden')
+    expect(state.metricsWrap).toBe('wrap')
     expect(state.explorerText ?? '').toMatch(/orders/)
-    expect(state.explorerText ?? '').toMatch(/Olist Commerce/)
-    expect(state.explorerText ?? '').toMatch(/\/tmp\/duckdb/)
+    expect(state.explorerText ?? '').toMatch(/DuckLake catalog/)
+    expect(state.explorerText ?? '').toMatch(/\/tmp\/libredash\/libredash\.db/)
+    expect(state.explorerText ?? '').toMatch(/Table UUID/)
+    expect(state.explorerText ?? '').toMatch(/table-uuid/)
+    expect(state.explorerText ?? '').toMatch(/DuckLake path/)
+    expect(state.explorerText ?? '').toMatch(/model\/orders\//)
+    expect(state.schemaText ?? '').toMatch(/Column ID/)
+    expect(state.schemaText ?? '').toMatch(/literal/)
+    expect(state.schemaText ?? '').toMatch(/duckdb/)
+    expect(state.schemaText ?? '').toMatch(/Nulls/)
+    expect(state.schemaText ?? '').toMatch(/o_001/)
+    expect(state.schemaText ?? '').toMatch(/o_999/)
+    expect(state.filesText ?? '').toMatch(/model\/orders\/file\.parquet/)
+    expect(state.explorerText ?? '').toMatch(/32,000,204/)
+    expect(state.explorerText ?? '').not.toMatch(/32000204/)
+    expect(state.explorerText ?? '').not.toMatch(/dep_1/)
     expect(state.explorerText ?? '').toMatch(/12 KiB/)
   } finally {
     await page.close()
@@ -1404,33 +1453,63 @@ test('admin storage explorer keeps table, schema, and breadcrumb selection coher
     const state = await page.evaluate(async () => {
       const element = document.createElement('ld-storage-explorer') as any
       const customers = {
-        key: 'db\u0000model\u0000customers',
-        databaseId: 'db',
-        databaseName: 'libredash-olist.duckdb',
-        databasePath: '/tmp/duckdb/libredash-olist.duckdb',
-        modelId: 'olist',
-        modelName: 'Olist Commerce',
+        key: 'ducklake-catalog\u0000model\u0000customers',
+        databaseId: 'ducklake-catalog',
+        databaseName: 'DuckLake catalog',
+        databasePath: '/tmp/libredash/libredash.db',
+        modelId: 'ducklake',
+        modelName: 'DuckLake',
         schema: 'model',
         name: 'customers',
         type: 'table',
+        tableId: 41,
+        tableUuid: 'customers-uuid',
+        duckLakePath: 'model/customers/',
+        beginSnapshot: 6,
+        endSnapshot: 0,
+        rowCount: 10,
         rowCountLabel: '10',
         columnCount: 1,
+        fileCount: 1,
+        sizeBytes: 12288,
         sizeLabel: '12 KiB',
-        columns: [{ name: 'customer_id', type: 'VARCHAR', ordinal: 1, nullable: 'No', default: '' }],
+        columns: [{ id: 81, name: 'customer_id', type: 'VARCHAR', ordinal: 1, nullable: 'No', default: '', initialDefault: '', defaultValueType: 'literal', defaultValueDialect: 'duckdb', beginSnapshot: 6, containsNull: 'No', containsNan: '-', minValue: 'c_001', maxValue: 'c_999', extraStats: '' }],
+        files: [{ id: 1, path: 'model/customers/file.parquet', format: 'parquet', recordCount: 10, recordCountLabel: '10', sizeBytes: 12288, sizeLabel: '12 KiB', beginSnapshot: 6, endSnapshot: 0 }],
+        history: [{ snapshotId: 6, time: '2026-07-03T10:00:00Z', schemaVersion: 1, source: 'table,data_file', changes: 'tables_inserted_into', author: 'tester', message: 'materialize customers', extraInfo: '{}' }],
+        deployments: [{ workspaceId: 'olist', environment: 'dev', deploymentId: 'dep_1', status: 'active', snapshotId: 6, digest: 'digest', active: true, activatedAt: 'now' }],
       }
       const orders = {
         ...customers,
-        key: 'db\u0000model\u0000orders',
+        key: 'ducklake-catalog\u0000model\u0000orders',
         name: 'orders',
+        tableId: 42,
+        tableUuid: 'orders-uuid',
+        duckLakePath: 'model/orders/',
+        rowCount: 20,
         rowCountLabel: '20',
-        columns: [{ name: 'order_id', type: 'VARCHAR', ordinal: 1, nullable: 'No', default: '' }],
+        columns: [{ id: 82, name: 'order_id', type: 'VARCHAR', ordinal: 1, nullable: 'No', default: '', initialDefault: '', defaultValueType: 'literal', defaultValueDialect: 'duckdb', beginSnapshot: 6, containsNull: 'No', containsNan: '-', minValue: 'o_001', maxValue: 'o_999', extraStats: '' }],
+        files: [{ id: 2, path: 'model/orders/file.parquet', format: 'parquet', recordCount: 20, recordCountLabel: '20', sizeBytes: 12288, sizeLabel: '12 KiB', beginSnapshot: 6, endSnapshot: 0 }],
+        history: [{ snapshotId: 6, time: '2026-07-03T10:00:00Z', schemaVersion: 1, source: 'table,data_file', changes: 'tables_inserted_into', author: 'tester', message: 'materialize orders', extraInfo: '{}' }],
       }
       element.storage = {
-        summary: { duckdbDir: '/tmp/duckdb', databaseCount: 1, totalSizeLabel: '24 KiB', tableCount: 2 },
+        summary: {
+          catalogPath: '/tmp/libredash/libredash.db',
+          dataPath: '/tmp/libredash/data',
+          catalogSizeLabel: '32 KiB',
+          dataSizeLabel: '24 KiB',
+          totalSizeLabel: '56 KiB',
+          totalDataSizeLabel: '24 KiB',
+          databaseCount: 1,
+          tableCount: 2,
+          snapshotCount: 1,
+          dataFileCount: 2,
+        },
         status: '',
         warnings: [],
         selectedKey: customers.key,
         tables: [customers, orders],
+        snapshots: [{ id: 6, time: '2026-07-03T10:00:00Z', schemaVersion: 1, author: 'tester', message: 'materialize', changes: 'tables_inserted_into', extraInfo: '{}', protected: true, deploymentCount: 1 }],
+        deployments: [{ workspaceId: 'olist', environment: 'dev', deploymentId: 'dep_1', status: 'active', snapshotId: 6, digest: 'digest', active: true, activatedAt: 'now' }],
         selectedTable: customers,
       }
       const commands: unknown[] = []
@@ -1447,10 +1526,27 @@ test('admin storage explorer keeps table, schema, and breadcrumb selection coher
 
       ordersButton.click()
       await element.updateComplete
+      const tabText = (tab: Element | null) => tab?.textContent?.replace(/\s+/g, ' ').trim()
+      const defaultTabLabels = Array.from(root.querySelectorAll('.storage-tab')).map((tab) => tabText(tab))
+      const activeTabBefore = tabText(root.querySelector('.storage-tab.is-active'))
+      const schemaDetail = detailText()
+      const filesTab = Array.from(root.querySelectorAll<HTMLButtonElement>('.storage-tab')).find((button) => button.textContent?.includes('Data files'))!
+      filesTab.click()
+      await element.updateComplete
+      const filesDetail = detailText()
+      const historyTab = Array.from(root.querySelectorAll<HTMLButtonElement>('.storage-tab')).find((button) => button.textContent?.includes('History'))!
+      historyTab.click()
+      await element.updateComplete
+      const historyDetail = detailText()
       const afterOrders = {
         selectedNames: selectedNames(),
         tableSizes: tableSizes(),
         detail: detailText(),
+        defaultTabLabels,
+        activeTabBefore,
+        schemaDetail,
+        filesDetail,
+        historyDetail,
         commands: [...commands],
       }
 
@@ -1470,11 +1566,27 @@ test('admin storage explorer keeps table, schema, and breadcrumb selection coher
       const databaseBreadcrumb = root.querySelector<HTMLButtonElement>('button[data-breadcrumb-kind="database"]')!
       databaseBreadcrumb.click()
       await element.updateComplete
+      const catalogTabs = Array.from(root.querySelectorAll('.storage-tab')).map((tab) => tabText(tab))
+      const catalogActiveTab = tabText(root.querySelector('.storage-tab.is-active'))
+      const catalogDefaultDetail = detailText()
+      const catalogDeploymentsTab = Array.from(root.querySelectorAll<HTMLButtonElement>('.storage-tab')).find((button) => button.textContent?.includes('Deployments'))!
+      catalogDeploymentsTab.click()
+      await element.updateComplete
+      const catalogDeploymentsDetail = detailText()
+      const catalogSnapshotsTab = Array.from(root.querySelectorAll<HTMLButtonElement>('.storage-tab')).find((button) => button.textContent?.includes('Snapshots'))!
+      catalogSnapshotsTab.click()
+      await element.updateComplete
+      const catalogSnapshotsDetail = detailText()
       const afterBreadcrumb = {
         selectedNames: selectedNames(),
         detail: detailText(),
         schemaRows: root.querySelectorAll('ld-record-table tbody tr').length,
         schemaRowsBeforeBreadcrumb,
+        catalogTabs,
+        catalogActiveTab,
+        catalogDefaultDetail,
+        catalogDeploymentsDetail,
+        catalogSnapshotsDetail,
       }
 
       return { afterOrders, afterSchema, afterBreadcrumb }
@@ -1483,8 +1595,13 @@ test('admin storage explorer keeps table, schema, and breadcrumb selection coher
     expect(state.afterOrders.selectedNames).toHaveLength(1)
     expect(state.afterOrders.selectedNames[0]).toContain('orders')
     expect(state.afterOrders.tableSizes).toEqual(['12 KiB', '12 KiB'])
-    expect(state.afterOrders.detail).toContain('order_id')
-    expect(state.afterOrders.commands).toEqual([{ databaseId: 'db', schema: 'model', table: 'orders' }])
+    expect(state.afterOrders.activeTabBefore).toContain('Schema')
+    expect(state.afterOrders.defaultTabLabels).toEqual(['Schema 1', 'Data files 1', 'History 1'])
+    expect(state.afterOrders.schemaDetail).toContain('order_id')
+    expect(state.afterOrders.filesDetail).toContain('model/orders/file.parquet')
+    expect(state.afterOrders.historyDetail).toContain('materialize orders')
+    expect(state.afterOrders.historyDetail).toContain('tables_inserted_into')
+    expect(state.afterOrders.commands).toEqual([{ databaseId: 'ducklake-catalog', schema: 'model', table: 'orders' }])
 
     expect(state.afterSchema.selectedNames).toHaveLength(0)
     expect(state.afterSchema.detail).toContain('Tables')
@@ -1492,8 +1609,13 @@ test('admin storage explorer keeps table, schema, and breadcrumb selection coher
     expect(state.afterSchema.detail).toContain('orders')
 
     expect(state.afterBreadcrumb.selectedNames).toHaveLength(0)
-    expect(state.afterBreadcrumb.detail).toContain('Schemas')
-    expect(state.afterBreadcrumb.detail).toContain('model')
+    expect(state.afterBreadcrumb.catalogActiveTab).toContain('Schemas')
+    expect(state.afterBreadcrumb.catalogTabs).toEqual(['Schemas 1', 'Deployments 1', 'Snapshots 1'])
+    expect(state.afterBreadcrumb.catalogDefaultDetail).toContain('Schemas')
+    expect(state.afterBreadcrumb.catalogDefaultDetail).toContain('model')
+    expect(state.afterBreadcrumb.catalogDefaultDetail).not.toContain('dep_1')
+    expect(state.afterBreadcrumb.catalogDeploymentsDetail).toContain('dep_1')
+    expect(state.afterBreadcrumb.catalogSnapshotsDetail).toContain('materialize')
     expect(state.afterBreadcrumb.schemaRows).toBe(1)
     expect(state.afterBreadcrumb.schemaRowsBeforeBreadcrumb).toBe(2)
   } finally {

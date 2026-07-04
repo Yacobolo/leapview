@@ -112,16 +112,20 @@ type AuditEvent struct {
 }
 
 type Deployment struct {
-	ID           string         `json:"id"`
-	WorkspaceID  string         `json:"workspace_id"`
-	Environment  string         `json:"environment"`
-	Status       string         `json:"status"`
-	Digest       string         `json:"digest"`
-	ManifestJson string         `json:"manifest_json"`
-	CreatedBy    string         `json:"created_by"`
-	CreatedAt    string         `json:"created_at"`
-	ActivatedAt  sql.NullString `json:"activated_at"`
-	Error        string         `json:"error"`
+	ID                 string         `json:"id"`
+	WorkspaceID        string         `json:"workspace_id"`
+	Environment        string         `json:"environment"`
+	Status             string         `json:"status"`
+	Source             string         `json:"source"`
+	Digest             string         `json:"digest"`
+	ManifestJson       string         `json:"manifest_json"`
+	DucklakeSnapshotID int64          `json:"ducklake_snapshot_id"`
+	CreatedBy          string         `json:"created_by"`
+	CreatedAt          string         `json:"created_at"`
+	ActivatedAt        sql.NullString `json:"activated_at"`
+	SupersededAt       sql.NullString `json:"superseded_at"`
+	CleanupAfter       sql.NullString `json:"cleanup_after"`
+	Error              string         `json:"error"`
 }
 
 type DeploymentArtifact struct {
@@ -132,6 +136,7 @@ type DeploymentArtifact struct {
 	Digest       string `json:"digest"`
 	Format       string `json:"format"`
 	Path         string `json:"path"`
+	DataRoot     string `json:"data_root"`
 	ManifestJson string `json:"manifest_json"`
 	SizeBytes    int64  `json:"size_bytes"`
 	CreatedAt    string `json:"created_at"`
@@ -165,13 +170,22 @@ type GroupMember struct {
 }
 
 type MaterializationJob struct {
-	ID           string         `json:"id"`
-	WorkspaceID  string         `json:"workspace_id"`
-	DeploymentID sql.NullString `json:"deployment_id"`
-	ModelID      string         `json:"model_id"`
-	Status       string         `json:"status"`
-	CreatedAt    string         `json:"created_at"`
-	UpdatedAt    string         `json:"updated_at"`
+	ID             string         `json:"id"`
+	WorkspaceID    string         `json:"workspace_id"`
+	DeploymentID   sql.NullString `json:"deployment_id"`
+	ModelID        string         `json:"model_id"`
+	Kind           string         `json:"kind"`
+	PayloadJson    string         `json:"payload_json"`
+	Status         string         `json:"status"`
+	QueuedAt       string         `json:"queued_at"`
+	StartedAt      sql.NullString `json:"started_at"`
+	FinishedAt     sql.NullString `json:"finished_at"`
+	LeaseOwner     string         `json:"lease_owner"`
+	LeaseExpiresAt sql.NullString `json:"lease_expires_at"`
+	AttemptCount   int64          `json:"attempt_count"`
+	LastError      string         `json:"last_error"`
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
 }
 
 type MaterializationJobRun struct {
@@ -224,27 +238,42 @@ type Principal struct {
 }
 
 type QueryEvent struct {
-	ID            string `json:"id"`
-	WorkspaceID   string `json:"workspace_id"`
-	PrincipalID   string `json:"principal_id"`
-	Surface       string `json:"surface"`
-	Operation     string `json:"operation"`
-	QueryKind     string `json:"query_kind"`
-	ModelID       string `json:"model_id"`
-	Target        string `json:"target"`
-	ObjectType    string `json:"object_type"`
-	ObjectID      string `json:"object_id"`
-	RequestID     string `json:"request_id"`
-	CorrelationID string `json:"correlation_id"`
-	Status        string `json:"status"`
-	DurationMs    int64  `json:"duration_ms"`
-	RowsReturned  int64  `json:"rows_returned"`
-	BytesEstimate int64  `json:"bytes_estimate"`
-	Error         string `json:"error"`
-	SqlText       string `json:"sql_text"`
-	PlanText      string `json:"plan_text"`
-	QueryJson     string `json:"query_json"`
-	CreatedAt     string `json:"created_at"`
+	ID             string `json:"id"`
+	WorkspaceID    string `json:"workspace_id"`
+	PrincipalID    string `json:"principal_id"`
+	Surface        string `json:"surface"`
+	Operation      string `json:"operation"`
+	QueryKind      string `json:"query_kind"`
+	ModelID        string `json:"model_id"`
+	Target         string `json:"target"`
+	ObjectType     string `json:"object_type"`
+	ObjectID       string `json:"object_id"`
+	RequestID      string `json:"request_id"`
+	CorrelationID  string `json:"correlation_id"`
+	Status         string `json:"status"`
+	DurationMs     int64  `json:"duration_ms"`
+	QueueWaitMs    int64  `json:"queue_wait_ms"`
+	ExecutionMs    int64  `json:"execution_ms"`
+	ExecutionState string `json:"execution_state"`
+	RowsReturned   int64  `json:"rows_returned"`
+	BytesEstimate  int64  `json:"bytes_estimate"`
+	Error          string `json:"error"`
+	SqlText        string `json:"sql_text"`
+	PlanText       string `json:"plan_text"`
+	QueryJson      string `json:"query_json"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type QuerySnapshotLease struct {
+	ID                 string         `json:"id"`
+	WorkspaceID        string         `json:"workspace_id"`
+	Environment        string         `json:"environment"`
+	DeploymentID       string         `json:"deployment_id"`
+	DucklakeSnapshotID int64          `json:"ducklake_snapshot_id"`
+	OwnerID            string         `json:"owner_id"`
+	AcquiredAt         string         `json:"acquired_at"`
+	ExpiresAt          string         `json:"expires_at"`
+	ReleasedAt         sql.NullString `json:"released_at"`
 }
 
 type Role struct {

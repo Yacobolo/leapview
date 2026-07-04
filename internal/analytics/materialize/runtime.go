@@ -55,6 +55,18 @@ type schemaDiscoverer interface {
 }
 
 func OpenRuntime(ctx context.Context, config RuntimeConfig) (*Runtime, error) {
+	runtime, err := NewRuntimeView(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.Refresh(ctx); err != nil {
+		config.Database.Close()
+		return nil, err
+	}
+	return runtime, nil
+}
+
+func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error) {
 	if config.Model == nil {
 		return nil, fmt.Errorf("semantic model is required")
 	}
@@ -79,10 +91,6 @@ func OpenRuntime(ctx context.Context, config RuntimeConfig) (*Runtime, error) {
 		sources: config.Sources,
 		queries: semanticquery.NewService(semanticquery.NewPlanner(config.Model), config.Database),
 	}
-	if err := runtime.Refresh(ctx); err != nil {
-		config.Database.Close()
-		return nil, err
-	}
 	return runtime, nil
 }
 
@@ -91,6 +99,13 @@ func DatabasePath(dbDir, modelID string) string {
 		return path
 	}
 	return filepath.Join(dbDir, "libredash-"+modelID+".duckdb")
+}
+
+func WorkspaceDatabasePath(dbDir string) string {
+	if path := os.Getenv("LIBREDASH_DUCKDB_PATH"); path != "" {
+		return path
+	}
+	return filepath.Join(dbDir, "libredash-workspace.duckdb")
 }
 
 func (r *Runtime) Close() error {

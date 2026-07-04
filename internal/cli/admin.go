@@ -3,11 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/config"
+	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
+	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +43,37 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	parent.AddCommand(bootstrap)
+	storage := &cobra.Command{Use: "storage", Short: "Maintain analytical storage"}
+	cleanup := &cobra.Command{
+		Use:   "cleanup",
+		Short: "Reconcile deployment snapshots and clean DuckLake storage",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdminStorageCleanup(ctx, opts, cmd.OutOrStdout())
+		},
+	}
+	cleanup.Flags().BoolVar(&opts.apply, "apply", false, "perform destructive cleanup instead of dry-run")
+	storage.AddCommand(cleanup)
+	parent.AddCommand(bootstrap, storage)
 	return parent
+}
+
+func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Writer) error {
+	cfg := config.MustLoad()
+	store, err := platform.Open(ctx, cfg.DBPath())
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	repo := deploymentsqlite.NewRepository(store.SQLDB())
+	_, err = storagemaintenance.Run(ctx, repo, storagemaintenance.Options{
+		RootDir:     cfg.HomeDir,
+		CatalogPath: cfg.DBPath(),
+		DataPath:    cfg.DuckLakeDataDir(),
+		DryRun:      !opts.apply,
+		Out:         out,
+	})
+	if err != nil {
+		return fmt.Errorf("storage cleanup: %w", err)
+	}
+	return nil
 }

@@ -34,6 +34,7 @@ func (r *Repository) Create(ctx context.Context, input deployment.CreateInput) (
 		WorkspaceID: string(input.WorkspaceID),
 		Environment: string(deployment.NormalizeEnvironment(input.Environment)),
 		Status:      string(deployment.StatusPending),
+		Source:      string(deployment.NormalizeSource(input.Source)),
 		CreatedBy:   input.CreatedBy,
 	}); err != nil {
 		return deployment.Deployment{}, err
@@ -70,6 +71,105 @@ func (r *Repository) MarkFailed(ctx context.Context, deploymentID deployment.ID,
 		Error:  cause.Error(),
 		ID:     string(deploymentID),
 	})
+}
+
+func (r *Repository) RecordDuckLakeSnapshot(ctx context.Context, deploymentID deployment.ID, snapshotID int64) error {
+	if snapshotID <= 0 {
+		return fmt.Errorf("ducklake snapshot id must be positive")
+	}
+	return r.q.UpdateDeploymentDuckLakeSnapshot(ctx, platformdb.UpdateDeploymentDuckLakeSnapshotParams{
+		DucklakeSnapshotID: snapshotID,
+		ID:                 string(deploymentID),
+	})
+}
+
+func (r *Repository) ReferencedDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
+	return r.q.ListReferencedDuckLakeSnapshots(ctx)
+}
+
+func (r *Repository) ActiveDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
+	return r.q.ListActiveDuckLakeSnapshots(ctx)
+}
+
+func (r *Repository) LeasedDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
+	return r.q.ListLeasedDuckLakeSnapshots(ctx)
+}
+
+func (r *Repository) CreateQuerySnapshotLease(ctx context.Context, input deployment.SnapshotLeaseInput) (string, error) {
+	if input.WorkspaceID == "" {
+		return "", fmt.Errorf("workspace id is required")
+	}
+	if input.DeploymentID == "" {
+		return "", fmt.Errorf("deployment id is required")
+	}
+	if input.DuckLakeSnapshotID <= 0 {
+		return "", fmt.Errorf("ducklake snapshot id must be positive")
+	}
+	expiresAt := input.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = time.Now().Add(5 * time.Minute)
+	}
+	id := newID("lease")
+	if err := r.q.CreateQuerySnapshotLease(ctx, platformdb.CreateQuerySnapshotLeaseParams{
+		ID:                 id,
+		WorkspaceID:        string(input.WorkspaceID),
+		Environment:        string(deployment.NormalizeEnvironment(input.Environment)),
+		DeploymentID:       string(input.DeploymentID),
+		DucklakeSnapshotID: input.DuckLakeSnapshotID,
+		OwnerID:            input.OwnerID,
+		ExpiresAt:          sqliteTimestamp(expiresAt),
+	}); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func (r *Repository) ReleaseQuerySnapshotLease(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	return r.q.ReleaseQuerySnapshotLease(ctx, id)
+}
+
+func (r *Repository) ExtendQuerySnapshotLease(ctx context.Context, id string, expiresAt time.Time) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	if expiresAt.IsZero() {
+		return fmt.Errorf("lease expiry is required")
+	}
+	return r.q.ExtendQuerySnapshotLease(ctx, platformdb.ExtendQuerySnapshotLeaseParams{
+		ID:        id,
+		ExpiresAt: sqliteTimestamp(expiresAt),
+	})
+}
+
+func (r *Repository) ReleaseExpiredQuerySnapshotLeases(ctx context.Context) error {
+	return r.q.ReleaseExpiredQuerySnapshotLeases(ctx)
+}
+
+func (r *Repository) ExpireInactiveDeployments(ctx context.Context) error {
+	return r.q.ExpireInactiveDeployments(ctx)
+}
+
+func (r *Repository) ScheduleExpiredDeploymentDeletion(ctx context.Context) error {
+	return r.q.ScheduleExpiredDeploymentDeletion(ctx)
+}
+
+func (r *Repository) MarkDeleteScheduledDeploymentsDeleted(ctx context.Context) error {
+	return r.q.MarkDeleteScheduledDeploymentsDeleted(ctx)
+}
+
+func (r *Repository) ReconcileRetention(ctx context.Context, now time.Time) error {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if err := r.q.MarkDrainingDeploymentsDeleteScheduled(ctx); err != nil {
+		return err
+	}
+	return r.q.MarkDeleteScheduledDeploymentsDeleted(ctx)
 }
 
 func (r *Repository) SaveValidated(ctx context.Context, deploymentID deployment.ID, validation deployment.Validation, artifact deployment.Artifact) (deployment.Deployment, error) {
@@ -182,7 +282,11 @@ func (r *Repository) activate(ctx context.Context, workspaceID deployment.Worksp
 			return deployment.Deployment{}, err
 		}
 	}
-	if err := q.MarkOtherDeploymentsInactive(ctx, platformdb.MarkOtherDeploymentsInactiveParams{WorkspaceID: string(workspaceID), Environment: string(environment), ID: string(deploymentID)}); err != nil {
+	if err := q.MarkOtherDeploymentsDraining(ctx, platformdb.MarkOtherDeploymentsDrainingParams{
+		WorkspaceID: string(workspaceID),
+		Environment: string(environment),
+		ID:          string(deploymentID),
+	}); err != nil {
 		return deployment.Deployment{}, err
 	}
 	if err := q.MarkDeploymentActive(ctx, string(deploymentID)); err != nil {
@@ -325,18 +429,26 @@ func (r *Repository) ArtifactByDeployment(ctx context.Context, deploymentID depl
 
 func mapDeployment(row platformdb.Deployment) deployment.Deployment {
 	out := deployment.Deployment{
-		ID:           deployment.ID(row.ID),
-		WorkspaceID:  deployment.WorkspaceID(row.WorkspaceID),
-		Environment:  deployment.Environment(row.Environment),
-		Status:       deployment.Status(row.Status),
-		Digest:       row.Digest,
-		ManifestJSON: row.ManifestJson,
-		CreatedBy:    row.CreatedBy,
-		CreatedAt:    row.CreatedAt,
-		Error:        row.Error,
+		ID:                 deployment.ID(row.ID),
+		WorkspaceID:        deployment.WorkspaceID(row.WorkspaceID),
+		Environment:        deployment.Environment(row.Environment),
+		Status:             deployment.Status(row.Status),
+		Source:             deployment.NormalizeSource(deployment.Source(row.Source)),
+		Digest:             row.Digest,
+		ManifestJSON:       row.ManifestJson,
+		CreatedBy:          row.CreatedBy,
+		CreatedAt:          row.CreatedAt,
+		Error:              row.Error,
+		DuckLakeSnapshotID: row.DucklakeSnapshotID,
 	}
 	if row.ActivatedAt.Valid {
 		out.ActivatedAt = row.ActivatedAt.String
+	}
+	if row.SupersededAt.Valid {
+		out.SupersededAt = row.SupersededAt.String
+	}
+	if row.CleanupAfter.Valid {
+		out.CleanupAfter = row.CleanupAfter.String
 	}
 	return out
 }
@@ -350,6 +462,7 @@ func mapArtifact(row platformdb.DeploymentArtifact) deployment.Artifact {
 		Digest:       row.Digest,
 		Format:       row.Format,
 		Path:         row.Path,
+		DataRoot:     row.DataRoot,
 		ManifestJSON: row.ManifestJson,
 		SizeBytes:    row.SizeBytes,
 		CreatedAt:    row.CreatedAt,
@@ -365,6 +478,7 @@ func mapArtifactParams(artifact deployment.Artifact) platformdb.InsertDeployment
 		Digest:       artifact.Digest,
 		Format:       artifact.Format,
 		Path:         artifact.Path,
+		DataRoot:     artifact.DataRoot,
 		ManifestJson: artifact.ManifestJSON,
 		SizeBytes:    artifact.SizeBytes,
 	}
@@ -384,6 +498,10 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func sqliteTimestamp(value time.Time) string {
+	return value.UTC().Format("2006-01-02 15:04:05")
 }
 
 func stableAccessID(prefix, workspaceID, name string) string {
@@ -424,4 +542,8 @@ func newSecret() string {
 func stableID(value string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(value)))
 	return hex.EncodeToString(sum[:])[:32]
+}
+
+func formatSQLiteTime(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
 }

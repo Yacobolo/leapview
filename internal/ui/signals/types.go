@@ -237,19 +237,19 @@ type WorkspaceAssetPageEnvelope struct {
 }
 
 type WorkspaceAssetPageSignal struct {
-	Kind          RouteKind                    `json:"kind"`
-	Title         string                       `json:"title"`
-	WorkspaceID   string                       `json:"workspaceId"`
-	AssetID       string                       `json:"assetId"`
-	ActiveSection string                       `json:"activeSection"`
-	Asset         WorkspaceAssetSummarySignal  `json:"asset"`
-	Breadcrumbs   []WorkspaceBreadcrumbSignal  `json:"breadcrumbs"`
-	Actions       []WorkspaceActionSignal      `json:"actions,omitempty"`
-	Tabs          []WorkspaceTabSignal         `json:"tabs"`
-	Details       WorkspaceAssetDetailsSignal  `json:"details,omitempty"`
-	Lineage       WorkspaceAssetLineageSignal  `json:"lineage,omitempty"`
-	Refresh       WorkspaceAssetRefreshSignal  `json:"refresh,omitempty"`
-	Versions      WorkspaceAssetVersionsSignal `json:"versions,omitempty"`
+	Kind          RouteKind                     `json:"kind"`
+	Title         string                        `json:"title"`
+	WorkspaceID   string                        `json:"workspaceId"`
+	AssetID       string                        `json:"assetId"`
+	ActiveSection string                        `json:"activeSection"`
+	Asset         WorkspaceAssetSummarySignal   `json:"asset"`
+	Breadcrumbs   []WorkspaceBreadcrumbSignal   `json:"breadcrumbs"`
+	Actions       []WorkspaceActionSignal       `json:"actions,omitempty"`
+	Tabs          []WorkspaceTabSignal          `json:"tabs"`
+	Details       WorkspaceAssetDetailsSignal   `json:"details,omitempty"`
+	Lineage       WorkspaceAssetLineageSignal   `json:"lineage,omitempty"`
+	Refresh       WorkspaceAssetRefreshSignal   `json:"refresh,omitempty"`
+	Versions      *WorkspaceAssetVersionsSignal `json:"versions,omitempty"`
 }
 
 type ConnectionsPageEnvelope struct {
@@ -723,15 +723,26 @@ type AdminQueryEventSignal struct {
 }
 
 type AdminStorageData struct {
-	DuckDBDir      string
-	Status         string
-	DatabaseCount  int
-	TotalSizeBytes int64
-	TotalSizeLabel string
-	TableCount     int
-	Databases      []AdminStorageDatabase
-	Tables         []AdminStorageTable
-	Warnings       []string
+	CatalogPath        string
+	DataPath           string
+	Status             string
+	DatabaseCount      int
+	CatalogSizeBytes   int64
+	CatalogSizeLabel   string
+	DataSizeBytes      int64
+	DataSizeLabel      string
+	TotalSizeBytes     int64
+	TotalSizeLabel     string
+	TotalDataSizeBytes int64
+	TotalDataSizeLabel string
+	TableCount         int
+	SnapshotCount      int
+	DataFileCount      int
+	Databases          []AdminStorageDatabase
+	Tables             []AdminStorageTable
+	Snapshots          []AdminStorageSnapshot
+	Deployments        []AdminStorageDeployment
+	Warnings           []string
 }
 
 type AdminStorageDatabase struct {
@@ -753,58 +764,200 @@ type AdminStorageTable struct {
 	Schema        string
 	Name          string
 	Type          string
+	TableID       int64
+	TableUUID     string
+	DuckLakePath  string
+	BeginSnapshot int64
+	EndSnapshot   int64
+	RowCount      int64
 	RowCountLabel string
 	ColumnCount   int
+	FileCount     int
+	SizeBytes     int64
 	SizeLabel     string
 	Columns       []AdminStorageColumn
+	Files         []AdminStorageFile
+	History       []AdminStorageTableHistory
+	Deployments   []AdminStorageDeployment
 }
 
 type AdminStorageColumn struct {
-	Name     string
-	Type     string
-	Ordinal  int
-	Nullable string
-	Default  string
+	ID                  int64
+	Name                string
+	Type                string
+	Ordinal             int
+	Nullable            string
+	Default             string
+	InitialDefault      string
+	DefaultValueType    string
+	DefaultValueDialect string
+	BeginSnapshot       int64
+	ContainsNull        string
+	ContainsNaN         string
+	MinValue            string
+	MaxValue            string
+	ExtraStats          string
+}
+
+type AdminStorageFile struct {
+	ID               int64
+	Path             string
+	Format           string
+	RecordCount      int64
+	RecordCountLabel string
+	SizeBytes        int64
+	SizeLabel        string
+	BeginSnapshot    int64
+	EndSnapshot      int64
+}
+
+type AdminStorageTableHistory struct {
+	SnapshotID    int64
+	Time          string
+	SchemaVersion int64
+	Source        string
+	Changes       string
+	Author        string
+	Message       string
+	ExtraInfo     string
+}
+
+type AdminStorageSnapshot struct {
+	ID              int64
+	Time            string
+	SchemaVersion   int64
+	Author          string
+	Message         string
+	Changes         string
+	ExtraInfo       string
+	Protected       bool
+	DeploymentCount int
+}
+
+type AdminStorageDeployment struct {
+	WorkspaceID  string
+	Environment  string
+	DeploymentID string
+	Status       string
+	SnapshotID   int64
+	Digest       string
+	Active       bool
+	ActivatedAt  string
 }
 
 type AdminStorageSignal struct {
-	Summary       AdminStorageSummary       `json:"summary"`
-	Status        string                    `json:"status"`
-	Warnings      []string                  `json:"warnings"`
-	Tables        []AdminStorageTableSignal `json:"tables"`
-	SelectedKey   string                    `json:"selectedKey"`
-	SelectedTable *AdminStorageTableSignal  `json:"selectedTable"`
+	Summary       AdminStorageSummary            `json:"summary"`
+	Status        string                         `json:"status"`
+	Warnings      []string                       `json:"warnings"`
+	Tables        []AdminStorageTableSignal      `json:"tables"`
+	Snapshots     []AdminStorageSnapshotSignal   `json:"snapshots"`
+	Deployments   []AdminStorageDeploymentSignal `json:"deployments"`
+	SelectedKey   string                         `json:"selectedKey"`
+	SelectedTable *AdminStorageTableSignal       `json:"selectedTable"`
 }
 
 type AdminStorageSummary struct {
-	DuckDBDir      string `json:"duckdbDir"`
-	DatabaseCount  int    `json:"databaseCount"`
-	TotalSizeLabel string `json:"totalSizeLabel"`
-	TableCount     int    `json:"tableCount"`
+	CatalogPath        string `json:"catalogPath"`
+	DataPath           string `json:"dataPath"`
+	CatalogSizeLabel   string `json:"catalogSizeLabel"`
+	DataSizeLabel      string `json:"dataSizeLabel"`
+	TotalSizeLabel     string `json:"totalSizeLabel"`
+	TotalDataSizeLabel string `json:"totalDataSizeLabel"`
+	DatabaseCount      int    `json:"databaseCount"`
+	TableCount         int    `json:"tableCount"`
+	SnapshotCount      int    `json:"snapshotCount"`
+	DataFileCount      int    `json:"dataFileCount"`
 }
 
 type AdminStorageTableSignal struct {
-	Key           string                     `json:"key"`
-	DatabaseID    string                     `json:"databaseId"`
-	DatabaseName  string                     `json:"databaseName"`
-	DatabasePath  string                     `json:"databasePath"`
-	ModelID       string                     `json:"modelId"`
-	ModelName     string                     `json:"modelName"`
-	Schema        string                     `json:"schema"`
-	Name          string                     `json:"name"`
-	Type          string                     `json:"type"`
-	RowCountLabel string                     `json:"rowCountLabel"`
-	ColumnCount   int                        `json:"columnCount"`
-	SizeLabel     string                     `json:"sizeLabel"`
-	Columns       []AdminStorageColumnSignal `json:"columns,omitempty"`
+	Key           string                           `json:"key"`
+	DatabaseID    string                           `json:"databaseId"`
+	DatabaseName  string                           `json:"databaseName"`
+	DatabasePath  string                           `json:"databasePath"`
+	ModelID       string                           `json:"modelId"`
+	ModelName     string                           `json:"modelName"`
+	Schema        string                           `json:"schema"`
+	Name          string                           `json:"name"`
+	Type          string                           `json:"type"`
+	TableID       int64                            `json:"tableId"`
+	TableUUID     string                           `json:"tableUuid"`
+	DuckLakePath  string                           `json:"duckLakePath"`
+	BeginSnapshot int64                            `json:"beginSnapshot"`
+	EndSnapshot   int64                            `json:"endSnapshot"`
+	RowCount      int64                            `json:"rowCount"`
+	RowCountLabel string                           `json:"rowCountLabel"`
+	ColumnCount   int                              `json:"columnCount"`
+	FileCount     int                              `json:"fileCount"`
+	SizeBytes     int64                            `json:"sizeBytes"`
+	SizeLabel     string                           `json:"sizeLabel"`
+	Columns       []AdminStorageColumnSignal       `json:"columns,omitempty"`
+	Files         []AdminStorageFileSignal         `json:"files,omitempty"`
+	History       []AdminStorageTableHistorySignal `json:"history,omitempty"`
+	Deployments   []AdminStorageDeploymentSignal   `json:"deployments,omitempty"`
 }
 
 type AdminStorageColumnSignal struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Ordinal  int    `json:"ordinal"`
-	Nullable string `json:"nullable"`
-	Default  string `json:"default"`
+	ID                  int64  `json:"id"`
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	Ordinal             int    `json:"ordinal"`
+	Nullable            string `json:"nullable"`
+	Default             string `json:"default"`
+	InitialDefault      string `json:"initialDefault"`
+	DefaultValueType    string `json:"defaultValueType"`
+	DefaultValueDialect string `json:"defaultValueDialect"`
+	BeginSnapshot       int64  `json:"beginSnapshot"`
+	ContainsNull        string `json:"containsNull"`
+	ContainsNaN         string `json:"containsNan"`
+	MinValue            string `json:"minValue"`
+	MaxValue            string `json:"maxValue"`
+	ExtraStats          string `json:"extraStats"`
+}
+
+type AdminStorageFileSignal struct {
+	ID               int64  `json:"id"`
+	Path             string `json:"path"`
+	Format           string `json:"format"`
+	RecordCount      int64  `json:"recordCount"`
+	RecordCountLabel string `json:"recordCountLabel"`
+	SizeBytes        int64  `json:"sizeBytes"`
+	SizeLabel        string `json:"sizeLabel"`
+	BeginSnapshot    int64  `json:"beginSnapshot"`
+	EndSnapshot      int64  `json:"endSnapshot"`
+}
+
+type AdminStorageTableHistorySignal struct {
+	SnapshotID    int64  `json:"snapshotId"`
+	Time          string `json:"time"`
+	SchemaVersion int64  `json:"schemaVersion"`
+	Source        string `json:"source"`
+	Changes       string `json:"changes"`
+	Author        string `json:"author"`
+	Message       string `json:"message"`
+	ExtraInfo     string `json:"extraInfo"`
+}
+
+type AdminStorageSnapshotSignal struct {
+	ID              int64  `json:"id"`
+	Time            string `json:"time"`
+	SchemaVersion   int64  `json:"schemaVersion"`
+	Author          string `json:"author"`
+	Message         string `json:"message"`
+	Changes         string `json:"changes"`
+	ExtraInfo       string `json:"extraInfo"`
+	Protected       bool   `json:"protected"`
+	DeploymentCount int    `json:"deploymentCount"`
+}
+
+type AdminStorageDeploymentSignal struct {
+	WorkspaceID  string `json:"workspaceId"`
+	Environment  string `json:"environment"`
+	DeploymentID string `json:"deploymentId"`
+	Status       string `json:"status"`
+	SnapshotID   int64  `json:"snapshotId"`
+	Digest       string `json:"digest"`
+	Active       bool   `json:"active"`
+	ActivatedAt  string `json:"activatedAt"`
 }
 
 type AdminStorageCommand struct {

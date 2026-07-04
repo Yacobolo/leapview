@@ -179,9 +179,9 @@ test('workspace catalog cards keep Open links visible with long descriptions', a
         title: 'Workspaces',
         description: 'View published BI workspaces.',
         cards: [
-          { id: 'operations', title: 'Operations Workspace', description: 'Fulfillment and delivery analysis.', href: '/workspaces/operations', deploymentLabel: 'Published deployment' },
-          { id: 'sales', title: 'Sales Workspace', description: 'Revenue, orders, and product category analysis.', href: '/workspaces/sales', deploymentLabel: 'Published deployment' },
-          { id: 'visuals', title: 'Visuals Workspace', description: 'Developer QA workspace for exhaustive dashboard visual and table renderer coverage.', href: '/workspaces/visuals', deploymentLabel: 'Published deployment' },
+          { id: 'operations', title: 'Operations Workspace', description: 'Fulfillment and delivery analysis.', href: '/workspaces/operations', deploymentLabel: 'Serving' },
+          { id: 'sales', title: 'Sales Workspace', description: 'Revenue, orders, and product category analysis.', href: '/workspaces/sales', deploymentLabel: 'Serving' },
+          { id: 'visuals', title: 'Visuals Workspace', description: 'Developer QA workspace for exhaustive dashboard visual and table renderer coverage.', href: '/workspaces/visuals', deploymentLabel: 'Serving' },
         ],
       }
     })
@@ -371,7 +371,7 @@ test('workspace asset refresh page renders refresh tab and emits refresh events'
   }
 })
 
-test('workspace asset versions page renders record table', async () => {
+test('workspace asset page does not render versions as a product surface', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(baseURL)
@@ -403,40 +403,28 @@ test('workspace asset versions page renders record table', async () => {
         tabs: [
           { id: 'details', label: 'Details', href: '/workspaces/libredash/assets/dashboard:executive-sales/details', active: false },
           { id: 'lineage', label: 'Lineage', href: '/workspaces/libredash/assets/dashboard:executive-sales/lineage', active: false, count: 1 },
-          { id: 'versions', label: 'Versions', href: '/workspaces/libredash/assets/dashboard:executive-sales/versions', active: true },
         ],
-        versions: {
-          currentDeploymentId: 'dep_current123456',
-          table: {
-            columns: [
-              { id: 'version', header: 'Version', kind: 'code' },
-              { id: 'status', header: 'Status', kind: 'badge' },
-              { id: 'asset_hash', header: 'Asset hash', kind: 'code' },
-              { id: 'deployment_digest', header: 'Deployment digest', kind: 'code' },
-            ],
-            rows: [{
-              version: 'dep_current1',
-              status: { label: 'current', tone: 'success' },
-              asset_hash: 'asset_hash_c',
-              deployment_digest: 'digest_curre',
-            }],
-            empty: 'No versions recorded for this asset yet.',
-          },
+        details: {
+          overview: [
+            { label: 'Type', value: 'Dashboard' },
+          ],
+          sections: [],
         },
       }
       await asset.updateComplete
       const table = asset.shadowRoot.querySelector('ld-record-table') as HTMLElement | null
       return {
-        activeTab: asset.shadowRoot.querySelector('.tabs a.active')?.textContent?.trim(),
+        tabText: asset.shadowRoot.querySelector('.tabs')?.textContent ?? '',
         sectionTitle: asset.shadowRoot.querySelector('.detail-section h2')?.textContent?.trim(),
         tableText: table?.textContent ?? '',
+        bodyText: asset.shadowRoot.textContent ?? '',
       }
     })
 
-    expect(state.activeTab).toBe('Versions')
-    expect(state.sectionTitle).toBe('Versions')
-    expect(state.tableText).toMatch(/Deployment digest/)
-    expect(state.tableText).toMatch(/current/)
+    expect(state.tabText).not.toMatch(/Versions/)
+    expect(state.sectionTitle).not.toBe('Versions')
+    expect(state.tableText).not.toMatch(/Deployment digest/)
+    expect(state.bodyText).not.toMatch(/Deployment digest/)
   } finally {
     await page.close()
   }

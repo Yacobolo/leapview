@@ -469,7 +469,37 @@
     "AdminStorageColumnSignal": {
       "additionalProperties": false,
       "properties": {
+        "beginSnapshot": {
+          "type": "integer"
+        },
+        "containsNan": {
+          "type": "string"
+        },
+        "containsNull": {
+          "type": "string"
+        },
         "default": {
+          "type": "string"
+        },
+        "defaultValueDialect": {
+          "type": "string"
+        },
+        "defaultValueType": {
+          "type": "string"
+        },
+        "extraStats": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "initialDefault": {
+          "type": "string"
+        },
+        "maxValue": {
+          "type": "string"
+        },
+        "minValue": {
           "type": "string"
         },
         "name": {
@@ -486,7 +516,17 @@
         }
       },
       "required": [
+        "beginSnapshot",
+        "containsNan",
+        "containsNull",
         "default",
+        "defaultValueDialect",
+        "defaultValueType",
+        "extraStats",
+        "id",
+        "initialDefault",
+        "maxValue",
+        "minValue",
         "name",
         "nullable",
         "ordinal",
@@ -514,14 +554,110 @@
       ],
       "type": "object"
     },
+    "AdminStorageDeploymentSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "activatedAt": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "deploymentId": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "snapshotId": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "activatedAt",
+        "active",
+        "deploymentId",
+        "digest",
+        "environment",
+        "snapshotId",
+        "status",
+        "workspaceId"
+      ],
+      "type": "object"
+    },
+    "AdminStorageFileSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "beginSnapshot": {
+          "type": "integer"
+        },
+        "endSnapshot": {
+          "type": "integer"
+        },
+        "format": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "recordCount": {
+          "type": "integer"
+        },
+        "recordCountLabel": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "integer"
+        },
+        "sizeLabel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "beginSnapshot",
+        "endSnapshot",
+        "format",
+        "id",
+        "path",
+        "recordCount",
+        "recordCountLabel",
+        "sizeBytes",
+        "sizeLabel"
+      ],
+      "type": "object"
+    },
     "AdminStorageSignal": {
       "additionalProperties": false,
       "properties": {
+        "deployments": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageDeploymentSignal"
+          },
+          "type": "array"
+        },
         "selectedKey": {
           "type": "string"
         },
         "selectedTable": {
           "$ref": "#/$defs/AdminStorageTableSignal"
+        },
+        "snapshots": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageSnapshotSignal"
+          },
+          "type": "array"
         },
         "status": {
           "type": "string"
@@ -543,8 +679,10 @@
         }
       },
       "required": [
+        "deployments",
         "selectedKey",
         "selectedTable",
+        "snapshots",
         "status",
         "summary",
         "tables",
@@ -552,33 +690,144 @@
       ],
       "type": "object"
     },
+    "AdminStorageSnapshotSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "string"
+        },
+        "deploymentCount": {
+          "type": "integer"
+        },
+        "extraInfo": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "protected": {
+          "type": "boolean"
+        },
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "time": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "author",
+        "changes",
+        "deploymentCount",
+        "extraInfo",
+        "id",
+        "message",
+        "protected",
+        "schemaVersion",
+        "time"
+      ],
+      "type": "object"
+    },
     "AdminStorageSummary": {
       "additionalProperties": false,
       "properties": {
+        "catalogPath": {
+          "type": "string"
+        },
+        "catalogSizeLabel": {
+          "type": "string"
+        },
+        "dataFileCount": {
+          "type": "integer"
+        },
+        "dataPath": {
+          "type": "string"
+        },
+        "dataSizeLabel": {
+          "type": "string"
+        },
         "databaseCount": {
           "type": "integer"
         },
-        "duckdbDir": {
-          "type": "string"
+        "snapshotCount": {
+          "type": "integer"
         },
         "tableCount": {
           "type": "integer"
+        },
+        "totalDataSizeLabel": {
+          "type": "string"
         },
         "totalSizeLabel": {
           "type": "string"
         }
       },
       "required": [
+        "catalogPath",
+        "catalogSizeLabel",
+        "dataFileCount",
+        "dataPath",
+        "dataSizeLabel",
         "databaseCount",
-        "duckdbDir",
+        "snapshotCount",
         "tableCount",
+        "totalDataSizeLabel",
         "totalSizeLabel"
+      ],
+      "type": "object"
+    },
+    "AdminStorageTableHistorySignal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "string"
+        },
+        "extraInfo": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "snapshotId": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "author",
+        "changes",
+        "extraInfo",
+        "message",
+        "schemaVersion",
+        "snapshotId",
+        "source",
+        "time"
       ],
       "type": "object"
     },
     "AdminStorageTableSignal": {
       "additionalProperties": false,
       "properties": {
+        "beginSnapshot": {
+          "type": "integer"
+        },
         "columnCount": {
           "type": "integer"
         },
@@ -597,6 +846,33 @@
         "databasePath": {
           "type": "string"
         },
+        "deployments": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageDeploymentSignal"
+          },
+          "type": "array"
+        },
+        "duckLakePath": {
+          "type": "string"
+        },
+        "endSnapshot": {
+          "type": "integer"
+        },
+        "fileCount": {
+          "type": "integer"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageFileSignal"
+          },
+          "type": "array"
+        },
+        "history": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageTableHistorySignal"
+          },
+          "type": "array"
+        },
         "key": {
           "type": "string"
         },
@@ -609,13 +885,25 @@
         "name": {
           "type": "string"
         },
+        "rowCount": {
+          "type": "integer"
+        },
         "rowCountLabel": {
           "type": "string"
         },
         "schema": {
           "type": "string"
         },
+        "sizeBytes": {
+          "type": "integer"
+        },
         "sizeLabel": {
+          "type": "string"
+        },
+        "tableId": {
+          "type": "integer"
+        },
+        "tableUuid": {
           "type": "string"
         },
         "type": {
@@ -623,17 +911,25 @@
         }
       },
       "required": [
+        "beginSnapshot",
         "columnCount",
         "databaseId",
         "databaseName",
         "databasePath",
+        "duckLakePath",
+        "endSnapshot",
+        "fileCount",
         "key",
         "modelId",
         "modelName",
         "name",
+        "rowCount",
         "rowCountLabel",
         "schema",
+        "sizeBytes",
         "sizeLabel",
+        "tableId",
+        "tableUuid",
         "type"
       ],
       "type": "object"

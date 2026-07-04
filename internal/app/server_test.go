@@ -22,6 +22,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacerefresh "github.com/Yacobolo/libredash/internal/workspace/refresh"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
 
@@ -1274,6 +1275,78 @@ func TestWorkspaceModelTableRefreshCommandPersistsDirectAndDependencyRuns(t *tes
 	}
 }
 
+func TestWorkspaceAssetRefreshPlanModelTableUsesWorkspaceDependencies(t *testing.T) {
+	definition := &workspace.Definition{Models: map[string]*semanticmodel.Model{
+		"genre_ratings": {
+			Name: "genre_ratings",
+			Tables: map[string]semanticmodel.Table{
+				"ratings":       {Kind: "fact"},
+				"movies":        {Kind: "dimension"},
+				"rating_genres": {Kind: "fact", ModelDependencies: []string{"ratings", "movies"}},
+			},
+		},
+		"movie_ratings": {
+			Name: "movie_ratings",
+			Tables: map[string]semanticmodel.Table{
+				"ratings": {Kind: "fact"},
+				"movies":  {Kind: "dimension"},
+			},
+		},
+	}}
+	asset := workspace.AssetView{Type: string(workspace.AssetTypeModelTable), Key: "movielens.rating_genres"}
+
+	plan, err := workspacerefresh.PlanForAsset(definition, "movielens", asset)
+	if err != nil {
+		t.Fatalf("plan model table refresh: %v", err)
+	}
+	if plan.ModelID != workspacerefresh.WorkspaceRefreshModelID {
+		t.Fatalf("plan modelID = %q, want workspace refresh marker", plan.ModelID)
+	}
+	if got, want := plan.Tables, []string{"ratings", "movies", "rating_genres"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("plan tables = %#v, want %#v", got, want)
+	}
+	if got, want := plan.DependencyTables, []string{"ratings", "movies"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("dependency tables = %#v, want %#v", got, want)
+	}
+	if plan.TargetID != "movielens.rating_genres" || plan.TargetType != materialize.TargetModelTable {
+		t.Fatalf("target = %s/%s, want model_table movielens.rating_genres", plan.TargetType, plan.TargetID)
+	}
+}
+
+func TestWorkspaceAssetRefreshPlanSemanticModelUsesModelTables(t *testing.T) {
+	definition := &workspace.Definition{Models: map[string]*semanticmodel.Model{
+		"genre_ratings": {
+			Name: "genre_ratings",
+			Tables: map[string]semanticmodel.Table{
+				"ratings":       {Kind: "fact"},
+				"movies":        {Kind: "dimension"},
+				"rating_genres": {Kind: "fact", ModelDependencies: []string{"ratings", "movies"}},
+			},
+		},
+	}}
+	asset := workspace.AssetView{Type: string(workspace.AssetTypeSemanticModel), Key: "movielens.genre_ratings"}
+
+	plan, err := workspacerefresh.PlanForAsset(definition, "movielens", asset)
+	if err != nil {
+		t.Fatalf("plan semantic model refresh: %v", err)
+	}
+	if plan.ModelID != "genre_ratings" {
+		t.Fatalf("plan modelID = %q, want genre_ratings", plan.ModelID)
+	}
+	if got, want := plan.Tables, []string{"movies", "ratings", "rating_genres"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("plan tables = %#v, want %#v", got, want)
+	}
+	if got, want := plan.DependencyTables, []string{"movies", "ratings", "rating_genres"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("semantic model child tables = %#v, want %#v", got, want)
+	}
+	if plan.ChildTrigger != materialize.TriggerSemanticModel {
+		t.Fatalf("semantic model child trigger = %q, want semantic_model", plan.ChildTrigger)
+	}
+	if plan.TargetID != "movielens.genre_ratings" || plan.TargetType != materialize.TargetSemanticModel {
+		t.Fatalf("target = %s/%s, want semantic_model movielens.genre_ratings", plan.TargetType, plan.TargetID)
+	}
+}
+
 func TestMaterializationRunAPICanExecuteModelTableTargetWithLocalDevRuntimeShape(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
@@ -1320,6 +1393,41 @@ func TestMaterializationRunAPICanExecuteModelTableTargetWithLocalDevRuntimeShape
 	}
 }
 
+func TestServerStartupDispatchesQueuedMaterializationJobs(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	metrics := &localDevStyleModelTableMetrics{done: make(chan []string, 1)}
+	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "test"})
+	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	run, err := repo.CreateRun(ctx, materialize.RunInput{
+		WorkspaceID: "test",
+		ModelID:     "olist",
+		TargetType:  materialize.TargetModelTable,
+		TargetID:    "olist.orders",
+	})
+	if err != nil {
+		t.Fatalf("create queued run: %v", err)
+	}
+
+	server.StartBackgroundJobs(ctx)
+
+	select {
+	case refreshed := <-metrics.done:
+		if !reflect.DeepEqual(refreshed, []string{"olist", "orders"}) {
+			t.Fatalf("refreshed = %#v, want olist orders", refreshed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for startup-dispatched refresh")
+	}
+	stored, err := repo.GetRun(ctx, "test", run.ID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if stored.Status != materialize.RunStatusSucceeded {
+		t.Fatalf("run status = %q, want succeeded", stored.Status)
+	}
+}
+
 func TestMaterializationRunAPIMalformedModelTableTargetFailsPersistedRun(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
@@ -1350,12 +1458,12 @@ func TestMaterializationRunAPIMalformedModelTableTargetFailsPersistedRun(t *test
 		if err != nil {
 			t.Fatalf("get run: %v", err)
 		}
-		if run.Status != materialize.RunStatusQueued {
+		if run.Status == materialize.RunStatusFailed || run.Status == materialize.RunStatusSucceeded {
 			break
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("run remained queued: %#v", run)
+			t.Fatalf("run did not reach terminal status: %#v", run)
 		case <-time.After(10 * time.Millisecond):
 		}
 	}

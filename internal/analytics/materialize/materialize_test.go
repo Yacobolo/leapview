@@ -2,19 +2,25 @@ package materialize_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 func TestModelTableExecutesPlannedSQL(t *testing.T) {
@@ -213,6 +219,472 @@ func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
 	}
 }
 
+func TestMovieLensModelTableOrderMaterializesDimensionsBeforeFacts(t *testing.T) {
+	model := &semanticmodel.Model{
+		Name:        "movielens",
+		Connections: map[string]semanticmodel.Connection{"movielens": {Kind: "local"}},
+		Sources: map[string]semanticmodel.Source{
+			"ratings": {Path: "ratings.csv", Format: "csv", Connection: "movielens"},
+			"movies":  {Path: "movies.csv", Format: "csv", Connection: "movielens"},
+			"tags":    {Path: "tags.csv", Format: "csv", Connection: "movielens"},
+			"links":   {Path: "links.csv", Format: "csv", Connection: "movielens"},
+		},
+		BaseTable: "ratings",
+		Tables: map[string]semanticmodel.Table{
+			"ratings": {
+				Source:     "ratings",
+				PrimaryKey: "rating_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"rating_id": {Label: "Rating ID"}},
+			},
+			"movies": {
+				Sources:    []string{"movies", "links"},
+				Transform:  semanticmodel.Transform{SQL: "SELECT m.movieId AS movie_id FROM source.movies m LEFT JOIN source.links l ON l.movieId = m.movieId"},
+				PrimaryKey: "movie_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"movie_id": {Label: "Movie ID"}},
+			},
+			"users": {
+				Sources:    []string{"ratings", "tags"},
+				Transform:  semanticmodel.Transform{SQL: "SELECT r.userId AS user_id FROM source.ratings r LEFT JOIN source.tags t ON t.userId = r.userId"},
+				PrimaryKey: "user_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"user_id": {Label: "User ID"}},
+			},
+			"rating_genres": {
+				Transform:  semanticmodel.Transform{SQL: "SELECT rating_id, genre FROM model.ratings JOIN model.movies USING (movie_id)"},
+				PrimaryKey: "rating_genre_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"rating_genre_id": {Label: "Rating Genre ID"}},
+			},
+			"tags": {
+				Source:     "tags",
+				PrimaryKey: "tag_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"tag_id": {Label: "Tag ID"}},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"rating_count": {Table: "ratings", Grain: "rating_id", Expression: "COUNT(*)", Label: "Ratings"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	order, err := analyticsmaterialize.ModelTableOrder(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ratingsIndex := indexOf(order, "ratings")
+	moviesIndex := indexOf(order, "movies")
+	ratingGenresIndex := indexOf(order, "rating_genres")
+	if ratingsIndex < 0 || moviesIndex < 0 || ratingGenresIndex < 0 {
+		t.Fatalf("order = %#v, want ratings, movies, and rating_genres", order)
+	}
+	if ratingGenresIndex < ratingsIndex || ratingGenresIndex < moviesIndex {
+		t.Fatalf("order = %#v, want rating_genres after ratings and movies", order)
+	}
+}
+
+func TestWorkspaceRuntimeCommitsModelTablesInOneDuckLakeSnapshot(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "orders.csv"), []byte("order_id,status,revenue\no1,paid,10\no2,paid,15\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	model := &semanticmodel.Model{
+		Name:        "workspace",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "order_summary",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+			"order_summary": {
+				ModelDependencies: []string{"orders"},
+				Transform:         semanticmodel.Transform{SQL: "SELECT status, SUM(revenue) AS revenue FROM model.orders GROUP BY status"},
+				PrimaryKey:        "status",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"status":  {Label: "Status"},
+					"revenue": {Label: "Revenue"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "order_summary", Grain: "status", Expression: "SUM(order_summary.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:  map[string]*semanticmodel.Model{"sales": model},
+		DataDir: dir,
+		DBDir:   dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	if runtime.DuckLakeSnapshotID() <= 0 {
+		t.Fatalf("DuckLakeSnapshotID = %d, want committed snapshot", runtime.DuckLakeSnapshotID())
+	}
+
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(filepath.Join(dir, "catalog.sqlite"), "'", "''") + "' AS lake",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var matchingSnapshots int
+	if err := db.QueryRowContext(ctx, `
+SELECT count(*)
+FROM lake.snapshots()
+WHERE snapshot_id = ?
+  AND CAST(changes AS VARCHAR) LIKE '%model.orders%'
+  AND CAST(changes AS VARCHAR) LIKE '%model.order_summary%'`, runtime.DuckLakeSnapshotID()).Scan(&matchingSnapshots); err != nil {
+		t.Fatal(err)
+	}
+	if matchingSnapshots != 1 {
+		t.Fatalf("matching committed snapshots = %d, want 1", matchingSnapshots)
+	}
+}
+
+func TestWorkspaceRuntimeUsesPlatformDBAsDuckLakeCatalog(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "orders.csv"), []byte("order_id,status,revenue\no1,paid,10\no2,paid,15\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(dir, "libredash.db")
+	store, err := platform.Open(ctx, catalogPath)
+	if err != nil {
+		t.Fatalf("open platform store: %v", err)
+	}
+	defer store.Close()
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	model := &semanticmodel.Model{
+		Name:        "workspace",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	duckRoot := filepath.Join(dir, "duckdb", "dev")
+	duckLakeDataPath := filepath.Join(dir, ".libredash", "data")
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:           map[string]*semanticmodel.Model{"sales": model},
+		DataDir:          dataDir,
+		DBDir:            duckRoot,
+		CatalogPath:      catalogPath,
+		DuckLakeDataPath: duckLakeDataPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	if runtime.DuckLakeSnapshotID() <= 0 {
+		t.Fatalf("DuckLakeSnapshotID = %d, want committed snapshot", runtime.DuckLakeSnapshotID())
+	}
+	if _, err := os.Stat(filepath.Join(duckRoot, "catalog.sqlite")); !os.IsNotExist(err) {
+		t.Fatalf("workspace-local catalog exists or stat failed: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, "SELECT 1 FROM workspaces WHERE id = 'sales'"); err != nil {
+		t.Fatalf("platform control-plane table unavailable after materialization: %v", err)
+	}
+
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(catalogPath, "'", "''") + "' AS lake (DATA_PATH '" + strings.ReplaceAll(duckLakeDataPath, "'", "''") + "')",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var physicalTables int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM ducklake_table_info('lake') WHERE table_name = 'orders'").Scan(&physicalTables); err != nil {
+		t.Fatal(err)
+	}
+	if physicalTables != 1 {
+		t.Fatalf("DuckLake physical tables = %d, want one orders table in platform catalog", physicalTables)
+	}
+}
+
+func TestWorkspaceRuntimeQueriesPinnedDuckLakeSnapshots(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(dir, "libredash.db")
+	store, err := platform.Open(ctx, catalogPath)
+	if err != nil {
+		t.Fatalf("open platform store: %v", err)
+	}
+	defer store.Close()
+	model := simpleOrdersModel(t)
+	duckRoot := filepath.Join(dir, "duckdb", "dev")
+	config := analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:           map[string]*semanticmodel.Model{"sales": model},
+		DataDir:          dataDir,
+		DBDir:            duckRoot,
+		CatalogPath:      catalogPath,
+		DuckLakeDataPath: filepath.Join(dir, ".libredash", "data"),
+	}
+
+	writeOrdersCSV(t, dataDir, 10, 15)
+	writer, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot1 := writer.DuckLakeSnapshotID()
+	writeOrdersCSV(t, dataDir, 100, 150)
+	if err := writer.Refresh(ctx); err != nil {
+		t.Fatalf("refresh second snapshot: %v", err)
+	}
+	snapshot2 := writer.DuckLakeSnapshotID()
+	if snapshot2 <= snapshot1 {
+		t.Fatalf("snapshot2 = %d, want > snapshot1 %d", snapshot2, snapshot1)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	config.SnapshotID = snapshot1
+	first, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, config)
+	if err != nil {
+		t.Fatalf("open first snapshot: %v", err)
+	}
+	defer first.Close()
+	if got := queryRevenue(t, ctx, first); got != 25 {
+		t.Fatalf("first snapshot revenue = %v, want 25", got)
+	}
+
+	config.SnapshotID = snapshot2
+	second, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, config)
+	if err != nil {
+		t.Fatalf("open second snapshot: %v", err)
+	}
+	defer second.Close()
+	if got := queryRevenue(t, ctx, second); got != 250 {
+		t.Fatalf("second snapshot revenue = %v, want 250", got)
+	}
+}
+
+func TestWorkspaceRuntimeWritesDuckLakeDataUnderConfiguredInstanceStore(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "source")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeOrdersCSV(t, dataDir, 10, 15)
+	catalogPath := filepath.Join(dir, ".libredash", "libredash.db")
+	dataPath := filepath.Join(dir, ".libredash", "data")
+	oldEnvironmentDataPath := filepath.Join(dir, ".libredash", "duckdb", "dev", "data")
+
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t)},
+		DataDir:          dataDir,
+		DBDir:            filepath.Join(dir, ".libredash", "duckdb", "dev"),
+		CatalogPath:      catalogPath,
+		DuckLakeDataPath: dataPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	info, err := os.Stat(dataPath)
+	if err != nil {
+		t.Fatalf("DuckLake data path was not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("DuckLake data path %s is not a directory", dataPath)
+	}
+	if _, err := os.Stat(oldEnvironmentDataPath); !os.IsNotExist(err) {
+		t.Fatalf("old environment-scoped DuckLake data path exists or stat failed: %v", err)
+	}
+}
+
+func TestWorkspaceRuntimeWritesDuckLakeCommitMetadata(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "source")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeOrdersCSV(t, dataDir, 10, 15)
+	catalogPath := filepath.Join(dir, ".libredash", "libredash.db")
+	dataPath := filepath.Join(dir, ".libredash", "data")
+
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t)},
+		DataDir:          dataDir,
+		DBDir:            filepath.Join(dir, ".libredash", "duckdb", "dev"),
+		CatalogPath:      catalogPath,
+		DuckLakeDataPath: dataPath,
+		DeploymentID:     "dep_123",
+		WorkspaceID:      "sales",
+		Environment:      "prod",
+		SemanticDigest:   "semantic-digest",
+		ArtifactDigest:   "artifact-digest",
+		SourceDataDigest: "source-digest",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotID := runtime.DuckLakeSnapshotID()
+	defer runtime.Close()
+
+	extra := duckLakeSnapshotExtraInfo(t, ctx, catalogPath, dataPath, snapshotID)
+	for _, want := range []string{
+		`"deploymentId":"dep_123"`,
+		`"workspaceId":"sales"`,
+		`"environment":"prod"`,
+		`"semanticModelDigest":"semantic-digest"`,
+		`"artifactDigest":"artifact-digest"`,
+		`"sourceDataDigest":"source-digest"`,
+	} {
+		if !strings.Contains(extra, want) {
+			t.Fatalf("DuckLake snapshot metadata missing %s in %s", want, extra)
+		}
+	}
+}
+
+func duckLakeSnapshotExtraInfo(t *testing.T, ctx context.Context, catalogPath, dataPath string, snapshotID int64) string {
+	t.Helper()
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"LOAD sqlite",
+		"LOAD ducklake",
+		"ATTACH 'ducklake:sqlite:" + strings.ReplaceAll(catalogPath, "'", "''") + "' AS lake (DATA_PATH '" + strings.ReplaceAll(dataPath, "'", "''") + "')",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var extra string
+	if err := db.QueryRowContext(ctx, "SELECT CAST(commit_extra_info AS VARCHAR) FROM lake.snapshots() WHERE snapshot_id = ?", snapshotID).Scan(&extra); err != nil {
+		t.Fatal(err)
+	}
+	return extra
+}
+
+func simpleOrdersModel(t *testing.T) *semanticmodel.Model {
+	t.Helper()
+	model := &semanticmodel.Model{
+		Name:        "workspace",
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
+		},
+		BaseTable: "orders",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source:     "orders",
+				PrimaryKey: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"order_id": {Label: "Order ID"},
+					"status":   {Label: "Status"},
+					"revenue":  {Label: "Revenue"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		},
+	}
+	if err := model.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return model
+}
+
+func writeOrdersCSV(t *testing.T, dir string, firstRevenue, secondRevenue int) {
+	t.Helper()
+	content := fmt.Sprintf("order_id,status,revenue\no1,paid,%d\no2,paid,%d\n", firstRevenue, secondRevenue)
+	if err := os.WriteFile(filepath.Join(dir, "orders.csv"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func queryRevenue(t *testing.T, ctx context.Context, runtime *analyticsduckdb.WorkspaceRuntime) float64 {
+	t.Helper()
+	queries, err := runtime.Queries("sales")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := queries.Query(ctx, semanticquery.Request{
+		Measures: []semanticquery.Field{{Field: "revenue", Alias: "revenue"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %#v, want one row", rows)
+	}
+	switch value := rows[0]["revenue"].(type) {
+	case int64:
+		return float64(value)
+	case float64:
+		return value
+	case *big.Int:
+		return float64(value.Int64())
+	default:
+		t.Fatalf("revenue value = %#v (%T), want numeric", rows[0]["revenue"], rows[0]["revenue"])
+		return 0
+	}
+}
+
 func TestModelTableDependencyOrderIncludesUpstreamBeforeSelected(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name:      "test",
@@ -233,6 +705,15 @@ func TestModelTableDependencyOrderIncludesUpstreamBeforeSelected(t *testing.T) {
 	if !reflect.DeepEqual(order, want) {
 		t.Fatalf("dependency order = %#v, want %#v", order, want)
 	}
+}
+
+func indexOf(values []string, target string) int {
+	for index, value := range values {
+		if value == target {
+			return index
+		}
+	}
+	return -1
 }
 
 func TestModelTablesNamedMaterializesOnlyRequestedOrder(t *testing.T) {
@@ -720,6 +1201,202 @@ func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
 	}
 	if legacy.TargetType != analyticsmaterialize.TargetSemanticModel || legacy.TargetID != "legacy" || legacy.TriggerType != analyticsmaterialize.TriggerDirect {
 		t.Fatalf("default target metadata = %#v", legacy)
+	}
+}
+
+func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	if _, err := store.SQLDB().ExecContext(ctx, `
+		INSERT INTO deployments (id, workspace_id, status, digest, manifest_json, created_by)
+		VALUES ('dep_failed', 'test', 'failed', 'sha256:failed', '{}', 'test')
+	`); err != nil {
+		t.Fatalf("seed failed deployment: %v", err)
+	}
+
+	failedDeploymentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:  "test",
+		ModelID:      "olist",
+		DeploymentID: "dep_failed",
+		TargetType:   analyticsmaterialize.TargetModelTable,
+		TargetID:     "olist.orders",
+	})
+	if err != nil {
+		t.Fatalf("create terminal deployment run: %v", err)
+	}
+	if _, err := repo.MarkRunRunning(ctx, "test", failedDeploymentRun.ID); err != nil {
+		t.Fatalf("mark terminal deployment run running: %v", err)
+	}
+	activeDeploymentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:  "test",
+		ModelID:      "olist",
+		DeploymentID: "dep_1",
+		TargetType:   analyticsmaterialize.TargetModelTable,
+		TargetID:     "olist.customers",
+	})
+	if err != nil {
+		t.Fatalf("create active deployment run: %v", err)
+	}
+	if _, err := repo.MarkRunRunning(ctx, "test", activeDeploymentRun.ID); err != nil {
+		t.Fatalf("mark active deployment run running: %v", err)
+	}
+
+	if err := repo.FailRunsForTerminalDeployments(ctx, "refresh did not complete"); err != nil {
+		t.Fatalf("fail terminal deployment runs: %v", err)
+	}
+
+	storedFailed, err := repo.GetRun(ctx, "test", failedDeploymentRun.ID)
+	if err != nil {
+		t.Fatalf("get failed deployment run: %v", err)
+	}
+	if storedFailed.Status != analyticsmaterialize.RunStatusFailed || storedFailed.Error != "refresh did not complete" || storedFailed.FinishedAt == "" {
+		t.Fatalf("failed deployment run = %#v, want failed with message and finish time", storedFailed)
+	}
+	storedActive, err := repo.GetRun(ctx, "test", activeDeploymentRun.ID)
+	if err != nil {
+		t.Fatalf("get active deployment run: %v", err)
+	}
+	if storedActive.Status != analyticsmaterialize.RunStatusRunning || storedActive.Error != "" || storedActive.FinishedAt != "" {
+		t.Fatalf("active deployment run = %#v, want still running", storedActive)
+	}
+}
+
+func TestRunRepositoryClaimsExecutableRootJobs(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	parent, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:  "test",
+		ModelID:      "olist",
+		DeploymentID: "dep_1",
+		TargetType:   analyticsmaterialize.TargetSemanticModel,
+		TargetID:     "olist",
+		JobKind:      analyticsmaterialize.JobKindWorkspaceAssetRefresh,
+		PayloadJSON:  `{"assetKey":"olist","assetType":"semantic_model"}`,
+	})
+	if err != nil {
+		t.Fatalf("create parent run: %v", err)
+	}
+	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID: "test",
+		ModelID:     "olist",
+		TargetType:  analyticsmaterialize.TargetModelTable,
+		TargetID:    "olist.orders",
+		ParentRunID: parent.ID,
+	}); err != nil {
+		t.Fatalf("create child run: %v", err)
+	}
+
+	job, ok, err := repo.ClaimNextExecutableJob(ctx, "worker-1", time.Minute)
+	if err != nil {
+		t.Fatalf("claim job: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected queued root job")
+	}
+	if job.RunID != parent.ID || job.Kind != analyticsmaterialize.JobKindWorkspaceAssetRefresh || job.AttemptCount != 1 {
+		t.Fatalf("claimed job = %#v, want parent workspace refresh attempt 1", job)
+	}
+	stored, err := repo.GetRun(ctx, "test", parent.ID)
+	if err != nil {
+		t.Fatalf("get parent run: %v", err)
+	}
+	if stored.Status != analyticsmaterialize.RunStatusRunning || stored.StartedAt == "" {
+		t.Fatalf("parent run = %#v, want running with start time", stored)
+	}
+	if _, ok, err := repo.ClaimNextExecutableJob(ctx, "worker-1", time.Minute); err != nil || ok {
+		t.Fatalf("second claim ok=%v err=%v, want no child job claimed", ok, err)
+	}
+}
+
+func TestRunRepositoryReclaimsExpiredJobLease(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	run, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist"})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	job, ok, err := repo.ClaimNextExecutableJob(ctx, "worker-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("first claim ok=%v err=%v", ok, err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `
+		UPDATE materialization_jobs
+		SET lease_expires_at = datetime('now', '-1 second')
+		WHERE id = ?
+	`, job.ID); err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+
+	reclaimed, ok, err := repo.ClaimNextExecutableJob(ctx, "worker-2", time.Minute)
+	if err != nil {
+		t.Fatalf("reclaim job: %v", err)
+	}
+	if !ok || reclaimed.ID != job.ID || reclaimed.RunID != run.ID || reclaimed.AttemptCount != 2 {
+		t.Fatalf("reclaimed job = %#v ok=%v, want same job attempt 2", reclaimed, ok)
+	}
+	if err := repo.RenewJobLease(ctx, reclaimed.ID, "worker-2", time.Minute); err != nil {
+		t.Fatalf("renew lease: %v", err)
+	}
+	var owner string
+	if err := store.SQLDB().QueryRowContext(ctx, `SELECT lease_owner FROM materialization_jobs WHERE id = ?`, reclaimed.ID).Scan(&owner); err != nil {
+		t.Fatalf("read lease owner: %v", err)
+	}
+	if owner != "worker-2" {
+		t.Fatalf("lease owner = %q, want worker-2", owner)
+	}
+}
+
+func TestRunRepositoryReportsDurableQueueStats(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+
+	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "queued"}); err != nil {
+		t.Fatalf("create queued run: %v", err)
+	}
+	running, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "running"})
+	if err != nil {
+		t.Fatalf("create running run: %v", err)
+	}
+	stale, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "stale"})
+	if err != nil {
+		t.Fatalf("create stale run: %v", err)
+	}
+	if _, _, err := repo.ClaimNextExecutableJob(ctx, "worker-1", time.Minute); err != nil {
+		t.Fatalf("claim queued job: %v", err)
+	}
+	if _, _, err := repo.ClaimNextExecutableJob(ctx, "worker-1", time.Minute); err != nil {
+		t.Fatalf("claim running job: %v", err)
+	}
+	if _, _, err := repo.ClaimNextExecutableJob(ctx, "worker-1", time.Minute); err != nil {
+		t.Fatalf("claim stale job: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `
+		UPDATE materialization_jobs
+		SET lease_expires_at = datetime('now', '-1 second')
+		WHERE id = (SELECT job_id FROM materialization_job_runs WHERE id = ?)
+	`, stale.ID); err != nil {
+		t.Fatalf("expire stale lease: %v", err)
+	}
+	if _, err := repo.MarkRunSucceeded(ctx, "test", running.ID); err != nil {
+		t.Fatalf("finish one running run: %v", err)
+	}
+
+	stats, err := repo.JobQueueStats(ctx)
+	if err != nil {
+		t.Fatalf("queue stats: %v", err)
+	}
+	if stats.QueuedJobs != 0 || stats.RunningJobs != 1 || stats.StaleLeasedJobs != 1 {
+		t.Fatalf("queue stats = %#v, want 0 queued, 1 running, 1 stale", stats)
 	}
 }
 

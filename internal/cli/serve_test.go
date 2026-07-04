@@ -29,6 +29,36 @@ func TestDeploymentBackedDevServerAlwaysOpensPlatformStore(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, "artifacts")); err != nil {
 		t.Fatalf("artifact directory was not created: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(home, "data")); err != nil {
+		t.Fatalf("DuckLake data directory was not created: %v", err)
+	}
+}
+
+func TestDeploymentBackedDevServerRemovesLegacyDuckLakeArtifacts(t *testing.T) {
+	home := t.TempDir()
+	legacyCatalog := filepath.Join(home, "duckdb", "dev", "catalog.sqlite")
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(legacyCatalog), "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyCatalog, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(legacyCatalog), "data", "old.parquet"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cleanup, err := deploymentBackedServer(context.Background(), config.Config{HomeDir: home}, "", false, deployment.DefaultEnvironment)
+	if err != nil {
+		t.Fatalf("deployment-backed dev server: %v", err)
+	}
+	defer cleanup()
+
+	if _, err := os.Stat(legacyCatalog); !os.IsNotExist(err) {
+		t.Fatalf("legacy DuckLake catalog exists or stat failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(legacyCatalog), "data")); !os.IsNotExist(err) {
+		t.Fatalf("legacy DuckLake data exists or stat failed: %v", err)
+	}
 }
 
 func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {

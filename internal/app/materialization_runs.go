@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	"github.com/Yacobolo/libredash/internal/execution"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -48,14 +49,15 @@ func (s *Server) createMaterializationRun(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	orchestrator := NewGenericRefreshOrchestrator(repo, s.metrics)
-	go func() {
-		ctx := context.Background()
-		if _, err := orchestrator.ExecuteRun(ctx, workspaceID, run.ID, refreshPublisher{}); err != nil && s.logger != nil {
-			s.logger.WarnContext(ctx, "async materialization refresh failed", "workspace", workspaceID, "run", run.ID, "error", err)
-		}
-	}()
+	s.dispatchQueuedMaterializationJobs(context.Background())
 	writeJSON(w, http.StatusAccepted, run)
+}
+
+func (s *Server) executionService() *execution.Service {
+	if s.executor == nil {
+		s.executor = execution.New(execution.DefaultConfig())
+	}
+	return s.executor
 }
 
 func (s *Server) listMaterializationRuns(w http.ResponseWriter, r *http.Request) {

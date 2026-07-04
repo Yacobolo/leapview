@@ -14,10 +14,23 @@ import './agent-prompt-editor'
 import './storage-explorer'
 
 const emptyStorage: AdminStorageSignal = {
-  summary: { duckdbDir: '', databaseCount: 0, totalSizeLabel: '', tableCount: 0 },
+  summary: {
+    catalogPath: '',
+    dataPath: '',
+    catalogSizeLabel: '',
+    dataSizeLabel: '',
+    totalSizeLabel: '',
+    totalDataSizeLabel: '',
+    databaseCount: 0,
+    tableCount: 0,
+    snapshotCount: 0,
+    dataFileCount: 0,
+  },
   status: '',
   warnings: [],
   tables: [],
+  snapshots: [],
+  deployments: [],
   selectedKey: '',
   selectedTable: null,
 }

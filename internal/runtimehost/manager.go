@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/deployment"
 )
@@ -13,14 +14,32 @@ type DeploymentRepository interface {
 	ActiveArtifact(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment) (deployment.Deployment, deployment.Artifact, error)
 	ByID(ctx context.Context, id deployment.ID) (deployment.Deployment, error)
 	ArtifactByDeployment(ctx context.Context, deploymentID deployment.ID) (deployment.Artifact, error)
+	RecordDuckLakeSnapshot(ctx context.Context, deploymentID deployment.ID, snapshotID int64) error
 }
 
 type Runtime interface {
 	Close() error
 }
 
+type RuntimeSnapshot interface {
+	DuckLakeSnapshotID() int64
+}
+
+type Lease interface {
+	Runtime() Runtime
+	DeploymentID() deployment.ID
+	DuckLakeSnapshotID() int64
+	Release()
+}
+
 type RuntimeFactory interface {
 	Prepare(ctx context.Context, input RuntimeInput) (Runtime, error)
+}
+
+type SnapshotLeaseRepository interface {
+	CreateQuerySnapshotLease(ctx context.Context, input deployment.SnapshotLeaseInput) (string, error)
+	ReleaseQuerySnapshotLease(ctx context.Context, id string) error
+	ExtendQuerySnapshotLease(ctx context.Context, id string, expiresAt time.Time) error
 }
 
 type RuntimeInput struct {
@@ -38,10 +57,15 @@ type Manager struct {
 	environment deployment.Environment
 	dataDir     string
 	factory     RuntimeFactory
+	onDrained   func(deployment.ID, int64)
+	leaseTTL    time.Duration
+	leaseOwner  string
 
 	activeDeployment deployment.ID
 	activeDigest     string
-	current          Runtime
+	activeSnapshotID int64
+	current          *managedRuntime
+	retired          []*managedRuntime
 }
 
 type ManagerOptions struct {
@@ -50,6 +74,9 @@ type ManagerOptions struct {
 	Environment deployment.Environment
 	DataDir     string
 	Factory     RuntimeFactory
+	OnDrained   func(deployment.ID, int64)
+	LeaseTTL    time.Duration
+	LeaseOwner  string
 }
 
 type Prepared struct {
@@ -57,6 +84,7 @@ type Prepared struct {
 	digest       string
 	runtime      Runtime
 	noChange     bool
+	snapshotID   int64
 }
 
 func (p *Prepared) Close() error {
@@ -66,6 +94,13 @@ func (p *Prepared) Close() error {
 	return p.runtime.Close()
 }
 
+func (p *Prepared) DuckLakeSnapshotID() int64 {
+	if p == nil {
+		return 0
+	}
+	return p.snapshotID
+}
+
 func NewManagerWithFactory(options ManagerOptions) *Manager {
 	return &Manager{
 		repo:        options.Repo,
@@ -73,6 +108,9 @@ func NewManagerWithFactory(options ManagerOptions) *Manager {
 		environment: deployment.NormalizeEnvironment(options.Environment),
 		dataDir:     options.DataDir,
 		factory:     options.Factory,
+		onDrained:   options.OnDrained,
+		leaseTTL:    normalizedLeaseTTL(options.LeaseTTL),
+		leaseOwner:  firstNonEmpty(options.LeaseOwner, "runtimehost"),
 	}
 }
 
@@ -80,13 +118,19 @@ func (m *Manager) Reload(ctx context.Context) error {
 	current, artifact, err := m.repo.ActiveArtifact(ctx, m.workspaceID, m.environment)
 	if err != nil {
 		if errors.Is(err, deployment.ErrNotFound) {
-			return nil
+			return m.Close()
 		}
 		return err
 	}
 	prepared, err := m.prepare(ctx, current, artifact)
 	if err != nil {
 		return err
+	}
+	if current.DuckLakeSnapshotID == 0 && prepared.DuckLakeSnapshotID() > 0 {
+		if err := m.repo.RecordDuckLakeSnapshot(ctx, current.ID, prepared.DuckLakeSnapshotID()); err != nil {
+			_ = prepared.Close()
+			return err
+		}
 	}
 	return m.CommitPrepared(prepared)
 }
@@ -108,7 +152,7 @@ func (m *Manager) PrepareDeployment(ctx context.Context, deploymentID string) (d
 
 func (m *Manager) prepare(ctx context.Context, current deployment.Deployment, artifact deployment.Artifact) (*Prepared, error) {
 	m.mu.RLock()
-	if m.current != nil && m.activeDeployment == current.ID && m.activeDigest == artifact.Digest {
+	if m.current != nil && m.activeDeployment == current.ID && m.activeDigest == artifact.Digest && m.activeSnapshotID == current.DuckLakeSnapshotID {
 		m.mu.RUnlock()
 		return &Prepared{deploymentID: current.ID, digest: artifact.Digest, noChange: true}, nil
 	}
@@ -122,7 +166,14 @@ func (m *Manager) prepare(ctx context.Context, current deployment.Deployment, ar
 	if err != nil {
 		return nil, err
 	}
-	return &Prepared{deploymentID: current.ID, digest: artifact.Digest, runtime: runtime}, nil
+	var snapshotID int64
+	if snapshot, ok := runtime.(RuntimeSnapshot); ok {
+		snapshotID = snapshot.DuckLakeSnapshotID()
+	}
+	if snapshotID == 0 {
+		snapshotID = current.DuckLakeSnapshotID
+	}
+	return &Prepared{deploymentID: current.ID, digest: artifact.Digest, runtime: runtime, snapshotID: snapshotID}, nil
 }
 
 func (m *Manager) CommitPrepared(candidate deployment.PreparedRuntime) error {
@@ -139,14 +190,19 @@ func (m *Manager) CommitPrepared(candidate deployment.PreparedRuntime) error {
 
 	m.mu.Lock()
 	old := m.current
-	m.current = prepared.runtime
+	m.current = &managedRuntime{
+		deploymentID: prepared.deploymentID,
+		digest:       prepared.digest,
+		runtime:      prepared.runtime,
+		snapshotID:   prepared.snapshotID,
+	}
 	m.activeDeployment = prepared.deploymentID
 	m.activeDigest = prepared.digest
+	m.activeSnapshotID = prepared.snapshotID
 	prepared.runtime = nil
+	oldToClose := m.retireLocked(old)
 	m.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
+	m.closeManaged(oldToClose)
 	return nil
 }
 
@@ -156,18 +212,235 @@ func (m *Manager) Close() error {
 	m.current = nil
 	m.activeDeployment = ""
 	m.activeDigest = ""
+	m.activeSnapshotID = 0
+	currentToClose := m.retireLocked(current)
 	m.mu.Unlock()
-	if current == nil {
+	if currentToClose == nil {
 		return nil
 	}
-	return current.Close()
+	return m.closeManaged(currentToClose)
 }
 
 func (m *Manager) Active() (Runtime, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.current == nil {
+	lease, err := m.Acquire()
+	if err != nil {
+		return nil, err
+	}
+	runtime := lease.Runtime()
+	lease.Release()
+	return runtime, nil
+}
+
+func (m *Manager) Acquire() (Lease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == nil || m.current.closing {
 		return nil, fmt.Errorf("no active LibreDash deployment")
 	}
-	return m.current, nil
+	leaseID, heartbeatCancel, err := m.createPersistentLeaseLocked()
+	if err != nil {
+		return nil, err
+	}
+	m.current.refs++
+	return &runtimeLease{manager: m, managed: m.current, leaseID: leaseID, heartbeatCancel: heartbeatCancel}, nil
+}
+
+func (m *Manager) LeasedSnapshots() []int64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	snapshots := map[int64]struct{}{}
+	if m.current != nil && m.current.refs > 0 && m.current.snapshotID > 0 {
+		snapshots[m.current.snapshotID] = struct{}{}
+	}
+	for _, runtime := range m.retired {
+		if runtime.refs > 0 && runtime.snapshotID > 0 {
+			snapshots[runtime.snapshotID] = struct{}{}
+		}
+	}
+	return snapshotKeys(snapshots)
+}
+
+func (m *Manager) retireLocked(runtime *managedRuntime) *managedRuntime {
+	if runtime == nil {
+		return nil
+	}
+	runtime.closing = true
+	if runtime.refs > 0 {
+		m.retired = append(m.retired, runtime)
+		return nil
+	}
+	return runtime
+}
+
+func (m *Manager) release(runtime *managedRuntime, leaseID string, heartbeatCancel context.CancelFunc) {
+	if heartbeatCancel != nil {
+		heartbeatCancel()
+	}
+	if leaseID != "" {
+		if repo, ok := m.repo.(SnapshotLeaseRepository); ok {
+			releaseSnapshotLease(repo, leaseID)
+		}
+	}
+	var drained *managedRuntime
+	m.mu.Lock()
+	if runtime != nil && runtime.refs > 0 {
+		runtime.refs--
+		if runtime.refs == 0 && runtime.closing {
+			drained = runtime
+			m.removeRetiredLocked(runtime)
+		}
+	}
+	m.mu.Unlock()
+	_ = m.closeManaged(drained)
+}
+
+func releaseSnapshotLease(repo SnapshotLeaseRepository, leaseID string) {
+	if repo == nil || leaseID == "" {
+		return
+	}
+	delay := 25 * time.Millisecond
+	for attempt := 0; attempt < 5; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := repo.ReleaseQuerySnapshotLease(ctx, leaseID)
+		cancel()
+		if err == nil {
+			return
+		}
+		time.Sleep(delay)
+		delay *= 2
+	}
+	_ = repo.ReleaseQuerySnapshotLease(context.Background(), leaseID)
+}
+
+func (m *Manager) removeRetiredLocked(runtime *managedRuntime) {
+	for index, retired := range m.retired {
+		if retired == runtime {
+			m.retired = append(m.retired[:index], m.retired[index+1:]...)
+			return
+		}
+	}
+}
+
+func (m *Manager) closeManaged(runtime *managedRuntime) error {
+	if runtime == nil || runtime.runtime == nil {
+		return nil
+	}
+	err := runtime.runtime.Close()
+	if runtime.closing && m.onDrained != nil {
+		m.onDrained(runtime.deploymentID, runtime.snapshotID)
+	}
+	return err
+}
+
+type managedRuntime struct {
+	deploymentID deployment.ID
+	digest       string
+	runtime      Runtime
+	snapshotID   int64
+	refs         int
+	closing      bool
+}
+
+type runtimeLease struct {
+	manager         *Manager
+	managed         *managedRuntime
+	leaseID         string
+	heartbeatCancel context.CancelFunc
+	once            sync.Once
+}
+
+func (l *runtimeLease) Runtime() Runtime {
+	if l == nil || l.managed == nil {
+		return nil
+	}
+	return l.managed.runtime
+}
+
+func (l *runtimeLease) DeploymentID() deployment.ID {
+	if l == nil || l.managed == nil {
+		return ""
+	}
+	return l.managed.deploymentID
+}
+
+func (l *runtimeLease) DuckLakeSnapshotID() int64 {
+	if l == nil || l.managed == nil {
+		return 0
+	}
+	return l.managed.snapshotID
+}
+
+func (l *runtimeLease) Release() {
+	if l == nil || l.manager == nil || l.managed == nil {
+		return
+	}
+	l.once.Do(func() {
+		l.manager.release(l.managed, l.leaseID, l.heartbeatCancel)
+	})
+}
+
+func (m *Manager) createPersistentLeaseLocked() (string, context.CancelFunc, error) {
+	repo, ok := m.repo.(SnapshotLeaseRepository)
+	if !ok || m.current == nil || m.current.snapshotID <= 0 {
+		return "", nil, nil
+	}
+	expiresAt := time.Now().Add(m.leaseTTL)
+	leaseID, err := repo.CreateQuerySnapshotLease(context.Background(), deployment.SnapshotLeaseInput{
+		WorkspaceID:        m.workspaceID,
+		Environment:        m.environment,
+		DeploymentID:       m.current.deploymentID,
+		DuckLakeSnapshotID: m.current.snapshotID,
+		OwnerID:            m.leaseOwner,
+		ExpiresAt:          expiresAt,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	heartbeatCtx, cancel := context.WithCancel(context.Background())
+	go m.heartbeatLease(heartbeatCtx, repo, leaseID)
+	return leaseID, cancel, nil
+}
+
+func (m *Manager) heartbeatLease(ctx context.Context, repo SnapshotLeaseRepository, leaseID string) {
+	interval := m.leaseTTL / 2
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = repo.ExtendQuerySnapshotLease(context.Background(), leaseID, time.Now().Add(m.leaseTTL))
+		}
+	}
+}
+
+func normalizedLeaseTTL(value time.Duration) time.Duration {
+	if value <= 0 {
+		return 5 * time.Minute
+	}
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func snapshotKeys(values map[int64]struct{}) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]int64, 0, len(values))
+	for value := range values {
+		keys = append(keys, value)
+	}
+	return keys
 }

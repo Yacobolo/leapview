@@ -54,8 +54,8 @@ ON CONFLICT(workspace_id, environment) DO UPDATE SET
   updated_at = CURRENT_TIMESTAMP;
 
 -- name: CreateDeployment :exec
-INSERT INTO deployments (id, workspace_id, environment, status, created_by)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO deployments (id, workspace_id, environment, status, source, created_by)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetDeployment :one
 SELECT * FROM deployments WHERE id = ?;
@@ -71,9 +71,67 @@ SELECT * FROM deployments
 WHERE workspace_id = ? AND environment = ?
 ORDER BY created_at DESC;
 
+-- name: ListReferencedDuckLakeSnapshots :many
+SELECT DISTINCT ducklake_snapshot_id
+FROM deployments
+WHERE ducklake_snapshot_id > 0
+  AND status = 'active'
+ORDER BY ducklake_snapshot_id;
+
+-- name: ListActiveDuckLakeSnapshots :many
+SELECT DISTINCT ducklake_snapshot_id
+FROM deployments
+WHERE ducklake_snapshot_id > 0
+  AND status = 'active'
+ORDER BY ducklake_snapshot_id;
+
+-- name: ListLeasedDuckLakeSnapshots :many
+SELECT DISTINCT ducklake_snapshot_id
+FROM query_snapshot_leases
+WHERE ducklake_snapshot_id > 0
+  AND released_at IS NULL
+  AND expires_at > CURRENT_TIMESTAMP
+ORDER BY ducklake_snapshot_id;
+
+-- name: ExpireInactiveDeployments :exec
+UPDATE deployments
+SET status = 'expired', error = ''
+WHERE status = 'inactive';
+
+-- name: MarkOtherDeploymentsDraining :exec
+UPDATE deployments
+SET status = 'draining',
+    superseded_at = CURRENT_TIMESTAMP,
+    cleanup_after = NULL,
+    error = ''
+WHERE workspace_id = ?
+  AND environment = ?
+  AND id <> ?
+  AND status = 'active';
+
+-- name: MarkDrainingDeploymentsDeleteScheduled :exec
+UPDATE deployments
+SET status = 'delete_scheduled', error = ''
+WHERE status = 'draining';
+
+-- name: ScheduleExpiredDeploymentDeletion :exec
+UPDATE deployments
+SET status = 'delete_scheduled', error = ''
+WHERE status = 'expired';
+
+-- name: MarkDeleteScheduledDeploymentsDeleted :exec
+UPDATE deployments
+SET status = 'deleted', error = ''
+WHERE status = 'delete_scheduled';
+
 -- name: UpdateDeploymentValidated :exec
 UPDATE deployments
 SET status = ?, digest = ?, manifest_json = ?, error = ''
+WHERE id = ?;
+
+-- name: UpdateDeploymentDuckLakeSnapshot :exec
+UPDATE deployments
+SET ducklake_snapshot_id = ?
 WHERE id = ?;
 
 -- name: UpdateDeploymentStatus :exec
@@ -92,18 +150,40 @@ SET status = 'inactive'
 WHERE workspace_id = ? AND environment = ? AND id <> ? AND status = 'active';
 
 -- name: InsertDeploymentArtifact :exec
-INSERT INTO deployment_artifacts (id, deployment_id, workspace_id, environment, digest, format, path, manifest_json, size_bytes)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO deployment_artifacts (id, deployment_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(deployment_id) DO UPDATE SET
   environment = excluded.environment,
   digest = excluded.digest,
   format = excluded.format,
   path = excluded.path,
+  data_root = excluded.data_root,
   manifest_json = excluded.manifest_json,
   size_bytes = excluded.size_bytes;
 
 -- name: GetArtifactByDeployment :one
 SELECT * FROM deployment_artifacts WHERE deployment_id = ?;
+
+-- name: CreateQuerySnapshotLease :exec
+INSERT INTO query_snapshot_leases (id, workspace_id, environment, deployment_id, ducklake_snapshot_id, owner_id, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- name: ReleaseQuerySnapshotLease :exec
+UPDATE query_snapshot_leases
+SET released_at = COALESCE(released_at, CURRENT_TIMESTAMP)
+WHERE id = ?;
+
+-- name: ExtendQuerySnapshotLease :exec
+UPDATE query_snapshot_leases
+SET expires_at = ?
+WHERE id = ?
+  AND released_at IS NULL;
+
+-- name: ReleaseExpiredQuerySnapshotLeases :exec
+UPDATE query_snapshot_leases
+SET released_at = CURRENT_TIMESTAMP
+WHERE released_at IS NULL
+  AND expires_at <= CURRENT_TIMESTAMP;
 
 -- name: ClearAssetsForDeployment :exec
 DELETE FROM assets WHERE deployment_id = ?;
@@ -143,7 +223,7 @@ JOIN assets a ON a.deployment_id = d.id
 WHERE d.workspace_id = ?
   AND d.environment = ?
   AND a.logical_asset_id = ?
-  AND d.status IN ('active', 'inactive', 'validated')
+  AND d.status IN ('active', 'draining', 'inactive', 'validated')
 ORDER BY
   COALESCE(d.activated_at, d.created_at) DESC,
   d.created_at DESC,
@@ -552,6 +632,9 @@ INSERT INTO query_events (
   correlation_id,
   status,
   duration_ms,
+  queue_wait_ms,
+  execution_ms,
+  execution_state,
   rows_returned,
   bytes_estimate,
   error,
@@ -574,6 +657,9 @@ VALUES (
   sqlc.arg(correlation_id),
   sqlc.arg(status),
   sqlc.arg(duration_ms),
+  sqlc.arg(queue_wait_ms),
+  sqlc.arg(execution_ms),
+  sqlc.arg(execution_state),
   sqlc.arg(rows_returned),
   sqlc.arg(bytes_estimate),
   sqlc.arg(error),

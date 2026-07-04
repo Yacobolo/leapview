@@ -5,16 +5,20 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
+	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
+	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 	"github.com/spf13/cobra"
@@ -59,6 +63,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	defer cleanup()
+	server.StartBackgroundJobs(ctx)
 	slog.Info("LibreDash listening", "url", "http://localhost"+addr)
 	return http.ListenAndServe(addr, server.Routes())
 }
@@ -68,10 +73,16 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, dir := range []string{cfg.ArtifactDir(), cfg.DuckDBDirPath(), cfg.RuntimeDir()} {
+	for _, dir := range []string{cfg.ArtifactDir(), cfg.DuckDBDirPath(), cfg.RuntimeDir(), cfg.DuckLakeDataDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, err
 		}
+	}
+	if err := analyticsducklake.MigrateSQLiteCatalogDataPath(ctx, cfg.DBPath(), cfg.DuckLakeDataDir()); err != nil {
+		return nil, nil, err
+	}
+	if err := removeLegacyDuckLakeArtifacts(cfg.DuckDBDirPath()); err != nil {
+		return nil, nil, err
 	}
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
@@ -87,6 +98,19 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		}
 	}
 	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	if err := materialize.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalDeployments(ctx, "refresh did not complete"); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	if _, err := storagemaintenance.Run(ctx, deploymentRepo, storagemaintenance.Options{
+		RootDir:     cfg.HomeDir,
+		CatalogPath: cfg.DBPath(),
+		DataPath:    cfg.DuckLakeDataDir(),
+		DryRun:      false,
+	}); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
 	summaries, err := workspaceRepo.List(ctx)
 	if err != nil {
@@ -97,15 +121,35 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	for _, summary := range summaries {
 		workspaceIDs = append(workspaceIDs, deployment.WorkspaceID(summary.ID))
 	}
-	registry := runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
+	var registry *runtimehost.Registry
+	registry = runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
 		Repo:         deploymentRepo,
 		WorkspaceIDs: workspaceIDs,
 		Environment:  environment,
 		DataDir:      dataDir,
+		OnDrained: func(deployment.ID, int64) {
+			go func() {
+				protected := []int64(nil)
+				if registry != nil {
+					protected = registry.LeasedSnapshots()
+				}
+				if _, err := storagemaintenance.Run(context.Background(), deploymentRepo, storagemaintenance.Options{
+					RootDir:                      cfg.HomeDir,
+					CatalogPath:                  cfg.DBPath(),
+					DataPath:                     cfg.DuckLakeDataDir(),
+					AdditionalProtectedSnapshots: protected,
+					DryRun:                       false,
+				}); err != nil {
+					slog.Default().Warn("storage retention cleanup failed after runtime drain", "error", err)
+				}
+			}()
+		},
 		Factory: deploymentRuntimeFactory{
-			dataDir:    dataDir,
-			duckDBDir:  cfg.DuckDBDirPath(),
-			runtimeDir: cfg.RuntimeDir(),
+			dataDir:          dataDir,
+			duckDBDir:        cfg.DuckDBDirPath(),
+			runtimeDir:       cfg.RuntimeDir(),
+			catalogPath:      cfg.DBPath(),
+			duckLakeDataPath: cfg.DuckLakeDataDir(),
 		},
 	})
 	if err := registry.Reload(ctx); err != nil {
@@ -138,21 +182,57 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	rateLimits := app.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	server := app.NewWithOptions(runtimeMetrics, app.Options{
-		Store:              store,
-		DeploymentRepo:     deploymentRepo,
-		WorkspaceRepo:      workspaceRepo,
-		AssetCatalog:       assetCatalog,
-		AccessRepo:         accessRepo,
-		Agent:              agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
-		Auth:               auth,
-		Reloader:           registry,
-		ArtifactDir:        cfg.ArtifactDir(),
-		DuckDBDir:          cfg.DuckDBDirPath(),
-		DefaultEnvironment: string(environment),
-		RateLimits:         rateLimits,
-		SecurityHeaders:    app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
-		RequestLogging:     production && cfg.RequestLoggingEnabled(),
-		Logger:             slog.Default(),
+		Store:               store,
+		DeploymentRepo:      deploymentRepo,
+		WorkspaceRepo:       workspaceRepo,
+		AssetCatalog:        assetCatalog,
+		AccessRepo:          accessRepo,
+		Agent:               agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
+		Auth:                auth,
+		Reloader:            registry,
+		ArtifactDir:         cfg.ArtifactDir(),
+		DuckDBDir:           cfg.DuckDBDirPath(),
+		DuckLakeCatalogPath: cfg.DBPath(),
+		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
+		DefaultEnvironment:  string(environment),
+		RateLimits:          rateLimits,
+		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
+		RequestLogging:      production && cfg.RequestLoggingEnabled(),
+		Logger:              slog.Default(),
 	})
 	return server, cleanupWithRegistry, nil
+}
+
+func removeLegacyDuckLakeArtifacts(root string) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() || entry.Name() != "catalog.sqlite" {
+			return nil
+		}
+		dir := filepath.Dir(path)
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		if err := os.RemoveAll(filepath.Join(dir, "data")); err != nil {
+			return err
+		}
+		return nil
+	})
 }
