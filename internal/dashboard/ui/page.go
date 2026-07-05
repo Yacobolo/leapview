@@ -15,10 +15,6 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func updateAction(workspaceID, dashboardID, pageID string) string {
-	return pagestream.RefreshSignalsAction()
-}
-
 func updatesURL(workspaceID, dashboardID, pageID string) string {
 	values := url.Values{}
 	values.Set("route", string(uisignals.RouteDashboard))
@@ -64,8 +60,7 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 		activePage = defaultPage()
 	}
 	dashboardUpdatesURL := updatesURL(catalog.Workspace.ID, report.ID, activePage.ID)
-	action := updateAction(catalog.Workspace.ID, report.ID, activePage.ID)
-	initAction := "window.DatastarURLSync && window.DatastarURLSync.bindPopstate($urlParamShape)"
+	reloadAction := postAction("/workspaces/" + catalog.Workspace.ID + "/commands/reload")
 	tableReset := tableResetExpression()
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + tableReset
 	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters)
@@ -87,11 +82,11 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 		MainAttrs: []g.Node{
 			h.ID("dashboard"),
 			h.Class(appRootClass),
-			g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); "+tableReset+action),
+			g.Attr("data-url-param-shape", jsonString(signals["urlParamShape"])),
+			g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); "+tableReset+reloadAction),
 		},
-		Signals:          signals,
-		BeforeStreamInit: []string{initAction},
-		UpdatesURL:       dashboardUpdatesURL,
+		Signals:    signals,
+		UpdatesURL: dashboardUpdatesURL,
 		Body: []g.Node{
 			g.El("ld-app-shell",
 				g.Attr("chrome", jsonString(signals["chrome"])),
@@ -112,9 +107,9 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 					g.Attr("data-attr:visuals", "$visuals"),
 					g.Attr("data-attr:tables", "$tables"),
 					g.Attr("data-attr:status", "$status"),
-					g.Attr("data-on:ld-filters-change", filtersUpdate+action),
+					g.Attr("data-on:ld-filters-change", filtersUpdate+reloadAction),
 					g.Attr("data-on:ld-filters-reset", filtersUpdate+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters")),
-					g.Attr("data-on:ld-filters-refresh", action),
+					g.Attr("data-on:ld-filters-refresh", reloadAction),
 					g.Attr("data-on:ld-selection-clear", "$filters.selections = []; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection")),
 					g.Attr("data-on:ld-interaction-select", "$interactionCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/select")),
 					g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/table-window")),

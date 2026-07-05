@@ -8,10 +8,10 @@ import (
 )
 
 type StreamSpec struct {
-	Broker         *Broker
-	StreamID       string
-	InitialPatches []Patch
-	Snapshot       func(context.Context) []Patch
+	Broker          *Broker
+	StreamID        string
+	InitialPatches  []Patch
+	InitialSnapshot func(context.Context) []Patch
 }
 
 func ServeStream(w http.ResponseWriter, r *http.Request, spec StreamSpec) {
@@ -30,7 +30,7 @@ func ServeStream(w http.ResponseWriter, r *http.Request, spec StreamSpec) {
 	if !patchAll(spec.InitialPatches) {
 		return
 	}
-	if spec.Snapshot != nil && !patchAll(spec.Snapshot(r.Context())) {
+	if spec.InitialSnapshot != nil && !patchAll(spec.InitialSnapshot(r.Context())) {
 		return
 	}
 	if spec.Broker == nil || spec.StreamID == "" {

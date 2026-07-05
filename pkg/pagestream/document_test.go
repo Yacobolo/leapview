@@ -12,14 +12,13 @@ import (
 func TestRenderPageIncludesSignalsUpdatesInitMainAttrsAndBody(t *testing.T) {
 	var body bytes.Buffer
 	err := RenderPage(PageSpec{
-		Title:            "Test Page",
-		HTMLAttrs:        []g.Node{g.Attr("data-color-mode", "auto")},
-		Head:             []g.Node{h.Meta(g.Attr("name", "test-head"))},
-		MainAttrs:        []g.Node{h.ID("root"), h.Class("app-shell")},
-		Signals:          map[string]any{"runtime": map[string]any{}, "page": map[string]any{"title": "Test"}},
-		BeforeStreamInit: []string{"$ready = true"},
-		UpdatesURL:       "/updates?route=test",
-		Body:             []g.Node{h.Div(h.ID("content"), g.Text("Hello"))},
+		Title:      "Test Page",
+		HTMLAttrs:  []g.Node{g.Attr("data-color-mode", "auto")},
+		Head:       []g.Node{h.Meta(g.Attr("name", "test-head"))},
+		MainAttrs:  []g.Node{h.ID("root"), h.Class("app-shell")},
+		Signals:    map[string]any{"runtime": map[string]any{}, "page": map[string]any{"title": "Test"}},
+		UpdatesURL: "/updates?route=test",
+		Body:       []g.Node{h.Div(h.ID("content"), g.Text("Hello"))},
 	}).Render(&body)
 	if err != nil {
 		t.Fatalf("render document: %v", err)
@@ -32,7 +31,7 @@ func TestRenderPageIncludesSignalsUpdatesInitMainAttrsAndBody(t *testing.T) {
 		`data-signals=`,
 		`updatesUrl`,
 		`/updates?route=test`,
-		`data-init="$ready = true; @get($runtime.updatesUrl, {openWhenHidden: true})"`,
+		`data-init="@get($runtime.updatesUrl, {openWhenHidden: true})"`,
 		`<div id="content">Hello</div>`,
 	} {
 		if !strings.Contains(html, want) {

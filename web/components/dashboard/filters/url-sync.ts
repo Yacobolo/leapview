@@ -103,6 +103,22 @@ function bindPopstate(fallback: unknown): void {
   })
 }
 
+function readDocumentFallback(): URLParamsShape | null {
+  const element = document.querySelector<HTMLElement>('[data-url-param-shape]')
+  const raw = element?.dataset.urlParamShape
+  if (!raw) return null
+  try {
+    return normalizeURLParams(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
+
+function bindDocumentPopstate(): void {
+  const fallback = readDocumentFallback()
+  if (fallback) bindPopstate(fallback)
+}
+
 const datastarURLSync = {
   bindPopstate,
   push,
@@ -124,3 +140,9 @@ declare global {
 
 window.DatastarURLSync = datastarURLSync
 window.LibreDashFilterURL = libreDashFilterURL
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindDocumentPopstate, { once: true })
+} else {
+  bindDocumentPopstate()
+}

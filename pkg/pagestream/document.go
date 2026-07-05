@@ -13,23 +13,20 @@ import (
 )
 
 type PageSpec struct {
-	Title            string
-	Language         string
-	HTMLAttrs        []g.Node
-	Head             []g.Node
-	MainAttrs        []g.Node
-	Signals          map[string]any
-	BeforeStreamInit []string
-	UpdatesURL       string
-	Body             []g.Node
+	Title      string
+	Language   string
+	HTMLAttrs  []g.Node
+	Head       []g.Node
+	MainAttrs  []g.Node
+	Signals    map[string]any
+	UpdatesURL string
+	Body       []g.Node
 }
 
 func RenderPage(spec PageSpec) g.Node {
 	updatesURL := validateUpdatesURL(spec.UpdatesURL)
 	signals := cloneSignals(spec.Signals)
 	ensureRuntimeUpdatesURL(signals, updatesURL)
-	init := append([]string{}, spec.BeforeStreamInit...)
-	init = append(init, RefreshSignalsAction())
 	return renderDocument(documentSpec{
 		Title:     spec.Title,
 		Language:  spec.Language,
@@ -37,12 +34,12 @@ func RenderPage(spec PageSpec) g.Node {
 		Head:      spec.Head,
 		MainAttrs: spec.MainAttrs,
 		Signals:   signals,
-		Init:      init,
+		Init:      []string{refreshSignalsAction()},
 		Body:      spec.Body,
 	})
 }
 
-func RefreshSignalsAction() string {
+func refreshSignalsAction() string {
 	return "@get($runtime.updatesUrl, {openWhenHidden: true})"
 }
 

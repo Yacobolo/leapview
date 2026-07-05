@@ -108,3 +108,29 @@ func TestSelectReturnsReloadEventsForActivePage(t *testing.T) {
 		t.Fatalf("queries = %#v", metrics.queries)
 	}
 }
+
+func TestReloadReturnsReloadEventsForCurrentFilters(t *testing.T) {
+	metrics := &fakeMetrics{}
+
+	events := Service{Metrics: metrics}.Reload(context.Background(), Request{
+		DashboardID:  "dash",
+		PageID:       "overview",
+		Filters:      dashboard.Filters{Controls: map[string]dashboard.FilterControl{"state": {Type: "multi_select", Operator: "in", Values: []string{"SP"}}}},
+		TableCommand: dashboard.TableRequest{Table: "orders", Block: "a", Start: 50, Count: 50},
+	})
+
+	if len(events) != 3 {
+		t.Fatalf("events = %#v", events)
+	}
+	for i, kind := range []EventType{EventLoading, EventDashboard, EventTables} {
+		if events[i].Type != kind {
+			t.Fatalf("event %d = %#v, want %s", i, events[i], kind)
+		}
+	}
+	if events[1].Patch.Status.DataDirectory != ".data" {
+		t.Fatalf("dashboard patch = %#v", events[1].Patch)
+	}
+	if len(metrics.queries) != 1 || metrics.queries[0] != "overview" {
+		t.Fatalf("queries = %#v", metrics.queries)
+	}
+}

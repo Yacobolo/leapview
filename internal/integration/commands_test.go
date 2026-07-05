@@ -52,6 +52,28 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 			},
 		},
 		{
+			name: "/commands/reload",
+			path: "/commands/reload",
+			signals: mergeSignals(runtimeSignals("cmd-reload", "overview"), map[string]any{
+				"filters": map[string]any{
+					"controls": map[string]any{
+						"state": map[string]any{
+							"type":     "multi_select",
+							"operator": "in",
+							"values":   []string{"SP"},
+						},
+					},
+				},
+				"tableCommand": tableCommand("orders_table", "all", 0, 50, 5, 0),
+			}),
+			assert: func(t *testing.T, patches []map[string]any) {
+				t.Helper()
+				requireStatusLoading(t, patches, true)
+				requireFilterValues(t, patches, "state", "SP")
+				requireTable(t, patches, "orders_table")
+			},
+		},
+		{
 			name: "/commands/reset-filters",
 			path: "/commands/reset-filters",
 			signals: mergeSignals(runtimeSignals("cmd-reset", "overview"), map[string]any{

@@ -77,6 +77,15 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	if !strings.Contains(showcase, `<ld-dashboard-page`) || !strings.Contains(showcase, `data-on:ld-filters-change`) || !strings.Contains(showcase, `data-on:ld-interaction-select`) {
 		t.Fatalf("showcase page did not mount dashboard route root with command bridge:\n%s", showcase)
 	}
+	if !strings.Contains(showcase, `/commands/reload`) || !strings.Contains(showcase, `data-url-param-shape`) {
+		t.Fatalf("showcase page did not wire dashboard reload command and URL sync shape:\n%s", showcase)
+	}
+	for _, attr := range []string{"data-on:ld-filters-change", "data-on:ld-filters-refresh", "data-on:datastar-url-params-sync__window"} {
+		segment := renderedAttrSegment(showcase, attr)
+		if !strings.Contains(segment, `/commands/reload`) || strings.Contains(segment, `@get($runtime.updatesUrl`) {
+			t.Fatalf("%s segment = %q, want reload command without updates stream reopen:\n%s", attr, segment, showcase)
+		}
+	}
 	if !strings.Contains(showcase, `"active_chart"`) || !strings.Contains(showcase, `"active_kpi"`) {
 		t.Fatalf("showcase page did not seed active chart and KPI visuals:\n%s", showcase)
 	}
@@ -132,6 +141,19 @@ func renderPageForTest(t *testing.T, report reportdef.Dashboard, model *semantic
 		t.Fatal(err)
 	}
 	return html.UnescapeString(out.String())
+}
+
+func renderedAttrSegment(body, name string) string {
+	prefix := name + `="`
+	start := strings.Index(body, prefix)
+	if start < 0 {
+		return ""
+	}
+	end := start + 1000
+	if end > len(body) {
+		end = len(body)
+	}
+	return body[start:end]
 }
 
 func assertNoDashboardProductDOM(t *testing.T, body string) {

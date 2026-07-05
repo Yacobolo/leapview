@@ -33,7 +33,7 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		Broker:         h.Broker,
 		StreamID:       clientID,
 		InitialPatches: []pagestream.Patch{lddatastar.LoadingPatch(metrics.DataDir())},
-		Snapshot: func(ctx context.Context) []pagestream.Patch {
+		InitialSnapshot: func(ctx context.Context) []pagestream.Patch {
 			snapshot := stream.Service{Metrics: metrics}.Snapshot(ctx, request)
 			return lddatastar.SnapshotPatches(snapshot)
 		},

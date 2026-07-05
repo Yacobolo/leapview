@@ -27,6 +27,12 @@ func (h Handler) ClearSelection(w nethttp.ResponseWriter, r *nethttp.Request) {
 	})
 }
 
+func (h Handler) Reload(w nethttp.ResponseWriter, r *nethttp.Request) {
+	h.handleCommand(w, r, func(ctx command.Service, request command.Request) []command.Event {
+		return ctx.Reload(r.Context(), request)
+	})
+}
+
 func (h Handler) ResetFilters(w nethttp.ResponseWriter, r *nethttp.Request) {
 	h.handleCommand(w, r, func(ctx command.Service, request command.Request) []command.Event {
 		return ctx.ResetFilters(r.Context(), request)

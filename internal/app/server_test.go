@@ -1013,6 +1013,11 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
 		},
 		{
+			name: "reload",
+			path: "/workspaces/test-workspace/commands/reload",
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,
+		},
+		{
 			name: "reset filters",
 			path: "/workspaces/test-workspace/commands/reset-filters",
 			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,

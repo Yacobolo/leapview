@@ -59,7 +59,7 @@ func TestServeStreamSendsInitialSnapshotOnce(t *testing.T) {
 	go func() {
 		defer close(done)
 		ServeStream(rec, req, StreamSpec{
-			Snapshot: func(context.Context) []Patch {
+			InitialSnapshot: func(context.Context) []Patch {
 				return []Patch{{"snapshot": "initial"}}
 			},
 		})
