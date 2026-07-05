@@ -207,6 +207,16 @@ func (a *Auth) Middleware(privilege access.Privilege, next http.Handler) http.Ha
 					decision.Allowed = true
 				}
 			}
+			if !decision.Allowed && routeCanDeferGrantManagement(privilege, r) {
+				useDecision, err := a.repo.Authorize(r.Context(), principal.ID, access.PrivilegeUseWorkspace, authObjectForWorkspace(workspaceID))
+				if err != nil {
+					writeAuthError(w, r, err, http.StatusInternalServerError)
+					return
+				}
+				if useDecision.Allowed {
+					decision.Allowed = true
+				}
+			}
 			if !decision.Allowed {
 				writeAuthError(w, r, errForbidden, http.StatusForbidden)
 				return

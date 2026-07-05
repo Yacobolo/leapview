@@ -512,6 +512,7 @@ type Repository interface {
 	EffectivePrivileges(ctx context.Context, principalID string, object ObjectRef) ([]Privilege, error)
 	EffectiveAccess(ctx context.Context, principalID string, object ObjectRef) ([]AuthorizationDecision, error)
 	CreateGrant(ctx context.Context, input GrantInput) (Grant, error)
+	GetGrant(ctx context.Context, workspaceID, id string) (Grant, error)
 	DeleteGrant(ctx context.Context, workspaceID, id string) error
 	ListGrants(ctx context.Context, object ObjectRef) ([]Grant, error)
 	ListGrantsWithOptions(ctx context.Context, object ObjectRef, includeInherited bool) ([]GrantView, error)

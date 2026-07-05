@@ -661,6 +661,9 @@ func (s *Server) apiListGrants(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.authorizeCurrentObject(w, r, access.PrivilegeManageGrants, object) {
+		return
+	}
 	repo, err := s.accessRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -693,6 +696,9 @@ func (s *Server) apiCreateGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	object, ok := objectRefFromValues(w, r, input.ObjectType, input.ObjectID)
 	if !ok {
+		return
+	}
+	if !s.authorizeCurrentObject(w, r, access.PrivilegeManageGrants, object) {
 		return
 	}
 	subjectType := access.SubjectType(strings.TrimSpace(input.SubjectType))
@@ -732,6 +738,14 @@ func (s *Server) apiDeleteGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	grant, err := repo.GetGrant(r.Context(), workspaceID, chi.URLParam(r, "grant"))
+	if err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
+	if !s.authorizeCurrentObject(w, r, access.PrivilegeManageGrants, objectRefFromGrant(grant)) {
+		return
+	}
 	if err := repo.DeleteGrant(r.Context(), workspaceID, chi.URLParam(r, "grant")); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return

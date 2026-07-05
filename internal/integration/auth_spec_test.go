@@ -47,6 +47,137 @@ func TestAuthSpecItemSharingAndDataPrivileges(t *testing.T) {
 	}
 }
 
+func TestAuthSpecItemManagerCanShareAndRevokeDashboardAccess(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	manager := authSpecPrincipal(t, ctx, repo, "item-manager@example.com")
+	viewer := authSpecPrincipal(t, ctx, repo, "shared-viewer@example.com")
+	dashboard := access.ItemObject(access.SecurableDashboard, "sales", "executive-sales")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, manager.ID, access.PrivilegeUseWorkspace)
+	authSpecGrant(t, ctx, repo, dashboard, access.SubjectPrincipal, manager.ID, access.PrivilegeViewItem)
+	authSpecGrant(t, ctx, repo, dashboard, access.SubjectPrincipal, manager.ID, access.PrivilegeManageGrants)
+	managerToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: manager.ID, WorkspaceID: "sales", Name: "item-manager"})
+	viewerToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: viewer.ID, WorkspaceID: "sales", Name: "viewer"})
+
+	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/grants", managerToken, `{"objectType":"dashboard","objectId":"executive-sales","subjectType":"principal","subjectId":"`+viewer.ID+`","privilege":"VIEW_ITEM"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("item manager create grant status=%d body=%s", status, body)
+	}
+	var createdGrant struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &createdGrant); err != nil {
+		t.Fatalf("decode created grant: %v body=%s", err, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards/executive-sales", viewerToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("shared viewer dashboard status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards", viewerToken, "")
+	if status != http.StatusForbidden {
+		t.Fatalf("shared viewer dashboard list status=%d want=403 body=%s", status, body)
+	}
+
+	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/workspaces/sales/grants/"+createdGrant.ID, managerToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("item manager delete grant status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards/executive-sales", viewerToken, "")
+	if status != http.StatusForbidden {
+		t.Fatalf("revoked shared viewer dashboard status=%d want=403 body=%s", status, body)
+	}
+}
+
+func TestAuthSpecGroupSharingFollowsMembershipChanges(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	admin := authSpecPrincipal(t, ctx, repo, "sharing-admin@example.com")
+	member := authSpecPrincipal(t, ctx, repo, "group-member@example.com")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, admin.ID, access.PrivilegeManageGrants)
+	adminToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, WorkspaceID: "sales", Name: "sharing-admin"})
+	memberToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: member.ID, WorkspaceID: "sales", Name: "group-member"})
+
+	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/groups", adminToken, `{"name":"analysts","displayName":"Analysts"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create group status=%d body=%s", status, body)
+	}
+	var group struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &group); err != nil {
+		t.Fatalf("decode group: %v body=%s", err, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPut, "/api/v1/workspaces/sales/groups/"+group.ID+"/members/"+member.ID, adminToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("add group member status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/grants", adminToken, `{"objectType":"dashboard","objectId":"executive-sales","subjectType":"group","subjectId":"`+group.ID+`","privilege":"VIEW_ITEM"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create group grant status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards/executive-sales", memberToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("group member dashboard status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/workspaces/sales/groups/"+group.ID+"/members/"+member.ID, adminToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("remove group member status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards/executive-sales", memberToken, "")
+	if status != http.StatusForbidden {
+		t.Fatalf("removed group member dashboard status=%d want=403 body=%s", status, body)
+	}
+}
+
+func TestAuthSpecWorkspaceRoleSharingCompilesToGrants(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	admin := authSpecPrincipal(t, ctx, repo, "role-admin@example.com")
+	viewer := authSpecPrincipal(t, ctx, repo, "role-viewer@example.com")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, admin.ID, access.PrivilegeManageGrants)
+	adminToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, WorkspaceID: "sales", Name: "role-admin"})
+	viewerToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: viewer.ID, WorkspaceID: "sales", Name: "role-viewer"})
+
+	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/role-bindings", adminToken, `{"subjectType":"principal","subjectId":"`+viewer.ID+`","role":"viewer"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create viewer role binding status=%d body=%s", status, body)
+	}
+	var binding struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &binding); err != nil {
+		t.Fatalf("decode role binding: %v body=%s", err, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards", viewerToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("viewer list dashboards status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/dashboards/executive-sales/pages/overview/query", viewerToken, `{}`)
+	if status != http.StatusOK {
+		t.Fatalf("viewer dashboard query status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", viewerToken, `{"fields":[{"field":"orders.status"}],"limit":1}`)
+	if status != http.StatusForbidden {
+		t.Fatalf("viewer raw preview status=%d want=403 body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/grants", viewerToken, `{"objectType":"dashboard","objectId":"executive-sales","subjectType":"principal","subjectId":"email_other","privilege":"VIEW_ITEM"}`)
+	if status != http.StatusForbidden {
+		t.Fatalf("viewer create grant status=%d want=403 body=%s", status, body)
+	}
+
+	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/workspaces/sales/role-bindings/"+binding.ID, adminToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("delete viewer role binding status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards", viewerToken, "")
+	if status != http.StatusForbidden {
+		t.Fatalf("viewer list after role delete status=%d want=403 body=%s", status, body)
+	}
+}
+
 func TestAuthSpecEffectiveAccessExplainsInheritedGrants(t *testing.T) {
 	h, repo := newAuthSpecHarness(t)
 	ctx := context.Background()
@@ -54,6 +185,7 @@ func TestAuthSpecEffectiveAccessExplainsInheritedGrants(t *testing.T) {
 	principal := authSpecPrincipal(t, ctx, repo, "effective@example.com")
 	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, principal.ID, access.PrivilegeUseWorkspace)
 	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectPrincipal, principal.ID, access.PrivilegeQueryData)
+	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectPrincipal, principal.ID, access.PrivilegeManageGrants)
 	token := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: principal.ID, WorkspaceID: "sales", Name: "effective"})
 
 	status, body := h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/effective-privileges?objectType=dataset&objectId=sales/orders", token, "")
@@ -86,12 +218,47 @@ func TestAuthSpecEffectiveAccessExplainsInheritedGrants(t *testing.T) {
 	t.Fatalf("effectiveGrants=%#v missing QUERY_DATA provenance", decoded.EffectiveGrants)
 }
 
+func TestAuthSpecShowGrantsIncludesInheritedObjectProvenance(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	manager := authSpecPrincipal(t, ctx, repo, "grant-inspector@example.com")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, manager.ID, access.PrivilegeUseWorkspace)
+	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectPrincipal, manager.ID, access.PrivilegeManageGrants)
+	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectPrincipal, manager.ID, access.PrivilegeQueryData)
+	token := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: manager.ID, WorkspaceID: "sales", Name: "grant-inspector"})
+
+	status, body := h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/grants?objectType=dataset&objectId=sales/orders&includeInherited=true", token, "")
+	if status != http.StatusOK {
+		t.Fatalf("list inherited grants status=%d body=%s", status, body)
+	}
+	var decoded struct {
+		Items []struct {
+			ObjectID  string `json:"objectId"`
+			Privilege string `json:"privilege"`
+			Inherited bool   `json:"inherited"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("decode inherited grants: %v body=%s", err, body)
+	}
+	for _, item := range decoded.Items {
+		if item.Privilege == string(access.PrivilegeQueryData) {
+			if !item.Inherited || item.ObjectID != "semantic_model:sales:sales" {
+				t.Fatalf("inherited grant item=%#v, want semantic model provenance", item)
+			}
+			return
+		}
+	}
+	t.Fatalf("inherited grants=%#v missing QUERY_DATA", decoded.Items)
+}
+
 func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
 	h, repo := newAuthSpecHarness(t)
 	ctx := context.Background()
 
 	admin := authSpecPlatformAdmin(t, ctx, repo, "platform-admin@example.com")
-	adminToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, Name: "platform-admin", Permissions: []access.Privilege{access.PrivilegeManagePlatform}})
+	adminToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, Name: "platform-admin", Permissions: []access.Privilege{access.PrivilegeManagePlatform, access.PrivilegeManageGrants}})
 
 	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/service-principals", adminToken, `{"id":"sp_ci","displayName":"CI"}`)
 	if status != http.StatusCreated {
@@ -110,7 +277,10 @@ func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &secretResponse); err != nil {
 		t.Fatalf("decode service principal secret: %v body=%s", err, body)
 	}
-	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectServicePrincipal, "sp_ci", access.PrivilegeQueryData)
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/grants", adminToken, `{"objectType":"semantic_model","objectId":"sales","subjectType":"service_principal","subjectId":"sp_ci","privilege":"QUERY_DATA"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("share semantic model with service principal status=%d body=%s", status, body)
+	}
 
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")

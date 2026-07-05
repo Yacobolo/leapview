@@ -24,6 +24,10 @@ func routeCanDeferDashboardDataAuth(privilege access.Privilege, r *http.Request)
 	return privilege == access.PrivilegeQueryData && strings.TrimSpace(chi.URLParam(r, "dashboard")) != ""
 }
 
+func routeCanDeferGrantManagement(privilege access.Privilege, r *http.Request) bool {
+	return privilege == access.PrivilegeManageGrants && strings.Contains(r.URL.Path, "/grants")
+}
+
 func routeObjectRefs(r *http.Request, workspaceID string) []access.ObjectRef {
 	workspaceID = strings.TrimSpace(workspaceID)
 	objects := []access.ObjectRef{}
@@ -77,6 +81,19 @@ func objectWithInferredParent(typ access.SecurableType, workspaceID, objectID st
 		}
 	}
 	return access.ItemObject(typ, workspaceID, objectID)
+}
+
+func objectRefFromGrant(grant access.Grant) access.ObjectRef {
+	switch grant.ObjectType {
+	case access.SecurablePlatform:
+		return access.PlatformObject()
+	case access.SecurableWorkspace:
+		return access.WorkspaceObject(grant.WorkspaceID)
+	default:
+		prefix := string(grant.ObjectType) + ":" + grant.WorkspaceID + ":"
+		objectID := strings.TrimPrefix(grant.ObjectID, prefix)
+		return objectWithInferredParent(grant.ObjectType, grant.WorkspaceID, objectID)
+	}
 }
 
 func dashboardQueryObjects(metrics QueryMetrics, r *http.Request) []access.ObjectRef {

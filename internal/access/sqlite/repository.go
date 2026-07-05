@@ -375,6 +375,25 @@ func (r *Repository) CreateGrant(ctx context.Context, input access.GrantInput) (
 	return access.Grant{}, sql.ErrNoRows
 }
 
+func (r *Repository) GetGrant(ctx context.Context, workspaceID, id string) (access.Grant, error) {
+	row := r.db.QueryRowContext(ctx, `
+SELECT g.id, g.object_id, so.object_type, so.workspace_id, g.subject_type, g.subject_id, g.privilege, g.created_at
+FROM grants g
+JOIN securable_objects so ON so.id = g.object_id
+WHERE g.id = ?
+  AND (so.workspace_id = ? OR so.id = ?)
+`, id, workspaceID, access.WorkspaceObject(workspaceID).CanonicalID())
+	var grant access.Grant
+	var objectType, subjectType, privilege string
+	if err := row.Scan(&grant.ID, &grant.ObjectID, &objectType, &grant.WorkspaceID, &subjectType, &grant.SubjectID, &privilege, &grant.CreatedAt); err != nil {
+		return access.Grant{}, err
+	}
+	grant.ObjectType = access.SecurableType(objectType)
+	grant.SubjectType = access.SubjectType(subjectType)
+	grant.Privilege = access.Privilege(privilege)
+	return grant, nil
+}
+
 func (r *Repository) DeleteGrant(ctx context.Context, workspaceID, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("grant id is required")
