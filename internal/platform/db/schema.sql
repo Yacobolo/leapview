@@ -161,6 +161,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   principal_id TEXT NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
+  token_fingerprint TEXT,
+  token_verifier TEXT NOT NULL DEFAULT '',
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -181,6 +183,8 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
+  token_fingerprint TEXT,
+  token_verifier TEXT NOT NULL DEFAULT '',
   permissions_json TEXT NOT NULL DEFAULT '[]',
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -193,6 +197,8 @@ CREATE TABLE IF NOT EXISTS service_principal_secrets (
   service_principal_id TEXT NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   secret_hash TEXT NOT NULL UNIQUE,
+  secret_fingerprint TEXT,
+  secret_verifier TEXT NOT NULL DEFAULT '',
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   revoked_at TEXT
@@ -402,8 +408,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS role_bindings_group_unique_idx
 CREATE UNIQUE INDEX IF NOT EXISTS platform_role_bindings_principal_unique_idx
   ON platform_role_bindings(role_id, principal_id);
 CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions(token_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_fingerprint_unique_idx
+  ON sessions(token_fingerprint)
+  WHERE token_fingerprint IS NOT NULL AND token_fingerprint <> '';
 CREATE INDEX IF NOT EXISTS api_tokens_principal_idx ON api_tokens(principal_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_token_fingerprint_unique_idx
+  ON api_tokens(token_fingerprint)
+  WHERE token_fingerprint IS NOT NULL AND token_fingerprint <> '';
 CREATE INDEX IF NOT EXISTS service_principal_secrets_principal_idx ON service_principal_secrets(service_principal_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS service_principal_secrets_fingerprint_unique_idx
+  ON service_principal_secrets(service_principal_id, secret_fingerprint)
+  WHERE secret_fingerprint IS NOT NULL AND secret_fingerprint <> '';
 CREATE INDEX IF NOT EXISTS audit_events_workspace_created_idx ON audit_events(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS query_events_workspace_created_idx ON query_events(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS query_events_principal_created_idx ON query_events(principal_id, created_at DESC);

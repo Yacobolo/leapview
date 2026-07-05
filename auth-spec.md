@@ -12,6 +12,24 @@ Unity Catalog is the model LibreDash should implement internally: principals,
 securable objects, ownership, grants, inherited privileges, service principals,
 and data-level policies.
 
+## Enterprise Auth Model
+
+LibreDash should follow the standard enterprise split of responsibility:
+
+```text
+OIDC = interactive human login
+SCIM = enterprise user and group provisioning
+Grant engine = LibreDash authorization
+Service principals = non-human workload identity
+API tokens = scoped credentials, not identities
+```
+
+OIDC proves who the user is. SCIM keeps users, groups, and memberships in sync.
+The LibreDash grant engine remains the source of truth for product access.
+Service principals receive grants like any other principal. API tokens only
+constrain an existing principal's access through workspace scope and privilege
+allowlists.
+
 ## Goals
 
 - Make authorization explicit, inspectable, and testable.

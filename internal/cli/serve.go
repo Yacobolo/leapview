@@ -13,6 +13,7 @@ import (
 	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/app"
+	oidcauth "github.com/Yacobolo/libredash/internal/auth/oidc"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
@@ -166,6 +167,17 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo)
 	authConfig := app.AuthConfig{DevBypass: true, CSRFKey: cfg.CSRFKey, CookieSecure: false}
 	if production {
+		oidcProviders := []oidcauth.Config{}
+		if cfg.OIDCConfigured() {
+			oidcProviders = append(oidcProviders, oidcauth.Config{
+				ID:           cfg.OIDCProviderID,
+				IssuerURL:    cfg.OIDCIssuerURL,
+				ClientID:     cfg.OIDCClientID,
+				ClientSecret: cfg.OIDCSecret,
+				RedirectURL:  cfg.OIDCCallbackURL,
+				Scopes:       cfg.OIDCScopesList(),
+			})
+		}
 		authConfig = app.AuthConfig{
 			DevBypass:       cfg.DevAuthBypass,
 			APITokenOnly:    cfg.APITokenOnlyAuth,
@@ -176,6 +188,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 			CSRFKey:         cfg.CSRFKey,
 			CookieSecure:    cookieSecure,
 			BootstrapTenant: cfg.AzureTenant,
+			OIDCProviders:   oidcProviders,
 		}
 	}
 	auth := app.NewAuth(accessRepo, "", authConfig)

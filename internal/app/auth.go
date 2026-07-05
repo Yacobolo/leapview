@@ -2,26 +2,27 @@ package app
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	oidcauth "github.com/Yacobolo/libredash/internal/auth/oidc"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
-	"github.com/gorilla/sessions"
-	"github.com/markbates/goth"
-	"github.com/markbates/goth/gothic"
-	"github.com/markbates/goth/providers/azureadv2"
 )
 
 type principalContextKey struct{}
 type apiCredentialContextKey struct{}
 
 const csrfCookieName = "ld_csrf"
+const oidcStateCookieName = "ld_oidc_state"
 
 var (
 	errUnauthorized = errors.New("unauthorized")
@@ -35,8 +36,20 @@ type Principal struct {
 	DevBypass   bool   `json:"-"`
 }
 
+type oidcClient interface {
+	AuthCodeURL(state, nonce string) string
+	Authenticate(ctx context.Context, code, expectedNonce string) (oidcauth.Claims, error)
+}
+
+type sessionManager interface {
+	CreateSession(ctx context.Context, principalID string, ttl time.Duration) (string, error)
+	PrincipalForToken(ctx context.Context, token string) (access.Principal, error)
+	DeleteSession(ctx context.Context, token string) error
+}
+
 type Auth struct {
 	repo         access.Repository
+	sessions     sessionManager
 	workspaceID  string
 	devBypass    bool
 	apiTokenOnly bool
@@ -45,6 +58,9 @@ type Auth struct {
 	azureTenant  string
 	cookieSecure bool
 	csrf         func(http.Handler) http.Handler
+	oidcRegistry *oidcauth.Registry
+	oidcOverride map[string]oidcClient
+	stateKey     []byte
 }
 
 type AuthConfig struct {
@@ -57,21 +73,26 @@ type AuthConfig struct {
 	CSRFKey         string
 	CookieSecure    bool
 	BootstrapTenant string
+	OIDCProviders   []oidcauth.Config
 }
 
 func NewAuth(repo access.Repository, workspaceID string, cfg AuthConfig) *Auth {
 	auth := &Auth{
 		repo:         repo,
+		sessions:     repo,
 		workspaceID:  workspaceID,
 		devBypass:    cfg.DevBypass,
 		apiTokenOnly: cfg.APITokenOnly,
 		azureTenant:  cfg.AzureTenant,
 		cookieSecure: cfg.CookieSecure,
 	}
-	if cfg.AzureClientID != "" && cfg.AzureSecret != "" && cfg.AzureCallback != "" {
-		tenant := azureadv2.TenantType(cfg.AzureTenant)
-		goth.UseProviders(azureadv2.New(cfg.AzureClientID, cfg.AzureSecret, cfg.AzureCallback, azureadv2.ProviderOptions{Tenant: tenant}))
-		auth.configured = true
+	providers := append([]oidcauth.Config(nil), cfg.OIDCProviders...)
+	if cfg.AzureClientID != "" && cfg.AzureSecret != "" && cfg.AzureCallback != "" && !hasOIDCProvider(providers, "azureadv2") {
+		providers = append(providers, oidcauth.AzureProviderConfig(cfg.AzureClientID, cfg.AzureSecret, cfg.AzureCallback, cfg.AzureTenant))
+	}
+	if registry, err := oidcauth.NewRegistry(providers); err == nil {
+		auth.oidcRegistry = registry
+		auth.configured = registry.Configured()
 	}
 	auth.csrf = csrf.Protect(
 		csrfKey(cfg.CSRFKey),
@@ -87,60 +108,106 @@ func NewAuth(repo access.Repository, workspaceID string, cfg AuthConfig) *Auth {
 			http.Error(w, csrf.FailureReason(r).Error(), http.StatusForbidden)
 		})),
 	)
-	gothic.Store = gothCookieStore(cfg.CSRFKey, cfg.CookieSecure)
+	auth.stateKey = derivedSecret(cfg.CSRFKey, "oidc-state")
 	auth.enabled = true
 	return auth
+}
+
+func hasOIDCProvider(providers []oidcauth.Config, id string) bool {
+	id = oidcauth.ProviderID(id)
+	for _, provider := range providers {
+		if oidcauth.ProviderID(provider.ID) == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Auth) Enabled() bool {
 	return a != nil && a.enabled
 }
 
+func (a *Auth) oidcClient(ctx context.Context, provider string) (oidcClient, oidcauth.Config, error) {
+	provider = oidcauth.ProviderID(provider)
+	if a.oidcOverride != nil {
+		if client := a.oidcOverride[provider]; client != nil {
+			var cfg oidcauth.Config
+			if a.oidcRegistry != nil {
+				cfg, _ = a.oidcRegistry.Config(provider)
+			}
+			cfg.ID = provider
+			return client, cfg, nil
+		}
+	}
+	if a.oidcRegistry == nil {
+		return nil, oidcauth.Config{}, errors.New("oidc registry is not configured")
+	}
+	client, cfg, err := a.oidcRegistry.Client(ctx, provider)
+	return client, cfg, err
+}
+
 func (a *Auth) Begin(w http.ResponseWriter, r *http.Request) {
 	if !a.configured && !a.devBypass {
-		http.Error(w, "Azure AD auth is not configured", http.StatusServiceUnavailable)
+		http.Error(w, "OIDC auth is not configured", http.StatusServiceUnavailable)
 		return
 	}
 	provider := chi.URLParam(r, "provider")
 	if provider == "" {
 		provider = "azureadv2"
 	}
-	q := r.URL.Query()
-	q.Set("provider", provider)
-	r.URL.RawQuery = q.Encode()
-	gothic.BeginAuthHandler(w, r)
+	client, _, err := a.oidcClient(r.Context(), provider)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	state := randomAuthValue()
+	nonce := randomAuthValue()
+	http.SetCookie(w, a.oidcStateCookie(state, nonce))
+	http.Redirect(w, r, client.AuthCodeURL(state, nonce), http.StatusFound)
 }
 
 func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 	if !a.configured && !a.devBypass {
-		http.Error(w, "Azure AD auth is not configured", http.StatusServiceUnavailable)
+		http.Error(w, "OIDC auth is not configured", http.StatusServiceUnavailable)
 		return
 	}
 	provider := chi.URLParam(r, "provider")
 	if provider == "" {
 		provider = "azureadv2"
 	}
-	q := r.URL.Query()
-	q.Set("provider", provider)
-	r.URL.RawQuery = q.Encode()
-	user, err := gothic.CompleteUserAuth(w, r)
+	state, nonce, err := a.consumeOIDCState(w, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
-	email := userEmail(user)
+	if r.URL.Query().Get("state") != state {
+		http.Error(w, "invalid oidc state", http.StatusUnauthorized)
+		return
+	}
+	client, providerConfig, err := a.oidcClient(r.Context(), provider)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	claims, err := client.Authenticate(r.Context(), r.URL.Query().Get("code"), nonce)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	email := oidcEmail(claims)
+	issuer := firstNonEmpty(claims.Issuer, providerConfig.IssuerURL, provider)
 	principal, err := a.repo.ResolveExternalPrincipal(r.Context(), access.ExternalIdentityInput{
-		Provider:    provider,
-		TenantID:    a.azureTenant,
-		Subject:     stableSubject(user.UserID, email),
+		Provider:    "oidc",
+		TenantID:    issuer,
+		Subject:     stableSubject(claims.Subject, email),
 		Email:       email,
-		DisplayName: displayName(user),
+		DisplayName: oidcDisplayName(claims),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	token, err := a.repo.CreateSession(r.Context(), principal.ID, 8*time.Hour)
+	token, err := a.sessions.CreateSession(r.Context(), principal.ID, 8*time.Hour)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -153,8 +220,8 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 
 func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("ld_session"); err == nil {
-		principal, _ := a.repo.PrincipalForToken(r.Context(), cookie.Value)
-		_ = a.repo.DeleteSession(r.Context(), cookie.Value)
+		principal, _ := a.sessions.PrincipalForToken(r.Context(), cookie.Value)
+		_ = a.sessions.DeleteSession(r.Context(), cookie.Value)
 		recordAccessAudit(r, a.repo, "session.revoked", principal.ID, "", "session", "", "", "success", nil)
 		recordAccessAudit(r, a.repo, "sign_out", principal.ID, "", "principal", principal.ID, "", "success", nil)
 	}
@@ -305,7 +372,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 	if err != nil || cookie.Value == "" {
 		return Principal{}, nil, false
 	}
-	principal, err := a.repo.PrincipalForToken(r.Context(), cookie.Value)
+	principal, err := a.sessions.PrincipalForToken(r.Context(), cookie.Value)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			return Principal{}, nil, false
@@ -346,24 +413,21 @@ func wantsJSON(r *http.Request) bool {
 	return strings.HasPrefix(r.URL.Path, "/api/") || strings.Contains(r.Header.Get("Accept"), "application/json")
 }
 
-func displayName(user goth.User) string {
-	if user.Name != "" {
-		return user.Name
+func oidcDisplayName(claims oidcauth.Claims) string {
+	if claims.Name != "" {
+		return claims.Name
 	}
-	if user.NickName != "" {
-		return user.NickName
+	if claims.PreferredUsername != "" {
+		return claims.PreferredUsername
 	}
-	return user.Email
+	return claims.Email
 }
 
-func userEmail(user goth.User) string {
-	if user.Email != "" {
-		return user.Email
+func oidcEmail(claims oidcauth.Claims) string {
+	if claims.Email != "" {
+		return claims.Email
 	}
-	if value, ok := user.RawData["userPrincipalName"].(string); ok {
-		return value
-	}
-	return ""
+	return claims.PreferredUsername
 }
 
 func stableSubject(subject, fallback string) string {
@@ -391,22 +455,57 @@ func csrfKey(value string) []byte {
 	return key
 }
 
-func gothCookieStore(secret string, secure bool) *sessions.CookieStore {
-	signingKey := derivedSecret(secret, "goth-signing")
-	encryptionKey := derivedSecret(secret, "goth-encryption")
-	store := sessions.NewCookieStore(signingKey, encryptionKey)
-	store.Options = &sessions.Options{
+func (a *Auth) oidcStateCookie(state, nonce string) *http.Cookie {
+	return &http.Cookie{
+		Name:     oidcStateCookieName,
+		Value:    a.encodeOIDCState(state, nonce),
 		Path:     "/",
 		MaxAge:   10 * 60,
 		HttpOnly: true,
-		Secure:   secure,
+		Secure:   a.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
-	return store
+}
+
+func (a *Auth) consumeOIDCState(w http.ResponseWriter, r *http.Request) (string, string, error) {
+	cookie, err := r.Cookie(oidcStateCookieName)
+	if err != nil {
+		return "", "", err
+	}
+	http.SetCookie(w, &http.Cookie{Name: oidcStateCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: a.cookieSecure})
+	return a.decodeOIDCState(cookie.Value)
+}
+
+func (a *Auth) encodeOIDCState(state, nonce string) string {
+	message := state + "|" + nonce
+	mac := hmac.New(sha256.New, a.stateKey)
+	mac.Write([]byte(message))
+	return state + "." + nonce + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+func (a *Auth) decodeOIDCState(value string) (string, string, error) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 3 {
+		return "", "", errors.New("invalid oidc state cookie")
+	}
+	expected := a.encodeOIDCState(parts[0], parts[1])
+	if !hmac.Equal([]byte(value), []byte(expected)) {
+		return "", "", errors.New("invalid oidc state cookie signature")
+	}
+	return parts[0], parts[1], nil
 }
 
 func derivedSecret(secret, purpose string) []byte {
 	base := csrfKey(secret)
 	sum := sha256.Sum256(append([]byte("libredash:"+purpose+":"), base...))
 	return sum[:]
+}
+
+func randomAuthValue() string {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		sum := sha256.Sum256([]byte(time.Now().Format(time.RFC3339Nano)))
+		return hex.EncodeToString(sum[:])
+	}
+	return hex.EncodeToString(b[:])
 }

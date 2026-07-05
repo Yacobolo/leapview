@@ -1270,21 +1270,27 @@ func (r *Repository) policyPrincipal(ctx context.Context, id, email, displayName
 
 func (r *Repository) CreateSession(ctx context.Context, principalID string, ttl time.Duration) (string, error) {
 	token := newSecret()
+	fingerprint := secretFingerprint(token)
+	verifier, err := newSecretVerifier(token)
+	if err != nil {
+		return "", err
+	}
 	expires := time.Now().Add(ttl).UTC().Format(time.RFC3339)
 	return token, r.q.CreateSession(ctx, platformdb.CreateSessionParams{
-		ID:          newID("session"),
-		PrincipalID: principalID,
-		TokenHash:   tokenHash(token),
-		ExpiresAt:   expires,
+		ID:               newID("session"),
+		PrincipalID:      principalID,
+		TokenHash:        storedSecretHash(fingerprint),
+		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
+		TokenVerifier:    verifier,
+		ExpiresAt:        expires,
 	})
 }
 
 func (r *Repository) PrincipalForToken(ctx context.Context, token string) (access.Principal, error) {
-	session, err := r.q.GetSessionByTokenHash(ctx, tokenHash(token))
+	session, err := r.sessionForToken(ctx, token)
 	if err != nil {
 		return access.Principal{}, err
 	}
-	_ = r.q.TouchSession(ctx, session.ID)
 	row, err := r.q.GetPrincipal(ctx, session.PrincipalID)
 	if err != nil {
 		return access.Principal{}, err
@@ -1292,8 +1298,47 @@ func (r *Repository) PrincipalForToken(ctx context.Context, token string) (acces
 	return mapPrincipal(row), nil
 }
 
+func (r *Repository) sessionForToken(ctx context.Context, token string) (platformdb.Session, error) {
+	fingerprint := secretFingerprint(token)
+	session, err := r.q.GetSessionByTokenFingerprint(ctx, sql.NullString{String: fingerprint, Valid: true})
+	if err == nil {
+		if !verifySecret(token, session.TokenVerifier) {
+			return platformdb.Session{}, sql.ErrNoRows
+		}
+		_ = r.q.TouchSession(ctx, session.ID)
+		return session, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return platformdb.Session{}, err
+	}
+	session, err = r.q.GetSessionByTokenHash(ctx, legacyTokenHash(token))
+	if err != nil {
+		return platformdb.Session{}, err
+	}
+	verifier, err := newSecretVerifier(token)
+	if err != nil {
+		return platformdb.Session{}, err
+	}
+	if err := r.q.BackfillSessionTokenVerifier(ctx, platformdb.BackfillSessionTokenVerifierParams{
+		TokenHash:        storedSecretHash(fingerprint),
+		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
+		TokenVerifier:    verifier,
+		ID:               session.ID,
+	}); err != nil {
+		return platformdb.Session{}, err
+	}
+	_ = r.q.TouchSession(ctx, session.ID)
+	session.TokenFingerprint = sql.NullString{String: fingerprint, Valid: true}
+	session.TokenVerifier = verifier
+	return session, nil
+}
+
 func (r *Repository) DeleteSession(ctx context.Context, token string) error {
-	return r.q.DeleteSessionByTokenHash(ctx, tokenHash(token))
+	fingerprint := secretFingerprint(token)
+	if err := r.q.DeleteSessionByTokenFingerprint(ctx, sql.NullString{String: fingerprint, Valid: true}); err != nil {
+		return err
+	}
+	return r.q.DeleteSessionByTokenHash(ctx, legacyTokenHash(token))
 }
 
 func (r *Repository) ListSessions(ctx context.Context, principalID string) ([]access.Session, error) {
@@ -1354,14 +1399,21 @@ func (r *Repository) CreateAPITokenWithMetadata(ctx context.Context, input acces
 	if !input.ExpiresAt.IsZero() {
 		expiresAt = sql.NullString{String: input.ExpiresAt.UTC().Format(time.RFC3339), Valid: true}
 	}
+	fingerprint := secretFingerprint(token)
+	verifier, err := newSecretVerifier(token)
+	if err != nil {
+		return "", access.APIToken{}, err
+	}
 	if err := r.q.CreateAPIToken(ctx, platformdb.CreateAPITokenParams{
-		ID:              id,
-		PrincipalID:     input.PrincipalID,
-		WorkspaceID:     sql.NullString{String: input.WorkspaceID, Valid: strings.TrimSpace(input.WorkspaceID) != ""},
-		Name:            input.Name,
-		TokenHash:       tokenHash(token),
-		PermissionsJson: string(permissionsJSON),
-		ExpiresAt:       expiresAt,
+		ID:               id,
+		PrincipalID:      input.PrincipalID,
+		WorkspaceID:      sql.NullString{String: input.WorkspaceID, Valid: strings.TrimSpace(input.WorkspaceID) != ""},
+		Name:             input.Name,
+		TokenHash:        storedSecretHash(fingerprint),
+		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
+		TokenVerifier:    verifier,
+		PermissionsJson:  string(permissionsJSON),
+		ExpiresAt:        expiresAt,
 	}); err != nil {
 		return "", access.APIToken{}, err
 	}
@@ -1386,11 +1438,10 @@ func (r *Repository) PrincipalForAPIToken(ctx context.Context, token string) (ac
 }
 
 func (r *Repository) CredentialForAPIToken(ctx context.Context, token string) (access.APICredential, error) {
-	apiToken, err := r.q.GetAPITokenByHash(ctx, tokenHash(token))
+	apiToken, err := r.apiTokenForSecret(ctx, token)
 	if err != nil {
 		return access.APICredential{}, err
 	}
-	_ = r.q.TouchAPIToken(ctx, apiToken.ID)
 	row, err := r.q.GetPrincipal(ctx, apiToken.PrincipalID)
 	if err != nil {
 		return access.APICredential{}, err
@@ -1399,6 +1450,41 @@ func (r *Repository) CredentialForAPIToken(ctx context.Context, token string) (a
 		Principal: mapPrincipal(row),
 		Token:     mapAPIToken(apiToken),
 	}, nil
+}
+
+func (r *Repository) apiTokenForSecret(ctx context.Context, token string) (platformdb.ApiToken, error) {
+	fingerprint := secretFingerprint(token)
+	apiToken, err := r.q.GetAPITokenByFingerprint(ctx, sql.NullString{String: fingerprint, Valid: true})
+	if err == nil {
+		if !verifySecret(token, apiToken.TokenVerifier) {
+			return platformdb.ApiToken{}, sql.ErrNoRows
+		}
+		_ = r.q.TouchAPIToken(ctx, apiToken.ID)
+		return apiToken, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return platformdb.ApiToken{}, err
+	}
+	apiToken, err = r.q.GetAPITokenByHash(ctx, legacyTokenHash(token))
+	if err != nil {
+		return platformdb.ApiToken{}, err
+	}
+	verifier, err := newSecretVerifier(token)
+	if err != nil {
+		return platformdb.ApiToken{}, err
+	}
+	if err := r.q.BackfillAPITokenVerifier(ctx, platformdb.BackfillAPITokenVerifierParams{
+		TokenHash:        storedSecretHash(fingerprint),
+		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
+		TokenVerifier:    verifier,
+		ID:               apiToken.ID,
+	}); err != nil {
+		return platformdb.ApiToken{}, err
+	}
+	_ = r.q.TouchAPIToken(ctx, apiToken.ID)
+	apiToken.TokenFingerprint = sql.NullString{String: fingerprint, Valid: true}
+	apiToken.TokenVerifier = verifier
+	return apiToken, nil
 }
 
 func (r *Repository) ListAPITokens(ctx context.Context, principalID string) ([]access.APIToken, error) {
@@ -1503,17 +1589,24 @@ func (r *Repository) CreateServicePrincipalSecret(ctx context.Context, servicePr
 		name = "default"
 	}
 	secret := newSecret()
+	fingerprint := secretFingerprint(secret)
+	verifier, err := newSecretVerifier(secret)
+	if err != nil {
+		return "", access.ServicePrincipalSecret{}, err
+	}
 	row := access.ServicePrincipalSecret{
 		ID:                 newID("spsecret"),
 		ServicePrincipalID: servicePrincipalID,
 		Name:               name,
-		Secret:             tokenHash(secret),
+		Secret:             storedSecretHash(fingerprint),
 	}
 	if err := r.q.CreateServicePrincipalSecret(ctx, platformdb.CreateServicePrincipalSecretParams{
 		ID:                 row.ID,
 		ServicePrincipalID: row.ServicePrincipalID,
 		Name:               row.Name,
 		SecretHash:         row.Secret,
+		SecretFingerprint:  sql.NullString{String: fingerprint, Valid: true},
+		SecretVerifier:     verifier,
 	}); err != nil {
 		return "", access.ServicePrincipalSecret{}, err
 	}
@@ -1531,10 +1624,7 @@ func (r *Repository) RevokeServicePrincipalSecret(ctx context.Context, servicePr
 }
 
 func (r *Repository) PrincipalForServicePrincipalSecret(ctx context.Context, servicePrincipalID, secret string) (access.Principal, error) {
-	row, err := r.q.GetServicePrincipalSecretByHash(ctx, platformdb.GetServicePrincipalSecretByHashParams{
-		ServicePrincipalID: strings.TrimSpace(servicePrincipalID),
-		SecretHash:         tokenHash(secret),
-	})
+	row, err := r.servicePrincipalSecretForSecret(ctx, servicePrincipalID, secret)
 	if err != nil {
 		return access.Principal{}, err
 	}
@@ -1543,6 +1633,46 @@ func (r *Repository) PrincipalForServicePrincipalSecret(ctx context.Context, ser
 		return access.Principal{}, err
 	}
 	return mapPrincipal(principal), nil
+}
+
+func (r *Repository) servicePrincipalSecretForSecret(ctx context.Context, servicePrincipalID, secret string) (platformdb.ServicePrincipalSecret, error) {
+	servicePrincipalID = strings.TrimSpace(servicePrincipalID)
+	fingerprint := secretFingerprint(secret)
+	row, err := r.q.GetServicePrincipalSecretByFingerprint(ctx, platformdb.GetServicePrincipalSecretByFingerprintParams{
+		ServicePrincipalID: servicePrincipalID,
+		SecretFingerprint:  sql.NullString{String: fingerprint, Valid: true},
+	})
+	if err == nil {
+		if !verifySecret(secret, row.SecretVerifier) {
+			return platformdb.ServicePrincipalSecret{}, sql.ErrNoRows
+		}
+		return row, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return platformdb.ServicePrincipalSecret{}, err
+	}
+	row, err = r.q.GetServicePrincipalSecretByHash(ctx, platformdb.GetServicePrincipalSecretByHashParams{
+		ServicePrincipalID: servicePrincipalID,
+		SecretHash:         legacyTokenHash(secret),
+	})
+	if err != nil {
+		return platformdb.ServicePrincipalSecret{}, err
+	}
+	verifier, err := newSecretVerifier(secret)
+	if err != nil {
+		return platformdb.ServicePrincipalSecret{}, err
+	}
+	if err := r.q.BackfillServicePrincipalSecretVerifier(ctx, platformdb.BackfillServicePrincipalSecretVerifierParams{
+		SecretHash:        storedSecretHash(fingerprint),
+		SecretFingerprint: sql.NullString{String: fingerprint, Valid: true},
+		SecretVerifier:    verifier,
+		ID:                row.ID,
+	}); err != nil {
+		return platformdb.ServicePrincipalSecret{}, err
+	}
+	row.SecretFingerprint = sql.NullString{String: fingerprint, Valid: true}
+	row.SecretVerifier = verifier
+	return row, nil
 }
 
 func (r *Repository) RecordAuditEvent(ctx context.Context, input access.AuditEventInput) error {
@@ -1833,9 +1963,4 @@ func newSecret() string {
 func stableID(value string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(value)))
 	return hex.EncodeToString(sum[:])[:32]
-}
-
-func tokenHash(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
 }

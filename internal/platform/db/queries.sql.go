@@ -162,6 +162,75 @@ func (q *Queries) ArchiveAgentConversation(ctx context.Context, arg ArchiveAgent
 	return i, err
 }
 
+const backfillAPITokenVerifier = `-- name: BackfillAPITokenVerifier :exec
+UPDATE api_tokens
+SET token_hash = ?, token_fingerprint = ?, token_verifier = ?
+WHERE id = ? AND (token_fingerprint IS NULL OR token_fingerprint = '' OR token_verifier = '')
+`
+
+type BackfillAPITokenVerifierParams struct {
+	TokenHash        string         `json:"token_hash"`
+	TokenFingerprint sql.NullString `json:"token_fingerprint"`
+	TokenVerifier    string         `json:"token_verifier"`
+	ID               string         `json:"id"`
+}
+
+func (q *Queries) BackfillAPITokenVerifier(ctx context.Context, arg BackfillAPITokenVerifierParams) error {
+	_, err := q.db.ExecContext(ctx, backfillAPITokenVerifier,
+		arg.TokenHash,
+		arg.TokenFingerprint,
+		arg.TokenVerifier,
+		arg.ID,
+	)
+	return err
+}
+
+const backfillServicePrincipalSecretVerifier = `-- name: BackfillServicePrincipalSecretVerifier :exec
+UPDATE service_principal_secrets
+SET secret_hash = ?, secret_fingerprint = ?, secret_verifier = ?
+WHERE id = ? AND (secret_fingerprint IS NULL OR secret_fingerprint = '' OR secret_verifier = '')
+`
+
+type BackfillServicePrincipalSecretVerifierParams struct {
+	SecretHash        string         `json:"secret_hash"`
+	SecretFingerprint sql.NullString `json:"secret_fingerprint"`
+	SecretVerifier    string         `json:"secret_verifier"`
+	ID                string         `json:"id"`
+}
+
+func (q *Queries) BackfillServicePrincipalSecretVerifier(ctx context.Context, arg BackfillServicePrincipalSecretVerifierParams) error {
+	_, err := q.db.ExecContext(ctx, backfillServicePrincipalSecretVerifier,
+		arg.SecretHash,
+		arg.SecretFingerprint,
+		arg.SecretVerifier,
+		arg.ID,
+	)
+	return err
+}
+
+const backfillSessionTokenVerifier = `-- name: BackfillSessionTokenVerifier :exec
+UPDATE sessions
+SET token_hash = ?, token_fingerprint = ?, token_verifier = ?
+WHERE id = ? AND (token_fingerprint IS NULL OR token_fingerprint = '' OR token_verifier = '')
+`
+
+type BackfillSessionTokenVerifierParams struct {
+	TokenHash        string         `json:"token_hash"`
+	TokenFingerprint sql.NullString `json:"token_fingerprint"`
+	TokenVerifier    string         `json:"token_verifier"`
+	ID               string         `json:"id"`
+}
+
+func (q *Queries) BackfillSessionTokenVerifier(ctx context.Context, arg BackfillSessionTokenVerifierParams) error {
+	_, err := q.db.ExecContext(ctx, backfillSessionTokenVerifier,
+		arg.TokenHash,
+		arg.TokenFingerprint,
+		arg.TokenVerifier,
+		arg.ID,
+	)
+	return err
+}
+
 const clearAssetEdgesForDeployment = `-- name: ClearAssetEdgesForDeployment :exec
 DELETE FROM asset_edges WHERE deployment_id = ?
 `
@@ -181,18 +250,20 @@ func (q *Queries) ClearAssetsForDeployment(ctx context.Context, deploymentID str
 }
 
 const createAPIToken = `-- name: CreateAPIToken :exec
-INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateAPITokenParams struct {
-	ID              string         `json:"id"`
-	PrincipalID     string         `json:"principal_id"`
-	WorkspaceID     sql.NullString `json:"workspace_id"`
-	Name            string         `json:"name"`
-	TokenHash       string         `json:"token_hash"`
-	PermissionsJson string         `json:"permissions_json"`
-	ExpiresAt       sql.NullString `json:"expires_at"`
+	ID               string         `json:"id"`
+	PrincipalID      string         `json:"principal_id"`
+	WorkspaceID      sql.NullString `json:"workspace_id"`
+	Name             string         `json:"name"`
+	TokenHash        string         `json:"token_hash"`
+	TokenFingerprint sql.NullString `json:"token_fingerprint"`
+	TokenVerifier    string         `json:"token_verifier"`
+	PermissionsJson  string         `json:"permissions_json"`
+	ExpiresAt        sql.NullString `json:"expires_at"`
 }
 
 func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) error {
@@ -202,6 +273,8 @@ func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) 
 		arg.WorkspaceID,
 		arg.Name,
 		arg.TokenHash,
+		arg.TokenFingerprint,
+		arg.TokenVerifier,
 		arg.PermissionsJson,
 		arg.ExpiresAt,
 	)
@@ -358,8 +431,8 @@ func (q *Queries) CreateQuerySnapshotLease(ctx context.Context, arg CreateQueryS
 }
 
 const createServicePrincipalSecret = `-- name: CreateServicePrincipalSecret :exec
-INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_hash, expires_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_hash, secret_fingerprint, secret_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateServicePrincipalSecretParams struct {
@@ -367,6 +440,8 @@ type CreateServicePrincipalSecretParams struct {
 	ServicePrincipalID string         `json:"service_principal_id"`
 	Name               string         `json:"name"`
 	SecretHash         string         `json:"secret_hash"`
+	SecretFingerprint  sql.NullString `json:"secret_fingerprint"`
+	SecretVerifier     string         `json:"secret_verifier"`
 	ExpiresAt          sql.NullString `json:"expires_at"`
 }
 
@@ -376,21 +451,25 @@ func (q *Queries) CreateServicePrincipalSecret(ctx context.Context, arg CreateSe
 		arg.ServicePrincipalID,
 		arg.Name,
 		arg.SecretHash,
+		arg.SecretFingerprint,
+		arg.SecretVerifier,
 		arg.ExpiresAt,
 	)
 	return err
 }
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (id, principal_id, token_hash, expires_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO sessions (id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
-	ID          string `json:"id"`
-	PrincipalID string `json:"principal_id"`
-	TokenHash   string `json:"token_hash"`
-	ExpiresAt   string `json:"expires_at"`
+	ID               string         `json:"id"`
+	PrincipalID      string         `json:"principal_id"`
+	TokenHash        string         `json:"token_hash"`
+	TokenFingerprint sql.NullString `json:"token_fingerprint"`
+	TokenVerifier    string         `json:"token_verifier"`
+	ExpiresAt        string         `json:"expires_at"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
@@ -398,6 +477,8 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.ID,
 		arg.PrincipalID,
 		arg.TokenHash,
+		arg.TokenFingerprint,
+		arg.TokenVerifier,
 		arg.ExpiresAt,
 	)
 	return err
@@ -471,6 +552,15 @@ WHERE id = ? AND kind = 'service_principal'
 
 func (q *Queries) DeleteServicePrincipal(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, deleteServicePrincipal, id)
+	return err
+}
+
+const deleteSessionByTokenFingerprint = `-- name: DeleteSessionByTokenFingerprint :exec
+DELETE FROM sessions WHERE token_fingerprint = ?
+`
+
+func (q *Queries) DeleteSessionByTokenFingerprint(ctx context.Context, tokenFingerprint sql.NullString) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionByTokenFingerprint, tokenFingerprint)
 	return err
 }
 
@@ -578,8 +668,35 @@ func (q *Queries) FinishAgentRun(ctx context.Context, arg FinishAgentRunParams) 
 	return i, err
 }
 
+const getAPITokenByFingerprint = `-- name: GetAPITokenByFingerprint :one
+SELECT id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
+WHERE token_fingerprint = ?
+  AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+`
+
+func (q *Queries) GetAPITokenByFingerprint(ctx context.Context, tokenFingerprint sql.NullString) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getAPITokenByFingerprint, tokenFingerprint)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
+		&i.PermissionsJson,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getAPITokenByHash = `-- name: GetAPITokenByHash :one
-SELECT id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
+SELECT id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
 WHERE token_hash = ?
   AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
@@ -594,6 +711,8 @@ func (q *Queries) GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiT
 		&i.WorkspaceID,
 		&i.Name,
 		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
 		&i.PermissionsJson,
 		&i.ExpiresAt,
 		&i.CreatedAt,
@@ -936,8 +1055,41 @@ func (q *Queries) GetRoleByName(ctx context.Context, name string) (Role, error) 
 	return i, err
 }
 
+const getServicePrincipalSecretByFingerprint = `-- name: GetServicePrincipalSecretByFingerprint :one
+SELECT s.id, s.service_principal_id, s.name, s.secret_hash, s.secret_fingerprint, s.secret_verifier, s.expires_at, s.created_at, s.revoked_at
+FROM service_principal_secrets s
+JOIN principals p ON p.id = s.service_principal_id
+WHERE p.kind = 'service_principal'
+  AND s.service_principal_id = ?
+  AND s.secret_fingerprint = ?
+  AND s.revoked_at IS NULL
+  AND (s.expires_at IS NULL OR s.expires_at > CURRENT_TIMESTAMP)
+`
+
+type GetServicePrincipalSecretByFingerprintParams struct {
+	ServicePrincipalID string         `json:"service_principal_id"`
+	SecretFingerprint  sql.NullString `json:"secret_fingerprint"`
+}
+
+func (q *Queries) GetServicePrincipalSecretByFingerprint(ctx context.Context, arg GetServicePrincipalSecretByFingerprintParams) (ServicePrincipalSecret, error) {
+	row := q.db.QueryRowContext(ctx, getServicePrincipalSecretByFingerprint, arg.ServicePrincipalID, arg.SecretFingerprint)
+	var i ServicePrincipalSecret
+	err := row.Scan(
+		&i.ID,
+		&i.ServicePrincipalID,
+		&i.Name,
+		&i.SecretHash,
+		&i.SecretFingerprint,
+		&i.SecretVerifier,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getServicePrincipalSecretByHash = `-- name: GetServicePrincipalSecretByHash :one
-SELECT s.id, s.service_principal_id, s.name, s.secret_hash, s.expires_at, s.created_at, s.revoked_at
+SELECT s.id, s.service_principal_id, s.name, s.secret_hash, s.secret_fingerprint, s.secret_verifier, s.expires_at, s.created_at, s.revoked_at
 FROM service_principal_secrets s
 JOIN principals p ON p.id = s.service_principal_id
 WHERE p.kind = 'service_principal'
@@ -960,6 +1112,8 @@ func (q *Queries) GetServicePrincipalSecretByHash(ctx context.Context, arg GetSe
 		&i.ServicePrincipalID,
 		&i.Name,
 		&i.SecretHash,
+		&i.SecretFingerprint,
+		&i.SecretVerifier,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.RevokedAt,
@@ -967,8 +1121,30 @@ func (q *Queries) GetServicePrincipalSecretByHash(ctx context.Context, arg GetSe
 	return i, err
 }
 
+const getSessionByTokenFingerprint = `-- name: GetSessionByTokenFingerprint :one
+SELECT id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at FROM sessions
+WHERE token_fingerprint = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL
+`
+
+func (q *Queries) GetSessionByTokenFingerprint(ctx context.Context, tokenFingerprint sql.NullString) (Session, error) {
+	row := q.db.QueryRowContext(ctx, getSessionByTokenFingerprint, tokenFingerprint)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getSessionByTokenHash = `-- name: GetSessionByTokenHash :one
-SELECT id, principal_id, token_hash, expires_at, created_at, last_seen_at, revoked_at FROM sessions
+SELECT id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at FROM sessions
 WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL
 `
 
@@ -979,6 +1155,8 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (
 		&i.ID,
 		&i.PrincipalID,
 		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastSeenAt,
@@ -1359,7 +1537,7 @@ func (q *Queries) InsertRoleBinding(ctx context.Context, arg InsertRoleBindingPa
 }
 
 const listAPITokensByPrincipal = `-- name: ListAPITokensByPrincipal :many
-SELECT id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
+SELECT id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
 WHERE principal_id = ?
 ORDER BY created_at DESC
 `
@@ -1379,6 +1557,8 @@ func (q *Queries) ListAPITokensByPrincipal(ctx context.Context, principalID stri
 			&i.WorkspaceID,
 			&i.Name,
 			&i.TokenHash,
+			&i.TokenFingerprint,
+			&i.TokenVerifier,
 			&i.PermissionsJson,
 			&i.ExpiresAt,
 			&i.CreatedAt,
@@ -2324,7 +2504,7 @@ func (q *Queries) ListServicePrincipals(ctx context.Context) ([]Principal, error
 }
 
 const listSessionsByPrincipal = `-- name: ListSessionsByPrincipal :many
-SELECT id, principal_id, token_hash, expires_at, created_at, last_seen_at, revoked_at FROM sessions
+SELECT id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at FROM sessions
 WHERE principal_id = ?
 ORDER BY created_at DESC
 `
@@ -2342,6 +2522,8 @@ func (q *Queries) ListSessionsByPrincipal(ctx context.Context, principalID strin
 			&i.ID,
 			&i.PrincipalID,
 			&i.TokenHash,
+			&i.TokenFingerprint,
+			&i.TokenVerifier,
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.LastSeenAt,
@@ -2561,7 +2743,7 @@ const revokeAPITokenForPrincipal = `-- name: RevokeAPITokenForPrincipal :one
 UPDATE api_tokens
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
-RETURNING id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at, created_at, last_used_at, revoked_at
+RETURNING id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at, created_at, last_used_at, revoked_at
 `
 
 type RevokeAPITokenForPrincipalParams struct {
@@ -2578,6 +2760,8 @@ func (q *Queries) RevokeAPITokenForPrincipal(ctx context.Context, arg RevokeAPIT
 		&i.WorkspaceID,
 		&i.Name,
 		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
 		&i.PermissionsJson,
 		&i.ExpiresAt,
 		&i.CreatedAt,
@@ -2618,7 +2802,7 @@ const revokeSessionForPrincipal = `-- name: RevokeSessionForPrincipal :one
 UPDATE sessions
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
-RETURNING id, principal_id, token_hash, expires_at, created_at, last_seen_at, revoked_at
+RETURNING id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at
 `
 
 type RevokeSessionForPrincipalParams struct {
@@ -2633,6 +2817,8 @@ func (q *Queries) RevokeSessionForPrincipal(ctx context.Context, arg RevokeSessi
 		&i.ID,
 		&i.PrincipalID,
 		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastSeenAt,
