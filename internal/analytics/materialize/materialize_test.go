@@ -15,6 +15,7 @@ import (
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
+	analyticsmaterializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -956,7 +957,7 @@ func TestRunRepositoryPersistsPrincipalAttribution(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 	seedMaterializationPrincipal(t, ctx, store, "principal_alice", "alice@example.com", "Alice")
 
 	queued, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders", PrincipalID: "principal_alice"})
@@ -1002,7 +1003,7 @@ func TestRunRepositoryListsAndFindsLatestByModel(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
 	ordersSucceeded, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
 	if err != nil {
@@ -1053,7 +1054,7 @@ func TestRunRepositoryPagesRunsInSQLOrder(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
 	first, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.orders"})
 	if err != nil {
@@ -1095,7 +1096,7 @@ func TestRunRepositoryPagesTargetRunsInSQLOrder(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
 	first, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist", TargetType: analyticsmaterialize.TargetModelTable, TargetID: "olist.orders"})
 	if err != nil {
@@ -1140,7 +1141,7 @@ func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
 	parent, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
 		WorkspaceID:    "test",
@@ -1208,7 +1209,7 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 	if _, err := store.SQLDB().ExecContext(ctx, `
 		INSERT INTO serving_states (id, workspace_id, status, digest, manifest_json, created_by)
 		VALUES ('dep_failed', 'test', 'failed', 'sha256:failed', '{}', 'test')
@@ -1267,7 +1268,7 @@ func TestRunRepositoryClaimsExecutableRootJobs(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
 	parent, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
 		WorkspaceID:    "test",
@@ -1317,7 +1318,7 @@ func TestRunRepositoryReclaimsExpiredJobLease(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
 	run, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "olist"})
 	if err != nil {
@@ -1358,7 +1359,7 @@ func TestRunRepositoryReportsDurableQueueStats(t *testing.T) {
 	ctx := context.Background()
 	store := openMaterializationStore(t, ctx)
 	defer store.Close()
-	repo := analyticsmaterialize.NewSQLRunRepository(store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
 	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "queued"}); err != nil {
 		t.Fatalf("create queued run: %v", err)

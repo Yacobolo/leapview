@@ -13,14 +13,14 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/agentapp"
-	"github.com/Yacobolo/libredash/internal/agentconfig"
+	"github.com/Yacobolo/libredash/internal/agent"
+	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
 )
 
 func TestAgentAPIReportsDisabledWhenProviderMissing(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{}), DefaultWorkspaceID: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations", nil)
 	rec := httptest.NewRecorder()
@@ -37,7 +37,7 @@ func TestGlobalAgentAPIListsPrincipalConversations(t *testing.T) {
 	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
 	token := testAPIToken(t, ctx, store, principal.ID, "agent-global")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
+	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 
 	createReq := authedJSONRequest(http.MethodPost, "/api/v1/agent/conversations", token, `{"title":"Global ask"}`)
@@ -85,7 +85,7 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 
 	createReq := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/agent/conversations", token, `{"title":"Ask"}`)
@@ -135,7 +135,7 @@ func TestAdminAgentAPIReturnsAndUpdatesSystemPrompt(t *testing.T) {
 	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleOwner)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
+	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 
 	getReq := authedJSONRequest(http.MethodGet, "/api/v1/admin/agent/config", token, "")
@@ -172,7 +172,7 @@ func TestAdminAgentAPIRejectsEmptySystemPrompt(t *testing.T) {
 	owner := testPrincipal(t, ctx, store, "owner-empty@example.com", "Owner", access.RoleOwner)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
 	req := authedJSONRequest(http.MethodPatch, "/api/v1/admin/agent/config", token, `{"systemPrompt":"   "}`)
 	rec := httptest.NewRecorder()
@@ -188,7 +188,7 @@ func TestAdminAgentAPIRequiresRBACPermissions(t *testing.T) {
 	viewer := testPrincipal(t, ctx, store, "viewer-admin-agent@example.com", "Viewer", access.RoleViewer)
 	token := testAPIToken(t, ctx, store, viewer.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
 	for _, tc := range []struct {
 		method string
@@ -213,14 +213,14 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
 	token := testAPIToken(t, ctx, store, principal.ID, "agent-test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"})
+	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
-	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	scope := agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	conversation, err := agentService.CreateConversation(ctx, scope, "Original")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
-	run, err := testAgentRepository(store).CreateRun(ctx, agentapp.RunInput{
+	run, err := testAgentRepository(store).CreateRun(ctx, agent.RunInput{
 		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
@@ -230,7 +230,7 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create run: %v", err)
 	}
-	if _, err := testAgentRepository(store).AppendEvent(ctx, agentapp.EventInput{
+	if _, err := testAgentRepository(store).AppendEvent(ctx, agent.EventInput{
 		WorkspaceID: "test",
 		PrincipalID: principal.ID,
 		RunID:       run.ID,
@@ -294,9 +294,9 @@ func TestAgentAPIRejectsConcurrentTurnsForConversation(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
-	conversation, err := agentService.CreateConversation(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Ask")
+	conversation, err := agentService.CreateConversation(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Ask")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}

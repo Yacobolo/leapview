@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
-	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -21,8 +19,8 @@ type Repository interface {
 	ActivateWithWorkspacePolicy(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID, policy workspace.AccessPolicy) (servingstate.State, error)
 }
 
-type ArtifactRepository interface {
-	ArtifactByServingState(ctx context.Context, servingStateID servingstate.ID) (servingstate.Artifact, error)
+type AccessPolicyLoader interface {
+	LoadAccessPolicy(ctx context.Context, state servingstate.State) (workspace.AccessPolicy, error)
 }
 
 type RuntimeHost interface {
@@ -35,18 +33,18 @@ type preparedDuckLakeSnapshot interface {
 }
 
 type Service struct {
-	repo      Repository
-	runtime   RuntimeHost
-	artifacts ArtifactRepository
-	access    access.WorkspacePolicyReconciler
+	repo     Repository
+	runtime  RuntimeHost
+	policies AccessPolicyLoader
+	access   access.WorkspacePolicyReconciler
 }
 
 func NewService(repo Repository, runtime RuntimeHost) Service {
 	return Service{repo: repo, runtime: runtime}
 }
 
-func NewServiceWithAccess(repo Repository, runtime RuntimeHost, artifacts ArtifactRepository, accessReconciler access.WorkspacePolicyReconciler) Service {
-	return Service{repo: repo, runtime: runtime, artifacts: artifacts, access: accessReconciler}
+func NewServiceWithAccess(repo Repository, runtime RuntimeHost, policies AccessPolicyLoader, accessReconciler access.WorkspacePolicyReconciler) Service {
+	return Service{repo: repo, runtime: runtime, policies: policies, access: accessReconciler}
 }
 
 func (s Service) Activate(ctx context.Context, servingStateID servingstate.ID) (servingstate.State, error) {
@@ -59,8 +57,8 @@ func (s Service) Activate(ctx context.Context, servingStateID servingstate.ID) (
 	}
 
 	var policy *workspace.AccessPolicy
-	if s.access != nil && s.artifacts != nil {
-		loaded, err := s.accessPolicy(ctx, current)
+	if s.access != nil && s.policies != nil {
+		loaded, err := s.policies.LoadAccessPolicy(ctx, current)
 		if err != nil {
 			return servingstate.State{}, err
 		}
@@ -101,36 +99,4 @@ func (s Service) Activate(ctx context.Context, servingStateID servingstate.ID) (
 		}
 	}
 	return activated, nil
-}
-
-func (s Service) accessPolicy(ctx context.Context, current servingstate.State) (workspace.AccessPolicy, error) {
-	artifact, err := s.artifacts.ArtifactByServingState(ctx, current.ID)
-	if err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	root, err := os.MkdirTemp("", "libredash-activate-*")
-	if err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	defer os.RemoveAll(root)
-	if err := servingstatefs.ExtractArtifact(artifact.Path, root); err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(root)
-	if err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	if compiled.WorkspaceID != string(current.WorkspaceID) {
-		return workspace.AccessPolicy{}, fmt.Errorf("compiled artifact workspace = %q, want %q", compiled.WorkspaceID, current.WorkspaceID)
-	}
-	if compiled.ServingStateID != string(current.ID) {
-		return workspace.AccessPolicy{}, fmt.Errorf("compiled artifact serving state = %q, want %q", compiled.ServingStateID, current.ID)
-	}
-	if servingstate.Environment(compiled.Environment) != servingstate.NormalizeEnvironment(current.Environment) {
-		return workspace.AccessPolicy{}, fmt.Errorf("compiled artifact environment = %q, want %q", compiled.Environment, servingstate.NormalizeEnvironment(current.Environment))
-	}
-	if err := servingstatefs.ValidateCompiledWorkspaceArtifact(compiled); err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	return compiled.Definition.Access, nil
 }

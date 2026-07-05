@@ -3,16 +3,16 @@ package app
 import (
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/agentapp"
-	"github.com/Yacobolo/libredash/pkg/agent"
+	agentcap "github.com/Yacobolo/libredash/internal/agent"
+	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 )
 
-func appendServerUserTranscript(transcript []agentapp.ChatTranscriptItem, conversationID, input string) []agentapp.ChatTranscriptItem {
+func appendServerUserTranscript(transcript []agentcap.ChatTranscriptItem, conversationID, input string) []agentcap.ChatTranscriptItem {
 	if strings.TrimSpace(input) == "" {
 		return transcript
 	}
-	next := append([]agentapp.ChatTranscriptItem{}, transcript...)
-	next = append(next, agentapp.ChatTranscriptItem{
+	next := append([]agentcap.ChatTranscriptItem{}, transcript...)
+	next = append(next, agentcap.ChatTranscriptItem{
 		ID:             "live:user",
 		Kind:           "user",
 		Text:           input,
@@ -21,10 +21,10 @@ func appendServerUserTranscript(transcript []agentapp.ChatTranscriptItem, conver
 	return next
 }
 
-func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversationID string, event agentapp.EventEnvelope) []agentapp.ChatTranscriptItem {
-	next := append([]agentapp.ChatTranscriptItem{}, transcript...)
+func applyLiveTranscriptEvent(transcript []agentcap.ChatTranscriptItem, conversationID string, event agentcap.EventEnvelope) []agentcap.ChatTranscriptItem {
+	next := append([]agentcap.ChatTranscriptItem{}, transcript...)
 	switch event.Type {
-	case string(agent.EventTypeMessageDelta):
+	case string(agentcore.EventTypeMessageDelta):
 		delta := stringPayload(event.Payload, "delta")
 		if delta == "" {
 			return next
@@ -35,7 +35,7 @@ func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversa
 				return next
 			}
 		}
-		return append(next, agentapp.ChatTranscriptItem{
+		return append(next, agentcap.ChatTranscriptItem{
 			ID:             "live:assistant:" + event.RunID,
 			Kind:           "assistant",
 			Markdown:       delta,
@@ -44,7 +44,7 @@ func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversa
 			RunID:          event.RunID,
 			CreatedAt:      event.CreatedAt,
 		})
-	case string(agent.EventTypeToolStart):
+	case string(agentcore.EventTypeToolStart):
 		callID := stringPayload(event.Payload, "tool_call_id")
 		name := stringPayload(event.Payload, "tool_name")
 		if callID == "" {
@@ -54,7 +54,7 @@ func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversa
 			next[idx].Status = "running"
 			return next
 		}
-		return append(next, agentapp.ChatTranscriptItem{
+		return append(next, agentcap.ChatTranscriptItem{
 			ID:             "live:tool:" + callID,
 			Kind:           "tool",
 			ToolCallID:     callID,
@@ -65,7 +65,7 @@ func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversa
 			RunID:          event.RunID,
 			CreatedAt:      event.CreatedAt,
 		})
-	case string(agent.EventTypeToolEnd):
+	case string(agentcore.EventTypeToolEnd):
 		callID := stringPayload(event.Payload, "tool_call_id")
 		if callID == "" {
 			return next
@@ -73,7 +73,7 @@ func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversa
 		idx := transcriptToolIndex(next, callID)
 		if idx < 0 {
 			name := stringPayload(event.Payload, "tool_name")
-			next = append(next, agentapp.ChatTranscriptItem{
+			next = append(next, agentcap.ChatTranscriptItem{
 				ID:             "live:tool:" + callID,
 				Kind:           "tool",
 				ToolCallID:     callID,
@@ -85,7 +85,7 @@ func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversa
 			})
 			idx = len(next) - 1
 		}
-		if event.Severity == string(agent.SeverityError) || event.Severity == string(agent.SeverityWarn) {
+		if event.Severity == string(agentcore.SeverityError) || event.Severity == string(agentcore.SeverityWarn) {
 			next[idx].Status = "error"
 			next[idx].Error = "Tool failed"
 			return next
@@ -97,7 +97,7 @@ func applyLiveTranscriptEvent(transcript []agentapp.ChatTranscriptItem, conversa
 	}
 }
 
-func transcriptToolIndex(transcript []agentapp.ChatTranscriptItem, callID string) int {
+func transcriptToolIndex(transcript []agentcap.ChatTranscriptItem, callID string) int {
 	for i := range transcript {
 		if transcript[i].Kind == "tool" && transcript[i].ToolCallID == callID {
 			return i

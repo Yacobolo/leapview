@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/libredash/internal/agenttools"
+	agenttools "github.com/Yacobolo/libredash/internal/agent/tools"
 	"github.com/Yacobolo/libredash/internal/configschema"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/workspace"

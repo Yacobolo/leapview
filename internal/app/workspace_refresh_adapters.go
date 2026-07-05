@@ -3,13 +3,57 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
+	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
+	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacehttp "github.com/Yacobolo/libredash/internal/workspace/http"
 	"github.com/Yacobolo/libredash/internal/workspace/refresh"
 )
+
+func (s *Server) workspaceRefreshSupport() workspacehttp.Support {
+	return workspacehttp.Support{
+		Runs: func() (workspacehttp.RunRepository, error) {
+			return s.refreshRunRepository()
+		},
+		Service: func(repo workspacehttp.RunRepository) (refresh.Service, error) {
+			return s.workspaceRefreshService(repo)
+		},
+		Environment: func(r *http.Request) servingstate.Environment {
+			return s.requestServingEnvironment(r)
+		},
+		PrincipalID: func(r *http.Request) string {
+			principal, _ := currentPrincipal(s, r)
+			return principal.ID
+		},
+		DispatchQueued: func() {
+			s.dispatchQueuedRefreshJobs(context.Background())
+		},
+		DataDir:      s.dataDirForWorkspace,
+		DirectRunner: appRefreshRunner{metrics: s.metrics},
+		ModelLookup:  refreshModelLookup(s.metrics),
+		Broker:       s.broker,
+		AssetCatalog: func(ctx context.Context, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
+			assets, edges, err := s.workspaceHTTPReadModel().WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(s.defaultServingEnvironment()))
+			if err != nil || (len(assets) == 0 && len(edges) == 0) {
+				return nil, nil, false
+			}
+			return assets, edges, true
+		},
+		WorkspaceView: func(r *http.Request, workspaceID string) workspace.WorkspaceView {
+			return s.workspaceHTTPReadModel().WorkspaceResponse(r, workspaceID)
+		},
+		WorkspaceViewContext: func(ctx context.Context, workspaceID string) workspace.WorkspaceView {
+			return s.workspaceHTTPReadModel().WorkspaceViewContext(ctx, workspaceID)
+		},
+		WorkspaceVersions: s.assetVersionsStateForSection,
+	}
+}
 
 func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh.Service, error) {
 	repo, err := s.servingStateRepository()
@@ -23,10 +67,15 @@ func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh
 		ServingStates: repo,
 		Runs:          runRepo,
 		Artifacts:     appRefreshArtifactLoader{},
-		Materializer:  appRefreshMaterializer{server: s},
-		Runtime:       appRefreshRuntimeHost{reloader: s.reloader},
-		Retention:     appRefreshRetention{server: s},
-		Publisher:     appRefreshPublisher{server: s},
+		Materializer: analyticsduckdb.WorkspaceRefreshMaterializer{
+			DuckDBDir:       s.duckDBDir,
+			DuckLakeCatalog: s.duckLakeCatalogPath,
+			DuckLakeData:    s.duckLakeDataPath,
+			DataDir:         s.dataDirForWorkspace,
+		},
+		Runtime:   appRefreshRuntimeHost{reloader: s.reloader},
+		Retention: appRefreshRetention{server: s},
+		Publisher: appRefreshPublisher{server: s},
 	}, nil
 }
 
@@ -46,17 +95,6 @@ func (appRefreshArtifactLoader) Load(_ context.Context, artifact servingstate.Ar
 		return refresh.LoadedArtifact{}, err
 	}
 	return refresh.LoadedArtifact{Definition: compiled.Definition, Graph: compiled.Graph}, nil
-}
-
-type appRefreshMaterializer struct {
-	server *Server
-}
-
-func (m appRefreshMaterializer) Materialize(ctx context.Context, input refresh.MaterializeInput) (int64, error) {
-	if m.server == nil {
-		return 0, fmt.Errorf("server is required")
-	}
-	return m.server.executeWorkspaceAssetRefreshPlan(ctx, input.Definition, input.Active, input.Candidate, input.Artifact, input.Environment, input.Plan)
 }
 
 type appRefreshRuntimeHost struct {
@@ -103,11 +141,11 @@ func (p appRefreshPublisher) PublishRefreshTarget(ctx context.Context, workspace
 	if p.server == nil {
 		return
 	}
-	p.server.publishWorkspaceAssetRefreshPatchesForTarget(ctx, workspaceID, targetType, targetID)
+	p.server.workspaceRefreshSupport().PublishWorkspaceAssetRefreshPatchesForTarget(ctx, workspaceID, targetType, targetID)
 }
 
 type appLegacyRefreshExecutor struct {
-	repo    *materialize.SQLRunRepository
+	repo    *materializesqlite.SQLRunRepository
 	metrics QueryMetrics
 	logger  interface {
 		WarnContext(context.Context, string, ...any)
@@ -115,8 +153,8 @@ type appLegacyRefreshExecutor struct {
 }
 
 func (e appLegacyRefreshExecutor) ExecuteLegacyJob(ctx context.Context, job materialize.JobRecord) error {
-	orchestrator := NewGenericRefreshOrchestrator(e.repo, e.metrics)
-	_, err := orchestrator.ExecuteRun(ctx, job.WorkspaceID, job.RunID, refreshPublisher{})
+	orchestrator := materialize.NewGenericRefreshOrchestrator(e.repo, appRefreshRunner{metrics: e.metrics}, refreshModelLookup(e.metrics))
+	_, err := orchestrator.ExecuteRun(ctx, job.WorkspaceID, job.RunID, materialize.RefreshPublisher{})
 	if err != nil && e.logger != nil {
 		e.logger.WarnContext(ctx, "refresh job failed", "workspace", job.WorkspaceID, "run", job.RunID, "error", err)
 	}

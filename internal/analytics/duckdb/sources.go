@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/analytics/connectors"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
@@ -54,14 +55,14 @@ func PrepareSourceRuntime(ctx context.Context, db *sql.DB, model *semanticmodel.
 	}
 	for _, sourceName := range sortedKeys(model.Sources) {
 		source := model.Sources[sourceName]
-		if source.Kind() != semanticmodel.KindObject {
+		if source.Kind() != connectors.KindObject {
 			continue
 		}
 		if _, ok := attachedConnections[source.Connection]; ok {
 			continue
 		}
 		connection := model.Connections[source.Connection]
-		connectionSpec, ok := semanticmodel.LookupConnection(connection.Kind)
+		connectionSpec, ok := connectors.LookupConnection(connection.Kind)
 		if !ok {
 			return fmt.Errorf("unsupported connection kind %q", connection.Kind)
 		}
@@ -89,7 +90,7 @@ type sourcePlan struct {
 	path             string
 	connection       string
 	connectionConfig semanticmodel.Connection
-	connectionSpec   semanticmodel.ConnectionSpec
+	connectionSpec   connectors.ConnectionSpec
 	object           string
 	fields           []string
 	columns          []sourceReadColumn
@@ -134,7 +135,7 @@ func ResolveSourcePlan(model *semanticmodel.Model, source semanticmodel.Source, 
 	}
 	if connection, ok := model.Connections[source.Connection]; ok {
 		plan.connectionConfig = connection
-		if spec, ok := semanticmodel.LookupConnection(connection.Kind); ok {
+		if spec, ok := connectors.LookupConnection(connection.Kind); ok {
 			plan.connectionSpec = spec
 		}
 	}
@@ -169,7 +170,7 @@ type sourceAdapter interface {
 type pathSourceAdapter struct{}
 
 func (pathSourceAdapter) CompileRead(plan sourcePlan) (string, error) {
-	format, ok := semanticmodel.LookupFormat(plan.format)
+	format, ok := connectors.LookupFormat(plan.format)
 	if !ok {
 		return "", fmt.Errorf("unsupported source format %q", plan.format)
 	}
@@ -177,13 +178,13 @@ func (pathSourceAdapter) CompileRead(plan sourcePlan) (string, error) {
 		return "", fmt.Errorf("%s source cannot set options", plan.format)
 	}
 	switch format.ScanKind {
-	case semanticmodel.ScanTableFunction:
+	case connectors.ScanTableFunction:
 		source, err := scanRelationSource(format.ScanFunction, plan.path, plan.options)
 		if err != nil {
 			return "", err
 		}
 		return projectedRelation(source, plan.fields, plan.columns, plan.rowPresenceOnly)
-	case semanticmodel.ScanReplacement:
+	case connectors.ScanReplacement:
 		return projectedRelation(replacementScanSource(plan.path), plan.fields, plan.columns, plan.rowPresenceOnly)
 	default:
 		return "", fmt.Errorf("unsupported source scan kind %q", format.ScanKind)
@@ -216,13 +217,13 @@ func (quackSourceAdapter) CompileRead(plan sourcePlan) (string, error) {
 
 func sourceAdapterForPlan(plan sourcePlan) (sourceAdapter, error) {
 	switch plan.kind {
-	case semanticmodel.KindPath:
+	case connectors.KindPath:
 		return pathSourceAdapter{}, nil
-	case semanticmodel.KindObject:
+	case connectors.KindObject:
 		switch plan.connectionSpec.ObjectRelation {
-		case semanticmodel.ObjectRelationAttach:
+		case connectors.ObjectRelationAttach:
 			return attachedObjectSourceAdapter{}, nil
-		case semanticmodel.ObjectRelationQuackQuery:
+		case connectors.ObjectRelationQuackQuery:
 			return quackSourceAdapter{}, nil
 		default:
 			return nil, fmt.Errorf("unsupported object relation mode %q", plan.connectionSpec.ObjectRelation)
@@ -232,8 +233,8 @@ func sourceAdapterForPlan(plan sourcePlan) (sourceAdapter, error) {
 	}
 }
 
-func connectionRequiresObjectAttach(connection semanticmodel.ConnectionSpec) bool {
-	return connection.ObjectRelation == semanticmodel.ObjectRelationAttach
+func connectionRequiresObjectAttach(connection connectors.ConnectionSpec) bool {
+	return connection.ObjectRelation == connectors.ObjectRelationAttach
 }
 
 func quackQueryRelation(uri, object string, fields []string, columns []sourceReadColumn, rowPresenceOnly bool, options map[string]any) (string, error) {
@@ -420,12 +421,12 @@ func sqlLiteral(value any) string {
 func RequiredExtensions(model *semanticmodel.Model) []string {
 	extensions := map[string]struct{}{}
 	addConnection := func(kind string) {
-		if connection, ok := semanticmodel.LookupConnection(kind); ok && connection.RequiredExtension != "" {
+		if connection, ok := connectors.LookupConnection(kind); ok && connection.RequiredExtension != "" {
 			extensions[connection.RequiredExtension] = struct{}{}
 		}
 	}
 	addPath := func(path string) {
-		if extension, ok := semanticmodel.StorageExtension(path); ok {
+		if extension, ok := connectors.StorageExtension(path); ok {
 			extensions[extension] = struct{}{}
 		}
 	}
@@ -441,11 +442,11 @@ func RequiredExtensions(model *semanticmodel.Model) []string {
 		source := model.Sources[name]
 		addPath(source.Path)
 		switch source.Kind() {
-		case semanticmodel.KindPath:
-			if format, ok := semanticmodel.LookupFormat(source.Format); ok && format.RequiredExtension != "" {
+		case connectors.KindPath:
+			if format, ok := connectors.LookupFormat(source.Format); ok && format.RequiredExtension != "" {
 				extensions[format.RequiredExtension] = struct{}{}
 			}
-		case semanticmodel.KindObject:
+		case connectors.KindObject:
 			connection := model.Connections[source.Connection]
 			addConnection(connection.Kind)
 		}
@@ -454,7 +455,7 @@ func RequiredExtensions(model *semanticmodel.Model) []string {
 }
 
 func duckDBConnectionType(kind string) string {
-	if connection, ok := semanticmodel.LookupConnection(kind); ok && connection.SecretType != "" {
+	if connection, ok := connectors.LookupConnection(kind); ok && connection.SecretType != "" {
 		return connection.SecretType
 	}
 	return kind
@@ -464,10 +465,10 @@ func compileSourceSecretStatements(model *semanticmodel.Model) ([]string, error)
 	statements := map[string]string{}
 	for _, sourceName := range sortedKeys(model.Sources) {
 		source := model.Sources[sourceName]
-		if source.Kind() != semanticmodel.KindPath {
+		if source.Kind() != connectors.KindPath {
 			continue
 		}
-		format, ok := semanticmodel.LookupFormat(source.Format)
+		format, ok := connectors.LookupFormat(source.Format)
 		if !ok || format.SourceSecretType == "" {
 			continue
 		}
@@ -492,11 +493,11 @@ func compileSourceSecretStatements(model *semanticmodel.Model) ([]string, error)
 }
 
 func compileConnectionSecret(name string, connection semanticmodel.Connection) (string, bool, error) {
-	connectionSpec, ok := semanticmodel.LookupConnection(connection.Kind)
+	connectionSpec, ok := connectors.LookupConnection(connection.Kind)
 	if !ok || connectionSpec.SecretType == "" {
 		return "", false, nil
 	}
-	if connectionSpec.AttachKind == semanticmodel.AttachDatabase {
+	if connectionSpec.AttachKind == connectors.AttachDatabase {
 		return "", false, nil
 	}
 	return compileTypedConnectionSecret(name, connection, connectionSpec.SecretType)
@@ -585,11 +586,11 @@ func duckDBAuthParameter(key string) string {
 }
 
 func compileObjectAttach(model *semanticmodel.Model, connectionName string, connection semanticmodel.Connection, dataDir string) (string, error) {
-	connectionSpec, ok := semanticmodel.LookupConnection(connection.Kind)
+	connectionSpec, ok := connectors.LookupConnection(connection.Kind)
 	if !ok {
 		return "", fmt.Errorf("unsupported connection kind %q", connection.Kind)
 	}
-	if connectionSpec.AttachKind == semanticmodel.AttachDuckLake {
+	if connectionSpec.AttachKind == connectors.AttachDuckLake {
 		return compileDuckLakeAttach(model, connectionName, connection, dataDir)
 	}
 	if connectionSpec.AttachKind == "" {
@@ -649,15 +650,15 @@ func resolveConnectionPath(model *semanticmodel.Model, connection semanticmodel.
 
 func resolvePathInConnectionScope(_ *semanticmodel.Model, connection semanticmodel.Connection, path string, dataDir string) (string, error) {
 	if connection.Scope != "" {
-		if semanticmodel.IsLocalPath(path) {
-			return semanticmodel.JoinScope(connection.Scope, path), nil
+		if connectors.IsLocalPath(path) {
+			return connectors.JoinScope(connection.Scope, path), nil
 		}
-		if !semanticmodel.WithinScope(connection.Scope, path) {
+		if !connectors.WithinScope(connection.Scope, path) {
 			return "", fmt.Errorf("path %q is outside connection scope %q", path, connection.Scope)
 		}
 		return path, nil
 	}
-	if filepath.IsAbs(path) || !semanticmodel.IsLocalPath(path) {
+	if filepath.IsAbs(path) || !connectors.IsLocalPath(path) {
 		return path, nil
 	}
 	return filepath.Join(dataDir, path), nil
@@ -693,7 +694,7 @@ func connectionSecretName(name string) (string, error) {
 
 func connectionStringOption(connection semanticmodel.Connection) (string, error) {
 	for key := range connection.Options {
-		connectionSpec, _ := semanticmodel.LookupConnection(connection.Kind)
+		connectionSpec, _ := connectors.LookupConnection(connection.Kind)
 		if !connectionAllowsOption(connectionSpec, key) {
 			return "", fmt.Errorf("unsupported database connection option %q", key)
 		}
@@ -721,7 +722,7 @@ func connectionStringOption(connection semanticmodel.Connection) (string, error)
 	return "", nil
 }
 
-func connectionAllowsOption(connection semanticmodel.ConnectionSpec, option string) bool {
+func connectionAllowsOption(connection connectors.ConnectionSpec, option string) bool {
 	for _, allowed := range connection.AllowedOptions {
 		if option == allowed {
 			return true

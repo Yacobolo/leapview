@@ -167,6 +167,11 @@ type PrincipalInput struct {
 	DisplayName string
 }
 
+type PrincipalFilter struct {
+	Email string
+	Query string
+}
+
 type ExternalIdentityInput struct {
 	Provider    string
 	TenantID    string
@@ -271,6 +276,7 @@ type AuditEvent struct {
 
 type Repository interface {
 	PrincipalByID(ctx context.Context, id string) (Principal, error)
+	ListPrincipals(ctx context.Context, filter PrincipalFilter) ([]Principal, error)
 	UpsertPrincipal(ctx context.Context, input PrincipalInput) (Principal, error)
 	SetPrincipalRole(ctx context.Context, input PrincipalRoleInput) (Principal, error)
 	SetPlatformRole(ctx context.Context, input PlatformRoleInput) (Principal, error)
@@ -285,11 +291,14 @@ type Repository interface {
 	BootstrapAdmin(ctx context.Context, workspaceID, email string) error
 	ResolveExternalPrincipal(ctx context.Context, input ExternalIdentityInput) (Principal, error)
 	UpsertGroup(ctx context.Context, input GroupInput) (Group, error)
+	ListAllGroups(ctx context.Context) ([]Group, error)
 	ListGroups(ctx context.Context, workspaceID string) ([]Group, error)
 	DeleteGroup(ctx context.Context, workspaceID, groupID string) error
 	AddGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error
 	RemoveGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error
+	ListGroupMembersByGroup(ctx context.Context, groupID string) ([]GroupMember, error)
 	ListGroupMembers(ctx context.Context, workspaceID, groupID string) ([]GroupMember, error)
+	ListAllRoleBindings(ctx context.Context) ([]RoleBinding, error)
 	CreateSession(ctx context.Context, principalID string, ttl time.Duration) (string, error)
 	PrincipalForToken(ctx context.Context, token string) (Principal, error)
 	DeleteSession(ctx context.Context, token string) error

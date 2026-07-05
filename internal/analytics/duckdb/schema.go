@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/analytics/connectors"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
 
@@ -107,7 +108,7 @@ func discoverSourceSchema(ctx context.Context, db queryContext, model *semanticm
 }
 
 func discoverSourceSchemaWithDataDir(ctx context.Context, db queryContext, model *semanticmodel.Model, source semanticmodel.Source, dataDir string) ([]semanticmodel.ColumnSchema, error) {
-	if dataDir == "" && source.Kind() == semanticmodel.KindPath {
+	if dataDir == "" && source.Kind() == connectors.KindPath {
 		return nil, nil
 	}
 	plan, err := ResolveSourcePlan(model, source, dataDir)

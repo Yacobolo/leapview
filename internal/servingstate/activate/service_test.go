@@ -1,15 +1,11 @@
 package activate
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
-	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -59,21 +55,15 @@ func TestServiceRecordsPreparedDuckLakeSnapshotBeforeActivation(t *testing.T) {
 func TestServiceReconcilesAccessPolicyFromValidatedArtifact(t *testing.T) {
 	ctx := context.Background()
 	servingStateID := servingstate.ID("dep_access")
-	projectPath := filepath.Join("..", "..", "..", "dashboards", servingstatefs.ProjectFile)
-	var bundle bytes.Buffer
-	if _, _, err := servingstatefs.PackProject(projectPath, "sales", servingStateID, &bundle); err != nil {
-		t.Fatalf("PackProject() error = %v", err)
-	}
-	artifactPath := filepath.Join(t.TempDir(), "artifact.tar.gz")
-	if err := os.WriteFile(artifactPath, bundle.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	repo := &fakeRepo{
 		deployment: servingstate.State{ID: servingStateID, WorkspaceID: "sales", Status: servingstate.StatusValidated},
-		artifact:   servingstate.Artifact{ServingStateID: servingStateID, WorkspaceID: "sales", Path: artifactPath},
 	}
 	reconciler := &fakeAccessReconciler{}
-	service := NewServiceWithAccess(repo, &fakeRuntime{}, repo, reconciler)
+	loader := fakeAccessPolicyLoader{policy: workspace.AccessPolicy{
+		Groups:       map[string]workspace.WorkspaceGroup{"analysts": {Name: "analysts"}},
+		RoleBindings: map[string]workspace.WorkspaceRoleBinding{"analysts-viewer": {Name: "analysts-viewer"}},
+	}}
+	service := NewServiceWithAccess(repo, &fakeRuntime{}, loader, reconciler)
 
 	if _, err := service.Activate(ctx, servingStateID); err != nil {
 		t.Fatalf("activate: %v", err)
@@ -206,6 +196,15 @@ func (p fakePrepared) DuckLakeSnapshotID() int64 { return p.snapshotID }
 type fakeAccessReconciler struct {
 	workspaceID string
 	policy      workspace.AccessPolicy
+}
+
+type fakeAccessPolicyLoader struct {
+	policy workspace.AccessPolicy
+	err    error
+}
+
+func (l fakeAccessPolicyLoader) LoadAccessPolicy(context.Context, servingstate.State) (workspace.AccessPolicy, error) {
+	return l.policy, l.err
 }
 
 func (r *fakeAccessReconciler) ReconcileWorkspacePolicy(_ context.Context, workspaceID string, policy workspace.AccessPolicy) error {

@@ -1,76 +1,52 @@
 # LibreDash Architecture Spec
 
-This document describes the target architecture for LibreDash as it grows from a compact monolith into a modular Go application. The goal is not to add ceremony. The goal is to keep business capabilities cohesive, keep adapters honest, and avoid global `service.go` files becoming the new monolith.
+This document defines the target architecture for LibreDash: a feature-oriented modular monolith with ports and adapters. The goal is cohesive product capabilities, explicit infrastructure boundaries, and a codebase that grows without turning `internal/app`, `platform`, or global service objects into new monoliths.
 
-## Architecture Style
+## Core Rules
 
-LibreDash should evolve toward a feature-oriented modular monolith with hexagonal boundaries at the edges.
+- Package by product capability first.
+- Keep domain and use-case code free of transport, persistence, filesystem, DuckDB, Datastar, gomponents, and model-provider details.
+- Define small ports at the consumer boundary.
+- Let adapters import external systems and generated code; never let domain or use-case packages import adapters.
+- Split packages by cohesion, workflow, dependency pressure, or test friction, not by generic layers.
+- Prefer explicit composition over hidden service locators or broad runtime objects.
 
-In practical Go terms:
-
-- Package by business capability first.
-- Keep each capability cohesive and understandable.
-- Use ports and adapters where the capability talks to the outside world.
-- Define small interfaces at the consumer boundary.
-- Keep domain and application code free of transport and persistence details.
-- Split into subpackages only when cohesion starts to break.
-
-This is sometimes called:
-
-- Modular monolith
-- Feature-based architecture
-- Vertical slice architecture
-- Hexagonal architecture / ports and adapters
-- Clean architecture, applied locally rather than globally
-
-For LibreDash, the preferred label is:
-
-> Feature-oriented modular monolith with ports and adapters.
-
-## Target Dependency Direction
-
-Dependencies should point inward:
+Dependencies point inward:
 
 ```text
-HTTP / Datastar / SQLite / DuckDB / filesystem / OpenAI
-        -> capability application code
+HTTP / CLI / Datastar / SQLite / DuckDB / filesystem / OpenAI
+        -> capability adapters
+        -> capability use cases
         -> capability domain types and ports
 ```
 
-Business code should not import transport or persistence implementation packages.
-
-Package import rules:
-
-- Capability root packages contain shared domain language.
-- Use-case packages may import the capability root package.
-- Adapter packages may import the capability root package and use-case packages.
-- Capability root packages and use-case packages must not import adapter packages.
-- Composition code is the only place that wires adapters into use cases.
-
-Allowed inward dependencies:
+Allowed:
 
 ```text
-internal/servingstate/http      -> internal/servingstate
-internal/servingstate/http      -> internal/servingstate/activate
-internal/servingstate/sqlite    -> internal/servingstate
-internal/servingstate/filesystem -> internal/servingstate
-
-internal/dashboard/datastar   -> internal/dashboard
-internal/analytics/duckdb     -> internal/analytics
+servingstate/http       -> servingstate/activate
+servingstate/http       -> servingstate/filesystem
+servingstate/sqlite     -> servingstate
+dashboard/http        -> dashboard/stream
+dashboard/datastar    -> dashboard
+analytics/duckdb      -> analytics/query
+analytics/connectors  -> analytics/model
 ```
 
-Avoid outward dependencies:
+Forbidden outside adapters and composition:
 
 ```text
-internal/servingstate -> chi
-internal/servingstate -> sqlc generated rows
-internal/servingstate -> datastar
-internal/servingstate -> http.Request
+servingstate/activate -> servingstate/filesystem
+servingstate          -> chi
+servingstate          -> sqlc rows
+dashboard/report    -> datastar
+analytics/query     -> duckdb connection details
+workspace           -> http.Request
+agent               -> OpenAI request payloads
 ```
 
-## Top-Level Capabilities
+## Capability Map
 
-The long-term internal package map should be organized around product capabilities:
+Long-term package ownership:
 
 ```text
 internal/
@@ -80,70 +56,105 @@ internal/
   analytics/
   dashboard/
   agent/
+  runtimehost/
+  platform/
 ```
 
-Suggested ownership:
+- `workspace`: workspace identity, catalog surface, asset discovery, asset graph views, workspace-level read models.
+- `servingstate`: bundle lifecycle, validation, artifact identity, activation, rollback, serving state status, immutable asset snapshots.
+- `access`: principals, groups, roles, permissions, authorization decisions, tokens, sessions, audit access.
+- `analytics`: source and connection contracts, semantic model tables, semantic models, query planning, query execution, materialization, connectors, DuckDB adapters.
+- `dashboard`: report pages, filters, visuals, BI tables, interactions, page state, typed query intents, signal contracts.
+- `agent`: conversations, runs, transcripts, tools, policy-filtered operation exposure, model interaction ports.
+- `runtimehost`: active runtime lifecycle, prepared runtime swap, runtime closure, active runtime ports.
+- `platform`: low-level infrastructure: SQLite setup, migrations, shared DB plumbing, process-level storage paths.
 
-- `workspace`: workspace identity, catalog surface, asset discovery, workspace-level views.
-- `servingstate`: publish bundle lifecycle, upload, validation, artifact storage, activation, and internal serving-state transitions.
-- `access`: principals, roles, permissions, authorization decisions.
-- `analytics`: semantic model loading, source/model resolution, semantic relationship validation, query planning, DuckDB execution, materialization.
-- `dashboard`: report pages, filters, visuals, BI tables, interaction commands, page state, and typed query intents for analytics.
-- `agent`: conversations, runs, tools, transcripts, model interaction.
+`admin` is not a domain capability. It is an interface surface over capabilities and infrastructure. `admin/http` may aggregate read models from `access`, `workspace`, `servingstate`, `agent`, `analytics`, `runtimehost`, and `platform`, but it must not own their business workflows.
 
-Existing packages such as `semantic`, `query`, `dashboard`, and `data` already contain useful concepts. Refactors should preserve good domain language while moving responsibilities toward the capability map above.
+Historical or legacy vocabulary must not define long-term ownership when it conflicts with product capabilities.
 
-Product contract:
+## Product Contract
+
+The authored product contract is:
 
 ```text
 sources -> models -> semantic model -> dashboards
 ```
 
-LibreDash is assets-as-code. Authored YAML in Git is the source of truth. The compiler turns authored contracts into a stable asset graph. Publishes create immutable asset-configuration snapshots. Runtime stores never become authoring sources.
+LibreDash is assets-as-code. Authored YAML in Git is the source of truth. The compiler turns authored contracts into a normalized workspace and stable asset graph. Serving states publish immutable graph snapshots. Runtime stores never become authoring sources.
 
-Metric views, datasets, cache tables, and generated serving tables are not product/schema concepts in the v1 contract. If they appear in code, they should be internal runtime implementation details, legacy rejection paths, or tests proving old vocabulary does not leak into user-facing surfaces.
+Not product/schema concepts in the v1 contract:
+
+- metric views
+- cache tables
+- generated serving tables
+
+If those appear in code, they are internal runtime implementation details, legacy rejection paths, or tests proving old vocabulary does not leak into user-facing surfaces.
+
+`semantic dataset` is allowed only as a headless API and agent-facing alias for a semantic model table. Go domain code should prefer `model table` or `table` unless it is translating the public BI API contract. Do not introduce a separate dataset domain model parallel to `analytics/model.Table`.
 
 YAML contract ownership:
 
 - `workspace` owns catalog discovery and workspace asset surfacing.
-- `analytics` owns source contracts, model table contracts, semantic model contracts, fields, relationships, measures, query-facing validation, and materialization definitions.
-- `dashboard` owns dashboard/page/filter/visual/table contracts and runtime signal shapes.
-- `serving state` owns bundle-level validation, artifact identity, activation, and artifact storage. Rollback is not a v1 data-version product surface.
+- `analytics/model` owns source contracts, connection contracts, model table contracts, semantic model contracts, fields, relationships, measures, and materialization definitions.
+- `dashboard/report` owns dashboard, page, filter, visual, and table contracts.
+- `servingstate` owns bundle-level validation, artifact identity, activation, rollback, and artifact storage.
 
-Storage ownership:
+## Target Package Shape
 
-- SQLite is the control-plane store for workspaces, serving states, immutable asset graph snapshots, roles, sessions, agent conversations, and audit data.
-- SQLite asset tables are indexed read models of compiled code assets. They are not an authoring database for dashboards, models, sources, fields, measures, or visuals.
-- DuckDB is the analytical data plane for imported/cache data, semantic query execution, dashboard data, and materializations.
+Use flat capability packages until cohesion breaks. Then split by workflow or adapter.
 
-Capability sub-boundaries should make the semantic-model-first core explicit:
+Target examples:
 
 ```text
 analytics/
-  model/        semantic model contracts, fields, relationships, measures
-  query/        semantic query requests, planning, path safety, SQL plans
-  materialize/  refresh and cache/materialization behavior
-  duckdb/       DuckDB execution adapter
+  model/          semantic contracts, fields, relationships, measures
+  query/          semantic query requests, planning, path safety, SQL plans
+  materialize/    refresh and materialization behavior
+  connectors/     connector registry, source capabilities, option schemas
+  duckdb/         DuckDB execution adapter
 
 dashboard/
-  report/       dashboard/page/filter/visual/table contracts
-  stream/       page snapshots and SSE/update flow
-  command/      filter, selection, table-window, and refresh command handling
-  datastar/     signal decoding, patch keys, SSE serialization
-  http/         route handlers
+  report/         dashboard/page/filter/visual/table contracts
+  stream/         page snapshots and update flow
+  command/        filter, selection, table-window, refresh command handling
+  datastar/       signal decoding, patch keys, SSE serialization
+  http/           route handlers
+  ui/             HTML/gomponents rendering adapter
+
+servingstate/
+  state.go   shared domain language
+  activate/       activation use case
+  validate/       validation use case
+  sqlite/         SQLite persistence adapter
+  filesystem/     artifact storage and bundle adapter
+  http/           route handlers
 
 workspace/
-  catalog/      catalog discovery and workspace identity
-  compiler/     cross-contract loading, validation, normalization, and asset graph extraction
+  catalog/        catalog discovery and workspace identity
+  compiler/       cross-contract loading, validation, normalization, graph extraction
+  refresh/        workspace asset refresh use cases
+  sqlite/         SQLite read models and repositories
+  http/           REST/UI handlers
+  datastar/       workspace signal patches
 ```
 
-`analytics` is the only owner of semantic query planning, semantic model validation, materialization, and DuckDB execution. `dashboard` may describe what data a page needs, but it should call analytics through typed semantic query ports instead of planning or executing semantic queries itself.
+Avoid global horizontal packages:
 
-## Asset-Centric Compiler
+```text
+handlers
+services
+repositories
+models
+utils
+helpers
+```
 
-LibreDash is dashboards-as-code and assets-as-code, so authored YAML contracts need one compilation boundary.
+These names are acceptable only inside a capability and only when they stay narrow.
 
-The long-term target is:
+## Asset Compiler
+
+Authored YAML contracts have one compilation boundary:
 
 ```text
 workspace/catalog + analytics/model + dashboard/report
@@ -157,85 +168,74 @@ The compiler owns cross-contract validation and normalization:
 - Catalog entries resolve to semantic models and dashboards.
 - Dashboard `semantic_model` references resolve to loaded semantic models.
 - Dashboard fields, measures, filters, tables, and visuals resolve against the semantic model.
-- Legacy product vocabulary such as metric views is rejected at the boundary.
-- The compiler produces a runtime workspace that dashboard, analytics, serving state, workspace UI, APIs, and agent tools can consume without re-parsing YAML.
-- The compiler produces the asset graph. Serving state, UI, API, agents, and storage adapters must not rediscover lineage by walking semantic or dashboard internals.
+- Legacy vocabulary such as metric views is rejected at the boundary.
+- Runtime consumers receive a normalized workspace without re-parsing YAML.
+- Serving state, UI, API, agents, and storage adapters consume the compiler-produced asset graph instead of rediscovering lineage by walking semantic or dashboard internals.
 
-Capability packages own their local contracts and validation. The compiler owns validation that spans multiple contracts. Serving state validation should call the compiler instead of importing semantic/dashboard internals directly.
+Capability packages own local contracts and validation. The compiler owns validation spanning multiple contracts.
 
 Asset graph rules:
 
-- Every authored object that users can discover, govern, diff, or trace is an asset.
-- Each asset has a stable logical identity independent of serving state, such as `semantic_model:olist` or `visual:executive-sales.revenue`.
-- Each publish stores immutable asset snapshots tied to the serving state and source bundle digest.
-- Asset snapshot IDs may be serving-state-scoped. Logical asset IDs must be stable across publishes.
-- Asset payloads are explicit, versioned projections such as `semantic_model.v1`, `model_table.v1`, `measure.v1`, `dashboard.v1`, and `visual.v1`.
-- Asset payloads must not be raw `json.Marshal` output of arbitrary Go structs. Persisted payload shape changes through payload versions, not incidental Go field changes.
-- The full authored YAML remains in the serving-state artifact. The asset graph stores the metadata needed for catalog views, search, lineage, diffs, policy, API responses, and agent context.
-- Read paths may load asset snapshots. They must not repair, migrate, or reinterpret stale graph shapes during ordinary HTTP requests.
+- Every authored object users can discover, govern, diff, or trace is an asset.
+- Logical asset IDs are stable across serving states, such as `semantic_model:olist` or `visual:executive-sales.revenue`.
+- Serving state-scoped snapshot IDs may change per serving state.
+- Asset payloads are explicit versioned projections, such as `semantic_model.v1`, `model_table.v1`, `measure.v1`, `dashboard.v1`, and `visual.v1`.
+- Persisted payloads must not be raw `json.Marshal` output of arbitrary Go structs.
+- The full authored YAML remains in the serving state artifact.
+- Read paths may load asset snapshots but must not repair, migrate, or reinterpret stale graph shapes during ordinary HTTP requests.
 
-## Source and Connector Boundaries
+## Source And Connector Boundaries
 
-Source and connection support crosses product contracts, security, and runtime execution, so the boundary must stay explicit:
+Source and connection support crosses contracts, security, and execution.
 
 - `analytics/model` owns authored source and connection contracts.
-- A connector registry owns supported connection/source kinds, formats, option schemas, and capability metadata.
-- Credential and environment resolution belongs to infrastructure adapters, not authored domain structs.
+- `analytics/connectors` owns supported connection/source kinds, formats, option schemas, and capability metadata.
+- Credential and environment resolution belongs to infrastructure adapters.
 - Path-scope and object-scope validation belongs at the compiler/runtime boundary before execution.
 - DuckDB scan, secret, attach, and extension statements belong in `analytics/duckdb`.
 
-Authored YAML should describe what source to read and under which governed connection. It should not expose DuckDB secret plumbing, internal `raw.*` relations, or runtime scan implementation details.
+Authored YAML describes what source to read and which governed connection to use. It must not expose DuckDB secret plumbing, internal `raw.*` relations, or scan implementation details.
 
-## Package Shape
+## Storage Ownership
 
-Start with a flat capability package:
+- SQLite is the control-plane store for workspaces, serving states, immutable asset graph snapshots, roles, sessions, agent conversations, and audit data.
+- SQLite asset tables are indexed read models of compiled code assets, not authoring storage.
+- DuckDB is the analytical data plane for imported/cache data, semantic query execution, dashboard data, and materializations.
+- Generated sqlc code is private to SQLite adapter packages or narrow platform infrastructure.
+- `platform.Store` must not expose raw `Queries()` or direct SQL access to handlers, use cases, runtime managers, or domain packages.
+- `platform` may own migrations and DB setup. It must not accumulate workspace, serving state, access, session, asset, or agent business workflows.
 
-```text
-internal/servingstate/
-  serving state.go
-  activate.go
-  validate.go
-  repository.go
-  errors.go
-```
-
-Use clear files before creating subpackages. A file should usually represent one concept or use case, not a generic layer.
-
-When the package grows, split by workflow or adapter. Do this because dependencies, tests, or workflows diverge, not because every use case needs a subpackage on day one:
+Capability repositories wrap control-plane persistence:
 
 ```text
-internal/servingstate/
-  serving state.go
-  repository.go
-  errors.go
-  activate/
-    service.go
-    planner.go
-  validate/
-    service.go
-    manifest.go
-  sqlite/
-    repository.go
-  filesystem/
-    artifact_store.go
-  http/
-    handlers.go
+servingstate.Repository
+servingstate.ArtifactRepository
+workspace.AssetRepository
+access.RoleBindingRepository
+agent.ConversationRepository
 ```
 
-This keeps the default Go experience simple while still giving large areas room to breathe. A small capability can keep `servingstate.Activate` or `servingstate.Activator` in the root package until there is real pressure to move to `servingstate/activate`.
+SQLite implementations live under adapter packages:
 
-## Domain Code
+```text
+servingstate/sqlite.Repository
+workspace/sqlite.AssetRepository
+access/sqlite.RoleBindingRepository
+agent/sqlite.ConversationRepository
+```
 
-Domain code defines the language of a capability:
+## Domain And Use Cases
 
-- Business types
-- Value objects
-- Statuses and state transitions
-- Validation rules
-- Business errors
-- Business-shaped ports when they are part of the capability's language
+Domain code defines capability language:
 
-Domain code should not contain:
+- business types
+- value objects
+- statuses and state transitions
+- validation rules
+- business errors
+- shared business-shaped ports
+
+Domain and use-case packages must not contain:
 
 - `http.Request` or `http.ResponseWriter`
 - `chi`, Datastar, or gomponents details
@@ -243,37 +243,17 @@ Domain code should not contain:
 - `sql.NullString`
 - DuckDB connection details
 - OpenAI request/response payloads
-- Filesystem layout assumptions unless the capability is explicitly about filesystem storage
+- filesystem layout assumptions, unless the capability is explicitly a filesystem adapter
 
-Example:
+Use-case services orchestrate one workflow. They may load domain objects, call domain methods, coordinate repositories, call ports, and return capability-level results. They must not decode HTTP, render HTML, emit Datastar patches, return sqlc structs, or construct infrastructure clients.
 
-```go
-type State struct {
-    ID          ID
-    WorkspaceID WorkspaceID
-    Status      Status
-    Digest      Digest
-}
+When a workflow needs atomic writes across repositories, define a capability-level unit-of-work port. Do not expose `*sql.Tx` or sqlc transaction types to use-case code.
 
-func (s State) CanActivate() bool {
-    return s.Status == Validated || s.Status == Inactive || s.Status == Active
-}
-```
-
-## Ports and Interfaces
+## Ports And Interfaces
 
 Prefer small interfaces defined where they are consumed.
 
-Good:
-
-```go
-type Repository interface {
-    ByID(ctx context.Context, id ID) (State, error)
-    Save(ctx context.Context, state State) error
-}
-```
-
-Good when the use case needs a very specific view:
+Use-case-specific dependency:
 
 ```go
 package activate
@@ -284,29 +264,7 @@ type Repository interface {
 }
 ```
 
-Avoid generic interfaces that expose persistence mechanics:
-
-```go
-type Store interface {
-    Queries() *db.Queries
-}
-```
-
-Interface ownership rule:
-
-- If the interface describes shared business language, keep it with the capability root package.
-- If the interface exists only for one use case, keep it in the consuming use-case package.
-- If the interface describes an adapter implementation detail, avoid exporting it from domain code.
-- Adapters implement ports; they do not own the business-facing port definitions.
-
-For example, activation-specific dependencies should live beside the activation workflow:
-
-```text
-servingstate/activate.Repository
-servingstate/activate.RuntimeActivator
-```
-
-Shared concepts stay in the capability root:
+Shared business concept:
 
 ```text
 servingstate.State
@@ -315,355 +273,208 @@ servingstate.Artifact
 servingstate.Repository
 ```
 
-## Application Services
-
-Application services orchestrate use cases. They are not dumping grounds.
-
-Prefer focused use-case services:
-
-```text
-servingstate/activate.Service
-servingstate/validate.Service
-access/grant.Service
-dashboard/stream.Service
-analytics/materialize.Service
-```
-
-Avoid one object that accumulates every workflow:
-
-```text
-servingstate.Service
-  Create
-  Upload
-  Validate
-  Activate
-  Rollback
-  List
-  Delete
-  Refresh
-```
-
-A service should generally have one reason to change. If a service is changing for multiple workflows, split it.
-
-Application services may:
-
-- Load domain objects from repositories.
-- Call domain methods.
-- Coordinate transactions through repositories.
-- Call adapter ports such as artifact stores, runtime activators, model clients, or query engines.
-- Return capability-level results or DTOs designed for callers.
-
-Application services should not:
-
-- Decode HTTP requests.
-- Write HTTP responses.
-- Render gomponents pages.
-- Emit Datastar patches directly unless the service belongs to a Datastar adapter package.
-- Return sqlc generated structs.
-
-When a use case spans multiple repositories or must make several writes atomically, define a capability-level transaction runner or unit-of-work port. Do not expose sqlc transaction types or `*sql.Tx` to use-case code.
+Avoid generic infrastructure interfaces in domain or use-case packages:
 
 ```go
-type UnitOfWork interface {
-    Do(ctx context.Context, fn func(ctx context.Context, repos Repositories) error) error
+type Store interface {
+    Queries() *db.Queries
 }
 ```
 
-## Adapters
+Interface ownership:
 
-Adapters translate between external systems and capability code.
+- Shared business language lives in the capability root.
+- Single-use dependencies live beside the consuming use case.
+- Adapter implementation details stay inside adapters.
+- Adapters implement ports; they do not own business-facing port definitions.
 
-Examples:
-
-```text
-servingstate/http        HTTP request/response translation
-servingstate/sqlite      sqlc/SQLite persistence adapter
-servingstate/filesystem  artifact storage and bundle files
-analytics/duckdb       DuckDB execution
-dashboard/datastar     signal patch translation
-agent/openai           model API adapter
-```
-
-Adapters may import external libraries and generated code. They should hide those details behind capability ports.
-
-Gomponents renderers are also edge adapters. Prefer colocating renderers with the capability HTTP/UI adapter when they are capability-specific. A shared `internal/ui` package may exist, but it must stay render-only:
-
-- No workflow orchestration.
-- No storage access.
-- No semantic query planning.
-- No cross-contract validation.
-- No mutation of domain state.
+Broad interfaces must split when consumers diverge. Dashboard streaming, semantic query APIs, workspace asset views, and refresh orchestration should not share one cross-cutting runtime interface unless they truly need the same capability set.
 
 ## Product Interfaces
 
-LibreDash has four major product interfaces:
+LibreDash has peer product interfaces:
 
 ```text
 REST API / APIGen
 CLI
 agent tools
 UI / HTML / Datastar
-        -> capability use cases
-        -> capability domain types and ports
 ```
 
-These interfaces are peers. None of them should own product behavior.
+None of these owns product behavior. They translate transport contracts into capability use cases.
 
-Long-term rules:
+Rules:
 
 - TypeSpec/APIGen owns the canonical headless REST contract and generator metadata.
-- Friendly CLI commands should use generated APIGen operation metadata where possible, with small UX wrappers only when they improve ergonomics.
-- Agent tools should be derived from APIGen operation metadata, then filtered by LibreDash policy such as risk, permission, workspace scope, and credential constraints.
-- UI routes may render HTML, gomponents, and Datastar patches, but they should call the same capability use cases as API, CLI, and agent interfaces.
-- Datastar signal shapes are UI-private adapter contracts. They should not become headless API DTOs.
-- API DTOs live in `internal/api` only as framework-neutral wire contracts. They should not contain HTTP routing, Datastar, repositories, gomponents, or use-case orchestration.
+- API DTOs live in `internal/api` as framework-neutral wire contracts only.
+- CLI commands should use generated APIGen operation metadata where possible, with small UX wrappers only when needed.
+- Agent tools should derive from APIGen operation metadata, then be filtered by risk, permission, workspace scope, credential constraints, and agent policy.
+- UI routes may render HTML and Datastar patches, but must call the same capability use cases as API, CLI, and agent interfaces for the same behavior.
+- Datastar signal shapes are UI-private adapter contracts. They must not become headless API DTOs.
 
-The desired shape for a mature capability is:
+Avoid a single cross-capability `internal/api/http` package.
 
-```text
-internal/workspace/
-  search.go          capability use case / domain language
-  http/              REST JSON adapter
-  cli/               optional friendly CLI adapter
-  agent/             optional tool adapter or policy mapping
-  ui/                optional HTML adapter
+## UI And Datastar
 
-internal/dashboard/
-  visual_data.go
-  http/
-  datastar/
-  agent/
-  ui/
+HTTP handlers are adapters. They may parse route parameters, query strings, forms, JSON bodies, and Datastar signals; call one use case; translate results; and map errors to status codes.
 
-internal/analytics/query/
-  service.go
-  http/
-  cli/
-  agent/
-```
+Handlers must not own business workflows such as serving state activation, workspace access mutation, artifact validation, or dashboard query orchestration.
 
-Do not create every adapter subpackage upfront. Start flat inside a capability and split when workflows, dependencies, or tests diverge.
+Datastar-specific logic belongs in adapter packages near the owning capability:
 
-Avoid a single cross-capability `internal/api/http` package. It would become the new monolith. Prefer capability-owned adapters:
+- signal decoding
+- patch keys
+- SSE serialization
+- compatibility with client-side signal shape
 
-```text
-workspace/http.Handler
-dashboard/http.Handler
-analytics/query/http.Handler
-servingstate/http.Handler
-access/http.Handler
-agent/http.Handler
-```
+Domain and analytics packages speak in typed commands, snapshots, events, query intents, and result structs.
 
-The composition root wires these adapters together. It should not absorb their product behavior.
+Gomponents renderers are edge adapters. A shared `internal/ui` package may exist, but it must stay render-only:
 
-## Control-Plane Infrastructure
+- no workflow orchestration
+- no storage access
+- no semantic query planning
+- no cross-contract validation
+- no domain mutation
 
-SQLite/sqlc is control-plane infrastructure, not a product capability.
+REST JSON handlers and UI/Datastar handlers may live beside the same capability, but their transport contracts must stay separate.
 
-Long-term rules:
+## Dashboard Runtime
 
-- Generated sqlc code should be private to SQLite adapter packages or a narrow `platform/sqlite` infrastructure package.
-- `platform.Store` should not expose raw `Queries()` to handlers, services, runtime managers, or domain code.
-- `access` owns roles, permissions, and authorization decisions.
-- `servingstate`, `workspace`, `access`, and `agent` each get capability-shaped repositories over the SQLite control plane.
-- Composition code may wire SQLite implementations into use cases, but business workflows should not depend on sqlc row types or transaction types.
-
-`platform` can remain as low-level infrastructure, migrations, or shared SQLite setup. It should not be the place where workspace, serving state, access, sessions, assets, and agent business workflows accumulate.
-
-## Active Runtime Host
-
-The active workspace runtime lifecycle needs a small explicit owner. It should not be absorbed wholesale by serving state, analytics, dashboard, or composition code.
-
-Long-term responsibilities:
-
-- Track the active servingstate/runtime for a workspace.
-- Prepare a candidate runtime before activation is committed.
-- Atomically swap the active runtime after serving state activation succeeds.
-- Close replaced runtimes safely.
-- Expose typed runtime ports to dashboard and agent use cases.
-
-Boundary rules:
-
-- Serving state requests activation through a runtime host port.
-- Analytics prepares executable engines and query/materialization services.
-- Dashboard queries through typed analytics ports exposed by the active runtime.
-- Composition wires the runtime host, serving state repositories, artifact store, and analytics runtime factory.
-- The runtime host must not own serving state status transitions, semantic query planning, dashboard patch construction, or sqlc persistence.
-
-## Composition Root
-
-`internal/app` or a future `internal/server` package should become the composition root.
-
-The composition root may:
-
-- Load configuration.
-- Open SQLite and DuckDB-backed adapters.
-- Construct repositories, services, handlers, and background workers.
-- Register routes.
-- Manage lifecycle, logging, shutdown, and health checks.
-- Wire adapters into use cases.
-- Mount generated APIGen routing and delegate operations to capability-owned adapters.
-
-The composition root should not:
-
-- Own business workflows.
-- Contain DTO mapping that belongs to a capability.
-- Contain domain validation.
-- Reach around use cases by calling generated sqlc queries directly.
-- Become the place where unrelated product behavior accumulates.
-- Become the long-term owner of every REST, CLI, agent, and UI adapter.
-
-For a small surface, `internal/app` may temporarily contain thin handlers. As an interface grows, move handlers and translation logic toward the owning capability adapter while keeping application bootstrapping and route mounting in `internal/app`.
-
-## HTTP and Datastar
-
-HTTP handlers should be thin:
-
-- Parse route parameters, query strings, forms, JSON, and Datastar signals.
-- Call one application use case.
-- Translate the result into HTML, JSON, redirects, or signal patches.
-- Map errors to status codes.
-
-Handlers should not own business workflows such as serving state activation, workspace access mutation, artifact validation, or dashboard query orchestration.
-
-Datastar-specific logic should live in adapter code near dashboard/workspace capabilities rather than leaking across domain or analytics code.
-
-REST JSON handlers and UI/Datastar handlers may live beside the same capability, but they should keep their transport contracts separate:
-
-- REST handlers translate API DTOs and status codes.
-- UI handlers translate HTML, forms, redirects, and Datastar signals.
-- Both should call the same capability use cases when they represent the same product behavior.
-
-Dashboard domain code should own:
+Dashboard owns report-page behavior:
 
 - `PageState`
 - `PageSnapshot`
 - `FilterState`
 - `InteractionSelection`
-- Table window and chart selection command intents
-- Typed analytics query intents
-
-`dashboard/datastar` should own:
-
-- JSON signal decoding.
-- Datastar patch keys.
-- SSE serialization.
-- Compatibility with client-side signal shape.
+- table window command intents
+- chart selection command intents
+- typed analytics query intents
 
 Dashboard streaming services must:
 
-- Accept `context.Context` and stop promptly on cancellation.
-- Treat repeated requests and stale client updates as safe to ignore or replace.
-- Produce immutable page snapshots or typed patch intents.
-- Keep cache invalidation and refresh behavior explicit.
-- Treat Datastar as serialization and transport, not as business state.
-- Keep patch shape ownership in dashboard/datastar adapter code.
+- accept `context.Context` and stop promptly on cancellation
+- treat repeated requests and stale client updates as safe to ignore or replace
+- produce immutable page snapshots or typed patch intents
+- keep cache invalidation and refresh behavior explicit
+- treat Datastar as serialization and transport, not business state
 
-## Visual Renderer Plugins
+Dashboard may describe what data a page needs. Analytics owns semantic query planning and execution. Dashboard queries analytics through typed semantic query ports.
 
-Dashboard/Go code owns renderer-neutral visual intent:
+Visual renderer plugins adapt renderer-neutral visual intent to concrete libraries such as ECharts. Renderer plugins must not own semantic query planning, dashboard filter behavior, or backend data contracts.
 
-- Visual kind and shape.
-- Encodings and semantic fields.
-- Safe core visual options.
-- Validated renderer-specific option bags.
-- Data payloads shaped by analytics results.
+## Analytics Runtime
 
-Web renderer plugins adapt those shapes to concrete libraries such as ECharts. Renderer plugins should not own semantic query planning, dashboard filter behavior, or backend data contracts. Future renderers should plug into the same renderer-neutral visual shape contracts rather than creating dashboard-specific query paths.
+`analytics` owns:
 
-## Repositories
+- semantic model validation
+- source and connection resolution
+- relationship validation
+- semantic query planning
+- path safety
+- SQL plan generation
+- DuckDB execution adapters
+- materialization and refresh behavior
 
-Repositories should be split by capability and by aggregate/use case when needed.
+DuckDB runtime construction belongs in analytics adapters. Workspace, dashboard, serving state, API, CLI, and agent code use typed analytics ports rather than constructing DuckDB runtimes directly.
 
-Good:
+## Serving State And Runtime Host
 
-```text
-servingstate.Repository
-servingstate.ArtifactRepository
-access.RoleBindingRepository
-agent.ConversationRepository
-workspace.AssetRepository
-```
+Serving state owns published workspace artifacts:
 
-SQLite implementations can live under adapter subpackages:
+- bundle envelope and manifest
+- artifact identity and digest
+- serving state status transitions
+- upload, validation, activation, rollback, and failure marking
+- persistence of compiler-produced asset snapshots
 
-```text
-servingstate/sqlite.Repository
-access/sqlite.RoleBindingRepository
-agent/sqlite.ConversationRepository
-```
+Serving state depends on ports for:
 
-Repository implementations may use sqlc. Domain and application code should not.
+- workspace compilation
+- artifact storage
+- runtime preparation
+- artifact persistence
+- access policy reconciliation
 
-## Serving state Boundaries
+Serving state must not walk semantic/dashboard internals directly, construct DuckDB services, or call sqlc queries directly.
 
-Serving state owns the lifecycle of published workspace artifacts:
+`runtimehost` owns active runtime lifecycle:
 
-- Bundle envelope and manifest.
-- Artifact identity and digest.
-- Serving state status transitions.
-- Upload, validation, activation, rollback, and failure marking.
-- Persistence of compiler-produced asset snapshots for each serving state.
+- track the active serving state/runtime for each workspace
+- prepare candidate runtimes before activation commits
+- atomically swap the active runtime after activation succeeds
+- close replaced runtimes safely
+- expose typed runtime ports to dashboard and agent use cases
 
-Serving state should not walk semantic/dashboard internals directly. It should depend on ports:
+Boundary rules:
 
-- A workspace compiler for contract validation, normalization, and asset graph output.
-- An analytics runtime factory for preparing a runtime from a compiled artifact.
-- Capability repositories for serving state and artifact persistence.
+- Serving state requests activation through a runtime host port.
+- Analytics prepares executable engines and query/materialization services.
+- Dashboard and agent use active runtime ports.
+- Runtime host must not own serving state status transitions, semantic query planning, dashboard patch construction, or sqlc persistence.
 
-Runtime activation should prepare analytics runtime through a port and commit serving state state through serving state repositories. It should not construct DuckDB services or call sqlc queries directly.
+## Composition Root
 
-## Scaling Laws
+`internal/app` is composition only.
 
-Use these rules to decide when to split files, packages, services, and interfaces.
+It may:
 
-### Start Flat
+- load configuration
+- open infrastructure adapters
+- construct repositories, services, handlers, and background workers
+- register routes
+- manage lifecycle, logging, shutdown, health checks, and shared middleware
+- wire adapters into use cases
+- mount generated APIGen routing and delegate operations to capability-owned adapters
 
-Begin with a single capability package when the area is small:
+It must not:
 
-```text
-internal/workspace/
-  workspace.go
-  assets.go
-  repository.go
-```
+- own business workflows
+- contain capability DTO mapping
+- contain domain validation
+- call sqlc or raw SQL directly
+- become the long-term owner of REST, CLI, agent, or UI adapters
+- pass `*app.Server`, `*platform.Store`, or broad runtime objects into capability adapters when narrow ports are enough
 
-Do not create subpackages just to satisfy an architecture diagram.
-
-### Split by Cohesion
-
-Split when a file, service, or package has multiple reasons to change.
-
-Signals:
-
-- A file mixes unrelated workflows.
-- Tests for one behavior need large unrelated setup.
-- A service has methods that do not share dependencies.
-- A package import list includes several unrelated external systems.
-- A change to one product area risks accidental edits in another.
-
-### Split by Use Case Before Layer
-
-When `servingstate/service.go` grows, prefer:
+Target route ownership:
 
 ```text
-servingstate/activate/
-servingstate/validate/
-servingstate/upload/
+internal/app
+  -> workspace/http
+  -> access/http
+  -> servingstate/http
+  -> analytics/query/http
+  -> dashboard/http
+  -> agent/http
+  -> admin/http
 ```
 
-over:
+## Package Splitting Rules
+
+Split when cohesion breaks:
+
+- a file mixes unrelated workflows
+- tests for one behavior need unrelated setup
+- a service has methods with different dependency sets
+- a package imports several unrelated external systems
+- one product change risks accidental edits in another
+- domain language diverges
+
+Split by use case before generic layer:
 
 ```text
-servingstate/services/
+servingstate/activate
+servingstate/validate
+servingstate/upload
 ```
 
-Use-case packages are easier to reason about than generic layer packages.
+Prefer this over:
 
-### Split Adapters When External Details Leak
+```text
+servingstate/services
+```
 
-Create an adapter subpackage when code imports or exposes:
+Create adapter subpackages when code imports or exposes:
 
 - sqlc generated packages
 - `database/sql`
@@ -672,59 +483,13 @@ Create an adapter subpackage when code imports or exposes:
 - `chi`
 - Datastar SSE/signal machinery
 - filesystem artifact layout
-- OpenAI-compatible API payloads
+- model-provider API payloads
 
-The adapter should translate those details into capability language.
-
-### Split Interfaces When Consumers Diverge
-
-Do not create one broad repository interface for everyone.
-
-If activation and listing need different data, define different ports:
-
-```go
-type ActivationRepository interface { ... }
-type ListingRepository interface { ... }
-```
-
-Small interfaces keep tests focused and prevent use cases from depending on accidental persistence capabilities.
-
-### Split Domain Types When Language Diverges
-
-If a package starts using the same nouns to mean different things, split or rename.
-
-Examples:
-
-- Dashboard asset vs serving state artifact.
-- Workspace role vs provider identity.
-- Query filter vs UI filter signal.
-
-Ambiguous domain language is an architectural smell.
-
-### Split on Test Friction
-
-Tests should be easy to write without booting the world.
-
-Split when:
-
-- A use case test needs HTTP setup.
-- A domain rule test needs a database.
-- A repository test needs Datastar signals.
-- A dashboard command test needs OpenAI config.
-
-The target is that domain and use-case tests run with plain Go fakes.
-
-### Do Not Split Only by Line Count
-
-Line count is a hint, not a rule.
-
-A 500-line package can be healthy if it owns one cohesive idea. A 100-line package can be too large if it mixes transport, persistence, and business rules.
-
-Use cohesion, dependency direction, and test friction as the real signals.
+Line count is only a hint. Cohesion, dependency direction, and test friction are the real split criteria.
 
 ## Naming Rules
 
-Prefer business names:
+Prefer capability names:
 
 ```text
 servingstate
@@ -733,6 +498,8 @@ access
 analytics
 dashboard
 agent
+runtimehost
+platform
 ```
 
 Prefer use-case names:
@@ -744,6 +511,7 @@ materialize
 stream
 grant
 revoke
+refresh
 ```
 
 Prefer adapter names:
@@ -757,7 +525,7 @@ datastar
 openai
 ```
 
-Avoid global horizontal names:
+Avoid package names that describe a generic layer unless scoped inside a capability:
 
 ```text
 handlers
@@ -768,96 +536,29 @@ utils
 helpers
 ```
 
-These names are acceptable inside a capability only when they stay small and specific.
+## Architecture Guardrails
 
-## Example: Serving state Activation
+The target architecture should be enforceable with package boundary tests.
 
-Target shape:
-
-```text
-internal/servingstate/
-  state.go
-  repository.go
-  activate/
-    service.go
-  sqlite/
-    repository.go
-  filesystem/
-    artifact_store.go
-  http/
-    handlers.go
-```
-
-Flow:
+Use-case packages must not import adapter packages such as:
 
 ```text
-servingstate/http.Handler
-    -> servingstate/activate.Service
-        -> activate.Repository
-        -> activate.RuntimeActivator
-    <- activate.Result
+/sqlite
+/filesystem
+/duckdb
+/datastar
+/http
+/openai
 ```
 
-The handler knows HTTP. The service knows the activation workflow. The repository knows SQLite. The runtime activator knows how to prepare and commit the active DuckDB runtime. The domain knows which serving-state transitions are valid.
+Exceptions are allowed only when the package is itself an adapter or composition package.
 
-## Example: Dashboard Updates
+Architecture tests should assert:
 
-Target shape:
-
-```text
-internal/dashboard/
-  dashboard.go
-  filters.go
-  table.go
-  stream/
-    service.go
-  command/
-    service.go
-  datastar/
-    patches.go
-  http/
-    handlers.go
-```
-
-Flow:
-
-```text
-dashboard/http.UpdatesHandler
-    -> dashboard/stream.Service
-        -> dashboard.QueryIntent
-        -> analytics/query.Engine
-    <- dashboard.PageSnapshot
-    -> dashboard/datastar.Patch
-```
-
-Dashboard code owns report-page behavior, filter state, selections, table windows, and page snapshots. Analytics code owns semantic query planning and execution. Datastar code owns signal translation.
-
-## Migration Guidance
-
-Architecture should improve through focused moves:
-
-1. Extract a cohesive use case from `internal/app`.
-2. Define the smallest port needed by that use case.
-3. Move sqlc/direct storage access behind an adapter.
-4. Move HTTP/Datastar translation to an adapter package.
-5. Add use-case tests with fakes.
-6. Repeat for the next workflow.
-
-Primary migration target:
-
-- Retire `internal/data/DuckDBMetrics` as the cross-cutting runtime object. Split it into:
-  - `analytics/duckdb` for DuckDB connections and execution.
-  - `analytics/materialize` for model materialization refresh.
-  - `analytics/query` for semantic query planning/execution ports.
-  - `dashboard/stream` or `dashboard/runtime` for page snapshots, table windows, and command orchestration.
-  - `workspace/catalog` and `workspace/compiler` for catalog/workspace loading and normalized runtime workspace construction.
-
-Other good candidates:
-
-- Serving state activation and validation.
-- Workspace asset listing and access view shaping.
-- RBAC grant/revoke/authorize workflows.
-- Dashboard command handling and update streaming.
-- Extracting sqlc access behind capability repositories and removing raw `Queries()` calls outside adapters/composition.
+- use-case packages do not import adapter packages
+- domain and use-case packages do not import `net/http`, `chi`, Datastar, gomponents, sqlc generated packages, DuckDB adapters, filesystem adapters, or model-provider adapters
+- `internal/api` remains transport-contract only
+- `internal/ui` remains render-only
+- `platform.Store` and sqlc generated types do not leak into handlers, use cases, runtime managers, or domain packages
 
 The architecture is successful when a developer can understand and test one capability without loading the whole application into their head.

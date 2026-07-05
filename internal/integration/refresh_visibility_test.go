@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 )
 
 func TestRefreshVisibilityStreamsAndPersistsSemanticModelRuns(t *testing.T) {
@@ -43,7 +44,7 @@ func TestRefreshVisibilityStreamsAndPersistsSemanticModelRuns(t *testing.T) {
 	requireAssetRefreshStatus(t, semanticStream, materialize.RunStatusSucceeded)
 	requireStreamText(t, ordersStream, "Semantic model")
 
-	repo := materialize.NewSQLRunRepository(h.store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(h.store.SQLDB())
 	modelRuns, err := repo.ListTargetRuns(ctx, workspaceID, materialize.TargetSemanticModel, "sales.sales", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list semantic model runs: %v", err)

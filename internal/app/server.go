@@ -11,7 +11,8 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
+	agentopenai "github.com/Yacobolo/libredash/internal/agent/openai"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -26,6 +27,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
+	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/gorilla/csrf"
 )
 
@@ -93,7 +95,7 @@ type Server struct {
 	workspaceRepo       workspace.Repository
 	assetCatalog        workspace.AssetCatalogReader
 	accessRepo          access.Repository
-	agent               *agentapp.Service
+	agent               *agent.Service
 	auth                *Auth
 	reloader            runtimeReloader
 	artifactDir         string
@@ -123,7 +125,7 @@ type Options struct {
 	WorkspaceRepo       workspace.Repository
 	AssetCatalog        workspace.AssetCatalogReader
 	AccessRepo          access.Repository
-	Agent               *agentapp.Service
+	Agent               *agent.Service
 	Auth                *Auth
 	Reloader            runtimeReloader
 	ArtifactDir         string
@@ -180,6 +182,11 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	if options.Logger != nil {
 		server.logger = options.Logger
+	}
+	if server.agent != nil {
+		server.agent.ConfigureDefaultModel(func(config agent.Config) agentcore.Model {
+			return agentopenai.NewModel(config, nil)
+		})
 	}
 	server.configureAgentTools()
 	return server
@@ -276,7 +283,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.CatalogPageForCatalogs(s.catalogsForVisibleWorkspaces(r), s.chatChromeOption(r)).Render(w); err != nil {
+	if err := ui.CatalogPageForCatalogs(s.workspaceHTTPReadModel().CatalogsForVisibleWorkspaces(r), s.chatChromeOption(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -315,6 +322,13 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			return selected, true
 		},
 		Broker: s.broker,
+		CurrentPrincipalID: func(r *http.Request) string {
+			principal, ok := principalFromContext(r.Context())
+			if !ok {
+				return ""
+			}
+			return principal.ID
+		},
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
 				return ""
@@ -365,15 +379,18 @@ func (s *Server) refreshMaterializationsWithRunForWorkspace(ctx context.Context,
 	if s.store == nil {
 		return s.metrics.RefreshMaterializations(ctx, modelID)
 	}
-	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	repo, err := s.refreshRunRepository()
+	if err != nil {
+		return err
+	}
 	principal, _ := principalFromContext(ctx)
-	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
-	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
+	orchestrator := materialize.NewRefreshOrchestrator(repo, appRefreshRunner{metrics: s.metrics}, refreshModelLookup(s.metrics))
+	return orchestrator.RefreshSemanticModel(ctx, materialize.RefreshRunInput{
 		WorkspaceID: workspaceID,
 		ModelID:     modelID,
 		PrincipalID: principal.ID,
-	}, refreshPublisher{
-		Root:   func() { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
-		Target: func(string) { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
+	}, materialize.RefreshPublisher{
+		Root:   func() { s.workspaceRefreshSupport().PublishModelRefreshPatches(ctx, workspaceID, modelID) },
+		Target: func(string) { s.workspaceRefreshSupport().PublishModelRefreshPatches(ctx, workspaceID, modelID) },
 	})
 }
