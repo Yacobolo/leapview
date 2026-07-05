@@ -11,24 +11,23 @@ import (
 )
 
 const (
-	PermissionWorkspaceRead      = "workspace:read"
-	PermissionAssetRead          = "asset:read"
-	PermissionDeploymentRead     = "deployment:read"
-	PermissionDeploymentWrite    = "deployment:write"
-	PermissionDeploymentActivate = "deployment:activate"
-	PermissionRBACRead           = "rbac:read"
-	PermissionRBACWrite          = "rbac:write"
-	PermissionAgentUse           = "agent:use"
-	PermissionAgentRead          = "agent:read"
-	PermissionMaterializationRun = "materialization:run"
-	PermissionAuditRead          = "audit:read"
-	PermissionTokenManage        = "token:manage"
+	PermissionWorkspaceRead   = "workspace:read"
+	PermissionAssetRead       = "asset:read"
+	PermissionPublishRead     = "publish:read"
+	PermissionPublishWrite    = "publish:write"
+	PermissionPublishActivate = "publish:activate"
+	PermissionRBACRead        = "rbac:read"
+	PermissionRBACWrite       = "rbac:write"
+	PermissionAgentUse        = "agent:use"
+	PermissionAgentRead       = "agent:read"
+	PermissionRefreshRun      = "refresh:run"
+	PermissionAuditRead       = "audit:read"
+	PermissionTokenManage     = "token:manage"
 
-	PermissionDashboardView           = PermissionWorkspaceRead
-	PermissionDeploymentCreate        = PermissionDeploymentWrite
-	PermissionDeploymentRollback      = PermissionDeploymentActivate
-	PermissionMaterializationsRefresh = PermissionMaterializationRun
-	PermissionRBACManage              = PermissionRBACWrite
+	PermissionDashboardView   = PermissionWorkspaceRead
+	PermissionPublishCreate   = PermissionPublishWrite
+	PermissionPublishRollback = PermissionPublishActivate
+	PermissionRBACManage      = PermissionRBACWrite
 )
 
 const (
@@ -45,14 +44,14 @@ var defaultRoles = []Role{
 		Permissions: []string{
 			PermissionWorkspaceRead,
 			PermissionAssetRead,
-			PermissionDeploymentRead,
-			PermissionDeploymentWrite,
-			PermissionDeploymentActivate,
+			PermissionPublishRead,
+			PermissionPublishWrite,
+			PermissionPublishActivate,
 			PermissionRBACRead,
 			PermissionRBACWrite,
 			PermissionAgentUse,
 			PermissionAgentRead,
-			PermissionMaterializationRun,
+			PermissionRefreshRun,
 			PermissionAuditRead,
 			PermissionTokenManage,
 		},
@@ -62,14 +61,14 @@ var defaultRoles = []Role{
 		Permissions: []string{
 			PermissionWorkspaceRead,
 			PermissionAssetRead,
-			PermissionDeploymentRead,
-			PermissionDeploymentWrite,
-			PermissionDeploymentActivate,
+			PermissionPublishRead,
+			PermissionPublishWrite,
+			PermissionPublishActivate,
 			PermissionRBACRead,
 			PermissionRBACWrite,
 			PermissionAgentUse,
 			PermissionAgentRead,
-			PermissionMaterializationRun,
+			PermissionRefreshRun,
 			PermissionAuditRead,
 			PermissionTokenManage,
 		},
@@ -79,10 +78,10 @@ var defaultRoles = []Role{
 		Permissions: []string{
 			PermissionWorkspaceRead,
 			PermissionAssetRead,
-			PermissionDeploymentRead,
-			PermissionDeploymentWrite,
-			PermissionDeploymentActivate,
-			PermissionMaterializationRun,
+			PermissionPublishRead,
+			PermissionPublishWrite,
+			PermissionPublishActivate,
+			PermissionRefreshRun,
 		},
 	},
 	{
@@ -92,7 +91,7 @@ var defaultRoles = []Role{
 			PermissionAssetRead,
 			PermissionAgentUse,
 			PermissionAgentRead,
-			PermissionMaterializationRun,
+			PermissionRefreshRun,
 		},
 	},
 	{
