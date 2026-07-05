@@ -9,7 +9,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/agentconfig"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/pkg/agent"
-	"github.com/starfederation/datastar-go/datastar"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 type adminAgentCommandSignals struct {
@@ -30,7 +30,7 @@ func (s *Server) getAdminAgentConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateAdminAgentConfig(w http.ResponseWriter, r *http.Request) {
 	var signals adminAgentCommandSignals
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}

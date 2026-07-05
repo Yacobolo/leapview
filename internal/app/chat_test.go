@@ -14,8 +14,8 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/api"
-	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
@@ -62,7 +62,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 		`data-indicator="agentTurnPending"`,
 		`data-on:ld-chat-submit`,
 		`/chat/turns`,
-		`/chat/updates`,
+		`/updates?route=chat`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat page missing %q:\n%s", want, body)
@@ -113,7 +113,6 @@ func TestLegacyWorkspaceChatRoutesRedirectToGlobalChat(t *testing.T) {
 	for path, want := range map[string]string{
 		"/workspaces/test/chat":             "/chat",
 		"/workspaces/test/chat/new":         "/chat/new",
-		"/workspaces/test/chat/updates":     "/chat/updates",
 		"/workspaces/test/chat/agentconv_1": "/chat/agentconv_1",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -647,7 +646,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	key := chatStreamID(scope, "client-test")
 
 	reqCtx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodGet, "/chat/updates", nil).WithContext(reqCtx)
+	req := httptest.NewRequest(http.MethodGet, "/updates?route=chat", nil).WithContext(reqCtx)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-test"})
 	rec := httptest.NewRecorder()
@@ -657,7 +656,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 		server.Routes().ServeHTTP(rec, req)
 	}()
 	waitForBrokerSubscription(t, server, key)
-	server.broker.Publish(key, dashboardstream.Patch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
+	server.broker.Publish(key, pagestream.Patch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
 	time.Sleep(25 * time.Millisecond)
 	cancel()
 	<-done
@@ -740,7 +739,7 @@ func chatSignalsRequest(method, path, token string, signals map[string]any) *htt
 
 func chatUpdatesSignalsRequest(ctx context.Context, token, clientID, activeID string) *http.Request {
 	bytes, _ := json.Marshal(map[string]any{"agent": map[string]any{"activeConversationId": activeID}})
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/chat/updates?datastar="+url.QueryEscape(string(bytes)), nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=chat&datastar="+url.QueryEscape(string(bytes)), nil)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: clientID})

@@ -104,7 +104,7 @@ func TestUpdatesRateLimitAllowsOrdinaryReconnects(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test-workspace/updates?dashboard=executive-sales&page=overview", nil)
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=overview", nil)
 		req.RemoteAddr = "192.0.2.30:1234"
 		req.Header.Set("Authorization", "Bearer dev")
 		rec := httptest.NewRecorder()

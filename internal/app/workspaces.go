@@ -22,6 +22,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacerefresh "github.com/Yacobolo/libredash/internal/workspace/refresh"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 	"github.com/starfederation/datastar-go/datastar"
@@ -222,8 +223,8 @@ func (s *Server) refreshWorkspaceAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	assetID := chi.URLParam(r, "asset")
+	workspaceID := s.workspaceID(firstNonEmpty(chi.URLParam(r, "workspace"), r.URL.Query().Get("workspace")))
+	assetID := firstNonEmpty(chi.URLParam(r, "asset"), r.URL.Query().Get("asset"))
 	section := workspaceAssetUpdateSection(r)
 	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
 	if err != nil {
@@ -240,25 +241,11 @@ func (s *Server) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sse := datastar.NewSSE(w, r)
-	if err := sse.MarshalAndPatchSignals(s.workspaceAssetRefreshPatch(r, workspaceID, selected, assets, edges, section)); err != nil {
-		return
-	}
-	updates, unsubscribe := s.broker.Subscribe(workspaceAssetStreamID(workspaceID, assetID, section))
-	defer unsubscribe()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch, ok := <-updates:
-			if !ok {
-				return
-			}
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
-	}
+	pagestream.ServeStream(w, r, pagestream.StreamSpec{
+		Broker:         s.broker,
+		StreamID:       workspaceAssetStreamID(workspaceID, assetID, section),
+		InitialPatches: []pagestream.Patch{s.workspaceAssetRefreshPatch(r, workspaceID, selected, assets, edges, section)},
+	})
 }
 
 func (s *Server) refreshWorkspaceAssetWithPatches(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
@@ -827,7 +814,7 @@ func (signals workspaceAccessSignalPayload) command() ui.WorkspaceAccessCommand 
 
 func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	signals := workspaceAccessSignalPayload{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -847,7 +834,7 @@ func (s *Server) upsertWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	signals := workspaceAccessSignalPayload{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

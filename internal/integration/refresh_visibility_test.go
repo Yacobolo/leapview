@@ -19,7 +19,7 @@ func TestRefreshVisibilityStreamsAndPersistsSemanticModelRuns(t *testing.T) {
 	ordersAssetID := integrationAssetID(t, h.store, workspaceID, "model_table", "sales.orders")
 
 	details := h.getAuthenticated(t, "/workspaces/"+workspaceID+"/assets/"+semanticAssetID+"/details")
-	for _, want := range []string{"Refresh status", "refresh-materializations", "/updates?section=details"} {
+	for _, want := range []string{"Refresh status", "refresh-materializations", "/updates?asset=", "route=workspace_asset", "section=details"} {
 		if !strings.Contains(details, want) {
 			t.Fatalf("semantic model details page did not contain %q", want)
 		}

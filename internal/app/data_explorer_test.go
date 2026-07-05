@@ -235,7 +235,7 @@ func TestDataExplorerRouteRendersSignalsAndWiring(t *testing.T) {
 		"/static/data-explorer.js",
 		"dataExplorer",
 		`"csrfToken":"`,
-		"/data/updates",
+		"/updates?route=data",
 		"/data/command",
 		"X-CSRF-Token",
 		"workspaceId",

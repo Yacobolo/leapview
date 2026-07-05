@@ -12,9 +12,8 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	workspaceview "github.com/Yacobolo/libredash/internal/workspace"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	ds "maragu.dev/gomponents-datastar"
-	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
@@ -454,7 +453,6 @@ func WorkspaceAssetPageWithRefreshAndVersions(catalog dashboard.Catalog, workspa
 	}
 	if assetRefreshable(asset.Type) {
 		refreshPath := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/refresh"
-		updatesURL := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/updates?section=" + activeSection
 		extraSignals["csrfToken"] = refresh.CSRFToken
 		attrs = append(attrs,
 			g.Attr("data-on:ld-refresh-materializations", postActionWithCSRFSignal(refreshPath, "$csrfToken")),
@@ -462,8 +460,7 @@ func WorkspaceAssetPageWithRefreshAndVersions(catalog dashboard.Catalog, workspa
 		if activeSection == "versions" {
 			return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("ld-workspace-asset-page", attrs...), extraSignals, activeSection, chromeOptions)
 		}
-		extraHeadInit := ds.Init("@get('" + updatesURL + "', {openWhenHidden: true})")
-		return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("ld-workspace-asset-page", attrs...), extraSignals, activeSection, chromeOptions, extraHeadInit)
+		return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("ld-workspace-asset-page", attrs...), extraSignals, activeSection, chromeOptions)
 	}
 	return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("ld-workspace-asset-page", attrs...), nil, activeSection, chromeOptions)
 }
@@ -587,10 +584,11 @@ func workspaceRouteDocument(title string, catalog dashboard.Catalog, active, rol
 func workspaceRouteDocumentWithBodyExtras(title string, catalog dashboard.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extraSignals map[string]any, bodyExtras []g.Node, chromeOptions []ChromeOption, extraHead ...g.Node) g.Node {
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, active, roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
+	runtime := runtimeForPage(routeKind, catalog, page)
 	signals := map[string]any{
 		"chrome":  chrome,
 		"page":    page,
-		"runtime": uisignals.RouteRuntimeSignal{Kind: routeKind},
+		"runtime": runtime,
 		"status":  dashboard.Status{},
 	}
 	for key, value := range extraSignals {
@@ -603,9 +601,8 @@ func workspaceRouteDocumentWithBodyExtras(title string, catalog dashboard.Catalo
 		h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 	}
 	head = append(head, extraHead...)
-	mainChildren := []g.Node{ds.Signals(signals)}
-	mainChildren = append(mainChildren, bodyExtras...)
-	mainChildren = append(mainChildren,
+	body := append([]g.Node{}, bodyExtras...)
+	body = append(body,
 		g.El("ld-app-shell",
 			g.Attr("chrome", jsonString(chrome)),
 			g.Attr("data-attr:chrome", "$chrome"),
@@ -613,19 +610,35 @@ func workspaceRouteDocumentWithBodyExtras(title string, catalog dashboard.Catalo
 		),
 		inspectorElement(),
 	)
-	return c.HTML5(c.HTML5Props{
-		Title:    title,
-		Language: "en",
+	return pagestream.RenderDocument(pagestream.DocumentSpec{
+		Title: title,
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: pageHead(head...),
-		Body: []g.Node{
-			h.Main(append([]g.Node{h.Class(appRootClass)}, mainChildren...)...),
-		},
+		Head:      pageHead(head...),
+		MainAttrs: []g.Node{h.Class(appRootClass)},
+		Signals:   signals,
+		Init:      []string{streamAction()},
+		Body:      body,
 	})
+}
+
+func runtimeForPage(routeKind uisignals.RouteKind, catalog dashboard.Catalog, page any) uisignals.RouteRuntimeSignal {
+	runtime := runtimeSignal(routeKind, updatesURL(routeKind))
+	switch typed := page.(type) {
+	case uisignals.WorkspacePageSignal:
+		runtime.WorkspaceID = firstNonEmpty(typed.WorkspaceID, catalog.Workspace.ID)
+		runtime.UpdatesURL = updatesURL(routeKind, "workspace", runtime.WorkspaceID)
+	case uisignals.ConnectionsPageSignal:
+		runtime.WorkspaceID = firstNonEmpty(typed.WorkspaceID, catalog.Workspace.ID)
+		runtime.UpdatesURL = updatesURL(routeKind, "workspace", runtime.WorkspaceID)
+	case uisignals.WorkspaceAssetPageSignal:
+		runtime.WorkspaceID = firstNonEmpty(typed.WorkspaceID, catalog.Workspace.ID)
+		runtime.UpdatesURL = updatesURL(routeKind, "workspace", runtime.WorkspaceID, "asset", typed.AssetID, "section", typed.ActiveSection)
+	}
+	return runtime
 }
 
 func workspaceServingLabel(workspace workspaceview.WorkspaceView) string {

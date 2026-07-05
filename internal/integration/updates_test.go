@@ -72,7 +72,7 @@ func TestUpdatesStreamsSetupRequiredPatchForMissingData(t *testing.T) {
 
 func TestUpdatesRejectsMalformedDatastarSignals(t *testing.T) {
 	h := newHarness(t)
-	req := httptest.NewRequest(http.MethodGet, h.workspaceUpdatesPath()+"?dashboard=executive-sales&page=overview&datastar=%7Bnot-json", nil)
+	req := httptest.NewRequest(http.MethodGet, h.workspaceUpdatesPath()+"?route=dashboard&workspace="+h.workspaceIDOrDefault()+"&dashboard=executive-sales&page=overview&datastar=%7Bnot-json", nil)
 	rec := httptest.NewRecorder()
 
 	h.handler.ServeHTTP(rec, req)

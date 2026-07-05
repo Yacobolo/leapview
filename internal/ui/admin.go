@@ -8,9 +8,8 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	workspaceview "github.com/Yacobolo/libredash/internal/workspace"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	ds "maragu.dev/gomponents-datastar"
-	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
@@ -138,10 +137,11 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
 	storageSignal := page.Storage
+	runtime := runtimeSignal(uisignals.RouteAdmin, updatesURL(uisignals.RouteAdmin, "section", active))
 	signals := map[string]any{
 		"chrome":    chrome,
 		"page":      page,
-		"runtime":   uisignals.RouteRuntimeSignal{Kind: uisignals.RouteAdmin},
+		"runtime":   runtime,
 		"status":    dashboard.Status{},
 		"csrfToken": data.CSRFToken,
 	}
@@ -198,9 +198,8 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 		}
 		adminChildren = append(adminChildren, g.El("ld-agent-prompt-editor", promptAttrs...))
 	}
-	return c.HTML5(c.HTML5Props{
-		Title:    "Admin - " + title,
-		Language: "en",
+	return pagestream.RenderDocument(pagestream.DocumentSpec{
+		Title: "Admin - " + title,
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
@@ -213,18 +212,16 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
+		MainAttrs: []g.Node{h.Class(appRootClass)},
+		Signals:   signals,
+		Init:      []string{streamAction()},
 		Body: []g.Node{
-			h.Main(h.Class(appRootClass),
-				ds.Signals(signals),
-				g.If(active == "storage", ds.Init("@get('/admin/storage/updates', {openWhenHidden: true})")),
-				g.If(active == "queries", ds.Init("@get('/admin/queries/updates', {openWhenHidden: true})")),
-				g.El("ld-app-shell",
-					g.Attr("chrome", jsonString(chrome)),
-					g.Attr("data-attr:chrome", "$chrome"),
-					g.El("ld-admin-page", append(adminAttrs, adminChildren...)...),
-				),
-				inspectorElement(),
+			g.El("ld-app-shell",
+				g.Attr("chrome", jsonString(chrome)),
+				g.Attr("data-attr:chrome", "$chrome"),
+				g.El("ld-admin-page", append(adminAttrs, adminChildren...)...),
 			),
+			inspectorElement(),
 		},
 	})
 }

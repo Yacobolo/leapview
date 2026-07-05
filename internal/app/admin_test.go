@@ -36,7 +36,8 @@ func TestAdminRouteRejectsViewer(t *testing.T) {
 		{method: http.MethodGet, path: "/admin"},
 		{method: http.MethodGet, path: "/admin/agent"},
 		{method: http.MethodGet, path: "/admin/storage"},
-		{method: http.MethodGet, path: "/admin/storage/updates"},
+		{method: http.MethodGet, path: "/updates?route=admin&section=storage"},
+		{method: http.MethodGet, path: "/updates?route=admin&section=queries"},
 		{method: http.MethodPost, path: "/admin/storage/select-table", body: `{}`},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
@@ -80,8 +81,8 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 		{path: "/admin/groups", want: []string{"<ld-admin-page", "Groups", "sections", "Member count", "/admin/groups/group_finance", "Finance", "local", "finance", "editor"}},
 		{path: "/admin/groups/group_finance", want: []string{"Groups / Finance", "Provider", "local", "External ID", "finance", "Group ID", "group_finance", "Members", "Principal ID", "analyst@example.com", "viewer", analyst.ID}},
 		{path: "/admin/agent", want: []string{"<ld-admin-page", "<ld-agent-prompt-editor", "slot=\"agent-prompt\"", `data-attr:value="$adminAgentCommand.systemPrompt"`, "agent-prompt", `data-attr:agent-prompt="$adminAgentCommand.systemPrompt"`, "systemPrompt", "You are LibreDash", "Tools", "query_visual", "/api/v1/admin/agent/config"}},
-		{path: "/admin/storage", want: []string{"<ld-admin-page", "Storage", "Catalog path", "Data path", "Snapshots", "Tables", "adminStorage", "storage=", "/admin/storage/updates", "/admin/storage/select-table", "No DuckLake catalog has been initialized."}},
-		{path: "/admin/queries", want: []string{"<ld-admin-page", "Query History", "adminQueryHistory", "adminQueryDetail", "adminQueryHistoryCommand", "/admin/queries/updates", "/admin/queries/command", "csrfToken"}},
+		{path: "/admin/storage", want: []string{"<ld-admin-page", "Storage", "Catalog path", "Data path", "Snapshots", "Tables", "adminStorage", "storage=", "/updates?route=admin", "section=storage", "/admin/storage/select-table", "No DuckLake catalog has been initialized."}},
+		{path: "/admin/queries", want: []string{"<ld-admin-page", "Query History", "adminQueryHistory", "adminQueryDetail", "adminQueryHistoryCommand", "/updates?route=admin", "section=queries", "/admin/queries/command", "csrfToken"}},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -435,7 +436,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/admin/queries/updates", nil)
+	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=queries", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
@@ -499,7 +500,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/admin/storage/updates", nil)
+	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=storage", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()

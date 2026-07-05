@@ -24,6 +24,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacerefresh "github.com/Yacobolo/libredash/internal/workspace/refresh"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func fieldRefs(fields ...string) []reportdef.FieldRef {
@@ -896,7 +897,7 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test-workspace/updates?dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22controls%22%3A%7B%22state%22%3A%7B%22type%22%3A%22multi_select%22%2C%22operator%22%3A%22in%22%2C%22values%22%3A%5B%22SP%22%5D%7D%2C%22category%22%3A%7B%22type%22%3A%22text%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%22ignored%22%7D%7D%7D%7D", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22controls%22%3A%7B%22state%22%3A%7B%22type%22%3A%22multi_select%22%2C%22operator%22%3A%22in%22%2C%22values%22%3A%5B%22SP%22%5D%7D%2C%22category%22%3A%7B%22type%22%3A%22text%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%22ignored%22%7D%7D%7D%7D", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -949,7 +950,7 @@ func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test-workspace/updates?dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -1088,7 +1089,7 @@ func TestWorkspaceAssetUpdatesStreamsInitialRefreshState(t *testing.T) {
 	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=refreshes", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=workspace_asset&workspace=test&asset="+string(assetID)+"&section=refreshes", nil)
 	rec := httptest.NewRecorder()
 
 	server.Routes().ServeHTTP(rec, req)
@@ -1125,7 +1126,7 @@ func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesTableAndUnusedRefreshFields
 	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=details", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=workspace_asset&workspace=test&asset="+string(assetID)+"&section=details", nil)
 	rec := httptest.NewRecorder()
 
 	server.Routes().ServeHTTP(rec, req)
@@ -1584,8 +1585,8 @@ func TestWorkspaceSemanticModelRefreshCommandPersistsTableChildRuns(t *testing.T
 	}
 }
 
-func drainPatches(ch <-chan map[string]any) []map[string]any {
-	var patches []map[string]any
+func drainPatches(ch <-chan pagestream.Patch) []pagestream.Patch {
+	var patches []pagestream.Patch
 	for {
 		select {
 		case patch := <-ch:
@@ -1596,7 +1597,7 @@ func drainPatches(ch <-chan map[string]any) []map[string]any {
 	}
 }
 
-func patchesContainAssetRefreshStatus(patches []map[string]any, status string) bool {
+func patchesContainAssetRefreshStatus(patches []pagestream.Patch, status string) bool {
 	for _, patch := range patches {
 		refresh, ok := patch["assetRefresh"].(map[string]any)
 		if ok && refresh["status"] == status {
@@ -1615,7 +1616,7 @@ func patchesContainAssetRefreshStatus(patches []map[string]any, status string) b
 	return false
 }
 
-func anyPatchesString(patches []map[string]any) string {
+func anyPatchesString(patches []pagestream.Patch) string {
 	bytes, _ := json.Marshal(patches)
 	return string(bytes)
 }

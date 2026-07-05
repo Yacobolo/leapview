@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
-	"github.com/Yacobolo/libredash/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/libredash/internal/dashboard/ui"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -32,7 +31,7 @@ type Metrics interface {
 type Handler struct {
 	Metrics             Metrics
 	MetricsForWorkspace func(workspaceID string) (Metrics, bool)
-	Broker              *stream.Broker
+	Broker              *pagestream.Broker
 	TickerInterval      time.Duration
 	CSRFToken           func(r *nethttp.Request) string
 	ChromeDecorators    func(r *nethttp.Request) []reportui.ChromeDecorator
@@ -67,7 +66,7 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 		nethttp.NotFound(w, r)
 		return
 	}
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	reportDefinition, model, ok := metrics.Report(dashboardID)
 	if !ok {
 		nethttp.NotFound(w, r)
@@ -97,6 +96,9 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 
 func (h Handler) metricsForRequest(r *nethttp.Request) (Metrics, bool) {
 	workspaceID := chi.URLParam(r, "workspace")
+	if workspaceID == "" {
+		workspaceID = r.URL.Query().Get("workspace")
+	}
 	if workspaceID != "" && h.MetricsForWorkspace != nil {
 		return h.MetricsForWorkspace(workspaceID)
 	}

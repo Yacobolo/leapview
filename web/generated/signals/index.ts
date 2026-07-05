@@ -919,9 +919,12 @@ export interface ReportFilterValues {
 
 export interface RouteRuntimeSignal {
   clientId?: string
+  workspaceId?: string
   dashboardId?: string
   pageId?: string
   modelId?: string
+  routeKey?: string
+  updatesUrl?: string
   kind: string
 }
 

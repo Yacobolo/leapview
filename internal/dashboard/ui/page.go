@@ -2,20 +2,30 @@ package ui
 
 import (
 	"encoding/json"
+	"net/url"
+	"strconv"
+
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
-	"strconv"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	g "maragu.dev/gomponents"
-	ds "maragu.dev/gomponents-datastar"
-	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
 func updateAction(workspaceID, dashboardID, pageID string) string {
-	return "@get('/workspaces/" + workspaceID + "/updates?dashboard=" + dashboardID + "&page=" + pageID + "', {openWhenHidden: true})"
+	return "@get($runtime.updatesUrl, {openWhenHidden: true})"
+}
+
+func updatesURL(workspaceID, dashboardID, pageID string) string {
+	values := url.Values{}
+	values.Set("route", string(uisignals.RouteDashboard))
+	values.Set("workspace", workspaceID)
+	values.Set("dashboard", dashboardID)
+	values.Set("page", pageID)
+	return "/updates?" + values.Encode()
 }
 
 func postAction(path string) string {
@@ -59,9 +69,8 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + tableReset
 	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters)
 	signals := initialSignals(dataDir, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters, chromeDecorators...)
-	return c.HTML5(c.HTML5Props{
-		Title:    "LibreDash",
-		Language: "en",
+	return pagestream.RenderDocument(pagestream.DocumentSpec{
+		Title: "LibreDash",
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
@@ -74,43 +83,43 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
+		MainAttrs: []g.Node{
+			h.ID("dashboard"),
+			h.Class(appRootClass),
+			g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); "+tableReset+action),
+		},
+		Signals: signals,
+		Init:    []string{initAction},
 		Body: []g.Node{
-			h.Main(
-				h.ID("dashboard"),
-				h.Class(appRootClass),
-				ds.Signals(signals),
-				ds.Init(initAction),
-				g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LibreDashFilterURL.fromParams($filterConfig, $filters, $urlParams); "+tableReset+action),
-				g.El("ld-app-shell",
-					g.Attr("chrome", jsonString(signals["chrome"])),
-					g.Attr("data-attr:chrome", "$chrome"),
-					g.El("ld-dashboard-page",
-						g.Attr("slot", "page"),
-						g.Attr("page", jsonString(signals["page"])),
-						g.Attr("filterconfig", jsonString(signals["filterConfig"])),
-						g.Attr("filters", jsonString(signals["filters"])),
-						g.Attr("filteroptions", jsonString(signals["filterOptions"])),
-						g.Attr("visuals", jsonString(signals["visuals"])),
-						g.Attr("tables", jsonString(signals["tables"])),
-						g.Attr("status", jsonString(signals["status"])),
-						g.Attr("data-attr:page", "$page"),
-						g.Attr("data-attr:filterconfig", "$filterConfig"),
-						g.Attr("data-attr:filters", "$filters"),
-						g.Attr("data-attr:filteroptions", "$filterOptions"),
-						g.Attr("data-attr:visuals", "$visuals"),
-						g.Attr("data-attr:tables", "$tables"),
-						g.Attr("data-attr:status", "$status"),
-						g.Attr("data-on:ld-filters-change", filtersUpdate+action),
-						g.Attr("data-on:ld-filters-reset", filtersUpdate+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters")),
-						g.Attr("data-on:ld-filters-refresh", action),
-						g.Attr("data-on:ld-selection-clear", "$filters.selections = []; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection")),
-						g.Attr("data-on:ld-interaction-select", "$interactionCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/select")),
-						g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/table-window")),
-						g.Attr("data-on:ld-refresh-materializations", postAction("/workspaces/"+catalog.Workspace.ID+"/commands/refresh-materializations?model="+model.Name+"&dashboard="+report.ID)),
-					),
+			g.El("ld-app-shell",
+				g.Attr("chrome", jsonString(signals["chrome"])),
+				g.Attr("data-attr:chrome", "$chrome"),
+				g.El("ld-dashboard-page",
+					g.Attr("slot", "page"),
+					g.Attr("page", jsonString(signals["page"])),
+					g.Attr("filterconfig", jsonString(signals["filterConfig"])),
+					g.Attr("filters", jsonString(signals["filters"])),
+					g.Attr("filteroptions", jsonString(signals["filterOptions"])),
+					g.Attr("visuals", jsonString(signals["visuals"])),
+					g.Attr("tables", jsonString(signals["tables"])),
+					g.Attr("status", jsonString(signals["status"])),
+					g.Attr("data-attr:page", "$page"),
+					g.Attr("data-attr:filterconfig", "$filterConfig"),
+					g.Attr("data-attr:filters", "$filters"),
+					g.Attr("data-attr:filteroptions", "$filterOptions"),
+					g.Attr("data-attr:visuals", "$visuals"),
+					g.Attr("data-attr:tables", "$tables"),
+					g.Attr("data-attr:status", "$status"),
+					g.Attr("data-on:ld-filters-change", filtersUpdate+action),
+					g.Attr("data-on:ld-filters-reset", filtersUpdate+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters")),
+					g.Attr("data-on:ld-filters-refresh", action),
+					g.Attr("data-on:ld-selection-clear", "$filters.selections = []; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection")),
+					g.Attr("data-on:ld-interaction-select", "$interactionCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/select")),
+					g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/table-window")),
+					g.Attr("data-on:ld-refresh-materializations", postAction("/workspaces/"+catalog.Workspace.ID+"/commands/refresh-materializations?model="+model.Name+"&dashboard="+report.ID)),
 				),
-				inspectorElement(),
 			),
+			inspectorElement(),
 		},
 	})
 }
@@ -134,6 +143,9 @@ func jsonString(value any) string {
 
 func initialSignals(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
 	envelope := uisignals.DashboardInitialEnvelope(dataDir, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters)
+	envelope.Runtime.WorkspaceID = catalog.Workspace.ID
+	envelope.Runtime.RouteKey = string(uisignals.RouteDashboard)
+	envelope.Runtime.UpdatesURL = updatesURL(catalog.Workspace.ID, report.ID, activePage.ID)
 	for _, decorate := range chromeDecorators {
 		if decorate != nil {
 			decorate(&envelope.Chrome)

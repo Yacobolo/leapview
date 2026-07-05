@@ -5,11 +5,10 @@ import (
 	"net/url"
 	"strings"
 
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 const (
@@ -54,26 +53,14 @@ func (s *Server) workspaceDataExplorerRedirect(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) dataExplorerUpdates(w http.ResponseWriter, r *http.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
-	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := s.broker.Subscribe(dataExplorerStreamID(clientID))
-	defer unsubscribe()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch := <-updates:
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
-	}
+	clientID := pagestream.EnsureClientID(w, r)
+	pagestream.ServeStream(w, r, pagestream.StreamSpec{Broker: s.broker, StreamID: dataExplorerStreamID(clientID)})
 }
 
 func (s *Server) dataExplorerCommand(w http.ResponseWriter, r *http.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	signals := dataExplorerCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

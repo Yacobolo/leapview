@@ -12,10 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	_ "github.com/duckdb/duckdb-go/v2"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 type adminStorageCommandSignals struct {
@@ -91,26 +90,14 @@ func (s *Server) adminStorageData(r interface{ Context() context.Context }) ui.A
 }
 
 func (s *Server) adminStorageUpdates(w http.ResponseWriter, r *http.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
-	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := s.broker.Subscribe(adminStorageStreamID(clientID))
-	defer unsubscribe()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch := <-updates:
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
-	}
+	clientID := pagestream.EnsureClientID(w, r)
+	pagestream.ServeStream(w, r, pagestream.StreamSpec{Broker: s.broker, StreamID: adminStorageStreamID(clientID)})
 }
 
 func (s *Server) adminStorageSelectTable(w http.ResponseWriter, r *http.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	signals := adminStorageCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

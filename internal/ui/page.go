@@ -2,14 +2,15 @@ package ui
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	ds "maragu.dev/gomponents-datastar"
-	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
@@ -30,6 +31,30 @@ func staticAsset(path string) string {
 }
 
 const appRootClass = "min-h-svh bg-app text-fg-default"
+
+func updatesURL(route uisignals.RouteKind, pairs ...string) string {
+	values := url.Values{}
+	values.Set("route", string(route))
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if strings.TrimSpace(pairs[i+1]) == "" {
+			continue
+		}
+		values.Set(pairs[i], pairs[i+1])
+	}
+	return "/updates?" + values.Encode()
+}
+
+func runtimeSignal(kind uisignals.RouteKind, updates string) uisignals.RouteRuntimeSignal {
+	return uisignals.RouteRuntimeSignal{
+		Kind:       kind,
+		RouteKey:   string(kind),
+		UpdatesURL: updates,
+	}
+}
+
+func streamAction() string {
+	return "@get($runtime.updatesUrl, {openWhenHidden: true})"
+}
 
 func inspectorScript() g.Node {
 	return h.Script(h.Type("module"), h.Src(staticAsset("/static/datastar-inspector.js")))
@@ -56,9 +81,8 @@ func LoginPage() g.Node {
 		ProviderLabel:       "Sign in with Azure Active Directory",
 		BackgroundModuleSrc: staticAsset("/static/topology-background.js"),
 	}
-	return c.HTML5(c.HTML5Props{
-		Title:    "LibreDash Login",
-		Language: "en",
+	return pagestream.RenderDocument(pagestream.DocumentSpec{
+		Title: "LibreDash Login",
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
@@ -74,20 +98,20 @@ func LoginPage() g.Node {
 			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		},
+		MainAttrs: []g.Node{h.Class(appRootClass)},
+		Signals: map[string]any{
+			"page":    page,
+			"runtime": runtimeSignal(uisignals.RouteLogin, updatesURL(uisignals.RouteLogin)),
+			"status":  dashboard.Status{},
+		},
+		Init: []string{streamAction()},
 		Body: []g.Node{
-			h.Main(h.Class(appRootClass),
-				ds.Signals(map[string]any{
-					"page":    page,
-					"runtime": uisignals.RouteRuntimeSignal{Kind: uisignals.RouteLogin},
-					"status":  dashboard.Status{},
-				}),
-				ds.Init("document.dispatchEvent(new CustomEvent('libredash-login-background-init'))", ds.ModifierDelay, ds.Duration(900*time.Millisecond)),
-				g.El("ld-login-page",
-					g.Attr("page", jsonString(page)),
-					g.Attr("data-attr:page", "$page"),
-				),
-				inspectorElement(),
+			h.Span(g.Attr("hidden"), ds.Init("document.dispatchEvent(new CustomEvent('libredash-login-background-init'))", ds.ModifierDelay, ds.Duration(900*time.Millisecond))),
+			g.El("ld-login-page",
+				g.Attr("page", jsonString(page)),
+				g.Attr("data-attr:page", "$page"),
 			),
+			inspectorElement(),
 		},
 	})
 }
@@ -125,12 +149,11 @@ func catalogPageDocument(catalog dashboard.Catalog, page uisignals.CatalogPageSi
 	signals := map[string]any{
 		"chrome":  chrome,
 		"page":    page,
-		"runtime": uisignals.RouteRuntimeSignal{Kind: uisignals.RouteCatalog},
+		"runtime": runtimeSignal(uisignals.RouteCatalog, updatesURL(uisignals.RouteCatalog)),
 		"status":  dashboard.Status{},
 	}
-	return c.HTML5(c.HTML5Props{
-		Title:    "LibreDash Dashboards",
-		Language: "en",
+	return pagestream.RenderDocument(pagestream.DocumentSpec{
+		Title: "LibreDash Dashboards",
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
@@ -142,20 +165,20 @@ func catalogPageDocument(catalog dashboard.Catalog, page uisignals.CatalogPageSi
 			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
+		MainAttrs: []g.Node{h.Class(appRootClass)},
+		Signals:   signals,
+		Init:      []string{streamAction()},
 		Body: []g.Node{
-			h.Main(h.Class(appRootClass),
-				ds.Signals(signals),
-				g.El("ld-app-shell",
-					g.Attr("chrome", jsonString(chrome)),
-					g.Attr("data-attr:chrome", "$chrome"),
-					g.El("ld-catalog-page",
-						g.Attr("slot", "page"),
-						g.Attr("page", jsonString(page)),
-						g.Attr("data-attr:page", "$page"),
-					),
+			g.El("ld-app-shell",
+				g.Attr("chrome", jsonString(chrome)),
+				g.Attr("data-attr:chrome", "$chrome"),
+				g.El("ld-catalog-page",
+					g.Attr("slot", "page"),
+					g.Attr("page", jsonString(page)),
+					g.Attr("data-attr:page", "$page"),
 				),
-				inspectorElement(),
 			),
+			inspectorElement(),
 		},
 	})
 }

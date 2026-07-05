@@ -6,6 +6,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/command"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func (h Handler) TableWindow(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -69,7 +70,7 @@ func (h Handler) handleCommand(w nethttp.ResponseWriter, r *nethttp.Request, run
 
 func (h Handler) readSignals(w nethttp.ResponseWriter, r *nethttp.Request) (dashboard.Signals, bool) {
 	signals := dashboard.Signals{}
-	if err := lddatastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return dashboard.Signals{}, false
 	}

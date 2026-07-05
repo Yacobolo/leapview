@@ -5,9 +5,8 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	ds "maragu.dev/gomponents-datastar"
-	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
@@ -21,12 +20,11 @@ func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPage
 		"dataExplorer":        explorer,
 		"dataExplorerCommand": explorer.Command,
 		"csrfToken":           csrfToken,
-		"runtime":             uisignals.RouteRuntimeSignal{Kind: uisignals.RouteData},
+		"runtime":             runtimeSignal(uisignals.RouteData, updatesURL(uisignals.RouteData)),
 		"status":              dashboard.Status{},
 	}
-	return c.HTML5(c.HTML5Props{
-		Title:    page.Title,
-		Language: "en",
+	return pagestream.RenderDocument(pagestream.DocumentSpec{
+		Title: page.Title,
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
@@ -38,24 +36,23 @@ func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPage
 			inspectorScript(),
 			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
+		MainAttrs: []g.Node{h.Class(appRootClass)},
+		Signals:   signals,
+		Init:      []string{streamAction()},
 		Body: []g.Node{
-			h.Main(h.Class(appRootClass),
-				ds.Signals(signals),
-				ds.Init("@get('/data/updates', {openWhenHidden: true})"),
-				g.El("ld-app-shell",
-					g.Attr("chrome", jsonString(chrome)),
-					g.Attr("data-attr:chrome", "$chrome"),
-					g.El("ld-data-explorer",
-						g.Attr("slot", "page"),
-						g.Attr("page", mustJSONString(page)),
-						g.Attr("data-attr:page", "$page"),
-						g.Attr("dataexplorer", mustJSONString(explorer)),
-						g.Attr("data-attr:dataexplorer", "$dataExplorer"),
-						g.Attr("data-on:ld-data-explorer-command", "$dataExplorerCommand = evt.detail; "+postAction("/data/command")),
-					),
+			g.El("ld-app-shell",
+				g.Attr("chrome", jsonString(chrome)),
+				g.Attr("data-attr:chrome", "$chrome"),
+				g.El("ld-data-explorer",
+					g.Attr("slot", "page"),
+					g.Attr("page", mustJSONString(page)),
+					g.Attr("data-attr:page", "$page"),
+					g.Attr("dataexplorer", mustJSONString(explorer)),
+					g.Attr("data-attr:dataexplorer", "$dataExplorer"),
+					g.Attr("data-on:ld-data-explorer-command", "$dataExplorerCommand = evt.detail; "+postAction("/data/command")),
 				),
-				inspectorElement(),
 			),
+			inspectorElement(),
 		},
 	})
 }

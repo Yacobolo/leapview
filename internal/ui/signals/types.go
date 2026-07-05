@@ -83,9 +83,12 @@ type SidebarItemSignal struct {
 
 type RouteRuntimeSignal struct {
 	ClientID    string    `json:"clientId,omitempty"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
 	DashboardID string    `json:"dashboardId,omitempty"`
 	PageID      string    `json:"pageId,omitempty"`
 	ModelID     string    `json:"modelId,omitempty"`
+	RouteKey    string    `json:"routeKey,omitempty"`
+	UpdatesURL  string    `json:"updatesUrl,omitempty"`
 	Kind        RouteKind `json:"kind"`
 }
 

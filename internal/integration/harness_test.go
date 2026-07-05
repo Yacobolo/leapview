@@ -213,6 +213,8 @@ func (h *harness) getUpdates(t *testing.T, dashboardID, pageID string, signals m
 		t.Fatalf("marshal Datastar signals: %v", err)
 	}
 	values := url.Values{}
+	values.Set("route", "dashboard")
+	values.Set("workspace", h.workspaceIDOrDefault())
 	values.Set("dashboard", dashboardID)
 	values.Set("page", pageID)
 	values.Set("datastar", string(encodedSignals))
@@ -252,6 +254,8 @@ func (h *harness) openUpdatesStream(t *testing.T, dashboardID, pageID string, si
 		t.Fatalf("marshal Datastar signals: %v", err)
 	}
 	values := url.Values{}
+	values.Set("route", "dashboard")
+	values.Set("workspace", h.workspaceIDOrDefault())
 	values.Set("dashboard", dashboardID)
 	values.Set("page", pageID)
 	values.Set("datastar", string(encodedSignals))
@@ -358,7 +362,12 @@ func (h *harness) openAssetUpdatesStream(t *testing.T, workspaceID, assetID, sec
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	path := h.serverURL(t) + "/workspaces/" + workspaceID + "/assets/" + assetID + "/updates?section=" + url.QueryEscape(section)
+	values := url.Values{}
+	values.Set("route", "workspace_asset")
+	values.Set("workspace", workspaceID)
+	values.Set("asset", assetID)
+	values.Set("section", section)
+	path := h.serverURL(t) + "/updates?" + values.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		cancel()
@@ -399,7 +408,7 @@ func (h *harness) serverURL(t *testing.T) string {
 }
 
 func (h *harness) workspaceUpdatesPath() string {
-	return "/workspaces/" + h.workspaceIDOrDefault() + "/updates"
+	return "/updates"
 }
 
 func (h *harness) workspaceCommandPath(path string) string {

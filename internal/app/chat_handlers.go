@@ -9,8 +9,8 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/agentapp"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 	"github.com/starfederation/datastar-go/datastar"
 )
@@ -44,6 +44,10 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) legacyChatRedirect(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/updates") {
+		http.NotFound(w, r)
+		return
+	}
 	status := http.StatusFound
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		status = http.StatusTemporaryRedirect
@@ -59,6 +63,10 @@ func (s *Server) chatNew(w http.ResponseWriter, r *http.Request) {
 func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
 	scope := s.chatScope(r)
 	conversationID := strings.TrimSpace(chi.URLParam(r, "conversation"))
+	if conversationID == "updates" {
+		http.NotFound(w, r)
+		return
+	}
 	if s.agent == nil || !s.agent.Enabled() {
 		s.renderChat(w, r, "conversation", s.chatSignal(r.Context(), scope, "", "", false))
 		return
@@ -77,7 +85,7 @@ func (s *Server) chatConversation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderChat(w http.ResponseWriter, r *http.Request, view string, signal ui.ChatSignal) {
-	_ = lddatastar.EnsureClientID(w, r)
+	_ = pagestream.EnsureClientID(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	workspaceID := s.chatDefaultWorkspaceID()
@@ -94,7 +102,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request) {
 	}
 	clientID := chatClientID(r)
 	signals := chatTurnCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -240,28 +248,21 @@ func (s *Server) chatUpdates(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := s.broker.Subscribe(chatStreamID(scope, chatClientID(r)))
-	defer unsubscribe()
+	initialPatches := []pagestream.Patch{}
 	signals := chatTurnCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err == nil {
+	if err := pagestream.ReadSignals(r, &signals); err == nil {
 		activeID := strings.TrimSpace(signals.Agent.ActiveConversationID)
 		if activeID != "" {
 			if state, stateErr := s.agent.ConversationTranscriptState(r.Context(), scope, activeID); stateErr == nil {
-				_ = sse.MarshalAndPatchSignals(chatSignalPatch(s.chatSignalWith(r.Context(), scope, activeID, state.Transcript, state.Artifacts, "", s.agent.ConversationRunning(activeID))))
+				initialPatches = append(initialPatches, chatSignalPatch(s.chatSignalWith(r.Context(), scope, activeID, state.Transcript, state.Artifacts, "", s.agent.ConversationRunning(activeID))))
 			}
 		}
 	}
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch := <-updates:
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
-	}
+	pagestream.ServeStream(w, r, pagestream.StreamSpec{
+		Broker:         s.broker,
+		StreamID:       chatStreamID(scope, chatClientID(r)),
+		InitialPatches: initialPatches,
+	})
 }
 
 func (s *Server) chatService(w http.ResponseWriter, r *http.Request) (*agentapp.Service, agentapp.Scope, bool) {
@@ -325,8 +326,6 @@ func legacyGlobalChatPath(conversationID, path string) string {
 	switch {
 	case strings.HasSuffix(path, "/new"):
 		return chatRoutePath("", "new")
-	case strings.HasSuffix(path, "/updates"):
-		return chatRoutePath("", "updates")
 	case strings.HasSuffix(path, "/turns"):
 		return chatRoutePath("", "turns")
 	case strings.TrimSpace(conversationID) != "":
