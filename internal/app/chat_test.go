@@ -53,10 +53,10 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 		`&#34;primaryAction&#34;:{&#34;label&#34;:&#34;New chat&#34;,&#34;href&#34;:&#34;/chat/new&#34;,&#34;icon&#34;:&#34;plus&#34;}`,
 		`&#34;history&#34;:{&#34;label&#34;:&#34;Chats&#34;`,
 		`&#34;view&#34;:&#34;new&#34;`,
-		`data-attr:page="JSON.stringify($page)"`,
-		`data-attr:agent="JSON.stringify($agent)"`,
-		`data-attr:visuals="JSON.stringify($visuals)"`,
-		`data-attr:tables="JSON.stringify($tables)"`,
+		`data-attr:page="$page"`,
+		`data-attr:agent="$agent"`,
+		`data-attr:visuals="$visuals"`,
+		`data-attr:tables="$tables"`,
 		`data-attr:pending="$agentTurnPending || $agent.status.running"`,
 		`data-attr:composerdisabled="$agentTurnPending || $agent.status.running || $agent.composer.disabled"`,
 		`data-indicator="agentTurnPending"`,
@@ -71,7 +71,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	if strings.Contains(body, `aria-label="Agent conversations"`) {
 		t.Fatalf("chat page should render the conversation web component instead of the static rail:\n%s", body)
 	}
-	for _, legacy := range []string{`<ld-sub-sidebar`, `<ld-chat-thread`, `<ld-chat-composer`, `data-attr:transcript`, `JSON.stringify($page.sidebar)`} {
+	for _, legacy := range []string{`<ld-sub-sidebar`, `<ld-chat-thread`, `<ld-chat-composer`, `data-attr:transcript`, `$page.sidebar`} {
 		if strings.Contains(body, legacy) {
 			t.Fatalf("chat page rendered product internals below the route root (%q):\n%s", legacy, body)
 		}
@@ -337,8 +337,8 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 		`"title":"Orders"`,
 		`"data":[{"label":"delivered","value":42}]`,
 		`"tables":{}`,
-		`data-attr:visuals="JSON.stringify($visuals)"`,
-		`data-attr:tables="JSON.stringify($tables)"`,
+		`data-attr:visuals="$visuals"`,
+		`data-attr:tables="$tables"`,
 		`"artifact":{"kind":"chart","id":"agent_chart_123","summary":"Created chart."}`,
 		`"resultJson":"{\n  \"ok\": true,\n  \"kind\": \"chart\"`,
 	} {
