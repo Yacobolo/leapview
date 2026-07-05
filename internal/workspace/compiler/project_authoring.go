@@ -151,9 +151,10 @@ type workspaceGrantSpec struct {
 }
 
 type workspaceDataPolicySpec struct {
-	Object     workspaceSecurableObjectSpec `yaml:"object"`
-	PolicyType string                       `yaml:"policyType"`
-	Expression yaml.Node                    `yaml:"expression"`
+	Object     workspaceSecurableObjectSpec    `yaml:"object"`
+	Subject    workspaceRoleBindingSubjectSpec `yaml:"subject"`
+	PolicyType string                          `yaml:"policyType"`
+	Expression yaml.Node                       `yaml:"expression"`
 }
 
 type workspaceAgentPolicySpec struct {

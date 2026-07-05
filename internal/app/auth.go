@@ -202,7 +202,17 @@ func (a *Auth) Middleware(privilege access.Privilege, next http.Handler) http.Ha
 				writeAuthError(w, r, err, http.StatusInternalServerError)
 				return
 			}
-			if !decision.Allowed && routeCanDeferDashboardDataAuth(privilege, r) {
+			if !decision.Allowed && routeCanDeferDataAuth(privilege, r) {
+				useDecision, err := a.repo.Authorize(r.Context(), principal.ID, access.PrivilegeUseWorkspace, authObjectForWorkspace(workspaceID))
+				if err != nil {
+					writeAuthError(w, r, err, http.StatusInternalServerError)
+					return
+				}
+				if useDecision.Allowed {
+					decision.Allowed = true
+				}
+			}
+			if !decision.Allowed && routeCanDeferDataAuth(privilege, r) {
 				viewDecision, err := a.repo.AuthorizeAny(r.Context(), principal.ID, access.PrivilegeViewItem, objects)
 				if err != nil {
 					writeAuthError(w, r, err, http.StatusInternalServerError)

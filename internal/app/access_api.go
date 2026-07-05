@@ -803,10 +803,12 @@ func (s *Server) apiListDataPolicies(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiCreateDataPolicy(w http.ResponseWriter, r *http.Request) {
 	principal, _ := currentPrincipal(s, r)
 	var input struct {
-		ObjectType string         `json:"objectType"`
-		ObjectID   string         `json:"objectId"`
-		PolicyType string         `json:"policyType"`
-		Expression map[string]any `json:"expression"`
+		ObjectType  string         `json:"objectType"`
+		ObjectID    string         `json:"objectId"`
+		SubjectType string         `json:"subjectType"`
+		SubjectID   string         `json:"subjectId"`
+		PolicyType  string         `json:"policyType"`
+		Expression  map[string]any `json:"expression"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -823,6 +825,20 @@ func (s *Server) apiCreateDataPolicy(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, fmt.Errorf("unsupported policyType %q", input.PolicyType), http.StatusBadRequest)
 		return
 	}
+	subjectType := access.SubjectType(strings.TrimSpace(input.SubjectType))
+	subjectID := strings.TrimSpace(input.SubjectID)
+	if subjectType != "" && !knownSubjectType(subjectType) {
+		writeJSONError(w, fmt.Errorf("unsupported subjectType %q", input.SubjectType), http.StatusBadRequest)
+		return
+	}
+	if subjectType != "" && subjectID == "" {
+		writeJSONError(w, fmt.Errorf("subjectId is required when subjectType is set"), http.StatusBadRequest)
+		return
+	}
+	if subjectType == "" && subjectID != "" {
+		writeJSONError(w, fmt.Errorf("subjectType is required when subjectId is set"), http.StatusBadRequest)
+		return
+	}
 	expression, err := json.Marshal(input.Expression)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
@@ -835,6 +851,8 @@ func (s *Server) apiCreateDataPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := repo.UpsertDataPolicy(r.Context(), access.DataPolicyInput{
 		Object:         object,
+		SubjectType:    subjectType,
+		SubjectID:      subjectID,
 		PolicyType:     input.PolicyType,
 		ExpressionJSON: string(expression),
 	})
@@ -844,6 +862,38 @@ func (s *Server) apiCreateDataPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	recordAccessAudit(r, repo, "data_policy.created", principal.ID, row.WorkspaceID, "data_policy", row.ID, access.PrivilegeManageGrants, "success", map[string]any{"objectId": row.ObjectID, "policyType": row.PolicyType})
 	writeJSON(w, http.StatusCreated, dataPolicyDTO(row))
+}
+
+func (s *Server) apiTransferOwnership(w http.ResponseWriter, r *http.Request) {
+	principal, _ := currentPrincipal(s, r)
+	var input struct {
+		ObjectType       string `json:"objectType"`
+		ObjectID         string `json:"objectId"`
+		OwnerPrincipalID string `json:"ownerPrincipalId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	object, ok := objectRefFromValues(w, r, input.ObjectType, input.ObjectID)
+	if !ok {
+		return
+	}
+	if !s.authorizeCurrentObject(w, r, access.PrivilegeManageItem, object) {
+		return
+	}
+	repo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	updated, err := repo.SetObjectOwner(r.Context(), object, input.OwnerPrincipalID)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	recordAccessAudit(r, repo, "ownership.transferred", principal.ID, updated.WorkspaceID, "securable_object", updated.ID, access.PrivilegeManageItem, "success", map[string]any{"ownerPrincipalId": updated.OwnerPrincipalID, "objectType": string(updated.Type)})
+	writeJSON(w, http.StatusOK, securableObjectDTO(updated))
 }
 
 func (s *Server) apiDeleteDataPolicy(w http.ResponseWriter, r *http.Request) {
@@ -1049,10 +1099,25 @@ func dataPolicyDTO(row access.DataPolicy) map[string]any {
 		"id":          row.ID,
 		"workspaceId": row.WorkspaceID,
 		"objectId":    row.ObjectID,
+		"subjectType": emptyToNil(string(row.SubjectType)),
+		"subjectId":   emptyToNil(row.SubjectID),
 		"policyType":  row.PolicyType,
 		"expression":  expression,
 		"createdAt":   row.CreatedAt,
 		"updatedAt":   row.UpdatedAt,
+	}
+}
+
+func securableObjectDTO(row access.SecurableObject) map[string]any {
+	return map[string]any{
+		"id":               row.ID,
+		"type":             string(row.Type),
+		"workspaceId":      row.WorkspaceID,
+		"parentId":         emptyToNil(row.ParentID),
+		"ownerPrincipalId": emptyToNil(row.OwnerPrincipalID),
+		"displayName":      emptyToNil(row.DisplayName),
+		"createdAt":        row.CreatedAt,
+		"updatedAt":        row.UpdatedAt,
 	}
 }
 
@@ -1069,6 +1134,15 @@ func authorizationDecisionDTO(row access.AuthorizationDecision) map[string]any {
 		"inherited":     row.Inherited,
 		"owner":         row.Owner,
 		"platform":      row.Platform,
+	}
+}
+
+func knownSubjectType(value access.SubjectType) bool {
+	switch value {
+	case access.SubjectPrincipal, access.SubjectGroup, access.SubjectServicePrincipal:
+		return true
+	default:
+		return false
 	}
 }
 

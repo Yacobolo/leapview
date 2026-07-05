@@ -24,6 +24,8 @@ type Repository struct {
 	q  *platformdb.Queries
 }
 
+const defaultAPITokenTTL = 90 * 24 * time.Hour
+
 func NewRepository(sqlDB *sql.DB) *Repository {
 	return &Repository{db: sqlDB, q: platformdb.New(sqlDB)}
 }
@@ -423,16 +425,21 @@ func (r *Repository) UpsertDataPolicy(ctx context.Context, input access.DataPoli
 	if err != nil {
 		return access.DataPolicy{}, err
 	}
+	if input.SubjectType != "" && strings.TrimSpace(input.SubjectID) == "" {
+		return access.DataPolicy{}, fmt.Errorf("data policy subject id is required")
+	}
 	_, err = r.db.ExecContext(ctx, `
-INSERT INTO data_policies (id, workspace_id, object_id, policy_type, expression_json)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO data_policies (id, workspace_id, object_id, subject_type, subject_id, policy_type, expression_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   workspace_id = excluded.workspace_id,
   object_id = excluded.object_id,
+  subject_type = excluded.subject_type,
+  subject_id = excluded.subject_id,
   policy_type = excluded.policy_type,
   expression_json = excluded.expression_json,
   updated_at = CURRENT_TIMESTAMP
-`, input.ID, input.Object.WorkspaceID, objectID, input.PolicyType, input.ExpressionJSON)
+`, input.ID, input.Object.WorkspaceID, objectID, string(input.SubjectType), strings.TrimSpace(input.SubjectID), input.PolicyType, input.ExpressionJSON)
 	if err != nil {
 		return access.DataPolicy{}, err
 	}
@@ -441,14 +448,16 @@ ON CONFLICT(id) DO UPDATE SET
 
 func (r *Repository) GetDataPolicy(ctx context.Context, workspaceID, id string) (access.DataPolicy, error) {
 	row := r.db.QueryRowContext(ctx, `
-SELECT id, workspace_id, object_id, policy_type, expression_json, created_at, updated_at
+SELECT id, workspace_id, object_id, subject_type, subject_id, policy_type, expression_json, created_at, updated_at
 FROM data_policies
 WHERE id = ? AND workspace_id = ?
 `, id, workspaceID)
 	var policy access.DataPolicy
-	if err := row.Scan(&policy.ID, &policy.WorkspaceID, &policy.ObjectID, &policy.PolicyType, &policy.ExpressionJSON, &policy.CreatedAt, &policy.UpdatedAt); err != nil {
+	var subjectType string
+	if err := row.Scan(&policy.ID, &policy.WorkspaceID, &policy.ObjectID, &subjectType, &policy.SubjectID, &policy.PolicyType, &policy.ExpressionJSON, &policy.CreatedAt, &policy.UpdatedAt); err != nil {
 		return access.DataPolicy{}, err
 	}
+	policy.SubjectType = access.SubjectType(subjectType)
 	return policy, nil
 }
 
@@ -474,7 +483,7 @@ func (r *Repository) ListDataPoliciesWithOptions(ctx context.Context, object acc
 		args = append(args, id)
 	}
 	rows, err := r.db.QueryContext(ctx, `
-SELECT id, workspace_id, object_id, policy_type, expression_json, created_at, updated_at
+SELECT id, workspace_id, object_id, subject_type, subject_id, policy_type, expression_json, created_at, updated_at
 FROM data_policies
 WHERE object_id IN (`+placeholders+`)
 ORDER BY CASE object_id`+grantOrderCase(objectIDs)+` ELSE 999 END, policy_type, id
@@ -486,12 +495,55 @@ ORDER BY CASE object_id`+grantOrderCase(objectIDs)+` ELSE 999 END, policy_type, 
 	policies := []access.DataPolicy{}
 	for rows.Next() {
 		var policy access.DataPolicy
-		if err := rows.Scan(&policy.ID, &policy.WorkspaceID, &policy.ObjectID, &policy.PolicyType, &policy.ExpressionJSON, &policy.CreatedAt, &policy.UpdatedAt); err != nil {
+		var subjectType string
+		if err := rows.Scan(&policy.ID, &policy.WorkspaceID, &policy.ObjectID, &subjectType, &policy.SubjectID, &policy.PolicyType, &policy.ExpressionJSON, &policy.CreatedAt, &policy.UpdatedAt); err != nil {
 			return nil, err
 		}
+		policy.SubjectType = access.SubjectType(subjectType)
 		policies = append(policies, policy)
 	}
 	return policies, rows.Err()
+}
+
+func (r *Repository) ListEffectiveDataPolicies(ctx context.Context, principalID string, object access.ObjectRef, includeInherited bool) ([]access.DataPolicy, error) {
+	policies, err := r.ListDataPoliciesWithOptions(ctx, object, includeInherited)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]access.DataPolicy, 0, len(policies))
+	for _, policy := range policies {
+		applies, err := r.dataPolicyAppliesToPrincipal(ctx, policy, principalID)
+		if err != nil {
+			return nil, err
+		}
+		if applies {
+			out = append(out, policy)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) dataPolicyAppliesToPrincipal(ctx context.Context, policy access.DataPolicy, principalID string) (bool, error) {
+	switch policy.SubjectType {
+	case "":
+		return true, nil
+	case access.SubjectPrincipal, access.SubjectServicePrincipal:
+		return strings.TrimSpace(policy.SubjectID) == strings.TrimSpace(principalID), nil
+	case access.SubjectGroup:
+		var found string
+		err := r.db.QueryRowContext(ctx, `
+SELECT principal_id
+FROM group_members
+WHERE group_id = ? AND principal_id = ?
+LIMIT 1
+`, policy.SubjectID, principalID).Scan(&found)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return err == nil, err
+	default:
+		return false, fmt.Errorf("unsupported data policy subject type %q", policy.SubjectType)
+	}
 }
 
 func (r *Repository) DeleteDataPolicy(ctx context.Context, workspaceID, id string) error {
@@ -500,6 +552,25 @@ func (r *Repository) DeleteDataPolicy(ctx context.Context, workspaceID, id strin
 	}
 	_, err := r.db.ExecContext(ctx, `DELETE FROM data_policies WHERE workspace_id = ? AND id = ?`, workspaceID, id)
 	return err
+}
+
+func (r *Repository) SetObjectOwner(ctx context.Context, object access.ObjectRef, ownerPrincipalID string) (access.SecurableObject, error) {
+	ownerPrincipalID = strings.TrimSpace(ownerPrincipalID)
+	if ownerPrincipalID == "" {
+		return access.SecurableObject{}, fmt.Errorf("owner principal id is required")
+	}
+	objectID, err := r.ensureSecurableObject(ctx, object)
+	if err != nil {
+		return access.SecurableObject{}, err
+	}
+	if _, err := r.db.ExecContext(ctx, `
+UPDATE securable_objects
+SET owner_principal_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`, ownerPrincipalID, objectID); err != nil {
+		return access.SecurableObject{}, err
+	}
+	return r.securableObjectByID(ctx, objectID)
 }
 
 func (r *Repository) ListGrants(ctx context.Context, object access.ObjectRef) ([]access.Grant, error) {
@@ -683,6 +754,21 @@ func (r *Repository) objectOwner(ctx context.Context, objectID string) (string, 
 		return "", nil
 	}
 	return owner, err
+}
+
+func (r *Repository) securableObjectByID(ctx context.Context, objectID string) (access.SecurableObject, error) {
+	row := r.db.QueryRowContext(ctx, `
+SELECT id, object_type, workspace_id, parent_id, owner_principal_id, display_name, created_at, updated_at
+FROM securable_objects
+WHERE id = ?
+`, objectID)
+	var object access.SecurableObject
+	var objectType string
+	if err := row.Scan(&object.ID, &objectType, &object.WorkspaceID, &object.ParentID, &object.OwnerPrincipalID, &object.DisplayName, &object.CreatedAt, &object.UpdatedAt); err != nil {
+		return access.SecurableObject{}, err
+	}
+	object.Type = access.SecurableType(objectType)
+	return object, nil
 }
 
 func (r *Repository) syncRoleBindingGrants(ctx context.Context, bindingID, workspaceID, roleName string, subjectType access.SubjectType, subjectID string) error {
@@ -1090,9 +1176,20 @@ WHERE object_id IN (
 	}
 	for _, name := range sortedWorkspaceDataPolicyNames(policy.DataPolicies) {
 		dataPolicy := policy.DataPolicies[name]
+		var subjectType access.SubjectType
+		var subjectID string
+		if strings.TrimSpace(dataPolicy.Subject.Kind) != "" {
+			var err error
+			subjectType, subjectID, err = r.policySubject(ctx, workspaceID, dataPolicy.Subject, groupIDs)
+			if err != nil {
+				return fmt.Errorf("workspace data policy %q: %w", name, err)
+			}
+		}
 		if _, err := r.UpsertDataPolicy(ctx, access.DataPolicyInput{
 			ID:             stableAccessID("datapolicy", workspaceID, name),
 			Object:         policyObjectRef(workspaceID, dataPolicy.Object),
+			SubjectType:    subjectType,
+			SubjectID:      subjectID,
 			PolicyType:     dataPolicy.PolicyType,
 			ExpressionJSON: dataPolicy.ExpressionJSON,
 		}); err != nil {
@@ -1249,6 +1346,9 @@ func (r *Repository) CreateAPITokenWithMetadata(ctx context.Context, input acces
 	permissionsJSON, err := json.Marshal(input.Permissions)
 	if err != nil {
 		return "", access.APIToken{}, err
+	}
+	if input.ExpiresAt.IsZero() {
+		input.ExpiresAt = time.Now().Add(defaultAPITokenTTL)
 	}
 	expiresAt := sql.NullString{}
 	if !input.ExpiresAt.IsZero() {

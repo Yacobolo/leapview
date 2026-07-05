@@ -73,6 +73,7 @@ var apigenOperationPermissions = map[string]access.Privilege{
 	"listDataPolicies":                  access.PrivilegeManageGrants,
 	"createDataPolicy":                  access.PrivilegeManageGrants,
 	"deleteDataPolicy":                  access.PrivilegeManageGrants,
+	"transferOwnership":                 access.PrivilegeManageItem,
 	"listGroups":                        access.PrivilegeManageGrants,
 	"createGroup":                       access.PrivilegeManageGrants,
 	"getGroup":                          access.PrivilegeManageGrants,

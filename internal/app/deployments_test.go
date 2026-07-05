@@ -594,6 +594,54 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	}
 }
 
+func TestDeploymentAPIAuditsRollbackWhenInactiveDeploymentIsActivated(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	store := testStore(t)
+	ctx := context.Background()
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
+		t.Fatalf("ensure sales workspace: %v", err)
+	}
+	artifactDir := t.TempDir()
+	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
+	first := saveBundledValidatedDeployment(t, ctx, deploymentRepo, artifactDir, "sales")
+	if _, err := deploymentRepo.Activate(ctx, "sales", deployment.DefaultEnvironment, first.ID); err != nil {
+		t.Fatalf("activate first deployment: %v", err)
+	}
+	second := saveBundledValidatedDeployment(t, ctx, deploymentRepo, artifactDir, "sales")
+	if _, err := deploymentRepo.Activate(ctx, "sales", deployment.DefaultEnvironment, second.ID); err != nil {
+		t.Fatalf("activate second deployment: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE deployments SET status = ? WHERE id = ?`, deployment.StatusInactive, first.ID); err != nil {
+		t.Fatalf("mark first deployment inactive: %v", err)
+	}
+	auth := testAuth(store, "sales", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: &fakeReloader{}, ArtifactDir: artifactDir, DefaultWorkspaceID: "sales"})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/deployments/"+string(first.ID)+"/activate", nil)
+	req.Header.Set("Authorization", "Bearer dev")
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rollback activate status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	events, err := accesssqlite.NewRepository(store.SQLDB()).ListAuditEvents(ctx, access.AuditEventFilter{
+		WorkspaceID: "sales",
+		Action:      "deployment.rolled_back",
+		TargetID:    string(first.ID),
+	})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("rollback audit events = %d, want 1: %#v", len(events), events)
+	}
+	if events[0].Privilege != access.PrivilegeActivateDeployment || events[0].Status != "success" {
+		t.Fatalf("rollback audit event = %#v, want activate privilege success", events[0])
+	}
+}
+
 func TestDeploymentActivationPrepareFailureLeavesDeploymentInactive(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
@@ -2003,6 +2051,56 @@ func zeroArtifact(deploymentID deployment.ID, workspaceID string) deployment.Art
 		Path:         "artifact.tar.gz",
 		ManifestJSON: "{}",
 	}
+}
+
+func saveBundledValidatedDeployment(t *testing.T, ctx context.Context, repo *deploymentsqlite.Repository, artifactDir, workspaceID string) deployment.Deployment {
+	t.Helper()
+	created, err := repo.Create(ctx, deployment.CreateInput{WorkspaceID: deployment.WorkspaceID(workspaceID), CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	var bundle bytes.Buffer
+	manifest, digest, err := deploymentfs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), workspaceID, created.ID, &bundle)
+	if err != nil {
+		t.Fatalf("pack project: %v", err)
+	}
+	artifactPath := filepath.Join(artifactDir, digest+".tar.gz")
+	if err := os.WriteFile(artifactPath, bundle.Bytes(), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	compiled, err := workspacecompiler.CompileProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), workspacecompiler.Options{})
+	if err != nil {
+		t.Fatalf("compile project: %v", err)
+	}
+	workspaceDef := compiled.Workspaces[workspaceID].Definition
+	if workspaceDef == nil {
+		t.Fatalf("compile project: missing %s workspace definition", workspaceID)
+	}
+	workspaceDef.SourceFiles = remapTestSourceFiles(workspaceDef.SourceFiles, "sales", workspaceID)
+	graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(created.ID), workspaceDef)
+	if err != nil {
+		t.Fatalf("extract assets: %v", err)
+	}
+	artifact := deployment.Artifact{
+		ID:           "artifact_" + string(created.ID),
+		DeploymentID: created.ID,
+		WorkspaceID:  deployment.WorkspaceID(workspaceID),
+		Environment:  deployment.DefaultEnvironment,
+		Digest:       digest,
+		Format:       deploymentfs.BundleFormat,
+		Path:         artifactPath,
+		ManifestJSON: string(manifestBytes),
+		SizeBytes:    int64(bundle.Len()),
+	}
+	validated, err := repo.SaveValidated(ctx, created.ID, deployment.Validation{Digest: digest, ManifestJSON: string(manifestBytes), Graph: graph}, artifact)
+	if err != nil {
+		t.Fatalf("validate deployment: %v", err)
+	}
+	return validated
 }
 
 func writeMinimalOlistFixture(t *testing.T, dir string) {

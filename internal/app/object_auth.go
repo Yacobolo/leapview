@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -20,8 +21,14 @@ func authObjectsForRequest(privilege access.Privilege, r *http.Request, workspac
 	return objects
 }
 
-func routeCanDeferDashboardDataAuth(privilege access.Privilege, r *http.Request) bool {
-	return privilege == access.PrivilegeQueryData && strings.TrimSpace(chi.URLParam(r, "dashboard")) != ""
+func routeCanDeferDataAuth(privilege access.Privilege, r *http.Request) bool {
+	if privilege != access.PrivilegeQueryData && privilege != access.PrivilegePreviewData {
+		return false
+	}
+	if strings.TrimSpace(chi.URLParam(r, "dashboard")) != "" {
+		return true
+	}
+	return strings.TrimSpace(chi.URLParam(r, "model")) != "" && strings.TrimSpace(chi.URLParam(r, "dataset")) != ""
 }
 
 func routeCanDeferGrantManagement(privilege access.Privilege, r *http.Request) bool {
@@ -149,6 +156,40 @@ func dashboardQueryObjects(metrics QueryMetrics, r *http.Request) []access.Objec
 
 func (s *Server) authorizeCurrentObject(w http.ResponseWriter, r *http.Request, privilege access.Privilege, object access.ObjectRef) bool {
 	return s.authorizeCurrentAny(w, r, privilege, []access.ObjectRef{object})
+}
+
+func (s *Server) authorizeCurrentDataQuery(w http.ResponseWriter, r *http.Request, privilege access.Privilege, query dataquery.Query) bool {
+	principal, ok := currentPrincipal(s, r)
+	if !ok {
+		writeJSONError(w, fmt.Errorf("authenticated principal is required"), http.StatusUnauthorized)
+		return false
+	}
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	query.WorkspaceID = workspaceID
+	query.PrincipalID = principal.ID
+	if credential, ok := currentAPICredential(s, r); ok && !apiTokenAllows(credential.Token, workspaceID, privilege) {
+		writeJSONError(w, errForbidden, http.StatusForbidden)
+		return false
+	}
+	if principal.DevBypass || s.auth == nil {
+		return true
+	}
+	repo, err := s.accessRepository()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return false
+	}
+	objects := dataQueryObjects(query)
+	ok, err = dataAuthorizationMetrics{repo: repo}.authorizeDataQuery(r.Context(), principal.ID, privilege, query, objects)
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return false
+	}
+	if !ok {
+		writeJSONError(w, errForbidden, http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 func (s *Server) authorizeCurrentAny(w http.ResponseWriter, r *http.Request, privilege access.Privilege, objects []access.ObjectRef) bool {

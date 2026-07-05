@@ -82,7 +82,7 @@ func (s *Server) runAgentVisualTool(ctx context.Context, scope agentapp.Scope, c
 		RequestID:   call.ID,
 	}
 	ctx = dataquery.WithMetadata(ctx, metadata)
-	if errResult, ok := s.authorizeAgentPermission(ctx, scope, access.PrivilegeQueryData, []access.ObjectRef{access.WorkspaceObject(scope.WorkspaceID)}, "agent_tool", agentVisualToolName); !ok {
+	if errResult, ok := s.authorizeAgentPermission(ctx, scope, access.PrivilegeQueryData, agentVisualDataObjects(scope.WorkspaceID, input), "agent_tool", agentVisualToolName); !ok {
 		return errResult
 	}
 	result, err := s.queryAgentVisual(ctx, input, agentVisualID(input.Kind, call.ID))
@@ -99,6 +99,21 @@ func (s *Server) runAgentVisualTool(ctx context.Context, scope agentapp.Scope, c
 		},
 		DisplayContent: result,
 	}
+}
+
+func agentVisualDataObjects(workspaceID string, input agentVisualInput) []access.ObjectRef {
+	model := access.ItemObject(access.SecurableSemanticModel, workspaceID, input.Model)
+	objects := []access.ObjectRef{}
+	if input.Dataset != "" {
+		objects = append(objects, access.ItemObjectWithParent(access.SecurableDataset, workspaceID, input.Model+"/"+input.Dataset, model))
+	}
+	if input.Model != "" {
+		objects = append(objects, model)
+	}
+	if workspaceID != "" {
+		objects = append(objects, access.WorkspaceObject(workspaceID))
+	}
+	return objects
 }
 
 func decodeAgentVisualInput(rawArgs json.RawMessage) (agentVisualInput, error) {

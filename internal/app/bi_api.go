@@ -195,16 +195,12 @@ func (s *Server) querySemanticDataset(w http.ResponseWriter, r *http.Request) {
 	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
 		return
 	}
-	if !s.authorizeCurrentAny(w, r, access.PrivilegeQueryData, []access.ObjectRef{
-		semanticDatasetObjectFromRequest(r),
-		semanticModelObjectFromRequest(r),
-		access.WorkspaceObject(chi.URLParam(r, "workspace")),
-	}) {
-		return
-	}
 	request, limit, err := semanticAggregateRequest(datasetID, input, true)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	if !s.authorizeCurrentDataQuery(w, r, access.PrivilegeQueryData, semanticAggregateDataQuery(modelID, request)) {
 		return
 	}
 	plan, err := semanticExplainAggregate(metrics, modelID, request)
@@ -235,16 +231,12 @@ func (s *Server) previewSemanticDataset(w http.ResponseWriter, r *http.Request) 
 	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
 		return
 	}
-	if !s.authorizeCurrentAny(w, r, access.PrivilegePreviewData, []access.ObjectRef{
-		semanticDatasetObjectFromRequest(r),
-		semanticModelObjectFromRequest(r),
-		access.WorkspaceObject(chi.URLParam(r, "workspace")),
-	}) {
-		return
-	}
 	request, limit, err := semanticRowRequest(datasetID, input, true)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	if !s.authorizeCurrentDataQuery(w, r, access.PrivilegePreviewData, semanticRowsDataQuery(modelID, request)) {
 		return
 	}
 	plan, err := semanticExplainRows(metrics, modelID, request)
@@ -275,16 +267,12 @@ func (s *Server) explainSemanticQuery(w http.ResponseWriter, r *http.Request) {
 	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
 		return
 	}
-	if !s.authorizeCurrentAny(w, r, access.PrivilegeQueryData, []access.ObjectRef{
-		semanticDatasetObjectFromRequest(r),
-		semanticModelObjectFromRequest(r),
-		access.WorkspaceObject(chi.URLParam(r, "workspace")),
-	}) {
-		return
-	}
 	request, _, err := semanticAggregateRequest(datasetID, input, false)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	if !s.authorizeCurrentDataQuery(w, r, access.PrivilegeQueryData, semanticAggregateDataQuery(modelID, request)) {
 		return
 	}
 	plan, err := semanticExplainAggregate(metrics, modelID, request)
@@ -309,16 +297,12 @@ func (s *Server) explainSemanticPreview(w http.ResponseWriter, r *http.Request) 
 	if _, _, _, ok := s.semanticDatasetForRequest(w, r); !ok {
 		return
 	}
-	if !s.authorizeCurrentAny(w, r, access.PrivilegePreviewData, []access.ObjectRef{
-		semanticDatasetObjectFromRequest(r),
-		semanticModelObjectFromRequest(r),
-		access.WorkspaceObject(chi.URLParam(r, "workspace")),
-	}) {
-		return
-	}
 	request, _, err := semanticRowRequest(datasetID, input, false)
 	if err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	if !s.authorizeCurrentDataQuery(w, r, access.PrivilegePreviewData, semanticRowsDataQuery(modelID, request)) {
 		return
 	}
 	plan, err := semanticExplainRows(metrics, modelID, request)
@@ -345,9 +329,6 @@ func (s *Server) queryDashboardPage(w http.ResponseWriter, r *http.Request) {
 		filters = metrics.DefaultFilters(dashboardID)
 	}
 	pageID := chi.URLParam(r, "page")
-	if !s.authorizeCurrentAny(w, r, access.PrivilegeQueryData, dashboardQueryObjects(metrics, r)) {
-		return
-	}
 	ctx := dataquery.WithMetadata(r.Context(), requestQueryMetadata(r, dataquery.SurfaceAPI, dataquery.OperationAPIQuery, "dashboard_page", dashboardID+":"+pageID))
 	patch, err := metrics.QueryDashboardPage(ctx, dashboardID, pageID, filters)
 	if err != nil {
@@ -378,9 +359,6 @@ func (s *Server) queryDashboardTable(w http.ResponseWriter, r *http.Request) {
 	}
 	request := metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: chi.URLParam(r, "table"), Block: "a", Count: count})
 	request.Count = count
-	if !s.authorizeCurrentAny(w, r, access.PrivilegeQueryData, dashboardQueryObjects(metrics, r)) {
-		return
-	}
 	ctx := dataquery.WithMetadata(r.Context(), requestQueryMetadata(r, dataquery.SurfaceAPI, dataquery.OperationAPIQuery, "dashboard_table", dashboardID+":"+chi.URLParam(r, "table")))
 	table, err := metrics.QueryTablePage(ctx, dashboardID, input.PageID, filters, request)
 	if err != nil {
@@ -417,9 +395,6 @@ func (s *Server) queryDashboardVisualData(w http.ResponseWriter, r *http.Request
 	filters := dashboardFilters(input.Filters)
 	if filters.Controls == nil && filters.Selections == nil {
 		filters = metrics.DefaultFilters(dashboardID)
-	}
-	if !s.authorizeCurrentAny(w, r, access.PrivilegeQueryData, dashboardQueryObjects(metrics, r)) {
-		return
 	}
 	ctx := dataquery.WithMetadata(r.Context(), requestQueryMetadata(r, dataquery.SurfaceAPI, dataquery.OperationAPIQuery, "dashboard_visual", dashboardID+":"+visualID))
 	patch, err := metrics.QueryDashboardPage(ctx, dashboardID, page.ID, filters)
@@ -469,9 +444,6 @@ func (s *Server) queryDashboardTableData(w http.ResponseWriter, r *http.Request)
 	}
 	request := metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: tableID, Block: "a", Count: count})
 	request.Count = count
-	if !s.authorizeCurrentAny(w, r, access.PrivilegeQueryData, dashboardQueryObjects(metrics, r)) {
-		return
-	}
 	ctx := dataquery.WithMetadata(r.Context(), requestQueryMetadata(r, dataquery.SurfaceAPI, dataquery.OperationAPIQuery, "dashboard_table", dashboardID+":"+tableID))
 	table, err := metrics.QueryTablePage(ctx, dashboardID, page.ID, filters, request)
 	if err != nil {
@@ -508,9 +480,6 @@ func (s *Server) listDashboardFilterOptions(w http.ResponseWriter, r *http.Reque
 	filters := dashboardFilters(input.Filters)
 	if filters.Controls == nil && filters.Selections == nil {
 		filters = metrics.DefaultFilters(dashboardID)
-	}
-	if !s.authorizeCurrentAny(w, r, access.PrivilegeQueryData, dashboardQueryObjects(metrics, r)) {
-		return
 	}
 	ctx := dataquery.WithMetadata(r.Context(), requestQueryMetadata(r, dataquery.SurfaceAPI, dataquery.OperationAPIQuery, "dashboard_filter", dashboardID+":"+filterID))
 	patch, err := metrics.QueryDashboardPage(ctx, dashboardID, page.ID, filters)

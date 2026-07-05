@@ -119,6 +119,8 @@ type DataPolicy struct {
 	ID             string `json:"id"`
 	WorkspaceID    string `json:"workspace_id"`
 	ObjectID       string `json:"object_id"`
+	SubjectType    string `json:"subject_type"`
+	SubjectID      string `json:"subject_id"`
 	PolicyType     string `json:"policy_type"`
 	ExpressionJson string `json:"expression_json"`
 	CreatedAt      string `json:"created_at"`

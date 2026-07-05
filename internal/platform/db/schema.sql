@@ -236,6 +236,8 @@ CREATE TABLE IF NOT EXISTS data_policies (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL DEFAULT '',
   object_id TEXT NOT NULL REFERENCES securable_objects(id) ON DELETE CASCADE,
+  subject_type TEXT NOT NULL DEFAULT '',
+  subject_id TEXT NOT NULL DEFAULT '',
   policy_type TEXT NOT NULL,
   expression_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

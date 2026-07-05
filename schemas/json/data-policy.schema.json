@@ -3,6 +3,34 @@
     "#APIVersion": {
       "const": "libredash.dev/v1"
     },
+    "#AccessSubject": {
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "group": {
+          "$ref": "#/$defs/%23ResourceID"
+        },
+        "kind": {
+          "enum": [
+            "principal",
+            "group",
+            "service_principal"
+          ]
+        },
+        "principalId": {
+          "$ref": "#/$defs/%23ResourceID"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "#AnyObject": {
       "additionalProperties": true,
       "type": "object"
@@ -93,6 +121,9 @@
             "row_filter",
             "column_mask"
           ]
+        },
+        "subject": {
+          "$ref": "#/$defs/%23AccessSubject"
         }
       },
       "required": [

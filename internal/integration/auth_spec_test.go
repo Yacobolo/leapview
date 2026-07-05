@@ -41,7 +41,7 @@ func TestAuthSpecItemSharingAndDataPrivileges(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("dashboard query via semantic model grant status=%d body=%s", status, body)
 	}
-	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"fields":[{"field":"orders.status"}],"limit":1}`)
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
 	if status != http.StatusForbidden {
 		t.Fatalf("raw preview status=%d want=403 body=%s", status, body)
 	}
@@ -159,7 +159,7 @@ func TestAuthSpecWorkspaceRoleSharingCompilesToGrants(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("viewer dashboard query status=%d body=%s", status, body)
 	}
-	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", viewerToken, `{"fields":[{"field":"orders.status"}],"limit":1}`)
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", viewerToken, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
 	if status != http.StatusForbidden {
 		t.Fatalf("viewer raw preview status=%d want=403 body=%s", status, body)
 	}
@@ -301,6 +301,34 @@ func TestAuthSpecDataPolicyAPIRowFilterAppliesAndDeletes(t *testing.T) {
 	}
 }
 
+func TestAuthSpecDataPolicySubjectScopeAppliesOnlyToMatchingPrincipal(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	manager := authSpecPrincipal(t, ctx, repo, "subject-policy-manager@example.com")
+	analyst := authSpecPrincipal(t, ctx, repo, "subject-policy-analyst@example.com")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, manager.ID, access.PrivilegeUseWorkspace)
+	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectPrincipal, manager.ID, access.PrivilegeManageGrants)
+	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectPrincipal, manager.ID, access.PrivilegeQueryData)
+	authSpecGrant(t, ctx, repo, access.ItemObject(access.SecurableSemanticModel, "sales", "sales"), access.SubjectPrincipal, analyst.ID, access.PrivilegeQueryData)
+	managerToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: manager.ID, WorkspaceID: "sales", Name: "subject-policy-manager"})
+	analystToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: analyst.ID, WorkspaceID: "sales", Name: "subject-policy-analyst"})
+
+	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/data-policies", managerToken, `{"objectType":"dataset","objectId":"sales/orders","policyType":"row_filter","subjectType":"principal","subjectId":"`+analyst.ID+`","expression":{"field":"orders.status","operator":"equals","values":["delivered"]}}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create subject row filter policy status=%d body=%s", status, body)
+	}
+	if got := h.authSpecQueryRevenue(t, managerToken); got != 165 {
+		t.Fatalf("manager revenue = %v, want unaffected 165", got)
+	}
+	if got := h.authSpecQueryRevenue(t, analystToken); got != 110 {
+		t.Fatalf("analyst revenue = %v, want subject-filtered 110", got)
+	}
+	if !strings.Contains(body, `"subjectType":"principal"`) || !strings.Contains(body, `"subjectId":"`+analyst.ID+`"`) {
+		t.Fatalf("created data policy missing subject scope: %s", body)
+	}
+}
+
 func TestAuthSpecAPITokenAllowlistReducesEffectiveDataPrivileges(t *testing.T) {
 	h, repo := newAuthSpecHarness(t)
 	ctx := context.Background()
@@ -319,9 +347,34 @@ func TestAuthSpecAPITokenAllowlistReducesEffectiveDataPrivileges(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("query with QUERY_DATA token status=%d body=%s", status, body)
 	}
-	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"fields":[{"field":"orders.status"}],"limit":1}`)
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
 	if status != http.StatusForbidden {
 		t.Fatalf("preview with query-only token status=%d want=403 body=%s", status, body)
+	}
+}
+
+func TestAuthSpecColumnGrantAllowsOnlyGrantedPreviewColumns(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	principal := authSpecPrincipal(t, ctx, repo, "column-preview@example.com")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, principal.ID, access.PrivilegeUseWorkspace)
+	statusColumn := access.ItemObjectWithParent(
+		access.SecurableColumn,
+		"sales",
+		"sales/orders/status",
+		access.ItemObjectWithParent(access.SecurableDataset, "sales", "sales/orders", access.ItemObject(access.SecurableSemanticModel, "sales", "sales")),
+	)
+	authSpecGrant(t, ctx, repo, statusColumn, access.SubjectPrincipal, principal.ID, access.PrivilegePreviewData)
+	token := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: principal.ID, WorkspaceID: "sales", Name: "column-preview"})
+
+	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
+	if status != http.StatusOK {
+		t.Fatalf("preview granted column status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"dimensions":[{"field":"orders.status"},{"field":"orders.revenue"}],"limit":1}`)
+	if status != http.StatusForbidden {
+		t.Fatalf("preview ungranted column status=%d want=403 body=%s", status, body)
 	}
 }
 
@@ -378,7 +431,7 @@ func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("service principal query status=%d body=%s", status, body)
 	}
-	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", tokenResponse.AccessToken, `{"fields":[{"field":"orders.status"}],"limit":1}`)
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", tokenResponse.AccessToken, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
 	if status != http.StatusForbidden {
 		t.Fatalf("service principal preview status=%d want=403 body=%s", status, body)
 	}

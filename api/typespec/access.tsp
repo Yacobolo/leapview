@@ -144,6 +144,8 @@ model GrantListResponse {
 model DataPolicyRequest {
   objectType?: string;
   objectId?: string;
+  subjectType?: string;
+  subjectId?: string;
   policyType: string;
   expression: JSONObject;
 }
@@ -152,6 +154,8 @@ model DataPolicyResponse {
   id: string;
   workspaceId: string;
   objectId: string;
+  subjectType?: string;
+  subjectId?: string;
   policyType: string;
   expression: JSONObject;
   createdAt: utcDateTime;
@@ -169,6 +173,23 @@ model EffectivePrivilegeListResponse {
   objectId?: string;
   privileges: string[];
   effectiveGrants: AuthorizationDecisionResponse[];
+}
+
+model OwnershipTransferRequest {
+  objectType?: string;
+  objectId?: string;
+  ownerPrincipalId: string;
+}
+
+model SecurableObjectResponse {
+  id: string;
+  type: string;
+  workspaceId: string;
+  parentId?: string;
+  ownerPrincipalId?: string;
+  displayName?: string;
+  createdAt: utcDateTime;
+  updatedAt: utcDateTime;
 }
 
 model AuthorizationDecisionResponse {
@@ -418,6 +439,15 @@ alias DeleteGrantOK = OkJson<StatusResponse>;
 @delete
 @apigen.authz(#{ mode: "permission", permission: "MANAGE_GRANTS" })
 op deleteGrant(@path workspace: string, @path grant: string): DeleteGrantOK | CommonErrors;
+
+alias TransferOwnershipOK = OkJson<SecurableObjectResponse>;
+
+@tag("Access")
+@summary("Transfer object ownership")
+@route("/workspaces/{workspace}/ownership")
+@post
+@apigen.authz(#{ mode: "permission", permission: "MANAGE_ITEM" })
+op transferOwnership(@path workspace: string, @body body: OwnershipTransferRequest): TransferOwnershipOK | CommonErrors;
 
 alias ListDataPoliciesOK = OkJson<DataPolicyListResponse>;
 

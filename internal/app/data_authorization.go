@@ -92,12 +92,10 @@ func (m dataAuthorizationMetrics) GovernDataQuery(ctx context.Context, request d
 		m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
 		return request, nil, err
 	}
-	decision, err := m.repo.AuthorizeAny(ctx, principalID, privilege, objects)
-	if err != nil {
+	if ok, err := m.authorizeDataQuery(ctx, principalID, privilege, request, objects); err != nil {
 		m.recordDataAccessAudit(ctx, request, privilege, objects, "error", err)
 		return request, nil, err
-	}
-	if !decision.Allowed {
+	} else if !ok {
 		err := fmt.Errorf("principal %q lacks %s on data object", principalID, privilege)
 		m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
 		return request, nil, err
@@ -123,6 +121,27 @@ func (m dataAuthorizationMetrics) GovernDataQuery(ctx context.Context, request d
 		m.recordDataAccessAudit(ctx, governed, privilege, objects, status, nil)
 		return nil
 	}, nil
+}
+
+func (m dataAuthorizationMetrics) authorizeDataQuery(ctx context.Context, principalID string, privilege access.Privilege, request dataquery.Query, objects []access.ObjectRef) (bool, error) {
+	decision, err := m.repo.AuthorizeAny(ctx, principalID, privilege, objects)
+	if err != nil || decision.Allowed {
+		return decision.Allowed, err
+	}
+	columnObjects := dataQueryColumnObjects(request)
+	if len(columnObjects) == 0 {
+		return false, nil
+	}
+	for _, column := range columnObjects {
+		columnDecision, err := m.repo.Authorize(ctx, principalID, privilege, column)
+		if err != nil {
+			return false, err
+		}
+		if !columnDecision.Allowed {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (m dataAuthorizationMetrics) recordDataAccessAudit(ctx context.Context, request dataquery.Query, privilege access.Privilege, objects []access.ObjectRef, status string, cause error) {
@@ -175,7 +194,17 @@ func (m dataAuthorizationMetrics) recordDataAccessAudit(ctx context.Context, req
 }
 
 func (m dataAuthorizationMetrics) QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
-	result, err := m.ExecuteDataQuery(ctx, dataquery.Query{
+	result, err := m.ExecuteDataQuery(ctx, semanticAggregateDataQuery(modelID, request))
+	return queryRowsFromDataResult(result.Rows), err
+}
+
+func (m dataAuthorizationMetrics) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
+	result, err := m.ExecuteDataQuery(ctx, semanticRowsDataQuery(modelID, request))
+	return queryRowsFromDataResult(result.Rows), err
+}
+
+func semanticAggregateDataQuery(modelID string, request reportdef.AggregateQuery) dataquery.Query {
+	return dataquery.Query{
 		ModelID:  modelID,
 		Kind:     dataquery.KindSemanticAggregate,
 		Target:   request.Table,
@@ -186,12 +215,11 @@ func (m dataAuthorizationMetrics) QuerySemantic(ctx context.Context, modelID str
 		Sort:     querySortToDataSort(request.Sort),
 		Limit:    request.Limit,
 		Offset:   request.Offset,
-	})
-	return queryRowsFromDataResult(result.Rows), err
+	}
 }
 
-func (m dataAuthorizationMetrics) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
-	result, err := m.ExecuteDataQuery(ctx, dataquery.Query{
+func semanticRowsDataQuery(modelID string, request reportdef.RowQuery) dataquery.Query {
+	return dataquery.Query{
 		ModelID:  modelID,
 		Kind:     dataquery.KindSemanticRows,
 		Target:   request.Table,
@@ -201,8 +229,7 @@ func (m dataAuthorizationMetrics) PreviewSemantic(ctx context.Context, modelID s
 		Sort:     querySortToDataSort(request.Sort),
 		Limit:    request.Limit,
 		Offset:   request.Offset,
-	})
-	return queryRowsFromDataResult(result.Rows), err
+	}
 }
 
 func (m dataAuthorizationMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
@@ -273,7 +300,7 @@ func (m dataAuthorizationMetrics) effectiveDataPolicies(ctx context.Context, req
 			return nil
 		}
 		seenObjects[key] = struct{}{}
-		policies, err := m.repo.ListDataPoliciesWithOptions(ctx, object, true)
+		policies, err := m.repo.ListEffectiveDataPolicies(ctx, request.PrincipalID, object, true)
 		if err != nil {
 			return err
 		}

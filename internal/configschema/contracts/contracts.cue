@@ -135,6 +135,7 @@ package contracts
 	metadata!:   #Metadata
 	spec!: close({
 		object!:     #SecurableObjectRef
+		subject?:    #AccessSubject
 		policyType!: "row_filter" | "column_mask"
 		expression!: #AnyObject
 	})

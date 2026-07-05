@@ -281,7 +281,7 @@ func (r *Repository) activate(ctx context.Context, workspaceID deployment.Worksp
 	if err != nil {
 		return deployment.Deployment{}, err
 	}
-	if err := registerDeploymentSecurablesTx(ctx, tx, string(workspaceID), assets); err != nil {
+	if err := registerDeploymentSecurablesTx(ctx, tx, string(workspaceID), current.CreatedBy, assets); err != nil {
 		return deployment.Deployment{}, err
 	}
 	if policy != nil {
@@ -428,20 +428,30 @@ WHERE object_id IN (
 	}
 	for _, name := range sortedWorkspaceDataPolicyNames(policy.DataPolicies) {
 		dataPolicy := policy.DataPolicies[name]
-		objectID, err := ensureSecurableObjectTx(ctx, tx, policyObjectRef(workspaceID, dataPolicy.Object))
+		objectID, err := ensureSecurableObjectTx(ctx, tx, policyObjectRef(workspaceID, dataPolicy.Object), "")
 		if err != nil {
 			return err
 		}
+		var subjectType access.SubjectType
+		var subjectID string
+		if strings.TrimSpace(dataPolicy.Subject.Kind) != "" {
+			subjectType, subjectID, err = policySubjectTx(ctx, q, workspaceID, dataPolicy.Subject, groupIDs)
+			if err != nil {
+				return fmt.Errorf("workspace data policy %q: %w", name, err)
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO data_policies (id, workspace_id, object_id, policy_type, expression_json)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO data_policies (id, workspace_id, object_id, subject_type, subject_id, policy_type, expression_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   workspace_id = excluded.workspace_id,
   object_id = excluded.object_id,
+  subject_type = excluded.subject_type,
+  subject_id = excluded.subject_id,
   policy_type = excluded.policy_type,
   expression_json = excluded.expression_json,
   updated_at = CURRENT_TIMESTAMP
-`, stableAccessID("datapolicy", workspaceID, name), workspaceID, objectID, dataPolicy.PolicyType, dataPolicy.ExpressionJSON); err != nil {
+`, stableAccessID("datapolicy", workspaceID, name), workspaceID, objectID, string(subjectType), subjectID, dataPolicy.PolicyType, dataPolicy.ExpressionJSON); err != nil {
 			return err
 		}
 	}
@@ -533,9 +543,9 @@ func policyObjectRef(workspaceID string, object workspace.WorkspaceSecurableObje
 	return access.ItemObject(typ, workspaceID, objectID)
 }
 
-func registerDeploymentSecurablesTx(ctx context.Context, tx *sql.Tx, workspaceID string, assets []platformdb.Asset) error {
+func registerDeploymentSecurablesTx(ctx context.Context, tx *sql.Tx, workspaceID, ownerPrincipalID string, assets []platformdb.Asset) error {
 	workspaceObject := access.WorkspaceObject(workspaceID)
-	if _, err := ensureSecurableObjectTx(ctx, tx, workspaceObject); err != nil {
+	if _, err := ensureSecurableObjectTx(ctx, tx, workspaceObject, ownerPrincipalID); err != nil {
 		return err
 	}
 	for _, asset := range assets {
@@ -544,11 +554,11 @@ func registerDeploymentSecurablesTx(ctx context.Context, tx *sql.Tx, workspaceID
 			continue
 		}
 		for _, parent := range parents {
-			if _, err := ensureSecurableObjectTx(ctx, tx, parent); err != nil {
+			if _, err := ensureSecurableObjectTx(ctx, tx, parent, ownerPrincipalID); err != nil {
 				return err
 			}
 		}
-		if _, err := ensureSecurableObjectTx(ctx, tx, object); err != nil {
+		if _, err := ensureSecurableObjectTx(ctx, tx, object, ownerPrincipalID); err != nil {
 			return err
 		}
 	}
@@ -620,7 +630,7 @@ func upsertGrantTx(ctx context.Context, tx *sql.Tx, id string, object access.Obj
 	if strings.TrimSpace(privilege) == "" {
 		return fmt.Errorf("grant privilege is required")
 	}
-	objectID, err := ensureSecurableObjectTx(ctx, tx, object)
+	objectID, err := ensureSecurableObjectTx(ctx, tx, object, "")
 	if err != nil {
 		return err
 	}
@@ -632,27 +642,28 @@ ON CONFLICT(object_id, subject_type, subject_id, privilege) DO UPDATE SET id = e
 	return err
 }
 
-func ensureSecurableObjectTx(ctx context.Context, tx *sql.Tx, object access.ObjectRef) (string, error) {
+func ensureSecurableObjectTx(ctx context.Context, tx *sql.Tx, object access.ObjectRef, ownerPrincipalID string) (string, error) {
 	objectID := object.CanonicalID()
 	parentID := ""
 	if strings.TrimSpace(object.ParentID) != "" {
 		parentID = strings.TrimSpace(object.ParentID)
 	} else if parent, ok := object.Parent(); ok {
 		parentID = parent.CanonicalID()
-		if _, err := ensureSecurableObjectTx(ctx, tx, parent); err != nil {
+		if _, err := ensureSecurableObjectTx(ctx, tx, parent, ownerPrincipalID); err != nil {
 			return "", err
 		}
 	}
 	_, err := tx.ExecContext(ctx, `
-INSERT INTO securable_objects (id, object_type, workspace_id, parent_id, display_name)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO securable_objects (id, object_type, workspace_id, parent_id, owner_principal_id, display_name)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   object_type = excluded.object_type,
   workspace_id = excluded.workspace_id,
   parent_id = excluded.parent_id,
+  owner_principal_id = COALESCE(NULLIF(securable_objects.owner_principal_id, ''), NULLIF(excluded.owner_principal_id, ''), ''),
   display_name = COALESCE(NULLIF(excluded.display_name, ''), securable_objects.display_name),
   updated_at = CURRENT_TIMESTAMP
-`, objectID, string(object.Type), object.WorkspaceID, parentID, securableDisplayName(object))
+`, objectID, string(object.Type), object.WorkspaceID, parentID, strings.TrimSpace(ownerPrincipalID), securableDisplayName(object))
 	return objectID, err
 }
 

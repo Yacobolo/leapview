@@ -156,6 +156,11 @@ func validateWorkspaceAccess(workspaceProject *WorkspaceProject) error {
 		if strings.TrimSpace(policy.ExpressionJSON) == "" {
 			return resourceError(path, "data_policy:"+workspaceProject.ID+"."+name, "spec.expression", "DataPolicy %q.%q requires expression", workspaceProject.ID, name)
 		}
+		if strings.TrimSpace(policy.Subject.Kind) != "" {
+			if err := validateWorkspaceAccessSubject(path, "data_policy:"+workspaceProject.ID+"."+name, "DataPolicy", workspaceProject.ID, name, policy.Subject, workspaceProject.AccessGroups); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

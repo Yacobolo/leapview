@@ -145,7 +145,8 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if _, err := s.deploymentByIDForRequestWorkspace(r, repo, deployment.ID(deploymentID)); err != nil {
+	current, err := s.deploymentByIDForRequestWorkspace(r, repo, deployment.ID(deploymentID))
+	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
@@ -161,14 +162,22 @@ func (s *Server) activateDeployment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	service := activate.NewServiceWithAccess(repo, s.reloader, repo, accessReconciler)
+	auditAction := deploymentActivationAuditAction(current)
 	row, err := service.Activate(r.Context(), deployment.ID(deploymentID))
 	if err != nil {
-		s.recordDeploymentAudit(r, "deployment.activated", chi.URLParam(r, "workspace"), deploymentID, access.PrivilegeActivateDeployment, "error", map[string]any{"error": err.Error()})
+		s.recordDeploymentAudit(r, auditAction, chi.URLParam(r, "workspace"), deploymentID, access.PrivilegeActivateDeployment, "error", map[string]any{"error": err.Error()})
 		writeJSONError(w, err, statusForActivationError(err))
 		return
 	}
-	s.recordDeploymentAudit(r, "deployment.activated", string(row.WorkspaceID), string(row.ID), access.PrivilegeActivateDeployment, "success", map[string]any{"environment": string(row.Environment)})
+	s.recordDeploymentAudit(r, auditAction, string(row.WorkspaceID), string(row.ID), access.PrivilegeActivateDeployment, "success", map[string]any{"environment": string(row.Environment)})
 	writeJSON(w, http.StatusOK, deploymentDTO(row))
+}
+
+func deploymentActivationAuditAction(row deployment.Deployment) string {
+	if row.Status == deployment.StatusInactive || row.Status == deployment.StatusActive {
+		return "deployment.rolled_back"
+	}
+	return "deployment.activated"
 }
 
 func (s *Server) recordDeploymentAudit(r *http.Request, action, workspaceID, deploymentID string, privilege access.Privilege, status string, metadata map[string]any) {

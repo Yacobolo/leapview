@@ -52,6 +52,7 @@ type WorkspaceDataPolicy struct {
 	ID             string                      `json:"id"`
 	Name           string                      `json:"name"`
 	Object         WorkspaceSecurableObjectRef `json:"object"`
+	Subject        WorkspaceRoleBindingSubject `json:"subject,omitempty"`
 	PolicyType     string                      `json:"policyType"`
 	ExpressionJSON string                      `json:"expressionJson"`
 }

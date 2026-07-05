@@ -138,6 +138,13 @@ func projectWorkspaceDataPolicy(name string, spec workspaceDataPolicySpec) (work
 			Type: strings.TrimSpace(spec.Object.Type),
 			ID:   strings.TrimSpace(spec.Object.ID),
 		},
+		Subject: workspace.WorkspaceRoleBindingSubject{
+			Kind:        strings.TrimSpace(spec.Subject.Kind),
+			PrincipalID: strings.TrimSpace(spec.Subject.PrincipalID),
+			Email:       strings.TrimSpace(spec.Subject.Email),
+			DisplayName: strings.TrimSpace(spec.Subject.DisplayName),
+			Group:       strings.TrimSpace(spec.Subject.Group),
+		},
 		PolicyType:     strings.TrimSpace(spec.PolicyType),
 		ExpressionJSON: expressionJSON,
 	}, nil

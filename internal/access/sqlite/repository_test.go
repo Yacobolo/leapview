@@ -288,6 +288,96 @@ func TestRepositoryStoresDataPoliciesBySecurableObject(t *testing.T) {
 	}
 }
 
+func TestRepositoryFiltersDataPoliciesBySubject(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+
+	alice, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "principal_policy_alice", Email: "alice@example.com", DisplayName: "Alice"})
+	if err != nil {
+		t.Fatalf("upsert alice: %v", err)
+	}
+	bob, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "principal_policy_bob", Email: "bob@example.com", DisplayName: "Bob"})
+	if err != nil {
+		t.Fatalf("upsert bob: %v", err)
+	}
+	group, err := repo.UpsertGroup(ctx, access.GroupInput{ID: "group_policy", WorkspaceID: "test", Provider: "local", ExternalID: "analysts", Name: "Analysts"})
+	if err != nil {
+		t.Fatalf("upsert group: %v", err)
+	}
+	if err := repo.AddGroupMember(ctx, "test", group.ID, bob.ID); err != nil {
+		t.Fatalf("add group member: %v", err)
+	}
+	object := access.ItemObjectWithParent(access.SecurableDataset, "test", "sales/orders", access.ItemObject(access.SecurableSemanticModel, "test", "sales"))
+	for _, input := range []access.DataPolicyInput{
+		{ID: "policy_global", Object: object, PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"global"}`},
+		{ID: "policy_alice", Object: object, PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"alice"}`, SubjectType: access.SubjectPrincipal, SubjectID: alice.ID},
+		{ID: "policy_group", Object: object, PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"group"}`, SubjectType: access.SubjectGroup, SubjectID: group.ID},
+	} {
+		if _, err := repo.UpsertDataPolicy(ctx, input); err != nil {
+			t.Fatalf("upsert %s: %v", input.ID, err)
+		}
+	}
+	alicePolicies, err := repo.ListEffectiveDataPolicies(ctx, alice.ID, object, true)
+	if err != nil {
+		t.Fatalf("list alice policies: %v", err)
+	}
+	if got := policyIDs(alicePolicies); !equalStringSets(got, []string{"policy_global", "policy_alice"}) {
+		t.Fatalf("alice policies = %#v", got)
+	}
+	bobPolicies, err := repo.ListEffectiveDataPolicies(ctx, bob.ID, object, true)
+	if err != nil {
+		t.Fatalf("list bob policies: %v", err)
+	}
+	if got := policyIDs(bobPolicies); !equalStringSets(got, []string{"policy_global", "policy_group"}) {
+		t.Fatalf("bob policies = %#v", got)
+	}
+}
+
+func TestRepositoryObjectOwnershipGrantsFullControl(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+
+	owner, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "principal_object_owner", Email: "owner@example.com", DisplayName: "Owner"})
+	if err != nil {
+		t.Fatalf("upsert owner: %v", err)
+	}
+	object := access.ItemObject(access.SecurableDashboard, "test", "executive")
+	if _, err := repo.SetObjectOwner(ctx, object, owner.ID); err != nil {
+		t.Fatalf("set object owner: %v", err)
+	}
+	decision, err := repo.Authorize(ctx, owner.ID, access.PrivilegeManageGrants, object)
+	if err != nil {
+		t.Fatalf("authorize owner: %v", err)
+	}
+	if !decision.Allowed || !decision.Owner || decision.Reason != "owner" {
+		t.Fatalf("owner decision = %#v", decision)
+	}
+}
+
+func TestRepositoryAPITokensExpireByDefault(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "principal_default_token_expiry", Email: "token@example.com", DisplayName: "Token"})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	_, token, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{PrincipalID: principal.ID, Name: "default-expiry"})
+	if err != nil {
+		t.Fatalf("create api token: %v", err)
+	}
+	if token.ExpiresAt == "" {
+		t.Fatal("token expires_at is empty, want default expiry")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, token.ExpiresAt)
+	if err != nil {
+		t.Fatalf("parse expires_at %q: %v", token.ExpiresAt, err)
+	}
+	if !expiresAt.After(time.Now()) {
+		t.Fatalf("expires_at = %s, want future default", token.ExpiresAt)
+	}
+}
+
 func TestRepositoryReconcilesWorkspacePolicySnapshot(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openAccessRepo(t, ctx)
@@ -916,4 +1006,29 @@ func openAccessRepo(t *testing.T, ctx context.Context) (*platform.Store, *Reposi
 func testAuthorize(ctx context.Context, repo *Repository, workspaceID, principalID string, privilege access.Privilege) (bool, error) {
 	decision, err := repo.Authorize(ctx, principalID, privilege, access.WorkspaceObject(workspaceID))
 	return decision.Allowed, err
+}
+
+func policyIDs(policies []access.DataPolicy) []string {
+	out := make([]string, 0, len(policies))
+	for _, policy := range policies {
+		out = append(out, policy.ID)
+	}
+	return out
+}
+
+func equalStringSets(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, value := range got {
+		counts[value]++
+	}
+	for _, value := range want {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	return true
 }

@@ -375,6 +375,10 @@ func (a apiGenAdapter) DeleteDataPolicy(w http.ResponseWriter, r *http.Request, 
 	a.server.apiDeleteDataPolicy(w, r)
 }
 
+func (a apiGenAdapter) TransferOwnership(w http.ResponseWriter, r *http.Request, _ string) {
+	a.server.apiTransferOwnership(w, r)
+}
+
 func (a apiGenAdapter) ListSemanticModels(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListSemanticModelsParams) {
 	a.server.listSemanticModels(w, r)
 }

@@ -372,6 +372,8 @@ type DataPolicy struct {
 	ID             string
 	WorkspaceID    string
 	ObjectID       string
+	SubjectType    SubjectType
+	SubjectID      string
 	PolicyType     string
 	ExpressionJSON string
 	CreatedAt      string
@@ -381,6 +383,8 @@ type DataPolicy struct {
 type DataPolicyInput struct {
 	ID             string
 	Object         ObjectRef
+	SubjectType    SubjectType
+	SubjectID      string
 	PolicyType     string
 	ExpressionJSON string
 }
@@ -516,10 +520,12 @@ type Repository interface {
 	DeleteGrant(ctx context.Context, workspaceID, id string) error
 	ListGrants(ctx context.Context, object ObjectRef) ([]Grant, error)
 	ListGrantsWithOptions(ctx context.Context, object ObjectRef, includeInherited bool) ([]GrantView, error)
+	SetObjectOwner(ctx context.Context, object ObjectRef, ownerPrincipalID string) (SecurableObject, error)
 	UpsertDataPolicy(ctx context.Context, input DataPolicyInput) (DataPolicy, error)
 	GetDataPolicy(ctx context.Context, workspaceID, id string) (DataPolicy, error)
 	ListDataPolicies(ctx context.Context, object ObjectRef) ([]DataPolicy, error)
 	ListDataPoliciesWithOptions(ctx context.Context, object ObjectRef, includeInherited bool) ([]DataPolicy, error)
+	ListEffectiveDataPolicies(ctx context.Context, principalID string, object ObjectRef, includeInherited bool) ([]DataPolicy, error)
 	DeleteDataPolicy(ctx context.Context, workspaceID, id string) error
 	CreateServicePrincipal(ctx context.Context, input ServicePrincipalInput) (Principal, error)
 	ListServicePrincipals(ctx context.Context) ([]Principal, error)
