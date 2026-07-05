@@ -38,6 +38,17 @@ func (r *Repository) PrincipalByID(ctx context.Context, id string) (access.Princ
 	return mapPrincipal(row), nil
 }
 
+func (r *Repository) principalDisabled(ctx context.Context, principalID string) (bool, error) {
+	row, err := r.q.GetPrincipal(ctx, principalID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return row.DisabledAt.Valid && row.DisabledAt.String != "", nil
+}
+
 func (r *Repository) UpsertPrincipal(ctx context.Context, input access.PrincipalInput) (access.Principal, error) {
 	if strings.TrimSpace(input.ID) == "" {
 		input.ID = newID("principal")
@@ -271,6 +282,12 @@ func (r *Repository) Authorize(ctx context.Context, principalID string, privileg
 	}
 	if strings.TrimSpace(string(privilege)) == "" {
 		decision.Reason = "missing_privilege"
+		return decision, nil
+	}
+	if disabled, err := r.principalDisabled(ctx, principalID); err != nil {
+		return decision, err
+	} else if disabled {
+		decision.Reason = "principal_disabled"
 		return decision, nil
 	}
 	objectID, err := r.ensureSecurableObject(ctx, object)
@@ -916,6 +933,13 @@ func (r *Repository) ResolveExternalPrincipal(ctx context.Context, input access.
 		Subject:  input.Subject,
 	})
 	if err == nil {
+		principal, err := r.q.GetPrincipal(ctx, identity.PrincipalID)
+		if err != nil {
+			return access.Principal{}, err
+		}
+		if principal.DisabledAt.Valid && principal.DisabledAt.String != "" {
+			return access.Principal{}, sql.ErrNoRows
+		}
 		return r.UpsertPrincipal(ctx, access.PrincipalInput{
 			ID:          identity.PrincipalID,
 			Email:       input.Email,
@@ -934,6 +958,9 @@ func (r *Repository) ResolveExternalPrincipal(ctx context.Context, input access.
 		}
 		if err == nil {
 			principal = mapPrincipal(row)
+			if principal.DisabledAt != "" {
+				return access.Principal{}, sql.ErrNoRows
+			}
 		}
 	}
 	if principal.ID == "" {
@@ -967,6 +994,108 @@ func (r *Repository) ResolveExternalPrincipal(ctx context.Context, input access.
 		return access.Principal{}, err
 	}
 	return principal, nil
+}
+
+func (r *Repository) UpsertSCIMUser(ctx context.Context, input access.SCIMUserInput) (access.Principal, error) {
+	subject := strings.TrimSpace(firstNonEmpty(input.ExternalID, input.ID, input.UserName, input.Email))
+	if subject == "" {
+		return access.Principal{}, fmt.Errorf("scim user requires id, external id, userName, or email")
+	}
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = "scim_user_" + stableID(subject)
+	}
+	email := access.NormalizeEmail(firstNonEmpty(input.Email, input.UserName))
+	displayName := strings.TrimSpace(firstNonEmpty(input.DisplayName, email, input.UserName, id))
+	principal, err := r.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          id,
+		Kind:        access.PrincipalKindUser,
+		Email:       email,
+		DisplayName: displayName,
+	})
+	if err != nil {
+		return access.Principal{}, err
+	}
+	if err := r.q.UpsertExternalIdentity(ctx, platformdb.UpsertExternalIdentityParams{
+		ID:          "identity_" + stableID("scim||"+subject),
+		PrincipalID: principal.ID,
+		Provider:    "scim",
+		TenantID:    "",
+		Subject:     subject,
+		Email:       email,
+	}); err != nil {
+		return access.Principal{}, err
+	}
+	if !input.Active {
+		return r.DisableSCIMUser(ctx, principal.ID)
+	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE principals SET disabled_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, principal.ID); err != nil {
+		return access.Principal{}, err
+	}
+	row, err := r.q.GetPrincipal(ctx, principal.ID)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	return mapPrincipal(row), nil
+}
+
+func (r *Repository) ListSCIMUsers(ctx context.Context, filter access.SCIMUserFilter) ([]access.Principal, error) {
+	if strings.TrimSpace(filter.ID) != "" {
+		row, err := r.q.GetPrincipal(ctx, strings.TrimSpace(filter.ID))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return []access.Principal{}, nil
+			}
+			return nil, err
+		}
+		if _, err := r.q.GetExternalIdentityByPrincipalProvider(ctx, platformdb.GetExternalIdentityByPrincipalProviderParams{
+			PrincipalID: row.ID,
+			Provider:    "scim",
+		}); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return []access.Principal{}, nil
+			}
+			return nil, err
+		}
+		return []access.Principal{mapPrincipal(row)}, nil
+	}
+	subject := strings.TrimSpace(firstNonEmpty(filter.ID, filter.ExternalID))
+	rows, err := r.q.ListSCIMPrincipals(ctx, platformdb.ListSCIMPrincipalsParams{
+		Subject:  subject,
+		UserName: strings.TrimSpace(filter.UserName),
+	})
+	if err != nil {
+		return nil, err
+	}
+	principals := make([]access.Principal, 0, len(rows))
+	for _, row := range rows {
+		principals = append(principals, mapPrincipal(row))
+	}
+	return principals, nil
+}
+
+func (r *Repository) DisableSCIMUser(ctx context.Context, principalID string) (access.Principal, error) {
+	principalID = strings.TrimSpace(principalID)
+	if principalID == "" {
+		return access.Principal{}, fmt.Errorf("principal id is required")
+	}
+	if err := r.q.DisablePrincipal(ctx, principalID); err != nil {
+		return access.Principal{}, err
+	}
+	if err := r.q.DeleteSCIMGroupMembersByPrincipal(ctx, principalID); err != nil {
+		return access.Principal{}, err
+	}
+	if err := r.q.RevokeSessionsByPrincipal(ctx, principalID); err != nil {
+		return access.Principal{}, err
+	}
+	if err := r.q.RevokeAPITokensByPrincipal(ctx, principalID); err != nil {
+		return access.Principal{}, err
+	}
+	row, err := r.q.GetPrincipal(ctx, principalID)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	return mapPrincipal(row), nil
 }
 
 func (r *Repository) UpsertGroup(ctx context.Context, input access.GroupInput) (access.Group, error) {
@@ -1053,6 +1182,130 @@ func (r *Repository) ListGroupMembers(ctx context.Context, workspaceID, groupID 
 		WorkspaceID: workspaceID,
 		GroupID:     groupID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	members := make([]access.GroupMember, 0, len(rows))
+	for _, row := range rows {
+		members = append(members, access.GroupMember{
+			GroupID:     row.GroupID,
+			WorkspaceID: row.WorkspaceID,
+			PrincipalID: row.PrincipalID,
+			Email:       row.Email,
+			DisplayName: row.DisplayName,
+			CreatedAt:   row.CreatedAt,
+		})
+	}
+	return members, nil
+}
+
+func (r *Repository) UpsertSCIMGroup(ctx context.Context, input access.SCIMGroupInput) (access.Group, error) {
+	externalID := strings.TrimSpace(firstNonEmpty(input.ExternalID, input.ID, input.Name))
+	if externalID == "" {
+		return access.Group{}, fmt.Errorf("scim group requires external id, id, or display name")
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		name = externalID
+	}
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = "scim_group_" + stableID(externalID)
+	}
+	if err := r.q.UpsertGroup(ctx, platformdb.UpsertGroupParams{
+		ID:          id,
+		WorkspaceID: "",
+		Provider:    "scim",
+		ExternalID:  externalID,
+		Name:        name,
+	}); err != nil {
+		return access.Group{}, err
+	}
+	if input.MemberIDs != nil {
+		if err := r.q.DeleteSCIMGroupMembers(ctx, id); err != nil {
+			return access.Group{}, err
+		}
+		for _, principalID := range input.MemberIDs {
+			principalID = strings.TrimSpace(principalID)
+			if principalID == "" {
+				continue
+			}
+			if err := r.q.InsertGroupMember(ctx, platformdb.InsertGroupMemberParams{
+				WorkspaceID: "",
+				GroupID:     id,
+				PrincipalID: principalID,
+			}); err != nil {
+				return access.Group{}, err
+			}
+		}
+	}
+	row, err := r.q.GetSCIMGroup(ctx, id)
+	if err != nil {
+		return access.Group{}, err
+	}
+	return mapGroup(row), nil
+}
+
+func (r *Repository) ListSCIMGroups(ctx context.Context, filter access.SCIMGroupFilter) ([]access.Group, error) {
+	if strings.TrimSpace(filter.ID) != "" {
+		row, err := r.q.GetSCIMGroup(ctx, strings.TrimSpace(filter.ID))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return []access.Group{}, nil
+			}
+			return nil, err
+		}
+		return []access.Group{mapGroup(row)}, nil
+	}
+	rows, err := r.q.ListSCIMGroups(ctx, platformdb.ListSCIMGroupsParams{
+		ExternalID:  strings.TrimSpace(filter.ExternalID),
+		DisplayName: strings.TrimSpace(filter.DisplayName),
+	})
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]access.Group, 0, len(rows))
+	for _, row := range rows {
+		groups = append(groups, mapGroup(row))
+	}
+	return groups, nil
+}
+
+func (r *Repository) DeleteSCIMGroup(ctx context.Context, groupID string) error {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return fmt.Errorf("group id is required")
+	}
+	if err := r.q.DeleteSCIMGroupMembers(ctx, groupID); err != nil {
+		return err
+	}
+	return r.q.DeleteSCIMGroup(ctx, groupID)
+}
+
+func (r *Repository) AddSCIMGroupMember(ctx context.Context, groupID, principalID string) error {
+	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
+		return fmt.Errorf("group id and principal id are required")
+	}
+	return r.q.InsertGroupMember(ctx, platformdb.InsertGroupMemberParams{
+		WorkspaceID: "",
+		GroupID:     groupID,
+		PrincipalID: principalID,
+	})
+}
+
+func (r *Repository) RemoveSCIMGroupMember(ctx context.Context, groupID, principalID string) error {
+	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
+		return fmt.Errorf("group id and principal id are required")
+	}
+	return r.q.DeleteGroupMember(ctx, platformdb.DeleteGroupMemberParams{
+		WorkspaceID: "",
+		GroupID:     groupID,
+		PrincipalID: principalID,
+	})
+}
+
+func (r *Repository) ListSCIMGroupMembers(ctx context.Context, groupID string) ([]access.GroupMember, error) {
+	rows, err := r.q.ListSCIMGroupMembers(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -1295,7 +1548,11 @@ func (r *Repository) PrincipalForToken(ctx context.Context, token string) (acces
 	if err != nil {
 		return access.Principal{}, err
 	}
-	return mapPrincipal(row), nil
+	principal := mapPrincipal(row)
+	if principal.DisabledAt != "" {
+		return access.Principal{}, sql.ErrNoRows
+	}
+	return principal, nil
 }
 
 func (r *Repository) sessionForToken(ctx context.Context, token string) (platformdb.Session, error) {
@@ -1446,8 +1703,12 @@ func (r *Repository) CredentialForAPIToken(ctx context.Context, token string) (a
 	if err != nil {
 		return access.APICredential{}, err
 	}
+	principal := mapPrincipal(row)
+	if principal.DisabledAt != "" {
+		return access.APICredential{}, sql.ErrNoRows
+	}
 	return access.APICredential{
-		Principal: mapPrincipal(row),
+		Principal: principal,
 		Token:     mapAPIToken(apiToken),
 	}, nil
 }
@@ -1632,7 +1893,11 @@ func (r *Repository) PrincipalForServicePrincipalSecret(ctx context.Context, ser
 	if err != nil {
 		return access.Principal{}, err
 	}
-	return mapPrincipal(principal), nil
+	mapped := mapPrincipal(principal)
+	if mapped.DisabledAt != "" {
+		return access.Principal{}, sql.ErrNoRows
+	}
+	return mapped, nil
 }
 
 func (r *Repository) servicePrincipalSecretForSecret(ctx context.Context, servicePrincipalID, secret string) (platformdb.ServicePrincipalSecret, error) {
@@ -1816,6 +2081,7 @@ func mapPrincipal(row platformdb.Principal) access.Principal {
 		Kind:        access.PrincipalKind(row.Kind),
 		Email:       row.Email,
 		DisplayName: row.DisplayName,
+		DisabledAt:  nullString(row.DisabledAt),
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 	}

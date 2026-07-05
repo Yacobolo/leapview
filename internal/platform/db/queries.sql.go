@@ -545,6 +545,36 @@ func (q *Queries) DeleteRoleBindingByID(ctx context.Context, arg DeleteRoleBindi
 	return err
 }
 
+const deleteSCIMGroup = `-- name: DeleteSCIMGroup :exec
+DELETE FROM groups
+WHERE workspace_id = '' AND provider = 'scim' AND id = ?
+`
+
+func (q *Queries) DeleteSCIMGroup(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteSCIMGroup, id)
+	return err
+}
+
+const deleteSCIMGroupMembers = `-- name: DeleteSCIMGroupMembers :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND group_id = ?
+`
+
+func (q *Queries) DeleteSCIMGroupMembers(ctx context.Context, groupID string) error {
+	_, err := q.db.ExecContext(ctx, deleteSCIMGroupMembers, groupID)
+	return err
+}
+
+const deleteSCIMGroupMembersByPrincipal = `-- name: DeleteSCIMGroupMembersByPrincipal :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND principal_id = ?
+`
+
+func (q *Queries) DeleteSCIMGroupMembersByPrincipal(ctx context.Context, principalID string) error {
+	_, err := q.db.ExecContext(ctx, deleteSCIMGroupMembersByPrincipal, principalID)
+	return err
+}
+
 const deleteServicePrincipal = `-- name: DeleteServicePrincipal :exec
 DELETE FROM principals
 WHERE id = ? AND kind = 'service_principal'
@@ -570,6 +600,18 @@ DELETE FROM sessions WHERE token_hash = ?
 
 func (q *Queries) DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error {
 	_, err := q.db.ExecContext(ctx, deleteSessionByTokenHash, tokenHash)
+	return err
+}
+
+const disablePrincipal = `-- name: DisablePrincipal :exec
+UPDATE principals
+SET disabled_at = COALESCE(disabled_at, CURRENT_TIMESTAMP),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+func (q *Queries) DisablePrincipal(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, disablePrincipal, id)
 	return err
 }
 
@@ -863,6 +905,33 @@ func (q *Queries) GetExternalIdentity(ctx context.Context, arg GetExternalIdenti
 	return i, err
 }
 
+const getExternalIdentityByPrincipalProvider = `-- name: GetExternalIdentityByPrincipalProvider :one
+SELECT id, principal_id, provider, tenant_id, subject, email, created_at, updated_at FROM external_identities
+WHERE principal_id = ? AND provider = ?
+LIMIT 1
+`
+
+type GetExternalIdentityByPrincipalProviderParams struct {
+	PrincipalID string `json:"principal_id"`
+	Provider    string `json:"provider"`
+}
+
+func (q *Queries) GetExternalIdentityByPrincipalProvider(ctx context.Context, arg GetExternalIdentityByPrincipalProviderParams) (ExternalIdentity, error) {
+	row := q.db.QueryRowContext(ctx, getExternalIdentityByPrincipalProvider, arg.PrincipalID, arg.Provider)
+	var i ExternalIdentity
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.Provider,
+		&i.TenantID,
+		&i.Subject,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getGroup = `-- name: GetGroup :one
 SELECT id, workspace_id, provider, external_id, name, created_at FROM groups
 WHERE workspace_id = ? AND id = ?
@@ -913,7 +982,7 @@ func (q *Queries) GetGroupByProviderExternalID(ctx context.Context, arg GetGroup
 }
 
 const getPrincipal = `-- name: GetPrincipal :one
-SELECT id, kind, email, display_name, created_at, updated_at FROM principals WHERE id = ?
+SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals WHERE id = ?
 `
 
 func (q *Queries) GetPrincipal(ctx context.Context, id string) (Principal, error) {
@@ -924,6 +993,7 @@ func (q *Queries) GetPrincipal(ctx context.Context, id string) (Principal, error
 		&i.Kind,
 		&i.Email,
 		&i.DisplayName,
+		&i.DisabledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -931,7 +1001,7 @@ func (q *Queries) GetPrincipal(ctx context.Context, id string) (Principal, error
 }
 
 const getPrincipalByEmail = `-- name: GetPrincipalByEmail :one
-SELECT id, kind, email, display_name, created_at, updated_at FROM principals WHERE lower(email) = lower(?) AND email <> '' LIMIT 1
+SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals WHERE lower(email) = lower(?) AND email <> '' LIMIT 1
 `
 
 func (q *Queries) GetPrincipalByEmail(ctx context.Context, lower string) (Principal, error) {
@@ -942,6 +1012,7 @@ func (q *Queries) GetPrincipalByEmail(ctx context.Context, lower string) (Princi
 		&i.Kind,
 		&i.Email,
 		&i.DisplayName,
+		&i.DisabledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1052,6 +1123,25 @@ func (q *Queries) GetRoleByName(ctx context.Context, name string) (Role, error) 
 	row := q.db.QueryRowContext(ctx, getRoleByName, name)
 	var i Role
 	err := row.Scan(&i.ID, &i.Name, &i.PermissionsJson)
+	return i, err
+}
+
+const getSCIMGroup = `-- name: GetSCIMGroup :one
+SELECT id, workspace_id, provider, external_id, name, created_at FROM groups
+WHERE provider = 'scim' AND id = ?
+`
+
+func (q *Queries) GetSCIMGroup(ctx context.Context, id string) (Group, error) {
+	row := q.db.QueryRowContext(ctx, getSCIMGroup, id)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Provider,
+		&i.ExternalID,
+		&i.Name,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -2166,6 +2256,7 @@ func (q *Queries) ListGroupMembers(ctx context.Context, arg ListGroupMembersPara
 const listGroupsByWorkspace = `-- name: ListGroupsByWorkspace :many
 SELECT id, workspace_id, provider, external_id, name, created_at FROM groups
 WHERE workspace_id = ?
+   OR (workspace_id = '' AND provider = 'scim')
 ORDER BY name, id
 `
 
@@ -2467,8 +2558,156 @@ func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
 	return items, nil
 }
 
+const listSCIMGroupMembers = `-- name: ListSCIMGroupMembers :many
+SELECT
+  gm.group_id,
+  gm.workspace_id,
+  gm.principal_id,
+  p.email,
+  p.display_name,
+  gm.created_at
+FROM group_members gm
+JOIN principals p ON p.id = gm.principal_id
+WHERE gm.workspace_id = '' AND gm.group_id = ?
+ORDER BY p.email, p.display_name, gm.principal_id
+`
+
+type ListSCIMGroupMembersRow struct {
+	GroupID     string `json:"group_id"`
+	WorkspaceID string `json:"workspace_id"`
+	PrincipalID string `json:"principal_id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) ListSCIMGroupMembers(ctx context.Context, groupID string) ([]ListSCIMGroupMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSCIMGroupMembers, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSCIMGroupMembersRow{}
+	for rows.Next() {
+		var i ListSCIMGroupMembersRow
+		if err := rows.Scan(
+			&i.GroupID,
+			&i.WorkspaceID,
+			&i.PrincipalID,
+			&i.Email,
+			&i.DisplayName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSCIMGroups = `-- name: ListSCIMGroups :many
+SELECT id, workspace_id, provider, external_id, name, created_at FROM groups
+WHERE workspace_id = ''
+  AND provider = 'scim'
+  AND (?1 = '' OR external_id = ?1)
+  AND (?2 = '' OR lower(name) = lower(?2))
+ORDER BY name, id
+`
+
+type ListSCIMGroupsParams struct {
+	ExternalID  interface{} `json:"external_id"`
+	DisplayName interface{} `json:"display_name"`
+}
+
+func (q *Queries) ListSCIMGroups(ctx context.Context, arg ListSCIMGroupsParams) ([]Group, error) {
+	rows, err := q.db.QueryContext(ctx, listSCIMGroups, arg.ExternalID, arg.DisplayName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Group{}
+	for rows.Next() {
+		var i Group
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Provider,
+			&i.ExternalID,
+			&i.Name,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSCIMPrincipals = `-- name: ListSCIMPrincipals :many
+SELECT p.id, p.kind, p.email, p.display_name, p.disabled_at, p.created_at, p.updated_at
+FROM principals p
+JOIN external_identities ei ON ei.principal_id = p.id
+WHERE p.kind = 'user'
+  AND ei.provider = 'scim'
+  AND (?1 = '' OR ei.subject = ?1)
+  AND (
+    ?2 = ''
+    OR lower(p.email) = lower(?2)
+    OR lower(ei.email) = lower(?2)
+  )
+ORDER BY p.email, p.display_name, p.id
+`
+
+type ListSCIMPrincipalsParams struct {
+	Subject  interface{} `json:"subject"`
+	UserName interface{} `json:"user_name"`
+}
+
+func (q *Queries) ListSCIMPrincipals(ctx context.Context, arg ListSCIMPrincipalsParams) ([]Principal, error) {
+	rows, err := q.db.QueryContext(ctx, listSCIMPrincipals, arg.Subject, arg.UserName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Principal{}
+	for rows.Next() {
+		var i Principal
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Email,
+			&i.DisplayName,
+			&i.DisabledAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServicePrincipals = `-- name: ListServicePrincipals :many
-SELECT id, kind, email, display_name, created_at, updated_at FROM principals
+SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals
 WHERE kind = 'service_principal'
 ORDER BY display_name, id
 `
@@ -2487,6 +2726,7 @@ func (q *Queries) ListServicePrincipals(ctx context.Context) ([]Principal, error
 			&i.Kind,
 			&i.Email,
 			&i.DisplayName,
+			&i.DisabledAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -2771,6 +3011,17 @@ func (q *Queries) RevokeAPITokenForPrincipal(ctx context.Context, arg RevokeAPIT
 	return i, err
 }
 
+const revokeAPITokensByPrincipal = `-- name: RevokeAPITokensByPrincipal :exec
+UPDATE api_tokens
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeAPITokensByPrincipal(ctx context.Context, principalID string) error {
+	_, err := q.db.ExecContext(ctx, revokeAPITokensByPrincipal, principalID)
+	return err
+}
+
 const revokeServicePrincipalSecret = `-- name: RevokeServicePrincipalSecret :exec
 UPDATE service_principal_secrets
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
@@ -2825,6 +3076,17 @@ func (q *Queries) RevokeSessionForPrincipal(ctx context.Context, arg RevokeSessi
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const revokeSessionsByPrincipal = `-- name: RevokeSessionsByPrincipal :exec
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeSessionsByPrincipal(ctx context.Context, principalID string) error {
+	_, err := q.db.ExecContext(ctx, revokeSessionsByPrincipal, principalID)
+	return err
 }
 
 const scheduleExpiredDeploymentDeletion = `-- name: ScheduleExpiredDeploymentDeletion :exec

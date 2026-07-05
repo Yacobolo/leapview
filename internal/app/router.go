@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/auth/scimprov"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -82,6 +84,13 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/oauth/token", s.oauthToken)
 	})
 	if s.store != nil {
+		if strings.TrimSpace(s.scimBearerToken) != "" {
+			if repo, err := s.accessRepository(); err == nil && repo != nil {
+				if handler, err := scimprov.NewHandler(scimprov.Options{Repository: repo, BearerToken: s.scimBearerToken}); err == nil {
+					mux.Handle("/scim/*", http.StripPrefix("/scim", handler))
+				}
+			}
+		}
 		mux.Group(func(r chi.Router) {
 			r.Use(s.rateLimits.apiMiddleware())
 			r.Use(s.csrf)

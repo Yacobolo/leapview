@@ -252,12 +252,13 @@ type PlatformSetting struct {
 }
 
 type Principal struct {
-	ID          string `json:"id"`
-	Kind        string `json:"kind"`
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID          string         `json:"id"`
+	Kind        string         `json:"kind"`
+	Email       string         `json:"email"`
+	DisplayName string         `json:"display_name"`
+	DisabledAt  sql.NullString `json:"disabled_at"`
+	CreatedAt   string         `json:"created_at"`
+	UpdatedAt   string         `json:"updated_at"`
 }
 
 type QueryEvent struct {

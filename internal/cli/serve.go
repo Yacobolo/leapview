@@ -212,6 +212,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 		RequestLogging:      production && cfg.RequestLoggingEnabled(),
 		Logger:              slog.Default(),
+		SCIMBearerToken:     cfg.SCIMBearerToken,
 	})
 	return server, cleanupWithRegistry, nil
 }

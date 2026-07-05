@@ -167,6 +167,7 @@ type Principal struct {
 	Kind        PrincipalKind
 	Email       string
 	DisplayName string
+	DisabledAt  string
 	CreatedAt   string
 	UpdatedAt   string
 }
@@ -423,6 +424,34 @@ type GroupMember struct {
 	CreatedAt   string
 }
 
+type SCIMUserInput struct {
+	ID          string
+	ExternalID  string
+	UserName    string
+	Email       string
+	DisplayName string
+	Active      bool
+}
+
+type SCIMUserFilter struct {
+	ID         string
+	ExternalID string
+	UserName   string
+}
+
+type SCIMGroupInput struct {
+	ID         string
+	ExternalID string
+	Name       string
+	MemberIDs  []string
+}
+
+type SCIMGroupFilter struct {
+	ID          string
+	ExternalID  string
+	DisplayName string
+}
+
 type APITokenInput struct {
 	PrincipalID string
 	WorkspaceID string
@@ -536,12 +565,21 @@ type Repository interface {
 	PrincipalForServicePrincipalSecret(ctx context.Context, servicePrincipalID, secret string) (Principal, error)
 	BootstrapAdmin(ctx context.Context, workspaceID, email string) error
 	ResolveExternalPrincipal(ctx context.Context, input ExternalIdentityInput) (Principal, error)
+	UpsertSCIMUser(ctx context.Context, input SCIMUserInput) (Principal, error)
+	ListSCIMUsers(ctx context.Context, filter SCIMUserFilter) ([]Principal, error)
+	DisableSCIMUser(ctx context.Context, principalID string) (Principal, error)
 	UpsertGroup(ctx context.Context, input GroupInput) (Group, error)
 	ListGroups(ctx context.Context, workspaceID string) ([]Group, error)
 	DeleteGroup(ctx context.Context, workspaceID, groupID string) error
 	AddGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error
 	RemoveGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error
 	ListGroupMembers(ctx context.Context, workspaceID, groupID string) ([]GroupMember, error)
+	UpsertSCIMGroup(ctx context.Context, input SCIMGroupInput) (Group, error)
+	ListSCIMGroups(ctx context.Context, filter SCIMGroupFilter) ([]Group, error)
+	DeleteSCIMGroup(ctx context.Context, groupID string) error
+	AddSCIMGroupMember(ctx context.Context, groupID, principalID string) error
+	RemoveSCIMGroupMember(ctx context.Context, groupID, principalID string) error
+	ListSCIMGroupMembers(ctx context.Context, groupID string) ([]GroupMember, error)
 	CreateSession(ctx context.Context, principalID string, ttl time.Duration) (string, error)
 	PrincipalForToken(ctx context.Context, token string) (Principal, error)
 	DeleteSession(ctx context.Context, token string) error

@@ -10,11 +10,13 @@ require (
 	github.com/coreos/go-oidc/v3 v3.19.0
 	github.com/duckdb/duckdb-go/v2 v2.10504.0
 	github.com/eduardolat/gomponents-lucide v1.5.0
+	github.com/elimity-com/scim v0.0.0-20260506142751-830e1caafcc3
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/httprate v0.15.0
 	github.com/gorilla/csrf v1.7.3
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+	github.com/scim2/filter-parser/v2 v2.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/starfederation/datastar-go v1.2.2
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
@@ -31,6 +33,8 @@ require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect
 	github.com/cockroachdb/apd/v3 v3.2.1 // indirect
+	github.com/di-wu/parser v0.2.2 // indirect
+	github.com/di-wu/xsd-datetime v1.0.0 // indirect
 	github.com/duckdb/duckdb-go-bindings v0.10504.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10504.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10504.0 // indirect

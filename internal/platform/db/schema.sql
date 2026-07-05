@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS principals (
   kind TEXT NOT NULL DEFAULT 'user',
   email TEXT NOT NULL DEFAULT '',
   display_name TEXT NOT NULL DEFAULT '',
+  disabled_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -119,7 +120,7 @@ CREATE TABLE IF NOT EXISTS external_identities (
 
 CREATE TABLE IF NOT EXISTS groups (
   id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL DEFAULT '',
   provider TEXT NOT NULL DEFAULT '',
   external_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
@@ -129,7 +130,7 @@ CREATE TABLE IF NOT EXISTS groups (
 
 CREATE TABLE IF NOT EXISTS group_members (
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL DEFAULT '',
   principal_id TEXT NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY(group_id, principal_id)

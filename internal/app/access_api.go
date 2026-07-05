@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -531,6 +532,10 @@ func (s *Server) apiUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if group.Provider == "scim" {
+		writeJSONError(w, errors.New("SCIM groups can only be updated through SCIM provisioning"), http.StatusForbidden)
+		return
+	}
 	repo, err := s.accessRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -550,6 +555,10 @@ func (s *Server) apiUpdateGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	group, ok := s.groupByID(w, r)
 	if !ok {
+		return
+	}
+	if group.Provider == "scim" {
+		writeJSONError(w, errors.New("SCIM groups can only be deleted through SCIM provisioning"), http.StatusForbidden)
 		return
 	}
 	repo, err := s.accessRepository()
@@ -573,7 +582,16 @@ func (s *Server) apiListGroupMembers(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	rows, err := repo.ListGroupMembers(r.Context(), s.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "group"))
+	group, ok := s.groupByID(w, r)
+	if !ok {
+		return
+	}
+	var rows []access.GroupMember
+	if group.Provider == "scim" {
+		rows, err = repo.ListSCIMGroupMembers(r.Context(), group.ID)
+	} else {
+		rows, err = repo.ListGroupMembers(r.Context(), s.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "group"))
+	}
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
@@ -591,6 +609,14 @@ func (s *Server) apiAddGroupMember(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
+	group, ok := s.groupByID(w, r)
+	if !ok {
+		return
+	}
+	if group.Provider == "scim" {
+		writeJSONError(w, errors.New("SCIM group memberships can only be updated through SCIM provisioning"), http.StatusForbidden)
+		return
+	}
 	if err := repo.AddGroupMember(r.Context(), s.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "group"), chi.URLParam(r, "principal")); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
@@ -605,6 +631,14 @@ func (s *Server) apiRemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 	repo, err := s.accessRepository()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	group, ok := s.groupByID(w, r)
+	if !ok {
+		return
+	}
+	if group.Provider == "scim" {
+		writeJSONError(w, errors.New("SCIM group memberships can only be updated through SCIM provisioning"), http.StatusForbidden)
 		return
 	}
 	if err := repo.RemoveGroupMember(r.Context(), s.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "group"), chi.URLParam(r, "principal")); err != nil {
@@ -1057,7 +1091,7 @@ func currentPrincipalDTO(row Principal) map[string]any {
 }
 
 func groupDTO(row access.Group) map[string]any {
-	return map[string]any{"id": row.ID, "name": row.ExternalID, "displayName": row.Name, "createdAt": row.CreatedAt, "updatedAt": row.CreatedAt}
+	return map[string]any{"id": row.ID, "workspaceId": row.WorkspaceID, "provider": row.Provider, "externalId": row.ExternalID, "name": row.ExternalID, "displayName": row.Name, "createdAt": row.CreatedAt, "updatedAt": row.CreatedAt}
 }
 
 func groupMemberPrincipalDTO(row access.GroupMember) map[string]any {

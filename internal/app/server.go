@@ -102,6 +102,7 @@ type Server struct {
 	duckLakeDataPath    string
 	defaultWorkspaceID  string
 	defaultEnvironment  string
+	scimBearerToken     string
 	rateLimits          RateLimitConfig
 	securityHeaders     SecurityHeadersConfig
 	requestLogging      bool
@@ -132,6 +133,7 @@ type Options struct {
 	DuckLakeDataPath    string
 	DefaultWorkspaceID  string
 	DefaultEnvironment  string
+	SCIMBearerToken     string
 	RateLimits          RateLimitConfig
 	SecurityHeaders     SecurityHeadersConfig
 	RequestLogging      bool
@@ -178,6 +180,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.duckLakeDataPath = options.DuckLakeDataPath
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
 	server.defaultEnvironment = string(deployment.NormalizeEnvironment(deployment.Environment(options.DefaultEnvironment)))
+	server.scimBearerToken = options.SCIMBearerToken
 	server.rateLimits = options.RateLimits
 	server.securityHeaders = options.SecurityHeaders
 	server.requestLogging = options.RequestLogging

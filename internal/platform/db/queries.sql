@@ -244,6 +244,31 @@ SELECT * FROM principals WHERE id = ?;
 -- name: GetPrincipalByEmail :one
 SELECT * FROM principals WHERE lower(email) = lower(?) AND email <> '' LIMIT 1;
 
+-- name: DisablePrincipal :exec
+UPDATE principals
+SET disabled_at = COALESCE(disabled_at, CURRENT_TIMESTAMP),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: ListSCIMPrincipals :many
+SELECT p.*
+FROM principals p
+JOIN external_identities ei ON ei.principal_id = p.id
+WHERE p.kind = 'user'
+  AND ei.provider = 'scim'
+  AND (sqlc.arg(subject) = '' OR ei.subject = sqlc.arg(subject))
+  AND (
+    sqlc.arg(user_name) = ''
+    OR lower(p.email) = lower(sqlc.arg(user_name))
+    OR lower(ei.email) = lower(sqlc.arg(user_name))
+  )
+ORDER BY p.email, p.display_name, p.id;
+
+-- name: GetExternalIdentityByPrincipalProvider :one
+SELECT * FROM external_identities
+WHERE principal_id = ? AND provider = ?
+LIMIT 1;
+
 -- name: ListServicePrincipals :many
 SELECT * FROM principals
 WHERE kind = 'service_principal'
@@ -293,11 +318,28 @@ WHERE workspace_id = ? AND provider = ? AND external_id = ?;
 -- name: ListGroupsByWorkspace :many
 SELECT * FROM groups
 WHERE workspace_id = ?
+   OR (workspace_id = '' AND provider = 'scim')
+ORDER BY name, id;
+
+-- name: GetSCIMGroup :one
+SELECT * FROM groups
+WHERE provider = 'scim' AND id = ?;
+
+-- name: ListSCIMGroups :many
+SELECT * FROM groups
+WHERE workspace_id = ''
+  AND provider = 'scim'
+  AND (sqlc.arg(external_id) = '' OR external_id = sqlc.arg(external_id))
+  AND (sqlc.arg(display_name) = '' OR lower(name) = lower(sqlc.arg(display_name)))
 ORDER BY name, id;
 
 -- name: DeleteGroup :exec
 DELETE FROM groups
 WHERE workspace_id = ? AND id = ?;
+
+-- name: DeleteSCIMGroup :exec
+DELETE FROM groups
+WHERE workspace_id = '' AND provider = 'scim' AND id = ?;
 
 -- name: InsertGroupMember :exec
 INSERT OR IGNORE INTO group_members (workspace_id, group_id, principal_id)
@@ -319,6 +361,27 @@ FROM group_members gm
 JOIN principals p ON p.id = gm.principal_id
 WHERE gm.workspace_id = ? AND gm.group_id = ?
 ORDER BY p.email, p.display_name, gm.principal_id;
+
+-- name: ListSCIMGroupMembers :many
+SELECT
+  gm.group_id,
+  gm.workspace_id,
+  gm.principal_id,
+  p.email,
+  p.display_name,
+  gm.created_at
+FROM group_members gm
+JOIN principals p ON p.id = gm.principal_id
+WHERE gm.workspace_id = '' AND gm.group_id = ?
+ORDER BY p.email, p.display_name, gm.principal_id;
+
+-- name: DeleteSCIMGroupMembers :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND group_id = ?;
+
+-- name: DeleteSCIMGroupMembersByPrincipal :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND principal_id = ?;
 
 -- name: InsertRoleBinding :exec
 INSERT OR IGNORE INTO role_bindings (id, workspace_id, role_id, principal_id, group_id)
@@ -422,6 +485,11 @@ SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
 RETURNING *;
 
+-- name: RevokeSessionsByPrincipal :exec
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL;
+
 -- name: CreateAPIToken :exec
 INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -461,6 +529,11 @@ UPDATE api_tokens
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
 RETURNING *;
+
+-- name: RevokeAPITokensByPrincipal :exec
+UPDATE api_tokens
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL;
 
 -- name: CreateServicePrincipalSecret :exec
 INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_hash, secret_fingerprint, secret_verifier, expires_at)

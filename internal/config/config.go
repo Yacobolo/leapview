@@ -33,6 +33,7 @@ type Config struct {
 	OIDCSecret       string `env:"LIBREDASH_OIDC_CLIENT_SECRET"`
 	OIDCCallbackURL  string `env:"LIBREDASH_OIDC_CALLBACK_URL"`
 	OIDCScopes       string `env:"LIBREDASH_OIDC_SCOPES"`
+	SCIMBearerToken  string `env:"LIBREDASH_SCIM_BEARER_TOKEN"`
 	CSRFKey          string `env:"LIBREDASH_CSRF_KEY"`
 	CookieSecureRaw  string `env:"LIBREDASH_COOKIE_SECURE"`
 	Target           string `env:"LIBREDASH_TARGET"`
