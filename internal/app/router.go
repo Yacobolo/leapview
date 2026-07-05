@@ -26,6 +26,8 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/workspaces/{workspace}", s.protected(access.PrivilegeViewItem, s.workspaceAssets))
 		r.Get("/workspaces/{workspace}/assets/{asset}", s.protected(access.PrivilegeViewItem, s.workspaceAsset))
 		r.Get("/workspaces/{workspace}/assets/{asset}/updates", s.protected(access.PrivilegeViewItem, s.workspaceAssetUpdates))
+		r.Post("/workspaces/{workspace}/assets/{asset}/access/upsert", s.protected(access.PrivilegeManageGrants, s.upsertWorkspaceAssetAccess))
+		r.Post("/workspaces/{workspace}/assets/{asset}/access/remove", s.protected(access.PrivilegeManageGrants, s.removeWorkspaceAssetAccess))
 		r.Get("/workspaces/{workspace}/assets/{asset}/{section}", s.protected(access.PrivilegeViewItem, s.workspaceAssetSection))
 		r.Post("/workspaces/{workspace}/assets/{asset}/refresh", s.protected(access.PrivilegeRefreshData, s.refreshWorkspaceAsset))
 		r.Post("/workspaces/{workspace}/assets/{asset}/refresh-materializations", s.protected(access.PrivilegeRefreshData, s.refreshWorkspaceAssetMaterializations))

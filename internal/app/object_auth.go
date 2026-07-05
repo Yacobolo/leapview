@@ -48,10 +48,50 @@ func routeObjectRefs(r *http.Request, workspaceID string) []access.ObjectRef {
 	if conversationID := strings.TrimSpace(chi.URLParam(r, "conversation")); conversationID != "" {
 		objects = append(objects, access.ItemObject(access.SecurableAgentPolicy, workspaceID, "conversation/"+conversationID))
 	}
+	if assetID := strings.TrimSpace(chi.URLParam(r, "asset")); assetID != "" {
+		if object, ok := assetObjectRef(workspaceID, assetID); ok {
+			objects = append(objects, object)
+		}
+	}
 	if workspaceID != "" {
 		objects = append(objects, access.WorkspaceObject(workspaceID))
 	}
 	return objects
+}
+
+func assetObjectRef(workspaceID, assetID string) (access.ObjectRef, bool) {
+	typ, objectID, ok := assetSecurableParts(assetID)
+	if !ok {
+		return access.ObjectRef{}, false
+	}
+	return objectWithInferredParent(typ, workspaceID, objectID), true
+}
+
+func assetSecurableParts(assetID string) (access.SecurableType, string, bool) {
+	prefix, objectID, ok := strings.Cut(strings.TrimSpace(assetID), ":")
+	if !ok || strings.TrimSpace(objectID) == "" {
+		return "", "", false
+	}
+	switch prefix {
+	case string(access.SecurableDashboard):
+		return access.SecurableDashboard, objectID, true
+	case string(access.SecurableSemanticModel):
+		return access.SecurableSemanticModel, objectID, true
+	case string(access.SecurableSource):
+		return access.SecurableSource, objectID, true
+	case string(access.SecurableModelTable):
+		return access.SecurableModelTable, objectID, true
+	case string(access.SecurableDataset):
+		return access.SecurableDataset, objectID, true
+	case string(access.SecurableTable):
+		return access.SecurableTable, objectID, true
+	case string(access.SecurableColumn):
+		return access.SecurableColumn, objectID, true
+	case string(access.SecurableAgentPolicy):
+		return access.SecurableAgentPolicy, objectID, true
+	default:
+		return "", "", false
+	}
 }
 
 func dashboardObjectFromRequest(r *http.Request) access.ObjectRef {

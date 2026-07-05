@@ -186,9 +186,10 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	accessResponse := s.workspaceAssetAccessResponse(r, workspace, selected, s.canManageAssetAccess(r, workspaceID, selected), ui.WorkspaceAccessStatus{})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.WorkspaceAssetPageWithRefreshAndVersions(s.catalogForWorkspace(workspaceID), workspace, selected, assets, edges, section, s.currentRoleLabel(r), refresh, versions, s.chatChromeOption(r)).Render(w); err != nil {
+	if err := ui.WorkspaceAssetPageWithRefreshVersionsAndAccess(s.catalogForWorkspace(workspaceID), workspace, selected, assets, edges, section, s.currentRoleLabel(r), refresh, versions, accessResponse, csrfToken(r, s.auth), s.chatChromeOption(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -819,7 +820,7 @@ type workspaceAccessSignalPayload struct {
 
 func (signals workspaceAccessSignalPayload) command() ui.WorkspaceAccessCommand {
 	command := signals.WorkspaceAccess.Command
-	if command.Email == "" && command.Role == "" && command.PrincipalID == "" {
+	if command.Email == "" && command.Role == "" && command.PrincipalID == "" && command.BindingID == "" && command.SubjectID == "" {
 		command = signals.WorkspaceAccessCommand
 	}
 	return command
@@ -865,12 +866,96 @@ func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 	s.patchWorkspaceAccess(w, r, workspaceID, status)
 }
 
+func (s *Server) upsertWorkspaceAssetAccess(w http.ResponseWriter, r *http.Request) {
+	signals := workspaceAccessSignalPayload{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	selected, ok := s.workspaceAssetForAccessRequest(w, r, workspaceID)
+	if !ok {
+		return
+	}
+	command := signals.command()
+	status := ui.WorkspaceAccessStatus{Message: "Access updated."}
+	repo, err := s.accessRepository()
+	if err != nil {
+		status = ui.WorkspaceAccessStatus{Error: err.Error()}
+	} else if repo == nil {
+		status = ui.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+	} else if privilege := access.Privilege(strings.TrimSpace(command.Role)); !knownPrivilege(privilege) {
+		status = ui.WorkspaceAccessStatus{Error: fmt.Sprintf("unsupported privilege %q", command.Role)}
+	} else if object, ok := assetObjectRef(workspaceID, selected.ID); !ok {
+		status = ui.WorkspaceAccessStatus{Error: fmt.Sprintf("asset %q cannot be shared", selected.ID)}
+	} else {
+		email := access.NormalizeEmail(command.Email)
+		if email == "" && strings.TrimSpace(command.SubjectID) == "" {
+			status = ui.WorkspaceAccessStatus{Error: "email is required"}
+		} else {
+			subjectID := strings.TrimSpace(command.SubjectID)
+			if email != "" {
+				principal, err := repo.UpsertPrincipal(r.Context(), access.PrincipalInput{ID: access.PrincipalIDForEmail(email), Email: email, DisplayName: email})
+				if err != nil {
+					status = ui.WorkspaceAccessStatus{Error: err.Error()}
+				} else {
+					subjectID = principal.ID
+				}
+			}
+			if status.Error == "" {
+				if strings.TrimSpace(command.BindingID) != "" {
+					_ = repo.DeleteGrant(r.Context(), workspaceID, command.BindingID)
+				}
+				if _, err := repo.CreateGrant(r.Context(), access.GrantInput{Object: object, SubjectType: access.SubjectPrincipal, SubjectID: subjectID, Privilege: privilege}); err != nil {
+					status = ui.WorkspaceAccessStatus{Error: err.Error()}
+				}
+			}
+		}
+	}
+	s.patchWorkspaceAssetAccess(w, r, workspaceID, selected, status)
+}
+
+func (s *Server) removeWorkspaceAssetAccess(w http.ResponseWriter, r *http.Request) {
+	signals := workspaceAccessSignalPayload{}
+	if err := datastar.ReadSignals(r, &signals); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
+	selected, ok := s.workspaceAssetForAccessRequest(w, r, workspaceID)
+	if !ok {
+		return
+	}
+	command := signals.command()
+	status := ui.WorkspaceAccessStatus{Message: "Access removed."}
+	repo, err := s.accessRepository()
+	if err != nil {
+		status = ui.WorkspaceAccessStatus{Error: err.Error()}
+	} else if repo == nil {
+		status = ui.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+	} else if strings.TrimSpace(command.BindingID) == "" {
+		status = ui.WorkspaceAccessStatus{Error: "grant id is required"}
+	} else if err := repo.DeleteGrant(r.Context(), workspaceID, command.BindingID); err != nil {
+		status = ui.WorkspaceAccessStatus{Error: err.Error()}
+	}
+	s.patchWorkspaceAssetAccess(w, r, workspaceID, selected, status)
+}
+
 func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceID string, status ui.WorkspaceAccessStatus) {
 	workspace := s.workspaceResponse(r, workspaceID)
 	access := s.workspaceAccessResponse(r, workspace, true, status)
 	sse := datastar.NewSSE(w, r)
 	_ = sse.MarshalAndPatchSignals(map[string]any{
 		"workspaceAccess": ui.WorkspaceAccessSignals(access, csrfToken(r, s.auth)),
+	})
+}
+
+func (s *Server) patchWorkspaceAssetAccess(w http.ResponseWriter, r *http.Request, workspaceID string, asset workspace.AssetView, status ui.WorkspaceAccessStatus) {
+	workspaceView := s.workspaceResponse(r, workspaceID)
+	accessResponse := s.workspaceAssetAccessResponse(r, workspaceView, asset, true, status)
+	sse := datastar.NewSSE(w, r)
+	_ = sse.MarshalAndPatchSignals(map[string]any{
+		"workspaceAccess": ui.WorkspaceAccessSignals(accessResponse, csrfToken(r, s.auth)),
 	})
 }
 
@@ -1315,6 +1400,52 @@ func (s *Server) workspaceAccessResponse(r *http.Request, workspaceView workspac
 	}
 }
 
+func (s *Server) workspaceAssetAccessResponse(r *http.Request, workspaceView workspace.WorkspaceView, assetView workspace.AssetView, canManage bool, status ui.WorkspaceAccessStatus) ui.WorkspaceAccessResponse {
+	object, ok := assetObjectRef(workspaceView.ID, assetView.ID)
+	if !ok {
+		if status.Error == "" {
+			status.Error = fmt.Sprintf("asset %q cannot be shared", assetView.ID)
+		}
+		return ui.WorkspaceAccessResponse{Workspace: workspaceView, CanManage: false, Status: status}
+	}
+	bindings := []workspace.RoleBindingView{}
+	repo, err := s.accessRepository()
+	if err != nil && status.Error == "" {
+		status.Error = err.Error()
+	} else if repo != nil && canManage {
+		grants, err := repo.ListGrants(r.Context(), object)
+		if err != nil && status.Error == "" {
+			status.Error = err.Error()
+		}
+		for _, grant := range grants {
+			if grant.SubjectType != access.SubjectPrincipal {
+				continue
+			}
+			bindings = append(bindings, grantBindingView(r.Context(), repo, grant))
+		}
+	}
+	return ui.WorkspaceAccessResponse{
+		Workspace:   workspaceView,
+		ObjectType:  string(object.Type),
+		ObjectID:    object.ObjectID,
+		ObjectTitle: assetAccessTitle(assetView),
+		Mode:        "object",
+		Roles:       assetGrantPrivilegeViews(assetView.Type),
+		Bindings:    bindings,
+		CanManage:   canManage,
+		Status:      status,
+	}
+}
+
+func assetAccessTitle(assetView workspace.AssetView) string {
+	for _, value := range []string{assetView.Title, assetView.Key, assetView.ID} {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return "Asset"
+}
+
 func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) bool {
 	if s.auth == nil {
 		return true
@@ -1329,6 +1460,78 @@ func (s *Server) canManageWorkspaceAccess(r *http.Request, workspaceID string) b
 	}
 	decision, err := repo.Authorize(r.Context(), principal.ID, access.PrivilegeManageGrants, access.WorkspaceObject(workspaceID))
 	return err == nil && decision.Allowed
+}
+
+func (s *Server) canManageAssetAccess(r *http.Request, workspaceID string, assetView workspace.AssetView) bool {
+	if s.auth == nil {
+		return true
+	}
+	repo, err := s.accessRepository()
+	if err != nil || repo == nil {
+		return false
+	}
+	principal, ok := s.auth.Principal(r)
+	if !ok {
+		return false
+	}
+	object, ok := assetObjectRef(workspaceID, assetView.ID)
+	if !ok {
+		return false
+	}
+	decision, err := repo.Authorize(r.Context(), principal.ID, access.PrivilegeManageGrants, object)
+	return err == nil && decision.Allowed
+}
+
+func (s *Server) workspaceAssetForAccessRequest(w http.ResponseWriter, r *http.Request, workspaceID string) (workspace.AssetView, bool) {
+	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForNotFound(err))
+		return workspace.AssetView{}, false
+	}
+	selected, ok := workspace.AssetByID(assets, chi.URLParam(r, "asset"))
+	if !ok {
+		http.NotFound(w, r)
+		return workspace.AssetView{}, false
+	}
+	return selected, true
+}
+
+func assetGrantPrivilegeViews(assetType string) []workspace.RoleView {
+	privileges := []access.Privilege{
+		access.PrivilegeViewItem,
+		access.PrivilegeEditItem,
+		access.PrivilegeManageItem,
+		access.PrivilegeManageGrants,
+	}
+	switch assetType {
+	case string(access.SecurableDashboard), string(access.SecurableSemanticModel), string(access.SecurableModelTable), string(access.SecurableDataset), string(access.SecurableTable), string(access.SecurableSource):
+		privileges = append(privileges, access.PrivilegeQueryData, access.PrivilegePreviewData, access.PrivilegeRefreshData)
+	}
+	out := make([]workspace.RoleView, 0, len(privileges))
+	for _, privilege := range privileges {
+		out = append(out, workspace.RoleView{Name: string(privilege)})
+	}
+	return out
+}
+
+func grantBindingView(ctx context.Context, repo access.Repository, grant access.Grant) workspace.RoleBindingView {
+	email := grant.SubjectID
+	displayName := ""
+	if principal, err := repo.PrincipalByID(ctx, grant.SubjectID); err == nil {
+		email = firstNonEmpty(principal.Email, grant.SubjectID)
+		displayName = principal.DisplayName
+	}
+	return workspace.RoleBindingView{
+		ID:          grant.ID,
+		WorkspaceID: grant.WorkspaceID,
+		SubjectType: string(grant.SubjectType),
+		SubjectID:   grant.SubjectID,
+		PrincipalID: grant.SubjectID,
+		Email:       email,
+		DisplayName: displayName,
+		Role:        string(grant.Privilege),
+		CreatedAt:   grant.CreatedAt,
+	}
 }
 
 func defaultWorkspaceRoles() []workspace.RoleView {

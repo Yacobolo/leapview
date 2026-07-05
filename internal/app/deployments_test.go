@@ -1645,6 +1645,67 @@ func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAssetAccessCommandCreatesAndRemovesGrant(t *testing.T) {
+	store := testStore(t)
+	seedActiveDeployment(t, store, "test")
+	ctx := context.Background()
+	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", "owner")
+	token := testAPIToken(t, ctx, store, owner.ID, "test")
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	signals := `{"workspaceAccess":{"command":{"email":"analyst@example.com","role":"VIEW_ITEM"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/assets/semantic_model:test.sales/access/upsert", bytes.NewBufferString(signals))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("asset access upsert status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"event: datastar-patch-signals", "workspaceAccess", `"mode":"object"`, "analyst@example.com", "Access updated."} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("asset access upsert did not patch %q:\n%s", want, body)
+		}
+	}
+
+	repo := testAccessRepository(store)
+	grants, err := repo.ListGrants(ctx, access.ItemObject(access.SecurableSemanticModel, "test", "test.sales"))
+	if err != nil {
+		t.Fatalf("list grants: %v", err)
+	}
+	var grantID string
+	for _, grant := range grants {
+		if grant.SubjectID == access.PrincipalIDForEmail("analyst@example.com") && grant.Privilege == access.PrivilegeViewItem {
+			grantID = grant.ID
+		}
+	}
+	if grantID == "" {
+		t.Fatalf("asset grant missing after command: %#v", grants)
+	}
+
+	removeSignals := `{"workspaceAccess":{"command":{"bindingId":"` + grantID + `"}}}`
+	removeReq := httptest.NewRequest(http.MethodPost, "/workspaces/test/assets/semantic_model:test.sales/access/remove", bytes.NewBufferString(removeSignals))
+	removeReq.Header.Set("Authorization", "Bearer "+token)
+	removeRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(removeRec, removeReq)
+	if removeRec.Code != http.StatusOK {
+		t.Fatalf("asset access remove status = %d body=%s", removeRec.Code, removeRec.Body.String())
+	}
+	if !strings.Contains(removeRec.Body.String(), "Access removed.") {
+		t.Fatalf("asset access remove did not patch success:\n%s", removeRec.Body.String())
+	}
+	grants, err = repo.ListGrants(ctx, access.ItemObject(access.SecurableSemanticModel, "test", "test.sales"))
+	if err != nil {
+		t.Fatalf("list grants after remove: %v", err)
+	}
+	for _, grant := range grants {
+		if grant.ID == grantID {
+			t.Fatalf("asset grant remained after remove: %#v", grants)
+		}
+	}
+}
+
 func TestWorkspaceAccessCommandRejectsViewer(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
