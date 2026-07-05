@@ -24,6 +24,9 @@ func TestRenderPageIncludesSignalsUpdatesInitMainAttrsAndBody(t *testing.T) {
 		t.Fatalf("render document: %v", err)
 	}
 	html := body.String()
+	if strings.Contains(html, "cdn.jsdelivr") {
+		t.Fatalf("rendered document referenced CDN Datastar asset:\n%s", html)
+	}
 	for _, want := range []string{
 		"<title>Test Page</title>",
 		`data-color-mode="auto"`,
@@ -31,6 +34,7 @@ func TestRenderPageIncludesSignalsUpdatesInitMainAttrsAndBody(t *testing.T) {
 		`data-signals=`,
 		`updatesUrl`,
 		`/updates?route=test`,
+		datastarScriptSrc,
 		`data-init="@get($runtime.updatesUrl, {openWhenHidden: true})"`,
 		`<div id="content">Hello</div>`,
 	} {

@@ -586,14 +586,20 @@ func TestLoginRouteRendersAzureADLogin(t *testing.T) {
 	if !strings.Contains(body, `Sign in with Azure Active Directory`) {
 		t.Fatalf("login page did not seed Azure AD provider label:\n%s", body)
 	}
-	if !strings.Contains(body, `data-init__delay`) {
-		t.Fatalf("login page did not include lazy background init:\n%s", body)
+	if strings.Contains(body, `data-init__delay`) || strings.Contains(body, `libredash-login-background-init`) {
+		t.Fatalf("login page still uses Datastar for lazy background init:\n%s", body)
 	}
-	if !strings.Contains(body, `libredash-login-background-init`) {
-		t.Fatalf("login page did not dispatch login background init event:\n%s", body)
+	if !strings.Contains(body, `setTimeout`) || !strings.Contains(body, `requestIdleCallback`) {
+		t.Fatalf("login page did not include lazy background loader:\n%s", body)
 	}
 	if !strings.Contains(body, `/static/topology-background.js`) {
 		t.Fatalf("login page did not include lazy topology background asset:\n%s", body)
+	}
+	if strings.Contains(body, `starfederation/datastar`) || strings.Contains(body, `cdn.jsdelivr`) {
+		t.Fatalf("login page still references remote Datastar runtime:\n%s", body)
+	}
+	if !strings.Contains(body, `/static/vendor/datastar-1.0.2.js?v=dev`) {
+		t.Fatalf("login page did not include framework Datastar runtime:\n%s", body)
 	}
 }
 

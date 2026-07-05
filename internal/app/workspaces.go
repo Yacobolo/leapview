@@ -25,7 +25,6 @@ import (
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 var errWorkspaceRBACNotConfigured = errors.New("Workspace RBAC store is not configured.")
@@ -855,8 +854,7 @@ func (s *Server) removeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
 func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceID string, status ui.WorkspaceAccessStatus) {
 	workspace := s.workspaceResponse(r, workspaceID)
 	access := s.workspaceAccessResponse(r, workspace, true, status)
-	sse := datastar.NewSSE(w, r)
-	_ = sse.MarshalAndPatchSignals(map[string]any{
+	_ = pagestream.PatchResponse(w, r, pagestream.SignalPatch{
 		"workspaceAccess": ui.WorkspaceAccessSignals(access, csrfToken(r, s.auth)),
 	})
 }

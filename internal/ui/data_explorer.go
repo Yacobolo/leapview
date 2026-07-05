@@ -35,7 +35,6 @@ func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPage
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/data-explorer.js"))),
 			inspectorScript(),
-			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
 		MainAttrs:  []g.Node{h.Class(appRootClass)},
 		Signals:    signals,

@@ -12,7 +12,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 type chatTurnCommandSignals struct {
@@ -135,8 +134,7 @@ func (s *Server) startDraftChatTurn(w http.ResponseWriter, r *http.Request, serv
 		return
 	}
 	go s.completeDraftChatTurn(service, scope, clientID, started)
-	sse := datastar.NewSSE(w, r)
-	if err := sse.Redirect(chatRoutePath(scope.WorkspaceID, conversation.ID)); err != nil {
+	if err := pagestream.Redirect(w, r, chatRoutePath(scope.WorkspaceID, conversation.ID)); err != nil {
 		return
 	}
 }
@@ -166,7 +164,7 @@ func (s *Server) runChatTurn(w http.ResponseWriter, r *http.Request, service *ag
 	}
 	transcript := state.Transcript
 	streamArtifacts := state.Artifacts
-	sse := datastar.NewSSE(w, r)
+	updates := pagestream.NewSignalStream(w, r)
 
 	started, err := service.StartPrompt(r.Context(), agentapp.PromptInput{
 		Scope:          scope,
@@ -174,13 +172,13 @@ func (s *Server) runChatTurn(w http.ResponseWriter, r *http.Request, service *ag
 		Input:          input,
 	})
 	if err != nil {
-		_ = sse.MarshalAndPatchSignals(chatSignalPatch(s.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, chatTurnStatusError(err), false)))
+		_ = updates.Patch(chatSignalPatch(s.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, chatTurnStatusError(err), false)))
 		return
 	}
 	_, _ = s.executeStartedChatTurn(r.Context(), service, scope, started, chatTurnExecution{
 		liveConversations: streamConversations,
 		emit: func(signal ui.ChatSignal) error {
-			return sse.MarshalAndPatchSignals(chatSignalPatch(signal))
+			return updates.Patch(chatSignalPatch(signal))
 		},
 	})
 }

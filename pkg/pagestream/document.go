@@ -12,6 +12,8 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
+const datastarScriptSrc = "/static/vendor/datastar-1.0.2.js?v=dev"
+
 type PageSpec struct {
 	Title      string
 	Language   string
@@ -59,6 +61,8 @@ func renderDocument(spec documentSpec) g.Node {
 	if language == "" {
 		language = "en"
 	}
+	head := append([]g.Node{}, spec.Head...)
+	head = append(head, datastarScript())
 	mainChildren := []g.Node{}
 	if spec.Signals != nil {
 		mainChildren = append(mainChildren, dsattr.Signals(spec.Signals))
@@ -73,9 +77,13 @@ func renderDocument(spec documentSpec) g.Node {
 		Title:     spec.Title,
 		Language:  language,
 		HTMLAttrs: spec.HTMLAttrs,
-		Head:      spec.Head,
+		Head:      head,
 		Body:      []g.Node{h.Main(mainAttrs...)},
 	})
+}
+
+func datastarScript() g.Node {
+	return h.Script(h.Type("module"), h.Src(datastarScriptSrc))
 }
 
 func initExpression(expressions ...string) string {

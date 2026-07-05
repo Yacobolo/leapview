@@ -48,7 +48,6 @@ func inspectorElement() g.Node {
 
 func pageHead(extra ...g.Node) []g.Node {
 	nodes := []g.Node{
-		h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 		h.Script(h.Src(staticAsset("/static/theme.js"))),
 	}
@@ -77,7 +76,6 @@ func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
 			inspectorScript(),
-			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
 		MainAttrs: []g.Node{
 			h.ID("dashboard"),

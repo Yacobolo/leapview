@@ -21,6 +21,16 @@ func NewSignalStream(w http.ResponseWriter, r *http.Request) SignalStream {
 	return SignalStream{sse: datastar.NewSSE(w, r)}
 }
 
+// Redirect emits a Datastar redirect response.
+func Redirect(w http.ResponseWriter, r *http.Request, location string) error {
+	return datastar.NewSSE(w, r).Redirect(location)
+}
+
+// PatchResponse emits a single Datastar patch-signals response.
+func PatchResponse(w http.ResponseWriter, r *http.Request, patch SignalPatch) error {
+	return NewSignalStream(w, r).Patch(patch)
+}
+
 // Patch emits one Datastar patch-signals event. Empty patches are ignored.
 func (s SignalStream) Patch(patch SignalPatch) error {
 	if len(patch) == 0 {

@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	ds "maragu.dev/gomponents-datastar"
 	h "maragu.dev/gomponents/html"
 )
 
@@ -62,7 +60,6 @@ func inspectorElement() g.Node {
 
 func pageHead(extra ...g.Node) []g.Node {
 	nodes := []g.Node{
-		h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 		h.Script(h.Src(staticAsset("/static/theme.js"))),
 	}
@@ -86,14 +83,12 @@ func LoginPage() g.Node {
 			g.Attr("data-dark-theme", "dark"),
 		},
 		Head: []g.Node{
-			h.Link(h.Rel("preconnect"), h.Href("https://cdn.jsdelivr.net")),
 			h.Link(h.Rel("icon"), h.Href(favicon)),
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			h.Script(h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/login-page.js"))),
 			loginBackgroundLoaderScript(),
 			inspectorScript(),
-			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		},
 		MainAttrs: []g.Node{h.Class(appRootClass)},
 		Signals: map[string]any{
@@ -103,7 +98,6 @@ func LoginPage() g.Node {
 		},
 		UpdatesURL: loginUpdatesURL,
 		Body: []g.Node{
-			h.Span(g.Attr("hidden"), ds.Init("document.dispatchEvent(new CustomEvent('libredash-login-background-init'))", ds.ModifierDelay, ds.Duration(900*time.Millisecond))),
 			g.El("ld-login-page",
 				g.Attr("page", jsonString(page)),
 				g.Attr("data-attr:page", "$page"),
@@ -161,7 +155,6 @@ func catalogPageDocument(catalog dashboard.Catalog, page uisignals.CatalogPageSi
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/catalog-page.js"))),
 			inspectorScript(),
-			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
 		MainAttrs:  []g.Node{h.Class(appRootClass)},
 		Signals:    signals,
@@ -230,7 +223,7 @@ func recordTableBadgeValue(value, tone string) any {
 }
 
 func loginBackgroundLoaderScript() g.Node {
-	return h.Script(g.Raw(`(()=>{const schedule=(task)=>{const run=()=>{"requestIdleCallback"in window?requestIdleCallback(task,{timeout:1600}):setTimeout(task,600)};document.readyState==="complete"?run():window.addEventListener("load",run,{once:true})};document.addEventListener("libredash-login-background-init",()=>schedule(()=>{const el=document.querySelector("[data-login-background]");if(!el)return;const state=el.dataset.backgroundState;if(state==="loading"||state==="loaded")return;const src=el.dataset.moduleSrc;if(!src)return;el.dataset.backgroundState="loading";import(src).then(()=>{el.dataset.backgroundState="loaded"}).catch((error)=>{el.dataset.backgroundState="error";console.error("LibreDash login background failed to load",error)})}))})();`))
+	return h.Script(g.Raw(`(()=>{const schedule=(task)=>{const run=()=>{"requestIdleCallback"in window?requestIdleCallback(task,{timeout:1600}):setTimeout(task,600)};document.readyState==="complete"?run():window.addEventListener("load",run,{once:true})};setTimeout(()=>schedule(()=>{const el=document.querySelector("[data-login-background]");if(!el)return;const state=el.dataset.backgroundState;if(state==="loading"||state==="loaded")return;const src=el.dataset.moduleSrc;if(!src)return;el.dataset.backgroundState="loading";import(src).then(()=>{el.dataset.backgroundState="loaded"}).catch((error)=>{el.dataset.backgroundState="error";console.error("LibreDash login background failed to load",error)})}),900)})();`))
 }
 
 func displayLabel(label, fallback string) string {

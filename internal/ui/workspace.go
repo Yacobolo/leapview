@@ -598,7 +598,6 @@ func workspaceRouteDocumentWithBodyExtras(title string, catalog dashboard.Catalo
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/workspace-page.js"))),
 		inspectorScript(),
-		h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 	}
 	head = append(head, extraHead...)
 	body := append([]g.Node{}, bodyExtras...)
