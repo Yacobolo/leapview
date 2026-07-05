@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,15 +11,11 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
-	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
-	workspacedatastar "github.com/Yacobolo/libredash/internal/workspace/datastar"
-	workspacerefresh "github.com/Yacobolo/libredash/internal/workspace/refresh"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 	"github.com/starfederation/datastar-go/datastar"
@@ -31,96 +26,6 @@ var errWorkspaceRBACNotConfigured = errors.New("Workspace RBAC store is not conf
 type activeWorkspaceMetadataRepository interface {
 	ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error)
 	ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error)
-}
-
-func (s *Server) runWorkspaceAssetRefreshWithPatches(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
-	switch asset.Type {
-	case string(workspace.AssetTypeSemanticModel):
-		return s.refreshSemanticModelAssetWithPatches(r.Context(), r, workspaceID, asset, assets, edges)
-	case string(workspace.AssetTypeModelTable):
-		return s.refreshModelTableAssetWithPatches(r.Context(), r, workspaceID, asset, assets, edges)
-	default:
-		return http.ErrMissingFile
-	}
-}
-
-func (s *Server) queueWorkspaceAssetRefreshWithPatches(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
-	ctx := r.Context()
-	runRepo, err := s.materializationRunRepository()
-	if err != nil {
-		return err
-	}
-	service, err := s.workspaceRefreshService(runRepo)
-	if err != nil {
-		return err
-	}
-	environment := s.requestDeploymentEnvironment(r)
-	activeState, err := service.Active(ctx, workspaceID, environment)
-	if err != nil {
-		return err
-	}
-	artifact := activeState.Artifact
-	if strings.TrimSpace(artifact.Path) == "" {
-		return s.runWorkspaceAssetRefreshWithPatches(r, workspaceID, asset, assets, edges)
-	}
-	if _, err := os.Stat(artifact.Path); err != nil {
-		if os.IsNotExist(err) {
-			return s.runWorkspaceAssetRefreshWithPatches(r, workspaceID, asset, assets, edges)
-		}
-		return err
-	}
-	principal, _ := currentPrincipal(s, r)
-	if _, err := service.QueueAssetRefresh(ctx, workspacerefresh.QueueAssetInput{
-		WorkspaceID: workspaceID,
-		Environment: environment,
-		PrincipalID: principal.ID,
-		Asset:       asset,
-		DataRoot:    s.dataDirForWorkspace(workspaceID, artifact),
-	}); err != nil {
-		return err
-	}
-	s.dispatchQueuedMaterializationJobs(context.Background())
-	return nil
-}
-
-func (s *Server) executeWorkspaceAssetRefreshPlan(ctx context.Context, definition *workspace.Definition, active, refreshed deployment.Deployment, artifact deployment.Artifact, environment deployment.Environment, plan workspacerefresh.Plan) (int64, error) {
-	runtime, err := s.openRefreshRuntime(ctx, definition, active, refreshed, artifact, environment, plan)
-	if err != nil {
-		return 0, err
-	}
-	defer runtime.Close()
-	if err := runtime.RefreshWorkspaceTables(ctx, plan.Tables); err != nil {
-		return 0, err
-	}
-	snapshotID := runtime.DuckLakeSnapshotID()
-	if snapshotID <= 0 {
-		return 0, fmt.Errorf("refresh did not produce a DuckLake snapshot")
-	}
-	return snapshotID, nil
-}
-
-func (s *Server) openRefreshRuntime(ctx context.Context, definition *workspace.Definition, active, refreshed deployment.Deployment, artifact deployment.Artifact, environment deployment.Environment, plan workspacerefresh.Plan) (*analyticsduckdb.WorkspaceRuntime, error) {
-	dataDir := s.dataDirForWorkspace(string(refreshed.WorkspaceID), artifact)
-	dbDir := s.duckDBDir
-	if strings.TrimSpace(dbDir) == "" {
-		dbDir = filepath.Join(".libredash", "duckdb")
-	}
-	dbDir = filepath.Join(dbDir, string(deployment.NormalizeEnvironment(environment)))
-	return analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:             definition.Models,
-		DataDir:            dataDir,
-		DBDir:              dbDir,
-		CatalogPath:        s.duckLakeCatalogPath,
-		DuckLakeDataPath:   s.duckLakeDataPath,
-		DeploymentID:       string(refreshed.ID),
-		WorkspaceID:        string(refreshed.WorkspaceID),
-		Environment:        string(deployment.NormalizeEnvironment(environment)),
-		TargetType:         plan.TargetType,
-		TargetID:           plan.TargetID,
-		SemanticDigest:     refreshed.Digest,
-		ArtifactDigest:     artifact.Digest,
-		SkipInitialRefresh: true,
-	})
 }
 
 func (s *Server) dataDirForWorkspace(workspaceID string, artifact deployment.Artifact) string {
@@ -141,173 +46,6 @@ func (s *Server) dataDirForWorkspace(workspaceID string, artifact deployment.Art
 		return workspaceDataDir
 	}
 	return dataDir
-}
-
-func (s *Server) refreshSemanticModelAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
-	repo, err := s.materializationRunRepository()
-	if err != nil {
-		return err
-	}
-	principal, _ := currentPrincipal(s, r)
-	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
-	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
-		WorkspaceID: workspaceID,
-		ModelID:     semanticModelTargetID(asset),
-		PrincipalID: principal.ID,
-		TargetID:    asset.Key,
-	}, refreshPublisher{
-		Root: func() { s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges) },
-		Target: func(targetID string) {
-			s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
-		},
-	})
-}
-
-func (s *Server) refreshModelTableAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
-	repo, err := s.materializationRunRepository()
-	if err != nil {
-		return err
-	}
-	principal, _ := currentPrincipal(s, r)
-	modelID, tableName := modelTableTargetParts(asset.Key)
-	if modelID == "" || tableName == "" {
-		return errors.New("model table asset key is invalid")
-	}
-	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
-	return orchestrator.RefreshModelTable(ctx, refreshRunInput{
-		WorkspaceID: workspaceID,
-		ModelID:     modelID,
-		PrincipalID: principal.ID,
-		TargetID:    asset.Key,
-	}, tableName, refreshPublisher{
-		Root: func() { s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges) },
-		Target: func(targetID string) {
-			s.publishWorkspaceAssetRefreshPatchForTarget(r, workspaceID, targetID, assets, edges)
-		},
-	})
-}
-
-func (s *Server) publishWorkspaceAssetRefreshPatch(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) {
-	for _, section := range workspacedatastar.WorkspaceAssetRefreshSections() {
-		s.broker.Publish(workspacedatastar.WorkspaceAssetStreamID(workspaceID, asset.ID, section), s.workspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges, section))
-	}
-}
-
-func (s *Server) publishWorkspaceAssetRefreshPatchForTarget(r *http.Request, workspaceID, targetID string, assets []workspace.AssetView, edges []workspace.AssetEdgeView) {
-	for _, asset := range assets {
-		if asset.Key == targetID && workspaceAssetRefreshable(asset) {
-			s.publishWorkspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges)
-		}
-	}
-}
-
-func (s *Server) publishModelRefreshPatches(ctx context.Context, workspaceID, modelID string) {
-	assets, edges, ok := s.workspaceAssetsAndEdgesForRefresh(ctx, workspaceID)
-	if !ok {
-		return
-	}
-	view := catalogWorkspaceView(s.catalogForWorkspace(workspaceID))
-	view.ID = workspaceID
-	for _, asset := range assets {
-		if asset.Type == string(workspace.AssetTypeSemanticModel) && semanticModelTargetID(asset) != modelID {
-			continue
-		}
-		if asset.Type == string(workspace.AssetTypeModelTable) {
-			assetModelID, _ := modelTableTargetParts(asset.Key)
-			if assetModelID != modelID {
-				continue
-			}
-		}
-		if !workspaceAssetRefreshable(asset) {
-			continue
-		}
-		refresh, err := s.assetRefreshStateForContext(ctx, workspaceID, asset)
-		if err != nil {
-			continue
-		}
-		for _, section := range workspacedatastar.WorkspaceAssetRefreshSections() {
-			s.broker.Publish(workspacedatastar.WorkspaceAssetStreamID(workspaceID, asset.ID, section), workspacedatastar.WorkspaceAssetRefreshSignals(view, asset, assets, edges, refresh, section))
-		}
-	}
-}
-
-func (s *Server) publishWorkspaceAssetRefreshPatchesForTarget(ctx context.Context, workspaceID, targetType, targetID string) {
-	assets, edges, ok := s.workspaceAssetsAndEdgesForRefresh(ctx, workspaceID)
-	if !ok {
-		return
-	}
-	view := catalogWorkspaceView(s.catalogForWorkspace(workspaceID))
-	view.ID = workspaceID
-	for _, asset := range assets {
-		if !workspaceAssetRefreshable(asset) {
-			continue
-		}
-		if assetRefreshTargetID(asset) != targetID {
-			continue
-		}
-		if targetType == materialize.TargetModelTable && asset.Type != string(workspace.AssetTypeModelTable) {
-			continue
-		}
-		if targetType == materialize.TargetSemanticModel && asset.Type != string(workspace.AssetTypeSemanticModel) {
-			continue
-		}
-		refresh, err := s.assetRefreshStateForContext(ctx, workspaceID, asset)
-		if err != nil {
-			continue
-		}
-		for _, section := range workspacedatastar.WorkspaceAssetRefreshSections() {
-			s.broker.Publish(workspacedatastar.WorkspaceAssetStreamID(workspaceID, asset.ID, section), workspacedatastar.WorkspaceAssetRefreshSignals(view, asset, assets, edges, refresh, section))
-		}
-	}
-}
-
-func (s *Server) workspaceAssetsAndEdgesForRefresh(ctx context.Context, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
-	catalog, ok, err := s.workspaceAssetCatalog(ctx, workspaceID, string(s.defaultDeploymentEnvironment()))
-	if err != nil || !ok {
-		return nil, nil, false
-	}
-	return assetCatalogViews(catalog), assetCatalogEdgeViews(catalog), true
-}
-
-func (s *Server) workspaceAssetRefreshPatch(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView, section string) map[string]any {
-	refresh, err := s.assetRefreshState(r, workspaceID, asset)
-	if err != nil {
-		refresh = ui.AssetRefreshState{Latest: ui.AssetRefreshRun{Status: "failed"}}
-	}
-	return workspacedatastar.WorkspaceAssetRefreshSignals(s.workspaceResponse(r, workspaceID), asset, assets, edges, refresh, section)
-}
-
-func (s *Server) assetRefreshState(r *http.Request, workspaceID string, asset workspace.AssetView) (ui.AssetRefreshState, error) {
-	return s.assetRefreshStateForContext(r.Context(), workspaceID, asset)
-}
-
-func (s *Server) assetRefreshStateForContext(ctx context.Context, workspaceID string, asset workspace.AssetView) (ui.AssetRefreshState, error) {
-	if s.store == nil || !workspaceAssetRefreshable(asset) {
-		return ui.AssetRefreshState{}, nil
-	}
-	repo, err := s.materializationRunRepository()
-	if err != nil {
-		return ui.AssetRefreshState{}, err
-	}
-	targetType := materialize.TargetSemanticModel
-	if asset.Type == string(workspace.AssetTypeModelTable) {
-		targetType = materialize.TargetModelTable
-	}
-	targetID := assetRefreshTargetID(asset)
-	runs, err := repo.ListTargetRuns(ctx, workspaceID, targetType, targetID, materialize.RunPage{Limit: 50})
-	if err != nil {
-		return ui.AssetRefreshState{}, err
-	}
-	state := ui.AssetRefreshState{Runs: uiRefreshRuns(runs)}
-	if len(state.Runs) > 0 {
-		state.Latest = state.Runs[0]
-	}
-	if latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, workspaceID, targetType, targetID); err != nil {
-		return ui.AssetRefreshState{}, err
-	} else if ok {
-		state.LatestSuccessful = uiRefreshRun(latest)
-	}
-	return state, nil
 }
 
 func (s *Server) assetVersionsStateForSection(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
@@ -339,58 +77,6 @@ func (s *Server) assetVersionsStateForSection(ctx context.Context, workspaceID, 
 		})
 	}
 	return state, nil
-}
-
-func uiRefreshRuns(runs []materialize.RunRecord) []ui.AssetRefreshRun {
-	out := make([]ui.AssetRefreshRun, 0, len(runs))
-	for _, run := range runs {
-		out = append(out, uiRefreshRun(run))
-	}
-	return out
-}
-
-func uiRefreshRun(run materialize.RunRecord) ui.AssetRefreshRun {
-	return ui.AssetRefreshRun{
-		ID:                   run.ID,
-		ModelID:              run.ModelID,
-		DeploymentID:         run.DeploymentID,
-		PrincipalID:          run.PrincipalID,
-		PrincipalDisplayName: run.PrincipalDisplayName,
-		TargetType:           run.TargetType,
-		TargetID:             run.TargetID,
-		TriggerType:          run.TriggerType,
-		ParentRunID:          run.ParentRunID,
-		Status:               run.Status,
-		StartedAt:            run.StartedAt,
-		FinishedAt:           run.FinishedAt,
-		Error:                run.Error,
-	}
-}
-
-func workspaceAssetRefreshable(asset workspace.AssetView) bool {
-	return asset.Type == string(workspace.AssetTypeSemanticModel) || asset.Type == string(workspace.AssetTypeModelTable)
-}
-
-func assetRefreshTargetID(asset workspace.AssetView) string {
-	return asset.Key
-}
-
-func semanticModelTargetID(asset workspace.AssetView) string {
-	if name, ok := asset.Payload["Name"].(string); ok && strings.TrimSpace(name) != "" {
-		return strings.TrimSpace(name)
-	}
-	if name, ok := asset.Payload["name"].(string); ok && strings.TrimSpace(name) != "" {
-		return strings.TrimSpace(name)
-	}
-	return asset.Key
-}
-
-func modelTableTargetParts(key string) (string, string) {
-	parts := strings.SplitN(strings.TrimSpace(key), ".", 2)
-	if len(parts) != 2 {
-		return "", strings.TrimSpace(key)
-	}
-	return parts[0], parts[1]
 }
 
 type workspaceAccessSignalPayload struct {

@@ -169,6 +169,14 @@ func TestAppDoesNotOwnKnownProductRouteFamilies(t *testing.T) {
 			"func (s *Server) refreshWorkspaceAssetWithPatches(",
 			"func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(",
 			"func (s *Server) openWorkspaceRefreshRuntime(",
+			"func (s *Server) runWorkspaceAssetRefreshWithPatches(",
+			"func (s *Server) queueWorkspaceAssetRefreshWithPatches(",
+			"func (s *Server) refreshSemanticModelAssetWithPatches(",
+			"func (s *Server) refreshModelTableAssetWithPatches(",
+			"func (s *Server) publishWorkspaceAssetRefreshPatch(",
+			"func (s *Server) publishModelRefreshPatches(",
+			"func (s *Server) publishWorkspaceAssetRefreshPatchesForTarget(",
+			"func (s *Server) assetRefreshStateForContext(",
 		} {
 			if strings.Contains(file.body, forbidden) {
 				t.Fatalf("%s still owns product route family %q", file.path, forbidden)

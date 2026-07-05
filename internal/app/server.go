@@ -13,6 +13,7 @@ import (
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agent"
 	agentopenai "github.com/Yacobolo/libredash/internal/agent/openai"
+	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
@@ -383,13 +384,13 @@ func (s *Server) refreshMaterializationsWithRunForWorkspace(ctx context.Context,
 		return err
 	}
 	principal, _ := principalFromContext(ctx)
-	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
-	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
+	orchestrator := materialize.NewRefreshOrchestrator(repo, appRefreshRunner{metrics: s.metrics}, refreshModelLookup(s.metrics))
+	return orchestrator.RefreshSemanticModel(ctx, materialize.RefreshRunInput{
 		WorkspaceID: workspaceID,
 		ModelID:     modelID,
 		PrincipalID: principal.ID,
-	}, refreshPublisher{
-		Root:   func() { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
-		Target: func(string) { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
+	}, materialize.RefreshPublisher{
+		Root:   func() { s.workspaceRefreshSupport().PublishModelRefreshPatches(ctx, workspaceID, modelID) },
+		Target: func(string) { s.workspaceRefreshSupport().PublishModelRefreshPatches(ctx, workspaceID, modelID) },
 	})
 }

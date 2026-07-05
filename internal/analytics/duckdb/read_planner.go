@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/analytics/connectors"
 	"github.com/Yacobolo/libredash/internal/analytics/duckdb/queryjson"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
@@ -439,12 +440,12 @@ func wholeQueryPushdownSQL(model *semanticmodel.Model, table semanticmodel.Table
 		if !ok {
 			return "", false, fmt.Errorf("unknown source %q", sourceName)
 		}
-		if source.Kind() != semanticmodel.KindObject {
+		if source.Kind() != connectors.KindObject {
 			return "", false, nil
 		}
 		connection := model.Connections[source.Connection]
-		connectionSpec, ok := semanticmodel.LookupConnection(connection.Kind)
-		if !ok || !connectionSpec.TransformPushdown || connectionSpec.ObjectRelation != semanticmodel.ObjectRelationQuackQuery {
+		connectionSpec, ok := connectors.LookupConnection(connection.Kind)
+		if !ok || !connectionSpec.TransformPushdown || connectionSpec.ObjectRelation != connectors.ObjectRelationQuackQuery {
 			return "", false, nil
 		}
 		if connectionName == "" {
