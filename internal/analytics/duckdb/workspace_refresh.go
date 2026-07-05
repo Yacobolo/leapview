@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/deployment"
+	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/workspace/refresh"
 )
 
@@ -14,7 +14,7 @@ type WorkspaceRefreshMaterializer struct {
 	DuckDBDir       string
 	DuckLakeCatalog string
 	DuckLakeData    string
-	DataDir         func(workspaceID string, artifact deployment.Artifact) string
+	DataDir         func(workspaceID string, artifact servingstate.Artifact) string
 }
 
 func (m WorkspaceRefreshMaterializer) Materialize(ctx context.Context, input refresh.MaterializeInput) (int64, error) {
@@ -26,16 +26,16 @@ func (m WorkspaceRefreshMaterializer) Materialize(ctx context.Context, input ref
 	if strings.TrimSpace(dbDir) == "" {
 		dbDir = filepath.Join(".libredash", "duckdb")
 	}
-	dbDir = filepath.Join(dbDir, string(deployment.NormalizeEnvironment(input.Environment)))
+	dbDir = filepath.Join(dbDir, string(servingstate.NormalizeEnvironment(input.Environment)))
 	runtime, err := OpenWorkspaceMaterializeRuntime(ctx, WorkspaceRuntimeConfig{
 		Models:             input.Definition.Models,
 		DataDir:            dataDir,
 		DBDir:              dbDir,
 		CatalogPath:        m.DuckLakeCatalog,
 		DuckLakeDataPath:   m.DuckLakeData,
-		DeploymentID:       string(input.Candidate.ID),
+		ServingStateID:     string(input.Candidate.ID),
 		WorkspaceID:        string(input.Candidate.WorkspaceID),
-		Environment:        string(deployment.NormalizeEnvironment(input.Environment)),
+		Environment:        string(servingstate.NormalizeEnvironment(input.Environment)),
 		TargetType:         input.Plan.TargetType,
 		TargetID:           input.Plan.TargetID,
 		SemanticDigest:     input.Candidate.Digest,

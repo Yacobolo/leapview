@@ -9,7 +9,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	"github.com/Yacobolo/libredash/internal/dashboard/stream"
-	"github.com/Yacobolo/libredash/internal/deployment"
+	"github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacedatastar "github.com/Yacobolo/libredash/internal/workspace/datastar"
@@ -26,10 +26,10 @@ type ServiceFactory func(RunRepository) (refresh.Service, error)
 type Support struct {
 	Runs                 func() (RunRepository, error)
 	Service              ServiceFactory
-	Environment          func(*nethttp.Request) deployment.Environment
+	Environment          func(*nethttp.Request) servingstate.Environment
 	PrincipalID          func(*nethttp.Request) string
 	DispatchQueued       func()
-	DataDir              func(workspaceID string, artifact deployment.Artifact) string
+	DataDir              func(workspaceID string, artifact servingstate.Artifact) string
 	DirectRunner         materialize.RefreshRunner
 	ModelLookup          materialize.ModelLookup
 	Broker               interface{ Publish(string, stream.Patch) }
@@ -74,7 +74,7 @@ func (s Support) AssetRefreshState(ctx context.Context, workspaceID string, asse
 
 func (s Support) AssetVersionsState(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
 	if s.WorkspaceVersions == nil {
-		return ui.AssetVersionsState{CurrentDeploymentID: asset.DeploymentID}, nil
+		return ui.AssetVersionsState{CurrentContentHash: asset.ContentHash}, nil
 	}
 	return s.WorkspaceVersions(ctx, workspaceID, environment, asset, section)
 }
@@ -92,7 +92,7 @@ func (s Support) queueAssetRefreshWithPatches(r *nethttp.Request, workspaceID st
 	if err != nil {
 		return err
 	}
-	environment := deployment.DefaultEnvironment
+	environment := servingstate.DefaultEnvironment
 	if s.Environment != nil {
 		environment = s.Environment(r)
 	}
@@ -286,7 +286,7 @@ func (s Support) principalID(r *nethttp.Request) string {
 	return s.PrincipalID(r)
 }
 
-func (s Support) dataDir(workspaceID string, artifact deployment.Artifact) string {
+func (s Support) dataDir(workspaceID string, artifact servingstate.Artifact) string {
 	if s.DataDir == nil {
 		return ""
 	}
@@ -312,7 +312,7 @@ func uiRefreshRun(run materialize.RunRecord) ui.AssetRefreshRun {
 	return ui.AssetRefreshRun{
 		ID:                   run.ID,
 		ModelID:              run.ModelID,
-		DeploymentID:         run.DeploymentID,
+		ServingStateID:       run.ServingStateID,
 		PrincipalID:          run.PrincipalID,
 		PrincipalDisplayName: run.PrincipalDisplayName,
 		TargetType:           run.TargetType,

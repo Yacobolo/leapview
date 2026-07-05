@@ -23,7 +23,7 @@ func NewSQLRunRepository(db *sql.DB) *SQLRunRepository {
 
 func (r *SQLRunRepository) CreateRun(ctx context.Context, input materialize.RunInput) (materialize.RunRecord, error) {
 	if r == nil || r.db == nil {
-		return materialize.RunRecord{}, fmt.Errorf("materialization run database is required")
+		return materialize.RunRecord{}, fmt.Errorf("refresh run database is required")
 	}
 	normalized, err := normalizeRunInput(input)
 	if err != nil {
@@ -37,13 +37,13 @@ func (r *SQLRunRepository) CreateRun(ctx context.Context, input materialize.RunI
 	jobID := newRunID("matjob")
 	runID := newRunID("matrun")
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO materialization_jobs (id, workspace_id, deployment_id, model_id, kind, payload_json, status, queued_at)
+		INSERT INTO refresh_jobs (id, workspace_id, serving_state_id, model_id, kind, payload_json, status, queued_at)
 		VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, jobID, normalized.WorkspaceID, normalized.DeploymentID, normalized.ModelID, normalized.JobKind, normalized.PayloadJSON, materialize.RunStatusQueued); err != nil {
+	`, jobID, normalized.WorkspaceID, normalized.ServingStateID, normalized.ModelID, normalized.JobKind, normalized.PayloadJSON, materialize.RunStatusQueued); err != nil {
 		return materialize.RunRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO materialization_job_runs (id, job_id, principal_id, target_type, target_id, trigger_type, parent_run_id, status)
+		INSERT INTO refresh_job_runs (id, job_id, principal_id, target_type, target_id, trigger_type, parent_run_id, status)
 		VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?)
 	`, runID, jobID, normalized.PrincipalID, normalized.TargetType, normalized.TargetID, normalized.TriggerType, normalized.ParentRunID, materialize.RunStatusQueued); err != nil {
 		return materialize.RunRecord{}, err
@@ -56,7 +56,7 @@ func (r *SQLRunRepository) CreateRun(ctx context.Context, input materialize.RunI
 
 func (r *SQLRunRepository) ClaimNextExecutableJob(ctx context.Context, owner string, lease time.Duration) (materialize.JobRecord, bool, error) {
 	if r == nil || r.db == nil {
-		return materialize.JobRecord{}, false, fmt.Errorf("materialization run database is required")
+		return materialize.JobRecord{}, false, fmt.Errorf("refresh run database is required")
 	}
 	owner = strings.TrimSpace(owner)
 	if owner == "" {
@@ -71,10 +71,10 @@ func (r *SQLRunRepository) ClaimNextExecutableJob(ctx context.Context, owner str
 	}
 	defer tx.Rollback()
 	row := tx.QueryRowContext(ctx, `
-		SELECT j.id, j.workspace_id, COALESCE(j.deployment_id, ''), j.model_id, j.kind, j.payload_json,
+		SELECT j.id, j.workspace_id, COALESCE(j.serving_state_id, ''), j.model_id, j.kind, j.payload_json,
 		       r.id, r.target_type, r.target_id, r.trigger_type, j.attempt_count
-		FROM materialization_jobs j
-		JOIN materialization_job_runs r ON r.job_id = j.id
+		FROM refresh_jobs j
+		JOIN refresh_job_runs r ON r.job_id = j.id
 		WHERE COALESCE(r.parent_run_id, '') = ''
 		  AND j.kind IN (?, ?)
 		  AND (
@@ -83,9 +83,9 @@ func (r *SQLRunRepository) ClaimNextExecutableJob(ctx context.Context, owner str
 		  )
 		ORDER BY COALESCE(NULLIF(j.queued_at, ''), j.created_at) ASC, j.id ASC
 		LIMIT 1
-	`, materialize.JobKindMaterialization, materialize.JobKindWorkspaceAssetRefresh, materialize.RunStatusQueued, materialize.RunStatusQueued, materialize.RunStatusRunning)
+	`, materialize.JobKindRefresh, materialize.JobKindWorkspaceAssetRefresh, materialize.RunStatusQueued, materialize.RunStatusQueued, materialize.RunStatusRunning)
 	var job materialize.JobRecord
-	if err := row.Scan(&job.ID, &job.WorkspaceID, &job.DeploymentID, &job.ModelID, &job.Kind, &job.PayloadJSON, &job.RunID, &job.TargetType, &job.TargetID, &job.TriggerType, &job.AttemptCount); err != nil {
+	if err := row.Scan(&job.ID, &job.WorkspaceID, &job.ServingStateID, &job.ModelID, &job.Kind, &job.PayloadJSON, &job.RunID, &job.TargetType, &job.TargetID, &job.TriggerType, &job.AttemptCount); err != nil {
 		if err == sql.ErrNoRows {
 			return materialize.JobRecord{}, false, nil
 		}
@@ -93,7 +93,7 @@ func (r *SQLRunRepository) ClaimNextExecutableJob(ctx context.Context, owner str
 	}
 	leaseExpr := sqliteLeaseModifier(lease)
 	result, err := tx.ExecContext(ctx, `
-		UPDATE materialization_jobs
+		UPDATE refresh_jobs
 		SET status = ?, started_at = COALESCE(started_at, CURRENT_TIMESTAMP), finished_at = NULL,
 		    lease_owner = ?, lease_expires_at = datetime('now', ?),
 		    attempt_count = attempt_count + 1, updated_at = CURRENT_TIMESTAMP
@@ -114,7 +114,7 @@ func (r *SQLRunRepository) ClaimNextExecutableJob(ctx context.Context, owner str
 		return materialize.JobRecord{}, false, nil
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE materialization_job_runs
+		UPDATE refresh_job_runs
 		SET status = ?, started_at = CURRENT_TIMESTAMP, finished_at = NULL, error = ''
 		WHERE id = ?
 	`, materialize.RunStatusRunning, job.RunID); err != nil {
@@ -129,10 +129,10 @@ func (r *SQLRunRepository) ClaimNextExecutableJob(ctx context.Context, owner str
 
 func (r *SQLRunRepository) RenewJobLease(ctx context.Context, jobID, owner string, lease time.Duration) error {
 	if r == nil || r.db == nil {
-		return fmt.Errorf("materialization run database is required")
+		return fmt.Errorf("refresh run database is required")
 	}
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE materialization_jobs
+		UPDATE refresh_jobs
 		SET lease_expires_at = datetime('now', ?), updated_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND lease_owner = ? AND status = ?
 	`, sqliteLeaseModifier(lease), strings.TrimSpace(jobID), strings.TrimSpace(owner), materialize.RunStatusRunning)
@@ -141,18 +141,18 @@ func (r *SQLRunRepository) RenewJobLease(ctx context.Context, jobID, owner strin
 
 func (r *SQLRunRepository) JobQueueStats(ctx context.Context) (materialize.JobQueueStats, error) {
 	if r == nil || r.db == nil {
-		return materialize.JobQueueStats{}, fmt.Errorf("materialization run database is required")
+		return materialize.JobQueueStats{}, fmt.Errorf("refresh run database is required")
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
 		  COALESCE(SUM(CASE WHEN j.status = ? THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE WHEN j.status = ? AND j.lease_expires_at IS NOT NULL AND j.lease_expires_at > CURRENT_TIMESTAMP THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE WHEN j.status = ? AND (j.lease_expires_at IS NULL OR j.lease_expires_at <= CURRENT_TIMESTAMP) THEN 1 ELSE 0 END), 0)
-		FROM materialization_jobs j
-		JOIN materialization_job_runs r ON r.job_id = j.id
+		FROM refresh_jobs j
+		JOIN refresh_job_runs r ON r.job_id = j.id
 		WHERE COALESCE(r.parent_run_id, '') = ''
 		  AND j.kind IN (?, ?)
-	`, materialize.RunStatusQueued, materialize.RunStatusRunning, materialize.RunStatusRunning, materialize.JobKindMaterialization, materialize.JobKindWorkspaceAssetRefresh)
+	`, materialize.RunStatusQueued, materialize.RunStatusRunning, materialize.RunStatusRunning, materialize.JobKindRefresh, materialize.JobKindWorkspaceAssetRefresh)
 	var stats materialize.JobQueueStats
 	if err := row.Scan(&stats.QueuedJobs, &stats.RunningJobs, &stats.StaleLeasedJobs); err != nil {
 		return materialize.JobQueueStats{}, err
@@ -169,7 +169,7 @@ func (r *SQLRunRepository) GetRun(ctx context.Context, workspaceID, runID string
 	if runID == "" {
 		return materialize.RunRecord{}, fmt.Errorf("run id is required")
 	}
-	row := r.db.QueryRowContext(ctx, materializationRunSelect()+`
+	row := r.db.QueryRowContext(ctx, refreshRunSelect()+`
 		WHERE r.id = ? AND j.workspace_id = ?
 	`, runID, workspaceID)
 	return scanRun(row)
@@ -196,7 +196,7 @@ func (r *SQLRunRepository) ListRuns(ctx context.Context, workspaceID string, pag
 		args = append(args, cursor.CreatedAt, cursor.CreatedAt, cursor.RowID)
 	}
 	args = append(args, limit)
-	rows, err := r.db.QueryContext(ctx, materializationRunSelect()+`
+	rows, err := r.db.QueryContext(ctx, refreshRunSelect()+`
 		WHERE j.workspace_id = ?`+cursorClause+`
 		ORDER BY j.created_at DESC, r.rowid DESC
 		LIMIT ?
@@ -241,7 +241,7 @@ func (r *SQLRunRepository) ListTargetRuns(ctx context.Context, workspaceID, targ
 		args = append(args, cursor.CreatedAt, cursor.CreatedAt, cursor.RowID)
 	}
 	args = append(args, limit)
-	rows, err := r.db.QueryContext(ctx, materializationRunSelect()+`
+	rows, err := r.db.QueryContext(ctx, refreshRunSelect()+`
 		WHERE j.workspace_id = ? AND r.target_type = ? AND r.target_id = ?`+cursorClause+`
 		ORDER BY j.created_at DESC, r.rowid DESC
 		LIMIT ?
@@ -262,7 +262,7 @@ func (r *SQLRunRepository) ListChildRuns(ctx context.Context, workspaceID, paren
 	if parentRunID == "" {
 		return nil, fmt.Errorf("parent run id is required")
 	}
-	rows, err := r.db.QueryContext(ctx, materializationRunSelect()+`
+	rows, err := r.db.QueryContext(ctx, refreshRunSelect()+`
 		WHERE j.workspace_id = ? AND r.parent_run_id = ?
 		ORDER BY r.rowid ASC
 	`, workspaceID, parentRunID)
@@ -305,7 +305,7 @@ func (r *SQLRunRepository) LatestSuccessfulTargetRun(ctx context.Context, worksp
 	if targetID == "" {
 		return materialize.RunRecord{}, false, fmt.Errorf("target id is required")
 	}
-	row := r.db.QueryRowContext(ctx, materializationRunSelect()+`
+	row := r.db.QueryRowContext(ctx, refreshRunSelect()+`
 		WHERE j.workspace_id = ? AND r.target_type = ? AND r.target_id = ? AND r.status = ?
 		ORDER BY j.created_at DESC, r.rowid DESC
 		LIMIT 1
@@ -332,9 +332,9 @@ func (r *SQLRunRepository) MarkRunFailed(ctx context.Context, workspaceID, runID
 	return r.markRun(ctx, workspaceID, runID, materialize.RunStatusFailed, message)
 }
 
-func (r *SQLRunRepository) FailRunsForTerminalDeployments(ctx context.Context, message string) error {
+func (r *SQLRunRepository) FailRunsForTerminalServingStates(ctx context.Context, message string) error {
 	if r == nil || r.db == nil {
-		return fmt.Errorf("materialization run database is required")
+		return fmt.Errorf("refresh run database is required")
 	}
 	message = strings.TrimSpace(message)
 	if message == "" {
@@ -346,25 +346,25 @@ func (r *SQLRunRepository) FailRunsForTerminalDeployments(ctx context.Context, m
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE materialization_job_runs
+		UPDATE refresh_job_runs
 		SET status = ?, finished_at = CURRENT_TIMESTAMP,
 		    error = CASE WHEN error <> '' THEN error ELSE ? END
 		WHERE status IN (?, ?)
 		  AND job_id IN (
 		    SELECT j.id
-		    FROM materialization_jobs j
-		    JOIN deployments d ON d.id = j.deployment_id
+		    FROM refresh_jobs j
+		    JOIN serving_states d ON d.id = j.serving_state_id
 		    WHERE d.status IN ('failed', 'delete_scheduled', 'deleted')
 		  )
 	`, materialize.RunStatusFailed, message, materialize.RunStatusQueued, materialize.RunStatusRunning); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE materialization_jobs
+		UPDATE refresh_jobs
 		SET status = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE status IN (?, ?)
-		  AND deployment_id IN (
-		    SELECT id FROM deployments WHERE status IN ('failed', 'delete_scheduled', 'deleted')
+		  AND serving_state_id IN (
+		    SELECT id FROM serving_states WHERE status IN ('failed', 'delete_scheduled', 'deleted')
 		  )
 	`, materialize.RunStatusFailed, materialize.RunStatusQueued, materialize.RunStatusRunning); err != nil {
 		return err
@@ -391,10 +391,10 @@ func (r *SQLRunRepository) markRun(ctx context.Context, workspaceID, runID, stat
 	}
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE materialization_job_runs
+		UPDATE refresh_job_runs
 		SET status = ?, finished_at = %s, error = ?
 		WHERE id = ?
-		  AND job_id IN (SELECT id FROM materialization_jobs WHERE workspace_id = ?)
+		  AND job_id IN (SELECT id FROM refresh_jobs WHERE workspace_id = ?)
 	`, finishedExpr), status, message, runID, workspaceID)
 	if err != nil {
 		return materialize.RunRecord{}, err
@@ -407,13 +407,13 @@ func (r *SQLRunRepository) markRun(ctx context.Context, workspaceID, runID, stat
 		return materialize.RunRecord{}, sql.ErrNoRows
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE materialization_jobs
+		UPDATE refresh_jobs
 		SET status = ?, updated_at = CURRENT_TIMESTAMP,
 		    finished_at = CASE WHEN ? IN (?, ?) THEN CURRENT_TIMESTAMP ELSE finished_at END,
 		    lease_owner = CASE WHEN ? IN (?, ?) THEN '' ELSE lease_owner END,
 		    lease_expires_at = CASE WHEN ? IN (?, ?) THEN NULL ELSE lease_expires_at END,
 		    last_error = CASE WHEN ? = ? THEN ? ELSE last_error END
-		WHERE id = (SELECT job_id FROM materialization_job_runs WHERE id = ?)
+		WHERE id = (SELECT job_id FROM refresh_job_runs WHERE id = ?)
 		  AND workspace_id = ?
 	`, status, status, materialize.RunStatusSucceeded, materialize.RunStatusFailed, status, materialize.RunStatusSucceeded, materialize.RunStatusFailed, status, materialize.RunStatusSucceeded, materialize.RunStatusFailed, status, materialize.RunStatusFailed, message, runID, workspaceID); err != nil {
 		return materialize.RunRecord{}, err
@@ -448,8 +448,8 @@ func (r *SQLRunRepository) runPageCursor(ctx context.Context, workspaceID, targe
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT j.created_at, r.rowid
-		FROM materialization_job_runs r
-		JOIN materialization_jobs j ON j.id = r.job_id
+		FROM refresh_job_runs r
+		JOIN refresh_jobs j ON j.id = r.job_id
 		WHERE r.id = ? AND j.workspace_id = ?`+targetClause+`
 	`, args...)
 	var cursor runPageCursor
@@ -479,11 +479,11 @@ func scanRunRows(rows runRows) ([]materialize.RunRecord, error) {
 
 func scanRun(row runScanner) (materialize.RunRecord, error) {
 	var run materialize.RunRecord
-	var deploymentID, principalID, principalDisplayName, parentRunID, finishedAt sql.NullString
+	var servingStateID, principalID, principalDisplayName, parentRunID, finishedAt sql.NullString
 	if err := row.Scan(
 		&run.ID,
 		&run.WorkspaceID,
-		&deploymentID,
+		&servingStateID,
 		&run.ModelID,
 		&principalID,
 		&principalDisplayName,
@@ -500,8 +500,8 @@ func scanRun(row runScanner) (materialize.RunRecord, error) {
 	); err != nil {
 		return materialize.RunRecord{}, err
 	}
-	if deploymentID.Valid {
-		run.DeploymentID = deploymentID.String
+	if servingStateID.Valid {
+		run.ServingStateID = servingStateID.String
 	}
 	if principalID.Valid {
 		run.PrincipalID = principalID.String
@@ -521,32 +521,32 @@ func scanRun(row runScanner) (materialize.RunRecord, error) {
 	return run, nil
 }
 
-func materializationRunSelect() string {
+func refreshRunSelect() string {
 	return `
-		SELECT r.id, j.workspace_id, j.deployment_id, j.model_id, r.principal_id, COALESCE(NULLIF(p.display_name, ''), NULLIF(p.email, ''), r.principal_id, '') AS principal_display_name, r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.status, j.created_at, j.updated_at, r.started_at, r.finished_at, r.error
-		FROM materialization_job_runs r
-		JOIN materialization_jobs j ON j.id = r.job_id
+		SELECT r.id, j.workspace_id, j.serving_state_id, j.model_id, r.principal_id, COALESCE(NULLIF(p.display_name, ''), NULLIF(p.email, ''), r.principal_id, '') AS principal_display_name, r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.status, j.created_at, j.updated_at, r.started_at, r.finished_at, r.error
+		FROM refresh_job_runs r
+		JOIN refresh_jobs j ON j.id = r.job_id
 		LEFT JOIN principals p ON p.id = r.principal_id
 	`
 }
 
 type normalizedRunInput struct {
-	WorkspaceID  string
-	ModelID      string
-	DeploymentID string
-	PrincipalID  string
-	TargetType   string
-	TargetID     string
-	TriggerType  string
-	ParentRunID  string
-	JobKind      string
-	PayloadJSON  string
+	WorkspaceID    string
+	ModelID        string
+	ServingStateID string
+	PrincipalID    string
+	TargetType     string
+	TargetID       string
+	TriggerType    string
+	ParentRunID    string
+	JobKind        string
+	PayloadJSON    string
 }
 
 func normalizeRunInput(input materialize.RunInput) (normalizedRunInput, error) {
 	workspaceID := strings.TrimSpace(input.WorkspaceID)
 	modelID := strings.TrimSpace(input.ModelID)
-	deploymentID := strings.TrimSpace(input.DeploymentID)
+	servingStateID := strings.TrimSpace(input.ServingStateID)
 	principalID := strings.TrimSpace(input.PrincipalID)
 	targetType := strings.TrimSpace(input.TargetType)
 	targetID := strings.TrimSpace(input.TargetID)
@@ -573,7 +573,7 @@ func normalizeRunInput(input materialize.RunInput) (normalizedRunInput, error) {
 		if parentRunID != "" {
 			jobKind = materialize.JobKindChildRun
 		} else {
-			jobKind = materialize.JobKindMaterialization
+			jobKind = materialize.JobKindRefresh
 		}
 	}
 	if payloadJSON == "" {
@@ -589,16 +589,16 @@ func normalizeRunInput(input materialize.RunInput) (normalizedRunInput, error) {
 		return normalizedRunInput{}, err
 	}
 	return normalizedRunInput{
-		WorkspaceID:  workspaceID,
-		ModelID:      modelID,
-		DeploymentID: deploymentID,
-		PrincipalID:  principalID,
-		TargetType:   targetType,
-		TargetID:     targetID,
-		TriggerType:  triggerType,
-		ParentRunID:  parentRunID,
-		JobKind:      jobKind,
-		PayloadJSON:  payloadJSON,
+		WorkspaceID:    workspaceID,
+		ModelID:        modelID,
+		ServingStateID: servingStateID,
+		PrincipalID:    principalID,
+		TargetType:     targetType,
+		TargetID:       targetID,
+		TriggerType:    triggerType,
+		ParentRunID:    parentRunID,
+		JobKind:        jobKind,
+		PayloadJSON:    payloadJSON,
 	}, nil
 }
 
@@ -625,7 +625,7 @@ func validateRunTrigger(triggerType string) error {
 
 func validateJobKind(kind string) error {
 	switch kind {
-	case materialize.JobKindMaterialization, materialize.JobKindWorkspaceAssetRefresh, materialize.JobKindChildRun:
+	case materialize.JobKindRefresh, materialize.JobKindWorkspaceAssetRefresh, materialize.JobKindChildRun:
 		return nil
 	default:
 		return fmt.Errorf("unsupported materialization job kind %q", kind)

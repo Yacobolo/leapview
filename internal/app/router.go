@@ -29,8 +29,8 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/workspaces/{workspace}/assets/{asset}", s.protected(access.PermissionDashboardView, workspaceHTTP.WorkspaceAsset))
 		r.Get("/workspaces/{workspace}/assets/{asset}/updates", s.protected(access.PermissionDashboardView, workspaceHTTP.AssetUpdatesStream))
 		r.Get("/workspaces/{workspace}/assets/{asset}/{section}", s.protected(access.PermissionDashboardView, workspaceHTTP.WorkspaceAssetSection))
-		r.Post("/workspaces/{workspace}/assets/{asset}/refresh", s.protected(access.PermissionMaterializationsRefresh, workspaceHTTP.RefreshAsset))
-		r.Post("/workspaces/{workspace}/assets/{asset}/refresh-materializations", s.protected(access.PermissionMaterializationsRefresh, workspaceHTTP.RefreshAssetMaterializations))
+		r.Post("/workspaces/{workspace}/assets/{asset}/refresh", s.protected(access.PermissionRefreshRun, workspaceHTTP.RefreshAsset))
+		r.Post("/workspaces/{workspace}/assets/{asset}/refresh-materializations", s.protected(access.PermissionRefreshRun, workspaceHTTP.RefreshAssetMaterializations))
 		r.Get("/workspaces/{workspace}/data", s.protected(access.PermissionDashboardView, workspaceHTTP.WorkspaceDataExplorerRedirect))
 		agentHTTP := s.agentHTTPHandler()
 		r.Get("/chat", s.protected(access.PermissionAgentRead, agentHTTP.Chat))
@@ -74,7 +74,6 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/workspaces/{workspace}/commands/select", s.protected(access.PermissionDashboardView, dashboardHTTP.Select))
 		r.Post("/workspaces/{workspace}/commands/clear-selection", s.protected(access.PermissionDashboardView, dashboardHTTP.ClearSelection))
 		r.Post("/workspaces/{workspace}/commands/reset-filters", s.protected(access.PermissionDashboardView, dashboardHTTP.ResetFilters))
-		r.Post("/workspaces/{workspace}/commands/refresh-materializations", s.protected(access.PermissionMaterializationsRefresh, dashboardHTTP.RefreshMaterializations))
 		r.Post("/auth/logout", s.authLogout)
 	})
 	mux.Group(func(r chi.Router) {

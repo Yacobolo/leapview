@@ -11,7 +11,7 @@ import (
 func (s *Server) workspaceHTTPHandler() workspacehttp.Handler {
 	return workspacehttp.Handler{
 		WorkspaceID:      s.workspaceID,
-		Environment:      func(r *http.Request) string { return string(s.requestDeploymentEnvironment(r)) },
+		Environment:      func(r *http.Request) string { return string(s.requestServingEnvironment(r)) },
 		ReadModel:        s.workspaceHTTPReadModel(),
 		RefreshState:     s.workspaceRefreshSupport(),
 		RefreshRunner:    s.workspaceRefreshSupport(),
@@ -37,7 +37,7 @@ func (s *Server) workspaceHTTPReadModel() workspacehttp.ReadModel {
 			}
 			return s.metrics.Catalog()
 		},
-		Environment:      func(r *http.Request) string { return string(s.requestDeploymentEnvironment(r)) },
+		Environment:      func(r *http.Request) string { return string(s.requestServingEnvironment(r)) },
 		CurrentPrincipal: s.currentWorkspacePrincipal,
 		AuthConfigured:   s.auth != nil,
 	}

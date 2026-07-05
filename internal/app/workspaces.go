@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/deployment"
+	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/gorilla/csrf"
 )
 
-func (s *Server) dataDirForWorkspace(workspaceID string, artifact deployment.Artifact) string {
+func (s *Server) dataDirForWorkspace(workspaceID string, artifact servingstate.Artifact) string {
 	if strings.TrimSpace(artifact.DataRoot) != "" {
 		return artifact.DataRoot
 	}
@@ -34,7 +34,7 @@ func (s *Server) dataDirForWorkspace(workspaceID string, artifact deployment.Art
 }
 
 func (s *Server) assetVersionsStateForSection(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
-	state := ui.AssetVersionsState{CurrentDeploymentID: asset.DeploymentID}
+	state := ui.AssetVersionsState{CurrentContentHash: asset.ContentHash}
 	if section != "versions" {
 		return state, nil
 	}
@@ -52,13 +52,14 @@ func (s *Server) assetVersionsStateForSection(ctx context.Context, workspaceID, 
 	state.Versions = make([]ui.AssetVersionState, 0, len(versions))
 	for _, version := range versions {
 		state.Versions = append(state.Versions, ui.AssetVersionState{
-			DeploymentID: string(version.DeploymentID),
-			Status:       version.Status,
-			Digest:       version.Digest,
-			CreatedBy:    version.CreatedBy,
-			CreatedAt:    version.CreatedAt,
-			ActivatedAt:  version.ActivatedAt,
-			ContentHash:  version.ContentHash,
+			ServingStateID: string(version.ServingStateID),
+			Status:         version.Status,
+			Digest:         version.Digest,
+			CreatedBy:      version.CreatedBy,
+			CreatedAt:      version.CreatedAt,
+			ActivatedAt:    version.ActivatedAt,
+			SourceFile:     version.SourceFile,
+			ContentHash:    version.ContentHash,
 		})
 	}
 	return state, nil

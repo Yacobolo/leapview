@@ -1,8 +1,6 @@
 package materialize
 
-import (
-	"context"
-)
+import "context"
 
 const (
 	RunStatusQueued    = "queued"
@@ -17,7 +15,7 @@ const (
 	TriggerSemanticModel = "semantic_model"
 	TriggerDependency    = "dependency"
 
-	JobKindMaterialization       = "materialization"
+	JobKindRefresh               = "refresh"
 	JobKindWorkspaceAssetRefresh = "workspace_asset_refresh"
 	JobKindChildRun              = "child_run"
 )
@@ -26,7 +24,7 @@ type RunRecord struct {
 	ID                   string `json:"id"`
 	WorkspaceID          string `json:"workspaceId"`
 	ModelID              string `json:"modelId"`
-	DeploymentID         string `json:"deploymentId,omitempty"`
+	ServingStateID       string `json:"servingStateId,omitempty"`
 	PrincipalID          string `json:"principalId,omitempty"`
 	PrincipalDisplayName string `json:"principalDisplayName,omitempty"`
 	TargetType           string `json:"targetType"`
@@ -42,30 +40,30 @@ type RunRecord struct {
 }
 
 type RunInput struct {
-	WorkspaceID  string
-	ModelID      string
-	DeploymentID string
-	PrincipalID  string
-	TargetType   string
-	TargetID     string
-	TriggerType  string
-	ParentRunID  string
-	JobKind      string
-	PayloadJSON  string
+	WorkspaceID    string
+	ModelID        string
+	ServingStateID string
+	PrincipalID    string
+	TargetType     string
+	TargetID       string
+	TriggerType    string
+	ParentRunID    string
+	JobKind        string
+	PayloadJSON    string
 }
 
 type JobRecord struct {
-	ID           string
-	WorkspaceID  string
-	DeploymentID string
-	ModelID      string
-	Kind         string
-	PayloadJSON  string
-	RunID        string
-	TargetType   string
-	TargetID     string
-	TriggerType  string
-	AttemptCount int
+	ID             string
+	WorkspaceID    string
+	ServingStateID string
+	ModelID        string
+	Kind           string
+	PayloadJSON    string
+	RunID          string
+	TargetType     string
+	TargetID       string
+	TriggerType    string
+	AttemptCount   int
 }
 
 type JobQueueStats struct {

@@ -325,7 +325,7 @@ func (h Handler) ActiveDeploymentGraph(w nethttp.ResponseWriter, r *nethttp.Requ
 	graph := workspace.AssetGraph{}
 	if repo != nil {
 		var ok bool
-		graph, ok, err = repo.ActiveDeploymentGraph(r.Context(), workspace.WorkspaceID(workspaceID), h.environment(r))
+		graph, ok, err = repo.ActiveServingStateGraph(r.Context(), workspace.WorkspaceID(workspaceID), h.environment(r))
 		if err != nil {
 			writeJSONError(w, err, nethttp.StatusInternalServerError)
 			return
@@ -735,7 +735,7 @@ func (h Handler) assetRefreshState(ctx context.Context, workspaceID string, asse
 
 func (h Handler) assetVersionsState(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
 	if h.RefreshState == nil {
-		return ui.AssetVersionsState{CurrentDeploymentID: asset.DeploymentID}, nil
+		return ui.AssetVersionsState{CurrentContentHash: asset.ContentHash}, nil
 	}
 	return h.RefreshState.AssetVersionsState(ctx, workspaceID, environment, asset, section)
 }
@@ -826,12 +826,12 @@ func apiWorkspaceDTOs(rows []workspace.WorkspaceView) []api.WorkspaceResponse {
 	out := make([]api.WorkspaceResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, api.WorkspaceResponse{
-			ID:                 row.ID,
-			Title:              row.Title,
-			Description:        row.Description,
-			ActiveDeploymentID: row.ActiveDeploymentID,
-			CreatedAt:          row.CreatedAt,
-			UpdatedAt:          row.UpdatedAt,
+			ID:                   row.ID,
+			Title:                row.Title,
+			Description:          row.Description,
+			ActiveServingStateID: row.ActiveServingStateID,
+			CreatedAt:            row.CreatedAt,
+			UpdatedAt:            row.UpdatedAt,
 		})
 	}
 	return out
@@ -841,19 +841,19 @@ func apiAssetDTOs(rows []workspace.AssetView) []api.AssetResponse {
 	out := make([]api.AssetResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, api.AssetResponse{
-			ID:            row.ID,
-			SnapshotID:    row.SnapshotID,
-			WorkspaceID:   row.WorkspaceID,
-			DeploymentID:  row.DeploymentID,
-			Type:          row.Type,
-			Key:           row.Key,
-			ParentID:      row.ParentID,
-			Title:         row.Title,
-			Description:   row.Description,
-			SourceFile:    row.SourceFile,
-			PayloadSchema: row.PayloadSchema,
-			Payload:       row.Payload,
-			Href:          row.Href,
+			ID:             row.ID,
+			SnapshotID:     row.SnapshotID,
+			WorkspaceID:    row.WorkspaceID,
+			ServingStateID: row.ServingStateID,
+			Type:           row.Type,
+			Key:            row.Key,
+			ParentID:       row.ParentID,
+			Title:          row.Title,
+			Description:    row.Description,
+			SourceFile:     row.SourceFile,
+			PayloadSchema:  row.PayloadSchema,
+			Payload:        row.Payload,
+			Href:           row.Href,
 		})
 	}
 	return out
@@ -863,19 +863,19 @@ func apiAssetSummaryDTOs(rows []workspace.AssetView) []api.AssetSummaryResponse 
 	out := make([]api.AssetSummaryResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, api.AssetSummaryResponse{
-			ID:            row.ID,
-			SnapshotID:    row.SnapshotID,
-			WorkspaceID:   row.WorkspaceID,
-			DeploymentID:  row.DeploymentID,
-			Type:          row.Type,
-			Key:           row.Key,
-			ParentID:      row.ParentID,
-			Title:         row.Title,
-			Description:   row.Description,
-			SourceFile:    row.SourceFile,
-			PayloadSchema: row.PayloadSchema,
-			ContentHash:   row.ContentHash,
-			Href:          row.Href,
+			ID:             row.ID,
+			SnapshotID:     row.SnapshotID,
+			WorkspaceID:    row.WorkspaceID,
+			ServingStateID: row.ServingStateID,
+			Type:           row.Type,
+			Key:            row.Key,
+			ParentID:       row.ParentID,
+			Title:          row.Title,
+			Description:    row.Description,
+			SourceFile:     row.SourceFile,
+			PayloadSchema:  row.PayloadSchema,
+			ContentHash:    row.ContentHash,
+			Href:           row.Href,
 		})
 	}
 	return out
@@ -891,19 +891,19 @@ func apiWorkspaceAssetGraphDTO(graph workspace.AssetGraph) (api.WorkspaceAssetGr
 			}
 		}
 		assets = append(assets, api.AssetGraphAssetResponse{
-			ID:            string(row.ID),
-			SnapshotID:    string(row.SnapshotID),
-			WorkspaceID:   string(row.WorkspaceID),
-			DeploymentID:  string(row.DeploymentID),
-			Type:          string(row.Type),
-			Key:           row.Key,
-			ParentID:      string(row.ParentID),
-			Title:         row.Title,
-			Description:   row.Description,
-			SourceFile:    row.SourceFile,
-			PayloadSchema: row.PayloadSchema,
-			Payload:       payload,
-			ContentHash:   row.ContentHash,
+			ID:             string(row.ID),
+			SnapshotID:     string(row.SnapshotID),
+			WorkspaceID:    string(row.WorkspaceID),
+			ServingStateID: string(row.ServingStateID),
+			Type:           string(row.Type),
+			Key:            row.Key,
+			ParentID:       string(row.ParentID),
+			Title:          row.Title,
+			Description:    row.Description,
+			SourceFile:     row.SourceFile,
+			PayloadSchema:  row.PayloadSchema,
+			Payload:        payload,
+			ContentHash:    row.ContentHash,
 		})
 	}
 	return api.WorkspaceAssetGraphResponse{
@@ -916,12 +916,12 @@ func apiWorkspaceAssetGraphEdgeDTOs(rows []workspace.AssetEdge) []api.AssetEdgeR
 	out := make([]api.AssetEdgeResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, api.AssetEdgeResponse{
-			ID:           string(row.ID),
-			WorkspaceID:  string(row.WorkspaceID),
-			DeploymentID: string(row.DeploymentID),
-			FromAssetID:  string(row.FromAssetID),
-			ToAssetID:    string(row.ToAssetID),
-			Type:         string(row.Type),
+			ID:             string(row.ID),
+			WorkspaceID:    string(row.WorkspaceID),
+			ServingStateID: string(row.ServingStateID),
+			FromAssetID:    string(row.FromAssetID),
+			ToAssetID:      string(row.ToAssetID),
+			Type:           string(row.Type),
 		})
 	}
 	return out
@@ -931,12 +931,12 @@ func apiAssetEdgeDTOs(rows []workspace.AssetEdgeView) []api.AssetEdgeResponse {
 	out := make([]api.AssetEdgeResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, api.AssetEdgeResponse{
-			ID:           row.ID,
-			WorkspaceID:  row.WorkspaceID,
-			DeploymentID: row.DeploymentID,
-			FromAssetID:  row.FromAssetID,
-			ToAssetID:    row.ToAssetID,
-			Type:         row.Type,
+			ID:             row.ID,
+			WorkspaceID:    row.WorkspaceID,
+			ServingStateID: row.ServingStateID,
+			FromAssetID:    row.FromAssetID,
+			ToAssetID:      row.ToAssetID,
+			Type:           row.Type,
 		})
 	}
 	return out

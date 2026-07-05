@@ -98,7 +98,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 				t.Fatalf("%s missing %q:\n%s", tc.path, want, body)
 			}
 		}
-		for _, notWant := range []string{"/admin/access", "Assign role", "Remove access", "Refresh", "<form", "data-on:ld-workspace-access-upsert", "refresh-materializations"} {
+		for _, notWant := range []string{"/admin/access", "Assign role", "Remove access", "<form", "data-on:ld-workspace-access-upsert", "refresh-materializations"} {
 			if strings.Contains(body, notWant) {
 				t.Fatalf("%s rendered write control %q:\n%s", tc.path, notWant, body)
 			}
@@ -663,9 +663,9 @@ func TestAdminStorageIncludesDeploymentSnapshotContext(t *testing.T) {
 	snapshotID := latestAdminStorageDuckLakeSnapshot(t, catalogPath)
 	if _, err := store.SQLDB().ExecContext(ctx, `
 INSERT INTO workspaces (id, title) VALUES ('test', 'Test') ON CONFLICT(id) DO NOTHING;
-INSERT INTO deployments (id, workspace_id, environment, status, digest, ducklake_snapshot_id, created_by, activated_at)
+INSERT INTO serving_states (id, workspace_id, environment, status, digest, ducklake_snapshot_id, created_by, activated_at)
 VALUES ('dep_test', 'test', 'dev', 'active', 'digest_test', ?, 'tester', CURRENT_TIMESTAMP);
-INSERT INTO workspace_active_deployments (workspace_id, environment, deployment_id)
+INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id)
 VALUES ('test', 'dev', 'dep_test')`, snapshotID); err != nil {
 		t.Fatal(err)
 	}
@@ -678,12 +678,12 @@ VALUES ('test', 'dev', 'dep_test')`, snapshotID); err != nil {
 	})
 
 	data := server.storageReadModel().Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
-	if len(data.Deployments) != 1 {
-		t.Fatalf("deployments = %#v, want active deployment context", data.Deployments)
+	if len(data.ServingStates) != 1 {
+		t.Fatalf("serving_states = %#v, want active serving state context", data.ServingStates)
 	}
-	deployment := data.Deployments[0]
-	if deployment.WorkspaceID != "test" || deployment.Environment != "dev" || deployment.DeploymentID != "dep_test" || deployment.SnapshotID != snapshotID || !deployment.Active {
-		t.Fatalf("deployment = %#v, want active snapshot deployment", deployment)
+	state := data.ServingStates[0]
+	if state.WorkspaceID != "test" || state.Environment != "dev" || state.ServingStateID != "dep_test" || state.SnapshotID != snapshotID || !state.Active {
+		t.Fatalf("serving state = %#v, want active snapshot serving state", state)
 	}
 	if len(data.Snapshots) == 0 || data.Snapshots[len(data.Snapshots)-1].ID != snapshotID {
 		t.Fatalf("snapshots = %#v, want latest snapshot metadata", data.Snapshots)

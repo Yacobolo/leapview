@@ -25,12 +25,12 @@ type Handler struct {
 }
 
 type materializationRunRequest struct {
-	ModelID      string `json:"modelId"`
-	DeploymentID string `json:"deploymentId,omitempty"`
-	TargetType   string `json:"targetType,omitempty"`
-	TargetID     string `json:"targetId,omitempty"`
-	TriggerType  string `json:"triggerType,omitempty"`
-	ParentRunID  string `json:"parentRunId,omitempty"`
+	ModelID        string `json:"modelId"`
+	ServingStateID string `json:"servingStateId,omitempty"`
+	TargetType     string `json:"targetType,omitempty"`
+	TargetID       string `json:"targetId,omitempty"`
+	TriggerType    string `json:"triggerType,omitempty"`
+	ParentRunID    string `json:"parentRunId,omitempty"`
 }
 
 func (h Handler) CreateRun(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -54,14 +54,14 @@ func (h Handler) CreateRun(w nethttp.ResponseWriter, r *nethttp.Request) {
 		}
 	}
 	run, err := repo.CreateRun(r.Context(), materialize.RunInput{
-		WorkspaceID:  workspaceID,
-		ModelID:      input.ModelID,
-		DeploymentID: input.DeploymentID,
-		PrincipalID:  principalID,
-		TargetType:   input.TargetType,
-		TargetID:     input.TargetID,
-		TriggerType:  input.TriggerType,
-		ParentRunID:  input.ParentRunID,
+		WorkspaceID:    workspaceID,
+		ModelID:        input.ModelID,
+		ServingStateID: input.ServingStateID,
+		PrincipalID:    principalID,
+		TargetType:     input.TargetType,
+		TargetID:       input.TargetID,
+		TriggerType:    input.TriggerType,
+		ParentRunID:    input.ParentRunID,
 	})
 	if err != nil {
 		writeJSONError(w, err, nethttp.StatusBadRequest)

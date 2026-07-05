@@ -714,14 +714,14 @@ func knownPermissions() []string {
 	return []string{
 		access.PermissionWorkspaceRead,
 		access.PermissionAssetRead,
-		access.PermissionDeploymentRead,
-		access.PermissionDeploymentWrite,
-		access.PermissionDeploymentActivate,
+		access.PermissionPublishRead,
+		access.PermissionPublishWrite,
+		access.PermissionPublishActivate,
 		access.PermissionRBACRead,
 		access.PermissionRBACWrite,
 		access.PermissionAgentUse,
 		access.PermissionAgentRead,
-		access.PermissionMaterializationRun,
+		access.PermissionRefreshRun,
 		access.PermissionAuditRead,
 		access.PermissionTokenManage,
 	}

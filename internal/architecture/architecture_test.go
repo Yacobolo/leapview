@@ -107,7 +107,7 @@ func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 		"internal/analytics/materialize/http",
 		"internal/analytics/query/http",
 		"internal/dashboard/http",
-		"internal/deployment/http",
+		"internal/servingstate/http",
 		"internal/workspace/datastar",
 		"internal/workspace/http",
 	} {
@@ -344,8 +344,8 @@ func isSQLDBAllowedFile(file goFile) bool {
 	if file.pkgDir == "internal/app" {
 		switch file.path {
 		case "internal/app/server.go",
-			"internal/app/deployments.go",
-			"internal/app/materialization_runs.go",
+			"internal/app/publishes.go",
+			"internal/app/refresh_runs.go",
 			"internal/app/query_audit.go":
 			return true
 		default:
