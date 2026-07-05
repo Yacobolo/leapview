@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -323,6 +325,71 @@ func TestAuthCallbackUsesOIDCIssuerAndSubjectAsStableIdentity(t *testing.T) {
 	}
 	if second.Email != "second@example.com" || second.DisplayName != "Second" {
 		t.Fatalf("updated principal = %#v, want latest OIDC metadata", second)
+	}
+}
+
+func TestAuthAuditsDisabledPrincipalCredentialFailures(t *testing.T) {
+	store := testStore(t)
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	ctx := context.Background()
+	user, err := repo.UpsertSCIMUser(ctx, access.SCIMUserInput{
+		ExternalID:  "disabled-auth-user",
+		UserName:    "disabled-auth@example.com",
+		Email:       "disabled-auth@example.com",
+		DisplayName: "Disabled Auth",
+		Active:      true,
+	})
+	if err != nil {
+		t.Fatalf("create SCIM user: %v", err)
+	}
+	sessionSecret, err := repo.CreateSession(ctx, user.Principal.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	apiSecret, _, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{PrincipalID: user.Principal.ID, Name: "disabled-auth-token"})
+	if err != nil {
+		t.Fatalf("create API token: %v", err)
+	}
+	if _, err := repo.DisableSCIMUser(ctx, user.Principal.ID); err != nil {
+		t.Fatalf("disable SCIM user: %v", err)
+	}
+	auth := NewAuth(repo, "test", AuthConfig{CSRFKey: "0123456789abcdef0123456789abcdef"})
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test", nil)
+	apiReq.Header.Set("Authorization", "Bearer "+apiSecret)
+	apiReq.Header.Set("X-Request-ID", "disabled_api_req")
+	if _, _, ok := auth.authenticate(apiReq); ok {
+		t.Fatal("disabled API token authenticated")
+	}
+	sessionReq := httptest.NewRequest(http.MethodGet, "/workspaces/test", nil)
+	sessionReq.AddCookie(&http.Cookie{Name: "ld_session", Value: sessionSecret})
+	sessionReq.Header.Set("X-Request-ID", "disabled_session_req")
+	if _, _, ok := auth.authenticate(sessionReq); ok {
+		t.Fatal("disabled session authenticated")
+	}
+	if _, err := repo.CredentialForAPIToken(ctx, apiSecret); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("disabled api credential err = %v, want sql.ErrNoRows", err)
+	}
+
+	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{Action: "credential.denied"})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("credential denied events = %d, want 2: %#v", len(events), events)
+	}
+	byRequest := map[string]access.AuditEvent{}
+	for _, event := range events {
+		byRequest[event.RequestID] = event
+	}
+	for requestID, targetType := range map[string]string{"disabled_api_req": "api_token", "disabled_session_req": "session"} {
+		event, ok := byRequest[requestID]
+		if !ok {
+			t.Fatalf("missing audit event for %s: %#v", requestID, events)
+		}
+		if event.PrincipalID != user.Principal.ID || event.Status != "denied" || event.TargetType != targetType || !strings.Contains(event.MetadataJSON, "principal_disabled") {
+			t.Fatalf("audit event for %s = %#v", requestID, event)
+		}
 	}
 }
 

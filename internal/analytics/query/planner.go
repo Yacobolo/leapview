@@ -469,6 +469,11 @@ func (m columnMaskSet) matchesMeasure(ref string, measure ResolvedMeasure) bool 
 			return true
 		}
 	}
+	for _, dependency := range semanticmodel.ExpressionFieldRefs(measure.SQLExpression()) {
+		if _, ok := m[strings.ToLower(strings.TrimSpace(dependency))]; ok {
+			return true
+		}
+	}
 	return false
 }
 

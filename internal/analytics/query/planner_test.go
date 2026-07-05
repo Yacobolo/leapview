@@ -199,6 +199,23 @@ func TestPlannerRejectsMaskedAggregateMeasureDependency(t *testing.T) {
 	}
 }
 
+func TestPlannerRejectsMaskedFieldInsideAggregateMeasureExpression(t *testing.T) {
+	model := testModel()
+	model.Measures["net_revenue"] = semanticmodel.MetricMeasure{
+		Label:      "Net revenue",
+		Table:      "orders",
+		Grain:      "order_id",
+		Expression: "SUM(orders.revenue - orders.discount)",
+	}
+	_, err := NewPlanner(model).Plan(Request{
+		Measures:    []Field{{Field: "net_revenue", Alias: "net_revenue"}},
+		ColumnMasks: []ColumnMask{{Field: "orders.discount", Mask: "zero"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "depends on masked field") {
+		t.Fatalf("Plan() error = %v, want masked expression dependency rejection", err)
+	}
+}
+
 func TestPlannerRawValues(t *testing.T) {
 	plan, err := NewPlanner(testModel()).PlanRawValues(RawValueRequest{
 		Dimensions: []Field{{Field: "customers.state", Alias: "label"}},

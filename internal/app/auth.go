@@ -47,6 +47,11 @@ type sessionManager interface {
 	DeleteSession(ctx context.Context, token string) error
 }
 
+type disabledCredentialResolver interface {
+	DisabledPrincipalForAPIToken(ctx context.Context, token string) (principalID, tokenID string, err error)
+	DisabledPrincipalForSessionToken(ctx context.Context, token string) (principalID, sessionID string, err error)
+}
+
 type Auth struct {
 	repo         access.Repository
 	sessions     sessionManager
@@ -364,6 +369,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 			principal := credential.Principal
 			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
 		}
+		a.auditDisabledCredentialFailure(r, "api_token", token)
 	}
 	if a.apiTokenOnly {
 		return Principal{}, nil, false
@@ -377,9 +383,31 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 		if err != sql.ErrNoRows {
 			return Principal{}, nil, false
 		}
+		a.auditDisabledCredentialFailure(r, "session", cookie.Value)
 		return Principal{}, nil, false
 	}
 	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, nil, true
+}
+
+func (a *Auth) auditDisabledCredentialFailure(r *http.Request, credentialType, secret string) {
+	resolver, ok := a.repo.(disabledCredentialResolver)
+	if !ok || strings.TrimSpace(secret) == "" {
+		return
+	}
+	var principalID, targetID string
+	var err error
+	switch credentialType {
+	case "api_token":
+		principalID, targetID, err = resolver.DisabledPrincipalForAPIToken(r.Context(), secret)
+	case "session":
+		principalID, targetID, err = resolver.DisabledPrincipalForSessionToken(r.Context(), secret)
+	default:
+		return
+	}
+	if err != nil || principalID == "" {
+		return
+	}
+	recordAccessAudit(r, a.repo, "credential.denied", principalID, "", credentialType, targetID, "", "denied", map[string]any{"reason": "principal_disabled"})
 }
 
 func apiTokenAllows(token access.APIToken, workspaceID string, privilege access.Privilege) bool {

@@ -1589,6 +1589,50 @@ func (r *Repository) PrincipalForToken(ctx context.Context, token string) (acces
 	return principal, nil
 }
 
+func (r *Repository) DisabledPrincipalForSessionToken(ctx context.Context, token string) (string, string, error) {
+	session, err := r.sessionForAuditToken(ctx, token)
+	if err != nil {
+		return "", "", err
+	}
+	row, err := r.q.GetPrincipal(ctx, session.PrincipalID)
+	if err != nil {
+		return "", "", err
+	}
+	principal := mapPrincipal(row)
+	if principal.DisabledAt == "" {
+		return "", "", sql.ErrNoRows
+	}
+	return principal.ID, session.ID, nil
+}
+
+func (r *Repository) sessionForAuditToken(ctx context.Context, token string) (platformdb.Session, error) {
+	fingerprint := secretFingerprint(token)
+	row := r.db.QueryRowContext(ctx, `
+SELECT id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at
+FROM sessions
+WHERE token_fingerprint = ? OR token_hash = ?
+ORDER BY created_at DESC
+LIMIT 1`, sql.NullString{String: fingerprint, Valid: true}, legacyTokenHash(token))
+	var session platformdb.Session
+	if err := row.Scan(
+		&session.ID,
+		&session.PrincipalID,
+		&session.TokenHash,
+		&session.TokenFingerprint,
+		&session.TokenVerifier,
+		&session.ExpiresAt,
+		&session.CreatedAt,
+		&session.LastSeenAt,
+		&session.RevokedAt,
+	); err != nil {
+		return platformdb.Session{}, err
+	}
+	if session.TokenVerifier != "" && !verifySecret(token, session.TokenVerifier) {
+		return platformdb.Session{}, sql.ErrNoRows
+	}
+	return session, nil
+}
+
 func (r *Repository) sessionForToken(ctx context.Context, token string) (platformdb.Session, error) {
 	fingerprint := secretFingerprint(token)
 	session, err := r.q.GetSessionByTokenFingerprint(ctx, sql.NullString{String: fingerprint, Valid: true})
@@ -1745,6 +1789,53 @@ func (r *Repository) CredentialForAPIToken(ctx context.Context, token string) (a
 		Principal: principal,
 		Token:     mapAPIToken(apiToken),
 	}, nil
+}
+
+func (r *Repository) DisabledPrincipalForAPIToken(ctx context.Context, token string) (string, string, error) {
+	apiToken, err := r.apiTokenForAuditSecret(ctx, token)
+	if err != nil {
+		return "", "", err
+	}
+	row, err := r.q.GetPrincipal(ctx, apiToken.PrincipalID)
+	if err != nil {
+		return "", "", err
+	}
+	principal := mapPrincipal(row)
+	if principal.DisabledAt == "" {
+		return "", "", sql.ErrNoRows
+	}
+	return principal.ID, apiToken.ID, nil
+}
+
+func (r *Repository) apiTokenForAuditSecret(ctx context.Context, token string) (platformdb.ApiToken, error) {
+	fingerprint := secretFingerprint(token)
+	row := r.db.QueryRowContext(ctx, `
+SELECT id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at, created_at, last_used_at, revoked_at
+FROM api_tokens
+WHERE token_fingerprint = ? OR token_hash = ?
+ORDER BY created_at DESC
+LIMIT 1`, sql.NullString{String: fingerprint, Valid: true}, legacyTokenHash(token))
+	var apiToken platformdb.ApiToken
+	if err := row.Scan(
+		&apiToken.ID,
+		&apiToken.PrincipalID,
+		&apiToken.WorkspaceID,
+		&apiToken.Name,
+		&apiToken.TokenHash,
+		&apiToken.TokenFingerprint,
+		&apiToken.TokenVerifier,
+		&apiToken.PermissionsJson,
+		&apiToken.ExpiresAt,
+		&apiToken.CreatedAt,
+		&apiToken.LastUsedAt,
+		&apiToken.RevokedAt,
+	); err != nil {
+		return platformdb.ApiToken{}, err
+	}
+	if apiToken.TokenVerifier != "" && !verifySecret(token, apiToken.TokenVerifier) {
+		return platformdb.ApiToken{}, sql.ErrNoRows
+	}
+	return apiToken, nil
 }
 
 func (r *Repository) apiTokenForSecret(ctx context.Context, token string) (platformdb.ApiToken, error) {

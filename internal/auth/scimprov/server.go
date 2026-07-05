@@ -282,6 +282,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 		memberSet[memberID] = true
 	}
 	membersChanged := false
+	memberAudits := []string{}
 	for _, op := range ops {
 		path := patchPath(op)
 		switch strings.ToLower(op.Op) {
@@ -295,7 +296,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 						if !memberSet[memberID] {
 							memberSet[memberID] = true
 							membersChanged = true
-							recordAudit(r.Context(), h.repo, r, "scim.group.member.add", "group", id, "success", nil)
+							memberAudits = append(memberAudits, "scim.group.member.add")
 						}
 					}
 					continue
@@ -306,7 +307,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 					if !memberSet[memberID] {
 						memberSet[memberID] = true
 						membersChanged = true
-						recordAudit(r.Context(), h.repo, r, "scim.group.member.add", "group", id, "success", nil)
+						memberAudits = append(memberAudits, "scim.group.member.add")
 					}
 				}
 			}
@@ -315,7 +316,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 				if memberSet[memberID] {
 					delete(memberSet, memberID)
 					membersChanged = true
-					recordAudit(r.Context(), h.repo, r, "scim.group.member.remove", "group", id, "success", nil)
+					memberAudits = append(memberAudits, "scim.group.member.remove")
 				}
 				continue
 			}
@@ -323,7 +324,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 				if len(memberSet) > 0 {
 					memberSet = map[string]bool{}
 					membersChanged = true
-					recordAudit(r.Context(), h.repo, r, "scim.group.member.replace", "group", id, "success", nil)
+					memberAudits = append(memberAudits, "scim.group.member.replace")
 				}
 				continue
 			}
@@ -332,7 +333,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 					if memberSet[memberID] {
 						delete(memberSet, memberID)
 						membersChanged = true
-						recordAudit(r.Context(), h.repo, r, "scim.group.member.remove", "group", id, "success", nil)
+						memberAudits = append(memberAudits, "scim.group.member.remove")
 					}
 				}
 			}
@@ -349,7 +350,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 					if _, ok := m["members"]; ok {
 						memberSet = memberSetFromIDs(memberIDs(m["members"]))
 						membersChanged = true
-						recordAudit(r.Context(), h.repo, r, "scim.group.member.replace", "group", id, "success", nil)
+						memberAudits = append(memberAudits, "scim.group.member.replace")
 					}
 					continue
 				}
@@ -357,7 +358,7 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 			if strings.EqualFold(path, "members") {
 				memberSet = memberSetFromIDs(memberIDs(op.Value))
 				membersChanged = true
-				recordAudit(r.Context(), h.repo, r, "scim.group.member.replace", "group", id, "success", nil)
+				memberAudits = append(memberAudits, "scim.group.member.replace")
 			}
 		}
 	}
@@ -372,6 +373,9 @@ func (h groupHandler) Patch(r *http.Request, id string, ops []scimpkg.PatchOpera
 	if err != nil {
 		recordAudit(r.Context(), h.repo, r, "scim.group.update", "group", id, "error", err)
 		return scimpkg.Resource{}, err
+	}
+	for _, action := range memberAudits {
+		recordAudit(r.Context(), h.repo, r, action, "group", group.ID, "success", nil)
 	}
 	recordAudit(r.Context(), h.repo, r, "scim.group.update", "group", group.ID, "success", nil)
 	return h.groupResource(r.Context(), group, "")
