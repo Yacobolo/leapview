@@ -1,11 +1,9 @@
 package http
 
 import (
-	"fmt"
 	nethttp "net/http"
 	"strings"
 
-	adminstorage "github.com/Yacobolo/libredash/internal/admin/storage"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/dashboard/stream"
@@ -21,18 +19,14 @@ type Broker interface {
 }
 
 type QueryAuditRepositoryProvider func() (queryaudit.Repository, error)
-type PrincipalLabelsProvider func(*nethttp.Request, []string) map[string]string
 
 type Handler struct {
-	Catalog              func() dashboard.Catalog
-	Data                 func(*nethttp.Request) (ui.AdminData, error)
-	CurrentRoleLabel     func(*nethttp.Request) string
-	ChromeOption         func(*nethttp.Request) ui.ChromeOption
-	EnsureClientID       func(nethttp.ResponseWriter, *nethttp.Request)
-	Broker               Broker
-	StorageService       adminstorage.Service
-	QueryAuditRepository QueryAuditRepositoryProvider
-	PrincipalLabels      PrincipalLabelsProvider
+	Catalog          func() dashboard.Catalog
+	ReadModel        ReadModel
+	CurrentRoleLabel func(*nethttp.Request) string
+	ChromeOption     func(*nethttp.Request) ui.ChromeOption
+	EnsureClientID   func(nethttp.ResponseWriter, *nethttp.Request)
+	Broker           Broker
 }
 
 type storageCommandSignals struct {
@@ -135,7 +129,7 @@ func (h Handler) StorageTableSelect(w nethttp.ResponseWriter, r *nethttp.Request
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
-	selectedTable, err := h.StorageService.SelectTable(r.Context(), signals.AdminStorageCommand)
+	selectedTable, err := h.readModel().StorageService.SelectTable(r.Context(), signals.AdminStorageCommand)
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
@@ -171,10 +165,7 @@ func (h Handler) writePage(w nethttp.ResponseWriter, r *nethttp.Request, active 
 }
 
 func (h Handler) adminData(r *nethttp.Request) (ui.AdminData, error) {
-	if h.Data == nil {
-		return ui.AdminData{}, fmt.Errorf("admin data provider is not configured")
-	}
-	return h.Data(r)
+	return h.readModel().Data(r)
 }
 
 func (h Handler) catalog() dashboard.Catalog {
@@ -204,25 +195,8 @@ func (h Handler) ensureClientID(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 }
 
-func (h Handler) queryAuditRepository() (queryaudit.Repository, error) {
-	if h.QueryAuditRepository == nil {
-		return nil, fmt.Errorf("query audit repository is not configured")
-	}
-	return h.QueryAuditRepository()
-}
-
-func (h Handler) queryPrincipalLabels(r *nethttp.Request, values []string) map[string]string {
-	if h.PrincipalLabels == nil {
-		labels := map[string]string{}
-		for _, value := range values {
-			value = strings.TrimSpace(value)
-			if value != "" {
-				labels[value] = value
-			}
-		}
-		return labels
-	}
-	return h.PrincipalLabels(r, values)
+func (h Handler) readModel() ReadModel {
+	return h.ReadModel
 }
 
 func adminStorageStreamID(clientID string) string {

@@ -23,26 +23,15 @@ import (
 )
 
 type Handler struct {
-	WorkspaceID          func(string) string
-	Environment          func(*nethttp.Request) string
-	WorkspaceRepository  func() (workspace.Repository, error)
-	AccessRepository     func() (access.Repository, error)
-	WorkspaceList        func(*nethttp.Request) ([]workspace.WorkspaceView, error)
-	WorkspaceAssetsEdges func(*nethttp.Request, string) ([]workspace.AssetView, []workspace.AssetEdgeView, error)
-	PlatformAssetsEdges  func(*nethttp.Request) ([]workspace.AssetView, []workspace.AssetEdgeView, error)
-	MetricsForWorkspace  func(string) (Metrics, bool)
-	CatalogForWorkspaces func(*nethttp.Request, []workspace.WorkspaceView) dashboard.Catalog
-	RoleBindingsAndRoles func(*nethttp.Request, string) ([]workspace.RoleBindingView, []workspace.RoleView, error)
-	CatalogForWorkspace  func(string) dashboard.Catalog
-	WorkspaceResponse    func(*nethttp.Request, string) workspace.WorkspaceView
-	CanManageAccess      func(*nethttp.Request, string) bool
-	WorkspaceAccess      func(*nethttp.Request, workspace.WorkspaceView, bool, ui.WorkspaceAccessStatus) ui.WorkspaceAccessResponse
-	RefreshState         RefreshStateProvider
-	RefreshRunner        AssetRefreshRunner
-	Broker               Broker
-	CSRFToken            func(*nethttp.Request) string
-	CurrentRoleLabel     func(*nethttp.Request) string
-	ChromeOptions        func(*nethttp.Request) []ui.ChromeOption
+	WorkspaceID      func(string) string
+	Environment      func(*nethttp.Request) string
+	ReadModel        ReadModel
+	RefreshState     RefreshStateProvider
+	RefreshRunner    AssetRefreshRunner
+	Broker           Broker
+	CSRFToken        func(*nethttp.Request) string
+	CurrentRoleLabel func(*nethttp.Request) string
+	ChromeOptions    func(*nethttp.Request) []ui.ChromeOption
 }
 
 type workspaceAccessSignalPayload struct {
@@ -304,11 +293,7 @@ func (h Handler) ConnectionAssetSection(w nethttp.ResponseWriter, r *nethttp.Req
 }
 
 func (h Handler) Workspaces(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if h.WorkspaceList == nil {
-		writeJSONError(w, fmt.Errorf("workspace list provider is not configured"), nethttp.StatusInternalServerError)
-		return
-	}
-	workspaces, err := h.WorkspaceList(r)
+	workspaces, err := h.workspaceList(r)
 	if err != nil {
 		writeJSONError(w, err, nethttp.StatusInternalServerError)
 		return
@@ -683,51 +668,27 @@ func (h Handler) environment(r *nethttp.Request) string {
 }
 
 func (h Handler) workspaceRepository() (workspace.Repository, error) {
-	if h.WorkspaceRepository == nil {
-		return nil, nil
-	}
-	return h.WorkspaceRepository()
+	return h.ReadModel.workspaceRepository()
 }
 
 func (h Handler) accessRepository() (access.Repository, error) {
-	if h.AccessRepository == nil {
-		return nil, nil
-	}
-	return h.AccessRepository()
+	return h.ReadModel.accessRepository()
 }
 
 func (h Handler) assetsAndEdges(r *nethttp.Request, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, error) {
-	if h.WorkspaceAssetsEdges == nil {
-		return nil, nil, fmt.Errorf("workspace asset provider is not configured")
-	}
-	return h.WorkspaceAssetsEdges(r, workspaceID)
+	return h.ReadModel.WorkspaceAssetsAndEdges(r, workspaceID)
 }
 
 func (h Handler) platformAssetsAndEdges(r *nethttp.Request) ([]workspace.AssetView, []workspace.AssetEdgeView, error) {
-	if h.PlatformAssetsEdges == nil {
-		return nil, nil, fmt.Errorf("platform asset provider is not configured")
-	}
-	return h.PlatformAssetsEdges(r)
+	return h.ReadModel.PlatformAssetsAndEdges(r)
 }
 
 func (h Handler) workspaceList(r *nethttp.Request) ([]workspace.WorkspaceView, error) {
-	if h.WorkspaceList == nil {
-		return nil, fmt.Errorf("workspace list provider is not configured")
-	}
-	return h.WorkspaceList(r)
+	return h.ReadModel.WorkspaceList(r)
 }
 
 func (h Handler) workspaceAssetsAndEdgesForData(ctx context.Context, workspaceID, environment string) ([]workspace.AssetView, []workspace.AssetEdgeView, error) {
-	if h.WorkspaceAssetsEdges == nil {
-		return nil, nil, fmt.Errorf("workspace asset provider is not configured")
-	}
-	req, _ := nethttp.NewRequestWithContext(ctx, nethttp.MethodGet, "/data", nil)
-	if environment != "" {
-		query := req.URL.Query()
-		query.Set("environment", environment)
-		req.URL.RawQuery = query.Encode()
-	}
-	assets, edges, err := h.WorkspaceAssetsEdges(req, workspaceID)
+	assets, edges, err := h.ReadModel.WorkspaceAssetsAndEdgesForData(ctx, workspaceID, environment)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -738,52 +699,31 @@ func (h Handler) workspaceAssetsAndEdgesForData(ctx context.Context, workspaceID
 }
 
 func (h Handler) metricsForWorkspace(workspaceID string) (Metrics, bool) {
-	if h.MetricsForWorkspace == nil {
-		return nil, false
-	}
-	return h.MetricsForWorkspace(workspaceID)
+	return h.ReadModel.metricsForWorkspace(workspaceID)
 }
 
 func (h Handler) roleBindingsAndRoles(r *nethttp.Request, workspaceID string) ([]workspace.RoleBindingView, []workspace.RoleView, error) {
-	if h.RoleBindingsAndRoles == nil {
-		return nil, nil, fmt.Errorf("workspace role provider is not configured")
-	}
-	return h.RoleBindingsAndRoles(r, workspaceID)
+	return h.ReadModel.RoleBindingsAndRoles(r, workspaceID)
 }
 
 func (h Handler) catalogForWorkspacesPage(r *nethttp.Request, workspaces []workspace.WorkspaceView) dashboard.Catalog {
-	if h.CatalogForWorkspaces != nil {
-		return h.CatalogForWorkspaces(r, workspaces)
-	}
-	if len(workspaces) > 0 {
-		return h.catalogForWorkspace(workspaces[0].ID)
-	}
-	return dashboard.Catalog{}
+	return h.ReadModel.CatalogForWorkspacesPage(r, workspaces)
 }
 
 func (h Handler) catalogForWorkspace(workspaceID string) dashboard.Catalog {
-	if h.CatalogForWorkspace == nil {
-		return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspaceID}}
-	}
-	return h.CatalogForWorkspace(workspaceID)
+	return h.ReadModel.catalogForWorkspace(workspaceID)
 }
 
 func (h Handler) workspaceResponse(r *nethttp.Request, workspaceID string) workspace.WorkspaceView {
-	if h.WorkspaceResponse == nil {
-		return workspace.WorkspaceView{ID: workspaceID}
-	}
-	return h.WorkspaceResponse(r, workspaceID)
+	return h.ReadModel.WorkspaceResponse(r, workspaceID)
 }
 
 func (h Handler) canManageAccess(r *nethttp.Request, workspaceID string) bool {
-	return h.CanManageAccess != nil && h.CanManageAccess(r, workspaceID)
+	return h.ReadModel.CanManageAccess(r, workspaceID)
 }
 
 func (h Handler) workspaceAccess(r *nethttp.Request, view workspace.WorkspaceView, canManage bool, status ui.WorkspaceAccessStatus) ui.WorkspaceAccessResponse {
-	if h.WorkspaceAccess == nil {
-		return ui.WorkspaceAccessResponse{Workspace: view, CanManage: canManage, Status: status}
-	}
-	return h.WorkspaceAccess(r, view, canManage, status)
+	return h.ReadModel.WorkspaceAccess(r, view, canManage, status)
 }
 
 func (h Handler) assetRefreshState(ctx context.Context, workspaceID string, asset workspace.AssetView) (ui.AssetRefreshState, error) {

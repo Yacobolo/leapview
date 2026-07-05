@@ -25,26 +25,6 @@ type queryHistoryCommandSignals struct {
 	AdminQueryHistoryCommand uisignals.AdminQueryHistoryCommand `json:"adminQueryHistoryCommand"`
 }
 
-func (h Handler) QueryHistoryData(r *http.Request, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ui.AdminQueryHistoryData {
-	repo, err := h.queryAuditRepository()
-	if err != nil || repo == nil {
-		return ui.AdminQueryHistoryData{Filters: filters, Limit: normalizeQueryHistoryLimit(limit), Error: queryHistoryErrorText(err)}
-	}
-	filters = normalizeQueryHistoryFilters(filters)
-	events, nextCursor, hasMore, err := h.queryHistoryPage(r, repo, filters, pageToken, limit)
-	if err != nil {
-		return ui.AdminQueryHistoryData{Filters: filters, Limit: normalizeQueryHistoryLimit(limit), Error: err.Error()}
-	}
-	return ui.AdminQueryHistoryData{
-		Events:      events,
-		FilterMenus: h.queryHistoryFilterMenus(r, repo, filters, "", ""),
-		Filters:     filters,
-		NextCursor:  nextCursor,
-		HasMore:     hasMore,
-		Limit:       normalizeQueryHistoryLimit(limit),
-	}
-}
-
 func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 	clientID := lddatastar.EnsureClientID(w, r)
 	if h.Broker == nil {
@@ -74,7 +54,7 @@ func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	command := normalizeQueryHistoryCommand(signals.AdminQueryHistoryCommand)
-	repo, err := h.queryAuditRepository()
+	repo, err := h.readModel().queryAuditRepository()
 	if err != nil || repo == nil {
 		errorText := queryHistoryErrorText(err)
 		if errorText == "" {
@@ -119,7 +99,7 @@ func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {
 		history := signals.AdminQueryHistory
 		history.Loading = false
 		history.Error = ""
-		history.FilterMenus = h.queryHistoryFilterMenus(r, repo, command.Filters, command.FilterMenu.MenuID, command.FilterMenu.Search)
+		history.FilterMenus = h.readModel().queryHistoryFilterMenus(r, repo, command.Filters, command.FilterMenu.MenuID, command.FilterMenu.Search)
 		h.publishQueryHistoryPatch(clientID, history)
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -128,7 +108,7 @@ func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {
 		command.Filters = applyFilterMenuCommand(command.Filters, command.FilterMenu)
 		command.PageToken = ""
 	}
-	events, nextCursor, hasMore, err := h.queryHistoryPage(r, repo, command.Filters, command.PageToken, command.Limit)
+	events, nextCursor, hasMore, err := queryHistoryPage(r, repo, command.Filters, command.PageToken, command.Limit)
 	history := signals.AdminQueryHistory
 	incomingCount := len(history.Table.Rows)
 	if command.Action == "load_more" {
@@ -138,7 +118,7 @@ func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {
 		history.Table = ui.AdminQueryHistorySignalFromData(ui.AdminQueryHistoryData{Events: events}).Table
 		incomingCount = 0
 	}
-	history.FilterMenus = h.queryHistoryFilterMenus(r, repo, command.Filters, "", "")
+	history.FilterMenus = h.readModel().queryHistoryFilterMenus(r, repo, command.Filters, "", "")
 	history.Filters = command.Filters
 	history.NextCursor = nextCursor
 	history.HasMore = hasMore
@@ -287,7 +267,7 @@ func queryHistoryLoadedCountLabel(count int) string {
 	return strconv.Itoa(count) + " queries loaded"
 }
 
-func (h Handler) queryHistoryFilterMenus(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, searchMenuID, search string) []uisignals.FilterMenuSignal {
+func (m ReadModel) queryHistoryFilterMenus(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, searchMenuID, search string) []uisignals.FilterMenuSignal {
 	menus := []struct {
 		id          string
 		label       string
@@ -319,7 +299,7 @@ func (h Handler) queryHistoryFilterMenus(r *http.Request, repo queryaudit.Reposi
 			menu.values[option.Value] = option.Count
 		}
 		if menu.id == "principal" {
-			menu.labels = h.queryPrincipalLabels(r, mapKeys(menu.values))
+			menu.labels = m.PrincipalLabels(r, mapKeys(menu.values))
 		}
 		out = append(out, queryHistoryFilterMenu(menu.id, menu.label, menu.placeholder, menu.empty, menu.icon, menu.values, menu.labels, menu.selected, menuSearch, loading, ""))
 	}
@@ -445,7 +425,7 @@ func queryHistoryStreamID(clientID string) string {
 	return "admin-queries:" + clientID
 }
 
-func (h Handler) queryHistoryPage(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ([]ui.AdminQueryEvent, string, bool, error) {
+func queryHistoryPage(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ([]ui.AdminQueryEvent, string, bool, error) {
 	limit = normalizeQueryHistoryLimit(limit)
 	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{
 		WorkspaceIDs: cleanStringSlice(filters.Workspaces),

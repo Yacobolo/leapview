@@ -39,19 +39,17 @@ func (s *Server) workspaceRefreshSupport() workspacehttp.Support {
 		ModelLookup:  refreshModelLookup(s.metrics),
 		Broker:       s.broker,
 		AssetCatalog: func(ctx context.Context, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
-			catalog, ok, err := s.workspaceAssetCatalog(ctx, workspaceID, string(s.defaultDeploymentEnvironment()))
-			if err != nil || !ok {
+			assets, edges, err := s.workspaceHTTPReadModel().WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(s.defaultDeploymentEnvironment()))
+			if err != nil || (len(assets) == 0 && len(edges) == 0) {
 				return nil, nil, false
 			}
-			return assetCatalogViews(catalog), assetCatalogEdgeViews(catalog), true
+			return assets, edges, true
 		},
 		WorkspaceView: func(r *http.Request, workspaceID string) workspace.WorkspaceView {
-			return s.workspaceResponse(r, workspaceID)
+			return s.workspaceHTTPReadModel().WorkspaceResponse(r, workspaceID)
 		},
-		WorkspaceViewContext: func(_ context.Context, workspaceID string) workspace.WorkspaceView {
-			view := catalogWorkspaceView(s.catalogForWorkspace(workspaceID))
-			view.ID = workspaceID
-			return view
+		WorkspaceViewContext: func(ctx context.Context, workspaceID string) workspace.WorkspaceView {
+			return s.workspaceHTTPReadModel().WorkspaceViewContext(ctx, workspaceID)
 		},
 		WorkspaceVersions: s.assetVersionsStateForSection,
 	}
