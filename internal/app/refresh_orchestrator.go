@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
 
@@ -62,13 +63,13 @@ func (p refreshPublisher) publishTarget(targetID string) {
 }
 
 type RefreshOrchestrator struct {
-	repo                *materialize.SQLRunRepository
+	repo                *materializesqlite.SQLRunRepository
 	runner              appRefreshRunner
 	model               refreshModelLookup
 	allowDirectFallback bool
 }
 
-func NewRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics QueryMetrics) RefreshOrchestrator {
+func NewRefreshOrchestrator(repo *materializesqlite.SQLRunRepository, metrics QueryMetrics) RefreshOrchestrator {
 	var lookup refreshModelLookup
 	if metrics != nil {
 		lookup = metrics.SemanticModel
@@ -80,7 +81,7 @@ func NewRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics QueryMet
 	}
 }
 
-func NewGenericRefreshOrchestrator(repo *materialize.SQLRunRepository, metrics QueryMetrics) RefreshOrchestrator {
+func NewGenericRefreshOrchestrator(repo *materializesqlite.SQLRunRepository, metrics QueryMetrics) RefreshOrchestrator {
 	orchestrator := NewRefreshOrchestrator(repo, metrics)
 	orchestrator.allowDirectFallback = true
 	return orchestrator

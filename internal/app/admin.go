@@ -1,7 +1,6 @@
 package app
 
 import (
-	"database/sql"
 	"net/http"
 	"sort"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/internal/workspace"
-	"github.com/go-chi/chi/v5"
 	"github.com/starfederation/datastar-go/datastar"
 )
 
@@ -23,87 +21,6 @@ type adminQueryHistoryCommandSignals struct {
 	AdminQueryHistory        uisignals.AdminQueryHistorySignal  `json:"adminQueryHistory"`
 	AdminQueryDetail         uisignals.AdminQueryDetailSignal   `json:"adminQueryDetail"`
 	AdminQueryHistoryCommand uisignals.AdminQueryHistoryCommand `json:"adminQueryHistoryCommand"`
-}
-
-func (s *Server) adminGeneral(w http.ResponseWriter, r *http.Request) {
-	s.renderAdminPage(w, r, "general")
-}
-
-func (s *Server) adminPrincipals(w http.ResponseWriter, r *http.Request) {
-	s.renderAdminPage(w, r, "principals")
-}
-
-func (s *Server) adminPrincipalDetail(w http.ResponseWriter, r *http.Request) {
-	data, err := s.adminData(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	principalID := chi.URLParam(r, "principal")
-	for i := range data.Principals {
-		if data.Principals[i].ID == principalID {
-			data.SelectedPrincipal = &data.Principals[i]
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			if err := ui.AdminPage(s.metrics.Catalog(), "principal-detail", s.currentAdminRoleLabel(r), data, s.chatChromeOption(r)).Render(w); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
-			return
-		}
-	}
-	http.NotFound(w, r)
-}
-
-func (s *Server) adminGroups(w http.ResponseWriter, r *http.Request) {
-	s.renderAdminPage(w, r, "groups")
-}
-
-func (s *Server) adminAgent(w http.ResponseWriter, r *http.Request) {
-	s.renderAdminPage(w, r, "agent")
-}
-
-func (s *Server) adminStorage(w http.ResponseWriter, r *http.Request) {
-	_ = lddatastar.EnsureClientID(w, r)
-	s.renderAdminPage(w, r, "storage")
-}
-
-func (s *Server) adminQueries(w http.ResponseWriter, r *http.Request) {
-	_ = lddatastar.EnsureClientID(w, r)
-	s.renderAdminPage(w, r, "queries")
-}
-
-func (s *Server) adminGroupDetail(w http.ResponseWriter, r *http.Request) {
-	data, err := s.adminData(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	groupID := chi.URLParam(r, "group")
-	for i := range data.Groups {
-		if data.Groups[i].ID == groupID {
-			data.SelectedGroup = &data.Groups[i]
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			if err := ui.AdminPage(s.metrics.Catalog(), "group-detail", s.currentAdminRoleLabel(r), data, s.chatChromeOption(r)).Render(w); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
-			return
-		}
-	}
-	http.NotFound(w, r)
-}
-
-func (s *Server) renderAdminPage(w http.ResponseWriter, r *http.Request, active string) {
-	data, err := s.adminData(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	if err := ui.AdminPage(s.metrics.Catalog(), active, s.currentAdminRoleLabel(r), data, s.chatChromeOption(r)).Render(w); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 }
 
 func (s *Server) currentAdminRoleLabel(r *http.Request) string {
@@ -187,7 +104,7 @@ func (s *Server) adminQueryHistoryData(r *http.Request, filters uisignals.AdminQ
 		return ui.AdminQueryHistoryData{Filters: filters, Limit: normalizeAdminQueryHistoryLimit(limit), Error: queryHistoryErrorText(err)}
 	}
 	filters = normalizeAdminQueryHistoryFilters(filters)
-	events, nextCursor, hasMore, err := s.listAdminQueryHistoryPage(r, repo, filters, pageToken, limit)
+	events, nextCursor, hasMore, err := s.adminQueryHistoryPage(r, repo, filters, pageToken, limit)
 	if err != nil {
 		return ui.AdminQueryHistoryData{Filters: filters, Limit: normalizeAdminQueryHistoryLimit(limit), Error: err.Error()}
 	}
@@ -280,7 +197,7 @@ func (s *Server) adminQueryHistoryCommand(w http.ResponseWriter, r *http.Request
 		command.Filters = applyAdminQueryFilterMenuCommand(command.Filters, command.FilterMenu)
 		command.PageToken = ""
 	}
-	events, nextCursor, hasMore, err := s.listAdminQueryHistoryPage(r, repo, command.Filters, command.PageToken, command.Limit)
+	events, nextCursor, hasMore, err := s.adminQueryHistoryPage(r, repo, command.Filters, command.PageToken, command.Limit)
 	history := signals.AdminQueryHistory
 	incomingCount := len(history.Table.Rows)
 	if command.Action == "load_more" {
@@ -615,7 +532,7 @@ func adminQueryHistoryStreamID(clientID string) string {
 	return "admin-queries:" + clientID
 }
 
-func (s *Server) listAdminQueryHistoryPage(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ([]ui.AdminQueryEvent, string, bool, error) {
+func (s *Server) adminQueryHistoryPage(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ([]ui.AdminQueryEvent, string, bool, error) {
 	limit = normalizeAdminQueryHistoryLimit(limit)
 	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{
 		WorkspaceIDs: cleanStringSlice(filters.Workspaces),
@@ -690,7 +607,7 @@ func normalizeAdminQueryHistoryLimit(limit int) int {
 }
 
 func (s *Server) adminAgentData(r *http.Request) (ui.AdminAgentData, error) {
-	details, err := s.adminAgentDetails(r.Context())
+	details, err := s.agentHTTPHandler().AdminDetails(r.Context())
 	if err != nil {
 		return ui.AdminAgentData{}, err
 	}
@@ -729,51 +646,32 @@ func (s *Server) adminAgentData(r *http.Request) (ui.AdminAgentData, error) {
 }
 
 func (s *Server) adminGroupsData(r *http.Request) ([]access.Group, error) {
-	if s.store == nil {
-		return nil, nil
-	}
-	rows, err := s.store.SQLDB().QueryContext(r.Context(), `
-SELECT id, workspace_id, provider, external_id, name, created_at
-FROM groups
-ORDER BY workspace_id, name, id
-`)
+	repo, err := s.accessRepository()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	groups := []access.Group{}
-	for rows.Next() {
-		var group access.Group
-		if err := rows.Scan(&group.ID, &group.WorkspaceID, &group.Provider, &group.ExternalID, &group.Name, &group.CreatedAt); err != nil {
-			return nil, err
-		}
-		groups = append(groups, group)
+	if repo == nil {
+		return nil, nil
 	}
-	return groups, rows.Err()
+	return repo.ListAllGroups(r.Context())
 }
 
 func (s *Server) adminGroupMembersData(r *http.Request, groupID string) []ui.AdminPrincipalRef {
-	if s.store == nil {
+	repo, err := s.accessRepository()
+	if err != nil || repo == nil {
 		return nil
 	}
-	rows, err := s.store.SQLDB().QueryContext(r.Context(), `
-SELECT gm.principal_id, p.email, p.display_name
-FROM group_members gm
-JOIN principals p ON p.id = gm.principal_id
-WHERE gm.group_id = ?
-ORDER BY p.email, p.display_name, gm.principal_id
-`, groupID)
+	rows, err := repo.ListGroupMembersByGroup(r.Context(), groupID)
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
-	members := []ui.AdminPrincipalRef{}
-	for rows.Next() {
-		var member ui.AdminPrincipalRef
-		if err := rows.Scan(&member.ID, &member.Email, &member.DisplayName); err != nil {
-			return nil
-		}
-		members = append(members, member)
+	members := make([]ui.AdminPrincipalRef, 0, len(rows))
+	for _, row := range rows {
+		members = append(members, ui.AdminPrincipalRef{
+			ID:          row.PrincipalID,
+			Email:       row.Email,
+			DisplayName: row.DisplayName,
+		})
 	}
 	return members
 }
@@ -802,62 +700,47 @@ func (s *Server) adminRoleBindingsAndRoles(r *http.Request) ([]workspace.RoleBin
 }
 
 func (s *Server) adminRoleBindingsData(r *http.Request) ([]workspace.RoleBindingView, error) {
-	if s.store == nil {
-		return nil, nil
-	}
-	rows, err := s.store.SQLDB().QueryContext(r.Context(), `
-SELECT
-  rb.id,
-  rb.workspace_id,
-  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
-  COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
-  rb.principal_id,
-  rb.group_id,
-  p.email,
-  p.display_name,
-  g.name AS group_name,
-  r.name AS role_name,
-  rb.created_at
-FROM role_bindings rb
-JOIN roles r ON r.id = rb.role_id
-LEFT JOIN principals p ON p.id = NULLIF(rb.principal_id, '')
-LEFT JOIN groups g ON g.id = rb.group_id
-ORDER BY rb.workspace_id, subject_type, p.email, g.name, r.name
-`)
+	repo, err := s.accessRepository()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	bindings := []workspace.RoleBindingView{}
-	for rows.Next() {
-		var binding workspace.RoleBindingView
-		var principalID, groupID, email, displayName, groupName sql.NullString
-		if err := rows.Scan(&binding.ID, &binding.WorkspaceID, &binding.SubjectType, &binding.SubjectID, &principalID, &groupID, &email, &displayName, &groupName, &binding.Role, &binding.CreatedAt); err != nil {
-			return nil, err
-		}
-		binding.PrincipalID = adminNullString(principalID)
-		binding.GroupID = adminNullString(groupID)
-		binding.Email = adminNullString(email)
-		binding.DisplayName = firstNonEmpty(adminNullString(displayName), adminNullString(groupName))
-		binding.GroupName = adminNullString(groupName)
-		bindings = append(bindings, binding)
+	if repo == nil {
+		return nil, nil
 	}
-	return bindings, rows.Err()
+	rows, err := repo.ListAllRoleBindings(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	bindings := make([]workspace.RoleBindingView, 0, len(rows))
+	for _, row := range rows {
+		bindings = append(bindings, roleBindingView(row))
+	}
+	return bindings, nil
 }
 
 func (s *Server) adminPrincipalsData(r *http.Request) ([]ui.AdminPrincipal, error) {
-	rows, err := s.queryPrincipals(r)
+	repo, err := s.accessRepository()
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return []ui.AdminPrincipal{}, nil
+	}
+	rows, err := repo.ListPrincipals(r.Context(), access.PrincipalFilter{
+		Email: r.URL.Query().Get("email"),
+		Query: r.URL.Query().Get("q"),
+	})
 	if err != nil {
 		return nil, err
 	}
 	principals := make([]ui.AdminPrincipal, 0, len(rows))
 	for _, row := range rows {
 		principals = append(principals, ui.AdminPrincipal{
-			ID:          stringMapValue(row, "id"),
-			Email:       stringMapValue(row, "email"),
-			DisplayName: stringMapValue(row, "displayName"),
-			CreatedAt:   stringMapValue(row, "createdAt"),
-			UpdatedAt:   stringMapValue(row, "updatedAt"),
+			ID:          row.ID,
+			Email:       row.Email,
+			DisplayName: row.DisplayName,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
 		})
 	}
 	sort.SliceStable(principals, func(i, j int) bool {
@@ -952,13 +835,6 @@ func appendUnique(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
-}
-
-func adminNullString(value sql.NullString) string {
-	if value.Valid {
-		return value.String
-	}
-	return ""
 }
 
 func stringMapValue(row map[string]any, key string) string {

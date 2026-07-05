@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/deployment"
 	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace/refresh"
@@ -107,7 +108,7 @@ func (p appRefreshPublisher) PublishRefreshTarget(ctx context.Context, workspace
 }
 
 type appLegacyRefreshExecutor struct {
-	repo    *materialize.SQLRunRepository
+	repo    *materializesqlite.SQLRunRepository
 	metrics QueryMetrics
 	logger  interface {
 		WarnContext(context.Context, string, ...any)

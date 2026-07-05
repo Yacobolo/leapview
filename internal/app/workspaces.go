@@ -15,6 +15,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/assetnav"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -34,7 +35,7 @@ type activeWorkspaceMetadataRepository interface {
 	ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error)
 }
 
-func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderWorkspacesPage(w http.ResponseWriter, r *http.Request) {
 	workspaces, err := s.workspaceList(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -47,7 +48,7 @@ func (s *Server) workspaces(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderWorkspaceAssetsPage(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	switch r.URL.Query().Get("type") {
 	case "connection":
@@ -73,7 +74,7 @@ func (s *Server) workspaceAssets(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderConnectionsPage(w http.ResponseWriter, r *http.Request) {
 	assets, edges, err := s.platformConnectionAssetsAndEdges(r)
 	if err != nil {
 		http.Error(w, err.Error(), statusForNotFound(err))
@@ -88,7 +89,7 @@ func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) workspaceAsset(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderWorkspaceAssetRedirect(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	assetID := chi.URLParam(r, "asset")
 	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
@@ -118,7 +119,7 @@ func (s *Server) workspaceAsset(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/workspaces/"+workspaceID+"/assets/"+assetID+"/details", http.StatusFound)
 }
 
-func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderWorkspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 	section := chi.URLParam(r, "section")
 	redirectToDetails := false
 	if section == "definition" {
@@ -193,11 +194,11 @@ func (s *Server) workspaceAssetSection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) refreshWorkspaceAssetMaterializations(w http.ResponseWriter, r *http.Request) {
-	s.refreshWorkspaceAsset(w, r)
+func (s *Server) assetRefreshMaterializationsPost(w http.ResponseWriter, r *http.Request) {
+	s.assetRefreshPost(w, r)
 }
 
-func (s *Server) refreshWorkspaceAsset(w http.ResponseWriter, r *http.Request) {
+func (s *Server) assetRefreshPost(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	assetID := chi.URLParam(r, "asset")
 	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
@@ -221,7 +222,7 @@ func (s *Server) refreshWorkspaceAsset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
+func (s *Server) assetUpdatesStream(w http.ResponseWriter, r *http.Request) {
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	assetID := chi.URLParam(r, "asset")
 	section := workspaceAssetUpdateSection(r)
@@ -274,7 +275,7 @@ func (s *Server) refreshWorkspaceAssetWithPatches(r *http.Request, workspaceID s
 
 func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
 	ctx := r.Context()
-	runRepo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	runRepo := materializesqlite.NewSQLRunRepository(s.store.SQLDB())
 	service, err := s.workspaceRefreshService(runRepo)
 	if err != nil {
 		return err
@@ -369,7 +370,7 @@ func (s *Server) dataDirForWorkspace(workspaceID string, artifact deployment.Art
 }
 
 func (s *Server) refreshSemanticModelAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
-	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(s.store.SQLDB())
 	principal, _ := currentPrincipal(s, r)
 	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
 	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
@@ -386,7 +387,7 @@ func (s *Server) refreshSemanticModelAssetWithPatches(ctx context.Context, r *ht
 }
 
 func (s *Server) refreshModelTableAssetWithPatches(ctx context.Context, r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
-	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(s.store.SQLDB())
 	principal, _ := currentPrincipal(s, r)
 	modelID, tableName := modelTableTargetParts(asset.Key)
 	if modelID == "" || tableName == "" {
@@ -523,7 +524,7 @@ func (s *Server) assetRefreshStateForContext(ctx context.Context, workspaceID st
 	if s.store == nil || !workspaceAssetRefreshable(asset) {
 		return ui.AssetRefreshState{}, nil
 	}
-	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(s.store.SQLDB())
 	targetType := materialize.TargetSemanticModel
 	if asset.Type == string(workspace.AssetTypeModelTable) {
 		targetType = materialize.TargetModelTable
@@ -628,12 +629,12 @@ func modelTableTargetParts(key string) (string, string) {
 	return parts[0], parts[1]
 }
 
-func (s *Server) connectionAsset(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderConnectionAssetRedirect(w http.ResponseWriter, r *http.Request) {
 	assetID := chi.URLParam(r, "asset")
 	http.Redirect(w, r, assetnav.ConnectionAssetSectionHref(assetID, "details"), http.StatusFound)
 }
 
-func (s *Server) connectionSourceAsset(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderConnectionSourceAssetRedirect(w http.ResponseWriter, r *http.Request) {
 	connectionID := chi.URLParam(r, "connection")
 	sourceID := chi.URLParam(r, "source")
 	assets, edges, err := s.platformConnectionAssetsAndEdges(r)
@@ -648,7 +649,7 @@ func (s *Server) connectionSourceAsset(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, assetnav.ConnectionSourceAssetSectionHref(connectionID, sourceID, "details"), http.StatusFound)
 }
 
-func (s *Server) connectionSourceAssetSection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderConnectionSourceAssetSection(w http.ResponseWriter, r *http.Request) {
 	section := chi.URLParam(r, "section")
 	if section == "definition" {
 		http.Redirect(w, r, assetnav.ConnectionSourceAssetSectionHref(chi.URLParam(r, "connection"), chi.URLParam(r, "source"), "details"), http.StatusFound)
@@ -704,7 +705,7 @@ func connectionSourcePair(assets []workspace.AssetView, edges []workspace.AssetE
 	return connection, source, true
 }
 
-func (s *Server) connectionAssetSection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderConnectionAssetSection(w http.ResponseWriter, r *http.Request) {
 	section := chi.URLParam(r, "section")
 	if section == "definition" {
 		http.Redirect(w, r, assetnav.ConnectionAssetSectionHref(chi.URLParam(r, "asset"), "details"), http.StatusFound)
@@ -750,64 +751,6 @@ func (s *Server) connectionAssetSection(w http.ResponseWriter, r *http.Request) 
 	if err := ui.ConnectionAssetPageWithVersions(s.catalogForWorkspacesPage(r, nil), workspace, selected, assets, edges, section, s.currentRoleLabel(r), versions).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func (s *Server) workspacePermissions(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	bindings, roles, err := s.roleBindingsAndRoles(r, workspaceID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	if err := ui.WorkspacePermissionsPage(s.catalogForWorkspace(workspaceID), s.workspaceResponse(r, workspaceID), bindings, roles, csrfToken(r, s.auth), s.currentRoleLabel(r)).Render(w); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func (s *Server) updateWorkspacePermission(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	repo, err := s.accessRepository()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		http.Error(w, errWorkspaceRBACNotConfigured.Error(), http.StatusInternalServerError)
-		return
-	}
-	if _, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: r.FormValue("email"), DisplayName: r.FormValue("displayName"), Role: r.FormValue("role")}); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	http.Redirect(w, r, "/workspaces/"+workspaceID+"/permissions", http.StatusFound)
-}
-
-func (s *Server) removeWorkspacePermission(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	repo, err := s.accessRepository()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		http.Error(w, errWorkspaceRBACNotConfigured.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := repo.RemovePrincipalRoles(r.Context(), workspaceID, r.FormValue("principalId")); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	http.Redirect(w, r, "/workspaces/"+workspaceID+"/permissions", http.StatusFound)
 }
 
 type workspaceAccessSignalPayload struct {
@@ -872,182 +815,6 @@ func (s *Server) patchWorkspaceAccess(w http.ResponseWriter, r *http.Request, wo
 	_ = sse.MarshalAndPatchSignals(map[string]any{
 		"workspaceAccess": ui.WorkspaceAccessSignals(access, csrfToken(r, s.auth)),
 	})
-}
-
-func (s *Server) apiWorkspaces(w http.ResponseWriter, r *http.Request) {
-	workspaces, err := s.workspaceList(r)
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	_ = writePagedJSON(w, r, apiWorkspaceDTOs(workspaces))
-}
-
-func (s *Server) apiWorkspaceAssets(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
-	if err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
-		return
-	}
-	filtered := workspace.FilterWorkspaceAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))
-	if r.URL.Query().Get("include") == "all" {
-		filtered = workspace.FilterAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))
-	}
-	_ = writePagedJSON(w, r, apiAssetSummaryDTOs(filtered))
-}
-
-func (s *Server) apiWorkspaceActiveDeploymentGraph(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	repo, err := s.workspaceRepository()
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	graph := workspace.AssetGraph{}
-	if repo != nil {
-		var ok bool
-		graph, ok, err = repo.ActiveDeploymentGraph(r.Context(), workspace.WorkspaceID(workspaceID), string(s.requestDeploymentEnvironment(r)))
-		if err != nil {
-			writeJSONError(w, err, http.StatusInternalServerError)
-			return
-		}
-		if !ok {
-			graph = workspace.AssetGraph{}
-		}
-	}
-	response, err := apiWorkspaceAssetGraphDTO(graph)
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, response)
-}
-
-func (s *Server) apiWorkspaceAsset(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	assetID := firstNonEmpty(chi.URLParam(r, "assetId"), chi.URLParam(r, "asset"))
-	assets, _, err := s.workspaceAssetsAndEdges(r, workspaceID)
-	if err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
-		return
-	}
-	asset, ok := workspace.AssetByID(assets, assetID)
-	if !ok {
-		writeJSONError(w, fmt.Errorf("asset %q not found", assetID), http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, apiAssetDTOs([]workspace.AssetView{asset})[0])
-}
-
-func (s *Server) apiWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	_, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
-	if err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
-		return
-	}
-	_ = writePagedJSON(w, r, apiAssetEdgeDTOs(edges))
-}
-
-func (s *Server) apiWorkspaceAssetLineage(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	assetID := firstNonEmpty(chi.URLParam(r, "assetId"), chi.URLParam(r, "asset"))
-	assets, edges, err := s.workspaceAssetsAndEdges(r, workspaceID)
-	if err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
-		return
-	}
-	if _, ok := workspace.AssetByID(assets, assetID); !ok {
-		writeJSONError(w, fmt.Errorf("asset %q not found", assetID), http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, api.AssetLineageResponse{
-		AssetID:    assetID,
-		Upstream:   assetLineageEndpointIDs(edges, assetID, true),
-		Downstream: assetLineageEndpointIDs(edges, assetID, false),
-	})
-}
-
-func (s *Server) apiWorkspaceRoles(w http.ResponseWriter, r *http.Request) {
-	_, roles, err := s.roleBindingsAndRoles(r, s.workspaceID(chi.URLParam(r, "workspace")))
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	_ = writePagedJSON(w, r, apiRoleDTOs(roles))
-}
-
-func (s *Server) apiRoleBindings(w http.ResponseWriter, r *http.Request) {
-	repo, err := s.accessRepository()
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		_ = writePagedJSON(w, r, []map[string]any{})
-		return
-	}
-	bindings, err := repo.ListRoleBindings(r.Context(), s.workspaceID(chi.URLParam(r, "workspace")))
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	out := make([]map[string]any, 0, len(bindings))
-	for _, binding := range bindings {
-		out = append(out, apiRoleBindingDTO(binding))
-	}
-	_ = writePagedJSON(w, r, out)
-}
-
-func (s *Server) apiUpsertRoleBinding(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Email       string `json:"email"`
-		DisplayName string `json:"displayName"`
-		Role        string `json:"role"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeJSONError(w, err, http.StatusBadRequest)
-		return
-	}
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	repo, err := s.accessRepository()
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		writeJSONError(w, errWorkspaceRBACNotConfigured, http.StatusInternalServerError)
-		return
-	}
-	principal, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: input.Email, DisplayName: input.DisplayName, Role: input.Role})
-	if err != nil {
-		writeJSONError(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"principalId": principal.ID})
-}
-
-func (s *Server) apiDeleteRoleBinding(w http.ResponseWriter, r *http.Request) {
-	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
-	repo, err := s.accessRepository()
-	if err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		writeJSONError(w, errWorkspaceRBACNotConfigured, http.StatusInternalServerError)
-		return
-	}
-	bindingID := chi.URLParam(r, "binding")
-	if bindingID == "" {
-		bindingID = chi.URLParam(r, "principal")
-	}
-	if err := repo.DeleteRoleBinding(r.Context(), workspaceID, bindingID); err != nil {
-		writeJSONError(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
 func (s *Server) workspaceList(r *http.Request) ([]workspace.WorkspaceView, error) {

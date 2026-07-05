@@ -26,8 +26,8 @@ func TestAPIPackageStaysTransportContractOnly(t *testing.T) {
 	assertPackageDoesNotImport(t, ".", forbidden)
 }
 
-func TestAgentAppDoesNotDependOnHeadlessAPIContract(t *testing.T) {
-	assertPackageDoesNotImport(t, filepath.Join("..", "agentapp"), map[string]bool{
+func TestAgentDoesNotDependOnHeadlessAPIContract(t *testing.T) {
+	assertPackageDoesNotImport(t, filepath.Join("..", "agent"), map[string]bool{
 		"github.com/Yacobolo/libredash/internal/api": true,
 	})
 }

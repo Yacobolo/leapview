@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -1060,7 +1061,7 @@ func TestDashboardRefreshCommandPersistsMaterializationRun(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	runs, err := repo.ListModelRuns(context.Background(), "test", "test", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)
@@ -1077,7 +1078,7 @@ func TestWorkspaceAssetUpdatesStreamsInitialRefreshState(t *testing.T) {
 	store := testStore(t)
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", emptyPageRuntimeAssetMetrics{})
 	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	queued, err := repo.CreateRun(context.Background(), materialize.RunInput{WorkspaceID: "test", ModelID: "olist"})
 	if err != nil {
 		t.Fatalf("create run: %v", err)
@@ -1179,7 +1180,7 @@ func TestWorkspaceAssetRefreshCommandPublishesRunningAndFinalState(t *testing.T)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	runs, err := repo.ListModelRuns(context.Background(), "test", "olist", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)
@@ -1218,7 +1219,7 @@ func TestWorkspaceAssetRefreshCommandPublishesFailedError(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	runs, err := repo.ListModelRuns(context.Background(), "test", "olist", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)
@@ -1255,7 +1256,7 @@ func TestWorkspaceModelTableRefreshCommandPersistsDirectAndDependencyRuns(t *tes
 	if got, want := metrics.refreshed, [][]string{{"orders"}, {"order_summary"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("refreshed tables = %#v, want %#v", got, want)
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	rootRuns, err := repo.ListTargetRuns(ctx, "test", materialize.TargetModelTable, "olist.order_summary", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list selected table runs: %v", err)
@@ -1383,7 +1384,7 @@ func TestMaterializationRunAPICanExecuteModelTableTargetWithLocalDevRuntimeShape
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for async model table refresh")
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	run, err := repo.GetRun(ctx, "test", created.ID)
 	if err != nil {
 		t.Fatalf("get run: %v", err)
@@ -1398,7 +1399,7 @@ func TestServerStartupDispatchesQueuedMaterializationJobs(t *testing.T) {
 	store := testStore(t)
 	metrics := &localDevStyleModelTableMetrics{done: make(chan []string, 1)}
 	server := NewWithOptions(metrics, Options{Store: store, DefaultWorkspaceID: "test"})
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	run, err := repo.CreateRun(ctx, materialize.RunInput{
 		WorkspaceID: "test",
 		ModelID:     "olist",
@@ -1449,7 +1450,7 @@ func TestMaterializationRunAPIMalformedModelTableTargetFailsPersistedRun(t *test
 		t.Fatalf("decode create: %v", err)
 	}
 
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	var run materialize.RunRecord
 	deadline := time.After(time.Second)
 	for {
@@ -1492,7 +1493,7 @@ func TestWorkspaceSemanticModelRefreshFailsWhenGraphMissing(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	runs, err := repo.ListModelRuns(ctx, "test", "olist", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
@@ -1522,7 +1523,7 @@ func TestWorkspaceModelTableRefreshMarksDependencyAndRootFailedWhenDependencyFai
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	rootRuns, err := repo.ListTargetRuns(ctx, "test", materialize.TargetModelTable, "olist.order_summary", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list root runs: %v", err)
@@ -1565,7 +1566,7 @@ func TestWorkspaceSemanticModelRefreshCommandPersistsTableChildRuns(t *testing.T
 	if got, want := metrics.refreshed, [][]string{{"orders"}, {"order_summary"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("refreshed tables = %#v, want %#v", got, want)
 	}
-	repo := materialize.NewSQLRunRepository(store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
 	modelRuns, err := repo.ListModelRuns(ctx, "test", "olist", materialize.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)

@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 )
 
-func (s *Server) generateConversationTitleAsync(scope agentapp.Scope, conversationID, clientID string) {
+func (s *Server) generateConversationTitleAsync(scope agent.Scope, conversationID, clientID string) {
 	if s.agent == nil {
 		s.clearChatTitlePending(conversationID)
 		return
@@ -30,7 +30,7 @@ func (s *Server) generateConversationTitleAsync(scope agentapp.Scope, conversati
 }
 
 // queueMissingChatTitle repairs old one-turn chats that missed the async title job.
-func (s *Server) queueMissingChatTitle(ctx context.Context, scope agentapp.Scope, conversationID, clientID string) {
+func (s *Server) queueMissingChatTitle(ctx context.Context, scope agent.Scope, conversationID, clientID string) {
 	if s.agent == nil || s.isChatTitlePending(conversationID) {
 		return
 	}
@@ -70,7 +70,7 @@ func (s *Server) isChatTitlePending(conversationID string) bool {
 	return ok
 }
 
-func chatStreamID(scope agentapp.Scope, clientID string) string {
+func chatStreamID(scope agent.Scope, clientID string) string {
 	if strings.TrimSpace(clientID) == "" {
 		clientID = "default"
 	}

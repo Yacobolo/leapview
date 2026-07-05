@@ -20,11 +20,12 @@ import (
 )
 
 type Repository struct {
-	q *platformdb.Queries
+	db *sql.DB
+	q  *platformdb.Queries
 }
 
 func NewRepository(sqlDB *sql.DB) *Repository {
-	return &Repository{q: platformdb.New(sqlDB)}
+	return &Repository{db: sqlDB, q: platformdb.New(sqlDB)}
 }
 
 func (r *Repository) PrincipalByID(ctx context.Context, id string) (access.Principal, error) {
@@ -33,6 +34,34 @@ func (r *Repository) PrincipalByID(ctx context.Context, id string) (access.Princ
 		return access.Principal{}, err
 	}
 	return mapPrincipal(row), nil
+}
+
+func (r *Repository) ListPrincipals(ctx context.Context, filter access.PrincipalFilter) ([]access.Principal, error) {
+	if r == nil || r.db == nil {
+		return []access.Principal{}, nil
+	}
+	email := strings.TrimSpace(filter.Email)
+	query := strings.TrimSpace(filter.Query)
+	rows, err := r.db.QueryContext(ctx, `
+SELECT id, email, display_name, created_at, updated_at
+FROM principals
+WHERE (? = '' OR lower(email) = lower(?))
+  AND (? = '' OR lower(email) LIKE '%' || lower(?) || '%' OR lower(display_name) LIKE '%' || lower(?) || '%')
+ORDER BY email, id
+`, email, email, query, query, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []access.Principal{}
+	for rows.Next() {
+		var principal access.Principal
+		if err := rows.Scan(&principal.ID, &principal.Email, &principal.DisplayName, &principal.CreatedAt, &principal.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, principal)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) UpsertPrincipal(ctx context.Context, input access.PrincipalInput) (access.Principal, error) {
@@ -208,6 +237,49 @@ func (r *Repository) ListRoleBindings(ctx context.Context, workspaceID string) (
 	return bindings, nil
 }
 
+func (r *Repository) ListAllRoleBindings(ctx context.Context) ([]access.RoleBinding, error) {
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+  rb.id,
+  rb.workspace_id,
+  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
+  rb.principal_id,
+  rb.group_id,
+  p.email,
+  p.display_name,
+  g.name AS group_name,
+  r.name AS role_name,
+  rb.created_at
+FROM role_bindings rb
+JOIN roles r ON r.id = rb.role_id
+LEFT JOIN principals p ON p.id = NULLIF(rb.principal_id, '')
+LEFT JOIN groups g ON g.id = rb.group_id
+ORDER BY rb.workspace_id, subject_type, p.email, g.name, r.name
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	bindings := []access.RoleBinding{}
+	for rows.Next() {
+		var binding access.RoleBinding
+		var subjectType string
+		var principalID, groupID, email, displayName, groupName sql.NullString
+		if err := rows.Scan(&binding.ID, &binding.WorkspaceID, &subjectType, &binding.SubjectID, &principalID, &groupID, &email, &displayName, &groupName, &binding.Role, &binding.CreatedAt); err != nil {
+			return nil, err
+		}
+		binding.SubjectType = access.SubjectType(subjectType)
+		binding.PrincipalID = nullString(principalID)
+		binding.GroupID = nullString(groupID)
+		binding.Email = nullString(email)
+		binding.DisplayName = nullString(displayName)
+		binding.GroupName = nullString(groupName)
+		bindings = append(bindings, binding)
+	}
+	return bindings, rows.Err()
+}
+
 func (r *Repository) ListRoles(ctx context.Context) ([]access.Role, error) {
 	rows, err := r.q.ListRoles(ctx)
 	if err != nil {
@@ -379,6 +451,27 @@ func (r *Repository) ListGroups(ctx context.Context, workspaceID string) ([]acce
 	return groups, nil
 }
 
+func (r *Repository) ListAllGroups(ctx context.Context) ([]access.Group, error) {
+	rows, err := r.db.QueryContext(ctx, `
+SELECT id, workspace_id, provider, external_id, name, created_at
+FROM groups
+ORDER BY workspace_id, name, id
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	groups := []access.Group{}
+	for rows.Next() {
+		var group access.Group
+		if err := rows.Scan(&group.ID, &group.WorkspaceID, &group.Provider, &group.ExternalID, &group.Name, &group.CreatedAt); err != nil {
+			return nil, err
+		}
+		groups = append(groups, group)
+	}
+	return groups, rows.Err()
+}
+
 func (r *Repository) DeleteGroup(ctx context.Context, workspaceID, groupID string) error {
 	if strings.TrimSpace(groupID) == "" {
 		return fmt.Errorf("group id is required")
@@ -431,6 +524,30 @@ func (r *Repository) ListGroupMembers(ctx context.Context, workspaceID, groupID 
 		})
 	}
 	return members, nil
+}
+
+func (r *Repository) ListGroupMembersByGroup(ctx context.Context, groupID string) ([]access.GroupMember, error) {
+	rows, err := r.db.QueryContext(ctx, `
+SELECT gm.group_id, g.workspace_id, gm.principal_id, p.email, p.display_name, gm.created_at
+FROM group_members gm
+JOIN groups g ON g.id = gm.group_id
+JOIN principals p ON p.id = gm.principal_id
+WHERE gm.group_id = ?
+ORDER BY p.email, p.display_name, gm.principal_id
+`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	members := []access.GroupMember{}
+	for rows.Next() {
+		var member access.GroupMember
+		if err := rows.Scan(&member.GroupID, &member.WorkspaceID, &member.PrincipalID, &member.Email, &member.DisplayName, &member.CreatedAt); err != nil {
+			return nil, err
+		}
+		members = append(members, member)
+	}
+	return members, rows.Err()
 }
 
 func (r *Repository) ReconcileWorkspacePolicy(ctx context.Context, workspaceID string, policy workspace.AccessPolicy) error {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/execution"
 	"github.com/Yacobolo/libredash/internal/workspace/refresh"
 )
@@ -30,7 +30,7 @@ func (s *Server) runMaterializationDispatcher(ctx context.Context) {
 		s.jobDispatching = false
 		s.jobDispatchMu.Unlock()
 	}()
-	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(s.store.SQLDB())
 	service, err := s.workspaceRefreshService(repo)
 	if err != nil {
 		if s.logger != nil {

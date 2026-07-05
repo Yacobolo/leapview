@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -1045,7 +1045,7 @@ type ChatArtifactSignal struct {
 	Summary string `json:"summary,omitempty"`
 }
 
-func ChatTranscriptItems(items []agentapp.ChatTranscriptItem) []ChatTranscriptItemSignal {
+func ChatTranscriptItems(items []agent.ChatTranscriptItem) []ChatTranscriptItemSignal {
 	out := make([]ChatTranscriptItemSignal, 0, len(items))
 	for _, item := range items {
 		out = append(out, ChatTranscriptItem(item))
@@ -1053,7 +1053,7 @@ func ChatTranscriptItems(items []agentapp.ChatTranscriptItem) []ChatTranscriptIt
 	return out
 }
 
-func ChatTranscriptItem(item agentapp.ChatTranscriptItem) ChatTranscriptItemSignal {
+func ChatTranscriptItem(item agent.ChatTranscriptItem) ChatTranscriptItemSignal {
 	out := ChatTranscriptItemSignal{
 		ID:             item.ID,
 		Kind:           item.Kind,

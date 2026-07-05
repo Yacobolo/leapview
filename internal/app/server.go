@@ -11,8 +11,9 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
-	"github.com/Yacobolo/libredash/internal/agentapp"
-	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	"github.com/Yacobolo/libredash/internal/agent"
+	agentopenai "github.com/Yacobolo/libredash/internal/agent/openai"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
@@ -26,6 +27,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
+	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/gorilla/csrf"
 )
 
@@ -93,7 +95,7 @@ type Server struct {
 	workspaceRepo       workspace.Repository
 	assetCatalog        workspace.AssetCatalogReader
 	accessRepo          access.Repository
-	agent               *agentapp.Service
+	agent               *agent.Service
 	auth                *Auth
 	reloader            runtimeReloader
 	artifactDir         string
@@ -123,7 +125,7 @@ type Options struct {
 	WorkspaceRepo       workspace.Repository
 	AssetCatalog        workspace.AssetCatalogReader
 	AccessRepo          access.Repository
-	Agent               *agentapp.Service
+	Agent               *agent.Service
 	Auth                *Auth
 	Reloader            runtimeReloader
 	ArtifactDir         string
@@ -180,6 +182,11 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	if options.Logger != nil {
 		server.logger = options.Logger
+	}
+	if server.agent != nil {
+		server.agent.ConfigureDefaultModel(func(config agent.Config) agentcore.Model {
+			return agentopenai.NewModel(config, nil)
+		})
 	}
 	server.configureAgentTools()
 	return server
@@ -315,6 +322,13 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			return selected, true
 		},
 		Broker: s.broker,
+		CurrentPrincipalID: func(r *http.Request) string {
+			principal, ok := principalFromContext(r.Context())
+			if !ok {
+				return ""
+			}
+			return principal.ID
+		},
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
 				return ""
@@ -365,7 +379,7 @@ func (s *Server) refreshMaterializationsWithRunForWorkspace(ctx context.Context,
 	if s.store == nil {
 		return s.metrics.RefreshMaterializations(ctx, modelID)
 	}
-	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	repo := materializesqlite.NewSQLRunRepository(s.store.SQLDB())
 	principal, _ := principalFromContext(ctx)
 	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
 	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{

@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/deployment"
-	deploymentfs "github.com/Yacobolo/libredash/internal/deployment/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -21,8 +19,8 @@ type Repository interface {
 	ActivateWithWorkspacePolicy(ctx context.Context, workspaceID deployment.WorkspaceID, environment deployment.Environment, deploymentID deployment.ID, policy workspace.AccessPolicy) (deployment.Deployment, error)
 }
 
-type ArtifactRepository interface {
-	ArtifactByDeployment(ctx context.Context, deploymentID deployment.ID) (deployment.Artifact, error)
+type AccessPolicyLoader interface {
+	LoadAccessPolicy(ctx context.Context, deployment deployment.Deployment) (workspace.AccessPolicy, error)
 }
 
 type RuntimeHost interface {
@@ -35,18 +33,18 @@ type preparedDuckLakeSnapshot interface {
 }
 
 type Service struct {
-	repo      Repository
-	runtime   RuntimeHost
-	artifacts ArtifactRepository
-	access    access.WorkspacePolicyReconciler
+	repo     Repository
+	runtime  RuntimeHost
+	policies AccessPolicyLoader
+	access   access.WorkspacePolicyReconciler
 }
 
 func NewService(repo Repository, runtime RuntimeHost) Service {
 	return Service{repo: repo, runtime: runtime}
 }
 
-func NewServiceWithAccess(repo Repository, runtime RuntimeHost, artifacts ArtifactRepository, accessReconciler access.WorkspacePolicyReconciler) Service {
-	return Service{repo: repo, runtime: runtime, artifacts: artifacts, access: accessReconciler}
+func NewServiceWithAccess(repo Repository, runtime RuntimeHost, policies AccessPolicyLoader, accessReconciler access.WorkspacePolicyReconciler) Service {
+	return Service{repo: repo, runtime: runtime, policies: policies, access: accessReconciler}
 }
 
 func (s Service) Activate(ctx context.Context, deploymentID deployment.ID) (deployment.Deployment, error) {
@@ -59,8 +57,8 @@ func (s Service) Activate(ctx context.Context, deploymentID deployment.ID) (depl
 	}
 
 	var policy *workspace.AccessPolicy
-	if s.access != nil && s.artifacts != nil {
-		loaded, err := s.accessPolicy(ctx, current)
+	if s.access != nil && s.policies != nil {
+		loaded, err := s.policies.LoadAccessPolicy(ctx, current)
 		if err != nil {
 			return deployment.Deployment{}, err
 		}
@@ -101,36 +99,4 @@ func (s Service) Activate(ctx context.Context, deploymentID deployment.ID) (depl
 		}
 	}
 	return activated, nil
-}
-
-func (s Service) accessPolicy(ctx context.Context, current deployment.Deployment) (workspace.AccessPolicy, error) {
-	artifact, err := s.artifacts.ArtifactByDeployment(ctx, current.ID)
-	if err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	root, err := os.MkdirTemp("", "libredash-activate-*")
-	if err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	defer os.RemoveAll(root)
-	if err := deploymentfs.ExtractArtifact(artifact.Path, root); err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	compiled, _, err := deploymentfs.LoadCompiledWorkspaceArtifact(root)
-	if err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	if compiled.WorkspaceID != string(current.WorkspaceID) {
-		return workspace.AccessPolicy{}, fmt.Errorf("compiled artifact workspace = %q, want %q", compiled.WorkspaceID, current.WorkspaceID)
-	}
-	if compiled.DeploymentID != string(current.ID) {
-		return workspace.AccessPolicy{}, fmt.Errorf("compiled artifact deployment = %q, want %q", compiled.DeploymentID, current.ID)
-	}
-	if deployment.Environment(compiled.Environment) != deployment.NormalizeEnvironment(current.Environment) {
-		return workspace.AccessPolicy{}, fmt.Errorf("compiled artifact environment = %q, want %q", compiled.Environment, deployment.NormalizeEnvironment(current.Environment))
-	}
-	if err := deploymentfs.ValidateCompiledWorkspaceArtifact(compiled); err != nil {
-		return workspace.AccessPolicy{}, err
-	}
-	return compiled.Definition.Access, nil
 }

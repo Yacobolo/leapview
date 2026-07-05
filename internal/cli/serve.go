@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
-	"github.com/Yacobolo/libredash/internal/agentapp"
-	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
+	"github.com/Yacobolo/libredash/internal/agent"
+	agentsqlite "github.com/Yacobolo/libredash/internal/agent/sqlite"
 	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
-	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/deployment"
@@ -98,7 +98,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		}
 	}
 	deploymentRepo := deploymentsqlite.NewRepository(store.SQLDB())
-	if err := materialize.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalDeployments(ctx, "refresh did not complete"); err != nil {
+	if err := materializesqlite.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalDeployments(ctx, "refresh did not complete"); err != nil {
 		cleanup()
 		return nil, nil, err
 	}
@@ -111,7 +111,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		cleanup()
 		return nil, nil, err
 	}
-	agentRepo := agentappsqlite.NewRepository(store.SQLDB())
+	agentRepo := agentsqlite.NewRepository(store.SQLDB())
 	summaries, err := workspaceRepo.List(ctx)
 	if err != nil {
 		cleanup()
@@ -187,7 +187,7 @@ func deploymentBackedServer(ctx context.Context, cfg config.Config, dataDir stri
 		WorkspaceRepo:       workspaceRepo,
 		AssetCatalog:        assetCatalog,
 		AccessRepo:          accessRepo,
-		Agent:               agentapp.NewService(runtimeMetrics, agentRepo, agentapp.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
+		Agent:               agent.NewService(runtimeMetrics, agentRepo, agent.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
 		Auth:                auth,
 		Reloader:            registry,
 		ArtifactDir:         cfg.ArtifactDir(),

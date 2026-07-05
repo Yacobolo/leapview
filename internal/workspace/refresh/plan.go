@@ -2,10 +2,11 @@ package refresh
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
-	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -52,7 +53,7 @@ func PlanForAsset(definition *workspace.Definition, workspaceID string, asset wo
 		if err != nil {
 			return Plan{}, err
 		}
-		order, err := analyticsduckdb.WorkspaceModelTableDependencyOrder(definition.Models, tableName)
+		order, err := workspaceModelTableDependencyOrder(definition.Models, tableName)
 		if err != nil {
 			return Plan{}, err
 		}
@@ -70,6 +71,90 @@ func PlanForAsset(definition *workspace.Definition, workspaceID string, asset wo
 		}, nil
 	default:
 		return Plan{}, fmt.Errorf("asset type %q cannot be refreshed", asset.Type)
+	}
+}
+
+func workspaceModelTableDependencyOrder(models map[string]*semanticmodel.Model, selectedTable string) ([]string, error) {
+	model, err := physicalWorkspaceModel(models)
+	if err != nil {
+		return nil, err
+	}
+	return materialize.ModelTableDependencyOrder(model, selectedTable)
+}
+
+func physicalWorkspaceModel(models map[string]*semanticmodel.Model) (*semanticmodel.Model, error) {
+	workspaceModel := &semanticmodel.Model{
+		Name:              WorkspaceRefreshModelID,
+		DefaultConnection: "",
+		Connections:       map[string]semanticmodel.Connection{},
+		Sources:           map[string]semanticmodel.Source{},
+		Tables:            map[string]semanticmodel.Table{},
+		Measures:          map[string]semanticmodel.MetricMeasure{},
+	}
+	for modelID, model := range models {
+		if model == nil {
+			return nil, fmt.Errorf("semantic model %q is required", modelID)
+		}
+		if workspaceModel.DefaultConnection == "" {
+			workspaceModel.DefaultConnection = model.DefaultConnection
+		}
+		for name, connection := range model.Connections {
+			existing, ok := workspaceModel.Connections[name]
+			if ok && !reflect.DeepEqual(existing, connection) {
+				return nil, fmt.Errorf("semantic model %q connection %q conflicts with another workspace model", modelID, name)
+			}
+			workspaceModel.Connections[name] = connection
+		}
+		for name, source := range model.Sources {
+			existing, ok := workspaceModel.Sources[name]
+			if ok && !reflect.DeepEqual(sourcePhysicalSignature(existing), sourcePhysicalSignature(source)) {
+				return nil, fmt.Errorf("semantic model %q source %q conflicts with another workspace model", modelID, name)
+			}
+			workspaceModel.Sources[name] = source
+		}
+		for name, table := range model.Tables {
+			existing, ok := workspaceModel.Tables[name]
+			if ok && !reflect.DeepEqual(tablePhysicalSignature(existing), tablePhysicalSignature(table)) {
+				return nil, fmt.Errorf("semantic model %q model table %q conflicts with another workspace model", modelID, name)
+			}
+			workspaceModel.Tables[name] = table
+		}
+	}
+	return workspaceModel, nil
+}
+
+func sourcePhysicalSignature(source semanticmodel.Source) semanticmodel.Source {
+	source.Description = ""
+	source.Fields = nil
+	source.Schema = semanticmodel.TableSchema{}
+	return source
+}
+
+type tablePhysicalSignatureValue struct {
+	Kind               string
+	Source             string
+	Sources            []string
+	SQL                string
+	Transform          semanticmodel.Transform
+	Columns            map[string]semanticmodel.ModelColumn
+	PrimaryKey         string
+	Grain              string
+	SourceDependencies []string
+	ModelDependencies  []string
+}
+
+func tablePhysicalSignature(table semanticmodel.Table) tablePhysicalSignatureValue {
+	return tablePhysicalSignatureValue{
+		Kind:               table.Kind,
+		Source:             table.Source,
+		Sources:            append([]string{}, table.Sources...),
+		SQL:                table.SQL,
+		Transform:          table.Transform,
+		Columns:            table.Columns,
+		PrimaryKey:         table.PrimaryKey,
+		Grain:              table.Grain,
+		SourceDependencies: append([]string{}, table.SourceDependencies...),
+		ModelDependencies:  append([]string{}, table.ModelDependencies...),
 	}
 }
 

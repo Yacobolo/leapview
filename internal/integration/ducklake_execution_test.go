@@ -18,6 +18,7 @@ import (
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
+	analyticsmaterializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/app"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -675,7 +676,7 @@ func TestDurableRefreshQueueResumesAfterStartup(t *testing.T) {
 func TestExpiredRefreshJobLeaseIsReclaimed(t *testing.T) {
 	h := newDuckLakeHarness(t)
 	ctx := context.Background()
-	repo := analyticsmaterialize.NewSQLRunRepository(h.store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(h.store.SQLDB())
 	run := h.createQueuedWorkspaceAssetRefreshRun(t, analyticsmaterialize.TargetModelTable, "sales.orders", "sales")
 	job, ok, err := repo.ClaimNextExecutableJob(ctx, "stale-worker", time.Second)
 	if err != nil || !ok {
@@ -780,7 +781,7 @@ func (h *duckLakeHarness) createQueuedWorkspaceAssetRefreshRun(t *testing.T, tar
 	}, candidateArtifact); err != nil {
 		t.Fatalf("save refresh candidate deployment: %v", err)
 	}
-	repo := analyticsmaterialize.NewSQLRunRepository(h.store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(h.store.SQLDB())
 	run, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
 		WorkspaceID:  "sales",
 		ModelID:      modelID,
@@ -891,7 +892,7 @@ func (h *duckLakeHarness) activeDeploymentID(t *testing.T) deployment.ID {
 func (h *duckLakeHarness) waitLatestRun(t *testing.T, targetType, targetID, status string) analyticsmaterialize.RunRecord {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)
-	repo := analyticsmaterialize.NewSQLRunRepository(h.store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(h.store.SQLDB())
 	for time.Now().Before(deadline) {
 		runs, err := repo.ListTargetRuns(context.Background(), "sales", targetType, targetID, analyticsmaterialize.RunPage{Limit: 1})
 		if err != nil {
@@ -909,7 +910,7 @@ func (h *duckLakeHarness) waitLatestRun(t *testing.T, targetType, targetID, stat
 func (h *duckLakeHarness) waitRun(t *testing.T, runID, status string) analyticsmaterialize.RunRecord {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)
-	repo := analyticsmaterialize.NewSQLRunRepository(h.store.SQLDB())
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(h.store.SQLDB())
 	for time.Now().Before(deadline) {
 		run, err := repo.GetRun(context.Background(), "sales", runID)
 		if err != nil {

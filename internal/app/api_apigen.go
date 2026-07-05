@@ -104,35 +104,35 @@ func (w *apiGenResponseBuffer) normalizedBody(status int) []byte {
 }
 
 func (a apiGenAdapter) GetCurrentPrincipal(w http.ResponseWriter, r *http.Request) {
-	a.server.apiGetCurrentPrincipal(w, r)
+	a.server.accessHTTPHandler().GetCurrentPrincipal(w, r)
 }
 
 func (a apiGenAdapter) ListCurrentPermissions(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentPermissionsParams) {
-	a.server.apiListCurrentPermissions(w, r)
+	a.server.accessHTTPHandler().ListCurrentPermissions(w, r)
 }
 
 func (a apiGenAdapter) ListCurrentAPITokens(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentAPITokensParams) {
-	a.server.apiListCurrentAPITokens(w, r)
+	a.server.accessHTTPHandler().ListCurrentAPITokens(w, r)
 }
 
 func (a apiGenAdapter) CreateCurrentAPIToken(w http.ResponseWriter, r *http.Request) {
-	a.server.apiCreateCurrentAPIToken(w, r)
+	a.server.accessHTTPHandler().CreateCurrentAPIToken(w, r)
 }
 
 func (a apiGenAdapter) RevokeCurrentAPIToken(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.apiRevokeCurrentAPIToken(w, r)
+	a.server.accessHTTPHandler().RevokeCurrentAPIToken(w, r)
 }
 
 func (a apiGenAdapter) ListCurrentSessions(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentSessionsParams) {
-	a.server.apiListCurrentSessions(w, r)
+	a.server.accessHTTPHandler().ListCurrentSessions(w, r)
 }
 
 func (a apiGenAdapter) RevokeCurrentSession(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.apiRevokeCurrentSession(w, r)
+	a.server.accessHTTPHandler().RevokeCurrentSession(w, r)
 }
 
 func (a apiGenAdapter) ListWorkspaces(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListWorkspacesParams) {
-	a.server.apiWorkspaces(w, r)
+	a.server.workspaceHTTPHandler().Workspaces(w, r)
 }
 
 func (a apiGenAdapter) SearchWorkspace(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenSearchWorkspaceParams) {
@@ -140,249 +140,249 @@ func (a apiGenAdapter) SearchWorkspace(w http.ResponseWriter, r *http.Request, _
 }
 
 func (a apiGenAdapter) ListWorkspaceAssets(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceAssetsParams) {
-	a.server.apiWorkspaceAssets(w, r)
+	a.server.workspaceHTTPHandler().Assets(w, r)
 }
 
 func (a apiGenAdapter) GetWorkspaceActiveDeploymentGraph(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenGetWorkspaceActiveDeploymentGraphParams) {
-	a.server.apiWorkspaceActiveDeploymentGraph(w, r)
+	a.server.workspaceHTTPHandler().ActiveDeploymentGraph(w, r)
 }
 
 func (a apiGenAdapter) GetWorkspaceAsset(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.apiWorkspaceAsset(w, r)
+	a.server.workspaceHTTPHandler().Asset(w, r)
 }
 
 func (a apiGenAdapter) GetWorkspaceAssetLineage(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.apiWorkspaceAssetLineage(w, r)
+	a.server.workspaceHTTPHandler().AssetLineage(w, r)
 }
 
 func (a apiGenAdapter) ListWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceAssetEdgesParams) {
-	a.server.apiWorkspaceAssetEdges(w, r)
+	a.server.workspaceHTTPHandler().AssetEdges(w, r)
 }
 
 func (a apiGenAdapter) ListDashboards(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDashboardsParams) {
-	a.server.listDashboards(w, r)
+	a.server.dashboardHTTP().ListDashboards(w, r)
 }
 
 func (a apiGenAdapter) GetDashboard(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.getDashboard(w, r)
+	a.server.dashboardHTTP().GetDashboard(w, r)
 }
 
 func (a apiGenAdapter) ListDashboardComponents(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenListDashboardComponentsParams) {
-	a.server.listDashboardComponents(w, r)
+	a.server.dashboardHTTP().ListDashboardComponents(w, r)
 }
 
 func (a apiGenAdapter) GetDashboardVisual(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
-	a.server.getDashboardVisual(w, r)
+	a.server.dashboardHTTP().GetDashboardVisual(w, r)
 }
 
 func (a apiGenAdapter) ListSemanticDatasets(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListSemanticDatasetsParams) {
-	a.server.listSemanticDatasets(w, r)
+	a.server.semanticQueryHTTP().ListSemanticDatasets(w, r)
 }
 
 func (a apiGenAdapter) GetSemanticDataset(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.getSemanticDataset(w, r)
+	a.server.semanticQueryHTTP().GetSemanticDataset(w, r)
 }
 
 func (a apiGenAdapter) ListSemanticFields(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenListSemanticFieldsParams) {
-	a.server.listSemanticFields(w, r)
+	a.server.semanticQueryHTTP().ListSemanticFields(w, r)
 }
 
 func (a apiGenAdapter) QuerySemanticDataset(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.querySemanticDataset(w, r)
+	a.server.semanticQueryHTTP().QuerySemanticDataset(w, r)
 }
 
 func (a apiGenAdapter) PreviewSemanticDataset(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.previewSemanticDataset(w, r)
+	a.server.semanticQueryHTTP().PreviewSemanticDataset(w, r)
 }
 
 func (a apiGenAdapter) ExplainSemanticQuery(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.explainSemanticQuery(w, r)
+	a.server.semanticQueryHTTP().ExplainSemanticQuery(w, r)
 }
 
 func (a apiGenAdapter) ExplainSemanticPreview(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.explainSemanticPreview(w, r)
+	a.server.semanticQueryHTTP().ExplainSemanticPreview(w, r)
 }
 
 func (a apiGenAdapter) QueryDashboardPage(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.queryDashboardPage(w, r)
+	a.server.dashboardHTTP().QueryDashboardPage(w, r)
 }
 
 func (a apiGenAdapter) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
-	a.server.queryDashboardVisualData(w, r)
+	a.server.dashboardHTTP().QueryDashboardVisualData(w, r)
 }
 
 func (a apiGenAdapter) QueryDashboardTable(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.queryDashboardTable(w, r)
+	a.server.dashboardHTTP().QueryDashboardTable(w, r)
 }
 
 func (a apiGenAdapter) QueryDashboardTableData(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
-	a.server.queryDashboardTableData(w, r)
+	a.server.dashboardHTTP().QueryDashboardTableData(w, r)
 }
 
 func (a apiGenAdapter) ListDashboardFilterOptions(w http.ResponseWriter, r *http.Request, _, _, _, _ string, _ apigenapi.GenListDashboardFilterOptionsParams) {
-	a.server.listDashboardFilterOptions(w, r)
+	a.server.dashboardHTTP().ListDashboardFilterOptions(w, r)
 }
 
 func (a apiGenAdapter) ListDeployments(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDeploymentsParams) {
-	a.server.listDeployments(w, r)
+	a.server.deploymentHTTPHandler().List(w, r)
 }
 
 func (a apiGenAdapter) CreateDeployment(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.createDeployment(w, r)
+	a.server.deploymentHTTPHandler().Create(w, r)
 }
 
 func (a apiGenAdapter) GetDeployment(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenGetDeploymentParams) {
-	a.server.getDeployment(w, r)
+	a.server.deploymentHTTPHandler().Get(w, r)
 }
 
 func (a apiGenAdapter) UploadDeploymentArtifact(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenUploadDeploymentArtifactHeaders) {
-	a.server.uploadDeploymentArtifact(w, r)
+	a.server.deploymentHTTPHandler().UploadArtifact(w, r)
 }
 
 func (a apiGenAdapter) ActivateDeployment(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenActivateDeploymentParams) {
-	a.server.activateDeployment(w, r)
+	a.server.deploymentHTTPHandler().Activate(w, r)
 }
 
 func (a apiGenAdapter) ValidateDeployment(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenValidateDeploymentParams) {
-	a.server.validateDeployment(w, r)
+	a.server.deploymentHTTPHandler().Validate(w, r)
 }
 
 func (a apiGenAdapter) CreateMaterializationRun(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.createMaterializationRun(w, r)
+	a.server.materializationHTTP().CreateRun(w, r)
 }
 
 func (a apiGenAdapter) ListMaterializationRuns(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListMaterializationRunsParams) {
-	a.server.listMaterializationRuns(w, r)
+	a.server.materializationHTTP().ListRuns(w, r)
 }
 
 func (a apiGenAdapter) GetMaterializationRun(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.getMaterializationRun(w, r)
+	a.server.materializationHTTP().GetRun(w, r)
 }
 
 func (a apiGenAdapter) ListAgentConversations(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAgentConversationsParams) {
-	a.server.listAgentConversations(w, r)
+	a.server.agentHTTPHandler().ListConversations(w, r)
 }
 
 func (a apiGenAdapter) CreateAgentConversation(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.createAgentConversation(w, r)
+	a.server.agentHTTPHandler().CreateConversation(w, r)
 }
 
 func (a apiGenAdapter) GetAgentConversation(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.getAgentConversation(w, r)
+	a.server.agentHTTPHandler().GetConversation(w, r)
 }
 
 func (a apiGenAdapter) UpdateAgentConversation(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.updateAgentConversation(w, r)
+	a.server.agentHTTPHandler().UpdateConversation(w, r)
 }
 
 func (a apiGenAdapter) ArchiveAgentConversation(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.archiveAgentConversation(w, r)
+	a.server.agentHTTPHandler().ArchiveConversation(w, r)
 }
 
 func (a apiGenAdapter) ListAgentMessages(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListAgentMessagesParams) {
-	a.server.listAgentMessages(w, r)
+	a.server.agentHTTPHandler().ListMessages(w, r)
 }
 
 func (a apiGenAdapter) CreateAgentTurn(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.createAgentTurn(w, r)
+	a.server.agentHTTPHandler().CreateTurn(w, r)
 }
 
 func (a apiGenAdapter) ListAgentRuns(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListAgentRunsParams) {
-	a.server.listAgentRuns(w, r)
+	a.server.agentHTTPHandler().ListRuns(w, r)
 }
 
 func (a apiGenAdapter) GetAgentRun(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.getAgentRun(w, r)
+	a.server.agentHTTPHandler().GetRun(w, r)
 }
 
 func (a apiGenAdapter) ListAgentEvents(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenListAgentEventsParams) {
-	a.server.listAgentEvents(w, r)
+	a.server.agentHTTPHandler().ListEvents(w, r)
 }
 
 func (a apiGenAdapter) GetAdminAgentConfig(w http.ResponseWriter, r *http.Request) {
-	a.server.getAdminAgentConfig(w, r)
+	a.server.agentHTTPHandler().GetAdminConfig(w, r)
 }
 
 func (a apiGenAdapter) UpdateAdminAgentConfig(w http.ResponseWriter, r *http.Request) {
-	a.server.updateAdminAgentConfig(w, r)
+	a.server.agentHTTPHandler().UpdateAdminConfig(w, r)
 }
 
 func (a apiGenAdapter) ListPrincipals(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListPrincipalsParams) {
-	a.server.apiListPrincipals(w, r)
+	a.server.accessHTTPHandler().ListPrincipals(w, r)
 }
 
 func (a apiGenAdapter) GetPrincipal(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.apiGetPrincipal(w, r)
+	a.server.accessHTTPHandler().GetPrincipal(w, r)
 }
 
 func (a apiGenAdapter) UpdatePrincipal(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.apiUpdatePrincipal(w, r)
+	a.server.accessHTTPHandler().UpdatePrincipal(w, r)
 }
 
 func (a apiGenAdapter) ListWorkspaceRoles(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceRolesParams) {
-	a.server.apiWorkspaceRoles(w, r)
+	a.server.accessHTTPHandler().ListWorkspaceRoles(w, r)
 }
 
 func (a apiGenAdapter) ListSemanticModels(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListSemanticModelsParams) {
-	a.server.listSemanticModels(w, r)
+	a.server.semanticQueryHTTP().ListSemanticModels(w, r)
 }
 
 func (a apiGenAdapter) GetSemanticModel(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.getSemanticModel(w, r)
+	a.server.semanticQueryHTTP().GetSemanticModel(w, r)
 }
 
 func (a apiGenAdapter) ListGroups(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListGroupsParams) {
-	a.server.apiListGroups(w, r)
+	a.server.accessHTTPHandler().ListGroups(w, r)
 }
 
 func (a apiGenAdapter) CreateGroup(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.apiCreateGroup(w, r)
+	a.server.accessHTTPHandler().CreateGroup(w, r)
 }
 
 func (a apiGenAdapter) GetGroup(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.apiGetGroup(w, r)
+	a.server.accessHTTPHandler().GetGroup(w, r)
 }
 
 func (a apiGenAdapter) UpdateGroup(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.apiUpdateGroup(w, r)
+	a.server.accessHTTPHandler().UpdateGroup(w, r)
 }
 
 func (a apiGenAdapter) DeleteGroup(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.apiDeleteGroup(w, r)
+	a.server.accessHTTPHandler().DeleteGroup(w, r)
 }
 
 func (a apiGenAdapter) ListGroupMembers(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListGroupMembersParams) {
-	a.server.apiListGroupMembers(w, r)
+	a.server.accessHTTPHandler().ListGroupMembers(w, r)
 }
 
 func (a apiGenAdapter) AddGroupMember(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.apiAddGroupMember(w, r)
+	a.server.accessHTTPHandler().AddGroupMember(w, r)
 }
 
 func (a apiGenAdapter) RemoveGroupMember(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.server.apiRemoveGroupMember(w, r)
+	a.server.accessHTTPHandler().RemoveGroupMember(w, r)
 }
 
 func (a apiGenAdapter) ListRoleBindings(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListRoleBindingsParams) {
-	a.server.apiRoleBindings(w, r)
+	a.server.accessHTTPHandler().ListRoleBindings(w, r)
 }
 
 func (a apiGenAdapter) CreateRoleBinding(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.apiCreateRoleBinding(w, r)
+	a.server.accessHTTPHandler().CreateRoleBinding(w, r)
 }
 
 func (a apiGenAdapter) UpdateRoleBinding(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.apiUpdateRoleBinding(w, r)
+	a.server.accessHTTPHandler().UpdateRoleBinding(w, r)
 }
 
 func (a apiGenAdapter) DeleteRoleBinding(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.server.apiDeleteRoleBinding(w, r)
+	a.server.accessHTTPHandler().DeleteRoleBinding(w, r)
 }
 
 func (a apiGenAdapter) ListAuditEvents(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAuditEventsParams) {
-	a.server.apiListAuditEvents(w, r)
+	a.server.accessHTTPHandler().ListAuditEvents(w, r)
 }
 
 func (a apiGenAdapter) ListQueryEvents(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListQueryEventsParams) {
-	a.server.apiListQueryEvents(w, r)
+	a.server.accessHTTPHandler().ListQueryEvents(w, r)
 }

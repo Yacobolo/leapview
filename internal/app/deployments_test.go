@@ -16,8 +16,8 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
-	"github.com/Yacobolo/libredash/internal/agentapp"
-	agentappsqlite "github.com/Yacobolo/libredash/internal/agentapp/sqlite"
+	"github.com/Yacobolo/libredash/internal/agent"
+	agentsqlite "github.com/Yacobolo/libredash/internal/agent/sqlite"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/deployment"
@@ -1713,8 +1713,8 @@ func testAccessRepository(store *platform.Store) access.Repository {
 	return accesssqlite.NewRepository(store.SQLDB())
 }
 
-func testAgentRepository(store *platform.Store) agentapp.Repository {
-	return agentappsqlite.NewRepository(store.SQLDB())
+func testAgentRepository(store *platform.Store) agent.Repository {
+	return agentsqlite.NewRepository(store.SQLDB())
 }
 
 func testPrincipal(t *testing.T, ctx context.Context, store *platform.Store, email, displayName, role string) access.Principal {
