@@ -2,54 +2,56 @@ package pagestream
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/starfederation/datastar-go/datastar"
 )
 
-type StreamSpec struct {
-	Broker          *Broker
-	StreamID        string
-	InitialPatches  []Patch
-	InitialSnapshot func(context.Context) []Patch
+var errMissingForwardTarget = errors.New("pagestream: broker and streamID are required")
+
+// SignalStream is one long-lived Datastar SSE response that emits signal
+// patches.
+type SignalStream struct {
+	sse *datastar.ServerSentEventGenerator
 }
 
-func ServeStream(w http.ResponseWriter, r *http.Request, spec StreamSpec) {
-	sse := datastar.NewSSE(w, r)
-	patchAll := func(patches []Patch) bool {
-		for _, patch := range patches {
-			if len(patch) == 0 {
-				continue
-			}
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return false
-			}
-		}
-		return true
+// NewSignalStream opens a Datastar SSE signal stream for the request.
+func NewSignalStream(w http.ResponseWriter, r *http.Request) SignalStream {
+	return SignalStream{sse: datastar.NewSSE(w, r)}
+}
+
+// Patch emits one Datastar patch-signals event. Empty patches are ignored.
+func (s SignalStream) Patch(patch SignalPatch) error {
+	if len(patch) == 0 {
+		return nil
 	}
-	if !patchAll(spec.InitialPatches) {
-		return
+	return s.sse.MarshalAndPatchSignals(patch)
+}
+
+// Forward relays signal patches published to streamID until ctx is canceled.
+func (s SignalStream) Forward(ctx context.Context, broker *Broker, streamID string) error {
+	if broker == nil || streamID == "" {
+		return errMissingForwardTarget
 	}
-	if spec.InitialSnapshot != nil && !patchAll(spec.InitialSnapshot(r.Context())) {
-		return
-	}
-	if spec.Broker == nil || spec.StreamID == "" {
-		<-r.Context().Done()
-		return
-	}
-	updates, unsubscribe := spec.Broker.Subscribe(spec.StreamID)
+	updates, unsubscribe := broker.Subscribe(streamID)
 	defer unsubscribe()
 	for {
 		select {
-		case <-r.Context().Done():
-			return
+		case <-ctx.Done():
+			return nil
 		case patch, ok := <-updates:
 			if !ok {
-				return
+				return nil
 			}
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
+			if err := s.Patch(patch); err != nil {
+				return err
 			}
 		}
 	}
+}
+
+// Wait keeps a no-op stream open until ctx is canceled.
+func (s SignalStream) Wait(ctx context.Context) {
+	<-ctx.Done()
 }

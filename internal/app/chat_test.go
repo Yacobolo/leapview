@@ -656,7 +656,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 		server.Routes().ServeHTTP(rec, req)
 	}()
 	waitForBrokerSubscription(t, server, key)
-	server.broker.Publish(key, pagestream.Patch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
+	server.broker.Publish(key, pagestream.SignalPatch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
 	time.Sleep(25 * time.Millisecond)
 	cancel()
 	<-done

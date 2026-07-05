@@ -911,9 +911,13 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	if len(patches) == 0 {
 		t.Fatalf("body does not contain Datastar patch signal event:\n%s", body)
 	}
+	firstStatus, ok := patches[0]["status"].(map[string]any)
+	if !ok || firstStatus["loading"] != true {
+		t.Fatalf("first patch status = %#v, want loading=true; patches=%#v", firstStatus, patches)
+	}
 	ssetest.RequirePatchSignal(t, body, func(patch map[string]any) bool {
 		status, ok := patch["status"].(map[string]any)
-		return ok && status["loading"] == true
+		return ok && status["loading"] == false
 	})
 	ssetest.RequirePatchSignal(t, body, func(patch map[string]any) bool {
 		filters, ok := patch["filters"].(map[string]any)
@@ -1590,8 +1594,8 @@ func TestWorkspaceSemanticModelRefreshCommandPersistsTableChildRuns(t *testing.T
 	}
 }
 
-func drainPatches(ch <-chan pagestream.Patch) []pagestream.Patch {
-	var patches []pagestream.Patch
+func drainPatches(ch <-chan pagestream.SignalPatch) []pagestream.SignalPatch {
+	var patches []pagestream.SignalPatch
 	for {
 		select {
 		case patch := <-ch:
@@ -1602,7 +1606,7 @@ func drainPatches(ch <-chan pagestream.Patch) []pagestream.Patch {
 	}
 }
 
-func patchesContainAssetRefreshStatus(patches []pagestream.Patch, status string) bool {
+func patchesContainAssetRefreshStatus(patches []pagestream.SignalPatch, status string) bool {
 	for _, patch := range patches {
 		refresh, ok := patch["assetRefresh"].(map[string]any)
 		if ok && refresh["status"] == status {
@@ -1621,7 +1625,7 @@ func patchesContainAssetRefreshStatus(patches []pagestream.Patch, status string)
 	return false
 }
 
-func anyPatchesString(patches []pagestream.Patch) string {
+func anyPatchesString(patches []pagestream.SignalPatch) string {
 	bytes, _ := json.Marshal(patches)
 	return string(bytes)
 }

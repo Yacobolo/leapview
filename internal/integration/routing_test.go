@@ -11,9 +11,9 @@ func TestCommandPatchesAreScopedToClientAndPage(t *testing.T) {
 	target := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("route-target", "overview"))
 	otherClient := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("route-other", "overview"))
 	otherPage := h.openUpdatesStream(t, "executive-sales", "missing", runtimeSignals("route-target", "missing"))
-	drainInitialSnapshot(t, target)
-	drainInitialSnapshot(t, otherClient)
-	drainInitialSnapshot(t, otherPage)
+	drainInitialStreamPatches(t, target)
+	drainInitialStreamPatches(t, otherClient)
+	drainInitialStreamPatches(t, otherPage)
 
 	status := h.postCommand(t, "/commands/select", mergeSignals(runtimeSignals("route-target", "overview"), map[string]any{
 		"interactionCommand": pointSelectionCommand("orders", "orders.status", "delivered"),

@@ -2,23 +2,25 @@ package pagestream
 
 import "sync"
 
-type Patch map[string]any
+// SignalPatch is a Datastar signal patch. pagestream intentionally streams
+// signal patches only; it does not transport element morphs or scripts.
+type SignalPatch map[string]any
 
 type Broker struct {
 	mu      sync.Mutex
-	clients map[string]map[chan Patch]struct{}
+	clients map[string]map[chan SignalPatch]struct{}
 }
 
 func NewBroker() *Broker {
-	return &Broker{clients: map[string]map[chan Patch]struct{}{}}
+	return &Broker{clients: map[string]map[chan SignalPatch]struct{}{}}
 }
 
-func (b *Broker) Subscribe(streamID string) (<-chan Patch, func()) {
-	ch := make(chan Patch, 8)
+func (b *Broker) Subscribe(streamID string) (<-chan SignalPatch, func()) {
+	ch := make(chan SignalPatch, 8)
 
 	b.mu.Lock()
 	if b.clients[streamID] == nil {
-		b.clients[streamID] = map[chan Patch]struct{}{}
+		b.clients[streamID] = map[chan SignalPatch]struct{}{}
 	}
 	b.clients[streamID][ch] = struct{}{}
 	b.mu.Unlock()
@@ -34,7 +36,7 @@ func (b *Broker) Subscribe(streamID string) (<-chan Patch, func()) {
 	}
 }
 
-func (b *Broker) Publish(streamID string, patch Patch) {
+func (b *Broker) Publish(streamID string, patch SignalPatch) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 

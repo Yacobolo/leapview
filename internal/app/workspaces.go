@@ -241,11 +241,11 @@ func (s *Server) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pagestream.ServeStream(w, r, pagestream.StreamSpec{
-		Broker:         s.broker,
-		StreamID:       workspaceAssetStreamID(workspaceID, assetID, section),
-		InitialPatches: []pagestream.Patch{s.workspaceAssetRefreshPatch(r, workspaceID, selected, assets, edges, section)},
-	})
+	updates := pagestream.NewSignalStream(w, r)
+	if err := updates.Patch(s.workspaceAssetRefreshPatch(r, workspaceID, selected, assets, edges, section)); err != nil {
+		return
+	}
+	_ = updates.Forward(r.Context(), s.broker, workspaceAssetStreamID(workspaceID, assetID, section))
 }
 
 func (s *Server) refreshWorkspaceAssetWithPatches(r *http.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {

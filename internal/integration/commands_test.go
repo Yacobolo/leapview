@@ -113,7 +113,7 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals(clientIDFromSignals(tt.signals), "overview"))
-			drainInitialSnapshot(t, stream)
+			drainInitialStreamPatches(t, stream)
 
 			if got := h.postCommand(t, tt.path, tt.signals); got != http.StatusNoContent {
 				t.Fatalf("status = %d, want %d", got, http.StatusNoContent)
@@ -127,7 +127,7 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 func TestTableWindowCommandPublishesOnlyRequestedTablePatch(t *testing.T) {
 	h := newHarness(t)
 	stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("cmd-table", "overview"))
-	drainInitialSnapshot(t, stream)
+	drainInitialStreamPatches(t, stream)
 
 	status := h.postCommand(t, "/commands/table-window", mergeSignals(runtimeSignals("cmd-table", "overview"), map[string]any{
 		"tableCommand": tableCommand("orders_table", "a", 0, 1, 7, 0),
@@ -149,7 +149,7 @@ func TestTableWindowCommandDoesNotPublishCanceledTablePatch(t *testing.T) {
 		return canceledTableWindowMetrics{integrationMetrics: metrics}
 	}))
 	stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("cmd-table-canceled", "overview"))
-	drainInitialSnapshot(t, stream)
+	drainInitialStreamPatches(t, stream)
 
 	status := h.postCommand(t, "/commands/table-window", mergeSignals(runtimeSignals("cmd-table-canceled", "overview"), map[string]any{
 		"tableCommand": tableCommand("orders_table", "a", 0, 1, 8, 0),
@@ -164,7 +164,7 @@ func TestTableWindowCommandDoesNotPublishCanceledTablePatch(t *testing.T) {
 func TestRefreshMaterializationsCommandPublishesErrorPatch(t *testing.T) {
 	h := newHarness(t, withOlistFixture(func(t *testing.T, dir string) {}))
 	stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("cmd-refresh-error", "overview"))
-	drainInitialSnapshot(t, stream)
+	drainInitialStreamPatches(t, stream)
 
 	signals := runtimeSignals("cmd-refresh-error", "overview")
 	runtime := signals["runtime"].(map[string]any)
@@ -211,7 +211,7 @@ func (m canceledTableWindowMetrics) QueryTablePage(_ context.Context, _ string, 
 	return dashboard.EmptyTable(request.WithDefaults(), context.Canceled), nil
 }
 
-func drainInitialSnapshot(t *testing.T, stream *streamClient) []map[string]any {
+func drainInitialStreamPatches(t *testing.T, stream *streamClient) []map[string]any {
 	t.Helper()
 	patches := []map[string]any{}
 	for len(patches) < 6 {

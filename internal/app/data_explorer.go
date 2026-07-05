@@ -54,7 +54,8 @@ func (s *Server) workspaceDataExplorerRedirect(w http.ResponseWriter, r *http.Re
 
 func (s *Server) dataExplorerUpdates(w http.ResponseWriter, r *http.Request) {
 	clientID := pagestream.EnsureClientID(w, r)
-	pagestream.ServeStream(w, r, pagestream.StreamSpec{Broker: s.broker, StreamID: dataExplorerStreamID(clientID)})
+	updates := pagestream.NewSignalStream(w, r)
+	_ = updates.Forward(r.Context(), s.broker, dataExplorerStreamID(clientID))
 }
 
 func (s *Server) dataExplorerCommand(w http.ResponseWriter, r *http.Request) {

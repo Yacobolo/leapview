@@ -13,7 +13,7 @@ func TestBrokerPublishSubscribeAndUnsubscribe(t *testing.T) {
 		t.Fatalf("subscriber count = %d, want 1", got)
 	}
 
-	broker.Publish("client:page", Patch{"status": "ready"})
+	broker.Publish("client:page", SignalPatch{"status": "ready"})
 	select {
 	case patch := <-updates:
 		if patch["status"] != "ready" {
@@ -38,7 +38,7 @@ func TestBrokerPublishDoesNotBlockWhenSubscriberChannelIsFull(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := 0; i < 32; i++ {
-			broker.Publish("client:page", Patch{"seq": i})
+			broker.Publish("client:page", SignalPatch{"seq": i})
 		}
 	}()
 

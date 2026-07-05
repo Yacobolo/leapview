@@ -248,21 +248,19 @@ func (s *Server) chatUpdates(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	initialPatches := []pagestream.Patch{}
+	updates := pagestream.NewSignalStream(w, r)
 	signals := chatTurnCommandSignals{}
 	if err := pagestream.ReadSignals(r, &signals); err == nil {
 		activeID := strings.TrimSpace(signals.Agent.ActiveConversationID)
 		if activeID != "" {
 			if state, stateErr := s.agent.ConversationTranscriptState(r.Context(), scope, activeID); stateErr == nil {
-				initialPatches = append(initialPatches, chatSignalPatch(s.chatSignalWith(r.Context(), scope, activeID, state.Transcript, state.Artifacts, "", s.agent.ConversationRunning(activeID))))
+				if err := updates.Patch(chatSignalPatch(s.chatSignalWith(r.Context(), scope, activeID, state.Transcript, state.Artifacts, "", s.agent.ConversationRunning(activeID)))); err != nil {
+					return
+				}
 			}
 		}
 	}
-	pagestream.ServeStream(w, r, pagestream.StreamSpec{
-		Broker:         s.broker,
-		StreamID:       chatStreamID(scope, chatClientID(r)),
-		InitialPatches: initialPatches,
-	})
+	_ = updates.Forward(r.Context(), s.broker, chatStreamID(scope, chatClientID(r)))
 }
 
 func (s *Server) chatService(w http.ResponseWriter, r *http.Request) (*agentapp.Service, agentapp.Scope, bool) {

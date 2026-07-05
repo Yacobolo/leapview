@@ -91,7 +91,8 @@ func (s *Server) adminStorageData(r interface{ Context() context.Context }) ui.A
 
 func (s *Server) adminStorageUpdates(w http.ResponseWriter, r *http.Request) {
 	clientID := pagestream.EnsureClientID(w, r)
-	pagestream.ServeStream(w, r, pagestream.StreamSpec{Broker: s.broker, StreamID: adminStorageStreamID(clientID)})
+	updates := pagestream.NewSignalStream(w, r)
+	_ = updates.Forward(r.Context(), s.broker, adminStorageStreamID(clientID))
 }
 
 func (s *Server) adminStorageSelectTable(w http.ResponseWriter, r *http.Request) {

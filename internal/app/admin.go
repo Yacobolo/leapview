@@ -202,7 +202,8 @@ func (s *Server) adminQueryHistoryData(r *http.Request, filters uisignals.AdminQ
 
 func (s *Server) adminQueryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 	clientID := pagestream.EnsureClientID(w, r)
-	pagestream.ServeStream(w, r, pagestream.StreamSpec{Broker: s.broker, StreamID: adminQueryHistoryStreamID(clientID)})
+	updates := pagestream.NewSignalStream(w, r)
+	_ = updates.Forward(r.Context(), s.broker, adminQueryHistoryStreamID(clientID))
 }
 
 func (s *Server) adminQueryHistoryCommand(w http.ResponseWriter, r *http.Request) {

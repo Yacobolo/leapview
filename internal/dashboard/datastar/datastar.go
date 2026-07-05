@@ -43,8 +43,8 @@ func ClientStreamID(r *http.Request, signals dashboard.Signals, dashboardID, pag
 	return pagestream.ClientIDFromRequest(r, signals.Runtime.ClientID) + ":" + dashboardID + ":" + pageID
 }
 
-func DashboardPatch(patch dashboard.Patch) pagestream.Patch {
-	return pagestream.Patch{
+func DashboardPatch(patch dashboard.Patch) pagestream.SignalPatch {
+	return pagestream.SignalPatch{
 		"filters":       patch.Filters,
 		"filterOptions": patch.FilterOptions,
 		"status":        patch.Status,
@@ -52,20 +52,20 @@ func DashboardPatch(patch dashboard.Patch) pagestream.Patch {
 	}
 }
 
-func TablePatch(name string, table dashboard.Table) pagestream.Patch {
-	return pagestream.Patch{
+func TablePatch(name string, table dashboard.Table) pagestream.SignalPatch {
+	return pagestream.SignalPatch{
 		"tables": map[string]dashboard.Table{
 			name: table,
 		},
 	}
 }
 
-func TablesPatch(tables map[string]dashboard.Table) pagestream.Patch {
-	return pagestream.Patch{"tables": tables}
+func TablesPatch(tables map[string]dashboard.Table) pagestream.SignalPatch {
+	return pagestream.SignalPatch{"tables": tables}
 }
 
-func LoadingPatch(dataDir string) pagestream.Patch {
-	return pagestream.Patch{
+func LoadingPatch(dataDir string) pagestream.SignalPatch {
+	return pagestream.SignalPatch{
 		"status": map[string]any{
 			"loading":       true,
 			"error":         "",
@@ -74,7 +74,7 @@ func LoadingPatch(dataDir string) pagestream.Patch {
 	}
 }
 
-func CommandEventPatch(event command.Event) pagestream.Patch {
+func CommandEventPatch(event command.Event) pagestream.SignalPatch {
 	switch event.Type {
 	case command.EventLoading:
 		return LoadingPatch(event.DataDir)
@@ -85,12 +85,12 @@ func CommandEventPatch(event command.Event) pagestream.Patch {
 	case command.EventTable:
 		return TablePatch(event.TableName, event.Table)
 	default:
-		return pagestream.Patch{}
+		return pagestream.SignalPatch{}
 	}
 }
 
-func SnapshotPatches(snapshot dashboardstream.Snapshot) []pagestream.Patch {
-	return []pagestream.Patch{
+func SnapshotPatches(snapshot dashboardstream.Snapshot) []pagestream.SignalPatch {
+	return []pagestream.SignalPatch{
 		DashboardPatch(snapshot.Patch),
 		TablesPatch(snapshot.Tables),
 	}

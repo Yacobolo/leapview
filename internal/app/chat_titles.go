@@ -21,7 +21,7 @@ func (s *Server) generateConversationTitleAsync(scope agentapp.Scope, conversati
 			s.logger.DebugContext(ctx, "agent title generation failed", "conversation_id", conversationID, "error", err)
 		}
 		s.clearChatTitlePending(conversationID)
-		s.broker.Publish(chatStreamID(scope, clientID), pagestream.Patch{
+		s.broker.Publish(chatStreamID(scope, clientID), pagestream.SignalPatch{
 			"agent": map[string]any{
 				"conversations": s.chatConversations(ctx, scope),
 			},

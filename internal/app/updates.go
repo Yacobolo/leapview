@@ -107,9 +107,9 @@ func (s *Server) serveUpdates(w http.ResponseWriter, r *http.Request, route stri
 
 func (s *Server) noopUpdates(w http.ResponseWriter, r *http.Request) {
 	_ = pagestream.EnsureClientID(w, r)
-	pagestream.ServeStream(w, r, pagestream.StreamSpec{
-		InitialPatches: []pagestream.Patch{
-			{"status": map[string]any{"loading": false, "error": ""}},
-		},
-	})
+	updates := pagestream.NewSignalStream(w, r)
+	if err := updates.Patch(pagestream.SignalPatch{"status": map[string]any{"loading": false, "error": ""}}); err != nil {
+		return
+	}
+	updates.Wait(r.Context())
 }

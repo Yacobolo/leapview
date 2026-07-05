@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	nethttp "net/http"
 
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
@@ -29,13 +28,15 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		TableCommand: signals.TableCommand,
 	}
 
-	pagestream.ServeStream(w, r, pagestream.StreamSpec{
-		Broker:         h.Broker,
-		StreamID:       clientID,
-		InitialPatches: []pagestream.Patch{lddatastar.LoadingPatch(metrics.DataDir())},
-		InitialSnapshot: func(ctx context.Context) []pagestream.Patch {
-			snapshot := stream.Service{Metrics: metrics}.Snapshot(ctx, request)
-			return lddatastar.SnapshotPatches(snapshot)
-		},
-	})
+	updates := pagestream.NewSignalStream(w, r)
+	if err := updates.Patch(lddatastar.LoadingPatch(metrics.DataDir())); err != nil {
+		return
+	}
+	snapshot := stream.Service{Metrics: metrics}.Snapshot(r.Context(), request)
+	for _, patch := range lddatastar.SnapshotPatches(snapshot) {
+		if err := updates.Patch(patch); err != nil {
+			return
+		}
+	}
+	_ = updates.Forward(r.Context(), h.Broker, clientID)
 }

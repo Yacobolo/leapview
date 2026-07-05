@@ -10,7 +10,27 @@ import (
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
 )
 
-func TestServeStreamSendsInitialAndBrokerPatchesAndCleansUp(t *testing.T) {
+func TestSignalStreamPatchSendsOnePatchSignalsEventPerCall(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/updates", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	stream := NewSignalStream(rec, req)
+	if err := stream.Patch(SignalPatch{"status": "loading"}); err != nil {
+		t.Fatalf("patch loading: %v", err)
+	}
+	if err := stream.Patch(SignalPatch{"status": "ready"}); err != nil {
+		t.Fatalf("patch ready: %v", err)
+	}
+
+	patches := ssetest.PatchSignals(t, rec.Body.String())
+	if len(patches) != 2 || patches[0]["status"] != "loading" || patches[1]["status"] != "ready" {
+		t.Fatalf("stream patches = %#v", patches)
+	}
+}
+
+func TestSignalStreamForwardRelaysBrokerPatchesAndCleansUp(t *testing.T) {
 	broker := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/updates", nil).WithContext(ctx)
@@ -19,19 +39,18 @@ func TestServeStreamSendsInitialAndBrokerPatchesAndCleansUp(t *testing.T) {
 
 	go func() {
 		defer close(done)
-		ServeStream(rec, req, StreamSpec{
-			Broker:         broker,
-			StreamID:       "client:page",
-			InitialPatches: []Patch{{"status": "initial"}},
-		})
+		stream := NewSignalStream(rec, req)
+		if err := stream.Forward(ctx, broker, "client:page"); err != nil {
+			t.Errorf("forward: %v", err)
+		}
 	}()
 
 	waitFor(t, time.Second, func() bool {
 		return broker.SubscriberCount("client:page") == 1
 	})
-	broker.Publish("client:page", Patch{"status": "broker"})
+	broker.Publish("client:page", SignalPatch{"status": "broker"})
 	waitFor(t, time.Second, func() bool {
-		return len(ssetest.PatchSignals(t, rec.Body.String())) >= 2
+		return len(ssetest.PatchSignals(t, rec.Body.String())) >= 1
 	})
 
 	cancel()
@@ -45,12 +64,26 @@ func TestServeStreamSendsInitialAndBrokerPatchesAndCleansUp(t *testing.T) {
 	}
 
 	patches := ssetest.PatchSignals(t, rec.Body.String())
-	if patches[0]["status"] != "initial" || patches[1]["status"] != "broker" {
+	if len(patches) != 1 || patches[0]["status"] != "broker" {
 		t.Fatalf("stream patches = %#v", patches)
 	}
 }
 
-func TestServeStreamSendsInitialSnapshotOnce(t *testing.T) {
+func TestSignalStreamForwardRequiresBrokerAndStreamID(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/updates", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	if err := NewSignalStream(rec, req).Forward(ctx, nil, "client:page"); err == nil {
+		t.Fatal("Forward with nil broker returned nil error")
+	}
+	if err := NewSignalStream(rec, req).Forward(ctx, NewBroker(), ""); err == nil {
+		t.Fatal("Forward with empty stream id returned nil error")
+	}
+}
+
+func TestSignalStreamWaitStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/updates", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
@@ -58,20 +91,9 @@ func TestServeStreamSendsInitialSnapshotOnce(t *testing.T) {
 
 	go func() {
 		defer close(done)
-		ServeStream(rec, req, StreamSpec{
-			InitialSnapshot: func(context.Context) []Patch {
-				return []Patch{{"snapshot": "initial"}}
-			},
-		})
+		NewSignalStream(rec, req).Wait(ctx)
 	}()
 
-	waitFor(t, time.Second, func() bool {
-		return len(ssetest.PatchSignals(t, rec.Body.String())) == 1
-	})
-	time.Sleep(25 * time.Millisecond)
-	if patches := ssetest.PatchSignals(t, rec.Body.String()); len(patches) != 1 {
-		t.Fatalf("snapshot stream patches = %#v, want exactly one initial snapshot", patches)
-	}
 	cancel()
 	select {
 	case <-done:
