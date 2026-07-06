@@ -1,131 +1,95 @@
 # LibreDash UI North Star
 
-LibreDash UI is an MPA with Datastar-streamed page signals and Lit-rendered web components. It is not a React-style SPA.
+LibreDash UI is a stream-first MPA. Go renders documents with Gomponents, Datastar stores client signals, `/updates` streams signal patches, and Lit renders route roots from the Datastar signal store.
 
-Server routes remain real URLs and full document navigations:
+It is not a React-style SPA.
+
+## Contract
 
 ```text
-/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}
-/
-/workspaces/{workspace}/chat
-/workspaces
-/connections
-/admin
+HTML = structure, assets, primitive route config, security metadata
+/updates = all server/read-model state
+Datastar = client signal store and signal-patch transport
+Lit = render from Datastar through DatastarLit
+commands = CQRS write endpoints that publish signal patches
 ```
 
-Go owns the route and document. Datastar owns page-local reactive state and SSE patches. Lit owns UI composition below explicit server-mounted component roots.
+Server routes are real URLs and full document navigations. Route identity belongs in the URL, not in a client router.
 
-## Runtime Model
+## Runtime
 
 ```text
 server route
-  -> HTML document shell
-  -> initial Datastar signals
-  -> top-level web component call
-  -> /workspaces/{workspace}/updates patches page signals
-  -> Lit re-renders from signal-backed properties
+  -> structural HTML shell
+  -> literal data-init="@get('/updates?...', {openWhenHidden: true})"
+  -> server-mounted route root
+  -> /updates sends hydration signal patch
+  -> Datastar stores signals
+  -> DatastarLit schedules Lit renders
   -> Lit emits domain events
-  -> Datastar command wiring patches or posts signals
+  -> Datastar posts command signals to CQRS endpoints
+  -> commands publish signal patches to the existing stream
 ```
 
-Lit components receive properties, render DOM, hold local UI state, and emit events. They do not route, fetch BI data, own backend state, or duplicate semantic/query rules.
+Initial HTML must not serialize the read model. Route roots render stable loading or empty states until `/updates` hydrates chrome, page view models, domain data, and status signals.
 
-## Ownership
+## Boundaries
 
-- Go: auth, permissions, HTTP routing, contracts, initial signal envelopes, commands, `/workspaces/{workspace}/updates`, BI query/model logic.
-- Datastar: page-local signal graph, signal patching, SSE transport, declarative event-to-command wiring.
-- Lit: layout, visual composition, local UI state, component events, lazy UI modules.
-- Gomponents: HTML document shell, assets, Datastar root, and explicit top-level custom element mounting.
+- `pkg/pagestream`: document shell, Datastar asset, literal `/updates` init, signal-only SSE streams, client ids, brokers.
+- Go route handlers: auth, permissions, routing, route metadata, command endpoints, read-model patch generation.
+- `/updates`: canonical transport endpoint; dispatches by route metadata; sends first hydration patch and later broker patches.
+- Datastar: page-local signal graph, SSE patch application, declarative event-to-command wiring.
+- `DatastarLit`: only route-root bridge from Datastar signals to Lit.
+- Lit: layout, visual composition, local UI state, child component orchestration, component events.
+- Gomponents: document shell, assets, route-root mounting, primitive config, CSRF metadata.
 
-Gomponents should not build product UI internals long term. Lit should not become a client router or data-fetching framework.
+Gomponents must not build product UI internals. Lit must not become a router, data-fetching layer, backend-state owner, or Datastar write API.
 
-## Route Mounting
+## Document Shape
 
-Go chooses the route component. `ld-app-shell` provides global chrome and a named page slot; it does not switch on route kind.
+Go chooses the route root. `ld-app-shell` provides chrome and a page slot; it does not switch on route kind.
 
 ```html
-<main data-signals="{...}" data-init="@get('/workspaces/{workspace}/updates?...')">
-  <ld-app-shell data-attr:chrome="$chrome">
-    <ld-dashboard-page
-      slot="page"
-      data-attr:page="$page"
-      data-attr:filters="$filters"
-      data-attr:filter-options="$filterOptions"
-      data-attr:visuals="$visuals"
-      data-attr:tables="$tables"
-      data-attr:status="$status"
-    ></ld-dashboard-page>
+<main data-init="@get('/updates?...', {openWhenHidden: true})">
+  <ld-app-shell>
+    <ld-some-route-root slot="page" route-id="..."></ld-some-route-root>
   </ld-app-shell>
 </main>
 ```
 
-Other routes mount their own page roots:
+Allowed route-root host attributes: primitive static config such as ids, active section, view, labels, and booleans.
 
-```html
-<ld-app-shell data-attr:chrome="$chrome">
-  <ld-chat-page slot="page" data-attr:agent="$agent"></ld-chat-page>
-</ld-app-shell>
-```
+Forbidden for MPA route payloads: `data-signals`, large JSON attributes, `data-attr:*` mirrors, and duplicated server/read-model state. `data-signals` is only acceptable in isolated component tests or local Datastar controls.
 
-Inside a route root, Lit composes from properties. Domain-specific dispatch belongs inside the domain root, such as dashboard visual kind to chart, KPI, filter, or table component.
+Route roots read Datastar signals through `DatastarLit`. Child components receive normal Lit properties from route roots. Domain dispatch stays inside the owning route root.
 
-## Component Map
+## Streams
 
-App and navigation:
+`/updates` URLs must contain enough route metadata to reconstruct hydration state without pre-existing Datastar signals. The exact query shape belongs to route code and tests, not this document.
 
-- `ld-app-shell`
-- `ld-sidebar`
-- `ld-sub-sidebar`
+`/updates` sends Datastar signal patches only: no element morphs, script events, or mixed transports.
 
-Dashboard:
+First patch: hydrate route state. Later patches: command results, broker events, refresh/status changes, and domain data that becomes ready after the stream opens.
 
-- `ld-dashboard-page`
-- `ld-dashboard-header`
-- `ld-dashboard-visual-frame`
-- `ld-report-canvas`
-- `ld-report-footer`
-- `ld-visual-modal`
+## Commands
 
-Dashboard data UI:
+Commands are CQRS write endpoints. They receive command/read context from Datastar, perform domain work, and publish signal patches to the existing `/updates` stream.
 
-- `ld-filter-dock`
-- `ld-filter-panel`
-- `ld-filter-card`
-- `ld-echart`
-- `ld-kpi-card`
-- `ld-data-table`
+Commands must not reopen `/updates`, return ad hoc JSON read models, or make Lit fetch backend state directly.
 
-Other route roots:
+CSRF is document security metadata, not application state. Mutating pages render `<meta name="csrf-token" content="...">`; Datastar command expressions call `window.LibreDashCommand.headers()`.
 
-- `ld-catalog-page`
-- `ld-chat-page`
-- `ld-workspace-page`
-- `ld-workspace-asset-page`
-- `ld-connections-page`
-- `ld-admin-page`
-- `ld-login-page`
+## Signals
 
-Shared support:
-
-- `ld-data-grid`
-- `ld-code-block`
-- `ld-workspace-access-control`
-- `ld-asset-lineage-graph`
-- `datastar-inspector`
-
-## Signal Contracts
-
-Signals are product API contracts, not convenient maps.
+Signals are product API contracts.
 
 - Go structs are the source of truth.
 - JSON Schema and TypeScript types are generated from Go signal structs.
-- Lit imports generated types for route props, visuals, tables, filters, status, and chrome.
-- Contract tests prove each page references existing visuals, tables, and filters.
-- Contract tests fail on unused visual/table/filter payloads unless explicitly marked as preloaded.
-- `/workspaces/{workspace}/updates` patches dynamic signals such as `filters`, `filterOptions`, `visuals`, `tables`, and `status`.
-- Route and page view models are seeded by the first response unless a feature deliberately makes them dynamic.
+- Lit imports generated types for route, chrome, status, and domain signals.
+- Contract tests enforce signal references and prevent unused payloads unless explicitly marked preloaded.
+- Signal roots should be stable, route-owned, and shaped for rendering rather than backend convenience.
 
-Recommended top-level dashboard signal shape:
+Dashboard signal roots should remain explicit and renderer-neutral:
 
 ```text
 $chrome
@@ -137,33 +101,23 @@ $tables
 $status
 ```
 
+## Components
+
+Route roots map one server route to one Lit composition boundary. They read Datastar signals, derive child props, and emit domain events.
+
+Child components are reusable UI units. They do not know about `/updates`, route metadata, auth, permissions, or command endpoint details unless they are the route root for that domain.
+
+Shared components must be static or property-driven. They must not introduce hidden global stores or backend fetch paths.
+
 ## Styling
 
-LibreDash keeps a locality-first styling model.
-
-- Tailwind remains for the outer light DOM and minimal Go shell.
-- Lit Shadow DOM components use local CSS.
+- Tailwind is for outer light DOM and minimal Go shell.
+- Lit components use Shadow DOM CSS.
 - Lit CSS consumes Primer and LibreDash CSS variables.
 - Tailwind utilities are not injected into Shadow DOM.
-- Global CSS contains tokens, imports, source declarations, and minimal document defaults.
-- Product UI should not depend on global selectors.
+- Global CSS contains tokens, imports, source declarations, and document defaults.
+- Product UI must not depend on global selectors.
 
-## Target Folder Layout
+## Folders
 
-```text
-web/components/
-  app/
-  navigation/
-  dashboard/
-    filters/
-    charts/
-    table/
-  workspace/
-  chat/
-  admin/
-  login/
-  shared/
-  inspector/
-```
-
-Route bundles should be coarse enough to support lazy loading without duplicating shared dependencies. The server should include only the route root and common shell assets needed for the current document.
+`web/components/` is organized by domain plus `shared/` and `inspector/`. Route bundles should be coarse enough for lazy loading without duplicating shared dependencies. The server includes only common shell assets and the current route root bundle.
