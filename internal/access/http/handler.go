@@ -142,6 +142,7 @@ func (h Handler) CreateCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Requ
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "api_token.created", principal.ID, row.WorkspaceID, "api_token", row.ID, access.PrivilegeManageGrants, "success", map[string]any{"name": row.Name, "privileges": row.Privileges})
 	writeJSON(w, stdhttp.StatusCreated, map[string]any{"token": token, "apiToken": apiTokenDTO(row)})
 }
 
@@ -156,10 +157,21 @@ func (h Handler) RevokeCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Requ
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	if err := repo.RevokeAPITokenForPrincipal(r.Context(), principal.ID, chi.URLParam(r, "token")); err != nil {
+	tokenID := chi.URLParam(r, "token")
+	var revoked access.APIToken
+	if rows, err := repo.ListAPITokens(r.Context(), principal.ID); err == nil {
+		for _, row := range rows {
+			if row.ID == tokenID {
+				revoked = row
+				break
+			}
+		}
+	}
+	if err := repo.RevokeAPITokenForPrincipal(r.Context(), principal.ID, tokenID); err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
+	recordAccessAudit(r, repo, "api_token.revoked", principal.ID, revoked.WorkspaceID, "api_token", tokenID, access.PrivilegeManageGrants, "success", map[string]any{"name": revoked.Name, "privileges": revoked.Privileges})
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
 }
 
@@ -201,6 +213,7 @@ func (h Handler) RevokeCurrentSession(w stdhttp.ResponseWriter, r *stdhttp.Reque
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
+	recordAccessAudit(r, repo, "session.revoked", principal.ID, "", "session", chi.URLParam(r, "session"), access.PrivilegeUseWorkspace, "success", nil)
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
 }
 
@@ -501,6 +514,7 @@ func (h Handler) CreateGroup(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "group.created", h.currentPrincipalID(r), group.WorkspaceID, "group", group.ID, access.PrivilegeManageGrants, "success", groupAuditMetadata(group))
 	writeJSON(w, stdhttp.StatusCreated, groupDTO(group))
 }
 
@@ -534,6 +548,7 @@ func (h Handler) UpdateGroup(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "group.updated", h.currentPrincipalID(r), updated.WorkspaceID, "group", updated.ID, access.PrivilegeManageGrants, "success", groupAuditMetadata(updated))
 	writeJSON(w, stdhttp.StatusOK, groupDTO(updated))
 }
 
@@ -551,6 +566,7 @@ func (h Handler) DeleteGroup(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "group.deleted", h.currentPrincipalID(r), group.WorkspaceID, "group", group.ID, access.PrivilegeManageGrants, "success", groupAuditMetadata(group))
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -578,10 +594,14 @@ func (h Handler) AddGroupMember(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	if err := repo.AddGroupMember(r.Context(), h.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "group"), chi.URLParam(r, "principal")); err != nil {
+	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
+	groupID := chi.URLParam(r, "group")
+	principalID := chi.URLParam(r, "principal")
+	if err := repo.AddGroupMember(r.Context(), workspaceID, groupID, principalID); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "group.member_added", h.currentPrincipalID(r), workspaceID, "group_member", groupID+":"+principalID, access.PrivilegeManageGrants, "success", map[string]any{"groupId": groupID, "memberPrincipalId": principalID})
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "added"})
 }
 
@@ -591,10 +611,14 @@ func (h Handler) RemoveGroupMember(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	if err := repo.RemoveGroupMember(r.Context(), h.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "group"), chi.URLParam(r, "principal")); err != nil {
+	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
+	groupID := chi.URLParam(r, "group")
+	principalID := chi.URLParam(r, "principal")
+	if err := repo.RemoveGroupMember(r.Context(), workspaceID, groupID, principalID); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "group.member_removed", h.currentPrincipalID(r), workspaceID, "group_member", groupID+":"+principalID, access.PrivilegeManageGrants, "success", map[string]any{"groupId": groupID, "memberPrincipalId": principalID})
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "removed"})
 }
 
@@ -653,6 +677,7 @@ func (h Handler) CreateRoleBinding(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "role_binding.created", h.currentPrincipalID(r), row.WorkspaceID, "role_binding", row.ID, access.PrivilegeManageGrants, "success", roleBindingAuditMetadata(row))
 	writeJSON(w, stdhttp.StatusCreated, apiRoleBindingDTO(row))
 }
 
@@ -942,6 +967,7 @@ func (h Handler) UpdateRoleBinding(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "role_binding.updated", h.currentPrincipalID(r), row.WorkspaceID, "role_binding", row.ID, access.PrivilegeManageGrants, "success", roleBindingAuditMetadata(row))
 	writeJSON(w, stdhttp.StatusOK, apiRoleBindingDTO(row))
 }
 
@@ -955,10 +981,18 @@ func (h Handler) DeleteRoleBinding(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		writeJSONError(w, errors.New("Workspace access store is not configured."), stdhttp.StatusInternalServerError)
 		return
 	}
-	if err := repo.DeleteRoleBinding(r.Context(), h.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "binding")); err != nil {
+	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
+	bindingID := chi.URLParam(r, "binding")
+	row, err := repo.GetRoleBinding(r.Context(), workspaceID, bindingID)
+	if err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
+	if err := repo.DeleteRoleBinding(r.Context(), workspaceID, bindingID); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
+	recordAccessAudit(r, repo, "role_binding.deleted", h.currentPrincipalID(r), row.WorkspaceID, "role_binding", row.ID, access.PrivilegeManageGrants, "success", roleBindingAuditMetadata(row))
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "removed"})
 }
 
@@ -1075,6 +1109,14 @@ func (h Handler) currentPrincipal(r *stdhttp.Request) (Principal, bool) {
 	return h.CurrentPrincipal(r)
 }
 
+func (h Handler) currentPrincipalID(r *stdhttp.Request) string {
+	principal, ok := h.currentPrincipal(r)
+	if !ok {
+		return ""
+	}
+	return principal.ID
+}
+
 func (h Handler) currentCredential(r *stdhttp.Request) (access.APICredential, bool) {
 	if h.CurrentCredential == nil {
 		return access.APICredential{}, false
@@ -1107,6 +1149,14 @@ func groupMemberPrincipalDTO(row access.GroupMember) map[string]any {
 
 func apiRoleBindingDTO(row access.RoleBinding) map[string]any {
 	return map[string]any{"id": row.ID, "workspaceId": row.WorkspaceID, "subjectType": string(row.SubjectType), "subjectId": row.SubjectID, "email": row.Email, "displayName": firstNonEmpty(row.DisplayName, row.GroupName), "role": row.Role, "createdAt": row.CreatedAt}
+}
+
+func groupAuditMetadata(row access.Group) map[string]any {
+	return map[string]any{"provider": row.Provider, "externalId": row.ExternalID, "displayName": row.Name}
+}
+
+func roleBindingAuditMetadata(row access.RoleBinding) map[string]any {
+	return map[string]any{"subjectType": string(row.SubjectType), "subjectId": row.SubjectID, "role": row.Role}
 }
 
 func grantDTO(row access.Grant) map[string]any {

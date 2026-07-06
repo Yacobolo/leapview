@@ -160,6 +160,73 @@ func TestAPIGenOperationAuthCoverage(t *testing.T) {
 	}
 }
 
+func TestAPIGenOperationObjectResolverCoverage(t *testing.T) {
+	contracts := apigenapi.GetAPIGenOperationContracts()
+	objectScopedOperations := []string{
+		"getWorkspaceAsset",
+		"getWorkspaceAssetLineage",
+		"listWorkspaceAssetEdges",
+		"getDashboard",
+		"listDashboardComponents",
+		"getDashboardVisual",
+		"queryDashboardPage",
+		"queryDashboardVisualData",
+		"queryDashboardTable",
+		"queryDashboardTableData",
+		"listDashboardFilterOptions",
+		"getSemanticModel",
+		"listSemanticDatasets",
+		"getSemanticDataset",
+		"listSemanticFields",
+		"querySemanticDataset",
+		"previewSemanticDataset",
+		"explainSemanticQuery",
+		"explainSemanticPreview",
+		"getAgentConversation",
+		"updateAgentConversation",
+		"archiveAgentConversation",
+		"listAgentMessages",
+		"createAgentTurn",
+		"listAgentRuns",
+		"getAgentRun",
+		"listAgentEvents",
+	}
+	for _, operationID := range objectScopedOperations {
+		if _, ok := contracts[operationID]; !ok {
+			t.Fatalf("%s missing generated contract", operationID)
+		}
+		if _, ok := apigenOperationPrivileges[operationID]; !ok {
+			t.Fatalf("%s missing privilege mapping", operationID)
+		}
+		if apigenOperationObjectResolvers[operationID] == nil {
+			t.Fatalf("%s missing exact object resolver", operationID)
+		}
+	}
+	for operationID := range apigenOperationObjectResolvers {
+		if _, ok := contracts[operationID]; !ok {
+			t.Fatalf("%s has object resolver but no generated contract", operationID)
+		}
+		if _, ok := apigenOperationPrivileges[operationID]; !ok {
+			t.Fatalf("%s has object resolver but no privilege mapping", operationID)
+		}
+	}
+	for _, operationID := range []string{
+		"listWorkspaceAssets",
+		"listDashboards",
+		"listSemanticModels",
+		"createAgentConversation",
+		"listAgentConversations",
+		"createPublish",
+		"listPublishes",
+		"createRefreshRun",
+		"listRefreshRuns",
+	} {
+		if apigenOperationObjectResolvers[operationID] != nil {
+			t.Fatalf("%s should stay workspace-scoped and not use an exact object resolver", operationID)
+		}
+	}
+}
+
 func TestAPIGenOperationExtensions(t *testing.T) {
 	contracts := apigenapi.GetAPIGenOperationContracts()
 	agentTools := map[string]string{

@@ -95,7 +95,7 @@ func TestCurrentAPITokenRevocationIsScopedToAuthenticatedPrincipal(t *testing.T)
 		Name:        "auth",
 		Privileges:  []access.Privilege{access.PrivilegeManageGrants},
 	})
-	_, ownerToken := testScopedAPIToken(t, ctx, store, access.APITokenInput{PrincipalID: owner.ID, Name: "owned"})
+	ownerSecret, ownerToken := testScopedAPIToken(t, ctx, store, access.APITokenInput{PrincipalID: owner.ID, Name: "owned"})
 	foreignSecret, foreignToken := testScopedAPIToken(t, ctx, store, access.APITokenInput{PrincipalID: foreign.ID, Name: "foreign"})
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
@@ -121,6 +121,73 @@ func TestCurrentAPITokenRevocationIsScopedToAuthenticatedPrincipal(t *testing.T)
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("revoke owned api token status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	revokedReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	revokedReq.Header.Set("Authorization", "Bearer "+ownerSecret)
+	revokedReq.Header.Set("Accept", "application/json")
+	revokedRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(revokedRec, revokedReq)
+	if revokedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked api token status = %d, want %d body=%s", revokedRec.Code, http.StatusUnauthorized, revokedRec.Body.String())
+	}
+}
+
+func TestCurrentAPITokenCreateAndRevokeRecordsAudit(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	repo := testAccessRepository(store)
+	owner := testPlatformPrincipal(t, ctx, store, "token-audit-owner@example.com", "Token Audit Owner", access.RoleAdmin)
+	authSecret, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
+		PrincipalID: owner.ID,
+		WorkspaceID: "test",
+		Name:        "auth",
+		Privileges:  []access.Privilege{access.PrivilegeManageGrants},
+	})
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/me/api-tokens", strings.NewReader(`{"name":"audited-api-token","workspaceId":"test","privileges":["USE_WORKSPACE"]}`))
+	createReq.Header.Set("Authorization", "Bearer "+authSecret)
+	createReq.Header.Set("Accept", "application/json")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create api token status = %d, want %d body=%s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	var created struct {
+		APIToken struct {
+			ID string `json:"id"`
+		} `json:"apiToken"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created api token: %v body=%s", err, createRec.Body.String())
+	}
+	if created.APIToken.ID == "" {
+		t.Fatalf("created api token missing id: %s", createRec.Body.String())
+	}
+	createdEvents, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{WorkspaceID: "test", Action: "api_token.created"})
+	if err != nil {
+		t.Fatalf("list create audit events: %v", err)
+	}
+	if len(createdEvents) != 1 || createdEvents[0].TargetID != created.APIToken.ID || createdEvents[0].PrincipalID != owner.ID {
+		t.Fatalf("api_token.created audit = %#v, want target %q actor %q", createdEvents, created.APIToken.ID, owner.ID)
+	}
+
+	revokeReq := httptest.NewRequest(http.MethodDelete, "/api/v1/me/api-tokens/"+created.APIToken.ID, nil)
+	revokeReq.Header.Set("Authorization", "Bearer "+authSecret)
+	revokeReq.Header.Set("Accept", "application/json")
+	revokeRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(revokeRec, revokeReq)
+	if revokeRec.Code != http.StatusOK {
+		t.Fatalf("revoke api token status = %d, want %d body=%s", revokeRec.Code, http.StatusOK, revokeRec.Body.String())
+	}
+	revokedEvents, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{WorkspaceID: "test", Action: "api_token.revoked"})
+	if err != nil {
+		t.Fatalf("list revoke audit events: %v", err)
+	}
+	if len(revokedEvents) != 1 || revokedEvents[0].TargetID != created.APIToken.ID || revokedEvents[0].PrincipalID != owner.ID {
+		t.Fatalf("api_token.revoked audit = %#v, want target %q actor %q", revokedEvents, created.APIToken.ID, owner.ID)
 	}
 }
 

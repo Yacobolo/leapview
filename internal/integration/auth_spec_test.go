@@ -486,6 +486,96 @@ func TestAuthSpecAuditIncludesGrantRequestMetadata(t *testing.T) {
 	}
 }
 
+func TestAuthSpecAuditCoversLocalAccessMutations(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	admin := authSpecPrincipal(t, ctx, repo, "access-audit-admin@example.com")
+	member := authSpecPrincipal(t, ctx, repo, "access-audit-member@example.com")
+	viewer := authSpecPrincipal(t, ctx, repo, "access-audit-viewer@example.com")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, admin.ID, access.PrivilegeManageGrants)
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, admin.ID, access.PrivilegeViewAudit)
+	token := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, WorkspaceID: "sales", Name: "access-audit-admin"})
+
+	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/groups", token, `{"name":"audit-analysts","displayName":"Audit Analysts"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create group status=%d body=%s", status, body)
+	}
+	var group struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &group); err != nil {
+		t.Fatalf("decode group: %v body=%s", err, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPatch, "/api/v1/workspaces/sales/groups/"+group.ID, token, `{"displayName":"Audit Analysts Updated"}`)
+	if status != http.StatusOK {
+		t.Fatalf("update group status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPut, "/api/v1/workspaces/sales/groups/"+group.ID+"/members/"+member.ID, token, "")
+	if status != http.StatusOK {
+		t.Fatalf("add group member status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/workspaces/sales/groups/"+group.ID+"/members/"+member.ID, token, "")
+	if status != http.StatusOK {
+		t.Fatalf("remove group member status=%d body=%s", status, body)
+	}
+
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/role-bindings", token, `{"subjectType":"principal","subjectId":"`+viewer.ID+`","role":"viewer"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create role binding status=%d body=%s", status, body)
+	}
+	var binding struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &binding); err != nil {
+		t.Fatalf("decode role binding: %v body=%s", err, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPatch, "/api/v1/workspaces/sales/role-bindings/"+binding.ID, token, `{"subjectType":"principal","subjectId":"`+viewer.ID+`","role":"contributor"}`)
+	if status != http.StatusOK {
+		t.Fatalf("update role binding status=%d body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/workspaces/sales/role-bindings/"+binding.ID, token, "")
+	if status != http.StatusOK {
+		t.Fatalf("delete role binding status=%d body=%s", status, body)
+	}
+
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/grants", token, `{"objectType":"dashboard","objectId":"executive-sales","subjectType":"principal","subjectId":"`+viewer.ID+`","privilege":"VIEW_ITEM"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create grant status=%d body=%s", status, body)
+	}
+	var grant struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &grant); err != nil {
+		t.Fatalf("decode grant: %v body=%s", err, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/workspaces/sales/grants/"+grant.ID, token, "")
+	if status != http.StatusOK {
+		t.Fatalf("delete grant status=%d body=%s", status, body)
+	}
+
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/audit-events?limit=50", token, "")
+	if status != http.StatusOK {
+		t.Fatalf("list audit status=%d body=%s", status, body)
+	}
+	actions := authSpecAuditActions(t, body)
+	for _, want := range []string{
+		"group.created",
+		"group.updated",
+		"group.member_added",
+		"group.member_removed",
+		"role_binding.created",
+		"role_binding.updated",
+		"role_binding.deleted",
+		"grant.created",
+		"grant.deleted",
+	} {
+		if !actions[want] {
+			t.Fatalf("audit actions missing %q: %#v body=%s", want, actions, body)
+		}
+	}
+}
+
 func newAuthSpecHarness(t *testing.T) (*harness, *accesssqlite.Repository) {
 	t.Helper()
 	h, metrics, catalogPath := newHarnessWithMetrics(t)
@@ -552,6 +642,23 @@ func authSpecToken(t *testing.T, ctx context.Context, repo *accesssqlite.Reposit
 		t.Fatalf("create api token: %v", err)
 	}
 	return token
+}
+
+func authSpecAuditActions(t *testing.T, body string) map[string]bool {
+	t.Helper()
+	var decoded struct {
+		Items []struct {
+			Action string `json:"action"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("decode audit response: %v body=%s", err, body)
+	}
+	actions := map[string]bool{}
+	for _, item := range decoded.Items {
+		actions[item.Action] = true
+	}
+	return actions
 }
 
 func (h *harness) authSpecDo(t *testing.T, method, path, token, body string) (int, string) {
