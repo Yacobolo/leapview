@@ -628,7 +628,7 @@ func TestDeploymentAPIAuditsRollbackWhenInactiveDeploymentIsActivated(t *testing
 
 	events, err := accesssqlite.NewRepository(store.SQLDB()).ListAuditEvents(ctx, access.AuditEventFilter{
 		WorkspaceID: "sales",
-		Action:      "deployment.rolled_back",
+		Action:      "publish.rolled_back",
 		TargetID:    string(first.ID),
 	})
 	if err != nil {

@@ -436,7 +436,7 @@ func (h Handler) UpsertRoleBinding(w nethttp.ResponseWriter, r *nethttp.Request)
 		return
 	}
 	if repo == nil {
-		writeJSONError(w, errWorkspaceRBACNotConfigured, nethttp.StatusInternalServerError)
+		writeJSONError(w, errWorkspaceAccessNotConfigured, nethttp.StatusInternalServerError)
 		return
 	}
 	principal, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: input.Email, DisplayName: input.DisplayName, Role: input.Role})
@@ -455,7 +455,7 @@ func (h Handler) DeleteRoleBinding(w nethttp.ResponseWriter, r *nethttp.Request)
 		return
 	}
 	if repo == nil {
-		writeJSONError(w, errWorkspaceRBACNotConfigured, nethttp.StatusInternalServerError)
+		writeJSONError(w, errWorkspaceAccessNotConfigured, nethttp.StatusInternalServerError)
 		return
 	}
 	bindingID := chi.URLParam(r, "binding")
@@ -482,7 +482,7 @@ func (h Handler) AccessUpsert(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if err != nil {
 		status = ui.WorkspaceAccessStatus{Error: err.Error()}
 	} else if repo == nil {
-		status = ui.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+		status = ui.WorkspaceAccessStatus{Error: errWorkspaceAccessNotConfigured.Error()}
 	} else if object, ok := assetAccessObject(r, workspaceID); ok {
 		subjectType, subjectID, err := h.resolveAccessSubject(r, repo, command)
 		if err != nil {
@@ -560,7 +560,7 @@ func (h Handler) AccessRemove(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if err != nil {
 		status = ui.WorkspaceAccessStatus{Error: err.Error()}
 	} else if repo == nil {
-		status = ui.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
+		status = ui.WorkspaceAccessStatus{Error: errWorkspaceAccessNotConfigured.Error()}
 	} else if _, ok := assetAccessObject(r, workspaceID); ok {
 		if err := repo.DeleteGrant(r.Context(), workspaceID, command.BindingID); err != nil {
 			status = ui.WorkspaceAccessStatus{Error: err.Error()}
@@ -600,7 +600,7 @@ func (h Handler) objectAccess(r *nethttp.Request, workspaceView workspace.Worksp
 		return response
 	}
 	if repo == nil {
-		response.Status.Error = errWorkspaceRBACNotConfigured.Error()
+		response.Status.Error = errWorkspaceAccessNotConfigured.Error()
 		return response
 	}
 	grants, err := repo.ListGrants(r.Context(), object)
@@ -902,7 +902,7 @@ func (h Handler) broker() Broker {
 	return noopBroker{}
 }
 
-var errWorkspaceRBACNotConfigured = errors.New("workspace RBAC is not configured")
+var errWorkspaceAccessNotConfigured = errors.New("workspace access store is not configured")
 
 type noopBroker struct{}
 

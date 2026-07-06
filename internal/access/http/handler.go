@@ -952,7 +952,7 @@ func (h Handler) DeleteRoleBinding(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		return
 	}
 	if repo == nil {
-		writeJSONError(w, errors.New("Workspace RBAC store is not configured."), stdhttp.StatusInternalServerError)
+		writeJSONError(w, errors.New("Workspace access store is not configured."), stdhttp.StatusInternalServerError)
 		return
 	}
 	if err := repo.DeleteRoleBinding(r.Context(), h.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "binding")); err != nil {

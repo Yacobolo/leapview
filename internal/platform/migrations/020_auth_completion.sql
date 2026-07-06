@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS service_principal_secrets (
   id TEXT PRIMARY KEY,
   service_principal_id TEXT NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  secret_hash TEXT NOT NULL UNIQUE,
+  secret_fingerprint TEXT NOT NULL,
+  secret_verifier TEXT NOT NULL,
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   revoked_at TEXT

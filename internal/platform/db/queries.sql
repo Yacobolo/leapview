@@ -476,27 +476,21 @@ DELETE FROM role_bindings
 WHERE workspace_id = ? AND principal_id = ?;
 
 -- name: CreateSession :exec
-INSERT INTO sessions (id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at)
-VALUES (?, ?, ?, ?, ?, ?);
-
--- name: GetSessionByTokenHash :one
-SELECT * FROM sessions
-WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL;
+INSERT INTO sessions (id, principal_id, token_fingerprint, token_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?);
 
 -- name: GetSessionByTokenFingerprint :one
 SELECT * FROM sessions
 WHERE token_fingerprint = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL;
 
--- name: BackfillSessionTokenVerifier :exec
-UPDATE sessions
-SET token_hash = ?, token_fingerprint = ?, token_verifier = ?
-WHERE id = ? AND (token_fingerprint IS NULL OR token_fingerprint = '' OR token_verifier = '');
+-- name: GetSessionByTokenFingerprintForAudit :one
+SELECT * FROM sessions
+WHERE token_fingerprint = ?
+ORDER BY created_at DESC
+LIMIT 1;
 
 -- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?;
-
--- name: DeleteSessionByTokenHash :exec
-DELETE FROM sessions WHERE token_hash = ?;
 
 -- name: DeleteSessionByTokenFingerprint :exec
 DELETE FROM sessions WHERE token_fingerprint = ?;
@@ -523,14 +517,8 @@ SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND revoked_at IS NULL;
 
 -- name: CreateAPIToken :exec
-INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, privileges_json, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-
--- name: GetAPITokenByHash :one
-SELECT * FROM api_tokens
-WHERE token_hash = ?
-  AND revoked_at IS NULL
-  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);
+INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetAPITokenByFingerprint :one
 SELECT * FROM api_tokens
@@ -538,10 +526,11 @@ WHERE token_fingerprint = ?
   AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);
 
--- name: BackfillAPITokenVerifier :exec
-UPDATE api_tokens
-SET token_hash = ?, token_fingerprint = ?, token_verifier = ?
-WHERE id = ? AND (token_fingerprint IS NULL OR token_fingerprint = '' OR token_verifier = '');
+-- name: GetAPITokenByFingerprintForAudit :one
+SELECT * FROM api_tokens
+WHERE token_fingerprint = ?
+ORDER BY created_at DESC
+LIMIT 1;
 
 -- name: TouchAPIToken :exec
 UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?;
@@ -568,18 +557,8 @@ SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND revoked_at IS NULL;
 
 -- name: CreateServicePrincipalSecret :exec
-INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_hash, secret_fingerprint, secret_verifier, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
-
--- name: GetServicePrincipalSecretByHash :one
-SELECT s.*
-FROM service_principal_secrets s
-JOIN principals p ON p.id = s.service_principal_id
-WHERE p.kind = 'service_principal'
-  AND s.service_principal_id = ?
-  AND s.secret_hash = ?
-  AND s.revoked_at IS NULL
-  AND (s.expires_at IS NULL OR s.expires_at > CURRENT_TIMESTAMP);
+INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_fingerprint, secret_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetServicePrincipalSecretByFingerprint :one
 SELECT s.*
@@ -590,11 +569,6 @@ WHERE p.kind = 'service_principal'
   AND s.secret_fingerprint = ?
   AND s.revoked_at IS NULL
   AND (s.expires_at IS NULL OR s.expires_at > CURRENT_TIMESTAMP);
-
--- name: BackfillServicePrincipalSecretVerifier :exec
-UPDATE service_principal_secrets
-SET secret_hash = ?, secret_fingerprint = ?, secret_verifier = ?
-WHERE id = ? AND (secret_fingerprint IS NULL OR secret_fingerprint = '' OR secret_verifier = '');
 
 -- name: RevokeServicePrincipalSecret :exec
 UPDATE service_principal_secrets

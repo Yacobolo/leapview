@@ -33,15 +33,6 @@ func verifySecret(secret, verifier string) bool {
 	return err == nil && match
 }
 
-func legacyTokenHash(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
-func storedSecretHash(fingerprint string) string {
-	return "v2:" + fingerprint
-}
-
 var tokenFingerprintKey = func() []byte {
 	source := firstNonEmpty(
 		strings.TrimSpace(os.Getenv("LIBREDASH_TOKEN_HASH_KEY")),

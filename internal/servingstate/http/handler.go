@@ -204,7 +204,7 @@ func (h *Handler) recordRollbackAudit(r *stdhttp.Request, repo access.Repository
 	_ = repo.RecordAuditEvent(r.Context(), access.AuditEventInput{
 		WorkspaceID:   string(row.WorkspaceID),
 		PrincipalID:   principalID,
-		Action:        "deployment.rolled_back",
+		Action:        "publish.rolled_back",
 		TargetType:    "publish",
 		TargetID:      string(row.ID),
 		Privilege:     access.PrivilegeActivateDeployment,

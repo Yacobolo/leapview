@@ -34,16 +34,16 @@ type ReadModel struct {
 	CurrentPrincipal     CurrentPrincipalProvider
 	DefaultWorkspaceID   string
 	AuthConfigured       bool
-	RBACConfigured       bool
+	AccessConfigured     bool
 }
 
 func (m ReadModel) Data(r *http.Request) (ui.AdminData, error) {
 	data := ui.AdminData{
-		Workspace:       workspace.WorkspaceView{ID: "platform", Title: "Platform"},
-		CSRFToken:       m.csrfToken(r),
-		AuthConfigured:  m.AuthConfigured,
-		RBACConfigured:  m.RBACConfigured,
-		RBACStatusLabel: "Configured",
+		Workspace:         workspace.WorkspaceView{ID: "platform", Title: "Platform"},
+		CSRFToken:         m.csrfToken(r),
+		AuthConfigured:    m.AuthConfigured,
+		AccessConfigured:  m.AccessConfigured,
+		AccessStatusLabel: "Configured",
 	}
 	var err error
 	data.Agent, err = m.agentData(r)
@@ -55,8 +55,8 @@ func (m ReadModel) Data(r *http.Request) (ui.AdminData, error) {
 		return data, err
 	}
 	if repo == nil {
-		data.RBACConfigured = false
-		data.RBACStatusLabel = "RBAC store is not configured"
+		data.AccessConfigured = false
+		data.AccessStatusLabel = "Access store is not configured"
 		data.RoleCount = len(defaultRoleViews())
 		data.Storage = m.StorageService.Data(r.Context())
 		return data, nil

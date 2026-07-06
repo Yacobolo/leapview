@@ -1674,8 +1674,7 @@ func (r *Repository) CreateSession(ctx context.Context, principalID string, ttl 
 	return token, r.q.CreateSession(ctx, platformdb.CreateSessionParams{
 		ID:               newID("session"),
 		PrincipalID:      principalID,
-		TokenHash:        storedSecretHash(fingerprint),
-		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
+		TokenFingerprint: fingerprint,
 		TokenVerifier:    verifier,
 		ExpiresAt:        expires,
 	})
@@ -1715,27 +1714,11 @@ func (r *Repository) DisabledPrincipalForSessionToken(ctx context.Context, token
 
 func (r *Repository) sessionForAuditToken(ctx context.Context, token string) (platformdb.Session, error) {
 	fingerprint := secretFingerprint(token)
-	row := r.db.QueryRowContext(ctx, `
-SELECT id, principal_id, token_hash, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at
-FROM sessions
-WHERE token_fingerprint = ? OR token_hash = ?
-ORDER BY created_at DESC
-LIMIT 1`, sql.NullString{String: fingerprint, Valid: true}, legacyTokenHash(token))
-	var session platformdb.Session
-	if err := row.Scan(
-		&session.ID,
-		&session.PrincipalID,
-		&session.TokenHash,
-		&session.TokenFingerprint,
-		&session.TokenVerifier,
-		&session.ExpiresAt,
-		&session.CreatedAt,
-		&session.LastSeenAt,
-		&session.RevokedAt,
-	); err != nil {
+	session, err := r.q.GetSessionByTokenFingerprintForAudit(ctx, fingerprint)
+	if err != nil {
 		return platformdb.Session{}, err
 	}
-	if session.TokenVerifier != "" && !verifySecret(token, session.TokenVerifier) {
+	if !verifySecret(token, session.TokenVerifier) {
 		return platformdb.Session{}, sql.ErrNoRows
 	}
 	return session, nil
@@ -1743,45 +1726,20 @@ LIMIT 1`, sql.NullString{String: fingerprint, Valid: true}, legacyTokenHash(toke
 
 func (r *Repository) sessionForToken(ctx context.Context, token string) (platformdb.Session, error) {
 	fingerprint := secretFingerprint(token)
-	session, err := r.q.GetSessionByTokenFingerprint(ctx, sql.NullString{String: fingerprint, Valid: true})
-	if err == nil {
-		if !verifySecret(token, session.TokenVerifier) {
-			return platformdb.Session{}, sql.ErrNoRows
-		}
-		_ = r.q.TouchSession(ctx, session.ID)
-		return session, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return platformdb.Session{}, err
-	}
-	session, err = r.q.GetSessionByTokenHash(ctx, legacyTokenHash(token))
+	session, err := r.q.GetSessionByTokenFingerprint(ctx, fingerprint)
 	if err != nil {
 		return platformdb.Session{}, err
 	}
-	verifier, err := newSecretVerifier(token)
-	if err != nil {
-		return platformdb.Session{}, err
-	}
-	if err := r.q.BackfillSessionTokenVerifier(ctx, platformdb.BackfillSessionTokenVerifierParams{
-		TokenHash:        storedSecretHash(fingerprint),
-		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
-		TokenVerifier:    verifier,
-		ID:               session.ID,
-	}); err != nil {
-		return platformdb.Session{}, err
+	if !verifySecret(token, session.TokenVerifier) {
+		return platformdb.Session{}, sql.ErrNoRows
 	}
 	_ = r.q.TouchSession(ctx, session.ID)
-	session.TokenFingerprint = sql.NullString{String: fingerprint, Valid: true}
-	session.TokenVerifier = verifier
 	return session, nil
 }
 
 func (r *Repository) DeleteSession(ctx context.Context, token string) error {
 	fingerprint := secretFingerprint(token)
-	if err := r.q.DeleteSessionByTokenFingerprint(ctx, sql.NullString{String: fingerprint, Valid: true}); err != nil {
-		return err
-	}
-	return r.q.DeleteSessionByTokenHash(ctx, legacyTokenHash(token))
+	return r.q.DeleteSessionByTokenFingerprint(ctx, fingerprint)
 }
 
 func (r *Repository) ListSessions(ctx context.Context, principalID string) ([]access.Session, error) {
@@ -1852,8 +1810,7 @@ func (r *Repository) CreateAPITokenWithMetadata(ctx context.Context, input acces
 		PrincipalID:      input.PrincipalID,
 		WorkspaceID:      sql.NullString{String: input.WorkspaceID, Valid: strings.TrimSpace(input.WorkspaceID) != ""},
 		Name:             input.Name,
-		TokenHash:        storedSecretHash(fingerprint),
-		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
+		TokenFingerprint: fingerprint,
 		TokenVerifier:    verifier,
 		PrivilegesJson:   string(privilegesJSON),
 		ExpiresAt:        expiresAt,
@@ -1917,30 +1874,11 @@ func (r *Repository) DisabledPrincipalForAPIToken(ctx context.Context, token str
 
 func (r *Repository) apiTokenForAuditSecret(ctx context.Context, token string) (platformdb.ApiToken, error) {
 	fingerprint := secretFingerprint(token)
-	row := r.db.QueryRowContext(ctx, `
-SELECT id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, privileges_json, expires_at, created_at, last_used_at, revoked_at
-FROM api_tokens
-WHERE token_fingerprint = ? OR token_hash = ?
-ORDER BY created_at DESC
-LIMIT 1`, sql.NullString{String: fingerprint, Valid: true}, legacyTokenHash(token))
-	var apiToken platformdb.ApiToken
-	if err := row.Scan(
-		&apiToken.ID,
-		&apiToken.PrincipalID,
-		&apiToken.WorkspaceID,
-		&apiToken.Name,
-		&apiToken.TokenHash,
-		&apiToken.TokenFingerprint,
-		&apiToken.TokenVerifier,
-		&apiToken.PrivilegesJson,
-		&apiToken.ExpiresAt,
-		&apiToken.CreatedAt,
-		&apiToken.LastUsedAt,
-		&apiToken.RevokedAt,
-	); err != nil {
+	apiToken, err := r.q.GetAPITokenByFingerprintForAudit(ctx, fingerprint)
+	if err != nil {
 		return platformdb.ApiToken{}, err
 	}
-	if apiToken.TokenVerifier != "" && !verifySecret(token, apiToken.TokenVerifier) {
+	if !verifySecret(token, apiToken.TokenVerifier) {
 		return platformdb.ApiToken{}, sql.ErrNoRows
 	}
 	return apiToken, nil
@@ -1948,36 +1886,14 @@ LIMIT 1`, sql.NullString{String: fingerprint, Valid: true}, legacyTokenHash(toke
 
 func (r *Repository) apiTokenForSecret(ctx context.Context, token string) (platformdb.ApiToken, error) {
 	fingerprint := secretFingerprint(token)
-	apiToken, err := r.q.GetAPITokenByFingerprint(ctx, sql.NullString{String: fingerprint, Valid: true})
-	if err == nil {
-		if !verifySecret(token, apiToken.TokenVerifier) {
-			return platformdb.ApiToken{}, sql.ErrNoRows
-		}
-		_ = r.q.TouchAPIToken(ctx, apiToken.ID)
-		return apiToken, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return platformdb.ApiToken{}, err
-	}
-	apiToken, err = r.q.GetAPITokenByHash(ctx, legacyTokenHash(token))
+	apiToken, err := r.q.GetAPITokenByFingerprint(ctx, fingerprint)
 	if err != nil {
 		return platformdb.ApiToken{}, err
 	}
-	verifier, err := newSecretVerifier(token)
-	if err != nil {
-		return platformdb.ApiToken{}, err
-	}
-	if err := r.q.BackfillAPITokenVerifier(ctx, platformdb.BackfillAPITokenVerifierParams{
-		TokenHash:        storedSecretHash(fingerprint),
-		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
-		TokenVerifier:    verifier,
-		ID:               apiToken.ID,
-	}); err != nil {
-		return platformdb.ApiToken{}, err
+	if !verifySecret(token, apiToken.TokenVerifier) {
+		return platformdb.ApiToken{}, sql.ErrNoRows
 	}
 	_ = r.q.TouchAPIToken(ctx, apiToken.ID)
-	apiToken.TokenFingerprint = sql.NullString{String: fingerprint, Valid: true}
-	apiToken.TokenVerifier = verifier
 	return apiToken, nil
 }
 
@@ -2092,14 +2008,12 @@ func (r *Repository) CreateServicePrincipalSecret(ctx context.Context, servicePr
 		ID:                 newID("spsecret"),
 		ServicePrincipalID: servicePrincipalID,
 		Name:               name,
-		Secret:             storedSecretHash(fingerprint),
 	}
 	if err := r.q.CreateServicePrincipalSecret(ctx, platformdb.CreateServicePrincipalSecretParams{
 		ID:                 row.ID,
 		ServicePrincipalID: row.ServicePrincipalID,
 		Name:               row.Name,
-		SecretHash:         row.Secret,
-		SecretFingerprint:  sql.NullString{String: fingerprint, Valid: true},
+		SecretFingerprint:  fingerprint,
 		SecretVerifier:     verifier,
 	}); err != nil {
 		return "", access.ServicePrincipalSecret{}, err
@@ -2138,38 +2052,14 @@ func (r *Repository) servicePrincipalSecretForSecret(ctx context.Context, servic
 	fingerprint := secretFingerprint(secret)
 	row, err := r.q.GetServicePrincipalSecretByFingerprint(ctx, platformdb.GetServicePrincipalSecretByFingerprintParams{
 		ServicePrincipalID: servicePrincipalID,
-		SecretFingerprint:  sql.NullString{String: fingerprint, Valid: true},
-	})
-	if err == nil {
-		if !verifySecret(secret, row.SecretVerifier) {
-			return platformdb.ServicePrincipalSecret{}, sql.ErrNoRows
-		}
-		return row, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return platformdb.ServicePrincipalSecret{}, err
-	}
-	row, err = r.q.GetServicePrincipalSecretByHash(ctx, platformdb.GetServicePrincipalSecretByHashParams{
-		ServicePrincipalID: servicePrincipalID,
-		SecretHash:         legacyTokenHash(secret),
+		SecretFingerprint:  fingerprint,
 	})
 	if err != nil {
 		return platformdb.ServicePrincipalSecret{}, err
 	}
-	verifier, err := newSecretVerifier(secret)
-	if err != nil {
-		return platformdb.ServicePrincipalSecret{}, err
+	if !verifySecret(secret, row.SecretVerifier) {
+		return platformdb.ServicePrincipalSecret{}, sql.ErrNoRows
 	}
-	if err := r.q.BackfillServicePrincipalSecretVerifier(ctx, platformdb.BackfillServicePrincipalSecretVerifierParams{
-		SecretHash:        storedSecretHash(fingerprint),
-		SecretFingerprint: sql.NullString{String: fingerprint, Valid: true},
-		SecretVerifier:    verifier,
-		ID:                row.ID,
-	}); err != nil {
-		return platformdb.ServicePrincipalSecret{}, err
-	}
-	row.SecretFingerprint = sql.NullString{String: fingerprint, Valid: true}
-	row.SecretVerifier = verifier
 	return row, nil
 }
 

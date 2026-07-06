@@ -203,7 +203,7 @@ They can:
 - Own publishes, jobs, and API tokens.
 - Use OAuth client credentials for automation.
 
-Service principals should not bypass RBAC. Their access is evaluated exactly
+Service principals should not bypass grants. Their access is evaluated exactly
 like user access.
 
 ## API Tokens

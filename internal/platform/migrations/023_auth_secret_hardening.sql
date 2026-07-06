@@ -1,11 +1,5 @@
 -- +goose Up
-ALTER TABLE sessions ADD COLUMN token_fingerprint TEXT;
-ALTER TABLE sessions ADD COLUMN token_verifier TEXT NOT NULL DEFAULT '';
-ALTER TABLE api_tokens ADD COLUMN token_fingerprint TEXT;
-ALTER TABLE api_tokens ADD COLUMN token_verifier TEXT NOT NULL DEFAULT '';
-ALTER TABLE service_principal_secrets ADD COLUMN secret_fingerprint TEXT;
-ALTER TABLE service_principal_secrets ADD COLUMN secret_verifier TEXT NOT NULL DEFAULT '';
-
+-- Fingerprint/verifier columns are created directly by baseline development migrations.
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_fingerprint_unique_idx
   ON sessions(token_fingerprint)
   WHERE token_fingerprint IS NOT NULL AND token_fingerprint <> '';

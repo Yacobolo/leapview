@@ -230,8 +230,8 @@ func TestRepositorySupportsServicePrincipalSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
-	if secret == "" || row.Secret == "" || row.Secret == secret {
-		t.Fatalf("secret row = %#v, raw secret %q should be returned once and never stored", row, secret)
+	if secret == "" || row.Secret != "" {
+		t.Fatalf("secret row = %#v, raw secret %q should be returned once and never exposed in metadata", row, secret)
 	}
 	resolved, err := repo.PrincipalForServicePrincipalSecret(ctx, sp.ID, secret)
 	if err != nil {
@@ -670,7 +670,7 @@ func TestRepositoryStoresNewCredentialsWithFingerprintsAndVerifiers(t *testing.T
 		t.Fatalf("create session: %v", err)
 	}
 	assertStoredSecret(t, store.SQLDB(), sessionSecret, `
-		SELECT token_hash, COALESCE(token_fingerprint, ''), token_verifier
+		SELECT token_fingerprint, token_verifier
 		FROM sessions
 		WHERE principal_id = ?
 	`, principal.ID)
@@ -686,7 +686,7 @@ func TestRepositoryStoresNewCredentialsWithFingerprintsAndVerifiers(t *testing.T
 		t.Fatalf("create api token: %v", err)
 	}
 	assertStoredSecret(t, store.SQLDB(), apiSecret, `
-		SELECT token_hash, COALESCE(token_fingerprint, ''), token_verifier
+		SELECT token_fingerprint, token_verifier
 		FROM api_tokens
 		WHERE id = ?
 	`, apiToken.ID)
@@ -710,87 +710,10 @@ func TestRepositoryStoresNewCredentialsWithFingerprintsAndVerifiers(t *testing.T
 		t.Fatalf("create service principal secret: %v", err)
 	}
 	assertStoredSecret(t, store.SQLDB(), spSecret, `
-		SELECT secret_hash, COALESCE(secret_fingerprint, ''), secret_verifier
+		SELECT secret_fingerprint, secret_verifier
 		FROM service_principal_secrets
 		WHERE id = ?
 	`, spSecretRow.ID)
-}
-
-func TestRepositoryBackfillsLegacyCredentialRows(t *testing.T) {
-	ctx := context.Background()
-	store, repo := openAccessRepo(t, ctx)
-	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
-		ID:          "principal_legacy_credentials",
-		Email:       "legacy@example.com",
-		DisplayName: "Legacy",
-	})
-	if err != nil {
-		t.Fatalf("upsert principal: %v", err)
-	}
-
-	sessionSecret := "legacy-session-secret"
-	if _, err := store.SQLDB().ExecContext(ctx, `
-		INSERT INTO sessions (id, principal_id, token_hash, expires_at)
-		VALUES (?, ?, ?, ?)
-	`, "session_legacy", principal.ID, legacyTokenHash(sessionSecret), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)); err != nil {
-		t.Fatalf("insert legacy session: %v", err)
-	}
-	resolved, err := repo.PrincipalForToken(ctx, sessionSecret)
-	if err != nil {
-		t.Fatalf("resolve legacy session: %v", err)
-	}
-	if resolved.ID != principal.ID {
-		t.Fatalf("legacy session principal = %q, want %q", resolved.ID, principal.ID)
-	}
-	assertBackfilledSecret(t, store.SQLDB(), sessionSecret, `
-		SELECT token_hash, COALESCE(token_fingerprint, ''), token_verifier
-		FROM sessions
-		WHERE id = ?
-	`, "session_legacy")
-
-	apiSecret := "legacy-api-secret"
-	if _, err := store.SQLDB().ExecContext(ctx, `
-		INSERT INTO api_tokens (id, principal_id, name, token_hash, privileges_json)
-		VALUES (?, ?, ?, ?, ?)
-	`, "token_legacy", principal.ID, "legacy", legacyTokenHash(apiSecret), "[]"); err != nil {
-		t.Fatalf("insert legacy api token: %v", err)
-	}
-	credential, err := repo.CredentialForAPIToken(ctx, apiSecret)
-	if err != nil {
-		t.Fatalf("resolve legacy api token: %v", err)
-	}
-	if credential.Principal.ID != principal.ID {
-		t.Fatalf("legacy api token principal = %q, want %q", credential.Principal.ID, principal.ID)
-	}
-	assertBackfilledSecret(t, store.SQLDB(), apiSecret, `
-		SELECT token_hash, COALESCE(token_fingerprint, ''), token_verifier
-		FROM api_tokens
-		WHERE id = ?
-	`, "token_legacy")
-
-	sp, err := repo.CreateServicePrincipal(ctx, access.ServicePrincipalInput{ID: "sp_legacy", DisplayName: "Legacy Bot"})
-	if err != nil {
-		t.Fatalf("create service principal: %v", err)
-	}
-	spSecret := "legacy-sp-secret"
-	if _, err := store.SQLDB().ExecContext(ctx, `
-		INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_hash)
-		VALUES (?, ?, ?, ?)
-	`, "spsecret_legacy", sp.ID, "legacy", legacyTokenHash(spSecret)); err != nil {
-		t.Fatalf("insert legacy sp secret: %v", err)
-	}
-	spResolved, err := repo.PrincipalForServicePrincipalSecret(ctx, sp.ID, spSecret)
-	if err != nil {
-		t.Fatalf("resolve legacy service principal secret: %v", err)
-	}
-	if spResolved.ID != sp.ID {
-		t.Fatalf("legacy service principal = %q, want %q", spResolved.ID, sp.ID)
-	}
-	assertBackfilledSecret(t, store.SQLDB(), spSecret, `
-		SELECT secret_hash, COALESCE(secret_fingerprint, ''), secret_verifier
-		FROM service_principal_secrets
-		WHERE id = ?
-	`, "spsecret_legacy")
 }
 
 func TestRepositoryListsAndRevokesSessionsByID(t *testing.T) {
@@ -1176,38 +1099,18 @@ func equalStringSets(got, want []string) bool {
 
 func assertStoredSecret(t *testing.T, db *sql.DB, rawSecret, query, id string) {
 	t.Helper()
-	var storedHash, fingerprint, verifier string
-	if err := db.QueryRowContext(context.Background(), query, id).Scan(&storedHash, &fingerprint, &verifier); err != nil {
+	var fingerprint, verifier string
+	if err := db.QueryRowContext(context.Background(), query, id).Scan(&fingerprint, &verifier); err != nil {
 		t.Fatalf("query stored secret: %v", err)
 	}
 	wantFingerprint := secretFingerprint(rawSecret)
 	if fingerprint != wantFingerprint {
 		t.Fatalf("fingerprint = %q, want %q", fingerprint, wantFingerprint)
 	}
-	if storedHash != storedSecretHash(wantFingerprint) {
-		t.Fatalf("stored hash = %q, want v2 fingerprint hash", storedHash)
-	}
-	if storedHash == legacyTokenHash(rawSecret) || strings.Contains(storedHash, rawSecret) {
-		t.Fatalf("stored hash %q exposes legacy hash or raw secret", storedHash)
+	if strings.Contains(fingerprint, rawSecret) {
+		t.Fatalf("fingerprint %q exposes raw secret", fingerprint)
 	}
 	if !verifySecret(rawSecret, verifier) {
 		t.Fatalf("verifier does not accept raw secret")
-	}
-}
-
-func assertBackfilledSecret(t *testing.T, db *sql.DB, rawSecret, query, id string) {
-	t.Helper()
-	var storedHash, fingerprint, verifier string
-	if err := db.QueryRowContext(context.Background(), query, id).Scan(&storedHash, &fingerprint, &verifier); err != nil {
-		t.Fatalf("query backfilled secret: %v", err)
-	}
-	if fingerprint != secretFingerprint(rawSecret) {
-		t.Fatalf("backfilled fingerprint = %q, want %q", fingerprint, secretFingerprint(rawSecret))
-	}
-	if storedHash != storedSecretHash(fingerprint) || storedHash == legacyTokenHash(rawSecret) {
-		t.Fatalf("backfilled hash = %q, want v2 fingerprint hash", storedHash)
-	}
-	if !verifySecret(rawSecret, verifier) {
-		t.Fatalf("backfilled verifier does not accept raw secret")
 	}
 }

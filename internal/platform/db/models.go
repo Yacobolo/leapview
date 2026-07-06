@@ -65,8 +65,7 @@ type ApiToken struct {
 	PrincipalID      string         `json:"principal_id"`
 	WorkspaceID      sql.NullString `json:"workspace_id"`
 	Name             string         `json:"name"`
-	TokenHash        string         `json:"token_hash"`
-	TokenFingerprint sql.NullString `json:"token_fingerprint"`
+	TokenFingerprint string         `json:"token_fingerprint"`
 	TokenVerifier    string         `json:"token_verifier"`
 	PrivilegesJson   string         `json:"privileges_json"`
 	ExpiresAt        sql.NullString `json:"expires_at"`
@@ -305,8 +304,7 @@ type ServicePrincipalSecret struct {
 	ID                 string         `json:"id"`
 	ServicePrincipalID string         `json:"service_principal_id"`
 	Name               string         `json:"name"`
-	SecretHash         string         `json:"secret_hash"`
-	SecretFingerprint  sql.NullString `json:"secret_fingerprint"`
+	SecretFingerprint  string         `json:"secret_fingerprint"`
 	SecretVerifier     string         `json:"secret_verifier"`
 	ExpiresAt          sql.NullString `json:"expires_at"`
 	CreatedAt          string         `json:"created_at"`
@@ -346,8 +344,7 @@ type ServingStateArtifact struct {
 type Session struct {
 	ID               string         `json:"id"`
 	PrincipalID      string         `json:"principal_id"`
-	TokenHash        string         `json:"token_hash"`
-	TokenFingerprint sql.NullString `json:"token_fingerprint"`
+	TokenFingerprint string         `json:"token_fingerprint"`
 	TokenVerifier    string         `json:"token_verifier"`
 	ExpiresAt        string         `json:"expires_at"`
 	CreatedAt        string         `json:"created_at"`

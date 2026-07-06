@@ -160,9 +160,8 @@ CREATE TABLE IF NOT EXISTS platform_role_bindings (
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   principal_id TEXT NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL UNIQUE,
-  token_fingerprint TEXT,
-  token_verifier TEXT NOT NULL DEFAULT '',
+  token_fingerprint TEXT NOT NULL UNIQUE,
+  token_verifier TEXT NOT NULL,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -182,9 +181,8 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   principal_id TEXT NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
   workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
-  token_hash TEXT NOT NULL UNIQUE,
-  token_fingerprint TEXT,
-  token_verifier TEXT NOT NULL DEFAULT '',
+  token_fingerprint TEXT NOT NULL UNIQUE,
+  token_verifier TEXT NOT NULL,
   privileges_json TEXT NOT NULL DEFAULT '[]',
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -196,9 +194,8 @@ CREATE TABLE IF NOT EXISTS service_principal_secrets (
   id TEXT PRIMARY KEY,
   service_principal_id TEXT NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  secret_hash TEXT NOT NULL UNIQUE,
-  secret_fingerprint TEXT,
-  secret_verifier TEXT NOT NULL DEFAULT '',
+  secret_fingerprint TEXT NOT NULL,
+  secret_verifier TEXT NOT NULL,
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   revoked_at TEXT
@@ -407,7 +404,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS role_bindings_group_unique_idx
   WHERE group_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS platform_role_bindings_principal_unique_idx
   ON platform_role_bindings(role_id, principal_id);
-CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions(token_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_fingerprint_unique_idx
   ON sessions(token_fingerprint)
   WHERE token_fingerprint IS NOT NULL AND token_fingerprint <> '';
