@@ -24,6 +24,8 @@ type ProjectPlanWorkspace struct {
 	Dashboards             []string                      `json:"dashboards"`
 	WorkspaceGroups        []string                      `json:"workspaceGroups"`
 	WorkspaceRoleBindings  []string                      `json:"workspaceRoleBindings"`
+	Grants                 []string                      `json:"grants"`
+	DataPolicies           []string                      `json:"dataPolicies"`
 	WorkspaceAgentPolicies []string                      `json:"workspaceAgentPolicies"`
 	Changes                []ProjectPlanChange           `json:"changes,omitempty"`
 	DependencyChanges      []ProjectPlanDependencyChange `json:"dependencyChanges,omitempty"`
@@ -80,6 +82,8 @@ func PlanProject(projectPath string) (ProjectPlan, error) {
 			Dashboards:             sortedMapKeys(workspaceProject.Dashboards),
 			WorkspaceGroups:        sortedMapKeys(workspaceProject.AccessGroups),
 			WorkspaceRoleBindings:  sortedMapKeys(workspaceProject.AccessRoleBindings),
+			Grants:                 sortedMapKeys(workspaceProject.AccessGrants),
+			DataPolicies:           sortedMapKeys(workspaceProject.AccessDataPolicies),
 			WorkspaceAgentPolicies: sortedMapKeys(workspaceProject.AgentPolicies),
 		})
 	}
@@ -87,7 +91,7 @@ func PlanProject(projectPath string) (ProjectPlan, error) {
 }
 
 func PlanProjectAgainstGraph(projectPath, workspaceID string, active workspace.AssetGraph) (ProjectPlan, error) {
-	compiled, err := CompileProject(projectPath, Options{DeploymentID: workspace.DeploymentID("plan")})
+	compiled, err := CompileProject(projectPath, Options{ServingStateID: workspace.ServingStateID("plan")})
 	if err != nil {
 		return ProjectPlan{}, err
 	}
@@ -135,7 +139,7 @@ func diffAssetGraphs(authored, active workspace.AssetGraph) ([]ProjectPlanChange
 		asset := authoredAssets[id]
 		activeAsset, ok := activeAssets[id]
 		if !ok {
-			changes = append(changes, projectPlanChange("add", asset, workspace.Asset{}, "not in active deployment", impact))
+			changes = append(changes, projectPlanChange("add", asset, workspace.Asset{}, "not in active serving state", impact))
 			continue
 		}
 		if activeAsset.ContentHash != asset.ContentHash {

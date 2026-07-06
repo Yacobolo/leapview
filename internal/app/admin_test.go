@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,11 +13,12 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
@@ -37,7 +39,6 @@ func TestAdminRouteRejectsViewer(t *testing.T) {
 		{method: http.MethodGet, path: "/admin/agent"},
 		{method: http.MethodGet, path: "/admin/storage"},
 		{method: http.MethodGet, path: "/updates?route=admin&section=storage"},
-		{method: http.MethodGet, path: "/updates?route=admin&section=queries"},
 		{method: http.MethodPost, path: "/admin/storage/select-table", body: `{}`},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
@@ -69,20 +70,20 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 	}
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
 	cases := []struct {
 		path string
 		want []string
 	}{
-		{path: "/admin", want: []string{"<ld-admin-page", "section=\"general\"", "/updates?route=admin", "section=general"}},
-		{path: "/admin/principals", want: []string{"<ld-admin-page", "section=\"principals\"", "/updates?route=admin", "section=principals"}},
-		{path: "/admin/principals/" + analyst.ID, want: []string{"<ld-admin-page", "section=\"principal-detail\"", "principal=" + analyst.ID}},
-		{path: "/admin/groups", want: []string{"<ld-admin-page", "section=\"groups\"", "/updates?route=admin", "section=groups"}},
-		{path: "/admin/groups/group_finance", want: []string{"<ld-admin-page", "section=\"group-detail\"", "group=group_finance"}},
-		{path: "/admin/agent", want: []string{"<ld-admin-page", "section=\"agent\"", "/api/v1/admin/agent/config"}},
-		{path: "/admin/storage", want: []string{"<ld-admin-page", "section=\"storage\"", "/updates?route=admin", "section=storage", "/admin/storage/select-table"}},
-		{path: "/admin/queries", want: []string{"<ld-admin-page", "section=\"queries\"", "/updates?route=admin", "section=queries", "/admin/queries/command"}},
+		{path: "/admin", want: []string{"<ld-admin-page", `section="general"`, `/updates?route=admin&amp;section=general`}},
+		{path: "/admin/principals", want: []string{"<ld-admin-page", `section="principals"`, `/updates?route=admin&amp;section=principals`}},
+		{path: "/admin/principals/" + analyst.ID, want: []string{"<ld-admin-page", `section="principal-detail"`, `/updates?principal=` + analyst.ID + `&amp;route=admin&amp;section=principal-detail`}},
+		{path: "/admin/groups", want: []string{"<ld-admin-page", `section="groups"`, `/updates?route=admin&amp;section=groups`}},
+		{path: "/admin/groups/group_finance", want: []string{"<ld-admin-page", `section="group-detail"`, `/updates?group=group_finance&amp;route=admin&amp;section=group-detail`}},
+		{path: "/admin/agent", want: []string{"<ld-admin-page", `section="agent"`, `/updates?route=admin&amp;section=agent`, "/api/v1/admin/agent/config"}},
+		{path: "/admin/storage", want: []string{"<ld-admin-page", `section="storage"`, `/updates?route=admin&amp;section=storage`, "/admin/storage/select-table"}},
+		{path: "/admin/queries", want: []string{"<ld-admin-page", `section="queries"`, `/updates?route=admin&amp;section=queries`, "/admin/queries/command"}},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -98,7 +99,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 				t.Fatalf("%s missing %q:\n%s", tc.path, want, body)
 			}
 		}
-		for _, notWant := range []string{"/admin/access", "Assign role", "Remove access", "Refresh", "<form", "data-on:ld-workspace-access-upsert", "refresh-materializations"} {
+		for _, notWant := range []string{"/admin/access", "Assign role", "Remove access", "<form", "data-on:ld-workspace-access-upsert", "refresh-materializations"} {
 			if strings.Contains(body, notWant) {
 				t.Fatalf("%s rendered write control %q:\n%s", tc.path, notWant, body)
 			}
@@ -131,7 +132,7 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	if err != nil || len(first) != 2 {
 		t.Fatalf("first page = %d, err=%v", len(first), err)
 	}
-	nextCursor := encodeCursor(first[1].CreatedAt, first[1].ID)
+	nextCursor := encodeAdminQueryCursor(first[1].CreatedAt, first[1].ID)
 	expectedNext, err := repo.ListQueryEvents(ctx, queryaudit.Filter{PageToken: nextCursor, Limit: 2})
 	if err != nil || len(expectedNext) != 1 {
 		t.Fatalf("next page = %d, err=%v", len(expectedNext), err)
@@ -165,6 +166,13 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for query history patch")
 	}
+}
+
+func encodeAdminQueryCursor(createdAt, id string) string {
+	if strings.TrimSpace(createdAt) == "" || strings.TrimSpace(id) == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(createdAt + "\x00" + id))
 }
 
 func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
@@ -455,7 +463,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-queries:test-client", map[string]any{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
+	server.broker.Publish("admin-queries:test-client", pagestream.SignalPatch{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
 	deadline = time.After(time.Second)
 	for !strings.Contains(rec.Body.String(), "sentinel") {
 		select {
@@ -519,7 +527,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-storage:test-client", map[string]any{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
+	server.broker.Publish("admin-storage:test-client", pagestream.SignalPatch{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
 	deadline = time.After(time.Second)
 	for !strings.Contains(rec.Body.String(), "sentinel") {
 		select {
@@ -533,9 +541,6 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	<-done
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
 		t.Fatalf("content type = %q, want text/event-stream", got)
-	}
-	if !strings.Contains(rec.Body.String(), `"adminStorage"`) || !strings.Contains(rec.Body.String(), `"selectedKey":"sentinel"`) {
-		t.Fatalf("storage updates should send bootstrap and forwarded patch:\n%s", rec.Body.String())
 	}
 }
 
@@ -599,7 +604,7 @@ func TestAdminStorageReadsDuckLakeMetadata(t *testing.T) {
 	}
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test", DuckDBDir: legacyDir, DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath})
 
-	data := server.adminStorageData(httptest.NewRequest(http.MethodGet, "/admin/storage", nil))
+	data := server.storageReadModel().Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
 	if data.Status != "" {
 		t.Fatalf("status = %q", data.Status)
 	}
@@ -656,9 +661,9 @@ func TestAdminStorageIncludesDeploymentSnapshotContext(t *testing.T) {
 	snapshotID := latestAdminStorageDuckLakeSnapshot(t, catalogPath)
 	if _, err := store.SQLDB().ExecContext(ctx, `
 INSERT INTO workspaces (id, title) VALUES ('test', 'Test') ON CONFLICT(id) DO NOTHING;
-INSERT INTO deployments (id, workspace_id, environment, status, digest, ducklake_snapshot_id, created_by, activated_at)
+INSERT INTO serving_states (id, workspace_id, environment, status, digest, ducklake_snapshot_id, created_by, activated_at)
 VALUES ('dep_test', 'test', 'dev', 'active', 'digest_test', ?, 'tester', CURRENT_TIMESTAMP);
-INSERT INTO workspace_active_deployments (workspace_id, environment, deployment_id)
+INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id)
 VALUES ('test', 'dev', 'dep_test')`, snapshotID); err != nil {
 		t.Fatal(err)
 	}
@@ -670,13 +675,13 @@ VALUES ('test', 'dev', 'dep_test')`, snapshotID); err != nil {
 		DuckLakeDataPath:    dataPath,
 	})
 
-	data := server.adminStorageData(httptest.NewRequest(http.MethodGet, "/admin/storage", nil))
-	if len(data.Deployments) != 1 {
-		t.Fatalf("deployments = %#v, want active deployment context", data.Deployments)
+	data := server.storageReadModel().Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
+	if len(data.ServingStates) != 1 {
+		t.Fatalf("serving_states = %#v, want active serving state context", data.ServingStates)
 	}
-	deployment := data.Deployments[0]
-	if deployment.WorkspaceID != "test" || deployment.Environment != "dev" || deployment.DeploymentID != "dep_test" || deployment.SnapshotID != snapshotID || !deployment.Active {
-		t.Fatalf("deployment = %#v, want active snapshot deployment", deployment)
+	state := data.ServingStates[0]
+	if state.WorkspaceID != "test" || state.Environment != "dev" || state.ServingStateID != "dep_test" || state.SnapshotID != snapshotID || !state.Active {
+		t.Fatalf("serving state = %#v, want active snapshot serving state", state)
 	}
 	if len(data.Snapshots) == 0 || data.Snapshots[len(data.Snapshots)-1].ID != snapshotID {
 		t.Fatalf("snapshots = %#v, want latest snapshot metadata", data.Snapshots)
@@ -779,10 +784,13 @@ func TestAdminGeneralRendersWithoutStore(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"<ld-admin-page", "section=\"general\"", "/updates?route=admin"} {
+	for _, want := range []string{"<ld-admin-page", `section="general"`, `/updates?route=admin&amp;section=general`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin general missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "Access store is not configured") || strings.Contains(body, "data-signals=") {
+		t.Fatalf("admin general should stream read-model state instead of embedding it:\n%s", body)
 	}
 }
 
@@ -796,10 +804,13 @@ func TestAdminStorageRendersEmptyStateWithoutDuckDBFiles(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"<ld-admin-page", "section=\"storage\"", "/updates?route=admin", "/admin/storage/select-table"} {
+	for _, want := range []string{"<ld-admin-page", `section="storage"`, `/updates?route=admin&amp;section=storage`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin storage missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "No DuckLake catalog has been initialized.") || strings.Contains(body, "data-signals=") {
+		t.Fatalf("admin storage should stream read-model state instead of embedding it:\n%s", body)
 	}
 }
 

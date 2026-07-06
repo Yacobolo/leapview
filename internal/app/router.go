@@ -3,8 +3,14 @@ package app
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/access/httpauth"
+	"github.com/Yacobolo/libredash/internal/access/scimprov"
+	agenthttp "github.com/Yacobolo/libredash/internal/agent/http"
+	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
+	workspacehttp "github.com/Yacobolo/libredash/internal/workspace/http"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -18,75 +24,81 @@ func (s *Server) Routes() http.Handler {
 	mux.Get("/login", s.login)
 	mux.Group(func(r chi.Router) {
 		r.Use(s.csrf)
-		r.With(s.rateLimits.updatesMiddleware()).Get("/updates", s.updates)
-		r.Get("/", s.protected(access.PermissionDashboardView, s.home))
-		r.Get("/data", s.protected(access.PermissionDashboardView, s.dataExplorer))
-		r.Post("/data/command", s.protected(access.PermissionDashboardView, s.dataExplorerCommand))
-		r.Get("/workspaces", s.protected(access.PermissionDashboardView, s.workspaces))
-		r.Get("/workspaces/{workspace}", s.protected(access.PermissionDashboardView, s.workspaceAssets))
-		r.Get("/workspaces/{workspace}/assets/{asset}", s.protected(access.PermissionDashboardView, s.workspaceAsset))
-		r.Get("/workspaces/{workspace}/assets/{asset}/{section}", s.protected(access.PermissionDashboardView, s.workspaceAssetSection))
-		r.Post("/workspaces/{workspace}/assets/{asset}/refresh", s.protected(access.PermissionMaterializationsRefresh, s.refreshWorkspaceAsset))
-		r.Post("/workspaces/{workspace}/assets/{asset}/refresh-materializations", s.protected(access.PermissionMaterializationsRefresh, s.refreshWorkspaceAssetMaterializations))
-		r.Get("/workspaces/{workspace}/data", s.protected(access.PermissionDashboardView, s.workspaceDataExplorerRedirect))
-		r.Get("/chat", s.protected(access.PermissionAgentRead, s.chat))
-		r.Get("/chat/new", s.protected(access.PermissionAgentRead, s.chatNew))
-		r.Get("/chat/{conversation}", s.protected(access.PermissionAgentRead, s.chatConversation))
-		r.Post("/chat/turns", s.protected(access.PermissionAgentUse, s.chatTurn))
-		r.Get("/workspaces/{workspace}/chat", s.protected(access.PermissionDashboardView, s.legacyChatRedirect))
-		r.Get("/workspaces/{workspace}/chat/new", s.protected(access.PermissionDashboardView, s.legacyChatRedirect))
-		r.Get("/workspaces/{workspace}/chat/{conversation}", s.protected(access.PermissionDashboardView, s.legacyChatRedirect))
-		r.Post("/workspaces/{workspace}/chat/turns", s.protected(access.PermissionDashboardView, s.legacyChatRedirect))
-		r.Get("/admin", s.protected(access.PermissionRBACRead, s.adminGeneral))
-		r.Get("/admin/principals", s.protected(access.PermissionRBACRead, s.adminPrincipals))
-		r.Get("/admin/principals/{principal}", s.protected(access.PermissionRBACRead, s.adminPrincipalDetail))
-		r.Get("/admin/groups", s.protected(access.PermissionRBACRead, s.adminGroups))
-		r.Get("/admin/groups/{group}", s.protected(access.PermissionRBACRead, s.adminGroupDetail))
-		r.Get("/admin/agent", s.protected(access.PermissionRBACRead, s.adminAgent))
-		r.Get("/admin/storage", s.protected(access.PermissionRBACRead, s.adminStorage))
-		r.Post("/admin/storage/select-table", s.protected(access.PermissionRBACRead, s.adminStorageSelectTable))
-		r.Get("/admin/queries", s.protected(access.PermissionAuditRead, s.adminQueries))
-		r.Post("/admin/queries/command", s.protected(access.PermissionAuditRead, s.adminQueryHistoryCommand))
-		r.Post("/workspaces/{workspace}/access/upsert", s.protected(access.PermissionRBACManage, s.upsertWorkspaceAccess))
-		r.Post("/workspaces/{workspace}/access/remove", s.protected(access.PermissionRBACManage, s.removeWorkspaceAccess))
-		r.Get("/workspaces/{workspace}/permissions", s.protected(access.PermissionRBACManage, s.workspacePermissions))
-		r.Post("/workspaces/{workspace}/permissions", s.protected(access.PermissionRBACManage, s.updateWorkspacePermission))
-		r.Post("/workspaces/{workspace}/permissions/remove", s.protected(access.PermissionRBACManage, s.removeWorkspacePermission))
-		r.Get("/connections", s.protected(access.PermissionDashboardView, s.connections))
-		r.Get("/connections/{connection}/sources/{source}", s.protected(access.PermissionDashboardView, s.connectionSourceAsset))
-		r.Get("/connections/{connection}/sources/{source}/{section}", s.protected(access.PermissionDashboardView, s.connectionSourceAssetSection))
-		r.Get("/connections/{asset}", s.protected(access.PermissionDashboardView, s.connectionAsset))
-		r.Get("/connections/{asset}/{section}", s.protected(access.PermissionDashboardView, s.connectionAssetSection))
+		r.With(s.rateLimits.updatesMiddleware()).Get("/updates", s.pageStream)
+		r.Get("/", s.protected(access.PrivilegeViewItem, s.home))
+		workspaceHTTP := s.workspaceHTTPHandler()
+		r.Get("/data", s.protected(access.PrivilegeViewItem, workspaceHTTP.DataExplorer))
+		r.Post("/data/command", s.protected(access.PrivilegeViewItem, workspaceHTTP.DataExplorerCommand))
+		r.Get("/workspaces", s.protected(access.PrivilegeViewItem, workspaceHTTP.WorkspaceCatalog))
+		r.Get("/workspaces/{workspace}", s.protected(access.PrivilegeViewItem, workspaceHTTP.WorkspaceAssets))
+		r.Get("/workspaces/{workspace}/assets/{asset}", s.protectedWithObjects(access.PrivilegeViewItem, workspacehttp.AssetObjectRefs, workspaceHTTP.WorkspaceAsset))
+		r.Get("/workspaces/{workspace}/assets/{asset}/{section}", s.protectedWithObjects(access.PrivilegeViewItem, workspacehttp.AssetObjectRefs, workspaceHTTP.WorkspaceAssetSection))
+		r.Post("/workspaces/{workspace}/assets/{asset}/refresh", s.protectedWithObjects(access.PrivilegeRefreshData, workspacehttp.AssetObjectRefs, workspaceHTTP.RefreshAsset))
+		r.Post("/workspaces/{workspace}/assets/{asset}/refresh-materializations", s.protectedWithObjects(access.PrivilegeRefreshData, workspacehttp.AssetObjectRefs, workspaceHTTP.RefreshAssetMaterializations))
+		r.Get("/workspaces/{workspace}/data", s.protected(access.PrivilegeViewItem, workspaceHTTP.WorkspaceDataExplorerRedirect))
+		agentHTTP := s.agentHTTPHandler()
+		r.Get("/chat", s.protected(access.PrivilegeViewAgent, agentHTTP.Chat))
+		r.Get("/chat/new", s.protected(access.PrivilegeViewAgent, agentHTTP.ChatNew))
+		r.Get("/chat/{conversation}", s.protectedWithObjects(access.PrivilegeViewAgent, agenthttp.ConversationObjectRefs, agentHTTP.ChatConversation))
+		r.Post("/chat/turns", s.protected(access.PrivilegeUseAgent, agentHTTP.ChatTurn))
+		adminHTTP := s.adminHTTPHandler()
+		r.Get("/admin", s.protected(access.PrivilegeManageGrants, adminHTTP.General))
+		r.Get("/admin/principals", s.protected(access.PrivilegeManageGrants, adminHTTP.Principals))
+		r.Get("/admin/principals/{principal}", s.protected(access.PrivilegeManageGrants, adminHTTP.PrincipalDetail))
+		r.Get("/admin/groups", s.protected(access.PrivilegeManageGrants, adminHTTP.Groups))
+		r.Get("/admin/groups/{group}", s.protected(access.PrivilegeManageGrants, adminHTTP.GroupDetail))
+		r.Get("/admin/agent", s.protected(access.PrivilegeManageGrants, adminHTTP.Agent))
+		r.Get("/admin/storage", s.protected(access.PrivilegeManageGrants, adminHTTP.Storage))
+		r.Post("/admin/storage/select-table", s.protected(access.PrivilegeManageGrants, adminHTTP.StorageTableSelect))
+		r.Get("/admin/queries", s.protected(access.PrivilegeViewAudit, adminHTTP.Queries))
+		r.Post("/admin/queries/command", s.protected(access.PrivilegeViewAudit, adminHTTP.QueryCommand))
+		r.Post("/workspaces/{workspace}/access/upsert", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessUpsert))
+		r.Post("/workspaces/{workspace}/access/remove", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessRemove))
+		r.Post("/workspaces/{workspace}/assets/{asset}/access/upsert", s.protectedWithObjects(access.PrivilegeManageGrants, workspacehttp.AssetObjectRefs, workspaceHTTP.AccessUpsert))
+		r.Post("/workspaces/{workspace}/assets/{asset}/access/remove", s.protectedWithObjects(access.PrivilegeManageGrants, workspacehttp.AssetObjectRefs, workspaceHTTP.AccessRemove))
+		r.Get("/connections", s.protected(access.PrivilegeViewItem, workspaceHTTP.Connections))
+		r.Get("/connections/{connection}/sources/{source}", s.protected(access.PrivilegeViewItem, workspaceHTTP.ConnectionSource))
+		r.Get("/connections/{connection}/sources/{source}/{section}", s.protected(access.PrivilegeViewItem, workspaceHTTP.ConnectionSourceSection))
+		r.Get("/connections/{asset}", s.protected(access.PrivilegeViewItem, workspaceHTTP.ConnectionAsset))
+		r.Get("/connections/{asset}/{section}", s.protected(access.PrivilegeViewItem, workspaceHTTP.ConnectionAssetSection))
 		dashboardHTTP := s.dashboardHTTP()
-		r.Get("/workspaces/{workspace}/dashboards/{dashboard}", s.protected(access.PermissionDashboardView, dashboardHTTP.Dashboard))
-		r.Get("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", s.protected(access.PermissionDashboardView, dashboardHTTP.Page))
-		r.Post("/workspaces/{workspace}/commands/table-window", s.protected(access.PermissionDashboardView, dashboardHTTP.TableWindow))
-		r.Post("/workspaces/{workspace}/commands/select", s.protected(access.PermissionDashboardView, dashboardHTTP.Select))
-		r.Post("/workspaces/{workspace}/commands/clear-selection", s.protected(access.PermissionDashboardView, dashboardHTTP.ClearSelection))
-		r.Post("/workspaces/{workspace}/commands/reload", s.protected(access.PermissionDashboardView, dashboardHTTP.Reload))
-		r.Post("/workspaces/{workspace}/commands/reset-filters", s.protected(access.PermissionDashboardView, dashboardHTTP.ResetFilters))
-		r.Post("/workspaces/{workspace}/commands/refresh-materializations", s.protected(access.PermissionMaterializationsRefresh, dashboardHTTP.RefreshMaterializations))
+		r.Get("/workspaces/{workspace}/dashboards/{dashboard}", s.protectedWithObjects(access.PrivilegeViewItem, dashboardhttp.DashboardObjectRefs, dashboardHTTP.Dashboard))
+		r.Get("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", s.protectedWithObjects(access.PrivilegeViewItem, dashboardhttp.DashboardObjectRefs, dashboardHTTP.Page))
+		r.Post("/workspaces/{workspace}/commands/table-window", s.protected(access.PrivilegeViewItem, dashboardHTTP.TableWindow))
+		r.Post("/workspaces/{workspace}/commands/select", s.protected(access.PrivilegeViewItem, dashboardHTTP.Select))
+		r.Post("/workspaces/{workspace}/commands/clear-selection", s.protected(access.PrivilegeViewItem, dashboardHTTP.ClearSelection))
+		r.Post("/workspaces/{workspace}/commands/reload", s.protected(access.PrivilegeViewItem, dashboardHTTP.Reload))
+		r.Post("/workspaces/{workspace}/commands/reset-filters", s.protected(access.PrivilegeViewItem, dashboardHTTP.ResetFilters))
 		r.Post("/auth/logout", s.authLogout)
 	})
 	mux.Group(func(r chi.Router) {
 		r.Use(s.rateLimits.authMiddleware())
 		r.Get("/auth/{provider}", s.authBegin)
 		r.Get("/auth/{provider}/callback", s.authCallback)
+		r.Post("/oauth/token", s.accessHTTPHandler().OAuthToken)
 	})
 	if s.store != nil {
+		if strings.TrimSpace(s.scimBearerToken) != "" {
+			if repo, err := s.accessRepository(); err == nil && repo != nil {
+				if handler, err := scimprov.NewHandler(scimprov.Options{Repository: repo, BearerToken: s.scimBearerToken}); err == nil {
+					mux.Handle("/scim/*", http.StripPrefix("/scim", handler))
+				}
+			}
+		}
 		mux.Group(func(r chi.Router) {
 			r.Use(s.rateLimits.apiMiddleware())
 			r.Use(s.csrf)
-			r.Get("/api/v1/agent/conversations", s.protected(access.PermissionAgentRead, s.listAgentConversations))
-			r.Post("/api/v1/agent/conversations", s.protected(access.PermissionAgentUse, s.createAgentConversation))
-			r.Get("/api/v1/agent/conversations/{conversation}", s.protected(access.PermissionAgentRead, s.getAgentConversation))
-			r.Patch("/api/v1/agent/conversations/{conversation}", s.protected(access.PermissionAgentUse, s.updateAgentConversation))
-			r.Delete("/api/v1/agent/conversations/{conversation}", s.protected(access.PermissionAgentUse, s.archiveAgentConversation))
-			r.Get("/api/v1/agent/conversations/{conversation}/messages", s.protected(access.PermissionAgentRead, s.listAgentMessages))
-			r.Get("/api/v1/agent/conversations/{conversation}/runs", s.protected(access.PermissionAgentRead, s.listAgentRuns))
-			r.Get("/api/v1/agent/conversations/{conversation}/runs/{run}", s.protected(access.PermissionAgentRead, s.getAgentRun))
-			r.Get("/api/v1/agent/conversations/{conversation}/runs/{run}/events", s.protected(access.PermissionAgentRead, s.listAgentEvents))
-			r.Post("/api/v1/agent/conversations/{conversation}/turns", s.protected(access.PermissionAgentUse, s.createAgentTurn))
+			agentHTTP := s.agentHTTPHandler()
+			r.Get("/api/v1/agent/conversations", s.protected(access.PrivilegeViewAgent, agentHTTP.ListConversations))
+			r.Post("/api/v1/agent/conversations", s.protected(access.PrivilegeUseAgent, agentHTTP.CreateConversation))
+			r.Get("/api/v1/agent/conversations/{conversation}", s.protectedWithObjects(access.PrivilegeViewAgent, agenthttp.ConversationObjectRefs, agentHTTP.GetConversation))
+			r.Patch("/api/v1/agent/conversations/{conversation}", s.protectedWithObjects(access.PrivilegeUseAgent, agenthttp.ConversationObjectRefs, agentHTTP.UpdateConversation))
+			r.Delete("/api/v1/agent/conversations/{conversation}", s.protectedWithObjects(access.PrivilegeUseAgent, agenthttp.ConversationObjectRefs, agentHTTP.ArchiveConversation))
+			r.Get("/api/v1/agent/conversations/{conversation}/messages", s.protectedWithObjects(access.PrivilegeViewAgent, agenthttp.ConversationObjectRefs, agentHTTP.ListMessages))
+			r.Get("/api/v1/agent/conversations/{conversation}/runs", s.protectedWithObjects(access.PrivilegeViewAgent, agenthttp.ConversationObjectRefs, agentHTTP.ListRuns))
+			r.Get("/api/v1/agent/conversations/{conversation}/runs/{run}", s.protectedWithObjects(access.PrivilegeViewAgent, agenthttp.ConversationObjectRefs, agentHTTP.GetRun))
+			r.Get("/api/v1/agent/conversations/{conversation}/runs/{run}/events", s.protectedWithObjects(access.PrivilegeViewAgent, agenthttp.ConversationObjectRefs, agentHTTP.ListEvents))
+			r.Post("/api/v1/agent/conversations/{conversation}/turns", s.protectedWithObjects(access.PrivilegeUseAgent, agenthttp.ConversationObjectRefs, agentHTTP.CreateTurn))
 			s.registerAPIGenRoutes(r)
 		})
 	}
@@ -95,18 +107,26 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
-func (s *Server) protected(permission string, handler http.HandlerFunc) http.HandlerFunc {
-	return s.protect(permission, handler).ServeHTTP
+func (s *Server) protected(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {
+	return s.protect(privilege, handler).ServeHTTP
 }
 
-func (s *Server) protect(permission string, next http.Handler) http.Handler {
+func (s *Server) protectedWithObjects(privilege access.Privilege, objectResolver httpauth.ObjectResolver, handler http.HandlerFunc) http.HandlerFunc {
+	return s.protectWithObjects(privilege, objectResolver, handler).ServeHTTP
+}
+
+func (s *Server) protect(privilege access.Privilege, next http.Handler) http.Handler {
+	return s.protectWithObjects(privilege, nil, next)
+}
+
+func (s *Server) protectWithObjects(privilege access.Privilege, objectResolver httpauth.ObjectResolver, next http.Handler) http.Handler {
 	if s.auth == nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := context.WithValue(r.Context(), principalContextKey{}, localDeveloperPrincipal())
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-	return s.auth.Middleware(permission, next)
+	return s.auth.MiddlewareWithObjectResolver(privilege, objectResolver, next)
 }
 
 func (s *Server) csrf(next http.Handler) http.Handler {

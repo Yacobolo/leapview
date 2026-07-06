@@ -1,6 +1,7 @@
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, rm } from 'node:fs/promises'
 
 const portFile = '.tmp/dev-server.port'
+const qaHome = '.tmp/qa-ui-framework/home'
 let startedServer = false
 let cleanedUp = false
 let devTask: Bun.Subprocess | null = null
@@ -36,13 +37,56 @@ async function resolveBaseURL(): Promise<string> {
   if (current && await reachable(current)) return current
 
   startedServer = true
-  devTask = spawn(['task', 'dev'], { LIBREDASH_DEV_LOG_LINES: '0' }, 'ignore')
+  await prepareManagedHome()
+  devTask = spawn(['task', 'dev'], {
+    LIBREDASH_DEV_LOG_LINES: '0',
+    LIBREDASH_DEV_SKIP_PUBLISH: '1',
+    LIBREDASH_HOME: qaHome,
+  }, 'ignore')
   void devTask.exited.then((code) => {
     devTaskExitCode = code
   })
 
   const started = await waitForManagedServer()
+  await publishManagedProject(started)
+  await waitForReachable(started)
   return started
+}
+
+async function prepareManagedHome(): Promise<void> {
+  await rm(qaHome, { recursive: true, force: true })
+  await mkdir(qaHome, { recursive: true })
+}
+
+async function publishManagedProject(baseURL: string): Promise<void> {
+  const command = [
+      'go',
+      'run',
+      './cmd/libredash',
+      'publish',
+      '--workspace',
+      'visuals',
+      '--project',
+      'dashboards/libredash.yaml',
+      '--target',
+      baseURL,
+      '--token',
+      'dev',
+      '--environment',
+      'dev',
+      '--auto-approve',
+  ]
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await run(command)
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 3) await sleep(1000)
+    }
+  }
+  throw lastError
 }
 
 async function waitForManagedServer(): Promise<string> {
@@ -55,6 +99,14 @@ async function waitForManagedServer(): Promise<string> {
     await sleep(200)
   }
   throw new Error('managed dev server did not become reachable')
+}
+
+async function waitForReachable(baseURL: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await reachable(baseURL)) return
+    await sleep(200)
+  }
+  throw new Error(`managed dev server did not become reachable after publish at ${baseURL}`)
 }
 
 async function managedBaseURL(): Promise<string | null> {

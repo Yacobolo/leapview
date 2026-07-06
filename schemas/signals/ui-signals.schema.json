@@ -550,46 +550,6 @@
       ],
       "type": "object"
     },
-    "AdminStorageDeploymentSignal": {
-      "additionalProperties": false,
-      "properties": {
-        "activatedAt": {
-          "type": "string"
-        },
-        "active": {
-          "type": "boolean"
-        },
-        "deploymentId": {
-          "type": "string"
-        },
-        "digest": {
-          "type": "string"
-        },
-        "environment": {
-          "type": "string"
-        },
-        "snapshotId": {
-          "type": "integer"
-        },
-        "status": {
-          "type": "string"
-        },
-        "workspaceId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "activatedAt",
-        "active",
-        "deploymentId",
-        "digest",
-        "environment",
-        "snapshotId",
-        "status",
-        "workspaceId"
-      ],
-      "type": "object"
-    },
     "AdminStorageFileSignal": {
       "additionalProperties": false,
       "properties": {
@@ -634,20 +594,60 @@
       ],
       "type": "object"
     },
+    "AdminStorageServingStateSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "activatedAt": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "servingStateId": {
+          "type": "string"
+        },
+        "snapshotId": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "activatedAt",
+        "active",
+        "digest",
+        "environment",
+        "servingStateId",
+        "snapshotId",
+        "status",
+        "workspaceId"
+      ],
+      "type": "object"
+    },
     "AdminStorageSignal": {
       "additionalProperties": false,
       "properties": {
-        "deployments": {
-          "items": {
-            "$ref": "#/$defs/AdminStorageDeploymentSignal"
-          },
-          "type": "array"
-        },
         "selectedKey": {
           "type": "string"
         },
         "selectedTable": {
           "$ref": "#/$defs/AdminStorageTableSignal"
+        },
+        "servingStates": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageServingStateSignal"
+          },
+          "type": "array"
         },
         "snapshots": {
           "items": {
@@ -675,9 +675,9 @@
         }
       },
       "required": [
-        "deployments",
         "selectedKey",
         "selectedTable",
+        "servingStates",
         "snapshots",
         "status",
         "summary",
@@ -695,9 +695,6 @@
         "changes": {
           "type": "string"
         },
-        "deploymentCount": {
-          "type": "integer"
-        },
         "extraInfo": {
           "type": "string"
         },
@@ -713,6 +710,9 @@
         "schemaVersion": {
           "type": "integer"
         },
+        "servingStateCount": {
+          "type": "integer"
+        },
         "time": {
           "type": "string"
         }
@@ -720,12 +720,12 @@
       "required": [
         "author",
         "changes",
-        "deploymentCount",
         "extraInfo",
         "id",
         "message",
         "protected",
         "schemaVersion",
+        "servingStateCount",
         "time"
       ],
       "type": "object"
@@ -842,12 +842,6 @@
         "databasePath": {
           "type": "string"
         },
-        "deployments": {
-          "items": {
-            "$ref": "#/$defs/AdminStorageDeploymentSignal"
-          },
-          "type": "array"
-        },
         "duckLakePath": {
           "type": "string"
         },
@@ -889,6 +883,12 @@
         },
         "schema": {
           "type": "string"
+        },
+        "servingStates": {
+          "items": {
+            "$ref": "#/$defs/AdminStorageServingStateSignal"
+          },
+          "type": "array"
         },
         "sizeBytes": {
           "type": "integer"
@@ -3705,20 +3705,36 @@
     "WorkspaceAccessCommand": {
       "additionalProperties": false,
       "properties": {
+        "bindingId": {
+          "type": "string"
+        },
         "email": {
           "type": "string"
         },
         "principalId": {
           "type": "string"
         },
+        "privilege": {
+          "type": "string"
+        },
         "role": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
           "type": "string"
         }
       },
       "required": [
+        "bindingId",
         "email",
         "principalId",
-        "role"
+        "privilege",
+        "role",
+        "subjectId",
+        "subjectType"
       ],
       "type": "object"
     },
@@ -3731,6 +3747,18 @@
         },
         "canManage": {
           "type": "boolean"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "objectId": {
+          "type": "string"
+        },
+        "objectTitle": {
+          "type": "string"
+        },
+        "objectType": {
+          "type": "string"
         },
         "roles": {
           "items": {},
@@ -3762,6 +3790,18 @@
         },
         "command": {
           "$ref": "#/$defs/WorkspaceAccessCommand"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "objectId": {
+          "type": "string"
+        },
+        "objectTitle": {
+          "type": "string"
+        },
+        "objectType": {
+          "type": "string"
         },
         "roles": {
           "items": {},
@@ -4080,7 +4120,7 @@
     "WorkspaceAssetVersionsSignal": {
       "additionalProperties": false,
       "properties": {
-        "currentDeploymentId": {
+        "currentContentHash": {
           "type": "string"
         },
         "table": {
@@ -4088,7 +4128,7 @@
         }
       },
       "required": [
-        "currentDeploymentId",
+        "currentContentHash",
         "table"
       ],
       "type": "object"
@@ -4114,9 +4154,6 @@
     "WorkspaceCardSignal": {
       "additionalProperties": false,
       "properties": {
-        "deploymentLabel": {
-          "type": "string"
-        },
         "description": {
           "type": "string"
         },
@@ -4126,15 +4163,18 @@
         "id": {
           "type": "string"
         },
+        "servingLabel": {
+          "type": "string"
+        },
         "title": {
           "type": "string"
         }
       },
       "required": [
-        "deploymentLabel",
         "description",
         "href",
         "id",
+        "servingLabel",
         "title"
       ],
       "type": "object"

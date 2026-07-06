@@ -205,11 +205,11 @@ func workspaceCardSignals(workspaces []workspaceview.WorkspaceView) []uisignals.
 			description = "Published workspace assets."
 		}
 		cards = append(cards, uisignals.WorkspaceCardSignal{
-			ID:              workspace.ID,
-			Title:           workspace.Title,
-			Description:     description,
-			Href:            "/workspaces/" + workspace.ID,
-			DeploymentLabel: workspaceServingLabel(workspace),
+			ID:           workspace.ID,
+			Title:        workspace.Title,
+			Description:  description,
+			Href:         "/workspaces/" + workspace.ID,
+			ServingLabel: workspaceServingLabel(workspace),
 		})
 	}
 	return cards
@@ -362,8 +362,15 @@ func workspaceAssetPageSignalWithRefreshAndVersions(workspace workspaceview.Work
 	if assetRefreshable(asset.Type) {
 		page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "refreshes", Label: "Refreshes", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "refreshes"), Active: activeSection == "refreshes"})
 	}
+	if assetHasVersions(versions) {
+		page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "versions", Label: "Versions", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "versions"), Active: activeSection == "versions", Count: len(versions.Versions)})
+	}
 	page.Tabs = append(page.Tabs, uisignals.WorkspaceTabSignal{ID: "lineage", Label: "Lineage", Href: assetnav.WorkspaceAssetSectionHref(workspace.ID, asset.ID, "lineage"), Active: activeSection == "lineage", Count: lineage.Count})
 	return page
+}
+
+func assetHasVersions(versions AssetVersionsState) bool {
+	return strings.TrimSpace(versions.CurrentContentHash) != "" || len(versions.Versions) > 0
 }
 
 func connectionAssetPageSignal(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection string, lineage assetLineageModel) uisignals.WorkspaceAssetPageSignal {
@@ -750,7 +757,7 @@ func workspaceRouteUpdatesURL(routeKind uisignals.RouteKind, catalog dashboard.C
 }
 
 func workspaceServingLabel(workspace workspaceview.WorkspaceView) string {
-	if workspace.ActiveDeploymentID == "" {
+	if workspace.ActiveServingStateID == "" {
 		return "Not serving"
 	}
 	return "Serving"
@@ -788,7 +795,7 @@ func workspaceAssetHref(workspaceID, typ, query string) string {
 
 func ValidWorkspaceAssetSection(section string) bool {
 	switch section {
-	case "details", "data", "lineage", "refreshes":
+	case "details", "data", "lineage", "refreshes", "versions":
 		return true
 	default:
 		return false
@@ -805,7 +812,7 @@ type AssetRefreshState struct {
 type AssetRefreshRun struct {
 	ID                   string
 	ModelID              string
-	DeploymentID         string
+	ServingStateID       string
 	PrincipalID          string
 	PrincipalDisplayName string
 	TargetType           string
@@ -819,18 +826,19 @@ type AssetRefreshRun struct {
 }
 
 type AssetVersionsState struct {
-	CurrentDeploymentID string
-	Versions            []AssetVersionState
+	CurrentContentHash string
+	Versions           []AssetVersionState
 }
 
 type AssetVersionState struct {
-	DeploymentID string
-	Status       string
-	Digest       string
-	CreatedBy    string
-	CreatedAt    string
-	ActivatedAt  string
-	ContentHash  string
+	ServingStateID string
+	Status         string
+	Digest         string
+	CreatedBy      string
+	CreatedAt      string
+	ActivatedAt    string
+	SourceFile     string
+	ContentHash    string
 }
 
 func WorkspaceAssetRefreshSignals(workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, refresh AssetRefreshState, activeSection string) map[string]any {
@@ -854,42 +862,40 @@ func assetRefreshSignal(refresh AssetRefreshState) uisignals.WorkspaceAssetRefre
 
 func assetVersionsSignal(state AssetVersionsState) uisignals.WorkspaceAssetVersionsSignal {
 	return uisignals.WorkspaceAssetVersionsSignal{
-		CurrentDeploymentID: state.CurrentDeploymentID,
-		Table:               assetVersionsTable(state),
+		CurrentContentHash: state.CurrentContentHash,
+		Table:              assetVersionsTable(state),
 	}
 }
 
 func assetVersionsTable(state AssetVersionsState) recordTable {
 	rows := make([]map[string]any, 0, len(state.Versions))
-	current := strings.TrimSpace(state.CurrentDeploymentID)
+	current := strings.TrimSpace(state.CurrentContentHash)
 	for _, version := range state.Versions {
 		status := version.Status
-		if current != "" && version.DeploymentID == current {
+		if current != "" && version.ContentHash == current {
 			status = "current"
 		}
 		rows = append(rows, map[string]any{
-			"version":           shortVersionID(version.DeploymentID),
-			"created":           emptyDash(version.CreatedAt),
-			"activated":         emptyDash(version.ActivatedAt),
-			"status":            recordTableBadge{Label: status, Tone: versionStatusTone(status)},
-			"asset_hash":        shortHash(version.ContentHash),
-			"deployment_digest": shortHash(version.Digest),
-			"created_by":        emptyDash(version.CreatedBy),
+			"version":      shortHash(version.ContentHash),
+			"published":    emptyDash(firstNonEmpty(version.ActivatedAt, version.CreatedAt)),
+			"status":       recordTableBadge{Label: status, Tone: versionStatusTone(status)},
+			"config_hash":  shortHash(version.ContentHash),
+			"source_file":  emptyDash(version.SourceFile),
+			"published_by": emptyDash(version.CreatedBy),
 		})
 	}
 	return recordTable{
 		Columns: []recordTableColumn{
 			{ID: "version", Header: "Version", Kind: "code", Width: "150px"},
-			{ID: "created", Header: "Created", Width: "180px"},
-			{ID: "activated", Header: "Activated", Width: "180px"},
+			{ID: "published", Header: "Published", Width: "180px"},
 			{ID: "status", Header: "Status", Kind: "badge", Width: "120px"},
-			{ID: "asset_hash", Header: "Asset hash", Kind: "code", Width: "130px"},
-			{ID: "deployment_digest", Header: "Deployment digest", Kind: "code", Width: "160px"},
-			{ID: "created_by", Header: "Created by", Width: "150px"},
+			{ID: "config_hash", Header: "Config hash", Kind: "code", Width: "130px"},
+			{ID: "source_file", Header: "Source file", Kind: "code", Width: "220px"},
+			{ID: "published_by", Header: "Published by", Width: "150px"},
 		},
 		Rows:     rows,
-		Empty:    "No versions recorded for this asset yet.",
-		MinWidth: "1070px",
+		Empty:    "No config versions recorded for this asset yet.",
+		MinWidth: "850px",
 	}
 }
 

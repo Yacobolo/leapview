@@ -156,17 +156,6 @@ export interface AdminStorageCommand {
   table: string
 }
 
-export interface AdminStorageDeploymentSignal {
-  workspaceId: string
-  environment: string
-  deploymentId: string
-  status: string
-  snapshotId: number
-  digest: string
-  active: boolean
-  activatedAt: string
-}
-
 export interface AdminStorageFileSignal {
   id: number
   path: string
@@ -179,13 +168,24 @@ export interface AdminStorageFileSignal {
   endSnapshot: number
 }
 
+export interface AdminStorageServingStateSignal {
+  workspaceId: string
+  environment: string
+  servingStateId: string
+  status: string
+  snapshotId: number
+  digest: string
+  active: boolean
+  activatedAt: string
+}
+
 export interface AdminStorageSignal {
   summary: AdminStorageSummary
   status: string
   warnings: string[]
   tables: AdminStorageTableSignal[]
   snapshots: AdminStorageSnapshotSignal[]
-  deployments: AdminStorageDeploymentSignal[]
+  servingStates: AdminStorageServingStateSignal[]
   selectedKey: string
   selectedTable: AdminStorageTableSignal
 }
@@ -199,7 +199,7 @@ export interface AdminStorageSnapshotSignal {
   changes: string
   extraInfo: string
   protected: boolean
-  deploymentCount: number
+  servingStateCount: number
 }
 
 export interface AdminStorageSummary {
@@ -250,7 +250,7 @@ export interface AdminStorageTableSignal {
   columns?: AdminStorageColumnSignal[]
   files?: AdminStorageFileSignal[]
   history?: AdminStorageTableHistorySignal[]
-  deployments?: AdminStorageDeploymentSignal[]
+  servingStates?: AdminStorageServingStateSignal[]
 }
 
 export interface AssetLineageEdgeSignal {
@@ -1031,11 +1031,19 @@ export interface SubSidebarSignal {
 export interface WorkspaceAccessCommand {
   email: string
   role: string
+  privilege: string
   principalId: string
+  bindingId: string
+  subjectType: string
+  subjectId: string
 }
 
 export interface WorkspaceAccessResponse {
   workspace: unknown
+  objectType?: string
+  objectId?: string
+  objectTitle?: string
+  mode?: string
   roles: unknown[]
   bindings: unknown[]
   canManage: boolean
@@ -1044,6 +1052,10 @@ export interface WorkspaceAccessResponse {
 
 export interface WorkspaceAccessSignal {
   workspace: unknown
+  objectType?: string
+  objectId?: string
+  objectTitle?: string
+  mode?: string
   roles: unknown[]
   bindings: unknown[]
   canManage: boolean
@@ -1134,7 +1146,7 @@ export interface WorkspaceAssetSummarySignal {
 }
 
 export interface WorkspaceAssetVersionsSignal {
-  currentDeploymentId: string
+  currentContentHash: string
   table: RecordTableSignal
 }
 
@@ -1149,7 +1161,7 @@ export interface WorkspaceCardSignal {
   title: string
   description: string
   href: string
-  deploymentLabel: string
+  servingLabel: string
 }
 
 export interface WorkspaceDetailSectionSignal {

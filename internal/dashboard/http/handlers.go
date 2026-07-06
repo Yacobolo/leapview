@@ -4,7 +4,9 @@ import (
 	"context"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	nethttp "net/http"
+	"strings"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -31,8 +33,20 @@ type Handler struct {
 	Metrics             Metrics
 	MetricsForWorkspace func(workspaceID string) (Metrics, bool)
 	Broker              *pagestream.Broker
+	CurrentPrincipalID  func(r *nethttp.Request) string
 	CSRFToken           func(r *nethttp.Request) string
 	ChromeDecorators    func(r *nethttp.Request) []reportui.ChromeDecorator
+}
+
+func DashboardObjectRefs(r *nethttp.Request, workspaceID string) []access.ObjectRef {
+	objects := []access.ObjectRef{}
+	if dashboardID := strings.TrimSpace(chi.URLParam(r, "dashboard")); dashboardID != "" {
+		objects = append(objects, access.ItemObjectWithParent(access.SecurableDashboard, workspaceID, dashboardID, access.WorkspaceObject(workspaceID)))
+	}
+	if strings.TrimSpace(workspaceID) != "" {
+		objects = append(objects, access.WorkspaceObject(workspaceID))
+	}
+	return objects
 }
 
 func (h Handler) Dashboard(w nethttp.ResponseWriter, r *nethttp.Request) {

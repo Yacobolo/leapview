@@ -17,8 +17,8 @@ type AdminData struct {
 	Workspace         workspaceview.WorkspaceView
 	CSRFToken         string
 	AuthConfigured    bool
-	RBACConfigured    bool
-	RBACStatusLabel   string
+	AccessConfigured  bool
+	AccessStatusLabel string
 	PrincipalCount    int
 	GroupCount        int
 	BindingCount      int
@@ -120,7 +120,7 @@ type AdminStorageColumn = uisignals.AdminStorageColumn
 type AdminStorageFile = uisignals.AdminStorageFile
 type AdminStorageTableHistory = uisignals.AdminStorageTableHistory
 type AdminStorageSnapshot = uisignals.AdminStorageSnapshot
-type AdminStorageDeployment = uisignals.AdminStorageDeployment
+type AdminStorageServingState = uisignals.AdminStorageServingState
 type AdminStorageSignal = uisignals.AdminStorageSignal
 type AdminStorageSummary = uisignals.AdminStorageSummary
 type AdminStorageTableSignal = uisignals.AdminStorageTableSignal
@@ -128,7 +128,7 @@ type AdminStorageColumnSignal = uisignals.AdminStorageColumnSignal
 type AdminStorageFileSignal = uisignals.AdminStorageFileSignal
 type AdminStorageTableHistorySignal = uisignals.AdminStorageTableHistorySignal
 type AdminStorageSnapshotSignal = uisignals.AdminStorageSnapshotSignal
-type AdminStorageDeploymentSignal = uisignals.AdminStorageDeploymentSignal
+type AdminStorageServingStateSignal = uisignals.AdminStorageServingStateSignal
 type AdminStorageCommand = uisignals.AdminStorageCommand
 
 func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) g.Node {
@@ -299,13 +299,13 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 	default:
 		page.HeaderTitle = "General"
 		page.HeaderDetail = "Read-only workspace administration."
-		if !data.RBACConfigured {
-			page.Empty = data.RBACStatusLabel
+		if !data.AccessConfigured {
+			page.Empty = data.AccessStatusLabel
 		}
 		page.Metrics = []uisignals.AdminMetricSignal{
 			{Label: "Workspace", Value: data.Workspace.Title, Detail: data.Workspace.ID},
 			{Label: "Auth", Value: configuredLabel(data.AuthConfigured)},
-			{Label: "RBAC", Value: data.RBACStatusLabel},
+			{Label: "Access", Value: data.AccessStatusLabel},
 			{Label: "Principals", Value: fmt.Sprint(data.PrincipalCount)},
 			{Label: "Groups", Value: fmt.Sprint(data.GroupCount)},
 			{Label: "Role bindings", Value: fmt.Sprint(data.BindingCount)},
@@ -802,7 +802,7 @@ func AdminStorageSignalFromData(data AdminStorageData, command AdminStorageComma
 		Warnings:      data.Warnings,
 		Tables:        tables,
 		Snapshots:     adminStorageSnapshotSignals(data.Snapshots),
-		Deployments:   adminStorageDeploymentSignals(data.Deployments),
+		ServingStates: adminStorageServingStateSignals(data.ServingStates),
 		SelectedKey:   selectedKey,
 		SelectedTable: selected,
 	}
@@ -880,7 +880,7 @@ func AdminStorageTableSignalFromTable(table AdminStorageTable) AdminStorageTable
 		Columns:       columns,
 		Files:         files,
 		History:       history,
-		Deployments:   adminStorageDeploymentSignals(table.Deployments),
+		ServingStates: adminStorageServingStateSignals(table.ServingStates),
 	}
 }
 
@@ -888,32 +888,32 @@ func adminStorageSnapshotSignals(snapshots []AdminStorageSnapshot) []AdminStorag
 	out := make([]AdminStorageSnapshotSignal, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		out = append(out, AdminStorageSnapshotSignal{
-			ID:              snapshot.ID,
-			Time:            snapshot.Time,
-			SchemaVersion:   snapshot.SchemaVersion,
-			Author:          snapshot.Author,
-			Message:         snapshot.Message,
-			Changes:         snapshot.Changes,
-			ExtraInfo:       snapshot.ExtraInfo,
-			Protected:       snapshot.Protected,
-			DeploymentCount: snapshot.DeploymentCount,
+			ID:                snapshot.ID,
+			Time:              snapshot.Time,
+			SchemaVersion:     snapshot.SchemaVersion,
+			Author:            snapshot.Author,
+			Message:           snapshot.Message,
+			Changes:           snapshot.Changes,
+			ExtraInfo:         snapshot.ExtraInfo,
+			Protected:         snapshot.Protected,
+			ServingStateCount: snapshot.ServingStateCount,
 		})
 	}
 	return out
 }
 
-func adminStorageDeploymentSignals(deployments []AdminStorageDeployment) []AdminStorageDeploymentSignal {
-	out := make([]AdminStorageDeploymentSignal, 0, len(deployments))
-	for _, deployment := range deployments {
-		out = append(out, AdminStorageDeploymentSignal{
-			WorkspaceID:  deployment.WorkspaceID,
-			Environment:  deployment.Environment,
-			DeploymentID: deployment.DeploymentID,
-			Status:       deployment.Status,
-			SnapshotID:   deployment.SnapshotID,
-			Digest:       deployment.Digest,
-			Active:       deployment.Active,
-			ActivatedAt:  deployment.ActivatedAt,
+func adminStorageServingStateSignals(servingStates []AdminStorageServingState) []AdminStorageServingStateSignal {
+	out := make([]AdminStorageServingStateSignal, 0, len(servingStates))
+	for _, servingState := range servingStates {
+		out = append(out, AdminStorageServingStateSignal{
+			WorkspaceID:    servingState.WorkspaceID,
+			Environment:    servingState.Environment,
+			ServingStateID: servingState.ServingStateID,
+			Status:         servingState.Status,
+			SnapshotID:     servingState.SnapshotID,
+			Digest:         servingState.Digest,
+			Active:         servingState.Active,
+			ActivatedAt:    servingState.ActivatedAt,
 		})
 	}
 	return out

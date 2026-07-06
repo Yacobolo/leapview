@@ -14,9 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestDeploymentsListDecodesEnvelopePreservingTableOutput(t *testing.T) {
+func TestPubsListDecodesEnvelopePreservingTableOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/workspaces/test/deployments" {
+		if r.URL.Path != "/api/v1/workspaces/test/publishes" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
@@ -38,7 +38,7 @@ func TestDeploymentsListDecodesEnvelopePreservingTableOutput(t *testing.T) {
 	defer server.Close()
 
 	output := captureStdout(t, func() {
-		err := runDeploymentsList(context.Background(), &rootOptions{target: server.URL, token: "token", workspaceID: "test"})
+		err := runPublishesList(context.Background(), &rootOptions{target: server.URL, token: "token", workspaceID: "test"})
 		if err != nil {
 			t.Fatalf("run list: %v", err)
 		}
@@ -125,9 +125,9 @@ func TestFriendlyListCommandsPassPaginationQuery(t *testing.T) {
 		},
 		{
 			name:    "deployments",
-			command: deploymentsCommand,
+			command: publishesCommand,
 			args:    []string{"list"},
-			path:    "/api/v1/workspaces/test/deployments",
+			path:    "/api/v1/workspaces/test/publishes",
 		},
 		{
 			name:    "agent conversations",
@@ -440,7 +440,7 @@ func TestAgentToolsCommandListsGeneratedTools(t *testing.T) {
 			t.Fatalf("agent tools: %v", err)
 		}
 	})
-	for _, want := range []string{"NAME", "PERMISSION", "list_dashboards", "asset:read", "list_assets", "describe_asset", "asset_lineage", "search_workspace", "query_dashboard_visual_data", "query_semantic_dataset", "explain_semantic_query"} {
+	for _, want := range []string{"NAME", "PRIVILEGE", "list_dashboards", "VIEW_ITEM", "list_assets", "describe_asset", "asset_lineage", "search_workspace", "query_dashboard_visual_data", "query_semantic_dataset", "explain_semantic_query"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("agent tools output missing %q:\n%s", want, output)
 		}

@@ -1,6 +1,6 @@
 package workspace
 
-import "github.com/Yacobolo/libredash/internal/agenttools"
+import agenttools "github.com/Yacobolo/libredash/internal/agent/tools"
 
 func IsKnownAgentTool(name string) bool {
 	return agenttools.IsKnownTool(name)

@@ -10,83 +10,80 @@ import (
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
-func (s *Server) updates(w http.ResponseWriter, r *http.Request) {
-	route := updateRoute(r)
+func (s *Server) pageStream(w http.ResponseWriter, r *http.Request) {
+	route := streamRoute(r)
 	if route == "" {
 		http.Error(w, "updates route is required", http.StatusBadRequest)
 		return
 	}
-	permission, ok := updatesPermission(route, r.URL.Query().Get("section"))
+	privilege, ok := streamPrivilege(route, r.URL.Query().Get("section"))
 	if !ok {
 		http.Error(w, "unknown updates route", http.StatusBadRequest)
 		return
 	}
-	if permission == "" {
-		s.serveUpdates(w, r, route)
+	if privilege == "" {
+		s.servePageStream(w, r, route)
 		return
 	}
-	s.protect(permission, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.serveUpdates(w, r, route)
+	s.protect(privilege, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.servePageStream(w, r, route)
 	})).ServeHTTP(w, r)
 }
 
-func updateRoute(r *http.Request) string {
+func streamRoute(r *http.Request) string {
 	return strings.TrimSpace(r.URL.Query().Get("route"))
 }
 
-func updatesPermission(route, section string) (string, bool) {
+func streamPrivilege(route, section string) (access.Privilege, bool) {
 	switch uisignals.RouteKind(route) {
 	case uisignals.RouteLogin:
 		return "", true
 	case uisignals.RouteCatalog, uisignals.RouteDashboard, uisignals.RouteWorkspace, uisignals.RouteWorkspaceAsset, uisignals.RouteConnections, uisignals.RouteConnectionAsset, uisignals.RouteData:
-		return access.PermissionDashboardView, true
+		return access.PrivilegeViewItem, true
 	case uisignals.RouteChat:
-		return access.PermissionAgentRead, true
+		return access.PrivilegeViewAgent, true
 	case uisignals.RouteAdmin:
 		if strings.TrimSpace(section) == "queries" {
-			return access.PermissionAuditRead, true
+			return access.PrivilegeViewAudit, true
 		}
-		return access.PermissionRBACRead, true
+		return access.PrivilegeManageGrants, true
 	default:
 		return "", false
 	}
 }
 
-func (s *Server) serveUpdates(w http.ResponseWriter, r *http.Request, route string) {
+func (s *Server) servePageStream(w http.ResponseWriter, r *http.Request, route string) {
 	switch uisignals.RouteKind(route) {
 	case uisignals.RouteDashboard:
 		s.dashboardHTTP().Updates(w, r)
 	case uisignals.RouteChat:
-		if s.agent == nil || !s.agent.Enabled() {
-			s.chatBootstrapUpdates(w, r)
-			return
-		}
-		s.chatUpdates(w, r)
+		s.agentHTTPHandler().ChatUpdates(w, r)
 	case uisignals.RouteData:
-		s.dataExplorerUpdates(w, r)
+		s.workspaceHTTPHandler().DataExplorerUpdates(w, r)
 	case uisignals.RouteAdmin:
+		adminHTTP := s.adminHTTPHandler()
 		switch strings.TrimSpace(r.URL.Query().Get("section")) {
 		case "queries":
-			s.adminQueryHistoryUpdates(w, r)
+			adminHTTP.QueryUpdates(w, r)
 		case "storage":
-			s.adminStorageUpdates(w, r)
+			adminHTTP.StorageSignalUpdates(w, r)
 		default:
-			s.adminBootstrapUpdates(w, r)
+			adminHTTP.BootstrapUpdates(w, r)
 		}
 	case uisignals.RouteWorkspaceAsset, uisignals.RouteConnectionAsset:
 		if strings.TrimSpace(r.URL.Query().Get("asset")) != "" {
-			s.workspaceAssetUpdates(w, r)
+			s.workspaceHTTPHandler().AssetUpdatesStream(w, r)
 			return
 		}
 		s.patchAndWait(w, r, pagestream.SignalPatch{"status": map[string]any{"loading": false, "error": ""}})
 	case uisignals.RouteLogin:
 		s.patchAndWait(w, r, ui.LoginBootstrapSignals())
 	case uisignals.RouteCatalog:
-		s.patchAndWait(w, r, ui.CatalogBootstrapSignalsForCatalogs(s.catalogsForVisibleWorkspaces(r), s.chatChromeOption(r)))
+		s.patchAndWait(w, r, ui.CatalogBootstrapSignalsForCatalogs(s.workspaceHTTPReadModel().CatalogsForVisibleWorkspaces(r), s.chatChromeOption(r)))
 	case uisignals.RouteWorkspace:
-		s.workspaceBootstrapUpdates(w, r)
+		s.workspaceHTTPHandler().WorkspaceBootstrapUpdates(w, r)
 	case uisignals.RouteConnections:
-		s.connectionsBootstrapUpdates(w, r)
+		s.workspaceHTTPHandler().ConnectionsBootstrapUpdates(w, r)
 	default:
 		http.Error(w, "unknown updates route", http.StatusBadRequest)
 	}

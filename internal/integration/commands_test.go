@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -52,28 +53,6 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 			},
 		},
 		{
-			name: "/commands/reload",
-			path: "/commands/reload",
-			signals: mergeSignals(runtimeSignals("cmd-reload", "overview"), map[string]any{
-				"filters": map[string]any{
-					"controls": map[string]any{
-						"state": map[string]any{
-							"type":     "multi_select",
-							"operator": "in",
-							"values":   []string{"SP"},
-						},
-					},
-				},
-				"tableCommand": tableCommand("orders_table", "all", 0, 50, 5, 0),
-			}),
-			assert: func(t *testing.T, patches []map[string]any) {
-				t.Helper()
-				requireStatusLoading(t, patches, true)
-				requireFilterValues(t, patches, "state", "SP")
-				requireTable(t, patches, "orders_table")
-			},
-		},
-		{
 			name: "/commands/reset-filters",
 			path: "/commands/reset-filters",
 			signals: mergeSignals(runtimeSignals("cmd-reset", "overview"), map[string]any{
@@ -95,25 +74,12 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 				requireTableResetVersion(t, patches, "orders_table", 3)
 			},
 		},
-		{
-			name: "/commands/refresh-materializations",
-			path: "/commands/refresh-materializations",
-			signals: mergeSignals(runtimeSignals("cmd-refresh", "overview"), map[string]any{
-				"tableCommand": tableCommand("orders_table", "all", 0, 50, 6, 0),
-			}),
-			assert: func(t *testing.T, patches []map[string]any) {
-				t.Helper()
-				requireStatusLoading(t, patches, true)
-				requireVisual(t, patches, "total_orders")
-				requireTable(t, patches, "orders_table")
-			},
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals(clientIDFromSignals(tt.signals), "overview"))
-			drainInitialStreamPatches(t, stream)
+			drainInitialSnapshot(t, stream)
 
 			if got := h.postCommand(t, tt.path, tt.signals); got != http.StatusNoContent {
 				t.Fatalf("status = %d, want %d", got, http.StatusNoContent)
@@ -127,7 +93,7 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 func TestTableWindowCommandPublishesOnlyRequestedTablePatch(t *testing.T) {
 	h := newHarness(t)
 	stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("cmd-table", "overview"))
-	drainInitialStreamPatches(t, stream)
+	drainInitialSnapshot(t, stream)
 
 	status := h.postCommand(t, "/commands/table-window", mergeSignals(runtimeSignals("cmd-table", "overview"), map[string]any{
 		"tableCommand": tableCommand("orders_table", "a", 0, 1, 7, 0),
@@ -149,7 +115,7 @@ func TestTableWindowCommandDoesNotPublishCanceledTablePatch(t *testing.T) {
 		return canceledTableWindowMetrics{integrationMetrics: metrics}
 	}))
 	stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("cmd-table-canceled", "overview"))
-	drainInitialStreamPatches(t, stream)
+	drainInitialSnapshot(t, stream)
 
 	status := h.postCommand(t, "/commands/table-window", mergeSignals(runtimeSignals("cmd-table-canceled", "overview"), map[string]any{
 		"tableCommand": tableCommand("orders_table", "a", 0, 1, 8, 0),
@@ -161,22 +127,28 @@ func TestTableWindowCommandDoesNotPublishCanceledTablePatch(t *testing.T) {
 	stream.expectNoPatch(t, 500*time.Millisecond)
 }
 
-func TestRefreshMaterializationsCommandPublishesErrorPatch(t *testing.T) {
+func TestRefreshMaterializationsCommandIsRemoved(t *testing.T) {
 	h := newHarness(t, withOlistFixture(func(t *testing.T, dir string) {}))
-	stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("cmd-refresh-error", "overview"))
-	drainInitialStreamPatches(t, stream)
-
 	signals := runtimeSignals("cmd-refresh-error", "overview")
 	runtime := signals["runtime"].(map[string]any)
 	runtime["modelId"] = "olist"
-	status := h.postCommand(t, "/commands/refresh-materializations", signals)
-	if status != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", status, http.StatusNoContent)
+	encodedSignals, err := json.Marshal(signals)
+	if err != nil {
+		t.Fatalf("marshal Datastar signals: %v", err)
 	}
-
-	patches := nextPatches(t, stream, 2)
-	requireStatusLoading(t, patches, true)
-	requireStatusError(t, patches, true)
+	req, err := http.NewRequest(http.MethodPost, h.serverURL(t)+h.workspaceCommandPath("/commands/refresh-materializations"), bytes.NewReader(encodedSignals))
+	if err != nil {
+		t.Fatalf("create removed command request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST removed command: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusNotFound)
+	}
 }
 
 func TestCommandRejectsMalformedDatastarBody(t *testing.T) {
@@ -211,27 +183,53 @@ func (m canceledTableWindowMetrics) QueryTablePage(_ context.Context, _ string, 
 	return dashboard.EmptyTable(request.WithDefaults(), context.Canceled), nil
 }
 
-func drainInitialStreamPatches(t *testing.T, stream *streamClient) []map[string]any {
+func drainInitialSnapshot(t *testing.T, stream *streamClient) []map[string]any {
 	t.Helper()
 	patches := []map[string]any{}
-	sawSnapshotStatus := false
-	sawSnapshotTables := false
-	for len(patches) < 8 {
-		patch := stream.nextPatch(t)
-		patches = append(patches, patch)
-		status := mapAt(patch, "status")
-		if status["loading"] == false {
-			sawSnapshotStatus = true
-		}
-		if hasKey(patch, "tables") && !hasKey(patch, "runtime") {
-			sawSnapshotTables = true
-		}
-		if sawSnapshotStatus && sawSnapshotTables {
+	quiet := time.NewTimer(150 * time.Millisecond)
+	defer quiet.Stop()
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	seenSnapshotTable := false
+	for {
+		select {
+		case patch, ok := <-stream.patches:
+			if !ok {
+				return patches
+			}
+			patches = append(patches, patch)
+			if tableHasSnapshot(patch, "orders_table") {
+				seenSnapshotTable = true
+			}
+			if !quiet.Stop() {
+				select {
+				case <-quiet.C:
+				default:
+				}
+			}
+			quiet.Reset(150 * time.Millisecond)
+		case err := <-stream.errs:
+			if err != nil {
+				t.Fatalf("read initial updates stream: %v", err)
+			}
 			return patches
+		case <-quiet.C:
+			if seenSnapshotTable {
+				return patches
+			}
+			quiet.Reset(150 * time.Millisecond)
+		case <-deadline.C:
+			t.Fatalf("initial stream did not include populated tables patch: %#v", patches)
 		}
 	}
-	t.Fatalf("initial stream did not include snapshot status and tables patches: %#v", patches)
-	return nil
+}
+
+func tableHasSnapshot(patch map[string]any, tableID string) bool {
+	table := mapAt(patch, "tables", tableID)
+	if _, ok := table["availableRows"]; !ok {
+		return false
+	}
+	return hasKey(table, "blocks")
 }
 
 func nextPatches(t *testing.T, stream *streamClient, count int) []map[string]any {

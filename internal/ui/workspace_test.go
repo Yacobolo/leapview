@@ -114,31 +114,45 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	}
 }
 
-func TestWorkspaceAssetPageHidesVersionsSurface(t *testing.T) {
+func TestWorkspaceAssetPageExposesVersionsSurface(t *testing.T) {
 	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
 	asset := testAssetByID(t, assets, "dashboard")
+	versions := AssetVersionsState{
+		CurrentContentHash: "hash_current",
+		Versions: []AssetVersionState{{
+			ServingStateID: "state_1",
+			Status:         "active",
+			CreatedBy:      "tester",
+			CreatedAt:      "2026-01-01",
+			ContentHash:    "hash_current",
+			SourceFile:     "dashboards/test.yaml",
+		}},
+	}
 
-	page := workspaceAssetPageSignalWithRefresh(workspace, asset, assets, edges, "details", assetLineage(workspace.ID, asset, assets, edges), AssetRefreshState{})
+	page := workspaceAssetPageSignalWithRefreshAndVersions(workspace, asset, assets, edges, "versions", assetLineage(workspace.ID, asset, assets, edges), AssetRefreshState{}, versions)
+	foundVersions := false
 	for _, tab := range page.Tabs {
-		if tab.ID == "versions" || tab.Label == "Versions" {
-			t.Fatalf("workspace asset tabs include versions: %#v", page.Tabs)
+		if tab.ID == "versions" && tab.Label == "Versions" && tab.Active {
+			foundVersions = true
 		}
 	}
-	if ValidWorkspaceAssetSection("versions") {
-		t.Fatal("versions section is valid, want hidden v1 surface")
+	if !foundVersions {
+		t.Fatalf("workspace asset tabs missing active versions tab: %#v", page.Tabs)
+	}
+	if !ValidWorkspaceAssetSection("versions") {
+		t.Fatal("versions section is not valid")
 	}
 
 	var out strings.Builder
-	err := WorkspaceAssetPageWithRefresh(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}).Render(&out)
+	err := WorkspaceAssetPageWithRefreshAndVersions(catalog, workspace, asset, assets, edges, "versions", "Owner", AssetRefreshState{}, versions).Render(&out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
-	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}, AssetVersionsState{}))
-	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}, AssetVersionsState{}))
-	for _, notWant := range []string{`"label":"Versions"`, `"versions":`, "Deployment digest", `/updates?section=versions`} {
-		if strings.Contains(rendered, notWant) {
-			t.Fatalf("workspace asset page rendered versions surface %q:\n%s", notWant, rendered)
+	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "versions", "Owner", AssetRefreshState{}, versions))
+	for _, want := range []string{`"label":"Versions"`, `"versions":`, `route=workspace_asset`, `section=versions`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("workspace asset page missing versions surface %q:\n%s", want, rendered)
 		}
 	}
 }

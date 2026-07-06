@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 )
 
@@ -14,6 +14,6 @@ type ChatStatus = uisignals.ChatStatus
 type ComposerSignal = uisignals.ComposerSignal
 type ChatTranscriptItemSignal = uisignals.ChatTranscriptItemSignal
 
-func ChatTranscriptItems(items []agentapp.ChatTranscriptItem) []ChatTranscriptItemSignal {
+func ChatTranscriptItems(items []agent.ChatTranscriptItem) []ChatTranscriptItemSignal {
 	return uisignals.ChatTranscriptItems(items)
 }

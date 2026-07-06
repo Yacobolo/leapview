@@ -307,13 +307,16 @@ test('workspace access modal normalizes Go-shaped access signals', async () => {
       }
     })
 
-    expect(state).toEqual({
-      hasDialog: true,
-      title: 'LibreDash Workspace roles apply to every published asset in this workspace.',
-      roleOptions: [
-        { value: 'viewer', label: 'Viewer' },
-        { value: 'workspace_admin', label: 'Workspace Admin' },
-      ],
+	expect(state).toEqual({
+		hasDialog: false,
+		title: 'LibreDash Workspace roles apply to every published asset in this workspace.',
+		roleOptions: [
+			{ value: 'principal', label: 'User' },
+			{ value: 'group', label: 'Group' },
+			{ value: 'service_principal', label: 'Service principal' },
+			{ value: 'viewer', label: 'Viewer' },
+			{ value: 'workspace_admin', label: 'Workspace Admin' },
+		],
       rowRoleValue: 'viewer',
       principal: 'analyst@example.com',
     })

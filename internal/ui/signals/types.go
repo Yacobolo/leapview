@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -373,11 +373,11 @@ type DataExplorerCommand struct {
 }
 
 type WorkspaceCardSignal struct {
-	ID              string `json:"id"`
-	Title           string `json:"title"`
-	Description     string `json:"description"`
-	Href            string `json:"href"`
-	DeploymentLabel string `json:"deploymentLabel"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	Href         string `json:"href"`
+	ServingLabel string `json:"servingLabel"`
 }
 
 type WorkspaceAssetListSignal struct {
@@ -495,8 +495,8 @@ type WorkspaceAssetRefreshSignal struct {
 }
 
 type WorkspaceAssetVersionsSignal struct {
-	CurrentDeploymentID string            `json:"currentDeploymentId"`
-	Table               RecordTableSignal `json:"table"`
+	CurrentContentHash string            `json:"currentContentHash"`
+	Table              RecordTableSignal `json:"table"`
 }
 
 type AssetLineageGraphSignal struct {
@@ -742,7 +742,7 @@ type AdminStorageData struct {
 	Databases          []AdminStorageDatabase
 	Tables             []AdminStorageTable
 	Snapshots          []AdminStorageSnapshot
-	Deployments        []AdminStorageDeployment
+	ServingStates      []AdminStorageServingState
 	Warnings           []string
 }
 
@@ -779,7 +779,7 @@ type AdminStorageTable struct {
 	Columns       []AdminStorageColumn
 	Files         []AdminStorageFile
 	History       []AdminStorageTableHistory
-	Deployments   []AdminStorageDeployment
+	ServingStates []AdminStorageServingState
 }
 
 type AdminStorageColumn struct {
@@ -824,37 +824,37 @@ type AdminStorageTableHistory struct {
 }
 
 type AdminStorageSnapshot struct {
-	ID              int64
-	Time            string
-	SchemaVersion   int64
-	Author          string
-	Message         string
-	Changes         string
-	ExtraInfo       string
-	Protected       bool
-	DeploymentCount int
+	ID                int64
+	Time              string
+	SchemaVersion     int64
+	Author            string
+	Message           string
+	Changes           string
+	ExtraInfo         string
+	Protected         bool
+	ServingStateCount int
 }
 
-type AdminStorageDeployment struct {
-	WorkspaceID  string
-	Environment  string
-	DeploymentID string
-	Status       string
-	SnapshotID   int64
-	Digest       string
-	Active       bool
-	ActivatedAt  string
+type AdminStorageServingState struct {
+	WorkspaceID    string
+	Environment    string
+	ServingStateID string
+	Status         string
+	SnapshotID     int64
+	Digest         string
+	Active         bool
+	ActivatedAt    string
 }
 
 type AdminStorageSignal struct {
-	Summary       AdminStorageSummary            `json:"summary"`
-	Status        string                         `json:"status"`
-	Warnings      []string                       `json:"warnings"`
-	Tables        []AdminStorageTableSignal      `json:"tables"`
-	Snapshots     []AdminStorageSnapshotSignal   `json:"snapshots"`
-	Deployments   []AdminStorageDeploymentSignal `json:"deployments"`
-	SelectedKey   string                         `json:"selectedKey"`
-	SelectedTable *AdminStorageTableSignal       `json:"selectedTable"`
+	Summary       AdminStorageSummary              `json:"summary"`
+	Status        string                           `json:"status"`
+	Warnings      []string                         `json:"warnings"`
+	Tables        []AdminStorageTableSignal        `json:"tables"`
+	Snapshots     []AdminStorageSnapshotSignal     `json:"snapshots"`
+	ServingStates []AdminStorageServingStateSignal `json:"servingStates"`
+	SelectedKey   string                           `json:"selectedKey"`
+	SelectedTable *AdminStorageTableSignal         `json:"selectedTable"`
 }
 
 type AdminStorageSummary struct {
@@ -894,7 +894,7 @@ type AdminStorageTableSignal struct {
 	Columns       []AdminStorageColumnSignal       `json:"columns,omitempty"`
 	Files         []AdminStorageFileSignal         `json:"files,omitempty"`
 	History       []AdminStorageTableHistorySignal `json:"history,omitempty"`
-	Deployments   []AdminStorageDeploymentSignal   `json:"deployments,omitempty"`
+	ServingStates []AdminStorageServingStateSignal `json:"servingStates,omitempty"`
 }
 
 type AdminStorageColumnSignal struct {
@@ -939,26 +939,26 @@ type AdminStorageTableHistorySignal struct {
 }
 
 type AdminStorageSnapshotSignal struct {
-	ID              int64  `json:"id"`
-	Time            string `json:"time"`
-	SchemaVersion   int64  `json:"schemaVersion"`
-	Author          string `json:"author"`
-	Message         string `json:"message"`
-	Changes         string `json:"changes"`
-	ExtraInfo       string `json:"extraInfo"`
-	Protected       bool   `json:"protected"`
-	DeploymentCount int    `json:"deploymentCount"`
+	ID                int64  `json:"id"`
+	Time              string `json:"time"`
+	SchemaVersion     int64  `json:"schemaVersion"`
+	Author            string `json:"author"`
+	Message           string `json:"message"`
+	Changes           string `json:"changes"`
+	ExtraInfo         string `json:"extraInfo"`
+	Protected         bool   `json:"protected"`
+	ServingStateCount int    `json:"servingStateCount"`
 }
 
-type AdminStorageDeploymentSignal struct {
-	WorkspaceID  string `json:"workspaceId"`
-	Environment  string `json:"environment"`
-	DeploymentID string `json:"deploymentId"`
-	Status       string `json:"status"`
-	SnapshotID   int64  `json:"snapshotId"`
-	Digest       string `json:"digest"`
-	Active       bool   `json:"active"`
-	ActivatedAt  string `json:"activatedAt"`
+type AdminStorageServingStateSignal struct {
+	WorkspaceID    string `json:"workspaceId"`
+	Environment    string `json:"environment"`
+	ServingStateID string `json:"servingStateId"`
+	Status         string `json:"status"`
+	SnapshotID     int64  `json:"snapshotId"`
+	Digest         string `json:"digest"`
+	Active         bool   `json:"active"`
+	ActivatedAt    string `json:"activatedAt"`
 }
 
 type AdminStorageCommand struct {
@@ -981,11 +981,15 @@ type LoginPageSignal struct {
 }
 
 type WorkspaceAccessResponse struct {
-	Workspace workspaceview.WorkspaceView     `json:"workspace"`
-	Roles     []workspaceview.RoleView        `json:"roles"`
-	Bindings  []workspaceview.RoleBindingView `json:"bindings"`
-	CanManage bool                            `json:"canManage"`
-	Status    WorkspaceAccessStatus           `json:"status"`
+	Workspace   workspaceview.WorkspaceView     `json:"workspace"`
+	ObjectType  string                          `json:"objectType,omitempty"`
+	ObjectID    string                          `json:"objectId,omitempty"`
+	ObjectTitle string                          `json:"objectTitle,omitempty"`
+	Mode        string                          `json:"mode,omitempty"`
+	Roles       []workspaceview.RoleView        `json:"roles"`
+	Bindings    []workspaceview.RoleBindingView `json:"bindings"`
+	CanManage   bool                            `json:"canManage"`
+	Status      WorkspaceAccessStatus           `json:"status"`
 }
 
 type WorkspaceAccessSignal struct {
@@ -1003,7 +1007,11 @@ type WorkspaceAccessStatus struct {
 type WorkspaceAccessCommand struct {
 	Email       string `json:"email"`
 	Role        string `json:"role"`
+	Privilege   string `json:"privilege"`
 	PrincipalID string `json:"principalId"`
+	BindingID   string `json:"bindingId"`
+	SubjectType string `json:"subjectType"`
+	SubjectID   string `json:"subjectId"`
 }
 
 type ChatSignal struct {
@@ -1045,7 +1053,7 @@ type ChatArtifactSignal struct {
 	Summary string `json:"summary,omitempty"`
 }
 
-func ChatTranscriptItems(items []agentapp.ChatTranscriptItem) []ChatTranscriptItemSignal {
+func ChatTranscriptItems(items []agent.ChatTranscriptItem) []ChatTranscriptItemSignal {
 	out := make([]ChatTranscriptItemSignal, 0, len(items))
 	for _, item := range items {
 		out = append(out, ChatTranscriptItem(item))
@@ -1053,7 +1061,7 @@ func ChatTranscriptItems(items []agentapp.ChatTranscriptItem) []ChatTranscriptIt
 	return out
 }
 
-func ChatTranscriptItem(item agentapp.ChatTranscriptItem) ChatTranscriptItemSignal {
+func ChatTranscriptItem(item agent.ChatTranscriptItem) ChatTranscriptItemSignal {
 	out := ChatTranscriptItemSignal{
 		ID:             item.ID,
 		Kind:           item.Kind,

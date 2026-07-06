@@ -22,7 +22,8 @@ SELECT
 FROM agent_runs r
 JOIN agent_conversations c ON c.id = r.conversation_id
 WHERE r.id = ?6
-  AND c.principal_id = ?7
+  AND c.workspace_id = ?7
+  AND c.principal_id = ?8
 RETURNING id, run_id, seq, event_type, severity, payload_json, created_at
 `
 
@@ -33,6 +34,7 @@ type AppendAgentEventParams struct {
 	Severity    string `json:"severity"`
 	PayloadJson string `json:"payload_json"`
 	RunID       string `json:"run_id"`
+	WorkspaceID string `json:"workspace_id"`
 	PrincipalID string `json:"principal_id"`
 }
 
@@ -44,6 +46,7 @@ func (q *Queries) AppendAgentEvent(ctx context.Context, arg AppendAgentEventPara
 		arg.Severity,
 		arg.PayloadJson,
 		arg.RunID,
+		arg.WorkspaceID,
 		arg.PrincipalID,
 	)
 	var i AgentEvent
@@ -74,7 +77,8 @@ SELECT
   ?8
 FROM agent_conversations c
 WHERE c.id = ?9
-  AND c.principal_id = ?10
+  AND c.workspace_id = ?10
+  AND c.principal_id = ?11
 RETURNING id, conversation_id, run_id, seq, role, content_text, content_json, tool_call_id, tool_name, is_error, created_at
 `
 
@@ -88,6 +92,7 @@ type AppendAgentMessageParams struct {
 	ToolName       string      `json:"tool_name"`
 	IsError        bool        `json:"is_error"`
 	ConversationID string      `json:"conversation_id"`
+	WorkspaceID    string      `json:"workspace_id"`
 	PrincipalID    string      `json:"principal_id"`
 }
 
@@ -102,6 +107,7 @@ func (q *Queries) AppendAgentMessage(ctx context.Context, arg AppendAgentMessage
 		arg.ToolName,
 		arg.IsError,
 		arg.ConversationID,
+		arg.WorkspaceID,
 		arg.PrincipalID,
 	)
 	var i AgentMessage
@@ -127,17 +133,19 @@ SET status = 'archived',
     archived_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?1
-  AND principal_id = ?2
+  AND workspace_id = ?2
+  AND principal_id = ?3
 RETURNING id, workspace_id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at
 `
 
 type ArchiveAgentConversationParams struct {
 	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
 	PrincipalID string `json:"principal_id"`
 }
 
 func (q *Queries) ArchiveAgentConversation(ctx context.Context, arg ArchiveAgentConversationParams) (AgentConversation, error) {
-	row := q.db.QueryRowContext(ctx, archiveAgentConversation, arg.ID, arg.PrincipalID)
+	row := q.db.QueryRowContext(ctx, archiveAgentConversation, arg.ID, arg.WorkspaceID, arg.PrincipalID)
 	var i AgentConversation
 	err := row.Scan(
 		&i.ID,
@@ -154,46 +162,38 @@ func (q *Queries) ArchiveAgentConversation(ctx context.Context, arg ArchiveAgent
 	return i, err
 }
 
-const clearAssetEdgesForDeployment = `-- name: ClearAssetEdgesForDeployment :exec
-DELETE FROM asset_edges WHERE deployment_id = ?
+const clearAssetEdgesForServingState = `-- name: ClearAssetEdgesForServingState :exec
+DELETE FROM asset_edges WHERE serving_state_id = ?
 `
 
-func (q *Queries) ClearAssetEdgesForDeployment(ctx context.Context, deploymentID string) error {
-	_, err := q.db.ExecContext(ctx, clearAssetEdgesForDeployment, deploymentID)
+func (q *Queries) ClearAssetEdgesForServingState(ctx context.Context, servingStateID string) error {
+	_, err := q.db.ExecContext(ctx, clearAssetEdgesForServingState, servingStateID)
 	return err
 }
 
-const clearAssetsForDeployment = `-- name: ClearAssetsForDeployment :exec
-DELETE FROM assets WHERE deployment_id = ?
+const clearAssetsForServingState = `-- name: ClearAssetsForServingState :exec
+DELETE FROM assets WHERE serving_state_id = ?
 `
 
-func (q *Queries) ClearAssetsForDeployment(ctx context.Context, deploymentID string) error {
-	_, err := q.db.ExecContext(ctx, clearAssetsForDeployment, deploymentID)
-	return err
-}
-
-const clearRolePermissions = `-- name: ClearRolePermissions :exec
-DELETE FROM role_permissions WHERE role_id = ?
-`
-
-func (q *Queries) ClearRolePermissions(ctx context.Context, roleID string) error {
-	_, err := q.db.ExecContext(ctx, clearRolePermissions, roleID)
+func (q *Queries) ClearAssetsForServingState(ctx context.Context, servingStateID string) error {
+	_, err := q.db.ExecContext(ctx, clearAssetsForServingState, servingStateID)
 	return err
 }
 
 const createAPIToken = `-- name: CreateAPIToken :exec
-INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateAPITokenParams struct {
-	ID              string         `json:"id"`
-	PrincipalID     string         `json:"principal_id"`
-	WorkspaceID     sql.NullString `json:"workspace_id"`
-	Name            string         `json:"name"`
-	TokenHash       string         `json:"token_hash"`
-	PermissionsJson string         `json:"permissions_json"`
-	ExpiresAt       sql.NullString `json:"expires_at"`
+	ID               string         `json:"id"`
+	PrincipalID      string         `json:"principal_id"`
+	WorkspaceID      sql.NullString `json:"workspace_id"`
+	Name             string         `json:"name"`
+	TokenFingerprint string         `json:"token_fingerprint"`
+	TokenVerifier    string         `json:"token_verifier"`
+	PrivilegesJson   string         `json:"privileges_json"`
+	ExpiresAt        sql.NullString `json:"expires_at"`
 }
 
 func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) error {
@@ -202,8 +202,9 @@ func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) 
 		arg.PrincipalID,
 		arg.WorkspaceID,
 		arg.Name,
-		arg.TokenHash,
-		arg.PermissionsJson,
+		arg.TokenFingerprint,
+		arg.TokenVerifier,
+		arg.PrivilegesJson,
 		arg.ExpiresAt,
 	)
 	return err
@@ -261,7 +262,8 @@ SELECT
   ?4
 FROM agent_conversations c
 WHERE c.id = ?5
-  AND c.principal_id = ?6
+  AND c.workspace_id = ?6
+  AND c.principal_id = ?7
 RETURNING id, conversation_id, status, model, stop_reason, input_tokens, output_tokens, total_tokens, error, started_at, finished_at, metadata_json
 `
 
@@ -271,6 +273,7 @@ type CreateAgentRunParams struct {
 	Model          string `json:"model"`
 	MetadataJson   string `json:"metadata_json"`
 	ConversationID string `json:"conversation_id"`
+	WorkspaceID    string `json:"workspace_id"`
 	PrincipalID    string `json:"principal_id"`
 }
 
@@ -281,6 +284,7 @@ func (q *Queries) CreateAgentRun(ctx context.Context, arg CreateAgentRunParams) 
 		arg.Model,
 		arg.MetadataJson,
 		arg.ConversationID,
+		arg.WorkspaceID,
 		arg.PrincipalID,
 	)
 	var i AgentRun
@@ -301,34 +305,8 @@ func (q *Queries) CreateAgentRun(ctx context.Context, arg CreateAgentRunParams) 
 	return i, err
 }
 
-const createDeployment = `-- name: CreateDeployment :exec
-INSERT INTO deployments (id, workspace_id, environment, status, source, created_by)
-VALUES (?, ?, ?, ?, ?, ?)
-`
-
-type CreateDeploymentParams struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	Environment string `json:"environment"`
-	Status      string `json:"status"`
-	Source      string `json:"source"`
-	CreatedBy   string `json:"created_by"`
-}
-
-func (q *Queries) CreateDeployment(ctx context.Context, arg CreateDeploymentParams) error {
-	_, err := q.db.ExecContext(ctx, createDeployment,
-		arg.ID,
-		arg.WorkspaceID,
-		arg.Environment,
-		arg.Status,
-		arg.Source,
-		arg.CreatedBy,
-	)
-	return err
-}
-
 const createQuerySnapshotLease = `-- name: CreateQuerySnapshotLease :exec
-INSERT INTO query_snapshot_leases (id, workspace_id, environment, deployment_id, ducklake_snapshot_id, owner_id, expires_at)
+INSERT INTO query_snapshot_leases (id, workspace_id, environment, serving_state_id, ducklake_snapshot_id, owner_id, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
@@ -336,7 +314,7 @@ type CreateQuerySnapshotLeaseParams struct {
 	ID                 string `json:"id"`
 	WorkspaceID        string `json:"workspace_id"`
 	Environment        string `json:"environment"`
-	DeploymentID       string `json:"deployment_id"`
+	ServingStateID     string `json:"serving_state_id"`
 	DucklakeSnapshotID int64  `json:"ducklake_snapshot_id"`
 	OwnerID            string `json:"owner_id"`
 	ExpiresAt          string `json:"expires_at"`
@@ -347,7 +325,7 @@ func (q *Queries) CreateQuerySnapshotLease(ctx context.Context, arg CreateQueryS
 		arg.ID,
 		arg.WorkspaceID,
 		arg.Environment,
-		arg.DeploymentID,
+		arg.ServingStateID,
 		arg.DucklakeSnapshotID,
 		arg.OwnerID,
 		arg.ExpiresAt,
@@ -355,23 +333,77 @@ func (q *Queries) CreateQuerySnapshotLease(ctx context.Context, arg CreateQueryS
 	return err
 }
 
+const createServicePrincipalSecret = `-- name: CreateServicePrincipalSecret :exec
+INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_fingerprint, secret_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type CreateServicePrincipalSecretParams struct {
+	ID                 string         `json:"id"`
+	ServicePrincipalID string         `json:"service_principal_id"`
+	Name               string         `json:"name"`
+	SecretFingerprint  string         `json:"secret_fingerprint"`
+	SecretVerifier     string         `json:"secret_verifier"`
+	ExpiresAt          sql.NullString `json:"expires_at"`
+}
+
+func (q *Queries) CreateServicePrincipalSecret(ctx context.Context, arg CreateServicePrincipalSecretParams) error {
+	_, err := q.db.ExecContext(ctx, createServicePrincipalSecret,
+		arg.ID,
+		arg.ServicePrincipalID,
+		arg.Name,
+		arg.SecretFingerprint,
+		arg.SecretVerifier,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const createServingState = `-- name: CreateServingState :exec
+INSERT INTO serving_states (id, workspace_id, environment, status, source, created_by)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type CreateServingStateParams struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	Environment string `json:"environment"`
+	Status      string `json:"status"`
+	Source      string `json:"source"`
+	CreatedBy   string `json:"created_by"`
+}
+
+func (q *Queries) CreateServingState(ctx context.Context, arg CreateServingStateParams) error {
+	_, err := q.db.ExecContext(ctx, createServingState,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Environment,
+		arg.Status,
+		arg.Source,
+		arg.CreatedBy,
+	)
+	return err
+}
+
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (id, principal_id, token_hash, expires_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO sessions (id, principal_id, token_fingerprint, token_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
-	ID          string `json:"id"`
-	PrincipalID string `json:"principal_id"`
-	TokenHash   string `json:"token_hash"`
-	ExpiresAt   string `json:"expires_at"`
+	ID               string `json:"id"`
+	PrincipalID      string `json:"principal_id"`
+	TokenFingerprint string `json:"token_fingerprint"`
+	TokenVerifier    string `json:"token_verifier"`
+	ExpiresAt        string `json:"expires_at"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
 	_, err := q.db.ExecContext(ctx, createSession,
 		arg.ID,
 		arg.PrincipalID,
-		arg.TokenHash,
+		arg.TokenFingerprint,
+		arg.TokenVerifier,
 		arg.ExpiresAt,
 	)
 	return err
@@ -438,23 +470,75 @@ func (q *Queries) DeleteRoleBindingByID(ctx context.Context, arg DeleteRoleBindi
 	return err
 }
 
-const deleteSessionByTokenHash = `-- name: DeleteSessionByTokenHash :exec
-DELETE FROM sessions WHERE token_hash = ?
+const deleteSCIMGroup = `-- name: DeleteSCIMGroup :exec
+DELETE FROM groups
+WHERE workspace_id = '' AND provider = 'scim' AND id = ?
 `
 
-func (q *Queries) DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error {
-	_, err := q.db.ExecContext(ctx, deleteSessionByTokenHash, tokenHash)
+func (q *Queries) DeleteSCIMGroup(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteSCIMGroup, id)
 	return err
 }
 
-const expireInactiveDeployments = `-- name: ExpireInactiveDeployments :exec
-UPDATE deployments
+const deleteSCIMGroupMembers = `-- name: DeleteSCIMGroupMembers :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND group_id = ?
+`
+
+func (q *Queries) DeleteSCIMGroupMembers(ctx context.Context, groupID string) error {
+	_, err := q.db.ExecContext(ctx, deleteSCIMGroupMembers, groupID)
+	return err
+}
+
+const deleteSCIMGroupMembersByPrincipal = `-- name: DeleteSCIMGroupMembersByPrincipal :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND principal_id = ?
+`
+
+func (q *Queries) DeleteSCIMGroupMembersByPrincipal(ctx context.Context, principalID string) error {
+	_, err := q.db.ExecContext(ctx, deleteSCIMGroupMembersByPrincipal, principalID)
+	return err
+}
+
+const deleteServicePrincipal = `-- name: DeleteServicePrincipal :exec
+DELETE FROM principals
+WHERE id = ? AND kind = 'service_principal'
+`
+
+func (q *Queries) DeleteServicePrincipal(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteServicePrincipal, id)
+	return err
+}
+
+const deleteSessionByTokenFingerprint = `-- name: DeleteSessionByTokenFingerprint :exec
+DELETE FROM sessions WHERE token_fingerprint = ?
+`
+
+func (q *Queries) DeleteSessionByTokenFingerprint(ctx context.Context, tokenFingerprint string) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionByTokenFingerprint, tokenFingerprint)
+	return err
+}
+
+const disablePrincipal = `-- name: DisablePrincipal :exec
+UPDATE principals
+SET disabled_at = COALESCE(disabled_at, CURRENT_TIMESTAMP),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+func (q *Queries) DisablePrincipal(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, disablePrincipal, id)
+	return err
+}
+
+const expireInactiveServingStates = `-- name: ExpireInactiveServingStates :exec
+UPDATE serving_states
 SET status = 'expired', error = ''
 WHERE status = 'inactive'
 `
 
-func (q *Queries) ExpireInactiveDeployments(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, expireInactiveDeployments)
+func (q *Queries) ExpireInactiveServingStates(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, expireInactiveServingStates)
 	return err
 }
 
@@ -490,7 +574,8 @@ WHERE agent_runs.id = ?8
     SELECT agent_conversations.id
     FROM agent_conversations
     WHERE agent_conversations.id = ?9
-      AND principal_id = ?10
+      AND workspace_id = ?10
+      AND principal_id = ?11
   )
 RETURNING id, conversation_id, status, model, stop_reason, input_tokens, output_tokens, total_tokens, error, started_at, finished_at, metadata_json
 `
@@ -505,6 +590,7 @@ type FinishAgentRunParams struct {
 	MetadataJson   string `json:"metadata_json"`
 	ID             string `json:"id"`
 	ConversationID string `json:"conversation_id"`
+	WorkspaceID    string `json:"workspace_id"`
 	PrincipalID    string `json:"principal_id"`
 }
 
@@ -519,6 +605,7 @@ func (q *Queries) FinishAgentRun(ctx context.Context, arg FinishAgentRunParams) 
 		arg.MetadataJson,
 		arg.ID,
 		arg.ConversationID,
+		arg.WorkspaceID,
 		arg.PrincipalID,
 	)
 	var i AgentRun
@@ -539,23 +626,24 @@ func (q *Queries) FinishAgentRun(ctx context.Context, arg FinishAgentRunParams) 
 	return i, err
 }
 
-const getAPITokenByHash = `-- name: GetAPITokenByHash :one
-SELECT id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
-WHERE token_hash = ?
+const getAPITokenByFingerprint = `-- name: GetAPITokenByFingerprint :one
+SELECT id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
+WHERE token_fingerprint = ?
   AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
 `
 
-func (q *Queries) GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error) {
-	row := q.db.QueryRowContext(ctx, getAPITokenByHash, tokenHash)
+func (q *Queries) GetAPITokenByFingerprint(ctx context.Context, tokenFingerprint string) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getAPITokenByFingerprint, tokenFingerprint)
 	var i ApiToken
 	err := row.Scan(
 		&i.ID,
 		&i.PrincipalID,
 		&i.WorkspaceID,
 		&i.Name,
-		&i.TokenHash,
-		&i.PermissionsJson,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
+		&i.PrivilegesJson,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastUsedAt,
@@ -564,21 +652,47 @@ func (q *Queries) GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiT
 	return i, err
 }
 
-const getActiveDeployment = `-- name: GetActiveDeployment :one
-SELECT d.id, d.workspace_id, d.environment, d.status, d.source, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.superseded_at, d.cleanup_after, d.error
-FROM deployments d
-JOIN workspace_active_deployments active ON active.deployment_id = d.id
+const getAPITokenByFingerprintForAudit = `-- name: GetAPITokenByFingerprintForAudit :one
+SELECT id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
+WHERE token_fingerprint = ?
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetAPITokenByFingerprintForAudit(ctx context.Context, tokenFingerprint string) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getAPITokenByFingerprintForAudit, tokenFingerprint)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
+		&i.PrivilegesJson,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getActiveServingState = `-- name: GetActiveServingState :one
+SELECT d.id, d.workspace_id, d.environment, d.status, d.source, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.superseded_at, d.error
+FROM serving_states d
+JOIN workspace_active_serving_states active ON active.serving_state_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?
 `
 
-type GetActiveDeploymentParams struct {
+type GetActiveServingStateParams struct {
 	WorkspaceID string `json:"workspace_id"`
 	Environment string `json:"environment"`
 }
 
-func (q *Queries) GetActiveDeployment(ctx context.Context, arg GetActiveDeploymentParams) (Deployment, error) {
-	row := q.db.QueryRowContext(ctx, getActiveDeployment, arg.WorkspaceID, arg.Environment)
-	var i Deployment
+func (q *Queries) GetActiveServingState(ctx context.Context, arg GetActiveServingStateParams) (ServingState, error) {
+	row := q.db.QueryRowContext(ctx, getActiveServingState, arg.WorkspaceID, arg.Environment)
+	var i ServingState
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
@@ -592,7 +706,6 @@ func (q *Queries) GetActiveDeployment(ctx context.Context, arg GetActiveDeployme
 		&i.CreatedAt,
 		&i.ActivatedAt,
 		&i.SupersededAt,
-		&i.CleanupAfter,
 		&i.Error,
 	)
 	return i, err
@@ -601,16 +714,18 @@ func (q *Queries) GetActiveDeployment(ctx context.Context, arg GetActiveDeployme
 const getAgentConversation = `-- name: GetAgentConversation :one
 SELECT id, workspace_id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at FROM agent_conversations
 WHERE id = ?1
-  AND principal_id = ?2
+  AND workspace_id = ?2
+  AND principal_id = ?3
 `
 
 type GetAgentConversationParams struct {
 	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
 	PrincipalID string `json:"principal_id"`
 }
 
 func (q *Queries) GetAgentConversation(ctx context.Context, arg GetAgentConversationParams) (AgentConversation, error) {
-	row := q.db.QueryRowContext(ctx, getAgentConversation, arg.ID, arg.PrincipalID)
+	row := q.db.QueryRowContext(ctx, getAgentConversation, arg.ID, arg.WorkspaceID, arg.PrincipalID)
 	var i AgentConversation
 	err := row.Scan(
 		&i.ID,
@@ -627,16 +742,16 @@ func (q *Queries) GetAgentConversation(ctx context.Context, arg GetAgentConversa
 	return i, err
 }
 
-const getArtifactByDeployment = `-- name: GetArtifactByDeployment :one
-SELECT id, deployment_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes, created_at FROM deployment_artifacts WHERE deployment_id = ?
+const getArtifactByServingState = `-- name: GetArtifactByServingState :one
+SELECT id, serving_state_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes, created_at FROM serving_state_artifacts WHERE serving_state_id = ?
 `
 
-func (q *Queries) GetArtifactByDeployment(ctx context.Context, deploymentID string) (DeploymentArtifact, error) {
-	row := q.db.QueryRowContext(ctx, getArtifactByDeployment, deploymentID)
-	var i DeploymentArtifact
+func (q *Queries) GetArtifactByServingState(ctx context.Context, servingStateID string) (ServingStateArtifact, error) {
+	row := q.db.QueryRowContext(ctx, getArtifactByServingState, servingStateID)
+	var i ServingStateArtifact
 	err := row.Scan(
 		&i.ID,
-		&i.DeploymentID,
+		&i.ServingStateID,
 		&i.WorkspaceID,
 		&i.Environment,
 		&i.Digest,
@@ -646,32 +761,6 @@ func (q *Queries) GetArtifactByDeployment(ctx context.Context, deploymentID stri
 		&i.ManifestJson,
 		&i.SizeBytes,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getDeployment = `-- name: GetDeployment :one
-SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, cleanup_after, error FROM deployments WHERE id = ?
-`
-
-func (q *Queries) GetDeployment(ctx context.Context, id string) (Deployment, error) {
-	row := q.db.QueryRowContext(ctx, getDeployment, id)
-	var i Deployment
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.Environment,
-		&i.Status,
-		&i.Source,
-		&i.Digest,
-		&i.ManifestJson,
-		&i.DucklakeSnapshotID,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.ActivatedAt,
-		&i.SupersededAt,
-		&i.CleanupAfter,
-		&i.Error,
 	)
 	return i, err
 }
@@ -689,6 +778,33 @@ type GetExternalIdentityParams struct {
 
 func (q *Queries) GetExternalIdentity(ctx context.Context, arg GetExternalIdentityParams) (ExternalIdentity, error) {
 	row := q.db.QueryRowContext(ctx, getExternalIdentity, arg.Provider, arg.TenantID, arg.Subject)
+	var i ExternalIdentity
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.Provider,
+		&i.TenantID,
+		&i.Subject,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getExternalIdentityByPrincipalProvider = `-- name: GetExternalIdentityByPrincipalProvider :one
+SELECT id, principal_id, provider, tenant_id, subject, email, created_at, updated_at FROM external_identities
+WHERE principal_id = ? AND provider = ?
+LIMIT 1
+`
+
+type GetExternalIdentityByPrincipalProviderParams struct {
+	PrincipalID string `json:"principal_id"`
+	Provider    string `json:"provider"`
+}
+
+func (q *Queries) GetExternalIdentityByPrincipalProvider(ctx context.Context, arg GetExternalIdentityByPrincipalProviderParams) (ExternalIdentity, error) {
+	row := q.db.QueryRowContext(ctx, getExternalIdentityByPrincipalProvider, arg.PrincipalID, arg.Provider)
 	var i ExternalIdentity
 	err := row.Scan(
 		&i.ID,
@@ -753,7 +869,7 @@ func (q *Queries) GetGroupByProviderExternalID(ctx context.Context, arg GetGroup
 }
 
 const getPrincipal = `-- name: GetPrincipal :one
-SELECT id, email, display_name, created_at, updated_at FROM principals WHERE id = ?
+SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals WHERE id = ?
 `
 
 func (q *Queries) GetPrincipal(ctx context.Context, id string) (Principal, error) {
@@ -761,8 +877,10 @@ func (q *Queries) GetPrincipal(ctx context.Context, id string) (Principal, error
 	var i Principal
 	err := row.Scan(
 		&i.ID,
+		&i.Kind,
 		&i.Email,
 		&i.DisplayName,
+		&i.DisabledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -770,7 +888,7 @@ func (q *Queries) GetPrincipal(ctx context.Context, id string) (Principal, error
 }
 
 const getPrincipalByEmail = `-- name: GetPrincipalByEmail :one
-SELECT id, email, display_name, created_at, updated_at FROM principals WHERE lower(email) = lower(?) AND email <> '' LIMIT 1
+SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals WHERE lower(email) = lower(?) AND email <> '' LIMIT 1
 `
 
 func (q *Queries) GetPrincipalByEmail(ctx context.Context, lower string) (Principal, error) {
@@ -778,8 +896,10 @@ func (q *Queries) GetPrincipalByEmail(ctx context.Context, lower string) (Princi
 	var i Principal
 	err := row.Scan(
 		&i.ID,
+		&i.Kind,
 		&i.Email,
 		&i.DisplayName,
+		&i.DisabledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -828,7 +948,11 @@ const getRoleBindingByID = `-- name: GetRoleBindingByID :one
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  CASE
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL AND p.kind = 'service_principal' THEN 'service_principal'
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal'
+    ELSE 'group'
+  END AS subject_type,
   COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
@@ -883,28 +1007,128 @@ func (q *Queries) GetRoleBindingByID(ctx context.Context, arg GetRoleBindingByID
 }
 
 const getRoleByName = `-- name: GetRoleByName :one
-SELECT id, name, permissions_json FROM roles WHERE name = ?
+SELECT id, name, privileges_json FROM roles WHERE name = ?
 `
 
 func (q *Queries) GetRoleByName(ctx context.Context, name string) (Role, error) {
 	row := q.db.QueryRowContext(ctx, getRoleByName, name)
 	var i Role
-	err := row.Scan(&i.ID, &i.Name, &i.PermissionsJson)
+	err := row.Scan(&i.ID, &i.Name, &i.PrivilegesJson)
 	return i, err
 }
 
-const getSessionByTokenHash = `-- name: GetSessionByTokenHash :one
-SELECT id, principal_id, token_hash, expires_at, created_at, last_seen_at, revoked_at FROM sessions
-WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL
+const getSCIMGroup = `-- name: GetSCIMGroup :one
+SELECT id, workspace_id, provider, external_id, name, created_at FROM groups
+WHERE provider = 'scim' AND id = ?
 `
 
-func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error) {
-	row := q.db.QueryRowContext(ctx, getSessionByTokenHash, tokenHash)
+func (q *Queries) GetSCIMGroup(ctx context.Context, id string) (Group, error) {
+	row := q.db.QueryRowContext(ctx, getSCIMGroup, id)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Provider,
+		&i.ExternalID,
+		&i.Name,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getServicePrincipalSecretByFingerprint = `-- name: GetServicePrincipalSecretByFingerprint :one
+SELECT s.id, s.service_principal_id, s.name, s.secret_fingerprint, s.secret_verifier, s.expires_at, s.created_at, s.revoked_at
+FROM service_principal_secrets s
+JOIN principals p ON p.id = s.service_principal_id
+WHERE p.kind = 'service_principal'
+  AND s.service_principal_id = ?
+  AND s.secret_fingerprint = ?
+  AND s.revoked_at IS NULL
+  AND (s.expires_at IS NULL OR s.expires_at > CURRENT_TIMESTAMP)
+`
+
+type GetServicePrincipalSecretByFingerprintParams struct {
+	ServicePrincipalID string `json:"service_principal_id"`
+	SecretFingerprint  string `json:"secret_fingerprint"`
+}
+
+func (q *Queries) GetServicePrincipalSecretByFingerprint(ctx context.Context, arg GetServicePrincipalSecretByFingerprintParams) (ServicePrincipalSecret, error) {
+	row := q.db.QueryRowContext(ctx, getServicePrincipalSecretByFingerprint, arg.ServicePrincipalID, arg.SecretFingerprint)
+	var i ServicePrincipalSecret
+	err := row.Scan(
+		&i.ID,
+		&i.ServicePrincipalID,
+		&i.Name,
+		&i.SecretFingerprint,
+		&i.SecretVerifier,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getServingState = `-- name: GetServingState :one
+SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states WHERE id = ?
+`
+
+func (q *Queries) GetServingState(ctx context.Context, id string) (ServingState, error) {
+	row := q.db.QueryRowContext(ctx, getServingState, id)
+	var i ServingState
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Environment,
+		&i.Status,
+		&i.Source,
+		&i.Digest,
+		&i.ManifestJson,
+		&i.DucklakeSnapshotID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+		&i.SupersededAt,
+		&i.Error,
+	)
+	return i, err
+}
+
+const getSessionByTokenFingerprint = `-- name: GetSessionByTokenFingerprint :one
+SELECT id, principal_id, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at FROM sessions
+WHERE token_fingerprint = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL
+`
+
+func (q *Queries) GetSessionByTokenFingerprint(ctx context.Context, tokenFingerprint string) (Session, error) {
+	row := q.db.QueryRowContext(ctx, getSessionByTokenFingerprint, tokenFingerprint)
 	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.PrincipalID,
-		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getSessionByTokenFingerprintForAudit = `-- name: GetSessionByTokenFingerprintForAudit :one
+SELECT id, principal_id, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at FROM sessions
+WHERE token_fingerprint = ?
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetSessionByTokenFingerprintForAudit(ctx context.Context, tokenFingerprint string) (Session, error) {
+	row := q.db.QueryRowContext(ctx, getSessionByTokenFingerprintForAudit, tokenFingerprint)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.PrincipalID,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastSeenAt,
@@ -935,14 +1159,14 @@ SELECT
   w.id,
   CASE WHEN a.title IS NOT NULL AND a.title <> '' THEN a.title ELSE w.title END AS title,
   CASE WHEN a.description IS NOT NULL THEN a.description ELSE w.description END AS description,
-  COALESCE(active.deployment_id, '') AS active_deployment_id,
+  COALESCE(active.serving_state_id, '') AS active_serving_state_id,
   w.created_at,
   w.updated_at
 FROM workspaces w
-LEFT JOIN workspace_active_deployments active
+LEFT JOIN workspace_active_serving_states active
   ON active.workspace_id = w.id AND active.environment = ?
 LEFT JOIN assets a
-  ON a.deployment_id = active.deployment_id
+  ON a.serving_state_id = active.serving_state_id
  AND a.asset_type = 'catalog'
  AND a.logical_asset_id = 'catalog:' || w.id
 WHERE w.id = ?
@@ -954,12 +1178,12 @@ type GetWorkspaceWithActiveMetadataParams struct {
 }
 
 type GetWorkspaceWithActiveMetadataRow struct {
-	ID                 string      `json:"id"`
-	Title              interface{} `json:"title"`
-	Description        interface{} `json:"description"`
-	ActiveDeploymentID string      `json:"active_deployment_id"`
-	CreatedAt          string      `json:"created_at"`
-	UpdatedAt          string      `json:"updated_at"`
+	ID                   string      `json:"id"`
+	Title                interface{} `json:"title"`
+	Description          interface{} `json:"description"`
+	ActiveServingStateID string      `json:"active_serving_state_id"`
+	CreatedAt            string      `json:"created_at"`
+	UpdatedAt            string      `json:"updated_at"`
 }
 
 func (q *Queries) GetWorkspaceWithActiveMetadata(ctx context.Context, arg GetWorkspaceWithActiveMetadataParams) (GetWorkspaceWithActiveMetadataRow, error) {
@@ -969,7 +1193,7 @@ func (q *Queries) GetWorkspaceWithActiveMetadata(ctx context.Context, arg GetWor
 		&i.ID,
 		&i.Title,
 		&i.Description,
-		&i.ActiveDeploymentID,
+		&i.ActiveServingStateID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -977,7 +1201,7 @@ func (q *Queries) GetWorkspaceWithActiveMetadata(ctx context.Context, arg GetWor
 }
 
 const insertAsset = `-- name: InsertAsset :exec
-INSERT INTO assets (snapshot_id, logical_asset_id, workspace_id, deployment_id, asset_type, asset_key, parent_logical_asset_id, title, description, source_file, payload_schema, payload_json, content_hash)
+INSERT INTO assets (snapshot_id, logical_asset_id, workspace_id, serving_state_id, asset_type, asset_key, parent_logical_asset_id, title, description, source_file, payload_schema, payload_json, content_hash)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
@@ -985,7 +1209,7 @@ type InsertAssetParams struct {
 	SnapshotID           string `json:"snapshot_id"`
 	LogicalAssetID       string `json:"logical_asset_id"`
 	WorkspaceID          string `json:"workspace_id"`
-	DeploymentID         string `json:"deployment_id"`
+	ServingStateID       string `json:"serving_state_id"`
 	AssetType            string `json:"asset_type"`
 	AssetKey             string `json:"asset_key"`
 	ParentLogicalAssetID string `json:"parent_logical_asset_id"`
@@ -1002,7 +1226,7 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 		arg.SnapshotID,
 		arg.LogicalAssetID,
 		arg.WorkspaceID,
-		arg.DeploymentID,
+		arg.ServingStateID,
 		arg.AssetType,
 		arg.AssetKey,
 		arg.ParentLogicalAssetID,
@@ -1017,14 +1241,14 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 }
 
 const insertAssetEdge = `-- name: InsertAssetEdge :exec
-INSERT INTO asset_edges (id, workspace_id, deployment_id, from_logical_asset_id, to_logical_asset_id, edge_type)
+INSERT INTO asset_edges (id, workspace_id, serving_state_id, from_logical_asset_id, to_logical_asset_id, edge_type)
 VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertAssetEdgeParams struct {
 	ID                 string `json:"id"`
 	WorkspaceID        string `json:"workspace_id"`
-	DeploymentID       string `json:"deployment_id"`
+	ServingStateID     string `json:"serving_state_id"`
 	FromLogicalAssetID string `json:"from_logical_asset_id"`
 	ToLogicalAssetID   string `json:"to_logical_asset_id"`
 	EdgeType           string `json:"edge_type"`
@@ -1034,7 +1258,7 @@ func (q *Queries) InsertAssetEdge(ctx context.Context, arg InsertAssetEdgeParams
 	_, err := q.db.ExecContext(ctx, insertAssetEdge,
 		arg.ID,
 		arg.WorkspaceID,
-		arg.DeploymentID,
+		arg.ServingStateID,
 		arg.FromLogicalAssetID,
 		arg.ToLogicalAssetID,
 		arg.EdgeType,
@@ -1043,18 +1267,22 @@ func (q *Queries) InsertAssetEdge(ctx context.Context, arg InsertAssetEdgeParams
 }
 
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
-INSERT INTO audit_events (id, workspace_id, principal_id, action, target_type, target_id, metadata_json)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO audit_events (id, workspace_id, principal_id, action, target_type, target_id, privilege, status, request_id, correlation_id, metadata_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertAuditEventParams struct {
-	ID           string         `json:"id"`
-	WorkspaceID  sql.NullString `json:"workspace_id"`
-	PrincipalID  sql.NullString `json:"principal_id"`
-	Action       string         `json:"action"`
-	TargetType   string         `json:"target_type"`
-	TargetID     string         `json:"target_id"`
-	MetadataJson string         `json:"metadata_json"`
+	ID            string         `json:"id"`
+	WorkspaceID   sql.NullString `json:"workspace_id"`
+	PrincipalID   sql.NullString `json:"principal_id"`
+	Action        string         `json:"action"`
+	TargetType    string         `json:"target_type"`
+	TargetID      string         `json:"target_id"`
+	Privilege     string         `json:"privilege"`
+	Status        string         `json:"status"`
+	RequestID     string         `json:"request_id"`
+	CorrelationID string         `json:"correlation_id"`
+	MetadataJson  string         `json:"metadata_json"`
 }
 
 func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) error {
@@ -1065,49 +1293,11 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 		arg.Action,
 		arg.TargetType,
 		arg.TargetID,
+		arg.Privilege,
+		arg.Status,
+		arg.RequestID,
+		arg.CorrelationID,
 		arg.MetadataJson,
-	)
-	return err
-}
-
-const insertDeploymentArtifact = `-- name: InsertDeploymentArtifact :exec
-INSERT INTO deployment_artifacts (id, deployment_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(deployment_id) DO UPDATE SET
-  environment = excluded.environment,
-  digest = excluded.digest,
-  format = excluded.format,
-  path = excluded.path,
-  data_root = excluded.data_root,
-  manifest_json = excluded.manifest_json,
-  size_bytes = excluded.size_bytes
-`
-
-type InsertDeploymentArtifactParams struct {
-	ID           string `json:"id"`
-	DeploymentID string `json:"deployment_id"`
-	WorkspaceID  string `json:"workspace_id"`
-	Environment  string `json:"environment"`
-	Digest       string `json:"digest"`
-	Format       string `json:"format"`
-	Path         string `json:"path"`
-	DataRoot     string `json:"data_root"`
-	ManifestJson string `json:"manifest_json"`
-	SizeBytes    int64  `json:"size_bytes"`
-}
-
-func (q *Queries) InsertDeploymentArtifact(ctx context.Context, arg InsertDeploymentArtifactParams) error {
-	_, err := q.db.ExecContext(ctx, insertDeploymentArtifact,
-		arg.ID,
-		arg.DeploymentID,
-		arg.WorkspaceID,
-		arg.Environment,
-		arg.Digest,
-		arg.Format,
-		arg.Path,
-		arg.DataRoot,
-		arg.ManifestJson,
-		arg.SizeBytes,
 	)
 	return err
 }
@@ -1276,23 +1466,50 @@ func (q *Queries) InsertRoleBinding(ctx context.Context, arg InsertRoleBindingPa
 	return err
 }
 
-const insertRolePermission = `-- name: InsertRolePermission :exec
-INSERT OR IGNORE INTO role_permissions (role_id, permission_name)
-VALUES (?, ?)
+const insertServingStateArtifact = `-- name: InsertServingStateArtifact :exec
+INSERT INTO serving_state_artifacts (id, serving_state_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(serving_state_id) DO UPDATE SET
+  environment = excluded.environment,
+  digest = excluded.digest,
+  format = excluded.format,
+  path = excluded.path,
+  data_root = excluded.data_root,
+  manifest_json = excluded.manifest_json,
+  size_bytes = excluded.size_bytes
 `
 
-type InsertRolePermissionParams struct {
-	RoleID         string `json:"role_id"`
-	PermissionName string `json:"permission_name"`
+type InsertServingStateArtifactParams struct {
+	ID             string `json:"id"`
+	ServingStateID string `json:"serving_state_id"`
+	WorkspaceID    string `json:"workspace_id"`
+	Environment    string `json:"environment"`
+	Digest         string `json:"digest"`
+	Format         string `json:"format"`
+	Path           string `json:"path"`
+	DataRoot       string `json:"data_root"`
+	ManifestJson   string `json:"manifest_json"`
+	SizeBytes      int64  `json:"size_bytes"`
 }
 
-func (q *Queries) InsertRolePermission(ctx context.Context, arg InsertRolePermissionParams) error {
-	_, err := q.db.ExecContext(ctx, insertRolePermission, arg.RoleID, arg.PermissionName)
+func (q *Queries) InsertServingStateArtifact(ctx context.Context, arg InsertServingStateArtifactParams) error {
+	_, err := q.db.ExecContext(ctx, insertServingStateArtifact,
+		arg.ID,
+		arg.ServingStateID,
+		arg.WorkspaceID,
+		arg.Environment,
+		arg.Digest,
+		arg.Format,
+		arg.Path,
+		arg.DataRoot,
+		arg.ManifestJson,
+		arg.SizeBytes,
+	)
 	return err
 }
 
 const listAPITokensByPrincipal = `-- name: ListAPITokensByPrincipal :many
-SELECT id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
+SELECT id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at, created_at, last_used_at, revoked_at FROM api_tokens
 WHERE principal_id = ?
 ORDER BY created_at DESC
 `
@@ -1311,8 +1528,9 @@ func (q *Queries) ListAPITokensByPrincipal(ctx context.Context, principalID stri
 			&i.PrincipalID,
 			&i.WorkspaceID,
 			&i.Name,
-			&i.TokenHash,
-			&i.PermissionsJson,
+			&i.TokenFingerprint,
+			&i.TokenVerifier,
+			&i.PrivilegesJson,
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.LastUsedAt,
@@ -1333,7 +1551,7 @@ func (q *Queries) ListAPITokensByPrincipal(ctx context.Context, principalID stri
 
 const listActiveDuckLakeSnapshots = `-- name: ListActiveDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
-FROM deployments
+FROM serving_states
 WHERE ducklake_snapshot_id > 0
   AND status = 'active'
 ORDER BY ducklake_snapshot_id
@@ -1364,13 +1582,19 @@ func (q *Queries) ListActiveDuckLakeSnapshots(ctx context.Context) ([]int64, err
 
 const listAgentConversations = `-- name: ListAgentConversations :many
 SELECT id, workspace_id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at FROM agent_conversations
-WHERE principal_id = ?1
+WHERE workspace_id = ?1
+  AND principal_id = ?2
   AND status = 'active'
 ORDER BY updated_at DESC, created_at DESC
 `
 
-func (q *Queries) ListAgentConversations(ctx context.Context, principalID string) ([]AgentConversation, error) {
-	rows, err := q.db.QueryContext(ctx, listAgentConversations, principalID)
+type ListAgentConversationsParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	PrincipalID string `json:"principal_id"`
+}
+
+func (q *Queries) ListAgentConversations(ctx context.Context, arg ListAgentConversationsParams) ([]AgentConversation, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentConversations, arg.WorkspaceID, arg.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -1409,17 +1633,19 @@ FROM agent_events e
 JOIN agent_runs r ON r.id = e.run_id
 JOIN agent_conversations c ON c.id = r.conversation_id
 WHERE r.id = ?1
-  AND c.principal_id = ?2
+  AND c.workspace_id = ?2
+  AND c.principal_id = ?3
 ORDER BY e.seq
 `
 
 type ListAgentEventsParams struct {
 	RunID       string `json:"run_id"`
+	WorkspaceID string `json:"workspace_id"`
 	PrincipalID string `json:"principal_id"`
 }
 
 func (q *Queries) ListAgentEvents(ctx context.Context, arg ListAgentEventsParams) ([]AgentEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listAgentEvents, arg.RunID, arg.PrincipalID)
+	rows, err := q.db.QueryContext(ctx, listAgentEvents, arg.RunID, arg.WorkspaceID, arg.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -1454,17 +1680,19 @@ SELECT m.id, m.conversation_id, m.run_id, m.seq, m.role, m.content_text, m.conte
 FROM agent_messages m
 JOIN agent_conversations c ON c.id = m.conversation_id
 WHERE c.id = ?1
-  AND c.principal_id = ?2
+  AND c.workspace_id = ?2
+  AND c.principal_id = ?3
 ORDER BY m.seq
 `
 
 type ListAgentMessagesParams struct {
 	ConversationID string `json:"conversation_id"`
+	WorkspaceID    string `json:"workspace_id"`
 	PrincipalID    string `json:"principal_id"`
 }
 
 func (q *Queries) ListAgentMessages(ctx context.Context, arg ListAgentMessagesParams) ([]AgentMessage, error) {
-	rows, err := q.db.QueryContext(ctx, listAgentMessages, arg.ConversationID, arg.PrincipalID)
+	rows, err := q.db.QueryContext(ctx, listAgentMessages, arg.ConversationID, arg.WorkspaceID, arg.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -1503,17 +1731,19 @@ SELECT r.id, r.conversation_id, r.status, r.model, r.stop_reason, r.input_tokens
 FROM agent_runs r
 JOIN agent_conversations c ON c.id = r.conversation_id
 WHERE c.id = ?1
-  AND c.principal_id = ?2
+  AND c.workspace_id = ?2
+  AND c.principal_id = ?3
 ORDER BY r.started_at DESC
 `
 
 type ListAgentRunsParams struct {
 	ConversationID string `json:"conversation_id"`
+	WorkspaceID    string `json:"workspace_id"`
 	PrincipalID    string `json:"principal_id"`
 }
 
 func (q *Queries) ListAgentRuns(ctx context.Context, arg ListAgentRunsParams) ([]AgentRun, error) {
-	rows, err := q.db.QueryContext(ctx, listAgentRuns, arg.ConversationID, arg.PrincipalID)
+	rows, err := q.db.QueryContext(ctx, listAgentRuns, arg.ConversationID, arg.WorkspaceID, arg.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -1548,12 +1778,12 @@ func (q *Queries) ListAgentRuns(ctx context.Context, arg ListAgentRunsParams) ([
 	return items, nil
 }
 
-const listAssetEdgesByDeployment = `-- name: ListAssetEdgesByDeployment :many
-SELECT id, workspace_id, deployment_id, from_logical_asset_id, to_logical_asset_id, edge_type, created_at FROM asset_edges WHERE deployment_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id
+const listAssetEdgesByServingState = `-- name: ListAssetEdgesByServingState :many
+SELECT id, workspace_id, serving_state_id, from_logical_asset_id, to_logical_asset_id, edge_type, created_at FROM asset_edges WHERE serving_state_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id
 `
 
-func (q *Queries) ListAssetEdgesByDeployment(ctx context.Context, deploymentID string) ([]AssetEdge, error) {
-	rows, err := q.db.QueryContext(ctx, listAssetEdgesByDeployment, deploymentID)
+func (q *Queries) ListAssetEdgesByServingState(ctx context.Context, servingStateID string) ([]AssetEdge, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetEdgesByServingState, servingStateID)
 	if err != nil {
 		return nil, err
 	}
@@ -1564,7 +1794,7 @@ func (q *Queries) ListAssetEdgesByDeployment(ctx context.Context, deploymentID s
 		if err := rows.Scan(
 			&i.ID,
 			&i.WorkspaceID,
-			&i.DeploymentID,
+			&i.ServingStateID,
 			&i.FromLogicalAssetID,
 			&i.ToLogicalAssetID,
 			&i.EdgeType,
@@ -1585,7 +1815,7 @@ func (q *Queries) ListAssetEdgesByDeployment(ctx context.Context, deploymentID s
 
 const listAssetVersions = `-- name: ListAssetVersions :many
 SELECT
-  d.id AS deployment_id,
+  d.id AS serving_state_id,
   d.workspace_id,
   d.environment,
   d.status,
@@ -1595,13 +1825,38 @@ SELECT
   d.activated_at,
   a.snapshot_id,
   a.logical_asset_id,
+  a.source_file,
   a.content_hash
-FROM deployments d
-JOIN assets a ON a.deployment_id = d.id
+FROM serving_states d
+JOIN assets a ON a.serving_state_id = d.id
 WHERE d.workspace_id = ?
   AND d.environment = ?
   AND a.logical_asset_id = ?
+  AND d.source = 'publish'
   AND d.status IN ('active', 'draining', 'inactive', 'validated')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM serving_states newer
+    JOIN assets newer_asset ON newer_asset.serving_state_id = newer.id
+    WHERE newer.workspace_id = d.workspace_id
+      AND newer.environment = d.environment
+      AND newer.source = 'publish'
+      AND newer.status IN ('active', 'draining', 'inactive', 'validated')
+      AND newer_asset.logical_asset_id = a.logical_asset_id
+      AND newer_asset.content_hash = a.content_hash
+      AND (
+        COALESCE(newer.activated_at, newer.created_at) > COALESCE(d.activated_at, d.created_at)
+        OR (
+          COALESCE(newer.activated_at, newer.created_at) = COALESCE(d.activated_at, d.created_at)
+          AND newer.created_at > d.created_at
+        )
+        OR (
+          COALESCE(newer.activated_at, newer.created_at) = COALESCE(d.activated_at, d.created_at)
+          AND newer.created_at = d.created_at
+          AND newer.id > d.id
+        )
+      )
+  )
 ORDER BY
   COALESCE(d.activated_at, d.created_at) DESC,
   d.created_at DESC,
@@ -1615,7 +1870,7 @@ type ListAssetVersionsParams struct {
 }
 
 type ListAssetVersionsRow struct {
-	DeploymentID   string         `json:"deployment_id"`
+	ServingStateID string         `json:"serving_state_id"`
 	WorkspaceID    string         `json:"workspace_id"`
 	Environment    string         `json:"environment"`
 	Status         string         `json:"status"`
@@ -1625,6 +1880,7 @@ type ListAssetVersionsRow struct {
 	ActivatedAt    sql.NullString `json:"activated_at"`
 	SnapshotID     string         `json:"snapshot_id"`
 	LogicalAssetID string         `json:"logical_asset_id"`
+	SourceFile     string         `json:"source_file"`
 	ContentHash    string         `json:"content_hash"`
 }
 
@@ -1638,7 +1894,7 @@ func (q *Queries) ListAssetVersions(ctx context.Context, arg ListAssetVersionsPa
 	for rows.Next() {
 		var i ListAssetVersionsRow
 		if err := rows.Scan(
-			&i.DeploymentID,
+			&i.ServingStateID,
 			&i.WorkspaceID,
 			&i.Environment,
 			&i.Status,
@@ -1648,6 +1904,7 @@ func (q *Queries) ListAssetVersions(ctx context.Context, arg ListAssetVersionsPa
 			&i.ActivatedAt,
 			&i.SnapshotID,
 			&i.LogicalAssetID,
+			&i.SourceFile,
 			&i.ContentHash,
 		); err != nil {
 			return nil, err
@@ -1663,12 +1920,12 @@ func (q *Queries) ListAssetVersions(ctx context.Context, arg ListAssetVersionsPa
 	return items, nil
 }
 
-const listAssetsByDeployment = `-- name: ListAssetsByDeployment :many
-SELECT snapshot_id, logical_asset_id, workspace_id, deployment_id, asset_type, asset_key, parent_logical_asset_id, title, description, source_file, payload_schema, payload_json, content_hash, created_at FROM assets WHERE deployment_id = ? ORDER BY asset_type, asset_key
+const listAssetsByServingState = `-- name: ListAssetsByServingState :many
+SELECT snapshot_id, logical_asset_id, workspace_id, serving_state_id, asset_type, asset_key, parent_logical_asset_id, title, description, source_file, payload_schema, payload_json, content_hash, created_at FROM assets WHERE serving_state_id = ? ORDER BY asset_type, asset_key
 `
 
-func (q *Queries) ListAssetsByDeployment(ctx context.Context, deploymentID string) ([]Asset, error) {
-	rows, err := q.db.QueryContext(ctx, listAssetsByDeployment, deploymentID)
+func (q *Queries) ListAssetsByServingState(ctx context.Context, servingStateID string) ([]Asset, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetsByServingState, servingStateID)
 	if err != nil {
 		return nil, err
 	}
@@ -1680,7 +1937,7 @@ func (q *Queries) ListAssetsByDeployment(ctx context.Context, deploymentID strin
 			&i.SnapshotID,
 			&i.LogicalAssetID,
 			&i.WorkspaceID,
-			&i.DeploymentID,
+			&i.ServingStateID,
 			&i.AssetType,
 			&i.AssetKey,
 			&i.ParentLogicalAssetID,
@@ -1706,7 +1963,7 @@ func (q *Queries) ListAssetsByDeployment(ctx context.Context, deploymentID strin
 }
 
 const listAuditEvents = `-- name: ListAuditEvents :many
-SELECT id, workspace_id, principal_id, "action", target_type, target_id, metadata_json, created_at FROM audit_events
+SELECT id, workspace_id, principal_id, "action", target_type, target_id, privilege, status, request_id, correlation_id, metadata_json, created_at FROM audit_events
 WHERE (? = '' OR workspace_id = ?)
   AND (? = '' OR principal_id = ?)
   AND (? = '' OR action = ?)
@@ -1777,57 +2034,12 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 			&i.Action,
 			&i.TargetType,
 			&i.TargetID,
+			&i.Privilege,
+			&i.Status,
+			&i.RequestID,
+			&i.CorrelationID,
 			&i.MetadataJson,
 			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listDeployments = `-- name: ListDeployments :many
-SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, cleanup_after, error FROM deployments
-WHERE workspace_id = ? AND environment = ?
-ORDER BY created_at DESC
-`
-
-type ListDeploymentsParams struct {
-	WorkspaceID string `json:"workspace_id"`
-	Environment string `json:"environment"`
-}
-
-func (q *Queries) ListDeployments(ctx context.Context, arg ListDeploymentsParams) ([]Deployment, error) {
-	rows, err := q.db.QueryContext(ctx, listDeployments, arg.WorkspaceID, arg.Environment)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Deployment{}
-	for rows.Next() {
-		var i Deployment
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Environment,
-			&i.Status,
-			&i.Source,
-			&i.Digest,
-			&i.ManifestJson,
-			&i.DucklakeSnapshotID,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.ActivatedAt,
-			&i.SupersededAt,
-			&i.CleanupAfter,
-			&i.Error,
 		); err != nil {
 			return nil, err
 		}
@@ -1903,6 +2115,7 @@ func (q *Queries) ListGroupMembers(ctx context.Context, arg ListGroupMembersPara
 const listGroupsByWorkspace = `-- name: ListGroupsByWorkspace :many
 SELECT id, workspace_id, provider, external_id, name, created_at FROM groups
 WHERE workspace_id = ?
+   OR (workspace_id = '' AND provider = 'scim')
 ORDER BY name, id
 `
 
@@ -1958,91 +2171,6 @@ func (q *Queries) ListLeasedDuckLakeSnapshots(ctx context.Context) ([]int64, err
 			return nil, err
 		}
 		items = append(items, ducklake_snapshot_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPermissions = `-- name: ListPermissions :many
-SELECT name, created_at FROM permissions ORDER BY name
-`
-
-func (q *Queries) ListPermissions(ctx context.Context) ([]Permission, error) {
-	rows, err := q.db.QueryContext(ctx, listPermissions)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Permission{}
-	for rows.Next() {
-		var i Permission
-		if err := rows.Scan(&i.Name, &i.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPrincipalRolePermissions = `-- name: ListPrincipalRolePermissions :many
-SELECT DISTINCT permission_name
-FROM (
-  SELECT rp.permission_name
-  FROM role_bindings rb
-  JOIN role_permissions rp ON rp.role_id = rb.role_id
-  LEFT JOIN group_members gm
-    ON gm.workspace_id = rb.workspace_id
-   AND gm.group_id = rb.group_id
-  WHERE rb.workspace_id = ?
-    AND (
-      rb.principal_id = ?
-      OR gm.principal_id = ?
-    )
-  UNION
-  SELECT rp.permission_name
-  FROM platform_role_bindings prb
-  JOIN role_permissions rp ON rp.role_id = prb.role_id
-  WHERE prb.principal_id = ?
-)
-ORDER BY permission_name
-`
-
-type ListPrincipalRolePermissionsParams struct {
-	WorkspaceID   string         `json:"workspace_id"`
-	PrincipalID   sql.NullString `json:"principal_id"`
-	PrincipalID_2 string         `json:"principal_id_2"`
-	PrincipalID_3 string         `json:"principal_id_3"`
-}
-
-func (q *Queries) ListPrincipalRolePermissions(ctx context.Context, arg ListPrincipalRolePermissionsParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listPrincipalRolePermissions,
-		arg.WorkspaceID,
-		arg.PrincipalID,
-		arg.PrincipalID_2,
-		arg.PrincipalID_3,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var permission_name string
-		if err := rows.Scan(&permission_name); err != nil {
-			return nil, err
-		}
-		items = append(items, permission_name)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -2163,7 +2291,7 @@ func (q *Queries) ListQueryEvents(ctx context.Context, arg ListQueryEventsParams
 
 const listReferencedDuckLakeSnapshots = `-- name: ListReferencedDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
-FROM deployments
+FROM serving_states
 WHERE ducklake_snapshot_id > 0
   AND status = 'active'
 ORDER BY ducklake_snapshot_id
@@ -2196,7 +2324,11 @@ const listRoleBindingsByWorkspace = `-- name: ListRoleBindingsByWorkspace :many
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  CASE
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL AND p.kind = 'service_principal' THEN 'service_principal'
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal'
+    ELSE 'group'
+  END AS subject_type,
   COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
@@ -2263,7 +2395,7 @@ func (q *Queries) ListRoleBindingsByWorkspace(ctx context.Context, workspaceID s
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, permissions_json FROM roles ORDER BY name
+SELECT id, name, privileges_json FROM roles ORDER BY name
 `
 
 func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
@@ -2275,7 +2407,240 @@ func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
 	items := []Role{}
 	for rows.Next() {
 		var i Role
-		if err := rows.Scan(&i.ID, &i.Name, &i.PermissionsJson); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.PrivilegesJson); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSCIMGroupMembers = `-- name: ListSCIMGroupMembers :many
+SELECT
+  gm.group_id,
+  gm.workspace_id,
+  gm.principal_id,
+  p.email,
+  p.display_name,
+  gm.created_at
+FROM group_members gm
+JOIN principals p ON p.id = gm.principal_id
+WHERE gm.workspace_id = '' AND gm.group_id = ?
+ORDER BY p.email, p.display_name, gm.principal_id
+`
+
+type ListSCIMGroupMembersRow struct {
+	GroupID     string `json:"group_id"`
+	WorkspaceID string `json:"workspace_id"`
+	PrincipalID string `json:"principal_id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) ListSCIMGroupMembers(ctx context.Context, groupID string) ([]ListSCIMGroupMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSCIMGroupMembers, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSCIMGroupMembersRow{}
+	for rows.Next() {
+		var i ListSCIMGroupMembersRow
+		if err := rows.Scan(
+			&i.GroupID,
+			&i.WorkspaceID,
+			&i.PrincipalID,
+			&i.Email,
+			&i.DisplayName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSCIMGroups = `-- name: ListSCIMGroups :many
+SELECT id, workspace_id, provider, external_id, name, created_at FROM groups
+WHERE workspace_id = ''
+  AND provider = 'scim'
+  AND (?1 = '' OR external_id = ?1)
+  AND (?2 = '' OR lower(name) = lower(?2))
+ORDER BY name, id
+`
+
+type ListSCIMGroupsParams struct {
+	ExternalID  interface{} `json:"external_id"`
+	DisplayName interface{} `json:"display_name"`
+}
+
+func (q *Queries) ListSCIMGroups(ctx context.Context, arg ListSCIMGroupsParams) ([]Group, error) {
+	rows, err := q.db.QueryContext(ctx, listSCIMGroups, arg.ExternalID, arg.DisplayName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Group{}
+	for rows.Next() {
+		var i Group
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Provider,
+			&i.ExternalID,
+			&i.Name,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSCIMPrincipals = `-- name: ListSCIMPrincipals :many
+SELECT p.id, p.kind, p.email, p.display_name, p.disabled_at, p.created_at, p.updated_at
+FROM principals p
+JOIN external_identities ei ON ei.principal_id = p.id
+WHERE p.kind = 'user'
+  AND ei.provider = 'scim'
+  AND (?1 = '' OR ei.subject = ?1)
+  AND (
+    ?2 = ''
+    OR lower(p.email) = lower(?2)
+    OR lower(ei.email) = lower(?2)
+  )
+ORDER BY p.email, p.display_name, p.id
+`
+
+type ListSCIMPrincipalsParams struct {
+	Subject  interface{} `json:"subject"`
+	UserName interface{} `json:"user_name"`
+}
+
+func (q *Queries) ListSCIMPrincipals(ctx context.Context, arg ListSCIMPrincipalsParams) ([]Principal, error) {
+	rows, err := q.db.QueryContext(ctx, listSCIMPrincipals, arg.Subject, arg.UserName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Principal{}
+	for rows.Next() {
+		var i Principal
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Email,
+			&i.DisplayName,
+			&i.DisabledAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServicePrincipals = `-- name: ListServicePrincipals :many
+SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals
+WHERE kind = 'service_principal'
+ORDER BY display_name, id
+`
+
+func (q *Queries) ListServicePrincipals(ctx context.Context) ([]Principal, error) {
+	rows, err := q.db.QueryContext(ctx, listServicePrincipals)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Principal{}
+	for rows.Next() {
+		var i Principal
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Email,
+			&i.DisplayName,
+			&i.DisabledAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServingStates = `-- name: ListServingStates :many
+SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states
+WHERE workspace_id = ? AND environment = ?
+ORDER BY created_at DESC
+`
+
+type ListServingStatesParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	Environment string `json:"environment"`
+}
+
+func (q *Queries) ListServingStates(ctx context.Context, arg ListServingStatesParams) ([]ServingState, error) {
+	rows, err := q.db.QueryContext(ctx, listServingStates, arg.WorkspaceID, arg.Environment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ServingState{}
+	for rows.Next() {
+		var i ServingState
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Environment,
+			&i.Status,
+			&i.Source,
+			&i.Digest,
+			&i.ManifestJson,
+			&i.DucklakeSnapshotID,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.ActivatedAt,
+			&i.SupersededAt,
+			&i.Error,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2290,7 +2655,7 @@ func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
 }
 
 const listSessionsByPrincipal = `-- name: ListSessionsByPrincipal :many
-SELECT id, principal_id, token_hash, expires_at, created_at, last_seen_at, revoked_at FROM sessions
+SELECT id, principal_id, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at FROM sessions
 WHERE principal_id = ?
 ORDER BY created_at DESC
 `
@@ -2307,7 +2672,8 @@ func (q *Queries) ListSessionsByPrincipal(ctx context.Context, principalID strin
 		if err := rows.Scan(
 			&i.ID,
 			&i.PrincipalID,
-			&i.TokenHash,
+			&i.TokenFingerprint,
+			&i.TokenVerifier,
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.LastSeenAt,
@@ -2364,26 +2730,26 @@ SELECT
   w.id,
   CASE WHEN a.title IS NOT NULL AND a.title <> '' THEN a.title ELSE w.title END AS title,
   CASE WHEN a.description IS NOT NULL THEN a.description ELSE w.description END AS description,
-  COALESCE(active.deployment_id, '') AS active_deployment_id,
+  COALESCE(active.serving_state_id, '') AS active_serving_state_id,
   w.created_at,
   w.updated_at
 FROM workspaces w
-LEFT JOIN workspace_active_deployments active
+LEFT JOIN workspace_active_serving_states active
   ON active.workspace_id = w.id AND active.environment = ?
 LEFT JOIN assets a
-  ON a.deployment_id = active.deployment_id
+  ON a.serving_state_id = active.serving_state_id
  AND a.asset_type = 'catalog'
  AND a.logical_asset_id = 'catalog:' || w.id
 ORDER BY w.created_at
 `
 
 type ListWorkspacesWithActiveMetadataRow struct {
-	ID                 string      `json:"id"`
-	Title              interface{} `json:"title"`
-	Description        interface{} `json:"description"`
-	ActiveDeploymentID string      `json:"active_deployment_id"`
-	CreatedAt          string      `json:"created_at"`
-	UpdatedAt          string      `json:"updated_at"`
+	ID                   string      `json:"id"`
+	Title                interface{} `json:"title"`
+	Description          interface{} `json:"description"`
+	ActiveServingStateID string      `json:"active_serving_state_id"`
+	CreatedAt            string      `json:"created_at"`
+	UpdatedAt            string      `json:"updated_at"`
 }
 
 func (q *Queries) ListWorkspacesWithActiveMetadata(ctx context.Context, environment string) ([]ListWorkspacesWithActiveMetadataRow, error) {
@@ -2399,7 +2765,7 @@ func (q *Queries) ListWorkspacesWithActiveMetadata(ctx context.Context, environm
 			&i.ID,
 			&i.Title,
 			&i.Description,
-			&i.ActiveDeploymentID,
+			&i.ActiveServingStateID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -2416,44 +2782,32 @@ func (q *Queries) ListWorkspacesWithActiveMetadata(ctx context.Context, environm
 	return items, nil
 }
 
-const markDeleteScheduledDeploymentsDeleted = `-- name: MarkDeleteScheduledDeploymentsDeleted :exec
-UPDATE deployments
+const markDeleteScheduledServingStatesDeleted = `-- name: MarkDeleteScheduledServingStatesDeleted :exec
+UPDATE serving_states
 SET status = 'deleted', error = ''
 WHERE status = 'delete_scheduled'
 `
 
-func (q *Queries) MarkDeleteScheduledDeploymentsDeleted(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, markDeleteScheduledDeploymentsDeleted)
+func (q *Queries) MarkDeleteScheduledServingStatesDeleted(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, markDeleteScheduledServingStatesDeleted)
 	return err
 }
 
-const markDeploymentActive = `-- name: MarkDeploymentActive :exec
-UPDATE deployments
-SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
-WHERE id = ?
-`
-
-func (q *Queries) MarkDeploymentActive(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, markDeploymentActive, id)
-	return err
-}
-
-const markDrainingDeploymentsDeleteScheduled = `-- name: MarkDrainingDeploymentsDeleteScheduled :exec
-UPDATE deployments
+const markDrainingServingStatesDeleteScheduled = `-- name: MarkDrainingServingStatesDeleteScheduled :exec
+UPDATE serving_states
 SET status = 'delete_scheduled', error = ''
 WHERE status = 'draining'
 `
 
-func (q *Queries) MarkDrainingDeploymentsDeleteScheduled(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, markDrainingDeploymentsDeleteScheduled)
+func (q *Queries) MarkDrainingServingStatesDeleteScheduled(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, markDrainingServingStatesDeleteScheduled)
 	return err
 }
 
-const markOtherDeploymentsDraining = `-- name: MarkOtherDeploymentsDraining :exec
-UPDATE deployments
+const markOtherServingStatesDraining = `-- name: MarkOtherServingStatesDraining :exec
+UPDATE serving_states
 SET status = 'draining',
     superseded_at = CURRENT_TIMESTAMP,
-    cleanup_after = NULL,
     error = ''
 WHERE workspace_id = ?
   AND environment = ?
@@ -2461,31 +2815,42 @@ WHERE workspace_id = ?
   AND status = 'active'
 `
 
-type MarkOtherDeploymentsDrainingParams struct {
+type MarkOtherServingStatesDrainingParams struct {
 	WorkspaceID string `json:"workspace_id"`
 	Environment string `json:"environment"`
 	ID          string `json:"id"`
 }
 
-func (q *Queries) MarkOtherDeploymentsDraining(ctx context.Context, arg MarkOtherDeploymentsDrainingParams) error {
-	_, err := q.db.ExecContext(ctx, markOtherDeploymentsDraining, arg.WorkspaceID, arg.Environment, arg.ID)
+func (q *Queries) MarkOtherServingStatesDraining(ctx context.Context, arg MarkOtherServingStatesDrainingParams) error {
+	_, err := q.db.ExecContext(ctx, markOtherServingStatesDraining, arg.WorkspaceID, arg.Environment, arg.ID)
 	return err
 }
 
-const markOtherDeploymentsInactive = `-- name: MarkOtherDeploymentsInactive :exec
-UPDATE deployments
+const markOtherServingStatesInactive = `-- name: MarkOtherServingStatesInactive :exec
+UPDATE serving_states
 SET status = 'inactive'
 WHERE workspace_id = ? AND environment = ? AND id <> ? AND status = 'active'
 `
 
-type MarkOtherDeploymentsInactiveParams struct {
+type MarkOtherServingStatesInactiveParams struct {
 	WorkspaceID string `json:"workspace_id"`
 	Environment string `json:"environment"`
 	ID          string `json:"id"`
 }
 
-func (q *Queries) MarkOtherDeploymentsInactive(ctx context.Context, arg MarkOtherDeploymentsInactiveParams) error {
-	_, err := q.db.ExecContext(ctx, markOtherDeploymentsInactive, arg.WorkspaceID, arg.Environment, arg.ID)
+func (q *Queries) MarkOtherServingStatesInactive(ctx context.Context, arg MarkOtherServingStatesInactiveParams) error {
+	_, err := q.db.ExecContext(ctx, markOtherServingStatesInactive, arg.WorkspaceID, arg.Environment, arg.ID)
+	return err
+}
+
+const markServingStateActive = `-- name: MarkServingStateActive :exec
+UPDATE serving_states
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
+WHERE id = ?
+`
+
+func (q *Queries) MarkServingStateActive(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, markServingStateActive, id)
 	return err
 }
 
@@ -2527,7 +2892,7 @@ const revokeAPITokenForPrincipal = `-- name: RevokeAPITokenForPrincipal :one
 UPDATE api_tokens
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
-RETURNING id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at, created_at, last_used_at, revoked_at
+RETURNING id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at, created_at, last_used_at, revoked_at
 `
 
 type RevokeAPITokenForPrincipalParams struct {
@@ -2543,14 +2908,42 @@ func (q *Queries) RevokeAPITokenForPrincipal(ctx context.Context, arg RevokeAPIT
 		&i.PrincipalID,
 		&i.WorkspaceID,
 		&i.Name,
-		&i.TokenHash,
-		&i.PermissionsJson,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
+		&i.PrivilegesJson,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const revokeAPITokensByPrincipal = `-- name: RevokeAPITokensByPrincipal :exec
+UPDATE api_tokens
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeAPITokensByPrincipal(ctx context.Context, principalID string) error {
+	_, err := q.db.ExecContext(ctx, revokeAPITokensByPrincipal, principalID)
+	return err
+}
+
+const revokeServicePrincipalSecret = `-- name: RevokeServicePrincipalSecret :exec
+UPDATE service_principal_secrets
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE service_principal_id = ? AND id = ?
+`
+
+type RevokeServicePrincipalSecretParams struct {
+	ServicePrincipalID string `json:"service_principal_id"`
+	ID                 string `json:"id"`
+}
+
+func (q *Queries) RevokeServicePrincipalSecret(ctx context.Context, arg RevokeServicePrincipalSecretParams) error {
+	_, err := q.db.ExecContext(ctx, revokeServicePrincipalSecret, arg.ServicePrincipalID, arg.ID)
+	return err
 }
 
 const revokeSession = `-- name: RevokeSession :exec
@@ -2568,7 +2961,7 @@ const revokeSessionForPrincipal = `-- name: RevokeSessionForPrincipal :one
 UPDATE sessions
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
-RETURNING id, principal_id, token_hash, expires_at, created_at, last_seen_at, revoked_at
+RETURNING id, principal_id, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at
 `
 
 type RevokeSessionForPrincipalParams struct {
@@ -2582,7 +2975,8 @@ func (q *Queries) RevokeSessionForPrincipal(ctx context.Context, arg RevokeSessi
 	err := row.Scan(
 		&i.ID,
 		&i.PrincipalID,
-		&i.TokenHash,
+		&i.TokenFingerprint,
+		&i.TokenVerifier,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastSeenAt,
@@ -2591,33 +2985,44 @@ func (q *Queries) RevokeSessionForPrincipal(ctx context.Context, arg RevokeSessi
 	return i, err
 }
 
-const scheduleExpiredDeploymentDeletion = `-- name: ScheduleExpiredDeploymentDeletion :exec
-UPDATE deployments
+const revokeSessionsByPrincipal = `-- name: RevokeSessionsByPrincipal :exec
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeSessionsByPrincipal(ctx context.Context, principalID string) error {
+	_, err := q.db.ExecContext(ctx, revokeSessionsByPrincipal, principalID)
+	return err
+}
+
+const scheduleExpiredServingStateDeletion = `-- name: ScheduleExpiredServingStateDeletion :exec
+UPDATE serving_states
 SET status = 'delete_scheduled', error = ''
 WHERE status = 'expired'
 `
 
-func (q *Queries) ScheduleExpiredDeploymentDeletion(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, scheduleExpiredDeploymentDeletion)
+func (q *Queries) ScheduleExpiredServingStateDeletion(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, scheduleExpiredServingStateDeletion)
 	return err
 }
 
-const setActiveDeployment = `-- name: SetActiveDeployment :exec
-INSERT INTO workspace_active_deployments (workspace_id, environment, deployment_id, updated_at)
+const setActiveServingState = `-- name: SetActiveServingState :exec
+INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id, updated_at)
 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(workspace_id, environment) DO UPDATE SET
-  deployment_id = excluded.deployment_id,
+  serving_state_id = excluded.serving_state_id,
   updated_at = CURRENT_TIMESTAMP
 `
 
-type SetActiveDeploymentParams struct {
-	WorkspaceID  string `json:"workspace_id"`
-	Environment  string `json:"environment"`
-	DeploymentID string `json:"deployment_id"`
+type SetActiveServingStateParams struct {
+	WorkspaceID    string `json:"workspace_id"`
+	Environment    string `json:"environment"`
+	ServingStateID string `json:"serving_state_id"`
 }
 
-func (q *Queries) SetActiveDeployment(ctx context.Context, arg SetActiveDeploymentParams) error {
-	_, err := q.db.ExecContext(ctx, setActiveDeployment, arg.WorkspaceID, arg.Environment, arg.DeploymentID)
+func (q *Queries) SetActiveServingState(ctx context.Context, arg SetActiveServingStateParams) error {
+	_, err := q.db.ExecContext(ctx, setActiveServingState, arg.WorkspaceID, arg.Environment, arg.ServingStateID)
 	return err
 }
 
@@ -2644,18 +3049,25 @@ UPDATE agent_conversations
 SET transcript_json = ?1,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?2
-  AND principal_id = ?3
+  AND workspace_id = ?3
+  AND principal_id = ?4
 RETURNING id, workspace_id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at
 `
 
 type UpdateAgentConversationTranscriptParams struct {
 	TranscriptJson string `json:"transcript_json"`
 	ID             string `json:"id"`
+	WorkspaceID    string `json:"workspace_id"`
 	PrincipalID    string `json:"principal_id"`
 }
 
 func (q *Queries) UpdateAgentConversationTranscript(ctx context.Context, arg UpdateAgentConversationTranscriptParams) (AgentConversation, error) {
-	row := q.db.QueryRowContext(ctx, updateAgentConversationTranscript, arg.TranscriptJson, arg.ID, arg.PrincipalID)
+	row := q.db.QueryRowContext(ctx, updateAgentConversationTranscript,
+		arg.TranscriptJson,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.PrincipalID,
+	)
 	var i AgentConversation
 	err := row.Scan(
 		&i.ID,
@@ -2677,7 +3089,8 @@ UPDATE agent_conversations
 SET title = ?1,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?2
-  AND principal_id = ?3
+  AND workspace_id = ?3
+  AND principal_id = ?4
   AND status = 'active'
   AND title = 'New conversation'
 RETURNING id, workspace_id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at
@@ -2686,11 +3099,17 @@ RETURNING id, workspace_id, principal_id, title, status, metadata_json, transcri
 type UpdateDefaultAgentConversationTitleParams struct {
 	Title       string `json:"title"`
 	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
 	PrincipalID string `json:"principal_id"`
 }
 
 func (q *Queries) UpdateDefaultAgentConversationTitle(ctx context.Context, arg UpdateDefaultAgentConversationTitleParams) (AgentConversation, error) {
-	row := q.db.QueryRowContext(ctx, updateDefaultAgentConversationTitle, arg.Title, arg.ID, arg.PrincipalID)
+	row := q.db.QueryRowContext(ctx, updateDefaultAgentConversationTitle,
+		arg.Title,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.PrincipalID,
+	)
 	var i AgentConversation
 	err := row.Scan(
 		&i.ID,
@@ -2705,62 +3124,6 @@ func (q *Queries) UpdateDefaultAgentConversationTitle(ctx context.Context, arg U
 		&i.ArchivedAt,
 	)
 	return i, err
-}
-
-const updateDeploymentDuckLakeSnapshot = `-- name: UpdateDeploymentDuckLakeSnapshot :exec
-UPDATE deployments
-SET ducklake_snapshot_id = ?
-WHERE id = ?
-`
-
-type UpdateDeploymentDuckLakeSnapshotParams struct {
-	DucklakeSnapshotID int64  `json:"ducklake_snapshot_id"`
-	ID                 string `json:"id"`
-}
-
-func (q *Queries) UpdateDeploymentDuckLakeSnapshot(ctx context.Context, arg UpdateDeploymentDuckLakeSnapshotParams) error {
-	_, err := q.db.ExecContext(ctx, updateDeploymentDuckLakeSnapshot, arg.DucklakeSnapshotID, arg.ID)
-	return err
-}
-
-const updateDeploymentStatus = `-- name: UpdateDeploymentStatus :exec
-UPDATE deployments
-SET status = ?, error = ?
-WHERE id = ?
-`
-
-type UpdateDeploymentStatusParams struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
-	ID     string `json:"id"`
-}
-
-func (q *Queries) UpdateDeploymentStatus(ctx context.Context, arg UpdateDeploymentStatusParams) error {
-	_, err := q.db.ExecContext(ctx, updateDeploymentStatus, arg.Status, arg.Error, arg.ID)
-	return err
-}
-
-const updateDeploymentValidated = `-- name: UpdateDeploymentValidated :exec
-UPDATE deployments
-SET status = ?, digest = ?, manifest_json = ?, error = ''
-WHERE id = ?
-`
-
-type UpdateDeploymentValidatedParams struct {
-	Status       string `json:"status"`
-	Digest       string `json:"digest"`
-	ManifestJson string `json:"manifest_json"`
-	ID           string `json:"id"`
-}
-
-func (q *Queries) UpdateDeploymentValidated(ctx context.Context, arg UpdateDeploymentValidatedParams) error {
-	_, err := q.db.ExecContext(ctx, updateDeploymentValidated,
-		arg.Status,
-		arg.Digest,
-		arg.ManifestJson,
-		arg.ID,
-	)
-	return err
 }
 
 const updateRoleBindingByID = `-- name: UpdateRoleBindingByID :exec
@@ -2783,6 +3146,62 @@ func (q *Queries) UpdateRoleBindingByID(ctx context.Context, arg UpdateRoleBindi
 		arg.PrincipalID,
 		arg.GroupID,
 		arg.WorkspaceID,
+		arg.ID,
+	)
+	return err
+}
+
+const updateServingStateDuckLakeSnapshot = `-- name: UpdateServingStateDuckLakeSnapshot :exec
+UPDATE serving_states
+SET ducklake_snapshot_id = ?
+WHERE id = ?
+`
+
+type UpdateServingStateDuckLakeSnapshotParams struct {
+	DucklakeSnapshotID int64  `json:"ducklake_snapshot_id"`
+	ID                 string `json:"id"`
+}
+
+func (q *Queries) UpdateServingStateDuckLakeSnapshot(ctx context.Context, arg UpdateServingStateDuckLakeSnapshotParams) error {
+	_, err := q.db.ExecContext(ctx, updateServingStateDuckLakeSnapshot, arg.DucklakeSnapshotID, arg.ID)
+	return err
+}
+
+const updateServingStateStatus = `-- name: UpdateServingStateStatus :exec
+UPDATE serving_states
+SET status = ?, error = ?
+WHERE id = ?
+`
+
+type UpdateServingStateStatusParams struct {
+	Status string `json:"status"`
+	Error  string `json:"error"`
+	ID     string `json:"id"`
+}
+
+func (q *Queries) UpdateServingStateStatus(ctx context.Context, arg UpdateServingStateStatusParams) error {
+	_, err := q.db.ExecContext(ctx, updateServingStateStatus, arg.Status, arg.Error, arg.ID)
+	return err
+}
+
+const updateServingStateValidated = `-- name: UpdateServingStateValidated :exec
+UPDATE serving_states
+SET status = ?, digest = ?, manifest_json = ?, error = ''
+WHERE id = ?
+`
+
+type UpdateServingStateValidatedParams struct {
+	Status       string `json:"status"`
+	Digest       string `json:"digest"`
+	ManifestJson string `json:"manifest_json"`
+	ID           string `json:"id"`
+}
+
+func (q *Queries) UpdateServingStateValidated(ctx context.Context, arg UpdateServingStateValidatedParams) error {
+	_, err := q.db.ExecContext(ctx, updateServingStateValidated,
+		arg.Status,
+		arg.Digest,
+		arg.ManifestJson,
 		arg.ID,
 	)
 	return err
@@ -2844,21 +3263,11 @@ func (q *Queries) UpsertGroup(ctx context.Context, arg UpsertGroupParams) error 
 	return err
 }
 
-const upsertPermission = `-- name: UpsertPermission :exec
-INSERT INTO permissions (name)
-VALUES (?)
-ON CONFLICT(name) DO NOTHING
-`
-
-func (q *Queries) UpsertPermission(ctx context.Context, name string) error {
-	_, err := q.db.ExecContext(ctx, upsertPermission, name)
-	return err
-}
-
 const upsertPrincipal = `-- name: UpsertPrincipal :exec
-INSERT INTO principals (id, email, display_name, updated_at)
-VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO principals (id, kind, email, display_name, updated_at)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(id) DO UPDATE SET
+  kind = excluded.kind,
   email = excluded.email,
   display_name = excluded.display_name,
   updated_at = CURRENT_TIMESTAMP
@@ -2866,29 +3275,35 @@ ON CONFLICT(id) DO UPDATE SET
 
 type UpsertPrincipalParams struct {
 	ID          string `json:"id"`
+	Kind        string `json:"kind"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 }
 
 func (q *Queries) UpsertPrincipal(ctx context.Context, arg UpsertPrincipalParams) error {
-	_, err := q.db.ExecContext(ctx, upsertPrincipal, arg.ID, arg.Email, arg.DisplayName)
+	_, err := q.db.ExecContext(ctx, upsertPrincipal,
+		arg.ID,
+		arg.Kind,
+		arg.Email,
+		arg.DisplayName,
+	)
 	return err
 }
 
 const upsertRole = `-- name: UpsertRole :exec
-INSERT INTO roles (id, name, permissions_json)
+INSERT INTO roles (id, name, privileges_json)
 VALUES (?, ?, ?)
-ON CONFLICT(name) DO UPDATE SET permissions_json = excluded.permissions_json
+ON CONFLICT(name) DO UPDATE SET privileges_json = excluded.privileges_json
 `
 
 type UpsertRoleParams struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	PermissionsJson string `json:"permissions_json"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	PrivilegesJson string `json:"privileges_json"`
 }
 
 func (q *Queries) UpsertRole(ctx context.Context, arg UpsertRoleParams) error {
-	_, err := q.db.ExecContext(ctx, upsertRole, arg.ID, arg.Name, arg.PermissionsJson)
+	_, err := q.db.ExecContext(ctx, upsertRole, arg.ID, arg.Name, arg.PrivilegesJson)
 	return err
 }
 

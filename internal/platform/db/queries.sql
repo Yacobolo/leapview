@@ -17,14 +17,14 @@ SELECT
   w.id,
   CASE WHEN a.title IS NOT NULL AND a.title <> '' THEN a.title ELSE w.title END AS title,
   CASE WHEN a.description IS NOT NULL THEN a.description ELSE w.description END AS description,
-  COALESCE(active.deployment_id, '') AS active_deployment_id,
+  COALESCE(active.serving_state_id, '') AS active_serving_state_id,
   w.created_at,
   w.updated_at
 FROM workspaces w
-LEFT JOIN workspace_active_deployments active
+LEFT JOIN workspace_active_serving_states active
   ON active.workspace_id = w.id AND active.environment = ?
 LEFT JOIN assets a
-  ON a.deployment_id = active.deployment_id
+  ON a.serving_state_id = active.serving_state_id
  AND a.asset_type = 'catalog'
  AND a.logical_asset_id = 'catalog:' || w.id
 ORDER BY w.created_at;
@@ -34,53 +34,53 @@ SELECT
   w.id,
   CASE WHEN a.title IS NOT NULL AND a.title <> '' THEN a.title ELSE w.title END AS title,
   CASE WHEN a.description IS NOT NULL THEN a.description ELSE w.description END AS description,
-  COALESCE(active.deployment_id, '') AS active_deployment_id,
+  COALESCE(active.serving_state_id, '') AS active_serving_state_id,
   w.created_at,
   w.updated_at
 FROM workspaces w
-LEFT JOIN workspace_active_deployments active
+LEFT JOIN workspace_active_serving_states active
   ON active.workspace_id = w.id AND active.environment = ?
 LEFT JOIN assets a
-  ON a.deployment_id = active.deployment_id
+  ON a.serving_state_id = active.serving_state_id
  AND a.asset_type = 'catalog'
  AND a.logical_asset_id = 'catalog:' || w.id
 WHERE w.id = ?;
 
--- name: SetActiveDeployment :exec
-INSERT INTO workspace_active_deployments (workspace_id, environment, deployment_id, updated_at)
+-- name: SetActiveServingState :exec
+INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id, updated_at)
 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(workspace_id, environment) DO UPDATE SET
-  deployment_id = excluded.deployment_id,
+  serving_state_id = excluded.serving_state_id,
   updated_at = CURRENT_TIMESTAMP;
 
--- name: CreateDeployment :exec
-INSERT INTO deployments (id, workspace_id, environment, status, source, created_by)
+-- name: CreateServingState :exec
+INSERT INTO serving_states (id, workspace_id, environment, status, source, created_by)
 VALUES (?, ?, ?, ?, ?, ?);
 
--- name: GetDeployment :one
-SELECT * FROM deployments WHERE id = ?;
+-- name: GetServingState :one
+SELECT * FROM serving_states WHERE id = ?;
 
--- name: GetActiveDeployment :one
+-- name: GetActiveServingState :one
 SELECT d.*
-FROM deployments d
-JOIN workspace_active_deployments active ON active.deployment_id = d.id
+FROM serving_states d
+JOIN workspace_active_serving_states active ON active.serving_state_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?;
 
--- name: ListDeployments :many
-SELECT * FROM deployments
+-- name: ListServingStates :many
+SELECT * FROM serving_states
 WHERE workspace_id = ? AND environment = ?
 ORDER BY created_at DESC;
 
 -- name: ListReferencedDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
-FROM deployments
+FROM serving_states
 WHERE ducklake_snapshot_id > 0
   AND status = 'active'
 ORDER BY ducklake_snapshot_id;
 
 -- name: ListActiveDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
-FROM deployments
+FROM serving_states
 WHERE ducklake_snapshot_id > 0
   AND status = 'active'
 ORDER BY ducklake_snapshot_id;
@@ -93,66 +93,65 @@ WHERE ducklake_snapshot_id > 0
   AND expires_at > CURRENT_TIMESTAMP
 ORDER BY ducklake_snapshot_id;
 
--- name: ExpireInactiveDeployments :exec
-UPDATE deployments
+-- name: ExpireInactiveServingStates :exec
+UPDATE serving_states
 SET status = 'expired', error = ''
 WHERE status = 'inactive';
 
--- name: MarkOtherDeploymentsDraining :exec
-UPDATE deployments
+-- name: MarkOtherServingStatesDraining :exec
+UPDATE serving_states
 SET status = 'draining',
     superseded_at = CURRENT_TIMESTAMP,
-    cleanup_after = NULL,
     error = ''
 WHERE workspace_id = ?
   AND environment = ?
   AND id <> ?
   AND status = 'active';
 
--- name: MarkDrainingDeploymentsDeleteScheduled :exec
-UPDATE deployments
+-- name: MarkDrainingServingStatesDeleteScheduled :exec
+UPDATE serving_states
 SET status = 'delete_scheduled', error = ''
 WHERE status = 'draining';
 
--- name: ScheduleExpiredDeploymentDeletion :exec
-UPDATE deployments
+-- name: ScheduleExpiredServingStateDeletion :exec
+UPDATE serving_states
 SET status = 'delete_scheduled', error = ''
 WHERE status = 'expired';
 
--- name: MarkDeleteScheduledDeploymentsDeleted :exec
-UPDATE deployments
+-- name: MarkDeleteScheduledServingStatesDeleted :exec
+UPDATE serving_states
 SET status = 'deleted', error = ''
 WHERE status = 'delete_scheduled';
 
--- name: UpdateDeploymentValidated :exec
-UPDATE deployments
+-- name: UpdateServingStateValidated :exec
+UPDATE serving_states
 SET status = ?, digest = ?, manifest_json = ?, error = ''
 WHERE id = ?;
 
--- name: UpdateDeploymentDuckLakeSnapshot :exec
-UPDATE deployments
+-- name: UpdateServingStateDuckLakeSnapshot :exec
+UPDATE serving_states
 SET ducklake_snapshot_id = ?
 WHERE id = ?;
 
--- name: UpdateDeploymentStatus :exec
-UPDATE deployments
+-- name: UpdateServingStateStatus :exec
+UPDATE serving_states
 SET status = ?, error = ?
 WHERE id = ?;
 
--- name: MarkDeploymentActive :exec
-UPDATE deployments
+-- name: MarkServingStateActive :exec
+UPDATE serving_states
 SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
 WHERE id = ?;
 
--- name: MarkOtherDeploymentsInactive :exec
-UPDATE deployments
+-- name: MarkOtherServingStatesInactive :exec
+UPDATE serving_states
 SET status = 'inactive'
 WHERE workspace_id = ? AND environment = ? AND id <> ? AND status = 'active';
 
--- name: InsertDeploymentArtifact :exec
-INSERT INTO deployment_artifacts (id, deployment_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes)
+-- name: InsertServingStateArtifact :exec
+INSERT INTO serving_state_artifacts (id, serving_state_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(deployment_id) DO UPDATE SET
+ON CONFLICT(serving_state_id) DO UPDATE SET
   environment = excluded.environment,
   digest = excluded.digest,
   format = excluded.format,
@@ -161,11 +160,11 @@ ON CONFLICT(deployment_id) DO UPDATE SET
   manifest_json = excluded.manifest_json,
   size_bytes = excluded.size_bytes;
 
--- name: GetArtifactByDeployment :one
-SELECT * FROM deployment_artifacts WHERE deployment_id = ?;
+-- name: GetArtifactByServingState :one
+SELECT * FROM serving_state_artifacts WHERE serving_state_id = ?;
 
 -- name: CreateQuerySnapshotLease :exec
-INSERT INTO query_snapshot_leases (id, workspace_id, environment, deployment_id, ducklake_snapshot_id, owner_id, expires_at)
+INSERT INTO query_snapshot_leases (id, workspace_id, environment, serving_state_id, ducklake_snapshot_id, owner_id, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: ReleaseQuerySnapshotLease :exec
@@ -185,29 +184,29 @@ SET released_at = CURRENT_TIMESTAMP
 WHERE released_at IS NULL
   AND expires_at <= CURRENT_TIMESTAMP;
 
--- name: ClearAssetsForDeployment :exec
-DELETE FROM assets WHERE deployment_id = ?;
+-- name: ClearAssetsForServingState :exec
+DELETE FROM assets WHERE serving_state_id = ?;
 
--- name: ClearAssetEdgesForDeployment :exec
-DELETE FROM asset_edges WHERE deployment_id = ?;
+-- name: ClearAssetEdgesForServingState :exec
+DELETE FROM asset_edges WHERE serving_state_id = ?;
 
 -- name: InsertAsset :exec
-INSERT INTO assets (snapshot_id, logical_asset_id, workspace_id, deployment_id, asset_type, asset_key, parent_logical_asset_id, title, description, source_file, payload_schema, payload_json, content_hash)
+INSERT INTO assets (snapshot_id, logical_asset_id, workspace_id, serving_state_id, asset_type, asset_key, parent_logical_asset_id, title, description, source_file, payload_schema, payload_json, content_hash)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: InsertAssetEdge :exec
-INSERT INTO asset_edges (id, workspace_id, deployment_id, from_logical_asset_id, to_logical_asset_id, edge_type)
+INSERT INTO asset_edges (id, workspace_id, serving_state_id, from_logical_asset_id, to_logical_asset_id, edge_type)
 VALUES (?, ?, ?, ?, ?, ?);
 
--- name: ListAssetsByDeployment :many
-SELECT * FROM assets WHERE deployment_id = ? ORDER BY asset_type, asset_key;
+-- name: ListAssetsByServingState :many
+SELECT * FROM assets WHERE serving_state_id = ? ORDER BY asset_type, asset_key;
 
--- name: ListAssetEdgesByDeployment :many
-SELECT * FROM asset_edges WHERE deployment_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id;
+-- name: ListAssetEdgesByServingState :many
+SELECT * FROM asset_edges WHERE serving_state_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id;
 
 -- name: ListAssetVersions :many
 SELECT
-  d.id AS deployment_id,
+  d.id AS serving_state_id,
   d.workspace_id,
   d.environment,
   d.status,
@@ -217,22 +216,48 @@ SELECT
   d.activated_at,
   a.snapshot_id,
   a.logical_asset_id,
+  a.source_file,
   a.content_hash
-FROM deployments d
-JOIN assets a ON a.deployment_id = d.id
+FROM serving_states d
+JOIN assets a ON a.serving_state_id = d.id
 WHERE d.workspace_id = ?
   AND d.environment = ?
   AND a.logical_asset_id = ?
+  AND d.source = 'publish'
   AND d.status IN ('active', 'draining', 'inactive', 'validated')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM serving_states newer
+    JOIN assets newer_asset ON newer_asset.serving_state_id = newer.id
+    WHERE newer.workspace_id = d.workspace_id
+      AND newer.environment = d.environment
+      AND newer.source = 'publish'
+      AND newer.status IN ('active', 'draining', 'inactive', 'validated')
+      AND newer_asset.logical_asset_id = a.logical_asset_id
+      AND newer_asset.content_hash = a.content_hash
+      AND (
+        COALESCE(newer.activated_at, newer.created_at) > COALESCE(d.activated_at, d.created_at)
+        OR (
+          COALESCE(newer.activated_at, newer.created_at) = COALESCE(d.activated_at, d.created_at)
+          AND newer.created_at > d.created_at
+        )
+        OR (
+          COALESCE(newer.activated_at, newer.created_at) = COALESCE(d.activated_at, d.created_at)
+          AND newer.created_at = d.created_at
+          AND newer.id > d.id
+        )
+      )
+  )
 ORDER BY
   COALESCE(d.activated_at, d.created_at) DESC,
   d.created_at DESC,
   d.id DESC;
 
 -- name: UpsertPrincipal :exec
-INSERT INTO principals (id, email, display_name, updated_at)
-VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO principals (id, kind, email, display_name, updated_at)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(id) DO UPDATE SET
+  kind = excluded.kind,
   email = excluded.email,
   display_name = excluded.display_name,
   updated_at = CURRENT_TIMESTAMP;
@@ -242,6 +267,40 @@ SELECT * FROM principals WHERE id = ?;
 
 -- name: GetPrincipalByEmail :one
 SELECT * FROM principals WHERE lower(email) = lower(?) AND email <> '' LIMIT 1;
+
+-- name: DisablePrincipal :exec
+UPDATE principals
+SET disabled_at = COALESCE(disabled_at, CURRENT_TIMESTAMP),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: ListSCIMPrincipals :many
+SELECT p.*
+FROM principals p
+JOIN external_identities ei ON ei.principal_id = p.id
+WHERE p.kind = 'user'
+  AND ei.provider = 'scim'
+  AND (sqlc.arg(subject) = '' OR ei.subject = sqlc.arg(subject))
+  AND (
+    sqlc.arg(user_name) = ''
+    OR lower(p.email) = lower(sqlc.arg(user_name))
+    OR lower(ei.email) = lower(sqlc.arg(user_name))
+  )
+ORDER BY p.email, p.display_name, p.id;
+
+-- name: GetExternalIdentityByPrincipalProvider :one
+SELECT * FROM external_identities
+WHERE principal_id = ? AND provider = ?
+LIMIT 1;
+
+-- name: ListServicePrincipals :many
+SELECT * FROM principals
+WHERE kind = 'service_principal'
+ORDER BY display_name, id;
+
+-- name: DeleteServicePrincipal :exec
+DELETE FROM principals
+WHERE id = ? AND kind = 'service_principal';
 
 -- name: UpsertExternalIdentity :exec
 INSERT INTO external_identities (id, principal_id, provider, tenant_id, subject, email, updated_at)
@@ -256,30 +315,15 @@ SELECT * FROM external_identities
 WHERE provider = ? AND tenant_id = ? AND subject = ?;
 
 -- name: UpsertRole :exec
-INSERT INTO roles (id, name, permissions_json)
+INSERT INTO roles (id, name, privileges_json)
 VALUES (?, ?, ?)
-ON CONFLICT(name) DO UPDATE SET permissions_json = excluded.permissions_json;
-
--- name: UpsertPermission :exec
-INSERT INTO permissions (name)
-VALUES (?)
-ON CONFLICT(name) DO NOTHING;
-
--- name: ClearRolePermissions :exec
-DELETE FROM role_permissions WHERE role_id = ?;
-
--- name: InsertRolePermission :exec
-INSERT OR IGNORE INTO role_permissions (role_id, permission_name)
-VALUES (?, ?);
+ON CONFLICT(name) DO UPDATE SET privileges_json = excluded.privileges_json;
 
 -- name: GetRoleByName :one
 SELECT * FROM roles WHERE name = ?;
 
 -- name: ListRoles :many
 SELECT * FROM roles ORDER BY name;
-
--- name: ListPermissions :many
-SELECT * FROM permissions ORDER BY name;
 
 -- name: UpsertGroup :exec
 INSERT INTO groups (id, workspace_id, provider, external_id, name)
@@ -298,11 +342,28 @@ WHERE workspace_id = ? AND provider = ? AND external_id = ?;
 -- name: ListGroupsByWorkspace :many
 SELECT * FROM groups
 WHERE workspace_id = ?
+   OR (workspace_id = '' AND provider = 'scim')
+ORDER BY name, id;
+
+-- name: GetSCIMGroup :one
+SELECT * FROM groups
+WHERE provider = 'scim' AND id = ?;
+
+-- name: ListSCIMGroups :many
+SELECT * FROM groups
+WHERE workspace_id = ''
+  AND provider = 'scim'
+  AND (sqlc.arg(external_id) = '' OR external_id = sqlc.arg(external_id))
+  AND (sqlc.arg(display_name) = '' OR lower(name) = lower(sqlc.arg(display_name)))
 ORDER BY name, id;
 
 -- name: DeleteGroup :exec
 DELETE FROM groups
 WHERE workspace_id = ? AND id = ?;
+
+-- name: DeleteSCIMGroup :exec
+DELETE FROM groups
+WHERE workspace_id = '' AND provider = 'scim' AND id = ?;
 
 -- name: InsertGroupMember :exec
 INSERT OR IGNORE INTO group_members (workspace_id, group_id, principal_id)
@@ -325,6 +386,27 @@ JOIN principals p ON p.id = gm.principal_id
 WHERE gm.workspace_id = ? AND gm.group_id = ?
 ORDER BY p.email, p.display_name, gm.principal_id;
 
+-- name: ListSCIMGroupMembers :many
+SELECT
+  gm.group_id,
+  gm.workspace_id,
+  gm.principal_id,
+  p.email,
+  p.display_name,
+  gm.created_at
+FROM group_members gm
+JOIN principals p ON p.id = gm.principal_id
+WHERE gm.workspace_id = '' AND gm.group_id = ?
+ORDER BY p.email, p.display_name, gm.principal_id;
+
+-- name: DeleteSCIMGroupMembers :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND group_id = ?;
+
+-- name: DeleteSCIMGroupMembersByPrincipal :exec
+DELETE FROM group_members
+WHERE workspace_id = '' AND principal_id = ?;
+
 -- name: InsertRoleBinding :exec
 INSERT OR IGNORE INTO role_bindings (id, workspace_id, role_id, principal_id, group_id)
 VALUES (?, ?, ?, ?, ?);
@@ -337,7 +419,11 @@ VALUES (?, ?, ?);
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  CASE
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL AND p.kind = 'service_principal' THEN 'service_principal'
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal'
+    ELSE 'group'
+  END AS subject_type,
   COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
@@ -365,7 +451,11 @@ WHERE workspace_id = ? AND id = ?;
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  CASE
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL AND p.kind = 'service_principal' THEN 'service_principal'
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal'
+    ELSE 'group'
+  END AS subject_type,
   COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
@@ -385,41 +475,25 @@ ORDER BY subject_type, p.email, g.name, r.name;
 DELETE FROM role_bindings
 WHERE workspace_id = ? AND principal_id = ?;
 
--- name: ListPrincipalRolePermissions :many
-SELECT DISTINCT permission_name
-FROM (
-  SELECT rp.permission_name
-  FROM role_bindings rb
-  JOIN role_permissions rp ON rp.role_id = rb.role_id
-  LEFT JOIN group_members gm
-    ON gm.workspace_id = rb.workspace_id
-   AND gm.group_id = rb.group_id
-  WHERE rb.workspace_id = ?
-    AND (
-      rb.principal_id = ?
-      OR gm.principal_id = ?
-    )
-  UNION
-  SELECT rp.permission_name
-  FROM platform_role_bindings prb
-  JOIN role_permissions rp ON rp.role_id = prb.role_id
-  WHERE prb.principal_id = ?
-)
-ORDER BY permission_name;
-
 -- name: CreateSession :exec
-INSERT INTO sessions (id, principal_id, token_hash, expires_at)
-VALUES (?, ?, ?, ?);
+INSERT INTO sessions (id, principal_id, token_fingerprint, token_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?);
 
--- name: GetSessionByTokenHash :one
+-- name: GetSessionByTokenFingerprint :one
 SELECT * FROM sessions
-WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL;
+WHERE token_fingerprint = ? AND expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL;
+
+-- name: GetSessionByTokenFingerprintForAudit :one
+SELECT * FROM sessions
+WHERE token_fingerprint = ?
+ORDER BY created_at DESC
+LIMIT 1;
 
 -- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?;
 
--- name: DeleteSessionByTokenHash :exec
-DELETE FROM sessions WHERE token_hash = ?;
+-- name: DeleteSessionByTokenFingerprint :exec
+DELETE FROM sessions WHERE token_fingerprint = ?;
 
 -- name: ListSessionsByPrincipal :many
 SELECT * FROM sessions
@@ -437,15 +511,26 @@ SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
 RETURNING *;
 
--- name: CreateAPIToken :exec
-INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, permissions_json, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+-- name: RevokeSessionsByPrincipal :exec
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL;
 
--- name: GetAPITokenByHash :one
+-- name: CreateAPIToken :exec
+INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetAPITokenByFingerprint :one
 SELECT * FROM api_tokens
-WHERE token_hash = ?
+WHERE token_fingerprint = ?
   AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);
+
+-- name: GetAPITokenByFingerprintForAudit :one
+SELECT * FROM api_tokens
+WHERE token_fingerprint = ?
+ORDER BY created_at DESC
+LIMIT 1;
 
 -- name: TouchAPIToken :exec
 UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?;
@@ -466,9 +551,33 @@ SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND id = ?
 RETURNING *;
 
+-- name: RevokeAPITokensByPrincipal :exec
+UPDATE api_tokens
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE principal_id = ? AND revoked_at IS NULL;
+
+-- name: CreateServicePrincipalSecret :exec
+INSERT INTO service_principal_secrets (id, service_principal_id, name, secret_fingerprint, secret_verifier, expires_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: GetServicePrincipalSecretByFingerprint :one
+SELECT s.*
+FROM service_principal_secrets s
+JOIN principals p ON p.id = s.service_principal_id
+WHERE p.kind = 'service_principal'
+  AND s.service_principal_id = ?
+  AND s.secret_fingerprint = ?
+  AND s.revoked_at IS NULL
+  AND (s.expires_at IS NULL OR s.expires_at > CURRENT_TIMESTAMP);
+
+-- name: RevokeServicePrincipalSecret :exec
+UPDATE service_principal_secrets
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE service_principal_id = ? AND id = ?;
+
 -- name: InsertAuditEvent :exec
-INSERT INTO audit_events (id, workspace_id, principal_id, action, target_type, target_id, metadata_json)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO audit_events (id, workspace_id, principal_id, action, target_type, target_id, privilege, status, request_id, correlation_id, metadata_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListAuditEvents :many
 SELECT * FROM audit_events
@@ -490,13 +599,15 @@ RETURNING *;
 
 -- name: ListAgentConversations :many
 SELECT * FROM agent_conversations
-WHERE principal_id = sqlc.arg(principal_id)
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND principal_id = sqlc.arg(principal_id)
   AND status = 'active'
 ORDER BY updated_at DESC, created_at DESC;
 
 -- name: GetAgentConversation :one
 SELECT * FROM agent_conversations
 WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
   AND principal_id = sqlc.arg(principal_id);
 
 -- name: ArchiveAgentConversation :one
@@ -505,6 +616,7 @@ SET status = 'archived',
     archived_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
   AND principal_id = sqlc.arg(principal_id)
 RETURNING *;
 
@@ -513,6 +625,7 @@ UPDATE agent_conversations
 SET transcript_json = sqlc.arg(transcript_json),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
   AND principal_id = sqlc.arg(principal_id)
 RETURNING *;
 
@@ -521,6 +634,7 @@ UPDATE agent_conversations
 SET title = sqlc.arg(title),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
   AND principal_id = sqlc.arg(principal_id)
   AND status = 'active'
   AND title = 'New conversation'
@@ -541,6 +655,7 @@ SELECT
   sqlc.arg(is_error)
 FROM agent_conversations c
 WHERE c.id = sqlc.arg(conversation_id)
+  AND c.workspace_id = sqlc.arg(workspace_id)
   AND c.principal_id = sqlc.arg(principal_id)
 RETURNING *;
 
@@ -549,6 +664,7 @@ SELECT m.*
 FROM agent_messages m
 JOIN agent_conversations c ON c.id = m.conversation_id
 WHERE c.id = sqlc.arg(conversation_id)
+  AND c.workspace_id = sqlc.arg(workspace_id)
   AND c.principal_id = sqlc.arg(principal_id)
 ORDER BY m.seq;
 
@@ -562,6 +678,7 @@ SELECT
   sqlc.arg(metadata_json)
 FROM agent_conversations c
 WHERE c.id = sqlc.arg(conversation_id)
+  AND c.workspace_id = sqlc.arg(workspace_id)
   AND c.principal_id = sqlc.arg(principal_id)
 RETURNING *;
 
@@ -570,6 +687,7 @@ SELECT r.*
 FROM agent_runs r
 JOIN agent_conversations c ON c.id = r.conversation_id
 WHERE c.id = sqlc.arg(conversation_id)
+  AND c.workspace_id = sqlc.arg(workspace_id)
   AND c.principal_id = sqlc.arg(principal_id)
 ORDER BY r.started_at DESC;
 
@@ -588,6 +706,7 @@ WHERE agent_runs.id = sqlc.arg(id)
     SELECT agent_conversations.id
     FROM agent_conversations
     WHERE agent_conversations.id = sqlc.arg(conversation_id)
+      AND workspace_id = sqlc.arg(workspace_id)
       AND principal_id = sqlc.arg(principal_id)
   )
 RETURNING *;
@@ -604,6 +723,7 @@ SELECT
 FROM agent_runs r
 JOIN agent_conversations c ON c.id = r.conversation_id
 WHERE r.id = sqlc.arg(run_id)
+  AND c.workspace_id = sqlc.arg(workspace_id)
   AND c.principal_id = sqlc.arg(principal_id)
 RETURNING *;
 
@@ -613,6 +733,7 @@ FROM agent_events e
 JOIN agent_runs r ON r.id = e.run_id
 JOIN agent_conversations c ON c.id = r.conversation_id
 WHERE r.id = sqlc.arg(run_id)
+  AND c.workspace_id = sqlc.arg(workspace_id)
   AND c.principal_id = sqlc.arg(principal_id)
 ORDER BY e.seq;
 

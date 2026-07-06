@@ -7,9 +7,10 @@ type RouteExpectation = {
 }
 
 const baseURL = Bun.env.LIBREDASH_BASE_URL ?? 'http://localhost:8195'
+const dashboardPath = '/workspaces/visuals/dashboards/visual-showcase/pages/overview'
 const routes: RouteExpectation[] = [
   { path: '/', root: 'ld-catalog-page', shell: true },
-  { path: '/workspaces/visuals/dashboards/visual-showcase/pages/overview', root: 'ld-dashboard-page', shell: true },
+  { path: dashboardPath, root: 'ld-dashboard-page', shell: true },
   { path: '/data', root: 'ld-data-explorer', shell: true },
   { path: '/workspaces', root: 'ld-workspace-page', shell: true },
   { path: '/connections', root: 'ld-connections-page', shell: true },
@@ -91,7 +92,7 @@ async function verifyDashboardCommandDoesNotReopenUpdates(): Promise<void> {
   })
 
   try {
-    await page.goto(new URL('/workspaces/visuals/dashboards/visual-showcase/pages/overview', baseURL).toString(), { waitUntil: 'domcontentloaded' })
+    await page.goto(new URL(dashboardPath, baseURL).toString(), { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('ld-dashboard-page')
     await page.waitForTimeout(1000)
     const beforeUpdates = updates.length

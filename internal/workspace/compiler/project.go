@@ -28,6 +28,8 @@ type WorkspaceProject struct {
 	Dashboards            map[string]*report.Dashboard
 	AccessGroups          map[string]workspace.WorkspaceGroup
 	AccessRoleBindings    map[string]workspace.WorkspaceRoleBinding
+	AccessGrants          map[string]workspace.WorkspaceGrant
+	AccessDataPolicies    map[string]workspace.WorkspaceDataPolicy
 	AgentPolicies         map[string]workspace.AgentPolicy
 	ModelTitles           map[string]string
 	ModelDescriptions     map[string]string
@@ -58,9 +60,9 @@ func CompileProject(projectPath string, opts Options) (CompiledProject, error) {
 		if err != nil {
 			return CompiledProject{}, err
 		}
-		deploymentID := opts.DeploymentID
+		servingStateID := opts.ServingStateID
 		workspaceID := workspace.WorkspaceID(id)
-		graph, err := ExtractLineage(workspaceID, deploymentID, definition)
+		graph, err := ExtractLineage(workspaceID, servingStateID, definition)
 		if err != nil {
 			return CompiledProject{}, err
 		}

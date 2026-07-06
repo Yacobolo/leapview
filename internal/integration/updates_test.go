@@ -1,10 +1,15 @@
 package integration
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
 )
 
 func TestUpdatesStreamsRealRuntimeSignals(t *testing.T) {
@@ -14,26 +19,16 @@ func TestUpdatesStreamsRealRuntimeSignals(t *testing.T) {
 		name    string
 		pageID  string
 		signals map[string]any
+		query   url.Values
 		assert  func(t *testing.T, patches []map[string]any)
 	}{
 		{
-			name:   "overview filtered to SP",
-			pageID: "overview",
-			signals: map[string]any{
-				"filters": map[string]any{
-					"controls": map[string]any{
-						"state": map[string]any{
-							"type":     "multi_select",
-							"operator": "in",
-							"values":   []string{"SP"},
-						},
-						"category": map[string]any{
-							"type":     "text",
-							"operator": "contains",
-							"value":    "ignored",
-						},
-					},
-				},
+			name:    "overview filtered to SP",
+			pageID:  "overview",
+			signals: map[string]any{},
+			query: url.Values{
+				"state":    []string{"SP"},
+				"category": []string{"ignored"},
 			},
 			assert: func(t *testing.T, patches []map[string]any) {
 				t.Helper()
@@ -52,7 +47,7 @@ func TestUpdatesStreamsRealRuntimeSignals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			patches := h.getUpdatesSignals(t, "executive-sales", tt.pageID, tt.signals)
+			patches := h.getUpdatesSignalsWithQuery(t, "executive-sales", tt.pageID, tt.signals, tt.query)
 			tt.assert(t, patches)
 		})
 	}
@@ -70,19 +65,22 @@ func TestUpdatesStreamsSetupRequiredPatchForMissingData(t *testing.T) {
 	})
 }
 
-func TestUpdatesRejectsMalformedDatastarSignals(t *testing.T) {
+func TestUpdatesIgnoresMalformedDatastarSignals(t *testing.T) {
 	h := newHarness(t)
-	req := httptest.NewRequest(http.MethodGet, h.workspaceUpdatesPath()+"?route=dashboard&workspace="+h.workspaceIDOrDefault()+"&dashboard=executive-sales&page=overview&datastar=%7Bnot-json", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, h.workspaceUpdatesPath()+"?route=dashboard&workspace="+h.workspaceIDOrDefault()+"&dashboard=executive-sales&page=overview&datastar=%7Bnot-json", nil)
 	rec := httptest.NewRecorder()
 
 	h.handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d; body:\n%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body:\n%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if got := rec.Header().Get("Content-Type"); strings.HasPrefix(got, "text/event-stream") {
-		t.Fatalf("malformed Datastar request opened SSE stream with content type %q", got)
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("content type = %q, want text/event-stream", got)
 	}
+	requireVisual(t, ssetest.PatchSignals(t, rec.Body.String()), "total_orders")
 }
 
 func requireFirstStatusLoading(t *testing.T, patches []map[string]any) {

@@ -40,7 +40,11 @@ func ModelID(r *http.Request, signals dashboard.Signals, dashboardID string, def
 }
 
 func ClientStreamID(r *http.Request, signals dashboard.Signals, dashboardID, pageID string) string {
-	return pagestream.ClientIDFromRequest(r, signals.Runtime.ClientID) + ":" + dashboardID + ":" + pageID
+	return StreamID(pagestream.ClientIDFromRequest(r, signals.Runtime.ClientID), dashboardID, pageID)
+}
+
+func StreamID(clientID, dashboardID, pageID string) string {
+	return clientID + ":" + dashboardID + ":" + pageID
 }
 
 func DashboardPatch(patch dashboard.Patch) pagestream.SignalPatch {

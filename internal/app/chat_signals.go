@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/ui"
 )
 
-func chatSignalWithConversations(conversations []ui.ChatConversationSummary, activeID string, transcript []agentapp.ChatTranscriptItem, artifacts agentapp.ChatArtifactSignals, statusErr string, running, enabled bool) ui.ChatSignal {
+func chatSignalWithConversations(conversations []ui.ChatConversationSummary, activeID string, transcript []agent.ChatTranscriptItem, artifacts agent.ChatArtifactSignals, statusErr string, running, enabled bool) ui.ChatSignal {
 	if !enabled && statusErr == "" {
 		statusErr = "Agent is not configured"
 	}
@@ -36,9 +36,9 @@ func chatSignalWithConversations(conversations []ui.ChatConversationSummary, act
 	}
 }
 
-func (s *Server) chatSignal(ctx context.Context, scope agentapp.Scope, activeID, statusErr string, running bool) ui.ChatSignal {
-	transcript := []agentapp.ChatTranscriptItem{}
-	artifacts := agentapp.ChatArtifactSignals{}
+func (s *Server) chatSignal(ctx context.Context, scope agent.Scope, activeID, statusErr string, running bool) ui.ChatSignal {
+	transcript := []agent.ChatTranscriptItem{}
+	artifacts := agent.ChatArtifactSignals{}
 	if activeID != "" && s.agent != nil && scope.PrincipalID != "" {
 		if loaded, err := s.agent.ConversationTranscriptState(ctx, scope, activeID); err == nil {
 			transcript = loaded.Transcript
@@ -48,7 +48,7 @@ func (s *Server) chatSignal(ctx context.Context, scope agentapp.Scope, activeID,
 	return s.chatSignalWith(ctx, scope, activeID, transcript, artifacts, statusErr, running)
 }
 
-func (s *Server) chatSignalWith(ctx context.Context, scope agentapp.Scope, activeID string, transcript []agentapp.ChatTranscriptItem, artifacts agentapp.ChatArtifactSignals, statusErr string, running bool) ui.ChatSignal {
+func (s *Server) chatSignalWith(ctx context.Context, scope agent.Scope, activeID string, transcript []agent.ChatTranscriptItem, artifacts agent.ChatArtifactSignals, statusErr string, running bool) ui.ChatSignal {
 	conversations := s.chatConversations(ctx, scope)
 	enabled := s.agent != nil && s.agent.Enabled()
 	if !enabled && statusErr == "" {
@@ -74,7 +74,7 @@ func (s *Server) chatSignalWith(ctx context.Context, scope agentapp.Scope, activ
 	}
 }
 
-func normalizeChatArtifacts(artifacts agentapp.ChatArtifactSignals) agentapp.ChatArtifactSignals {
+func normalizeChatArtifacts(artifacts agent.ChatArtifactSignals) agent.ChatArtifactSignals {
 	if artifacts.Visuals == nil {
 		artifacts.Visuals = map[string]any{}
 	}
@@ -124,7 +124,7 @@ func chatSignalPatch(signal ui.ChatSignal) map[string]any {
 	}
 }
 
-func (s *Server) chatConversations(ctx context.Context, scope agentapp.Scope) []ui.ChatConversationSummary {
+func (s *Server) chatConversations(ctx context.Context, scope agent.Scope) []ui.ChatConversationSummary {
 	conversations := []ui.ChatConversationSummary{}
 	if s.agent == nil || scope.PrincipalID == "" {
 		return conversations
@@ -141,7 +141,7 @@ func (s *Server) chatConversations(ctx context.Context, scope agentapp.Scope) []
 	return conversations
 }
 
-func chatConversationSummary(row agentapp.Conversation) ui.ChatConversationSummary {
+func chatConversationSummary(row agent.Conversation) ui.ChatConversationSummary {
 	return ui.ChatConversationSummary{
 		ID:          row.ID,
 		WorkspaceID: row.WorkspaceID,

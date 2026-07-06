@@ -223,10 +223,14 @@ wait_ready() {
   return 1
 }
 
-deploy_project() {
+publish_project() {
   local port="$1"
+  if [[ "${LIBREDASH_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
+    echo "Skipping dev project publish"
+    return 0
+  fi
   local project="${LIBREDASH_DEV_PROJECT:-dashboards/libredash.yaml}"
-  go run ./cmd/libredash deploy --project "$project" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
+  go run ./cmd/libredash publish --project "$project" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
 }
 
 attach_server() {
@@ -266,8 +270,8 @@ start() {
       echo "PID: $existing_pid"
       echo "URL: http://localhost:$existing_port"
       echo "Logs: $LOG_FILE"
-      echo "Deploying project to existing server..."
-      deploy_project "$existing_port"
+      echo "Publishing project to existing server..."
+      publish_project "$existing_port"
       echo "Attached to LibreDash logs. Press Ctrl-C to stop."
       attach_server "$existing_pid" "$existing_port"
       return 0
@@ -291,7 +295,11 @@ start() {
   else
     echo "Runner: go run (install air for hot reload)"
   fi
-  echo "Deploying project after startup. Press Ctrl-C to stop."
+  if [[ "${LIBREDASH_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
+    echo "Project publish disabled. Press Ctrl-C to stop."
+  else
+    echo "Publishing project after startup. Press Ctrl-C to stop."
+  fi
 
   cd "$ROOT"
   export PORT="$port"
@@ -312,7 +320,7 @@ start() {
     exit 1
   fi
 
-  if ! deploy_project "$port"; then
+  if ! publish_project "$port"; then
     stop_pid "$pid" "LibreDash dev server"
     exit 1
   fi

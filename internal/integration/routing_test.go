@@ -43,3 +43,8 @@ func TestUpdatesQueryParamsTakePrecedenceOverRuntimeSignalIDs(t *testing.T) {
 		return len(visuals) > 0 && hasKey(visuals, "revenue_by_month")
 	})
 }
+
+func drainInitialStreamPatches(t *testing.T, stream *streamClient) {
+	t.Helper()
+	_ = drainInitialSnapshot(t, stream)
+}
