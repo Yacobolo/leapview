@@ -8,9 +8,9 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
-func WorkspaceAccessSignals(access ui.WorkspaceAccessResponse, csrfToken string) map[string]any {
+func WorkspaceAccessSignals(access ui.WorkspaceAccessResponse, _ string) map[string]any {
 	return map[string]any{
-		"workspaceAccess": ui.WorkspaceAccessSignals(access, csrfToken),
+		"workspaceAccess": ui.WorkspaceAccessSignals(access),
 	}
 }
 
@@ -19,7 +19,7 @@ func WorkspaceAssetStreamID(workspaceID, assetID, section string) string {
 }
 
 func WorkspaceAssetRefreshSections() []string {
-	return []string{"details", "refreshes", "lineage"}
+	return []string{"details", "refreshes", "lineage", "versions"}
 }
 
 func WorkspaceAssetUpdateSection(r *http.Request) string {
@@ -28,6 +28,8 @@ func WorkspaceAssetUpdateSection(r *http.Request) string {
 		return "refreshes"
 	case "lineage":
 		return "lineage"
+	case "versions":
+		return "versions"
 	default:
 		return "details"
 	}

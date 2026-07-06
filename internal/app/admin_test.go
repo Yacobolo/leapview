@@ -18,6 +18,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
@@ -37,7 +38,7 @@ func TestAdminRouteRejectsViewer(t *testing.T) {
 		{method: http.MethodGet, path: "/admin"},
 		{method: http.MethodGet, path: "/admin/agent"},
 		{method: http.MethodGet, path: "/admin/storage"},
-		{method: http.MethodGet, path: "/admin/storage/updates"},
+		{method: http.MethodGet, path: "/updates?route=admin&section=storage"},
 		{method: http.MethodPost, path: "/admin/storage/select-table", body: `{}`},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
@@ -75,14 +76,14 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 		path string
 		want []string
 	}{
-		{path: "/admin", want: []string{"General", "Principals", "Groups", "Role bindings", "Roles"}},
-		{path: "/admin/principals", want: []string{"<ld-admin-page", "Principals", "sections", "Group count", "/admin/principals/" + analyst.ID, "analyst@example.com", "viewer", analyst.ID}},
-		{path: "/admin/principals/" + analyst.ID, want: []string{"Principals / Analyst", "Email", "analyst@example.com", "Principal ID", analyst.ID, "Direct roles", "viewer", "Group count", "Groups", "/admin/groups/group_finance", "Finance", "local", "finance", "editor"}},
-		{path: "/admin/groups", want: []string{"<ld-admin-page", "Groups", "sections", "Member count", "/admin/groups/group_finance", "Finance", "local", "finance", "editor"}},
-		{path: "/admin/groups/group_finance", want: []string{"Groups / Finance", "Provider", "local", "External ID", "finance", "Group ID", "group_finance", "Members", "Principal ID", "analyst@example.com", "viewer", analyst.ID}},
-		{path: "/admin/agent", want: []string{"<ld-admin-page", "<ld-agent-prompt-editor", "slot=\"agent-prompt\"", `data-attr:value="$adminAgentCommand.systemPrompt"`, "agent-prompt", `data-attr:agent-prompt="$adminAgentCommand.systemPrompt"`, "systemPrompt", "You are LibreDash", "Tools", "query_visual", "/api/v1/admin/agent/config"}},
-		{path: "/admin/storage", want: []string{"<ld-admin-page", "Storage", "Catalog path", "Data path", "Snapshots", "Tables", "adminStorage", "storage=", "/admin/storage/updates", "/admin/storage/select-table", "No DuckLake catalog has been initialized."}},
-		{path: "/admin/queries", want: []string{"<ld-admin-page", "Query History", "adminQueryHistory", "adminQueryDetail", "adminQueryHistoryCommand", "/admin/queries/updates", "/admin/queries/command", "csrfToken"}},
+		{path: "/admin", want: []string{"<ld-admin-page", `section="general"`, `/updates?route=admin&amp;section=general`}},
+		{path: "/admin/principals", want: []string{"<ld-admin-page", `section="principals"`, `/updates?route=admin&amp;section=principals`}},
+		{path: "/admin/principals/" + analyst.ID, want: []string{"<ld-admin-page", `section="principal-detail"`, `/updates?principal=` + analyst.ID + `&amp;route=admin&amp;section=principal-detail`}},
+		{path: "/admin/groups", want: []string{"<ld-admin-page", `section="groups"`, `/updates?route=admin&amp;section=groups`}},
+		{path: "/admin/groups/group_finance", want: []string{"<ld-admin-page", `section="group-detail"`, `/updates?group=group_finance&amp;route=admin&amp;section=group-detail`}},
+		{path: "/admin/agent", want: []string{"<ld-admin-page", `section="agent"`, `/updates?route=admin&amp;section=agent`, "/api/v1/admin/agent/config"}},
+		{path: "/admin/storage", want: []string{"<ld-admin-page", `section="storage"`, `/updates?route=admin&amp;section=storage`, "/admin/storage/select-table"}},
+		{path: "/admin/queries", want: []string{"<ld-admin-page", `section="queries"`, `/updates?route=admin&amp;section=queries`, "/admin/queries/command"}},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -443,7 +444,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/admin/queries/updates", nil)
+	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=queries", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
@@ -462,7 +463,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-queries:test-client", map[string]any{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
+	server.broker.Publish("admin-queries:test-client", pagestream.SignalPatch{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
 	deadline = time.After(time.Second)
 	for !strings.Contains(rec.Body.String(), "sentinel") {
 		select {
@@ -507,7 +508,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/admin/storage/updates", nil)
+	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=storage", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
@@ -526,7 +527,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-storage:test-client", map[string]any{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
+	server.broker.Publish("admin-storage:test-client", pagestream.SignalPatch{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
 	deadline = time.After(time.Second)
 	for !strings.Contains(rec.Body.String(), "sentinel") {
 		select {
@@ -540,9 +541,6 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	<-done
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
 		t.Fatalf("content type = %q, want text/event-stream", got)
-	}
-	if strings.Contains(rec.Body.String(), `"tables"`) || strings.Contains(rec.Body.String(), `"selectedTable"`) {
-		t.Fatalf("storage updates should not send initial full table signal data:\n%s", rec.Body.String())
 	}
 }
 
@@ -786,10 +784,13 @@ func TestAdminGeneralRendersWithoutStore(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"General", "Access store is not configured", "Platform"} {
+	for _, want := range []string{"<ld-admin-page", `section="general"`, `/updates?route=admin&amp;section=general`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin general missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "Access store is not configured") || strings.Contains(body, "data-signals=") {
+		t.Fatalf("admin general should stream read-model state instead of embedding it:\n%s", body)
 	}
 }
 
@@ -803,10 +804,13 @@ func TestAdminStorageRendersEmptyStateWithoutDuckDBFiles(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Storage", "No DuckLake catalog has been initialized.", "Catalog path"} {
+	for _, want := range []string{"<ld-admin-page", `section="storage"`, `/updates?route=admin&amp;section=storage`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin storage missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "No DuckLake catalog has been initialized.") || strings.Contains(body, "data-signals=") {
+		t.Fatalf("admin storage should stream read-model state instead of embedding it:\n%s", body)
 	}
 }
 

@@ -1,13 +1,10 @@
 package ui
 
 import (
-	"encoding/json"
-
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	ds "maragu.dev/gomponents-datastar"
-	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
@@ -15,55 +12,44 @@ func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPage
 	catalog = catalogWithoutWorkspaceContext(catalog)
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "data", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
-	signals := map[string]any{
-		"chrome":              chrome,
-		"page":                page,
-		"dataExplorer":        explorer,
-		"dataExplorerCommand": explorer.Command,
-		"csrfToken":           csrfToken,
-		"runtime":             uisignals.RouteRuntimeSignal{Kind: uisignals.RouteData},
-		"status":              dashboard.Status{},
-	}
-	return c.HTML5(c.HTML5Props{
-		Title:    page.Title,
-		Language: "en",
+	explorerUpdatesURL := updatesURL(uisignals.RouteData, "workspace", explorer.Command.WorkspaceID, "object", explorer.Command.ObjectKey)
+	_ = chrome
+	return pagestream.RenderPage(pagestream.PageSpec{
+		Title: page.Title,
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
 		Head: pageHead(
+			csrfMeta(csrfToken),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/data-explorer.js"))),
 			inspectorScript(),
-			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
 		),
+		MainAttrs:  []g.Node{h.Class(appRootClass)},
+		UpdatesURL: explorerUpdatesURL,
 		Body: []g.Node{
-			h.Main(h.Class(appRootClass),
-				ds.Signals(signals),
-				ds.Init("@get('/data/updates', {openWhenHidden: true})"),
-				g.El("ld-app-shell",
-					g.Attr("chrome", jsonString(chrome)),
-					g.Attr("data-attr:chrome", "$chrome"),
-					g.El("ld-data-explorer",
-						g.Attr("slot", "page"),
-						g.Attr("page", mustJSONString(page)),
-						g.Attr("data-attr:page", "$page"),
-						g.Attr("dataexplorer", mustJSONString(explorer)),
-						g.Attr("data-attr:dataexplorer", "$dataExplorer"),
-						g.Attr("data-on:ld-data-explorer-command", "$dataExplorerCommand = evt.detail; "+postAction("/data/command")),
-					),
+			g.El("ld-app-shell",
+				g.El("ld-data-explorer",
+					g.Attr("slot", "page"),
+					g.Attr("data-on:ld-data-explorer-command", "$dataExplorerCommand = evt.detail; "+postAction("/data/command")),
 				),
-				inspectorElement(),
 			),
+			inspectorElement(),
 		},
 	})
 }
 
-func mustJSONString(value any) string {
-	out, err := json.Marshal(value)
-	if err != nil {
-		return "{}"
+func DataExplorerBootstrapSignals(catalog dashboard.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
+	catalog = catalogWithoutWorkspaceContext(catalog)
+	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "data", roleLabel)}
+	applyChromeOptions(&chrome, chromeOptions)
+	return map[string]any{
+		"chrome":              chrome,
+		"page":                page,
+		"dataExplorer":        explorer,
+		"dataExplorerCommand": explorer.Command,
+		"status":              dashboard.Status{},
 	}
-	return string(out)
 }

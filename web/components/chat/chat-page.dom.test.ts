@@ -8,7 +8,8 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-const root = join(process.cwd(), '.tmp/chat-page-test')
+const projectRoot = process.cwd()
+const root = join(projectRoot, '.tmp/chat-page-test')
 
 beforeAll(async () => {
   server = createServer(async (request, response) => {
@@ -28,8 +29,9 @@ beforeAll(async () => {
       response.end(testDocument('new', 'new'))
       return
     }
-    const file = normalize(join(root, url.pathname))
-    if (!file.startsWith(root)) {
+    const fileRoot = url.pathname.startsWith('/static/vendor/') ? projectRoot : root
+    const file = normalize(join(fileRoot, url.pathname))
+    if (!file.startsWith(fileRoot)) {
       response.writeHead(404)
       response.end('not found')
       return
@@ -314,7 +316,6 @@ function testDocument(view = 'conversation', scenario: 'active' | 'new' = 'activ
     status: { enabled: true, running: false },
     composer: { value: '', disabled: false, placeholder: 'Ask about dashboards, metrics, or models...' },
   }
-  const attr = (value: unknown) => escapeHTML(JSON.stringify(value))
   return `
     <!doctype html>
     <html>
@@ -326,7 +327,10 @@ function testDocument(view = 'conversation', scenario: 'active' | 'new' = 'activ
         </style>
       </head>
       <body>
-        <ld-chat-page page="${attr(page)}" agent="${attr(agent)}"></ld-chat-page>
+        <main data-signals="${escapeHTML(JSON.stringify({ page, agent, visuals: {}, tables: {} }))}">
+          <ld-chat-page></ld-chat-page>
+        </main>
+        <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>
         <script type="module" src="/chat-page-under-test.js"></script>
       </body>
     </html>

@@ -8,9 +8,8 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	workspaceview "github.com/Yacobolo/libredash/internal/workspace"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	ds "maragu.dev/gomponents-datastar"
-	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
@@ -138,18 +137,74 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
 	storageSignal := page.Storage
+	adminUpdatesURL := updatesURL(uisignals.RouteAdmin, "section", active)
+	if active == "principal-detail" && data.SelectedPrincipal != nil {
+		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "principal", data.SelectedPrincipal.ID)
+	}
+	if active == "group-detail" && data.SelectedGroup != nil {
+		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "group", data.SelectedGroup.ID)
+	}
+	_ = chrome
+	_ = storageSignal
+	adminAttrs := []g.Node{
+		g.Attr("slot", "page"),
+		g.Attr("section", active),
+	}
+	if active == "storage" {
+		adminAttrs = append(adminAttrs,
+			g.Attr("data-on:ld-storage-table-select", "$adminStorageCommand = evt.detail; "+postAction("/admin/storage/select-table")),
+		)
+	}
+	if active == "agent" {
+		adminAttrs = append(adminAttrs,
+			g.Attr("data-on:ld-agent-system-prompt-save", "$adminAgentCommand = evt.detail; "+patchAction("/api/v1/admin/agent/config")),
+		)
+	}
+	if active == "queries" {
+		adminAttrs = append(adminAttrs,
+			g.Attr("data-on:ld-query-history-command", "$adminQueryHistoryCommand = evt.detail; evt.detail.action == 'select_detail' ? ($adminQueryDetail = {eventId: evt.detail.eventId, loading: true, error: ''}) : evt.detail.action == 'close_detail' ? ($adminQueryDetail = {eventId: '', loading: false, error: ''}) : ($adminQueryHistory.loading = true, $adminQueryHistory.error = ''); "+postAction("/admin/queries/command")),
+		)
+	}
+	return pagestream.RenderPage(pagestream.PageSpec{
+		Title: "Admin - " + title,
+		HTMLAttrs: []g.Node{
+			g.Attr("data-color-mode", "auto"),
+			g.Attr("data-light-theme", "light"),
+			g.Attr("data-dark-theme", "dark"),
+		},
+		Head: pageHead(
+			csrfMeta(data.CSRFToken),
+			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/admin-page.css"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/admin-page.js"))),
+			inspectorScript(),
+		),
+		MainAttrs:  []g.Node{h.Class(appRootClass)},
+		UpdatesURL: adminUpdatesURL,
+		Body: []g.Node{
+			g.El("ld-app-shell",
+				g.El("ld-admin-page", adminAttrs...),
+			),
+			inspectorElement(),
+		},
+	})
+}
+
+func AdminBootstrapSignals(catalog dashboard.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) map[string]any {
+	page := adminPageSignal(active, data)
+	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
+	applyChromeOptions(&chrome, chromeOptions)
 	signals := map[string]any{
-		"chrome":    chrome,
-		"page":      page,
-		"runtime":   uisignals.RouteRuntimeSignal{Kind: uisignals.RouteAdmin},
-		"status":    dashboard.Status{},
-		"csrfToken": data.CSRFToken,
+		"chrome":  chrome,
+		"page":    page,
+		"runtime": uisignals.RouteRuntimeSignal{Kind: uisignals.RouteAdmin},
+		"status":  dashboard.Status{},
 	}
 	if active == "agent" {
 		signals["adminAgentCommand"] = map[string]string{"systemPrompt": data.Agent.SystemPrompt}
 	}
 	if active == "storage" {
-		signals["adminStorage"] = storageSignal
+		signals["adminStorage"] = page.Storage
 		signals["adminStorageCommand"] = AdminStorageCommand{}
 	}
 	if active == "queries" {
@@ -158,75 +213,7 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 		signals["adminQueryDetail"] = uisignals.AdminQueryDetailSignal{}
 		signals["adminQueryHistoryCommand"] = uisignals.AdminQueryHistoryCommand{Action: "load_more", Filters: queryHistory.Filters, PageToken: queryHistory.NextCursor, Limit: queryHistory.Limit}
 	}
-	adminAttrs := []g.Node{
-		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
-	}
-	if active == "storage" {
-		adminAttrs = append(adminAttrs,
-			g.Attr("storage", jsonString(storageSignal)),
-			g.Attr("data-attr:storage", "$adminStorage"),
-			g.Attr("data-on:ld-storage-table-select", "$adminStorageCommand = evt.detail; "+postAction("/admin/storage/select-table")),
-		)
-	}
-	if active == "agent" {
-		adminAttrs = append(adminAttrs,
-			g.Attr("agent-prompt", data.Agent.SystemPrompt),
-			g.Attr("data-attr:agent-prompt", "$adminAgentCommand.systemPrompt"),
-			g.Attr("data-on:ld-agent-system-prompt-save", "$adminAgentCommand = evt.detail; "+patchAction("/api/v1/admin/agent/config")),
-		)
-	}
-	if active == "queries" {
-		adminAttrs = append(adminAttrs,
-			g.Attr("query-history", jsonString(AdminQueryHistorySignalFromData(data.QueryHistory))),
-			g.Attr("query-detail", jsonString(uisignals.AdminQueryDetailSignal{})),
-			g.Attr("data-attr:query-history", "$adminQueryHistory"),
-			g.Attr("data-attr:query-detail", "$adminQueryDetail"),
-			g.Attr("data-on:ld-query-history-command", "$adminQueryHistoryCommand = evt.detail; evt.detail.action == 'select_detail' ? ($adminQueryDetail = {eventId: evt.detail.eventId, loading: true, error: ''}) : evt.detail.action == 'close_detail' ? ($adminQueryDetail = {eventId: '', loading: false, error: ''}) : ($adminQueryHistory.loading = true, $adminQueryHistory.error = ''); "+postAction("/admin/queries/command")),
-		)
-	}
-	adminChildren := []g.Node{}
-	if active == "agent" {
-		promptAttrs := []g.Node{
-			g.Attr("slot", "agent-prompt"),
-			g.Attr("value", data.Agent.SystemPrompt),
-			g.Attr("data-attr:value", "$adminAgentCommand.systemPrompt"),
-		}
-		if !data.Agent.CanWrite {
-			promptAttrs = append(promptAttrs, g.Attr("disabled", ""))
-		}
-		adminChildren = append(adminChildren, g.El("ld-agent-prompt-editor", promptAttrs...))
-	}
-	return c.HTML5(c.HTML5Props{
-		Title:    "Admin - " + title,
-		Language: "en",
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: pageHead(
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/admin-page.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/admin-page.js"))),
-			inspectorScript(),
-			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js")),
-		),
-		Body: []g.Node{
-			h.Main(h.Class(appRootClass),
-				ds.Signals(signals),
-				g.If(active == "storage", ds.Init("@get('/admin/storage/updates', {openWhenHidden: true})")),
-				g.If(active == "queries", ds.Init("@get('/admin/queries/updates', {openWhenHidden: true})")),
-				g.El("ld-app-shell",
-					g.Attr("chrome", jsonString(chrome)),
-					g.Attr("data-attr:chrome", "$chrome"),
-					g.El("ld-admin-page", append(adminAttrs, adminChildren...)...),
-				),
-				inspectorElement(),
-			),
-		},
-	})
+	return signals
 }
 
 func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
@@ -466,7 +453,6 @@ func adminAgentSignal(data AdminAgentData) uisignals.AdminAgentSignal {
 		Model:        data.Model,
 		SystemPrompt: data.SystemPrompt,
 		CanWrite:     data.CanWrite,
-		CSRFToken:    data.CSRFToken,
 		UpdatePath:   data.UpdatePath,
 		Tools:        tools,
 	}

@@ -5,11 +5,10 @@ import (
 	"net/url"
 	"strings"
 
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 const (
@@ -59,34 +58,37 @@ func (h Handler) WorkspaceDataExplorerRedirect(w nethttp.ResponseWriter, r *neth
 }
 
 func (h Handler) DataExplorerUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
-	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := h.broker().Subscribe(dataExplorerStreamID(clientID))
-	defer unsubscribe()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch := <-updates:
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
+	clientID := pagestream.EnsureClientID(w, r)
+	updates := pagestream.NewSignalStream(w, r)
+	page, explorer, err := h.globalDataExplorerState(r, dataExplorerCommandFromQuery(r.URL.Query().Get("workspace"), r.URL.Query().Get("object")))
+	if err != nil {
+		nethttp.Error(w, err.Error(), statusForNotFound(err))
+		return
 	}
+	if err := updates.Patch(ui.DataExplorerBootstrapSignals(h.catalogForWorkspacesPage(r, nil), page, explorer, h.currentRoleLabel(r), h.chromeOptions(r)...)); err != nil {
+		return
+	}
+	if broker := h.broker(); broker != nil {
+		_ = updates.Forward(r.Context(), broker, dataExplorerStreamID(clientID))
+		return
+	}
+	updates.Wait(r.Context())
 }
 
 func (h Handler) DataExplorerCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	signals := dataExplorerCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
 	if explorer, ok := dataExplorerResizeOnlyPatch(signals.DataExplorer, signals.DataExplorerCommand); ok {
-		h.broker().Publish(dataExplorerStreamID(clientID), map[string]any{
-			"dataExplorer":        explorer,
-			"dataExplorerCommand": explorer.Command,
-		})
+		if broker := h.broker(); broker != nil {
+			broker.Publish(dataExplorerStreamID(clientID), pagestream.SignalPatch{
+				"dataExplorer":        explorer,
+				"dataExplorerCommand": explorer.Command,
+			})
+		}
 		w.WriteHeader(nethttp.StatusNoContent)
 		return
 	}
@@ -99,10 +101,12 @@ func (h Handler) DataExplorerCommand(w nethttp.ResponseWriter, r *nethttp.Reques
 		w.WriteHeader(nethttp.StatusNoContent)
 		return
 	}
-	h.broker().Publish(dataExplorerStreamID(clientID), map[string]any{
-		"dataExplorer":        explorer,
-		"dataExplorerCommand": explorer.Command,
-	})
+	if broker := h.broker(); broker != nil {
+		broker.Publish(dataExplorerStreamID(clientID), pagestream.SignalPatch{
+			"dataExplorer":        explorer,
+			"dataExplorerCommand": explorer.Command,
+		})
+	}
 	w.WriteHeader(nethttp.StatusNoContent)
 }
 

@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { RefreshCw } from 'lucide'
 import type {
   DashboardComponentSignal,
   DashboardFilters,
@@ -10,7 +11,8 @@ import type {
   DashboardVisual,
   ReportFilterConfig,
 } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { lucideIcon } from '../shared/lucide-icons'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
 import './filters/filter-dock'
@@ -28,15 +30,7 @@ const emptyStatus: DashboardStatus = {
   setupRequired: false,
 }
 
-class LibreDashDashboardPage extends LitElement {
-  @property({ converter: jsonAttribute<DashboardPageSignal | null>(null) }) page: DashboardPageSignal | null = null
-  @property({ attribute: 'filterconfig', converter: jsonAttribute<ReportFilterConfig[]>([]) }) filterConfig: ReportFilterConfig[] = []
-  @property({ converter: jsonAttribute<DashboardFilters>(emptyFilters) }) filters: DashboardFilters = emptyFilters
-  @property({ attribute: 'filteroptions', converter: jsonAttribute<Record<string, unknown>>({}) }) filterOptions: Record<string, unknown> = {}
-  @property({ converter: jsonAttribute<Record<string, DashboardVisual>>({}) }) visuals: Record<string, DashboardVisual> = {}
-  @property({ converter: jsonAttribute<Record<string, DashboardTable>>({}) }) tables: Record<string, DashboardTable> = {}
-  @property({ converter: jsonAttribute<DashboardStatus>(emptyStatus) }) status: DashboardStatus = emptyStatus
-
+class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
 
   static styles = css`
@@ -246,12 +240,42 @@ class LibreDashDashboardPage extends LitElement {
   }
 
   updated(): void {
-    checkSignalContract('dashboard page', this.page, {
+    const page = this.page
+    if (!page) return
+    checkSignalContract('dashboard page', page, {
       dashboardId: 'required',
       pageId: 'required',
       components: 'required',
     })
     this.loadRenderedComponents()
+  }
+
+  get page(): DashboardPageSignal | null {
+    return this.signal<DashboardPageSignal | null>('page', null)
+  }
+
+  private get filterConfig(): ReportFilterConfig[] {
+    return this.signal<ReportFilterConfig[]>('filterConfig', [])
+  }
+
+  private get filters(): DashboardFilters {
+    return this.signal<DashboardFilters>('filters', emptyFilters)
+  }
+
+  private get filterOptions(): Record<string, unknown> {
+    return this.signal<Record<string, unknown>>('filterOptions', {})
+  }
+
+  private get visuals(): Record<string, DashboardVisual> {
+    return this.signal<Record<string, DashboardVisual>>('visuals', {})
+  }
+
+  private get tables(): Record<string, DashboardTable> {
+    return this.signal<Record<string, DashboardTable>>('tables', {})
+  }
+
+  private get status(): DashboardStatus {
+    return this.signal<DashboardStatus>('status', emptyStatus)
   }
 
   render() {
@@ -264,6 +288,11 @@ class LibreDashDashboardPage extends LitElement {
             <div class="title-block">
               <h1>${this.page.title}</h1>
               <p class="detail">${this.page.headerDetail}</p>
+            </div>
+            <div class="actions">
+              <button class="icon-button" type="button" title="Refresh model materializations" aria-label="Refresh model materializations" ?disabled=${this.status.loading} @click=${this.refreshMaterializations}>
+                ${lucideIcon(RefreshCw)}
+              </button>
             </div>
           </header>
           <div class="body">
@@ -392,6 +421,10 @@ class LibreDashDashboardPage extends LitElement {
 
   private visualFor(component: DashboardComponentSignal): DashboardVisual | undefined {
     return component.visual ? this.visuals[component.visual] : undefined
+  }
+
+  private refreshMaterializations = (): void => {
+    this.dispatchEvent(new CustomEvent('ld-refresh-materializations', { bubbles: true, composed: true }))
   }
 
   private loadRenderedComponents(): void {

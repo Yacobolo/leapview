@@ -8,7 +8,7 @@ import (
 	adminstorage "github.com/Yacobolo/libredash/internal/admin/storage"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func (s *Server) adminHTTPHandler() adminhttp.Handler {
@@ -29,7 +29,7 @@ func (s *Server) adminHTTPHandler() adminhttp.Handler {
 		},
 		CurrentRoleLabel: s.currentAdminRoleLabel,
 		ChromeOption:     s.chatChromeOption,
-		EnsureClientID:   func(w http.ResponseWriter, r *http.Request) { _ = lddatastar.EnsureClientID(w, r) },
+		EnsureClientID:   func(w http.ResponseWriter, r *http.Request) { _ = pagestream.EnsureClientID(w, r) },
 		Broker:           s.broker,
 	}
 }

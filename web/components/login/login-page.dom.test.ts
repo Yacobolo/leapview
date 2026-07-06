@@ -8,7 +8,8 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-const root = join(process.cwd(), '.tmp/login-page-test')
+const projectRoot = process.cwd()
+const root = join(projectRoot, '.tmp/login-page-test')
 
 beforeAll(async () => {
   server = createServer(async (request, response) => {
@@ -18,8 +19,9 @@ beforeAll(async () => {
       response.end(testDocument())
       return
     }
-    const file = normalize(join(root, url.pathname))
-    if (!file.startsWith(root)) {
+    const fileRoot = url.pathname.startsWith('/static/vendor/') ? projectRoot : root
+    const file = normalize(join(fileRoot, url.pathname))
+    if (!file.startsWith(fileRoot)) {
       response.writeHead(404)
       response.end('not found')
       return
@@ -141,7 +143,10 @@ function testDocument(): string {
         </style>
       </head>
       <body>
-        <ld-login-page page="${escapeHTML(JSON.stringify(page))}"></ld-login-page>
+        <main data-signals="${escapeHTML(JSON.stringify({ page }))}">
+          <ld-login-page></ld-login-page>
+        </main>
+        <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>
         <script type="module" src="/login-page-under-test.js"></script>
       </body>
     </html>

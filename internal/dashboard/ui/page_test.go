@@ -77,50 +77,77 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	if !strings.Contains(showcase, `<ld-dashboard-page`) || !strings.Contains(showcase, `data-on:ld-filters-change`) || !strings.Contains(showcase, `data-on:ld-interaction-select`) {
 		t.Fatalf("showcase page did not mount dashboard route root with command bridge:\n%s", showcase)
 	}
-	if !strings.Contains(showcase, `"active_chart"`) || !strings.Contains(showcase, `"active_kpi"`) {
-		t.Fatalf("showcase page did not seed active chart and KPI visuals:\n%s", showcase)
+	if strings.Contains(showcase, `data-signals=`) || !strings.Contains(showcase, `data-init="@get('/updates?`) {
+		t.Fatalf("showcase page did not render stream-first structural shell:\n%s", showcase)
 	}
-	if strings.Contains(showcase, `"off_page_chart"`) {
-		t.Fatalf("showcase page seeded off-page chart:\n%s", showcase)
+	for _, attr := range []string{
+		` chrome="`, ` page="`, ` filterconfig="`, ` filters="`, ` filteroptions="`, ` visuals="`, ` tables="`, ` status="`,
+		`data-attr:chrome`, `data-attr:page`, `data-attr:filterconfig`, `data-attr:filters`, `data-attr:filteroptions`, `data-attr:visuals`, `data-attr:tables`, `data-attr:status`,
+	} {
+		if strings.Contains(showcase, attr) {
+			t.Fatalf("showcase page rendered migrated dashboard bridge attribute %q:\n%s", attr, showcase)
+		}
 	}
-	if strings.Contains(showcase, `"kpis"`) {
-		t.Fatalf("showcase page seeded legacy kpis signal:\n%s", showcase)
+	if !strings.Contains(showcase, `/commands/reload`) || strings.Contains(showcase, `data-url-param-shape`) {
+		t.Fatalf("showcase page did not wire dashboard reload command without URL shape attribute:\n%s", showcase)
+	}
+	for _, attr := range []string{"data-on:ld-filters-change", "data-on:ld-filters-refresh", "data-on:datastar-url-params-sync__window"} {
+		segment := renderedAttrSegment(showcase, attr)
+		if !strings.Contains(segment, `/commands/reload`) || strings.Contains(segment, `@get($runtime.updatesUrl`) {
+			t.Fatalf("%s segment = %q, want reload command without updates stream reopen:\n%s", attr, segment, showcase)
+		}
+	}
+	showcaseSignals := html.UnescapeString(jsonString(BootstrapSignals(".data", "client", dashboard.Catalog{}, report, model, report.Pages, report.Pages[0], dashboard.Filters{})))
+	if !strings.Contains(showcaseSignals, `"active_chart"`) || !strings.Contains(showcaseSignals, `"active_kpi"`) {
+		t.Fatalf("showcase bootstrap did not include active chart and KPI visuals:\n%s", showcaseSignals)
+	}
+	if strings.Contains(showcaseSignals, `"off_page_chart"`) {
+		t.Fatalf("showcase bootstrap included off-page chart:\n%s", showcaseSignals)
+	}
+	if strings.Contains(showcaseSignals, `"kpis"`) {
+		t.Fatalf("showcase bootstrap included legacy kpis signal:\n%s", showcaseSignals)
+	}
+	for _, forbidden := range []string{`"updatesUrl"`, `"routeKey"`, `"csrfToken"`} {
+		if strings.Contains(showcaseSignals, forbidden) {
+			t.Fatalf("showcase bootstrap leaked %s:\n%s", forbidden, showcaseSignals)
+		}
 	}
 	assertNoDashboardProductDOM(t, showcase)
-	if !strings.Contains(showcase, `"tables":{}`) {
-		t.Fatalf("showcase page should seed no tables:\n%s", showcase)
+	if !strings.Contains(showcaseSignals, `"tables":{}`) {
+		t.Fatalf("showcase bootstrap should include no tables:\n%s", showcaseSignals)
 	}
-	if !strings.Contains(showcase, `"filterConfig":[{"id":"state"`) {
-		t.Fatalf("showcase page did not seed active page filter config:\n%s", showcase)
+	if !strings.Contains(showcaseSignals, `"filterConfig":[{"id":"state"`) {
+		t.Fatalf("showcase bootstrap did not include active page filter config:\n%s", showcaseSignals)
 	}
-	if !strings.Contains(showcase, `"controls":{"state"`) {
-		t.Fatalf("showcase page did not seed active page filter controls:\n%s", showcase)
+	if !strings.Contains(showcaseSignals, `"controls":{"state"`) {
+		t.Fatalf("showcase bootstrap did not include active page filter controls:\n%s", showcaseSignals)
 	}
-	if strings.Contains(showcase, `"id":"category"`) || strings.Contains(showcase, `"category":""`) {
-		t.Fatalf("showcase page seeded off-page category filter:\n%s", showcase)
+	if strings.Contains(showcaseSignals, `"id":"category"`) || strings.Contains(showcaseSignals, `"category":""`) {
+		t.Fatalf("showcase bootstrap included off-page category filter:\n%s", showcaseSignals)
 	}
 
 	tables := renderPageForTest(t, report, model, report.Pages[1])
+	tableSignals := html.UnescapeString(jsonString(BootstrapSignals(".data", "client", dashboard.Catalog{}, report, model, report.Pages, report.Pages[1], dashboard.Filters{})))
 	for _, tableID := range []string{"orders", "matrix", "pivot"} {
-		if !strings.Contains(tables, `"`+tableID+`":{`) || !strings.Contains(tables, `"availableRows"`) {
-			t.Fatalf("tables page did not seed table %q with row metadata:\n%s", tableID, tables)
+		if !strings.Contains(tableSignals, `"`+tableID+`":{`) || !strings.Contains(tableSignals, `"availableRows"`) {
+			t.Fatalf("tables bootstrap did not include table %q with row metadata:\n%s", tableID, tableSignals)
 		}
 	}
-	if !strings.Contains(tables, `"style":{"density":"compact"`) || !strings.Contains(tables, `"rowHeight":28`) || !strings.Contains(tables, `"width":220`) {
-		t.Fatalf("tables page did not seed table style and column display metadata:\n%s", tables)
+	if !strings.Contains(tableSignals, `"style":{"density":"compact"`) || !strings.Contains(tableSignals, `"rowHeight":28`) || !strings.Contains(tableSignals, `"width":220`) {
+		t.Fatalf("tables bootstrap did not include table style and column display metadata:\n%s", tableSignals)
 	}
 	assertNoDashboardProductDOM(t, tables)
-	if !strings.Contains(showcase, `"interaction":{"kind":"point_selection","toggle":false,"mappings":[{"field":"orders.status","value":"label"}]`) || strings.Contains(showcase, `"mode":"multi"`) {
-		t.Fatalf("showcase page did not seed point selection without mode:\n%s", showcase)
+	if !strings.Contains(showcaseSignals, `"interaction":{"kind":"point_selection","toggle":false,"mappings":[{"field":"orders.status","value":"label"}]`) || strings.Contains(showcaseSignals, `"mode":"multi"`) {
+		t.Fatalf("showcase bootstrap did not include point selection without mode:\n%s", showcaseSignals)
 	}
-	if !strings.Contains(tables, `"interaction":{"kind":"row_selection","toggle":false,"mappings":[{"field":"orders.order_id","value":"order_id"}]`) || strings.Contains(tables, `"mode":"multi"`) {
-		t.Fatalf("tables page did not seed row selection without mode:\n%s", tables)
+	if !strings.Contains(tableSignals, `"interaction":{"kind":"row_selection","toggle":false,"mappings":[{"field":"orders.order_id","value":"order_id"}]`) || strings.Contains(tableSignals, `"mode":"multi"`) {
+		t.Fatalf("tables bootstrap did not include row selection without mode:\n%s", tableSignals)
 	}
-	if strings.Contains(tables, `"off_page"`) {
-		t.Fatalf("tables page seeded off-page table:\n%s", tables)
+	if strings.Contains(tableSignals, `"off_page"`) {
+		t.Fatalf("tables bootstrap included off-page table:\n%s", tableSignals)
 	}
-	if !strings.Contains(tables, `"visuals":{}`) {
-		t.Fatalf("tables page should seed no visuals:\n%s", tables)
+	if !strings.Contains(tableSignals, `"visuals":{}`) {
+		t.Fatalf("tables bootstrap should include no visuals:\n%s", tableSignals)
 	}
 }
 
@@ -132,6 +159,19 @@ func renderPageForTest(t *testing.T, report reportdef.Dashboard, model *semantic
 		t.Fatal(err)
 	}
 	return html.UnescapeString(out.String())
+}
+
+func renderedAttrSegment(body, name string) string {
+	prefix := name + `="`
+	start := strings.Index(body, prefix)
+	if start < 0 {
+		return ""
+	}
+	end := start + 1000
+	if end > len(body) {
+		end = len(body)
+	}
+	return body[start:end]
 }
 
 func assertNoDashboardProductDOM(t *testing.T, body string) {

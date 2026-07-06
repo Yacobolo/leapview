@@ -1,5 +1,5 @@
-import { LitElement, css, html, nothing, type PropertyValues } from 'lit'
-import { property, state } from 'lit/decorators.js'
+import { LitElement, css, html, nothing } from 'lit'
+import { state } from 'lit/decorators.js'
 import {
   ArrowLeft,
   BookOpen,
@@ -36,7 +36,7 @@ import type {
   WorkspacePageSignal,
   WorkspaceTabSignal,
 } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 import '../shared/record-table'
@@ -49,23 +49,38 @@ const emptyWorkspaceAccess: WorkspaceAccessSignal = {
   bindings: [],
   canManage: false,
   status: { loading: false, error: '', message: '' },
-  csrfToken: '',
-  command: { email: '', role: '', principalId: '', bindingId: '', subjectType: '', subjectId: '' },
+  command: { email: '', role: '', principalId: '' },
   search: '',
 }
 
-class LibreDashWorkspacePage extends LitElement {
-  @property({ converter: jsonAttribute<WorkspacePageSignal | null>(null) }) page: WorkspacePageSignal | null = null
-  @property({ attribute: 'workspaceaccess', converter: jsonAttribute<WorkspaceAccessSignal>(emptyWorkspaceAccess) }) workspaceAccess: WorkspaceAccessSignal = emptyWorkspaceAccess
+class LibreDashWorkspacePage extends DatastarLit(LitElement) {
   @state() private assetQuery: string | null = null
+  private lastPageKey = ''
 
   static get styles() {
     return workspaceStyles
   }
 
-  updated(changedProperties: PropertyValues<this>): void {
-    if (changedProperties.has('page')) this.assetQuery = null
+  updated(): void {
+    const key = this.pageKey
+    if (key !== this.lastPageKey) {
+      this.lastPageKey = key
+      this.assetQuery = null
+    }
     checkSignalContract('workspace page', this.page, { kind: 'required', title: 'required' })
+  }
+
+  get page(): WorkspacePageSignal | null {
+    return this.signal<WorkspacePageSignal | null>('page', null)
+  }
+
+  get workspaceAccess(): WorkspaceAccessSignal {
+    return this.signal<WorkspaceAccessSignal>('workspaceAccess', emptyWorkspaceAccess)
+  }
+
+  private get pageKey(): string {
+    const page = this.page
+    return [page?.workspaceId ?? '', page?.title ?? '', page?.assetList?.activeType ?? '', page?.assetList?.query ?? ''].join(':')
   }
 
   render() {
@@ -89,7 +104,7 @@ class LibreDashWorkspacePage extends LitElement {
                 <p class="muted">${card.description}</p>
               </div>
               <footer>
-                ${card.servingLabel ? html`<span>${card.servingLabel}</span>` : html`<span></span>`}
+                ${card.deploymentLabel ? html`<span>${card.deploymentLabel}</span>` : html`<span></span>`}
                 <a class="primary-link" href=${card.href}>${lucideIcon(ExternalLink)}<span>Open</span></a>
               </footer>
             </article>
@@ -114,7 +129,7 @@ class LibreDashWorkspacePage extends LitElement {
 
   private renderAccessPage(page: WorkspacePageSignal) {
     return html`
-      <section class="page" aria-label="Workspace access">
+      <section class="page" aria-label="Workspace permissions">
         ${this.renderHeader('Workspace', page.title, page.description, this.renderAccessControl())}
       </section>
     `
@@ -144,17 +159,30 @@ class LibreDashWorkspacePage extends LitElement {
   }
 }
 
-class LibreDashConnectionsPage extends LitElement {
-  @property({ converter: jsonAttribute<ConnectionsPageSignal | null>(null) }) page: ConnectionsPageSignal | null = null
+class LibreDashConnectionsPage extends DatastarLit(LitElement) {
   @state() private assetQuery: string | null = null
+  private lastPageKey = ''
 
   static get styles() {
     return workspaceStyles
   }
 
-  updated(changedProperties: PropertyValues<this>): void {
-    if (changedProperties.has('page')) this.assetQuery = null
+  updated(): void {
+    const key = this.pageKey
+    if (key !== this.lastPageKey) {
+      this.lastPageKey = key
+      this.assetQuery = null
+    }
     checkSignalContract('connections page', this.page, { kind: 'required', title: 'required', assetList: 'required' })
+  }
+
+  get page(): ConnectionsPageSignal | null {
+    return this.signal<ConnectionsPageSignal | null>('page', null)
+  }
+
+  private get pageKey(): string {
+    const page = this.page
+    return [page?.workspaceId ?? '', page?.assetList?.activeType ?? '', page?.assetList?.query ?? ''].join(':')
   }
 
   render() {
@@ -179,16 +207,17 @@ class LibreDashConnectionsPage extends LitElement {
   }
 }
 
-class LibreDashWorkspaceAssetPage extends LitElement {
-  @property({ converter: jsonAttribute<WorkspaceAssetPageSignal | null>(null) }) page: WorkspaceAssetPageSignal | null = null
-  @property({ attribute: 'workspaceaccess', converter: jsonAttribute<WorkspaceAccessSignal>(emptyWorkspaceAccess) }) workspaceAccess: WorkspaceAccessSignal = emptyWorkspaceAccess
-
+class LibreDashWorkspaceAssetPage extends DatastarLit(LitElement) {
   static get styles() {
     return workspaceStyles
   }
 
   updated(): void {
     checkSignalContract('workspace asset page', this.page, { title: 'required', breadcrumbs: 'required', tabs: 'required' })
+  }
+
+  get page(): WorkspaceAssetPageSignal | null {
+    return this.signal<WorkspaceAssetPageSignal | null>('page', null)
   }
 
   render() {
@@ -209,7 +238,6 @@ class LibreDashWorkspaceAssetPage extends LitElement {
             </ol>
           </nav>
           <div class="actions">
-            ${this.renderAccessControl()}
             ${page.actions?.map((action) => this.renderAction(action, page))}
           </div>
         </header>
@@ -220,27 +248,15 @@ class LibreDashWorkspaceAssetPage extends LitElement {
               ? this.renderLineage(page)
               : page.activeSection === 'refreshes'
                 ? this.renderRefreshes(page)
-                : page.activeSection === 'versions'
-                  ? this.renderVersions(page)
-                  : this.renderDetails(page)}
+                : this.renderDetails(page)}
           </div>
         </div>
       </section>
     `
   }
 
-  private renderAccessControl() {
-    if (!this.workspaceAccess?.canManage) return nothing
-    return html`
-      <ld-workspace-access-control
-        .access=${this.workspaceAccess}
-        search=${this.workspaceAccess.search ?? ''}
-      ></ld-workspace-access-control>
-    `
-  }
-
   private renderAction(action: NonNullable<WorkspaceAssetPageSignal['actions']>[number], page: WorkspaceAssetPageSignal) {
-    if (action.command === 'refresh') {
+    if (action.command === 'refresh-materializations') {
       return html`
         <button
           type="button"
@@ -248,7 +264,7 @@ class LibreDashWorkspaceAssetPage extends LitElement {
           title=${action.label}
           aria-label=${action.label}
           ?disabled=${Boolean(action.disabled || page.refresh?.running)}
-          @click=${() => this.dispatchEvent(new CustomEvent('ld-refresh-asset', { bubbles: true, composed: true }))}
+          @click=${() => this.dispatchEvent(new CustomEvent('ld-refresh-materializations', { bubbles: true, composed: true }))}
         >
           ${lucideIcon(RefreshCw, { className: page.refresh?.running ? 'spin' : '' })}
         </button>
@@ -290,14 +306,6 @@ class LibreDashWorkspaceAssetPage extends LitElement {
     return html`
       <section class="details" id="refreshes" aria-label="Refresh runs">
         ${renderRecordTableSection('Refreshes', page.refresh?.runsTable)}
-      </section>
-    `
-  }
-
-  private renderVersions(page: WorkspaceAssetPageSignal) {
-    return html`
-      <section class="details" id="versions" aria-label="Asset versions">
-        ${renderRecordTableSection('Versions', page.versions?.table)}
       </section>
     `
   }

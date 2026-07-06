@@ -1,14 +1,11 @@
 import { LitElement, css, html, nothing } from 'lit'
-import { property } from 'lit/decorators.js'
 import { ExternalLink } from 'lucide'
 import type { CatalogPageSignal } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 
-class LibreDashCatalogPage extends LitElement {
-  @property({ converter: jsonAttribute<CatalogPageSignal | null>(null) }) page: CatalogPageSignal | null = null
-
+class LibreDashCatalogPage extends DatastarLit(LitElement) {
   static styles = css`
     :host {
       display: block;
@@ -147,7 +144,13 @@ class LibreDashCatalogPage extends LitElement {
   `
 
   updated(): void {
-    checkSignalContract('catalog page', this.page, { kind: 'required', dashboards: 'required' })
+    const page = this.page
+    if (!page) return
+    checkSignalContract('catalog page', page, { kind: 'required', dashboards: 'required' })
+  }
+
+  get page(): CatalogPageSignal | null {
+    return this.signal<CatalogPageSignal | null>('page', null)
   }
 
   render() {

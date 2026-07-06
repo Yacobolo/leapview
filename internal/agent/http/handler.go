@@ -14,11 +14,10 @@ import (
 	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/ui"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 type Principal struct {
@@ -38,7 +37,7 @@ type Options struct {
 	CurrentCredential      func(*stdhttp.Request) (access.APICredential, bool)
 	WorkspaceID            func(string) string
 	DefaultWorkspace       string
-	Broker                 *dashboardstream.Broker
+	Broker                 *pagestream.Broker
 	CatalogForWorkspace    func(string) dashboard.Catalog
 	CSRFToken              func(*stdhttp.Request) string
 	CurrentRoleLabel       func(*stdhttp.Request) string
@@ -308,7 +307,7 @@ func (h *Handler) GetAdminConfig(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 
 func (h *Handler) UpdateAdminConfig(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	var signals adminAgentCommandSignals
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}

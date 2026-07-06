@@ -1,6 +1,12 @@
 import { filtersFromURLParams, type FilterConfig, type FiltersSignal, type URLParamsShape } from './filter-url'
+import { loadDatastarRuntime } from '../../shared/datastar-runtime'
 
 const dataStarURLSyncEvent = 'datastar-url-params-sync'
+
+type DatastarRuntime = {
+  effect(fn: () => void): () => void
+  getPath<T = unknown>(path: string): T | undefined
+}
 
 type URLSyncDetail = {
   params: URLParamsShape
@@ -103,6 +109,25 @@ function bindPopstate(fallback: unknown): void {
   })
 }
 
+async function bindSignalPopstate(): Promise<void> {
+  try {
+    const runtime = await loadDatastarRuntime() as DatastarRuntime
+    let dispose: (() => void) | null = null
+    let bound = false
+    dispose = runtime.effect(() => {
+      if (bound) return
+      const fallback = normalizeURLParams(runtime.getPath('urlParamShape'))
+      if (Object.keys(fallback).length === 0) return
+      bindPopstate(fallback)
+      bound = true
+      dispose?.()
+      dispose = null
+    })
+  } catch (error) {
+    console.error('LibreDash URL sync failed to bind Datastar signals', error)
+  }
+}
+
 const datastarURLSync = {
   bindPopstate,
   push,
@@ -124,3 +149,9 @@ declare global {
 
 window.DatastarURLSync = datastarURLSync
 window.LibreDashFilterURL = libreDashFilterURL
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => void bindSignalPopstate(), { once: true })
+} else {
+  void bindSignalPopstate()
+}

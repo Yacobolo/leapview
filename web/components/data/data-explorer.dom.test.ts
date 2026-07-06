@@ -8,7 +8,8 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-const root = join(process.cwd(), '.tmp/data-explorer-test')
+const projectRoot = process.cwd()
+const root = join(projectRoot, '.tmp/data-explorer-test')
 
 beforeAll(async () => {
   server = createServer(async (request, response) => {
@@ -18,8 +19,9 @@ beforeAll(async () => {
       response.end(testDocument())
       return
     }
-    const file = normalize(join(root, url.pathname))
-    if (!file.startsWith(root)) {
+    const fileRoot = url.pathname.startsWith('/static/vendor/') ? projectRoot : root
+    const file = normalize(join(fileRoot, url.pathname))
+    if (!file.startsWith(fileRoot)) {
       response.writeHead(404)
       response.end('not found')
       return
@@ -52,7 +54,7 @@ test('data explorer renders object browser and emits preview commands', async ()
 
     const state = await page.evaluate(async () => {
       const element = document.createElement('ld-data-explorer') as any
-      element.page = {
+      const pageSignal = {
         kind: 'data',
         title: 'Data Explorer',
         description: 'Inspect rows.',
@@ -62,7 +64,7 @@ test('data explorer renders object browser and emits preview commands', async ()
         workspaces: [{ id: 'sales', title: 'Sales', href: '/data?workspace=sales', objectCount: 3, active: true }],
         tabs: [],
       }
-      element.dataExplorer = {
+      const dataExplorer = {
         objects: [
           {
             key: 'source:source:olist.orders',
@@ -151,10 +153,15 @@ test('data explorer renders object browser and emits preview commands', async ()
         command: { workspaceId: 'sales', objectKey: 'model_table:model_table:olist.orders', offset: 0, limit: 100, block: 'all', start: 0, count: 100, requestSeq: 0, resetVersion: 0, sort: {}, visibleColumns: [], columnWidths: {} },
         warnings: [],
       }
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: pageSignal, dataExplorer })
       const commands: any[] = []
       element.addEventListener('ld-data-explorer-command', (event: CustomEvent) => commands.push(event.detail))
       document.body.append(element)
-      await element.updateComplete
+      for (let index = 0; index < 20 && !element.shadowRoot?.querySelector('ld-data-preview-table'); index += 1) {
+        await element.updateComplete
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+      }
       const root = element.shadowRoot
       const previewTable = root.querySelector('ld-data-preview-table') as any
       await previewTable.updateComplete
@@ -229,6 +236,8 @@ function testDocument() {
         </style>
       </head>
       <body>
+        <main data-signals="{}"></main>
+        <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>
         <script type="module" src="/data-explorer-under-test.js"></script>
       </body>
     </html>

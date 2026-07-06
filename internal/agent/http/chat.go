@@ -10,10 +10,9 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/ui"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 type chatTurnCommandSignals struct {
@@ -63,6 +62,10 @@ func (h *Handler) ChatNew(w nethttp.ResponseWriter, r *nethttp.Request) {
 func (h *Handler) ChatConversation(w nethttp.ResponseWriter, r *nethttp.Request) {
 	scope := h.chatScope(r)
 	conversationID := strings.TrimSpace(chi.URLParam(r, "conversation"))
+	if conversationID == "updates" {
+		nethttp.NotFound(w, r)
+		return
+	}
 	if h.options.Service == nil || !h.options.Service.Enabled() {
 		h.renderChat(w, r, "conversation", h.chatSignal(r.Context(), scope, "", "", false))
 		return
@@ -89,7 +92,7 @@ func (h *Handler) ChatTurn(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 	clientID := chatClientID(r)
 	signals := chatTurnCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
@@ -107,40 +110,23 @@ func (h *Handler) ChatTurn(w nethttp.ResponseWriter, r *nethttp.Request) {
 }
 
 func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
-	_, scope, ok := h.chatService(w, r)
-	if !ok {
+	scope := h.chatScope(r)
+	signal, view := h.chatBootstrapSignal(r, scope)
+	workspaceID := h.chatDefaultWorkspaceID()
+	catalog := h.catalogForWorkspace(workspaceID)
+	updates := pagestream.NewSignalStream(w, r)
+	if err := updates.Patch(ui.ChatBootstrapSignals(catalog, workspaceID, h.currentRoleLabel(r), view, signal)); err != nil {
 		return
 	}
-	if h.options.Broker == nil {
-		nethttp.Error(w, "chat updates broker is not configured", nethttp.StatusServiceUnavailable)
+	if h.options.Service == nil || !h.options.Service.Enabled() || scope.PrincipalID == "" || h.options.Broker == nil {
+		updates.Wait(r.Context())
 		return
 	}
-	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := h.options.Broker.Subscribe(chatStreamID(scope, chatClientID(r)))
-	defer unsubscribe()
-	signals := chatTurnCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err == nil {
-		activeID := strings.TrimSpace(signals.Agent.ActiveConversationID)
-		if activeID != "" {
-			if state, stateErr := h.options.Service.ConversationTranscriptState(r.Context(), scope, activeID); stateErr == nil {
-				_ = sse.MarshalAndPatchSignals(chatSignalPatch(h.chatSignalWith(r.Context(), scope, activeID, state.Transcript, state.Artifacts, "", h.options.Service.ConversationRunning(activeID))))
-			}
-		}
-	}
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch := <-updates:
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
-	}
+	_ = updates.Forward(r.Context(), h.options.Broker, chatStreamID(scope, chatClientID(r)))
 }
 
 func (h *Handler) renderChat(w nethttp.ResponseWriter, r *nethttp.Request, view string, signal ui.ChatSignal) {
-	_ = lddatastar.EnsureClientID(w, r)
+	_ = pagestream.EnsureClientID(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
 	workspaceID := h.chatDefaultWorkspaceID()
@@ -166,8 +152,7 @@ func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Reques
 		return
 	}
 	go h.completeDraftChatTurn(service, scope, clientID, started)
-	sse := datastar.NewSSE(w, r)
-	_ = sse.Redirect(chatRoutePath(scope.WorkspaceID, conversation.ID))
+	_ = pagestream.Redirect(w, r, chatRoutePath(scope.WorkspaceID, conversation.ID))
 }
 
 func (h *Handler) completeDraftChatTurn(service *agent.Service, scope agent.Scope, clientID string, started *agent.StartedPrompt) {
@@ -198,14 +183,14 @@ func (h *Handler) runChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, serv
 	}
 	transcript := state.Transcript
 	streamArtifacts := state.Artifacts
-	sse := datastar.NewSSE(w, r)
+	updates := pagestream.NewSignalStream(w, r)
 	started, err := service.StartPrompt(r.Context(), agent.PromptInput{
 		Scope:          scope,
 		ConversationID: conversationID,
 		Input:          input,
 	})
 	if err != nil {
-		_ = sse.MarshalAndPatchSignals(chatSignalPatch(h.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, chatTurnStatusError(err), false)))
+		_ = updates.Patch(chatSignalPatch(h.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, chatTurnStatusError(err), false)))
 		return
 	}
 	if h.options.ExecuteStartedChatTurn == nil {
@@ -215,9 +200,25 @@ func (h *Handler) runChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, serv
 	_, _ = h.options.ExecuteStartedChatTurn(r.Context(), service, scope, started, ChatTurnExecution{
 		LiveConversations: h.chatConversations(r.Context(), scope),
 		Emit: func(signal ui.ChatSignal) error {
-			return sse.MarshalAndPatchSignals(chatSignalPatch(signal))
+			return updates.Patch(chatSignalPatch(signal))
 		},
 	})
+}
+
+func (h *Handler) chatBootstrapSignal(r *nethttp.Request, scope agent.Scope) (ui.ChatSignal, string) {
+	view := strings.TrimSpace(r.URL.Query().Get("view"))
+	if view == "" {
+		view = "list"
+	}
+	conversationID := strings.TrimSpace(r.URL.Query().Get("conversation"))
+	if conversationID == "" || h.options.Service == nil || !h.options.Service.Enabled() || scope.PrincipalID == "" {
+		return h.chatSignal(r.Context(), scope, "", "", false), view
+	}
+	state, err := h.options.Service.ConversationTranscriptState(r.Context(), scope, conversationID)
+	if err != nil {
+		return h.chatSignal(r.Context(), scope, "", "", false), view
+	}
+	return h.chatSignalWith(r.Context(), scope, conversationID, state.Transcript, state.Artifacts, "", h.options.Service.ConversationRunning(conversationID)), view
 }
 
 func (h *Handler) chatService(w nethttp.ResponseWriter, r *nethttp.Request) (*agent.Service, agent.Scope, bool) {
@@ -302,8 +303,8 @@ func chatTurnStatusError(err error) string {
 	return err.Error()
 }
 
-func chatSignalPatch(signal ui.ChatSignal) map[string]any {
-	return map[string]any{
+func chatSignalPatch(signal ui.ChatSignal) pagestream.SignalPatch {
+	return pagestream.SignalPatch{
 		"agent":   signal,
 		"visuals": signal.Visuals,
 		"tables":  signal.Tables,

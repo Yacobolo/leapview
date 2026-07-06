@@ -25,6 +25,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacerefresh "github.com/Yacobolo/libredash/internal/workspace/refresh"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func fieldRefs(fields ...string) []reportdef.FieldRef {
@@ -368,12 +369,13 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales/pages/operations", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	server := New(fakeMetrics{})
+	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	body := rec.Body.String()
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "")
 	if !strings.Contains(body, `<ld-app-shell`) || !strings.Contains(body, `<ld-dashboard-page`) {
 		t.Fatalf("report page did not render app shell and dashboard route root:\n%s", body)
 	}
@@ -383,7 +385,7 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 	if strings.Contains(body, `<ld-sub-sidebar`) || strings.Contains(body, `<ld-report-canvas`) || strings.Contains(body, `<ld-echart`) || strings.Contains(body, `<ld-report-table`) {
 		t.Fatalf("report page rendered dashboard product internals below route root:\n%s", body)
 	}
-	if !strings.Contains(body, `&#34;compact&#34;:true`) {
+	if !strings.Contains(body, `"compact":true`) {
 		t.Fatalf("report page did not compact the primary sidebar:\n%s", body)
 	}
 	if !strings.Contains(body, `/workspaces/test-workspace/dashboards/executive-sales/pages/operations`) {
@@ -414,22 +416,23 @@ func TestPageRouteSeedsPageScopedFiltersFromURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales/pages/overview?state=SP&state=RJ&category=ignored", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	server := New(fakeMetrics{})
+	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	body := rec.Body.String()
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "")
 	if !strings.Contains(body, `/static/url-sync.js`) {
 		t.Fatalf("page did not include url sync script:\n%s", body)
 	}
-	if !strings.Contains(body, `&#34;state&#34;:[&#34;RJ&#34;,&#34;SP&#34;]`) {
+	if !strings.Contains(body, `"state":["RJ","SP"]`) {
 		t.Fatalf("page did not seed state url params:\n%s", body)
 	}
-	if !strings.Contains(body, `&#34;values&#34;:[&#34;RJ&#34;,&#34;SP&#34;]`) {
+	if !strings.Contains(body, `"values":["RJ","SP"]`) {
 		t.Fatalf("page did not seed state filter values:\n%s", body)
 	}
-	if strings.Contains(body, `&#34;category&#34;`) {
+	if strings.Contains(body, `"category"`) {
 		t.Fatalf("overview page seeded off-page category filter:\n%s", body)
 	}
 }
@@ -438,16 +441,17 @@ func TestPageRouteSeedsOperationsPageFiltersFromURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales/pages/operations?state=SP&category=ops", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	server := New(fakeMetrics{})
+	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `&#34;category&#34;:&#34;ops&#34;`) && !strings.Contains(body, `&#34;value&#34;:&#34;ops&#34;`) {
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "")
+	if !strings.Contains(body, `"category":"ops"`) && !strings.Contains(body, `"value":"ops"`) {
 		t.Fatalf("operations page did not seed category URL filter:\n%s", body)
 	}
-	if strings.Contains(body, `&#34;state&#34;`) {
+	if strings.Contains(body, `"state":{"type"`) || strings.Contains(body, `"urlParams":{"state"`) || strings.Contains(body, `"urlParamShape":{"state"`) {
 		t.Fatalf("operations page seeded off-page state filter:\n%s", body)
 	}
 }
@@ -488,13 +492,14 @@ func TestHomeRouteRendersDashboardCatalog(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	server := New(fakeMetrics{})
+	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	body := rec.Body.String()
-	rendered := html.UnescapeString(body)
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "")
+	rendered := body
 	if !strings.Contains(rendered, `<ld-app-shell`) || !strings.Contains(rendered, `<ld-catalog-page`) {
 		t.Fatalf("home did not mount catalog route root:\n%s", rendered)
 	}
@@ -555,7 +560,7 @@ func TestHomeRouteAggregatesDBBackedWorkspaceCatalogs(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	rendered := html.UnescapeString(rec.Body.String())
+	rendered := renderedWithBootstrap(t, server, rec.Body.String(), "")
 	for _, want := range []string{
 		`Fulfillment Operations`,
 		`Executive Sales`,
@@ -574,26 +579,33 @@ func TestLoginRouteRendersAzureADLogin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	server := New(fakeMetrics{})
+	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	body := rec.Body.String()
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "")
 	if !strings.Contains(body, `<ld-login-page`) {
 		t.Fatalf("login page did not mount login route root:\n%s", body)
 	}
 	if !strings.Contains(body, `Sign in with Azure Active Directory`) {
 		t.Fatalf("login page did not seed Azure AD provider label:\n%s", body)
 	}
-	if !strings.Contains(body, `data-init__delay`) {
-		t.Fatalf("login page did not include lazy background init:\n%s", body)
+	if strings.Contains(body, `data-init__delay`) || strings.Contains(body, `libredash-login-background-init`) {
+		t.Fatalf("login page still uses Datastar for lazy background init:\n%s", body)
 	}
-	if !strings.Contains(body, `libredash-login-background-init`) {
-		t.Fatalf("login page did not dispatch login background init event:\n%s", body)
+	if !strings.Contains(body, `setTimeout`) || !strings.Contains(body, `requestIdleCallback`) {
+		t.Fatalf("login page did not include lazy background loader:\n%s", body)
 	}
 	if !strings.Contains(body, `/static/topology-background.js`) {
 		t.Fatalf("login page did not include lazy topology background asset:\n%s", body)
+	}
+	if strings.Contains(body, `starfederation/datastar`) || strings.Contains(body, `cdn.jsdelivr`) {
+		t.Fatalf("login page still references remote Datastar runtime:\n%s", body)
+	}
+	if !strings.Contains(body, `/static/vendor/datastar-1.0.2.js?v=dev`) {
+		t.Fatalf("login page did not include framework Datastar runtime:\n%s", body)
 	}
 }
 
@@ -897,7 +909,7 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test-workspace/updates?dashboard=executive-sales&page=overview&datastar=%7B%22filters%22%3A%7B%22controls%22%3A%7B%22state%22%3A%7B%22type%22%3A%22multi_select%22%2C%22operator%22%3A%22in%22%2C%22values%22%3A%5B%22SP%22%5D%7D%2C%22category%22%3A%7B%22type%22%3A%22text%22%2C%22operator%22%3A%22contains%22%2C%22value%22%3A%22ignored%22%7D%7D%7D%7D", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=overview&state=SP&category=ignored", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -911,9 +923,13 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 	if len(patches) == 0 {
 		t.Fatalf("body does not contain Datastar patch signal event:\n%s", body)
 	}
+	firstStatus, ok := patches[0]["status"].(map[string]any)
+	if !ok || firstStatus["loading"] != true {
+		t.Fatalf("first patch status = %#v, want loading=true; patches=%#v", firstStatus, patches)
+	}
 	ssetest.RequirePatchSignal(t, body, func(patch map[string]any) bool {
 		status, ok := patch["status"].(map[string]any)
-		return ok && status["loading"] == true
+		return ok && status["loading"] == false
 	})
 	ssetest.RequirePatchSignal(t, body, func(patch map[string]any) bool {
 		filters, ok := patch["filters"].(map[string]any)
@@ -950,7 +966,7 @@ func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test-workspace/updates?dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
@@ -1011,6 +1027,11 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 			name: "clear selection",
 			path: "/workspaces/test-workspace/commands/clear-selection",
 			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
+		},
+		{
+			name: "reload",
+			path: "/workspaces/test-workspace/commands/reload",
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,
 		},
 		{
 			name: "reset filters",
@@ -1081,7 +1102,7 @@ func TestWorkspaceAssetUpdatesStreamsInitialRefreshState(t *testing.T) {
 	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=refreshes", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=workspace_asset&workspace=test&asset="+string(assetID)+"&section=refreshes", nil)
 	rec := httptest.NewRecorder()
 
 	server.Routes().ServeHTTP(rec, req)
@@ -1118,7 +1139,7 @@ func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesTableAndUnusedRefreshFields
 	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/workspaces/test/assets/"+string(assetID)+"/updates?section=details", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=workspace_asset&workspace=test&asset="+string(assetID)+"&section=details", nil)
 	rec := httptest.NewRecorder()
 
 	server.Routes().ServeHTTP(rec, req)
@@ -1577,8 +1598,8 @@ func TestWorkspaceSemanticModelRefreshCommandPersistsTableChildRuns(t *testing.T
 	}
 }
 
-func drainPatches(ch <-chan map[string]any) []map[string]any {
-	var patches []map[string]any
+func drainPatches(ch <-chan pagestream.SignalPatch) []pagestream.SignalPatch {
+	var patches []pagestream.SignalPatch
 	for {
 		select {
 		case patch := <-ch:
@@ -1589,7 +1610,7 @@ func drainPatches(ch <-chan map[string]any) []map[string]any {
 	}
 }
 
-func patchesContainAssetRefreshStatus(patches []map[string]any, status string) bool {
+func patchesContainAssetRefreshStatus(patches []pagestream.SignalPatch, status string) bool {
 	for _, patch := range patches {
 		refresh, ok := patch["assetRefresh"].(map[string]any)
 		if ok && refresh["status"] == status {
@@ -1608,7 +1629,7 @@ func patchesContainAssetRefreshStatus(patches []map[string]any, status string) b
 	return false
 }
 
-func anyPatchesString(patches []map[string]any) string {
+func anyPatchesString(patches []pagestream.SignalPatch) string {
 	bytes, _ := json.Marshal(patches)
 	return string(bytes)
 }

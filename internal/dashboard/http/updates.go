@@ -2,10 +2,13 @@ package http
 
 import (
 	nethttp "net/http"
-	"time"
+	"strings"
 
+	"github.com/Yacobolo/libredash/internal/dashboard"
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/dashboard/stream"
+	reportui "github.com/Yacobolo/libredash/internal/dashboard/ui"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -14,63 +17,53 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		nethttp.NotFound(w, r)
 		return
 	}
-	signals, ok := h.readSignals(w, r)
+	dashboardID := strings.TrimSpace(r.URL.Query().Get("dashboard"))
+	if dashboardID == "" {
+		dashboardID = metrics.DefaultDashboardID()
+	}
+	pageID := strings.TrimSpace(r.URL.Query().Get("page"))
+	reportDefinition, model, ok := metrics.Report(dashboardID)
 	if !ok {
+		nethttp.NotFound(w, r)
 		return
 	}
-	dashboardID := lddatastar.DashboardID(r, signals, metrics.DefaultDashboardID())
-	pageID := lddatastar.PageID(r, signals)
-	clientID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
+	pages := metrics.Pages(dashboardID)
+	activePage, ok := streamActivePage(pages, pageID)
+	if !ok {
+		nethttp.NotFound(w, r)
+		return
+	}
+	initialFilters := reportDefinition.FiltersFromURLForPage(activePage.ID, r.URL.Query())
+	clientID := pagestream.ClientIDFromRequest(r, "")
 	request := stream.SnapshotRequest{
-		DashboardID:  dashboardID,
-		PageID:       pageID,
-		Filters:      signals.Filters,
-		TableCommand: signals.TableCommand,
+		DashboardID: dashboardID,
+		PageID:      activePage.ID,
+		Filters:     initialFilters,
 	}
 
-	writer := lddatastar.NewSignalWriter(w, r)
-	updates, unsubscribe := h.Broker.Subscribe(clientID)
-	defer unsubscribe()
-
-	if err := writer.Patch(lddatastar.LoadingPatch(metrics.DataDir())); err != nil {
+	updates := pagestream.NewSignalStream(w, r)
+	bootstrap := reportui.BootstrapSignals(metrics.DataDir(), clientID, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
+	bootstrap["status"] = lddatastar.LoadingPatch(metrics.DataDir())["status"]
+	if err := updates.Patch(bootstrap); err != nil {
 		return
 	}
-	if !h.queryAndPatch(r, metrics, writer, request) {
-		return
-	}
-
-	interval := h.TickerInterval
-	if interval <= 0 {
-		interval = 60 * time.Second
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch, ok := <-updates:
-			if !ok {
-				return
-			}
-			if err := writer.Patch(patch); err != nil {
-				return
-			}
-		case <-ticker.C:
-			if !h.queryAndPatch(r, metrics, writer, request) {
-				return
-			}
-		}
-	}
-}
-
-func (h Handler) queryAndPatch(r *nethttp.Request, metrics Metrics, writer lddatastar.SignalWriter, request stream.SnapshotRequest) bool {
 	snapshot := stream.Service{Metrics: metrics}.Snapshot(r.Context(), request)
 	for _, patch := range lddatastar.SnapshotPatches(snapshot) {
-		if err := writer.Patch(patch); err != nil {
-			return false
+		if err := updates.Patch(patch); err != nil {
+			return
 		}
 	}
-	return true
+	_ = updates.Forward(r.Context(), h.Broker, lddatastar.StreamID(clientID, dashboardID, activePage.ID))
+}
+
+func streamActivePage(pages []dashboard.Page, pageID string) (dashboard.Page, bool) {
+	if pageID == "" && len(pages) > 0 {
+		return pages[0], true
+	}
+	for _, page := range pages {
+		if page.ID == pageID {
+			return page, true
+		}
+	}
+	return dashboard.Page{}, false
 }

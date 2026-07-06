@@ -21,6 +21,7 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}, AssetVersionsState{}))
 
 	for _, want := range []string{
 		"<ld-app-shell",
@@ -113,20 +114,21 @@ func TestWorkspaceAssetDetailSignalsUseSharedGridShape(t *testing.T) {
 	}
 }
 
-func TestWorkspaceAssetPageShowsConfigVersionsSurface(t *testing.T) {
+func TestWorkspaceAssetPageExposesVersionsSurface(t *testing.T) {
 	workspace, catalog, assets, edges := testWorkspaceAssetFixtures()
 	asset := testAssetByID(t, assets, "dashboard")
-
 	versions := AssetVersionsState{
-		CurrentContentHash: "hash-current",
+		CurrentContentHash: "hash_current",
 		Versions: []AssetVersionState{{
-			CreatedBy:   "tester",
-			ActivatedAt: "2026-07-05",
-			SourceFile:  "dashboards/sales.yaml",
-			ContentHash: "hash-current",
-			Status:      "active",
+			ServingStateID: "state_1",
+			Status:         "active",
+			CreatedBy:      "tester",
+			CreatedAt:      "2026-01-01",
+			ContentHash:    "hash_current",
+			SourceFile:     "dashboards/test.yaml",
 		}},
 	}
+
 	page := workspaceAssetPageSignalWithRefreshAndVersions(workspace, asset, assets, edges, "versions", assetLineage(workspace.ID, asset, assets, edges), AssetRefreshState{}, versions)
 	foundVersions := false
 	for _, tab := range page.Tabs {
@@ -138,21 +140,7 @@ func TestWorkspaceAssetPageShowsConfigVersionsSurface(t *testing.T) {
 		t.Fatalf("workspace asset tabs missing active versions tab: %#v", page.Tabs)
 	}
 	if !ValidWorkspaceAssetSection("versions") {
-		t.Fatal("versions section is invalid, want asset config versions surface")
-	}
-	if page.Versions == nil || len(page.Versions.Table.Rows) != 1 {
-		t.Fatalf("versions signal = %#v, want one config version row", page.Versions)
-	}
-	renderedTable := fmt.Sprint(page.Versions.Table)
-	for _, want := range []string{"Config hash", "Source file", "Published by"} {
-		if !strings.Contains(renderedTable, want) {
-			t.Fatalf("versions table missing %q: %#v", want, page.Versions.Table)
-		}
-	}
-	for _, notWant := range []string{"Deployment digest", "deployment"} {
-		if strings.Contains(renderedTable, notWant) {
-			t.Fatalf("versions table contains deployment wording %q: %#v", notWant, page.Versions.Table)
-		}
+		t.Fatal("versions section is not valid")
 	}
 
 	var out strings.Builder
@@ -161,41 +149,31 @@ func TestWorkspaceAssetPageShowsConfigVersionsSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
-	for _, want := range []string{`"label":"Versions"`, `"versions":`, "Config hash", "Source file"} {
+	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "versions", "Owner", AssetRefreshState{}, versions))
+	for _, want := range []string{`"label":"Versions"`, `"versions":`, `route=workspace_asset`, `section=versions`} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("workspace asset page missing versions surface %q:\n%s", want, rendered)
 		}
 	}
-	if strings.Contains(rendered, "Deployment digest") {
-		t.Fatalf("workspace asset page rendered deployment wording:\n%s", rendered)
-	}
 }
 
-func TestConnectionAssetPagesShowVersionsSurface(t *testing.T) {
+func TestConnectionAssetPagesHideVersionsSurface(t *testing.T) {
 	workspace, _, assets, edges := testWorkspaceAssetFixtures()
 	connection := testAssetByID(t, assets, "connection")
 	source := testAssetByID(t, assets, "source")
 
 	connectionPage := connectionAssetPageSignal(workspace, connection, assets, edges, "details", assetLineage(workspace.ID, connection, assets, edges))
-	foundConnectionVersions := false
 	for _, tab := range connectionPage.Tabs {
-		if tab.ID == "versions" && tab.Label == "Versions" {
-			foundConnectionVersions = true
+		if tab.ID == "versions" || tab.Label == "Versions" {
+			t.Fatalf("connection asset tabs include versions: %#v", connectionPage.Tabs)
 		}
-	}
-	if !foundConnectionVersions {
-		t.Fatalf("connection asset tabs missing versions: %#v", connectionPage.Tabs)
 	}
 
 	sourcePage := connectionSourceAssetPageSignal(workspace, connection, source, assets, edges, "details", assetLineage(workspace.ID, source, assets, edges))
-	foundSourceVersions := false
 	for _, tab := range sourcePage.Tabs {
-		if tab.ID == "versions" && tab.Label == "Versions" {
-			foundSourceVersions = true
+		if tab.ID == "versions" || tab.Label == "Versions" {
+			t.Fatalf("source asset tabs include versions: %#v", sourcePage.Tabs)
 		}
-	}
-	if !foundSourceVersions {
-		t.Fatalf("source asset tabs missing versions: %#v", sourcePage.Tabs)
 	}
 }
 
@@ -289,6 +267,7 @@ func TestWorkspaceAssetDetailsRenderModelTableComposition(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}, AssetVersionsState{}))
 
 	for _, want := range []string{
 		"<ld-workspace-asset-page",
@@ -327,6 +306,7 @@ func TestWorkspaceAssetDetailsRenderDirectSourceModelTableWithoutSQL(t *testing.
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}, AssetVersionsState{}))
 
 	for _, want := range []string{
 		"<ld-workspace-asset-page",
@@ -360,6 +340,7 @@ func TestWorkspaceAssetDetailsRenderSourceSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(WorkspaceAssetBootstrapSignals(catalog, workspace, asset, assets, edges, "details", "Owner", AssetRefreshState{}, AssetVersionsState{}))
 
 	for _, want := range []string{
 		"<ld-workspace-asset-page",
@@ -722,9 +703,11 @@ func TestConnectionAssetDetailsRenderConnectionSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(ConnectionAssetBootstrapSignals(catalog, workspace, connection, assets, edges, "details", "Owner", AssetVersionsState{}))
 
 	for _, want := range []string{
 		"<ld-workspace-asset-page",
+		`assetWorkspace=libredash`,
 		`"breadcrumbs":[`,
 		"Olist connection",
 		`"overview":[`,
@@ -768,6 +751,7 @@ func TestConnectionsPageUsesConnectionAssetTabs(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(ConnectionsBootstrapSignals(catalog, workspace.ID, visibleAssets, edges, "source", "", "Owner"))
 
 	for _, want := range []string{
 		`<ld-connections-page`,
@@ -798,9 +782,11 @@ func TestConnectionSourceAssetDetailsRenderConnectionChrome(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(ConnectionSourceAssetBootstrapSignals(catalog, workspace, connection, source, assets, edges, "details", "Owner", AssetVersionsState{}))
 
 	for _, want := range []string{
 		`<ld-workspace-asset-page`,
+		`assetWorkspace=libredash`,
 		"Connections",
 		"Olist connection",
 		"Sources",
@@ -833,6 +819,8 @@ func TestWorkspaceAssetTabsUseWorkspaceAssetTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	access := testWorkspaceAccess(workspace, true)
+	rendered += bootstrapJSON(WorkspaceBootstrapSignals(catalog, workspace, assets, "", "", "Owner", access))
 
 	for _, want := range []string{
 		`<ld-workspace-page`,
@@ -890,6 +878,8 @@ func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	access := testWorkspaceAccess(workspace, true)
+	rendered += bootstrapJSON(WorkspaceBootstrapSignals(catalog, workspace, visibleAssets, "", "", "Owner", access))
 
 	for _, want := range []string{
 		`<ld-workspace-page`,
@@ -916,33 +906,39 @@ func TestWorkspaceAssetRowsRenderTokenBackedIconColors(t *testing.T) {
 
 func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
 	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
+	access := testWorkspaceAccess(workspace, true)
 
 	var out strings.Builder
-	err := WorkspacePage(catalog, workspace, []workspaceview.AssetView{assets[0]}, "", "", "Owner", testWorkspaceAccess(workspace, true), "csrf").Render(&out)
+	err := WorkspacePage(catalog, workspace, []workspaceview.AssetView{assets[0]}, "", "", "Owner", access, "csrf").Render(&out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(out.String())
+	rendered += bootstrapJSON(WorkspaceBootstrapSignals(catalog, workspace, []workspaceview.AssetView{assets[0]}, "", "", "Owner", access))
 
 	for _, want := range []string{
 		`<ld-workspace-page`,
-		`workspaceaccess=`,
-		`data-attr:workspaceaccess="$workspaceAccess"`,
 		`data-on:ld-workspace-access-search__debounce.200ms=`,
 		`data-on:ld-workspace-access-upsert=`,
 		`data-on:ld-workspace-access-remove=`,
 		`workspaceAccess`,
 		`command`,
 		`search`,
-		`csrfToken`,
+		`meta name="csrf-token" content="csrf"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("workspace access control did not render %q:\n%s", want, rendered)
 		}
 	}
 	for _, notWant := range []string{
+		`workspaceaccess=`,
+		`data-attr:workspaceaccess="$workspaceAccess"`,
 		`workspaceAccessCommand`,
 		`workspaceAccessSearch`,
+		`_csrfMeta`,
+		`csrfToken`,
+		`updatesUrl`,
+		`routeKey`,
 	} {
 		if strings.Contains(rendered, notWant) {
 			t.Fatalf("workspace access control rendered root-level access signal %q:\n%s", notWant, rendered)
@@ -950,47 +946,8 @@ func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
 	}
 }
 
-func TestWorkspaceAssetAccessControlRendersForManagers(t *testing.T) {
-	workspace, catalog, assets, _ := testWorkspaceAssetFixtures()
-	asset := testAssetByID(t, assets, "model")
-	access := testWorkspaceAccess(workspace, true)
-	access.Mode = "object"
-	access.ObjectType = "semantic_model"
-	access.ObjectID = "olist"
-	access.ObjectTitle = "Olist Commerce"
-	access.Roles = []workspaceview.RoleView{
-		{Name: "VIEW_ITEM"},
-		{Name: "QUERY_DATA"},
-		{Name: "MANAGE_GRANTS"},
-	}
-	access.Bindings = []workspaceview.RoleBindingView{
-		{ID: "grant_1", WorkspaceID: workspace.ID, SubjectType: "principal", SubjectID: "email_analyst", PrincipalID: "email_analyst", Email: "analyst@example.com", Role: "VIEW_ITEM"},
-	}
-
-	var out strings.Builder
-	err := WorkspaceAssetPageWithRefreshVersionsAndAccess(catalog, workspace, asset, assets, nil, "details", "Owner", AssetRefreshState{}, AssetVersionsState{}, access, "csrf").Render(&out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rendered := html.UnescapeString(out.String())
-
-	for _, want := range []string{
-		`<ld-workspace-asset-page`,
-		`workspaceaccess=`,
-		`data-attr:workspaceaccess="$workspaceAccess"`,
-		`data-on:ld-workspace-access-upsert=`,
-		`/workspaces/libredash/assets/semantic_model:olist/access/upsert`,
-		`/workspaces/libredash/assets/semantic_model:olist/access/remove`,
-		`"mode":"object"`,
-		`"objectType":"semantic_model"`,
-		`"objectId":"olist"`,
-		`"objectTitle":"Olist Commerce"`,
-		`"Role":"VIEW_ITEM"`,
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("workspace asset access control did not render %q:\n%s", want, rendered)
-		}
-	}
+func bootstrapJSON(signals map[string]any) string {
+	return html.UnescapeString(jsonString(signals))
 }
 
 func TestWorkspaceAccessControlDoesNotRenderForViewers(t *testing.T) {

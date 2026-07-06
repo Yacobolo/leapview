@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
-	"github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacedatastar "github.com/Yacobolo/libredash/internal/workspace/datastar"
 	"github.com/Yacobolo/libredash/internal/workspace/refresh"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 type RunRepository interface {
@@ -24,15 +24,17 @@ type RunRepository interface {
 type ServiceFactory func(RunRepository) (refresh.Service, error)
 
 type Support struct {
-	Runs                 func() (RunRepository, error)
-	Service              ServiceFactory
-	Environment          func(*nethttp.Request) servingstate.Environment
-	PrincipalID          func(*nethttp.Request) string
-	DispatchQueued       func()
-	DataDir              func(workspaceID string, artifact servingstate.Artifact) string
-	DirectRunner         materialize.RefreshRunner
-	ModelLookup          materialize.ModelLookup
-	Broker               interface{ Publish(string, stream.Patch) }
+	Runs           func() (RunRepository, error)
+	Service        ServiceFactory
+	Environment    func(*nethttp.Request) servingstate.Environment
+	PrincipalID    func(*nethttp.Request) string
+	DispatchQueued func()
+	DataDir        func(workspaceID string, artifact servingstate.Artifact) string
+	DirectRunner   materialize.RefreshRunner
+	ModelLookup    materialize.ModelLookup
+	Broker         interface {
+		Publish(string, pagestream.SignalPatch)
+	}
 	AssetCatalog         func(context.Context, string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool)
 	WorkspaceView        func(*nethttp.Request, string) workspace.WorkspaceView
 	WorkspaceViewContext func(context.Context, string) workspace.WorkspaceView
@@ -249,11 +251,11 @@ func (s Support) publishAssetRefreshSignals(ctx context.Context, r *nethttp.Requ
 		view = s.WorkspaceViewContext(ctx, workspaceID)
 	}
 	for _, section := range sections {
-		s.publish(workspacedatastar.WorkspaceAssetStreamID(workspaceID, asset.ID, section), workspacedatastar.WorkspaceAssetRefreshSignals(view, asset, assets, edges, refresh, section))
+		s.publish(workspacedatastar.WorkspaceAssetStreamID(workspaceID, asset.ID, section), pagestream.SignalPatch(workspacedatastar.WorkspaceAssetRefreshSignals(view, asset, assets, edges, refresh, section)))
 	}
 }
 
-func (s Support) workspaceAssetRefreshPatch(r *nethttp.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView, section string) map[string]any {
+func (s Support) workspaceAssetRefreshPatch(r *nethttp.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView, section string) pagestream.SignalPatch {
 	refresh, err := s.AssetRefreshState(r.Context(), workspaceID, asset)
 	if err != nil {
 		refresh = ui.AssetRefreshState{Latest: ui.AssetRefreshRun{Status: "failed"}}
@@ -262,7 +264,7 @@ func (s Support) workspaceAssetRefreshPatch(r *nethttp.Request, workspaceID stri
 	if s.WorkspaceView != nil {
 		view = s.WorkspaceView(r, workspaceID)
 	}
-	return workspacedatastar.WorkspaceAssetRefreshSignals(view, asset, assets, edges, refresh, section)
+	return pagestream.SignalPatch(workspacedatastar.WorkspaceAssetRefreshSignals(view, asset, assets, edges, refresh, section))
 }
 
 func (s Support) workspaceAssetsAndEdges(ctx context.Context, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
@@ -293,7 +295,7 @@ func (s Support) dataDir(workspaceID string, artifact servingstate.Artifact) str
 	return s.DataDir(workspaceID, artifact)
 }
 
-func (s Support) publish(streamID string, patch map[string]any) {
+func (s Support) publish(streamID string, patch pagestream.SignalPatch) {
 	if s.Broker == nil {
 		return
 	}

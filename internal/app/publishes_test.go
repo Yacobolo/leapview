@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -974,7 +973,7 @@ func TestWorkspaceListPageDoesNotRenderWorkspaceScopedChat(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	rendered := html.UnescapeString(rec.Body.String())
+	rendered := renderedWithBootstrap(t, server, rec.Body.String(), "Bearer dev")
 	for _, notWant := range []string{`/workspaces/test/chat`, `"workspaceTitle":"LibreDash Workspace"`} {
 		if strings.Contains(rendered, notWant) {
 			t.Fatalf("workspace list rendered workspace-scoped chat %q:\n%s", notWant, rec.Body.String())
@@ -1036,7 +1035,7 @@ func TestWorkspacePageDefaultsToTopLevelAssets(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	body := html.UnescapeString(rec.Body.String())
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "Bearer dev")
 	for _, want := range []string{"Executive Sales", "Sales Semantic Model", "orders"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("workspace page missing top-level asset %q:\n%s", want, body)
@@ -1126,7 +1125,7 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	body := html.UnescapeString(rec.Body.String())
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "Bearer dev")
 	for _, want := range []string{"<ld-connections-page", "Connections", "Connection", "Source", "assetList", "Local CSV files for the Olist ecommerce demo dataset.", "orders"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("connections page missing %q:\n%s", want, body)
@@ -1161,7 +1160,7 @@ func TestConnectionsPageFiltersSources(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	body := html.UnescapeString(rec.Body.String())
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "Bearer dev")
 	for _, want := range []string{"Source", "orders", `/connections/`, `/sources/`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("source-filtered connections page missing %q:\n%s", want, body)
@@ -1198,7 +1197,7 @@ func TestConnectionAssetRoutesUseConnectionSurface(t *testing.T) {
 	if detailRec.Code != http.StatusOK {
 		t.Fatalf("connection detail status = %d body=%s", detailRec.Code, detailRec.Body.String())
 	}
-	detailBody := detailRec.Body.String()
+	detailBody := renderedWithBootstrap(t, server, detailRec.Body.String(), "Bearer dev")
 	for _, want := range []string{"Connections", "olist", "Sources", "order_items", "Lineage"} {
 		if !strings.Contains(detailBody, want) {
 			t.Fatalf("connection detail missing %q:\n%s", want, detailBody)
@@ -1217,9 +1216,10 @@ func TestConnectionAssetRoutesUseConnectionSurface(t *testing.T) {
 	if lineageRec.Code != http.StatusOK {
 		t.Fatalf("connection lineage status = %d body=%s", lineageRec.Code, lineageRec.Body.String())
 	}
+	lineageBody := renderedWithBootstrap(t, server, lineageRec.Body.String(), "Bearer dev")
 	for _, want := range []string{"<ld-workspace-asset-page", "/static/asset-lineage-graph.js", "lineage", "usesTable"} {
-		if !strings.Contains(lineageRec.Body.String(), want) {
-			t.Fatalf("connection lineage missing %q:\n%s", want, lineageRec.Body.String())
+		if !strings.Contains(lineageBody, want) {
+			t.Fatalf("connection lineage missing %q:\n%s", want, lineageBody)
 		}
 	}
 }
@@ -1251,7 +1251,7 @@ func TestConnectionSourceAssetRoutesUseConnectionScopedSurface(t *testing.T) {
 	if detailRec.Code != http.StatusOK {
 		t.Fatalf("source detail status = %d body=%s", detailRec.Code, detailRec.Body.String())
 	}
-	detailBody := detailRec.Body.String()
+	detailBody := renderedWithBootstrap(t, server, detailRec.Body.String(), "Bearer dev")
 	for _, want := range []string{"Connections", "Sources", "orders", "Fields", "Physical type", "Lineage"} {
 		if !strings.Contains(detailBody, want) {
 			t.Fatalf("source detail missing %q:\n%s", want, detailBody)
@@ -1270,9 +1270,10 @@ func TestConnectionSourceAssetRoutesUseConnectionScopedSurface(t *testing.T) {
 	if lineageRec.Code != http.StatusOK {
 		t.Fatalf("source lineage status = %d body=%s", lineageRec.Code, lineageRec.Body.String())
 	}
+	lineageBody := renderedWithBootstrap(t, server, lineageRec.Body.String(), "Bearer dev")
 	for _, want := range []string{"<ld-workspace-asset-page", "/static/asset-lineage-graph.js", "lineage", "usesTable"} {
-		if !strings.Contains(lineageRec.Body.String(), want) {
-			t.Fatalf("source lineage missing %q:\n%s", want, lineageRec.Body.String())
+		if !strings.Contains(lineageBody, want) {
+			t.Fatalf("source lineage missing %q:\n%s", want, lineageBody)
 		}
 	}
 
@@ -1352,8 +1353,9 @@ func TestWorkspaceAssetVersionsRouteShowsConfigHistory(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("versions status = %d, want 200 body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "Config hash") || strings.Contains(rec.Body.String(), "Deployment digest") {
-		t.Fatalf("versions body does not show asset config history cleanly:\n%s", rec.Body.String())
+	body := renderedWithBootstrap(t, server, rec.Body.String(), "Bearer dev")
+	if !strings.Contains(body, "Config hash") || strings.Contains(body, "Deployment digest") {
+		t.Fatalf("versions body does not show asset config history cleanly:\n%s", body)
 	}
 }
 
@@ -1405,8 +1407,12 @@ func TestAssetViewsDefaultToConfiguredEnvironment(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 			}
-			if !strings.Contains(rec.Body.String(), tc.want) {
-				t.Fatalf("body missing %q:\n%s", tc.want, rec.Body.String())
+			body := rec.Body.String()
+			if strings.HasPrefix(tc.path, "/workspaces") || strings.HasPrefix(tc.path, "/connections") {
+				body = renderedWithBootstrap(t, server, body, "")
+			}
+			if !strings.Contains(body, tc.want) {
+				t.Fatalf("body missing %q:\n%s", tc.want, body)
 			}
 		})
 	}

@@ -1,8 +1,6 @@
 package datastar
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -37,18 +35,5 @@ func TestPatchKeys(t *testing.T) {
 	status, ok := LoadingPatch(".data")["status"].(map[string]any)
 	if !ok || status["loading"] != true || status["dataDirectory"] != ".data" {
 		t.Fatalf("loading patch = %#v", LoadingPatch(".data"))
-	}
-}
-
-func TestEnsureClientIDKeepsExistingCookie(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: ClientIDCookieName, Value: "client-1"})
-	rec := httptest.NewRecorder()
-
-	if got := EnsureClientID(rec, req); got != "client-1" {
-		t.Fatalf("client id = %q", got)
-	}
-	if cookies := rec.Result().Cookies(); len(cookies) != 0 {
-		t.Fatalf("unexpected replacement cookie: %#v", cookies)
 	}
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
-	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/execution"
 	"github.com/Yacobolo/libredash/internal/platform"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
@@ -27,6 +26,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/gorilla/csrf"
 )
 
@@ -67,7 +67,7 @@ func (m multiWorkspaceMetrics) defaultMetrics() QueryMetrics {
 type Server struct {
 	metrics             QueryMetrics
 	executor            *execution.Service
-	broker              *dashboardstream.Broker
+	broker              *pagestream.Broker
 	store               *platform.Store
 	servingStateRepo    servingStateRepository
 	workspaceRepo       workspace.Repository
@@ -95,7 +95,7 @@ type Server struct {
 }
 
 func New(metrics QueryMetrics) *Server {
-	return &Server{metrics: metrics, broker: dashboardstream.NewBroker(), logger: slog.Default(), pendingChatTitles: map[string]struct{}{}}
+	return &Server{metrics: metrics, broker: pagestream.NewBroker(), logger: slog.Default(), pendingChatTitles: map[string]struct{}{}}
 }
 
 type Options struct {

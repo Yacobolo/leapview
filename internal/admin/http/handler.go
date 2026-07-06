@@ -1,22 +1,16 @@
 package http
 
 import (
+	"database/sql"
 	nethttp "net/http"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
-	"github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
-	"github.com/starfederation/datastar-go/datastar"
 )
-
-type Broker interface {
-	Subscribe(string) (<-chan stream.Patch, func())
-	Publish(string, stream.Patch)
-}
 
 type QueryAuditRepositoryProvider func() (queryaudit.Repository, error)
 
@@ -26,7 +20,7 @@ type Handler struct {
 	CurrentRoleLabel func(*nethttp.Request) string
 	ChromeOption     func(*nethttp.Request) ui.ChromeOption
 	EnsureClientID   func(nethttp.ResponseWriter, *nethttp.Request)
-	Broker           Broker
+	Broker           *pagestream.Broker
 }
 
 type storageCommandSignals struct {
@@ -93,6 +87,23 @@ func (h Handler) Queries(w nethttp.ResponseWriter, r *nethttp.Request) {
 	h.renderPage(w, r, "queries")
 }
 
+func (h Handler) BootstrapUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
+	active := strings.TrimSpace(r.URL.Query().Get("section"))
+	if active == "" {
+		active = "general"
+	}
+	data, err := h.adminDataForUpdates(r, active)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			nethttp.NotFound(w, r)
+			return
+		}
+		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
+		return
+	}
+	h.patchAndWait(w, r, ui.AdminBootstrapSignals(h.catalog(), active, h.roleLabel(r), data, h.chromeOption(r)))
+}
+
 func (h Handler) QueryUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	h.queryHistoryUpdates(w, r)
 }
@@ -102,30 +113,27 @@ func (h Handler) QueryCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
 }
 
 func (h Handler) StorageSignalUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	if h.Broker == nil {
 		nethttp.Error(w, "admin storage broker is not configured", nethttp.StatusInternalServerError)
 		return
 	}
-	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := h.Broker.Subscribe(adminStorageStreamID(clientID))
-	defer unsubscribe()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch := <-updates:
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
+	updates := pagestream.NewSignalStream(w, r)
+	data, err := h.adminDataForUpdates(r, "storage")
+	if err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
+		return
 	}
+	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "storage", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
+		return
+	}
+	_ = updates.Forward(r.Context(), h.Broker, adminStorageStreamID(clientID))
 }
 
 func (h Handler) StorageTableSelect(w nethttp.ResponseWriter, r *nethttp.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	signals := storageCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
@@ -168,6 +176,44 @@ func (h Handler) adminData(r *nethttp.Request) (ui.AdminData, error) {
 	return h.readModel().Data(r)
 }
 
+func (h Handler) adminDataForUpdates(r *nethttp.Request, active string) (ui.AdminData, error) {
+	data, err := h.adminData(r)
+	if err != nil {
+		return data, err
+	}
+	switch active {
+	case "principal-detail":
+		principalID := strings.TrimSpace(r.URL.Query().Get("principal"))
+		for i := range data.Principals {
+			if data.Principals[i].ID == principalID {
+				data.SelectedPrincipal = &data.Principals[i]
+				return data, nil
+			}
+		}
+		return data, sql.ErrNoRows
+	case "group-detail":
+		groupID := strings.TrimSpace(r.URL.Query().Get("group"))
+		for i := range data.Groups {
+			if data.Groups[i].ID == groupID {
+				data.SelectedGroup = &data.Groups[i]
+				return data, nil
+			}
+		}
+		return data, sql.ErrNoRows
+	default:
+		return data, nil
+	}
+}
+
+func (h Handler) patchAndWait(w nethttp.ResponseWriter, r *nethttp.Request, patch pagestream.SignalPatch) {
+	_ = pagestream.EnsureClientID(w, r)
+	updates := pagestream.NewSignalStream(w, r)
+	if err := updates.Patch(patch); err != nil {
+		return
+	}
+	updates.Wait(r.Context())
+}
+
 func (h Handler) catalog() dashboard.Catalog {
 	if h.Catalog == nil {
 		return dashboard.Catalog{}
@@ -192,7 +238,9 @@ func (h Handler) chromeOption(r *nethttp.Request) ui.ChromeOption {
 func (h Handler) ensureClientID(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if h.EnsureClientID != nil {
 		h.EnsureClientID(w, r)
+		return
 	}
+	_ = pagestream.EnsureClientID(w, r)
 }
 
 func (h Handler) readModel() ReadModel {

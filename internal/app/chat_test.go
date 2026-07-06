@@ -14,8 +14,8 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/api"
-	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
@@ -45,27 +45,32 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	for _, want := range []string{
 		`/static/app-shell.js`,
 		`/static/chat-page.js`,
-		`data-signals=`,
 		`<ld-app-shell`,
 		`<ld-chat-page`,
-		`&#34;visuals&#34;`,
-		`&#34;tables&#34;`,
-		`&#34;primaryAction&#34;:{&#34;label&#34;:&#34;New chat&#34;,&#34;href&#34;:&#34;/chat/new&#34;,&#34;icon&#34;:&#34;plus&#34;}`,
-		`&#34;history&#34;:{&#34;label&#34;:&#34;Chats&#34;`,
-		`&#34;view&#34;:&#34;new&#34;`,
+		`workspace-id="test"`,
+		`view="new"`,
+		`data-indicator="agentTurnPending"`,
+		`data-on:ld-chat-submit`,
+		`/chat/turns`,
+		`/updates?route=chat&amp;view=new&amp;workspace=test`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("chat page missing %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		`data-signals=`,
 		`data-attr:page="$page"`,
 		`data-attr:agent="$agent"`,
 		`data-attr:visuals="$visuals"`,
 		`data-attr:tables="$tables"`,
-		`data-attr:pending="$agentTurnPending || $agent.status.running"`,
-		`data-attr:composerdisabled="$agentTurnPending || $agent.status.running || $agent.composer.disabled"`,
-		`data-indicator="agentTurnPending"`,
-		`data-on:ld-chat-submit`,
-		`/chat/turns`,
 		`/chat/updates`,
+		`&#34;visuals&#34;`,
+		`&#34;tables&#34;`,
+		`&#34;history&#34;`,
 	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("chat page missing %q:\n%s", want, body)
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("chat page embedded streamed state or legacy transport %q:\n%s", forbidden, body)
 		}
 	}
 	if strings.Contains(body, `aria-label="Agent conversations"`) {
@@ -99,8 +104,12 @@ func TestChatPageDisabledState(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `<ld-chat-page`) || !strings.Contains(body, `Agent is not configured`) {
+	if !strings.Contains(body, `<ld-chat-page`) || !strings.Contains(body, `/updates?route=chat&amp;view=list&amp;workspace=test`) {
 		t.Fatalf("disabled chat page did not render usable disabled state:\n%s", body)
+	}
+	updatesBody := readUpdatesUntil(t, server, "/updates?route=chat&workspace=test&view=list", "", `Agent is not configured`)
+	if !strings.Contains(updatesBody, `Agent is not configured`) {
+		t.Fatalf("disabled chat stream missing disabled state:\n%s", updatesBody)
 	}
 }
 
@@ -142,9 +151,18 @@ func TestChatRootRendersListWhenNoConversations(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`&#34;view&#34;:&#34;list&#34;`, `&#34;conversations&#34;:[]`, `&#34;href&#34;:&#34;/chat/new&#34;`} {
+	for _, want := range []string{`<ld-chat-page`, `view="list"`, `/updates?route=chat&amp;view=list&amp;workspace=test`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat list missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `data-signals=`) || strings.Contains(body, `&#34;conversations&#34;`) {
+		t.Fatalf("chat list should not embed conversations in HTML:\n%s", body)
+	}
+	updatesBody := readUpdatesUntil(t, server, "/updates?route=chat&workspace=test&view=list", token, `"view":"list"`, `"conversations":[]`, `"href":"/chat/new"`)
+	for _, want := range []string{`"view":"list"`, `"conversations":[]`, `"href":"/chat/new"`} {
+		if !strings.Contains(updatesBody, want) {
+			t.Fatalf("chat list stream missing %q:\n%s", want, updatesBody)
 		}
 	}
 }
@@ -178,15 +196,15 @@ func TestChatRootRendersConversationList(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{
-		`&#34;view&#34;:&#34;list&#34;`,
-		`&#34;title&#34;:&#34;Latest&#34;`,
-		`&#34;title&#34;:&#34;Old&#34;`,
-		`/chat/` + latest.ID,
-		`/chat/` + old.ID,
-	} {
+	for _, want := range []string{`<ld-chat-page`, `view="list"`, `/updates?route=chat&amp;view=list&amp;workspace=test`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat list missing %q:\n%s", want, body)
+		}
+	}
+	updatesBody := readUpdatesUntil(t, server, "/updates?route=chat&workspace=test&view=list", token, `"title":"Latest"`, `"title":"Old"`)
+	for _, want := range []string{`"view":"list"`, `"title":"Latest"`, `"title":"Old"`, `/chat/` + latest.ID, `/chat/` + old.ID} {
+		if !strings.Contains(updatesBody, want) {
+			t.Fatalf("chat list stream missing %q:\n%s", want, updatesBody)
 		}
 	}
 }
@@ -206,13 +224,19 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`&#34;href&#34;:&#34;/chat/new&#34;`, `&#34;label&#34;:&#34;New chat&#34;`, `&#34;history&#34;`} {
+	for _, want := range []string{`<ld-chat-page`, `view="new"`, `/updates?route=chat&amp;view=new&amp;workspace=test`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("draft chat page missing %q:\n%s", want, body)
 		}
 	}
 	if strings.Contains(body, `&#34;active&#34;:&#34;chat&#34;`) {
 		t.Fatalf("draft chat page should not activate the Chats nav item:\n%s", body)
+	}
+	updatesBody := readUpdatesUntil(t, server, "/updates?route=chat&workspace=test&view=new", token, `"href":"/chat/new"`, `"label":"New chat"`)
+	for _, want := range []string{`"href":"/chat/new"`, `"label":"New chat"`, `"history"`} {
+		if !strings.Contains(updatesBody, want) {
+			t.Fatalf("draft chat stream missing %q:\n%s", want, updatesBody)
+		}
 	}
 	conversations, err := testAgentRepository(store).ListConversations(ctx, "test", principal.ID)
 	if err != nil {
@@ -274,14 +298,20 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, `&#34;kind&#34;:&#34;user&#34;`) || !strings.Contains(body, "hello") {
+	if rec.Code != http.StatusOK || !strings.Contains(body, `<ld-chat-page`) || !strings.Contains(body, `view="conversation"`) {
 		t.Fatalf("owned route status=%d body=%s", rec.Code, body)
 	}
 	if strings.Contains(body, `&#34;active&#34;:&#34;chat&#34;`) {
 		t.Fatalf("conversation route should not activate the Chats nav item:\n%s", body)
 	}
-	if !strings.Contains(body, `&#34;id&#34;:&#34;`+owned.ID+`&#34;`) || !strings.Contains(body, `&#34;active&#34;:true`) {
-		t.Fatalf("conversation route should keep its history item active:\n%s", body)
+	if strings.Contains(body, "hello") || strings.Contains(body, `data-signals=`) {
+		t.Fatalf("conversation route should stream transcript state instead of embedding it:\n%s", body)
+	}
+	updatesBody := readUpdatesUntil(t, server, "/updates?route=chat&workspace=test&view=conversation&conversation="+url.QueryEscape(owned.ID), token, `"kind":"user"`, "hello")
+	for _, want := range []string{`"kind":"user"`, "hello", `"id":"` + owned.ID + `"`, `"active":true`} {
+		if !strings.Contains(updatesBody, want) {
+			t.Fatalf("conversation stream missing %q:\n%s", want, updatesBody)
+		}
 	}
 
 	hiddenReq := httptest.NewRequest(http.MethodGet, "/chat/"+hidden.ID, nil)
@@ -325,22 +355,24 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, body)
 	}
+	if strings.Contains(body, `"visuals"`) || strings.Contains(body, `data-attr:visuals="$visuals"`) {
+		t.Fatalf("chat page should not embed artifact signals in HTML:\n%s", body)
+	}
+	updatesBody := readUpdatesUntil(t, server, "/updates?route=chat&workspace=test&view=conversation&conversation="+url.QueryEscape(conversation.ID), token, `"visuals":{"agent_chart_123":`, `"artifact":{"kind":"chart"`)
 	for _, want := range []string{
 		`"visuals":{"agent_chart_123":`,
 		`"title":"Orders"`,
 		`"data":[{"label":"delivered","value":42}]`,
 		`"tables":{}`,
-		`data-attr:visuals="$visuals"`,
-		`data-attr:tables="$tables"`,
 		`"artifact":{"kind":"chart","id":"agent_chart_123","summary":"Created chart."}`,
 		`"resultJson":"{\n  \"ok\": true,\n  \"kind\": \"chart\"`,
 	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("chat page missing %q:\n%s", want, body)
+		if !strings.Contains(updatesBody, want) {
+			t.Fatalf("chat stream missing %q:\n%s", want, updatesBody)
 		}
 	}
-	if strings.Contains(body, `"patch"`) {
-		t.Fatalf("transcript should not embed artifact patch payload:\n%s", body)
+	if strings.Contains(updatesBody, `"patch"`) {
+		t.Fatalf("transcript should not stream artifact patch payload:\n%s", updatesBody)
 	}
 }
 
@@ -378,8 +410,8 @@ func TestChatConversationRouteQueuesMissingTitleRepair(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `&#34;titlePending&#34;:true`) {
-		t.Fatalf("default one-turn conversation should render title pending:\n%s", rec.Body.String())
+	if strings.Contains(rec.Body.String(), `&#34;titlePending&#34;:true`) || strings.Contains(rec.Body.String(), `data-signals=`) {
+		t.Fatalf("conversation page should not embed title repair state:\n%s", rec.Body.String())
 	}
 	waitForAgentConversationTitle(t, store, "test", owner.ID, conversation.ID, "Greeting")
 }
@@ -425,8 +457,8 @@ func TestChatConversationRouteSkipsTitleRepairForManualAndMultiUserTitles(t *tes
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 		}
-		if strings.Contains(rec.Body.String(), `&#34;titlePending&#34;:true`) {
-			t.Fatalf("conversation %s should not render title pending:\n%s", conversationID, rec.Body.String())
+		if strings.Contains(rec.Body.String(), `&#34;titlePending&#34;:true`) || strings.Contains(rec.Body.String(), `data-signals=`) {
+			t.Fatalf("conversation %s should not embed title state:\n%s", conversationID, rec.Body.String())
 		}
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -571,8 +603,8 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 	if pageRec.Code != http.StatusOK {
 		t.Fatalf("conversation page status=%d body=%s", pageRec.Code, pageRec.Body.String())
 	}
-	if !strings.Contains(pageRec.Body.String(), "Draft redirect prompt") || !strings.Contains(pageRec.Body.String(), `&#34;running&#34;:true`) {
-		t.Fatalf("conversation page should show persisted prompt and running state:\n%s", pageRec.Body.String())
+	if strings.Contains(pageRec.Body.String(), "Draft redirect prompt") || strings.Contains(pageRec.Body.String(), `&#34;running&#34;:true`) {
+		t.Fatalf("conversation page should stream persisted prompt and running state:\n%s", pageRec.Body.String())
 	}
 
 	updatesCtx, cancelUpdates := context.WithCancel(context.Background())
@@ -640,7 +672,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	key := chatStreamID(scope, "client-test")
 
 	reqCtx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodGet, "/chat/updates", nil).WithContext(reqCtx)
+	req := httptest.NewRequest(http.MethodGet, "/updates?route=chat", nil).WithContext(reqCtx)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-test"})
 	rec := httptest.NewRecorder()
@@ -650,7 +682,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 		server.Routes().ServeHTTP(rec, req)
 	}()
 	waitForBrokerSubscription(t, server, key)
-	server.broker.Publish(key, dashboardstream.Patch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
+	server.broker.Publish(key, pagestream.SignalPatch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
 	time.Sleep(25 * time.Millisecond)
 	cancel()
 	<-done
@@ -661,6 +693,46 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 			t.Fatalf("chat updates stream missing %q:\n%s", want, body)
 		}
 	}
+}
+
+func readUpdatesUntil(t *testing.T, server *Server, path, token string, wants ...string) string {
+	t.Helper()
+	reqCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, path, nil)
+	req.Header.Set("Accept", "text/event-stream")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-read"})
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.Routes().ServeHTTP(rec, req)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		body := rec.Body.String()
+		missing := ""
+		for _, want := range wants {
+			if !strings.Contains(body, want) {
+				missing = want
+				break
+			}
+		}
+		if missing == "" {
+			cancel()
+			<-done
+			return body
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
+	t.Fatalf("updates %s did not contain %q:\n%s", path, wants, rec.Body.String())
+	return ""
 }
 
 func chatPrincipalAndToken(t *testing.T, ctx context.Context, store *platform.Store) (testPrincipalRef, string) {
@@ -732,8 +804,7 @@ func chatSignalsRequest(method, path, token string, signals map[string]any) *htt
 }
 
 func chatUpdatesSignalsRequest(ctx context.Context, token, clientID, activeID string) *http.Request {
-	bytes, _ := json.Marshal(map[string]any{"agent": map[string]any{"activeConversationId": activeID}})
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/chat/updates?datastar="+url.QueryEscape(string(bytes)), nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=chat&workspace=test&view=conversation&conversation="+url.QueryEscape(activeID), nil)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: clientID})

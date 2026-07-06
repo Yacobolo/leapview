@@ -7,7 +7,6 @@ export interface AdminAgentSignal {
   model?: string
   systemPrompt: string
   canWrite: boolean
-  csrfToken: string
   updatePath: string
   tools: AdminAgentToolSignal[]
 }
@@ -332,7 +331,6 @@ export interface ChatEnvelope {
   chrome: ChromeSignal
   page: ChatPageSignal
   runtime: RouteRuntimeSignal
-  csrfToken: string
   agent: ChatSignal
   visuals: Record<string, DashboardVisual>
   tables: Record<string, DashboardTable>
@@ -404,6 +402,7 @@ export interface ConnectionsPageSignal {
   title: string
   description?: string
   workspaceId?: string
+  environment?: string
   assetList?: WorkspaceAssetListSignal
 }
 
@@ -429,7 +428,6 @@ export interface DashboardEnvelope {
   chrome: ChromeSignal
   page: DashboardPageSignal
   runtime: RouteRuntimeSignal
-  csrfToken: string
   filterConfig: ReportFilterConfig[]
   filters: DashboardFilters
   urlParams: Record<string, unknown>
@@ -919,6 +917,7 @@ export interface ReportFilterValues {
 
 export interface RouteRuntimeSignal {
   clientId?: string
+  workspaceId?: string
   dashboardId?: string
   pageId?: string
   modelId?: string
@@ -1061,7 +1060,6 @@ export interface WorkspaceAccessSignal {
   bindings: unknown[]
   canManage: boolean
   status: WorkspaceAccessStatus
-  csrfToken: string
   command: WorkspaceAccessCommand
   search: string
 }
@@ -1114,6 +1112,7 @@ export interface WorkspaceAssetPageSignal {
   kind: string
   title: string
   workspaceId: string
+  environment?: string
   assetId: string
   activeSection: string
   asset: WorkspaceAssetSummarySignal
@@ -1186,6 +1185,7 @@ export interface WorkspacePageSignal {
   title: string
   description?: string
   workspaceId?: string
+  environment?: string
   cards?: WorkspaceCardSignal[]
   assetList?: WorkspaceAssetListSignal
 }

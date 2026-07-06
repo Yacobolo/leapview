@@ -186,15 +186,50 @@ func (m canceledTableWindowMetrics) QueryTablePage(_ context.Context, _ string, 
 func drainInitialSnapshot(t *testing.T, stream *streamClient) []map[string]any {
 	t.Helper()
 	patches := []map[string]any{}
-	for len(patches) < 6 {
-		patch := stream.nextPatch(t)
-		patches = append(patches, patch)
-		if _, ok := patch["tables"]; ok {
+	quiet := time.NewTimer(150 * time.Millisecond)
+	defer quiet.Stop()
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	seenSnapshotTable := false
+	for {
+		select {
+		case patch, ok := <-stream.patches:
+			if !ok {
+				return patches
+			}
+			patches = append(patches, patch)
+			if tableHasSnapshot(patch, "orders_table") {
+				seenSnapshotTable = true
+			}
+			if !quiet.Stop() {
+				select {
+				case <-quiet.C:
+				default:
+				}
+			}
+			quiet.Reset(150 * time.Millisecond)
+		case err := <-stream.errs:
+			if err != nil {
+				t.Fatalf("read initial updates stream: %v", err)
+			}
 			return patches
+		case <-quiet.C:
+			if seenSnapshotTable {
+				return patches
+			}
+			quiet.Reset(150 * time.Millisecond)
+		case <-deadline.C:
+			t.Fatalf("initial stream did not include populated tables patch: %#v", patches)
 		}
 	}
-	t.Fatalf("initial stream did not include tables patch: %#v", patches)
-	return nil
+}
+
+func tableHasSnapshot(patch map[string]any, tableID string) bool {
+	table := mapAt(patch, "tables", tableID)
+	if _, ok := table["availableRows"]; !ok {
+		return false
+	}
+	return hasKey(table, "blocks")
 }
 
 func nextPatches(t *testing.T, stream *streamClient, count int) []map[string]any {

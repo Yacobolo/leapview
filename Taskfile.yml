@@ -88,6 +88,20 @@ tasks:
     cmds:
       - bun run build
 
+  bench:datastar-bridge:
+    desc: Benchmark legacy, Ignition, and DatastarLit bridges in Chromium
+    deps:
+      - node:deps
+    cmds:
+      - bun run bench:datastar-bridge
+
+  qa:ui-framework:
+    desc: Run browser QA for the stream-first DatastarLit UI framework
+    deps:
+      - node:deps
+    cmds:
+      - bun scripts/qa_ui_framework.ts
+
   generate:
     desc: Generate all checked-out derived code needed for local development
     cmds:
@@ -153,6 +167,7 @@ tasks:
       - bun run test:primer-primitives
       - bun run test:primer-alignment
       - bun run test:theme
+      - bun run test:datastar-lit
       - bun run test:app-shell
       - bun run test:table-selection
       - bun run test:record-table
@@ -179,6 +194,8 @@ tasks:
     desc: Run the full CI test suite
     deps:
       - test
+    cmds:
+      - task: qa:ui-framework
 
   agent:e2e:
     desc: Run opt-in DeepSeek-backed headless agent E2E

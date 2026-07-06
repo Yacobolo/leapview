@@ -7,11 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
-	"github.com/starfederation/datastar-go/datastar"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 const (
@@ -26,30 +25,27 @@ type queryHistoryCommandSignals struct {
 }
 
 func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	if h.Broker == nil {
 		http.Error(w, "admin query-history broker is not configured", http.StatusInternalServerError)
 		return
 	}
-	sse := datastar.NewSSE(w, r)
-	updates, unsubscribe := h.Broker.Subscribe(queryHistoryStreamID(clientID))
-	defer unsubscribe()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch := <-updates:
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
-			}
-		}
+	updates := pagestream.NewSignalStream(w, r)
+	data, err := h.adminDataForUpdates(r, "queries")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "queries", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
+		return
+	}
+	_ = updates.Forward(r.Context(), h.Broker, queryHistoryStreamID(clientID))
 }
 
 func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {
-	clientID := lddatastar.EnsureClientID(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
 	signals := queryHistoryCommandSignals{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

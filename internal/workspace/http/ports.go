@@ -7,7 +7,6 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
-	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -19,11 +18,6 @@ type Metrics interface {
 	SemanticModel(modelID string) (*semanticmodel.Model, bool)
 	ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error)
 	Pages(dashboardID string) []dashboard.Page
-}
-
-type Broker interface {
-	Subscribe(clientID string) (<-chan dashboardstream.Patch, func())
-	Publish(clientID string, patch dashboardstream.Patch)
 }
 
 type AssetCatalogReader interface {

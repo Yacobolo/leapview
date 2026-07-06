@@ -72,6 +72,11 @@ func (s Service) ClearSelection(ctx context.Context, request Request) []Event {
 	return s.reload(ctx, request, filters)
 }
 
+func (s Service) Reload(ctx context.Context, request Request) []Event {
+	filters := report.NormalizeFilters(s.Metrics, request.DashboardID, request.PageID, request.Filters)
+	return s.reload(ctx, request, filters)
+}
+
 func (s Service) ResetFilters(ctx context.Context, request Request) []Event {
 	return s.reload(ctx, request, report.DefaultFilters(s.Metrics, request.DashboardID, request.PageID))
 }

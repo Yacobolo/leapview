@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +43,8 @@ type harness struct {
 	store       *platform.Store
 	workspaceID string
 }
+
+var integrationDataInitUpdatesPattern = regexp.MustCompile(`data-init="@get\('([^']+)'`)
 
 type harnessConfig struct {
 	catalogPath string
@@ -208,14 +212,27 @@ func newHarnessRuntime(dataDir, catalogPath, duckDBDir string) (*dashboardruntim
 func (h *harness) getUpdates(t *testing.T, dashboardID, pageID string, signals map[string]any) string {
 	t.Helper()
 
+	return h.getUpdatesWithQuery(t, dashboardID, pageID, signals, nil)
+}
+
+func (h *harness) getUpdatesWithQuery(t *testing.T, dashboardID, pageID string, signals map[string]any, query url.Values) string {
+	t.Helper()
+
 	encodedSignals, err := json.Marshal(signals)
 	if err != nil {
 		t.Fatalf("marshal Datastar signals: %v", err)
 	}
 	values := url.Values{}
+	values.Set("route", "dashboard")
+	values.Set("workspace", h.workspaceIDOrDefault())
 	values.Set("dashboard", dashboardID)
 	values.Set("page", pageID)
 	values.Set("datastar", string(encodedSignals))
+	for key, vals := range query {
+		for _, value := range vals {
+			values.Add(key, value)
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
@@ -236,6 +253,19 @@ func (h *harness) getUpdatesSignals(t *testing.T, dashboardID, pageID string, si
 	t.Helper()
 
 	body := h.getUpdates(t, dashboardID, pageID, signals)
+	return patchSignalsFromBody(t, body)
+}
+
+func (h *harness) getUpdatesSignalsWithQuery(t *testing.T, dashboardID, pageID string, signals map[string]any, query url.Values) []map[string]any {
+	t.Helper()
+
+	body := h.getUpdatesWithQuery(t, dashboardID, pageID, signals, query)
+	return patchSignalsFromBody(t, body)
+}
+
+func patchSignalsFromBody(t *testing.T, body string) []map[string]any {
+	t.Helper()
+
 	patches := ssetest.PatchSignals(t, body)
 	if len(patches) == 0 {
 		t.Fatalf("GET /updates did not stream Datastar patch signals:\n%s", body)
@@ -252,6 +282,8 @@ func (h *harness) openUpdatesStream(t *testing.T, dashboardID, pageID string, si
 		t.Fatalf("marshal Datastar signals: %v", err)
 	}
 	values := url.Values{}
+	values.Set("route", "dashboard")
+	values.Set("workspace", h.workspaceIDOrDefault())
 	values.Set("dashboard", dashboardID)
 	values.Set("page", pageID)
 	values.Set("datastar", string(encodedSignals))
@@ -261,6 +293,9 @@ func (h *harness) openUpdatesStream(t *testing.T, dashboardID, pageID string, si
 	if err != nil {
 		cancel()
 		t.Fatalf("create updates request: %v", err)
+	}
+	if clientID := clientIDFromSignals(signals); clientID != "" {
+		req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: clientID})
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -302,6 +337,9 @@ func (h *harness) postCommand(t *testing.T, path string, signals map[string]any)
 		t.Fatalf("create command request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if clientID := clientIDFromSignals(signals); clientID != "" {
+		req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: clientID})
+	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
@@ -334,6 +372,57 @@ func (h *harness) getAuthenticated(t *testing.T, path string) string {
 	return string(body)
 }
 
+func (h *harness) getAuthenticatedHydrated(t *testing.T, path string) string {
+	t.Helper()
+	body := h.getAuthenticated(t, path)
+	return html.UnescapeString(body) + h.streamPageBootstrap(t, body)
+}
+
+func (h *harness) streamPageBootstrap(t *testing.T, pageBody string) string {
+	t.Helper()
+	decoded := html.UnescapeString(pageBody)
+	matches := integrationDataInitUpdatesPattern.FindStringSubmatch(decoded)
+	if len(matches) != 2 {
+		t.Fatalf("rendered page did not include literal /updates data-init:\n%s", pageBody)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.serverURL(t)+matches[1], nil)
+	if err != nil {
+		t.Fatalf("create bootstrap request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer dev")
+	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "integration-stream-first"})
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET bootstrap %s: %v", matches[1], err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(res.Body)
+		t.Fatalf("GET bootstrap %s status = %d, body:\n%s", matches[1], res.StatusCode, string(body))
+	}
+	client := &streamClient{
+		cancel:  cancel,
+		body:    res.Body,
+		patches: make(chan map[string]any, 16),
+		errs:    make(chan error, 1),
+	}
+	go client.read()
+	t.Cleanup(client.close)
+	patch := client.nextPatch(t)
+	cancel()
+	return patchString(patch)
+}
+
+func patchString(patch map[string]any) string {
+	encoded, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Sprintf("%#v", patch)
+	}
+	return string(encoded)
+}
+
 func (h *harness) postAuthenticated(t *testing.T, path string) int {
 	t.Helper()
 
@@ -358,7 +447,12 @@ func (h *harness) openAssetUpdatesStream(t *testing.T, workspaceID, assetID, sec
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	path := h.serverURL(t) + "/workspaces/" + workspaceID + "/assets/" + assetID + "/updates?section=" + url.QueryEscape(section)
+	values := url.Values{}
+	values.Set("route", "workspace_asset")
+	values.Set("workspace", workspaceID)
+	values.Set("asset", assetID)
+	values.Set("section", section)
+	path := h.serverURL(t) + "/updates?" + values.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		cancel()
@@ -399,7 +493,7 @@ func (h *harness) serverURL(t *testing.T) string {
 }
 
 func (h *harness) workspaceUpdatesPath() string {
-	return "/workspaces/" + h.workspaceIDOrDefault() + "/updates"
+	return "/updates"
 }
 
 func (h *harness) workspaceCommandPath(path string) string {

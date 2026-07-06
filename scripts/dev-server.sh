@@ -225,6 +225,10 @@ wait_ready() {
 
 publish_project() {
   local port="$1"
+  if [[ "${LIBREDASH_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
+    echo "Skipping dev project publish"
+    return 0
+  fi
   local project="${LIBREDASH_DEV_PROJECT:-dashboards/libredash.yaml}"
   go run ./cmd/libredash publish --project "$project" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
 }
@@ -291,7 +295,11 @@ start() {
   else
     echo "Runner: go run (install air for hot reload)"
   fi
-  echo "Publishing project after startup. Press Ctrl-C to stop."
+  if [[ "${LIBREDASH_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
+    echo "Project publish disabled. Press Ctrl-C to stop."
+  else
+    echo "Publishing project after startup. Press Ctrl-C to stop."
+  fi
 
   cd "$ROOT"
   export PORT="$port"

@@ -1,3 +1,5 @@
+import { datastarRuntimeURL } from '../web/components/shared/datastar-runtime'
+
 type BuildOptions = Parameters<typeof Bun.build>[0]
 
 type FixtureBuild = {
@@ -6,6 +8,8 @@ type FixtureBuild = {
   options: BuildOptions
   copy?: Array<{ from: string; to: string }>
 }
+
+const externalModules = [datastarRuntimeURL]
 
 const fixtures = new Map<string, FixtureBuild>([
   ['app-shell', single('app-shell', 'web/components/app/app-shell.ts', '.tmp/app-shell-test/app-shell-under-test.js')],
@@ -49,6 +53,7 @@ const fixtures = new Map<string, FixtureBuild>([
         entrypoints: ['web/components/shared/semantic-model-graph.ts'],
         target: 'browser',
         format: 'esm',
+        external: externalModules,
         outdir: '.tmp/semantic-model-graph-test',
         naming: { entry: 'semantic-model-graph.[ext]' },
       },
@@ -64,6 +69,7 @@ const fixtures = new Map<string, FixtureBuild>([
         entrypoints: ['web/components/shared/asset-lineage-graph.ts'],
         target: 'browser',
         format: 'esm',
+        external: externalModules,
         outdir: '.tmp/asset-lineage-test',
         naming: { entry: 'asset-lineage-graph.[ext]' },
       },
@@ -96,6 +102,7 @@ function single(label: string, entrypoint: string, outputPath: string): FixtureB
       entrypoints: [entrypoint],
       target: 'browser',
       format: 'esm',
+      external: externalModules,
       outdir: output.dir,
       naming: { entry: output.name },
     },
@@ -111,6 +118,7 @@ function split(label: string, entrypoint: string, outdir: string, entryName: str
       target: 'browser',
       format: 'esm',
       splitting: true,
+      external: externalModules,
       outdir,
       naming: { entry: entryName, chunk: chunkName },
     },
@@ -127,6 +135,7 @@ function pageWithMonacoWorker(label: string, entrypoint: string, outdir: string,
       target: 'browser',
       format: 'esm',
       splitting: true,
+      external: externalModules,
       outdir,
       naming: { entry: '[name].[ext]', chunk: `chunks/${entryBase}-[name]-[hash].[ext]` },
     },

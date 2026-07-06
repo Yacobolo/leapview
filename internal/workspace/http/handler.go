@@ -15,12 +15,12 @@ import (
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/assetnav"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/ui"
+	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacedatastar "github.com/Yacobolo/libredash/internal/workspace/datastar"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 type Handler struct {
@@ -29,7 +29,7 @@ type Handler struct {
 	ReadModel        ReadModel
 	RefreshState     RefreshStateProvider
 	RefreshRunner    AssetRefreshRunner
-	Broker           Broker
+	Broker           *pagestream.Broker
 	CSRFToken        func(*nethttp.Request) string
 	CurrentRoleLabel func(*nethttp.Request) string
 	ChromeOptions    func(*nethttp.Request) []ui.ChromeOption
@@ -83,7 +83,7 @@ func (h Handler) WorkspaceAssets(w nethttp.ResponseWriter, r *nethttp.Request) {
 	access := h.workspaceAccess(r, workspaceView, h.canManageAccess(r, workspaceID), ui.WorkspaceAccessStatus{})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.WorkspacePage(h.catalogForWorkspace(workspaceID), workspaceView, filtered, r.URL.Query().Get("type"), r.URL.Query().Get("q"), h.currentRoleLabel(r), access, h.csrfToken(r), h.chromeOptions(r)...).Render(w); err != nil {
+	if err := ui.WorkspacePageForEnvironment(h.catalogForWorkspace(workspaceID), workspaceView, filtered, r.URL.Query().Get("type"), r.URL.Query().Get("q"), h.environment(r), h.currentRoleLabel(r), access, h.csrfToken(r), h.chromeOptions(r)...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }
@@ -175,7 +175,7 @@ func (h Handler) WorkspaceAssetSection(w nethttp.ResponseWriter, r *nethttp.Requ
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.WorkspaceAssetPageWithRefreshAndVersions(h.catalogForWorkspace(workspaceID), h.workspaceResponse(r, workspaceID), selected, assets, edges, section, h.currentRoleLabel(r), refresh, versions, h.chromeOptions(r)...).Render(w); err != nil {
+	if err := ui.WorkspaceAssetPageWithRefreshAndVersionsForEnvironment(h.catalogForWorkspace(workspaceID), h.workspaceResponse(r, workspaceID), selected, assets, edges, section, h.environment(r), h.currentRoleLabel(r), refresh, versions, h.chromeOptions(r)...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }
@@ -190,9 +190,45 @@ func (h Handler) Connections(w nethttp.ResponseWriter, r *nethttp.Request) {
 	filtered := workspace.FilterConnectionAssets(assets, activeType, r.URL.Query().Get("q"))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.ConnectionsPage(h.catalogForWorkspacesPage(r, nil), "platform", filtered, edges, activeType, r.URL.Query().Get("q"), h.currentRoleLabel(r), h.chromeOptions(r)...).Render(w); err != nil {
+	if err := ui.ConnectionsPageForEnvironment(h.catalogForWorkspacesPage(r, nil), "platform", filtered, edges, activeType, r.URL.Query().Get("q"), h.environment(r), h.currentRoleLabel(r), h.chromeOptions(r)...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
+}
+
+func (h Handler) WorkspaceBootstrapUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
+	workspaceID := h.workspaceID(r.URL.Query().Get("workspace"))
+	if strings.TrimSpace(workspaceID) == "" {
+		workspaces, err := h.workspaceList(r)
+		if err != nil {
+			nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
+			return
+		}
+		h.patchAndWait(w, r, ui.WorkspacesBootstrapSignalsForEnvironment(h.catalogForWorkspacesPage(r, workspaces), workspaces, h.environment(r), h.currentRoleLabel(r), h.chromeOptions(r)...))
+		return
+	}
+	assets, _, err := h.assetsAndEdges(r, workspaceID)
+	if err != nil {
+		nethttp.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	activeType := r.URL.Query().Get("type")
+	query := r.URL.Query().Get("q")
+	filtered := workspace.FilterWorkspaceAssets(assets, activeType, query)
+	workspaceView := h.workspaceResponse(r, workspaceID)
+	access := h.workspaceAccess(r, workspaceView, h.canManageAccess(r, workspaceID), ui.WorkspaceAccessStatus{})
+	h.patchAndWait(w, r, ui.WorkspaceBootstrapSignalsForEnvironment(h.catalogForWorkspace(workspaceID), workspaceView, filtered, activeType, query, h.environment(r), h.currentRoleLabel(r), access, h.chromeOptions(r)...))
+}
+
+func (h Handler) ConnectionsBootstrapUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
+	assets, edges, err := h.platformAssetsAndEdges(r)
+	if err != nil {
+		nethttp.Error(w, err.Error(), statusForNotFound(err))
+		return
+	}
+	activeType := workspace.NormalizeConnectionAssetType(r.URL.Query().Get("type"))
+	query := r.URL.Query().Get("q")
+	filtered := workspace.FilterConnectionAssets(assets, activeType, query)
+	h.patchAndWait(w, r, ui.ConnectionsBootstrapSignalsForEnvironment(h.catalogForWorkspacesPage(r, nil), "platform", filtered, edges, activeType, query, h.environment(r), h.currentRoleLabel(r), h.chromeOptions(r)...))
 }
 
 func (h Handler) ConnectionSource(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -248,7 +284,7 @@ func (h Handler) ConnectionSourceSection(w nethttp.ResponseWriter, r *nethttp.Re
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.ConnectionSourceAssetPageWithVersions(h.catalogForWorkspacesPage(r, nil), platformAssetWorkspaceView(), connection, source, assets, edges, section, h.currentRoleLabel(r), versions).Render(w); err != nil {
+	if err := ui.ConnectionSourceAssetPageWithVersionsForEnvironment(h.catalogForWorkspacesPage(r, nil), platformAssetWorkspaceView(), connection, source, assets, edges, section, h.environment(r), h.currentRoleLabel(r), versions).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }
@@ -288,7 +324,7 @@ func (h Handler) ConnectionAssetSection(w nethttp.ResponseWriter, r *nethttp.Req
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.ConnectionAssetPageWithVersions(h.catalogForWorkspacesPage(r, nil), platformAssetWorkspaceView(), selected, assets, edges, section, h.currentRoleLabel(r), versions).Render(w); err != nil {
+	if err := ui.ConnectionAssetPageWithVersionsForEnvironment(h.catalogForWorkspacesPage(r, nil), platformAssetWorkspaceView(), selected, assets, edges, section, h.environment(r), h.currentRoleLabel(r), versions).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }
@@ -471,7 +507,7 @@ func (h Handler) DeleteRoleBinding(w nethttp.ResponseWriter, r *nethttp.Request)
 
 func (h Handler) AccessUpsert(w nethttp.ResponseWriter, r *nethttp.Request) {
 	signals := workspaceAccessSignalPayload{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
@@ -549,7 +585,7 @@ func (h Handler) resolveAccessSubject(r *nethttp.Request, repo access.Repository
 
 func (h Handler) AccessRemove(w nethttp.ResponseWriter, r *nethttp.Request) {
 	signals := workspaceAccessSignalPayload{}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
@@ -577,10 +613,7 @@ func (h Handler) patchWorkspaceAccess(w nethttp.ResponseWriter, r *nethttp.Reque
 	if object, ok := assetAccessObject(r, workspaceID); ok {
 		accessResponse = h.objectAccess(r, workspaceView, object, status)
 	}
-	sse := datastar.NewSSE(w, r)
-	_ = sse.MarshalAndPatchSignals(map[string]any{
-		"workspaceAccess": ui.WorkspaceAccessSignals(accessResponse, h.csrfToken(r)),
-	})
+	_ = pagestream.PatchResponse(w, r, pagestream.SignalPatch{"workspaceAccess": ui.WorkspaceAccessSignals(accessResponse)})
 }
 
 func (h Handler) objectAccess(r *nethttp.Request, workspaceView workspace.WorkspaceView, object access.ObjectRef, status ui.WorkspaceAccessStatus) ui.WorkspaceAccessResponse {
@@ -721,43 +754,82 @@ func AssetObjectRefs(r *nethttp.Request, workspaceID string) []access.ObjectRef 
 }
 
 func (h Handler) AssetUpdatesStream(w nethttp.ResponseWriter, r *nethttp.Request) {
-	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
-	assetID := chi.URLParam(r, "asset")
+	workspaceID := h.workspaceID(firstNonEmpty(chi.URLParam(r, "workspace"), r.URL.Query().Get("workspace")))
+	assetID := firstNonEmpty(chi.URLParam(r, "asset"), r.URL.Query().Get("asset"))
+	assetWorkspaceID := h.workspaceID(r.URL.Query().Get("assetWorkspace"))
 	section := workspacedatastar.WorkspaceAssetUpdateSection(r)
-	assets, edges, err := h.assetsAndEdges(r, workspaceID)
+	route := r.URL.Query().Get("route")
+	var (
+		assets []workspace.AssetView
+		edges  []workspace.AssetEdgeView
+		err    error
+	)
+	if route == string(uisignals.RouteConnectionAsset) {
+		assets, edges, err = h.platformAssetsAndEdges(r)
+	} else {
+		assets, edges, err = h.assetsAndEdges(r, workspaceID)
+	}
 	if err != nil {
 		nethttp.Error(w, err.Error(), statusForNotFound(err))
 		return
 	}
 	selected, ok := workspace.AssetByID(assets, assetID)
-	if !ok || !workspaceAssetRefreshable(selected) {
+	if !ok {
 		nethttp.NotFound(w, r)
 		return
 	}
-	if h.RefreshState == nil {
-		nethttp.Error(w, "workspace refresh state provider is required", nethttp.StatusServiceUnavailable)
-		return
+	if route == string(uisignals.RouteConnectionAsset) && strings.TrimSpace(assetWorkspaceID) != "" {
+		workspaceID = assetWorkspaceID
+	} else if strings.TrimSpace(workspaceID) == "" {
+		workspaceID = selected.WorkspaceID
 	}
 
-	sse := datastar.NewSSE(w, r)
-	if err := sse.MarshalAndPatchSignals(h.workspaceAssetRefreshPatch(r, workspaceID, selected, assets, edges, section)); err != nil {
+	updates := pagestream.NewSignalStream(w, r)
+	refresh, err := h.assetRefreshState(r.Context(), workspaceID, selected)
+	if err != nil {
+		nethttp.Error(w, err.Error(), statusForNotFound(err))
 		return
 	}
-	updates, unsubscribe := h.broker().Subscribe(workspacedatastar.WorkspaceAssetStreamID(workspaceID, assetID, section))
-	defer unsubscribe()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case patch, ok := <-updates:
-			if !ok {
-				return
-			}
-			if err := sse.MarshalAndPatchSignals(patch); err != nil {
-				return
+	versions, err := h.assetVersionsState(r.Context(), workspaceID, h.environment(r), selected, section)
+	if err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
+		return
+	}
+	var patch pagestream.SignalPatch
+	if route == string(uisignals.RouteConnectionAsset) {
+		if selected.Type == string(workspace.AssetTypeSource) {
+			connectionID := assetnav.SourceConnectionID(selected.ID, edges)
+			if connection, ok := workspace.AssetByID(assets, connectionID); ok {
+				patch = ui.ConnectionSourceAssetBootstrapSignalsForEnvironment(h.catalogForWorkspacesPage(r, nil), platformAssetWorkspaceView(), connection, selected, assets, edges, section, h.environment(r), h.currentRoleLabel(r), versions)
 			}
 		}
+		if patch == nil {
+			patch = ui.ConnectionAssetBootstrapSignalsForEnvironment(h.catalogForWorkspacesPage(r, nil), platformAssetWorkspaceView(), selected, assets, edges, section, h.environment(r), h.currentRoleLabel(r), versions)
+		}
+	} else {
+		patch = ui.WorkspaceAssetBootstrapSignalsForEnvironment(h.catalogForWorkspace(workspaceID), h.workspaceResponse(r, workspaceID), selected, assets, edges, section, h.environment(r), h.currentRoleLabel(r), refresh, versions, h.chromeOptions(r)...)
 	}
+	if err := updates.Patch(patch); err != nil {
+		return
+	}
+	if workspaceAssetRefreshable(selected) {
+		if broker := h.broker(); broker != nil {
+			_ = updates.Forward(r.Context(), broker, workspacedatastar.WorkspaceAssetStreamID(workspaceID, assetID, section))
+			return
+		}
+		updates.Wait(r.Context())
+		return
+	}
+	updates.Wait(r.Context())
+}
+
+func (h Handler) patchAndWait(w nethttp.ResponseWriter, r *nethttp.Request, patch pagestream.SignalPatch) {
+	_ = pagestream.EnsureClientID(w, r)
+	updates := pagestream.NewSignalStream(w, r)
+	if err := updates.Patch(patch); err != nil {
+		return
+	}
+	updates.Wait(r.Context())
 }
 
 func (h Handler) RefreshAsset(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -906,24 +978,14 @@ func (h Handler) chromeOptions(r *nethttp.Request) []ui.ChromeOption {
 	return h.ChromeOptions(r)
 }
 
-func (h Handler) broker() Broker {
+func (h Handler) broker() *pagestream.Broker {
 	if h.Broker != nil {
 		return h.Broker
 	}
-	return noopBroker{}
+	return nil
 }
 
 var errWorkspaceAccessNotConfigured = errors.New("workspace access store is not configured")
-
-type noopBroker struct{}
-
-func (noopBroker) Subscribe(string) (<-chan dashboardstream.Patch, func()) {
-	ch := make(chan dashboardstream.Patch)
-	close(ch)
-	return ch, func() {}
-}
-
-func (noopBroker) Publish(string, dashboardstream.Patch) {}
 
 func connectionSourcePair(assets []workspace.AssetView, edges []workspace.AssetEdgeView, connectionID, sourceID string) (workspace.AssetView, workspace.AssetView, bool) {
 	connection, ok := workspace.AssetByID(assets, connectionID)
@@ -945,17 +1007,21 @@ func workspaceAssetRefreshable(asset workspace.AssetView) bool {
 	return asset.Type == string(workspace.AssetTypeSemanticModel) || asset.Type == string(workspace.AssetTypeModelTable)
 }
 
-func (h Handler) workspaceAssetRefreshPatch(r *nethttp.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView, section string) map[string]any {
+func (h Handler) workspaceAssetRefreshPatch(r *nethttp.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView, section string) pagestream.SignalPatch {
 	refresh, err := h.assetRefreshState(r.Context(), workspaceID, asset)
 	if err != nil {
 		refresh = ui.AssetRefreshState{Latest: ui.AssetRefreshRun{Status: "failed"}}
 	}
-	return workspacedatastar.WorkspaceAssetRefreshSignals(h.workspaceResponse(r, workspaceID), asset, assets, edges, refresh, section)
+	return pagestream.SignalPatch(workspacedatastar.WorkspaceAssetRefreshSignals(h.workspaceResponse(r, workspaceID), asset, assets, edges, refresh, section))
 }
 
 func (h Handler) PublishWorkspaceAssetRefreshPatch(r *nethttp.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) {
+	broker := h.broker()
+	if broker == nil {
+		return
+	}
 	for _, section := range workspacedatastar.WorkspaceAssetRefreshSections() {
-		h.broker().Publish(workspacedatastar.WorkspaceAssetStreamID(workspaceID, asset.ID, section), h.workspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges, section))
+		broker.Publish(workspacedatastar.WorkspaceAssetStreamID(workspaceID, asset.ID, section), h.workspaceAssetRefreshPatch(r, workspaceID, asset, assets, edges, section))
 	}
 }
 
