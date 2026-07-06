@@ -20,6 +20,7 @@ type Binding = {
   principalId: string
   email: string
   displayName?: string
+  groupName?: string
   role: string
 }
 
@@ -52,6 +53,7 @@ type WorkspaceAccessInput = {
 type AccessCommand = {
   email?: string
   role?: string
+  privilege?: string
   principalId?: string
   bindingId?: string
   subjectType?: string
@@ -72,6 +74,7 @@ class WorkspaceAccessControl extends LitElement {
 
   @state() private open = false
   @state() private email = ''
+  @state() private subjectType = 'principal'
   @state() private selectedRole = 'viewer'
   @state() private query = ''
 
@@ -504,17 +507,28 @@ class WorkspaceAccessControl extends LitElement {
               <form class="composer" @submit=${this.handleSubmit}>
                 <span class="field-shell composer-shell">
                     ${mailIcon()}
+                    <select
+                      class="composer-role composer-subject-type"
+                      aria-label="Subject type"
+                      .value=${this.subjectType}
+                      ?disabled=${status.loading}
+                      @change=${(event: Event) => { this.subjectType = (event.currentTarget as HTMLSelectElement).value }}
+                    >
+                      <option value="principal">User</option>
+                      <option value="group">Group</option>
+                      <option value="service_principal">Service principal</option>
+                    </select>
                     <input
-                      type="email"
-                      autocomplete="email"
-                      placeholder="Search by email..."
-                    aria-label="Email principal"
+                      type=${this.subjectType === 'principal' ? 'email' : 'text'}
+                      autocomplete=${this.subjectType === 'principal' ? 'email' : 'off'}
+                      placeholder=${this.subjectType === 'principal' ? 'Search by email...' : 'Subject ID...'}
+                    aria-label=${this.subjectType === 'principal' ? 'Email principal' : 'Subject ID'}
                     .value=${this.email}
                     ?disabled=${status.loading}
                       @input=${(event: Event) => { this.email = (event.currentTarget as HTMLInputElement).value }}
                     >
                     <select
-                      class="composer-role"
+                      class="composer-role composer-grant-role"
                       aria-label=${this.modeIsObject(access) ? 'Privilege to grant' : 'Role to assign'}
                       .value=${this.selectedRole}
                       ?disabled=${status.loading}
@@ -625,7 +639,7 @@ class WorkspaceAccessControl extends LitElement {
     const query = this.query.trim().toLowerCase()
     if (!query) return bindings
     return bindings.filter((binding) => {
-      return `${binding.email} ${binding.role}`.toLowerCase().includes(query)
+      return `${displayLabel(binding)} ${binding.email} ${binding.groupName ?? ''} ${binding.subjectId ?? ''} ${binding.subjectType ?? ''} ${binding.role}`.toLowerCase().includes(query)
     })
   }
 
@@ -663,12 +677,15 @@ class WorkspaceAccessControl extends LitElement {
 
   private readonly handleSubmit = (event: Event): void => {
     event.preventDefault()
+    const subjectID = this.email.trim()
     const command: AccessCommand = {
-      email: this.email.trim(),
-      role: this.selectedRole,
-      subjectType: 'principal',
+      email: this.subjectType === 'principal' ? subjectID : '',
+      role: this.modeIsObject() ? '' : this.selectedRole,
+      privilege: this.modeIsObject() ? this.selectedRole : '',
+      subjectType: this.subjectType,
+      subjectId: this.subjectType === 'principal' ? '' : subjectID,
     }
-    if (!command.email || !command.role) return
+    if (!subjectID || (!command.role && !command.privilege)) return
     this.dispatchEvent(new CustomEvent('ld-workspace-access-upsert', {
       bubbles: true,
       composed: true,
@@ -677,13 +694,14 @@ class WorkspaceAccessControl extends LitElement {
   }
 
   private updateBindingRole(binding: Binding, role: string): void {
-    if (!binding.email || !role || role === binding.role) return
+    if (!role || role === binding.role) return
     this.dispatchEvent(new CustomEvent('ld-workspace-access-upsert', {
       bubbles: true,
       composed: true,
       detail: {
         email: binding.email,
-        role,
+        role: this.modeIsObject() ? '' : role,
+        privilege: this.modeIsObject() ? role : '',
         bindingId: binding.id,
         subjectType: binding.subjectType || 'principal',
         subjectId: binding.subjectId,
@@ -743,15 +761,17 @@ function normalizeBinding(binding: unknown): Binding | null {
   const raw = recordValue(binding)
   const email = stringValue(raw.email ?? raw.Email)
   const principalId = stringValue(raw.principalId ?? raw.PrincipalID)
+  const subjectId = stringValue(raw.subjectId ?? raw.SubjectID)
   const role = stringValue(raw.role ?? raw.Role)
-  if (!email && !principalId) return null
+  if (!email && !principalId && !subjectId) return null
   return {
     id: stringValue(raw.id ?? raw.ID),
     subjectType: stringValue(raw.subjectType ?? raw.SubjectType),
-    subjectId: stringValue(raw.subjectId ?? raw.SubjectID),
+    subjectId,
     principalId,
     email,
     displayName: stringValue(raw.displayName ?? raw.DisplayName),
+    groupName: stringValue(raw.groupName ?? raw.GroupName),
     role,
   }
 }
@@ -782,7 +802,7 @@ function stringValue(value: unknown): string {
 }
 
 function displayLabel(binding: Binding): string {
-  return binding.email || 'Principal'
+  return binding.displayName || binding.groupName || binding.email || binding.subjectId || 'Principal'
 }
 
 function principalInitial(binding: Binding): string {

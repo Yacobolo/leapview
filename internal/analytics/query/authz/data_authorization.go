@@ -1,4 +1,4 @@
-package app
+package authz
 
 import (
 	"context"
@@ -11,49 +11,97 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	"github.com/Yacobolo/libredash/internal/queryruntime"
 )
 
-type dataAuthorizationMetrics struct {
-	QueryMetrics
-	repo               access.Repository
-	defaultWorkspaceID string
+type Principal struct {
+	ID        string
+	DevBypass bool
 }
 
-func (m dataAuthorizationMetrics) MetricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
-	provider, ok := m.QueryMetrics.(workspaceMetrics)
+type Options struct {
+	Repo                  access.Repository
+	DefaultWorkspaceID    string
+	PrincipalFromContext  func(context.Context) (Principal, bool)
+	CredentialFromContext func(context.Context) (access.APICredential, bool)
+	TokenAllows           func(access.APIToken, string, access.Privilege) bool
+}
+
+type Metrics struct {
+	queryruntime.Metrics
+	repo                  access.Repository
+	defaultWorkspaceID    string
+	principalFromContext  func(context.Context) (Principal, bool)
+	credentialFromContext func(context.Context) (access.APICredential, bool)
+	tokenAllows           func(access.APIToken, string, access.Privilege) bool
+}
+
+type DeniedError struct {
+	PrincipalID string
+	Privilege   access.Privilege
+	Credential  bool
+}
+
+func (e DeniedError) Error() string {
+	if e.Credential {
+		return fmt.Sprintf("data query credential lacks %s", e.Privilege)
+	}
+	return fmt.Sprintf("principal %q lacks %s on data object", e.PrincipalID, e.Privilege)
+}
+
+func IsDenied(err error) bool {
+	var denied DeniedError
+	return errors.As(err, &denied)
+}
+
+func New(metrics queryruntime.Metrics, options Options) Metrics {
+	return Metrics{
+		Metrics:               metrics,
+		repo:                  options.Repo,
+		defaultWorkspaceID:    options.DefaultWorkspaceID,
+		principalFromContext:  options.PrincipalFromContext,
+		credentialFromContext: options.CredentialFromContext,
+		tokenAllows:           options.TokenAllows,
+	}
+}
+
+func (m Metrics) MetricsForWorkspace(workspaceID string) (queryruntime.Metrics, bool) {
+	provider, ok := m.Metrics.(queryruntime.WorkspaceMetrics)
 	if ok {
 		metrics, ok := provider.MetricsForWorkspace(workspaceID)
 		if !ok || metrics == nil {
 			return nil, ok
 		}
-		return dataAuthorizationMetrics{QueryMetrics: metrics, repo: m.repo, defaultWorkspaceID: workspaceID}, true
+		m.Metrics = metrics
+		m.defaultWorkspaceID = workspaceID
+		return m, true
 	}
-	if m.QueryMetrics == nil {
+	if m.Metrics == nil {
 		return nil, false
 	}
 	if m.defaultWorkspaceID != "" && workspaceID == m.defaultWorkspaceID {
 		return m, true
 	}
-	catalog := m.QueryMetrics.Catalog()
+	catalog := m.Metrics.Catalog()
 	if catalog.Workspace.ID == "" || catalog.Workspace.ID == workspaceID {
 		return m, true
 	}
 	return nil, false
 }
 
-func (m dataAuthorizationMetrics) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	if m.QueryMetrics == nil {
+func (m Metrics) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+	if m.Metrics == nil {
 		return dataquery.Result{}, errors.New("query metrics are not configured")
 	}
 	if m.repo == nil {
-		return m.QueryMetrics.ExecuteDataQuery(ctx, request)
+		return m.Metrics.ExecuteDataQuery(ctx, request)
 	}
 	governed, transform, err := m.GovernDataQuery(ctx, request)
 	if err != nil {
 		return rejectedDataQueryResult(err)
 	}
 	ctx = dataquery.WithGovernanceApplied(ctx)
-	result, err := m.QueryMetrics.ExecuteDataQuery(ctx, governed)
+	result, err := m.Metrics.ExecuteDataQuery(ctx, governed)
 	if transform != nil {
 		if transformErr := transform(&result, err); transformErr != nil {
 			return rejectedDataQueryResult(transformErr)
@@ -65,7 +113,7 @@ func (m dataAuthorizationMetrics) ExecuteDataQuery(ctx context.Context, request 
 	return result, nil
 }
 
-func (m dataAuthorizationMetrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Query, dataquery.ResultTransformer, error) {
+func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Query, dataquery.ResultTransformer, error) {
 	request = request.WithMetadata(dataquery.MetadataFromContext(ctx))
 	if request.WorkspaceID == "" {
 		request.WorkspaceID = m.defaultWorkspaceID
@@ -73,7 +121,7 @@ func (m dataAuthorizationMetrics) GovernDataQuery(ctx context.Context, request d
 	privilege := dataQueryPrivilege(request)
 	objects := dataQueryObjects(request)
 	principalID := strings.TrimSpace(request.PrincipalID)
-	if principal, ok := principalFromContext(ctx); ok {
+	if principal, ok := m.currentPrincipal(ctx); ok {
 		if principal.DevBypass {
 			return request, nil, nil
 		}
@@ -87,8 +135,8 @@ func (m dataAuthorizationMetrics) GovernDataQuery(ctx context.Context, request d
 		m.recordDataAccessAudit(ctx, request, "", objects, "denied", err)
 		return request, nil, err
 	}
-	if credential, ok := apiCredentialFromContext(ctx); ok && !apiTokenAllows(credential.Token, request.WorkspaceID, privilege) {
-		err := fmt.Errorf("data query credential lacks %s", privilege)
+	if credential, ok := m.currentCredential(ctx); ok && !m.allowsToken(credential.Token, request.WorkspaceID, privilege) {
+		err := DeniedError{PrincipalID: principalID, Privilege: privilege, Credential: true}
 		m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
 		return request, nil, err
 	}
@@ -96,7 +144,7 @@ func (m dataAuthorizationMetrics) GovernDataQuery(ctx context.Context, request d
 		m.recordDataAccessAudit(ctx, request, privilege, objects, "error", err)
 		return request, nil, err
 	} else if !ok {
-		err := fmt.Errorf("principal %q lacks %s on data object", principalID, privilege)
+		err := DeniedError{PrincipalID: principalID, Privilege: privilege}
 		m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
 		return request, nil, err
 	}
@@ -119,7 +167,7 @@ func (m dataAuthorizationMetrics) GovernDataQuery(ctx context.Context, request d
 	}, nil
 }
 
-func (m dataAuthorizationMetrics) authorizeDataQuery(ctx context.Context, principalID string, privilege access.Privilege, request dataquery.Query, objects []access.ObjectRef) (bool, error) {
+func (m Metrics) authorizeDataQuery(ctx context.Context, principalID string, privilege access.Privilege, request dataquery.Query, objects []access.ObjectRef) (bool, error) {
 	decision, err := m.repo.AuthorizeAny(ctx, principalID, privilege, objects)
 	if err != nil || decision.Allowed {
 		return decision.Allowed, err
@@ -140,7 +188,7 @@ func (m dataAuthorizationMetrics) authorizeDataQuery(ctx context.Context, princi
 	return true, nil
 }
 
-func (m dataAuthorizationMetrics) recordDataAccessAudit(ctx context.Context, request dataquery.Query, privilege access.Privilege, objects []access.ObjectRef, status string, cause error) {
+func (m Metrics) recordDataAccessAudit(ctx context.Context, request dataquery.Query, privilege access.Privilege, objects []access.ObjectRef, status string, cause error) {
 	if m.repo == nil {
 		return
 	}
@@ -189,12 +237,12 @@ func (m dataAuthorizationMetrics) recordDataAccessAudit(ctx context.Context, req
 	})
 }
 
-func (m dataAuthorizationMetrics) QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
+func (m Metrics) QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {
 	result, err := m.ExecuteDataQuery(ctx, semanticAggregateDataQuery(modelID, request))
 	return queryRowsFromDataResult(result.Rows), err
 }
 
-func (m dataAuthorizationMetrics) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
+func (m Metrics) PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error) {
 	result, err := m.ExecuteDataQuery(ctx, semanticRowsDataQuery(modelID, request))
 	return queryRowsFromDataResult(result.Rows), err
 }
@@ -228,37 +276,103 @@ func semanticRowsDataQuery(modelID string, request reportdef.RowQuery) dataquery
 	}
 }
 
-func (m dataAuthorizationMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
+func queryFieldsToDataFields(fields []reportdef.QueryField) []dataquery.Field {
+	out := make([]dataquery.Field, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, dataquery.Field{
+			Field: field.Field,
+			Alias: field.Alias,
+			Measure: dataquery.InlineMeasure{
+				Field:       field.Measure.Field,
+				Name:        field.Measure.Name,
+				Label:       field.Measure.Label,
+				Description: field.Measure.Description,
+				Expr:        field.Measure.Expr,
+				Expression:  field.Measure.Expression,
+				Table:       field.Measure.Table,
+				Grain:       field.Measure.Grain,
+				Time:        field.Measure.Time,
+				Grains:      append([]string{}, field.Measure.Grains...),
+				Unit:        field.Measure.Unit,
+				Format:      field.Measure.Format,
+			},
+		})
+	}
+	return out
+}
+
+func queryFiltersToDataFilters(filters []reportdef.QueryFilter) []dataquery.Filter {
+	out := make([]dataquery.Filter, 0, len(filters))
+	for _, filter := range filters {
+		groups := make([]dataquery.FilterGroup, 0, len(filter.Groups))
+		for _, group := range filter.Groups {
+			groups = append(groups, dataquery.FilterGroup{Filters: queryFiltersToDataFilters(group.Filters)})
+		}
+		out = append(out, dataquery.Filter{
+			Field:    filter.Field,
+			Operator: filter.Operator,
+			Values:   append([]any{}, filter.Values...),
+			Groups:   groups,
+		})
+	}
+	return out
+}
+
+func querySortToDataSort(sort []reportdef.QuerySort) []dataquery.Sort {
+	out := make([]dataquery.Sort, 0, len(sort))
+	for _, item := range sort {
+		out = append(out, dataquery.Sort{Field: item.Field, Direction: item.Direction})
+	}
+	return out
+}
+
+func queryRowsFromDataResult(rows []dataquery.Row) reportdef.QueryRows {
+	out := make(reportdef.QueryRows, 0, len(rows))
+	for _, row := range rows {
+		converted := reportdef.QueryRow{}
+		for key, value := range row {
+			converted[key] = value
+		}
+		out = append(out, converted)
+	}
+	return out
+}
+
+func (m Metrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	return m.QueryDashboardPage(ctx, dashboardID, "", filters)
 }
 
-func (m dataAuthorizationMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
-	return m.QueryMetrics.QueryDashboardPage(dataquery.WithGovernor(ctx, m), dashboardID, pageID, filters)
+func (m Metrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
+	return m.Metrics.QueryDashboardPage(dataquery.WithGovernor(ctx, m), dashboardID, pageID, filters)
 }
 
-func (m dataAuthorizationMetrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+func (m Metrics) QueryTable(ctx context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	return m.QueryTablePage(ctx, dashboardID, "", filters, request)
 }
 
-func (m dataAuthorizationMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
-	return m.QueryMetrics.QueryTablePage(dataquery.WithGovernor(ctx, m), dashboardID, pageID, filters, request)
+func (m Metrics) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
+	return m.Metrics.QueryTablePage(dataquery.WithGovernor(ctx, m), dashboardID, pageID, filters, request)
 }
 
-func (m dataAuthorizationMetrics) RefreshModelTables(ctx context.Context, modelID string, tableNames []string) error {
-	if port, ok := m.QueryMetrics.(modelTableRefreshMetrics); ok {
+func (m Metrics) RefreshModelTables(ctx context.Context, modelID string, tableNames []string) error {
+	if port, ok := m.Metrics.(interface {
+		RefreshModelTables(context.Context, string, []string) error
+	}); ok {
 		return port.RefreshModelTables(ctx, modelID, tableNames)
 	}
 	return errors.New("model table refresh is not configured")
 }
 
-func (m dataAuthorizationMetrics) RefreshTables(ctx context.Context, modelID string, tableNames []string) error {
-	if port, ok := m.QueryMetrics.(modelTableRefreshRuntimeMetrics); ok {
+func (m Metrics) RefreshTables(ctx context.Context, modelID string, tableNames []string) error {
+	if port, ok := m.Metrics.(interface {
+		RefreshTables(context.Context, string, []string) error
+	}); ok {
 		return port.RefreshTables(ctx, modelID, tableNames)
 	}
 	return errors.New("model table refresh is not configured")
 }
 
-func (m dataAuthorizationMetrics) applyDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) (dataquery.Query, error) {
+func (m Metrics) applyDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) (dataquery.Query, error) {
 	policies, err := m.effectiveDataPolicies(ctx, request, objects)
 	if err != nil {
 		return request, err
@@ -284,7 +398,7 @@ func (m dataAuthorizationMetrics) applyDataPolicies(ctx context.Context, request
 	return request, nil
 }
 
-func (m dataAuthorizationMetrics) effectiveDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) ([]access.DataPolicy, error) {
+func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) ([]access.DataPolicy, error) {
 	seenObjects := map[string]struct{}{}
 	seenPolicies := map[string]struct{}{}
 	out := []access.DataPolicy{}
@@ -511,7 +625,23 @@ func rejectedDataQueryResult(err error) (dataquery.Result, error) {
 	return dataquery.Result{Status: dataquery.StatusError, ExecutionState: dataquery.ExecutionRejected, Error: err.Error()}, err
 }
 
-func apiCredentialFromContext(ctx context.Context) (access.APICredential, bool) {
-	credential, ok := ctx.Value(apiCredentialContextKey{}).(access.APICredential)
-	return credential, ok
+func (m Metrics) currentPrincipal(ctx context.Context) (Principal, bool) {
+	if m.principalFromContext == nil {
+		return Principal{}, false
+	}
+	return m.principalFromContext(ctx)
+}
+
+func (m Metrics) currentCredential(ctx context.Context) (access.APICredential, bool) {
+	if m.credentialFromContext == nil {
+		return access.APICredential{}, false
+	}
+	return m.credentialFromContext(ctx)
+}
+
+func (m Metrics) allowsToken(token access.APIToken, workspaceID string, privilege access.Privilege) bool {
+	if m.tokenAllows == nil {
+		return true
+	}
+	return m.tokenAllows(token, workspaceID, privilege)
 }

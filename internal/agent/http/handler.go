@@ -412,8 +412,8 @@ func agentCredentialScope(credential access.APICredential) agent.CredentialScope
 	token := credential.Token
 	return agent.CredentialScope{
 		WorkspaceID: token.WorkspaceID,
-		Permissions: privilegeStrings(token.Permissions),
-		Restricted:  token.Permissions != nil,
+		Privileges:  privilegeStrings(token.Privileges),
+		Restricted:  token.Privileges != nil,
 	}
 }
 

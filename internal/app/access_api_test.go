@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/platform"
 )
 
-func TestAPITokenWorkspaceAndPermissionAllowlistAreEnforced(t *testing.T) {
+func TestAPITokenWorkspaceAndPrivilegeAllowlistAreEnforced(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 	owner := testPrincipal(t, ctx, store, "token-owner@example.com", "Token Owner", access.RoleOwner)
@@ -20,7 +21,7 @@ func TestAPITokenWorkspaceAndPermissionAllowlistAreEnforced(t *testing.T) {
 		PrincipalID: owner.ID,
 		WorkspaceID: "test",
 		Name:        "workspace-read-only",
-		Permissions: []access.Privilege{access.PrivilegeUseWorkspace},
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace},
 	})
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
@@ -43,34 +44,37 @@ func TestAPITokenWorkspaceAndPermissionAllowlistAreEnforced(t *testing.T) {
 		t.Fatalf("foreign workspace status = %d, want %d body=%s", foreignWorkspaceRec.Code, http.StatusForbidden, foreignWorkspaceRec.Body.String())
 	}
 
-	permissionsReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/permissions?workspace=test", nil)
-	permissionsReq.Header.Set("Authorization", "Bearer "+token)
-	permissionsReq.Header.Set("Accept", "application/json")
-	permissionsRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(permissionsRec, permissionsReq)
-	if permissionsRec.Code != http.StatusOK {
-		t.Fatalf("permissions status = %d, want %d body=%s", permissionsRec.Code, http.StatusOK, permissionsRec.Body.String())
+	privilegesReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/effective-privileges?workspace=test", nil)
+	privilegesReq.Header.Set("Authorization", "Bearer "+token)
+	privilegesReq.Header.Set("Accept", "application/json")
+	privilegesRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(privilegesRec, privilegesReq)
+	if privilegesRec.Code != http.StatusOK {
+		t.Fatalf("privileges status = %d, want %d body=%s", privilegesRec.Code, http.StatusOK, privilegesRec.Body.String())
 	}
-	var permissionsBody struct {
-		Permissions []string `json:"permissions"`
+	var privilegesBody struct {
+		Privileges []string `json:"privileges"`
 	}
-	if err := json.Unmarshal(permissionsRec.Body.Bytes(), &permissionsBody); err != nil {
-		t.Fatalf("decode permissions: %v", err)
+	if err := json.Unmarshal(privilegesRec.Body.Bytes(), &privilegesBody); err != nil {
+		t.Fatalf("decode privileges: %v", err)
 	}
-	if !hasString(permissionsBody.Permissions, string(access.PrivilegeUseWorkspace)) {
-		t.Fatalf("permissions = %#v, want workspace read", permissionsBody.Permissions)
+	if !hasString(privilegesBody.Privileges, string(access.PrivilegeUseWorkspace)) {
+		t.Fatalf("privileges = %#v, want workspace read", privilegesBody.Privileges)
 	}
-	if hasString(permissionsBody.Permissions, string(access.PrivilegeViewItem)) {
-		t.Fatalf("permissions = %#v, token allowlist leaked publish read", permissionsBody.Permissions)
+	if hasString(privilegesBody.Privileges, string(access.PrivilegeViewItem)) {
+		t.Fatalf("privileges = %#v, token allowlist leaked publish read", privilegesBody.Privileges)
+	}
+	if strings.Contains(privilegesRec.Body.String(), "permissions") {
+		t.Fatalf("effective privileges response still uses permissions vocabulary: %s", privilegesRec.Body.String())
 	}
 
 	emptyAllowlistToken, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
 		PrincipalID: owner.ID,
 		WorkspaceID: "test",
 		Name:        "empty-allowlist",
-		Permissions: []access.Privilege{},
+		Privileges:  []access.Privilege{},
 	})
-	emptyAllowlistReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/permissions?workspace=test", nil)
+	emptyAllowlistReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/effective-privileges?workspace=test", nil)
 	emptyAllowlistReq.Header.Set("Authorization", "Bearer "+emptyAllowlistToken)
 	emptyAllowlistReq.Header.Set("Accept", "application/json")
 	emptyAllowlistRec := httptest.NewRecorder()
@@ -89,7 +93,7 @@ func TestCurrentAPITokenRevocationIsScopedToAuthenticatedPrincipal(t *testing.T)
 		PrincipalID: owner.ID,
 		WorkspaceID: "test",
 		Name:        "auth",
-		Permissions: []access.Privilege{access.PrivilegeManageGrants},
+		Privileges:  []access.Privilege{access.PrivilegeManageGrants},
 	})
 	_, ownerToken := testScopedAPIToken(t, ctx, store, access.APITokenInput{PrincipalID: owner.ID, Name: "owned"})
 	foreignSecret, foreignToken := testScopedAPIToken(t, ctx, store, access.APITokenInput{PrincipalID: foreign.ID, Name: "foreign"})
@@ -130,7 +134,7 @@ func TestCurrentSessionRevocationIsScopedToAuthenticatedPrincipal(t *testing.T) 
 		PrincipalID: owner.ID,
 		WorkspaceID: "test",
 		Name:        "auth",
-		Permissions: []access.Privilege{access.PrivilegeUseWorkspace},
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace},
 	})
 	ownerSessionSecret, err := repo.CreateSession(ctx, owner.ID, time.Hour)
 	if err != nil {

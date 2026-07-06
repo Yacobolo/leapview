@@ -85,10 +85,10 @@ func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {
 	}
 	decision, err := repo.Authorize(ctx, principal.ID, access.PrivilegeManageGrants, access.WorkspaceObject("other"))
 	if err != nil {
-		t.Fatalf("check dev platform permission: %v", err)
+		t.Fatalf("check dev platform privilege: %v", err)
 	}
 	if !decision.Allowed {
-		t.Fatal("local dev principal missing platform admin permission")
+		t.Fatal("local dev principal missing platform admin privilege")
 	}
 }
 

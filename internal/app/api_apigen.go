@@ -18,12 +18,12 @@ type apiGenAdapter struct {
 }
 
 func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r *http.Request) {
-	permission, ok := apigenOperationPermissions[operationID]
+	privilege, ok := apigenOperationPrivileges[operationID]
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	a.server.protect(permission, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.server.protect(privilege, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buffered := newAPIGenResponseBuffer(w)
 		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, buffered, r); !ok {
 			http.NotFound(w, r)
@@ -107,8 +107,8 @@ func (a apiGenAdapter) GetCurrentPrincipal(w http.ResponseWriter, r *http.Reques
 	a.server.accessHTTPHandler().GetCurrentPrincipal(w, r)
 }
 
-func (a apiGenAdapter) ListCurrentPermissions(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentPermissionsParams) {
-	a.server.accessHTTPHandler().ListCurrentPermissions(w, r)
+func (a apiGenAdapter) ListCurrentEffectivePrivileges(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentEffectivePrivilegesParams) {
+	a.server.accessHTTPHandler().ListCurrentEffectivePrivileges(w, r)
 }
 
 func (a apiGenAdapter) ListCurrentAPITokens(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentAPITokensParams) {

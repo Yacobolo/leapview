@@ -387,7 +387,7 @@ func roleBindingView(row access.RoleBinding) workspace.RoleBindingView {
 func roleViews(rows []access.Role) []workspace.RoleView {
 	roles := make([]workspace.RoleView, 0, len(rows))
 	for _, row := range rows {
-		roles = append(roles, workspace.RoleView{Name: row.Name, Permissions: privilegeStrings(row.Permissions)})
+		roles = append(roles, workspace.RoleView{Name: row.Name, Privileges: privilegeStrings(row.Privileges)})
 	}
 	return roles
 }

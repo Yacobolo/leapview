@@ -122,7 +122,7 @@ func TestSCIMDisableRevokesCredentialsAndBlocksAuthorization(t *testing.T) {
 		PrincipalID: userID,
 		WorkspaceID: "test",
 		Name:        "disabled-user-token",
-		Permissions: []access.Privilege{access.PrivilegeUseWorkspace},
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace},
 	})
 	if err != nil {
 		t.Fatalf("create api token: %v", err)

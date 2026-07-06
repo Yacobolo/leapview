@@ -51,7 +51,7 @@ func (h Handler) GetCurrentPrincipal(w stdhttp.ResponseWriter, r *stdhttp.Reques
 	writeJSON(w, stdhttp.StatusOK, currentPrincipalDTO(principal))
 }
 
-func (h Handler) ListCurrentPermissions(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+func (h Handler) ListCurrentEffectivePrivileges(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	principal, ok := h.currentPrincipal(r)
 	if !ok {
 		writeJSONError(w, fmt.Errorf("authenticated principal is required"), stdhttp.StatusUnauthorized)
@@ -75,7 +75,7 @@ func (h Handler) ListCurrentPermissions(w stdhttp.ResponseWriter, r *stdhttp.Req
 		}
 		allowed = append(allowed, string(privilege))
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]any{"workspaceId": workspaceID, "permissions": allowed})
+	writeJSON(w, stdhttp.StatusOK, map[string]any{"workspaceId": workspaceID, "privileges": allowed})
 }
 
 func (h Handler) ListCurrentAPITokens(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -110,7 +110,7 @@ func (h Handler) CreateCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Requ
 	var input struct {
 		Name        string   `json:"name"`
 		WorkspaceID string   `json:"workspaceId"`
-		Permissions []string `json:"permissions"`
+		Privileges  []string `json:"privileges"`
 		ExpiresAt   string   `json:"expiresAt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -135,7 +135,7 @@ func (h Handler) CreateCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Requ
 		PrincipalID: principal.ID,
 		WorkspaceID: input.WorkspaceID,
 		Name:        input.Name,
-		Permissions: privilegesFromStrings(input.Permissions),
+		Privileges:  privilegesFromStrings(input.Privileges),
 		ExpiresAt:   expiresAt,
 	})
 	if err != nil {
@@ -326,7 +326,7 @@ func (h Handler) OAuthToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		PrincipalID: principal.ID,
 		WorkspaceID: input.WorkspaceID,
 		Name:        "oauth-client-credentials",
-		Permissions: privileges,
+		Privileges:  privileges,
 		ExpiresAt:   time.Now().Add(ttl),
 	})
 	if err != nil {
@@ -611,7 +611,7 @@ func (h Handler) ListWorkspaceRoles(w stdhttp.ResponseWriter, r *stdhttp.Request
 	}
 	out := make([]api.RoleResponse, 0, len(roles))
 	for _, role := range roles {
-		out = append(out, api.RoleResponse{Name: role.Name, Permissions: privilegeStrings(role.Permissions)})
+		out = append(out, api.RoleResponse{Name: role.Name, Privileges: privilegeStrings(role.Privileges)})
 	}
 	_ = writePagedJSON(w, r, out)
 }
@@ -1179,7 +1179,7 @@ func authorizationDecisionDTO(row access.AuthorizationDecision) map[string]any {
 }
 
 func apiTokenDTO(row access.APIToken) map[string]any {
-	return map[string]any{"id": row.ID, "name": row.Name, "workspaceId": row.WorkspaceID, "permissions": row.Permissions, "expiresAt": emptyToNil(row.ExpiresAt), "revokedAt": emptyToNil(row.RevokedAt), "createdAt": row.CreatedAt, "lastUsedAt": emptyToNil(row.LastUsedAt)}
+	return map[string]any{"id": row.ID, "name": row.Name, "workspaceId": row.WorkspaceID, "privileges": row.Privileges, "expiresAt": emptyToNil(row.ExpiresAt), "revokedAt": emptyToNil(row.RevokedAt), "createdAt": row.CreatedAt, "lastUsedAt": emptyToNil(row.LastUsedAt)}
 }
 
 func servicePrincipalSecretDTO(row access.ServicePrincipalSecret, rawSecret string) map[string]any {
@@ -1313,7 +1313,7 @@ func correlationIDFromRequest(r *stdhttp.Request) string {
 	return firstNonEmpty(r.Header.Get("X-Correlation-Id"), r.Header.Get("X-Correlation-ID"), requestIDFromRequest(r))
 }
 
-func knownPermissions() []string {
+func knownPrivileges() []string {
 	return []string{
 		string(access.PrivilegeUseWorkspace),
 		string(access.PrivilegeViewItem),
@@ -1582,10 +1582,10 @@ func apiTokenAllows(token access.APIToken, workspaceID string, privilege access.
 	if token.WorkspaceID != "" && token.WorkspaceID != workspaceID {
 		return false
 	}
-	if token.Permissions == nil {
+	if token.Privileges == nil {
 		return true
 	}
-	for _, allowed := range token.Permissions {
+	for _, allowed := range token.Privileges {
 		if allowed == privilege {
 			return true
 		}

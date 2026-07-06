@@ -1032,6 +1032,7 @@ export interface SubSidebarSignal {
 export interface WorkspaceAccessCommand {
   email: string
   role: string
+  privilege: string
   principalId: string
   bindingId: string
   subjectType: string

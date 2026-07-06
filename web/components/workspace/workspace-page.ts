@@ -114,7 +114,7 @@ class LibreDashWorkspacePage extends LitElement {
 
   private renderAccessPage(page: WorkspacePageSignal) {
     return html`
-      <section class="page" aria-label="Workspace permissions">
+      <section class="page" aria-label="Workspace access">
         ${this.renderHeader('Workspace', page.title, page.description, this.renderAccessControl())}
       </section>
     `

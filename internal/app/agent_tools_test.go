@@ -1189,13 +1189,13 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	}
 }
 
-func TestAPIGenAgentToolEnforcesCredentialPermissionAllowlistAndWorkspace(t *testing.T) {
+func TestAPIGenAgentToolEnforcesCredentialPrivilegeAllowlistAndWorkspace(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	principal := testPrincipal(t, ctx, store, "agent-token@example.com", "Agent Token", access.RoleOwner)
-	agentOnlyToken := access.APIToken{WorkspaceID: "test", Permissions: []access.Privilege{access.PrivilegeUseAgent}}
-	assetToken := access.APIToken{WorkspaceID: "test", Permissions: []access.Privilege{access.PrivilegeUseAgent, access.PrivilegeViewItem}}
-	foreignToken := access.APIToken{WorkspaceID: "other", Permissions: []access.Privilege{access.PrivilegeViewItem}}
+	agentOnlyToken := access.APIToken{WorkspaceID: "test", Privileges: []access.Privilege{access.PrivilegeUseAgent}}
+	assetToken := access.APIToken{WorkspaceID: "test", Privileges: []access.Privilege{access.PrivilegeUseAgent, access.PrivilegeViewItem}}
+	foreignToken := access.APIToken{WorkspaceID: "other", Privileges: []access.Privilege{access.PrivilegeViewItem}}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, AccessRepo: testAccessRepository(store), DefaultWorkspaceID: "test"})
 
 	run := func(token access.APIToken) agentcore.ToolResult {
@@ -1204,8 +1204,8 @@ func TestAPIGenAgentToolEnforcesCredentialPermissionAllowlistAndWorkspace(t *tes
 			PrincipalID: principal.ID,
 			Credential: agentcap.CredentialScope{
 				WorkspaceID: token.WorkspaceID,
-				Permissions: testPrivilegeStrings(token.Permissions),
-				Restricted:  token.Permissions != nil,
+				Privileges:  testPrivilegeStrings(token.Privileges),
+				Restricted:  token.Privileges != nil,
 			},
 		}
 		tools := agentAPIGenToolsForTest(server, scope)

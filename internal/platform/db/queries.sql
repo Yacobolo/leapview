@@ -315,9 +315,9 @@ SELECT * FROM external_identities
 WHERE provider = ? AND tenant_id = ? AND subject = ?;
 
 -- name: UpsertRole :exec
-INSERT INTO roles (id, name, permissions_json)
+INSERT INTO roles (id, name, privileges_json)
 VALUES (?, ?, ?)
-ON CONFLICT(name) DO UPDATE SET permissions_json = excluded.permissions_json;
+ON CONFLICT(name) DO UPDATE SET privileges_json = excluded.privileges_json;
 
 -- name: GetRoleByName :one
 SELECT * FROM roles WHERE name = ?;
@@ -419,7 +419,11 @@ VALUES (?, ?, ?);
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  CASE
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL AND p.kind = 'service_principal' THEN 'service_principal'
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal'
+    ELSE 'group'
+  END AS subject_type,
   COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
@@ -447,7 +451,11 @@ WHERE workspace_id = ? AND id = ?;
 SELECT
   rb.id,
   rb.workspace_id,
-  CASE WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal' ELSE 'group' END AS subject_type,
+  CASE
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL AND p.kind = 'service_principal' THEN 'service_principal'
+    WHEN NULLIF(rb.principal_id, '') IS NOT NULL THEN 'principal'
+    ELSE 'group'
+  END AS subject_type,
   COALESCE(NULLIF(rb.principal_id, ''), rb.group_id, '') AS subject_id,
   rb.principal_id,
   rb.group_id,
@@ -515,7 +523,7 @@ SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND revoked_at IS NULL;
 
 -- name: CreateAPIToken :exec
-INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at)
+INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, privileges_json, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetAPITokenByHash :one

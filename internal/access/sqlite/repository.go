@@ -329,9 +329,9 @@ func (r *Repository) ListRoles(ctx context.Context) ([]access.Role, error) {
 	}
 	roles := make([]access.Role, 0, len(rows))
 	for _, row := range rows {
-		var permissions []access.Privilege
-		_ = json.Unmarshal([]byte(row.PermissionsJson), &permissions)
-		roles = append(roles, access.Role{Name: row.Name, Permissions: permissions})
+		var privileges []access.Privilege
+		_ = json.Unmarshal([]byte(row.PrivilegesJson), &privileges)
+		roles = append(roles, access.Role{Name: row.Name, Privileges: privileges})
 	}
 	return roles, nil
 }
@@ -1831,7 +1831,7 @@ func (r *Repository) CreateAPITokenWithMetadata(ctx context.Context, input acces
 	}
 	token := newSecret()
 	id := newID("token")
-	permissionsJSON, err := json.Marshal(input.Permissions)
+	privilegesJSON, err := json.Marshal(input.Privileges)
 	if err != nil {
 		return "", access.APIToken{}, err
 	}
@@ -1855,7 +1855,7 @@ func (r *Repository) CreateAPITokenWithMetadata(ctx context.Context, input acces
 		TokenHash:        storedSecretHash(fingerprint),
 		TokenFingerprint: sql.NullString{String: fingerprint, Valid: true},
 		TokenVerifier:    verifier,
-		PermissionsJson:  string(permissionsJSON),
+		PrivilegesJson:   string(privilegesJSON),
 		ExpiresAt:        expiresAt,
 	}); err != nil {
 		return "", access.APIToken{}, err
@@ -1869,7 +1869,7 @@ func (r *Repository) CreateAPITokenWithMetadata(ctx context.Context, input acces
 			return token, mapAPIToken(row), nil
 		}
 	}
-	return token, access.APIToken{ID: id, PrincipalID: input.PrincipalID, WorkspaceID: input.WorkspaceID, Name: input.Name, Permissions: input.Permissions, ExpiresAt: nullString(expiresAt)}, nil
+	return token, access.APIToken{ID: id, PrincipalID: input.PrincipalID, WorkspaceID: input.WorkspaceID, Name: input.Name, Privileges: input.Privileges, ExpiresAt: nullString(expiresAt)}, nil
 }
 
 func (r *Repository) PrincipalForAPIToken(ctx context.Context, token string) (access.Principal, error) {
@@ -1918,7 +1918,7 @@ func (r *Repository) DisabledPrincipalForAPIToken(ctx context.Context, token str
 func (r *Repository) apiTokenForAuditSecret(ctx context.Context, token string) (platformdb.ApiToken, error) {
 	fingerprint := secretFingerprint(token)
 	row := r.db.QueryRowContext(ctx, `
-SELECT id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, permissions_json, expires_at, created_at, last_used_at, revoked_at
+SELECT id, principal_id, workspace_id, name, token_hash, token_fingerprint, token_verifier, privileges_json, expires_at, created_at, last_used_at, revoked_at
 FROM api_tokens
 WHERE token_fingerprint = ? OR token_hash = ?
 ORDER BY created_at DESC
@@ -1932,7 +1932,7 @@ LIMIT 1`, sql.NullString{String: fingerprint, Valid: true}, legacyTokenHash(toke
 		&apiToken.TokenHash,
 		&apiToken.TokenFingerprint,
 		&apiToken.TokenVerifier,
-		&apiToken.PermissionsJson,
+		&apiToken.PrivilegesJson,
 		&apiToken.ExpiresAt,
 		&apiToken.CreatedAt,
 		&apiToken.LastUsedAt,
@@ -2301,6 +2301,15 @@ func (r *Repository) roleBindingParts(ctx context.Context, input access.RoleBind
 	switch input.SubjectType {
 	case access.SubjectPrincipal:
 		return role, sql.NullString{String: subjectID, Valid: true}, sql.NullString{}, nil
+	case access.SubjectServicePrincipal:
+		principal, err := r.q.GetPrincipal(ctx, subjectID)
+		if err != nil {
+			return platformdb.Role{}, sql.NullString{}, sql.NullString{}, err
+		}
+		if access.PrincipalKind(principal.Kind) != access.PrincipalKindServicePrincipal {
+			return platformdb.Role{}, sql.NullString{}, sql.NullString{}, fmt.Errorf("principal %q is not a service principal", subjectID)
+		}
+		return role, sql.NullString{String: subjectID, Valid: true}, sql.NullString{}, nil
 	case access.SubjectGroup:
 		return role, sql.NullString{}, sql.NullString{String: subjectID, Valid: true}, nil
 	default:
@@ -2375,14 +2384,14 @@ func mapSession(row platformdb.Session) access.Session {
 }
 
 func mapAPIToken(row platformdb.ApiToken) access.APIToken {
-	var permissions []access.Privilege
-	_ = json.Unmarshal([]byte(row.PermissionsJson), &permissions)
+	var privileges []access.Privilege
+	_ = json.Unmarshal([]byte(row.PrivilegesJson), &privileges)
 	return access.APIToken{
 		ID:          row.ID,
 		PrincipalID: row.PrincipalID,
 		WorkspaceID: nullString(row.WorkspaceID),
 		Name:        row.Name,
-		Permissions: permissions,
+		Privileges:  privileges,
 		ExpiresAt:   nullString(row.ExpiresAt),
 		CreatedAt:   row.CreatedAt,
 		LastUsedAt:  nullString(row.LastUsedAt),

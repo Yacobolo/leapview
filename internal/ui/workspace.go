@@ -573,33 +573,6 @@ func ConnectionSourceAssetPage(catalog dashboard.Catalog, workspace workspacevie
 	)
 }
 
-func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace workspaceview.WorkspaceView, bindings []workspaceview.RoleBindingView, roles []workspaceview.RoleView, csrfToken, roleLabel string) g.Node {
-	page := uisignals.WorkspacePageSignal{
-		Kind:        uisignals.RouteWorkspace,
-		Title:       workspace.Title,
-		Description: "Assign workspace roles. BI assets remain authored in Git.",
-		WorkspaceID: workspace.ID,
-	}
-	access := WorkspaceAccessResponse{
-		Workspace: workspace,
-		Roles:     roles,
-		Bindings:  bindings,
-		CanManage: true,
-	}
-	attrs := []g.Node{
-		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
-	}
-	accessAttrs, extraSignals := workspaceAccessRouteBridge(workspace.ID, access, csrfToken)
-	attrs = append(attrs, accessAttrs...)
-	return workspaceRouteDocument("Workspace permissions", catalog, "settings", roleLabel, page, uisignals.RouteWorkspace,
-		g.El("ld-workspace-page", attrs...),
-		extraSignals,
-		nil,
-	)
-}
-
 func workspaceRouteDocument(title string, catalog dashboard.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extraSignals map[string]any, chromeOptions []ChromeOption, extraHead ...g.Node) g.Node {
 	return workspaceRouteDocumentWithBodyExtras(title, catalog, active, roleLabel, page, routeKind, routeRoot, extraSignals, nil, chromeOptions, extraHead...)
 }

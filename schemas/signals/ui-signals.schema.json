@@ -3720,6 +3720,9 @@
         "principalId": {
           "type": "string"
         },
+        "privilege": {
+          "type": "string"
+        },
         "role": {
           "type": "string"
         },
@@ -3734,6 +3737,7 @@
         "bindingId",
         "email",
         "principalId",
+        "privilege",
         "role",
         "subjectId",
         "subjectType"

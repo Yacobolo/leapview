@@ -1,6 +1,6 @@
 -- +goose Up
 -- Legacy string permission tables were replaced by role_grant_templates,
--- securable_objects, and grants. Roles keep permissions_json only as product
+-- securable_objects, and grants. Roles keep privileges_json only as product
 -- bundle metadata for display and role template seeding.
 DROP TABLE IF EXISTS role_permissions;
 DROP TABLE IF EXISTS permissions;

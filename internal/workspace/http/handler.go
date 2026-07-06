@@ -469,64 +469,6 @@ func (h Handler) DeleteRoleBinding(w nethttp.ResponseWriter, r *nethttp.Request)
 	writeJSON(w, nethttp.StatusOK, map[string]string{"status": "removed"})
 }
 
-func (h Handler) Permissions(w nethttp.ResponseWriter, r *nethttp.Request) {
-	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
-	bindings, roles, err := h.roleBindingsAndRoles(r, workspaceID)
-	if err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.WorkspacePermissionsPage(h.catalogForWorkspace(workspaceID), h.workspaceResponse(r, workspaceID), bindings, roles, h.csrfToken(r), h.currentRoleLabel(r)).Render(w); err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
-	}
-}
-
-func (h Handler) PermissionUpdate(w nethttp.ResponseWriter, r *nethttp.Request) {
-	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
-	if err := r.ParseForm(); err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
-		return
-	}
-	repo, err := h.accessRepository()
-	if err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		nethttp.Error(w, errWorkspaceRBACNotConfigured.Error(), nethttp.StatusInternalServerError)
-		return
-	}
-	if _, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: r.FormValue("email"), DisplayName: r.FormValue("displayName"), Role: r.FormValue("role")}); err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
-		return
-	}
-	nethttp.Redirect(w, r, "/workspaces/"+workspaceID+"/permissions", nethttp.StatusFound)
-}
-
-func (h Handler) PermissionRemove(w nethttp.ResponseWriter, r *nethttp.Request) {
-	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
-	if err := r.ParseForm(); err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
-		return
-	}
-	repo, err := h.accessRepository()
-	if err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		nethttp.Error(w, errWorkspaceRBACNotConfigured.Error(), nethttp.StatusInternalServerError)
-		return
-	}
-	if err := repo.RemovePrincipalRoles(r.Context(), workspaceID, r.FormValue("principalId")); err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
-		return
-	}
-	nethttp.Redirect(w, r, "/workspaces/"+workspaceID+"/permissions", nethttp.StatusFound)
-}
-
 func (h Handler) AccessUpsert(w nethttp.ResponseWriter, r *nethttp.Request) {
 	signals := workspaceAccessSignalPayload{}
 	if err := datastar.ReadSignals(r, &signals); err != nil {
@@ -542,24 +484,67 @@ func (h Handler) AccessUpsert(w nethttp.ResponseWriter, r *nethttp.Request) {
 	} else if repo == nil {
 		status = ui.WorkspaceAccessStatus{Error: errWorkspaceRBACNotConfigured.Error()}
 	} else if object, ok := assetAccessObject(r, workspaceID); ok {
-		principal, err := repo.UpsertPrincipal(r.Context(), access.PrincipalInput{
-			ID:    access.PrincipalIDForEmail(command.Email),
-			Email: command.Email,
-		})
+		subjectType, subjectID, err := h.resolveAccessSubject(r, repo, command)
 		if err != nil {
 			status = ui.WorkspaceAccessStatus{Error: err.Error()}
 		} else if _, err := repo.CreateGrant(r.Context(), access.GrantInput{
 			Object:      object,
-			SubjectType: access.SubjectPrincipal,
-			SubjectID:   principal.ID,
-			Privilege:   access.Privilege(strings.TrimSpace(command.Role)),
+			SubjectType: subjectType,
+			SubjectID:   subjectID,
+			Privilege:   access.Privilege(strings.TrimSpace(firstNonEmpty(command.Privilege, command.Role))),
 		}); err != nil {
 			status = ui.WorkspaceAccessStatus{Error: err.Error()}
 		}
-	} else if _, err := repo.SetPrincipalRole(r.Context(), access.PrincipalRoleInput{WorkspaceID: workspaceID, Email: command.Email, Role: command.Role}); err != nil {
-		status = ui.WorkspaceAccessStatus{Error: err.Error()}
+	} else {
+		subjectType, subjectID, err := h.resolveAccessSubject(r, repo, command)
+		if err != nil {
+			status = ui.WorkspaceAccessStatus{Error: err.Error()}
+		} else {
+			input := access.RoleBindingInput{WorkspaceID: workspaceID, SubjectType: subjectType, SubjectID: subjectID, Role: command.Role}
+			if strings.TrimSpace(command.BindingID) != "" {
+				_, err = repo.UpdateRoleBinding(r.Context(), workspaceID, command.BindingID, input)
+			} else {
+				_, err = repo.CreateRoleBinding(r.Context(), input)
+			}
+			if err != nil {
+				status = ui.WorkspaceAccessStatus{Error: err.Error()}
+			}
+		}
 	}
 	h.patchWorkspaceAccess(w, r, workspaceID, status)
+}
+
+func (h Handler) resolveAccessSubject(r *nethttp.Request, repo access.Repository, command ui.WorkspaceAccessCommand) (access.SubjectType, string, error) {
+	subjectType := access.SubjectType(strings.TrimSpace(command.SubjectType))
+	if subjectType == "" {
+		subjectType = access.SubjectPrincipal
+	}
+	subjectID := strings.TrimSpace(command.SubjectID)
+	switch subjectType {
+	case access.SubjectPrincipal:
+		if subjectID != "" {
+			return subjectType, subjectID, nil
+		}
+		email := strings.TrimSpace(command.Email)
+		if email == "" {
+			return "", "", fmt.Errorf("email is required")
+		}
+		principal, err := repo.UpsertPrincipal(r.Context(), access.PrincipalInput{
+			ID:    access.PrincipalIDForEmail(email),
+			Email: email,
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return subjectType, principal.ID, nil
+	case access.SubjectGroup, access.SubjectServicePrincipal:
+		if subjectID == "" {
+			return "", "", fmt.Errorf("subject id is required")
+		}
+		return subjectType, subjectID, nil
+	default:
+		return "", "", fmt.Errorf("unsupported subject type %q", command.SubjectType)
+	}
 }
 
 func (h Handler) AccessRemove(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -640,11 +625,29 @@ func (h Handler) objectAccess(r *nethttp.Request, workspaceView workspace.Worksp
 			}
 		} else if grant.SubjectType == access.SubjectGroup {
 			view.GroupID = grant.SubjectID
-			view.GroupName = grant.SubjectID
+			view.GroupName = h.groupDisplayName(r, repo, grant.SubjectID)
+		} else if grant.SubjectType == access.SubjectServicePrincipal {
+			view.PrincipalID = grant.SubjectID
+			if principal, err := repo.PrincipalByID(r.Context(), grant.SubjectID); err == nil {
+				view.DisplayName = firstNonEmpty(principal.DisplayName, principal.ID)
+			}
 		}
 		response.Bindings = append(response.Bindings, view)
 	}
 	return response
+}
+
+func (h Handler) groupDisplayName(r *nethttp.Request, repo access.Repository, groupID string) string {
+	groups, err := repo.ListAllGroups(r.Context())
+	if err != nil {
+		return groupID
+	}
+	for _, group := range groups {
+		if group.ID == groupID {
+			return firstNonEmpty(group.Name, group.ID)
+		}
+	}
+	return groupID
 }
 
 func objectPrivilegeRoleViews() []workspace.RoleView {
@@ -661,7 +664,7 @@ func objectPrivilegeRoleViews() []workspace.RoleView {
 	}
 	roles := make([]workspace.RoleView, 0, len(privileges))
 	for _, privilege := range privileges {
-		roles = append(roles, workspace.RoleView{Name: string(privilege), Permissions: []string{string(privilege)}})
+		roles = append(roles, workspace.RoleView{Name: string(privilege), Privileges: []string{string(privilege)}})
 	}
 	return roles
 }
@@ -1094,7 +1097,7 @@ func assetLineageEndpointIDs(edges []workspace.AssetEdgeView, assetID string, up
 func apiRoleDTOs(rows []workspace.RoleView) []api.RoleResponse {
 	out := make([]api.RoleResponse, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, api.RoleResponse{Name: row.Name, Permissions: row.Permissions})
+		out = append(out, api.RoleResponse{Name: row.Name, Privileges: row.Privileges})
 	}
 	return out
 }

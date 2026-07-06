@@ -271,7 +271,7 @@ test('workspace access drawer normalizes Go-shaped access signals', async () => 
       const drawer = accessControl.shadowRoot.querySelector('ld-drawer') as any
       await drawer.updateComplete
       const dialog = drawer.shadowRoot.querySelector('[role="dialog"]')
-      const roleOptions = Array.from(accessControl.shadowRoot.querySelectorAll('.composer-role option')).map((option) => ({
+      const roleOptions = Array.from(accessControl.shadowRoot.querySelectorAll('.composer-grant-role option')).map((option) => ({
         value: (option as HTMLOptionElement).value,
         label: option.textContent?.trim(),
       }))
@@ -316,7 +316,7 @@ test('asset access drawer renders object grants and privilege labels', async () 
       await accessControl.updateComplete
       const drawer = accessControl.shadowRoot.querySelector('ld-drawer') as any
       await drawer.updateComplete
-      const roleOptions = Array.from(accessControl.shadowRoot.querySelectorAll('.composer-role option')).map((option) => ({
+      const roleOptions = Array.from(accessControl.shadowRoot.querySelectorAll('.composer-grant-role option')).map((option) => ({
         value: (option as HTMLOptionElement).value,
         label: option.textContent?.trim(),
       }))

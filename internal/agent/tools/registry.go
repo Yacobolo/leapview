@@ -202,7 +202,7 @@ func operationAllowed(contract apigenapi.GenOperationContract, extension Extensi
 	if contract.Method != "GET" && contract.Method != "POST" {
 		return false
 	}
-	switch operationPermission(contract) {
+	switch operationPrivilege(contract) {
 	case "USE_WORKSPACE", "VIEW_ITEM", "QUERY_DATA", "PREVIEW_DATA", "REFRESH_DATA":
 		return true
 	default:
@@ -210,9 +210,9 @@ func operationAllowed(contract apigenapi.GenOperationContract, extension Extensi
 	}
 }
 
-func operationPermission(contract apigenapi.GenOperationContract) string {
+func operationPrivilege(contract apigenapi.GenOperationContract) string {
 	raw, _ := contract.Extensions["x-authz"].(map[string]any)
-	return stringFromMap(raw, "permission")
+	return stringFromMap(raw, "privilege")
 }
 
 func hasOpenAPIOperation(paths map[string]any, contract apigenapi.GenOperationContract) bool {

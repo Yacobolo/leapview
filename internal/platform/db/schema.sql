@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS group_members (
 CREATE TABLE IF NOT EXISTS roles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
-  permissions_json TEXT NOT NULL
+  privileges_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS role_bindings (
@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   token_hash TEXT NOT NULL UNIQUE,
   token_fingerprint TEXT,
   token_verifier TEXT NOT NULL DEFAULT '',
-  permissions_json TEXT NOT NULL DEFAULT '[]',
+  privileges_json TEXT NOT NULL DEFAULT '[]',
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_used_at TEXT,

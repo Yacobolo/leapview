@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/access/httpauth"
 	oidcauth "github.com/Yacobolo/libredash/internal/access/oidc"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
@@ -263,19 +264,19 @@ func (a *Auth) Middleware(privilege access.Privilege, next http.Handler) http.Ha
 			return
 		}
 		if privilege != "" {
-			workspaceID := a.permissionWorkspaceID(r)
+			workspaceID := a.privilegeWorkspaceID(r)
 			if credential != nil && !apiTokenAllows((*credential).Token, workspaceID, privilege) {
 				writeAuthError(w, r, errForbidden, http.StatusForbidden)
 				return
 			}
-			objects := authObjectsForRequest(privilege, r, workspaceID)
+			objects := httpauth.ObjectsForRequest(privilege, r, workspaceID)
 			decision, err := a.repo.AuthorizeAny(r.Context(), principal.ID, privilege, objects)
 			if err != nil {
 				writeAuthError(w, r, err, http.StatusInternalServerError)
 				return
 			}
-			if !decision.Allowed && routeCanDeferDataAuth(privilege, r) {
-				useDecision, err := a.repo.Authorize(r.Context(), principal.ID, access.PrivilegeUseWorkspace, authObjectForWorkspace(workspaceID))
+			if !decision.Allowed && httpauth.RouteCanDeferDataAuth(privilege, r) {
+				useDecision, err := a.repo.Authorize(r.Context(), principal.ID, access.PrivilegeUseWorkspace, httpauth.ObjectForWorkspace(workspaceID))
 				if err != nil {
 					writeAuthError(w, r, err, http.StatusInternalServerError)
 					return
@@ -284,7 +285,7 @@ func (a *Auth) Middleware(privilege access.Privilege, next http.Handler) http.Ha
 					decision.Allowed = true
 				}
 			}
-			if !decision.Allowed && routeCanDeferDataAuth(privilege, r) {
+			if !decision.Allowed && httpauth.RouteCanDeferDataAuth(privilege, r) {
 				viewDecision, err := a.repo.AuthorizeAny(r.Context(), principal.ID, access.PrivilegeViewItem, objects)
 				if err != nil {
 					writeAuthError(w, r, err, http.StatusInternalServerError)
@@ -294,8 +295,8 @@ func (a *Auth) Middleware(privilege access.Privilege, next http.Handler) http.Ha
 					decision.Allowed = true
 				}
 			}
-			if !decision.Allowed && routeCanDeferGrantManagement(privilege, r) {
-				useDecision, err := a.repo.Authorize(r.Context(), principal.ID, access.PrivilegeUseWorkspace, authObjectForWorkspace(workspaceID))
+			if !decision.Allowed && httpauth.RouteCanDeferGrantManagement(privilege, r) {
+				useDecision, err := a.repo.Authorize(r.Context(), principal.ID, access.PrivilegeUseWorkspace, httpauth.ObjectForWorkspace(workspaceID))
 				if err != nil {
 					writeAuthError(w, r, err, http.StatusInternalServerError)
 					return
@@ -315,13 +316,6 @@ func (a *Auth) Middleware(privilege access.Privilege, next http.Handler) http.Ha
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-func authObjectForWorkspace(workspaceID string) access.ObjectRef {
-	if strings.TrimSpace(workspaceID) == "" {
-		return access.PlatformObject()
-	}
-	return access.WorkspaceObject(workspaceID)
 }
 
 func writeAuthError(w http.ResponseWriter, r *http.Request, err error, status int) {
@@ -354,7 +348,7 @@ func recordAccessAudit(r *http.Request, repo access.Repository, action, principa
 	})
 }
 
-func (a *Auth) permissionWorkspaceID(r *http.Request) string {
+func (a *Auth) privilegeWorkspaceID(r *http.Request) string {
 	if workspaceID := strings.TrimSpace(chi.URLParam(r, "workspace")); workspaceID != "" {
 		return workspaceID
 	}
@@ -433,10 +427,10 @@ func apiTokenAllows(token access.APIToken, workspaceID string, privilege access.
 	if token.WorkspaceID != "" && token.WorkspaceID != workspaceID {
 		return false
 	}
-	if token.Permissions == nil {
+	if token.Privileges == nil {
 		return true
 	}
-	for _, allowed := range token.Permissions {
+	for _, allowed := range token.Privileges {
 		if allowed == privilege {
 			return true
 		}

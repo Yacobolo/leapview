@@ -44,7 +44,7 @@ const (
 var defaultRoles = []Role{
 	{
 		Name: RoleOwner,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeEditItem,
@@ -63,7 +63,7 @@ var defaultRoles = []Role{
 	},
 	{
 		Name: RoleAdmin,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeEditItem,
@@ -82,7 +82,7 @@ var defaultRoles = []Role{
 	},
 	{
 		Name: RoleDeployer,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeQueryData,
@@ -93,7 +93,7 @@ var defaultRoles = []Role{
 	},
 	{
 		Name: RoleContributor,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeEditItem,
@@ -106,7 +106,7 @@ var defaultRoles = []Role{
 	},
 	{
 		Name: RoleEditor,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeEditItem,
@@ -118,7 +118,7 @@ var defaultRoles = []Role{
 	},
 	{
 		Name: RoleMember,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeEditItem,
@@ -132,7 +132,7 @@ var defaultRoles = []Role{
 	},
 	{
 		Name: RoleViewer,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeQueryData,
@@ -142,7 +142,7 @@ var defaultRoles = []Role{
 	},
 	{
 		Name: RolePlatformAdmin,
-		Permissions: []Privilege{
+		Privileges: []Privilege{
 			PrivilegeManagePlatform,
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
@@ -173,8 +173,8 @@ type Principal struct {
 }
 
 type Role struct {
-	Name        string
-	Permissions []Privilege
+	Name       string
+	Privileges []Privilege
 }
 
 type PrincipalKind string
@@ -466,7 +466,7 @@ type APITokenInput struct {
 	PrincipalID string
 	WorkspaceID string
 	Name        string
-	Permissions []Privilege
+	Privileges  []Privilege
 	ExpiresAt   time.Time
 }
 
@@ -475,7 +475,7 @@ type APIToken struct {
 	PrincipalID string
 	WorkspaceID string
 	Name        string
-	Permissions []Privilege
+	Privileges  []Privilege
 	ExpiresAt   string
 	CreatedAt   string
 	LastUsedAt  string
@@ -619,8 +619,8 @@ func DefaultRoles() []Role {
 	roles := make([]Role, len(defaultRoles))
 	for i, role := range defaultRoles {
 		roles[i] = Role{
-			Name:        role.Name,
-			Permissions: append([]Privilege(nil), role.Permissions...),
+			Name:       role.Name,
+			Privileges: append([]Privilege(nil), role.Privileges...),
 		}
 	}
 	return roles

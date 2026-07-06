@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE TABLE IF NOT EXISTS roles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
-  permissions_json TEXT NOT NULL
+  privileges_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS role_bindings (

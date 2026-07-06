@@ -8,6 +8,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	agentcap "github.com/Yacobolo/libredash/internal/agent"
+	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 )
 
@@ -35,11 +36,13 @@ func TestDataAuthorizationPassesSelectedColumnMaskToExecution(t *testing.T) {
 		t.Fatalf("upsert policy: %v", err)
 	}
 	capture := &columnMaskCaptureMetrics{}
-	metrics := dataAuthorizationMetrics{
-		QueryMetrics: capture,
-		repo:         repo,
-	}
-	ctx = context.WithValue(ctx, principalContextKey{}, Principal{ID: principal.ID})
+	metrics := queryauthz.New(capture, queryauthz.Options{
+		Repo: repo,
+		PrincipalFromContext: func(context.Context) (queryauthz.Principal, bool) {
+			return queryauthz.Principal{ID: principal.ID}, true
+		},
+		TokenAllows: apiTokenAllows,
+	})
 	_, err = metrics.ExecuteDataQuery(ctx, dataquery.Query{
 		WorkspaceID:   "test",
 		ModelID:       "sales",
@@ -83,9 +86,9 @@ func TestAgentToolAuthorizationRecordsAuditEvent(t *testing.T) {
 	}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
 	ctx = dataquery.WithMetadata(ctx, dataquery.Metadata{RequestID: "tool_call_1", CorrelationID: "agent_corr"})
-	_, ok := server.authorizeAgentPermission(ctx, agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, access.PrivilegeQueryData, []access.ObjectRef{access.WorkspaceObject("test")}, "agent_tool", "create_visual")
+	_, ok := server.authorizeAgentPrivilege(ctx, agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, access.PrivilegeQueryData, []access.ObjectRef{access.WorkspaceObject("test")}, "agent_tool", "create_visual")
 	if !ok {
-		t.Fatal("authorizeAgentPermission ok = false, want true")
+		t.Fatal("authorizeAgentPrivilege ok = false, want true")
 	}
 	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{WorkspaceID: "test", Action: "agent_tool.called"})
 	if err != nil {

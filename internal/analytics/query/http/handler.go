@@ -9,10 +9,10 @@ import (
 	"io"
 	nethttp "net/http"
 	"sort"
-	"strings"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
+	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -626,11 +626,7 @@ func statusForDataExecutionError(err error) int {
 	if err == nil {
 		return nethttp.StatusOK
 	}
-	message := err.Error()
-	if strings.Contains(message, "lacks QUERY_DATA") ||
-		strings.Contains(message, "lacks PREVIEW_DATA") ||
-		strings.Contains(message, "credential lacks QUERY_DATA") ||
-		strings.Contains(message, "credential lacks PREVIEW_DATA") {
+	if queryauthz.IsDenied(err) {
 		return nethttp.StatusForbidden
 	}
 	return nethttp.StatusBadRequest

@@ -340,7 +340,7 @@ func TestAuthSpecAPITokenAllowlistReducesEffectiveDataPrivileges(t *testing.T) {
 		PrincipalID: principal.ID,
 		WorkspaceID: "sales",
 		Name:        "query-only",
-		Permissions: []access.Privilege{access.PrivilegeQueryData},
+		Privileges:  []access.Privilege{access.PrivilegeQueryData},
 	})
 
 	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/query", token, `{"measures":[{"field":"revenue"}],"limit":1}`)
@@ -383,7 +383,7 @@ func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
 	ctx := context.Background()
 
 	admin := authSpecPlatformAdmin(t, ctx, repo, "platform-admin@example.com")
-	adminToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, Name: "platform-admin", Permissions: []access.Privilege{access.PrivilegeManagePlatform, access.PrivilegeManageGrants}})
+	adminToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, Name: "platform-admin", Privileges: []access.Privilege{access.PrivilegeManagePlatform, access.PrivilegeManageGrants}})
 
 	status, body := h.authSpecDo(t, http.MethodPost, "/api/v1/service-principals", adminToken, `{"id":"sp_ci","displayName":"CI"}`)
 	if status != http.StatusCreated {

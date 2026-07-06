@@ -1481,7 +1481,7 @@ func graphAssetByTypeAndKey(t *testing.T, graph workspace.AssetGraph, typ worksp
 	return workspace.Asset{}
 }
 
-func TestWorkspacePermissionsRejectViewer(t *testing.T) {
+func TestWorkspacePermissionsRouteIsRemoved(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 	principal := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", "viewer")
@@ -1494,8 +1494,8 @@ func TestWorkspacePermissionsRejectViewer(t *testing.T) {
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
 
@@ -1704,6 +1704,15 @@ func TestWorkspaceAssetAccessCommandCreatesAndRemovesGrant(t *testing.T) {
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+	repo := testAccessRepository(store)
+	group, err := repo.UpsertSCIMGroup(ctx, access.SCIMGroupInput{ID: "group_scim_sales", ExternalID: "sales", Name: "Sales Analysts"})
+	if err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	servicePrincipal, err := repo.CreateServicePrincipal(ctx, access.ServicePrincipalInput{ID: "sp_ci", DisplayName: "CI Publisher"})
+	if err != nil {
+		t.Fatalf("seed service principal: %v", err)
+	}
 
 	signals := `{"workspaceAccess":{"command":{"email":"analyst@example.com","role":"VIEW_ITEM"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/assets/semantic_model:test.sales/access/upsert", bytes.NewBufferString(signals))
@@ -1720,19 +1729,56 @@ func TestWorkspaceAssetAccessCommandCreatesAndRemovesGrant(t *testing.T) {
 		}
 	}
 
-	repo := testAccessRepository(store)
+	groupSignals := `{"workspaceAccess":{"command":{"subjectType":"group","subjectId":"` + group.ID + `","privilege":"QUERY_DATA"}}}`
+	groupReq := httptest.NewRequest(http.MethodPost, "/workspaces/test/assets/semantic_model:test.sales/access/upsert", bytes.NewBufferString(groupSignals))
+	groupReq.Header.Set("Authorization", "Bearer "+token)
+	groupRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(groupRec, groupReq)
+	if groupRec.Code != http.StatusOK {
+		t.Fatalf("group asset access upsert status = %d body=%s", groupRec.Code, groupRec.Body.String())
+	}
+	if !strings.Contains(groupRec.Body.String(), "Sales Analysts") {
+		t.Fatalf("group access patch did not render group name:\n%s", groupRec.Body.String())
+	}
+
+	servicePrincipalSignals := `{"workspaceAccess":{"command":{"subjectType":"service_principal","subjectId":"` + servicePrincipal.ID + `","privilege":"DEPLOY"}}}`
+	servicePrincipalReq := httptest.NewRequest(http.MethodPost, "/workspaces/test/assets/semantic_model:test.sales/access/upsert", bytes.NewBufferString(servicePrincipalSignals))
+	servicePrincipalReq.Header.Set("Authorization", "Bearer "+token)
+	servicePrincipalRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(servicePrincipalRec, servicePrincipalReq)
+	if servicePrincipalRec.Code != http.StatusOK {
+		t.Fatalf("service principal asset access upsert status = %d body=%s", servicePrincipalRec.Code, servicePrincipalRec.Body.String())
+	}
+	if !strings.Contains(servicePrincipalRec.Body.String(), "CI Publisher") {
+		t.Fatalf("service principal access patch did not render display name:\n%s", servicePrincipalRec.Body.String())
+	}
+
 	grants, err := repo.ListGrants(ctx, access.ItemObject(access.SecurableSemanticModel, "test", "test.sales"))
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}
 	var grantID string
+	foundGroupGrant := false
+	foundServicePrincipalGrant := false
 	for _, grant := range grants {
 		if grant.SubjectID == access.PrincipalIDForEmail("analyst@example.com") && grant.Privilege == access.PrivilegeViewItem {
 			grantID = grant.ID
 		}
+		if grant.SubjectType == access.SubjectGroup && grant.SubjectID == group.ID && grant.Privilege == access.PrivilegeQueryData {
+			foundGroupGrant = true
+		}
+		if grant.SubjectType == access.SubjectServicePrincipal && grant.SubjectID == servicePrincipal.ID && grant.Privilege == access.PrivilegeDeploy {
+			foundServicePrincipalGrant = true
+		}
 	}
 	if grantID == "" {
 		t.Fatalf("asset grant missing after command: %#v", grants)
+	}
+	if !foundGroupGrant {
+		t.Fatalf("group asset grant missing after command: %#v", grants)
+	}
+	if !foundServicePrincipalGrant {
+		t.Fatalf("service principal asset grant missing after command: %#v", grants)
 	}
 
 	removeSignals := `{"workspaceAccess":{"command":{"bindingId":"` + grantID + `"}}}`

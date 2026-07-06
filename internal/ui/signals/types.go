@@ -1007,6 +1007,7 @@ type WorkspaceAccessStatus struct {
 type WorkspaceAccessCommand struct {
 	Email       string `json:"email"`
 	Role        string `json:"role"`
+	Privilege   string `json:"privilege"`
 	PrincipalID string `json:"principalId"`
 	BindingID   string `json:"bindingId"`
 	SubjectType string `json:"subjectType"`

@@ -89,6 +89,13 @@ func TestAppIsCompositionOnly(t *testing.T) {
 			"func (s *Server) upload",
 			"func (s *Server) validate",
 			"func (s *Server) activate",
+			"type dataAuthorizationMetrics",
+			"func routeObjectRefs(",
+			"func authObjectsForRequest(",
+			"func dataQueryObjects(",
+			"func dataQueryPrivilege(",
+			"func rowFiltersFromPolicy(",
+			"func columnMaskFromPolicy(",
 		} {
 			if strings.Contains(file.body, forbidden) {
 				t.Fatalf("%s contains product behavior marker %q", file.path, forbidden)
@@ -468,6 +475,7 @@ func isAdapterOrCompositionPackage(pkgDir string) bool {
 		pkgDir == "internal/storage" ||
 		strings.HasPrefix(pkgDir, "internal/storage/") ||
 		pkgDir == "internal/access/oidc" ||
+		pkgDir == "internal/access/httpauth" ||
 		pkgDir == "internal/access/scimprov" ||
 		pkgDir == "internal/admin/storage" ||
 		pkgDir == "internal/agent/tools" ||

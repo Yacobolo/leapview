@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	oidcauth "github.com/Yacobolo/libredash/internal/access/oidc"
+	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/config"
 )
 
@@ -67,7 +67,7 @@ func TestDeploymentAPIRateLimitPreservesAuth(t *testing.T) {
 	}
 }
 
-func TestDevBypassStillUsesRBACPermissions(t *testing.T) {
+func TestDevBypassStillUsesGrantPrivileges(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	repo := accesssqlite.NewRepository(store.SQLDB())

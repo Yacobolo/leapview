@@ -35,7 +35,7 @@ allowlists.
 - Make authorization explicit, inspectable, and testable.
 - Treat workspace boundaries as security boundaries.
 - Use grants on securable objects as the source of truth.
-- Treat roles as convenience bundles over grants, not the primitive permission
+- Treat roles as convenience bundles over grants, not the primitive authorization
   model.
 - Support users, groups, and service principals uniformly.
 - Keep authentication separate from authorization.
@@ -55,14 +55,14 @@ Principals are actors that can receive grants.
 
 - `user`: a human authenticated by an identity provider.
 - `group`: an identity-provider or LibreDash-managed group.
-- `service_principal`: an automation identity for API and deployment workflows.
+- `service_principal`: an automation identity for API and publish workflows.
 
 External identities map to stable LibreDash principal IDs. Email is display
 metadata, not identity.
 
 Groups should be synchronized from the identity provider when available. Local
-groups are allowed for file-backed/demo deployments but should use the same
-grant model.
+groups are allowed for file-backed/demo projects but should use the same grant
+model.
 
 ## Authentication
 
@@ -73,7 +73,7 @@ LibreDash should support:
 - Short-lived sessions for browser users.
 - Scoped API tokens only as a compatibility/bootstrap mechanism.
 
-Authentication returns a principal. It must not directly grant permissions.
+Authentication returns a principal. It must not directly grant privileges.
 
 ## Securable Objects
 
@@ -118,8 +118,9 @@ Core privileges:
 - `QUERY_DATA`: execute semantic/data queries.
 - `PREVIEW_DATA`: inspect row-level/raw data previews.
 - `REFRESH_DATA`: run materialization or cache refresh jobs.
-- `DEPLOY`: create deployments.
-- `ACTIVATE_DEPLOYMENT`: activate or roll back deployments.
+- `DEPLOY`: create publishes, upload artifacts, and validate serving-state
+  candidates.
+- `ACTIVATE_DEPLOYMENT`: activate publishes or roll back active serving state.
 - `USE_AGENT`: run agent turns.
 - `VIEW_AGENT`: read agent conversations and runs.
 - `MANAGE_GRANTS`: grant and revoke privileges.
@@ -160,7 +161,7 @@ Default mapping:
 Roles must compile into grants. Runtime authorization should check privileges,
 not role names.
 
-## Item Permissions
+## Item Access
 
 Workspace access and item access are separate.
 
@@ -199,7 +200,7 @@ They can:
 
 - Receive grants directly.
 - Be members of groups.
-- Own deployments, jobs, and API tokens.
+- Own publishes, jobs, and API tokens.
 - Use OAuth client credentials for automation.
 
 Service principals should not bypass RBAC. Their access is evaluated exactly
@@ -215,12 +216,12 @@ Tokens must be:
 - Revocable.
 - Expiring by default.
 - Workspace-scoped when possible.
-- Permission-scoped as a maximum allowlist.
+- Privilege-scoped as a maximum allowlist.
 
 Effective token access is:
 
 ```text
-principal grants ∩ token scope ∩ token permission allowlist
+principal grants ∩ token scope ∩ token privilege allowlist
 ```
 
 ## Enforcement Rules
@@ -248,7 +249,7 @@ LibreDash should audit:
 - Session and token creation/revocation.
 - Grant and role changes.
 - Group membership changes.
-- Deployment create/activate/rollback.
+- Publish create/activate/rollback.
 - Data queries and previews.
 - Agent tool calls that read or mutate workspace state.
 
@@ -286,7 +287,7 @@ explicit grants.
 4. Update middleware to check privileges through the grant engine.
 5. Add workspace/object filters to agent repositories.
 6. Split `asset:read` into `VIEW_ITEM`, `QUERY_DATA`, and `PREVIEW_DATA`.
-7. Add `show grants` and effective-permissions APIs.
+7. Add `show grants` and effective-privileges APIs.
 8. Add data-level policies for row filters and column masks.
 9. Move API automation toward service-principal OAuth.
 
