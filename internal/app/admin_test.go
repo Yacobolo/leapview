@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/ui"
@@ -68,7 +69,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 	}
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentapp.NewService(fakeMetrics{}, testAgentRepository(store), agentapp.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
 	cases := []struct {
 		path string
@@ -97,7 +98,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 				t.Fatalf("%s missing %q:\n%s", tc.path, want, body)
 			}
 		}
-		for _, notWant := range []string{"/admin/access", "Assign role", "Remove access", "Refresh", "<form", "data-on:ld-workspace-access-upsert", "refresh-materializations"} {
+		for _, notWant := range []string{"/admin/access", "Assign role", "Remove access", "<form", "data-on:ld-workspace-access-upsert", "refresh-materializations"} {
 			if strings.Contains(body, notWant) {
 				t.Fatalf("%s rendered write control %q:\n%s", tc.path, notWant, body)
 			}
@@ -130,7 +131,7 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	if err != nil || len(first) != 2 {
 		t.Fatalf("first page = %d, err=%v", len(first), err)
 	}
-	nextCursor := encodeCursor(first[1].CreatedAt, first[1].ID)
+	nextCursor := encodeAdminQueryCursor(first[1].CreatedAt, first[1].ID)
 	expectedNext, err := repo.ListQueryEvents(ctx, queryaudit.Filter{PageToken: nextCursor, Limit: 2})
 	if err != nil || len(expectedNext) != 1 {
 		t.Fatalf("next page = %d, err=%v", len(expectedNext), err)
@@ -164,6 +165,13 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for query history patch")
 	}
+}
+
+func encodeAdminQueryCursor(createdAt, id string) string {
+	if strings.TrimSpace(createdAt) == "" || strings.TrimSpace(id) == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(createdAt + "\x00" + id))
 }
 
 func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
@@ -598,7 +606,7 @@ func TestAdminStorageReadsDuckLakeMetadata(t *testing.T) {
 	}
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test", DuckDBDir: legacyDir, DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath})
 
-	data := server.adminStorageData(httptest.NewRequest(http.MethodGet, "/admin/storage", nil))
+	data := server.storageReadModel().Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
 	if data.Status != "" {
 		t.Fatalf("status = %q", data.Status)
 	}
@@ -655,9 +663,9 @@ func TestAdminStorageIncludesDeploymentSnapshotContext(t *testing.T) {
 	snapshotID := latestAdminStorageDuckLakeSnapshot(t, catalogPath)
 	if _, err := store.SQLDB().ExecContext(ctx, `
 INSERT INTO workspaces (id, title) VALUES ('test', 'Test') ON CONFLICT(id) DO NOTHING;
-INSERT INTO deployments (id, workspace_id, environment, status, digest, ducklake_snapshot_id, created_by, activated_at)
+INSERT INTO serving_states (id, workspace_id, environment, status, digest, ducklake_snapshot_id, created_by, activated_at)
 VALUES ('dep_test', 'test', 'dev', 'active', 'digest_test', ?, 'tester', CURRENT_TIMESTAMP);
-INSERT INTO workspace_active_deployments (workspace_id, environment, deployment_id)
+INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id)
 VALUES ('test', 'dev', 'dep_test')`, snapshotID); err != nil {
 		t.Fatal(err)
 	}
@@ -669,13 +677,13 @@ VALUES ('test', 'dev', 'dep_test')`, snapshotID); err != nil {
 		DuckLakeDataPath:    dataPath,
 	})
 
-	data := server.adminStorageData(httptest.NewRequest(http.MethodGet, "/admin/storage", nil))
-	if len(data.Deployments) != 1 {
-		t.Fatalf("deployments = %#v, want active deployment context", data.Deployments)
+	data := server.storageReadModel().Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
+	if len(data.ServingStates) != 1 {
+		t.Fatalf("serving_states = %#v, want active serving state context", data.ServingStates)
 	}
-	deployment := data.Deployments[0]
-	if deployment.WorkspaceID != "test" || deployment.Environment != "dev" || deployment.DeploymentID != "dep_test" || deployment.SnapshotID != snapshotID || !deployment.Active {
-		t.Fatalf("deployment = %#v, want active snapshot deployment", deployment)
+	state := data.ServingStates[0]
+	if state.WorkspaceID != "test" || state.Environment != "dev" || state.ServingStateID != "dep_test" || state.SnapshotID != snapshotID || !state.Active {
+		t.Fatalf("serving state = %#v, want active snapshot serving state", state)
 	}
 	if len(data.Snapshots) == 0 || data.Snapshots[len(data.Snapshots)-1].ID != snapshotID {
 		t.Fatalf("snapshots = %#v, want latest snapshot metadata", data.Snapshots)

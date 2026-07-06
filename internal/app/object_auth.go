@@ -167,7 +167,7 @@ func (s *Server) authorizeCurrentDataQuery(w http.ResponseWriter, r *http.Reques
 	workspaceID := s.workspaceID(chi.URLParam(r, "workspace"))
 	query.WorkspaceID = workspaceID
 	query.PrincipalID = principal.ID
-	if credential, ok := currentAPICredential(s, r); ok && !apiTokenAllows(credential.Token, workspaceID, privilege) {
+	if credential, ok := currentAPICredentialForRequest(s, r); ok && !apiTokenAllows(credential.Token, workspaceID, privilege) {
 		writeJSONError(w, errForbidden, http.StatusForbidden)
 		return false
 	}
@@ -198,7 +198,7 @@ func (s *Server) authorizeCurrentAny(w http.ResponseWriter, r *http.Request, pri
 		writeJSONError(w, fmt.Errorf("authenticated principal is required"), http.StatusUnauthorized)
 		return false
 	}
-	if credential, ok := currentAPICredential(s, r); ok && !apiTokenAllows(credential.Token, firstObjectWorkspace(objects), privilege) {
+	if credential, ok := currentAPICredentialForRequest(s, r); ok && !apiTokenAllows(credential.Token, firstObjectWorkspace(objects), privilege) {
 		writeJSONError(w, errForbidden, http.StatusForbidden)
 		return false
 	}
@@ -220,6 +220,13 @@ func (s *Server) authorizeCurrentAny(w http.ResponseWriter, r *http.Request, pri
 		return false
 	}
 	return true
+}
+
+func currentAPICredentialForRequest(s *Server, r *http.Request) (access.APICredential, bool) {
+	if s == nil || s.auth == nil {
+		return access.APICredential{}, false
+	}
+	return s.auth.APICredential(r)
 }
 
 func firstObjectWorkspace(objects []access.ObjectRef) string {

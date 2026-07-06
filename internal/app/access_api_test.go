@@ -25,13 +25,13 @@ func TestAPITokenWorkspaceAndPermissionAllowlistAreEnforced(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	deploymentsReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/deployments", nil)
-	deploymentsReq.Header.Set("Authorization", "Bearer "+token)
-	deploymentsReq.Header.Set("Accept", "application/json")
-	deploymentsRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(deploymentsRec, deploymentsReq)
-	if deploymentsRec.Code != http.StatusForbidden {
-		t.Fatalf("deployment list status = %d, want %d body=%s", deploymentsRec.Code, http.StatusForbidden, deploymentsRec.Body.String())
+	publishesReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/publishes", nil)
+	publishesReq.Header.Set("Authorization", "Bearer "+token)
+	publishesReq.Header.Set("Accept", "application/json")
+	publishesRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(publishesRec, publishesReq)
+	if publishesRec.Code != http.StatusForbidden {
+		t.Fatalf("publish list status = %d, want %d body=%s", publishesRec.Code, http.StatusForbidden, publishesRec.Body.String())
 	}
 
 	foreignWorkspaceReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/other/assets", nil)
@@ -61,7 +61,7 @@ func TestAPITokenWorkspaceAndPermissionAllowlistAreEnforced(t *testing.T) {
 		t.Fatalf("permissions = %#v, want workspace read", permissionsBody.Permissions)
 	}
 	if hasString(permissionsBody.Permissions, string(access.PrivilegeViewItem)) {
-		t.Fatalf("permissions = %#v, token allowlist leaked deployment read", permissionsBody.Permissions)
+		t.Fatalf("permissions = %#v, token allowlist leaked publish read", permissionsBody.Permissions)
 	}
 
 	emptyAllowlistToken, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{

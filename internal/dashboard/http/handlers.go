@@ -34,6 +34,7 @@ type Handler struct {
 	MetricsForWorkspace func(workspaceID string) (Metrics, bool)
 	Broker              *stream.Broker
 	TickerInterval      time.Duration
+	CurrentPrincipalID  func(r *nethttp.Request) string
 	CSRFToken           func(r *nethttp.Request) string
 	ChromeDecorators    func(r *nethttp.Request) []reportui.ChromeDecorator
 }

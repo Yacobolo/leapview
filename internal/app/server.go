@@ -11,7 +11,8 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	"github.com/Yacobolo/libredash/internal/agent"
+	agentopenai "github.com/Yacobolo/libredash/internal/agent/openai"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -19,13 +20,14 @@ import (
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/dataquery"
-	"github.com/Yacobolo/libredash/internal/deployment"
 	"github.com/Yacobolo/libredash/internal/execution"
 	"github.com/Yacobolo/libredash/internal/platform"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
+	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
+	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/gorilla/csrf"
 )
 
@@ -89,11 +91,11 @@ type Server struct {
 	executor            *execution.Service
 	broker              *dashboardstream.Broker
 	store               *platform.Store
-	deploymentRepo      deploymentRepository
+	servingStateRepo    servingStateRepository
 	workspaceRepo       workspace.Repository
 	assetCatalog        workspace.AssetCatalogReader
 	accessRepo          access.Repository
-	agent               *agentapp.Service
+	agent               *agent.Service
 	auth                *Auth
 	reloader            runtimeReloader
 	artifactDir         string
@@ -120,11 +122,11 @@ func New(metrics QueryMetrics) *Server {
 
 type Options struct {
 	Store               *platform.Store
-	DeploymentRepo      deploymentRepository
+	ServingStateRepo    servingStateRepository
 	WorkspaceRepo       workspace.Repository
 	AssetCatalog        workspace.AssetCatalogReader
 	AccessRepo          access.Repository
-	Agent               *agentapp.Service
+	Agent               *agent.Service
 	Auth                *Auth
 	Reloader            runtimeReloader
 	ArtifactDir         string
@@ -167,7 +169,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server := New(metrics)
 	server.executor = executor
 	server.store = options.Store
-	server.deploymentRepo = options.DeploymentRepo
+	server.servingStateRepo = options.ServingStateRepo
 	server.workspaceRepo = options.WorkspaceRepo
 	server.assetCatalog = options.AssetCatalog
 	server.accessRepo = options.AccessRepo
@@ -179,7 +181,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.duckLakeCatalogPath = options.DuckLakeCatalogPath
 	server.duckLakeDataPath = options.DuckLakeDataPath
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
-	server.defaultEnvironment = string(deployment.NormalizeEnvironment(deployment.Environment(options.DefaultEnvironment)))
+	server.defaultEnvironment = string(servingstate.NormalizeEnvironment(servingstate.Environment(options.DefaultEnvironment)))
 	server.scimBearerToken = options.SCIMBearerToken
 	server.rateLimits = options.RateLimits
 	server.securityHeaders = options.SecurityHeaders
@@ -191,12 +193,17 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	if options.Logger != nil {
 		server.logger = options.Logger
 	}
+	if server.agent != nil {
+		server.agent.ConfigureDefaultModel(func(config agent.Config) agentcore.Model {
+			return agentopenai.NewModel(config, nil)
+		})
+	}
 	server.configureAgentTools()
 	return server
 }
 
 func (s *Server) StartBackgroundJobs(ctx context.Context) {
-	s.dispatchQueuedMaterializationJobs(ctx)
+	s.dispatchQueuedRefreshJobs(ctx)
 }
 
 func executionConfigFromEnv() execution.Config {
@@ -286,7 +293,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.CatalogPageForCatalogs(s.catalogsForVisibleWorkspaces(r), s.chatChromeOption(r)).Render(w); err != nil {
+	if err := ui.CatalogPageForCatalogs(s.workspaceHTTPReadModel().CatalogsForVisibleWorkspaces(r), s.chatChromeOption(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -325,6 +332,13 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			return selected, true
 		},
 		Broker: s.broker,
+		CurrentPrincipalID: func(r *http.Request) string {
+			principal, ok := principalFromContext(r.Context())
+			if !ok {
+				return ""
+			}
+			return principal.ID
+		},
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
 				return ""
@@ -375,15 +389,18 @@ func (s *Server) refreshMaterializationsWithRunForWorkspace(ctx context.Context,
 	if s.store == nil {
 		return s.metrics.RefreshMaterializations(ctx, modelID)
 	}
-	repo := materialize.NewSQLRunRepository(s.store.SQLDB())
+	repo, err := s.refreshRunRepository()
+	if err != nil {
+		return err
+	}
 	principal, _ := principalFromContext(ctx)
-	orchestrator := NewRefreshOrchestrator(repo, s.metrics)
-	return orchestrator.RefreshSemanticModel(ctx, refreshRunInput{
+	orchestrator := materialize.NewRefreshOrchestrator(repo, appRefreshRunner{metrics: s.metrics}, refreshModelLookup(s.metrics))
+	return orchestrator.RefreshSemanticModel(ctx, materialize.RefreshRunInput{
 		WorkspaceID: workspaceID,
 		ModelID:     modelID,
 		PrincipalID: principal.ID,
-	}, refreshPublisher{
-		Root:   func() { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
-		Target: func(string) { s.publishModelRefreshPatches(ctx, workspaceID, modelID) },
+	}, materialize.RefreshPublisher{
+		Root:   func() { s.workspaceRefreshSupport().PublishModelRefreshPatches(ctx, workspaceID, modelID) },
+		Target: func(string) { s.workspaceRefreshSupport().PublishModelRefreshPatches(ctx, workspaceID, modelID) },
 	})
 }

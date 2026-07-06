@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/agentconfig"
+	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
 	"github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"

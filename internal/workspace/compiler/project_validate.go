@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/analytics/connectors"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
@@ -21,7 +22,7 @@ func validateProject(project Project) error {
 			return resourceError(project.SourcePaths[sourceName], "source:"+sourceName, "spec.connection", "Source %q references unknown Connection %q", sourceName, source.Connection)
 		}
 		if source.Path != "" && source.Format == "" {
-			format, ok := semanticmodel.InferFormat(source.Path)
+			format, ok := connectors.InferFormat(source.Path)
 			if !ok {
 				return resourceError(project.SourcePaths[sourceName], "source:"+sourceName, "spec.format", "Source %q path %q requires format", sourceName, source.Path)
 			}

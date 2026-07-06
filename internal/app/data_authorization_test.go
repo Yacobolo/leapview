@@ -7,7 +7,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
-	"github.com/Yacobolo/libredash/internal/agentapp"
+	agentcap "github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 )
 
@@ -83,7 +83,7 @@ func TestAgentToolAuthorizationRecordsAuditEvent(t *testing.T) {
 	}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
 	ctx = dataquery.WithMetadata(ctx, dataquery.Metadata{RequestID: "tool_call_1", CorrelationID: "agent_corr"})
-	_, ok := server.authorizeAgentPermission(ctx, agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, access.PrivilegeQueryData, []access.ObjectRef{access.WorkspaceObject("test")}, "agent_tool", "create_visual")
+	_, ok := server.authorizeAgentPermission(ctx, agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, access.PrivilegeQueryData, []access.ObjectRef{access.WorkspaceObject("test")}, "agent_tool", "create_visual")
 	if !ok {
 		t.Fatal("authorizeAgentPermission ok = false, want true")
 	}

@@ -10,20 +10,36 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/agentapp"
-	"github.com/Yacobolo/libredash/internal/agenttools"
+	agentcap "github.com/Yacobolo/libredash/internal/agent"
+	agenttools "github.com/Yacobolo/libredash/internal/agent/tools"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	"github.com/Yacobolo/libredash/internal/workspace"
-	"github.com/Yacobolo/libredash/pkg/agent"
+	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 )
+
+func agentAPIGenToolsForTest(server *Server, scope agentcap.Scope) []agentcore.ToolDefinition {
+	return server.agentAPIGenToolProvider().Definitions(agentToolsScope(scope))
+}
+
+func agentVisualToolsForTest(server *Server, scope agentcap.Scope) []agentcore.ToolDefinition {
+	return agentVisualToolProviderForTest(server).Definitions(agentToolsScope(scope))
+}
+
+func runAgentVisualToolForTest(server *Server, ctx context.Context, scope agentcap.Scope, call agentcore.ToolCall) agentcore.ToolResult {
+	return agentVisualToolProviderForTest(server).Run(ctx, agentToolsScope(scope), call)
+}
+
+func agentVisualToolProviderForTest(server *Server) agenttools.VisualProvider {
+	return server.agentVisualToolProvider()
+}
 
 func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	names := map[string]agent.ToolDefinition{}
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	names := map[string]agentcore.ToolDefinition{}
 	for _, tool := range tools {
 		names[tool.Name] = tool
 	}
@@ -32,16 +48,16 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		"describe_dashboard",
 		"describe_dashboard_visual",
 		"describe_model",
-		"get_deployment",
-		"get_materialization_run",
+		"get_publish",
+		"get_refresh_run",
 		"asset_lineage",
 		"describe_asset",
 		"list_dashboard_components",
 		"list_dashboard_filter_options",
 		"list_assets",
 		"list_dashboards",
-		"list_deployments",
-		"list_materialization_runs",
+		"list_publishes",
+		"list_refresh_runs",
 		"list_semantic_datasets",
 		"list_semantic_fields",
 		"list_semantic_models",
@@ -62,12 +78,12 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"activate_deployment",
+		"activate_publish",
 		"create_agent_turn",
-		"create_deployment",
+		"create_publish",
 		"create_role_binding",
 		"revoke_current_api_token",
-		"upload_deployment_artifact",
+		"upload_publish_artifact",
 	} {
 		if _, ok := names[forbidden]; ok {
 			t.Fatalf("risky operation exposed as agent tool %q", forbidden)
@@ -104,7 +120,7 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 
 func TestAgentVisualToolIsCustomAgentOnlyTool(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentVisualToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})
+	tools := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})
 	if len(tools) != 1 || tools[0].Name != agenttools.QueryVisualToolName || tools[0].Handler == nil {
 		t.Fatalf("visual tools = %#v", tools)
 	}
@@ -114,7 +130,7 @@ func TestAgentVisualToolIsCustomAgentOnlyTool(t *testing.T) {
 			t.Fatalf("query_visual schema contains non-portable keyword %s: %s", forbidden, schemaText)
 		}
 	}
-	for _, tool := range server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"}) {
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"}) {
 		if tool.Name == agenttools.QueryVisualToolName {
 			t.Fatalf("query_visual should not be exposed through APIGen tools")
 		}
@@ -123,8 +139,8 @@ func TestAgentVisualToolIsCustomAgentOnlyTool(t *testing.T) {
 
 func TestAgentAPIGenQueryAuditSurface(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
-	var queryTool agent.ToolDefinition
-	for _, tool := range server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true}) {
+	var queryTool agentcore.ToolDefinition
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true}) {
 		if tool.Name == "query_semantic_dataset" {
 			queryTool = tool
 			break
@@ -134,7 +150,7 @@ func TestAgentAPIGenQueryAuditSurface(t *testing.T) {
 		t.Fatal("query_semantic_dataset tool not found")
 	}
 
-	result, err := queryTool.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := queryTool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_agent_query",
 		Name: "query_semantic_dataset",
 		Arguments: json.RawMessage(`{
@@ -163,8 +179,8 @@ func TestAgentAPIGenQueryAuditSurface(t *testing.T) {
 
 func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tool := server.agentVisualToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
-	result, err := tool.Handler.Run(context.Background(), agent.ToolCall{
+	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
+	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
@@ -250,9 +266,9 @@ func TestAgentVisualToolAuthorizesAgainstRequestedDataset(t *testing.T) {
 		t.Fatalf("grant semantic model query: %v", err)
 	}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	tool := server.agentVisualToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: principal.ID})[0]
+	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID})[0]
 
-	result, err := tool.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_dataset_auth",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
@@ -276,8 +292,8 @@ func TestAgentVisualToolAuthorizesAgainstRequestedDataset(t *testing.T) {
 
 func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tool := server.agentVisualToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
-	result, err := tool.Handler.Run(context.Background(), agent.ToolCall{
+	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
+	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
@@ -342,8 +358,8 @@ func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 
 func TestAgentVisualToolReturnsAggregateTableFromRowsAndMeasures(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tool := server.agentVisualToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
-	result, err := tool.Handler.Run(context.Background(), agent.ToolCall{
+	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
+	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
@@ -386,7 +402,7 @@ func TestAgentVisualToolReturnsAggregateTableFromRowsAndMeasures(t *testing.T) {
 
 func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tool := server.agentVisualToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
+	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
 	args := json.RawMessage(`{
 		"kind":"chart",
 		"model":"test",
@@ -397,11 +413,11 @@ func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 		"measures":[{"field":"order_count"}],
 		"limit":10
 	}`)
-	first, err := tool.Handler.Run(context.Background(), agent.ToolCall{ID: "call_first", Name: "query_visual", Arguments: args})
+	first, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{ID: "call_first", Name: "query_visual", Arguments: args})
 	if err != nil {
 		t.Fatalf("run first query_visual: %v", err)
 	}
-	second, err := tool.Handler.Run(context.Background(), agent.ToolCall{ID: "call_second", Name: "query_visual", Arguments: args})
+	second, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{ID: "call_second", Name: "query_visual", Arguments: args})
 	if err != nil {
 		t.Fatalf("run second query_visual: %v", err)
 	}
@@ -432,7 +448,7 @@ func TestAgentVisualToolRejectsInlineDataAndFilters(t *testing.T) {
 		`{"kind":"chart","model":"test","dataset":"orders","filters":{"controls":{}},"measures":[{"field":"order_count"}]}`,
 		`{"kind":"table","model":"test","dataset":"orders","interaction":{"row_selection":{}},"fields":[{"field":"orders.order_id"}]}`,
 	} {
-		result := server.runAgentVisualTool(context.Background(), agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true}, agent.ToolCall{ID: "call_1", Name: "query_visual", Arguments: json.RawMessage(args)})
+		result := runAgentVisualToolForTest(server, context.Background(), agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true}, agentcore.ToolCall{ID: "call_1", Name: "query_visual", Arguments: json.RawMessage(args)})
 		if !result.IsError {
 			t.Fatalf("query_visual accepted forbidden input %s: %#v", args, result.Content)
 		}
@@ -441,8 +457,8 @@ func TestAgentVisualToolRejectsInlineDataAndFilters(t *testing.T) {
 
 func TestAPIGenAgentSearchToolInjectsDefaultLimit(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var search agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var search agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "search_workspace" {
 			search = tool
@@ -452,7 +468,7 @@ func TestAPIGenAgentSearchToolInjectsDefaultLimit(t *testing.T) {
 	if search.Handler == nil {
 		t.Fatal("search_workspace tool missing")
 	}
-	result, err := search.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := search.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "search_workspace",
 		Arguments: json.RawMessage(`{"q":"orders"}`),
@@ -502,8 +518,8 @@ func TestAPIGenAgentSearchToolInjectsDefaultLimit(t *testing.T) {
 
 func TestAPIGenAgentListWorkspacesUsesDeclarativeOutputShape(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var listWorkspaces agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var listWorkspaces agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "list_workspaces" {
 			listWorkspaces = tool
@@ -513,7 +529,7 @@ func TestAPIGenAgentListWorkspacesUsesDeclarativeOutputShape(t *testing.T) {
 	if listWorkspaces.Handler == nil {
 		t.Fatal("list_workspaces tool missing")
 	}
-	result, err := listWorkspaces.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := listWorkspaces.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "list_workspaces",
 		Arguments: json.RawMessage(`{}`),
@@ -551,7 +567,7 @@ func TestAPIGenAgentListWorkspacesUsesDeclarativeOutputShape(t *testing.T) {
 		if _, ok := item["description"]; !ok {
 			t.Fatalf("workspace item missing description: %#v", item)
 		}
-		for _, forbidden := range []string{"activeDeploymentId", "createdAt", "updatedAt"} {
+		for _, forbidden := range []string{"activeServingStateId", "createdAt", "updatedAt"} {
 			if _, ok := item[forbidden]; ok {
 				t.Fatalf("workspace item kept noisy metadata field %q: %#v", forbidden, item)
 			}
@@ -560,7 +576,7 @@ func TestAPIGenAgentListWorkspacesUsesDeclarativeOutputShape(t *testing.T) {
 }
 
 func TestAPIGenAgentOutputShapeKeepsNonEmptyCursor(t *testing.T) {
-	shaped := shapeAPIGenAgentToolContent(map[string]any{
+	shaped := agenttools.ShapeAPIGenToolContent(map[string]any{
 		"items": []any{
 			map[string]any{"id": "one", "title": "One", "description": "First", "createdAt": "ignored"},
 		},
@@ -584,7 +600,7 @@ func TestAPIGenAgentOutputShapeKeepsNonEmptyCursor(t *testing.T) {
 }
 
 func TestAPIGenAgentOutputShapeProjectsRootsCollectionsAndMaps(t *testing.T) {
-	shaped := shapeAPIGenAgentToolContent(map[string]any{
+	shaped := agenttools.ShapeAPIGenToolContent(map[string]any{
 		"title":         "Orders",
 		"availableRows": 7,
 		"style":         map[string]any{"density": "compact"},
@@ -656,10 +672,10 @@ func TestAPIGenAgentOutputShapeProjectsRootsCollectionsAndMaps(t *testing.T) {
 
 func TestAPIGenAgentOutputShapeOmitsMissingPathsAndFallbackRawWithoutMetadata(t *testing.T) {
 	raw := map[string]any{"body": "raw"}
-	if shaped := shapeAPIGenAgentToolContent(raw, agenttools.Output{}); !reflect.DeepEqual(shaped, raw) {
+	if shaped := agenttools.ShapeAPIGenToolContent(raw, agenttools.Output{}); !reflect.DeepEqual(shaped, raw) {
 		t.Fatalf("empty output metadata should preserve raw content: %#v", shaped)
 	}
-	shaped := shapeAPIGenAgentToolContent(raw, agenttools.Output{
+	shaped := agenttools.ShapeAPIGenToolContent(raw, agenttools.Output{
 		RootFields:  []string{"missing"},
 		Collections: []agenttools.OutputCollection{{Path: "items", As: "items", Count: true}},
 	})
@@ -674,8 +690,8 @@ func TestAPIGenAgentOutputShapeOmitsMissingPathsAndFallbackRawWithoutMetadata(t 
 
 func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	names := map[string]agent.ToolDefinition{}
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	names := map[string]agentcore.ToolDefinition{}
 	for _, tool := range tools {
 		names[tool.Name] = tool
 		schemaText := string(tool.InputSchema)
@@ -732,8 +748,8 @@ func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
 		AssetCatalog:       fakeAssetCatalogReader{catalog: catalog},
 		DefaultWorkspaceID: "test",
 	})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var listAssets agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var listAssets agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "list_assets" {
 			listAssets = tool
@@ -744,7 +760,7 @@ func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
 		t.Fatal("list_assets tool missing")
 	}
 
-	result, err := listAssets.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := listAssets.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "list_assets",
 		Arguments: json.RawMessage(`{"type":"dashboard","limit":1}`),
@@ -778,8 +794,8 @@ func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
 
 func TestAPIGenAgentDescribeDashboardVisualUsesDeclarativeOutputShape(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var describeVisual agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var describeVisual agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "describe_dashboard_visual" {
 			describeVisual = tool
@@ -789,7 +805,7 @@ func TestAPIGenAgentDescribeDashboardVisualUsesDeclarativeOutputShape(t *testing
 	if describeVisual.Handler == nil {
 		t.Fatal("describe_dashboard_visual tool missing")
 	}
-	result, err := describeVisual.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := describeVisual.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "describe_dashboard_visual",
 		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"orders"}`),
@@ -826,8 +842,8 @@ func TestAPIGenAgentAssetDescribeAndLineageToolsUseTypeSpecContracts(t *testing.
 		AssetCatalog:       fakeAssetCatalogReader{catalog: catalog},
 		DefaultWorkspaceID: "test",
 	})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	names := map[string]agent.ToolDefinition{}
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	names := map[string]agentcore.ToolDefinition{}
 	for _, tool := range tools {
 		names[tool.Name] = tool
 	}
@@ -837,7 +853,7 @@ func TestAPIGenAgentAssetDescribeAndLineageToolsUseTypeSpecContracts(t *testing.
 		}
 	}
 
-	result, err := names["describe_asset"].Handler.Run(context.Background(), agent.ToolCall{
+	result, err := names["describe_asset"].Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_2",
 		Name:      "describe_asset",
 		Arguments: json.RawMessage(`{"assetId":"visual:executive-sales.revenue"}`),
@@ -866,13 +882,13 @@ func TestAPIGenAgentAssetDescribeAndLineageToolsUseTypeSpecContracts(t *testing.
 	if err := json.Unmarshal(body, &describedMap); err != nil {
 		t.Fatalf("decode describe_asset map: %v", err)
 	}
-	for _, forbidden := range []string{"snapshotId", "workspaceId", "deploymentId", "payload", "key", "sourceFile"} {
+	for _, forbidden := range []string{"snapshotId", "workspaceId", "servingStateId", "payload", "key", "sourceFile"} {
 		if _, ok := describedMap[forbidden]; ok {
 			t.Fatalf("describe_asset kept noisy field %q: %#v", forbidden, describedMap)
 		}
 	}
 
-	result, err = names["asset_lineage"].Handler.Run(context.Background(), agent.ToolCall{
+	result, err = names["asset_lineage"].Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_3",
 		Name:      "asset_lineage",
 		Arguments: json.RawMessage(`{"assetId":"visual:executive-sales.revenue"}`),
@@ -899,8 +915,8 @@ func TestAPIGenAgentAssetDescribeAndLineageToolsUseTypeSpecContracts(t *testing.
 
 func TestAPIGenAgentQueryDashboardPageUsesDeclarativeOutputShape(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var queryPage agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var queryPage agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "query_dashboard_page" {
 			queryPage = tool
@@ -910,7 +926,7 @@ func TestAPIGenAgentQueryDashboardPageUsesDeclarativeOutputShape(t *testing.T) {
 	if queryPage.Handler == nil {
 		t.Fatal("query_dashboard_page tool missing")
 	}
-	result, err := queryPage.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := queryPage.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_dashboard_page",
 		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview"}`),
@@ -955,8 +971,8 @@ func TestAPIGenAgentListToolInjectsDefaultLimit(t *testing.T) {
 		AssetCatalog:       fakeAssetCatalogReader{catalog: catalog},
 		DefaultWorkspaceID: "test",
 	})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var listEdges agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var listEdges agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "list_workspace_asset_edges" {
 			listEdges = tool
@@ -966,7 +982,7 @@ func TestAPIGenAgentListToolInjectsDefaultLimit(t *testing.T) {
 	if listEdges.Handler == nil {
 		t.Fatal("list_workspace_asset_edges tool missing")
 	}
-	result, err := listEdges.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := listEdges.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "list_workspace_asset_edges",
 		Arguments: json.RawMessage(`{}`),
@@ -999,12 +1015,12 @@ func TestAPIGenAgentListToolInjectsDefaultLimit(t *testing.T) {
 				t.Fatalf("edge item missing %q: %#v", want, item)
 			}
 		}
-		if _, ok := item["deploymentId"]; ok {
+		if _, ok := item["servingStateId"]; ok {
 			t.Fatalf("edge item kept noisy metadata: %#v", item)
 		}
 	}
 
-	result, err = listEdges.Handler.Run(context.Background(), agent.ToolCall{
+	result, err = listEdges.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_2",
 		Name:      "list_workspace_asset_edges",
 		Arguments: json.RawMessage(`{"limit":3}`),
@@ -1023,8 +1039,8 @@ func TestAPIGenAgentListToolInjectsDefaultLimit(t *testing.T) {
 
 func TestAPIGenAgentToolDispatchesJSONBodyOperation(t *testing.T) {
 	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var queryTable agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var queryTable agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "query_table" {
 			queryTable = tool
@@ -1034,7 +1050,7 @@ func TestAPIGenAgentToolDispatchesJSONBodyOperation(t *testing.T) {
 	if queryTable.Handler == nil {
 		t.Fatal("query_table tool missing")
 	}
-	result, err := queryTable.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := queryTable.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_table",
 		Arguments: json.RawMessage(`{"dashboard":"executive-sales","pageId":"overview","table":"orders","count":500}`),
@@ -1075,8 +1091,8 @@ func TestAPIGenAgentToolDispatchesJSONBodyOperation(t *testing.T) {
 
 func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var queryVisual agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var queryVisual agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "query_dashboard_visual_data" {
 			queryVisual = tool
@@ -1086,7 +1102,7 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	if queryVisual.Handler == nil {
 		t.Fatal("query_dashboard_visual_data tool missing")
 	}
-	result, err := queryVisual.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := queryVisual.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_dashboard_visual_data",
 		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"orders"}`),
@@ -1125,8 +1141,8 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 
 func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	server := NewWithOptions(manySemanticRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := server.agentAPIGenToolDefinitions(agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var querySemantic agent.ToolDefinition
+	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
+	var querySemantic agentcore.ToolDefinition
 	for _, tool := range tools {
 		if tool.Name == "query_semantic_dataset" {
 			querySemantic = tool
@@ -1136,7 +1152,7 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	if querySemantic.Handler == nil {
 		t.Fatal("query_semantic_dataset tool missing")
 	}
-	result, err := querySemantic.Handler.Run(context.Background(), agent.ToolCall{
+	result, err := querySemantic.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_semantic_dataset",
 		Arguments: json.RawMessage(`{"model":"test","dataset":"orders","dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`),
@@ -1182,20 +1198,20 @@ func TestAPIGenAgentToolEnforcesCredentialPermissionAllowlistAndWorkspace(t *tes
 	foreignToken := access.APIToken{WorkspaceID: "other", Permissions: []access.Privilege{access.PrivilegeViewItem}}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, AccessRepo: testAccessRepository(store), DefaultWorkspaceID: "test"})
 
-	run := func(token access.APIToken) agent.ToolResult {
-		scope := agentapp.Scope{
+	run := func(token access.APIToken) agentcore.ToolResult {
+		scope := agentcap.Scope{
 			WorkspaceID: "test",
 			PrincipalID: principal.ID,
-			Credential: agentapp.CredentialScope{
+			Credential: agentcap.CredentialScope{
 				WorkspaceID: token.WorkspaceID,
 				Permissions: testPrivilegeStrings(token.Permissions),
 				Restricted:  token.Permissions != nil,
 			},
 		}
-		tools := server.agentAPIGenToolDefinitions(scope)
+		tools := agentAPIGenToolsForTest(server, scope)
 		for _, tool := range tools {
 			if tool.Name == "list_dashboards" {
-				result, err := tool.Handler.Run(ctx, agent.ToolCall{ID: "call_1", Name: "list_dashboards", Arguments: json.RawMessage(`{}`)})
+				result, err := tool.Handler.Run(ctx, agentcore.ToolCall{ID: "call_1", Name: "list_dashboards", Arguments: json.RawMessage(`{}`)})
 				if err != nil {
 					t.Fatalf("run list_dashboards: %v", err)
 				}
@@ -1203,7 +1219,7 @@ func TestAPIGenAgentToolEnforcesCredentialPermissionAllowlistAndWorkspace(t *tes
 			}
 		}
 		t.Fatal("list_dashboards tool missing")
-		return agent.ToolResult{}
+		return agentcore.ToolResult{}
 	}
 
 	if result := run(agentOnlyToken); !result.IsError {
@@ -1219,16 +1235,16 @@ func TestAPIGenAgentToolEnforcesCredentialPermissionAllowlistAndWorkspace(t *tes
 
 func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
 	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
-	scope := agentapp.Scope{WorkspaceID: "test", PrincipalID: "principal"}
-	var runtimeTools []agent.ToolDefinition
-	runtimeTools = append(runtimeTools, server.agentVisualToolDefinitions(scope)...)
-	runtimeTools = append(runtimeTools, server.agentAPIGenToolDefinitions(scope)...)
+	scope := agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"}
+	var runtimeTools []agentcore.ToolDefinition
+	runtimeTools = append(runtimeTools, agentVisualToolsForTest(server, scope)...)
+	runtimeTools = append(runtimeTools, agentAPIGenToolsForTest(server, scope)...)
 	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime tools = %#v, policy registry = %#v", got, want)
 	}
 }
 
-func toolNames(tools []agent.ToolDefinition) []string {
+func toolNames(tools []agentcore.ToolDefinition) []string {
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)
@@ -1236,7 +1252,7 @@ func toolNames(tools []agent.ToolDefinition) []string {
 	return names
 }
 
-func sortedToolNames(tools []agent.ToolDefinition) []string {
+func sortedToolNames(tools []agentcore.ToolDefinition) []string {
 	names := toolNames(tools)
 	sort.Strings(names)
 	return names
@@ -1272,24 +1288,24 @@ func (f fakeAssetCatalogReader) ActiveAssetCatalog(_ context.Context, _ workspac
 func testAgentAssetCatalog(t *testing.T) workspace.AssetCatalog {
 	t.Helper()
 	workspaceID := workspace.WorkspaceID("test")
-	deploymentID := workspace.DeploymentID("deploy_a")
-	dashboard, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeDashboard, "executive-sales", "", "Executive Sales", "", "dashboard.v1", map[string]any{"semantic_model": "olist"})
+	servingStateID := workspace.ServingStateID("deploy_a")
+	dashboard, err := workspace.NewAsset(workspaceID, servingStateID, workspace.AssetTypeDashboard, "executive-sales", "", "Executive Sales", "", "dashboard.v1", map[string]any{"semantic_model": "olist"})
 	if err != nil {
 		t.Fatalf("dashboard asset: %v", err)
 	}
-	measure, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeMeasure, "olist.revenue", "", "Revenue", "", "measure.v1", map[string]any{"table": "orders"})
+	measure, err := workspace.NewAsset(workspaceID, servingStateID, workspace.AssetTypeMeasure, "olist.revenue", "", "Revenue", "", "measure.v1", map[string]any{"table": "orders"})
 	if err != nil {
 		t.Fatalf("measure asset: %v", err)
 	}
-	visual, err := workspace.NewAsset(workspaceID, deploymentID, workspace.AssetTypeVisual, "executive-sales.revenue", dashboard.ID, "Revenue", "", "visual.v1", map[string]any{"query_kind": "aggregate"})
+	visual, err := workspace.NewAsset(workspaceID, servingStateID, workspace.AssetTypeVisual, "executive-sales.revenue", dashboard.ID, "Revenue", "", "visual.v1", map[string]any{"query_kind": "aggregate"})
 	if err != nil {
 		t.Fatalf("visual asset: %v", err)
 	}
 	graph := workspace.AssetGraph{
 		Assets: []workspace.Asset{dashboard, measure, visual},
 		Edges: []workspace.AssetEdge{
-			workspace.NewAssetEdge(workspaceID, deploymentID, dashboard.ID, visual.ID, workspace.AssetEdgeContains),
-			workspace.NewAssetEdge(workspaceID, deploymentID, visual.ID, measure.ID, workspace.AssetEdgeUsesMeasure),
+			workspace.NewAssetEdge(workspaceID, servingStateID, dashboard.ID, visual.ID, workspace.AssetEdgeContains),
+			workspace.NewAssetEdge(workspaceID, servingStateID, visual.ID, measure.ID, workspace.AssetEdgeUsesMeasure),
 		},
 	}
 	catalog, err := workspace.DecodeAssetCatalog(graph)
@@ -1360,8 +1376,8 @@ func (m manySemanticRowsMetrics) ExecuteDataQuery(ctx context.Context, request d
 	return dataquery.Result{Columns: dataquery.ColumnsFromNames([]string{"status", "order_count"}), Rows: out}, nil
 }
 
-func (manyEdgesMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
-	root, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeCatalog, "catalog", "", "Catalog", "", "catalog.v1", map[string]any{})
+func (manyEdgesMetrics) WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	root, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.ServingStateID(servingStateID), workspace.AssetTypeCatalog, "catalog", "", "Catalog", "", "catalog.v1", map[string]any{})
 	if err != nil {
 		return nil, nil, false
 	}
@@ -1369,12 +1385,12 @@ func (manyEdgesMetrics) WorkspaceAssets(workspaceID, deploymentID string) ([]wor
 	edges := make([]workspace.AssetEdge, 0, 30)
 	for i := 0; i < 30; i++ {
 		key := "dashboard-" + strconv.Itoa(i)
-		child, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), workspace.AssetTypeDashboard, key, root.ID, "Dashboard", "", "dashboard.v1", map[string]any{"index": i})
+		child, err := workspace.NewAsset(workspace.WorkspaceID(workspaceID), workspace.ServingStateID(servingStateID), workspace.AssetTypeDashboard, key, root.ID, "Dashboard", "", "dashboard.v1", map[string]any{"index": i})
 		if err != nil {
 			return nil, nil, false
 		}
 		assets = append(assets, child)
-		edges = append(edges, workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.DeploymentID(deploymentID), root.ID, child.ID, workspace.AssetEdgeContains))
+		edges = append(edges, workspace.NewAssetEdge(workspace.WorkspaceID(workspaceID), workspace.ServingStateID(servingStateID), root.ID, child.ID, workspace.AssetEdgeContains))
 	}
 	return assets, edges, true
 }

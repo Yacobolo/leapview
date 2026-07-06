@@ -5,15 +5,15 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
-	oidcauth "github.com/Yacobolo/libredash/internal/auth/oidc"
+	oidcauth "github.com/Yacobolo/libredash/internal/access/oidc"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 )
@@ -332,6 +332,28 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, err error, status in
 	http.Error(w, err.Error(), status)
 }
 
+func recordAccessAudit(r *http.Request, repo access.Repository, action, principalID, workspaceID, targetType, targetID string, privilege access.Privilege, status string, metadata map[string]any) {
+	if repo == nil {
+		return
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	bytes, _ := json.Marshal(metadata)
+	_ = repo.RecordAuditEvent(r.Context(), access.AuditEventInput{
+		WorkspaceID:   workspaceID,
+		PrincipalID:   principalID,
+		Action:        action,
+		TargetType:    targetType,
+		TargetID:      targetID,
+		Privilege:     privilege,
+		Status:        status,
+		RequestID:     firstNonEmpty(r.Header.Get("X-Request-Id"), r.Header.Get("X-Request-ID")),
+		CorrelationID: firstNonEmpty(r.Header.Get("X-Correlation-Id"), r.Header.Get("X-Correlation-ID"), r.Header.Get("X-Request-Id"), r.Header.Get("X-Request-ID")),
+		MetadataJSON:  string(bytes),
+	})
+}
+
 func (a *Auth) permissionWorkspaceID(r *http.Request) string {
 	if workspaceID := strings.TrimSpace(chi.URLParam(r, "workspace")); workspaceID != "" {
 		return workspaceID
@@ -380,9 +402,6 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 	}
 	principal, err := a.sessions.PrincipalForToken(r.Context(), cookie.Value)
 	if err != nil {
-		if err != sql.ErrNoRows {
-			return Principal{}, nil, false
-		}
 		a.auditDisabledCredentialFailure(r, "session", cookie.Value)
 		return Principal{}, nil, false
 	}

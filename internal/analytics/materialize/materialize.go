@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/analytics/connectors"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
 
@@ -145,10 +146,10 @@ func (defaultSourcePathResolver) ResolveSourcePath(model *semanticmodel.Model, s
 		if connection.Scope == "" {
 			return source.Path, nil
 		}
-		if semanticmodel.IsLocalPath(source.Path) {
-			return semanticmodel.JoinScope(connection.Scope, source.Path), nil
+		if connectors.IsLocalPath(source.Path) {
+			return connectors.JoinScope(connection.Scope, source.Path), nil
 		}
-		if !semanticmodel.WithinScope(connection.Scope, source.Path) {
+		if !connectors.WithinScope(connection.Scope, source.Path) {
 			return "", fmt.Errorf("path %q is outside connection %q scope %q", source.Path, source.Connection, connection.Scope)
 		}
 		return source.Path, nil
