@@ -98,10 +98,7 @@ func LoginPage() g.Node {
 		},
 		UpdatesURL: loginUpdatesURL,
 		Body: []g.Node{
-			g.El("ld-login-page",
-				g.Attr("page", jsonString(page)),
-				g.Attr("data-attr:page", "$page"),
-			),
+			g.El("ld-login-page"),
 			inspectorElement(),
 		},
 	})
@@ -161,12 +158,8 @@ func catalogPageDocument(catalog dashboard.Catalog, page uisignals.CatalogPageSi
 		UpdatesURL: catalogUpdatesURL,
 		Body: []g.Node{
 			g.El("ld-app-shell",
-				g.Attr("chrome", jsonString(chrome)),
-				g.Attr("data-attr:chrome", "$chrome"),
 				g.El("ld-catalog-page",
 					g.Attr("slot", "page"),
-					g.Attr("page", jsonString(page)),
-					g.Attr("data-attr:page", "$page"),
 				),
 			),
 			inspectorElement(),

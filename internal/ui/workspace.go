@@ -23,8 +23,6 @@ func WorkspacesPage(catalog dashboard.Catalog, workspaces []workspaceview.Worksp
 	return workspaceRouteDocument("LibreDash Workspaces", catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspace,
 		g.El("ld-workspace-page",
 			g.Attr("slot", "page"),
-			g.Attr("page", jsonString(page)),
-			g.Attr("data-attr:page", "$page"),
 		),
 		nil,
 		chromeOptions,
@@ -35,8 +33,6 @@ func WorkspacePage(catalog dashboard.Catalog, workspace workspaceview.WorkspaceV
 	page := workspacePageSignal(workspace, assets, nil, activeType, query)
 	attrs := []g.Node{
 		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
 	}
 	accessAttrs, extraSignals := workspaceAccessRouteBridge(workspace.ID, access, csrfToken)
 	attrs = append(attrs, accessAttrs...)
@@ -55,8 +51,6 @@ func ConnectionsPage(catalog dashboard.Catalog, workspaceID string, assets []wor
 	return workspaceRouteDocument("Connections", catalog, "connections", roleLabel, page, uisignals.RouteConnections,
 		g.El("ld-connections-page",
 			g.Attr("slot", "page"),
-			g.Attr("page", jsonString(page)),
-			g.Attr("data-attr:page", "$page"),
 		),
 		nil,
 		chromeOptions,
@@ -92,8 +86,6 @@ func workspaceAccessRouteBridge(workspaceID string, access WorkspaceAccessRespon
 	upsert := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + postActionWithCSRFSignal("/workspaces/"+workspaceID+"/access/upsert", "$workspaceAccess.csrfToken")
 	remove := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + postActionWithCSRFSignal("/workspaces/"+workspaceID+"/access/remove", "$workspaceAccess.csrfToken")
 	return []g.Node{
-		g.Attr("workspaceaccess", jsonString(accessSignal)),
-		g.Attr("data-attr:workspaceaccess", "$workspaceAccess"),
 		g.Attr("data-on:ld-workspace-access-search__debounce.200ms", "$workspaceAccess.search = evt.detail.search"),
 		g.Attr("data-on:ld-workspace-access-upsert", upsert),
 		g.Attr("data-on:ld-workspace-access-remove", remove),
@@ -448,8 +440,6 @@ func WorkspaceAssetPageWithRefreshAndVersions(catalog dashboard.Catalog, workspa
 	extraSignals := map[string]any{}
 	attrs := []g.Node{
 		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
 	}
 	if assetRefreshable(asset.Type) {
 		refreshPath := "/workspaces/" + workspace.ID + "/assets/" + asset.ID + "/refresh"
@@ -471,8 +461,6 @@ func ConnectionAssetPageWithVersions(catalog dashboard.Catalog, workspace worksp
 	page := connectionAssetPageSignalWithVersions(workspace, asset, assets, edges, activeSection, lineage, versions)
 	return workspaceAssetRouteDocument(asset, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset, g.El("ld-workspace-asset-page",
 		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
 	), nil, activeSection, nil)
 }
 
@@ -482,8 +470,6 @@ func ConnectionSourceAssetPageWithVersions(catalog dashboard.Catalog, workspace 
 	page := connectionSourceAssetPageSignalWithVersions(workspace, connection, source, assets, edges, activeSection, lineage, versions)
 	return workspaceAssetRouteDocument(source, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset, g.El("ld-workspace-asset-page",
 		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
 	), nil, activeSection, nil)
 }
 
@@ -518,8 +504,6 @@ func ConnectionAssetPage(catalog dashboard.Catalog, workspace workspaceview.Work
 	return workspaceRouteDocument(asset.Title, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset,
 		g.El("ld-workspace-asset-page",
 			g.Attr("slot", "page"),
-			g.Attr("page", jsonString(page)),
-			g.Attr("data-attr:page", "$page"),
 		),
 		nil,
 		nil,
@@ -541,8 +525,6 @@ func ConnectionSourceAssetPage(catalog dashboard.Catalog, workspace workspacevie
 	return workspaceRouteDocument(source.Title, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset,
 		g.El("ld-workspace-asset-page",
 			g.Attr("slot", "page"),
-			g.Attr("page", jsonString(page)),
-			g.Attr("data-attr:page", "$page"),
 		),
 		nil,
 		nil,
@@ -565,8 +547,6 @@ func WorkspacePermissionsPage(catalog dashboard.Catalog, workspace workspaceview
 	}
 	attrs := []g.Node{
 		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
 	}
 	accessAttrs, extraSignals := workspaceAccessRouteBridge(workspace.ID, access, csrfToken)
 	attrs = append(attrs, accessAttrs...)
@@ -603,8 +583,6 @@ func workspaceRouteDocumentWithBodyExtras(title string, catalog dashboard.Catalo
 	body := append([]g.Node{}, bodyExtras...)
 	body = append(body,
 		g.El("ld-app-shell",
-			g.Attr("chrome", jsonString(chrome)),
-			g.Attr("data-attr:chrome", "$chrome"),
 			routeRoot,
 		),
 		inspectorElement(),

@@ -887,8 +887,6 @@ func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
 
 	for _, want := range []string{
 		`<ld-workspace-page`,
-		`workspaceaccess=`,
-		`data-attr:workspaceaccess="$workspaceAccess"`,
 		`data-on:ld-workspace-access-search__debounce.200ms=`,
 		`data-on:ld-workspace-access-upsert=`,
 		`data-on:ld-workspace-access-remove=`,
@@ -902,6 +900,8 @@ func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
 		}
 	}
 	for _, notWant := range []string{
+		`workspaceaccess=`,
+		`data-attr:workspaceaccess="$workspaceAccess"`,
 		`workspaceAccessCommand`,
 		`workspaceAccessSearch`,
 	} {

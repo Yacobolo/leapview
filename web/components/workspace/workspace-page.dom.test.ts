@@ -8,18 +8,30 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-const root = join(process.cwd(), '.tmp/workspace-page-test')
+const projectRoot = process.cwd()
+const root = join(projectRoot, '.tmp/workspace-page-test')
 
 beforeAll(async () => {
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     if (url.pathname === '/') {
       response.setHeader('content-type', 'text/html')
-      response.end(testDocument())
+      response.end(testDocument('workspace'))
       return
     }
-    const file = normalize(join(root, url.pathname))
-    if (!file.startsWith(root)) {
+    if (url.pathname === '/connections') {
+      response.setHeader('content-type', 'text/html')
+      response.end(testDocument('connections'))
+      return
+    }
+    if (url.pathname === '/asset') {
+      response.setHeader('content-type', 'text/html')
+      response.end(testDocument('asset'))
+      return
+    }
+    const fileRoot = url.pathname.startsWith('/static/vendor/') ? projectRoot : root
+    const file = normalize(join(fileRoot, url.pathname))
+    if (!file.startsWith(fileRoot)) {
       response.writeHead(404)
       response.end('not found')
       return
@@ -52,20 +64,10 @@ for (const viewport of [
     const page = await browser.newPage({ viewport })
     try {
       await page.goto(baseURL)
-      await page.waitForFunction(() => (
-        customElements.get('ld-workspace-page')
-          && customElements.get('ld-connections-page')
-          && customElements.get('ld-workspace-asset-page')
-          && customElements.get('ld-record-table')
-      ))
+      await page.waitForFunction(() => customElements.get('ld-workspace-page') && customElements.get('ld-record-table'))
       await page.locator('ld-workspace-page').evaluate((element: any) => element.updateComplete)
-      await page.locator('ld-connections-page').evaluate((element: any) => element.updateComplete)
-      await page.locator('ld-workspace-asset-page').evaluate((element: any) => element.updateComplete)
-
-      const state = await page.evaluate(() => {
+      const workspaceState = await page.evaluate(() => {
         const workspace = document.querySelector('ld-workspace-page') as any
-        const connections = document.querySelector('ld-connections-page') as any
-        const asset = document.querySelector('ld-workspace-asset-page') as any
         const workspacePage = workspace.shadowRoot.querySelector('.page') as HTMLElement
         const workspaceToolbar = workspace.shadowRoot.querySelector('.toolbar') as HTMLElement
         const workspaceRecordTable = workspace.shadowRoot.querySelector('ld-record-table') as HTMLElement
@@ -77,18 +79,8 @@ for (const viewport of [
         const workspaceTypeCell = workspace.shadowRoot.querySelector('tbody tr:first-child td:nth-child(2)') as HTMLElement
         const workspaceAssetTitle = workspace.shadowRoot.querySelector('tbody tr:first-child .record-entity-label') as HTMLElement
         const workspaceAssetDescription = workspace.shadowRoot.querySelector('tbody tr:first-child .record-entity-description') as HTMLElement
-        const connectionsPage = connections.shadowRoot.querySelector('.page') as HTMLElement
-        const assetHeader = asset.shadowRoot.querySelector('.breadcrumb-header') as HTMLElement
-        const assetTabs = asset.shadowRoot.querySelector('.asset-body > .tabs') as HTMLElement
-        const assetFirstTab = asset.shadowRoot.querySelector('.asset-body > .tabs a') as HTMLElement
-        const assetSectionBody = asset.shadowRoot.querySelector('.section-body') as HTMLElement
-        const semanticGraph = asset.shadowRoot.querySelector('ld-semantic-model-graph') as HTMLElement
-        const firstRecordTable = asset.shadowRoot.querySelector('ld-record-table') as HTMLElement
-        const semanticGraphSection = asset.shadowRoot.querySelector('.semantic-model-section') as HTMLElement
         const nameCellRight = workspaceNameCell.getBoundingClientRect().right
-        const typeCellLeft = workspaceTypeCell.getBoundingClientRect().left
         const workspacePageRect = workspacePage.getBoundingClientRect()
-        const connectionsPageRect = connectionsPage.getBoundingClientRect()
         const isMobile = window.innerWidth <= 720
         return {
           workspaceTitle: workspace.shadowRoot.querySelector('h1')?.textContent?.trim(),
@@ -109,25 +101,10 @@ for (const viewport of [
           workspaceRowActionBorderColor: getComputedStyle(workspaceRowActionLink).borderTopColor,
           workspaceTitleFitsNameColumn: workspaceAssetTitle.getBoundingClientRect().right <= nameCellRight,
           workspaceDescriptionFitsNameColumn: workspaceAssetDescription.getBoundingClientRect().right <= nameCellRight,
-          connectionsTitle: connections.shadowRoot.querySelector('h1')?.textContent?.trim(),
-          connectionsHasSource: connections.shadowRoot.textContent?.includes('Orders source') ?? false,
-          connectionsIsStyled: getComputedStyle(connectionsPage).paddingTop !== '0px',
-          connectionsPageCentered: isMobile || Math.abs((connectionsPageRect.left + connectionsPageRect.width / 2) - window.innerWidth / 2) <= 1,
-          connectionsPageConstrained: isMobile || Math.round(connectionsPageRect.width) < window.innerWidth,
-          assetTitle: asset.shadowRoot.querySelector('h1 span:last-child')?.textContent?.trim(),
-          assetHasOverview: asset.shadowRoot.textContent?.includes('Overview') ?? false,
-          assetHasRecordTable: Boolean(asset.shadowRoot.querySelector('ld-record-table')),
-          assetHasSemanticGraph: Boolean(semanticGraph),
-          assetSemanticGraphBeforeRecordTable: Boolean(semanticGraph && firstRecordTable && semanticGraph.compareDocumentPosition(firstRecordTable) & Node.DOCUMENT_POSITION_FOLLOWING),
-          assetHasDataModelHeading: Array.from(asset.shadowRoot.querySelectorAll('h2')).some((heading) => heading.textContent?.trim() === 'Data model'),
-          assetGraphFlushLeft: semanticGraphSection ? Math.round(semanticGraphSection.getBoundingClientRect().left - assetSectionBody.getBoundingClientRect().left) : -1,
-          assetHeaderDisplay: getComputedStyle(assetHeader).display,
-          assetTabsPaddingLeft: getComputedStyle(assetTabs).paddingLeft,
-          assetFirstTabInset: Math.round(assetFirstTab.getBoundingClientRect().left - assetTabs.getBoundingClientRect().left),
         }
       })
 
-      expect(state).toEqual({
+      expect(workspaceState).toEqual({
         workspaceTitle: 'LibreDash Workspace',
         workspaceHasAsset: true,
         workspaceTableVariant: 'primary',
@@ -146,11 +123,58 @@ for (const viewport of [
         workspaceRowActionBorderColor: 'rgba(0, 0, 0, 0)',
         workspaceTitleFitsNameColumn: true,
         workspaceDescriptionFitsNameColumn: true,
+      })
+
+      await page.goto(`${baseURL}/connections`)
+      await page.waitForFunction(() => customElements.get('ld-connections-page') && customElements.get('ld-record-table'))
+      await page.locator('ld-connections-page').evaluate((element: any) => element.updateComplete)
+      const connectionsState = await page.evaluate(() => {
+        const connections = document.querySelector('ld-connections-page') as any
+        const connectionsPage = connections.shadowRoot.querySelector('.page') as HTMLElement
+        const connectionsPageRect = connectionsPage.getBoundingClientRect()
+        const isMobile = window.innerWidth <= 720
+        return {
+          connectionsTitle: connections.shadowRoot.querySelector('h1')?.textContent?.trim(),
+          connectionsHasSource: connections.shadowRoot.textContent?.includes('Orders source') ?? false,
+          connectionsIsStyled: getComputedStyle(connectionsPage).paddingTop !== '0px',
+          connectionsPageCentered: isMobile || Math.abs((connectionsPageRect.left + connectionsPageRect.width / 2) - window.innerWidth / 2) <= 1,
+          connectionsPageConstrained: isMobile || Math.round(connectionsPageRect.width) < window.innerWidth,
+        }
+      })
+      expect(connectionsState).toEqual({
         connectionsTitle: 'Connections',
         connectionsHasSource: true,
         connectionsIsStyled: true,
         connectionsPageCentered: true,
         connectionsPageConstrained: true,
+      })
+
+      await page.goto(`${baseURL}/asset`)
+      await page.waitForFunction(() => customElements.get('ld-workspace-asset-page') && customElements.get('ld-record-table'))
+      await page.locator('ld-workspace-asset-page').evaluate((element: any) => element.updateComplete)
+      const assetState = await page.evaluate(() => {
+        const asset = document.querySelector('ld-workspace-asset-page') as any
+        const assetHeader = asset.shadowRoot.querySelector('.breadcrumb-header') as HTMLElement
+        const assetTabs = asset.shadowRoot.querySelector('.asset-body > .tabs') as HTMLElement
+        const assetFirstTab = asset.shadowRoot.querySelector('.asset-body > .tabs a') as HTMLElement
+        const assetSectionBody = asset.shadowRoot.querySelector('.section-body') as HTMLElement
+        const semanticGraph = asset.shadowRoot.querySelector('ld-semantic-model-graph') as HTMLElement
+        const firstRecordTable = asset.shadowRoot.querySelector('ld-record-table') as HTMLElement
+        const semanticGraphSection = asset.shadowRoot.querySelector('.semantic-model-section') as HTMLElement
+        return {
+          assetTitle: asset.shadowRoot.querySelector('h1 span:last-child')?.textContent?.trim(),
+          assetHasOverview: asset.shadowRoot.textContent?.includes('Overview') ?? false,
+          assetHasRecordTable: Boolean(asset.shadowRoot.querySelector('ld-record-table')),
+          assetHasSemanticGraph: Boolean(semanticGraph),
+          assetSemanticGraphBeforeRecordTable: Boolean(semanticGraph && firstRecordTable && semanticGraph.compareDocumentPosition(firstRecordTable) & Node.DOCUMENT_POSITION_FOLLOWING),
+          assetHasDataModelHeading: Array.from(asset.shadowRoot.querySelectorAll('h2')).some((heading) => heading.textContent?.trim() === 'Data model'),
+          assetGraphFlushLeft: semanticGraphSection ? Math.round(semanticGraphSection.getBoundingClientRect().left - assetSectionBody.getBoundingClientRect().left) : -1,
+          assetHeaderDisplay: getComputedStyle(assetHeader).display,
+          assetTabsPaddingLeft: getComputedStyle(assetTabs).paddingLeft,
+          assetFirstTabInset: Math.round(assetFirstTab.getBoundingClientRect().left - assetTabs.getBoundingClientRect().left),
+        }
+      })
+      expect(assetState).toEqual({
         assetTitle: 'Olist Commerce',
         assetHasOverview: true,
         assetHasRecordTable: true,
@@ -173,8 +197,9 @@ test('workspace catalog cards keep Open links visible with long descriptions', a
   try {
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-workspace-page'))
-    await page.locator('ld-workspace-page').evaluate((element: any) => {
-      element.page = {
+    await page.evaluate(async () => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: {
         kind: 'workspace',
         title: 'Workspaces',
         description: 'View published BI workspaces.',
@@ -183,7 +208,7 @@ test('workspace catalog cards keep Open links visible with long descriptions', a
           { id: 'sales', title: 'Sales Workspace', description: 'Revenue, orders, and product category analysis.', href: '/workspaces/sales', deploymentLabel: 'Serving' },
           { id: 'visuals', title: 'Visuals Workspace', description: 'Developer QA workspace for exhaustive dashboard visual and table renderer coverage.', href: '/workspaces/visuals', deploymentLabel: 'Serving' },
         ],
-      }
+      } })
     })
     await page.locator('ld-workspace-page').evaluate((element: any) => element.updateComplete)
 
@@ -218,6 +243,7 @@ test('workspace asset search filters the current asset rows', async () => {
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-workspace-page'))
     await page.locator('ld-workspace-page').evaluate((element: any) => element.updateComplete)
+    await page.waitForFunction(() => Boolean((document.querySelector('ld-workspace-page') as any)?.shadowRoot?.querySelector('ld-workspace-access-control')?.shadowRoot?.querySelector('.trigger')))
 
     const state = await page.evaluate(async () => {
       const workspace = document.querySelector('ld-workspace-page') as any
@@ -299,14 +325,15 @@ test('workspace access modal normalizes Go-shaped access signals', async () => {
 test('workspace asset refresh page renders refresh tab and emits refresh events', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
-    await page.goto(baseURL)
+    await page.goto(`${baseURL}/asset`)
     await page.waitForFunction(() => customElements.get('ld-workspace-asset-page') && customElements.get('ld-record-table'))
 
     const state = await page.evaluate(async () => {
       const asset = document.querySelector('ld-workspace-asset-page') as any
       let refreshEvents = 0
       asset.addEventListener('ld-refresh-materializations', () => { refreshEvents += 1 })
-      asset.page = {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: {
         kind: 'workspace_asset',
         title: 'Olist Commerce',
         workspaceId: 'libredash',
@@ -350,7 +377,7 @@ test('workspace asset refresh page renders refresh tab and emits refresh events'
             empty: 'No refresh runs.',
           },
         },
-      }
+      } })
       await asset.updateComplete
       const button = asset.shadowRoot.querySelector('button[aria-label="Refresh materializations"]') as HTMLButtonElement
       button.click()
@@ -374,12 +401,13 @@ test('workspace asset refresh page renders refresh tab and emits refresh events'
 test('workspace asset page does not render versions as a product surface', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
-    await page.goto(baseURL)
+    await page.goto(`${baseURL}/asset`)
     await page.waitForFunction(() => customElements.get('ld-workspace-asset-page') && customElements.get('ld-record-table'))
 
     const state = await page.evaluate(async () => {
       const asset = document.querySelector('ld-workspace-asset-page') as any
-      asset.page = {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: {
         kind: 'workspace_asset',
         title: 'Executive Sales Dashboard',
         workspaceId: 'libredash',
@@ -410,7 +438,7 @@ test('workspace asset page does not render versions as a product surface', async
           ],
           sections: [],
         },
-      }
+      } })
       await asset.updateComplete
       const table = asset.shadowRoot.querySelector('ld-record-table') as HTMLElement | null
       return {
@@ -430,7 +458,7 @@ test('workspace asset page does not render versions as a product surface', async
   }
 })
 
-function testDocument(): string {
+function testDocument(root: 'workspace' | 'connections' | 'asset'): string {
   const assetList = {
     workspaceId: 'libredash',
     searchHref: '/workspaces/libredash',
@@ -556,7 +584,11 @@ function testDocument(): string {
     command: { email: '', role: '', principalId: '' },
     search: '',
   }
-  const attr = (value: unknown) => escapeHTML(JSON.stringify(value))
+  const route = root === 'connections'
+    ? { signals: { page: connectionsPage }, element: '<ld-connections-page></ld-connections-page>' }
+    : root === 'asset'
+      ? { signals: { page: assetPage }, element: '<ld-workspace-asset-page></ld-workspace-asset-page>' }
+      : { signals: { page: workspacePage, workspaceAccess: access }, element: '<ld-workspace-page></ld-workspace-page>' }
   return `
     <!doctype html>
     <html>
@@ -568,9 +600,10 @@ function testDocument(): string {
         </style>
       </head>
       <body>
-        <ld-workspace-page page="${attr(workspacePage)}" workspaceaccess="${attr(access)}"></ld-workspace-page>
-        <ld-connections-page page="${attr(connectionsPage)}"></ld-connections-page>
-        <ld-workspace-asset-page page="${attr(assetPage)}"></ld-workspace-asset-page>
+        <main data-signals="${escapeHTML(JSON.stringify(route.signals))}">
+          ${route.element}
+        </main>
+        <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>
         <script type="module" src="/workspace-page-under-test.js"></script>
       </body>
     </html>

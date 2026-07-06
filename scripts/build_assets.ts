@@ -6,6 +6,8 @@ type AssetBuild = {
   options: BuildOptions
 }
 
+const externalModules = ['/static/vendor/datastar-1.0.2.js?v=dev']
+
 const builds: AssetBuild[] = [
   single('app-shell', 'web/components/app/app-shell.ts', 'static/app-shell.js'),
   single('catalog-page', 'web/components/app/catalog-page.ts', 'static/catalog-page.js'),
@@ -26,6 +28,7 @@ const builds: AssetBuild[] = [
       entrypoints: ['web/components/shared/semantic-model-graph.ts'],
       target: 'browser',
       format: 'esm',
+      external: externalModules,
       outdir: 'static',
       naming: { entry: 'semantic-model-graph.[ext]' },
     },
@@ -37,6 +40,7 @@ const builds: AssetBuild[] = [
       entrypoints: ['web/components/shared/asset-lineage-graph.ts'],
       target: 'browser',
       format: 'esm',
+      external: externalModules,
       outdir: 'static',
       naming: { entry: 'asset-lineage-graph.[ext]' },
     },
@@ -57,6 +61,7 @@ function single(label: string, entrypoint: string, outputPath: string): AssetBui
       entrypoints: [entrypoint],
       target: 'browser',
       format: 'esm',
+      external: externalModules,
       outdir: output.dir,
       naming: { entry: output.name },
     },
@@ -73,6 +78,7 @@ function split(label: string, entrypoint: string, outdir: string, entryName: str
       target: 'browser',
       format: 'esm',
       splitting: true,
+      external: externalModules,
       outdir,
       naming: { entry: entryName, chunk: chunkName },
     },
@@ -90,6 +96,7 @@ function splitByName(label: string, entrypoint: string, outdir: string, chunkNam
       target: 'browser',
       format: 'esm',
       splitting: true,
+      external: externalModules,
       outdir,
       naming: { entry: '[name].[ext]', chunk: chunkName },
     },

@@ -12,7 +12,7 @@ import type {
   ReportFilterConfig,
 } from '../../generated/signals'
 import { lucideIcon } from '../shared/lucide-icons'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
 import './filters/filter-dock'
@@ -30,15 +30,7 @@ const emptyStatus: DashboardStatus = {
   setupRequired: false,
 }
 
-class LibreDashDashboardPage extends LitElement {
-  @property({ converter: jsonAttribute<DashboardPageSignal | null>(null) }) page: DashboardPageSignal | null = null
-  @property({ attribute: 'filterconfig', converter: jsonAttribute<ReportFilterConfig[]>([]) }) filterConfig: ReportFilterConfig[] = []
-  @property({ converter: jsonAttribute<DashboardFilters>(emptyFilters) }) filters: DashboardFilters = emptyFilters
-  @property({ attribute: 'filteroptions', converter: jsonAttribute<Record<string, unknown>>({}) }) filterOptions: Record<string, unknown> = {}
-  @property({ converter: jsonAttribute<Record<string, DashboardVisual>>({}) }) visuals: Record<string, DashboardVisual> = {}
-  @property({ converter: jsonAttribute<Record<string, DashboardTable>>({}) }) tables: Record<string, DashboardTable> = {}
-  @property({ converter: jsonAttribute<DashboardStatus>(emptyStatus) }) status: DashboardStatus = emptyStatus
-
+class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
 
   static styles = css`
@@ -248,12 +240,42 @@ class LibreDashDashboardPage extends LitElement {
   }
 
   updated(): void {
-    checkSignalContract('dashboard page', this.page, {
+    const page = this.page
+    if (!page) return
+    checkSignalContract('dashboard page', page, {
       dashboardId: 'required',
       pageId: 'required',
       components: 'required',
     })
     this.loadRenderedComponents()
+  }
+
+  get page(): DashboardPageSignal | null {
+    return this.signal<DashboardPageSignal | null>('page', null)
+  }
+
+  private get filterConfig(): ReportFilterConfig[] {
+    return this.signal<ReportFilterConfig[]>('filterConfig', [])
+  }
+
+  private get filters(): DashboardFilters {
+    return this.signal<DashboardFilters>('filters', emptyFilters)
+  }
+
+  private get filterOptions(): Record<string, unknown> {
+    return this.signal<Record<string, unknown>>('filterOptions', {})
+  }
+
+  private get visuals(): Record<string, DashboardVisual> {
+    return this.signal<Record<string, DashboardVisual>>('visuals', {})
+  }
+
+  private get tables(): Record<string, DashboardTable> {
+    return this.signal<Record<string, DashboardTable>>('tables', {})
+  }
+
+  private get status(): DashboardStatus {
+    return this.signal<DashboardStatus>('status', emptyStatus)
   }
 
   render() {

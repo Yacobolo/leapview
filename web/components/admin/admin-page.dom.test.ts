@@ -8,7 +8,8 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-const root = join(process.cwd(), '.tmp/admin-page-test')
+const projectRoot = process.cwd()
+const root = join(projectRoot, '.tmp/admin-page-test')
 
 beforeAll(async () => {
   server = createServer(async (request, response) => {
@@ -18,8 +19,9 @@ beforeAll(async () => {
       response.end(testDocument())
       return
     }
-    const file = normalize(join(root, url.pathname))
-    if (!file.startsWith(root)) {
+    const fileRoot = url.pathname.startsWith('/static/vendor/') ? projectRoot : root
+    const file = normalize(join(fileRoot, url.pathname))
+    if (!file.startsWith(fileRoot)) {
       response.writeHead(404)
       response.end('not found')
       return
@@ -107,10 +109,10 @@ test('admin navigation remains pinned while content scrolls on desktop', async (
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-sub-sidebar') && customElements.get('ld-record-table'))
 
-    const state = await page.evaluate(async () => {
-      const element = document.createElement('ld-admin-page') as any
-      element.style.minHeight = '1600px'
-      element.page = {
+      const state = await page.evaluate(async () => {
+        const element = document.createElement('ld-admin-page') as any
+        element.style.minHeight = '1600px'
+      const pageSignal = {
         kind: 'admin',
         title: 'Principals',
         active: 'principals',
@@ -141,6 +143,8 @@ test('admin navigation remains pinned while content scrolls on desktop', async (
           ],
         })),
       }
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: pageSignal })
       const spacer = document.createElement('div')
       spacer.style.height = '1600px'
       document.body.replaceChildren(element, spacer)
@@ -419,8 +423,8 @@ test('query audit page filters table rows and exposes optional metadata columns'
     const state = await page.evaluate(async (fixture) => {
       localStorage.removeItem('libredash-admin-query-events-columns')
       const element = document.createElement('ld-admin-page') as any
-      element.page = fixture
-      element.queryHistory = fixture.queryHistory
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: fixture, adminQueryHistory: fixture.queryHistory, adminQueryDetail: { eventId: '', loading: false, error: '' } })
       ;(window as any).queryHistoryCommands = []
       element.addEventListener('ld-query-history-command', (event: CustomEvent) => {
         ;(window as any).queryHistoryCommands.push(event.detail)
@@ -473,7 +477,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
       await element.updateComplete
       const detailCommand = (window as any).queryHistoryCommands.at(-1)
-      element.queryDetail = fixture.queryDetail
+      mergePatch({ adminQueryDetail: fixture.queryDetail })
       await element.updateComplete
       const drawer = root.querySelector('.query-detail-drawer') as HTMLElement | null
       const drawerText = drawer?.textContent ?? ''
@@ -490,17 +494,17 @@ test('query audit page filters table rows and exposes optional metadata columns'
       root.querySelector<HTMLButtonElement>('.query-detail-close')?.click()
       await element.updateComplete
       const closeCommand = (window as any).queryHistoryCommands.at(-1)
-      element.queryDetail = { eventId: '', loading: false, error: '' }
+      mergePatch({ adminQueryDetail: { eventId: '', loading: false, error: '' } })
       await element.updateComplete
       const hasDrawerAfterClose = Boolean(root.querySelector('.query-detail-drawer'))
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
       await element.updateComplete
-      element.queryDetail = fixture.queryDetail
+      mergePatch({ adminQueryDetail: fixture.queryDetail })
       await element.updateComplete
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
       await element.updateComplete
       const escapeCommand = (window as any).queryHistoryCommands.at(-1)
-      element.queryDetail = { eventId: '', loading: false, error: '' }
+      mergePatch({ adminQueryDetail: { eventId: '', loading: false, error: '' } })
       await element.updateComplete
       const hasDrawerAfterEscape = Boolean(root.querySelector('.query-detail-drawer'))
       Array.from(table.querySelectorAll('label'))
@@ -512,8 +516,6 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const operationText = table.textContent ?? ''
       const hasDetailAction = Boolean(table.querySelector('.record-icon-action[aria-label="Details"]'))
       const recreated = document.createElement('ld-admin-page') as any
-      recreated.page = element.page
-      recreated.queryHistory = element.queryHistory
       document.body.replaceChildren(recreated)
       await recreated.updateComplete
       const recreatedTable = recreated.shadowRoot.querySelector('ld-record-table') as any
@@ -624,10 +626,10 @@ test('query audit emits load more commands from backend-driven history state', a
   try {
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
-    const state = await page.evaluate(async (fixture) => {
-      const element = document.createElement('ld-admin-page') as any
-      element.page = fixture
-      element.queryHistory = fixture.queryHistory
+      const state = await page.evaluate(async (fixture) => {
+        const element = document.createElement('ld-admin-page') as any
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: fixture, adminQueryHistory: fixture.queryHistory, adminQueryDetail: { eventId: '', loading: false, error: '' } })
       ;(window as any).queryHistoryCommands = []
       element.addEventListener('ld-query-history-command', (event: CustomEvent) => {
         ;(window as any).queryHistoryCommands.push(event.detail)
@@ -639,7 +641,7 @@ test('query audit emits load more commands from backend-driven history state', a
       root.querySelector<HTMLButtonElement>('.query-history-load-more')?.click()
       await element.updateComplete
       const command = (window as any).queryHistoryCommands.at(-1)
-      element.queryHistory = {
+      mergePatch({ adminQueryHistory: {
         ...fixture.queryHistory,
         table: {
           ...fixture.queryHistory.table,
@@ -655,7 +657,7 @@ test('query audit emits load more commands from backend-driven history state', a
         nextCursor: '',
         hasMore: false,
         loadedCountLabel: '1 query loaded',
-      }
+      } })
       await element.updateComplete
       const updatedText = root.textContent ?? ''
       const workspaceMenu = root.querySelector('ld-filter-menu') as HTMLElement | null
@@ -684,16 +686,17 @@ test('query audit detail drawer behaves as a mobile overlay', async () => {
   try {
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
-    const state = await page.evaluate(async (fixture) => {
-      const element = document.createElement('ld-admin-page') as any
-      element.page = fixture
+      const state = await page.evaluate(async (fixture) => {
+        const element = document.createElement('ld-admin-page') as any
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: fixture, adminQueryHistory: fixture.queryHistory, adminQueryDetail: { eventId: '', loading: false, error: '' } })
       document.body.replaceChildren(element)
       await element.updateComplete
       const root = element.shadowRoot
       const table = root.querySelector('ld-record-table') as any
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
       await element.updateComplete
-      element.queryDetail = fixture.queryDetail
+      mergePatch({ adminQueryDetail: fixture.queryDetail })
       await element.updateComplete
       const drawer = root.querySelector('.query-detail-drawer') as HTMLElement
       const drawerRect = drawer.getBoundingClientRect()
@@ -721,9 +724,10 @@ test('query audit drawer does not block selecting another row', async () => {
   try {
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('ld-admin-page') && customElements.get('ld-record-table'))
-    const state = await page.evaluate(async (fixture) => {
-      const element = document.createElement('ld-admin-page') as any
-      element.page = fixture
+      const state = await page.evaluate(async (fixture) => {
+        const element = document.createElement('ld-admin-page') as any
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: fixture, adminQueryHistory: fixture.queryHistory, adminQueryDetail: { eventId: '', loading: false, error: '' } })
       document.body.replaceChildren(element)
       await element.updateComplete
       const root = element.shadowRoot
@@ -731,13 +735,13 @@ test('query audit drawer does not block selecting another row', async () => {
       const rows = Array.from(table.querySelectorAll<HTMLElement>('tbody tr.record-row'))
       rows[0]?.click()
       await element.updateComplete
-      element.queryDetail = fixture.queryDetail
+      mergePatch({ adminQueryDetail: fixture.queryDetail })
       await element.updateComplete
       const firstDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
       const hasBackdrop = Boolean(root.querySelector('.query-detail-backdrop'))
       rows[1]?.click()
       await element.updateComplete
-      element.queryDetail = {
+      mergePatch({ adminQueryDetail: {
         ...fixture.queryDetail,
         eventId: 'queryevent_2',
         status: 'error',
@@ -760,7 +764,7 @@ test('query audit drawer does not block selecting another row', async () => {
         planText: '',
         queryJson: '{"workspaceId":"operations","target":"customers"}',
         createdAt: '2026-07-02T10:01:00Z',
-      }
+      } })
       await element.updateComplete
       const secondDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
       return {
@@ -836,7 +840,7 @@ test('admin storage route renders storage explorer from typed signal data', asyn
         deployments: [{ workspaceId: 'sales', environment: 'dev', deploymentId: 'dep_1', status: 'active', snapshotId: 7, digest: 'digest', active: true, activatedAt: 'now' }],
         selectedTable: table,
       }
-      element.page = {
+      const pageSignal = {
         kind: 'admin',
         title: 'Storage',
         active: 'storage',
@@ -855,7 +859,8 @@ test('admin storage route renders storage explorer from typed signal data', asyn
         metrics: [{ label: 'Tables', value: '1' }],
         storage,
       }
-      element.storage = storage
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: pageSignal, adminStorage: storage })
       document.body.append(element)
       await element.updateComplete
       const explorer = element.shadowRoot.querySelector('ld-storage-explorer') as any
@@ -942,7 +947,7 @@ test('admin agent route renders prompt editor, tools catalog, and emits save com
         }
       }
       const element = document.createElement('ld-admin-page') as any
-      element.page = {
+      const pageSignal = {
         kind: 'admin',
         title: 'Agent',
         active: 'agent',
@@ -989,7 +994,8 @@ test('admin agent route renders prompt editor, tools catalog, and emits save com
           },
         }],
       }
-      element.agentPrompt = 'Signal prompt'
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: pageSignal, adminAgentCommand: { systemPrompt: 'Signal prompt' } })
       document.body.append(element)
       await element.updateComplete
       let command: unknown = null
@@ -1139,7 +1145,7 @@ test('admin agent prompt editor disables saves for read-only users', async () =>
         }
       }
       const element = document.createElement('ld-admin-page') as any
-      element.page = {
+      const pageSignal = {
         kind: 'admin',
         title: 'Agent',
         active: 'agent',
@@ -1166,6 +1172,8 @@ test('admin agent prompt editor disables saves for read-only users', async () =>
         },
         sections: [],
       }
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: pageSignal, adminAgentCommand: { systemPrompt: '' } })
       document.body.append(element)
       await element.updateComplete
       let command: unknown = null
@@ -1491,7 +1499,7 @@ test('admin storage explorer keeps table, schema, and breadcrumb selection coher
         files: [{ id: 2, path: 'model/orders/file.parquet', format: 'parquet', recordCount: 20, recordCountLabel: '20', sizeBytes: 12288, sizeLabel: '12 KiB', beginSnapshot: 6, endSnapshot: 0 }],
         history: [{ snapshotId: 6, time: '2026-07-03T10:00:00Z', schemaVersion: 1, source: 'table,data_file', changes: 'tables_inserted_into', author: 'tester', message: 'materialize orders', extraInfo: '{}' }],
       }
-      element.storage = {
+      const storage = {
         summary: {
           catalogPath: '/tmp/libredash/libredash.db',
           dataPath: '/tmp/libredash/data',
@@ -1512,6 +1520,7 @@ test('admin storage explorer keeps table, schema, and breadcrumb selection coher
         deployments: [{ workspaceId: 'olist', environment: 'dev', deploymentId: 'dep_1', status: 'active', snapshotId: 6, digest: 'digest', active: true, activatedAt: 'now' }],
         selectedTable: customers,
       }
+      element.storage = storage
       const commands: unknown[] = []
       element.addEventListener('ld-storage-table-select', (event: CustomEvent) => commands.push(event.detail))
       document.body.append(element)
@@ -1657,7 +1666,7 @@ function testDocument(): string {
       },
     }],
   }
-  const attr = (value: unknown) => escapeHTML(JSON.stringify(value))
+  const signals = escapeHTML(JSON.stringify({ page }))
   return `
     <!doctype html>
     <html>
@@ -1669,7 +1678,10 @@ function testDocument(): string {
         </style>
       </head>
       <body>
-        <ld-admin-page page="${attr(page)}"></ld-admin-page>
+        <main data-signals="${signals}">
+          <ld-admin-page></ld-admin-page>
+        </main>
+        <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>
         <script type="module" src="/admin-page-under-test.js"></script>
       </body>
     </html>

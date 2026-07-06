@@ -1,7 +1,6 @@
 import { LitElement, css, html } from 'lit'
-import { property } from 'lit/decorators.js'
 import type { ChromeSignal } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sidebar'
 
@@ -19,9 +18,7 @@ const emptyChrome: ChromeSignal = {
   },
 }
 
-class LibreDashAppShell extends LitElement {
-  @property({ converter: jsonAttribute<ChromeSignal>(emptyChrome) }) chrome: ChromeSignal = emptyChrome
-
+class LibreDashAppShell extends DatastarLit(LitElement) {
   static styles = css`
     :host {
       display: grid;
@@ -61,6 +58,10 @@ class LibreDashAppShell extends LitElement {
 
   updated(): void {
     checkSignalContract('chrome', this.chrome, { sidebar: 'required' })
+  }
+
+  get chrome(): ChromeSignal {
+    return this.signal<ChromeSignal>('chrome', emptyChrome)
   }
 
   connectedCallback(): void {

@@ -1,5 +1,5 @@
-import { LitElement, css, html, nothing, type PropertyValues } from 'lit'
-import { property, state } from 'lit/decorators.js'
+import { LitElement, css, html, nothing } from 'lit'
+import { state } from 'lit/decorators.js'
 import { ChevronRight, Code2, Database, Eye, Search, Server, Table2 } from 'lucide'
 import type {
   DataExplorerCommand,
@@ -8,7 +8,7 @@ import type {
   DataExplorerSignal,
   DataPreviewSignal,
 } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { lucideIcon } from '../shared/lucide-icons'
 import './preview-table'
 
@@ -49,11 +49,10 @@ type WorkspaceGroup = {
   layers: LayerGroup[]
 }
 
-class DataExplorerPage extends LitElement {
-  @property({ converter: jsonAttribute<DataExplorerPageSignal | null>(null) }) page: DataExplorerPageSignal | null = null
-  @property({ attribute: 'dataexplorer', converter: jsonAttribute<DataExplorerSignal>(emptyExplorer) }) dataExplorer: DataExplorerSignal = emptyExplorer
+class DataExplorerPage extends DatastarLit(LitElement) {
   @state() private search = ''
   @state() private showSQL = false
+  private lastSelectedKey = ''
 
   static styles = css`
     :host {
@@ -374,10 +373,20 @@ class DataExplorerPage extends LitElement {
     }
   `
 
-  updated(changed: PropertyValues<this>): void {
-    if (changed.has('dataExplorer')) {
+  updated(): void {
+    const selectedKey = `${this.dataExplorer.selectedWorkspaceId}:${this.dataExplorer.selectedKey}`
+    if (selectedKey !== this.lastSelectedKey) {
+      this.lastSelectedKey = selectedKey
       this.showSQL = false
     }
+  }
+
+  get page(): DataExplorerPageSignal | null {
+    return this.signal<DataExplorerPageSignal | null>('page', null)
+  }
+
+  get dataExplorer(): DataExplorerSignal {
+    return this.signal<DataExplorerSignal>('dataExplorer', emptyExplorer)
   }
 
   render() {

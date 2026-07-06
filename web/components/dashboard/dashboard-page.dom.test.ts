@@ -8,7 +8,8 @@ let server: Server
 let baseURL = ''
 let browser: Browser
 
-const root = join(process.cwd(), '.tmp/dashboard-page-test')
+const projectRoot = process.cwd()
+const root = join(projectRoot, '.tmp/dashboard-page-test')
 
 beforeAll(async () => {
   server = createServer(async (request, response) => {
@@ -18,8 +19,9 @@ beforeAll(async () => {
       response.end(testDocument())
       return
     }
-    const file = normalize(join(root, url.pathname))
-    if (!file.startsWith(root)) {
+    const fileRoot = url.pathname.startsWith('/static/vendor/') ? projectRoot : root
+    const file = normalize(join(fileRoot, url.pathname))
+    if (!file.startsWith(fileRoot)) {
       response.writeHead(404)
       response.end('not found')
       return
@@ -61,6 +63,7 @@ for (const viewport of [
           && customElements.get('ld-echart')
           && customElements.get('ld-report-table')
       ))
+      await page.waitForFunction(() => (document.querySelector('ld-dashboard-page') as any)?.page?.title === 'Executive Sales Dashboard')
       await page.locator('ld-dashboard-page').evaluate((element: any) => element.updateComplete)
 
       const state = await page.locator('ld-dashboard-page').evaluate((element: any) => {
@@ -259,6 +262,15 @@ function testDocument(): string {
     },
   }
   const status = { loading: false, error: '', lastUpdated: '12:00:00', dataDirectory: '.data/olist', setupRequired: false }
+  const signals = {
+    page,
+    filterConfig,
+    filters,
+    filterOptions: { state: [{ value: 'SP', label: 'SP' }] },
+    visuals,
+    tables,
+    status,
+  }
   const attr = (value: unknown) => escapeHTML(JSON.stringify(value))
   return `
     <!doctype html>
@@ -271,15 +283,10 @@ function testDocument(): string {
         </style>
       </head>
       <body>
-        <ld-dashboard-page
-          page="${attr(page)}"
-          filterconfig="${attr(filterConfig)}"
-          filters="${attr(filters)}"
-          filteroptions="${attr({ state: [{ value: 'SP', label: 'SP' }] })}"
-          visuals="${attr(visuals)}"
-          tables="${attr(tables)}"
-          status="${attr(status)}"
-        ></ld-dashboard-page>
+        <main data-signals="${attr(signals)}">
+          <ld-dashboard-page></ld-dashboard-page>
+        </main>
+        <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>
         <script type="module" src="/dashboard-page-under-test.js"></script>
       </body>
     </html>

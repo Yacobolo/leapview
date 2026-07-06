@@ -1,8 +1,8 @@
 import { LitElement, css, html, nothing } from 'lit'
-import { property, state } from 'lit/decorators.js'
+import { state } from 'lit/decorators.js'
 import { CheckCircle2, Clock3, Copy, X, XCircle } from 'lucide'
 import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, FilterMenuCommand, FilterMenuSignal, RecordTableSignal } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { lucideIcon } from '../shared/lucide-icons'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
@@ -35,15 +35,11 @@ const emptyStorage: AdminStorageSignal = {
   selectedTable: null,
 }
 
-class LibreDashAdminPage extends LitElement {
-  @property({ converter: jsonAttribute<AdminPageSignal | null>(null) }) page: AdminPageSignal | null = null
-  @property({ converter: jsonAttribute<AdminStorageSignal>(emptyStorage) }) storage: AdminStorageSignal = emptyStorage
-  @property({ attribute: 'query-history', converter: jsonAttribute<AdminQueryHistorySignal | null>(null) }) queryHistory: AdminQueryHistorySignal | null = null
-  @property({ attribute: 'query-detail', converter: jsonAttribute<AdminQueryDetailSignal | null>(null) }) queryDetail: AdminQueryDetailSignal | null = null
-  @property({ attribute: 'agent-prompt' }) agentPrompt = ''
+class LibreDashAdminPage extends DatastarLit(LitElement) {
   @state() private queryFilters: AdminQueryHistoryFilters = {}
   @state() private copiedQueryDetailValue = ''
   private queryFilterTimer: ReturnType<typeof setTimeout> | null = null
+  private lastQueryHistoryKey = ''
 
   static styles = css`
     :host {
@@ -542,15 +538,37 @@ class LibreDashAdminPage extends LitElement {
     super.disconnectedCallback()
   }
 
-  updated(changed: Map<string, unknown>): void {
+  updated(): void {
     checkSignalContract('admin page', this.page, { kind: 'required', title: 'required', sidebar: 'required' })
-    if (changed.has('queryHistory')) {
+    const historyKey = JSON.stringify(this.currentQueryHistory().filters)
+    if (historyKey !== this.lastQueryHistoryKey) {
+      this.lastQueryHistoryKey = historyKey
       const history = this.currentQueryHistory()
       this.queryFilters = { ...history.filters }
       if (this.queryDetail?.eventId && !tableRows(history.table).some((row) => String(row.id ?? '') === this.queryDetail?.eventId)) {
         this.closeQueryDetail()
       }
     }
+  }
+
+  get page(): AdminPageSignal | null {
+    return this.signal<AdminPageSignal | null>('page', null)
+  }
+
+  get storage(): AdminStorageSignal {
+    return this.signal<AdminStorageSignal>('adminStorage', emptyStorage)
+  }
+
+  get queryHistory(): AdminQueryHistorySignal | null {
+    return this.signal<AdminQueryHistorySignal | null>('adminQueryHistory', null)
+  }
+
+  get queryDetail(): AdminQueryDetailSignal | null {
+    return this.signal<AdminQueryDetailSignal | null>('adminQueryDetail', null)
+  }
+
+  get agentPrompt(): string {
+    return this.signal<string>('adminAgentCommand.systemPrompt', '')
   }
 
   render() {

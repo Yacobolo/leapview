@@ -161,43 +161,21 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 	}
 	adminAttrs := []g.Node{
 		g.Attr("slot", "page"),
-		g.Attr("page", jsonString(page)),
-		g.Attr("data-attr:page", "$page"),
 	}
 	if active == "storage" {
 		adminAttrs = append(adminAttrs,
-			g.Attr("storage", jsonString(storageSignal)),
-			g.Attr("data-attr:storage", "$adminStorage"),
 			g.Attr("data-on:ld-storage-table-select", "$adminStorageCommand = evt.detail; "+postAction("/admin/storage/select-table")),
 		)
 	}
 	if active == "agent" {
 		adminAttrs = append(adminAttrs,
-			g.Attr("agent-prompt", data.Agent.SystemPrompt),
-			g.Attr("data-attr:agent-prompt", "$adminAgentCommand.systemPrompt"),
 			g.Attr("data-on:ld-agent-system-prompt-save", "$adminAgentCommand = evt.detail; "+patchAction("/api/v1/admin/agent/config")),
 		)
 	}
 	if active == "queries" {
 		adminAttrs = append(adminAttrs,
-			g.Attr("query-history", jsonString(AdminQueryHistorySignalFromData(data.QueryHistory))),
-			g.Attr("query-detail", jsonString(uisignals.AdminQueryDetailSignal{})),
-			g.Attr("data-attr:query-history", "$adminQueryHistory"),
-			g.Attr("data-attr:query-detail", "$adminQueryDetail"),
 			g.Attr("data-on:ld-query-history-command", "$adminQueryHistoryCommand = evt.detail; evt.detail.action == 'select_detail' ? ($adminQueryDetail = {eventId: evt.detail.eventId, loading: true, error: ''}) : evt.detail.action == 'close_detail' ? ($adminQueryDetail = {eventId: '', loading: false, error: ''}) : ($adminQueryHistory.loading = true, $adminQueryHistory.error = ''); "+postAction("/admin/queries/command")),
 		)
-	}
-	adminChildren := []g.Node{}
-	if active == "agent" {
-		promptAttrs := []g.Node{
-			g.Attr("slot", "agent-prompt"),
-			g.Attr("value", data.Agent.SystemPrompt),
-			g.Attr("data-attr:value", "$adminAgentCommand.systemPrompt"),
-		}
-		if !data.Agent.CanWrite {
-			promptAttrs = append(promptAttrs, g.Attr("disabled", ""))
-		}
-		adminChildren = append(adminChildren, g.El("ld-agent-prompt-editor", promptAttrs...))
 	}
 	return pagestream.RenderPage(pagestream.PageSpec{
 		Title: "Admin - " + title,
@@ -217,9 +195,7 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 		UpdatesURL: adminUpdatesURL,
 		Body: []g.Node{
 			g.El("ld-app-shell",
-				g.Attr("chrome", jsonString(chrome)),
-				g.Attr("data-attr:chrome", "$chrome"),
-				g.El("ld-admin-page", append(adminAttrs, adminChildren...)...),
+				g.El("ld-admin-page", adminAttrs...),
 			),
 			inspectorElement(),
 		},

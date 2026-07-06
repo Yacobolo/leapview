@@ -77,6 +77,17 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	if !strings.Contains(showcase, `<ld-dashboard-page`) || !strings.Contains(showcase, `data-on:ld-filters-change`) || !strings.Contains(showcase, `data-on:ld-interaction-select`) {
 		t.Fatalf("showcase page did not mount dashboard route root with command bridge:\n%s", showcase)
 	}
+	if !strings.Contains(showcase, `data-signals=`) || !strings.Contains(showcase, `data-init="@get($runtime.updatesUrl, {openWhenHidden: true})"`) {
+		t.Fatalf("showcase page did not seed Datastar signals and updates stream init:\n%s", showcase)
+	}
+	for _, attr := range []string{
+		` chrome="`, ` page="`, ` filterconfig="`, ` filters="`, ` filteroptions="`, ` visuals="`, ` tables="`, ` status="`,
+		`data-attr:chrome`, `data-attr:page`, `data-attr:filterconfig`, `data-attr:filters`, `data-attr:filteroptions`, `data-attr:visuals`, `data-attr:tables`, `data-attr:status`,
+	} {
+		if strings.Contains(showcase, attr) {
+			t.Fatalf("showcase page rendered migrated dashboard bridge attribute %q:\n%s", attr, showcase)
+		}
+	}
 	if !strings.Contains(showcase, `/commands/reload`) || !strings.Contains(showcase, `data-url-param-shape`) {
 		t.Fatalf("showcase page did not wire dashboard reload command and URL sync shape:\n%s", showcase)
 	}

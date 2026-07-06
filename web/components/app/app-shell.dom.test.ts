@@ -39,6 +39,11 @@ beforeAll(async () => {
       response.end(testDocument(true, false, false, true))
       return
     }
+    if (url.pathname === '/signal-shell') {
+      response.setHeader('content-type', 'text/html')
+      response.end(signalShellDocument())
+      return
+    }
     if (url.pathname === '/chat') {
       response.setHeader('content-type', 'text/html')
       response.end('<!doctype html><title>Chat list</title><main>Chat list</main>')
@@ -118,6 +123,13 @@ test('upgraded compact app shell does not keep the fallback route grid column', 
   try {
     await page.goto(`${baseURL}/upgraded-compact-shell`)
     await page.waitForFunction(() => customElements.get('ld-app-shell') && customElements.get('ld-sidebar'))
+    await page.waitForFunction(() => (document.querySelector('ld-app-shell') as any)?.chrome?.sidebar?.compact === true)
+    await page.waitForFunction(() => ((document.querySelector('ld-app-shell') as any)?.shadowRoot?.querySelector('ld-sidebar') as any)?.config?.compact === true)
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('ld-app-shell') as HTMLElement | null
+      const sidebar = shell?.shadowRoot?.querySelector('ld-sidebar') as HTMLElement | null
+      return sidebar && Math.round(sidebar.getBoundingClientRect().width) === 48
+    })
     await page.locator('ld-app-shell').evaluate((element: any) => element.updateComplete)
 
     const state = await shellGeometry(page)
@@ -289,6 +301,31 @@ test('active chat nav item navigates to the chat list href', async () => {
   }
 })
 
+test('app shell reads chrome from Datastar signals without a payload attribute', async () => {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/signal-shell`)
+    await page.waitForFunction(() => customElements.get('ld-app-shell') && customElements.get('ld-sidebar'))
+    await page.waitForFunction(() => (document.querySelector('ld-app-shell') as any)?.chrome?.sidebar?.active === 'chat')
+    await page.locator('ld-app-shell').evaluate((element: any) => element.updateComplete)
+
+    const state = await page.locator('ld-app-shell').evaluate((element: any) => {
+      const sidebar = element.shadowRoot.querySelector('ld-sidebar') as any
+      return {
+        hasChromeAttr: element.hasAttribute('chrome'),
+        active: element.chrome.sidebar.active,
+        text: sidebar.shadowRoot.textContent.replace(/\s+/g, ' ').trim(),
+      }
+    })
+
+    expect(state.hasChromeAttr).toBe(false)
+    expect(state.active).toBe('chat')
+    expect(state.text).toContain('Chats')
+  } finally {
+    await page.close()
+  }
+})
+
 test('app shell routes retargeted sidebar clicks to the visual link', async () => {
   const page = await browser.newPage({ viewport: { width: 1320, height: 900 } })
   try {
@@ -347,6 +384,48 @@ async function shellGeometry(page: any) {
   })
 }
 
+function signalShellDocument(): string {
+  const signals = {
+    chrome: {
+      sidebar: {
+        workspaceTitle: 'LibreDash Workspace',
+        active: 'chat',
+        dashboardId: '',
+        dashboardTitle: '',
+        pageTitle: '',
+        modelId: '',
+        modelTitle: '',
+        compact: false,
+        groups: [{
+          label: 'Navigation',
+          items: [
+            { id: 'dashboards', label: 'Dashboards', href: '/', icon: 'dashboard' },
+            { id: 'chat', label: 'Chats', href: '/chat', icon: 'chat' },
+            { id: 'workspaces', label: 'Workspaces', href: '/workspaces', icon: 'catalog' },
+          ],
+        }],
+      },
+    },
+  }
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <link rel="stylesheet" href="/static/app.css">
+      </head>
+      <body>
+        <main class="min-h-svh bg-app text-fg-default" data-signals="${escapeHTML(JSON.stringify(signals))}">
+          <ld-app-shell>
+            <ld-workspace-page slot="page"></ld-workspace-page>
+          </ld-app-shell>
+        </main>
+        <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>
+        <script type="module" src="/tmp/app-shell-under-test.js"></script>
+      </body>
+    </html>
+  `
+}
+
 function testDocument(includeShellScript: boolean, compact = false, history = false, nav = false): string {
   const chromeConfig = compact || history || nav ? {
     sidebar: {
@@ -377,7 +456,7 @@ function testDocument(includeShellScript: boolean, compact = false, history = fa
       }] : [],
     },
   } : null
-  const chrome = chromeConfig ? ` chrome="${escapeHTML(JSON.stringify(chromeConfig))}"` : ''
+  const signals = chromeConfig ? ` data-signals="${escapeHTML(JSON.stringify({ chrome: chromeConfig }))}"` : ''
   return `
     <!doctype html>
     <html>
@@ -393,12 +472,12 @@ function testDocument(includeShellScript: boolean, compact = false, history = fa
         </style>
       </head>
       <body>
-        <main class="min-h-svh bg-app text-fg-default">
-          <ld-app-shell${chrome}>
+        <main class="min-h-svh bg-app text-fg-default"${signals}>
+          <ld-app-shell>
             <ld-workspace-page slot="page"></ld-workspace-page>
           </ld-app-shell>
         </main>
-        ${includeShellScript ? '<script type="module" src="/tmp/app-shell-under-test.js"></script>' : ''}
+        ${includeShellScript ? '<script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script><script type="module" src="/tmp/app-shell-under-test.js"></script>' : ''}
       </body>
     </html>
   `

@@ -88,6 +88,13 @@ tasks:
     cmds:
       - bun run build
 
+  bench:datastar-bridge:
+    desc: Benchmark legacy, direct signal, Ignition, and DatastarLit bridges in Chromium
+    deps:
+      - node:deps
+    cmds:
+      - bun run bench:datastar-bridge
+
   generate:
     desc: Generate all checked-out derived code needed for local development
     cmds:
@@ -153,6 +160,7 @@ tasks:
       - bun run test:primer-primitives
       - bun run test:primer-alignment
       - bun run test:theme
+      - bun run test:datastar-lit
       - bun run test:app-shell
       - bun run test:table-selection
       - bun run test:record-table

@@ -1,5 +1,5 @@
-import { LitElement, css, html, nothing, type PropertyValues } from 'lit'
-import { property, state } from 'lit/decorators.js'
+import { LitElement, css, html, nothing } from 'lit'
+import { state } from 'lit/decorators.js'
 import {
   ArrowLeft,
   BookOpen,
@@ -36,7 +36,7 @@ import type {
   WorkspacePageSignal,
   WorkspaceTabSignal,
 } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 import '../shared/record-table'
@@ -54,18 +54,34 @@ const emptyWorkspaceAccess: WorkspaceAccessSignal = {
   search: '',
 }
 
-class LibreDashWorkspacePage extends LitElement {
-  @property({ converter: jsonAttribute<WorkspacePageSignal | null>(null) }) page: WorkspacePageSignal | null = null
-  @property({ attribute: 'workspaceaccess', converter: jsonAttribute<WorkspaceAccessSignal>(emptyWorkspaceAccess) }) workspaceAccess: WorkspaceAccessSignal = emptyWorkspaceAccess
+class LibreDashWorkspacePage extends DatastarLit(LitElement) {
   @state() private assetQuery: string | null = null
+  private lastPageKey = ''
 
   static get styles() {
     return workspaceStyles
   }
 
-  updated(changedProperties: PropertyValues<this>): void {
-    if (changedProperties.has('page')) this.assetQuery = null
+  updated(): void {
+    const key = this.pageKey
+    if (key !== this.lastPageKey) {
+      this.lastPageKey = key
+      this.assetQuery = null
+    }
     checkSignalContract('workspace page', this.page, { kind: 'required', title: 'required' })
+  }
+
+  get page(): WorkspacePageSignal | null {
+    return this.signal<WorkspacePageSignal | null>('page', null)
+  }
+
+  get workspaceAccess(): WorkspaceAccessSignal {
+    return this.signal<WorkspaceAccessSignal>('workspaceAccess', emptyWorkspaceAccess)
+  }
+
+  private get pageKey(): string {
+    const page = this.page
+    return [page?.workspaceId ?? '', page?.title ?? '', page?.assetList?.activeType ?? '', page?.assetList?.query ?? ''].join(':')
   }
 
   render() {
@@ -144,17 +160,30 @@ class LibreDashWorkspacePage extends LitElement {
   }
 }
 
-class LibreDashConnectionsPage extends LitElement {
-  @property({ converter: jsonAttribute<ConnectionsPageSignal | null>(null) }) page: ConnectionsPageSignal | null = null
+class LibreDashConnectionsPage extends DatastarLit(LitElement) {
   @state() private assetQuery: string | null = null
+  private lastPageKey = ''
 
   static get styles() {
     return workspaceStyles
   }
 
-  updated(changedProperties: PropertyValues<this>): void {
-    if (changedProperties.has('page')) this.assetQuery = null
+  updated(): void {
+    const key = this.pageKey
+    if (key !== this.lastPageKey) {
+      this.lastPageKey = key
+      this.assetQuery = null
+    }
     checkSignalContract('connections page', this.page, { kind: 'required', title: 'required', assetList: 'required' })
+  }
+
+  get page(): ConnectionsPageSignal | null {
+    return this.signal<ConnectionsPageSignal | null>('page', null)
+  }
+
+  private get pageKey(): string {
+    const page = this.page
+    return [page?.workspaceId ?? '', page?.assetList?.activeType ?? '', page?.assetList?.query ?? ''].join(':')
   }
 
   render() {
@@ -179,15 +208,17 @@ class LibreDashConnectionsPage extends LitElement {
   }
 }
 
-class LibreDashWorkspaceAssetPage extends LitElement {
-  @property({ converter: jsonAttribute<WorkspaceAssetPageSignal | null>(null) }) page: WorkspaceAssetPageSignal | null = null
-
+class LibreDashWorkspaceAssetPage extends DatastarLit(LitElement) {
   static get styles() {
     return workspaceStyles
   }
 
   updated(): void {
     checkSignalContract('workspace asset page', this.page, { title: 'required', breadcrumbs: 'required', tabs: 'required' })
+  }
+
+  get page(): WorkspaceAssetPageSignal | null {
+    return this.signal<WorkspaceAssetPageSignal | null>('page', null)
   }
 
   render() {

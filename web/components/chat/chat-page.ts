@@ -1,7 +1,6 @@
 import { LitElement, css, html } from 'lit'
-import { property } from 'lit/decorators.js'
 import type { ChatConversationSummary, ChatPageSignal, ChatSignal, DashboardTable, DashboardVisual } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../dashboard/visual-modal'
 import './chat-thread'
@@ -16,14 +15,7 @@ const emptyAgent: ChatSignal = {
   composer: { value: '', disabled: true, placeholder: 'Agent is not configured.' },
 }
 
-class LibreDashChatPage extends LitElement {
-  @property({ converter: jsonAttribute<ChatPageSignal | null>(null) }) page: ChatPageSignal | null = null
-  @property({ converter: jsonAttribute<ChatSignal>(emptyAgent) }) agent: ChatSignal = emptyAgent
-  @property({ converter: jsonAttribute<Record<string, DashboardVisual>>({}) }) visuals: Record<string, DashboardVisual> = {}
-  @property({ converter: jsonAttribute<Record<string, DashboardTable>>({}) }) tables: Record<string, DashboardTable> = {}
-  @property({ type: Boolean, reflect: true }) pending = false
-  @property({ attribute: 'composerdisabled', type: Boolean }) composerDisabled = false
-
+class LibreDashChatPage extends DatastarLit(LitElement) {
   static styles = css`
     :host {
       display: block;
@@ -187,6 +179,31 @@ class LibreDashChatPage extends LitElement {
       status: 'required',
       composer: 'required',
     })
+  }
+
+  get page(): ChatPageSignal | null {
+    return this.signal<ChatPageSignal | null>('page', null)
+  }
+
+  get agent(): ChatSignal {
+    return this.signal<ChatSignal>('agent', emptyAgent)
+  }
+
+  get visuals(): Record<string, DashboardVisual> {
+    return this.signal<Record<string, DashboardVisual>>('visuals', {})
+  }
+
+  get tables(): Record<string, DashboardTable> {
+    return this.signal<Record<string, DashboardTable>>('tables', {})
+  }
+
+  get pending(): boolean {
+    return this.signal<boolean>('agentTurnPending', false) || Boolean(this.agent.status?.running)
+  }
+
+  get composerDisabled(): boolean {
+    const agent = this.agent
+    return this.pending || Boolean(agent.status?.running) || Boolean(agent.composer?.disabled)
   }
 
   render() {

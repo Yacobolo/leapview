@@ -1,8 +1,7 @@
 import { LitElement, css, html } from 'lit'
-import { property } from 'lit/decorators.js'
 import { Monitor, Moon, Sun } from 'lucide'
 import type { LoginPageSignal } from '../../generated/signals'
-import { jsonAttribute } from '../shared/json-attribute'
+import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 import './topology-background'
@@ -21,8 +20,7 @@ const themeLabels: Record<ThemeMode, string> = {
   dark: 'Dark theme',
 }
 
-class LibreDashLoginPage extends LitElement {
-  @property({ converter: jsonAttribute<LoginPageSignal | null>(null) }) page: LoginPageSignal | null = null
+class LibreDashLoginPage extends DatastarLit(LitElement) {
   private themeMode: ThemeMode = currentThemeMode()
   private readonly handleThemeApplied = (event: Event) => {
     const detail = (event as CustomEvent<{ mode?: string }>).detail
@@ -183,6 +181,10 @@ class LibreDashLoginPage extends LitElement {
 
   updated(): void {
     checkSignalContract('login page', this.page, { kind: 'required', title: 'required', providerLabel: 'required' })
+  }
+
+  get page(): LoginPageSignal | null {
+    return this.signal<LoginPageSignal | null>('page', null)
   }
 
   render() {
