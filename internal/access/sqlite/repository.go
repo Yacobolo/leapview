@@ -417,20 +417,50 @@ func (r *Repository) AuthorizeBatch(ctx context.Context, principalID string, che
 	if err != nil {
 		return nil, err
 	}
+	type objectFacts struct {
+		objectID string
+		exists   bool
+		owner    string
+		ancestry []string
+	}
+	factsByObject := map[string]objectFacts{}
+	loadObjectFacts := func(object access.ObjectRef) (objectFacts, error) {
+		objectKey := object.CanonicalID()
+		if facts, ok := factsByObject[objectKey]; ok {
+			return facts, nil
+		}
+		objectID, exists, err := r.lookupSecurableObjectID(ctx, object)
+		if err != nil {
+			return objectFacts{}, err
+		}
+		facts := objectFacts{objectID: objectID, exists: exists}
+		if exists {
+			owner, err := r.objectOwner(ctx, objectID)
+			if err != nil {
+				return objectFacts{}, err
+			}
+			ancestry, err := r.objectAncestry(ctx, objectID)
+			if err != nil {
+				return objectFacts{}, err
+			}
+			facts.owner = owner
+			facts.ancestry = ancestry
+		}
+		factsByObject[objectKey] = facts
+		return facts, nil
+	}
 	for _, i := range pending {
 		check := checks[i]
-		objectID, exists, err := r.lookupSecurableObjectID(ctx, check.Object)
+		facts, err := loadObjectFacts(check.Object)
 		if err != nil {
 			return nil, err
 		}
-		if !exists {
+		if !facts.exists {
 			out[i].Reason = access.ReasonUnknownObject
 			access.StoreAuthorizationDecision(ctx, principalID, out[i])
 			continue
 		}
-		if owner, err := r.objectOwner(ctx, objectID); err != nil {
-			return nil, err
-		} else if owner != "" && owner == principalID {
+		if facts.owner != "" && facts.owner == principalID {
 			out[i].Allowed = true
 			out[i].Owner = true
 			out[i].Reason = access.ReasonOwner
@@ -448,11 +478,7 @@ func (r *Repository) AuthorizeBatch(ctx context.Context, principalID string, che
 			access.StoreAuthorizationDecision(ctx, principalID, out[i])
 			continue
 		}
-		objectIDs, err := r.objectAncestry(ctx, objectID)
-		if err != nil {
-			return nil, err
-		}
-		grantDecision, err := r.authorizeByGrant(ctx, principalID, check.Privilege, objectIDs)
+		grantDecision, err := r.authorizeByGrant(ctx, principalID, check.Privilege, facts.ancestry)
 		if err != nil {
 			return nil, err
 		}
@@ -917,6 +943,9 @@ func grantOrderCase(objectIDs []string) string {
 }
 
 func objectDisplayName(object access.ObjectRef) string {
+	if strings.TrimSpace(object.DisplayName) != "" {
+		return strings.TrimSpace(object.DisplayName)
+	}
 	if object.ObjectID != "" {
 		return object.ObjectID
 	}

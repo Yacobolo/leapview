@@ -7,18 +7,28 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
+type SecurableRegistrar interface {
+	UpsertSecurableObject(ctx context.Context, object access.ObjectRef, ownerPrincipalID string) (access.SecurableObject, error)
+}
+
 type Repository struct {
-	db *sql.DB
-	q  *platformdb.Queries
+	db         *sql.DB
+	q          *platformdb.Queries
+	securables SecurableRegistrar
 }
 
 func NewRepository(sqlDB *sql.DB) *Repository {
 	return &Repository{db: sqlDB, q: platformdb.New(sqlDB)}
+}
+
+func NewRepositoryWithSecurables(sqlDB *sql.DB, securables SecurableRegistrar) *Repository {
+	return &Repository{db: sqlDB, q: platformdb.New(sqlDB), securables: securables}
 }
 
 func (r *Repository) Ensure(ctx context.Context, input workspace.EnsureInput) error {
@@ -37,16 +47,12 @@ func (r *Repository) Ensure(ctx context.Context, input workspace.EnsureInput) er
 	}); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `
-INSERT INTO securable_objects (id, object_type, workspace_id, parent_id, display_name)
-VALUES (?, 'workspace', ?, 'platform', ?)
-ON CONFLICT(id) DO UPDATE SET
-  object_type = excluded.object_type,
-  workspace_id = excluded.workspace_id,
-  parent_id = excluded.parent_id,
-  display_name = excluded.display_name,
-  updated_at = CURRENT_TIMESTAMP
-`, "workspace:"+id, id, title)
+	if r.securables == nil {
+		return nil
+	}
+	object := access.WorkspaceObject(id)
+	object.DisplayName = title
+	_, err := r.securables.UpsertSecurableObject(ctx, object, "")
 	return err
 }
 

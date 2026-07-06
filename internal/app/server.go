@@ -183,8 +183,11 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	if options.Logger != nil {
 		server.logger = options.Logger
 	}
-	if server.accessRepo != nil && strings.TrimSpace(server.defaultWorkspaceID) != "" {
-		_, _ = server.accessRepo.UpsertSecurableObject(context.Background(), access.WorkspaceObject(server.defaultWorkspaceID), "")
+	if err := server.registerDefaultWorkspaceSecurable(context.Background()); err != nil {
+		server.logger.ErrorContext(context.Background(), "register default workspace securable failed", "workspace", server.defaultWorkspaceID, "error", err)
+	}
+	if err := server.registerStoredWorkspaceSecurables(context.Background()); err != nil {
+		server.logger.ErrorContext(context.Background(), "register stored workspace securables failed", "error", err)
 	}
 	if server.agent != nil {
 		server.agent.ConfigureDefaultModel(func(config agent.Config) agentcore.Model {
@@ -241,7 +244,13 @@ func (s *Server) workspaceRepository() (workspace.Repository, error) {
 	if s.store == nil {
 		return nil, nil
 	}
-	s.workspaceRepo = workspacesqlite.NewRepository(s.store.SQLDB())
+	var securables workspacesqlite.SecurableRegistrar
+	if accessRepo, err := s.accessRepository(); err == nil {
+		securables = accessRepo
+	} else if s.logger != nil {
+		s.logger.ErrorContext(context.Background(), "create access repository for workspace securable registration failed", "error", err)
+	}
+	s.workspaceRepo = workspacesqlite.NewRepositoryWithSecurables(s.store.SQLDB(), securables)
 	return s.workspaceRepo, nil
 }
 
@@ -254,6 +263,47 @@ func (s *Server) accessRepository() (access.Repository, error) {
 	}
 	s.accessRepo = accesssqlite.NewRepository(s.store.SQLDB())
 	return s.accessRepo, nil
+}
+
+func (s *Server) registerDefaultWorkspaceSecurable(ctx context.Context) error {
+	if strings.TrimSpace(s.defaultWorkspaceID) == "" {
+		return nil
+	}
+	repo, err := s.accessRepository()
+	if err != nil {
+		return err
+	}
+	if repo == nil {
+		return nil
+	}
+	_, err = repo.UpsertSecurableObject(ctx, access.WorkspaceObject(s.defaultWorkspaceID), "")
+	return err
+}
+
+func (s *Server) registerStoredWorkspaceSecurables(ctx context.Context) error {
+	workspaceRepo, err := s.workspaceRepository()
+	if err != nil {
+		return err
+	}
+	accessRepo, err := s.accessRepository()
+	if err != nil {
+		return err
+	}
+	if workspaceRepo == nil || accessRepo == nil {
+		return nil
+	}
+	workspaces, err := workspaceRepo.List(ctx)
+	if err != nil {
+		return err
+	}
+	for _, row := range workspaces {
+		object := access.WorkspaceObject(string(row.ID))
+		object.DisplayName = row.Title
+		if _, err := accessRepo.UpsertSecurableObject(ctx, object, ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func principalFromContext(ctx context.Context) (Principal, bool) {

@@ -76,10 +76,10 @@ func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {
 		t.Fatalf("open platform store: %v", err)
 	}
 	defer store.Close()
-	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "other", Title: "Other"}); err != nil {
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	if err := workspacesqlite.NewRepositoryWithSecurables(store.SQLDB(), repo).Ensure(ctx, workspace.EnsureInput{ID: "other", Title: "Other"}); err != nil {
 		t.Fatalf("ensure other workspace: %v", err)
 	}
-	repo := accesssqlite.NewRepository(store.SQLDB())
 	principal, err := repo.PrincipalByID(ctx, "dev")
 	if err != nil {
 		t.Fatalf("lookup dev principal: %v", err)

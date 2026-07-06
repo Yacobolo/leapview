@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
+	oidcauth "github.com/Yacobolo/libredash/internal/access/oidc"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agent"
 	agentsqlite "github.com/Yacobolo/libredash/internal/agent/sqlite"
 	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/app"
-	oidcauth "github.com/Yacobolo/libredash/internal/access/oidc"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
@@ -90,8 +90,8 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		return nil, nil, err
 	}
 	cleanup := func() { _ = store.Close() }
-	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
 	accessRepo := accesssqlite.NewRepository(store.SQLDB())
+	workspaceRepo := workspacesqlite.NewRepositoryWithSecurables(store.SQLDB(), accessRepo)
 	if !production {
 		if err := app.SeedLocalDeveloperPlatformAdmin(ctx, accessRepo); err != nil {
 			cleanup()

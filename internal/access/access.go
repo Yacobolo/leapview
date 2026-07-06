@@ -205,6 +205,7 @@ type ObjectRef struct {
 	WorkspaceID string
 	ObjectID    string
 	ParentID    string
+	DisplayName string
 }
 
 func PlatformObject() ObjectRef {
