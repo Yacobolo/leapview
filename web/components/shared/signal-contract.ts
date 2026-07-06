@@ -2,6 +2,7 @@ type ContractShape = Record<string, 'required' | 'optional'>
 
 export function checkSignalContract(name: string, value: unknown, shape: ContractShape): void {
   if (!isDev()) return
+  if (value === undefined || value === null) return
   const object = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const missing = Object.entries(shape)
     .filter(([, required]) => required === 'required')

@@ -61,8 +61,8 @@ func renderDocument(spec documentSpec) g.Node {
 	if language == "" {
 		language = "en"
 	}
-	head := append([]g.Node{}, spec.Head...)
-	head = append(head, datastarScript())
+	head := []g.Node{datastarScript()}
+	head = append(head, spec.Head...)
 	mainChildren := []g.Node{}
 	if spec.Signals != nil {
 		mainChildren = append(mainChildren, dsattr.Signals(spec.Signals))

@@ -1,0 +1,117 @@
+import { chromium, type Page } from '@playwright/test'
+
+type RouteExpectation = {
+  path: string
+  root: string
+  shell: boolean
+}
+
+const baseURL = Bun.env.LIBREDASH_BASE_URL ?? 'http://localhost:8195'
+const routes: RouteExpectation[] = [
+  { path: '/', root: 'ld-catalog-page', shell: true },
+  { path: '/workspaces/visuals/dashboards/visual-showcase/pages/overview', root: 'ld-dashboard-page', shell: true },
+  { path: '/data', root: 'ld-data-explorer', shell: true },
+  { path: '/workspaces', root: 'ld-workspace-page', shell: true },
+  { path: '/connections', root: 'ld-connections-page', shell: true },
+  { path: '/admin', root: 'ld-admin-page', shell: true },
+  { path: '/chat', root: 'ld-chat-page', shell: true },
+  { path: '/login', root: 'ld-login-page', shell: false },
+]
+
+const browser = await chromium.launch()
+try {
+  for (const route of routes) {
+    await verifyRoute(route)
+  }
+  await verifyDashboardCommandDoesNotReopenUpdates()
+  console.log(`DatastarLit route QA passed for ${routes.length} routes at ${baseURL}`)
+} finally {
+  await browser.close()
+}
+
+async function verifyRoute(route: RouteExpectation): Promise<void> {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  const messages = collectBlockingConsoleMessages(page)
+  const updates: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/updates') updates.push(request.url())
+  })
+
+  try {
+    const response = await page.goto(new URL(route.path, baseURL).toString(), { waitUntil: 'domcontentloaded' })
+    if (!response?.ok()) {
+      throw new Error(`${route.path}: status ${response?.status() ?? 'unknown'}`)
+    }
+    await page.waitForSelector(route.root)
+    await page.waitForTimeout(1000)
+    const state = await page.evaluate((expectedRoot) => {
+      const root = document.querySelector(expectedRoot)
+      return {
+        root: root?.localName ?? '',
+        shell: Boolean(document.querySelector('ld-app-shell')),
+        shadowText: root?.shadowRoot?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+        datastarScriptCount: document.querySelectorAll('script[src*="datastar-1.0.2"]').length,
+      }
+    }, route.root)
+
+    if (state.root !== route.root) throw new Error(`${route.path}: mounted ${state.root || 'no root'}, want ${route.root}`)
+    if (state.shell !== route.shell) throw new Error(`${route.path}: shell=${state.shell}, want ${route.shell}`)
+    if (state.shadowText.length === 0 && route.root !== 'ld-chat-page') throw new Error(`${route.path}: route root rendered no shadow text`)
+    if (state.datastarScriptCount !== 1) throw new Error(`${route.path}: Datastar script count=${state.datastarScriptCount}, want 1`)
+    if (updates.length !== 1) throw new Error(`${route.path}: /updates request count=${updates.length}, want 1`)
+    assertNoBlockingConsoleMessages(route.path, messages)
+  } finally {
+    await page.close()
+  }
+}
+
+async function verifyDashboardCommandDoesNotReopenUpdates(): Promise<void> {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  const messages = collectBlockingConsoleMessages(page)
+  const updates: string[] = []
+  const commands: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/updates') updates.push(request.url())
+    if (url.pathname.includes('/commands/')) commands.push(`${request.method()} ${url.pathname}`)
+  })
+
+  try {
+    await page.goto(new URL('/workspaces/visuals/dashboards/visual-showcase/pages/overview', baseURL).toString(), { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('ld-dashboard-page')
+    await page.waitForTimeout(1000)
+    const beforeUpdates = updates.length
+    await page.evaluate(() => {
+      document.querySelector('ld-dashboard-page')?.dispatchEvent(new CustomEvent('ld-filters-refresh', { bubbles: true, composed: true }))
+    })
+    await page.waitForTimeout(1000)
+
+    if (beforeUpdates !== 1) throw new Error(`dashboard command: initial /updates count=${beforeUpdates}, want 1`)
+    if (updates.length !== 1) throw new Error(`dashboard command reopened /updates: count=${updates.length}`)
+    if (!commands.includes('POST /workspaces/visuals/commands/reload')) {
+      throw new Error(`dashboard command requests=${JSON.stringify(commands)}, want reload POST`)
+    }
+    assertNoBlockingConsoleMessages('dashboard command', messages)
+  } finally {
+    await page.close()
+  }
+}
+
+function collectBlockingConsoleMessages(page: Page): string[] {
+  const messages: string[] = []
+  page.on('console', (message) => {
+    if (message.type() !== 'warning' && message.type() !== 'error') return
+    const text = message.text()
+    if (text.includes('Failed to load resource')) messages.push(text)
+    if (text.includes('[LibreDash]')) messages.push(text)
+    if (text.includes('Multiple versions of Lit loaded')) messages.push(text)
+    if (text.includes('Lit is in dev mode')) messages.push(text)
+  })
+  return messages
+}
+
+function assertNoBlockingConsoleMessages(label: string, messages: string[]): void {
+  if (messages.length === 0) return
+  throw new Error(`${label}: blocking console messages:\n${messages.join('\n')}`)
+}

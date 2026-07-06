@@ -13,7 +13,7 @@
     "test:primer-alignment": "bun test scripts/check_primer_alignment.test.ts && bun scripts/check_primer_alignment.ts",
     "bench:datastar-bridge": "playwright install chromium && bun scripts/benchmark_datastar_bridge.ts",
     "test:theme": "playwright install chromium && bun test static/theme.dom.test.ts",
-    "test:datastar-lit": "bun test web/components/shared/datastar-lit.test.ts",
+    "test:datastar-lit": "bun test web/components/shared/datastar-lit.test.ts web/components/shared/signal-contract.test.ts",
     "test:app-shell": "playwright install chromium && bun scripts/build_test_assets.ts app-shell && bun test web/components/app/app-shell.dom.test.ts",
     "test:table-selection": "bun test web/components/dashboard/table/selection.test.ts",
     "test:visual-modal": "playwright install chromium && bun scripts/build_test_assets.ts visual-modal && bun test web/components/dashboard/visual-modal-focus.test.ts web/components/dashboard/visual-modal.dom.test.ts",
@@ -33,7 +33,8 @@
     "test:login-page": "playwright install chromium && bun scripts/build_test_assets.ts login-page && bun test web/components/login/login-page.dom.test.ts",
     "test:record-table": "playwright install chromium && bun scripts/build_test_assets.ts record-table && bun test web/components/shared/record-table.dom.test.ts",
     "test:asset-lineage": "playwright install chromium && bun scripts/build_test_assets.ts asset-lineage && bun test web/components/shared/asset-lineage-graph.dom.test.ts",
-    "test:semantic-model-graph": "playwright install chromium && bun scripts/build_test_assets.ts semantic-model-graph && bun test web/components/shared/semantic-model-graph.dom.test.ts"
+    "test:semantic-model-graph": "playwright install chromium && bun scripts/build_test_assets.ts semantic-model-graph && bun test web/components/shared/semantic-model-graph.dom.test.ts",
+    "qa:datastar-lit-routes": "playwright install chromium && bun scripts/datastar_lit_route_qa.ts"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",

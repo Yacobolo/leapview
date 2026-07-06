@@ -14,7 +14,7 @@ func TestRenderPageIncludesSignalsUpdatesInitMainAttrsAndBody(t *testing.T) {
 	err := RenderPage(PageSpec{
 		Title:      "Test Page",
 		HTMLAttrs:  []g.Node{g.Attr("data-color-mode", "auto")},
-		Head:       []g.Node{h.Meta(g.Attr("name", "test-head"))},
+		Head:       []g.Node{h.Meta(g.Attr("name", "test-head")), h.Script(h.Type("module"), h.Src("/static/route.js?v=dev"))},
 		MainAttrs:  []g.Node{h.ID("root"), h.Class("app-shell")},
 		Signals:    map[string]any{"runtime": map[string]any{}, "page": map[string]any{"title": "Test"}},
 		UpdatesURL: "/updates?route=test",
@@ -41,6 +41,9 @@ func TestRenderPageIncludesSignalsUpdatesInitMainAttrsAndBody(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Fatalf("rendered document missing %q:\n%s", want, html)
 		}
+	}
+	if strings.Index(html, datastarScriptSrc) > strings.Index(html, "/static/route.js?v=dev") {
+		t.Fatalf("rendered document loaded Datastar after route modules:\n%s", html)
 	}
 }
 

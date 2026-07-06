@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
 
-type BridgeVariant = 'legacy' | 'direct' | 'ignition' | 'datastar-lit'
+type BridgeVariant = 'legacy' | 'ignition' | 'datastar-lit'
 type BenchmarkResult = {
   variant: BridgeVariant
   iterations: number
@@ -33,7 +33,7 @@ type BenchmarkResult = {
 const projectRoot = process.cwd()
 const outDir = join(projectRoot, '.tmp/datastar-bridge-bench')
 const resultPath = join(projectRoot, '.tmp/datastar-bridge-benchmark.json')
-const variants: BridgeVariant[] = ['legacy', 'direct', 'ignition', 'datastar-lit']
+const variants: BridgeVariant[] = ['legacy', 'ignition', 'datastar-lit']
 const iterations = Number(Bun.env.LIBREDASH_BRIDGE_BENCH_ITERATIONS ?? 120)
 const warmup = Number(Bun.env.LIBREDASH_BRIDGE_BENCH_WARMUP ?? 20)
 

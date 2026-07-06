@@ -16,7 +16,7 @@ func BenchmarkDashboardJSONAttributeBridge(b *testing.B) {
 	benchmarkDashboardBridge(b, true)
 }
 
-func BenchmarkDashboardDirectSignalBridge(b *testing.B) {
+func BenchmarkDashboardDatastarLitBridge(b *testing.B) {
 	benchmarkDashboardBridge(b, false)
 }
 
@@ -51,7 +51,7 @@ func benchmarkDashboardDocument(catalog dashboard.Catalog, report reportdef.Dash
 	reloadAction := postAction("/workspaces/" + catalog.Workspace.ID + "/commands/reload")
 	tableReset := tableResetExpression()
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + tableReset
-	body := benchmarkDirectDashboardRoot(catalog, report, model, filtersUpdate, reloadAction)
+	body := benchmarkDatastarLitDashboardRoot(catalog, report, model, filtersUpdate, reloadAction)
 	if legacy {
 		body = benchmarkLegacyDashboardRoot(catalog, report, model, signals, filtersUpdate, reloadAction)
 	}
@@ -83,7 +83,7 @@ func benchmarkDashboardDocument(catalog dashboard.Catalog, report reportdef.Dash
 	})
 }
 
-func benchmarkDirectDashboardRoot(catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, filtersUpdate, reloadAction string) g.Node {
+func benchmarkDatastarLitDashboardRoot(catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, filtersUpdate, reloadAction string) g.Node {
 	attrs := append([]g.Node{g.Attr("slot", "page")}, benchmarkDashboardCommandAttrs(catalog, report, model, filtersUpdate, reloadAction)...)
 	return g.El("ld-app-shell",
 		g.El("ld-dashboard-page", attrs...),

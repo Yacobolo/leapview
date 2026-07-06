@@ -3,7 +3,7 @@ import { jsonAttribute } from '../components/shared/json-attribute'
 import { DatastarLit, datastarRuntimeURL } from '../components/shared/datastar-lit'
 import { DatastarWatcher } from '../vendor/ignition/datastar-watcher'
 
-type BridgeVariant = 'legacy' | 'direct' | 'ignition' | 'datastar-lit'
+type BridgeVariant = 'legacy' | 'ignition' | 'datastar-lit'
 type SignalPayload = Record<string, any>
 type BenchmarkMetrics = {
   jsonParseCalls: number
@@ -89,66 +89,6 @@ class BenchLegacyPage extends LitElement {
   }
 }
 
-class BenchDirectPage extends LitElement {
-  page = emptyPage
-  filterConfig = emptyFilterConfig
-  filters = emptyFilters
-  filterOptions = emptyFilterOptions
-  visuals = emptyVisuals
-  tables = emptyTables
-  status = emptyStatus
-  private disposers: Array<() => void> = []
-  private subscriptionsStarted = false
-
-  override connectedCallback(): void {
-    super.connectedCallback()
-    void this.startSubscriptions()
-  }
-
-  override disconnectedCallback(): void {
-    for (const dispose of this.disposers) dispose()
-    this.disposers = []
-    this.subscriptionsStarted = false
-    super.disconnectedCallback()
-  }
-
-  private async startSubscriptions(): Promise<void> {
-    if (this.subscriptionsStarted) return
-    this.subscriptionsStarted = true
-    const runtime = await import(datastarRuntimeURL) as DirectRuntime
-    if (!this.isConnected) return
-    this.disposers = [
-      directSubscribe(runtime, this, 'page', emptyPage, (value) => { this.page = value }),
-      directSubscribe(runtime, this, 'filterConfig', emptyFilterConfig, (value) => { this.filterConfig = value }),
-      directSubscribe(runtime, this, 'filters', emptyFilters, (value) => { this.filters = value }),
-      directSubscribe(runtime, this, 'filterOptions', emptyFilterOptions, (value) => { this.filterOptions = value }),
-      directSubscribe(runtime, this, 'visuals', emptyVisuals, (value) => { this.visuals = value }),
-      directSubscribe(runtime, this, 'tables', emptyTables, (value) => { this.tables = value }),
-      directSubscribe(runtime, this, 'status', emptyStatus, (value) => { this.status = value }),
-    ]
-  }
-
-  override render(): TemplateResult {
-    return renderSummary(summaryFromPayload(this.payload()))
-  }
-
-  override updated(): void {
-    countLitUpdate()
-  }
-
-  private payload(): SignalPayload {
-    return {
-      page: this.page,
-      filterConfig: this.filterConfig,
-      filters: this.filters,
-      filterOptions: this.filterOptions,
-      visuals: this.visuals,
-      tables: this.tables,
-      status: this.status,
-    }
-  }
-}
-
 class BenchIgnitionPage extends DatastarWatcher(LitElement) {
   protected override morphReactive = false
 
@@ -180,7 +120,6 @@ class BenchDatastarLitPage extends DatastarLit(LitElement) {
 }
 
 customElements.define('bench-legacy-page', BenchLegacyPage)
-customElements.define('bench-direct-page', BenchDirectPage)
 customElements.define('bench-ignition-page', BenchIgnitionPage)
 customElements.define('bench-datastar-lit-page', BenchDatastarLitPage)
 
@@ -391,31 +330,4 @@ function percentile(sortedValues: number[], fraction: number): number {
 function browserHeapSize(): number | null {
   const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory
   return typeof memory?.usedJSHeapSize === 'number' ? memory.usedJSHeapSize : null
-}
-
-type DirectRuntime = {
-  effect(fn: () => void): () => void
-  getPath<T = unknown>(path: string): T | undefined
-}
-
-function directSubscribe<T>(runtime: DirectRuntime, host: LitElement, path: string, fallback: T, assign: (value: T) => void): () => void {
-  return runtime.effect(() => {
-    const value = runtime.getPath<T>(path)
-    assign(materializeSignal(value === undefined ? fallback : value))
-    host.requestUpdate()
-  })
-}
-
-function materializeSignal<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((item) => materializeSignal(item)) as T
-  }
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {}
-    for (const key of Object.keys(value)) {
-      out[key] = materializeSignal((value as Record<string, unknown>)[key])
-    }
-    return out as T
-  }
-  return value
 }

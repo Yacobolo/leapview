@@ -89,7 +89,7 @@ tasks:
       - bun run build
 
   bench:datastar-bridge:
-    desc: Benchmark legacy, direct signal, Ignition, and DatastarLit bridges in Chromium
+    desc: Benchmark legacy, Ignition, and DatastarLit bridges in Chromium
     deps:
       - node:deps
     cmds:
