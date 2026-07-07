@@ -449,6 +449,12 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"/metrics",
 		"Authorization: Bearer",
 		".State.Health.Status",
+		"--read-only",
+		"--tmpfs \"/var/lib/libredash:rw,exec,nosuid,nodev,mode=0700,uid=${runtime_uid},gid=${runtime_gid},size=128m\"",
+		"--tmpfs /tmp:rw,nosuid,nodev,mode=1777",
+		"--entrypoint id",
+		"\"$image\" -u",
+		"\"$image\" -g",
 	} {
 		if !strings.Contains(scriptText, want) {
 			t.Fatalf("production image smoke script missing fragment %q", want)
