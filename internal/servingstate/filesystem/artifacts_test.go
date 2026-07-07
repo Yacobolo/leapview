@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
@@ -29,6 +30,24 @@ func TestArtifactStoreSaveUploadWritesAtomically(t *testing.T) {
 	if string(bytes) != "bundle" {
 		t.Fatalf("upload = %q, want bundle", bytes)
 	}
+}
+
+func TestArtifactStoreCreatesPrivateArtifactState(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "artifacts")
+	restoreUmask := setArtifactTestUmask(t, 0)
+	store := NewArtifactStore(dir)
+	if _, err := store.SaveUpload(context.Background(), servingstate.ID("state_1"), &errAfterReader{data: []byte("bundle")}); err != nil {
+		restoreUmask()
+		t.Fatalf("SaveUpload() error = %v", err)
+	}
+	artifact, err := store.PromoteUploaded(context.Background(), servingstate.ID("state_1"), "abc123", "{}")
+	restoreUmask()
+	if err != nil {
+		t.Fatalf("PromoteUploaded() error = %v", err)
+	}
+
+	assertArtifactMode(t, dir, 0o700)
+	assertArtifactMode(t, artifact.Path, 0o600)
 }
 
 func TestArtifactStoreSaveUploadCleansFailedUpload(t *testing.T) {
@@ -132,4 +151,23 @@ func entryNames(entries []os.DirEntry) []string {
 		names = append(names, entry.Name())
 	}
 	return names
+}
+
+func assertArtifactMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("mode for %s = %#o, want %#o", path, got, want)
+	}
+}
+
+func setArtifactTestUmask(t *testing.T, mask int) func() {
+	t.Helper()
+	old := syscall.Umask(mask)
+	return func() {
+		syscall.Umask(old)
+	}
 }

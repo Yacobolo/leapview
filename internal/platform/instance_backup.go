@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/securefs"
 	securejoin "github.com/cyphar/filepath-securejoin"
 )
 
@@ -20,9 +21,9 @@ const (
 	instanceBackupManifestName = "libredash-backup.json"
 	instanceBackupDBName       = "libredash.db"
 	instanceBackupVersion      = 1
-	instanceRestoreDirMode     = 0o755
-	instanceRestoreFileMode    = 0o644
-	instanceRestoreDBMode      = 0o600
+	instanceRestoreDirMode     = securefs.PrivateDirMode
+	instanceRestoreFileMode    = securefs.PrivateFileMode
+	instanceRestoreDBMode      = securefs.PrivateFileMode
 )
 
 type InstanceBackupOptions struct {

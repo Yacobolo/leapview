@@ -22,6 +22,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
+	"github.com/Yacobolo/libredash/internal/securefs"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
@@ -175,8 +176,8 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		return nil, nil, err
 	}
 	duckLakeCatalogPath := cfg.DuckLakeCatalogPath()
-	for _, dir := range []string{cfg.ArtifactDir(), cfg.DuckDBDirPath(), cfg.RuntimeDir(), cfg.DuckLakeDataDir(), filepath.Dir(duckLakeCatalogPath)} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+	for _, dir := range []string{cfg.HomeDir, cfg.ArtifactDir(), cfg.DuckDBDirPath(), cfg.RuntimeDir(), cfg.DuckLakeDataDir(), filepath.Dir(duckLakeCatalogPath)} {
+		if err := securefs.EnsurePrivateDir(dir); err != nil {
 			return nil, nil, err
 		}
 	}

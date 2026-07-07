@@ -28,6 +28,25 @@ func TestLayoutUsesOneCatalogAndDataStore(t *testing.T) {
 	}
 }
 
+func TestOpenCreatesPrivateCatalogAndDataDirectories(t *testing.T) {
+	ctx := context.Background()
+	parent := t.TempDir()
+	root := filepath.Join(parent, "ducklake")
+	restoreUmask := setUmask(t, 0)
+	env, err := Open(ctx, Config{RootDir: root})
+	restoreUmask()
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("open writer: %v", err)
+	}
+	defer env.Close()
+
+	assertFileMode(t, root, 0o700)
+	assertFileMode(t, filepath.Join(root, "data"), 0o700)
+}
+
 func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

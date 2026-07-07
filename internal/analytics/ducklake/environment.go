@@ -14,12 +14,13 @@ import (
 	"time"
 
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
+	"github.com/Yacobolo/libredash/internal/securefs"
 	_ "github.com/duckdb/duckdb-go/v2"
 	_ "modernc.org/sqlite"
 )
 
 const catalogAlias = "lake"
-const catalogFileMode = 0o600
+const catalogFileMode = securefs.PrivateFileMode
 
 var catalogWriteLocks sync.Map
 
@@ -71,13 +72,13 @@ func open(ctx context.Context, config Config, snapshot bool) (*Environment, erro
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(layout.RootDir, 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(layout.RootDir); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(layout.CatalogPath), 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(filepath.Dir(layout.CatalogPath)); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(layout.DataPath, 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(layout.DataPath); err != nil {
 		return nil, err
 	}
 	if err := MigrateSQLiteCatalogDataPath(ctx, layout.CatalogPath, layout.DataPath); err != nil {
@@ -187,7 +188,7 @@ func MigrateSharedSQLiteCatalog(ctx context.Context, sharedCatalogPath, targetCa
 	if hasDuckLakeMetadata == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(targetCatalogPath), 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(filepath.Dir(targetCatalogPath)); err != nil {
 		return err
 	}
 	if _, err := db.ExecContext(ctx, `VACUUM main INTO '`+sqliteString(targetCatalogPath)+`'`); err != nil {
@@ -246,7 +247,7 @@ func migrateLocalDataDir(source, target string) error {
 	sourceInfo, sourceErr := os.Stat(source)
 	if sourceErr != nil {
 		if os.IsNotExist(sourceErr) {
-			return os.MkdirAll(target, 0o755)
+			return securefs.EnsurePrivateDir(target)
 		}
 		return sourceErr
 	}
@@ -256,10 +257,13 @@ func migrateLocalDataDir(source, target string) error {
 	targetInfo, targetErr := os.Stat(target)
 	if targetErr != nil {
 		if os.IsNotExist(targetErr) {
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := securefs.EnsurePrivateDir(filepath.Dir(target)); err != nil {
 				return err
 			}
 			if err := os.Rename(source, target); err == nil {
+				if err := securefs.EnsurePrivateDir(target); err != nil {
+					return err
+				}
 				return nil
 			}
 			return copyDir(source, target)
@@ -278,9 +282,12 @@ func migrateLocalDataDir(source, target string) error {
 			return err
 		}
 		if err := os.Rename(source, target); err == nil {
+			if err := securefs.EnsurePrivateDir(target); err != nil {
+				return err
+			}
 			return nil
 		}
-		if err := os.MkdirAll(target, 0o755); err != nil {
+		if err := securefs.EnsurePrivateDir(target); err != nil {
 			return err
 		}
 	}
@@ -311,7 +318,7 @@ func copyDir(source, target string) error {
 		}
 		targetPath := filepath.Join(target, rel)
 		if entry.IsDir() {
-			return os.MkdirAll(targetPath, 0o755)
+			return securefs.EnsurePrivateDir(targetPath)
 		}
 		info, err := entry.Info()
 		if err != nil {
@@ -322,12 +329,12 @@ func copyDir(source, target string) error {
 		} else if err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		return copyFile(path, targetPath, info.Mode())
+		return copyFile(path, targetPath, securefs.PrivateFileMode)
 	})
 }
 
 func copyFile(source, target string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(filepath.Dir(target)); err != nil {
 		return err
 	}
 	src, err := os.Open(source)
@@ -343,7 +350,10 @@ func copyFile(source, target string, mode os.FileMode) error {
 		_ = dst.Close()
 		return err
 	}
-	return dst.Close()
+	if err := dst.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(target, mode)
 }
 
 func (e *Environment) initialize(ctx context.Context, snapshot bool, snapshotID int64) error {

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -109,6 +110,35 @@ func TestDeploymentBackedDevServerAlwaysOpensPlatformStore(t *testing.T) {
 	}
 }
 
+func TestDeploymentBackedServerCreatesPrivateStateDirectories(t *testing.T) {
+	parent := t.TempDir()
+	home := filepath.Join(parent, "home")
+	restoreUmask := setServeTestUmask(t, 0)
+	_, cleanup, err := servingStateBackedServer(context.Background(), config.Config{HomeDir: home}, "", false, servingstate.DefaultEnvironment)
+	restoreUmask()
+	if err != nil {
+		t.Fatalf("deployment-backed dev server: %v", err)
+	}
+	defer cleanup()
+
+	for _, path := range []string{
+		home,
+		filepath.Join(home, "artifacts"),
+		filepath.Join(home, "data"),
+		filepath.Join(home, "duckdb"),
+		filepath.Join(home, "ducklake"),
+		filepath.Join(home, "runtime"),
+	} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat %s: %v", path, err)
+		}
+		if got := info.Mode().Perm(); got != 0o700 {
+			t.Fatalf("mode for %s = %#o, want 0700", path, got)
+		}
+	}
+}
+
 func TestProductionServerAllowsCallbackHostAndRejectsOthers(t *testing.T) {
 	home := t.TempDir()
 	server, cleanup, err := servingStateBackedServer(context.Background(), config.Config{
@@ -144,6 +174,14 @@ func TestProductionServerAllowsCallbackHostAndRejectsOthers(t *testing.T) {
 				t.Fatalf("status = %d, want %d body=%s", rec.Code, tc.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+func setServeTestUmask(t *testing.T, mask int) func() {
+	t.Helper()
+	old := syscall.Umask(mask)
+	return func() {
+		syscall.Umask(old)
 	}
 }
 

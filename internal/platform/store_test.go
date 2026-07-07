@@ -558,9 +558,9 @@ func TestRestoreInstanceSanitizesArchivePermissions(t *testing.T) {
 	}
 
 	fileModeWants := map[string]os.FileMode{
-		filepath.Join(targetHome, instanceBackupManifestName):    0o644,
+		filepath.Join(targetHome, instanceBackupManifestName):    0o600,
 		filepath.Join(targetHome, instanceBackupDBName):          0o600,
-		filepath.Join(targetHome, "artifacts", "publish.tar.gz"): 0o644,
+		filepath.Join(targetHome, "artifacts", "publish.tar.gz"): 0o600,
 	}
 	for path, want := range fileModeWants {
 		info, err := os.Stat(path)
@@ -575,8 +575,8 @@ func TestRestoreInstanceSanitizesArchivePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat restored artifacts dir: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o755 {
-		t.Fatalf("restored dir mode = %#o, want 0755", got)
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("restored dir mode = %#o, want 0700", got)
 	}
 }
 

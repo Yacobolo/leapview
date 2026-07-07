@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/securefs"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 )
 
@@ -37,7 +38,7 @@ func (s *ArtifactStore) SaveUpload(_ context.Context, servingStateID servingstat
 	if err := validateArtifactPathComponent(string(servingStateID), "serving state id"); err != nil {
 		return 0, err
 	}
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(s.dir); err != nil {
 		return 0, err
 	}
 	tmp, err := os.CreateTemp(s.dir, string(servingStateID)+".upload-*.tmp")
@@ -73,7 +74,7 @@ func (s *ArtifactStore) PromoteUploaded(_ context.Context, servingStateID servin
 	if err := validateArtifactPathComponent(digest, "artifact digest"); err != nil {
 		return servingstate.Artifact{}, err
 	}
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(s.dir); err != nil {
 		return servingstate.Artifact{}, err
 	}
 	uploadPath := s.UploadPath(servingStateID)
@@ -117,7 +118,7 @@ func copyFile(source, target string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(target)
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, securefs.PrivateFileMode)
 	if err != nil {
 		return err
 	}
@@ -127,6 +128,9 @@ func copyFile(source, target string) error {
 	}
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("closing %s: %w", target, err)
+	}
+	if err := os.Chmod(target, securefs.PrivateFileMode); err != nil {
+		return err
 	}
 	return nil
 }

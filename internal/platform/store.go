@@ -14,6 +14,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
 	"github.com/Yacobolo/libredash/internal/platform/db"
+	"github.com/Yacobolo/libredash/internal/securefs"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )
@@ -23,7 +24,7 @@ var migrationsFS embed.FS
 
 const (
 	DefaultWorkspaceID = "libredash"
-	databaseFileMode   = 0o600
+	databaseFileMode   = securefs.PrivateFileMode
 )
 
 type Paths struct {
@@ -52,7 +53,7 @@ type Store struct {
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := securefs.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	conn, err := sql.Open("sqlite", sqliteDSN(path))
