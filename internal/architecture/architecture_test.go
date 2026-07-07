@@ -455,6 +455,8 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"--entrypoint id",
 		"\"$image\" -u",
 		"\"$image\" -g",
+		"-o /tmp/libredash-metrics-authorized.out",
+		"grep -q '^# HELP libredash_http_request_duration_seconds ' /tmp/libredash-metrics-authorized.out",
 	} {
 		if !strings.Contains(scriptText, want) {
 			t.Fatalf("production image smoke script missing fragment %q", want)

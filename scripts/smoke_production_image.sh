@@ -49,8 +49,10 @@ fi
 
 curl -fsS \
   -H "Authorization: Bearer ${metrics_token}" \
-  "http://127.0.0.1:${port}/metrics" |
-  grep -q '^# HELP libredash_http_request_duration_seconds ' ||
+  -o /tmp/libredash-metrics-authorized.out \
+  "http://127.0.0.1:${port}/metrics" ||
+  fail_with_logs
+grep -q '^# HELP libredash_http_request_duration_seconds ' /tmp/libredash-metrics-authorized.out ||
   fail_with_logs
 
 for _ in $(seq 1 120); do
