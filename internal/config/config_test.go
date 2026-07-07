@@ -30,6 +30,17 @@ func TestValidateProductionAuthAllowsGenericOIDC(t *testing.T) {
 	}
 }
 
+func TestValidateProductionAuthAllowsLocalAuth(t *testing.T) {
+	cfg := Config{
+		Production: true,
+		LocalAuth:  true,
+		CSRFKey:    "0123456789abcdef0123456789abcdef",
+	}
+	if err := cfg.ValidateProductionAuth(); err != nil {
+		t.Fatalf("validate production auth: %v", err)
+	}
+}
+
 func TestOIDCScopesListSplitsWhitespaceAndCommas(t *testing.T) {
 	cfg := Config{OIDCScopes: "openid profile,email\ngroups"}
 	got := cfg.OIDCScopesList()

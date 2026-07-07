@@ -37,6 +37,82 @@ func TestRepositoryChecksGrantPrivileges(t *testing.T) {
 	}
 }
 
+func TestRepositoryLocalUserPasswordLifecycle(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+
+	created, err := repo.CreateLocalUser(ctx, access.LocalUserInput{
+		Email:       "Analyst@Example.com",
+		DisplayName: "Analyst",
+		MustChange:  true,
+	})
+	if err != nil {
+		t.Fatalf("create local user: %v", err)
+	}
+	if created.Password == "" {
+		t.Fatal("temporary password was empty")
+	}
+	if created.Principal.Email != "analyst@example.com" || created.Principal.Kind != access.PrincipalKindUser {
+		t.Fatalf("created principal = %#v", created.Principal)
+	}
+
+	principal, credential, err := repo.VerifyLocalPassword(ctx, "analyst@example.com", created.Password)
+	if err != nil {
+		t.Fatalf("verify local password: %v", err)
+	}
+	if principal.ID != created.Principal.ID || !credential.MustChangePassword {
+		t.Fatalf("verified principal/credential = %#v / %#v", principal, credential)
+	}
+	if _, _, err := repo.VerifyLocalPassword(ctx, "analyst@example.com", "wrong-password"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("wrong password err = %v, want sql.ErrNoRows", err)
+	}
+
+	changed, err := repo.ChangeLocalPassword(ctx, created.Principal.ID, created.Password, "new-strong-password")
+	if err != nil {
+		t.Fatalf("change password: %v", err)
+	}
+	if changed.MustChangePassword {
+		t.Fatalf("must change after password change = true")
+	}
+	if _, _, err := repo.VerifyLocalPassword(ctx, "analyst@example.com", "new-strong-password"); err != nil {
+		t.Fatalf("verify changed password: %v", err)
+	}
+
+	reset, err := repo.ResetLocalPassword(ctx, created.Principal.ID)
+	if err != nil {
+		t.Fatalf("reset password: %v", err)
+	}
+	if reset.Password == "" || reset.Password == "new-strong-password" {
+		t.Fatalf("reset password = %q", reset.Password)
+	}
+	_, resetCredential, err := repo.VerifyLocalPassword(ctx, "analyst@example.com", reset.Password)
+	if err != nil {
+		t.Fatalf("verify reset password: %v", err)
+	}
+	if !resetCredential.MustChangePassword {
+		t.Fatal("reset credential must_change_password = false, want true")
+	}
+}
+
+func TestRepositoryLocalPasswordRejectsDisabledPrincipal(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+
+	created, err := repo.CreateLocalUser(ctx, access.LocalUserInput{Email: "disabled@example.com"})
+	if err != nil {
+		t.Fatalf("create local user: %v", err)
+	}
+	if _, _, err := repo.VerifyLocalPassword(ctx, "disabled@example.com", created.Password); err != nil {
+		t.Fatalf("verify before disable: %v", err)
+	}
+	if err := repo.q.DisablePrincipal(ctx, created.Principal.ID); err != nil {
+		t.Fatalf("disable principal: %v", err)
+	}
+	if _, _, err := repo.VerifyLocalPassword(ctx, "disabled@example.com", created.Password); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("disabled verify err = %v, want sql.ErrNoRows", err)
+	}
+}
+
 func TestRepositoryChecksPlatformRolePrivileges(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openAccessRepo(t, ctx)
@@ -190,6 +266,36 @@ func TestRepositoryAuthorizeDoesNotCreateUnknownSecurableObject(t *testing.T) {
 	}
 	if decision.Allowed || decision.Reason != access.ReasonUnknownObject {
 		t.Fatalf("decision = %#v, want denied unknown_object", decision)
+	}
+	var count int
+	if err := store.SQLDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM securable_objects WHERE id = ?`, object.CanonicalID()).Scan(&count); err != nil {
+		t.Fatalf("count securable objects: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("authorize created %d securable object rows, want 0", count)
+	}
+}
+
+func TestRepositoryPlatformAdminCanAuthorizeUnknownWorkspace(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+
+	principal, err := repo.SetPlatformRole(ctx, access.PlatformRoleInput{
+		PrincipalID: "platform_admin",
+		Email:       "platform-admin@example.com",
+		DisplayName: "Platform Admin",
+		Role:        access.RolePlatformAdmin,
+	})
+	if err != nil {
+		t.Fatalf("set platform role: %v", err)
+	}
+	object := access.WorkspaceObject("new-workspace")
+	decision, err := repo.Authorize(ctx, principal.ID, access.PrivilegeViewItem, object)
+	if err != nil {
+		t.Fatalf("authorize unknown workspace: %v", err)
+	}
+	if !decision.Allowed || !decision.Platform || decision.Reason != access.ReasonPlatformAdmin {
+		t.Fatalf("decision = %#v, want platform admin allow", decision)
 	}
 	var count int
 	if err := store.SQLDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM securable_objects WHERE id = ?`, object.CanonicalID()).Scan(&count); err != nil {

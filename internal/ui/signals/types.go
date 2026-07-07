@@ -977,6 +977,9 @@ type LoginPageSignal struct {
 	Kind                RouteKind `json:"kind"`
 	Title               string    `json:"title"`
 	ProviderLabel       string    `json:"providerLabel"`
+	LocalAuth           bool      `json:"localAuth"`
+	SSOAuth             bool      `json:"ssoAuth"`
+	MustChangePassword  bool      `json:"mustChangePassword"`
 	BackgroundModuleSrc string    `json:"backgroundModuleSrc"`
 }
 

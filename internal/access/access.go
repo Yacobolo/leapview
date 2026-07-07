@@ -369,6 +369,26 @@ type PrincipalInput struct {
 	DisplayName string
 }
 
+type LocalUserInput struct {
+	Email       string
+	DisplayName string
+	Password    string
+	MustChange  bool
+}
+
+type LocalPasswordReset struct {
+	Principal Principal
+	Password  string
+}
+
+type LocalCredential struct {
+	PrincipalID        string
+	MustChangePassword bool
+	CreatedAt          string
+	UpdatedAt          string
+	PasswordChangedAt  string
+}
+
 type PrincipalFilter struct {
 	Email string
 	Query string
@@ -562,6 +582,11 @@ type Repository interface {
 	PrincipalByID(ctx context.Context, id string) (Principal, error)
 	ListPrincipals(ctx context.Context, filter PrincipalFilter) ([]Principal, error)
 	UpsertPrincipal(ctx context.Context, input PrincipalInput) (Principal, error)
+	CreateLocalUser(ctx context.Context, input LocalUserInput) (LocalPasswordReset, error)
+	VerifyLocalPassword(ctx context.Context, email, password string) (Principal, LocalCredential, error)
+	ResetLocalPassword(ctx context.Context, principalID string) (LocalPasswordReset, error)
+	ChangeLocalPassword(ctx context.Context, principalID, currentPassword, newPassword string) (LocalCredential, error)
+	LocalCredential(ctx context.Context, principalID string) (LocalCredential, error)
 	SetPrincipalRole(ctx context.Context, input PrincipalRoleInput) (Principal, error)
 	SetPlatformRole(ctx context.Context, input PlatformRoleInput) (Principal, error)
 	RemovePrincipalRoles(ctx context.Context, workspaceID, principalID string) error

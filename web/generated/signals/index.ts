@@ -807,6 +807,9 @@ export interface LoginPageSignal {
   kind: string
   title: string
   providerLabel: string
+  localAuth: boolean
+  ssoAuth: boolean
+  mustChangePassword: boolean
   backgroundModuleSrc: string
 }
 

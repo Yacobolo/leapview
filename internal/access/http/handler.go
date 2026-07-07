@@ -248,6 +248,42 @@ func (h Handler) ListPrincipals(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	_ = writePagedJSON(w, r, out)
 }
 
+func (h Handler) CreatePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	var input struct {
+		Email       string `json:"email"`
+		DisplayName string `json:"displayName"`
+	}
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeJSONError(w, err, stdhttp.StatusBadRequest)
+			return
+		}
+	} else {
+		if err := r.ParseForm(); err != nil {
+			writeJSONError(w, err, stdhttp.StatusBadRequest)
+			return
+		}
+		input.Email = r.Form.Get("email")
+		input.DisplayName = r.Form.Get("displayName")
+	}
+	repo, err := h.repository()
+	if err != nil {
+		writeJSONError(w, err, stdhttp.StatusInternalServerError)
+		return
+	}
+	created, err := repo.CreateLocalUser(r.Context(), access.LocalUserInput{
+		Email:       input.Email,
+		DisplayName: input.DisplayName,
+		MustChange:  true,
+	})
+	if err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	recordAccessAudit(r, repo, "principal.local_user.created", h.currentPrincipalID(r), "", "principal", created.Principal.ID, access.PrivilegeManageGrants, "success", map[string]any{"email": created.Principal.Email})
+	writeJSON(w, stdhttp.StatusCreated, localPasswordResetDTO(created))
+}
+
 func (h Handler) GetPrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	repo, err := h.repository()
 	if err != nil {
@@ -260,6 +296,21 @@ func (h Handler) GetPrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	writeJSON(w, stdhttp.StatusOK, principalDTO(principal))
+}
+
+func (h Handler) ResetPrincipalPassword(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	repo, err := h.repository()
+	if err != nil {
+		writeJSONError(w, err, stdhttp.StatusInternalServerError)
+		return
+	}
+	reset, err := repo.ResetLocalPassword(r.Context(), chi.URLParam(r, "principal"))
+	if err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
+	recordAccessAudit(r, repo, "principal.local_password.reset", h.currentPrincipalID(r), "", "principal", reset.Principal.ID, access.PrivilegeManageGrants, "success", map[string]any{"email": reset.Principal.Email})
+	writeJSON(w, stdhttp.StatusOK, localPasswordResetDTO(reset))
 }
 
 func (h Handler) UpdatePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1133,6 +1184,10 @@ func (h Handler) workspaceID(value string) string {
 
 func principalDTO(row access.Principal) map[string]any {
 	return map[string]any{"id": row.ID, "email": row.Email, "displayName": row.DisplayName, "createdAt": row.CreatedAt, "updatedAt": row.UpdatedAt}
+}
+
+func localPasswordResetDTO(row access.LocalPasswordReset) map[string]any {
+	return map[string]any{"principal": principalDTO(row.Principal), "temporaryPassword": row.Password}
 }
 
 func currentPrincipalDTO(row Principal) map[string]any {

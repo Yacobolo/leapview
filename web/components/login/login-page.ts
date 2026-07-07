@@ -131,6 +131,8 @@ class LibreDashLoginPage extends DatastarLit(LitElement) {
       font-size: var(--ld-font-size-body-md);
       font-weight: var(--ld-font-weight-medium);
       box-shadow: var(--ld-button-shadow-resting);
+      text-decoration: none;
+      box-sizing: border-box;
     }
 
     .provider:hover,
@@ -155,6 +157,62 @@ class LibreDashLoginPage extends DatastarLit(LitElement) {
     .provider-mark span:nth-child(2) { background: var(--ld-fg-success); }
     .provider-mark span:nth-child(3) { background: var(--ld-accent); }
     .provider-mark span:nth-child(4) { background: var(--ld-fg-warning); }
+
+    form {
+      display: grid;
+      width: 100%;
+      gap: var(--base-size-12);
+    }
+
+    label {
+      display: grid;
+      gap: var(--base-size-6);
+      text-align: left;
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-medium);
+    }
+
+    input {
+      width: 100%;
+      min-height: var(--control-large-size);
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-default);
+      padding: 0 var(--base-size-12);
+      font: inherit;
+      font-size: var(--ld-font-size-body-md);
+      box-sizing: border-box;
+    }
+
+    input:focus {
+      outline: var(--focus-outline, var(--ld-border-default));
+      outline-color: var(--borderColor-accent-emphasis, var(--ld-line-accent));
+      outline-offset: var(--focus-outline-offset, var(--base-size-2));
+    }
+
+    .submit {
+      display: inline-grid;
+      min-height: var(--control-xlarge-size);
+      width: 100%;
+      place-items: center;
+      border: var(--borderWidth-default) solid var(--ld-button-accent-border-rest);
+      border-radius: var(--ld-button-radius);
+      background: var(--ld-button-accent-bg-rest);
+      color: var(--ld-button-accent-fg-rest);
+      cursor: pointer;
+      padding: 0 var(--ld-button-padding-inline-spacious);
+      font: inherit;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--ld-font-weight-medium);
+      box-shadow: var(--ld-button-shadow-resting);
+    }
+
+    .divider {
+      width: 100%;
+      border-top: var(--ld-border-muted);
+    }
 
     @media (max-width: 520px) {
       :host {
@@ -191,6 +249,9 @@ class LibreDashLoginPage extends DatastarLit(LitElement) {
     const page = this.page
     const nextMode = nextThemeMode[this.themeMode]
     const themeLabel = `${themeLabels[this.themeMode]}. Switch to ${themeLabels[nextMode]}.`
+    const localAuth = page?.localAuth ?? false
+    const ssoAuth = page?.ssoAuth ?? true
+    const mustChangePassword = page?.mustChangePassword ?? false
     return html`
       <ld-topology-background
         data-login-background
@@ -212,10 +273,40 @@ class LibreDashLoginPage extends DatastarLit(LitElement) {
       </button>
       <section class="panel" aria-label="LibreDash login">
         <h1>${page?.title ?? 'LibreDash'}</h1>
-        <button class="provider" type="button">
-          <span class="provider-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-          <span>${page?.providerLabel ?? 'Sign in with Azure Active Directory'}</span>
-        </button>
+        ${mustChangePassword ? html`
+          <form method="post" action="/auth/local/password">
+            <input type="hidden" name="gorilla.csrf.Token" value=${csrfToken()}>
+            <label>
+              Temporary password
+              <input name="currentPassword" type="password" autocomplete="current-password" required>
+            </label>
+            <label>
+              New password
+              <input name="newPassword" type="password" autocomplete="new-password" required>
+            </label>
+            <button class="submit" type="submit">Change password</button>
+          </form>
+        ` : localAuth ? html`
+          <form method="post" action="/auth/local/login">
+            <input type="hidden" name="gorilla.csrf.Token" value=${csrfToken()}>
+            <label>
+              Email
+              <input name="email" type="email" autocomplete="username" required>
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autocomplete="current-password" required>
+            </label>
+            <button class="submit" type="submit">Sign in</button>
+          </form>
+        ` : ''}
+        ${!mustChangePassword && localAuth && ssoAuth ? html`<div class="divider" aria-hidden="true"></div>` : ''}
+        ${!mustChangePassword && ssoAuth ? html`
+          <a class="provider" href="/auth/azureadv2">
+            <span class="provider-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+            <span>${page?.providerLabel ?? 'Sign in with Azure Active Directory'}</span>
+          </a>
+        ` : ''}
       </section>
     `
   }
@@ -237,6 +328,10 @@ function currentThemeMode(): ThemeMode {
     const colorMode = document.documentElement.dataset.colorMode
     return colorMode === 'light' || colorMode === 'dark' ? colorMode : 'system'
   }
+}
+
+function csrfToken(): string {
+  return document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content.trim() ?? ''
 }
 
 function normalizeThemeMode(mode: string | null | undefined): ThemeMode {

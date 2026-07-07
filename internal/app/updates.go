@@ -77,7 +77,7 @@ func (s *Server) servePageStream(w http.ResponseWriter, r *http.Request, route s
 		}
 		s.patchAndWait(w, r, pagestream.SignalPatch{"status": map[string]any{"loading": false, "error": ""}})
 	case uisignals.RouteLogin:
-		s.patchAndWait(w, r, ui.LoginBootstrapSignals())
+		s.patchAndWait(w, r, ui.LoginBootstrapSignalsForOptions(s.loginPageOptions(r)))
 	case uisignals.RouteCatalog:
 		s.patchAndWait(w, r, ui.CatalogBootstrapSignalsForCatalogs(s.workspaceHTTPReadModel().CatalogsForVisibleWorkspaces(r), s.chatChromeOption(r)))
 	case uisignals.RouteWorkspace:

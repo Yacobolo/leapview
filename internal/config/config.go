@@ -22,6 +22,7 @@ type Config struct {
 	Production       bool   `env:"LIBREDASH_PRODUCTION"`
 	DevAuthBypass    bool   `env:"LIBREDASH_DEV_AUTH_BYPASS"`
 	APITokenOnlyAuth bool   `env:"LIBREDASH_API_TOKEN_ONLY_AUTH"`
+	LocalAuth        bool   `env:"LIBREDASH_LOCAL_AUTH"`
 	BootstrapEmail   string `env:"LIBREDASH_BOOTSTRAP_ADMIN_EMAIL"`
 	AzureClientID    string `env:"LIBREDASH_AZURE_CLIENT_ID"`
 	AzureSecret      string `env:"LIBREDASH_AZURE_CLIENT_SECRET"`
@@ -147,8 +148,8 @@ func (c Config) ValidateProductionAuth() error {
 	if !c.Production {
 		return nil
 	}
-	if !c.OIDCConfigured() && !c.AzureConfigured() && !c.DevAuthBypass && !c.APITokenOnlyAuth {
-		return fmt.Errorf("production serve requires OIDC auth env vars, Azure auth env vars, LIBREDASH_DEV_AUTH_BYPASS, or LIBREDASH_API_TOKEN_ONLY_AUTH")
+	if !c.OIDCConfigured() && !c.AzureConfigured() && !c.LocalAuth && !c.DevAuthBypass && !c.APITokenOnlyAuth {
+		return fmt.Errorf("production serve requires OIDC auth env vars, Azure auth env vars, LIBREDASH_LOCAL_AUTH, LIBREDASH_DEV_AUTH_BYPASS, or LIBREDASH_API_TOKEN_ONLY_AUTH")
 	}
 	if !c.DevAuthBypass && len(c.CSRFKey) < 32 {
 		return fmt.Errorf("production serve requires LIBREDASH_CSRF_KEY with at least 32 characters")
