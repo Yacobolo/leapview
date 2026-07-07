@@ -1067,6 +1067,12 @@ func TestRepositoryCredentialCreationFailsWithoutSecureRandomness(t *testing.T) 
 	if _, _, err := repo.CreateServicePrincipalSecret(ctx, sp.ID, access.ServicePrincipalSecretInput{Name: "ci"}); err == nil {
 		t.Fatal("CreateServicePrincipalSecret error = nil, want secure randomness error")
 	}
+	if _, err := repo.CreateLocalUser(ctx, access.LocalUserInput{Email: "local-no-random@example.com"}); err == nil {
+		t.Fatal("CreateLocalUser error = nil, want secure randomness error")
+	}
+	if _, err := repo.ResetLocalPassword(ctx, principal.ID); err == nil {
+		t.Fatal("ResetLocalPassword error = nil, want secure randomness error")
+	}
 }
 
 func TestRepositoryListsAndRevokesSessionsByID(t *testing.T) {
