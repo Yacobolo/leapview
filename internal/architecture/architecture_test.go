@@ -481,6 +481,37 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	}
 }
 
+func TestStorageArchitectureSpecDocumentsGlobalDuckLakeCatalog(t *testing.T) {
+	root := repoRoot(t)
+	spec, err := os.ReadFile(filepath.Join(root, "docs", "storage-architecture-spec.md"))
+	if err != nil {
+		t.Fatalf("read storage architecture spec: %v", err)
+	}
+	text := string(spec)
+	for _, want := range []string{
+		"one global DuckLake catalog",
+		"libredash.db              # LibreDash control-plane tables",
+		"ducklake/catalog.sqlite   # global DuckLake analytical metadata catalog",
+		"data/                     # DuckLake-managed Parquet files",
+		"ATTACH 'ducklake:sqlite:.libredash/ducklake/catalog.sqlite' AS lake",
+		"Use one global DuckLake catalog per LibreDash instance.",
+		"Do not create per-workspace DuckLake catalogs.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("storage architecture spec missing global catalog contract fragment %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"LibreDash control-plane tables + DuckLake metadata tables",
+		"ducklake:sqlite:.libredash/libredash.db",
+		"Use one metadata catalog per LibreDash instance.",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("storage architecture spec still contains obsolete shared-catalog contract fragment %q", forbidden)
+		}
+	}
+}
+
 func TestProductionUIDoesNotDependOnCDNScripts(t *testing.T) {
 	root := repoRoot(t)
 	forbiddenHosts := []string{"cdn.jsdelivr.net", "unpkg.com", "esm.sh", "skypack.dev"}
