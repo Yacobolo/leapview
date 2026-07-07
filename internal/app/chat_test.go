@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -613,7 +614,7 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 	updatesCtx, cancelUpdates := context.WithCancel(context.Background())
 	defer cancelUpdates()
 	updatesReq := chatUpdatesSignalsRequest(updatesCtx, token, "client-draft", conversationID)
-	updatesRec := httptest.NewRecorder()
+	updatesRec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -622,16 +623,17 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 	waitForBrokerSubscription(t, server, chatStreamID(agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "client-draft"))
 	close(release)
 	waitForConversationMessage(t, service, principal.ID, conversationID, "Background complete.")
-	time.Sleep(25 * time.Millisecond)
+	waitForRecorderBodyContains(t, updatesRec, `"running":false`)
 	cancelUpdates()
 	<-done
 
-	updatesBody := updatesRec.Body.String()
+	updatesBody := updatesRec.BodyString()
 	for _, want := range []string{`"running":true`, "Background complete.", `"running":false`} {
 		if !strings.Contains(updatesBody, want) {
 			t.Fatalf("updates stream missing %q:\n%s", want, updatesBody)
 		}
 	}
+	waitForAgentConversationTitle(t, store, "test", principal.ID, conversationID, "Background complete")
 }
 
 func TestChatTurnWithActiveConversationDoesNotReplaceURL(t *testing.T) {
@@ -678,7 +680,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/updates?route=chat", nil).WithContext(reqCtx)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-test"})
-	rec := httptest.NewRecorder()
+	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -686,16 +688,68 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	}()
 	waitForBrokerSubscription(t, server, key)
 	server.broker.Publish(key, pagestream.SignalPatch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
-	time.Sleep(25 * time.Millisecond)
+	waitForRecorderBodyContains(t, rec, "Available dashboards")
 	cancel()
 	<-done
 
-	body := rec.Body.String()
+	body := rec.BodyString()
 	for _, want := range []string{"event: datastar-patch-signals", `"conversations"`, "Available dashboards"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat updates stream missing %q:\n%s", want, body)
 		}
 	}
+}
+
+type synchronizedRecorder struct {
+	rec *httptest.ResponseRecorder
+	mu  sync.Mutex
+}
+
+func newSynchronizedRecorder() *synchronizedRecorder {
+	return &synchronizedRecorder{rec: httptest.NewRecorder()}
+}
+
+func (r *synchronizedRecorder) Header() http.Header {
+	return r.rec.Header()
+}
+
+func (r *synchronizedRecorder) WriteHeader(statusCode int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rec.WriteHeader(statusCode)
+}
+
+func (r *synchronizedRecorder) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.rec.Write(p)
+}
+
+func (r *synchronizedRecorder) Flush() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rec.Flush()
+}
+
+func (r *synchronizedRecorder) BodyString() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.rec.Body.String()
+}
+
+func waitForRecorderBodyContains(t *testing.T, rec *synchronizedRecorder, want string) string {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		body := rec.BodyString()
+		if strings.Contains(body, want) {
+			return body
+		}
+		time.Sleep(time.Millisecond)
+	}
+	body := rec.BodyString()
+	t.Fatalf("updates stream missing %q:\n%s", want, body)
+	return ""
 }
 
 func readUpdatesUntil(t *testing.T, server *Server, path, token string, wants ...string) string {
@@ -708,7 +762,7 @@ func readUpdatesUntil(t *testing.T, server *Server, path, token string, wants ..
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-read"})
-	rec := httptest.NewRecorder()
+	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -717,7 +771,7 @@ func readUpdatesUntil(t *testing.T, server *Server, path, token string, wants ..
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		body := rec.Body.String()
+		body := rec.BodyString()
 		missing := ""
 		for _, want := range wants {
 			if !strings.Contains(body, want) {
@@ -734,7 +788,7 @@ func readUpdatesUntil(t *testing.T, server *Server, path, token string, wants ..
 	}
 	cancel()
 	<-done
-	t.Fatalf("updates %s did not contain %q:\n%s", path, wants, rec.Body.String())
+	t.Fatalf("updates %s did not contain %q:\n%s", path, wants, rec.BodyString())
 	return ""
 }
 
