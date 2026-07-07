@@ -32,7 +32,7 @@ COPY static ./static
 COPY web ./web
 COPY --from=sourcegen /src/web/generated ./web/generated
 
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --no-cache
 RUN bun run build
 
 FROM golang:1.25-bookworm AS build

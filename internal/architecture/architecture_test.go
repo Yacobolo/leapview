@@ -377,6 +377,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"go run ./internal/tools/uisignalsgen",
 		"FROM oven/bun:1.3.7 AS web",
 		"COPY --from=sourcegen /src/web/generated ./web/generated",
+		"RUN bun install --frozen-lockfile --no-cache",
 		"RUN bun run build",
 		"FROM golang:1.25-bookworm AS build",
 		"COPY --from=sourcegen /src/internal/api/gen ./internal/api/gen",
@@ -426,9 +427,31 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
 		"task ci",
 		"docker build --pull --tag libredash:ci .",
+		"./scripts/smoke_production_image.sh libredash:ci",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
+		}
+	}
+
+	script, err := os.ReadFile(filepath.Join(root, "scripts", "smoke_production_image.sh"))
+	if err != nil {
+		t.Fatalf("read production image smoke script: %v", err)
+	}
+	scriptText := string(script)
+	for _, want := range []string{
+		"LIBREDASH_API_TOKEN_ONLY_AUTH=1",
+		"LIBREDASH_CSRF_KEY=",
+		"LIBREDASH_METRICS_BEARER_TOKEN=",
+		"LIBREDASH_ALLOWED_HOSTS=",
+		"/healthz",
+		"/readyz",
+		"/metrics",
+		"Authorization: Bearer",
+		".State.Health.Status",
+	} {
+		if !strings.Contains(scriptText, want) {
+			t.Fatalf("production image smoke script missing fragment %q", want)
 		}
 	}
 }

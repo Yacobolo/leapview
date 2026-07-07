@@ -50,3 +50,6 @@ jobs:
 
       - name: Build production image
         run: docker build --pull --tag libredash:ci .
+
+      - name: Smoke test production image
+        run: ./scripts/smoke_production_image.sh libredash:ci
