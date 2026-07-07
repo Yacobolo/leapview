@@ -236,6 +236,9 @@ func (c Config) ValidateProductionAuth() error {
 		return fmt.Errorf("production browser auth requires LIBREDASH_COOKIE_SECURE=true")
 	}
 	if c.OIDCConfigured() {
+		if err := validateOIDCProviderID(c.OIDCProviderID); err != nil {
+			return err
+		}
 		if err := requireHTTPSURL("LIBREDASH_OIDC_ISSUER_URL", c.OIDCIssuerURL); err != nil {
 			return err
 		}
@@ -253,6 +256,26 @@ func (c Config) ValidateProductionAuth() error {
 	}
 	if token := strings.TrimSpace(c.MetricsBearerToken); token != "" && len(token) < 32 {
 		return fmt.Errorf("production metrics scraping requires LIBREDASH_METRICS_BEARER_TOKEN with at least 32 characters")
+	}
+	return nil
+}
+
+func validateOIDCProviderID(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	if len(id) > 64 {
+		return fmt.Errorf("LIBREDASH_OIDC_PROVIDER_ID must be at most 64 characters")
+	}
+	for index, char := range []byte(id) {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') {
+			continue
+		}
+		if index > 0 && (char == '-' || char == '_' || char == '.') {
+			continue
+		}
+		return fmt.Errorf("LIBREDASH_OIDC_PROVIDER_ID must be a route-safe slug containing only letters, numbers, dots, underscores, or dashes")
 	}
 	return nil
 }

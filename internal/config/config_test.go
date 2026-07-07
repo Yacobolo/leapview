@@ -67,6 +67,24 @@ func TestValidateProductionAuthAllowsGenericOIDC(t *testing.T) {
 	}
 }
 
+func TestValidateProductionAuthRejectsInvalidOIDCProviderID(t *testing.T) {
+	for _, providerID := range []string{"okta/prod", "../okta", "okta prod"} {
+		cfg := Config{
+			Production:         true,
+			OIDCProviderID:     providerID,
+			OIDCIssuerURL:      "https://issuer.example",
+			OIDCClientID:       "client-id",
+			OIDCSecret:         "client-secret",
+			OIDCCallbackURL:    "https://app.example/auth/oidc/callback",
+			CSRFKey:            "0123456789abcdef0123456789abcdef",
+			MetricsBearerToken: "0123456789abcdef0123456789abcdef",
+		}
+		if err := cfg.ValidateProductionAuth(); err == nil {
+			t.Fatalf("provider ID %q validated successfully, want error", providerID)
+		}
+	}
+}
+
 func TestValidateProductionAuthAllowsLocalAuth(t *testing.T) {
 	cfg := Config{
 		Production:         true,
