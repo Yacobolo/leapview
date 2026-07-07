@@ -477,7 +477,8 @@ func TestPageRouteSeedsOperationsPageFiltersFromURL(t *testing.T) {
 	}
 }
 
-func TestHTMLRoutesIncludeSelfHostedDatastarRuntime(t *testing.T) {
+func TestHTMLRoutesIncludeSelfHostedDatastarRuntimeAndDevInspector(t *testing.T) {
+	t.Setenv("LIBREDASH_PRODUCTION", "")
 	for _, path := range []string{
 		"/login",
 		"/",
@@ -492,7 +493,42 @@ func TestHTMLRoutesIncludeSelfHostedDatastarRuntime(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 			}
-			assertDatastarRuntime(t, rec.Body.String())
+			assertDevDatastarRuntime(t, rec.Body.String())
+		})
+	}
+}
+
+func TestHTMLRoutesOmitDatastarInspectorInProduction(t *testing.T) {
+	t.Setenv("LIBREDASH_PRODUCTION", "1")
+	for _, path := range []string{
+		"/login",
+		"/",
+		"/workspaces/test-workspace/dashboards/executive-sales/pages/overview",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+
+			New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, `/static/vendor/datastar-1.0.2.js?v=`) {
+				t.Fatalf("page missing self-hosted Datastar runtime:\n%s", body)
+			}
+			for _, notWant := range []string{
+				`/static/datastar-inspector.js`,
+				`<datastar-inspector`,
+			} {
+				if strings.Contains(body, notWant) {
+					t.Fatalf("production page included dev inspector marker %q:\n%s", notWant, body)
+				}
+			}
+			if strings.Contains(body, "cdn.jsdelivr.net") {
+				t.Fatalf("page references CDN-hosted Datastar runtime:\n%s", body)
+			}
 		})
 	}
 }
@@ -568,7 +604,7 @@ func TestStaticAssetsCacheOnlyCurrentVersionedURLs(t *testing.T) {
 	}
 }
 
-func assertDatastarRuntime(t *testing.T, body string) {
+func assertDevDatastarRuntime(t *testing.T, body string) {
 	t.Helper()
 	for _, want := range []string{
 		`/static/vendor/datastar-1.0.2.js?v=dev`,
@@ -684,6 +720,9 @@ func TestLoginRouteRendersAzureADLogin(t *testing.T) {
 	body := renderedWithBootstrap(t, server, rec.Body.String(), "")
 	if !strings.Contains(body, `<ld-login-page`) {
 		t.Fatalf("login page did not mount login route root:\n%s", body)
+	}
+	if !strings.Contains(body, `background-module-src="/static/topology-background.js`) {
+		t.Fatalf("login page did not seed versioned background module src on route root:\n%s", body)
 	}
 	if !strings.Contains(body, `Sign in with Azure Active Directory`) {
 		t.Fatalf("login page did not seed Azure AD provider label:\n%s", body)
