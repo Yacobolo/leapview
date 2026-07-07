@@ -347,6 +347,241 @@ func TestRemovedLegacyAgentPackagesAreNotImported(t *testing.T) {
 	}
 }
 
+func TestSecretComparisonsGoThroughSecretPackage(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir == "internal/secret" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == "crypto/subtle" {
+				t.Fatalf("%s imports crypto/subtle directly; use internal/secret for fixed-size secret comparisons", file.path)
+			}
+		}
+	}
+}
+
+func TestProductionContainerContractExists(t *testing.T) {
+	root := repoRoot(t)
+	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	text := string(dockerfile)
+	for _, want := range []string{
+		"FROM node:24-bookworm AS node",
+		"FROM golang:1.25-bookworm AS sourcegen",
+		"COPY --from=node /usr/local/bin/node /usr/local/bin/node",
+		"COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules",
+		"ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm",
+		"go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.3.3",
+		"go run ./internal/tools/uisignalsgen",
+		"FROM oven/bun:1.3.7 AS web",
+		"COPY --from=sourcegen /src/web/generated ./web/generated",
+		"RUN bun install --frozen-lockfile --no-cache",
+		"RUN bun run build",
+		"FROM golang:1.25-bookworm AS build",
+		"COPY --from=sourcegen /src/internal/api/gen ./internal/api/gen",
+		"CGO_ENABLED=1 go build",
+		"FROM debian:bookworm-slim AS runtime",
+		"USER libredash",
+		"WORKDIR /app",
+		"COPY --from=web /src/static ./static",
+		"LIBREDASH_HOME=/var/lib/libredash",
+		"LIBREDASH_PRODUCTION=1",
+		"HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD [\"libredash\", \"healthcheck\"]",
+		"CMD [\"serve\", \"--production\"]",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Dockerfile missing production container contract fragment %q", want)
+		}
+	}
+
+	ignored, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
+	if err != nil {
+		t.Fatalf("read .dockerignore: %v", err)
+	}
+	ignoreText := string(ignored)
+	for _, want := range []string{".data", ".libredash", "node_modules", "api/gen", "internal/api/gen", "static/chunks"} {
+		if !strings.Contains(ignoreText, want) {
+			t.Fatalf(".dockerignore missing generated or runtime path %q", want)
+		}
+	}
+}
+
+func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
+	root := repoRoot(t)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read CI workflow: %v", err)
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	text := string(workflow)
+	for _, want := range []string{
+		"name: CI",
+		"pull_request:",
+		"push:",
+		"actions/checkout@v7",
+		"actions/setup-go@v6",
+		"go-version-file: go.mod",
+		"oven-sh/setup-bun@v2",
+		"bun-version: 1.3.7",
+		"prepare:",
+		"name: Prepare generated assets",
+		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"task generate",
+		"task build",
+		"actions/upload-artifact@v4",
+		"name: generated-assets",
+		"go-tests:",
+		"name: Go tests",
+		"needs: prepare",
+		"go test ./...",
+		"frontend-tests:",
+		"name: Frontend tests",
+		"bun run test:semantic-model-graph",
+		"ui-route-qa:",
+		"name: UI route QA",
+		"task qa:ui-framework",
+		"node-audit:",
+		"name: JavaScript dependency audit",
+		"bun audit",
+		"go-vuln:",
+		"name: Go vulnerability scan",
+		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
+		"production-image:",
+		"name: Production image",
+		"docker build --pull --tag libredash:ci .",
+		"./scripts/smoke_production_image.sh libredash:ci",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("CI workflow missing production gate fragment %q", want)
+		}
+	}
+	taskText := string(taskfile)
+	for _, want := range []string{
+		"node:audit:",
+		"bun audit",
+		"vuln:",
+		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
+	} {
+		if !strings.Contains(taskText, want) {
+			t.Fatalf("Taskfile missing vulnerability gate fragment %q", want)
+		}
+	}
+
+	script, err := os.ReadFile(filepath.Join(root, "scripts", "smoke_production_image.sh"))
+	if err != nil {
+		t.Fatalf("read production image smoke script: %v", err)
+	}
+	scriptText := string(script)
+	for _, want := range []string{
+		"LIBREDASH_API_TOKEN_ONLY_AUTH=1",
+		"LIBREDASH_CSRF_KEY=",
+		"LIBREDASH_METRICS_BEARER_TOKEN=",
+		"LIBREDASH_ALLOWED_HOSTS=",
+		"/healthz",
+		"/readyz",
+		"/metrics",
+		"Authorization: Bearer",
+		".State.Health.Status",
+		"--read-only",
+		"--tmpfs \"/var/lib/libredash:rw,exec,nosuid,nodev,mode=0700,uid=${runtime_uid},gid=${runtime_gid},size=128m\"",
+		"--tmpfs /tmp:rw,nosuid,nodev,mode=1777",
+		"--entrypoint id",
+		"\"$image\" -u",
+		"\"$image\" -g",
+		"-o /tmp/libredash-metrics-authorized.out",
+		"grep -q '^# HELP libredash_http_request_duration_seconds ' /tmp/libredash-metrics-authorized.out",
+	} {
+		if !strings.Contains(scriptText, want) {
+			t.Fatalf("production image smoke script missing fragment %q", want)
+		}
+	}
+}
+
+func TestStorageArchitectureSpecDocumentsGlobalDuckLakeCatalog(t *testing.T) {
+	root := repoRoot(t)
+	spec, err := os.ReadFile(filepath.Join(root, "docs", "storage-architecture-spec.md"))
+	if err != nil {
+		t.Fatalf("read storage architecture spec: %v", err)
+	}
+	text := string(spec)
+	for _, want := range []string{
+		"one global DuckLake catalog",
+		"libredash.db              # LibreDash control-plane tables",
+		"ducklake/catalog.sqlite   # global DuckLake analytical metadata catalog",
+		"data/                     # DuckLake-managed Parquet files",
+		"ATTACH 'ducklake:sqlite:.libredash/ducklake/catalog.sqlite' AS lake",
+		"Use one global DuckLake catalog per LibreDash instance.",
+		"Do not create per-workspace DuckLake catalogs.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("storage architecture spec missing global catalog contract fragment %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"LibreDash control-plane tables + DuckLake metadata tables",
+		"ducklake:sqlite:.libredash/libredash.db",
+		"Use one metadata catalog per LibreDash instance.",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("storage architecture spec still contains obsolete shared-catalog contract fragment %q", forbidden)
+		}
+	}
+}
+
+func TestProductionUIDoesNotDependOnCDNScripts(t *testing.T) {
+	root := repoRoot(t)
+	forbiddenHosts := []string{"cdn.jsdelivr.net", "unpkg.com", "esm.sh", "skypack.dev"}
+
+	for _, dir := range []string{"internal/ui", "internal/dashboard/ui", "internal/app"} {
+		err := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(dir)), func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			text := string(body)
+			for _, forbidden := range forbiddenHosts {
+				if strings.Contains(text, forbidden) {
+					rel, _ := filepath.Rel(root, path)
+					t.Fatalf("%s references external script host %q; production UI assets must be served from /static", filepath.ToSlash(rel), forbidden)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	staticFiles, err := filepath.Glob(filepath.Join(root, "static", "*.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range staticFiles {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, forbidden := range forbiddenHosts {
+			if strings.Contains(text, forbidden) {
+				rel, _ := filepath.Rel(root, path)
+				t.Fatalf("%s references external asset host %q; production bundles must be self-contained", filepath.ToSlash(rel), forbidden)
+			}
+		}
+	}
+}
+
 func isSQLDBAllowedFile(file goFile) bool {
 	if file.pkgDir == "internal/app" {
 		switch file.path {

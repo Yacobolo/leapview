@@ -254,6 +254,154 @@ func TestCurrentAPITokenCreateAndRevokeRecordsAudit(t *testing.T) {
 	}
 }
 
+func TestCurrentAPITokenCreateRejectsExpiredExpiry(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	owner := testPlatformPrincipal(t, ctx, store, "expired-token-owner@example.com", "Expired Token Owner", access.RoleAdmin)
+	authSecret, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
+		PrincipalID: owner.ID,
+		WorkspaceID: "test",
+		Name:        "auth",
+		Privileges:  []access.Privilege{access.PrivilegeManageGrants},
+	})
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	expiresAt := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/api-tokens", strings.NewReader(`{"name":"expired-api-token","workspaceId":"test","expiresAt":"`+expiresAt+`"}`))
+	req.Header.Set("Authorization", "Bearer "+authSecret)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create expired api token status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestServicePrincipalSecretCreateReturnsExpiry(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	repo := testAccessRepository(store)
+	owner := testPlatformPrincipal(t, ctx, store, "sp-secret-owner@example.com", "SP Secret Owner", access.RolePlatformAdmin)
+	authSecret, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
+		PrincipalID: owner.ID,
+		Name:        "platform-admin",
+		Privileges:  []access.Privilege{access.PrivilegeManagePlatform},
+	})
+	servicePrincipal, err := repo.CreateServicePrincipal(ctx, access.ServicePrincipalInput{ID: "sp_secret_api", DisplayName: "Secret API"})
+	if err != nil {
+		t.Fatalf("create service principal: %v", err)
+	}
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	expiresAt := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second).Format(time.RFC3339)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/service-principals/"+servicePrincipal.ID+"/secrets", strings.NewReader(`{"name":"deploy","expiresAt":"`+expiresAt+`"}`))
+	req.Header.Set("Authorization", "Bearer "+authSecret)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create service principal secret status = %d, want %d body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var body struct {
+		Secret       string `json:"secret"`
+		ClientSecret struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			ExpiresAt string `json:"expiresAt"`
+			Secret    string `json:"secret"`
+		} `json:"clientSecret"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode service principal secret response: %v body=%s", err, rec.Body.String())
+	}
+	if body.Secret == "" || body.ClientSecret.Secret != "" {
+		t.Fatalf("secret exposure = top-level %q nested %q", body.Secret, body.ClientSecret.Secret)
+	}
+	if body.ClientSecret.Name != "deploy" || body.ClientSecret.ExpiresAt != expiresAt {
+		t.Fatalf("client secret metadata = %#v, want name deploy expires %s", body.ClientSecret, expiresAt)
+	}
+	if _, err := repo.PrincipalForServicePrincipalSecret(ctx, servicePrincipal.ID, body.Secret); err != nil {
+		t.Fatalf("resolve created service principal secret: %v", err)
+	}
+}
+
+func TestSecretMintingResponsesDisableHTTPStorage(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	repo := testAccessRepository(store)
+	owner := testPlatformPrincipal(t, ctx, store, "secret-cache-owner@example.com", "Secret Cache Owner", access.RolePlatformAdmin)
+	authSecret, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
+		PrincipalID: owner.ID,
+		Name:        "platform-admin",
+		Privileges:  []access.Privilege{access.PrivilegeManagePlatform, access.PrivilegeManageGrants},
+	})
+	servicePrincipal, err := repo.CreateServicePrincipal(ctx, access.ServicePrincipalInput{ID: "sp_secret_cache", DisplayName: "Secret Cache"})
+	if err != nil {
+		t.Fatalf("create service principal: %v", err)
+	}
+	spSecret, _, err := repo.CreateServicePrincipalSecret(ctx, servicePrincipal.ID, access.ServicePrincipalSecretInput{Name: "oauth"})
+	if err != nil {
+		t.Fatalf("create service principal secret: %v", err)
+	}
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	for _, tc := range []struct {
+		name          string
+		req           *http.Request
+		wantStatus    int
+		secretMarkers []string
+	}{
+		{
+			name:       "api token",
+			req:        secretCacheJSONRequest(http.MethodPost, "/api/v1/me/api-tokens", authSecret, `{"name":"deploy","workspaceId":"test","privileges":["USE_WORKSPACE"]}`),
+			wantStatus: http.StatusCreated,
+			secretMarkers: []string{
+				`"token":`,
+			},
+		},
+		{
+			name:       "service principal secret",
+			req:        secretCacheJSONRequest(http.MethodPost, "/api/v1/service-principals/"+servicePrincipal.ID+"/secrets", authSecret, `{"name":"deploy"}`),
+			wantStatus: http.StatusCreated,
+			secretMarkers: []string{
+				`"secret":`,
+			},
+		},
+		{
+			name: "oauth token",
+			req: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("grant_type=client_credentials&client_id="+servicePrincipal.ID+"&client_secret="+spSecret+"&workspace_id=test&scope="+string(access.PrivilegeUseWorkspace)))
+				req.Header.Set("Accept", "application/json")
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				return req
+			}(),
+			wantStatus: http.StatusOK,
+			secretMarkers: []string{
+				`"access_token":`,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			server.Routes().ServeHTTP(rec, tc.req)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d body=%s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			for _, marker := range tc.secretMarkers {
+				if !strings.Contains(rec.Body.String(), marker) {
+					t.Fatalf("response missing secret marker %q: %s", marker, rec.Body.String())
+				}
+			}
+			assertSecretResponseNoStore(t, rec)
+		})
+	}
+}
+
 func TestCurrentSessionRevocationIsScopedToAuthenticatedPrincipal(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
@@ -328,4 +476,22 @@ func hasString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func secretCacheJSONRequest(method, path, token, body string) *http.Request {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+func assertSecretResponseNoStore(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	if got := rec.Header().Get("Pragma"); got != "no-cache" {
+		t.Fatalf("Pragma = %q, want no-cache", got)
+	}
 }

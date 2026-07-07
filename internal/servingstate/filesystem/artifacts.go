@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/Yacobolo/libredash/internal/securefs"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 )
 
@@ -14,6 +16,7 @@ const (
 	BundleFormat        = "tar.gz"
 	ProjectFile         = "libredash.yaml"
 	CompiledProjectFile = "compiled/workspace.json"
+	MaxUploadBytes      = 128 << 20
 )
 
 type ArtifactStore struct {
@@ -25,11 +28,53 @@ func NewArtifactStore(dir string) *ArtifactStore {
 }
 
 func (s *ArtifactStore) UploadPath(servingStateID servingstate.ID) string {
+	if err := validateArtifactPathComponent(string(servingStateID), "serving state id"); err != nil {
+		return filepath.Join(s.dir, ".invalid.upload.tar.gz")
+	}
 	return filepath.Join(s.dir, string(servingStateID)+".upload.tar.gz")
 }
 
+func (s *ArtifactStore) SaveUpload(_ context.Context, servingStateID servingstate.ID, source io.Reader) (int64, error) {
+	if err := validateArtifactPathComponent(string(servingStateID), "serving state id"); err != nil {
+		return 0, err
+	}
+	if err := securefs.EnsurePrivateDir(s.dir); err != nil {
+		return 0, err
+	}
+	tmp, err := os.CreateTemp(s.dir, string(servingStateID)+".upload-*.tmp")
+	if err != nil {
+		return 0, err
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	size, copyErr := io.Copy(tmp, source)
+	closeErr := tmp.Close()
+	if copyErr != nil {
+		return size, copyErr
+	}
+	if closeErr != nil {
+		return size, fmt.Errorf("closing uploaded artifact: %w", closeErr)
+	}
+	if err := os.Rename(tmpPath, s.UploadPath(servingStateID)); err != nil {
+		return size, err
+	}
+	cleanup = false
+	return size, nil
+}
+
 func (s *ArtifactStore) PromoteUploaded(_ context.Context, servingStateID servingstate.ID, digest, manifestJSON string) (servingstate.Artifact, error) {
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	if err := validateArtifactPathComponent(string(servingStateID), "serving state id"); err != nil {
+		return servingstate.Artifact{}, err
+	}
+	if err := validateArtifactPathComponent(digest, "artifact digest"); err != nil {
+		return servingstate.Artifact{}, err
+	}
+	if err := securefs.EnsurePrivateDir(s.dir); err != nil {
 		return servingstate.Artifact{}, err
 	}
 	uploadPath := s.UploadPath(servingStateID)
@@ -51,6 +96,14 @@ func (s *ArtifactStore) PromoteUploaded(_ context.Context, servingStateID servin
 	}, nil
 }
 
+func validateArtifactPathComponent(value, label string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "." || value == ".." || filepath.IsAbs(value) || filepath.Base(value) != value {
+		return fmt.Errorf("%s must be a safe path component", label)
+	}
+	return nil
+}
+
 func fileSize(path string) int64 {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -65,7 +118,7 @@ func copyFile(source, target string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(target)
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, securefs.PrivateFileMode)
 	if err != nil {
 		return err
 	}
@@ -75,6 +128,9 @@ func copyFile(source, target string) error {
 	}
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("closing %s: %w", target, err)
+	}
+	if err := os.Chmod(target, securefs.PrivateFileMode); err != nil {
+		return err
 	}
 	return nil
 }

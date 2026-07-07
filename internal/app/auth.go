@@ -8,7 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +27,8 @@ type apiCredentialContextKey struct{}
 
 const csrfCookieName = "ld_csrf"
 const oidcStateCookieName = "ld_oidc_state"
+const oidcStateMaxAge = 10 * time.Minute
+const oidcStateClockSkew = time.Minute
 
 var (
 	errUnauthorized = errors.New("unauthorized")
@@ -41,6 +46,9 @@ type oidcClient interface {
 	AuthCodeURL(state, nonce string) string
 	Authenticate(ctx context.Context, code, expectedNonce string) (oidcauth.Claims, error)
 }
+
+var authRandomReader io.Reader = rand.Reader
+var authNow = time.Now
 
 type sessionManager interface {
 	CreateSession(ctx context.Context, principalID string, ttl time.Duration) (string, error)
@@ -175,8 +183,16 @@ func (a *Auth) Begin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	state := randomAuthValue()
-	nonce := randomAuthValue()
+	state, err := randomAuthValue()
+	if err != nil {
+		http.Error(w, "secure randomness unavailable", http.StatusInternalServerError)
+		return
+	}
+	nonce, err := randomAuthValue()
+	if err != nil {
+		http.Error(w, "secure randomness unavailable", http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, a.oidcStateCookie(state, nonce))
 	http.Redirect(w, r, client.AuthCodeURL(state, nonce), http.StatusFound)
 }
@@ -350,6 +366,10 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 		r = r.WithContext(access.WithAuthorizationCache(r.Context()))
 		principal, credential, ok := a.authenticate(r)
 		if !ok {
+			if a.apiTokenOnly {
+				writeBearerChallenge(w, r)
+				return
+			}
 			if wantsJSON(r) {
 				writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
 				return
@@ -440,6 +460,15 @@ func (a *Auth) mustChangeLocalPassword(r *http.Request, principalID string) bool
 	return err == nil && credential.MustChangePassword
 }
 
+func writeBearerChallenge(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("WWW-Authenticate", `Bearer realm="libredash"`)
+	if wantsJSON(r) {
+		writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
+		return
+	}
+	http.Error(w, "API bearer token required", http.StatusUnauthorized)
+}
+
 func writeAuthError(w http.ResponseWriter, r *http.Request, err error, status int) {
 	if wantsJSON(r) {
 		writeJSONError(w, err, status)
@@ -489,7 +518,7 @@ func (a *Auth) CSRFMiddleware(next http.Handler) http.Handler {
 	}
 	protected := a.csrf(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if bearerToken(r) != "" {
+		if bearerToken(r) != "" && !hasSessionCookie(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -511,6 +540,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
 		}
 		a.auditDisabledCredentialFailure(r, "api_token", token)
+		return Principal{}, nil, false
 	}
 	if a.apiTokenOnly {
 		return Principal{}, nil, false
@@ -525,6 +555,11 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 		return Principal{}, nil, false
 	}
 	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, nil, true
+}
+
+func hasSessionCookie(r *http.Request) bool {
+	cookie, err := r.Cookie("ld_session")
+	return err == nil && strings.TrimSpace(cookie.Value) != ""
 }
 
 func (a *Auth) auditDisabledCredentialFailure(r *http.Request, credentialType, secret string) {
@@ -604,11 +639,11 @@ func stableSubject(subject, fallback string) string {
 }
 
 func bearerToken(r *http.Request) string {
-	header := r.Header.Get("Authorization")
-	if !strings.HasPrefix(header, "Bearer ") {
+	fields := strings.Fields(r.Header.Get("Authorization"))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
 		return ""
 	}
-	return strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	return fields[1]
 }
 
 func csrfKey(value string) []byte {
@@ -626,7 +661,7 @@ func (a *Auth) oidcStateCookie(state, nonce string) *http.Cookie {
 		Name:     oidcStateCookieName,
 		Value:    a.encodeOIDCState(state, nonce),
 		Path:     "/",
-		MaxAge:   10 * 60,
+		MaxAge:   int(oidcStateMaxAge / time.Second),
 		HttpOnly: true,
 		Secure:   a.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
@@ -643,18 +678,35 @@ func (a *Auth) consumeOIDCState(w http.ResponseWriter, r *http.Request) (string,
 }
 
 func (a *Auth) encodeOIDCState(state, nonce string) string {
-	message := state + "|" + nonce
+	return a.encodeOIDCStateAt(state, nonce, authNow())
+}
+
+func (a *Auth) encodeOIDCStateAt(state, nonce string, issuedAt time.Time) string {
+	issuedUnix := strconv.FormatInt(issuedAt.UTC().Unix(), 10)
+	message := state + "|" + nonce + "|" + issuedUnix
 	mac := hmac.New(sha256.New, a.stateKey)
 	mac.Write([]byte(message))
-	return state + "." + nonce + "." + hex.EncodeToString(mac.Sum(nil))
+	return state + "." + nonce + "." + issuedUnix + "." + hex.EncodeToString(mac.Sum(nil))
 }
 
 func (a *Auth) decodeOIDCState(value string) (string, string, error) {
 	parts := strings.Split(value, ".")
-	if len(parts) != 3 {
+	if len(parts) != 4 {
 		return "", "", errors.New("invalid oidc state cookie")
 	}
-	expected := a.encodeOIDCState(parts[0], parts[1])
+	issuedUnix, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return "", "", errors.New("invalid oidc state cookie timestamp")
+	}
+	issuedAt := time.Unix(issuedUnix, 0).UTC()
+	now := authNow().UTC()
+	if issuedAt.After(now.Add(oidcStateClockSkew)) {
+		return "", "", errors.New("oidc state cookie is not yet valid")
+	}
+	if !issuedAt.Add(oidcStateMaxAge).After(now) {
+		return "", "", errors.New("oidc state cookie expired")
+	}
+	expected := a.encodeOIDCStateAt(parts[0], parts[1], issuedAt)
 	if !hmac.Equal([]byte(value), []byte(expected)) {
 		return "", "", errors.New("invalid oidc state cookie signature")
 	}
@@ -667,11 +719,26 @@ func derivedSecret(secret, purpose string) []byte {
 	return sum[:]
 }
 
-func randomAuthValue() string {
+func randomAuthValue() (string, error) {
 	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		sum := sha256.Sum256([]byte(time.Now().Format(time.RFC3339Nano)))
-		return hex.EncodeToString(sum[:])
+	if _, err := io.ReadFull(authRandomReader, b[:]); err != nil {
+		return "", fmt.Errorf("read secure random bytes: %w", err)
 	}
-	return hex.EncodeToString(b[:])
+	return hex.EncodeToString(b[:]), nil
+}
+
+func setAuthRandomReaderForTest(reader io.Reader) func() {
+	previous := authRandomReader
+	authRandomReader = reader
+	return func() {
+		authRandomReader = previous
+	}
+}
+
+func setAuthNowForTest(now time.Time) func() {
+	previous := authNow
+	authNow = func() time.Time { return now }
+	return func() {
+		authNow = previous
+	}
 }

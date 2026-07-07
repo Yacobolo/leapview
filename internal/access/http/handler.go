@@ -143,7 +143,7 @@ func (h Handler) CreateCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Requ
 		return
 	}
 	recordAccessAudit(r, repo, "api_token.created", principal.ID, row.WorkspaceID, "api_token", row.ID, access.PrivilegeManageGrants, "success", map[string]any{"name": row.Name, "privileges": row.Privileges})
-	writeJSON(w, stdhttp.StatusCreated, map[string]any{"token": token, "apiToken": apiTokenDTO(row)})
+	writeSecretJSON(w, stdhttp.StatusCreated, map[string]any{"token": token, "apiToken": apiTokenDTO(row)})
 }
 
 func (h Handler) RevokeCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -398,7 +398,7 @@ func (h Handler) OAuthToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	recordAccessAudit(r, repo, "oauth.token.created", principal.ID, input.WorkspaceID, "api_token", row.ID, "", "success", map[string]any{"grantType": "client_credentials"})
-	writeJSON(w, stdhttp.StatusOK, map[string]any{
+	writeSecretJSON(w, stdhttp.StatusOK, map[string]any{
 		"access_token": token,
 		"token_type":   "Bearer",
 		"expires_in":   int(ttl.Seconds()),
@@ -490,24 +490,37 @@ func (h Handler) DeleteServicePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Req
 func (h Handler) CreateServicePrincipalSecret(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	principal, _ := h.currentPrincipal(r)
 	var input struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		ExpiresAt string `json:"expiresAt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
+	}
+	var expiresAt time.Time
+	if strings.TrimSpace(input.ExpiresAt) != "" {
+		parsed, err := time.Parse(time.RFC3339, input.ExpiresAt)
+		if err != nil {
+			writeJSONError(w, err, stdhttp.StatusBadRequest)
+			return
+		}
+		expiresAt = parsed
 	}
 	repo, err := h.repository()
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	rawSecret, row, err := repo.CreateServicePrincipalSecret(r.Context(), chi.URLParam(r, "servicePrincipal"), input.Name)
+	rawSecret, row, err := repo.CreateServicePrincipalSecret(r.Context(), chi.URLParam(r, "servicePrincipal"), access.ServicePrincipalSecretInput{
+		Name:      input.Name,
+		ExpiresAt: expiresAt,
+	})
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
 	recordAccessAudit(r, repo, "service_principal_secret.created", principal.ID, "", "service_principal", row.ServicePrincipalID, access.PrivilegeManagePlatform, "success", map[string]any{"secretId": row.ID})
-	writeJSON(w, stdhttp.StatusCreated, map[string]any{"secret": rawSecret, "clientSecret": servicePrincipalSecretDTO(row, "")})
+	writeSecretJSON(w, stdhttp.StatusCreated, map[string]any{"secret": rawSecret, "clientSecret": servicePrincipalSecretDTO(row, "")})
 }
 
 func (h Handler) RevokeServicePrincipalSecret(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1292,6 +1305,7 @@ func servicePrincipalSecretDTO(row access.ServicePrincipalSecret, rawSecret stri
 		"id":                 row.ID,
 		"servicePrincipalId": row.ServicePrincipalID,
 		"name":               row.Name,
+		"expiresAt":          emptyToNil(row.ExpiresAt),
 		"createdAt":          emptyToNil(row.CreatedAt),
 		"revokedAt":          emptyToNil(row.RevokedAt),
 	}
@@ -1872,6 +1886,12 @@ func writeJSON(w stdhttp.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func writeSecretJSON(w stdhttp.ResponseWriter, status int, value any) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	writeJSON(w, status, value)
 }
 
 func writeJSONError(w stdhttp.ResponseWriter, err error, status int) {
