@@ -386,6 +386,38 @@ func TestBackupInstanceRejectsUnsafeSymlink(t *testing.T) {
 	}
 }
 
+func TestBackupInstanceRejectsSymlinkState(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	dbPath := filepath.Join(home, "libredash.db")
+	store, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "artifacts"), 0o755); err != nil {
+		t.Fatalf("mkdir artifacts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "artifacts", "target.tar.gz"), []byte("artifact"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	if err := os.Symlink("target.tar.gz", filepath.Join(home, "artifacts", "latest.tar.gz")); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	backupPath := filepath.Join(dir, "backups", "libredash-instance.tar.gz")
+	err = BackupInstance(ctx, InstanceBackupOptions{HomeDir: home, DBPath: dbPath, OutPath: backupPath})
+	if err == nil || !strings.Contains(err.Error(), "symlink entries are not supported") {
+		t.Fatalf("backup error = %v, want symlink rejection", err)
+	}
+	if _, statErr := os.Stat(backupPath); !os.IsNotExist(statErr) {
+		t.Fatalf("backup path exists after symlink error: %v", statErr)
+	}
+}
+
 func TestBackupInstanceRejectsOutputInsideHomeDir(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
@@ -545,6 +577,31 @@ func TestRestoreInstanceSanitizesArchivePermissions(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o755 {
 		t.Fatalf("restored dir mode = %#o, want 0755", got)
+	}
+}
+
+func TestRestoreInstanceRejectsSymlinkEntries(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	sourceDBPath := filepath.Join(dir, "source", instanceBackupDBName)
+	source, err := Open(ctx, sourceDBPath)
+	if err != nil {
+		t.Fatalf("open source store: %v", err)
+	}
+	if err := source.Close(); err != nil {
+		t.Fatalf("close source store: %v", err)
+	}
+	backupPath := filepath.Join(dir, "backup.tar.gz")
+	writeInstanceBackupArchive(t, backupPath, []testTarEntry{
+		{name: instanceBackupManifestName, mode: 0o644, body: []byte(`{"version":1,"kind":"libredash-instance","dbPath":"libredash.db"}` + "\n")},
+		{name: instanceBackupDBName, mode: 0o600, body: readTestBytes(t, sourceDBPath)},
+		{name: "artifacts/latest.tar.gz", mode: 0o777, symlink: true, linkname: "target.tar.gz"},
+	})
+
+	targetHome := filepath.Join(dir, "target")
+	err = RestoreInstance(ctx, InstanceRestoreOptions{TargetHomeDir: targetHome, BackupPath: backupPath})
+	if err == nil || !strings.Contains(err.Error(), "symlink entries are not supported") {
+		t.Fatalf("restore error = %v, want symlink rejection", err)
 	}
 }
 
@@ -722,10 +779,12 @@ func readTestBytes(t *testing.T, path string) []byte {
 }
 
 type testTarEntry struct {
-	name string
-	mode int64
-	body []byte
-	dir  bool
+	name     string
+	mode     int64
+	body     []byte
+	dir      bool
+	symlink  bool
+	linkname string
 }
 
 func writeInstanceBackupArchive(t *testing.T, archivePath string, entries []testTarEntry) {
@@ -746,6 +805,9 @@ func writeInstanceBackupArchive(t *testing.T, archivePath string, entries []test
 		}
 		if entry.dir {
 			header.Typeflag = tar.TypeDir
+		} else if entry.symlink {
+			header.Typeflag = tar.TypeSymlink
+			header.Linkname = entry.linkname
 		} else {
 			header.Typeflag = tar.TypeReg
 			header.Size = int64(len(entry.body))
@@ -753,7 +815,7 @@ func writeInstanceBackupArchive(t *testing.T, archivePath string, entries []test
 		if err := tw.WriteHeader(header); err != nil {
 			t.Fatalf("write tar header %s: %v", entry.name, err)
 		}
-		if !entry.dir {
+		if !entry.dir && !entry.symlink {
 			if _, err := tw.Write(entry.body); err != nil {
 				t.Fatalf("write tar body %s: %v", entry.name, err)
 			}

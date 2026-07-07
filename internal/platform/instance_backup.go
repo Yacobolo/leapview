@@ -177,7 +177,7 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 			if err := validateInstanceBackupSymlink(rel, target); err != nil {
 				return err
 			}
-			header.Linkname = target
+			return fmt.Errorf("instance backup symlink entries are not supported: %s", rel)
 		}
 		if err := tw.WriteHeader(header); err != nil {
 			return err
@@ -357,15 +357,7 @@ func extractInstanceBackup(ctx context.Context, archivePath, targetDir string) e
 				return err
 			}
 		case tar.TypeSymlink:
-			if err := os.MkdirAll(filepath.Dir(target), instanceRestoreDirMode); err != nil {
-				return err
-			}
-			if err := validateInstanceBackupSymlink(header.Name, header.Linkname); err != nil {
-				return err
-			}
-			if err := os.Symlink(header.Linkname, target); err != nil {
-				return err
-			}
+			return fmt.Errorf("instance backup symlink entries are not supported: %s", header.Name)
 		default:
 			return fmt.Errorf("instance backup contains unsupported entry %q", header.Name)
 		}
