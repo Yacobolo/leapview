@@ -423,7 +423,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"go-version-file: go.mod",
 		"oven-sh/setup-bun@v2",
 		"bun-version: 1.3.7",
-		"go install github.com/go-task/task/v3/cmd/task@v3.52.0",
+		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
 		"task ci",
 		"docker build --pull --tag libredash:ci .",
 	} {

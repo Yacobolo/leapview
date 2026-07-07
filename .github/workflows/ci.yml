@@ -37,7 +37,7 @@ jobs:
 
       - name: Install Task
         run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.52.0
+          go install github.com/go-task/task/v3/cmd/task@v3.50.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Install browser dependencies
