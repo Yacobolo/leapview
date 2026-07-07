@@ -349,9 +349,24 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.LoginPage().Render(w); err != nil {
+	if err := ui.LoginPage(s.loginPageOptions(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) loginPageOptions(r *http.Request) ui.LoginPageOptions {
+	opts := ui.LoginPageOptions{
+		LocalAuth:     s.auth != nil && s.auth.localAuth,
+		SSOAuth:       s.auth == nil || s.auth.configured,
+		ProviderLabel: "Sign in with Azure Active Directory",
+	}
+	if s.auth != nil {
+		opts.CSRFToken = csrf.Token(r)
+		if principal, _, ok := s.auth.authenticate(r); ok {
+			opts.MustChangePassword = s.auth.mustChangeLocalPassword(r, principal.ID)
+		}
+	}
+	return opts
 }
 
 func (s *Server) dashboardHTTP() dashboardhttp.Handler {

@@ -104,6 +104,186 @@ func (r *Repository) UpsertPrincipal(ctx context.Context, input access.Principal
 	return mapPrincipal(row), nil
 }
 
+func (r *Repository) CreateLocalUser(ctx context.Context, input access.LocalUserInput) (access.LocalPasswordReset, error) {
+	access.ClearAuthorizationCache(ctx)
+	email := access.NormalizeEmail(input.Email)
+	if email == "" {
+		return access.LocalPasswordReset{}, fmt.Errorf("email is required")
+	}
+	password := strings.TrimSpace(input.Password)
+	if password == "" {
+		password = newTemporaryPassword()
+	}
+	verifier, err := newSecretVerifier(password)
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	principalID := access.PrincipalIDForEmail(email)
+	if existing, err := r.q.GetPrincipalByEmail(ctx, email); err == nil {
+		principalID = existing.ID
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return access.LocalPasswordReset{}, err
+	}
+	principal, err := r.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          principalID,
+		Kind:        access.PrincipalKindUser,
+		Email:       email,
+		DisplayName: firstNonEmpty(strings.TrimSpace(input.DisplayName), email),
+	})
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	if err := r.upsertLocalCredential(ctx, principal.ID, verifier, input.MustChange); err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	return access.LocalPasswordReset{Principal: principal, Password: password}, nil
+}
+
+func (r *Repository) VerifyLocalPassword(ctx context.Context, email, password string) (access.Principal, access.LocalCredential, error) {
+	email = access.NormalizeEmail(email)
+	if email == "" || strings.TrimSpace(password) == "" {
+		return access.Principal{}, access.LocalCredential{}, sql.ErrNoRows
+	}
+	principal, credential, verifier, err := r.localCredentialByEmail(ctx, email)
+	if err != nil {
+		return access.Principal{}, access.LocalCredential{}, err
+	}
+	if principal.DisabledAt != "" || !verifySecret(password, verifier) {
+		return access.Principal{}, access.LocalCredential{}, sql.ErrNoRows
+	}
+	return principal, credential, nil
+}
+
+func (r *Repository) ResetLocalPassword(ctx context.Context, principalID string) (access.LocalPasswordReset, error) {
+	principalID = strings.TrimSpace(principalID)
+	if principalID == "" {
+		return access.LocalPasswordReset{}, fmt.Errorf("principal id is required")
+	}
+	principal, err := r.PrincipalByID(ctx, principalID)
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	if principal.Kind != access.PrincipalKindUser {
+		return access.LocalPasswordReset{}, fmt.Errorf("local passwords are only supported for user principals")
+	}
+	password := newTemporaryPassword()
+	verifier, err := newSecretVerifier(password)
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	if err := r.upsertLocalCredential(ctx, principal.ID, verifier, true); err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	return access.LocalPasswordReset{Principal: principal, Password: password}, nil
+}
+
+func (r *Repository) ChangeLocalPassword(ctx context.Context, principalID, currentPassword, newPassword string) (access.LocalCredential, error) {
+	principalID = strings.TrimSpace(principalID)
+	if principalID == "" {
+		return access.LocalCredential{}, fmt.Errorf("principal id is required")
+	}
+	if strings.TrimSpace(newPassword) == "" {
+		return access.LocalCredential{}, fmt.Errorf("new password is required")
+	}
+	principal, credential, verifier, err := r.localCredentialByPrincipalID(ctx, principalID)
+	if err != nil {
+		return access.LocalCredential{}, err
+	}
+	if principal.DisabledAt != "" || !verifySecret(currentPassword, verifier) {
+		return access.LocalCredential{}, sql.ErrNoRows
+	}
+	newVerifier, err := newSecretVerifier(newPassword)
+	if err != nil {
+		return access.LocalCredential{}, err
+	}
+	if _, err := r.db.ExecContext(ctx, `
+UPDATE local_user_credentials
+SET password_verifier = ?, must_change_password = 0, updated_at = CURRENT_TIMESTAMP, password_changed_at = CURRENT_TIMESTAMP
+WHERE principal_id = ?
+`, newVerifier, principalID); err != nil {
+		return access.LocalCredential{}, err
+	}
+	credential, err = r.LocalCredential(ctx, principalID)
+	if err != nil {
+		return access.LocalCredential{}, err
+	}
+	return credential, nil
+}
+
+func (r *Repository) LocalCredential(ctx context.Context, principalID string) (access.LocalCredential, error) {
+	_, credential, _, err := r.localCredentialByPrincipalID(ctx, principalID)
+	return credential, err
+}
+
+func (r *Repository) upsertLocalCredential(ctx context.Context, principalID, verifier string, mustChange bool) error {
+	mustChangeValue := 0
+	if mustChange {
+		mustChangeValue = 1
+	}
+	_, err := r.db.ExecContext(ctx, `
+INSERT INTO local_user_credentials (principal_id, password_verifier, must_change_password, updated_at, password_changed_at)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL)
+ON CONFLICT(principal_id) DO UPDATE SET
+  password_verifier = excluded.password_verifier,
+  must_change_password = excluded.must_change_password,
+  updated_at = CURRENT_TIMESTAMP,
+  password_changed_at = NULL
+`, principalID, verifier, mustChangeValue)
+	return err
+}
+
+func (r *Repository) localCredentialByEmail(ctx context.Context, email string) (access.Principal, access.LocalCredential, string, error) {
+	return r.scanLocalCredential(ctx, `
+SELECT p.id, p.kind, p.email, p.display_name, p.disabled_at, p.created_at, p.updated_at,
+       c.password_verifier, c.must_change_password, c.created_at, c.updated_at, c.password_changed_at
+FROM principals p
+JOIN local_user_credentials c ON c.principal_id = p.id
+WHERE lower(p.email) = lower(?) AND p.email <> ''
+LIMIT 1
+`, email)
+}
+
+func (r *Repository) localCredentialByPrincipalID(ctx context.Context, principalID string) (access.Principal, access.LocalCredential, string, error) {
+	return r.scanLocalCredential(ctx, `
+SELECT p.id, p.kind, p.email, p.display_name, p.disabled_at, p.created_at, p.updated_at,
+       c.password_verifier, c.must_change_password, c.created_at, c.updated_at, c.password_changed_at
+FROM principals p
+JOIN local_user_credentials c ON c.principal_id = p.id
+WHERE p.id = ?
+LIMIT 1
+`, strings.TrimSpace(principalID))
+}
+
+func (r *Repository) scanLocalCredential(ctx context.Context, query, arg string) (access.Principal, access.LocalCredential, string, error) {
+	var principal access.Principal
+	var credential access.LocalCredential
+	var disabledAt, passwordChangedAt sql.NullString
+	var verifier string
+	var mustChange int
+	err := r.db.QueryRowContext(ctx, query, arg).Scan(
+		&principal.ID,
+		&principal.Kind,
+		&principal.Email,
+		&principal.DisplayName,
+		&disabledAt,
+		&principal.CreatedAt,
+		&principal.UpdatedAt,
+		&verifier,
+		&mustChange,
+		&credential.CreatedAt,
+		&credential.UpdatedAt,
+		&passwordChangedAt,
+	)
+	if err != nil {
+		return access.Principal{}, access.LocalCredential{}, "", err
+	}
+	principal.DisabledAt = nullString(disabledAt)
+	credential.PrincipalID = principal.ID
+	credential.MustChangePassword = mustChange != 0
+	credential.PasswordChangedAt = nullString(passwordChangedAt)
+	return principal, credential, verifier, nil
+}
+
 func (r *Repository) SetPrincipalRole(ctx context.Context, input access.PrincipalRoleInput) (access.Principal, error) {
 	access.ClearAuthorizationCache(ctx)
 	email := access.NormalizeEmail(input.Email)
@@ -455,6 +635,17 @@ func (r *Repository) AuthorizeBatch(ctx context.Context, principalID string, che
 		if err != nil {
 			return nil, err
 		}
+		if platformDecision.Allowed {
+			out[i].Allowed = true
+			out[i].Platform = true
+			out[i].GrantID = platformDecision.GrantID
+			out[i].GrantObjectID = platformDecision.GrantObjectID
+			out[i].SubjectType = platformDecision.SubjectType
+			out[i].SubjectID = platformDecision.SubjectID
+			out[i].Reason = access.ReasonPlatformAdmin
+			access.StoreAuthorizationDecision(ctx, principalID, out[i])
+			continue
+		}
 		if !facts.exists {
 			out[i].Reason = access.ReasonUnknownObject
 			access.StoreAuthorizationDecision(ctx, principalID, out[i])
@@ -464,17 +655,6 @@ func (r *Repository) AuthorizeBatch(ctx context.Context, principalID string, che
 			out[i].Allowed = true
 			out[i].Owner = true
 			out[i].Reason = access.ReasonOwner
-			access.StoreAuthorizationDecision(ctx, principalID, out[i])
-			continue
-		}
-		if platformDecision.Allowed {
-			out[i].Allowed = true
-			out[i].Platform = true
-			out[i].GrantID = platformDecision.GrantID
-			out[i].GrantObjectID = platformDecision.GrantObjectID
-			out[i].SubjectType = platformDecision.SubjectType
-			out[i].SubjectID = platformDecision.SubjectID
-			out[i].Reason = access.ReasonPlatformAdmin
 			access.StoreAuthorizationDecision(ctx, principalID, out[i])
 			continue
 		}
@@ -2498,6 +2678,10 @@ func newSecret() string {
 		return hex.EncodeToString(sum[:])
 	}
 	return hex.EncodeToString(b[:])
+}
+
+func newTemporaryPassword() string {
+	return newSecret()[:24]
 }
 
 func stableID(value string) string {

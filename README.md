@@ -247,7 +247,7 @@ Production mode serves the active deployed BI-as-code bundle from `.libredash` b
 
 ```sh
 export LIBREDASH_PRODUCTION=1
-export LIBREDASH_API_TOKEN_ONLY_AUTH=1 # or configure Azure below
+export LIBREDASH_LOCAL_AUTH=1 # or configure OIDC/Azure below
 export LIBREDASH_CSRF_KEY=<32+ byte secret>
 libredash serve --production
 libredash admin bootstrap
@@ -261,6 +261,7 @@ Useful env vars:
 ```sh
 LIBREDASH_HOME=/var/lib/libredash
 LIBREDASH_DATA_DIR=/path/to/data
+LIBREDASH_LOCAL_AUTH=1
 LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 LIBREDASH_AZURE_CLIENT_ID=...
 LIBREDASH_AZURE_CLIENT_SECRET=...
@@ -269,6 +270,11 @@ LIBREDASH_AZURE_TENANT=...
 LIBREDASH_CSRF_KEY=<32+ byte secret>
 LIBREDASH_COOKIE_SECURE=true
 ```
+
+Local auth is admin-managed: users with grant-management access can create local
+users from Admin / Principals and copy the one-time temporary password shown in
+the response. Local users and local groups use the same grants and workspace
+roles as OIDC/SCIM identities.
 
 LibreDash reads production secrets from environment variables. Infisical is the recommended production workflow, but any env-based secret manager works:
 

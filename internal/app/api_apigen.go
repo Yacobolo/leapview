@@ -311,12 +311,20 @@ func (a apiGenAdapter) ListPrincipals(w http.ResponseWriter, r *http.Request, _ 
 	a.server.accessHTTPHandler().ListPrincipals(w, r)
 }
 
+func (a apiGenAdapter) CreatePrincipal(w http.ResponseWriter, r *http.Request) {
+	a.server.accessHTTPHandler().CreatePrincipal(w, r)
+}
+
 func (a apiGenAdapter) GetPrincipal(w http.ResponseWriter, r *http.Request, _ string) {
 	a.server.accessHTTPHandler().GetPrincipal(w, r)
 }
 
 func (a apiGenAdapter) UpdatePrincipal(w http.ResponseWriter, r *http.Request, _ string) {
 	a.server.accessHTTPHandler().UpdatePrincipal(w, r)
+}
+
+func (a apiGenAdapter) ResetPrincipalPassword(w http.ResponseWriter, r *http.Request, _ string) {
+	a.server.accessHTTPHandler().ResetPrincipalPassword(w, r)
 }
 
 func (a apiGenAdapter) ListServicePrincipals(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListServicePrincipalsParams) {

@@ -217,6 +217,78 @@ class LibreDashAdminPage extends DatastarLit(LitElement) {
       gap: var(--base-size-12);
     }
 
+    .local-user-panel {
+      display: grid;
+      max-width: var(--ld-workspace-detail-max-width);
+      gap: var(--base-size-12);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
+      padding: var(--base-size-12);
+    }
+
+    .local-user-form {
+      display: grid;
+      grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1fr) auto;
+      gap: var(--base-size-8);
+      align-items: end;
+    }
+
+    .local-user-form label {
+      display: grid;
+      gap: var(--base-size-4);
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-medium);
+      text-transform: uppercase;
+    }
+
+    .local-user-form input {
+      min-width: 0;
+      min-height: var(--control-medium-size);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-small);
+      background: var(--ld-bg-input);
+      color: var(--ld-fg-default);
+      font: inherit;
+      font-size: var(--ld-font-size-body-sm);
+      padding: 0 var(--base-size-8);
+    }
+
+    .local-user-action {
+      min-height: var(--control-medium-size);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-default);
+      cursor: pointer;
+      font: inherit;
+      font-size: var(--ld-font-size-body-sm);
+      font-weight: var(--ld-font-weight-medium);
+      padding: 0 var(--base-size-12);
+    }
+
+    .local-user-action:hover,
+    .local-user-action:focus-visible {
+      background: var(--ld-bg-control-hover);
+      outline: 0;
+    }
+
+    .local-user-action:disabled {
+      cursor: not-allowed;
+      opacity: 0.64;
+    }
+
+    .local-user-result {
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-body-sm);
+      line-height: var(--ld-line-height-compact);
+    }
+
+    .local-user-result code {
+      color: var(--ld-fg-default);
+    }
+
     .query-audit {
       display: grid;
       min-width: 0;
@@ -597,10 +669,45 @@ class LibreDashAdminPage extends DatastarLit(LitElement) {
               `)}
             </div>
           ` : nothing}
+          ${this.renderLocalUserAdmin(page)}
           ${page.active === 'storage' ? this.renderStorage(page) : page.active === 'agent' ? this.renderAgent(page) : page.active === 'queries' ? this.renderQueries(page) : page.sections?.map(renderSection)}
         </section>
       </div>
     `
+  }
+
+  private renderLocalUserAdmin(page: AdminPageSignal) {
+    if (page.active === 'principals') {
+      return html`
+        <section class="local-user-panel" aria-label="Create local user">
+          <form class="local-user-form" method="post" action="/api/v1/principals">
+            <input type="hidden" name="gorilla.csrf.Token" value=${csrfToken()}>
+            <label>
+              Email
+              <input name="email" type="email" autocomplete="off" required>
+            </label>
+            <label>
+              Display name
+              <input name="displayName" type="text" autocomplete="off">
+            </label>
+            <button class="local-user-action" type="submit">Create user</button>
+          </form>
+        </section>
+      `
+    }
+    if (page.active === 'principal-detail') {
+      const principalId = principalIDFromPage(page)
+      if (!principalId) return nothing
+      return html`
+        <section class="local-user-panel" aria-label="Reset local password">
+          <form method="post" action=${`/api/v1/principals/${encodeURIComponent(principalId)}/password-reset`}>
+            <input type="hidden" name="gorilla.csrf.Token" value=${csrfToken()}>
+            <button class="local-user-action" type="submit">Reset local password</button>
+          </form>
+        </section>
+      `
+    }
+    return nothing
   }
 
   private renderAgent(page: AdminPageSignal) {
@@ -946,6 +1053,16 @@ function formatQueryJSON(value: string): string {
 function storageHasPayload(storage: AdminStorageSignal | null | undefined): storage is AdminStorageSignal {
   if (!storage) return false
   return Boolean(storage.tables?.length || storage.status || storage.selectedKey || storage.selectedTable || storage.warnings?.length)
+}
+
+function csrfToken(): string {
+  const token = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content.trim() ?? ''
+  return token
+}
+
+function principalIDFromPage(page: AdminPageSignal): string {
+  const metric = page.metrics?.find((item) => item.label === 'Principal ID')
+  return metric?.value ?? ''
 }
 
 function renderSection(section: AdminContentSectionSignal) {

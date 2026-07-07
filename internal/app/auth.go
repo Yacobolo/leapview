@@ -48,6 +48,12 @@ type sessionManager interface {
 	DeleteSession(ctx context.Context, token string) error
 }
 
+type localCredentialManager interface {
+	VerifyLocalPassword(ctx context.Context, email, password string) (access.Principal, access.LocalCredential, error)
+	ChangeLocalPassword(ctx context.Context, principalID, currentPassword, newPassword string) (access.LocalCredential, error)
+	LocalCredential(ctx context.Context, principalID string) (access.LocalCredential, error)
+}
+
 type disabledCredentialResolver interface {
 	DisabledPrincipalForAPIToken(ctx context.Context, token string) (principalID, tokenID string, err error)
 	DisabledPrincipalForSessionToken(ctx context.Context, token string) (principalID, sessionID string, err error)
@@ -59,6 +65,7 @@ type Auth struct {
 	workspaceID  string
 	devBypass    bool
 	apiTokenOnly bool
+	localAuth    bool
 	enabled      bool
 	configured   bool
 	azureTenant  string
@@ -72,6 +79,7 @@ type Auth struct {
 type AuthConfig struct {
 	DevBypass       bool
 	APITokenOnly    bool
+	LocalAuth       bool
 	AzureClientID   string
 	AzureSecret     string
 	AzureCallback   string
@@ -89,6 +97,7 @@ func NewAuth(repo access.Repository, workspaceID string, cfg AuthConfig) *Auth {
 		workspaceID:  workspaceID,
 		devBypass:    cfg.DevBypass,
 		apiTokenOnly: cfg.APITokenOnly,
+		localAuth:    cfg.LocalAuth,
 		azureTenant:  cfg.AzureTenant,
 		cookieSecure: cfg.CookieSecure,
 	}
@@ -235,6 +244,86 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+func (a *Auth) LocalLogin(w http.ResponseWriter, r *http.Request) {
+	if !a.localAuth {
+		http.Error(w, "local auth is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	email := access.NormalizeEmail(firstNonEmpty(r.Form.Get("email"), r.Form.Get("username")))
+	password := r.Form.Get("password")
+	local, ok := a.repo.(localCredentialManager)
+	if !ok {
+		http.Error(w, "local auth repository is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	principal, credential, err := local.VerifyLocalPassword(r.Context(), email, password)
+	if err != nil {
+		recordAccessAudit(r, a.repo, "sign_in", "", "", "principal", "", "", "denied", map[string]any{"provider": "local", "email": email})
+		if wantsJSON(r) {
+			writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, errUnauthorized.Error(), http.StatusUnauthorized)
+		return
+	}
+	token, err := a.sessions.CreateSession(r.Context(), principal.ID, 8*time.Hour)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	recordAccessAudit(r, a.repo, "session.created", principal.ID, "", "session", "", "", "success", map[string]any{"provider": "local"})
+	recordAccessAudit(r, a.repo, "sign_in", principal.ID, "", "principal", principal.ID, "", "success", map[string]any{"provider": "local"})
+	http.SetCookie(w, a.sessionCookie(token, time.Now().Add(8*time.Hour)))
+	if credential.MustChangePassword {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (a *Auth) LocalPassword(w http.ResponseWriter, r *http.Request) {
+	if !a.localAuth {
+		http.Error(w, "local auth is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	principal, _, ok := a.authenticate(r)
+	if !ok {
+		if wantsJSON(r) {
+			writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, errUnauthorized.Error(), http.StatusUnauthorized)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	local, ok := a.repo.(localCredentialManager)
+	if !ok {
+		http.Error(w, "local auth repository is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if _, err := local.ChangeLocalPassword(r.Context(), principal.ID, firstNonEmpty(r.Form.Get("currentPassword"), r.Form.Get("current_password")), firstNonEmpty(r.Form.Get("newPassword"), r.Form.Get("new_password"))); err != nil {
+		if wantsJSON(r) {
+			writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, errUnauthorized.Error(), http.StatusUnauthorized)
+		return
+	}
+	recordAccessAudit(r, a.repo, "password.changed", principal.ID, "", "principal", principal.ID, "", "success", map[string]any{"provider": "local"})
+	if wantsJSON(r) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "changed"})
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
 func (a *Auth) Principal(r *http.Request) (Principal, bool) {
 	if value, ok := r.Context().Value(principalContextKey{}).(Principal); ok {
 		return value, true
@@ -265,7 +354,11 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
 				return
 			}
-			http.Redirect(w, r, "/auth/azureadv2", http.StatusFound)
+			http.Redirect(w, r, a.defaultLoginRedirect(), http.StatusFound)
+			return
+		}
+		if a.mustChangeLocalPassword(r, principal.ID) {
+			writeAuthError(w, r, errForbidden, http.StatusForbidden)
 			return
 		}
 		if privilege != "" {
@@ -328,6 +421,25 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 	})
 }
 
+func (a *Auth) defaultLoginRedirect() string {
+	if a.localAuth {
+		return "/login"
+	}
+	return "/auth/azureadv2"
+}
+
+func (a *Auth) mustChangeLocalPassword(r *http.Request, principalID string) bool {
+	if !a.localAuth || r.URL.Path == "/auth/local/password" || r.URL.Path == "/auth/logout" {
+		return false
+	}
+	local, ok := a.repo.(localCredentialManager)
+	if !ok {
+		return false
+	}
+	credential, err := local.LocalCredential(r.Context(), principalID)
+	return err == nil && credential.MustChangePassword
+}
+
 func writeAuthError(w http.ResponseWriter, r *http.Request, err error, status int) {
 	if wantsJSON(r) {
 		writeJSONError(w, err, status)
@@ -363,6 +475,9 @@ func (a *Auth) privilegeWorkspaceID(r *http.Request) string {
 		return workspaceID
 	}
 	if workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace")); workspaceID != "" {
+		if workspaceID == "platform" && r.URL.Path == "/updates" {
+			return ""
+		}
 		return workspaceID
 	}
 	return a.workspaceID

@@ -181,6 +181,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		authConfig = app.AuthConfig{
 			DevBypass:       cfg.DevAuthBypass,
 			APITokenOnly:    cfg.APITokenOnlyAuth,
+			LocalAuth:       cfg.LocalAuth,
 			AzureClientID:   cfg.AzureClientID,
 			AzureSecret:     cfg.AzureSecret,
 			AzureCallback:   cfg.AzureCallbackURL,

@@ -22,6 +22,16 @@ model PrincipalPatchRequest {
   displayName?: string;
 }
 
+model PrincipalCreateRequest {
+  email: string;
+  displayName?: string;
+}
+
+model LocalPasswordResetResponse {
+  principal: PrincipalResponse;
+  temporaryPassword: string;
+}
+
 model ServicePrincipalCreateRequest {
   id?: string;
   displayName: string;
@@ -215,6 +225,15 @@ alias ListPrincipalsOK = OkJson<PrincipalListResponse>;
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 op listPrincipals(@query email?: string, @query q?: string, @query limit?: int32, @query pageToken?: string): ListPrincipalsOK | CommonErrors;
 
+alias CreatePrincipalCreated = CreatedJson<LocalPasswordResetResponse>;
+
+@tag("Access")
+@summary("Create a local principal")
+@route("/principals")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+op createPrincipal(@body body: PrincipalCreateRequest): CreatePrincipalCreated | CommonErrors;
+
 alias GetPrincipalOK = OkJson<PrincipalResponse>;
 
 @tag("Access")
@@ -232,6 +251,15 @@ alias UpdatePrincipalOK = OkJson<PrincipalResponse>;
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 op updatePrincipal(@path principal: string, @body body: PrincipalPatchRequest): UpdatePrincipalOK | CommonErrors;
+
+alias ResetPrincipalPasswordOK = OkJson<LocalPasswordResetResponse>;
+
+@tag("Access")
+@summary("Reset a local principal password")
+@route("/principals/{principal}/password-reset")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+op resetPrincipalPassword(@path principal: string): ResetPrincipalPasswordOK | CommonErrors;
 
 alias ListServicePrincipalsOK = OkJson<ServicePrincipalListResponse>;
 

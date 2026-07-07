@@ -291,6 +291,127 @@ func TestAuthCallbackCreatesSessionAndAuditEvents(t *testing.T) {
 	}
 }
 
+func TestLocalLoginCreatesSessionAndAuditEvents(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	created, err := repo.CreateLocalUser(ctx, access.LocalUserInput{Email: "local@example.com", DisplayName: "Local User"})
+	if err != nil {
+		t.Fatalf("create local user: %v", err)
+	}
+	auth := testAuth(store, "test", AuthConfig{
+		LocalAuth: true,
+		CSRFKey:   "0123456789abcdef0123456789abcdef",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(url.Values{
+		"email":    {"local@example.com"},
+		"password": {created.Password},
+	}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	auth.LocalLogin(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 body=%s", rec.Code, rec.Body.String())
+	}
+	principal := principalFromSessionCookie(t, repo, rec.Result().Cookies())
+	if principal.ID != created.Principal.ID {
+		t.Fatalf("session principal = %#v, want %s", principal, created.Principal.ID)
+	}
+	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{Action: "sign_in"})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 1 || events[0].PrincipalID != created.Principal.ID || events[0].Status != "success" {
+		t.Fatalf("sign_in events = %#v", events)
+	}
+}
+
+func TestLocalLoginRejectsBadPasswordAndAuditsDenied(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	if _, err := repo.CreateLocalUser(ctx, access.LocalUserInput{Email: "local@example.com"}); err != nil {
+		t.Fatalf("create local user: %v", err)
+	}
+	auth := testAuth(store, "test", AuthConfig{
+		LocalAuth: true,
+		CSRFKey:   "0123456789abcdef0123456789abcdef",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/local/login", strings.NewReader(url.Values{
+		"email":    {"local@example.com"},
+		"password": {"bad-password"},
+	}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	auth.LocalLogin(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 body=%s", rec.Code, rec.Body.String())
+	}
+	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{Action: "sign_in"})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 1 || events[0].Status != "denied" {
+		t.Fatalf("sign_in denied events = %#v", events)
+	}
+}
+
+func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	created, err := repo.CreateLocalUser(ctx, access.LocalUserInput{Email: "local@example.com", MustChange: true})
+	if err != nil {
+		t.Fatalf("create local user: %v", err)
+	}
+	if _, err := repo.SetPlatformRole(ctx, access.PlatformRoleInput{PrincipalID: created.Principal.ID, Email: created.Principal.Email, Role: access.RolePlatformAdmin}); err != nil {
+		t.Fatalf("set platform role: %v", err)
+	}
+	auth := testAuth(store, "test", AuthConfig{
+		LocalAuth: true,
+		CSRFKey:   "0123456789abcdef0123456789abcdef",
+	})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+	sessionSecret, err := repo.CreateSession(ctx, created.Principal.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(auth.sessionCookie(sessionSecret, time.Now().Add(time.Hour)))
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("must-change status = %d, want 403 body=%s", rec.Code, rec.Body.String())
+	}
+
+	passwordReq := httptest.NewRequest(http.MethodPost, "/auth/local/password", strings.NewReader(url.Values{
+		"currentPassword": {created.Password},
+		"newPassword":     {"changed-password"},
+	}.Encode()))
+	passwordReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	passwordReq.AddCookie(auth.sessionCookie(sessionSecret, time.Now().Add(time.Hour)))
+	passwordRec := httptest.NewRecorder()
+	auth.LocalPassword(passwordRec, passwordReq)
+	if passwordRec.Code != http.StatusFound {
+		t.Fatalf("password change status = %d, want 302 body=%s", passwordRec.Code, passwordRec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(auth.sessionCookie(sessionSecret, time.Now().Add(time.Hour)))
+	rec = httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("after password change status = %d, want 200 body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAuthCallbackUsesOIDCIssuerAndSubjectAsStableIdentity(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{

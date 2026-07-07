@@ -21,7 +21,7 @@ func (s *Server) Routes() http.Handler {
 	}
 	mux.Use(securityHeaders(s.securityHeaders))
 	mux.Get("/favicon.ico", favicon)
-	mux.Get("/login", s.login)
+	mux.With(s.csrf).Get("/login", s.login)
 	mux.Group(func(r chi.Router) {
 		r.Use(s.csrf)
 		r.With(s.rateLimits.updatesMiddleware()).Get("/updates", s.pageStream)
@@ -70,6 +70,12 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/workspaces/{workspace}/commands/reload", s.protected(access.PrivilegeViewItem, dashboardHTTP.Reload))
 		r.Post("/workspaces/{workspace}/commands/reset-filters", s.protected(access.PrivilegeViewItem, dashboardHTTP.ResetFilters))
 		r.Post("/auth/logout", s.authLogout)
+		r.Post("/auth/local/password", s.authLocalPassword)
+	})
+	mux.Group(func(r chi.Router) {
+		r.Use(s.rateLimits.authMiddleware())
+		r.Use(s.csrf)
+		r.Post("/auth/local/login", s.authLocalLogin)
 	})
 	mux.Group(func(r chi.Router) {
 		r.Use(s.rateLimits.authMiddleware())
@@ -150,6 +156,22 @@ func (s *Server) authCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.Callback(w, r)
+}
+
+func (s *Server) authLocalLogin(w http.ResponseWriter, r *http.Request) {
+	if s.auth == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.auth.LocalLogin(w, r)
+}
+
+func (s *Server) authLocalPassword(w http.ResponseWriter, r *http.Request) {
+	if s.auth == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.auth.LocalPassword(w, r)
 }
 
 func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {

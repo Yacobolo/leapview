@@ -2934,8 +2934,17 @@
         "kind": {
           "type": "string"
         },
+        "localAuth": {
+          "type": "boolean"
+        },
+        "mustChangePassword": {
+          "type": "boolean"
+        },
         "providerLabel": {
           "type": "string"
+        },
+        "ssoAuth": {
+          "type": "boolean"
         },
         "title": {
           "type": "string"
@@ -2944,7 +2953,10 @@
       "required": [
         "backgroundModuleSrc",
         "kind",
+        "localAuth",
+        "mustChangePassword",
         "providerLabel",
+        "ssoAuth",
         "title"
       ],
       "type": "object"

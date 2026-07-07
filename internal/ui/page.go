@@ -68,7 +68,22 @@ func csrfMeta(token string) g.Node {
 	return h.Meta(h.Name("csrf-token"), h.Content(token))
 }
 
-func LoginPage() g.Node {
+type LoginPageOptions struct {
+	LocalAuth          bool
+	SSOAuth            bool
+	MustChangePassword bool
+	ProviderLabel      string
+	CSRFToken          string
+}
+
+func LoginPage(options ...LoginPageOptions) g.Node {
+	opts := LoginPageOptions{SSOAuth: true, ProviderLabel: "Sign in with Azure Active Directory"}
+	if len(options) > 0 {
+		opts = options[0]
+		if strings.TrimSpace(opts.ProviderLabel) == "" {
+			opts.ProviderLabel = "Sign in with Azure Active Directory"
+		}
+	}
 	favicon := "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230969da'/%3E%3Ctext x='32' y='39' text-anchor='middle' font-family='Arial,sans-serif' font-size='20' font-weight='700' fill='white'%3ELD%3C/text%3E%3C/svg%3E"
 	loginUpdatesURL := updatesURL(uisignals.RouteLogin)
 	return pagestream.RenderPage(pagestream.PageSpec{
@@ -79,6 +94,7 @@ func LoginPage() g.Node {
 			g.Attr("data-dark-theme", "dark"),
 		},
 		Head: []g.Node{
+			csrfMeta(opts.CSRFToken),
 			h.Link(h.Rel("icon"), h.Href(favicon)),
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			h.Script(h.Src(staticAsset("/static/theme.js"))),
@@ -101,10 +117,26 @@ func LoginBootstrapSignals() map[string]any {
 			Kind:                uisignals.RouteLogin,
 			Title:               "LibreDash",
 			ProviderLabel:       "Sign in with Azure Active Directory",
+			LocalAuth:           false,
+			SSOAuth:             true,
+			MustChangePassword:  false,
 			BackgroundModuleSrc: staticAsset("/static/topology-background.js"),
 		},
 		"status": dashboard.Status{},
 	}
+}
+
+func LoginBootstrapSignalsForOptions(opts LoginPageOptions) map[string]any {
+	signals := LoginBootstrapSignals()
+	page := signals["page"].(uisignals.LoginPageSignal)
+	page.LocalAuth = opts.LocalAuth
+	page.SSOAuth = opts.SSOAuth
+	page.MustChangePassword = opts.MustChangePassword
+	if strings.TrimSpace(opts.ProviderLabel) != "" {
+		page.ProviderLabel = opts.ProviderLabel
+	}
+	signals["page"] = page
+	return signals
 }
 
 func CatalogPage(catalog dashboard.Catalog, chromeOptions ...ChromeOption) g.Node {

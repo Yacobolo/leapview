@@ -13,6 +13,25 @@ API tokens = scoped credentials, not identities
 OIDC proves who a user is. SCIM syncs users, groups, and memberships.
 LibreDash grants remain the only source of product authorization.
 
+## Local Auth
+
+Enable local browser login for self-hosted deployments or break-glass access:
+
+```sh
+LIBREDASH_LOCAL_AUTH=1
+LIBREDASH_CSRF_KEY=<32+ byte secret>
+```
+
+Local users are admin-created only. A grant manager creates the user from
+Admin / Principals or `POST /api/v1/principals`, receives a one-time temporary
+password, and shares it out of band. Password resets use
+`POST /api/v1/principals/{principal}/password-reset` and force the user to
+change the temporary password on next sign-in.
+
+Local users map to ordinary `principals.kind = user`. Local groups remain
+workspace groups with `provider = local`. Both use the same roles, grants,
+sessions, API tokens, and audit events as OIDC and SCIM identities.
+
 ## OIDC
 
 Configure one browser identity provider with:

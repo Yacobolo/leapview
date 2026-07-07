@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 )
 
@@ -81,6 +82,68 @@ func TestAPITokenWorkspaceAndPrivilegeAllowlistAreEnforced(t *testing.T) {
 	server.Routes().ServeHTTP(emptyAllowlistRec, emptyAllowlistReq)
 	if emptyAllowlistRec.Code != http.StatusForbidden {
 		t.Fatalf("empty allowlist status = %d, want %d body=%s", emptyAllowlistRec.Code, http.StatusForbidden, emptyAllowlistRec.Body.String())
+	}
+}
+
+func TestCreateAndResetLocalPrincipalAPI(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	admin := testPlatformPrincipal(t, ctx, store, "access-admin@example.com", "Access Admin", access.RoleAdmin)
+	token, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
+		PrincipalID: admin.ID,
+		Name:        "access-admin",
+	})
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/principals", strings.NewReader(`{"email":"local-user@example.com","displayName":"Local User"}`))
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	createReq.Header.Set("Accept", "application/json")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create principal status = %d, want %d body=%s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	var created struct {
+		Principal         access.Principal `json:"principal"`
+		TemporaryPassword string           `json:"temporaryPassword"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if created.Principal.Email != "local-user@example.com" || created.TemporaryPassword == "" {
+		t.Fatalf("created response = %#v", created)
+	}
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	if _, credential, err := repo.VerifyLocalPassword(ctx, "local-user@example.com", created.TemporaryPassword); err != nil {
+		t.Fatalf("verify created temporary password: %v", err)
+	} else if !credential.MustChangePassword {
+		t.Fatal("created credential must_change_password = false, want true")
+	}
+
+	resetReq := httptest.NewRequest(http.MethodPost, "/api/v1/principals/"+created.Principal.ID+"/password-reset", nil)
+	resetReq.Header.Set("Authorization", "Bearer "+token)
+	resetReq.Header.Set("Accept", "application/json")
+	resetRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(resetRec, resetReq)
+	if resetRec.Code != http.StatusOK {
+		t.Fatalf("reset principal status = %d, want %d body=%s", resetRec.Code, http.StatusOK, resetRec.Body.String())
+	}
+	var reset struct {
+		Principal         access.Principal `json:"principal"`
+		TemporaryPassword string           `json:"temporaryPassword"`
+	}
+	if err := json.Unmarshal(resetRec.Body.Bytes(), &reset); err != nil {
+		t.Fatalf("decode reset response: %v", err)
+	}
+	if reset.Principal.ID != created.Principal.ID || reset.TemporaryPassword == "" || reset.TemporaryPassword == created.TemporaryPassword {
+		t.Fatalf("reset response = %#v created password=%q", reset, created.TemporaryPassword)
+	}
+	if _, credential, err := repo.VerifyLocalPassword(ctx, "local-user@example.com", reset.TemporaryPassword); err != nil {
+		t.Fatalf("verify reset temporary password: %v", err)
+	} else if !credential.MustChangePassword {
+		t.Fatal("reset credential must_change_password = false, want true")
 	}
 }
 
