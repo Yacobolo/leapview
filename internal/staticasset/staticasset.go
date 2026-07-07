@@ -19,7 +19,7 @@ func Version() string {
 	if version := strings.TrimSpace(os.Getenv(versionEnv)); version != "" {
 		return version
 	}
-	if isProduction() {
+	if Production() {
 		if bytes, err := os.ReadFile(generatedVersionPath); err == nil {
 			if version := strings.TrimSpace(string(bytes)); version != "" {
 				return version
@@ -29,7 +29,7 @@ func Version() string {
 	return "dev"
 }
 
-func isProduction() bool {
+func Production() bool {
 	value := strings.TrimSpace(os.Getenv("LIBREDASH_PRODUCTION"))
 	if value == "" {
 		return false
