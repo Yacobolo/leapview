@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars for local use. Do not commit terraform.tfvars.
+
+admin_email = "admin@example.com"
+
+# Optional. If omitted, the module uses <reserved-ip>.sslip.io.
+# domain = "libredash.example.com"
+
+# Optional hardening: replace with your public IP range.
+# ssh_allowed_cidrs = ["203.0.113.10/32"]
+
+# Optional: use an existing Hetzner SSH key instead of uploading your local key.
+# ssh_key_ids = ["my-key"]
+
+# Optional: build a branch or tag instead of main.
+# repo_ref = "main"
