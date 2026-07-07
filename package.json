@@ -65,6 +65,9 @@
     "shiki": "^4.3.0",
     "sql-formatter": "^15.8.2"
   },
+  "overrides": {
+    "dompurify": "3.4.11"
+  },
   "trustedDependencies": [
     "@parcel/watcher"
   ]

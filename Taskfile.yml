@@ -197,6 +197,13 @@ tasks:
     cmds:
       - task: qa:ui-framework
 
+  node:audit:
+    desc: Scan JavaScript dependencies for known vulnerabilities
+    deps:
+      - node:deps
+    cmds:
+      - bun audit
+
   vuln:
     desc: Scan Go dependencies and call paths for known vulnerabilities
     cmds:

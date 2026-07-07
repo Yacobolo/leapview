@@ -430,6 +430,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"bun-version: 1.3.7",
 		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
 		"task ci",
+		"task node:audit",
 		"task vuln",
 		"docker build --pull --tag libredash:ci .",
 		"./scripts/smoke_production_image.sh libredash:ci",
@@ -440,6 +441,8 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
+		"node:audit:",
+		"bun audit",
 		"vuln:",
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 	} {

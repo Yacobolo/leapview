@@ -48,6 +48,9 @@ jobs:
       - name: Run CI suite
         run: task ci
 
+      - name: Run JavaScript dependency audit
+        run: task node:audit
+
       - name: Run Go vulnerability scan
         run: task vuln
 
