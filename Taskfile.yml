@@ -197,6 +197,11 @@ tasks:
     cmds:
       - task: qa:ui-framework
 
+  vuln:
+    desc: Scan Go dependencies and call paths for known vulnerabilities
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
+
   agent:e2e:
     desc: Run opt-in DeepSeek-backed headless agent E2E
     cmds:

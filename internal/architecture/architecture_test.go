@@ -414,6 +414,10 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read CI workflow: %v", err)
 	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
 	text := string(workflow)
 	for _, want := range []string{
 		"name: CI",
@@ -426,11 +430,21 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"bun-version: 1.3.7",
 		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
 		"task ci",
+		"task vuln",
 		"docker build --pull --tag libredash:ci .",
 		"./scripts/smoke_production_image.sh libredash:ci",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
+		}
+	}
+	taskText := string(taskfile)
+	for _, want := range []string{
+		"vuln:",
+		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
+	} {
+		if !strings.Contains(taskText, want) {
+			t.Fatalf("Taskfile missing vulnerability gate fragment %q", want)
 		}
 	}
 

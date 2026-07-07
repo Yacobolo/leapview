@@ -48,6 +48,9 @@ jobs:
       - name: Run CI suite
         run: task ci
 
+      - name: Run Go vulnerability scan
+        run: task vuln
+
       - name: Build production image
         run: docker build --pull --tag libredash:ci .
 
