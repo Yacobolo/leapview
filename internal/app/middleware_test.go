@@ -907,6 +907,29 @@ func TestInvalidBearerDoesNotFallBackToSession(t *testing.T) {
 	}
 }
 
+func TestBearerTokenParserAcceptsStandardAuthSchemeVariations(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		header string
+		want   string
+	}{
+		{name: "canonical", header: "Bearer secret", want: "secret"},
+		{name: "lowercase scheme", header: "bearer secret", want: "secret"},
+		{name: "uppercase scheme", header: "BEARER secret", want: "secret"},
+		{name: "extra whitespace", header: "Bearer   secret  ", want: "secret"},
+		{name: "missing token", header: "Bearer   ", want: ""},
+		{name: "wrong scheme", header: "Basic secret", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Authorization", tc.header)
+			if got := bearerToken(req); got != tc.want {
+				t.Fatalf("bearerToken(%q) = %q, want %q", tc.header, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCSRFBearerBypassDoesNotApplyWhenSessionCookiePresent(t *testing.T) {
 	store := testStore(t)
 	repo := accesssqlite.NewRepository(store.SQLDB())

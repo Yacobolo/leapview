@@ -635,11 +635,11 @@ func stableSubject(subject, fallback string) string {
 }
 
 func bearerToken(r *http.Request) string {
-	header := r.Header.Get("Authorization")
-	if !strings.HasPrefix(header, "Bearer ") {
+	fields := strings.Fields(r.Header.Get("Authorization"))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
 		return ""
 	}
-	return strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	return fields[1]
 }
 
 func csrfKey(value string) []byte {
