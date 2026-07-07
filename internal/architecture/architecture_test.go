@@ -407,6 +407,32 @@ func TestProductionContainerContractExists(t *testing.T) {
 	}
 }
 
+func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
+	root := repoRoot(t)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read CI workflow: %v", err)
+	}
+	text := string(workflow)
+	for _, want := range []string{
+		"name: CI",
+		"pull_request:",
+		"push:",
+		"actions/checkout@v7",
+		"actions/setup-go@v6",
+		"go-version-file: go.mod",
+		"oven-sh/setup-bun@v2",
+		"bun-version: 1.3.7",
+		"go install github.com/go-task/task/v3/cmd/task@v3.52.0",
+		"task ci",
+		"docker build --pull --tag libredash:ci .",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("CI workflow missing production gate fragment %q", want)
+		}
+	}
+}
+
 func TestProductionUIDoesNotDependOnCDNScripts(t *testing.T) {
 	root := repoRoot(t)
 	forbiddenHosts := []string{"cdn.jsdelivr.net", "unpkg.com", "esm.sh", "skypack.dev"}
