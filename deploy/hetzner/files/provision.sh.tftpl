@@ -69,15 +69,6 @@ if [[ ! -e /etc/libredash/admin-initialized ]]; then
   }
   trap revoke_bootstrap EXIT
 
-  principal_payload="$(jq -nc --arg email "$ADMIN_EMAIL" '{email:$email, displayName:$email}')"
-  principal_response="$(curl -fsS \
-    -X POST \
-    -H "Host: $DOMAIN" \
-    -H "Authorization: Bearer $token" \
-    -H "Content-Type: application/json" \
-    --data "$principal_payload" \
-    http://127.0.0.1:8080/api/v1/principals)"
-
   publish_expires_at="$(date -u -d '24 hours' +%Y-%m-%dT%H:%M:%SZ)"
   publish_payload="$(jq -nc --arg expires "$publish_expires_at" '{
     name:"initial-publisher",
@@ -91,6 +82,15 @@ if [[ ! -e /etc/libredash/admin-initialized ]]; then
     -H "Content-Type: application/json" \
     --data "$publish_payload" \
     http://127.0.0.1:8080/api/v1/me/api-tokens)"
+
+  principal_payload="$(jq -nc --arg email "$ADMIN_EMAIL" '{email:$email, displayName:$email}')"
+  principal_response="$(curl -fsS \
+    -X POST \
+    -H "Host: $DOMAIN" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    --data "$principal_payload" \
+    http://127.0.0.1:8080/api/v1/principals)"
 
   jq -n \
     --argjson principal "$principal_response" \

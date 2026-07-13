@@ -128,6 +128,18 @@ func TestOperationsScriptSyntaxAndCommands(t *testing.T) {
 	}
 }
 
+func TestProvisionCreatesPublisherBeforeMandatoryPassword(t *testing.T) {
+	script := readFile(t, filepath.Join("files", "provision.sh.tftpl"))
+	publisher := strings.Index(script, `http://127.0.0.1:8080/api/v1/me/api-tokens`)
+	localUser := strings.Index(script, `http://127.0.0.1:8080/api/v1/principals`)
+	if publisher < 0 || localUser < 0 {
+		t.Fatal("provisioning endpoints are missing")
+	}
+	if publisher > localUser {
+		t.Fatal("publisher token must be created before the local credential enforces a password change")
+	}
+}
+
 func TestFirstLoginCredentialsAreConsumed(t *testing.T) {
 	script := filepath.Join("files", "libredashctl")
 	_ = readFile(t, script)
