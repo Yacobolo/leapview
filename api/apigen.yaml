@@ -16,4 +16,3 @@ targets:
     go_models_out: ../internal/ui/signals/models.gen.go
     go_models_package: signals
     ts_out: ../web/generated/signals/index.ts
-    json_schema_out: ../schemas/signals/ui-signals.schema.json

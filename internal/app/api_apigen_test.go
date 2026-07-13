@@ -79,11 +79,13 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		"typespec_dir: signals",
 		"go_models_out: ../internal/ui/signals/models.gen.go",
 		"ts_out: ../web/generated/signals/index.ts",
-		"json_schema_out: ../schemas/signals/ui-signals.schema.json",
 	} {
 		if !strings.Contains(manifestText, want) {
 			t.Fatalf("APIGen manifest missing UI signal contract setting %q", want)
 		}
+	}
+	if strings.Contains(manifestText, "json_schema_out: ../schemas/signals/ui-signals.schema.json") {
+		t.Fatal("APIGen manifest should not generate an unused UI signal JSON Schema")
 	}
 
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
@@ -102,6 +104,9 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 	if strings.Contains(taskText, "go run ./internal/tools/uisignalsgen") {
 		t.Fatal("Taskfile.yml still uses the Go reflection UI signal generator")
 	}
+	if strings.Contains(taskText, "schemas/signals/ui-signals.schema.json") {
+		t.Fatal("Taskfile.yml should not track an unused UI signal JSON Schema")
+	}
 
 	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
@@ -115,8 +120,12 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read CI workflow: %v", err)
 	}
-	if !strings.Contains(string(workflow), "internal/ui/signals/models.gen.go") {
+	workflowText := string(workflow)
+	if !strings.Contains(workflowText, "internal/ui/signals/models.gen.go") {
 		t.Fatal("CI generated-assets artifact does not include Go UI signal models")
+	}
+	if strings.Contains(workflowText, "schemas/signals/") {
+		t.Fatal("CI should not upload an unused UI signal JSON Schema")
 	}
 
 	typespec, err := os.ReadFile(filepath.Join(root, "api", "signals", "main.tsp"))

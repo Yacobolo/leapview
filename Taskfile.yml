@@ -149,7 +149,7 @@ tasks:
       - go run ./cmd/libredash schema export --format json-schema --out schemas/json
 
   ui-signals:generate:
-    desc: Generate UI signal Go, TypeScript, and JSON Schema contracts from TypeSpec
+    desc: Generate UI signal Go and TypeScript contracts from TypeSpec
     method: checksum
     sources:
       - Taskfile.yml
@@ -159,7 +159,6 @@ tasks:
     generates:
       - api/gen/ui-signals-ir.json
       - internal/ui/signals/models.gen.go
-      - schemas/signals/ui-signals.schema.json
       - web/generated/signals/index.ts
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target ui-signals
