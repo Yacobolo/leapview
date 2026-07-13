@@ -1937,13 +1937,9 @@ func semanticModelTablesTable(workspaceID string, parent workspaceview.AssetView
 
 func semanticMeasureCountsByTable(measures map[string]any) map[string]int {
 	counts := map[string]int{}
-	defaultTable := metaString(asMap(metaValue(measures, "Defaults", "defaults")), "Table", "table")
 	for _, name := range sortedMapKeys(measures) {
-		if strings.EqualFold(name, "defaults") {
-			continue
-		}
 		measure := asMap(measures[name])
-		table := firstNonEmpty(metaString(measure, "Table", "table"), defaultTable)
+		table := metaString(measure, "Fact", "fact")
 		if table == "" {
 			continue
 		}
@@ -1957,24 +1953,47 @@ func semanticModelGraphSignal(meta map[string]any) *uisignals.SemanticModelGraph
 	if len(tables) == 0 {
 		return nil
 	}
-	baseTable := metaString(meta, "BaseTable", "baseTable", "base_table")
+	measures := metaMap(meta, "Measures", "measures")
+	metrics := metaMap(meta, "Metrics", "metrics")
+	dimensions := metaMap(meta, "Dimensions", "dimensions")
+	facts := semanticModelFactNames(measures)
+	measureCounts := semanticMeasureCountsByTable(measures)
+	metricCounts := semanticMetricCountsByFact(metrics, measures)
+	conformedCounts := semanticConformedDimensionCounts(dimensions)
 	relationships := semanticModelGraphRelationships(metaSlice(meta, "Relationships", "relationships"), tables)
 	joinFields := semanticModelJoinFields(relationships)
 	nodes := make([]uisignals.SemanticModelGraphNodeSignal, 0, len(tables))
-	for _, name := range semanticModelGraphTableNames(tables, baseTable) {
+	for _, name := range semanticModelGraphTableNames(tables, facts) {
 		table := asMap(tables[name])
+		badges := []string{}
+		if containsString(facts, name) {
+			badges = append(badges, "fact")
+		}
+		if semanticModelTableIsDimension(name, relationships) {
+			badges = append(badges, "dimension")
+		}
+		if measureCounts[name] > 0 {
+			badges = append(badges, fmt.Sprintf("%d measures", measureCounts[name]))
+		}
+		if metricCounts[name] > 0 {
+			badges = append(badges, fmt.Sprintf("%d metrics", metricCounts[name]))
+		}
+		if conformedCounts[name] > 0 {
+			badges = append(badges, fmt.Sprintf("%d conformed dimensions", conformedCounts[name]))
+		}
 		nodes = append(nodes, uisignals.SemanticModelGraphNodeSignal{
 			ID:          name,
 			Title:       name,
 			Description: metaString(table, "Description", "description"),
 			PrimaryKey:  metaString(table, "PrimaryKey", "primaryKey", "primary_key"),
+			Badges:      badges,
 			Fields:      semanticModelGraphFields(table, joinFields[name]),
 		})
 	}
 	return &uisignals.SemanticModelGraphSignal{
-		BaseTable: baseTable,
-		Nodes:     nodes,
-		Edges:     relationships,
+		Facts: facts,
+		Nodes: nodes,
+		Edges: relationships,
 	}
 }
 
@@ -2006,7 +2025,6 @@ func semanticModelGraphRelationships(raw []any, tables map[string]any) []uisigna
 			TargetField: toField,
 			Cardinality: cardinality,
 			Label:       semanticModelGraphCardinalityLabel(cardinality),
-			Active:      metaBool(relationship, "Active", "active"),
 		})
 	}
 	sort.SliceStable(edges, func(i, j int) bool {
@@ -2041,21 +2059,106 @@ func semanticModelJoinFields(edges []uisignals.SemanticModelGraphEdgeSignal) map
 	return joinFields
 }
 
-func semanticModelGraphTableNames(tables map[string]any, baseTable string) []string {
+func semanticModelGraphTableNames(tables map[string]any, facts []string) []string {
 	names := sortedMapKeys(tables)
-	if baseTable == "" {
+	if len(facts) == 0 {
 		return names
 	}
 	out := make([]string, 0, len(names))
-	if _, ok := tables[baseTable]; ok {
-		out = append(out, baseTable)
+	for _, fact := range facts {
+		if _, ok := tables[fact]; ok {
+			out = append(out, fact)
+		}
 	}
 	for _, name := range names {
-		if name != baseTable {
+		if !containsString(facts, name) {
 			out = append(out, name)
 		}
 	}
 	return out
+}
+
+func semanticModelFactNames(measures map[string]any) []string {
+	seen := map[string]bool{}
+	for _, measure := range measures {
+		if fact := metaString(asMap(measure), "Fact", "fact"); fact != "" {
+			seen[fact] = true
+		}
+	}
+	facts := make([]string, 0, len(seen))
+	for fact := range seen {
+		facts = append(facts, fact)
+	}
+	sort.Strings(facts)
+	return facts
+}
+
+func semanticMetricCountsByFact(metrics, measures map[string]any) map[string]int {
+	counts := map[string]int{}
+	var memberFacts func(string, map[string]bool) map[string]bool
+	memberFacts = func(name string, visiting map[string]bool) map[string]bool {
+		if measure, ok := measures[name]; ok {
+			fact := metaString(asMap(measure), "Fact", "fact")
+			if fact == "" {
+				return map[string]bool{}
+			}
+			return map[string]bool{fact: true}
+		}
+		if visiting[name] {
+			return map[string]bool{}
+		}
+		metric, ok := metrics[name]
+		if !ok {
+			return map[string]bool{}
+		}
+		visiting[name] = true
+		facts := map[string]bool{}
+		expression := metaString(asMap(metric), "Expression", "expression")
+		for _, dependency := range append(sortedMapKeys(measures), sortedMapKeys(metrics)...) {
+			if !strings.Contains(expression, "${"+dependency+"}") {
+				continue
+			}
+			for fact := range memberFacts(dependency, visiting) {
+				facts[fact] = true
+			}
+		}
+		delete(visiting, name)
+		return facts
+	}
+	for _, name := range sortedMapKeys(metrics) {
+		for fact := range memberFacts(name, map[string]bool{}) {
+			counts[fact]++
+		}
+	}
+	return counts
+}
+
+func semanticConformedDimensionCounts(dimensions map[string]any) map[string]int {
+	counts := map[string]int{}
+	for _, dimension := range dimensions {
+		for fact := range metaMap(asMap(dimension), "Bindings", "bindings") {
+			counts[fact]++
+		}
+	}
+	return counts
+}
+
+func semanticModelTableIsDimension(table string, edges []uisignals.SemanticModelGraphEdgeSignal) bool {
+	for _, edge := range edges {
+		if edge.Target == table {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func semanticModelGraphFields(table map[string]any, joins map[string][]string) []uisignals.SemanticModelGraphFieldSignal {
@@ -2490,19 +2593,19 @@ func dashboardTablesTable(parent workspaceview.AssetView, tables []workspaceview
 	rows := make([]map[string]any, 0, len(tables))
 	for _, table := range tables {
 		rows = append(rows, map[string]any{
-			"table":     assetTitle(table),
-			"tableHref": assetnav.WorkspaceAssetSectionHref(parent.WorkspaceID, table.ID, "details"),
-			"key":       assetChildName(parent, table),
-			"baseTable": emptyDash(metaString(metaMap(table.Payload, "Query", "query"), "Table", "table")),
-			"rows":      emptyDash(strings.Join(stringSlice(metaValue(table.Payload, "Rows", "rows")), ", ")),
-			"measures":  emptyDash(strings.Join(stringSlice(metaValue(table.Payload, "Measures", "measures")), ", ")),
+			"table":      assetTitle(table),
+			"tableHref":  assetnav.WorkspaceAssetSectionHref(parent.WorkspaceID, table.ID, "details"),
+			"key":        assetChildName(parent, table),
+			"scopeTable": emptyDash(metaString(metaMap(table.Payload, "Query", "query"), "Table", "table")),
+			"rows":       emptyDash(strings.Join(stringSlice(metaValue(table.Payload, "Rows", "rows")), ", ")),
+			"measures":   emptyDash(strings.Join(stringSlice(metaValue(table.Payload, "Measures", "measures")), ", ")),
 		})
 	}
 	return recordTable{
 		Columns: []recordTableColumn{
 			{ID: "table", Header: "Table", Kind: "link", HrefKey: "tableHref", Width: "220px"},
 			{ID: "key", Header: "Key", Kind: "code", Width: "170px"},
-			{ID: "baseTable", Header: "Base table", Kind: "code", Width: "140px"},
+			{ID: "scopeTable", Header: "Table scope", Kind: "code", Width: "140px"},
 			{ID: "rows", Header: "Rows", Kind: "expression", Width: "280px"},
 			{ID: "measures", Header: "Measures", Kind: "expression"},
 		},

@@ -276,14 +276,14 @@ func semanticModelSearchDocuments(modelID, title, description string, model *sem
 		table := model.Tables[datasetID]
 		out = append(out, search.Document{
 			ID:          modelID + "." + datasetID,
-			Type:        "dataset",
+			Type:        "semantic_table",
 			Name:        datasetID,
-			Description: firstNonEmpty(table.Description, "Dataset "+datasetID),
+			Description: firstNonEmpty(table.Description, "Semantic table "+datasetID),
 			Refs: search.Refs{
 				ModelID:   modelID,
 				DatasetID: datasetID,
 			},
-			Terms:  []string{modelID, model.Title, datasetID, table.Kind, table.Source, strings.Join(table.Sources, " "), table.Description, table.PrimaryKey, table.Grain},
+			Terms:  []string{modelID, model.Title, datasetID, table.Source, strings.Join(table.Sources, " "), table.Description, table.PrimaryKey, table.Grain},
 			Weight: 15,
 		})
 		for _, field := range semanticDatasetFields(model, datasetID, table) {
@@ -322,11 +322,8 @@ func semanticDatasetMeasureCount(model *semanticmodel.Model, datasetID string) i
 		return 0
 	}
 	count := 0
-	if table, ok := model.Tables[datasetID]; ok {
-		count += len(table.Measures)
-	}
 	for _, measure := range model.Measures {
-		if measure.Table == datasetID {
+		if measure.Fact == datasetID {
 			count++
 		}
 	}
@@ -346,13 +343,9 @@ func semanticDatasetFields(model *semanticmodel.Model, datasetID string, table s
 			Description: dimension.Description,
 		})
 	}
-	for _, measureID := range sortedMapKeys(table.Measures) {
-		measure := table.Measures[measureID]
-		out = append(out, semanticMeasureFieldDTO(datasetID+"."+measureID, datasetID, measureID, measure))
-	}
 	for _, measureID := range sortedMapKeys(model.Measures) {
 		measure := model.Measures[measureID]
-		if measure.Table != datasetID {
+		if measure.Fact != datasetID {
 			continue
 		}
 		out = append(out, semanticMeasureFieldDTO(measureID, datasetID, measureID, measure))
@@ -370,9 +363,6 @@ func semanticMeasureFieldDTO(id, datasetID, name string, measure semanticmodel.M
 		Description: measure.Description,
 		Unit:        measure.Unit,
 		Format:      measure.Format,
-		Grain:       measure.Grain,
-		Time:        measure.Time,
-		Grains:      append([]string{}, measure.Grains...),
 	}
 }
 

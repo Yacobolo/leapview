@@ -456,14 +456,13 @@ metadata:
   workspace: sales
   name: sales
 spec:
-  baseTable: orders
   tables:
     - orders
   measures:
-    defaults:
-      table: orders
     order_count:
-      expression: count(orders.order_id)
+      fact: orders
+      aggregation: count
+      empty: zero
 `,
 		"workspaces/sales/dashboards/sales.yaml": `
 apiVersion: libredash.dev/v1

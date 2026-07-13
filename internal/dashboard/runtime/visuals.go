@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -26,10 +25,7 @@ func (s *VisualQueryService) visuals(ctx context.Context, runtime *modelRuntime,
 			return nil, err
 		}
 		measureName := visual.Query.Measures[0].Field
-		measure := semanticmodel.MetricMeasure{}
-		if resolved, err := runtime.model.ResolveMeasure(measureName); err == nil {
-			measure = resolved
-		}
+		measure := aggregateMemberMetadata(runtime.model, measureName)
 		title := visual.Title
 		if title == "" {
 			title = measure.Label
@@ -67,7 +63,7 @@ func (s *VisualQueryService) visuals(ctx context.Context, runtime *modelRuntime,
 			Unit:            unit,
 			Format:          measure.Format,
 			Interaction:     interaction,
-			Dimensions:      displayFields(queryDimensionFields(visual.Query.Dimensions)),
+			Dimensions:      visualDimensionNames(visual.Query),
 			Measure:         displayField(measureName),
 			Measures:        displayFields(queryMeasureFields(visual.Query.Measures)),
 			Series:          series,
@@ -114,7 +110,7 @@ func (s *VisualQueryService) categoryData(ctx context.Context, runtime *modelRun
 	}
 	dimensionAlias := "label"
 	measureAlias := "value"
-	dimensions := []reportdef.QueryField{fieldRef(visual.Query.Dimensions[0].Field, dimensionAlias)}
+	dimensions, queryTime := categoryDimension(visual.Query, dimensionAlias)
 	columns := []string{dimensionAlias, measureAlias}
 	if !visual.Query.Series.IsZero() {
 		dimensions = append(dimensions, fieldRef(visual.Query.Series.Field, "series"))
@@ -128,6 +124,7 @@ func (s *VisualQueryService) categoryData(ctx context.Context, runtime *modelRun
 		Table:      visual.Query.Table,
 		Dimensions: dimensions,
 		Measures:   []reportdef.QueryField{queryFieldRef(visual.Query.Measures[0], measureAlias)},
+		Time:       queryTime,
 		Filters:    queryFilters,
 		Sort:       sorts,
 		Limit:      visual.Query.Limit,
@@ -163,28 +160,51 @@ func (s *VisualQueryService) categoryMultiMeasureData(ctx context.Context, runti
 	if err != nil {
 		return nil, err
 	}
-	data := []dashboard.Datum{}
-
-	for _, measureName := range visual.Query.Measures {
-		rows, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
-			Table:      visual.Query.Table,
-			Dimensions: []reportdef.QueryField{fieldRef(visual.Query.Dimensions[0].Field, "label")},
-			Measures:   []reportdef.QueryField{queryFieldRef(measureName, "value")},
-			Filters:    queryFilters,
-			Sort:       visualSorts(visual),
-			Limit:      visual.Query.Limit,
-		})
-		if err != nil {
-			return nil, err
+	dimensions, queryTime := categoryDimension(visual.Query, "label")
+	measures := make([]reportdef.QueryField, 0, len(visual.Query.Measures))
+	for index, measure := range visual.Query.Measures {
+		measures = append(measures, queryFieldRef(measure, fmt.Sprintf("value_%d", index)))
+	}
+	rows, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table:      visual.Query.Table,
+		Dimensions: dimensions,
+		Measures:   measures,
+		Time:       queryTime,
+		Filters:    queryFilters,
+		Sort:       visualSorts(visual),
+		Limit:      visual.Query.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	data := make([]dashboard.Datum, 0, len(rows)*len(visual.Query.Measures))
+	for _, row := range rows {
+		for index, measureName := range visual.Query.Measures {
+			measure := aggregateMemberMetadata(runtime.model, measureName.Field)
+			data = append(data, dashboard.Datum{
+				"label":  row["label"],
+				"series": measureLabel(measureName.Field, measure),
+				"value":  row[fmt.Sprintf("value_%d", index)],
+			})
 		}
-		measure, _ := runtime.model.ResolveMeasure(measureName.Field)
-		for _, row := range rows {
-			row["series"] = measureLabel(measureName.Field, measure)
-		}
-		data = append(data, rows...)
 	}
 	markSelected(data, visual.Interaction.PointSelection, selectedEntries(filters, "visual", visualID))
 	return data, nil
+}
+
+func categoryDimension(query reportdef.VisualQuery, alias string) ([]reportdef.QueryField, reportdef.QueryTime) {
+	if query.Time.Field != "" {
+		return nil, reportdef.QueryTime{Field: query.Time.Field, Grain: query.Time.Grain, Alias: alias}
+	}
+	return []reportdef.QueryField{fieldRef(query.Dimensions[0].Field, alias)}, reportdef.QueryTime{}
+}
+
+func visualDimensionNames(query reportdef.VisualQuery) []string {
+	names := displayFields(queryDimensionFields(query.Dimensions))
+	if query.Time.Field != "" {
+		names = append(names, displayField(query.Time.Field))
+	}
+	return names
 }
 
 func (s *VisualQueryService) categoryDeltaData(ctx context.Context, runtime *modelRuntime, report *reportdef.Dashboard, visualID string, visual reportdef.Visual, filters dashboard.Filters) ([]dashboard.Datum, error) {
@@ -277,8 +297,8 @@ func (s *VisualQueryService) singleValueData(ctx context.Context, runtime *model
 	if title == "" {
 		if measure, err := runtime.model.ResolveMeasure(measureName); err == nil {
 			title = measure.Label
-		} else if measureRef.Measure.Label != "" {
-			title = measureRef.Measure.Label
+		} else if metric, ok := runtime.model.Metrics[measureName]; ok {
+			title = metric.Label
 		}
 	}
 	if title == "" {

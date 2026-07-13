@@ -20,12 +20,12 @@ func (m *Model) SafeRelationshipPath(base, target string) ([]Relationship, error
 	}
 }
 
-func (m *Model) CanReachField(baseTable, field string) error {
+func (m *Model) CanReachField(fact, field string) error {
 	dimension, err := m.ResolveDimension(field)
 	if err != nil {
 		return err
 	}
-	_, err = m.SafeRelationshipPath(baseTable, dimension.Table)
+	_, err = m.SafeRelationshipPath(fact, dimension.Table)
 	return err
 }
 
@@ -84,9 +84,6 @@ func (m *Model) safeRelationshipPaths(base, target string) [][]Relationship {
 }
 
 func semanticSafeEdgeFrom(table string, relationship Relationship) (relationshipEdge, bool) {
-	if !relationship.Active {
-		return relationshipEdge{}, false
-	}
 	fromTable, _, err := splitSemanticField(relationship.From)
 	if err != nil {
 		return relationshipEdge{}, false

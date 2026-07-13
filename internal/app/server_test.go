@@ -167,11 +167,11 @@ func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmod
 			Title: "Test Model",
 			Tables: map[string]semanticmodel.Table{
 				"orders": {
-					Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+					Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
 					Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}, "status": {Expr: "status"}},
 				},
 			},
-			Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Table: "orders", Grain: "order_id", Label: "Orders", Expression: "COUNT(*)"}},
+			Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
 		}, true
 }
 
@@ -982,13 +982,12 @@ func (m *dependentModelTableMetrics) SemanticModel(modelID string) (*semanticmod
 		return fakeMetrics{}.SemanticModel(modelID)
 	}
 	return &semanticmodel.Model{
-		Name:      "olist",
-		BaseTable: "order_summary",
+		Name: "olist",
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv"},
 		},
 		Tables: map[string]semanticmodel.Table{
-			"orders":        {Kind: "fact", Source: "orders", PrimaryKey: "order_id"},
+			"orders":        {Source: "orders", PrimaryKey: "order_id"},
 			"order_summary": {PrimaryKey: "status", Transform: semanticmodel.Transform{SQL: "SELECT status FROM model.orders"}, ModelDependencies: []string{"orders"}},
 		},
 	}, true
@@ -1411,16 +1410,16 @@ func TestWorkspaceAssetRefreshPlanModelTableUsesWorkspaceDependencies(t *testing
 		"genre_ratings": {
 			Name: "genre_ratings",
 			Tables: map[string]semanticmodel.Table{
-				"ratings":       {Kind: "fact"},
-				"movies":        {Kind: "dimension"},
-				"rating_genres": {Kind: "fact", ModelDependencies: []string{"ratings", "movies"}},
+				"ratings":       {},
+				"movies":        {},
+				"rating_genres": {ModelDependencies: []string{"ratings", "movies"}},
 			},
 		},
 		"movie_ratings": {
 			Name: "movie_ratings",
 			Tables: map[string]semanticmodel.Table{
-				"ratings": {Kind: "fact"},
-				"movies":  {Kind: "dimension"},
+				"ratings": {},
+				"movies":  {},
 			},
 		},
 	}}
@@ -1449,9 +1448,9 @@ func TestWorkspaceAssetRefreshPlanSemanticModelUsesModelTables(t *testing.T) {
 		"genre_ratings": {
 			Name: "genre_ratings",
 			Tables: map[string]semanticmodel.Table{
-				"ratings":       {Kind: "fact"},
-				"movies":        {Kind: "dimension"},
-				"rating_genres": {Kind: "fact", ModelDependencies: []string{"ratings", "movies"}},
+				"ratings":       {},
+				"movies":        {},
+				"rating_genres": {ModelDependencies: []string{"ratings", "movies"}},
 			},
 		},
 	}}

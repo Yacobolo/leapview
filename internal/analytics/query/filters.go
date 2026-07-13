@@ -28,14 +28,25 @@ func filterSQL(expr string, filter Filter) (string, []any, error) {
 			return "", nil, fmt.Errorf("contains filter requires one value")
 		}
 		return "lower(" + expr + ") LIKE lower(?)", []any{"%" + fmt.Sprint(filter.Values[0]) + "%"}, nil
+	case "not_contains":
+		if len(filter.Values) != 1 {
+			return "", nil, fmt.Errorf("not_contains filter requires one value")
+		}
+		return "lower(" + expr + ") NOT LIKE lower(?)", []any{"%" + fmt.Sprint(filter.Values[0]) + "%"}, nil
 	case "starts_with":
 		if len(filter.Values) != 1 {
 			return "", nil, fmt.Errorf("starts_with filter requires one value")
 		}
 		return "lower(" + expr + ") LIKE lower(?)", []any{fmt.Sprint(filter.Values[0]) + "%"}, nil
 	case "greater_than_or_equal":
+		if len(filter.Values) != 1 {
+			return "", nil, fmt.Errorf("greater_than_or_equal filter requires one value")
+		}
 		return expr + " >= ?", []any{filter.Values[0]}, nil
 	case "less_than":
+		if len(filter.Values) != 1 {
+			return "", nil, fmt.Errorf("less_than filter requires one value")
+		}
 		return expr + " < ?", []any{filter.Values[0]}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported filter operator %q", filter.Operator)

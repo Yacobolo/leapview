@@ -1,247 +1,110 @@
 # Semantic Model Design
 
-LibreDash should feel like a Power BI semantic model without DAX or Power Query.
-
-The product shape is:
+LibreDash uses a model-scoped, multi-fact semantic layer:
 
 ```text
 sources -> models -> semantic model -> dashboards
 ```
 
-## Layers
+Sources describe physical inputs. Models prepare DuckDB tables at useful grains. A semantic model owns the governed relationship graph, conformed dimensions, atomic measures, and derived metrics. Dashboards select those semantic members and contain no SQL.
 
-### Sources
-
-Sources describe raw physical data only: where rows come from and how to read them.
+## Contract
 
 ```yaml
-sources:
-  olist_orders:
-    connection: olist
-    path: olist_orders_dataset.csv
-    format: csv
+apiVersion: libredash.dev/v1
+kind: SemanticModel
+metadata:
+  workspace: movielens
+  name: activity
+spec:
+  tables: [ratings, tags, movies]
 
-  olist_customers:
-    connection: olist
-    path: olist_customers_dataset.csv
-    format: csv
-```
+  relationships:
+    - id: ratings_movies
+      from: ratings.movie_id
+      to: movies.movie_id
+      cardinality: many_to_one
+    - id: tags_movies
+      from: tags.movie_id
+      to: movies.movie_id
+      cardinality: many_to_one
 
-Sources do not define business fields, joins, measures, or dashboard-facing semantics.
-
-### Models
-
-Models are DuckDB-backed model tables prepared for semantic consumption.
-
-Each model can point directly at a source or apply light SQL. This is where casts, cleanup, naming, and grain-alignment preparation live.
-
-```yaml
-models:
-  orders:
-    sources: [olist_orders]
-    sql: |
-      SELECT
-        order_id,
-        customer_id,
-        CAST(order_purchase_timestamp AS TIMESTAMP) AS purchase_timestamp,
-        order_status AS status
-      FROM source.olist_orders
-
-  customers:
-    source: olist_customers
-```
-
-Use `source` for direct one-source tables and `sources` for SQL-backed tables that read one or more sources. Authored SQL must reference inputs with `source.<name>`; `raw.<name>` is an internal runtime detail. LibreDash can infer simple `source.<name>` SQL references, but explicit `sources` metadata is the canonical lineage contract. LibreDash is not a transformation framework. Heavy ETL and long model chains belong upstream.
-
-### Semantic Models
-
-Semantic models define the governed data model: tables and relationships.
-
-Every semantic model declares a `base_table`. This is the analytical root for v1: all semantic tables must be reachable from it through exactly one safe active relationship path.
-
-Tables are not required to be labeled as facts or dimensions. A table becomes fact-like when a measure uses it as its base table. A table becomes dimension-like when it is reached through a safe relationship path.
-
-```yaml
-semantic_models:
-  olist:
-    base_table: orders
-    tables:
-      orders:
-        model: orders
-        primary_key: order_id
-
-      customers:
-        model: customers
-        primary_key: customer_id
-
-    relationships:
-      - from: orders.customer_id
-        to: customers.customer_id
-        cardinality: many_to_one
-        active: true
-```
-
-The semantic model owns table identity, relationships, and measures.
-
-For v1, one semantic model is one connected, safe relationship graph. Unrelated fact islands should be authored as separate semantic models, not packed into one model.
-
-### Measures
-
-Measures are governed reusable analytics definitions.
-
-They live on the semantic model and reuse the same query metadata a visual can define inline: table, grain/scope, expression, time behavior, and formatting.
-
-```yaml
-semantic_models:
-  olist:
-    base_table: orders
-    measures:
-      defaults:
-        table: orders
-        grain: order_id
-        time: orders.purchase_timestamp
-        grains: [day, week, month, quarter, year]
-
-      revenue:
-        expr: SUM(orders.revenue)
-        format: currency
-
-      order_count:
-        expr: COUNT(DISTINCT orders.order_id)
-        format: integer
-```
-
-This keeps the model close to Power BI: dashboards query the semantic model, and measures are the simplified DAX-like contract. LibreDash measures are SQL aggregate expressions with explicit semantic evaluation metadata, not full DAX.
-
-Named measures are preferred for governed dashboards. Inline measures are allowed for one-off visual authoring and can later be promoted into the semantic model.
-
-If repeated field sets or curated subsets become painful, LibreDash can add optional views later. Views should be a DRY/permission/curation layer, not a required v1 modeling layer.
-
-### Dashboards
-
-Dashboards consume semantic models. Visuals ask for dimensions, measures, filters, sort, and limits.
-
-```yaml
-semantic_model: olist
-
-visuals:
-  revenue_by_state:
-    query:
-      dimensions:
-        state: customers.state
-      measures:
-        revenue:
-    encode:
-      x: state
-      y: revenue
-```
-
-Dashboards do not reference SQL joins, source files, or generated physical serving names.
-
-### Inline Queries
-
-The visual query shape is the primitive contract. A visual may use named measures or define inline measures with the same metadata.
-
-```yaml
-semantic_model: olist
-
-visuals:
-  orders_by_state:
-    query:
-      table: orders
-      grain: order_id
-      dimensions:
-        state: customers.state
-      measures:
-        order_count:
-          expr: COUNT(DISTINCT orders.order_id)
-          time: orders.purchase_timestamp
-          grains: [day, week, month, quarter, year]
-          format: integer
-```
-
-In query `measures`, the key is the local output name. A blank value uses the named semantic-model measure with the same name. Use `measure` to alias an existing measure, or `expr` to define an inline measure.
-
-```yaml
-query:
-  measures:
-    revenue:
-    orders:
-      measure: order_count
-    one_off_orders:
-      expr: COUNT(DISTINCT orders.order_id)
-      table: orders
-      grain: order_id
-      time: orders.purchase_timestamp
-      grains: [day, week, month, quarter, year]
-      format: integer
-```
-
-Inline measures are useful for quick dashboards and experiments. Named semantic-model measures are the governance path.
-
-Use expanded objects when a query field needs local metadata:
-
-```yaml
-query:
   dimensions:
-    state:
-      field: customers.state
-      label: Customer state
+    activity_date:
+      type: timestamp
+      grains: [day, week, month, quarter, year]
+      bindings:
+        ratings: {field: ratings.rated_at}
+        tags: {field: tags.tagged_at}
+    release_decade:
+      type: string
+      bindings:
+        ratings:
+          field: movies.release_decade
+          path: [ratings_movies]
+        tags:
+          field: movies.release_decade
+          path: [tags_movies]
+
   measures:
-    revenue:
-      measure: revenue
-      label: Revenue
+    rating_count:
+      fact: ratings
+      aggregation: count
+      empty: zero
+    rating_total:
+      fact: ratings
+      aggregation: sum
+      input: {field: ratings.rating}
+      empty: "null"
+    tag_count:
+      fact: tags
+      aggregation: count
+      empty: zero
+
+  metrics:
+    tags_per_rating:
+      expression: safe_divide(${tag_count}, ${rating_count})
+      format: decimal
 ```
 
-Row/detail visuals can query fields directly without measures, but must declare a table.
+Facts are inferred from atomic measure ownership. Tables have no semantic `kind`, and the same table may own measures while also serving as the one-side of another fact's relationship.
 
-```yaml
-semantic_model: olist
+## Atomic measures
 
-tables:
-  orders:
-    query:
-      table: orders
-      fields:
-        - orders.order_id
-        - orders.purchase_timestamp
-        - customers.state
-        - orders.status
-      sort:
-        - field: orders.purchase_timestamp
-          direction: desc
-      limit: 100
-```
+Atomic measures support `sum`, `count`, `count_distinct`, `avg`, `min`, and `max`. `count` has no input; every other aggregation has exactly one input field or scalar expression. Input fields belong to the owning fact. Filter fields may follow safe many-to-one or one-to-one paths.
 
-## Guardrails
+Scalar expressions are parsed, not interpolated SQL. They support numeric literals, arithmetic, parentheses, `${table.field}` references, and the allowlisted `coalesce`, `nullif`, `abs`, and `round` functions. Aggregate functions and arbitrary SQL are rejected.
 
-- Measures declare one table.
-- Measures declare their query grain/scope.
-- Inline visual measures follow the same rules as named semantic-model measures.
-- Multiple measures in one query must have a compatible table and grain.
-- Row/detail queries must declare a table when they do not include a measure.
-- Dimensions may come from the base table.
-- Dimensions may come from related tables through active many-to-one or one-to-one paths.
-- One-to-many, many-to-many, circular, ambiguous, inactive, or missing paths are rejected for dashboard queries.
-- Cross-fact measures are not supported in v1.
-- One semantic model must be one connected relationship graph for its measure base tables.
-- Unrelated subject areas belong in separate semantic models.
-- Unsafe analysis requires a new model at the correct grain or an explicit future view.
+Every measure declares its empty behavior. Counts use `zero`; other aggregations may use `zero` or `null`.
 
-## Naming
+## Metrics
 
-Use these names in product language:
+Metrics are parsed arithmetic expressions over measures and other metrics. `safe_divide` returns null when its denominator is zero. Unknown members, physical field references, aggregate SQL, invalid types, and dependency cycles fail validation.
 
-- Source
-- Model
-- Semantic model
-- Relationship
-- Measure
-- Dashboard
+Metrics are aggregate-only. Row previews, histograms, distributions, and raw-value operations require a table scope and a typed atomic measure input.
 
-Avoid these as primary user-facing concepts:
+## Conformed dimensions
 
-- OBT
-- Generated serving table
+A semantic dimension has an unqualified name, a canonical type, and a binding for every compatible fact. A binding identifies a qualified physical field and optionally an ordered relationship-ID path. The path may be omitted only for a local field or when exactly one safe path exists.
 
-Those are implementation terms. If physical optimization is shown, call it a materialization.
+Date and timestamp dimensions may declare time grains. Each fact compiler casts its binding to the canonical type before stitching.
+
+Qualified physical dimensions remain available to single-fact aggregate and row queries. Multi-fact output dimensions must be conformed semantic dimensions.
+
+## Query planning
+
+A table-scoped aggregate query is single-fact and rejects members owned by another fact. A model-scoped aggregate query expands the metric dependency graph and partitions atomic measures by fact.
+
+Each fact is independently joined only to its required safe dimension paths, filtered, masked, and aggregated. Scalar fact CTEs are cross-joined. Grouped fact CTEs are chained with `FULL OUTER JOIN` on every canonical dimension using `IS NOT DISTINCT FROM`. Stitch keys are coalesced; measure values use only their declared empty policy. Metrics are evaluated after stitching.
+
+Dimension-only model queries union distinct canonical values from every compatible binding, which gives filter controls complete values without inventing a default fact.
+
+## Filters and governance
+
+Conformed filters apply to every participating fact. A fact-local filter in a multi-fact query names its `fact`. Boolean groups must be entirely conformed or resolve to one fact.
+
+Dependency resolution happens before authorization and planning. It returns logical semantic fields, transitive metric dependencies, facts, physical fields, and relationship paths. Model-scoped queries authorize the semantic model and every selected or transitive semantic field, then apply policies from every resolved physical dependency. Row filters are targeted to every affected fact. A mask on any measure or metric dependency rejects the aggregate.
+
+## Product language
+
+Use Source, Model, Model table, Semantic model, Relationship, Conformed dimension, Fact, Measure, Metric, Dashboard, and Materialization. Facts are roles inferred from measures, not authored table classifications. Generated serving tables are internal implementation details.

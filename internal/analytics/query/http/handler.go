@@ -83,6 +83,81 @@ func (h Handler) GetSemanticModel(w nethttp.ResponseWriter, r *nethttp.Request) 
 	writeJSON(w, nethttp.StatusOK, model)
 }
 
+func (h Handler) ListSemanticModelFields(w nethttp.ResponseWriter, r *nethttp.Request) {
+	model, ok := h.semanticModelForRequest(w, r)
+	if !ok {
+		return
+	}
+	fields := semanticModelFields(model)
+	items, nextCursor, ok := pageSliceForRequest(w, r, fields)
+	if !ok {
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, api.SemanticFieldListResponse{Items: items, Page: api.PageInfo{NextCursor: nextCursor}})
+}
+
+func (h Handler) QuerySemanticModel(w nethttp.ResponseWriter, r *nethttp.Request) {
+	metrics, ok := h.biMetrics(w, r)
+	if !ok {
+		return
+	}
+	var input api.SemanticQueryRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+	modelID := chi.URLParam(r, "model")
+	if semanticModelForID(metrics, modelID) == nil {
+		writeJSONError(w, fmt.Errorf("model %q not found", modelID), nethttp.StatusNotFound)
+		return
+	}
+	request, limit, err := semanticAggregateRequest("", input, true)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+	plan, err := semanticExplainAggregate(metrics, modelID, request)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+	ctx := dataquery.WithMetadata(r.Context(), h.requestQueryMetadata(r, dataquery.SurfaceAPI, dataquery.OperationAPIQuery, "semantic_model", modelID))
+	rows, err := executeAggregateRows(ctx, metrics, modelID, request)
+	if err != nil {
+		writeJSONError(w, err, statusForDataExecutionError(err))
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, semanticQueryResponse(plan.Columns, rows, limit, request.Offset))
+}
+
+func (h Handler) ExplainSemanticModelQuery(w nethttp.ResponseWriter, r *nethttp.Request) {
+	metrics, ok := h.biMetrics(w, r)
+	if !ok {
+		return
+	}
+	var input api.SemanticQueryRequest
+	if err := decodeOptionalJSONBody(r, &input); err != nil {
+		writeJSONError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+	modelID := chi.URLParam(r, "model")
+	if semanticModelForID(metrics, modelID) == nil {
+		writeJSONError(w, fmt.Errorf("model %q not found", modelID), nethttp.StatusNotFound)
+		return
+	}
+	request, _, err := semanticAggregateRequest("", input, false)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+	plan, err := semanticExplainAggregate(metrics, modelID, request)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, semanticExplainResponse("query", plan, semanticQueryWarnings(input.Sort)))
+}
+
 func (h Handler) ListSemanticDatasets(w nethttp.ResponseWriter, r *nethttp.Request) {
 	model, ok := h.semanticModelForRequest(w, r)
 	if !ok {
@@ -93,7 +168,7 @@ func (h Handler) ListSemanticDatasets(w nethttp.ResponseWriter, r *nethttp.Reque
 		table := model.Tables[datasetID]
 		out = append(out, api.SemanticDatasetSummary{
 			ID:           datasetID,
-			Kind:         table.Kind,
+			Kind:         "table",
 			Source:       table.Source,
 			Description:  table.Description,
 			FieldCount:   len(table.Dimensions),
@@ -308,7 +383,7 @@ func semanticDatasetDTO(model *semanticmodel.Model, datasetID string, table sema
 	sort.Strings(sources)
 	return api.SemanticDatasetResponse{
 		ID:           datasetID,
-		Kind:         table.Kind,
+		Kind:         "table",
 		Source:       table.Source,
 		Sources:      sources,
 		Description:  table.Description,
@@ -324,15 +399,30 @@ func semanticDatasetMeasureCount(model *semanticmodel.Model, datasetID string) i
 		return 0
 	}
 	count := 0
-	if table, ok := model.Tables[datasetID]; ok {
-		count += len(table.Measures)
-	}
 	for _, measure := range model.Measures {
-		if measure.Table == datasetID {
+		if measure.Fact == datasetID {
 			count++
 		}
 	}
 	return count
+}
+
+func semanticTableRoles(model *semanticmodel.Model, tableID string) []string {
+	roles := []string{}
+	for _, measure := range model.Measures {
+		if measure.Fact == tableID {
+			roles = append(roles, "fact")
+			break
+		}
+	}
+	for _, relationship := range model.Relationships {
+		toTable := strings.SplitN(relationship.To, ".", 2)[0]
+		if toTable == tableID {
+			roles = append(roles, "dimension")
+			break
+		}
+	}
+	return roles
 }
 
 func semanticDatasetFields(model *semanticmodel.Model, datasetID string, table semanticmodel.Table) []api.SemanticFieldResponse {
@@ -346,18 +436,32 @@ func semanticDatasetFields(model *semanticmodel.Model, datasetID string, table s
 			Name:        fieldID,
 			Label:       dimension.Label,
 			Description: dimension.Description,
+			Type:        dimension.Type,
 		})
-	}
-	for _, measureID := range sortedMapKeys(table.Measures) {
-		measure := table.Measures[measureID]
-		out = append(out, semanticMeasureFieldDTO(datasetID+"."+measureID, datasetID, measureID, measure))
 	}
 	for _, measureID := range sortedMapKeys(model.Measures) {
 		measure := model.Measures[measureID]
-		if measure.Table != datasetID {
+		if measure.Fact != datasetID {
 			continue
 		}
 		out = append(out, semanticMeasureFieldDTO(measureID, datasetID, measureID, measure))
+	}
+	return out
+}
+
+func semanticModelFields(model *semanticmodel.Model) []api.SemanticFieldResponse {
+	out := make([]api.SemanticFieldResponse, 0, len(model.Dimensions)+len(model.Measures)+len(model.Metrics))
+	for _, name := range sortedMapKeys(model.Dimensions) {
+		dimension := model.Dimensions[name]
+		out = append(out, api.SemanticFieldResponse{ID: name, Kind: "dimension", Name: name, Label: dimension.Label, Description: dimension.Description, Type: dimension.Type, Grains: append([]string{}, dimension.Grains...)})
+	}
+	for _, name := range sortedMapKeys(model.Measures) {
+		measure := model.Measures[name]
+		out = append(out, semanticMeasureFieldDTO(name, measure.Fact, name, measure))
+	}
+	for _, name := range sortedMapKeys(model.Metrics) {
+		metric := model.Metrics[name]
+		out = append(out, api.SemanticFieldResponse{ID: name, Kind: "metric", Name: name, Label: metric.Label, Description: metric.Description, Unit: metric.Unit, Format: metric.Format})
 	}
 	return out
 }
@@ -372,9 +476,6 @@ func semanticMeasureFieldDTO(id, datasetID, name string, measure semanticmodel.M
 		Description: measure.Description,
 		Unit:        measure.Unit,
 		Format:      measure.Format,
-		Grain:       measure.Grain,
-		Time:        measure.Time,
-		Grains:      append([]string{}, measure.Grains...),
 	}
 }
 
@@ -402,17 +503,20 @@ func modelDescription(metrics Metrics, id string) (api.SemanticModelDescriptionR
 			fieldCount += len(table.Dimensions)
 		}
 		out.Counts = &api.SemanticModelCounts{
-			Sources:       len(model.Sources),
-			ModelTables:   len(model.Tables),
-			Fields:        fieldCount,
-			Measures:      len(model.Measures),
-			Relationships: len(model.Relationships),
+			Sources:             len(model.Sources),
+			ModelTables:         len(model.Tables),
+			Fields:              fieldCount,
+			Facts:               len(model.FactNames()),
+			ConformedDimensions: len(model.Dimensions),
+			AtomicMeasures:      len(model.Measures),
+			Metrics:             len(model.Metrics),
+			Relationships:       len(model.Relationships),
 		}
 		tables := make([]api.SemanticModelTableSummary, 0, len(model.Tables))
 		for tableID, table := range model.Tables {
 			tables = append(tables, api.SemanticModelTableSummary{
 				ID:          tableID,
-				Kind:        table.Kind,
+				Roles:       semanticTableRoles(model, tableID),
 				Source:      table.Source,
 				Description: table.Description,
 				Fields:      len(table.Dimensions),
@@ -541,6 +645,7 @@ func semanticFilters(filters []api.SemanticFilter) []reportdef.QueryFilter {
 	for _, filter := range filters {
 		out = append(out, reportdef.QueryFilter{
 			Field:    filter.Field,
+			Fact:     filter.Fact,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
 			Groups:   semanticFilterGroups(filter.Groups),
@@ -585,12 +690,19 @@ func semanticQueryResponse(columns []string, rows reportdef.QueryRows, limit, of
 }
 
 func semanticExplainResponse(mode string, plan semanticquery.Plan, warnings []string) api.SemanticExplainResponse {
+	if plan.Mode != "" {
+		mode = plan.Mode
+	}
 	return api.SemanticExplainResponse{
-		Mode:     mode,
-		SQL:      plan.SQL,
-		Args:     semanticExplainArgs(plan.Args),
-		Columns:  append([]string{}, plan.Columns...),
-		Warnings: warnings,
+		Mode:                 mode,
+		Facts:                append([]string{}, plan.Facts...),
+		StitchDimensions:     append([]string{}, plan.StitchDimensions...),
+		PhysicalDependencies: append([]string{}, plan.PhysicalDependencies...),
+		RelationshipPaths:    append([]string{}, plan.RelationshipPaths...),
+		SQL:                  plan.SQL,
+		Args:                 semanticExplainArgs(plan.Args),
+		Columns:              append([]string{}, plan.Columns...),
+		Warnings:             warnings,
 	}
 }
 
@@ -656,20 +768,6 @@ func queryFieldsToDataFields(fields []reportdef.QueryField) []dataquery.Field {
 		out = append(out, dataquery.Field{
 			Field: field.Field,
 			Alias: field.Alias,
-			Measure: dataquery.InlineMeasure{
-				Field:       field.Measure.Field,
-				Name:        field.Measure.Name,
-				Label:       field.Measure.Label,
-				Description: field.Measure.Description,
-				Expr:        field.Measure.Expr,
-				Expression:  field.Measure.Expression,
-				Table:       field.Measure.Table,
-				Grain:       field.Measure.Grain,
-				Time:        field.Measure.Time,
-				Grains:      append([]string{}, field.Measure.Grains...),
-				Unit:        field.Measure.Unit,
-				Format:      field.Measure.Format,
-			},
 		})
 	}
 	return out
@@ -684,6 +782,7 @@ func queryFiltersToDataFilters(filters []reportdef.QueryFilter) []dataquery.Filt
 		}
 		out = append(out, dataquery.Filter{
 			Field:    filter.Field,
+			Fact:     filter.Fact,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
 			Groups:   groups,

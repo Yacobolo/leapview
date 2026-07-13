@@ -89,6 +89,9 @@
           "$ref": "#/$defs/%23FieldRef"
         },
         {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        {
           "$ref": "#/$defs/%23FieldRefObject"
         }
       ]
@@ -107,13 +110,27 @@
             "^[A-Za-z_][A-Za-z0-9_]*$": {
               "anyOf": [
                 {
-                  "$ref": "#/$defs/%23FieldRef"
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/%23FieldRef"
+                    },
+                    {
+                      "$ref": "#/$defs/%23Identifier"
+                    }
+                  ]
                 },
                 {
                   "additionalProperties": false,
                   "properties": {
                     "field": {
-                      "$ref": "#/$defs/%23FieldRef"
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/%23FieldRef"
+                        },
+                        {
+                          "$ref": "#/$defs/%23Identifier"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -143,8 +160,18 @@
         "description": {
           "type": "string"
         },
+        "fact": {
+          "$ref": "#/$defs/%23Identifier"
+        },
         "field": {
-          "$ref": "#/$defs/%23FieldRef"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/%23FieldRef"
+            },
+            {
+              "$ref": "#/$defs/%23Identifier"
+            }
+          ]
         },
         "from_url_param": {
           "type": "string"
@@ -327,38 +354,13 @@
                 {
                   "additionalProperties": false,
                   "properties": {
-                    "expr": {
-                      "type": "string"
-                    },
-                    "format": {
-                      "type": "string"
-                    },
-                    "grain": {
-                      "$ref": "#/$defs/%23Identifier"
-                    },
-                    "grains": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
                     "measure": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/$defs/%23Identifier"
-                        },
-                        {
-                          "$ref": "#/$defs/%23FieldRef"
-                        }
-                      ]
-                    },
-                    "table": {
                       "$ref": "#/$defs/%23Identifier"
-                    },
-                    "time": {
-                      "$ref": "#/$defs/%23FieldRef"
                     }
                   },
+                  "required": [
+                    "measure"
+                  ],
                   "type": "object"
                 }
               ]
@@ -991,7 +993,14 @@
               "$ref": "#/$defs/%23Identifier"
             },
             "field": {
-              "$ref": "#/$defs/%23FieldRef"
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/%23FieldRef"
+                },
+                {
+                  "$ref": "#/$defs/%23Identifier"
+                }
+              ]
             },
             "grain": {
               "type": "string"

@@ -7,28 +7,13 @@ import (
 )
 
 type QueryField struct {
-	Field   string
-	Alias   string
-	Measure InlineMeasure
-}
-
-type InlineMeasure struct {
-	Field       string
-	Name        string
-	Label       string
-	Description string
-	Expr        string
-	Expression  string
-	Table       string
-	Grain       string
-	Time        string
-	Grains      []string
-	Unit        string
-	Format      string
+	Field string
+	Alias string
 }
 
 type QueryFilter struct {
 	Field    string
+	Fact     string
 	Operator string
 	Values   []any
 	Groups   []QueryFilterGroup
@@ -224,26 +209,8 @@ func queryFields(fields []QueryField) []semanticquery.Field {
 
 func queryField(field QueryField) semanticquery.Field {
 	return semanticquery.Field{
-		Field:   field.Field,
-		Alias:   field.Alias,
-		Measure: queryInlineMeasure(field.Measure),
-	}
-}
-
-func queryInlineMeasure(measure InlineMeasure) semanticquery.InlineMeasure {
-	return semanticquery.InlineMeasure{
-		Field:       measure.Field,
-		Name:        measure.Name,
-		Label:       measure.Label,
-		Description: measure.Description,
-		Expr:        measure.Expr,
-		Expression:  measure.Expression,
-		Table:       measure.Table,
-		Grain:       measure.Grain,
-		Time:        measure.Time,
-		Grains:      append([]string{}, measure.Grains...),
-		Unit:        measure.Unit,
-		Format:      measure.Format,
+		Field: field.Field,
+		Alias: field.Alias,
 	}
 }
 
@@ -252,6 +219,7 @@ func queryFilters(filters []QueryFilter) []semanticquery.Filter {
 	for i, filter := range filters {
 		result[i] = semanticquery.Filter{
 			Field:    filter.Field,
+			Fact:     filter.Fact,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
 			Groups:   queryFilterGroups(filter.Groups),

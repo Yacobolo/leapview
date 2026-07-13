@@ -212,7 +212,6 @@ func benchmarkDashboardFixture() (reportdef.Dashboard, *semanticmodel.Model, das
 		Title: "Benchmark Semantic Model",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
-				Kind:       "fact",
 				Source:     "orders",
 				PrimaryKey: "order_id",
 				Grain:      "order_id",
@@ -225,7 +224,7 @@ func benchmarkDashboardFixture() (reportdef.Dashboard, *semanticmodel.Model, das
 				},
 			},
 		},
-		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Table: "orders", Grain: "order_id", Label: "Orders", Expression: "COUNT(*)"}},
+		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
 	}
 	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "benchmark", Title: "Benchmark Workspace"}}
 	return report, model, catalog

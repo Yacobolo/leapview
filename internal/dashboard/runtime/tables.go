@@ -119,7 +119,7 @@ func (s *TableQueryService) matrixTableRows(ctx context.Context, runtime *modelR
 		columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, dimensionName)))
 	}
 	for _, measureName := range table.Measures {
-		measure, _ := runtime.model.ResolveMeasure(measureName)
+		measure := aggregateMemberMetadata(runtime.model, measureName)
 		key := displayField(measureName)
 		measures = append(measures, fieldRef(measureName, key))
 		column := dashboard.TableColumn{Key: key, Label: measureLabel(key, measure), Align: "right", Role: "measure", Measure: key, Format: tableMeasureFormat(measure), Formatting: tableMeasureFormatting(table, measureName)}
@@ -221,7 +221,7 @@ func (s *TableQueryService) crossTabTableRows(ctx context.Context, runtime *mode
 		label := fmt.Sprint(raw["pivot_label"])
 		groupLabel := label
 		if pivotMode {
-			measure, _ := runtime.model.ResolveMeasure(table.Measures[0])
+			measure := aggregateMemberMetadata(runtime.model, table.Measures[0])
 			groupLabel = measureLabel(displayField(table.Measures[0]), measure)
 		}
 		pivotKey, exists := pivotKeys[label]
@@ -230,7 +230,7 @@ func (s *TableQueryService) crossTabTableRows(ctx context.Context, runtime *mode
 			pivotKeys[label] = pivotKey
 		}
 		for _, measureName := range table.Measures {
-			measure, _ := runtime.model.ResolveMeasure(measureName)
+			measure := aggregateMemberMetadata(runtime.model, measureName)
 			measureKey := displayField(measureName)
 			columnIdentity := label + "\x00" + measureName
 			columnKey, columnExists := columnKeys[columnIdentity]

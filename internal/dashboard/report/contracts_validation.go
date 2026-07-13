@@ -128,13 +128,6 @@ func (d *Dashboard) validateContract() error {
 				return fmt.Errorf("visual %q renderer %q type %q does not support series", name, renderer, visual.Type)
 			}
 		}
-		for _, measure := range visual.Query.Measures {
-			if measure.Measure.Expression != "" {
-				if measure.Measure.Table == "" || measure.Measure.Grain == "" || measure.Measure.Time == "" || len(measure.Measure.Grains) == 0 || measure.Measure.Format == "" {
-					return fmt.Errorf("visual %q inline measure %q requires expr, table, grain, time, grains, and format", name, measure.Alias)
-				}
-			}
-		}
 		if shape == "geo" {
 			if mapName, ok := visual.Options["map"].(string); !ok || strings.TrimSpace(mapName) == "" {
 				return fmt.Errorf("visual %q shape geo requires options.map", name)

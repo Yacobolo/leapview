@@ -8,152 +8,7 @@ import (
 )
 
 func (p *Planner) Plan(request Request) (Plan, error) {
-	view, err := p.queryView(request)
-	if err != nil {
-		return Plan{}, err
-	}
-	masks, err := columnMaskMap(request.ColumnMasks)
-	if err != nil {
-		return Plan{}, err
-	}
-
-	fieldSet := []string{}
-	for _, dimension := range request.Dimensions {
-		field, _, err := view.ResolveDimensionRef(dimension.Field)
-		if err != nil {
-			return Plan{}, err
-		}
-		fieldSet = append(fieldSet, field)
-	}
-	if request.Time.Field != "" {
-		field, _, err := view.ResolveDimensionRef(request.Time.Field)
-		if err != nil {
-			return Plan{}, err
-		}
-		request.Time.Field = field
-		fieldSet = append(fieldSet, field)
-	}
-	for _, measure := range request.Measures {
-		field, resolved, err := view.ResolveMeasureRef(measure.Field)
-		if err != nil {
-			return Plan{}, err
-		}
-		if resolved.Table != view.BaseTable {
-			return Plan{}, fmt.Errorf("measure %q is not owned by base table %q", field, view.BaseTable)
-		}
-		if masks.matchesMeasure(field, resolved) {
-			return Plan{}, fmt.Errorf("measure %q depends on masked field %q", field, resolved.Table+"."+resolved.Name)
-		}
-		fieldSet = append(fieldSet, resolved.Table+"."+resolved.Name)
-	}
-	filterFields, err := filterFieldSet(view, request.Filters)
-	if err != nil {
-		return Plan{}, err
-	}
-	fieldSet = append(fieldSet, filterFields...)
-
-	aliases, err := p.aliases(view, fieldSet)
-	if err != nil {
-		return Plan{}, err
-	}
-	from, err := joinSQL(p.Model, view.BaseTable, aliases)
-	if err != nil {
-		return Plan{}, err
-	}
-
-	selects := []string{}
-	groupBy := []string{}
-	columns := []string{}
-	columnSet := map[string]bool{}
-	if request.Time.Field != "" {
-		dimension := view.Dimensions[request.Time.Field]
-		alias, err := outputAlias(Field{Field: request.Time.Field, Alias: request.Time.Alias})
-		if err != nil {
-			return Plan{}, err
-		}
-		if err := addOutputColumn(columnSet, alias); err != nil {
-			return Plan{}, err
-		}
-		expr, err := maskedDimensionExpr(request.Time.Field, dimension, aliases, masks)
-		if err != nil {
-			return Plan{}, err
-		}
-		if request.Time.Grain != "" {
-			if masks.matchesDimension(request.Time.Field, dimension) {
-				return Plan{}, fmt.Errorf("time field %q cannot be masked and time-grained", request.Time.Field)
-			}
-			if !allowedTimeGrain(request.Time.Grain) {
-				return Plan{}, fmt.Errorf("unsupported time grain %q", request.Time.Grain)
-			}
-			expr = fmt.Sprintf("date_trunc('%s', %s)", request.Time.Grain, expr)
-		}
-		selects = append(selects, expr+" AS "+alias)
-		groupBy = append(groupBy, alias)
-		columns = append(columns, alias)
-	}
-	for _, item := range request.Dimensions {
-		field, _, _ := view.ResolveDimensionRef(item.Field)
-		dimension := view.Dimensions[field]
-		alias, err := outputAlias(Field{Field: field, Alias: item.Alias})
-		if err != nil {
-			return Plan{}, err
-		}
-		if err := addOutputColumn(columnSet, alias); err != nil {
-			return Plan{}, err
-		}
-		expr, err := maskedDimensionExpr(field, dimension, aliases, masks)
-		if err != nil {
-			return Plan{}, err
-		}
-		selects = append(selects, expr+" AS "+alias)
-		groupBy = append(groupBy, alias)
-		columns = append(columns, alias)
-	}
-	for _, item := range request.Measures {
-		field, _, _ := view.ResolveMeasureRef(item.Field)
-		measure := view.Measures[field]
-		alias, err := outputAlias(Field{Field: field, Alias: item.Alias})
-		if err != nil {
-			return Plan{}, err
-		}
-		if err := addOutputColumn(columnSet, alias); err != nil {
-			return Plan{}, err
-		}
-		selects = append(selects, measureExpr(measure, aliases)+" AS "+alias)
-		columns = append(columns, alias)
-	}
-	if len(selects) == 0 {
-		return Plan{}, fmt.Errorf("query requires at least one selected field")
-	}
-
-	whereParts, args, err := p.whereParts(view, aliases, request.Filters)
-	if err != nil {
-		return Plan{}, err
-	}
-
-	var sql strings.Builder
-	sql.WriteString("SELECT ")
-	sql.WriteString(strings.Join(selects, ", "))
-	sql.WriteString("\nFROM ")
-	sql.WriteString(from)
-	sql.WriteString("\nWHERE ")
-	sql.WriteString(strings.Join(whereParts, " AND "))
-	if len(groupBy) > 0 {
-		sql.WriteString("\nGROUP BY ")
-		sql.WriteString(strings.Join(groupBy, ", "))
-	}
-	if len(request.Sort) > 0 {
-		parts, err := sortSQL(request.Sort, columnSet)
-		if err != nil {
-			return Plan{}, err
-		}
-		sql.WriteString("\nORDER BY ")
-		sql.WriteString(strings.Join(parts, ", "))
-	}
-	if err := writeLimitOffset(&sql, request.Limit, request.Offset); err != nil {
-		return Plan{}, err
-	}
-	return Plan{SQL: sql.String(), Args: args, Columns: columns}, nil
+	return p.planAggregate(request)
 }
 
 func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
@@ -178,10 +33,10 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 		if err != nil {
 			return Plan{}, err
 		}
-		if resolved.Table != view.BaseTable {
-			return Plan{}, fmt.Errorf("measure %q is not owned by base table %q", field, view.BaseTable)
+		if resolved.Fact != view.Fact {
+			return Plan{}, fmt.Errorf("measure %q is not owned by fact %q", field, view.Fact)
 		}
-		fieldSet = append(fieldSet, resolved.Table+"."+resolved.Name)
+		fieldSet = append(fieldSet, measurePhysicalFields(resolved)...)
 	}
 	filterFields, err := filterFieldSet(view, request.Filters)
 	if err != nil {
@@ -192,7 +47,7 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	from, err := joinSQL(p.Model, view.BaseTable, aliases)
+	from, err := joinSQL(p.Model, view.Fact, aliases)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -224,7 +79,7 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 		if err := addOutputColumn(columnSet, alias); err != nil {
 			return Plan{}, err
 		}
-		expr, err := maskedRawMeasureExpr(field, view.Measures[field], aliases, masks)
+		expr, err := maskedRawMeasureExpr(p.Model, field, view.Measures[field], aliases, masks)
 		if err != nil {
 			return Plan{}, err
 		}
@@ -272,13 +127,13 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	if measure.Table != view.BaseTable {
-		return Plan{}, fmt.Errorf("measure %q is not owned by base table %q", measureField, view.BaseTable)
+	if measure.Fact != view.Fact {
+		return Plan{}, fmt.Errorf("measure %q is not owned by fact %q", measureField, view.Fact)
 	}
 	if masks.matchesMeasure(measureField, measure) {
-		return Plan{}, fmt.Errorf("measure %q depends on masked field %q", measureField, measure.Table+"."+measure.Name)
+		return Plan{}, fmt.Errorf("measure %q depends on a masked field", measureField)
 	}
-	fieldSet = append(fieldSet, measure.Table+"."+measure.Name)
+	fieldSet = append(fieldSet, measurePhysicalFields(measure)...)
 	filterFields, err := filterFieldSet(view, request.Filters)
 	if err != nil {
 		return Plan{}, err
@@ -288,7 +143,7 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	from, err := joinSQL(p.Model, view.BaseTable, aliases)
+	from, err := joinSQL(p.Model, view.Fact, aliases)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -313,7 +168,7 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 		columns = append(columns, alias)
 		dimensionFields = append(dimensionFields, field)
 	}
-	rawExpr, err := rawMeasureExpr(measure, aliases)
+	rawExpr, err := rawMeasureExpr(p.Model, measure, aliases)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -367,7 +222,7 @@ func (p *Planner) PlanCount(request CountRequest) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	from, err := joinSQL(p.Model, view.BaseTable, aliases)
+	from, err := joinSQL(p.Model, view.Fact, aliases)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -424,8 +279,8 @@ func (p *Planner) filterPart(view *queryView, aliases map[string]tableAlias, fil
 	if filter.Field == "" {
 		return "", nil, nil
 	}
-	field, _, _ := view.ResolveDimensionRef(filter.Field)
-	expr := dimensionExpr(view.Dimensions[field], aliases)
+	_, dimension, _ := view.ResolveDimensionRef(filter.Field)
+	expr := dimensionExpr(dimension, aliases)
 	return filterSQL(expr, filter)
 }
 
@@ -464,12 +319,12 @@ func (m columnMaskSet) matchesMeasure(ref string, measure ResolvedMeasure) bool 
 	if len(m) == 0 {
 		return false
 	}
-	for _, key := range []string{ref, measure.Field, measure.Table + "." + measure.Name} {
+	for _, key := range []string{ref, measure.Field} {
 		if _, ok := m[strings.ToLower(strings.TrimSpace(key))]; ok {
 			return true
 		}
 	}
-	for _, dependency := range semanticmodel.ExpressionFieldRefs(measure.SQLExpression()) {
+	for _, dependency := range measurePhysicalFields(measure) {
 		if _, ok := m[strings.ToLower(strings.TrimSpace(dependency))]; ok {
 			return true
 		}
@@ -485,14 +340,34 @@ func maskedDimensionExpr(ref string, dimension semanticmodel.MetricDimension, al
 	return maskSQLExpr(mask)
 }
 
-func maskedRawMeasureExpr(ref string, measure ResolvedMeasure, aliases map[string]tableAlias, masks columnMaskSet) (string, error) {
+func maskedRawMeasureExpr(model *semanticmodel.Model, ref string, measure ResolvedMeasure, aliases map[string]tableAlias, masks columnMaskSet) (string, error) {
 	if mask, ok := masks[strings.ToLower(strings.TrimSpace(ref))]; ok {
 		return maskSQLExpr(mask)
 	}
-	if mask, ok := masks[strings.ToLower(strings.TrimSpace(measure.Table+"."+measure.Name))]; ok {
-		return maskSQLExpr(mask)
+	for _, dependency := range measurePhysicalFields(measure) {
+		if mask, ok := masks[strings.ToLower(strings.TrimSpace(dependency))]; ok {
+			return maskSQLExpr(mask)
+		}
 	}
-	return rawMeasureExpr(measure, aliases)
+	return rawMeasureExpr(model, measure, aliases)
+}
+
+func measurePhysicalFields(measure ResolvedMeasure) []string {
+	fields := []string{}
+	if measure.InputField != "" {
+		fields = append(fields, measure.InputField)
+	}
+	if measure.InputExpr != "" {
+		if expression, err := semanticmodel.ParseExpression(measure.InputExpr); err == nil {
+			fields = append(fields, expression.References()...)
+		}
+	}
+	for _, filter := range measure.Filters {
+		if filter.Field != "" {
+			fields = append(fields, filter.Field)
+		}
+	}
+	return fields
 }
 
 func maskSQLExpr(mask string) (string, error) {

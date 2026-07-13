@@ -323,6 +323,23 @@ func TestBIAPISemanticDatasetSurface(t *testing.T) {
 	}{
 		{
 			method: http.MethodGet,
+			path:   "/api/v1/workspaces/test/semantic-models/test/fields",
+			want:   []string{`"kind":"measure"`, `"name":"order_count"`},
+		},
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/workspaces/test/semantic-models/test/query",
+			body:   `{"dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`,
+			want:   []string{`"columns"`, `"items"`, `"delivered"`},
+		},
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/workspaces/test/semantic-models/test/query/explain",
+			body:   `{"measures":[{"field":"order_count"}]}`,
+			want:   []string{`"mode":"single_fact"`, `"facts":["orders"]`, `"physicalDependencies"`},
+		},
+		{
+			method: http.MethodGet,
 			path:   "/api/v1/workspaces/test/semantic-models/test/datasets?limit=1",
 			want:   []string{`"items"`, `"id":"orders"`, `"page"`},
 		},
@@ -352,7 +369,7 @@ func TestBIAPISemanticDatasetSurface(t *testing.T) {
 			method: http.MethodPost,
 			path:   "/api/v1/workspaces/test/semantic-models/test/datasets/orders/query/explain",
 			body:   `{"dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`,
-			want:   []string{`"mode":"query"`, `"sql"`, `"columns"`},
+			want:   []string{`"mode":"single_fact"`, `"facts":["orders"]`, `"sql"`, `"columns"`},
 		},
 		{
 			method: http.MethodPost,

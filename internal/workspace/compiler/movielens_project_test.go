@@ -27,9 +27,6 @@ func TestMovieLensExperimentProjectCompiles(t *testing.T) {
 			t.Fatalf("missing semantic model %q", modelID)
 		}
 		for _, relationship := range model.Relationships {
-			if !relationship.Active {
-				t.Fatalf("semantic model %q has inactive relationship %#v", modelID, relationship)
-			}
 			if relationship.Cardinality != "many_to_one" && relationship.Cardinality != "one_to_one" {
 				t.Fatalf("semantic model %q has unsafe relationship cardinality %#v", modelID, relationship)
 			}

@@ -851,6 +851,7 @@ export interface ReportFilterConfig {
   label: string
   description?: string
   dimension: string
+  fact?: string
   default: ReportFilterDefault
   custom?: boolean
   presets?: ReportFilterPreset[]
@@ -880,6 +881,7 @@ export interface ReportFilterDefinition {
   label: string
   description?: string
   dimension: string
+  fact?: string
   default: ReportFilterDefault
   custom?: boolean
   presets?: ReportFilterPreset[]
@@ -935,7 +937,6 @@ export interface SemanticModelGraphEdgeSignal {
   targetField: string
   cardinality: string
   label: string
-  active: boolean
 }
 
 export interface SemanticModelGraphFieldSignal {
@@ -952,11 +953,12 @@ export interface SemanticModelGraphNodeSignal {
   title: string
   description?: string
   primaryKey?: string
+  badges?: string[]
   fields: SemanticModelGraphFieldSignal[]
 }
 
 export interface SemanticModelGraphSignal {
-  baseTable?: string
+  facts?: string[]
   nodes: SemanticModelGraphNodeSignal[]
   edges: SemanticModelGraphEdgeSignal[]
 }

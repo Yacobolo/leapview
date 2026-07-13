@@ -60,12 +60,6 @@ func (m *Model) Validate() error {
 		if table.SQL != "" && table.Transform.SQL == "" {
 			table.Transform.SQL = table.SQL
 		}
-		if table.Kind == "" {
-			table.Kind = "model"
-		}
-		if table.Kind == "" {
-			return fmt.Errorf("model table %q requires kind", name)
-		}
 		if table.Source == "" && table.Transform.SQL == "" {
 			return fmt.Errorf("model table %q requires source or transform.sql", name)
 		}
@@ -107,26 +101,6 @@ func (m *Model) Validate() error {
 				dimension.Label = titleFromIdentifier(field)
 			}
 			table.Dimensions[field] = dimension
-		}
-		for field, measure := range table.Measures {
-			if err := validateSemanticIdentifier(field); err != nil {
-				return fmt.Errorf("model table %q measure %q is invalid: %w", name, field, err)
-			}
-			if measure.Expression == "" {
-				measure.Expression = measure.Expr
-			}
-			if measure.Label == "" {
-				measure.Label = titleFromIdentifier(field)
-			}
-			if measure.Table == "" {
-				measure.Table = name
-			}
-			measure.Field = field
-			measure.Name = field
-			table.Measures[field] = measure
-			if measure.Label == "" || strings.TrimSpace(measure.Expression) == "" {
-				return fmt.Errorf("model table %q measure %q requires label and expression", name, field)
-			}
 		}
 		columns, err := m.resolveModelColumns(name, table)
 		if err != nil {
@@ -248,20 +222,18 @@ func (m *Model) resolveModelColumns(tableName string, table Table) (map[string]M
 	for field := range table.Dimensions {
 		add(field)
 	}
-	for _, measure := range table.Measures {
-		for _, ref := range ExpressionFieldRefs(measure.SQLExpression()) {
-			refTable, refField, ok := strings.Cut(ref, ".")
-			if ok && refTable == tableName {
-				add(refField)
-			}
-		}
-	}
 	if m != nil {
 		for _, measure := range m.Measures {
-			if measure.Table != tableName {
+			if measure.Fact != tableName {
 				continue
 			}
-			for _, ref := range ExpressionFieldRefs(measure.SQLExpression()) {
+			refs := []string{measure.Input.Field}
+			if measure.Input.Expression != "" {
+				if expression, err := ParseExpression(measure.Input.Expression); err == nil {
+					refs = append(refs, expression.References()...)
+				}
+			}
+			for _, ref := range refs {
 				refTable, refField, ok := strings.Cut(ref, ".")
 				if ok && refTable == tableName {
 					add(refField)
@@ -288,16 +260,6 @@ func validateRequiredModelColumns(tableName string, table Table, columns map[str
 	for field := range table.Dimensions {
 		if err := require(field, "field"); err != nil {
 			return err
-		}
-	}
-	for _, measure := range table.Measures {
-		for _, ref := range ExpressionFieldRefs(measure.SQLExpression()) {
-			refTable, refField, ok := strings.Cut(ref, ".")
-			if ok && refTable == tableName {
-				if err := require(refField, "measure field"); err != nil {
-					return err
-				}
-			}
 		}
 	}
 	return nil
@@ -723,9 +685,6 @@ func sameStringSet(left []string, right []string) bool {
 
 func (m *Model) validateSemanticGraph() error {
 	for _, relationship := range m.Relationships {
-		if !relationship.Active {
-			return fmt.Errorf("unsafe relationship path: inactive relationship from %q to %q", relationship.From, relationship.To)
-		}
 		if relationship.Cardinality != "many_to_one" && relationship.Cardinality != "one_to_one" {
 			return fmt.Errorf("unsafe relationship path: cardinality %q from %q to %q", relationship.Cardinality, relationship.From, relationship.To)
 		}
@@ -736,35 +695,7 @@ func (m *Model) validateSemanticGraph() error {
 			return err
 		}
 	}
-	for _, base := range m.TableNames() {
-		for _, target := range m.TableNames() {
-			if base == target {
-				continue
-			}
-			if _, err := m.SafeRelationshipPath(base, target); err != nil && strings.Contains(err.Error(), "ambiguous relationship path") {
-				return err
-			}
-		}
-	}
-	return m.validateMeasureTables()
-}
-
-func (m *Model) validateMeasureTables() error {
-	if m.BaseTable == "" {
-		return fmt.Errorf("semantic model %q requires base_table", m.Name)
-	}
-	if _, ok := m.Tables[m.BaseTable]; !ok {
-		return fmt.Errorf("semantic model %q base_table %q references unknown table", m.Name, m.BaseTable)
-	}
-	for name, measure := range m.Measures {
-		if measure.Table == "" {
-			return fmt.Errorf("semantic model measure %q has no base table", name)
-		}
-		if _, ok := m.Tables[measure.Table]; !ok {
-			return fmt.Errorf("semantic model measure %q references unknown table %q", name, measure.Table)
-		}
-	}
-	return nil
+	return m.validateSemanticDefinitions()
 }
 
 func (m *Model) validateRelationshipEndpoint(role string, endpoint string) (string, error) {

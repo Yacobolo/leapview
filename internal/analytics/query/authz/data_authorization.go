@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
@@ -120,6 +122,12 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 	}
 	privilege := dataQueryPrivilege(request)
 	objects := dataQueryObjects(request)
+	semanticObjects, physicalObjects, err := m.resolvedDependencyObjects(request)
+	if err != nil {
+		return request, nil, err
+	}
+	objects = append(objects, semanticObjects...)
+	objects = append(objects, physicalObjects...)
 	principalID := strings.TrimSpace(request.PrincipalID)
 	if principal, ok := m.currentPrincipal(ctx); ok {
 		if principal.DevBypass {
@@ -168,6 +176,23 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 }
 
 func (m Metrics) authorizeDataQuery(ctx context.Context, principalID string, privilege access.Privilege, request dataquery.Query, objects []access.ObjectRef) (bool, error) {
+	if request.Kind == dataquery.KindSemanticAggregate && request.Target == "" {
+		modelObject := access.ItemObject(access.SecurableSemanticModel, request.WorkspaceID, request.ModelID)
+		decision, err := m.repo.Authorize(ctx, principalID, privilege, modelObject)
+		if err != nil || !decision.Allowed {
+			return decision.Allowed, err
+		}
+		for _, object := range objects {
+			if object.Type != access.SecurableSemanticField {
+				continue
+			}
+			decision, err := m.repo.Authorize(ctx, principalID, privilege, object)
+			if err != nil || !decision.Allowed {
+				return decision.Allowed, err
+			}
+		}
+		return true, nil
+	}
 	decision, err := m.repo.AuthorizeAny(ctx, principalID, privilege, objects)
 	if err != nil || decision.Allowed {
 		return decision.Allowed, err
@@ -186,6 +211,87 @@ func (m Metrics) authorizeDataQuery(ctx context.Context, principalID string, pri
 		}
 	}
 	return true, nil
+}
+
+func (m Metrics) resolvedDependencyObjects(request dataquery.Query) ([]access.ObjectRef, []access.ObjectRef, error) {
+	if request.Kind != dataquery.KindSemanticAggregate {
+		return nil, nil, nil
+	}
+	model, ok := m.Metrics.SemanticModel(request.ModelID)
+	if !ok || model == nil {
+		return nil, nil, fmt.Errorf("unknown semantic model %q", request.ModelID)
+	}
+	queryRequest := semanticquery.Request{
+		Table:      request.Target,
+		Dimensions: dataFieldsToSemanticFields(request.Fields),
+		Measures:   dataFieldsToSemanticFields(request.Measures),
+		Time:       semanticquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias},
+		Filters:    dataFiltersToSemanticFilters(request.Filters),
+	}
+	dependencies, err := semanticquery.ResolveDependencies(model, queryRequest)
+	if err != nil {
+		return nil, nil, err
+	}
+	modelObject := access.ItemObject(access.SecurableSemanticModel, request.WorkspaceID, request.ModelID)
+	semanticObjects := make([]access.ObjectRef, 0, len(dependencies.LogicalFields))
+	for _, field := range dependencies.LogicalFields {
+		if !isSemanticField(model, field) {
+			continue
+		}
+		semanticObjects = append(semanticObjects, access.ItemObjectWithParent(access.SecurableSemanticField, request.WorkspaceID, request.ModelID+"/"+field, modelObject))
+	}
+	physicalObjects := make([]access.ObjectRef, 0, len(dependencies.Facts)+len(dependencies.PhysicalFields))
+	datasets := map[string]access.ObjectRef{}
+	for _, fact := range dependencies.Facts {
+		dataset := access.ItemObjectWithParent(access.SecurableDataset, request.WorkspaceID, request.ModelID+"/"+fact, modelObject)
+		datasets[fact] = dataset
+		physicalObjects = append(physicalObjects, dataset)
+	}
+	for _, field := range dependencies.PhysicalFields {
+		table, column, ok := splitFieldRef(field)
+		if !ok {
+			continue
+		}
+		tableObject, ok := datasets[table]
+		if !ok {
+			tableObject = access.ItemObjectWithParent(access.SecurableDataset, request.WorkspaceID, request.ModelID+"/"+table, modelObject)
+			datasets[table] = tableObject
+			physicalObjects = append(physicalObjects, tableObject)
+		}
+		physicalObjects = append(physicalObjects, access.ItemObjectWithParent(access.SecurableColumn, request.WorkspaceID, request.ModelID+"/"+table+"/"+column, tableObject))
+	}
+	return semanticObjects, physicalObjects, nil
+}
+
+func isSemanticField(model *semanticmodel.Model, field string) bool {
+	if _, ok := model.Dimensions[field]; ok {
+		return true
+	}
+	if _, ok := model.Measures[field]; ok {
+		return true
+	}
+	_, ok := model.Metrics[field]
+	return ok
+}
+
+func dataFieldsToSemanticFields(fields []dataquery.Field) []semanticquery.Field {
+	out := make([]semanticquery.Field, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, semanticquery.Field{Field: field.Field, Alias: field.Alias})
+	}
+	return out
+}
+
+func dataFiltersToSemanticFilters(filters []dataquery.Filter) []semanticquery.Filter {
+	out := make([]semanticquery.Filter, 0, len(filters))
+	for _, filter := range filters {
+		groups := make([]semanticquery.FilterGroup, 0, len(filter.Groups))
+		for _, group := range filter.Groups {
+			groups = append(groups, semanticquery.FilterGroup{Filters: dataFiltersToSemanticFilters(group.Filters)})
+		}
+		out = append(out, semanticquery.Filter{Field: filter.Field, Fact: filter.Fact, Operator: filter.Operator, Values: append([]any{}, filter.Values...), Groups: groups})
+	}
+	return out
 }
 
 func (m Metrics) recordDataAccessAudit(ctx context.Context, request dataquery.Query, privilege access.Privilege, objects []access.ObjectRef, status string, cause error) {
@@ -282,20 +388,6 @@ func queryFieldsToDataFields(fields []reportdef.QueryField) []dataquery.Field {
 		out = append(out, dataquery.Field{
 			Field: field.Field,
 			Alias: field.Alias,
-			Measure: dataquery.InlineMeasure{
-				Field:       field.Measure.Field,
-				Name:        field.Measure.Name,
-				Label:       field.Measure.Label,
-				Description: field.Measure.Description,
-				Expr:        field.Measure.Expr,
-				Expression:  field.Measure.Expression,
-				Table:       field.Measure.Table,
-				Grain:       field.Measure.Grain,
-				Time:        field.Measure.Time,
-				Grains:      append([]string{}, field.Measure.Grains...),
-				Unit:        field.Measure.Unit,
-				Format:      field.Measure.Format,
-			},
 		})
 	}
 	return out
@@ -310,6 +402,7 @@ func queryFiltersToDataFilters(filters []reportdef.QueryFilter) []dataquery.Filt
 		}
 		out = append(out, dataquery.Filter{
 			Field:    filter.Field,
+			Fact:     filter.Fact,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
 			Groups:   groups,
@@ -384,18 +477,75 @@ func (m Metrics) applyDataPolicies(ctx context.Context, request dataquery.Query,
 			if err != nil {
 				return request, err
 			}
-			request.Filters = append(request.Filters, filters...)
+			request.Filters = append(request.Filters, m.resolvePolicyFilterFacts(request, filters)...)
 		case "column_mask":
 			mask, err := columnMaskFromPolicy(policy)
 			if err != nil {
 				return request, err
 			}
-			for _, field := range selectedMaskedFields(request, mask) {
+			maskedFields := selectedMaskedFields(request, mask)
+			if request.Kind == dataquery.KindSemanticAggregate {
+				maskedFields = append(maskedFields, mask.Fields...)
+			}
+			for _, field := range uniqueStrings(maskedFields) {
 				request.ColumnMasks = append(request.ColumnMasks, dataquery.ColumnMask{Field: field, Mask: mask.Mask})
 			}
 		}
 	}
 	return request, nil
+}
+
+func (m Metrics) resolvePolicyFilterFacts(request dataquery.Query, filters []dataquery.Filter) []dataquery.Filter {
+	if request.Kind != dataquery.KindSemanticAggregate || request.Target != "" {
+		return filters
+	}
+	model, ok := m.Metrics.SemanticModel(request.ModelID)
+	if !ok || model == nil {
+		return filters
+	}
+	dependencies, err := semanticquery.ResolveDependencies(model, semanticquery.Request{
+		Dimensions: dataFieldsToSemanticFields(request.Fields), Measures: dataFieldsToSemanticFields(request.Measures),
+		Time: semanticquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias},
+	})
+	if err != nil {
+		return filters
+	}
+	out := []dataquery.Filter{}
+	for _, filter := range filters {
+		if filter.Field == "" || filter.Fact != "" || len(filter.Groups) > 0 {
+			out = append(out, filter)
+			continue
+		}
+		if _, conformed := model.Dimensions[filter.Field]; conformed {
+			out = append(out, filter)
+			continue
+		}
+		physical, err := model.ResolveDimension(filter.Field)
+		if err != nil {
+			out = append(out, filter)
+			continue
+		}
+		for _, fact := range dependencies.Facts {
+			if _, err := model.SafeRelationshipPath(fact, physical.Table); err == nil {
+				copy := filter
+				copy.Fact = fact
+				out = append(out, copy)
+			}
+		}
+	}
+	return out
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) ([]access.DataPolicy, error) {

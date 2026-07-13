@@ -464,7 +464,6 @@ func sourcePhysicalSignature(source semanticmodel.Source) semanticmodel.Source {
 }
 
 type tablePhysicalSignatureValue struct {
-	Kind               string
 	Source             string
 	Sources            []string
 	SQL                string
@@ -478,7 +477,6 @@ type tablePhysicalSignatureValue struct {
 
 func tablePhysicalSignature(table semanticmodel.Table) tablePhysicalSignatureValue {
 	return tablePhysicalSignatureValue{
-		Kind:               table.Kind,
 		Source:             table.Source,
 		Sources:            append([]string{}, table.Sources...),
 		SQL:                table.SQL,

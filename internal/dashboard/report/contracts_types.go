@@ -2,7 +2,6 @@ package report
 
 import (
 	"fmt"
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"strings"
 
@@ -25,6 +24,7 @@ type FilterDefinition struct {
 	Label            string         `yaml:"label" json:"label"`
 	Description      string         `yaml:"description" json:"description,omitempty"`
 	Dimension        string         `yaml:"field" json:"dimension"`
+	Fact             string         `yaml:"fact" json:"fact,omitempty"`
 	Default          FilterDefault  `yaml:"default" json:"default"`
 	Custom           bool           `yaml:"custom" json:"custom,omitempty"`
 	Presets          []FilterPreset `yaml:"presets" json:"presets,omitempty"`
@@ -97,9 +97,8 @@ type VisualQuery struct {
 }
 
 type FieldRef struct {
-	Field   string                      `yaml:"field" json:"field"`
-	Alias   string                      `yaml:"alias,omitempty" json:"alias,omitempty"`
-	Measure semanticmodel.MetricMeasure `yaml:"-" json:"-"`
+	Field string `yaml:"field" json:"field"`
+	Alias string `yaml:"alias,omitempty" json:"alias,omitempty"`
 }
 
 type QueryTime struct {
@@ -231,13 +230,8 @@ func decodeMeasureRefs(node *yaml.Node) ([]FieldRef, error) {
 			field := alias
 			if item.Kind != yaml.ScalarNode || item.Tag != "!!null" {
 				var payload struct {
-					Measure string   `yaml:"measure"`
-					Expr    string   `yaml:"expr"`
-					Table   string   `yaml:"table"`
-					Grain   string   `yaml:"grain"`
-					Time    string   `yaml:"time"`
-					Grains  []string `yaml:"grains"`
-					Format  string   `yaml:"format"`
+					Measure string `yaml:"measure"`
+					Expr    string `yaml:"expr"`
 				}
 				if err := item.Decode(&payload); err != nil {
 					return nil, err
@@ -245,23 +239,7 @@ func decodeMeasureRefs(node *yaml.Node) ([]FieldRef, error) {
 				if payload.Measure != "" {
 					field = payload.Measure
 				} else if payload.Expr != "" {
-					field = alias
-					fields = append(fields, FieldRef{
-						Field: field,
-						Alias: alias,
-						Measure: semanticmodel.MetricMeasure{
-							Field:      alias,
-							Name:       alias,
-							Expr:       payload.Expr,
-							Expression: payload.Expr,
-							Table:      payload.Table,
-							Grain:      payload.Grain,
-							Time:       payload.Time,
-							Grains:     payload.Grains,
-							Format:     payload.Format,
-						},
-					})
-					continue
+					return nil, fmt.Errorf("inline dashboard measures are not supported; define %q in the semantic model", alias)
 				}
 			}
 			fields = append(fields, FieldRef{Field: field, Alias: alias})

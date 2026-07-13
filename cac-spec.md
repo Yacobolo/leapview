@@ -319,16 +319,18 @@ metadata:
   workspace: sales
   name: sales
 spec:
-  baseTable: orders
   tables:
     - orders
   measures:
     order_count:
-      expression: count(orders.order_id)
+      fact: orders
+      aggregation: count
+      empty: zero
 ```
 
-Semantic models define relationships, dimensions, measures, formatting, and
-query behavior.
+Semantic models define relationships, conformed dimensions, typed atomic
+measures, derived metrics, formatting, and query behavior. Facts are inferred
+from atomic measure ownership.
 
 ## Dashboards
 

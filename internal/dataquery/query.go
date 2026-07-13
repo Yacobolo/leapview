@@ -43,24 +43,8 @@ type Query struct {
 }
 
 type Field struct {
-	Field   string
-	Alias   string
-	Measure InlineMeasure
-}
-
-type InlineMeasure struct {
-	Field       string
-	Name        string
-	Label       string
-	Description string
-	Expr        string
-	Expression  string
-	Table       string
-	Grain       string
-	Time        string
-	Grains      []string
-	Unit        string
-	Format      string
+	Field string
+	Alias string
 }
 
 type Time struct {
@@ -71,6 +55,7 @@ type Time struct {
 
 type Filter struct {
 	Field    string
+	Fact     string
 	Operator string
 	Values   []any
 	Groups   []FilterGroup
@@ -250,7 +235,7 @@ func (q Query) Validate() error {
 		if strings.TrimSpace(q.Target) == "" {
 			return fmt.Errorf("%s query requires target", q.Kind)
 		}
-		if strings.TrimSpace(q.Value.Field) == "" && strings.TrimSpace(q.Value.Measure.Name) == "" {
+		if strings.TrimSpace(q.Value.Field) == "" {
 			return fmt.Errorf("%s query requires a value field", q.Kind)
 		}
 		if q.Kind == KindSemanticHistogram && q.BinCount <= 0 {

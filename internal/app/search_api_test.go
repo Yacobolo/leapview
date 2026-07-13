@@ -49,7 +49,7 @@ func TestWorkspaceSearchReturnsProgressiveDiscoveryResults(t *testing.T) {
 		"dashboard:executive-sales",
 		"visual:visual:executive-sales.overview.orders",
 		"table:table:executive-sales.overview.orders",
-		"dataset:test.orders",
+		"semantic_table:test.orders",
 		"field:test.orders.order_id",
 		"measure:test.order_count",
 	} {

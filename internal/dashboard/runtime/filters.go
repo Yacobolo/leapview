@@ -80,7 +80,7 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 			for i, value := range control.Values {
 				values[i] = value
 			}
-			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Operator: "in", Values: values})
+			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Fact: filter.Fact, Operator: "in", Values: values})
 		case "text":
 			value := strings.TrimSpace(control.Value)
 			if value == "" {
@@ -90,7 +90,7 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 			if operator == "" {
 				operator = filter.DefaultOperator
 			}
-			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Operator: operator, Values: []any{value}})
+			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Fact: filter.Fact, Operator: operator, Values: []any{value}})
 		}
 	}
 	for _, selection := range filters.Selections {
@@ -114,7 +114,16 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 					valid = false
 					break
 				}
-				group.Filters = append(group.Filters, reportdef.QueryFilter{Field: dimension.Field, Operator: "equals", Values: []any{mapping.Value}})
+				fact := ""
+				if facts, err := reportmodel.TargetFacts(report, runtime.model, targetKind, targetID); err == nil && len(facts) > 1 {
+					for _, candidate := range facts {
+						if candidate == dimension.Table {
+							fact = candidate
+							break
+						}
+					}
+				}
+				group.Filters = append(group.Filters, reportdef.QueryFilter{Field: dimension.Field, Fact: fact, Operator: "equals", Values: []any{mapping.Value}})
 			}
 			if valid && len(group.Filters) == len(entry.Mappings) {
 				groups = append(groups, group)
@@ -136,10 +145,10 @@ func (s *FilterService) dateSemanticFilters(runtime *modelRuntime, filter report
 	if control.From != "" || control.To != "" {
 		result := []reportdef.QueryFilter{}
 		if control.From != "" {
-			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Operator: "greater_than_or_equal", Values: []any{control.From}})
+			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Fact: filter.Fact, Operator: "greater_than_or_equal", Values: []any{control.From}})
 		}
 		if control.To != "" {
-			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Operator: "less_than", Values: []any{control.To}})
+			result = append(result, reportdef.QueryFilter{Field: filter.Dimension, Fact: filter.Fact, Operator: "less_than", Values: []any{control.To}})
 		}
 		return result
 	}
@@ -152,8 +161,8 @@ func (s *FilterService) dateSemanticFilters(runtime *modelRuntime, filter report
 		}
 		if preset.From != "" && preset.To != "" {
 			return []reportdef.QueryFilter{
-				{Field: filter.Dimension, Operator: "greater_than_or_equal", Values: []any{preset.From}},
-				{Field: filter.Dimension, Operator: "less_than", Values: []any{preset.To}},
+				{Field: filter.Dimension, Fact: filter.Fact, Operator: "greater_than_or_equal", Values: []any{preset.From}},
+				{Field: filter.Dimension, Fact: filter.Fact, Operator: "less_than", Values: []any{preset.To}},
 			}
 		}
 		if preset.RelativeDays > 0 {

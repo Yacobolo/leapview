@@ -1,8 +1,6 @@
 package compiler
 
 import (
-	"fmt"
-
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -64,15 +62,11 @@ type projectSourceField struct {
 }
 
 type projectSemanticModelSpec struct {
-	BaseTable     string                       `yaml:"baseTable"`
-	Tables        []string                     `yaml:"tables"`
-	Relationships []semanticmodel.Relationship `yaml:"relationships"`
-	Measures      projectSemanticModelMeasures `yaml:"measures"`
-}
-
-type projectSemanticModelMeasures struct {
-	Defaults semanticmodel.MeasureDefaults
-	Items    map[string]semanticmodel.MetricMeasure
+	Tables        []string                                   `yaml:"tables"`
+	Relationships []semanticmodel.Relationship               `yaml:"relationships"`
+	Dimensions    map[string]semanticmodel.SemanticDimension `yaml:"dimensions"`
+	Measures      map[string]semanticmodel.MetricMeasure     `yaml:"measures"`
+	Metrics       map[string]semanticmodel.Metric            `yaml:"metrics"`
 }
 
 type dashboardSpec struct {
@@ -84,18 +78,16 @@ type dashboardSpec struct {
 }
 
 type projectModelTableSpec struct {
-	Kind        string                                 `yaml:"kind"`
-	Source      string                                 `yaml:"source"`
-	Sources     []string                               `yaml:"sources"`
-	SourceReads map[string][]string                    `yaml:"sourceReads"`
-	SQL         string                                 `yaml:"sql"`
-	Transform   semanticmodel.Transform                `yaml:"transform"`
-	Columns     map[string]semanticmodel.ModelColumn   `yaml:"columns"`
-	PrimaryKey  string                                 `yaml:"primaryKey"`
-	Grain       string                                 `yaml:"grain"`
-	Fields      map[string]projectModelField           `yaml:"fields"`
-	Measures    map[string]semanticmodel.MetricMeasure `yaml:"measures"`
-	Description string                                 `yaml:"description"`
+	Source      string                               `yaml:"source"`
+	Sources     []string                             `yaml:"sources"`
+	SourceReads map[string][]string                  `yaml:"sourceReads"`
+	SQL         string                               `yaml:"sql"`
+	Transform   semanticmodel.Transform              `yaml:"transform"`
+	Columns     map[string]semanticmodel.ModelColumn `yaml:"columns"`
+	PrimaryKey  string                               `yaml:"primaryKey"`
+	Grain       string                               `yaml:"grain"`
+	Fields      map[string]projectModelField         `yaml:"fields"`
+	Description string                               `yaml:"description"`
 }
 
 type projectModelField struct {
@@ -166,32 +158,4 @@ type workspaceAgentPolicySpec struct {
 type workspaceAgentPolicyToolsSpec struct {
 	Allow []string `yaml:"allow"`
 	Deny  []string `yaml:"deny"`
-}
-
-func (m *projectSemanticModelMeasures) UnmarshalYAML(value *yaml.Node) error {
-	m.Items = map[string]semanticmodel.MetricMeasure{}
-	if value == nil || value.Kind == yaml.ScalarNode && value.Tag == "!!null" {
-		return nil
-	}
-	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("semantic model measures must be a mapping")
-	}
-	for index := 0; index+1 < len(value.Content); index += 2 {
-		key := value.Content[index].Value
-		item := value.Content[index+1]
-		if key == "defaults" {
-			if err := item.Decode(&m.Defaults); err != nil {
-				return err
-			}
-			continue
-		}
-		var measure semanticmodel.MetricMeasure
-		if item.Kind != yaml.ScalarNode || item.Tag != "!!null" {
-			if err := item.Decode(&measure); err != nil {
-				return err
-			}
-		}
-		m.Items[key] = measure
-	}
-	return nil
 }

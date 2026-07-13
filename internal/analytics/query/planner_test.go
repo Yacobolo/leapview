@@ -7,504 +7,278 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
 
-func TestPlannerSingleTableMeasure(t *testing.T) {
-	plan, err := NewPlanner(testModel()).Plan(Request{
-		Measures: []Field{{Field: "revenue", Alias: "value"}},
-	})
+func TestPlannerScalarMultiFactAggregatesFactsIndependently(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{Measures: []Field{
+		{Field: "revenue", Alias: "revenue"},
+		{Field: "tag_count", Alias: "tags"},
+		{Field: "tags_per_order", Alias: "ratio"},
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.SQL, "SUM(t0.revenue) AS value") {
-		t.Fatalf("plan SQL missing measure expression:\n%s", plan.SQL)
-	}
-	if !strings.Contains(plan.SQL, "FROM model.orders t0") {
-		t.Fatalf("plan SQL missing base table:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerSafeManyToOneDimensionJoin(t *testing.T) {
-	plan, err := NewPlanner(testModel()).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
-		t.Fatalf("plan SQL missing customer join:\n%s", plan.SQL)
-	}
-	if !strings.Contains(plan.SQL, "t1.state AS state") {
-		t.Fatalf("plan SQL missing related dimension:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerRelationshipJoinUsesIdentityEndpointColumns(t *testing.T) {
-	model := testModel()
-
-	plan, err := NewPlanner(model).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
-		t.Fatalf("plan SQL should join through identity endpoint columns:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerRelationshipJoinRejectsMissingEndpointField(t *testing.T) {
-	model := testModel()
-	customers := model.Tables["customers"]
-	delete(customers.Dimensions, "customer_id")
-	model.Tables["customers"] = customers
-
-	_, err := NewPlanner(model).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "unknown relationship endpoint field") {
-		t.Fatalf("Plan() error = %v, want missing relationship endpoint field rejection", err)
-	}
-}
-
-func TestPlannerTimeGrain(t *testing.T) {
-	plan, err := NewPlanner(testModel()).Plan(Request{
-		Time:     Time{Field: "orders.purchase_timestamp", Grain: "month", Alias: "month"},
-		Measures: []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "date_trunc('month', t0.purchase_timestamp) AS month") {
-		t.Fatalf("plan SQL missing date_trunc:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerAggregateLimitOffset(t *testing.T) {
-	plan, err := NewPlanner(testModel()).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-		Sort:       []Sort{{Field: "state", Direction: "asc"}},
-		Limit:      25,
-		Offset:     50,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "ORDER BY state ASC\nLIMIT 25\nOFFSET 50") {
-		t.Fatalf("plan SQL missing aggregate limit/offset:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerFilters(t *testing.T) {
-	plan, err := NewPlanner(testModel()).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-		Filters:    []Filter{{Field: "customers.state", Operator: "in", Values: []any{"SP", "RJ"}}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "t1.state IN (?, ?)") {
-		t.Fatalf("plan SQL missing semantic filter:\n%s", plan.SQL)
-	}
-	if len(plan.Args) != 2 {
-		t.Fatalf("args = %#v, want two filter args", plan.Args)
-	}
-}
-
-func TestPlannerGroupedFiltersUseOROfANDPredicates(t *testing.T) {
-	plan, err := NewPlanner(testModel()).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-		Filters: []Filter{{
-			Groups: []FilterGroup{
-				{Filters: []Filter{
-					{Field: "orders.order_id", Operator: "equals", Values: []any{"o1"}},
-					{Field: "customers.state", Operator: "equals", Values: []any{"SP"}},
-				}},
-				{Filters: []Filter{
-					{Field: "orders.order_id", Operator: "equals", Values: []any{"o2"}},
-					{Field: "customers.state", Operator: "equals", Values: []any{"RJ"}},
-				}},
-			},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "((t0.order_id = ? AND t1.state = ?) OR (t0.order_id = ? AND t1.state = ?))"
-	if !strings.Contains(plan.SQL, want) {
-		t.Fatalf("plan SQL missing grouped tuple predicate %q:\n%s", want, plan.SQL)
-	}
-	if got := len(plan.Args); got != 4 {
-		t.Fatalf("args = %#v, want four filter args", plan.Args)
-	}
-	if plan.Args[0] != "o1" || plan.Args[1] != "SP" || plan.Args[2] != "o2" || plan.Args[3] != "RJ" {
-		t.Fatalf("args = %#v, want [o1 SP o2 RJ]", plan.Args)
-	}
-}
-
-func TestPlannerRowQueryWithRelatedDimension(t *testing.T) {
-	plan, err := NewPlanner(testModel()).PlanRows(RowRequest{
-		Table: "orders",
-		Dimensions: []Field{
-			{Field: "orders.order_id", Alias: "order_id"},
-			{Field: "customers.state", Alias: "state"},
-		},
-		Measures: []Field{{Field: "revenue", Alias: "revenue"}},
-		Sort:     []Sort{{Field: "order_id", Direction: "asc"}},
-		Limit:    25,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
-		t.Fatalf("row plan SQL missing customer join:\n%s", plan.SQL)
-	}
-	if !strings.Contains(plan.SQL, "t0.order_id AS order_id") || !strings.Contains(plan.SQL, "t1.state AS state") {
-		t.Fatalf("row plan SQL missing selected dimensions:\n%s", plan.SQL)
-	}
-	if !strings.Contains(plan.SQL, "t0.revenue AS revenue") {
-		t.Fatalf("row plan SQL missing raw measure:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerMasksSelectedRowFieldInSQL(t *testing.T) {
-	plan, err := NewPlanner(testModel()).PlanRows(RowRequest{
-		Table:       "orders",
-		Dimensions:  []Field{{Field: "orders.order_id", Alias: "order_id"}},
-		Measures:    []Field{{Field: "revenue", Alias: "revenue"}},
-		ColumnMasks: []ColumnMask{{Field: "orders.order_id", Mask: "redact"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "'REDACTED' AS order_id") {
-		t.Fatalf("row plan SQL did not mask selected field:\n%s", plan.SQL)
-	}
-	if strings.Contains(plan.SQL, "t0.order_id AS order_id") {
-		t.Fatalf("row plan SQL leaked unmasked selected field:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerRejectsMaskedAggregateMeasureDependency(t *testing.T) {
-	_, err := NewPlanner(testModel()).Plan(Request{
-		Measures:    []Field{{Field: "revenue", Alias: "revenue"}},
-		ColumnMasks: []ColumnMask{{Field: "orders.revenue", Mask: "zero"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "depends on masked field") {
-		t.Fatalf("Plan() error = %v, want masked measure rejection", err)
-	}
-}
-
-func TestPlannerRejectsMaskedFieldInsideAggregateMeasureExpression(t *testing.T) {
-	model := testModel()
-	model.Measures["net_revenue"] = semanticmodel.MetricMeasure{
-		Label:      "Net revenue",
-		Table:      "orders",
-		Grain:      "order_id",
-		Expression: "SUM(orders.revenue - orders.discount)",
-	}
-	_, err := NewPlanner(model).Plan(Request{
-		Measures:    []Field{{Field: "net_revenue", Alias: "net_revenue"}},
-		ColumnMasks: []ColumnMask{{Field: "orders.discount", Mask: "zero"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "depends on masked field") {
-		t.Fatalf("Plan() error = %v, want masked expression dependency rejection", err)
-	}
-}
-
-func TestPlannerRawValues(t *testing.T) {
-	plan, err := NewPlanner(testModel()).PlanRawValues(RawValueRequest{
-		Dimensions: []Field{{Field: "customers.state", Alias: "label"}},
-		Measure:    Field{Field: "revenue", Alias: "value"},
-		Filters:    []Filter{{Field: "customers.state", Operator: "equals", Values: []any{"SP"}}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "t1.state AS label") || !strings.Contains(plan.SQL, "CAST(t0.revenue AS DOUBLE) AS value") {
-		t.Fatalf("raw value plan SQL missing fields:\n%s", plan.SQL)
-	}
-	if !strings.Contains(plan.SQL, "t1.state = ?") {
-		t.Fatalf("raw value plan SQL missing filter:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerCountWithRelatedFilter(t *testing.T) {
-	plan, err := NewPlanner(testModel()).PlanCount(CountRequest{
-		Table:   "orders",
-		Filters: []Filter{{Field: "customers.state", Operator: "in", Values: []any{"SP"}}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "COUNT(*) AS value") || !strings.Contains(plan.SQL, "LEFT JOIN model.customers") {
-		t.Fatalf("count plan SQL missing count or join:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerSafeMultiHopDimensionJoin(t *testing.T) {
-	model := testModel()
-	model.Sources["regions"] = semanticmodel.Source{Path: "regions.csv", Format: "csv", Connection: "local"}
-	model.Tables["regions"] = semanticmodel.Table{
-		Source: "regions", PrimaryKey: "region_id",
-		Dimensions: map[string]semanticmodel.MetricDimension{
-			"region_id": {Expr: "region_id"},
-			"name":      {Expr: "region_name"},
-		},
-	}
-	model.Tables["customers"] = semanticmodel.Table{
-		Source: "customers", PrimaryKey: "customer_id",
-		Dimensions: map[string]semanticmodel.MetricDimension{
-			"customer_id": {Expr: "customer_id"},
-			"region_id":   {Expr: "region_id"},
-			"state":       {Expr: "customer_state"},
-		},
-	}
-	model.Relationships = append(model.Relationships, semanticmodel.Relationship{
-		ID: "customers_regions", From: "customers.region_id", To: "regions.region_id", Cardinality: "many_to_one", Active: true,
-	})
-
-	plan, err := NewPlanner(model).Plan(Request{
-		Dimensions: []Field{{Field: "regions.name", Alias: "region"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan.SQL, "LEFT JOIN model.customers t1 ON t0.customer_id = t1.customer_id") {
-		t.Fatalf("plan SQL missing intermediate customer join:\n%s", plan.SQL)
-	}
-	if !strings.Contains(plan.SQL, "LEFT JOIN model.regions t2 ON t1.region_id = t2.region_id") {
-		t.Fatalf("plan SQL missing region join:\n%s", plan.SQL)
-	}
-}
-
-func TestPlannerRejectsUnsafeFanout(t *testing.T) {
-	model := testModel()
-	model.Relationships = append(model.Relationships, semanticmodel.Relationship{
-		ID: "orders_items", From: "orders.order_id", To: "items.order_id", Cardinality: "one_to_many", Active: true,
-	})
-	model.Tables["items"] = semanticmodel.Table{
-		Source: "items", PrimaryKey: "item_id",
-		Dimensions: map[string]semanticmodel.MetricDimension{"category": {Expr: "category"}},
-	}
-	_, err := NewPlanner(model).Plan(Request{
-		Dimensions: []Field{{Field: "items.category", Alias: "category"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "no safe relationship path") {
-		t.Fatalf("error = %v, want unsafe path rejection", err)
-	}
-}
-
-func TestPlannerRejectsInactiveAndManyToManyPaths(t *testing.T) {
-	tests := []struct {
-		name        string
-		cardinality string
-		active      bool
-	}{
-		{name: "inactive", cardinality: "many_to_one", active: false},
-		{name: "many to many", cardinality: "many_to_many", active: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			model := testModel()
-			model.Sources["segments"] = semanticmodel.Source{Path: "segments.csv", Format: "csv", Connection: "local"}
-			model.Tables["segments"] = semanticmodel.Table{
-				Source: "segments", PrimaryKey: "segment_id",
-				Dimensions: map[string]semanticmodel.MetricDimension{"name": {Expr: "segment_name"}},
-			}
-			model.Relationships = append(model.Relationships, semanticmodel.Relationship{
-				ID: "orders_segments", From: "orders.customer_id", To: "segments.segment_id", Cardinality: tt.cardinality, Active: tt.active,
-			})
-			_, err := NewPlanner(model).Plan(Request{
-				Dimensions: []Field{{Field: "segments.name", Alias: "segment"}},
-				Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-			})
-			if err == nil || !strings.Contains(err.Error(), "no safe relationship path") {
-				t.Fatalf("error = %v, want no safe path rejection", err)
-			}
-		})
-	}
-}
-
-func TestPlannerRejectsAmbiguousRelationshipPath(t *testing.T) {
-	model := testModel()
-	model.Relationships = append(model.Relationships, semanticmodel.Relationship{
-		ID: "orders_customers_alt", From: "orders.customer_id", To: "customers.customer_id", Cardinality: "many_to_one", Active: true,
-	})
-	_, err := NewPlanner(model).Plan(Request{
-		Dimensions: []Field{{Field: "customers.state", Alias: "state"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "ambiguous relationship path") {
-		t.Fatalf("error = %v, want ambiguous path rejection", err)
-	}
-}
-
-func TestPlannerRejectsCyclicUnsafePath(t *testing.T) {
-	model := testModel()
-	model.Sources["segments"] = semanticmodel.Source{Path: "segments.csv", Format: "csv", Connection: "local"}
-	model.Tables["segments"] = semanticmodel.Table{
-		Source: "segments", PrimaryKey: "segment_id",
-		Dimensions: map[string]semanticmodel.MetricDimension{"name": {Expr: "segment_name"}},
-	}
-	model.Relationships = append(model.Relationships,
-		semanticmodel.Relationship{ID: "customers_orders_cycle", From: "customers.customer_id", To: "orders.customer_id", Cardinality: "one_to_one", Active: true},
-		semanticmodel.Relationship{ID: "customers_segments_fanout", From: "customers.customer_id", To: "segments.segment_id", Cardinality: "one_to_many", Active: true},
-	)
-	_, err := NewPlanner(model).Plan(Request{
-		Dimensions: []Field{{Field: "segments.name", Alias: "segment"}},
-		Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "no safe relationship path") {
-		t.Fatalf("error = %v, want cyclic unsafe path rejection", err)
-	}
-}
-
-func TestPlannerRejectsUnknownFields(t *testing.T) {
-	planner := NewPlanner(testModel())
-	for _, tt := range []struct {
-		field string
-		want  string
-	}{
-		{field: "orders.missing", want: "unknown field"},
-		{field: "missing.state", want: "unknown table"},
+	for _, want := range []string{
+		"fact_0 AS", "SUM(t0.revenue)", "fact_1 AS", "COUNT(*) AS __m2",
+		"CROSS JOIN", "NULLIF(COALESCE(s.__m0, 0), 0)",
 	} {
-		_, err := planner.Plan(Request{
-			Dimensions: []Field{{Field: tt.field, Alias: "bad"}},
-			Measures:   []Field{{Field: "revenue", Alias: "revenue"}},
-		})
-		if err == nil || !strings.Contains(err.Error(), tt.want) {
-			t.Fatalf("field %q error = %v, want %q", tt.field, err, tt.want)
+		if !strings.Contains(plan.SQL, want) {
+			t.Fatalf("SQL missing %q:\n%s", want, plan.SQL)
+		}
+	}
+	if plan.Mode != "multi_fact" || strings.Join(plan.Facts, ",") != "orders,tags" {
+		t.Fatalf("plan mode/facts = %q/%v", plan.Mode, plan.Facts)
+	}
+}
+
+func TestPlannerGroupedMultiFactUsesFullOuterStitch(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Dimensions: []Field{{Field: "customer_state", Alias: "state"}},
+		Measures:   []Field{{Field: "order_count"}, {Field: "tag_count"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"LEFT JOIN model.customers", "FULL OUTER JOIN fact_1", "IS NOT DISTINCT FROM",
+		"COALESCE(l.__d0, r.__d0) AS __d0", "COALESCE(s.__m0, 0)",
+	} {
+		if !strings.Contains(plan.SQL, want) {
+			t.Fatalf("SQL missing %q:\n%s", want, plan.SQL)
+		}
+	}
+	if strings.Join(plan.StitchDimensions, ",") != "customer_state" {
+		t.Fatalf("stitch dimensions = %v", plan.StitchDimensions)
+	}
+	if strings.Join(plan.RelationshipPaths, ",") != "orders:orders_customers,tags:tags_customers" {
+		t.Fatalf("relationship paths = %v", plan.RelationshipPaths)
+	}
+}
+
+func TestPlannerConformedFilterPropagatesToEveryFact(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Measures: []Field{{Field: "order_count"}, {Field: "tag_count"}},
+		Filters:  []Filter{{Field: "customer_state", Operator: "equals", Values: []any{"DK"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(plan.SQL, "state = ?"); got != 2 {
+		t.Fatalf("conformed filter count = %d, want 2:\n%s", got, plan.SQL)
+	}
+	if len(plan.Args) != 2 || plan.Args[0] != "DK" || plan.Args[1] != "DK" {
+		t.Fatalf("args = %#v", plan.Args)
+	}
+}
+
+func TestPlannerRequiresFactForLocalMultiFactFilter(t *testing.T) {
+	_, err := NewPlanner(testModel()).Plan(Request{
+		Measures: []Field{{Field: "order_count"}, {Field: "tag_count"}},
+		Filters:  []Filter{{Field: "orders.status", Operator: "equals", Values: []any{"paid"}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires fact") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPlannerRejectsMismatchedFactOnSingleFactFilter(t *testing.T) {
+	_, err := NewPlanner(testModel()).PlanRows(RowRequest{
+		Table:      "orders",
+		Dimensions: []Field{{Field: "orders.order_id"}},
+		Filters:    []Filter{{Field: "customer_state", Fact: "tags", Operator: "equals", Values: []any{"DK"}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match query fact") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPlannerTableScopeRejectsOtherFactDependencies(t *testing.T) {
+	_, err := NewPlanner(testModel()).Plan(Request{
+		Table:    "orders",
+		Measures: []Field{{Field: "tags_per_order"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "selects dependency from fact") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPlannerRejectsLocalDimensionInMultiFactQuery(t *testing.T) {
+	_, err := NewPlanner(testModel()).Plan(Request{
+		Dimensions: []Field{{Field: "orders.status"}},
+		Measures:   []Field{{Field: "order_count"}, {Field: "tag_count"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "qualified local dimension") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPlannerUsesExplicitBindingPathInAmbiguousGraph(t *testing.T) {
+	model := testModel()
+	orders := model.Tables["orders"]
+	orders.Dimensions["billing_customer_id"] = semanticmodel.MetricDimension{Expr: "billing_customer_id"}
+	model.Tables["orders"] = orders
+	model.Relationships = append(model.Relationships, semanticmodel.Relationship{
+		ID: "orders_billing_customers", From: "orders.billing_customer_id", To: "customers.customer_id", Cardinality: "many_to_one",
+	})
+	state := model.Dimensions["customer_state"]
+	state.Bindings["orders"] = semanticmodel.DimensionBinding{Field: "customers.state", Path: []string{"orders_customers"}}
+	model.Dimensions["customer_state"] = state
+
+	plan, err := NewPlanner(model).Plan(Request{
+		Dimensions: []Field{{Field: "customer_state"}},
+		Measures:   []Field{{Field: "order_count"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.SQL, "t0.customer_id = t1.customer_id") || strings.Contains(plan.SQL, "billing_customer_id") {
+		t.Fatalf("plan did not use explicit orders_customers path:\n%s", plan.SQL)
+	}
+}
+
+func TestPlannerUsesDistinctAliasesForRolePlayingDimensionPaths(t *testing.T) {
+	plan, err := NewPlanner(rolePlayingDateModel()).Plan(Request{
+		Dimensions: []Field{{Field: "order_date"}, {Field: "ship_date"}},
+		Measures:   []Field{{Field: "order_count"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"LEFT JOIN model.dates t1 ON t0.ordered_date_id = t1.date_id",
+		"LEFT JOIN model.dates t2 ON t0.shipped_date_id = t2.date_id",
+		"CAST(t1.date_value AS DATE) AS __d0",
+		"CAST(t2.date_value AS DATE) AS __d1",
+	} {
+		if !strings.Contains(plan.SQL, want) {
+			t.Fatalf("role-playing SQL missing %q:\n%s", want, plan.SQL)
+		}
+	}
+	if strings.Join(plan.RelationshipPaths, ",") != "orders:orders_order_date,orders:orders_ship_date" {
+		t.Fatalf("relationship paths = %v", plan.RelationshipPaths)
+	}
+
+	reversed, err := NewPlanner(rolePlayingDateModel()).Plan(Request{
+		Dimensions: []Field{{Field: "ship_date"}, {Field: "order_date"}},
+		Measures:   []Field{{Field: "order_count"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"LEFT JOIN model.dates t1 ON t0.ordered_date_id = t1.date_id",
+		"LEFT JOIN model.dates t2 ON t0.shipped_date_id = t2.date_id",
+	} {
+		if !strings.Contains(reversed.SQL, want) {
+			t.Fatalf("reversed role-playing SQL missing deterministic join %q:\n%s", want, reversed.SQL)
 		}
 	}
 }
 
-func TestPlannerRejectsCrossFactMeasures(t *testing.T) {
-	model := testModel()
-	model.Measures["refund_amount"] = semanticmodel.MetricMeasure{
-		Field: "refund_amount", Table: "refunds", Name: "refund_amount", Grain: "refund_id", Expression: "SUM(refunds.refund_amount)",
-	}
-	_, err := NewPlanner(model).Plan(Request{
-		Measures: []Field{
-			{Field: "revenue", Alias: "revenue"},
-			{Field: "refund_amount", Alias: "refund_amount"},
+func TestPlannerKeepsRolePlayingFilterPathsDistinct(t *testing.T) {
+	plan, err := NewPlanner(rolePlayingDateModel()).Plan(Request{
+		Measures: []Field{{Field: "order_count"}},
+		Filters: []Filter{
+			{Field: "order_date", Operator: "equals", Values: []any{"2026-07-01"}},
+			{Field: "ship_date", Operator: "equals", Values: []any{"2026-07-02"}},
 		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "cross-fact measures are not supported") {
-		t.Fatalf("error = %v, want cross-fact rejection", err)
-	}
-}
-
-func TestPlannerInlineMeasureUsesQueryOwnedType(t *testing.T) {
-	plan, err := NewPlanner(testModel()).Plan(Request{
-		Measures: []Field{{
-			Field: "one_off_orders",
-			Alias: "orders",
-			Measure: InlineMeasure{
-				Expression: "COUNT(DISTINCT orders.order_id)",
-				Table:      "orders",
-				Grain:      "order_id",
-				Time:       "orders.purchase_timestamp",
-				Grains:     []string{"month"},
-				Format:     "integer",
-			},
-		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.SQL, "COUNT(DISTINCT t0.order_id) AS orders") {
-		t.Fatalf("plan SQL missing inline measure expression:\n%s", plan.SQL)
+	for _, want := range []string{
+		"LEFT JOIN model.dates t1 ON t0.ordered_date_id = t1.date_id",
+		"LEFT JOIN model.dates t2 ON t0.shipped_date_id = t2.date_id",
+		"t1.date_value = ?",
+		"t2.date_value = ?",
+	} {
+		if !strings.Contains(plan.SQL, want) {
+			t.Fatalf("role-playing filter SQL missing %q:\n%s", want, plan.SQL)
+		}
+	}
+	if len(plan.Args) != 2 || plan.Args[0] != "2026-07-01" || plan.Args[1] != "2026-07-02" {
+		t.Fatalf("args = %#v", plan.Args)
+	}
+	if strings.Join(plan.RelationshipPaths, ",") != "orders:orders_order_date,orders:orders_ship_date" {
+		t.Fatalf("filter relationship paths = %v", plan.RelationshipPaths)
 	}
 }
 
-func TestPlannerRejectsUnsafeAliasesAndSorts(t *testing.T) {
+func TestPlannerRowAndRawQueriesStaySingleFact(t *testing.T) {
 	planner := NewPlanner(testModel())
-	tests := []struct {
-		name    string
-		request Request
-		want    string
-	}{
-		{
-			name:    "unsafe alias",
-			request: Request{Measures: []Field{{Field: "revenue", Alias: "value;drop"}}},
-			want:    "invalid identifier",
-		},
-		{
-			name: "duplicate alias",
-			request: Request{
-				Dimensions: []Field{{Field: "orders.order_id", Alias: "value"}},
-				Measures:   []Field{{Field: "revenue", Alias: "value"}},
-			},
-			want: "duplicate output alias",
-		},
-		{
-			name:    "unknown sort alias",
-			request: Request{Measures: []Field{{Field: "revenue", Alias: "value"}}, Sort: []Sort{{Field: "missing_alias", Direction: "desc"}}},
-			want:    "not a selected output alias",
-		},
-		{
-			name:    "unsafe sort alias",
-			request: Request{Measures: []Field{{Field: "revenue", Alias: "value"}}, Sort: []Sort{{Field: "value;drop", Direction: "desc"}}},
-			want:    "invalid identifier",
-		},
+	row, err := planner.PlanRows(RowRequest{
+		Table: "orders", Dimensions: []Field{{Field: "orders.order_id"}}, Measures: []Field{{Field: "revenue"}},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := planner.Plan(tt.request)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("error = %v, want %q", err, tt.want)
-			}
-		})
+	if !strings.Contains(row.SQL, "t0.revenue AS revenue") {
+		t.Fatalf("row SQL:\n%s", row.SQL)
+	}
+	_, err = planner.PlanRawValues(RawValueRequest{Table: "orders", Measure: Field{Field: "order_count"}})
+	if err == nil || !strings.Contains(err.Error(), "no raw input") {
+		t.Fatalf("raw count error = %v", err)
 	}
 }
 
 func testModel() *semanticmodel.Model {
 	return &semanticmodel.Model{
 		Name: "commerce",
-		Sources: map[string]semanticmodel.Source{
-			"orders":    {Path: "orders.csv", Format: "csv", Connection: "local"},
-			"customers": {Path: "customers.csv", Format: "csv", Connection: "local"},
-			"refunds":   {Path: "refunds.csv", Format: "csv", Connection: "local"},
-		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
-			"orders": {
-				Source: "orders", PrimaryKey: "order_id",
-				Dimensions: map[string]semanticmodel.MetricDimension{
-					"order_id":           {Expr: "order_id"},
-					"customer_id":        {Expr: "customer_id"},
-					"purchase_timestamp": {Expr: "purchase_timestamp"},
-				},
-			},
-			"refunds": {
-				Source: "refunds", PrimaryKey: "refund_id",
-				Dimensions: map[string]semanticmodel.MetricDimension{
-					"refund_id": {Expr: "refund_id"},
-					"order_id":  {Expr: "order_id"},
-				},
-			},
-			"customers": {
-				Source: "customers", PrimaryKey: "customer_id",
-				Dimensions: map[string]semanticmodel.MetricDimension{
-					"customer_id": {Expr: "customer_id"},
-					"state":       {Expr: "customer_state"},
-				},
-			},
+			"orders": {Dimensions: map[string]semanticmodel.MetricDimension{
+				"order_id": {Expr: "order_id"}, "customer_id": {Expr: "customer_id"},
+				"ordered_at": {Expr: "ordered_at", Type: "timestamp"}, "revenue": {Expr: "revenue", Type: "number"},
+				"status": {Expr: "status", Type: "string"},
+			}},
+			"tags": {Dimensions: map[string]semanticmodel.MetricDimension{
+				"tag_id": {Expr: "tag_id"}, "customer_id": {Expr: "customer_id"},
+				"tagged_at": {Expr: "tagged_at", Type: "timestamp"},
+			}},
+			"customers": {Dimensions: map[string]semanticmodel.MetricDimension{
+				"customer_id": {Expr: "customer_id"}, "state": {Expr: "state", Type: "string"},
+			}},
 		},
 		Relationships: []semanticmodel.Relationship{
-			{ID: "orders_customers", From: "orders.customer_id", To: "customers.customer_id", Cardinality: "many_to_one", Active: true},
+			{ID: "orders_customers", From: "orders.customer_id", To: "customers.customer_id", Cardinality: "many_to_one"},
+			{ID: "tags_customers", From: "tags.customer_id", To: "customers.customer_id", Cardinality: "many_to_one"},
+		},
+		Dimensions: map[string]semanticmodel.SemanticDimension{
+			"activity_date": {Type: "timestamp", Grains: []string{"day", "month"}, Bindings: map[string]semanticmodel.DimensionBinding{
+				"orders": {Field: "orders.ordered_at"}, "tags": {Field: "tags.tagged_at"},
+			}},
+			"customer_state": {Type: "string", Bindings: map[string]semanticmodel.DimensionBinding{
+				"orders": {Field: "customers.state", Path: []string{"orders_customers"}},
+				"tags":   {Field: "customers.state", Path: []string{"tags_customers"}},
+			}},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue":       {Label: "Revenue", Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)"},
-			"order_count":   {Label: "Orders", Table: "orders", Grain: "order_id", Expression: "COUNT(DISTINCT orders.order_id)"},
-			"refund_amount": {Label: "Refunds", Table: "refunds", Grain: "refund_id", Expression: "SUM(refunds.refund_amount)"},
+			"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero"},
+			"revenue":     {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero"},
+			"tag_count":   {Fact: "tags", Aggregation: "count", Empty: "zero"},
+		},
+		Metrics: map[string]semanticmodel.Metric{
+			"tags_per_order": {Expression: "safe_divide(${tag_count}, ${order_count})"},
 		},
 	}
+}
+
+func rolePlayingDateModel() *semanticmodel.Model {
+	model := testModel()
+	orders := model.Tables["orders"]
+	orders.Dimensions["ordered_date_id"] = semanticmodel.MetricDimension{Expr: "ordered_date_id"}
+	orders.Dimensions["shipped_date_id"] = semanticmodel.MetricDimension{Expr: "shipped_date_id"}
+	model.Tables["orders"] = orders
+	model.Tables["dates"] = semanticmodel.Table{Dimensions: map[string]semanticmodel.MetricDimension{
+		"date_id":    {Expr: "date_id"},
+		"date_value": {Expr: "date_value", Type: "date"},
+	}}
+	model.Relationships = append(model.Relationships,
+		semanticmodel.Relationship{ID: "orders_order_date", From: "orders.ordered_date_id", To: "dates.date_id", Cardinality: "many_to_one"},
+		semanticmodel.Relationship{ID: "orders_ship_date", From: "orders.shipped_date_id", To: "dates.date_id", Cardinality: "many_to_one"},
+	)
+	model.Dimensions["order_date"] = semanticmodel.SemanticDimension{Type: "date", Bindings: map[string]semanticmodel.DimensionBinding{
+		"orders": {Field: "dates.date_value", Path: []string{"orders_order_date"}},
+	}}
+	model.Dimensions["ship_date"] = semanticmodel.SemanticDimension{Type: "date", Bindings: map[string]semanticmodel.DimensionBinding{
+		"orders": {Field: "dates.date_value", Path: []string{"orders_ship_date"}},
+	}}
+	return model
 }

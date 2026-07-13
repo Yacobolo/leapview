@@ -99,9 +99,9 @@ func TestRepositoryRedactsSecretsBeforePersistingQueryEvents(t *testing.T) {
 		ModelID:     "sales",
 		Target:      "orders",
 		Status:      "success",
-		SQL:          "SELECT * FROM quack_query('postgres://user:secret-pass@example.com/db', 'select 1', token => 'secret-token', PASSWORD 'secret-password')",
-		PlanText:     "CREATE SECRET prod (TYPE s3, KEY_ID 'public-ish', SECRET 'super-secret', CLIENT_SECRET 'client-secret')",
-		QueryJSON:    `{"target":"orders","options":{"api_key":"secret-api-key","note":"keep-me"}}`,
+		SQL:         "SELECT * FROM quack_query('postgres://user:secret-pass@example.com/db', 'select 1', token => 'secret-token', PASSWORD 'secret-password')",
+		PlanText:    "CREATE SECRET prod (TYPE s3, KEY_ID 'public-ish', SECRET 'super-secret', CLIENT_SECRET 'client-secret')",
+		QueryJSON:   `{"target":"orders","options":{"api_key":"secret-api-key","note":"keep-me"}}`,
 	}
 	if err := repo.RecordQueryEvent(ctx, input); err != nil {
 		t.Fatal(err)

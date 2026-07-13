@@ -536,11 +536,12 @@ function testDocument(root: 'workspace' | 'connections' | 'asset'): string {
         { label: 'Key', value: 'olist', code: true },
       ],
       semanticModelGraph: {
-        baseTable: 'orders',
+        facts: ['orders'],
         nodes: [{
           id: 'orders',
           title: 'orders',
           primaryKey: 'order_id',
+          badges: ['fact', '2 measures'],
           fields: [
             { name: 'order_id', label: 'Order ID', primaryKey: true },
             { name: 'customer_id', label: 'Customer ID', join: true, relationships: ['orders_customers'] },
@@ -559,7 +560,6 @@ function testDocument(root: 'workspace' | 'connections' | 'asset'): string {
           targetField: 'customer_id',
           cardinality: 'many_to_one',
           label: '*:1',
-          active: true,
         }],
       },
       sections: [{

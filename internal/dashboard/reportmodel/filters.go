@@ -2,6 +2,7 @@ package reportmodel
 
 import (
 	"fmt"
+	"sort"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -12,11 +13,33 @@ func FilterAppliesToTarget(d *report.Dashboard, model *semanticmodel.Model, filt
 	if targeted && !filter.Targets.Contains(targetKind, targetID) {
 		return false, nil
 	}
-	baseTable, err := TargetBaseTable(d, model, targetKind, targetID)
+	facts, err := TargetFacts(d, model, targetKind, targetID)
 	if err != nil {
 		return false, err
 	}
-	if err := model.CanReachField(baseTable, filter.Dimension); err != nil {
+	if dimension, ok := model.Dimensions[filter.Dimension]; ok {
+		for _, fact := range facts {
+			if _, ok := dimension.Bindings[fact]; !ok {
+				if targeted {
+					return false, fmt.Errorf("semantic dimension %q has no binding for fact %q", filter.Dimension, fact)
+				}
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	if len(facts) != 1 {
+		if filter.Fact == "" {
+			return false, nil
+		}
+		for _, fact := range facts {
+			if fact == filter.Fact {
+				return model.CanReachField(fact, filter.Dimension) == nil, nil
+			}
+		}
+		return false, nil
+	}
+	if err := model.CanReachField(facts[0], filter.Dimension); err != nil {
 		if targeted {
 			return false, err
 		}
@@ -25,128 +48,82 @@ func FilterAppliesToTarget(d *report.Dashboard, model *semanticmodel.Model, filt
 	return true, nil
 }
 
-func TargetBaseTable(d *report.Dashboard, model *semanticmodel.Model, targetKind, targetID string) (string, error) {
+func TargetFacts(d *report.Dashboard, model *semanticmodel.Model, targetKind, targetID string) ([]string, error) {
+	var table string
+	var measures []report.FieldRef
 	switch targetKind {
 	case "visual":
 		visual, ok := d.Visuals[targetID]
 		if !ok {
-			return "", fmt.Errorf("unknown target visual %q", targetID)
+			return nil, fmt.Errorf("unknown target visual %q", targetID)
 		}
-		return visualQueryBaseTable(model, visual.Query)
+		table, measures = visual.Query.Table, visual.Query.Measures
 	case "table":
-		table, ok := d.Tables[targetID]
+		tableVisual, ok := d.Tables[targetID]
 		if !ok {
-			return "", fmt.Errorf("unknown target table %q", targetID)
+			return nil, fmt.Errorf("unknown target table %q", targetID)
 		}
-		return tableQueryBaseTable(model, table)
+		table, measures = tableVisual.Query.Table, tableVisual.Query.Measures
 	default:
-		return "", fmt.Errorf("unknown target kind %q", targetKind)
+		return nil, fmt.Errorf("unknown target kind %q", targetKind)
 	}
+	if table != "" {
+		if _, ok := model.Tables[table]; !ok {
+			return nil, fmt.Errorf("query references unknown table %q", table)
+		}
+		return []string{table}, nil
+	}
+	factSet := map[string]struct{}{}
+	var addMember func(string) error
+	visiting := map[string]bool{}
+	addMember = func(name string) error {
+		if measure, ok := model.Measures[name]; ok {
+			factSet[measure.Fact] = struct{}{}
+			return nil
+		}
+		metric, ok := model.Metrics[name]
+		if !ok {
+			return fmt.Errorf("unknown measure or metric %q", name)
+		}
+		if visiting[name] {
+			return fmt.Errorf("metric dependency cycle includes %q", name)
+		}
+		visiting[name] = true
+		expression, err := semanticmodel.ParseExpression(metric.Expression)
+		if err != nil {
+			return err
+		}
+		for _, ref := range expression.References() {
+			if err := addMember(ref); err != nil {
+				return err
+			}
+		}
+		delete(visiting, name)
+		return nil
+	}
+	for _, measure := range measures {
+		if err := addMember(measure.Field); err != nil {
+			return nil, err
+		}
+	}
+	facts := make([]string, 0, len(factSet))
+	for fact := range factSet {
+		facts = append(facts, fact)
+	}
+	sort.Strings(facts)
+	if len(facts) == 0 {
+		return nil, fmt.Errorf("query requires at least one fact")
+	}
+	return facts, nil
 }
 
-func visualQueryBaseTable(model *semanticmodel.Model, query report.VisualQuery) (string, error) {
-	if query.Table != "" {
-		if _, ok := model.Tables[query.Table]; !ok {
-			return "", fmt.Errorf("query references unknown table %q", query.Table)
-		}
-		return query.Table, nil
-	}
-	base, err := measureRefsBaseTable(model, query.Measures)
+func TargetBaseTable(d *report.Dashboard, model *semanticmodel.Model, targetKind, targetID string) (string, error) {
+	facts, err := TargetFacts(d, model, targetKind, targetID)
 	if err != nil {
 		return "", err
 	}
-	if base != "" {
-		return base, nil
+	if len(facts) != 1 {
+		return "", fmt.Errorf("target uses multiple facts")
 	}
-	if len(query.Dimensions) > 0 {
-		dimension, err := model.ResolveDimension(query.Dimensions[0].Field)
-		if err != nil {
-			return "", err
-		}
-		return dimension.Table, nil
-	}
-	if !query.Series.IsZero() {
-		dimension, err := model.ResolveDimension(query.Series.Field)
-		if err != nil {
-			return "", err
-		}
-		return dimension.Table, nil
-	}
-	return "", fmt.Errorf("query requires a base table")
-}
-
-func tableQueryBaseTable(model *semanticmodel.Model, table report.TableVisual) (string, error) {
-	if table.Query.Table != "" {
-		return table.Query.Table, nil
-	}
-	columns := table.DataColumns
-	if len(columns) == 0 {
-		columns = table.Query.Columns
-	}
-	for _, column := range columns {
-		if measure, err := model.ResolveMeasure(column.Field); err == nil {
-			return measure.Table, nil
-		}
-		if dimension, err := model.ResolveDimension(column.Field); err == nil {
-			return dimension.Table, nil
-		}
-	}
-	base, err := measureRefsBaseTable(model, table.Query.Measures)
-	if err != nil {
-		return "", err
-	}
-	if base != "" {
-		return base, nil
-	}
-	if len(table.Query.Rows) > 0 {
-		dimension, err := model.ResolveDimension(table.Query.Rows[0].Field)
-		if err != nil {
-			return "", err
-		}
-		return dimension.Table, nil
-	}
-	return "", fmt.Errorf("query requires a base table")
-}
-
-func measureRefsBaseTable(model *semanticmodel.Model, measures []report.FieldRef) (string, error) {
-	base := ""
-	grain := ""
-	for _, ref := range measures {
-		measure, err := metricMeasureForRef(model, ref)
-		if err != nil {
-			return "", err
-		}
-		if measure.Table == "" {
-			return "", fmt.Errorf("measure %q has no base table", ref.Field)
-		}
-		if base == "" {
-			base = measure.Table
-			grain = measure.Grain
-			continue
-		}
-		if measure.Table != base || (grain != "" && measure.Grain != "" && measure.Grain != grain) {
-			return "", fmt.Errorf("cross-fact measures are not supported")
-		}
-		if grain == "" {
-			grain = measure.Grain
-		}
-	}
-	return base, nil
-}
-
-func metricMeasureForRef(model *semanticmodel.Model, ref report.FieldRef) (semanticmodel.MetricMeasure, error) {
-	if ref.Measure.Expression != "" || ref.Measure.Expr != "" {
-		measure := ref.Measure
-		measure.Field = defaultString(measure.Field, ref.Field)
-		measure.Name = defaultString(measure.Name, ref.Field)
-		return measure, nil
-	}
-	return model.ResolveMeasure(ref.Field)
-}
-
-func defaultString(value, fallback string) string {
-	if value != "" {
-		return value
-	}
-	return fallback
+	return facts[0], nil
 }

@@ -727,20 +727,6 @@ func dataQueryFields(fields []dataquery.Field) []semanticquery.Field {
 		out = append(out, semanticquery.Field{
 			Field: field.Field,
 			Alias: field.Alias,
-			Measure: semanticquery.InlineMeasure{
-				Field:       field.Measure.Field,
-				Name:        field.Measure.Name,
-				Label:       field.Measure.Label,
-				Description: field.Measure.Description,
-				Expr:        field.Measure.Expr,
-				Expression:  field.Measure.Expression,
-				Table:       field.Measure.Table,
-				Grain:       field.Measure.Grain,
-				Time:        field.Measure.Time,
-				Grains:      append([]string{}, field.Measure.Grains...),
-				Unit:        field.Measure.Unit,
-				Format:      field.Measure.Format,
-			},
 		})
 	}
 	return out
@@ -755,6 +741,7 @@ func dataQueryFilters(filters []dataquery.Filter) []semanticquery.Filter {
 		}
 		out = append(out, semanticquery.Filter{
 			Field:    filter.Field,
+			Fact:     filter.Fact,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
 			Groups:   groups,

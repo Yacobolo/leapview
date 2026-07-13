@@ -48,9 +48,8 @@ func TestDiscoverSchemasCapturesSourceAndModelColumns(t *testing.T) {
 				},
 			},
 		},
-		BaseTable: "orders",
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -110,8 +109,7 @@ func TestDiscoverSchemasIgnoresAttachedDatabaseSchemas(t *testing.T) {
 				},
 			},
 		},
-		BaseTable: "orders",
-		Measures:  map[string]semanticmodel.MetricMeasure{},
+		Measures: map[string]semanticmodel.MetricMeasure{},
 	}
 	if err := model.Validate(); err != nil {
 		t.Fatal(err)
@@ -178,9 +176,8 @@ func TestDiscoverSchemasRejectsMissingDocumentedSourceField(t *testing.T) {
 				},
 			},
 		},
-		BaseTable: "orders",
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -675,14 +672,13 @@ func TestSourceRelationResolvesSourcePlans(t *testing.T) {
 			"embeddings": {Connection: "vectors", Path: "vectors/products.lance"},
 			"schemata":   {Connection: "remote_quack", Object: "information_schema.schemata"},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
-				Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+				Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
 				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}},
-				Measures:   map[string]semanticmodel.MetricMeasure{"orders": {Label: "Orders", Expression: "COUNT(*)"}},
 			},
 		},
+		Measures: map[string]semanticmodel.MetricMeasure{"orders": {Fact: "orders", Label: "Orders", Aggregation: "count", Empty: "zero"}},
 	}
 	if err := model.Validate(); err != nil {
 		t.Fatal(err)

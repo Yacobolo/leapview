@@ -447,9 +447,9 @@ type DefinitionFactSignal struct {
 }
 
 type SemanticModelGraphSignal struct {
-	BaseTable string                         `json:"baseTable,omitempty"`
-	Nodes     []SemanticModelGraphNodeSignal `json:"nodes"`
-	Edges     []SemanticModelGraphEdgeSignal `json:"edges"`
+	Facts []string                       `json:"facts,omitempty"`
+	Nodes []SemanticModelGraphNodeSignal `json:"nodes"`
+	Edges []SemanticModelGraphEdgeSignal `json:"edges"`
 }
 
 type SemanticModelGraphNodeSignal struct {
@@ -457,6 +457,7 @@ type SemanticModelGraphNodeSignal struct {
 	Title       string                          `json:"title"`
 	Description string                          `json:"description,omitempty"`
 	PrimaryKey  string                          `json:"primaryKey,omitempty"`
+	Badges      []string                        `json:"badges,omitempty"`
 	Fields      []SemanticModelGraphFieldSignal `json:"fields"`
 }
 
@@ -477,7 +478,6 @@ type SemanticModelGraphEdgeSignal struct {
 	TargetField string `json:"targetField"`
 	Cardinality string `json:"cardinality"`
 	Label       string `json:"label"`
-	Active      bool   `json:"active"`
 }
 
 type WorkspaceAssetLineageSignal struct {

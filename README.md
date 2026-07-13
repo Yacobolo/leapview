@@ -65,42 +65,44 @@ models:
     source: customers
 ```
 
-Semantic models expose model tables, fields, safe relationships, and SQL aggregate measures. Dashboards query these directly.
+Semantic models expose model tables, safe relationships, conformed dimensions, typed atomic measures, and derived metrics. A measure's required `fact` identifies its owning table; a model may contain any number of facts. Dashboards query these directly.
 
 ```yaml
 semantic_models:
   olist:
-    base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          order_id: {expr: order_id}
-          customer_id: {expr: customer_id}
-          revenue: {expr: revenue, type: number}
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          state: {expr: customer_state}
+      - orders
+      - customers
     relationships:
-      - from: orders.customer_id
+      - id: orders_customers
+        from: orders.customer_id
         to: customers.customer_id
         cardinality: many_to_one
-        active: true
+    dimensions:
+      customer_state:
+        type: string
+        bindings:
+          orders:
+            field: customers.state
+            path: [orders_customers]
     measures:
-      defaults:
-        table: orders
-        grain: order_id
-        time: orders.purchase_timestamp
-        grains: [day, week, month, quarter, year]
       revenue:
-        expression: SUM(orders.revenue)
+        fact: orders
+        aggregation: sum
+        input: {field: orders.revenue}
+        empty: zero
+        format: currency
+      order_count:
+        fact: orders
+        aggregation: count
+        empty: zero
+    metrics:
+      revenue_per_order:
+        expression: safe_divide(${revenue}, ${order_count})
         format: currency
 ```
 
-`base_table` is the required semantic-model root; every table in the model must be reachable from it through one safe active relationship path.
+Model-scoped aggregate queries independently aggregate each participating fact and stitch the results through semantic dimensions that bind to every fact. Table-scoped aggregate and row queries remain single-fact.
 
 Local CSV:
 

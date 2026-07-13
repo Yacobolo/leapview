@@ -1998,6 +1998,10 @@ func policyObjectRef(workspaceID string, object workspace.WorkspaceSecurableObje
 			parent := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, parts[0]+"/"+parts[1], access.ItemObject(access.SecurableSemanticModel, workspaceID, parts[0]))
 			return access.ItemObjectWithParent(typ, workspaceID, objectID, parent)
 		}
+	case access.SecurableSemanticField:
+		if modelID, _, ok := strings.Cut(objectID, "/"); ok && strings.TrimSpace(modelID) != "" {
+			return access.ItemObjectWithParent(typ, workspaceID, objectID, access.ItemObject(access.SecurableSemanticModel, workspaceID, modelID))
+		}
 	}
 	return access.ItemObject(typ, workspaceID, objectID)
 }

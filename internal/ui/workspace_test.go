@@ -186,7 +186,7 @@ func TestSemanticModelDetailsSignalIncludesModelGraph(t *testing.T) {
 		Key:         "commerce",
 		Title:       "Commerce Model",
 		Payload: map[string]any{
-			"BaseTable": "orders",
+			"Measures": map[string]any{"order_count": map[string]any{"Fact": "orders"}},
 			"Tables": map[string]any{
 				"orders": map[string]any{
 					"PrimaryKey":  "order_id",
@@ -211,7 +211,7 @@ func TestSemanticModelDetailsSignalIncludesModelGraph(t *testing.T) {
 				},
 			},
 			"Relationships": []any{
-				map[string]any{"ID": "orders_customers", "From": "orders.customer_id", "To": "customers.customer_id", "Cardinality": "many_to_one", "Active": true},
+				map[string]any{"ID": "orders_customers", "From": "orders.customer_id", "To": "customers.customer_id", "Cardinality": "many_to_one"},
 			},
 		},
 	}
@@ -221,8 +221,8 @@ func TestSemanticModelDetailsSignalIncludesModelGraph(t *testing.T) {
 	if graph == nil {
 		t.Fatalf("semantic model details did not include graph: %#v", page.Details)
 	}
-	if graph.BaseTable != "orders" {
-		t.Fatalf("graph base table = %q, want orders", graph.BaseTable)
+	if len(graph.Facts) != 1 || graph.Facts[0] != "orders" {
+		t.Fatalf("graph facts = %v, want orders", graph.Facts)
 	}
 	if len(graph.Nodes) != 2 {
 		t.Fatalf("graph nodes = %d, want 2: %#v", len(graph.Nodes), graph.Nodes)
@@ -242,8 +242,8 @@ func TestSemanticModelDetailsSignalIncludesModelGraph(t *testing.T) {
 	if edge.ID != "orders_customers" || edge.Source != "orders" || edge.Target != "customers" || edge.SourceField != "customer_id" || edge.TargetField != "customer_id" {
 		t.Fatalf("graph edge endpoints = %#v, want orders.customer_id -> customers.customer_id", edge)
 	}
-	if edge.Cardinality != "many_to_one" || edge.Label != "*:1" || !edge.Active {
-		t.Fatalf("graph edge cardinality = %#v, want active many_to_one labeled *:1", edge)
+	if edge.Cardinality != "many_to_one" || edge.Label != "*:1" {
+		t.Fatalf("graph edge cardinality = %#v, want many_to_one labeled *:1", edge)
 	}
 }
 

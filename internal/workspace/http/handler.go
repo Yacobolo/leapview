@@ -735,6 +735,13 @@ func assetAccessObject(r *nethttp.Request, workspaceID string) (access.ObjectRef
 		model := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, parts[0], access.WorkspaceObject(workspaceID))
 		table := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, parts[0]+"/"+parts[1], model)
 		return access.ItemObjectWithParent(access.SecurableColumn, workspaceID, parts[0]+"/"+parts[1]+"/"+strings.Join(parts[2:], "."), table), true
+	case workspace.AssetTypeMeasure:
+		modelID, memberID, ok := strings.Cut(objectID, ".")
+		if !ok {
+			return access.ItemObject(access.SecurableSemanticField, workspaceID, objectID), true
+		}
+		model := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, access.WorkspaceObject(workspaceID))
+		return access.ItemObjectWithParent(access.SecurableSemanticField, workspaceID, modelID+"/"+memberID, model), true
 	case workspace.AssetTypeWorkspaceAgentPolicy:
 		return access.ItemObjectWithParent(access.SecurableAgentPolicy, workspaceID, objectID, access.WorkspaceObject(workspaceID)), true
 	default:

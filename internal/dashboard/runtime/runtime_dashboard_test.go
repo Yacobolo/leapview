@@ -139,11 +139,11 @@ func sharedOrdersWorkspaceDefinition(t *testing.T) *workspace.Definition {
 	t.Helper()
 	modelA := sharedOrdersModel("model_a")
 	modelA.Measures = map[string]semanticmodel.MetricMeasure{
-		"order_count": {Table: "orders", Grain: "order_id", Expression: "COUNT(*)", Label: "Orders"},
+		"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"},
 	}
 	modelB := sharedOrdersModel("model_b")
 	modelB.Measures = map[string]semanticmodel.MetricMeasure{
-		"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+		"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 	}
 	if err := modelA.Validate(); err != nil {
 		t.Fatal(err)
@@ -187,7 +187,6 @@ func sharedOrdersModel(name string) *semanticmodel.Model {
 				},
 			},
 		},
-		BaseTable: "orders",
 	}
 }
 
@@ -505,44 +504,6 @@ relogios_presentes,watches_gifts
 		t.Fatalf("state filter options = %d, want 2", got)
 	}
 
-	report := metrics.reports.workspace.Dashboards["executive-sales"]
-	originalKPI := report.Visuals["total_orders"]
-	inlineKPI := report.Visuals["total_orders"]
-	inlineKPI.Title = "Inline Revenue"
-	inlineKPI.Query.Measures = []reportdef.FieldRef{{
-		Field: "inline_revenue",
-		Alias: "inline_revenue",
-		Measure: semanticmodel.MetricMeasure{
-			Field:      "inline_revenue",
-			Name:       "inline_revenue",
-			Label:      "Inline Revenue",
-			Expression: "SUM(orders.revenue)",
-			Table:      "orders",
-			Grain:      "order_id",
-			Time:       "orders.purchase_timestamp",
-			Grains:     []string{"day", "month", "year"},
-			Format:     "currency",
-		},
-	}}
-	report.Visuals["total_orders"] = inlineKPI
-	metrics.reports.workspace.Dashboards["executive-sales"] = report
-	inlinePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", dashboard.Filters{Controls: map[string]dashboard.FilterControl{
-		"state":         {Type: "multi_select", Operator: "in", Values: []string{"SP"}},
-		"purchase_date": {Type: "date_range", Preset: "2018"},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if inlinePatch.Status.Error != "" {
-		t.Fatalf("inline KPI status error = %s", inlinePatch.Status.Error)
-	}
-	if got := datumFloat(inlinePatch.Visuals["total_orders"].Data[0]["value"]); got != 110 {
-		t.Fatalf("inline KPI value = %v, want 110", got)
-	}
-	report = metrics.reports.workspace.Dashboards["executive-sales"]
-	report.Visuals["total_orders"] = originalKPI
-	metrics.reports.workspace.Dashboards["executive-sales"] = report
-
 	defaultPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "", dashboard.Filters{})
 	if err != nil {
 		t.Fatal(err)
@@ -584,7 +545,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("single-series chart row series = %q, want empty", got)
 	}
 
-	report = metrics.reports.workspace.Dashboards["executive-sales"]
+	report := metrics.reports.workspace.Dashboards["executive-sales"]
 	ordersVisual := report.Visuals["orders"]
 	ordersVisual.Interaction.PointSelection.Targets = append(ordersVisual.Interaction.PointSelection.Targets, "orders")
 	report.Visuals["orders"] = ordersVisual
