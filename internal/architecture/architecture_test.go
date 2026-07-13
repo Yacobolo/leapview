@@ -373,6 +373,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"COPY --from=node /usr/local/bin/node /usr/local/bin/node",
 		"COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules",
 		"ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm",
+		"go run ./internal/tools/configgen",
 		"go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.3.3",
 		"go run ./internal/tools/uisignalsgen",
 		"FROM oven/bun:1.3.7 AS web",
@@ -431,6 +432,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"prepare:",
 		"name: Prepare generated assets",
 		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"task config:check",
 		"task generate",
 		"task build",
 		"actions/upload-artifact@v4",
@@ -462,6 +464,10 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
+		"config:generate:",
+		"go run ./internal/tools/configgen",
+		"config:check:",
+		"go run ./internal/tools/configgen --check",
 		"node:audit:",
 		"bun audit",
 		"vuln:",
