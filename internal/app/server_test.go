@@ -54,27 +54,6 @@ type namedWorkspaceMetrics struct {
 	title       string
 }
 
-func TestExecutionConfigFromEnvIncludesReadExecutionTimeout(t *testing.T) {
-	t.Setenv("LIBREDASH_EXEC_MAX_RUNNING_READS", "7")
-	t.Setenv("LIBREDASH_EXEC_MAX_QUEUED_READS", "9")
-	t.Setenv("LIBREDASH_EXEC_READ_QUEUE_TIMEOUT", "11s")
-	t.Setenv("LIBREDASH_EXEC_READ_TIMEOUT", "13s")
-
-	config := executionConfigFromEnv()
-	if config.MaxRunningReads != 7 {
-		t.Fatalf("MaxRunningReads = %d, want 7", config.MaxRunningReads)
-	}
-	if config.MaxQueuedReads != 9 {
-		t.Fatalf("MaxQueuedReads = %d, want 9", config.MaxQueuedReads)
-	}
-	if config.ReadQueueWait != 11*time.Second {
-		t.Fatalf("ReadQueueWait = %s, want 11s", config.ReadQueueWait)
-	}
-	if config.ReadExecutionTimeout != 13*time.Second {
-		t.Fatalf("ReadExecutionTimeout = %s, want 13s", config.ReadExecutionTimeout)
-	}
-}
-
 func (m namedWorkspaceMetrics) Catalog() dashboard.Catalog {
 	return dashboard.Catalog{
 		Workspace: dashboard.CatalogWorkspace{ID: m.workspaceID, Title: m.workspaceID},

@@ -43,6 +43,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
 
+      - name: Check generated configuration
+        run: task config:check
+
       - name: Generate checked build inputs
         run: task generate
 
