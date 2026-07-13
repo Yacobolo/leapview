@@ -1366,6 +1366,12 @@
       "x-lifecycle": "supported",
       "x-scope": "serve,admin,client"
     },
+    "LIBREDASH_IMAGE": {
+      "description": "Immutable LibreDash OCI image reference consumed by deployment tooling.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "Hetzner provisioner"
+    },
     "LIBREDASH_LOCAL_AUTH": {
       "description": "Enable administrator-managed local browser authentication.",
       "pattern": "^(1|t|T|true|TRUE|True|0|f|F|false|FALSE|False)$",

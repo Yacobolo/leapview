@@ -13,7 +13,7 @@ variable "name" {
 }
 
 variable "server_type" {
-  description = "Hetzner server type. cpx22 gives enough CPU/RAM to build the image on first boot."
+  description = "Hetzner server type. cpx22 is the supported baseline for a small LibreDash instance."
   type        = string
   default     = "cpx22"
 }
@@ -31,9 +31,16 @@ variable "image" {
 }
 
 variable "ssh_allowed_cidrs" {
-  description = "CIDR ranges allowed to reach SSH. Lock this down for durable deployments."
+  description = "Explicit CIDR ranges allowed to reach SSH. Use the operator's public address with a /32 suffix."
   type        = list(string)
-  default     = ["0.0.0.0/0", "::/0"]
+
+  validation {
+    condition = length(var.ssh_allowed_cidrs) > 0 && alltrue([
+      for cidr in var.ssh_allowed_cidrs :
+      can(cidrhost(cidr, 0)) && cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "ssh_allowed_cidrs must contain valid, restricted CIDRs; world-open SSH is not supported."
+  }
 }
 
 variable "ssh_key_ids" {
@@ -57,16 +64,30 @@ variable "domain" {
 variable "admin_email" {
   description = "Initial platform admin and local-login email."
   type        = string
+
+  validation {
+    condition     = can(regex("^[^@[:space:]]+@[^@[:space:]]+$", var.admin_email))
+    error_message = "admin_email must be a valid email address."
+  }
 }
 
-variable "repo_url" {
-  description = "Git repository cloned on first boot to build the LibreDash image."
+variable "libredash_image" {
+  description = "Public LibreDash OCI image pinned to an immutable sha256 digest."
   type        = string
-  default     = "https://github.com/Yacobolo/libredash.git"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$", var.libredash_image))
+    error_message = "libredash_image must be an immutable OCI reference ending in @sha256:<64 lowercase hex characters>."
+  }
 }
 
-variable "repo_ref" {
-  description = "Git ref checked out for the first-boot Docker build."
+variable "caddy_image" {
+  description = "Caddy OCI image pinned to an immutable sha256 digest."
   type        = string
-  default     = "main"
+  default     = "caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$", var.caddy_image))
+    error_message = "caddy_image must be an immutable OCI reference ending in @sha256:<64 lowercase hex characters>."
+  }
 }

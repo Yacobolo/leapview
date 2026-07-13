@@ -14,11 +14,11 @@ output "ssh_command" {
 }
 
 output "initial_local_user_command" {
-  description = "Command to read the initial local user's one-time password from the server."
-  value       = "ssh${local.ssh_identity_arg} root@${hcloud_primary_ip.libredash.ip_address} 'cat /root/libredash-initial-local-user.json'"
+  description = "One-use command that retrieves and removes the initial local user's temporary password."
+  value       = "ssh${local.ssh_identity_arg} root@${hcloud_primary_ip.libredash.ip_address} 'libredashctl first-login'"
 }
 
-output "bootstrap_token_command" {
-  description = "Command to read the bootstrap API token from the server."
-  value       = "ssh${local.ssh_identity_arg} root@${hcloud_primary_ip.libredash.ip_address} 'cat /root/libredash-bootstrap-token'"
+output "operations_command" {
+  description = "SSH prefix for status, logs, backup, restore, upgrade, and rollback operations."
+  value       = "ssh${local.ssh_identity_arg} root@${hcloud_primary_ip.libredash.ip_address} libredashctl"
 }

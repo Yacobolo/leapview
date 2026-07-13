@@ -72,6 +72,7 @@ Run `libredash config validate` to validate the active environment, or add `--pr
 | Environment variable | Type / default | Scope | Lifecycle | Description |
 |---|---|---|---|---|
 | `LIBREDASH_GID` | integer | Hetzner provisioner | internal | Temporary container group identifier used during provisioning. |
+| `LIBREDASH_IMAGE` | string | Hetzner provisioner | tooling | Immutable LibreDash OCI image reference consumed by deployment tooling. |
 | `LIBREDASH_UID` | integer | Hetzner provisioner | internal | Temporary container user identifier used during provisioning. |
 
 ## Development

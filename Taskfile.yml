@@ -218,6 +218,16 @@ tasks:
       - test
     cmds:
       - task: qa:ui-framework
+      - task: deploy:check
+
+  deploy:check:
+    desc: Validate the supported single-node deployment and lifecycle contracts
+    cmds:
+      - go test ./deploy/hetzner
+      - terraform fmt -check -recursive deploy/hetzner
+      - terraform -chdir=deploy/hetzner init -backend=false -input=false
+      - terraform -chdir=deploy/hetzner validate
+      - terraform -chdir=deploy/hetzner test
 
   node:audit:
     desc: Scan JavaScript dependencies for known vulnerabilities

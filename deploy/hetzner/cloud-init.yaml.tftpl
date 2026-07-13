@@ -1,117 +1,48 @@
 #cloud-config
 package_update: true
 package_upgrade: true
+package_reboot_if_required: true
 packages:
   - ca-certificates
   - curl
-  - git
-  - jq
   - docker.io
-  - docker-buildx
+  - docker-compose-v2
+  - jq
+  - openssl
+  - restic
+  - unattended-upgrades
 
 write_files:
+  - path: /opt/libredash/compose.yaml
+    owner: root:root
+    permissions: "0600"
+    encoding: b64
+    content: ${compose_b64}
+  - path: /etc/libredash/Caddyfile
+    owner: root:root
+    permissions: "0600"
+    encoding: b64
+    content: ${caddyfile_b64}
+  - path: /usr/local/sbin/libredashctl
+    owner: root:root
+    permissions: "0700"
+    encoding: b64
+    content: ${libredashctl_b64}
+  - path: /etc/systemd/system/libredash-backup.service
+    owner: root:root
+    permissions: "0644"
+    encoding: b64
+    content: ${backup_service_b64}
+  - path: /etc/systemd/system/libredash-backup.timer
+    owner: root:root
+    permissions: "0644"
+    encoding: b64
+    content: ${backup_timer_b64}
   - path: /opt/libredash/provision.sh
     owner: root:root
     permissions: "0700"
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-
-      DOMAIN=${jsonencode(domain)}
-      ADMIN_EMAIL=${jsonencode(admin_email)}
-      REPO_URL=${jsonencode(repo_url)}
-      REPO_REF=${jsonencode(repo_ref)}
-
-      mkdir -p /etc/libredash /var/lib/libredash /opt/libredash /var/log/libredash
-      chmod 700 /etc/libredash /var/lib/libredash
-
-      if [ ! -f /etc/libredash/libredash.env ]; then
-        umask 077
-        cat >/etc/libredash/libredash.env <<ENV
-      LIBREDASH_PRODUCTION=1
-      LIBREDASH_ADDR=:8080
-      LIBREDASH_HOME=/var/lib/libredash
-      LIBREDASH_LOCAL_AUTH=1
-      LIBREDASH_COOKIE_SECURE=true
-      LIBREDASH_ALLOWED_HOSTS=$DOMAIN
-      LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL
-      LIBREDASH_CSRF_KEY=$(openssl rand -hex 32)
-      LIBREDASH_METRICS_BEARER_TOKEN=$(openssl rand -hex 32)
-      ENV
-      fi
-
-      systemctl enable --now docker
-
-      if ! docker network inspect libredash >/dev/null 2>&1; then
-        docker network create libredash
-      fi
-
-      if [ ! -d /opt/libredash/source/.git ]; then
-        git clone "$REPO_URL" /opt/libredash/source
-      fi
-      git -C /opt/libredash/source fetch --all --tags
-      git -C /opt/libredash/source checkout "$REPO_REF"
-
-      DOCKER_BUILDKIT=1 docker build --pull -t libredash:deploy /opt/libredash/source
-      LIBREDASH_UID="$(docker run --rm --entrypoint sh libredash:deploy -c 'id -u libredash')"
-      LIBREDASH_GID="$(docker run --rm --entrypoint sh libredash:deploy -c 'id -g libredash')"
-      chown -R "$LIBREDASH_UID:$LIBREDASH_GID" /var/lib/libredash
-
-      docker rm -f libredash >/dev/null 2>&1 || true
-      docker run -d \
-        --name libredash \
-        --restart unless-stopped \
-        --network libredash \
-        -p 127.0.0.1:8080:8080 \
-        --env-file /etc/libredash/libredash.env \
-        -v /var/lib/libredash:/var/lib/libredash \
-        libredash:deploy
-
-      cat >/etc/libredash/Caddyfile <<CADDY
-      $DOMAIN {
-        encode zstd gzip
-        reverse_proxy libredash:8080
-      }
-      CADDY
-
-      docker rm -f libredash-caddy >/dev/null 2>&1 || true
-      docker run -d \
-        --name libredash-caddy \
-        --restart unless-stopped \
-        --network libredash \
-        -p 80:80 \
-        -p 443:443 \
-        -p 443:443/udp \
-        -v /etc/libredash/Caddyfile:/etc/caddy/Caddyfile:ro \
-        -v libredash-caddy-data:/data \
-        -v libredash-caddy-config:/config \
-        caddy:2
-
-      for attempt in $(seq 1 120); do
-        if docker exec libredash libredash healthcheck >/dev/null 2>&1; then
-          break
-        fi
-        sleep 2
-      done
-      docker exec libredash libredash healthcheck
-
-      if [ ! -s /root/libredash-bootstrap-token ]; then
-        umask 077
-        docker exec libredash libredash admin bootstrap >/root/libredash-bootstrap-token
-      fi
-
-      if [ ! -s /root/libredash-initial-local-user.json ]; then
-        umask 077
-        token="$(cat /root/libredash-bootstrap-token)"
-        curl -fsS \
-          -X POST \
-          -H "Host: $DOMAIN" \
-          -H "Authorization: Bearer $token" \
-          -H "Content-Type: application/json" \
-          --data "{\"email\":\"$ADMIN_EMAIL\",\"displayName\":\"$ADMIN_EMAIL\"}" \
-          http://127.0.0.1:8080/api/v1/principals \
-          | jq . >/root/libredash-initial-local-user.json
-      fi
+    encoding: b64
+    content: ${provision_b64}
 
 runcmd:
   - [bash, /opt/libredash/provision.sh]

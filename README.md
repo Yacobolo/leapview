@@ -234,7 +234,7 @@ For file and table paths, LibreDash infers `format` from clear extensions such a
 
 ## Deploy
 
-Development and production use the same deployment path. Start the dev server, then explicitly deploy the project to it:
+Start the development server, then explicitly deploy the project to it:
 
 ```sh
 task dev
@@ -242,6 +242,12 @@ task deploy:dev
 ```
 
 After YAML changes, run `task deploy:dev` again and refresh or navigate the UI. The server reads workspace assets, details, lineage, and versions from the active deployment records.
+
+For the supported small production topology, use the [Hetzner single-node
+guide](deploy/hetzner/README.md). It provisions pinned release images, HTTPS,
+generated secrets, restricted SSH, backups, and healthchecked upgrades with
+rollback using Terraform. The remaining examples in this section describe
+custom deployments.
 
 Production mode serves the active deployed BI-as-code bundle from `.libredash` by default:
 
