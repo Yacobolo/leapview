@@ -65,7 +65,7 @@ jobs:
         working-directory: deploy/hetzner
         run: |
           server_ip="$(terraform output -raw server_ipv4)"
-          for attempt in $(seq 1 90); do
+          for _ in $(seq 1 90); do
             if ssh -i "$RUNNER_TEMP/libredash-ci" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 root@"$server_ip" 'cloud-init status --wait'; then
               exit 0
             fi
