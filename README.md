@@ -42,6 +42,7 @@ go run ./cmd/libredash
 - Semantic model YAML follows `sources -> models -> semantic model`: sources are raw physical inputs, models are light DuckDB-backed preparation tables, and semantic models own tables, fields, relationships, and measures.
 - Dashboard YAML owns pages, filters, KPIs, visuals, tables, and interactions over semantic model fields and measures.
 - Lit route components consume typed Datastar-backed page signals; dashboard visuals bind to signal payloads such as `visuals.revenue`.
+- `api/signals/main.tsp` is the source of truth for UI signal payloads. APIGen generates the shared Go models, TypeScript types, and JSON Schema with `task ui-signals:generate`; handwritten adapters only translate internal dashboard domain values into those transport contracts.
 - The bundled `datastar-inspector` web component shows live Datastar signals in the browser.
 
 ## Source Model

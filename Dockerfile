@@ -20,8 +20,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target libredash-v1 && \
     go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all -manifest api/apigen.yaml -target libredash-v1 && \
     go run ./internal/tools/apigenpostprocess && \
-    go run ./cmd/libredash schema export --format json-schema --out schemas/json && \
-    go run ./internal/tools/uisignalsgen
+    go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target ui-signals && \
+    go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all -manifest api/apigen.yaml -target ui-signals && \
+    go run ./internal/tools/uisignalspostprocess && \
+    go run ./cmd/libredash schema export --format json-schema --out schemas/json
 
 FROM oven/bun:1.3.7 AS web
 WORKDIR /src

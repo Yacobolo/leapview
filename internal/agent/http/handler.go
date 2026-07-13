@@ -42,8 +42,8 @@ type Options struct {
 	CatalogForWorkspace    func(string) dashboard.Catalog
 	CSRFToken              func(*stdhttp.Request) string
 	CurrentRoleLabel       func(*stdhttp.Request) string
-	ChatSignal             func(context.Context, agent.Scope, string, string, bool) ui.ChatSignal
-	ChatSignalWith         func(context.Context, agent.Scope, string, []agent.ChatTranscriptItem, agent.ChatArtifactSignals, string, bool) ui.ChatSignal
+	ChatSignal             func(context.Context, agent.Scope, string, string, bool) ui.ChatViewState
+	ChatSignalWith         func(context.Context, agent.Scope, string, []agent.ChatTranscriptItem, agent.ChatArtifactSignals, string, bool) ui.ChatViewState
 	QueueMissingTitle      func(context.Context, agent.Scope, string, string)
 	ExecuteStartedChatTurn func(context.Context, *agent.Service, agent.Scope, *agent.StartedPrompt, ChatTurnExecution) (agent.PromptResult, error)
 }

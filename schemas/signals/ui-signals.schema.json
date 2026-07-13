@@ -32,7 +32,9 @@
         "tools",
         "updatePath"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminAgentToolSignal": {
       "additionalProperties": false,
@@ -67,7 +69,9 @@
         "name",
         "outputSchema"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminContentSectionSignal": {
       "additionalProperties": false,
@@ -88,7 +92,9 @@
       "required": [
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminMetricSignal": {
       "additionalProperties": false,
@@ -107,22 +113,32 @@
         "label",
         "value"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminPageEnvelope": {
       "additionalProperties": false,
       "properties": {
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "page": {
-          "$ref": "#/$defs/AdminPageSignal"
+          "$ref": "#/$defs/AdminPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         }
       },
       "required": [
@@ -131,7 +147,9 @@
         "runtime",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "admin"
     },
     "AdminPageSignal": {
       "additionalProperties": false,
@@ -152,7 +170,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "metrics": {
           "items": {
@@ -184,7 +202,9 @@
         "sidebar",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminQueryDetailSignal": {
       "additionalProperties": false,
@@ -196,6 +216,7 @@
           "type": "string"
         },
         "durationMs": {
+          "format": "int64",
           "type": "integer"
         },
         "error": {
@@ -238,6 +259,7 @@
           "type": "string"
         },
         "rowsReturned": {
+          "format": "int64",
           "type": "integer"
         },
         "sql": {
@@ -264,7 +286,9 @@
         "loading",
         "rowsReturned"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminQueryEventSignal": {
       "additionalProperties": false,
@@ -276,6 +300,7 @@
           "type": "string"
         },
         "durationMs": {
+          "format": "int64",
           "type": "integer"
         },
         "error": {
@@ -312,6 +337,7 @@
           "type": "string"
         },
         "rowsReturned": {
+          "format": "int64",
           "type": "integer"
         },
         "sql": {
@@ -352,7 +378,9 @@
         "target",
         "workspaceId"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminQueryHistoryCommand": {
       "additionalProperties": false,
@@ -370,6 +398,7 @@
           "$ref": "#/$defs/AdminQueryHistoryFilters"
         },
         "limit": {
+          "format": "int64",
           "type": "integer"
         },
         "pageToken": {
@@ -380,7 +409,9 @@
         "action",
         "filters"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "admin"
     },
     "AdminQueryHistoryFilters": {
       "additionalProperties": false,
@@ -428,7 +459,9 @@
           "type": "array"
         }
       },
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminQueryHistorySignal": {
       "additionalProperties": false,
@@ -449,6 +482,7 @@
           "type": "boolean"
         },
         "limit": {
+          "format": "int64",
           "type": "integer"
         },
         "loadedCountLabel": {
@@ -474,12 +508,15 @@
         "nextCursor",
         "table"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminStorageColumnSignal": {
       "additionalProperties": false,
       "properties": {
         "beginSnapshot": {
+          "format": "int64",
           "type": "integer"
         },
         "containsNan": {
@@ -501,6 +538,7 @@
           "type": "string"
         },
         "id": {
+          "format": "int64",
           "type": "integer"
         },
         "initialDefault": {
@@ -519,6 +557,7 @@
           "type": "string"
         },
         "ordinal": {
+          "format": "int64",
           "type": "integer"
         },
         "type": {
@@ -542,7 +581,9 @@
         "ordinal",
         "type"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminStorageCommand": {
       "additionalProperties": false,
@@ -562,33 +603,40 @@
         "schema",
         "table"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "admin"
     },
     "AdminStorageFileSignal": {
       "additionalProperties": false,
       "properties": {
         "beginSnapshot": {
+          "format": "int64",
           "type": "integer"
         },
         "endSnapshot": {
+          "format": "int64",
           "type": "integer"
         },
         "format": {
           "type": "string"
         },
         "id": {
+          "format": "int64",
           "type": "integer"
         },
         "path": {
           "type": "string"
         },
         "recordCount": {
+          "format": "int64",
           "type": "integer"
         },
         "recordCountLabel": {
           "type": "string"
         },
         "sizeBytes": {
+          "format": "int64",
           "type": "integer"
         },
         "sizeLabel": {
@@ -627,6 +675,7 @@
           "type": "string"
         },
         "snapshotId": {
+          "format": "int64",
           "type": "integer"
         },
         "status": {
@@ -690,7 +739,6 @@
       },
       "required": [
         "selectedKey",
-        "selectedTable",
         "servingStates",
         "snapshots",
         "status",
@@ -698,7 +746,9 @@
         "tables",
         "warnings"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminStorageSnapshotSignal": {
       "additionalProperties": false,
@@ -713,6 +763,7 @@
           "type": "string"
         },
         "id": {
+          "format": "int64",
           "type": "integer"
         },
         "message": {
@@ -722,9 +773,11 @@
           "type": "boolean"
         },
         "schemaVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "servingStateCount": {
+          "format": "int64",
           "type": "integer"
         },
         "time": {
@@ -754,6 +807,7 @@
           "type": "string"
         },
         "dataFileCount": {
+          "format": "int64",
           "type": "integer"
         },
         "dataPath": {
@@ -763,12 +817,15 @@
           "type": "string"
         },
         "databaseCount": {
+          "format": "int64",
           "type": "integer"
         },
         "snapshotCount": {
+          "format": "int64",
           "type": "integer"
         },
         "tableCount": {
+          "format": "int64",
           "type": "integer"
         },
         "totalDataSizeLabel": {
@@ -790,7 +847,9 @@
         "totalDataSizeLabel",
         "totalSizeLabel"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AdminStorageTableHistorySignal": {
       "additionalProperties": false,
@@ -808,9 +867,11 @@
           "type": "string"
         },
         "schemaVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "snapshotId": {
+          "format": "int64",
           "type": "integer"
         },
         "source": {
@@ -836,9 +897,11 @@
       "additionalProperties": false,
       "properties": {
         "beginSnapshot": {
+          "format": "int64",
           "type": "integer"
         },
         "columnCount": {
+          "format": "int64",
           "type": "integer"
         },
         "columns": {
@@ -860,9 +923,11 @@
           "type": "string"
         },
         "endSnapshot": {
+          "format": "int64",
           "type": "integer"
         },
         "fileCount": {
+          "format": "int64",
           "type": "integer"
         },
         "files": {
@@ -890,6 +955,7 @@
           "type": "string"
         },
         "rowCount": {
+          "format": "int64",
           "type": "integer"
         },
         "rowCountLabel": {
@@ -905,12 +971,14 @@
           "type": "array"
         },
         "sizeBytes": {
+          "format": "int64",
           "type": "integer"
         },
         "sizeLabel": {
           "type": "string"
         },
         "tableId": {
+          "format": "int64",
           "type": "integer"
         },
         "tableUuid": {
@@ -942,7 +1010,9 @@
         "tableUuid",
         "type"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
     },
     "AssetLineageEdgeSignal": {
       "additionalProperties": false,
@@ -997,6 +1067,7 @@
       "additionalProperties": false,
       "properties": {
         "containedCount": {
+          "format": "int64",
           "type": "integer"
         },
         "containedSummary": {
@@ -1018,6 +1089,7 @@
           "type": "string"
         },
         "rank": {
+          "format": "int64",
           "type": "integer"
         },
         "selected": {
@@ -1027,15 +1099,19 @@
           "type": "string"
         },
         "usedByCount": {
+          "format": "int64",
           "type": "integer"
         },
         "usesCount": {
+          "format": "int64",
           "type": "integer"
         },
         "visibleDownstreamCount": {
+          "format": "int64",
           "type": "integer"
         },
         "visibleUpstreamCount": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -1061,6 +1137,7 @@
           "type": "string"
         },
         "pageCount": {
+          "format": "int64",
           "type": "integer"
         },
         "semanticModel": {
@@ -1082,22 +1159,32 @@
         "pageCount",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "catalog"
     },
     "CatalogPageEnvelope": {
       "additionalProperties": false,
       "properties": {
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "page": {
-          "$ref": "#/$defs/CatalogPageSignal"
+          "$ref": "#/$defs/CatalogPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         }
       },
       "required": [
@@ -1106,7 +1193,9 @@
         "runtime",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "catalog"
     },
     "CatalogPageSignal": {
       "additionalProperties": false,
@@ -1121,7 +1210,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "title": {
           "type": "string"
@@ -1133,7 +1222,9 @@
         "kind",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "catalog"
     },
     "ChatArtifactSignal": {
       "additionalProperties": false,
@@ -1170,6 +1261,7 @@
           "type": "string"
         },
         "messageCount": {
+          "format": "int64",
           "type": "integer"
         },
         "principalId": {
@@ -1207,28 +1299,40 @@
       "additionalProperties": false,
       "properties": {
         "agent": {
-          "$ref": "#/$defs/ChatSignal"
+          "$ref": "#/$defs/ChatSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "agent"
         },
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "page": {
-          "$ref": "#/$defs/ChatPageSignal"
+          "$ref": "#/$defs/ChatPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "tables": {
           "additionalProperties": {
             "$ref": "#/$defs/DashboardTable"
           },
-          "type": "object"
+          "type": "object",
+          "x-libredash-patch-mode": "merge",
+          "x-libredash-signal-key": "tables"
         },
         "visuals": {
           "additionalProperties": {
             "$ref": "#/$defs/DashboardVisual"
           },
-          "type": "object"
+          "type": "object",
+          "x-libredash-patch-mode": "merge",
+          "x-libredash-signal-key": "visuals"
         }
       },
       "required": [
@@ -1239,7 +1343,9 @@
         "tables",
         "visuals"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "chat"
     },
     "ChatPageSignal": {
       "additionalProperties": false,
@@ -1248,7 +1354,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "title": {
           "type": "string"
@@ -1263,7 +1369,9 @@
         "title",
         "view"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "chat"
     },
     "ChatSignal": {
       "additionalProperties": false,
@@ -1297,7 +1405,9 @@
         "status",
         "transcript"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "chat"
     },
     "ChatStatus": {
       "additionalProperties": false,
@@ -1398,7 +1508,9 @@
       "required": [
         "sidebar"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "ComposerSignal": {
       "additionalProperties": false,
@@ -1424,16 +1536,24 @@
       "additionalProperties": false,
       "properties": {
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "page": {
-          "$ref": "#/$defs/ConnectionsPageSignal"
+          "$ref": "#/$defs/ConnectionsPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         }
       },
       "required": [
@@ -1442,7 +1562,9 @@
         "runtime",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "connections"
     },
     "ConnectionsPageSignal": {
       "additionalProperties": false,
@@ -1457,7 +1579,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "title": {
           "type": "string"
@@ -1470,7 +1592,9 @@
         "kind",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "connections"
     },
     "DashboardComponentSignal": {
       "additionalProperties": false,
@@ -1491,6 +1615,7 @@
           "type": "string"
         },
         "height": {
+          "format": "double",
           "type": "number"
         },
         "id": {
@@ -1515,12 +1640,15 @@
           "type": "string"
         },
         "width": {
+          "format": "double",
           "type": "number"
         },
         "x": {
+          "format": "double",
           "type": "number"
         },
         "y": {
+          "format": "double",
           "type": "number"
         }
       },
@@ -1533,19 +1661,25 @@
         "x",
         "y"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "dashboard"
     },
     "DashboardEnvelope": {
       "additionalProperties": false,
       "properties": {
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "filterConfig": {
           "items": {
             "$ref": "#/$defs/ReportFilterConfig"
           },
-          "type": "array"
+          "type": "array",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "filterConfig"
         },
         "filterOptions": {
           "additionalProperties": {
@@ -1554,45 +1688,67 @@
             },
             "type": "array"
           },
-          "type": "object"
+          "type": "object",
+          "x-libredash-patch-mode": "merge",
+          "x-libredash-signal-key": "filterOptions"
         },
         "filters": {
-          "$ref": "#/$defs/DashboardFilters"
+          "$ref": "#/$defs/DashboardFilters",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "filters"
         },
         "interactionCommand": {
-          "$ref": "#/$defs/DashboardInteractionCommand"
+          "$ref": "#/$defs/DashboardInteractionCommand",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "interactionCommand"
         },
         "page": {
-          "$ref": "#/$defs/DashboardPageSignal"
+          "$ref": "#/$defs/DashboardPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         },
         "tableCommand": {
-          "$ref": "#/$defs/DashboardTableRequest"
+          "$ref": "#/$defs/DashboardTableRequest",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "tableCommand"
         },
         "tables": {
           "additionalProperties": {
             "$ref": "#/$defs/DashboardTable"
           },
-          "type": "object"
+          "type": "object",
+          "x-libredash-patch-mode": "merge",
+          "x-libredash-signal-key": "tables"
         },
         "urlParamShape": {
           "additionalProperties": {},
-          "type": "object"
+          "type": "object",
+          "x-libredash-patch-mode": "merge",
+          "x-libredash-signal-key": "urlParamShape"
         },
         "urlParams": {
           "additionalProperties": {},
-          "type": "object"
+          "type": "object",
+          "x-libredash-patch-mode": "merge",
+          "x-libredash-signal-key": "urlParams"
         },
         "visuals": {
           "additionalProperties": {
             "$ref": "#/$defs/DashboardVisual"
           },
-          "type": "object"
+          "type": "object",
+          "x-libredash-patch-mode": "merge",
+          "x-libredash-signal-key": "visuals"
         }
       },
       "required": [
@@ -1610,7 +1766,9 @@
         "urlParams",
         "visuals"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "dashboard"
     },
     "DashboardFilterControl": {
       "additionalProperties": false,
@@ -1804,6 +1962,7 @@
           "type": "string"
         },
         "order": {
+          "format": "int64",
           "type": "integer"
         },
         "sourceId": {
@@ -1865,9 +2024,11 @@
       "additionalProperties": false,
       "properties": {
         "height": {
+          "format": "int64",
           "type": "integer"
         },
         "width": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -1881,15 +2042,19 @@
       "additionalProperties": false,
       "properties": {
         "columns": {
+          "format": "int64",
           "type": "integer"
         },
         "gap": {
+          "format": "int64",
           "type": "integer"
         },
         "padding": {
+          "format": "int64",
           "type": "integer"
         },
         "rowHeight": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -1923,21 +2088,27 @@
         "id",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "dashboard"
     },
     "DashboardPagePlacement": {
       "additionalProperties": false,
       "properties": {
         "col": {
+          "format": "int64",
           "type": "integer"
         },
         "colSpan": {
+          "format": "int64",
           "type": "integer"
         },
         "row": {
+          "format": "int64",
           "type": "integer"
         },
         "rowSpan": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -1977,7 +2148,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "modelId": {
           "type": "string"
@@ -2016,7 +2187,9 @@
         "pages",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "dashboard"
     },
     "DashboardStatus": {
       "additionalProperties": false,
@@ -2050,6 +2223,7 @@
       "additionalProperties": false,
       "properties": {
         "availableRows": {
+          "format": "int64",
           "type": "integer"
         },
         "blocks": {
@@ -2059,6 +2233,7 @@
           "type": "object"
         },
         "chunkSize": {
+          "format": "int64",
           "type": "integer"
         },
         "columns": {
@@ -2083,12 +2258,15 @@
           "type": "string"
         },
         "resetVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "rowCap": {
+          "format": "int64",
           "type": "integer"
         },
         "rowHeight": {
+          "format": "int64",
           "type": "integer"
         },
         "selection": {
@@ -2107,9 +2285,11 @@
           "type": "string"
         },
         "totalRows": {
+          "format": "int64",
           "type": "integer"
         },
         "version": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -2139,9 +2319,11 @@
       "additionalProperties": false,
       "properties": {
         "requestSeq": {
+          "format": "int64",
           "type": "integer"
         },
         "resetVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "rows": {
@@ -2155,6 +2337,7 @@
           "$ref": "#/$defs/DashboardTableSort"
         },
         "start": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -2201,6 +2384,7 @@
           "type": "string"
         },
         "width": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -2229,9 +2413,11 @@
           "type": "string"
         },
         "max": {
+          "format": "double",
           "type": "number"
         },
         "min": {
+          "format": "double",
           "type": "number"
         },
         "values": {
@@ -2253,18 +2439,22 @@
           "type": "string"
         },
         "count": {
+          "format": "int64",
           "type": "integer"
         },
         "requestSeq": {
+          "format": "int64",
           "type": "integer"
         },
         "resetVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "sort": {
           "$ref": "#/$defs/DashboardTableSort"
         },
         "start": {
+          "format": "int64",
           "type": "integer"
         },
         "table": {
@@ -2394,6 +2584,7 @@
           "type": "string"
         },
         "version": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -2426,32 +2617,39 @@
         },
         "columnWidths": {
           "additionalProperties": {
+            "format": "double",
             "type": "number"
           },
           "type": "object"
         },
         "count": {
+          "format": "int64",
           "type": "integer"
         },
         "limit": {
+          "format": "int64",
           "type": "integer"
         },
         "objectKey": {
           "type": "string"
         },
         "offset": {
+          "format": "int64",
           "type": "integer"
         },
         "requestSeq": {
+          "format": "int64",
           "type": "integer"
         },
         "resetVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "sort": {
           "$ref": "#/$defs/DataPreviewSortSignal"
         },
         "start": {
+          "format": "int64",
           "type": "integer"
         },
         "visibleColumns": {
@@ -2473,7 +2671,9 @@
         "sort",
         "start"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "data"
     },
     "DataExplorerObjectSignal": {
       "additionalProperties": false,
@@ -2482,6 +2682,7 @@
           "type": "string"
         },
         "columnCount": {
+          "format": "int64",
           "type": "integer"
         },
         "columns": {
@@ -2531,25 +2732,37 @@
         "title",
         "workspaceId"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DataExplorerPageEnvelope": {
       "additionalProperties": false,
       "properties": {
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "dataExplorer": {
-          "$ref": "#/$defs/DataExplorerSignal"
+          "$ref": "#/$defs/DataExplorerSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "dataExplorer"
         },
         "page": {
-          "$ref": "#/$defs/DataExplorerPageSignal"
+          "$ref": "#/$defs/DataExplorerPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         }
       },
       "required": [
@@ -2559,7 +2772,9 @@
         "runtime",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "data"
     },
     "DataExplorerPageSignal": {
       "additionalProperties": false,
@@ -2568,7 +2783,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "selectedObject": {
           "type": "string"
@@ -2601,7 +2816,9 @@
         "title",
         "workspaces"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DataExplorerSignal": {
       "additionalProperties": false,
@@ -2639,7 +2856,9 @@
         "objects",
         "preview"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DataExplorerWorkspaceSignal": {
       "additionalProperties": false,
@@ -2654,6 +2873,7 @@
           "type": "string"
         },
         "objectCount": {
+          "format": "int64",
           "type": "integer"
         },
         "title": {
@@ -2667,15 +2887,19 @@
         "objectCount",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DataPreviewBlockSignal": {
       "additionalProperties": false,
       "properties": {
         "requestSeq": {
+          "format": "int64",
           "type": "integer"
         },
         "resetVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "rows": {
@@ -2689,6 +2913,7 @@
           "$ref": "#/$defs/DataPreviewSortSignal"
         },
         "start": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -2699,7 +2924,9 @@
         "sort",
         "start"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DataPreviewColumnSignal": {
       "additionalProperties": false,
@@ -2718,12 +2945,15 @@
         "key",
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DataPreviewSignal": {
       "additionalProperties": false,
       "properties": {
         "availableRows": {
+          "format": "int64",
           "type": "integer"
         },
         "blocks": {
@@ -2733,6 +2963,7 @@
           "type": "object"
         },
         "chunkSize": {
+          "format": "int64",
           "type": "integer"
         },
         "columns": {
@@ -2748,9 +2979,11 @@
           "type": "string"
         },
         "resetVersion": {
+          "format": "int64",
           "type": "integer"
         },
         "rowHeight": {
+          "format": "int64",
           "type": "integer"
         },
         "sort": {
@@ -2763,6 +2996,7 @@
           "type": "string"
         },
         "totalRows": {
+          "format": "int64",
           "type": "integer"
         }
       },
@@ -2776,7 +3010,9 @@
         "sort",
         "totalRows"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DataPreviewSortSignal": {
       "additionalProperties": false,
@@ -2788,7 +3024,9 @@
           "type": "string"
         }
       },
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
     },
     "DefinitionFactSignal": {
       "additionalProperties": false,
@@ -2810,7 +3048,9 @@
         "label",
         "value"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "FilterMenuCommand": {
       "additionalProperties": false,
@@ -2834,7 +3074,9 @@
           "type": "string"
         }
       },
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "shared"
     },
     "FilterMenuOptionSignal": {
       "additionalProperties": false,
@@ -2867,7 +3109,9 @@
         "selected",
         "value"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "FilterMenuSignal": {
       "additionalProperties": false,
@@ -2917,19 +3161,27 @@
         "label",
         "loading"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "LoginPageEnvelope": {
       "additionalProperties": false,
       "properties": {
         "page": {
-          "$ref": "#/$defs/LoginPageSignal"
+          "$ref": "#/$defs/LoginPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         }
       },
       "required": [
@@ -2937,7 +3189,9 @@
         "runtime",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "login"
     },
     "LoginPageSignal": {
       "additionalProperties": false,
@@ -2946,7 +3200,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "localAuth": {
           "type": "boolean"
@@ -2973,7 +3227,9 @@
         "ssoAuth",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "login"
     },
     "RecordTableBadgeSignal": {
       "additionalProperties": false,
@@ -2988,7 +3244,9 @@
       "required": [
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "RecordTableColumnSelector": {
       "additionalProperties": false,
@@ -3043,7 +3301,9 @@
         "header",
         "id"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "RecordTableSignal": {
       "additionalProperties": false,
@@ -3082,7 +3342,9 @@
         "empty",
         "rows"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "ReportFilterConfig": {
       "additionalProperties": false,
@@ -3187,78 +3449,6 @@
       },
       "type": "object"
     },
-    "ReportFilterDefinition": {
-      "additionalProperties": false,
-      "properties": {
-        "custom": {
-          "type": "boolean"
-        },
-        "default": {
-          "$ref": "#/$defs/ReportFilterDefault"
-        },
-        "defaultOperator": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "dimension": {
-          "type": "string"
-        },
-        "fromURLParam": {
-          "type": "string"
-        },
-        "label": {
-          "type": "string"
-        },
-        "operator": {
-          "type": "string"
-        },
-        "operatorURLParam": {
-          "type": "string"
-        },
-        "operators": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "options": {
-          "items": {
-            "$ref": "#/$defs/ReportFilterOption"
-          },
-          "type": "array"
-        },
-        "presets": {
-          "items": {
-            "$ref": "#/$defs/ReportFilterPreset"
-          },
-          "type": "array"
-        },
-        "targets": {
-          "$ref": "#/$defs/ReportFilterTargets"
-        },
-        "toURLParam": {
-          "type": "string"
-        },
-        "type": {
-          "type": "string"
-        },
-        "urlParam": {
-          "type": "string"
-        },
-        "values": {
-          "$ref": "#/$defs/ReportFilterValues"
-        }
-      },
-      "required": [
-        "default",
-        "dimension",
-        "label",
-        "type"
-      ],
-      "type": "object"
-    },
     "ReportFilterOption": {
       "additionalProperties": false,
       "properties": {
@@ -3285,6 +3475,7 @@
           "type": "string"
         },
         "relativeDays": {
+          "format": "int64",
           "type": "integer"
         },
         "to": {
@@ -3322,6 +3513,7 @@
       "additionalProperties": false,
       "properties": {
         "limit": {
+          "format": "int64",
           "type": "integer"
         },
         "source": {
@@ -3329,6 +3521,22 @@
         }
       },
       "type": "object"
+    },
+    "RouteKind": {
+      "description": "Route surfaces supported by the shared UI signal transport.",
+      "enum": [
+        "dashboard",
+        "catalog",
+        "chat",
+        "workspace",
+        "workspace_asset",
+        "connections",
+        "connection_asset",
+        "data",
+        "admin",
+        "login"
+      ],
+      "type": "string"
     },
     "RouteRuntimeSignal": {
       "additionalProperties": false,
@@ -3340,7 +3548,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "modelId": {
           "type": "string"
@@ -3355,7 +3563,9 @@
       "required": [
         "kind"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SemanticModelGraphEdgeSignal": {
       "additionalProperties": false,
@@ -3395,7 +3605,9 @@
         "target",
         "targetField"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "SemanticModelGraphFieldSignal": {
       "additionalProperties": false,
@@ -3425,7 +3637,9 @@
       "required": [
         "name"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "SemanticModelGraphNodeSignal": {
       "additionalProperties": false,
@@ -3454,7 +3668,9 @@
         "id",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "SemanticModelGraphSignal": {
       "additionalProperties": false,
@@ -3479,7 +3695,9 @@
         "edges",
         "nodes"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "SidebarActionSignal": {
       "additionalProperties": false,
@@ -3499,7 +3717,9 @@
         "icon",
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SidebarGroupSignal": {
       "additionalProperties": false,
@@ -3518,7 +3738,9 @@
         "items",
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SidebarHistoryItemSignal": {
       "additionalProperties": false,
@@ -3545,7 +3767,9 @@
         "id",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SidebarHistorySignal": {
       "additionalProperties": false,
@@ -3567,7 +3791,9 @@
         "items",
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SidebarItemSignal": {
       "additionalProperties": false,
@@ -3597,7 +3823,9 @@
         "id",
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SidebarSignal": {
       "additionalProperties": false,
@@ -3650,7 +3878,9 @@
         "pageTitle",
         "workspaceTitle"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SubSidebarItemSignal": {
       "additionalProperties": false,
@@ -3677,7 +3907,9 @@
         "id",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "SubSidebarSignal": {
       "additionalProperties": false,
@@ -3726,7 +3958,9 @@
         "railLabel",
         "storageKey"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
     },
     "WorkspaceAccessCommand": {
       "additionalProperties": false,
@@ -3761,46 +3995,6 @@
         "role",
         "subjectId",
         "subjectType"
-      ],
-      "type": "object"
-    },
-    "WorkspaceAccessResponse": {
-      "additionalProperties": false,
-      "properties": {
-        "bindings": {
-          "items": {},
-          "type": "array"
-        },
-        "canManage": {
-          "type": "boolean"
-        },
-        "mode": {
-          "type": "string"
-        },
-        "objectId": {
-          "type": "string"
-        },
-        "objectTitle": {
-          "type": "string"
-        },
-        "objectType": {
-          "type": "string"
-        },
-        "roles": {
-          "items": {},
-          "type": "array"
-        },
-        "status": {
-          "$ref": "#/$defs/WorkspaceAccessStatus"
-        },
-        "workspace": {}
-      },
-      "required": [
-        "bindings",
-        "canManage",
-        "roles",
-        "status",
-        "workspace"
       ],
       "type": "object"
     },
@@ -3850,7 +4044,9 @@
         "status",
         "workspace"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAccessStatus": {
       "additionalProperties": false,
@@ -3894,7 +4090,9 @@
       "required": [
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAssetDetailsSignal": {
       "additionalProperties": false,
@@ -3919,12 +4117,15 @@
         "overview",
         "sections"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAssetLineageSignal": {
       "additionalProperties": false,
       "properties": {
         "count": {
+          "format": "int64",
           "type": "integer"
         },
         "graph": {
@@ -3943,7 +4144,9 @@
         "usedByTable",
         "usesTable"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAssetListSignal": {
       "additionalProperties": false,
@@ -3988,16 +4191,24 @@
       "additionalProperties": false,
       "properties": {
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "page": {
-          "$ref": "#/$defs/WorkspaceAssetPageSignal"
+          "$ref": "#/$defs/WorkspaceAssetPageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         }
       },
       "required": [
@@ -4006,7 +4217,9 @@
         "runtime",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAssetPageSignal": {
       "additionalProperties": false,
@@ -4039,7 +4252,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "lineage": {
           "$ref": "#/$defs/WorkspaceAssetLineageSignal"
@@ -4073,7 +4286,9 @@
         "title",
         "workspaceId"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAssetRefreshSignal": {
       "additionalProperties": false,
@@ -4096,7 +4311,9 @@
         "running",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAssetSummarySignal": {
       "additionalProperties": false,
@@ -4141,7 +4358,9 @@
         "type",
         "typeLabel"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceAssetVersionsSignal": {
       "additionalProperties": false,
@@ -4175,7 +4394,9 @@
       "required": [
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceCardSignal": {
       "additionalProperties": false,
@@ -4203,7 +4424,9 @@
         "servingLabel",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceDetailSectionSignal": {
       "additionalProperties": false,
@@ -4230,25 +4453,37 @@
       "required": [
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspacePageEnvelope": {
       "additionalProperties": false,
       "properties": {
         "chrome": {
-          "$ref": "#/$defs/ChromeSignal"
+          "$ref": "#/$defs/ChromeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "chrome"
         },
         "page": {
-          "$ref": "#/$defs/WorkspacePageSignal"
+          "$ref": "#/$defs/WorkspacePageSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "page"
         },
         "runtime": {
-          "$ref": "#/$defs/RouteRuntimeSignal"
+          "$ref": "#/$defs/RouteRuntimeSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "runtime"
         },
         "status": {
-          "$ref": "#/$defs/DashboardStatus"
+          "$ref": "#/$defs/DashboardStatus",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "status"
         },
         "workspaceAccess": {
-          "$ref": "#/$defs/WorkspaceAccessSignal"
+          "$ref": "#/$defs/WorkspaceAccessSignal",
+          "x-libredash-patch-mode": "replace",
+          "x-libredash-signal-key": "workspaceAccess"
         }
       },
       "required": [
@@ -4257,7 +4492,9 @@
         "runtime",
         "status"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "workspace"
     },
     "WorkspacePageSignal": {
       "additionalProperties": false,
@@ -4278,7 +4515,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RouteKind"
         },
         "title": {
           "type": "string"
@@ -4291,7 +4528,9 @@
         "kind",
         "title"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     },
     "WorkspaceTabSignal": {
       "additionalProperties": false,
@@ -4300,6 +4539,7 @@
           "type": "boolean"
         },
         "count": {
+          "format": "int64",
           "type": "integer"
         },
         "href": {
@@ -4318,10 +4558,11 @@
         "id",
         "label"
       ],
-      "type": "object"
+      "type": "object",
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
     }
   },
-  "$id": "https://libredash.local/schemas/ui-signals.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "anyOf": [
     {
@@ -4550,5 +4791,983 @@
       "$ref": "#/$defs/WorkspaceTabSignal"
     }
   ],
-  "title": "LibreDash UI Signals"
+  "description": "Typed Datastar payload contracts shared by the LibreDash Go backend and Lit web components.",
+  "title": "LibreDash UI Signal Contracts",
+  "x-apigen-contracts": [
+    {
+      "kind": "ui-signal",
+      "name": "AdminAgentSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminAgentSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminAgentToolSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminAgentToolSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminContentSectionSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminContentSectionSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminMetricSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminMetricSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "AdminPageEnvelope",
+      "schema": {
+        "$ref": "#/$defs/AdminPageEnvelope"
+      },
+      "tags": [
+        "admin",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminPageSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminPageSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminQueryDetailSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminQueryDetailSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminQueryEventSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminQueryEventSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-command",
+      "name": "AdminQueryHistoryCommand",
+      "schema": {
+        "$ref": "#/$defs/AdminQueryHistoryCommand"
+      },
+      "tags": [
+        "admin",
+        "command"
+      ],
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminQueryHistoryFilters",
+      "schema": {
+        "$ref": "#/$defs/AdminQueryHistoryFilters"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminQueryHistorySignal",
+      "schema": {
+        "$ref": "#/$defs/AdminQueryHistorySignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminStorageColumnSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminStorageColumnSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-command",
+      "name": "AdminStorageCommand",
+      "schema": {
+        "$ref": "#/$defs/AdminStorageCommand"
+      },
+      "tags": [
+        "admin",
+        "command"
+      ],
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminStorageSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminStorageSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminStorageSummary",
+      "schema": {
+        "$ref": "#/$defs/AdminStorageSummary"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "AdminStorageTableSignal",
+      "schema": {
+        "$ref": "#/$defs/AdminStorageTableSignal"
+      },
+      "tags": [
+        "admin",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "admin"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "CatalogDashboardSignal",
+      "schema": {
+        "$ref": "#/$defs/CatalogDashboardSignal"
+      },
+      "tags": [
+        "catalog",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "catalog"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "CatalogPageEnvelope",
+      "schema": {
+        "$ref": "#/$defs/CatalogPageEnvelope"
+      },
+      "tags": [
+        "catalog",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "catalog"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "CatalogPageSignal",
+      "schema": {
+        "$ref": "#/$defs/CatalogPageSignal"
+      },
+      "tags": [
+        "catalog",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "catalog"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "ChatEnvelope",
+      "schema": {
+        "$ref": "#/$defs/ChatEnvelope"
+      },
+      "tags": [
+        "chat",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "chat"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "ChatPageSignal",
+      "schema": {
+        "$ref": "#/$defs/ChatPageSignal"
+      },
+      "tags": [
+        "chat",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "chat"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "ChatSignal",
+      "schema": {
+        "$ref": "#/$defs/ChatSignal"
+      },
+      "tags": [
+        "chat",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "chat"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "ChromeSignal",
+      "schema": {
+        "$ref": "#/$defs/ChromeSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "ConnectionsPageEnvelope",
+      "schema": {
+        "$ref": "#/$defs/ConnectionsPageEnvelope"
+      },
+      "tags": [
+        "connections",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "connections"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "ConnectionsPageSignal",
+      "schema": {
+        "$ref": "#/$defs/ConnectionsPageSignal"
+      },
+      "tags": [
+        "connections",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "connections"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DashboardComponentSignal",
+      "schema": {
+        "$ref": "#/$defs/DashboardComponentSignal"
+      },
+      "tags": [
+        "dashboard",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "dashboard"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "DashboardEnvelope",
+      "schema": {
+        "$ref": "#/$defs/DashboardEnvelope"
+      },
+      "tags": [
+        "dashboard",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "dashboard"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DashboardPageNavSignal",
+      "schema": {
+        "$ref": "#/$defs/DashboardPageNavSignal"
+      },
+      "tags": [
+        "dashboard",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "dashboard"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DashboardPageSignal",
+      "schema": {
+        "$ref": "#/$defs/DashboardPageSignal"
+      },
+      "tags": [
+        "dashboard",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "dashboard"
+    },
+    {
+      "kind": "ui-command",
+      "name": "DataExplorerCommand",
+      "schema": {
+        "$ref": "#/$defs/DataExplorerCommand"
+      },
+      "tags": [
+        "data",
+        "command"
+      ],
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataExplorerObjectSignal",
+      "schema": {
+        "$ref": "#/$defs/DataExplorerObjectSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "DataExplorerPageEnvelope",
+      "schema": {
+        "$ref": "#/$defs/DataExplorerPageEnvelope"
+      },
+      "tags": [
+        "data",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataExplorerPageSignal",
+      "schema": {
+        "$ref": "#/$defs/DataExplorerPageSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataExplorerSignal",
+      "schema": {
+        "$ref": "#/$defs/DataExplorerSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataExplorerWorkspaceSignal",
+      "schema": {
+        "$ref": "#/$defs/DataExplorerWorkspaceSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataPreviewBlockSignal",
+      "schema": {
+        "$ref": "#/$defs/DataPreviewBlockSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataPreviewColumnSignal",
+      "schema": {
+        "$ref": "#/$defs/DataPreviewColumnSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataPreviewSignal",
+      "schema": {
+        "$ref": "#/$defs/DataPreviewSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DataPreviewSortSignal",
+      "schema": {
+        "$ref": "#/$defs/DataPreviewSortSignal"
+      },
+      "tags": [
+        "data",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "data"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "DefinitionFactSignal",
+      "schema": {
+        "$ref": "#/$defs/DefinitionFactSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-command",
+      "name": "FilterMenuCommand",
+      "schema": {
+        "$ref": "#/$defs/FilterMenuCommand"
+      },
+      "tags": [
+        "shared",
+        "command"
+      ],
+      "x-libredash-contract-role": "command",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "FilterMenuOptionSignal",
+      "schema": {
+        "$ref": "#/$defs/FilterMenuOptionSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "FilterMenuSignal",
+      "schema": {
+        "$ref": "#/$defs/FilterMenuSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "LoginPageEnvelope",
+      "schema": {
+        "$ref": "#/$defs/LoginPageEnvelope"
+      },
+      "tags": [
+        "login",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "login"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "LoginPageSignal",
+      "schema": {
+        "$ref": "#/$defs/LoginPageSignal"
+      },
+      "tags": [
+        "login",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "login"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "RecordTableBadgeSignal",
+      "schema": {
+        "$ref": "#/$defs/RecordTableBadgeSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "RecordTableColumnSignal",
+      "schema": {
+        "$ref": "#/$defs/RecordTableColumnSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "RecordTableSignal",
+      "schema": {
+        "$ref": "#/$defs/RecordTableSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "RouteRuntimeSignal",
+      "schema": {
+        "$ref": "#/$defs/RouteRuntimeSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SemanticModelGraphEdgeSignal",
+      "schema": {
+        "$ref": "#/$defs/SemanticModelGraphEdgeSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SemanticModelGraphFieldSignal",
+      "schema": {
+        "$ref": "#/$defs/SemanticModelGraphFieldSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SemanticModelGraphNodeSignal",
+      "schema": {
+        "$ref": "#/$defs/SemanticModelGraphNodeSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SemanticModelGraphSignal",
+      "schema": {
+        "$ref": "#/$defs/SemanticModelGraphSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SidebarActionSignal",
+      "schema": {
+        "$ref": "#/$defs/SidebarActionSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SidebarGroupSignal",
+      "schema": {
+        "$ref": "#/$defs/SidebarGroupSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SidebarHistoryItemSignal",
+      "schema": {
+        "$ref": "#/$defs/SidebarHistoryItemSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SidebarHistorySignal",
+      "schema": {
+        "$ref": "#/$defs/SidebarHistorySignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SidebarItemSignal",
+      "schema": {
+        "$ref": "#/$defs/SidebarItemSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SidebarSignal",
+      "schema": {
+        "$ref": "#/$defs/SidebarSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SubSidebarItemSignal",
+      "schema": {
+        "$ref": "#/$defs/SubSidebarItemSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "SubSidebarSignal",
+      "schema": {
+        "$ref": "#/$defs/SubSidebarSignal"
+      },
+      "tags": [
+        "shared",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "shared"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceAccessSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceAccessSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceActionSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceActionSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceAssetDetailsSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceAssetDetailsSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceAssetLineageSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceAssetLineageSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "WorkspaceAssetPageEnvelope",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceAssetPageEnvelope"
+      },
+      "tags": [
+        "workspace",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceAssetPageSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceAssetPageSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceAssetRefreshSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceAssetRefreshSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceAssetSummarySignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceAssetSummarySignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceBreadcrumbSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceBreadcrumbSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceCardSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceCardSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceDetailSectionSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceDetailSectionSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-envelope",
+      "name": "WorkspacePageEnvelope",
+      "schema": {
+        "$ref": "#/$defs/WorkspacePageEnvelope"
+      },
+      "tags": [
+        "workspace",
+        "envelope"
+      ],
+      "x-libredash-contract-role": "envelope",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspacePageSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspacePageSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    },
+    {
+      "kind": "ui-signal",
+      "name": "WorkspaceTabSignal",
+      "schema": {
+        "$ref": "#/$defs/WorkspaceTabSignal"
+      },
+      "tags": [
+        "workspace",
+        "signal"
+      ],
+      "x-libredash-contract-role": "signal",
+      "x-libredash-surface": "workspace"
+    }
+  ]
 }

@@ -154,10 +154,10 @@ func CatalogPageForCatalogs(catalogs []dashboard.Catalog, chromeOptions ...Chrom
 			dashboards = append(dashboards, uisignals.CatalogDashboardSignal{
 				ID:            catalog.Workspace.ID + "." + report.ID,
 				Title:         report.Title,
-				Description:   report.Description,
-				SemanticModel: report.SemanticModel,
-				PageCount:     report.PageCount,
-				Tags:          append([]string{}, report.Tags...),
+				Description:   uisignals.Optional(report.Description),
+				SemanticModel: uisignals.Optional(report.SemanticModel),
+				PageCount:     int64(report.PageCount),
+				Tags:          uisignals.OptionalSlice(report.Tags),
 				Href:          "/workspaces/" + catalog.Workspace.ID + "/dashboards/" + report.ID,
 			})
 		}
@@ -210,10 +210,10 @@ func CatalogBootstrapSignalsForCatalogs(catalogs []dashboard.Catalog, chromeOpti
 			dashboards = append(dashboards, uisignals.CatalogDashboardSignal{
 				ID:            catalog.Workspace.ID + "." + report.ID,
 				Title:         report.Title,
-				Description:   report.Description,
-				SemanticModel: report.SemanticModel,
-				PageCount:     report.PageCount,
-				Tags:          append([]string{}, report.Tags...),
+				Description:   uisignals.Optional(report.Description),
+				SemanticModel: uisignals.Optional(report.SemanticModel),
+				PageCount:     int64(report.PageCount),
+				Tags:          uisignals.OptionalSlice(report.Tags),
 				Href:          "/workspaces/" + catalog.Workspace.ID + "/dashboards/" + report.ID,
 			})
 		}
@@ -259,10 +259,10 @@ func catalogPageSignal(catalog dashboard.Catalog) uisignals.CatalogPageSignal {
 		dashboards = append(dashboards, uisignals.CatalogDashboardSignal{
 			ID:            report.ID,
 			Title:         report.Title,
-			Description:   report.Description,
-			SemanticModel: report.SemanticModel,
-			PageCount:     report.PageCount,
-			Tags:          report.Tags,
+			Description:   uisignals.Optional(report.Description),
+			SemanticModel: uisignals.Optional(report.SemanticModel),
+			PageCount:     int64(report.PageCount),
+			Tags:          uisignals.OptionalSlice(report.Tags),
 			Href:          "/workspaces/" + catalog.Workspace.ID + "/dashboards/" + report.ID,
 		})
 	}
@@ -278,7 +278,7 @@ func recordTableBadgeValue(value, tone string) any {
 	if strings.TrimSpace(value) == "" {
 		return ""
 	}
-	return recordTableBadge{Label: value, Tone: tone}
+	return recordTableBadge{Label: value, Tone: uisignals.Optional(tone)}
 }
 
 func loginBackgroundLoaderScript() g.Node {
