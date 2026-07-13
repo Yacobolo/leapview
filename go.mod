@@ -1,6 +1,6 @@
 module github.com/Yacobolo/libredash
 
-go 1.25.11
+go 1.25.12
 
 require (
 	cuelang.org/go v0.16.1
