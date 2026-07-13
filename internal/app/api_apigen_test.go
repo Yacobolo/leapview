@@ -31,6 +31,14 @@ func TestAPIGenUsesTypeSpecV040(t *testing.T) {
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
+		"- task: api:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
+		"schema:generate:\n    desc: Generate JSON Schema artifacts for LibreDash YAML contracts\n    deps:\n      - api:generate\n      - ui-signals:generate",
+	} {
+		if !strings.Contains(taskText, want) {
+			t.Fatalf("Taskfile.yml does not enforce generated-model ordering %q", want)
+		}
+	}
+	for _, want := range []string{
 		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile",
 		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all",
 	} {

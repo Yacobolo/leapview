@@ -106,8 +106,8 @@ tasks:
     desc: Generate all checked-out derived code needed for local development
     cmds:
       - task: api:generate
-      - task: schema:generate
       - task: ui-signals:generate
+      - task: schema:generate
 
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces
@@ -130,6 +130,9 @@ tasks:
 
   schema:generate:
     desc: Generate JSON Schema artifacts for LibreDash YAML contracts
+    deps:
+      - api:generate
+      - ui-signals:generate
     method: checksum
     sources:
       - Taskfile.yml
