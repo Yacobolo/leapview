@@ -1,13 +1,15 @@
 package runtime
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
@@ -223,6 +225,8 @@ func interactionConfig(kind string, selection reportdef.SelectionInteraction) da
 	for _, mapping := range selection.Mappings {
 		mappings = append(mappings, dashboard.InteractionConfigMapping{
 			Field: mapping.Field,
+			Fact:  mapping.Fact,
+			Grain: mapping.Grain,
 			Value: mapping.Value,
 			Label: mapping.Label,
 		})
@@ -282,25 +286,31 @@ func datumMatchesSelectionEntry(row dashboard.Datum, mappings []reportdef.Select
 		return false
 	}
 	for _, mapping := range mappings {
-		selectedValue, ok := selectionEntryMappingValue(entry, mapping.Field)
-		if !ok || selectedValue == "" {
+		selectedValue, ok := selectionEntryMappingValue(entry, mapping.Field, mapping.Fact, mapping.Grain)
+		if !ok {
 			return false
 		}
 		value, ok := row[mapping.Value]
-		if !ok || fmt.Sprint(value) != selectedValue {
+		if !ok || !selectionValuesEqual(value, selectedValue) {
 			return false
 		}
 	}
 	return true
 }
 
-func selectionEntryMappingValue(entry dashboard.InteractionSelectionEntry, field string) (string, bool) {
+func selectionEntryMappingValue(entry dashboard.InteractionSelectionEntry, field, fact, grain string) (dashboard.InteractionSelectionValue, bool) {
 	for _, mapping := range entry.Mappings {
-		if mapping.Field == field {
+		if mapping.Field == field && mapping.Fact == fact && mapping.Grain == grain {
 			return mapping.Value, true
 		}
 	}
-	return "", false
+	return nil, false
+}
+
+func selectionValuesEqual(left, right any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
 func normalizeDatumValue(value any) any {

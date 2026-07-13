@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -97,37 +98,38 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 		if selection.SourceKind == "" || selection.SourceID == "" || len(selection.Entries) == 0 {
 			continue
 		}
-		if !targetsInteractionSelection(report, selection, targetKind, targetID) {
+		if isUIOnlyRowSelection(selection) {
+			continue
+		}
+		wantInteractionKind := "point_selection"
+		if selection.SourceKind == "table" {
+			wantInteractionKind = "row_selection"
+		}
+		if selection.InteractionKind != wantInteractionKind {
+			return nil, fmt.Errorf("selection source %s %q has invalid interaction kind %q", selection.SourceKind, selection.SourceID, selection.InteractionKind)
+		}
+		resolved, err := reportmodel.ResolveSelectionInteraction(report, runtime.model, selection.SourceKind, selection.SourceID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve interaction selection: %w", err)
+		}
+		if !resolvedSelectionTargets(resolved, targetKind, targetID) {
 			continue
 		}
 		groups := make([]reportdef.QueryFilterGroup, 0, len(selection.Entries))
 		for _, entry := range selection.Entries {
 			group := reportdef.QueryFilterGroup{}
-			valid := len(entry.Mappings) > 0
-			for _, mapping := range entry.Mappings {
-				if mapping.Value == "" {
-					valid = false
-					break
-				}
-				dimension, err := runtime.model.ResolveDimension(mapping.Field)
+			canonical, err := canonicalSelectionEntry(resolved, entry)
+			if err != nil {
+				return nil, fmt.Errorf("selection source %s %q: %w", selection.SourceKind, selection.SourceID, err)
+			}
+			for index, mapping := range resolved.Mappings {
+				mappingFilters, err := selectionMappingFilters(mapping, canonical[index].Value)
 				if err != nil {
-					valid = false
-					break
+					return nil, fmt.Errorf("selection source %s %q field %q: %w", selection.SourceKind, selection.SourceID, mapping.Field, err)
 				}
-				fact := ""
-				if facts, err := reportmodel.TargetFacts(report, runtime.model, targetKind, targetID); err == nil && len(facts) > 1 {
-					for _, candidate := range facts {
-						if candidate == dimension.Table {
-							fact = candidate
-							break
-						}
-					}
-				}
-				group.Filters = append(group.Filters, reportdef.QueryFilter{Field: dimension.Field, Fact: fact, Operator: "equals", Values: []any{mapping.Value}})
+				group.Filters = append(group.Filters, mappingFilters...)
 			}
-			if valid && len(group.Filters) == len(entry.Mappings) {
-				groups = append(groups, group)
-			}
+			groups = append(groups, group)
 		}
 		switch len(groups) {
 		case 0:
@@ -139,6 +141,97 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 		}
 	}
 	return result, nil
+}
+
+func resolvedSelectionTargets(selection reportmodel.ResolvedSelectionInteraction, targetKind, targetID string) bool {
+	for _, target := range selection.Targets {
+		if target.Kind == targetKind && target.ID == targetID {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalSelectionEntry(selection reportmodel.ResolvedSelectionInteraction, entry dashboard.InteractionSelectionEntry) ([]dashboard.InteractionSelectionMapping, error) {
+	identities := make([]reportmodel.SelectionMappingIdentity, len(entry.Mappings))
+	incoming := make(map[reportmodel.SelectionMappingIdentity]dashboard.InteractionSelectionMapping, len(entry.Mappings))
+	for index, mapping := range entry.Mappings {
+		if !mapping.HasValue() {
+			return nil, fmt.Errorf("mapping %d must include value", index)
+		}
+		if !dashboard.IsInteractionSelectionScalar(mapping.Value) {
+			return nil, fmt.Errorf("mapping %d value must be a JSON scalar", index)
+		}
+		identity := reportmodel.SelectionMappingIdentity{Field: mapping.Field, Fact: mapping.Fact, Grain: mapping.Grain}
+		identities[index] = identity
+		incoming[identity] = mapping
+	}
+	canonical, err := selection.CanonicalizeMappings(identities)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]dashboard.InteractionSelectionMapping, 0, len(canonical))
+	for _, mapping := range canonical {
+		identity := reportmodel.SelectionMappingIdentity{Field: mapping.Field, Fact: mapping.Fact, Grain: mapping.Grain}
+		value := incoming[identity]
+		if !dashboard.InteractionSelectionValueMatchesType(value.Value, mapping.Type, mapping.Grain) {
+			return nil, fmt.Errorf("mapping field %q value type %T does not match semantic type %q", mapping.Field, value.Value, mapping.Type)
+		}
+		result = append(result, value)
+	}
+	return result, nil
+}
+
+func selectionMappingFilters(mapping reportmodel.ResolvedSelectionMapping, value dashboard.InteractionSelectionValue) ([]reportdef.QueryFilter, error) {
+	if value == nil {
+		return []reportdef.QueryFilter{{Field: mapping.Field, Fact: mapping.Fact, Operator: "is_null"}}, nil
+	}
+	if mapping.Grain == "" {
+		return []reportdef.QueryFilter{{Field: mapping.Field, Fact: mapping.Fact, Operator: "equals", Values: []any{value}}}, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("grained time value must be a string, got %T", value)
+	}
+	start, err := dashboard.ParseInteractionSelectionTime(text, mapping.Grain)
+	if err != nil {
+		return nil, err
+	}
+	var end time.Time
+	switch mapping.Grain {
+	case "day":
+		end = start.AddDate(0, 0, 1)
+	case "week":
+		end = start.AddDate(0, 0, 7)
+	case "month":
+		end = start.AddDate(0, 1, 0)
+	case "quarter":
+		end = start.AddDate(0, 3, 0)
+	case "year":
+		end = start.AddDate(1, 0, 0)
+	default:
+		return nil, fmt.Errorf("unsupported time grain %q", mapping.Grain)
+	}
+	return []reportdef.QueryFilter{
+		{Field: mapping.Field, Fact: mapping.Fact, Operator: "greater_than_or_equal", Values: []any{start}},
+		{Field: mapping.Field, Fact: mapping.Fact, Operator: "less_than", Values: []any{end}},
+	}, nil
+}
+
+func isUIOnlyRowSelection(selection dashboard.InteractionSelection) bool {
+	if selection.SourceKind != "table" || selection.InteractionKind != "row_selection" || len(selection.Entries) == 0 {
+		return false
+	}
+	for _, entry := range selection.Entries {
+		if len(entry.Mappings) != 1 {
+			return false
+		}
+		mapping := entry.Mappings[0]
+		if mapping.Field != dashboard.UIRowSelectionField || mapping.Fact != "" || mapping.Grain != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *FilterService) dateSemanticFilters(runtime *modelRuntime, filter reportdef.FilterDefinition, control dashboard.FilterControl) []reportdef.QueryFilter {
@@ -194,25 +287,6 @@ func tableForField(field string) string {
 		return field[:index]
 	}
 	return ""
-}
-
-func targetsInteractionSelection(report *reportdef.Dashboard, selection dashboard.InteractionSelection, targetKind, targetID string) bool {
-	switch selection.SourceKind {
-	case "visual":
-		visual, ok := report.Visuals[selection.SourceID]
-		if !ok || selection.InteractionKind != "point_selection" {
-			return false
-		}
-		return contains(visual.Interaction.PointSelection.Targets, targetID)
-	case "table":
-		table, ok := report.Tables[selection.SourceID]
-		if !ok || selection.InteractionKind != "row_selection" {
-			return false
-		}
-		return contains(table.Interaction.RowSelection.Targets, targetID)
-	default:
-		return false
-	}
 }
 
 func contains(values []string, value string) bool {

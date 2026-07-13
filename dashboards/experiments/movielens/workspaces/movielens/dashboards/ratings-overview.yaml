@@ -122,6 +122,22 @@ spec:
           - field: label
             direction: asc
         limit: 360
+      interaction:
+        point_selection:
+          toggle: true
+          mappings:
+            - field: activity_date
+              grain: month
+              value: label
+              label: label
+          targets:
+            - rating_count
+            - average_rating
+            - active_users
+            - rated_movies
+            - tags_per_rating
+            - tags_per_rating_by_decade
+            - movie_table
     tags_per_rating_by_decade:
       title: Tags per rating by release decade
       type: bar
@@ -134,6 +150,25 @@ spec:
           - field: release_decade
             direction: asc
         limit: 20
+      interaction:
+        point_selection:
+          toggle: true
+          mappings:
+            - field: release_decade
+              value: label
+              label: label
+          targets:
+            - rating_count
+            - average_rating
+            - active_users
+            - rated_movies
+            - tags_per_rating
+            - activity_by_month
+            - ratings_by_month
+            - rating_distribution
+            - top_movies
+            - average_by_decade
+            - movie_table
     ratings_by_month:
       title: Ratings by month
       type: area
@@ -157,6 +192,26 @@ spec:
         sort:
           - field: rating
             direction: asc
+      interaction:
+        point_selection:
+          toggle: true
+          mappings:
+            - field: ratings.rating_bucket
+              fact: ratings
+              value: label
+              label: label
+          targets:
+            - rating_count
+            - average_rating
+            - active_users
+            - rated_movies
+            - tags_per_rating
+            - activity_by_month
+            - ratings_by_month
+            - top_movies
+            - average_by_decade
+            - tags_per_rating_by_decade
+            - movie_table
     top_movies:
       title: Most rated movies
       type: bar

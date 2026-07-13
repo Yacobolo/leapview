@@ -28,12 +28,12 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 			"category": {Type: "text", Label: "Category", Dimension: "orders.category", URLParam: "category", DefaultOperator: "contains"},
 		},
 		Visuals: map[string]reportdef.Visual{
-			"active_chart":   {Title: "Active", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: reportdef.Interaction{PointSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.status", Value: "label"}}, Targets: []string{"orders"}}}},
+			"active_chart":   {Title: "Active", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: reportdef.Interaction{PointSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.status", Fact: "orders", Value: "label"}}, Targets: []string{"orders"}}}},
 			"active_kpi":     {Kind: "kpi", Shape: "single_value", Query: reportdef.VisualQuery{Measures: fieldRefs("order_count")}, Options: map[string]any{"note": "Filtered", "tone": "ink"}},
 			"off_page_chart": {Title: "Off Page", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}},
 		},
 		Tables: map[string]reportdef.TableVisual{
-			"orders":   {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, Interaction: reportdef.Interaction{RowSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.order_id", Value: "order_id"}}, Targets: []string{"active_chart"}}}, Style: dashboard.TableStyle{Density: "compact", Grid: "full"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order", Width: 220, Format: "text"}}},
+			"orders":   {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, Interaction: reportdef.Interaction{RowSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.order_id", Fact: "orders", Value: "order_id"}}, Targets: []string{"active_chart"}}}, Style: dashboard.TableStyle{Density: "compact", Grid: "full"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order", Width: 220, Format: "text"}}},
 			"matrix":   {Title: "Matrix", Kind: "matrix_table", Query: reportdef.TableQuery{Rows: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Columns: []dashboard.TableColumn{{Key: "status", Label: "Status"}}},
 			"pivot":    {Title: "Pivot", Kind: "pivot_table", Query: reportdef.TableQuery{Rows: fieldRefs("orders.status"), Columns: fieldRefs("orders.category"), Measures: fieldRefs("order_count")}, Columns: []dashboard.TableColumn{{Key: "status", Label: "Status"}}},
 			"off_page": {Title: "Off Page", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
@@ -137,10 +137,10 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		t.Fatalf("tables bootstrap did not include table style and column display metadata:\n%s", tableSignals)
 	}
 	assertNoDashboardProductDOM(t, tables)
-	if !strings.Contains(showcaseSignals, `"interaction":{"kind":"point_selection","toggle":false,"mappings":[{"field":"orders.status","value":"label"}]`) || strings.Contains(showcaseSignals, `"mode":"multi"`) {
+	if !strings.Contains(showcaseSignals, `"interaction":{"kind":"point_selection","toggle":false,"mappings":[{"field":"orders.status","fact":"orders","value":"label"}]`) || strings.Contains(showcaseSignals, `"mode":"multi"`) {
 		t.Fatalf("showcase bootstrap did not include point selection without mode:\n%s", showcaseSignals)
 	}
-	if !strings.Contains(tableSignals, `"interaction":{"kind":"row_selection","toggle":false,"mappings":[{"field":"orders.order_id","value":"order_id"}]`) || strings.Contains(tableSignals, `"mode":"multi"`) {
+	if !strings.Contains(tableSignals, `"interaction":{"kind":"row_selection","toggle":false,"mappings":[{"field":"orders.order_id","fact":"orders","value":"order_id"}]`) || strings.Contains(tableSignals, `"mode":"multi"`) {
 		t.Fatalf("tables bootstrap did not include row selection without mode:\n%s", tableSignals)
 	}
 	if strings.Contains(tableSignals, `"off_page"`) {

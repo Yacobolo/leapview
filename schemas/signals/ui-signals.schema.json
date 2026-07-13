@@ -1707,14 +1707,25 @@
     "DashboardInteractionCommandMapping": {
       "additionalProperties": false,
       "properties": {
+        "fact": {
+          "type": "string"
+        },
         "field": {
+          "type": "string"
+        },
+        "grain": {
           "type": "string"
         },
         "label": {
           "type": "string"
         },
         "value": {
-          "type": "string"
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1755,7 +1766,13 @@
     "DashboardInteractionConfigMapping": {
       "additionalProperties": false,
       "properties": {
+        "fact": {
+          "type": "string"
+        },
         "field": {
+          "type": "string"
+        },
+        "grain": {
           "type": "string"
         },
         "label": {
@@ -1831,14 +1848,25 @@
     "DashboardInteractionSelectionMapping": {
       "additionalProperties": false,
       "properties": {
+        "fact": {
+          "type": "string"
+        },
         "field": {
+          "type": "string"
+        },
+        "grain": {
           "type": "string"
         },
         "label": {
           "type": "string"
         },
         "value": {
-          "type": "string"
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [

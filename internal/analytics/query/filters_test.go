@@ -19,3 +19,24 @@ func TestFilterSQLSupportsNotContains(t *testing.T) {
 		t.Fatalf("filter = %q %#v", sql, args)
 	}
 }
+
+func TestFilterSQLSupportsNullSelection(t *testing.T) {
+	for _, test := range []struct {
+		operator string
+		wantSQL  string
+	}{
+		{operator: "is_null", wantSQL: "value IS NULL"},
+		{operator: "is_not_null", wantSQL: "value IS NOT NULL"},
+	} {
+		sql, args, err := filterSQL("value", Filter{Operator: test.operator})
+		if err != nil {
+			t.Fatalf("filterSQL(%q): %v", test.operator, err)
+		}
+		if sql != test.wantSQL || len(args) != 0 {
+			t.Fatalf("filterSQL(%q) = %q %#v, want %q with no args", test.operator, sql, args, test.wantSQL)
+		}
+		if _, _, err := filterSQL("value", Filter{Operator: test.operator, Values: []any{"unexpected"}}); err == nil {
+			t.Fatalf("filterSQL(%q) accepted a value", test.operator)
+		}
+	}
+}

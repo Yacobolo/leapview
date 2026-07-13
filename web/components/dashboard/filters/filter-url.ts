@@ -1,3 +1,5 @@
+import type { InteractionSelectionEntry, InteractionSelectionValue } from '../interaction-selection'
+
 export type FilterType = 'date_range' | 'multi_select' | 'text'
 
 export type URLParamValue = string | string[]
@@ -53,10 +55,7 @@ export type FilterControl = {
 
 export type InteractionSelection = {
   label?: string
-  entries?: Array<{
-    label?: string
-    mappings?: Array<{ field?: string; value?: string; label?: string }>
-  }>
+  entries?: InteractionSelectionEntry[]
 }
 
 export type FiltersSignal = {
@@ -65,6 +64,21 @@ export type FiltersSignal = {
 }
 
 export const emptyFilters: FiltersSignal = { controls: {}, selections: [] }
+
+export function interactionSelectionLabel(selection: InteractionSelection): string {
+  if (selection.label) return selection.label
+  return (selection.entries ?? [])
+    .map((entry) => entry.label || (entry.mappings ?? [])
+      .map((mapping) => mapping.label || filterSelectionValueLabel(mapping.value))
+      .filter(Boolean)
+      .join(', '))
+    .filter(Boolean)
+    .join(', ')
+}
+
+function filterSelectionValueLabel(value: InteractionSelectionValue): string {
+  return value === null ? 'null' : String(value)
+}
 
 export function filterConfigEntries(config: FilterConfig): Array<[string, FilterDefinition]> {
   return config.map((definition) => [definition.id, definition])

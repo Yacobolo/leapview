@@ -1,4 +1,9 @@
 import type { ChartDatum, ChartPayload } from './types'
+import {
+  interactionSelectionLabel,
+  interactionSelectionValue,
+  type InteractionSelectionMapping,
+} from '../interaction-selection'
 
 export type ChartInteractionDetail = {
   sourceKind: 'visual'
@@ -6,7 +11,7 @@ export type ChartInteractionDetail = {
   interactionKind: string
   action: 'set'
   toggle: boolean
-  mappings: Array<{ field: string; value: string; label: string }>
+  mappings: Array<InteractionSelectionMapping & { label: string }>
 }
 
 export function chartInteractionDetailForDatum(payload: ChartPayload, datum: ChartDatum): ChartInteractionDetail | undefined {
@@ -14,26 +19,24 @@ export function chartInteractionDetailForDatum(payload: ChartPayload, datum: Cha
   const mappings = interaction?.mappings ?? []
   if (!payload.id || mappings.length === 0) return undefined
   const commandMappings = mappings.map((mapping) => {
-    const value = stringFromDatum(datum, mapping.value)
+    const value = interactionSelectionValue(datum[mapping.value])
+    if (value === undefined) return undefined
+    const configuredLabel = mapping.label ? interactionSelectionValue(datum[mapping.label]) : undefined
     return {
       field: mapping.field,
+      ...(mapping.fact !== undefined ? { fact: mapping.fact } : {}),
+      ...(mapping.grain !== undefined ? { grain: mapping.grain } : {}),
       value,
-      label: stringFromDatum(datum, mapping.label || mapping.value) || value,
+      label: interactionSelectionLabel(configuredLabel === undefined ? value : configuredLabel),
     }
   })
-  if (commandMappings.some((mapping) => !mapping.field || !mapping.value)) return undefined
+  if (commandMappings.some((mapping) => mapping === undefined)) return undefined
   return {
     sourceKind: 'visual',
     sourceId: payload.id,
     interactionKind: interaction?.kind || 'point_selection',
     action: 'set',
     toggle: interaction?.toggle !== false,
-    mappings: commandMappings,
+    mappings: commandMappings as Array<InteractionSelectionMapping & { label: string }>,
   }
-}
-
-function stringFromDatum(datum: ChartDatum, key: string): string {
-  const value = datum[key]
-  if (value === undefined || value === null) return ''
-  return String(value)
 }

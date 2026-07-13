@@ -154,7 +154,7 @@ func supportsPointSelection(visual Visual) bool {
 		return false
 	}
 	switch visual.ShapeOrDefault() {
-	case "hierarchy":
+	case "graph", "hierarchy":
 		return false
 	default:
 		return true

@@ -566,8 +566,27 @@
           "items": {
             "additionalProperties": false,
             "properties": {
+              "fact": {
+                "$ref": "#/$defs/%23Identifier"
+              },
               "field": {
-                "$ref": "#/$defs/%23FieldRef"
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/%23FieldRef"
+                  },
+                  {
+                    "$ref": "#/$defs/%23Identifier"
+                  }
+                ]
+              },
+              "grain": {
+                "enum": [
+                  "day",
+                  "week",
+                  "month",
+                  "quarter",
+                  "year"
+                ]
               },
               "label": {
                 "type": "string"
@@ -583,9 +602,6 @@
             "type": "object"
           },
           "type": "array"
-        },
-        "mode": {
-          "type": "string"
         },
         "targets": {
           "items": {

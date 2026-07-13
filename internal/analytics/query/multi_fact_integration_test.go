@@ -102,6 +102,51 @@ func TestMultiFactPlanExecutesWithoutFactFanoutAndPreservesOneSidedGroups(t *tes
 		t.Fatalf("scalar = orders %d tags %d clicks %d ratio %v", orderCount, tagCount, clickCount, ratio)
 	}
 
+	conformed, err := planner.Plan(Request{
+		Measures: []Field{{Field: "order_count"}, {Field: "tag_count"}, {Field: "click_count"}, {Field: "tags_per_order"}},
+		Filters:  []Filter{{Field: "segment", Operator: "equals", Values: []any{"consumer"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(conformed.SQL, conformed.Args...).Scan(&orderCount, &tagCount, &clickCount, &ratio); err != nil {
+		t.Fatalf("execute conformed selection plan:\n%s\n%v", conformed.SQL, err)
+	}
+	if orderCount != 2 || tagCount != 3 || clickCount != 1 || ratio != 1.5 {
+		t.Fatalf("conformed selection = orders %d tags %d clicks %d ratio %v", orderCount, tagCount, clickCount, ratio)
+	}
+
+	local, err := planner.Plan(Request{
+		Measures: []Field{{Field: "order_count"}, {Field: "tag_count"}, {Field: "tags_per_order"}},
+		Filters:  []Filter{{Field: "orders.segment", Fact: "orders", Operator: "equals", Values: []any{"business"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(local.SQL, local.Args...).Scan(&orderCount, &tagCount, &ratio); err != nil {
+		t.Fatalf("execute fact-local selection plan:\n%s\n%v", local.SQL, err)
+	}
+	if orderCount != 1 || tagCount != 3 || ratio != 3 {
+		t.Fatalf("fact-local selection = orders %d tags %d ratio %v", orderCount, tagCount, ratio)
+	}
+
+	multiSelect, err := planner.Plan(Request{
+		Measures: []Field{{Field: "order_count"}, {Field: "tag_count"}, {Field: "click_count"}},
+		Filters: []Filter{{Groups: []FilterGroup{
+			{Filters: []Filter{{Field: "customer", Operator: "equals", Values: []any{"a"}}}},
+			{Filters: []Filter{{Field: "customer", Operator: "equals", Values: []any{"c"}}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(multiSelect.SQL, multiSelect.Args...).Scan(&orderCount, &tagCount, &clickCount); err != nil {
+		t.Fatalf("execute multi-entry selection plan:\n%s\n%v", multiSelect.SQL, err)
+	}
+	if orderCount != 2 || tagCount != 3 || clickCount != 1 {
+		t.Fatalf("multi-entry selection = orders %d tags %d clicks %d", orderCount, tagCount, clickCount)
+	}
+
 	grouped, err := planner.Plan(Request{
 		Dimensions: []Field{{Field: "customer", Alias: "customer"}, {Field: "segment", Alias: "segment"}},
 		Measures:   []Field{{Field: "order_count", Alias: "orders"}, {Field: "tag_count", Alias: "tags"}, {Field: "click_count", Alias: "clicks"}},

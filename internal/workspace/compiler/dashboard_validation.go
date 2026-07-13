@@ -45,13 +45,11 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 				return fmt.Errorf("visual %q references unknown measure %q", name, measure.Field)
 			}
 		}
-		for _, mapping := range visual.Interaction.PointSelection.Mappings {
-			if _, err := model.ResolveDimension(mapping.Field); err != nil {
-				return fmt.Errorf("visual %q interaction references unknown field %q", name, mapping.Field)
-			}
-		}
 		if !visual.Interaction.PointSelection.IsZero() {
 			if err := report.ValidateVisualPointSelectionMappingKeys(name, visual); err != nil {
+				return err
+			}
+			if _, err := reportmodel.ResolveSelectionInteraction(d, model, "visual", name); err != nil {
 				return err
 			}
 		}
@@ -76,15 +74,20 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 				return err
 			}
 		}
+		// Selection resolution reads sources from the dashboard definition. Publish
+		// the normalized table before resolving its configured row interaction.
+		d.Tables[name] = table
 		for _, mapping := range table.Interaction.RowSelection.Mappings {
-			if _, err := model.ResolveDimension(mapping.Field); err != nil {
-				return fmt.Errorf("table %q interaction references unknown field %q", name, mapping.Field)
-			}
 			if !tableHasOutputColumn(table, mapping.Value) {
 				return fmt.Errorf("table %q interaction references unknown value column %q", name, mapping.Value)
 			}
 			if mapping.Label != "" && !tableHasOutputColumn(table, mapping.Label) {
 				return fmt.Errorf("table %q interaction references unknown label column %q", name, mapping.Label)
+			}
+		}
+		if !table.Interaction.RowSelection.IsZero() {
+			if _, err := reportmodel.ResolveSelectionInteraction(d, model, "table", name); err != nil {
+				return err
 			}
 		}
 		if err := validateTableQueryPlan(d, model, name, table); err != nil {

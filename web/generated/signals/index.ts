@@ -471,7 +471,9 @@ export interface DashboardInteractionCommand {
 
 export interface DashboardInteractionCommandMapping {
   field: string
-  value: string
+  fact?: string
+  grain?: string
+  value: string | number | boolean | null
   label?: string
 }
 
@@ -484,6 +486,8 @@ export interface DashboardInteractionConfig {
 
 export interface DashboardInteractionConfigMapping {
   field: string
+  fact?: string
+  grain?: string
   value: string
   label?: string
 }
@@ -505,7 +509,9 @@ export interface DashboardInteractionSelectionEntry {
 
 export interface DashboardInteractionSelectionMapping {
   field: string
-  value: string
+  fact?: string
+  grain?: string
+  value: string | number | boolean | null
   label?: string
 }
 

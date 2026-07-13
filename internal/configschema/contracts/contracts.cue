@@ -427,9 +427,10 @@ package contracts
 
 #SelectionInteraction: close({
 	toggle?: bool
-	mode?:   string
 	mappings?: [...close({
-		field!: #FieldRef
+		field!: #FieldRef | #Identifier
+		fact?:  #Identifier
+		grain?: "day" | "week" | "month" | "quarter" | "year"
 		value!: string
 		label?: string
 	})]

@@ -1578,6 +1578,8 @@ func interactionSignal(kind string, selection reportdef.SelectionInteraction) da
 	for _, mapping := range selection.Mappings {
 		mappings = append(mappings, dashboard.InteractionConfigMapping{
 			Field: mapping.Field,
+			Fact:  mapping.Fact,
+			Grain: mapping.Grain,
 			Value: mapping.Value,
 			Label: mapping.Label,
 		})

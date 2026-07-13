@@ -48,6 +48,16 @@ func filterSQL(expr string, filter Filter) (string, []any, error) {
 			return "", nil, fmt.Errorf("less_than filter requires one value")
 		}
 		return expr + " < ?", []any{filter.Values[0]}, nil
+	case "is_null":
+		if len(filter.Values) != 0 {
+			return "", nil, fmt.Errorf("is_null filter does not accept values")
+		}
+		return expr + " IS NULL", nil, nil
+	case "is_not_null":
+		if len(filter.Values) != 0 {
+			return "", nil, fmt.Errorf("is_not_null filter does not accept values")
+		}
+		return expr + " IS NOT NULL", nil, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported filter operator %q", filter.Operator)
 	}

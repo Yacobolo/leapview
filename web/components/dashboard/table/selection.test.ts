@@ -41,6 +41,35 @@ test('buildRowSelectionCommand emits configured semantic mappings', () => {
   })
 })
 
+test('buildRowSelectionCommand preserves typed values and mapping fact and grain', () => {
+  const command = buildRowSelectionCommand({
+    sourceId: 'ratings_table',
+    interaction: {
+      kind: 'row_selection',
+      mappings: [
+        { field: 'activity_date', grain: 'month', value: 'month', label: 'month_label' },
+        { field: 'ratings.rating_bucket', fact: 'ratings', value: 'bucket', label: 'bucket_label' },
+        { field: 'ratings.is_verified', fact: 'ratings', value: 'verified' },
+      ],
+    },
+    key: 'rating-1',
+    row: {
+      month: '2026-07-01',
+      month_label: 'July 2026',
+      bucket: 0,
+      bucket_label: 'No rating',
+      verified: false,
+    },
+    selectionAction: { action: 'replace', toggle: false },
+  })
+
+  expect(command?.mappings).toEqual([
+    { field: 'activity_date', grain: 'month', value: '2026-07-01', label: 'July 2026' },
+    { field: 'ratings.rating_bucket', fact: 'ratings', value: 0, label: 'No rating' },
+    { field: 'ratings.is_verified', fact: 'ratings', value: false, label: 'false' },
+  ])
+})
+
 test('buildRowSelectionCommand emits UI-only row key mappings without semantic mappings', () => {
   const command = buildRowSelectionCommand({
     sourceId: 'orders_table',
@@ -112,6 +141,33 @@ test('rowSelectionFromEntries projects semantic selection entries to loaded rows
 
   expect(rowSelectionFromEntries(rows, semanticInteraction, selection)).toEqual({ o2: true })
   expect(rowIsSelected(rows[1].row, rows[1].key, semanticInteraction, selection)).toBe(true)
+})
+
+test('row selection projection includes fact, grain, and scalar type in mapping identity', () => {
+  const interaction: InteractionConfig = {
+    mappings: [
+      { field: 'activity_date', grain: 'month', value: 'month' },
+      { field: 'rating_bucket', fact: 'ratings', value: 'bucket' },
+    ],
+  }
+  const row = { month: '2026-07-01', bucket: 1 }
+
+  expect(rowIsSelected(row, 'row-1', interaction, [{ mappings: [
+    { field: 'activity_date', grain: 'month', value: '2026-07-01' },
+    { field: 'rating_bucket', fact: 'ratings', value: 1 },
+  ] }])).toBe(true)
+  expect(rowIsSelected(row, 'row-1', interaction, [{ mappings: [
+    { field: 'activity_date', grain: 'month', value: '2026-07-01' },
+    { field: 'rating_bucket', fact: 'ratings', value: '1' },
+  ] }])).toBe(false)
+  expect(rowIsSelected(row, 'row-1', interaction, [{ mappings: [
+    { field: 'activity_date', grain: 'day', value: '2026-07-01' },
+    { field: 'rating_bucket', fact: 'ratings', value: 1 },
+  ] }])).toBe(false)
+  expect(rowIsSelected(row, 'row-1', interaction, [{ mappings: [
+    { field: 'activity_date', grain: 'month', value: '2026-07-01' },
+    { field: 'rating_bucket', fact: 'tags', value: 1 },
+  ] }])).toBe(false)
 })
 
 test('rowSelectionFromEntries projects UI-only row-key entries to loaded rows', () => {

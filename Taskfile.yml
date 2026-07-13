@@ -169,7 +169,7 @@ tasks:
       - bun run test:theme
       - bun run test:datastar-lit
       - bun run test:app-shell
-      - bun run test:table-selection
+      - bun run test:interaction-selection
       - bun run test:record-table
       - bun run test:visual-modal
       - bun run test:catalog-page

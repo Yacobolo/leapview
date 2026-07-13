@@ -154,6 +154,9 @@ func (g *generator) schemaForStruct(t reflect.Type) map[string]any {
 
 func (g *generator) schemaForType(t reflect.Type) any {
 	t = deref(t)
+	if isInteractionSelectionValue(t) {
+		return map[string]any{"type": []string{"string", "number", "boolean", "null"}}
+	}
 	switch t.Kind() {
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}
@@ -184,6 +187,9 @@ func (g *generator) schemaForType(t reflect.Type) any {
 
 func (g *generator) tsType(t reflect.Type) string {
 	t = deref(t)
+	if isInteractionSelectionValue(t) {
+		return "string | number | boolean | null"
+	}
 	switch t.Kind() {
 	case reflect.Bool:
 		return "boolean"
@@ -208,6 +214,10 @@ func (g *generator) tsType(t reflect.Type) string {
 	default:
 		return "unknown"
 	}
+}
+
+func isInteractionSelectionValue(t reflect.Type) bool {
+	return t.PkgPath() == "github.com/Yacobolo/libredash/internal/dashboard" && t.Name() == "InteractionSelectionValue"
 }
 
 func sortedDefinitionNames(definitions map[string]reflect.Type) []string {

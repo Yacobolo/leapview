@@ -53,6 +53,27 @@ func TestDashboardEnvelopeRejectsUnusedPayload(t *testing.T) {
 	}
 }
 
+func TestInteractionSignalPreservesSelectionScope(t *testing.T) {
+	got := interactionSignal("point_selection", reportdef.SelectionInteraction{
+		Toggle: true,
+		Mappings: []reportdef.SelectionMapping{
+			{Field: "activity_date", Grain: "month", Value: "label"},
+			{Field: "ratings.rating_bucket", Fact: "ratings", Value: "series"},
+		},
+		Targets: []string{"activity_by_month"},
+	})
+
+	if !got.Toggle || len(got.Mappings) != 2 {
+		t.Fatalf("interaction signal = %#v", got)
+	}
+	if got.Mappings[0].Fact != "" || got.Mappings[0].Grain != "month" {
+		t.Fatalf("conformed mapping = %#v", got.Mappings[0])
+	}
+	if got.Mappings[1].Fact != "ratings" || got.Mappings[1].Grain != "" {
+		t.Fatalf("fact-local mapping = %#v", got.Mappings[1])
+	}
+}
+
 func TestChatInitialEnvelopeValidates(t *testing.T) {
 	envelope := ChatInitialEnvelope(dashboard.Catalog{}, "test", "", "list", ChatSignal{
 		ActiveConversationID: "",

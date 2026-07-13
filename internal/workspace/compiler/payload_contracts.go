@@ -245,6 +245,21 @@ type visualPayloadV1 struct {
 	Options         map[string]any       `json:"Options"`
 	RendererOptions map[string]any       `json:"RendererOptions"`
 	Encode          map[string]string    `json:"Encode"`
+	Interaction     selectionPayloadV1   `json:"Interaction"`
+}
+
+type selectionPayloadV1 struct {
+	Toggle   bool                        `json:"Toggle"`
+	Mappings []selectionMappingPayloadV1 `json:"Mappings"`
+	Targets  []string                    `json:"Targets"`
+}
+
+type selectionMappingPayloadV1 struct {
+	Field string `json:"Field"`
+	Fact  string `json:"Fact"`
+	Grain string `json:"Grain"`
+	Value string `json:"Value"`
+	Label string `json:"Label"`
 }
 
 type visualQueryPayloadV1 struct {
@@ -279,6 +294,7 @@ type tablePayloadV1 struct {
 	DataColumns []fieldRefPayloadV1 `json:"DataColumns"`
 	Style       tableStylePayloadV1 `json:"Style"`
 	DefaultSort tableSortPayloadV1  `json:"DefaultSort"`
+	Interaction selectionPayloadV1  `json:"Interaction"`
 }
 
 type tableQueryPayloadV1 struct {

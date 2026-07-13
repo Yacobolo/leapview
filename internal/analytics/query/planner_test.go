@@ -1,6 +1,7 @@
 package query
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -66,6 +67,42 @@ func TestPlannerConformedFilterPropagatesToEveryFact(t *testing.T) {
 	}
 	if len(plan.Args) != 2 || plan.Args[0] != "DK" || plan.Args[1] != "DK" {
 		t.Fatalf("args = %#v", plan.Args)
+	}
+}
+
+func TestPlannerConformedSelectionEntriesPropagateToEveryFact(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Measures: []Field{{Field: "order_count"}, {Field: "tag_count"}},
+		Filters: []Filter{{Groups: []FilterGroup{
+			{Filters: []Filter{{Field: "customer_state", Operator: "equals", Values: []any{"DK"}}}},
+			{Filters: []Filter{{Field: "customer_state", Operator: "equals", Values: []any{"SE"}}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(plan.SQL, "state = ?"); got != 4 {
+		t.Fatalf("conformed selection predicate count = %d, want 4:\n%s", got, plan.SQL)
+	}
+	wantArgs := []any{"DK", "SE", "DK", "SE"}
+	if fmt.Sprint(plan.Args) != fmt.Sprint(wantArgs) {
+		t.Fatalf("args = %#v, want %#v", plan.Args, wantArgs)
+	}
+}
+
+func TestPlannerFactLocalSelectionFiltersOnlyNamedFact(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Measures: []Field{{Field: "order_count"}, {Field: "tag_count"}},
+		Filters:  []Filter{{Field: "orders.status", Fact: "orders", Operator: "equals", Values: []any{"paid"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(plan.SQL, "status = ?"); got != 1 {
+		t.Fatalf("fact-local predicate count = %d, want 1:\n%s", got, plan.SQL)
+	}
+	if len(plan.Args) != 1 || plan.Args[0] != "paid" {
+		t.Fatalf("args = %#v, want [paid]", plan.Args)
 	}
 }
 

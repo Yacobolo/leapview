@@ -321,6 +321,25 @@ func visualPayload(visual reportdef.Visual) visualPayloadV1 {
 		Options:         visual.CoreOptions(),
 		RendererOptions: visual.RendererOptions,
 		Encode:          visual.Encode,
+		Interaction:     selectionPayload(visual.Interaction.PointSelection),
+	}
+}
+
+func selectionPayload(selection reportdef.SelectionInteraction) selectionPayloadV1 {
+	mappings := make([]selectionMappingPayloadV1, 0, len(selection.Mappings))
+	for _, mapping := range selection.Mappings {
+		mappings = append(mappings, selectionMappingPayloadV1{
+			Field: mapping.Field,
+			Fact:  mapping.Fact,
+			Grain: mapping.Grain,
+			Value: mapping.Value,
+			Label: mapping.Label,
+		})
+	}
+	return selectionPayloadV1{
+		Toggle:   selection.Toggle,
+		Mappings: mappings,
+		Targets:  append([]string{}, selection.Targets...),
 	}
 }
 
@@ -378,6 +397,7 @@ func tableVisualPayload(table reportdef.TableVisual) tablePayloadV1 {
 		DataColumns: fieldRefsPayload(table.DataColumns),
 		Style:       tableStylePayload(table.Style),
 		DefaultSort: tableSortPayload(table.DefaultSort),
+		Interaction: selectionPayload(table.Interaction.RowSelection),
 	}
 }
 

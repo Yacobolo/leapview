@@ -1,3 +1,11 @@
+import type { InteractionMapping, InteractionSelectionEntry } from '../interaction-selection'
+
+export type {
+  InteractionMapping,
+  InteractionSelectionEntry,
+  InteractionSelectionValue,
+} from '../interaction-selection'
+
 export type SortDirection = 'asc' | 'desc'
 export type BlockID = 'a' | 'b' | 'c'
 export type TableKind = 'data_table' | 'matrix_table' | 'pivot_table'
@@ -42,21 +50,6 @@ export interface InteractionConfig {
   toggle?: boolean
   mappings?: InteractionMapping[]
   targets?: string[]
-}
-
-export interface InteractionMapping {
-  field: string
-  value: string
-  label?: string
-}
-
-export interface InteractionSelectionEntry {
-  mappings?: Array<{
-    field?: string
-    value?: string
-    label?: string
-  }>
-  label?: string
 }
 
 export type TableRow = Record<string, unknown>

@@ -286,6 +286,8 @@ type SelectionInteraction struct {
 
 type SelectionMapping struct {
 	Field string `yaml:"field" json:"field"`
+	Fact  string `yaml:"fact" json:"fact,omitempty"`
+	Grain string `yaml:"grain" json:"grain,omitempty"`
 	Value string `yaml:"value" json:"value"`
 	Label string `yaml:"label" json:"label,omitempty"`
 }

@@ -1006,8 +1006,8 @@ relogios_presentes,watches_gifts
 	filters := dashboard.Filters{
 		Selections: []dashboard.InteractionSelection{
 			compositeInteractionSelection("table", "orders_table", "row_selection",
-				map[string]string{"orders.status": "delivered", "orders.category": "health_beauty"},
-				map[string]string{"orders.status": "shipped", "orders.category": "watches_gifts"},
+				map[string]string{"orders.order_id": "o1", "orders.status": "delivered", "orders.category": "health_beauty"},
+				map[string]string{"orders.order_id": "o4", "orders.status": "shipped", "orders.category": "watches_gifts"},
 			),
 		},
 	}
@@ -1031,8 +1031,8 @@ relogios_presentes,watches_gifts
 	malformedFilters := dashboard.Filters{
 		Selections: []dashboard.InteractionSelection{
 			compositeInteractionSelection("table", "orders_table", "row_selection",
-				map[string]string{"orders.status": "delivered", "orders.unknown": "health_beauty"},
-				map[string]string{"orders.status": "shipped", "orders.category": "watches_gifts"},
+				map[string]string{"orders.order_id": "o1", "orders.status": "delivered", "orders.unknown": "health_beauty"},
+				map[string]string{"orders.order_id": "o4", "orders.status": "shipped", "orders.category": "watches_gifts"},
 			),
 		},
 	}
@@ -1040,17 +1040,11 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
-	if patch.Status.Error != "" {
-		t.Fatalf("unexpected status error for malformed tuple filter: %s", patch.Status.Error)
+	if patch.Status.Error == "" {
+		t.Fatalf("malformed tuple selection was not rejected: %#v", patch)
 	}
-	if got := categoryRevenue(patch.Visuals["category_revenue"].Data, "health_beauty"); got != 0 {
-		t.Fatalf("health_beauty revenue with malformed tuple = %v, want 0", got)
-	}
-	if got := categoryRevenue(patch.Visuals["category_revenue"].Data, "watches_gifts"); got != 220 {
-		t.Fatalf("watches_gifts revenue with malformed tuple = %v, want 220", got)
-	}
-	if got := categoryRevenueTotal(patch.Visuals["category_revenue"].Data); got != 220 {
-		t.Fatalf("category revenue total with malformed tuple = %v, want only the valid tuple", got)
+	if len(patch.Visuals) != 0 {
+		t.Fatalf("malformed tuple returned visual data: %#v", patch.Visuals)
 	}
 }
 
@@ -1140,11 +1134,16 @@ relogios_presentes,watches_gifts
 }
 
 func interactionSelection(sourceKind, sourceID, interactionKind, field string, values ...string) dashboard.InteractionSelection {
+	fact := ""
+	if parts := strings.SplitN(field, ".", 2); len(parts) == 2 && field != dashboard.UIRowSelectionField {
+		fact = parts[0]
+	}
 	entries := make([]dashboard.InteractionSelectionEntry, 0, len(values))
 	for _, value := range values {
 		entries = append(entries, dashboard.InteractionSelectionEntry{
 			Mappings: []dashboard.InteractionSelectionMapping{{
 				Field: field,
+				Fact:  fact,
 				Value: value,
 				Label: value,
 			}},
@@ -1173,8 +1172,13 @@ func compositeInteractionSelection(sourceKind, sourceID, interactionKind string,
 		labels := make([]string, 0, len(fields))
 		for _, field := range fields {
 			value := tuple[field]
+			fact := ""
+			if parts := strings.SplitN(field, ".", 2); len(parts) == 2 && field != dashboard.UIRowSelectionField {
+				fact = parts[0]
+			}
 			entry.Mappings = append(entry.Mappings, dashboard.InteractionSelectionMapping{
 				Field: field,
+				Fact:  fact,
 				Value: value,
 				Label: value,
 			})
@@ -1213,7 +1217,7 @@ func selectedEntryValue(entries []dashboard.InteractionSelectionEntry, field str
 	for _, entry := range entries {
 		for _, mapping := range entry.Mappings {
 			if mapping.Field == field {
-				return mapping.Value
+				return fmt.Sprint(mapping.Value)
 			}
 		}
 	}

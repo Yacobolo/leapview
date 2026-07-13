@@ -1,0 +1,106 @@
+import { expect, test } from 'bun:test'
+import { chartInteractionDetailForDatum } from './interactions'
+import { selectedRows } from './utils'
+import type { ChartPayload } from './types'
+
+test('chartInteractionDetailForDatum preserves typed scalar values and mapping identity', () => {
+  const detail = chartInteractionDetailForDatum({
+    id: 'activity_by_month',
+    interaction: {
+      kind: 'point_selection',
+      toggle: true,
+      mappings: [
+        { field: 'activity_date', grain: 'month', value: 'period', label: 'period_label' },
+        { field: 'ratings.rating_bucket', fact: 'ratings', value: 'bucket', label: 'bucket_label' },
+      ],
+    },
+  }, {
+    period: '2026-07-01',
+    period_label: 'July 2026',
+    bucket: 5,
+    bucket_label: 'Five stars',
+  })
+
+  expect(detail).toEqual({
+    sourceKind: 'visual',
+    sourceId: 'activity_by_month',
+    interactionKind: 'point_selection',
+    action: 'set',
+    toggle: true,
+    mappings: [
+      { field: 'activity_date', grain: 'month', value: '2026-07-01', label: 'July 2026' },
+      { field: 'ratings.rating_bucket', fact: 'ratings', value: 5, label: 'Five stars' },
+    ],
+  })
+})
+
+test('chartInteractionDetailForDatum preserves false, zero, and null values', () => {
+  const payload: ChartPayload = {
+    id: 'typed_values',
+    interaction: {
+      mappings: [
+        { field: 'enabled', value: 'enabled' },
+        { field: 'score', value: 'score' },
+        { field: 'segment', value: 'segment' },
+      ],
+    },
+  }
+
+  expect(chartInteractionDetailForDatum(payload, { enabled: false, score: 0, segment: null })?.mappings).toEqual([
+    { field: 'enabled', value: false, label: 'false' },
+    { field: 'score', value: 0, label: '0' },
+    { field: 'segment', value: null, label: '' },
+  ])
+})
+
+test('chartInteractionDetailForDatum rejects missing and non-scalar values', () => {
+  const payload: ChartPayload = {
+    id: 'typed_values',
+    interaction: { mappings: [{ field: 'score', value: 'score' }] },
+  }
+
+  expect(chartInteractionDetailForDatum(payload, {})).toBeUndefined()
+  expect(chartInteractionDetailForDatum(payload, { score: { nested: true } })).toBeUndefined()
+})
+
+test('selectedRows includes fact, grain, and scalar type in tuple identity', () => {
+  const payload: ChartPayload = {
+    interaction: {
+      mappings: [
+        { field: 'activity_date', grain: 'month', value: 'period' },
+        { field: 'rating_bucket', fact: 'ratings', value: 'bucket' },
+      ],
+    },
+    selection: [{
+      mappings: [
+        { field: 'activity_date', grain: 'month', value: '2026-07-01' },
+        { field: 'rating_bucket', fact: 'ratings', value: 1 },
+      ],
+    }],
+    data: [
+      { period: '2026-07-01', bucket: 1 },
+      { period: '2026-07-01', bucket: '1' },
+    ],
+  }
+
+  const selection = selectedRows(payload)
+  expect(selection.hasSelection).toBe(true)
+  expect(selection.isSelected(payload.data?.[0] ?? {})).toBe(true)
+  expect(selection.isSelected(payload.data?.[1] ?? {})).toBe(false)
+
+  payload.selection = [{
+    mappings: [
+      { field: 'activity_date', grain: 'day', value: '2026-07-01' },
+      { field: 'rating_bucket', fact: 'ratings', value: 1 },
+    ],
+  }]
+  expect(selectedRows(payload).isSelected(payload.data?.[0] ?? {})).toBe(false)
+
+  payload.selection = [{
+    mappings: [
+      { field: 'activity_date', grain: 'month', value: '2026-07-01' },
+      { field: 'rating_bucket', fact: 'tags', value: 1 },
+    ],
+  }]
+  expect(selectedRows(payload).isSelected(payload.data?.[0] ?? {})).toBe(false)
+})

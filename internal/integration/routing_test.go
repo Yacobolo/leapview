@@ -14,7 +14,7 @@ func TestCommandPatchesAreScopedToClientAndPage(t *testing.T) {
 	drainInitialStreamPatches(t, otherClient)
 
 	status := h.postCommand(t, "/commands/select", mergeSignals(runtimeSignals("route-target", "overview"), map[string]any{
-		"interactionCommand": pointSelectionCommand("orders", "orders.status", "delivered"),
+		"interactionCommand": ordersRowSelectionCommand("delivered"),
 		"tableCommand":       tableCommand("orders_table", "all", 0, 50, 12, 0),
 	}))
 	if status != http.StatusNoContent {

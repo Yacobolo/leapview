@@ -26,13 +26,13 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 			name: "/commands/select",
 			path: "/commands/select",
 			signals: mergeSignals(runtimeSignals("cmd-select", "overview"), map[string]any{
-				"interactionCommand": pointSelectionCommand("orders", "orders.status", "delivered"),
+				"interactionCommand": ordersRowSelectionCommand("delivered"),
 				"tableCommand":       tableCommand("orders_table", "all", 0, 50, 3, 0),
 			}),
 			assert: func(t *testing.T, patches []map[string]any) {
 				t.Helper()
 				requireStatusLoading(t, patches, true)
-				requireSelection(t, patches, "orders", "orders.status", "delivered")
+				requireSelection(t, patches, "orders_table", "orders.status", "delivered")
 				requireTable(t, patches, "orders_table")
 			},
 		},
@@ -41,7 +41,7 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 			path: "/commands/clear-selection",
 			signals: mergeSignals(runtimeSignals("cmd-clear", "overview"), map[string]any{
 				"filters": map[string]any{
-					"selections": []map[string]any{selectionSignal("orders", "orders.status", "delivered")},
+					"selections": []map[string]any{selectionSignal("orders_table", "orders.status", "delivered")},
 				},
 				"tableCommand": tableCommand("orders_table", "all", 0, 50, 4, 0),
 			}),
@@ -257,30 +257,46 @@ func clientIDFromSignals(signals map[string]any) string {
 	return clientID
 }
 
-func pointSelectionCommand(sourceID, field, value string) map[string]any {
+func ordersRowSelectionCommand(status string) map[string]any {
 	return map[string]any{
-		"sourceKind":      "visual",
-		"sourceId":        sourceID,
-		"interactionKind": "point_selection",
+		"sourceKind":      "table",
+		"sourceId":        "orders_table",
+		"interactionKind": "row_selection",
 		"action":          "set",
 		"toggle":          true,
-		"mappings": []map[string]any{{
-			"field": field,
-			"value": value,
-			"label": value,
-		}},
+		"mappings": []map[string]any{
+			{
+				"field": "orders.order_id",
+				"fact":  "orders",
+				"value": "fixture-order-id",
+				"label": "fixture-order-id",
+			},
+			{
+				"field": "orders.status",
+				"fact":  "orders",
+				"value": status,
+				"label": status,
+			},
+			{
+				"field": "orders.category",
+				"fact":  "orders",
+				"value": "fixture-category",
+				"label": "fixture-category",
+			},
+		},
 	}
 }
 
 func selectionSignal(sourceID, field, value string) map[string]any {
 	return map[string]any{
-		"id":              "visual:" + sourceID + ":point_selection",
-		"sourceKind":      "visual",
+		"id":              "table:" + sourceID + ":row_selection",
+		"sourceKind":      "table",
 		"sourceId":        sourceID,
-		"interactionKind": "point_selection",
+		"interactionKind": "row_selection",
 		"entries": []map[string]any{{
 			"mappings": []map[string]any{{
 				"field": field,
+				"fact":  "orders",
 				"value": value,
 				"label": value,
 			}},
