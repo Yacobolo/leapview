@@ -21,8 +21,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target libredash-v1 && \
     go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all -manifest api/apigen.yaml -target libredash-v1 && \
     go run ./internal/tools/apigenpostprocess && \
-    go run ./cmd/libredash schema export --format json-schema --out schemas/json && \
-    go run ./internal/tools/uisignalsgen
+    go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target ui-signals && \
+    go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all -manifest api/apigen.yaml -target ui-signals && \
+    go run ./internal/tools/uisignalspostprocess && \
+    go run ./cmd/libredash schema export --format json-schema --out schemas/json
 
 FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
 WORKDIR /src
@@ -46,6 +48,7 @@ COPY . .
 COPY --from=sourcegen /src/api/gen ./api/gen
 COPY --from=sourcegen /src/internal/api/gen ./internal/api/gen
 COPY --from=sourcegen /src/internal/cli/gen ./internal/cli/gen
+COPY --from=sourcegen /src/internal/ui/signals/models.gen.go ./internal/ui/signals/models.gen.go
 COPY --from=sourcegen /src/schemas ./schemas
 COPY --from=sourcegen /src/web/generated ./web/generated
 COPY --from=web /src/static ./static
