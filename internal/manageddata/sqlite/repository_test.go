@@ -198,6 +198,28 @@ func TestActivateRolloutAtomicallyUpdatesMultipleWorkspaceTargets(t *testing.T) 
 	}
 }
 
+func TestRolloutCanReactivateInactiveServingState(t *testing.T) {
+	ctx, store, repo := testRepository(t)
+	collection, revision := readyRevision(t, ctx, repo, "sales", "project-a", "sales", "sales.csv", "a")
+	insertWorkspaceState(t, ctx, store, "workspace-1", "current-state", "prod", "active")
+	insertServingState(t, ctx, store, "workspace-1", "prior-state", "prod", "inactive")
+	setActiveState(t, ctx, store, "workspace-1", "prod", "current-state")
+
+	rollout, err := repo.CreateRollout(ctx, manageddata.CreateRolloutInput{
+		ID: "rollout-rollback", CollectionID: collection.ID, Environment: "prod", RevisionID: revision.ID,
+		Targets: []manageddata.RolloutTargetInput{{WorkspaceID: "workspace-1", ServingStateID: "prior-state"}},
+	})
+	if err != nil {
+		t.Fatalf("create rollback rollout: %v", err)
+	}
+	if _, err := repo.ActivateRollout(ctx, rollout.ID, manageddata.PointerExpectation{}); err != nil {
+		t.Fatalf("activate rollback rollout: %v", err)
+	}
+	assertActiveState(t, ctx, store, "workspace-1", "prod", "prior-state")
+	assertServingStateStatus(t, ctx, store, "prior-state", "active")
+	assertServingStateStatus(t, ctx, store, "current-state", "draining")
+}
+
 func TestServingStateBindingsAllowMultipleCollections(t *testing.T) {
 	ctx, store, repo := testRepository(t)
 	firstCollection, firstRevision := readyRevision(t, ctx, repo, "inventory", "project-a", "inventory", "inventory.csv", "c")

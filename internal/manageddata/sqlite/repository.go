@@ -15,6 +15,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
+	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 )
 
 type Repository struct {
@@ -347,8 +348,9 @@ func (r *Repository) CreateRollout(ctx context.Context, input manageddata.Create
 		if err != nil {
 			return manageddata.Rollout{}, mapError(err)
 		}
-		if candidate.WorkspaceID != target.WorkspaceID || candidate.Environment != string(environment) || candidate.Status != "validated" {
-			return manageddata.Rollout{}, fmt.Errorf("%w: serving state %q is not a validated %s candidate for workspace %q", manageddata.ErrConflict, target.ServingStateID, environment, target.WorkspaceID)
+		candidateState := servingstate.State{Status: servingstate.Status(candidate.Status)}
+		if candidate.WorkspaceID != target.WorkspaceID || candidate.Environment != string(environment) || !candidateState.CanActivate() {
+			return manageddata.Rollout{}, fmt.Errorf("%w: serving state %q is not an activatable %s candidate for workspace %q", manageddata.ErrConflict, target.ServingStateID, environment, target.WorkspaceID)
 		}
 		priorID, err := q.GetWorkspaceActiveServingStateID(ctx, platformdb.GetWorkspaceActiveServingStateIDParams{WorkspaceID: target.WorkspaceID, Environment: string(environment)})
 		if errors.Is(err, sql.ErrNoRows) {
@@ -415,8 +417,9 @@ func (r *Repository) ActivateRollout(ctx context.Context, id string, expected ma
 		if err != nil {
 			return manageddata.Rollout{}, mapError(err)
 		}
-		if candidate.WorkspaceID != target.WorkspaceID || candidate.Environment != rollout.Environment || candidate.Status != "validated" {
-			return manageddata.Rollout{}, fmt.Errorf("%w: rollout target %q is no longer a validated candidate", manageddata.ErrConflict, target.ServingStateID)
+		candidateState := servingstate.State{Status: servingstate.Status(candidate.Status)}
+		if candidate.WorkspaceID != target.WorkspaceID || candidate.Environment != rollout.Environment || !candidateState.CanActivate() {
+			return manageddata.Rollout{}, fmt.Errorf("%w: rollout target %q is no longer activatable", manageddata.ErrConflict, target.ServingStateID)
 		}
 		activeID, err := q.GetWorkspaceActiveServingStateID(ctx, platformdb.GetWorkspaceActiveServingStateIDParams{WorkspaceID: target.WorkspaceID, Environment: rollout.Environment})
 		if errors.Is(err, sql.ErrNoRows) {

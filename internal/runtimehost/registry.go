@@ -45,6 +45,38 @@ type PreparedSet struct {
 	committed bool
 }
 
+// PreparedSnapshot identifies durable snapshot metadata produced while a
+// serving-state candidate is still private.
+type PreparedSnapshot struct {
+	WorkspaceID        servingstate.WorkspaceID
+	ServingStateID     servingstate.ID
+	DuckLakeSnapshotID int64
+}
+
+// Snapshots returns candidate snapshot metadata in deterministic workspace
+// order. Callers may persist these values before the atomic activation step.
+func (p *PreparedSet) Snapshots() []PreparedSnapshot {
+	if p == nil {
+		return nil
+	}
+	out := make([]PreparedSnapshot, 0, len(p.items))
+	for _, item := range p.items {
+		if item == nil {
+			continue
+		}
+		prepared, ok := item.prepared.(*Prepared)
+		if !ok || prepared == nil {
+			continue
+		}
+		out = append(out, PreparedSnapshot{
+			WorkspaceID:        item.workspaceID,
+			ServingStateID:     prepared.servingStateID,
+			DuckLakeSnapshotID: prepared.snapshotID,
+		})
+	}
+	return out
+}
+
 // ServingStateCandidate binds an unpublished runtime preparation to an
 // explicit managed-data resolution. The resolution is committed separately.
 type ServingStateCandidate struct {

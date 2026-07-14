@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -639,6 +640,23 @@ func TestRegistryPreparesExplicitManagedDataCandidateBeforeActivation(t *testing
 	}
 	if got := factory.managedData[0].Roots["warehouse"]; got != "/cache/revision-b" {
 		t.Fatalf("prepared warehouse root = %q", got)
+	}
+}
+
+func TestPreparedSetReportsCandidateSnapshots(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	repo.deployments["dep_sales_prod"] = servingstate.State{ID: "dep_sales_prod", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated}
+	repo.artifacts["dep_sales_prod"] = servingstate.Artifact{ServingStateID: "dep_sales_prod", WorkspaceID: "sales", Environment: "prod", Digest: "sales-prod"}
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: &fakeFactory{snapshotID: 42}})
+
+	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	want := []PreparedSnapshot{{WorkspaceID: "sales", ServingStateID: "dep_sales_prod", DuckLakeSnapshotID: 42}}
+	if got := prepared.Snapshots(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("snapshots = %#v, want %#v", got, want)
 	}
 }
 
