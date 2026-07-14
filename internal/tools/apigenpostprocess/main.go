@@ -3,6 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"strings"
 )
@@ -15,6 +19,66 @@ func main() {
 	}
 	if err := relaxEmbeddedOpenAPI("internal/api/gen/server.apigen.gen.go"); err != nil {
 		fatal(err)
+	}
+	if err := widenManagedDataByteCounts("internal/api/gen/request_models.gen.go"); err != nil {
+		fatal(err)
+	}
+}
+
+func widenManagedDataByteCounts(path string) error {
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, path, nil, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+	widened := 0
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range general.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok || !strings.HasPrefix(typeSpec.Name.Name, "ManagedData") {
+				continue
+			}
+			structure, ok := typeSpec.Type.(*ast.StructType)
+			if !ok {
+				continue
+			}
+			for _, field := range structure.Fields.List {
+				if len(field.Names) != 1 || !managedDataByteField(field.Names[0].Name) {
+					continue
+				}
+				identifier, ok := field.Type.(*ast.Ident)
+				if !ok || identifier.Name != "int32" {
+					continue
+				}
+				identifier.Name = "int64"
+				widened++
+			}
+		}
+	}
+	if widened != 7 {
+		return fmt.Errorf("%s: widened %d managed-data byte fields, want 7", path, widened)
+	}
+	output, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := format.Node(output, set, file); err != nil {
+		output.Close()
+		return err
+	}
+	return output.Close()
+}
+
+func managedDataByteField(name string) bool {
+	switch name {
+	case "Size", "Offset", "MinimumPartSize", "MaximumPartSize":
+		return true
+	default:
+		return false
 	}
 }
 

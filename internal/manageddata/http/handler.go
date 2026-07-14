@@ -768,11 +768,10 @@ func revisionSummary(metadata RevisionMetadata, collectionID string) (apigenapi.
 		}
 		return apigenapi.ManagedDataRevisionSummaryResponse{}, errors.New("invalid revision metadata")
 	}
-	size, err := checkedInt32(revision.SizeBytes)
-	if err != nil || fileCount < 1 || size < 0 {
+	if fileCount < 1 || revision.SizeBytes < 0 {
 		return apigenapi.ManagedDataRevisionSummaryResponse{}, errors.New("invalid revision metadata")
 	}
-	return apigenapi.ManagedDataRevisionSummaryResponse{Id: revision.ID, Status: apigenapi.ManagedDataRevisionStatusAvailable, FileCount: fileCount, Size: size, CreatedAt: revision.CreatedAt, UploadSessionId: metadata.UploadSessionID}, nil
+	return apigenapi.ManagedDataRevisionSummaryResponse{Id: revision.ID, Status: apigenapi.ManagedDataRevisionStatusAvailable, FileCount: fileCount, Size: revision.SizeBytes, CreatedAt: revision.CreatedAt, UploadSessionId: metadata.UploadSessionID}, nil
 }
 
 func revisionResponse(metadata RevisionMetadata, collectionID string) (apigenapi.ManagedDataRevisionResponse, error) {
@@ -819,11 +818,10 @@ func manifestToWire(manifest manageddata.Manifest) (apigenapi.ManagedDataManifes
 	}
 	files := make([]apigenapi.ManagedDataFileMetadata, len(manifest.Files))
 	for i, file := range manifest.Files {
-		size, err := checkedInt32(file.Size)
-		if err != nil {
-			return apigenapi.ManagedDataManifest{}, err
+		if file.Size < 0 {
+			return apigenapi.ManagedDataManifest{}, errors.New("invalid manifest file size")
 		}
-		files[i] = apigenapi.ManagedDataFileMetadata{Path: file.Path, Size: size, Sha256: file.SHA256}
+		files[i] = apigenapi.ManagedDataFileMetadata{Path: file.Path, Size: file.Size, Sha256: file.SHA256}
 	}
 	return apigenapi.ManagedDataManifest{Files: files}, nil
 }
@@ -895,24 +893,21 @@ func negotiationToWire(value control.TransportDescription) (apigenapi.ManagedDat
 		if value.Tus == nil || value.S3Multipart != nil || value.Tus.Endpoint == "" || value.Tus.UploadID == "" || value.Tus.ExpiresAt == "" {
 			return apigenapi.ManagedDataUploadNegotiation{}, errors.New("invalid tus negotiation")
 		}
-		offset, err := checkedInt32(value.Tus.Offset)
-		if err != nil {
-			return apigenapi.ManagedDataUploadNegotiation{}, err
+		if value.Tus.Offset < 0 {
+			return apigenapi.ManagedDataUploadNegotiation{}, errors.New("invalid tus offset")
 		}
-		return apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolTus, Tus: &apigenapi.ManagedDataTusUploadNegotiation{Endpoint: value.Tus.Endpoint, UploadId: value.Tus.UploadID, Offset: offset, ExpiresAt: value.Tus.ExpiresAt}}, nil
+		return apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolTus, Tus: &apigenapi.ManagedDataTusUploadNegotiation{Endpoint: value.Tus.Endpoint, UploadId: value.Tus.UploadID, Offset: value.Tus.Offset, ExpiresAt: value.Tus.ExpiresAt}}, nil
 	case control.ProtocolS3Multipart:
 		if value.S3Multipart == nil || value.Tus != nil {
 			return apigenapi.ManagedDataUploadNegotiation{}, errors.New("invalid multipart negotiation")
 		}
-		minimum, err := checkedInt32(value.S3Multipart.MinimumPartSize)
-		if err != nil {
-			return apigenapi.ManagedDataUploadNegotiation{}, err
+		if value.S3Multipart.MinimumPartSize <= 0 {
+			return apigenapi.ManagedDataUploadNegotiation{}, errors.New("invalid multipart minimum part size")
 		}
-		maximum, err := checkedInt32(value.S3Multipart.MaximumPartSize)
-		if err != nil {
-			return apigenapi.ManagedDataUploadNegotiation{}, err
+		if value.S3Multipart.MaximumPartSize < value.S3Multipart.MinimumPartSize {
+			return apigenapi.ManagedDataUploadNegotiation{}, errors.New("invalid multipart maximum part size")
 		}
-		return apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolS3Multipart, S3Multipart: &apigenapi.ManagedDataS3MultipartNegotiation{CreateEndpoint: value.S3Multipart.CreateEndpoint, MinimumPartSize: minimum, MaximumPartSize: maximum, MaximumParts: value.S3Multipart.MaximumParts}}, nil
+		return apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolS3Multipart, S3Multipart: &apigenapi.ManagedDataS3MultipartNegotiation{CreateEndpoint: value.S3Multipart.CreateEndpoint, MinimumPartSize: value.S3Multipart.MinimumPartSize, MaximumPartSize: value.S3Multipart.MaximumPartSize, MaximumParts: value.S3Multipart.MaximumParts}}, nil
 	default:
 		return apigenapi.ManagedDataUploadNegotiation{}, errors.New("invalid upload negotiation")
 	}
@@ -1017,11 +1012,10 @@ func uploadFile(upload control.UploadResult, path string) (control.UploadFile, b
 }
 
 func fileToWire(file manageddata.File) (apigenapi.ManagedDataFileMetadata, error) {
-	size, err := checkedInt32(file.Size)
-	if err != nil || file.Path == "" || len(file.Path) > 1024 || !digestPattern.MatchString(file.SHA256) {
+	if file.Size < 0 || file.Path == "" || len(file.Path) > 1024 || !digestPattern.MatchString(file.SHA256) {
 		return apigenapi.ManagedDataFileMetadata{}, errors.New("invalid managed-data file metadata")
 	}
-	return apigenapi.ManagedDataFileMetadata{Path: file.Path, Size: size, Sha256: file.SHA256}, nil
+	return apigenapi.ManagedDataFileMetadata{Path: file.Path, Size: file.Size, Sha256: file.SHA256}, nil
 }
 
 func pageSlice[T any](items []T, limitValue *int32, tokenValue *string, scope string) ([]T, *string, error) {

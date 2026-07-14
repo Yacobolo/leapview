@@ -3,11 +3,30 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 )
+
+func TestManagedDataGeneratedByteCountsAreInt64(t *testing.T) {
+	for _, value := range []any{
+		apigenapi.ManagedDataFileMetadata{},
+		apigenapi.ManagedDataRevisionSummaryResponse{},
+		apigenapi.ManagedDataS3MultipartNegotiation{},
+		apigenapi.ManagedDataS3MultipartSignPartRequest{},
+		apigenapi.ManagedDataTusUploadNegotiation{},
+	} {
+		typeOf := reflect.TypeOf(value)
+		for _, fieldName := range []string{"Size", "Offset", "MinimumPartSize", "MaximumPartSize"} {
+			field, ok := typeOf.FieldByName(fieldName)
+			if ok && field.Type.Kind() != reflect.Int64 {
+				t.Fatalf("%s.%s type = %s, want int64", typeOf.Name(), fieldName, field.Type)
+			}
+		}
+	}
+}
 
 func TestManagedDataAPIGenAdapterImplementsEveryGeneratedOperation(t *testing.T) {
 	var _ apigenapi.GenOperationDispatcher = apiGenAdapter{}
