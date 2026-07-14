@@ -391,6 +391,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"WORKDIR /app",
 		"COPY --from=web /src/static ./static",
 		"LIBREDASH_HOME=/var/lib/libredash",
+		"LIBREDASH_MANAGED_DATA_DIR=/var/lib/libredash/managed-data",
 		"LIBREDASH_PRODUCTION=1",
 		"HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD [\"libredash\", \"healthcheck\"]",
 		"CMD [\"serve\", \"--production\"]",
