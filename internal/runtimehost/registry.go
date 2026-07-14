@@ -148,9 +148,6 @@ func (r *Registry) PrepareServingStates(ctx context.Context, servingStateIDs []s
 
 	r.prepareMu.Lock()
 	defer r.prepareMu.Unlock()
-	if err := r.closePreparedRuntimes(); err != nil {
-		return nil, err
-	}
 	set := &PreparedSet{registry: r, items: make([]*RegistryPrepared, 0, len(candidates))}
 	for _, candidate := range candidates {
 		manager := r.managerForWorkspace(candidate.state.WorkspaceID)

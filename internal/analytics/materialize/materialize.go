@@ -131,20 +131,34 @@ type defaultSourcePathResolver struct{}
 func (defaultSourcePathResolver) ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {
 	connection := model.Connections[source.Connection]
 	switch connection.Kind {
-	case "local", "managed":
+	case "local":
 		if filepath.IsAbs(source.Path) {
 			return source.Path, nil
 		}
 		root := connection.Root
-		if connection.Kind == "managed" && root == "" {
-			return "", fmt.Errorf("managed connection %q has no active revision", source.Connection)
-		}
 		if root == "" {
 			root = dataDir
 		} else if !filepath.IsAbs(root) {
 			root = filepath.Join(dataDir, root)
 		}
 		return filepath.Join(root, source.Path), nil
+	case "managed":
+		root := strings.TrimSpace(connection.Root)
+		if root == "" {
+			return "", fmt.Errorf("managed connection %q has no active revision", source.Connection)
+		}
+		if !filepath.IsAbs(root) {
+			return "", fmt.Errorf("managed connection %q revision root must be absolute", source.Connection)
+		}
+		if filepath.IsAbs(source.Path) {
+			return "", fmt.Errorf("managed connection %q source path must be relative", source.Connection)
+		}
+		target := filepath.Clean(filepath.Join(root, source.Path))
+		relative, err := filepath.Rel(filepath.Clean(root), target)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("managed connection %q source path escapes its active revision", source.Connection)
+		}
+		return target, nil
 	default:
 		if connection.Scope == "" {
 			return source.Path, nil

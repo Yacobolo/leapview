@@ -492,6 +492,11 @@ func TestRegistryPrepareCommitRoutesDeploymentByWorkspace(t *testing.T) {
 func TestRegistryPreparedSetActivatesAndCommitsEveryWorkspaceTogether(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales"} {
+		activeID := servingstate.ID("dep_" + string(workspaceID) + "_active")
+		repo.active[string(workspaceID)+"/prod"] = registryDeploymentArtifact{
+			deployment: servingstate.State{ID: activeID, WorkspaceID: workspaceID, Environment: "prod", Status: servingstate.StatusActive, DuckLakeSnapshotID: 1},
+			artifact:   servingstate.Artifact{ServingStateID: activeID, WorkspaceID: workspaceID, Environment: "prod", Digest: string(workspaceID) + "-active"},
+		}
 		id := servingstate.ID("dep_" + string(workspaceID) + "_prod")
 		repo.deployments[id] = servingstate.State{ID: id, WorkspaceID: workspaceID, Environment: "prod", Status: servingstate.StatusValidated}
 		repo.artifacts[id] = servingstate.Artifact{ServingStateID: id, WorkspaceID: workspaceID, Environment: "prod", Digest: string(workspaceID) + "-prod"}
@@ -504,14 +509,20 @@ func TestRegistryPreparedSetActivatesAndCommitsEveryWorkspaceTogether(t *testing
 		DataDir:      "/data",
 		Factory:      factory,
 	})
+	if err := registry.Reload(context.Background()); err != nil {
+		t.Fatalf("reload active generation: %v", err)
+	}
 
 	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_prod", "dep_operations_prod"})
 	if err != nil {
 		t.Fatalf("prepare set: %v", err)
 	}
 	defer prepared.Close()
-	if _, err := registry.managerForWorkspace("operations").Active(); err == nil {
-		t.Fatal("operations runtime became active before metadata activation")
+	if len(factory.runtimes) != 4 || factory.runtimes[0].closed || factory.runtimes[1].closed {
+		t.Fatalf("active generation was not retained during prepare: %#v", factory.runtimes)
+	}
+	if runtime, err := registry.managerForWorkspace("operations").Active(); err != nil || runtime != factory.runtimes[0] {
+		t.Fatalf("operations active during prepare = %#v, %v", runtime, err)
 	}
 	activated := false
 	err = registry.CommitPreparedSet(prepared, func() error {
@@ -533,7 +544,7 @@ func TestRegistryPreparedSetActivatesAndCommitsEveryWorkspaceTogether(t *testing
 			t.Fatalf("%s active: %v", workspaceID, err)
 		}
 	}
-	if got := factory.inputs; !equalStrings(got, []string{"operations/prod/dep_operations_prod", "sales/prod/dep_sales_prod"}) {
+	if got := factory.inputs; !equalStrings(got, []string{"operations/prod/dep_operations_active", "sales/prod/dep_sales_active", "operations/prod/dep_operations_prod", "sales/prod/dep_sales_prod"}) {
 		t.Fatalf("factory inputs = %#v", got)
 	}
 }

@@ -177,7 +177,7 @@ package contracts
 })
 
 #Connection: close({
-	kind!:        "local" | "s3" | "r2" | "gcs" | "http" | "azure_blob" | "postgres" | "mysql" | "sqlite" | "ducklake" | "quack"
+	kind!:        "local" | "managed" | "s3" | "r2" | "gcs" | "http" | "azure_blob" | "postgres" | "mysql" | "sqlite" | "ducklake" | "quack"
 	description?: string
 	path?:        string
 	root?:        string

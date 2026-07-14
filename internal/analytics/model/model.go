@@ -869,6 +869,12 @@ func (s Source) Validate(name string, connections map[string]Connection) error {
 		if (connection.Kind == "local" || connection.Kind == "managed") && !IsLocalPath(s.Path) {
 			return fmt.Errorf("source %q %s connection %q cannot use remote path %q", name, connection.Kind, s.Connection, s.Path)
 		}
+		if connection.Kind == "managed" {
+			cleaned := filepath.Clean(s.Path)
+			if filepath.IsAbs(s.Path) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("source %q managed path %q must be relative and cannot contain traversal", name, s.Path)
+			}
+		}
 		if !sourceWithinConnectionScope(connection, s.Path) {
 			return fmt.Errorf("source %q path %q escapes connection scope", name, s.Path)
 		}
@@ -952,6 +958,9 @@ func (c Connection) Validate(name string) (Connection, error) {
 	connectionSpec, ok := LookupConnection(c.Kind)
 	if !ok {
 		return c, fmt.Errorf("connection %q has unsupported kind %q", name, c.Kind)
+	}
+	if c.Kind == "managed" && (strings.TrimSpace(c.Root) != "" || strings.TrimSpace(c.Scope) != "") {
+		return c, fmt.Errorf("connection %q managed physical location is supplied by the active revision and cannot be authored", name)
 	}
 	if connectionSpec.RequiresPath {
 		if c.Path == "" {
