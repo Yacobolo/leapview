@@ -31,14 +31,14 @@ func TestRepositoryRevisionIDsAreCanonicalDigests(t *testing.T) {
 		{name: "unknown digest", id: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", wantErr: managedhttp.ErrNotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := adapter.RevisionByID(context.Background(), test.id)
+			_, err := adapter.RevisionByID(context.Background(), "collection_a", test.id)
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("RevisionByID() error = %v, want %v", err, test.wantErr)
 			}
 		})
 	}
 
-	got, err := adapter.RevisionByID(context.Background(), digestA)
+	got, err := adapter.RevisionByID(context.Background(), "collection_a", digestA)
 	if err != nil {
 		t.Fatalf("RevisionByID() error = %v", err)
 	}

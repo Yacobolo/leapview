@@ -1528,6 +1528,18 @@ func (q *Queries) GetManagedDataUploadSession(ctx context.Context, id string) (M
 	return i, err
 }
 
+const getManagedDataUploadSessionIDByRevision = `-- name: GetManagedDataUploadSessionIDByRevision :one
+SELECT id FROM managed_data_upload_sessions
+WHERE revision_id = ? AND status = 'complete'
+`
+
+func (q *Queries) GetManagedDataUploadSessionIDByRevision(ctx context.Context, revisionID sql.NullString) (string, error) {
+	row := q.db.QueryRowContext(ctx, getManagedDataUploadSessionIDByRevision, revisionID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getPrincipal = `-- name: GetPrincipal :one
 SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals WHERE id = ?
 `
@@ -3072,6 +3084,45 @@ func (q *Queries) ListManagedDataRolloutTargets(ctx context.Context, rolloutID s
 			&i.PriorServingStateID,
 			&i.Status,
 			&i.ActivatedAt,
+			&i.Error,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listManagedDataRollouts = `-- name: ListManagedDataRollouts :many
+SELECT id, collection_id, environment, revision_id, status, created_by, created_at, completed_at, error FROM managed_data_rollouts
+WHERE collection_id = ?
+ORDER BY created_at DESC, id DESC
+`
+
+func (q *Queries) ListManagedDataRollouts(ctx context.Context, collectionID string) ([]ManagedDataRollout, error) {
+	rows, err := q.db.QueryContext(ctx, listManagedDataRollouts, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ManagedDataRollout{}
+	for rows.Next() {
+		var i ManagedDataRollout
+		if err := rows.Scan(
+			&i.ID,
+			&i.CollectionID,
+			&i.Environment,
+			&i.RevisionID,
+			&i.Status,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.CompletedAt,
 			&i.Error,
 		); err != nil {
 			return nil, err

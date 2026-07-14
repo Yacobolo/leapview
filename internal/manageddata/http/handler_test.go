@@ -318,12 +318,12 @@ func (r *fakeRepository) CollectionByProjectConnection(_ context.Context, projec
 	return r.collection, nil
 }
 
-func (r *fakeRepository) RevisionByID(_ context.Context, id string) (managedhttp.RevisionMetadata, error) {
+func (r *fakeRepository) RevisionByID(_ context.Context, collectionID, id string) (managedhttp.RevisionMetadata, error) {
 	if r.revisionErr != nil {
 		return managedhttp.RevisionMetadata{}, r.revisionErr
 	}
 	revision, ok := r.revisions[id]
-	if !ok {
+	if !ok || revision.Revision.CollectionID != collectionID {
 		return managedhttp.RevisionMetadata{}, manageddata.ErrNotFound
 	}
 	return revision, nil

@@ -21,8 +21,10 @@ import (
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/execution"
+	manageddataapiadapter "github.com/Yacobolo/libredash/internal/manageddata/apiadapter"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
 	manageddataresolver "github.com/Yacobolo/libredash/internal/manageddata/resolver"
+	manageddatarollout "github.com/Yacobolo/libredash/internal/manageddata/rollout"
 	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -290,6 +292,24 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		cleanup()
 		return nil, nil, err
 	}
+	managedDataRuntime, err := manageddatarollout.NewRegistryRuntime(registry)
+	if err != nil {
+		_ = registry.Close()
+		cleanup()
+		return nil, nil, err
+	}
+	managedDataRollouts, err := manageddatarollout.New(managedDataRepo, servingStateRepo, managedDataRuntime, managedDataResolver)
+	if err != nil {
+		_ = registry.Close()
+		cleanup()
+		return nil, nil, err
+	}
+	managedDataAPI, err := manageddataapiadapter.New(managedDataRepo, managedDataRollouts)
+	if err != nil {
+		_ = registry.Close()
+		cleanup()
+		return nil, nil, err
+	}
 	cleanupWithRegistry := func() {
 		_ = registry.Close()
 		cleanup()
@@ -330,29 +350,32 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
 	server := app.NewWithOptions(runtimeMetrics, app.Options{
-		Store:                     store,
-		ServingStateRepo:          servingStateRepo,
-		WorkspaceRepo:             workspaceRepo,
-		AssetCatalog:              assetCatalog,
-		AccessRepo:                accessRepo,
-		Agent:                     agent.NewService(runtimeMetrics, agentRepo, agent.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
-		Auth:                      auth,
-		Reloader:                  registry,
-		ArtifactDir:               cfg.ArtifactDir(),
-		DuckDBDir:                 cfg.DuckDBDirPath(),
-		DuckLakeCatalogPath:       duckLakeCatalogPath,
-		DuckLakeDataPath:          cfg.DuckLakeDataDir(),
-		DefaultEnvironment:        string(environment),
-		RateLimits:                rateLimits,
-		SecurityHeaders:           app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
-		RequestLogging:            production && cfg.RequestLoggingEnabled(),
-		Logger:                    slog.Default(),
-		SCIMBearerToken:           cfg.SCIMBearerToken,
-		MetricsBearerToken:        cfg.MetricsBearerToken,
-		AllowedHosts:              allowedHosts,
-		Executor:                  execution.New(cfg.ExecutionConfig()),
-		JobLeaseTimeout:           cfg.ExecJobLeaseTimeout,
-		ManagedData:               manageddatahttp.Options{Uploads: managedDataControl, Multipart: managedDataMultipart},
+		Store:               store,
+		ServingStateRepo:    servingStateRepo,
+		WorkspaceRepo:       workspaceRepo,
+		AssetCatalog:        assetCatalog,
+		AccessRepo:          accessRepo,
+		Agent:               agent.NewService(runtimeMetrics, agentRepo, agent.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
+		Auth:                auth,
+		Reloader:            registry,
+		ArtifactDir:         cfg.ArtifactDir(),
+		DuckDBDir:           cfg.DuckDBDirPath(),
+		DuckLakeCatalogPath: duckLakeCatalogPath,
+		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
+		DefaultEnvironment:  string(environment),
+		RateLimits:          rateLimits,
+		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
+		RequestLogging:      production && cfg.RequestLoggingEnabled(),
+		Logger:              slog.Default(),
+		SCIMBearerToken:     cfg.SCIMBearerToken,
+		MetricsBearerToken:  cfg.MetricsBearerToken,
+		AllowedHosts:        allowedHosts,
+		Executor:            execution.New(cfg.ExecutionConfig()),
+		JobLeaseTimeout:     cfg.ExecJobLeaseTimeout,
+		ManagedData: manageddatahttp.Options{
+			Repository: managedDataAPI, Uploads: managedDataControl,
+			Multipart: managedDataMultipart, Rollouts: managedDataAPI,
+		},
 		ManagedDataTus:            managedDataStorage.tus,
 		ManagedDataExpirer:        managedDataControl,
 		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,

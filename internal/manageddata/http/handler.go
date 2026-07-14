@@ -54,7 +54,7 @@ func (h *Handler) GetManagedDataEnvironmentRevision(w stdhttp.ResponseWriter, r 
 		h.writeError(w, r, ErrNotFound)
 		return
 	}
-	metadata, err := h.options.Repository.RevisionByID(r.Context(), pointer.RevisionID)
+	metadata, err := h.options.Repository.RevisionByID(r.Context(), collection.ID, pointer.RevisionID)
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -115,7 +115,7 @@ func (h *Handler) GetManagedDataRevision(w stdhttp.ResponseWriter, r *stdhttp.Re
 		h.writeError(w, r, ErrInvalid)
 		return
 	}
-	metadata, err := h.options.Repository.RevisionByID(r.Context(), revisionID)
+	metadata, err := h.options.Repository.RevisionByID(r.Context(), collection.ID, revisionID)
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -481,7 +481,7 @@ func (h *Handler) CreateManagedDataRollout(w stdhttp.ResponseWriter, r *stdhttp.
 		h.writeError(w, r, ErrTooLarge)
 		return
 	}
-	revision, err := h.options.Repository.RevisionByID(r.Context(), body.RevisionId)
+	revision, err := h.options.Repository.RevisionByID(r.Context(), collection.ID, body.RevisionId)
 	if err != nil {
 		h.writeError(w, r, err)
 		return

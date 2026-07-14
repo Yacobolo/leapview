@@ -23,7 +23,6 @@ var canonicalRevisionID = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 // HTTP. RevisionByDigest must reject ambiguous digests across collections.
 type Repository interface {
 	CollectionByProjectConnection(context.Context, string, string) (manageddata.Collection, error)
-	RevisionByDigest(context.Context, string) (manageddata.Revision, error)
 	RevisionByID(context.Context, string) (manageddata.Revision, error)
 	ListRevisions(context.Context, string) ([]manageddata.Revision, error)
 	UploadSessionIDByRevisionID(context.Context, string) (string, error)
@@ -65,14 +64,15 @@ func (a *Adapter) CollectionByProjectConnection(ctx context.Context, project, co
 }
 
 // RevisionByID accepts only the public content-addressed revision identity.
-func (a *Adapter) RevisionByID(ctx context.Context, publicID string) (managedhttp.RevisionMetadata, error) {
+func (a *Adapter) RevisionByID(ctx context.Context, collectionID, publicID string) (managedhttp.RevisionMetadata, error) {
+	collectionID = strings.TrimSpace(collectionID)
 	publicID = strings.TrimSpace(publicID)
-	if !canonicalRevisionID.MatchString(publicID) {
+	if collectionID == "" || !canonicalRevisionID.MatchString(publicID) {
 		return managedhttp.RevisionMetadata{}, managedhttp.ErrInvalid
 	}
-	revision, err := a.repository.RevisionByDigest(ctx, publicID)
+	revision, err := a.scopedRevisionByDigest(ctx, collectionID, publicID)
 	if err != nil {
-		return managedhttp.RevisionMetadata{}, publicError(err)
+		return managedhttp.RevisionMetadata{}, err
 	}
 	return a.revisionMetadata(ctx, revision)
 }

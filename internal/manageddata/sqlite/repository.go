@@ -646,6 +646,14 @@ func (r *Repository) ListRevisions(ctx context.Context, collectionID string) ([]
 	return out, nil
 }
 
+func (r *Repository) UploadSessionIDByRevisionID(ctx context.Context, revisionID string) (string, error) {
+	id, err := r.q.GetManagedDataUploadSessionIDByRevision(ctx, nullable(strings.TrimSpace(revisionID)))
+	if err != nil {
+		return "", mapError(err)
+	}
+	return id, nil
+}
+
 func (r *Repository) ListRevisionFiles(ctx context.Context, revisionID string) ([]manageddata.RevisionFile, error) {
 	rows, err := r.q.ListManagedDataRevisionFiles(ctx, strings.TrimSpace(revisionID))
 	if err != nil {
@@ -742,6 +750,22 @@ func (r *Repository) RolloutByID(ctx context.Context, id string) (manageddata.Ro
 		return manageddata.Rollout{}, err
 	}
 	return mapRollout(row, targetRows), nil
+}
+
+func (r *Repository) ListRollouts(ctx context.Context, collectionID string) ([]manageddata.Rollout, error) {
+	rows, err := r.q.ListManagedDataRollouts(ctx, strings.TrimSpace(collectionID))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	out := make([]manageddata.Rollout, 0, len(rows))
+	for _, row := range rows {
+		targetRows, targetErr := r.q.ListManagedDataRolloutTargets(ctx, row.ID)
+		if targetErr != nil {
+			return nil, mapError(targetErr)
+		}
+		out = append(out, mapRollout(row, targetRows))
+	}
+	return out, nil
 }
 
 func (r *Repository) ActivateRollout(ctx context.Context, id string, expected manageddata.PointerExpectation) (manageddata.Rollout, error) {

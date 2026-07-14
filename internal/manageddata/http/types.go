@@ -32,7 +32,7 @@ type RevisionMetadata struct {
 
 type Repository interface {
 	CollectionByProjectConnection(context.Context, string, string) (manageddata.Collection, error)
-	RevisionByID(context.Context, string) (RevisionMetadata, error)
+	RevisionByID(context.Context, string, string) (RevisionMetadata, error)
 	ListRevisions(context.Context, string) ([]RevisionMetadata, error)
 	EnvironmentPointer(context.Context, string, manageddata.Environment) (manageddata.EnvironmentPointer, error)
 }

@@ -1002,6 +1002,10 @@ SELECT * FROM managed_data_revisions
 WHERE collection_id = ?
 ORDER BY sequence DESC;
 
+-- name: GetManagedDataUploadSessionIDByRevision :one
+SELECT id FROM managed_data_upload_sessions
+WHERE revision_id = ? AND status = 'complete';
+
 -- name: ListManagedDataRevisionFiles :many
 SELECT * FROM managed_data_revision_files
 WHERE revision_id = ?
@@ -1019,6 +1023,11 @@ VALUES (?, ?, ?, ?, 'pending');
 
 -- name: GetManagedDataRollout :one
 SELECT * FROM managed_data_rollouts WHERE id = ?;
+
+-- name: ListManagedDataRollouts :many
+SELECT * FROM managed_data_rollouts
+WHERE collection_id = ?
+ORDER BY created_at DESC, id DESC;
 
 -- name: ListManagedDataRolloutTargets :many
 SELECT * FROM managed_data_rollout_targets
