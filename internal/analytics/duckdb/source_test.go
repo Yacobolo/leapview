@@ -736,6 +736,26 @@ func TestSourceRelationResolvesSourcePlans(t *testing.T) {
 	}
 }
 
+func TestManagedSourceRelationUsesImmutableConnectionRoot(t *testing.T) {
+	root := t.TempDir()
+	model := &semanticmodel.Model{
+		Connections: map[string]semanticmodel.Connection{
+			"olist": {Kind: "managed", Root: root},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {Connection: "olist", Path: "orders.csv", Format: "csv"},
+		},
+	}
+	relation, err := SourceRelation(model, model.Sources["orders"], "/mutable-global-data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "SELECT * FROM read_csv('" + SQLString(filepath.Join(root, "orders.csv")) + "')"
+	if relation != want {
+		t.Fatalf("managed relation = %q, want %q", relation, want)
+	}
+}
+
 func TestDuckDBQuackSmoke(t *testing.T) {
 	uri := os.Getenv("LIBREDASH_QUACK_TEST_URI")
 	token := os.Getenv("LIBREDASH_QUACK_TEST_TOKEN")

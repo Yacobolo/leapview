@@ -131,6 +131,11 @@ var connections = map[string]ConnectionSpec{
 		AllowsPathSource: true,
 		AllowNoAuth:      true,
 	},
+	"managed": {
+		Kind:             "managed",
+		AllowsPathSource: true,
+		AllowNoAuth:      true,
+	},
 	"s3": {
 		Kind:              "s3",
 		SecretType:        "s3",

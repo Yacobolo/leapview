@@ -102,7 +102,7 @@ func ValidateFilesWithResolver(model *semanticmodel.Model, dataDir string, resol
 			continue
 		}
 		connection := model.Connections[source.Connection]
-		if connection.Kind != "local" {
+		if connection.Kind != "local" && connection.Kind != "managed" {
 			continue
 		}
 		file, err := resolver.ResolveSourcePath(model, source, dataDir)
@@ -131,11 +131,14 @@ type defaultSourcePathResolver struct{}
 func (defaultSourcePathResolver) ResolveSourcePath(model *semanticmodel.Model, source semanticmodel.Source, dataDir string) (string, error) {
 	connection := model.Connections[source.Connection]
 	switch connection.Kind {
-	case "local":
+	case "local", "managed":
 		if filepath.IsAbs(source.Path) {
 			return source.Path, nil
 		}
 		root := connection.Root
+		if connection.Kind == "managed" && root == "" {
+			return "", fmt.Errorf("managed connection %q has no active revision", source.Connection)
+		}
 		if root == "" {
 			root = dataDir
 		} else if !filepath.IsAbs(root) {
