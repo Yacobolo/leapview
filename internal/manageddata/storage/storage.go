@@ -1,0 +1,48 @@
+// Package storage defines managed-data blob persistence contracts.
+package storage
+
+import (
+	"context"
+	"errors"
+	"io"
+)
+
+var (
+	ErrInvalid   = errors.New("invalid storage request")
+	ErrNotFound  = errors.New("blob not found")
+	ErrIntegrity = errors.New("blob integrity check failed")
+	ErrOffset    = errors.New("upload offset mismatch")
+	ErrBackend   = errors.New("storage backend operation failed")
+)
+
+// Blob identifies immutable content. SHA256 is lowercase hexadecimal without a prefix.
+type Blob struct {
+	SHA256 string
+	Size   int64
+	URI    string
+}
+
+// BlobStore persists and verifies immutable, content-addressed blobs.
+type BlobStore interface {
+	Put(ctx context.Context, expected Blob, content io.Reader) (Blob, error)
+	Stat(ctx context.Context, sha256 string) (Blob, error)
+	Open(ctx context.Context, sha256 string) (io.ReadCloser, error)
+	DeleteUnreachable(ctx context.Context, sha256s []string) error
+}
+
+// RevisionFile maps one content-addressed blob into a logical revision path.
+type RevisionFile struct {
+	Path   string
+	SHA256 string
+}
+
+// RevisionView is an immutable local projection of revision files.
+type RevisionView struct {
+	ID   string
+	Path string
+}
+
+// RevisionViewStore materializes immutable revision views when a backend supports them.
+type RevisionViewStore interface {
+	MaterializeRevision(ctx context.Context, revisionID string, files []RevisionFile) (RevisionView, error)
+}
