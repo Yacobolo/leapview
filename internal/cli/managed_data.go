@@ -11,6 +11,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	"github.com/Yacobolo/libredash/internal/manageddata/runtimeview"
+	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
 	managedfilesystem "github.com/Yacobolo/libredash/internal/manageddata/storage/filesystem"
 	manageds3 "github.com/Yacobolo/libredash/internal/manageddata/storage/s3"
@@ -25,8 +26,6 @@ import (
 const (
 	managedDataTusPath             = "/api/v1/managed-data/tus"
 	managedDataS3MultipartTemplate = "/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart"
-	managedDataS3MinimumPartSize   = 5 << 20
-	managedDataS3MaximumPartSize   = int64(^uint32(0) >> 1)
 )
 
 type managedDataStorage struct {
@@ -73,9 +72,9 @@ func newManagedDataStorage(ctx context.Context, cfg config.Config) (managedDataS
 		}
 		transport, err := control.NewS3MultipartTransport("s3", control.S3MultipartDescription{
 			CreateEndpoint:  managedDataS3MultipartTemplate,
-			MinimumPartSize: managedDataS3MinimumPartSize,
-			MaximumPartSize: managedDataS3MaximumPartSize,
-			MaximumParts:    10_000,
+			MinimumPartSize: s3multipart.MinimumPartSize,
+			MaximumPartSize: s3multipart.MaximumPartSize,
+			MaximumParts:    s3multipart.MaximumParts,
 		})
 		if err != nil {
 			return managedDataStorage{}, err
