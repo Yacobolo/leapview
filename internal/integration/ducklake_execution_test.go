@@ -183,7 +183,7 @@ func createAndActivateProjectDeployment(t *testing.T, ctx context.Context, repo 
 	if err != nil {
 		t.Fatalf("create artifact: %v", err)
 	}
-	if _, _, err := servingstatefs.PackProjectAgainstGraphForEnvironment(projectPath, workspaceID, servingstate.DefaultEnvironment, created.ID, workspace.AssetGraph{}, file); err != nil {
+	if _, _, err := servingstatefs.PackProject(projectPath, servingstatefs.PackProjectOptions{WorkspaceID: workspaceID, Environment: servingstate.DefaultEnvironment, ServingStateID: created.ID}, file); err != nil {
 		_ = file.Close()
 		t.Fatalf("pack artifact: %v", err)
 	}

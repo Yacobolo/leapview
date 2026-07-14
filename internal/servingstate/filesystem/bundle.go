@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -47,16 +48,17 @@ type ValidateOptions struct {
 }
 
 type CompiledWorkspaceArtifact struct {
-	Version        int                                    `json:"version"`
-	ProjectID      string                                 `json:"projectId"`
-	WorkspaceID    string                                 `json:"workspaceId"`
-	WorkspaceTitle string                                 `json:"workspaceTitle"`
-	Environment    string                                 `json:"environment"`
-	ServingStateID string                                 `json:"servingStateId"`
-	Validation     CompiledArtifactValidation             `json:"validation"`
-	Definition     *workspace.Definition                  `json:"definition"`
-	Graph          workspace.AssetGraph                   `json:"graph"`
-	Plan           workspacecompiler.ProjectPlanWorkspace `json:"plan"`
+	Version              int                                    `json:"version"`
+	ProjectID            string                                 `json:"projectId"`
+	WorkspaceID          string                                 `json:"workspaceId"`
+	WorkspaceTitle       string                                 `json:"workspaceTitle"`
+	Environment          string                                 `json:"environment"`
+	ServingStateID       string                                 `json:"servingStateId"`
+	ManagedDataRevisions map[string]string                      `json:"managedDataRevisions"`
+	Validation           CompiledArtifactValidation             `json:"validation"`
+	Definition           *workspace.Definition                  `json:"definition"`
+	Graph                workspace.AssetGraph                   `json:"graph"`
+	Plan                 workspacecompiler.ProjectPlanWorkspace `json:"plan"`
 }
 
 type CompiledArtifactValidation struct {
@@ -72,52 +74,57 @@ type CompiledArtifactDiagnostic struct {
 	Message  string `json:"message"`
 }
 
-func PackProject(projectPath, workspaceID string, servingStateID servingstate.ID, out io.Writer) (Manifest, string, error) {
-	return PackProjectAgainstGraphForEnvironment(projectPath, workspaceID, servingstate.DefaultEnvironment, servingStateID, workspace.AssetGraph{}, out)
+type PackProjectOptions struct {
+	WorkspaceID          string
+	Environment          servingstate.Environment
+	ServingStateID       servingstate.ID
+	ActiveGraph          workspace.AssetGraph
+	ManagedDataRevisions map[string]string
 }
 
-func PackProjectAgainstGraph(projectPath, workspaceID string, servingStateID servingstate.ID, active workspace.AssetGraph, out io.Writer) (Manifest, string, error) {
-	return PackProjectAgainstGraphForEnvironment(projectPath, workspaceID, servingstate.DefaultEnvironment, servingStateID, active, out)
-}
-
-func PackProjectAgainstGraphForEnvironment(projectPath, workspaceID string, environment servingstate.Environment, servingStateID servingstate.ID, active workspace.AssetGraph, out io.Writer) (Manifest, string, error) {
+func PackProject(projectPath string, options PackProjectOptions, out io.Writer) (Manifest, string, error) {
 	projectPath, err := filepath.Abs(projectPath)
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	environment = servingstate.NormalizeEnvironment(environment)
-	if workspaceID == "" {
+	environment := servingstate.NormalizeEnvironment(options.Environment)
+	if options.WorkspaceID == "" {
 		return Manifest{}, "", fmt.Errorf("project publish requires explicit workspace")
 	}
-	if servingStateID == "" {
+	if options.ServingStateID == "" {
 		return Manifest{}, "", fmt.Errorf("project publish requires serving state id")
 	}
-	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{ServingStateID: workspace.ServingStateID(servingStateID)})
+	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{ServingStateID: workspace.ServingStateID(options.ServingStateID)})
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	compiledWorkspace, ok := compiled.Workspaces[workspaceID]
+	compiledWorkspace, ok := compiled.Workspaces[options.WorkspaceID]
 	if !ok {
-		return Manifest{}, "", fmt.Errorf("project %q has no workspace %q", projectPath, workspaceID)
+		return Manifest{}, "", fmt.Errorf("project %q has no workspace %q", projectPath, options.WorkspaceID)
 	}
-	if err := workspace.ValidateAssetGraphForServingState(compiledWorkspace.Workspace.Graph, workspace.WorkspaceID(workspaceID), workspace.ServingStateID(servingStateID)); err != nil {
+	if err := workspace.ValidateAssetGraphForServingState(compiledWorkspace.Workspace.Graph, workspace.WorkspaceID(options.WorkspaceID), workspace.ServingStateID(options.ServingStateID)); err != nil {
 		return Manifest{}, "", err
 	}
-	plan, err := workspacecompiler.PlanProjectAgainstGraph(projectPath, workspaceID, active)
+	plan, err := workspacecompiler.PlanProjectAgainstGraph(projectPath, options.WorkspaceID, options.ActiveGraph)
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	workspacePlan, ok := projectPlanWorkspace(plan, workspaceID)
+	workspacePlan, ok := projectPlanWorkspace(plan, options.WorkspaceID)
 	if !ok {
-		return Manifest{}, "", fmt.Errorf("project %q has no workspace %q in plan", projectPath, workspaceID)
+		return Manifest{}, "", fmt.Errorf("project %q has no workspace %q in plan", projectPath, options.WorkspaceID)
+	}
+	pins := make(map[string]string, len(options.ManagedDataRevisions))
+	for connection, digest := range options.ManagedDataRevisions {
+		pins[connection] = digest
 	}
 	compiledArtifact := CompiledWorkspaceArtifact{
-		Version:        1,
-		ProjectID:      compiled.Project.Name,
-		WorkspaceID:    workspaceID,
-		WorkspaceTitle: compiledWorkspace.Workspace.Title,
-		Environment:    string(environment),
-		ServingStateID: string(servingStateID),
+		Version:              1,
+		ProjectID:            compiled.Project.Name,
+		WorkspaceID:          options.WorkspaceID,
+		WorkspaceTitle:       compiledWorkspace.Workspace.Title,
+		Environment:          string(environment),
+		ServingStateID:       string(options.ServingStateID),
+		ManagedDataRevisions: pins,
 		Validation: CompiledArtifactValidation{
 			Status:        "passed",
 			GraphHash:     graphHash(compiledWorkspace.Workspace.Graph),
@@ -126,6 +133,9 @@ func PackProjectAgainstGraphForEnvironment(projectPath, workspaceID string, envi
 		Definition: compiledWorkspace.Definition,
 		Graph:      compiledWorkspace.Workspace.Graph,
 		Plan:       workspacePlan,
+	}
+	if err := ValidateCompiledWorkspaceArtifact(compiledArtifact); err != nil {
+		return Manifest{}, "", err
 	}
 	compiledBytes, err := json.MarshalIndent(compiledArtifact, "", "  ")
 	if err != nil {
@@ -138,7 +148,7 @@ func PackProjectAgainstGraphForEnvironment(projectPath, workspaceID string, envi
 	}
 	manifest := Manifest{
 		Version:        1,
-		WorkspaceID:    workspaceID,
+		WorkspaceID:    options.WorkspaceID,
 		WorkspaceTitle: compiledWorkspace.Workspace.Title,
 		Environment:    string(environment),
 		CatalogPath:    ProjectFile,
@@ -342,7 +352,7 @@ func ValidateArtifactWithOptions(path string, workspaceID servingstate.Workspace
 		os.RemoveAll(root)
 		return servingstate.Validation{}, err
 	}
-	if err := validateCompiledArtifactValidation(compiled); err != nil {
+	if err := ValidateCompiledWorkspaceArtifact(compiled); err != nil {
 		os.RemoveAll(root)
 		return servingstate.Validation{}, err
 	}
@@ -485,7 +495,83 @@ func validateCompiledArtifactValidation(compiled CompiledWorkspaceArtifact) erro
 }
 
 func ValidateCompiledWorkspaceArtifact(compiled CompiledWorkspaceArtifact) error {
+	if compiled.ProjectID == "" || compiled.ProjectID != strings.TrimSpace(compiled.ProjectID) {
+		return fmt.Errorf("compiled artifact projectId is required")
+	}
+	if compiled.Definition == nil {
+		return fmt.Errorf("compiled artifact definition is required")
+	}
+	if compiled.ManagedDataRevisions == nil {
+		return fmt.Errorf("compiled artifact managedDataRevisions object is required")
+	}
+	managedConnections, err := managedConnectionNames(compiled.Definition)
+	if err != nil {
+		return err
+	}
+	if len(compiled.ManagedDataRevisions) != len(managedConnections) {
+		return fmt.Errorf("compiled artifact managedDataRevisions must exactly match managed connections")
+	}
+	for _, connection := range managedConnections {
+		digest, ok := compiled.ManagedDataRevisions[connection]
+		if !ok {
+			return fmt.Errorf("compiled artifact managedDataRevisions must exactly match managed connections")
+		}
+		if !canonicalManagedRevisionDigest(digest) {
+			return fmt.Errorf("compiled artifact managedDataRevisions[%q] must be a canonical SHA-256 digest", connection)
+		}
+	}
+	for connection := range compiled.ManagedDataRevisions {
+		if connection == "" || connection != strings.TrimSpace(connection) {
+			return fmt.Errorf("compiled artifact managedDataRevisions contains a non-canonical connection name")
+		}
+	}
 	return validateCompiledArtifactValidation(compiled)
+}
+
+func managedConnectionNames(definition *workspace.Definition) ([]string, error) {
+	connections := map[string]semanticConnection{}
+	for _, model := range definition.Models {
+		if model == nil {
+			return nil, fmt.Errorf("compiled artifact contains a nil model")
+		}
+		for authoredName, connection := range model.Connections {
+			name := strings.TrimSpace(authoredName)
+			kind := strings.TrimSpace(connection.Kind)
+			if name == "" || name != authoredName || kind == "" || kind != connection.Kind {
+				return nil, fmt.Errorf("compiled artifact contains non-canonical connection metadata")
+			}
+			if existing, ok := connections[name]; ok && !reflect.DeepEqual(existing.value, connection) {
+				return nil, fmt.Errorf("compiled artifact connection %q has conflicting definitions", name)
+			}
+			connections[name] = semanticConnection{kind: kind, value: connection}
+		}
+	}
+	names := make([]string, 0, len(connections))
+	for name, connection := range connections {
+		if connection.kind == "managed" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+type semanticConnection struct {
+	kind  string
+	value any
+}
+
+func canonicalManagedRevisionDigest(value string) bool {
+	const prefix = "sha256:"
+	if len(value) != len(prefix)+sha256.Size*2 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	hexDigest := value[len(prefix):]
+	if strings.ToLower(hexDigest) != hexDigest {
+		return false
+	}
+	_, err := hex.DecodeString(hexDigest)
+	return err == nil
 }
 
 const projectAPIVersion = "libredash.dev/v1"
@@ -629,11 +715,8 @@ func readCompiledWorkspaceArtifact(root string, manifest Manifest) (CompiledWork
 	if compiled.Version != 1 {
 		return CompiledWorkspaceArtifact{}, fmt.Errorf("compiled artifact version = %d, want 1", compiled.Version)
 	}
-	if compiled.ProjectID == "" || compiled.ProjectID != strings.TrimSpace(compiled.ProjectID) {
-		return CompiledWorkspaceArtifact{}, fmt.Errorf("compiled artifact projectId is required")
-	}
-	if compiled.Definition == nil {
-		return CompiledWorkspaceArtifact{}, fmt.Errorf("compiled artifact definition is required")
+	if err := ValidateCompiledWorkspaceArtifact(compiled); err != nil {
+		return CompiledWorkspaceArtifact{}, err
 	}
 	return compiled, nil
 }

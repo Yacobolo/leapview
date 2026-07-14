@@ -3,14 +3,18 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/api"
+	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
@@ -93,6 +97,91 @@ func TestPubAutoApproveActivatesAfterPlan(t *testing.T) {
 		if len(sequence) <= i || sequence[i] != want {
 			t.Fatalf("sequence = %#v, want prefix %#v", sequence, wantPrefix)
 		}
+	}
+}
+
+func TestPubEmbedsCurrentManagedDataRevisionBeforeCreatingPublish(t *testing.T) {
+	projectPath := writeManagedPublishProject(t)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	var sequence []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sequence = append(sequence, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/sales/active-asset-graph":
+			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/project-a/data-connections/orders/environments/prod/revision":
+			writeCLIJSON(t, w, apigenapi.ManagedDataEnvironmentRevisionResponse{
+				Environment: "prod",
+				Revision:    &apigenapi.ManagedDataRevisionSummaryResponse{Id: digest, Status: apigenapi.ManagedDataRevisionStatusAvailable, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/sales/publishes":
+			writeCLIJSON(t, w, map[string]any{"id": "dep_1", "workspaceId": "sales", "environment": "prod", "status": "pending"})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/workspaces/sales/publishes/dep_1/artifact":
+			path := filepath.Join(t.TempDir(), "artifact.tar.gz")
+			file, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.Copy(file, r.Body); err != nil {
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			if err := servingstatefs.ExtractArtifact(path, root); err != nil {
+				t.Fatal(err)
+			}
+			compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := compiled.ManagedDataRevisions; len(got) != 1 || got["orders"] != digest {
+				t.Fatalf("managedDataRevisions = %#v, want orders pin", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/validate"):
+			writeCLIJSON(t, w, map[string]any{"id": "dep_1", "workspaceId": "sales", "environment": "prod", "status": "validated", "digest": "sha256:remote"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/activate"):
+			writeCLIJSON(t, w, map[string]any{"id": "dep_1", "workspaceId": "sales", "environment": "prod", "status": "active", "digest": "sha256:remote"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	if err := runPublish(context.Background(), &rootOptions{target: server.URL, token: "token", catalog: projectPath, environment: "prod", autoApprove: true}); err != nil {
+		t.Fatalf("runPublish() error = %v", err)
+	}
+	assertSequenceContainsInOrder(t, sequence, []string{
+		"GET /api/v1/workspaces/sales/active-asset-graph",
+		"GET /api/v1/projects/project-a/data-connections/orders/environments/prod/revision",
+		"POST /api/v1/workspaces/sales/publishes",
+	})
+}
+
+func TestPubFailsBeforeCreatingPublishWhenManagedDataHasNoCurrentRevision(t *testing.T) {
+	projectPath := writeManagedPublishProject(t)
+	var mutations atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/sales/active-asset-graph":
+			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/project-a/data-connections/orders/environments/prod/revision":
+			writeCLIJSON(t, w, apigenapi.ManagedDataEnvironmentRevisionResponse{Environment: "prod"})
+		default:
+			mutations.Add(1)
+			t.Fatalf("unexpected mutation after missing revision: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	err := runPublish(context.Background(), &rootOptions{target: server.URL, token: "token", catalog: projectPath, environment: "prod", autoApprove: true})
+	if err == nil || !strings.Contains(err.Error(), "orders") || !strings.Contains(err.Error(), "current revision") {
+		t.Fatalf("runPublish() error = %v, want missing current revision", err)
+	}
+	if mutations.Load() != 0 {
+		t.Fatalf("mutations = %d, want 0", mutations.Load())
 	}
 }
 
@@ -317,6 +406,102 @@ func activeGraphResponse(assets []workspace.Asset, edges []workspace.AssetEdge) 
 		Assets: assetGraphResponses(assets),
 		Edges:  assetEdgeResponses(edges),
 	}
+}
+
+func writeManagedPublishProject(t *testing.T) string {
+	t.Helper()
+	files := map[string]string{
+		"libredash.yaml": `
+apiVersion: libredash.dev/v1
+kind: Project
+metadata:
+  name: project-a
+spec:
+  connections:
+    include: [connections/*.yaml]
+  sources:
+    include: [sources/*.yaml]
+  workspaces:
+    include: [workspaces/*/workspace.yaml]
+`,
+		"connections/orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: Connection
+metadata:
+  name: orders
+spec:
+  kind: managed
+  credentials:
+    provider: none
+`,
+		"sources/orders.orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: Source
+metadata:
+  name: orders.orders
+spec:
+  connection: orders
+  path: orders.csv
+  format: csv
+  fields:
+    order_id:
+      type: string
+`,
+		"workspaces/sales/workspace.yaml": `
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: sales
+spec:
+  uses:
+    sources: [orders.orders]
+  models:
+    include: [models/*.yaml]
+  semanticModels:
+    include: [semantic-models/*.yaml]
+  dashboards:
+    include: []
+  access:
+    include: []
+  agentPolicy:
+    include: []
+`,
+		"workspaces/sales/models/orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: ModelTable
+metadata:
+  workspace: sales
+  name: orders
+spec:
+  source: orders.orders
+  primaryKey: order_id
+  fields:
+    order_id:
+      label: Order ID
+`,
+		"workspaces/sales/semantic-models/sales.yaml": `
+apiVersion: libredash.dev/v1
+kind: SemanticModel
+metadata:
+  workspace: sales
+  name: sales
+spec:
+  baseTable: orders
+  tables: [orders]
+  measures: {}
+`,
+	}
+	dir := t.TempDir()
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, "libredash.yaml")
 }
 
 func assetGraphResponses(assets []workspace.Asset) []api.AssetGraphAssetResponse {

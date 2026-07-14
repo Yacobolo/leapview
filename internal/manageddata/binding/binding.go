@@ -5,34 +5,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 )
 
 var (
-	ErrArtifactMetadata           = errors.New("managed data artifact metadata is inconsistent")
-	ErrCurrentRevisionUnavailable = errors.New("managed data current revision is unavailable")
-	ErrRepository                 = errors.New("managed data binding repository failure")
+	ErrArtifactMetadata          = errors.New("managed data artifact metadata is inconsistent")
+	ErrPinnedRevisionUnavailable = errors.New("managed data pinned revision is unavailable")
+	ErrRepository                = errors.New("managed data binding repository failure")
 )
 
-// Repository is the metadata surface needed to pin current revisions.
+// Repository is the metadata surface needed to resolve artifact-owned pins.
 // ReplaceServingStateBindings must replace the complete set atomically.
 type Repository interface {
 	CollectionByProjectConnection(context.Context, string, string) (manageddata.Collection, error)
-	EnvironmentPointer(context.Context, string, manageddata.Environment) (manageddata.EnvironmentPointer, error)
-	RevisionByID(context.Context, string) (manageddata.Revision, error)
+	ListRevisions(context.Context, string) ([]manageddata.Revision, error)
 	ReplaceServingStateBindings(context.Context, string, []manageddata.ServingStateBinding) error
 }
 
 type artifactLoader func(string) (servingstatefs.CompiledWorkspaceArtifact, error)
 
-// Binder resolves project-global managed-data pointers during publish validation.
+// Binder resolves project-global revision pins during publish validation.
 type Binder struct {
 	repository Repository
 	load       artifactLoader
@@ -66,11 +63,7 @@ func (b *Binder) AfterArtifactValidation(ctx context.Context, candidate servings
 	if err != nil {
 		return ErrArtifactMetadata
 	}
-	connections, err := managedConnections(compiled)
-	if err != nil {
-		return err
-	}
-	if compiled.ProjectID == "" || compiled.ProjectID != strings.TrimSpace(compiled.ProjectID) {
+	if err := servingstatefs.ValidateCompiledWorkspaceArtifact(compiled); err != nil {
 		return ErrArtifactMetadata
 	}
 
@@ -78,9 +71,14 @@ func (b *Binder) AfterArtifactValidation(ctx context.Context, candidate servings
 	if err != nil {
 		return ErrArtifactMetadata
 	}
+	connections := make([]string, 0, len(compiled.ManagedDataRevisions))
+	for connection := range compiled.ManagedDataRevisions {
+		connections = append(connections, connection)
+	}
+	sort.Strings(connections)
 	bindings := make([]manageddata.ServingStateBinding, 0, len(connections))
 	for _, connection := range connections {
-		binding, bindErr := b.currentBinding(ctx, candidate.ID, compiled.ProjectID, connection, environment)
+		binding, bindErr := b.pinnedBinding(ctx, candidate.ID, compiled.ProjectID, connection, compiled.ManagedDataRevisions[connection], environment)
 		if bindErr != nil {
 			return bindErr
 		}
@@ -98,43 +96,11 @@ func (b *Binder) AfterArtifactValidation(ctx context.Context, candidate servings
 	return nil
 }
 
-func managedConnections(compiled servingstatefs.CompiledWorkspaceArtifact) ([]string, error) {
-	if compiled.Definition == nil {
-		return nil, ErrArtifactMetadata
-	}
-	connectionsByName := map[string]semanticmodel.Connection{}
-	for _, model := range compiled.Definition.Models {
-		if model == nil {
-			return nil, ErrArtifactMetadata
-		}
-		for name, connection := range model.Connections {
-			authoredName := name
-			name = strings.TrimSpace(authoredName)
-			kind := strings.TrimSpace(connection.Kind)
-			if name == "" || name != authoredName || kind == "" || kind != connection.Kind {
-				return nil, ErrArtifactMetadata
-			}
-			if existing, ok := connectionsByName[name]; ok && !reflect.DeepEqual(existing, connection) {
-				return nil, ErrArtifactMetadata
-			}
-			connectionsByName[name] = connection
-		}
-	}
-	connections := make([]string, 0, len(connectionsByName))
-	for name, connection := range connectionsByName {
-		if connection.Kind == "managed" {
-			connections = append(connections, name)
-		}
-	}
-	sort.Strings(connections)
-	return connections, nil
-}
-
-func (b *Binder) currentBinding(ctx context.Context, servingStateID servingstate.ID, projectID, connectionName string, environment manageddata.Environment) (manageddata.ServingStateBinding, error) {
+func (b *Binder) pinnedBinding(ctx context.Context, servingStateID servingstate.ID, projectID, connectionName, digest string, environment manageddata.Environment) (manageddata.ServingStateBinding, error) {
 	collection, err := b.repository.CollectionByProjectConnection(ctx, projectID, connectionName)
 	if err != nil {
 		if errors.Is(err, manageddata.ErrNotFound) {
-			return manageddata.ServingStateBinding{}, ErrCurrentRevisionUnavailable
+			return manageddata.ServingStateBinding{}, ErrPinnedRevisionUnavailable
 		}
 		return manageddata.ServingStateBinding{}, repositoryError(err)
 	}
@@ -142,37 +108,34 @@ func (b *Binder) currentBinding(ctx context.Context, servingStateID servingstate
 		return manageddata.ServingStateBinding{}, ErrArtifactMetadata
 	}
 	if collection.Status != manageddata.CollectionStatusActive {
-		return manageddata.ServingStateBinding{}, ErrCurrentRevisionUnavailable
+		return manageddata.ServingStateBinding{}, ErrPinnedRevisionUnavailable
 	}
 
-	pointer, err := b.repository.EnvironmentPointer(ctx, collection.ID, environment)
+	revisions, err := b.repository.ListRevisions(ctx, collection.ID)
 	if err != nil {
-		if errors.Is(err, manageddata.ErrNotFound) {
-			return manageddata.ServingStateBinding{}, ErrCurrentRevisionUnavailable
-		}
 		return manageddata.ServingStateBinding{}, repositoryError(err)
 	}
-	if pointer.CollectionID != collection.ID || pointer.Environment != environment || pointer.RevisionID == "" || pointer.RolloutID == "" || pointer.Generation <= 0 {
-		return manageddata.ServingStateBinding{}, ErrArtifactMetadata
-	}
-
-	revision, err := b.repository.RevisionByID(ctx, pointer.RevisionID)
-	if err != nil {
-		if errors.Is(err, manageddata.ErrNotFound) {
-			return manageddata.ServingStateBinding{}, ErrCurrentRevisionUnavailable
+	var match manageddata.Revision
+	matches := 0
+	for _, revision := range revisions {
+		if revision.CollectionID != collection.ID {
+			return manageddata.ServingStateBinding{}, ErrArtifactMetadata
 		}
-		return manageddata.ServingStateBinding{}, repositoryError(err)
+		if revision.Digest == digest && revision.Status == manageddata.RevisionStatusReady {
+			match = revision
+			matches++
+		}
 	}
-	if revision.ID != pointer.RevisionID || revision.CollectionID != collection.ID {
+	if matches > 1 {
 		return manageddata.ServingStateBinding{}, ErrArtifactMetadata
 	}
-	if revision.Status != manageddata.RevisionStatusReady {
-		return manageddata.ServingStateBinding{}, ErrCurrentRevisionUnavailable
+	if matches == 0 {
+		return manageddata.ServingStateBinding{}, ErrPinnedRevisionUnavailable
 	}
 	return manageddata.ServingStateBinding{
 		ServingStateID: string(servingStateID),
 		CollectionID:   collection.ID,
-		RevisionID:     revision.ID,
+		RevisionID:     match.ID,
 		Environment:    environment,
 	}, nil
 }

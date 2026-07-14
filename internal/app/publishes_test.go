@@ -567,7 +567,7 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	}
 
 	var bundle bytes.Buffer
-	if _, _, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), "sales", servingstate.ID(created.ID), &bundle); err != nil {
+	if _, _, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingstate.ID(created.ID)}, &bundle); err != nil {
 		t.Fatalf("pack project: %v", err)
 	}
 	uploadReq := httptest.NewRequest(http.MethodPut, "/api/v1/workspaces/sales/publishes/"+created.ID+"/artifact", bytes.NewReader(bundle.Bytes()))
@@ -2127,7 +2127,7 @@ func saveBundledValidatedPublish(t *testing.T, ctx context.Context, repo *servin
 		t.Fatalf("create deployment: %v", err)
 	}
 	var bundle bytes.Buffer
-	manifest, digest, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), workspaceID, created.ID, &bundle)
+	manifest, digest, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: string(workspaceID), ServingStateID: created.ID}, &bundle)
 	if err != nil {
 		t.Fatalf("pack project: %v", err)
 	}

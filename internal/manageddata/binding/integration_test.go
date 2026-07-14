@@ -19,7 +19,7 @@ import (
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
 
-func TestBinderPinsCompiledArtifactToCurrentSQLiteRevision(t *testing.T) {
+func TestBinderPinsCompiledArtifactRevisionAfterEnvironmentPointerChanges(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
 	if err != nil {
@@ -46,29 +46,21 @@ func TestBinderPinsCompiledArtifactToCurrentSQLiteRevision(t *testing.T) {
 	firstTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
 	activateRevision(t, ctx, repository, collection.ID, firstRevision.ID, firstTarget.ID, manageddata.PointerExpectation{})
 
-	validation := validateManagedProjectArtifact(t, candidate)
-	binder, err := New(repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := binder.AfterArtifactValidation(ctx, candidate, validation); err != nil {
-		t.Fatalf("pin current revision: %v", err)
-	}
-	bindings, err := repository.ListServingStateBindings(ctx, string(candidate.ID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(bindings) != 1 || bindings[0].CollectionID != collection.ID || bindings[0].RevisionID != firstRevision.ID || bindings[0].Environment != "prod" {
-		t.Fatalf("bindings = %#v, want first revision", bindings)
-	}
-
+	validation := validateManagedProjectArtifact(t, candidate, firstRevision.Digest)
 	secondRevision := createReadyRevision(t, ctx, repository, collection.ID, "orders-v2.csv", "b")
 	secondTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
 	activateRevision(t, ctx, repository, collection.ID, secondRevision.ID, secondTarget.ID, manageddata.PointerExpectation{
 		RevisionID: firstRevision.ID,
 		Generation: 1,
 	})
-	bindings, err = repository.ListServingStateBindings(ctx, string(candidate.ID))
+	binder, err := New(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := binder.AfterArtifactValidation(ctx, candidate, validation); err != nil {
+		t.Fatalf("pin artifact revision: %v", err)
+	}
+	bindings, err := repository.ListServingStateBindings(ctx, string(candidate.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,11 +122,14 @@ func activateRevision(t *testing.T, ctx context.Context, repository *manageddata
 	}
 }
 
-func validateManagedProjectArtifact(t *testing.T, candidate servingstate.State) servingstate.Validation {
+func validateManagedProjectArtifact(t *testing.T, candidate servingstate.State, revisionDigest string) servingstate.Validation {
 	t.Helper()
 	projectPath := writeManagedProject(t)
 	var bundle bytes.Buffer
-	if _, _, err := servingstatefs.PackProjectAgainstGraphForEnvironment(projectPath, "sales", "prod", candidate.ID, workspace.AssetGraph{}, &bundle); err != nil {
+	if _, _, err := servingstatefs.PackProject(projectPath, servingstatefs.PackProjectOptions{
+		WorkspaceID: "sales", Environment: "prod", ServingStateID: candidate.ID,
+		ManagedDataRevisions: map[string]string{"orders": revisionDigest},
+	}, &bundle); err != nil {
 		t.Fatalf("pack project: %v", err)
 	}
 	path := filepath.Join(t.TempDir(), "artifact.tar.gz")

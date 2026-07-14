@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -103,6 +105,7 @@ func runPublish(ctx context.Context, opts *rootOptions) error {
 		}
 		result.Status = "pending"
 		result.ActiveGraph = activeGraph
+		result.ManagedConnections = managedConnectionsForWorkspace(project, project.Workspaces[workspaceID])
 		needsApproval = true
 		results = append(results, result)
 	}
@@ -110,6 +113,10 @@ func runPublish(ctx context.Context, opts *rootOptions) error {
 		if err := confirmPublish(opts, os.Stdin, os.Stdout); err != nil {
 			return err
 		}
+	}
+	managedDataPins, err := fetchManagedDataPins(ctx, target, token, project.Name, cliEnvironment(opts), results)
+	if err != nil {
+		return err
 	}
 
 	var failures []string
@@ -126,7 +133,7 @@ func runPublish(ctx context.Context, opts *rootOptions) error {
 			continue
 		}
 		workspaceProject := project.Workspaces[result.WorkspaceID]
-		activated, digest, err := publishWorkspace(ctx, opts, target, token, result.WorkspaceID, workspaceProject, result.ActiveGraph)
+		activated, digest, err := publishWorkspace(ctx, opts, target, token, result.WorkspaceID, workspaceProject, result.ActiveGraph, selectManagedDataPins(managedDataPins, result.ManagedConnections))
 		if err != nil {
 			result.Status = "failed"
 			failures = append(failures, fmt.Sprintf("%s: %v", result.WorkspaceID, err))
@@ -143,10 +150,85 @@ func runPublish(ctx context.Context, opts *rootOptions) error {
 }
 
 type publishWorkspaceResult struct {
-	WorkspaceID string
-	Status      string
-	ActiveGraph workspace.AssetGraph
-	Err         error
+	WorkspaceID        string
+	Status             string
+	ActiveGraph        workspace.AssetGraph
+	ManagedConnections []string
+	Err                error
+}
+
+func managedConnectionsForWorkspace(project workspacecompiler.Project, workspaceProject *workspacecompiler.WorkspaceProject) []string {
+	connections := map[string]struct{}{}
+	for sourceID := range workspaceProject.AllowedSources {
+		source, ok := project.Sources[sourceID]
+		if !ok {
+			continue
+		}
+		connection, ok := project.Connections[source.Connection]
+		if ok && connection.Kind == "managed" {
+			connections[source.Connection] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(connections))
+	for connection := range connections {
+		result = append(result, connection)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func fetchManagedDataPins(ctx context.Context, target, token, projectID, environment string, results []publishWorkspaceResult) (map[string]string, error) {
+	connections := map[string]struct{}{}
+	for _, result := range results {
+		if result.Err != nil || result.Status != "pending" {
+			continue
+		}
+		for _, connection := range result.ManagedConnections {
+			connections[connection] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(connections))
+	for connection := range connections {
+		names = append(names, connection)
+	}
+	sort.Strings(names)
+	pins := make(map[string]string, len(names))
+	if len(names) == 0 {
+		return pins, nil
+	}
+	client := newManagedDataCLIClient(http.DefaultClient, target, token)
+	for _, connection := range names {
+		current, err := client.currentRevision(ctx, projectID, connection, environment)
+		if err != nil {
+			return nil, fmt.Errorf("resolve managed data connection %q current revision: %w", connection, err)
+		}
+		if current.Environment != environment || current.Revision == nil || current.Revision.Status != "available" || !canonicalManagedRevisionID(current.Revision.Id) {
+			return nil, fmt.Errorf("managed data connection %q has no valid current revision in environment %q", connection, environment)
+		}
+		pins[connection] = current.Revision.Id
+	}
+	return pins, nil
+}
+
+func selectManagedDataPins(all map[string]string, connections []string) map[string]string {
+	pins := make(map[string]string, len(connections))
+	for _, connection := range connections {
+		pins[connection] = all[connection]
+	}
+	return pins
+}
+
+func canonicalManagedRevisionID(value string) bool {
+	const prefix = "sha256:"
+	if len(value) != len(prefix)+sha256.Size*2 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	digest := value[len(prefix):]
+	if strings.ToLower(digest) != digest {
+		return false
+	}
+	_, err := hex.DecodeString(digest)
+	return err == nil
 }
 
 func sortedPublishWorkspaceIDs(workspaces map[string]*workspacecompiler.WorkspaceProject, filter string) []string {
@@ -178,7 +260,7 @@ func printPublishPlanSummary(workspacePlan workspacecompiler.ProjectPlanWorkspac
 	fmt.Printf("workspace %s changes +%d ~%d -%d dependencies %d\n", workspacePlan.ID, summary.Added, summary.Changed, summary.Removed, summary.DependencyChanges)
 }
 
-func publishWorkspace(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph) (api.PublishResponse, string, error) {
+func publishWorkspace(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (api.PublishResponse, string, error) {
 	createBody, _ := json.Marshal(map[string]any{
 		"title":       workspaceProject.Title,
 		"description": workspaceProject.Description,
@@ -193,17 +275,15 @@ func publishWorkspace(ctx context.Context, opts *rootOptions, target, token, wor
 	if err := doJSON(ctx, http.MethodPost, createURL, token, bytes.NewReader(createBody), &created); err != nil {
 		return api.PublishResponse{}, "", err
 	}
-	var buf bytes.Buffer
-	var digest string
-	_, digest, err = servingstatefs.PackProjectAgainstGraphForEnvironment(opts.catalog, workspaceID, servingstate.Environment(cliEnvironment(opts)), servingstate.ID(created.ID), activeGraph, &buf)
-	if err != nil {
-		return api.PublishResponse{}, "", err
-	}
 	uploadURL, err := apiOperationURL(target, "uploadPublishArtifact", map[string]string{"workspace": workspaceID, "publish": created.ID}, environmentQuery(opts, nil))
 	if err != nil {
 		return api.PublishResponse{}, "", err
 	}
-	if err := doJSON(ctx, http.MethodPut, uploadURL, token, bytes.NewReader(buf.Bytes()), nil); err != nil {
+	digest, err := streamProjectArtifact(ctx, uploadURL, token, opts.catalog, servingstatefs.PackProjectOptions{
+		WorkspaceID: workspaceID, Environment: servingstate.Environment(cliEnvironment(opts)), ServingStateID: servingstate.ID(created.ID),
+		ActiveGraph: activeGraph, ManagedDataRevisions: managedDataRevisions,
+	})
+	if err != nil {
 		return api.PublishResponse{}, "", err
 	}
 	var validated api.PublishResponse
@@ -223,6 +303,30 @@ func publishWorkspace(ctx context.Context, opts *rootOptions, target, token, wor
 		return api.PublishResponse{}, "", err
 	}
 	return activated, digest, nil
+}
+
+func streamProjectArtifact(ctx context.Context, uploadURL, token, projectPath string, options servingstatefs.PackProjectOptions) (string, error) {
+	reader, writer := io.Pipe()
+	type packResult struct {
+		digest string
+		err    error
+	}
+	result := make(chan packResult, 1)
+	go func() {
+		_, digest, err := servingstatefs.PackProject(projectPath, options, writer)
+		_ = writer.CloseWithError(err)
+		result <- packResult{digest: digest, err: err}
+	}()
+	uploadErr := doRawAPI(ctx, http.MethodPut, uploadURL, token, "application/gzip", reader, io.Discard)
+	_ = reader.CloseWithError(uploadErr)
+	packed := <-result
+	if packed.err != nil {
+		return "", packed.err
+	}
+	if uploadErr != nil {
+		return "", uploadErr
+	}
+	return packed.digest, nil
 }
 
 func runPublishesList(ctx context.Context, opts *rootOptions) error {
