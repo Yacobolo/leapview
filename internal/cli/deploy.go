@@ -261,6 +261,18 @@ func printPublishPlanSummary(workspacePlan workspacecompiler.ProjectPlanWorkspac
 }
 
 func publishWorkspace(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (api.PublishResponse, string, error) {
+	prepared, digest, err := prepareWorkspacePublish(ctx, opts, target, token, workspaceID, workspaceProject, activeGraph, managedDataRevisions)
+	if err != nil {
+		return api.PublishResponse{}, "", err
+	}
+	activated, err := activateWorkspacePublish(ctx, opts, target, token, prepared)
+	if err != nil {
+		return api.PublishResponse{}, "", err
+	}
+	return activated, digest, nil
+}
+
+func prepareWorkspacePublish(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (api.PublishResponse, string, error) {
 	createBody, _ := json.Marshal(map[string]any{
 		"title":       workspaceProject.Title,
 		"description": workspaceProject.Description,
@@ -294,15 +306,25 @@ func publishWorkspace(ctx context.Context, opts *rootOptions, target, token, wor
 	if err := doJSON(ctx, http.MethodPost, validateURL, token, nil, &validated); err != nil {
 		return api.PublishResponse{}, "", err
 	}
+	if validated.ID != created.ID || validated.WorkspaceID != workspaceID || validated.Environment != cliEnvironment(opts) || validated.Status != string(servingstate.StatusValidated) || strings.TrimSpace(validated.Digest) == "" {
+		return api.PublishResponse{}, "", fmt.Errorf("publish validation returned inconsistent scope or status")
+	}
+	return validated, digest, nil
+}
+
+func activateWorkspacePublish(ctx context.Context, opts *rootOptions, target, token string, prepared api.PublishResponse) (api.PublishResponse, error) {
 	var activated api.PublishResponse
-	activateURL, err := apiOperationURL(target, "activatePublish", map[string]string{"workspace": workspaceID, "publish": created.ID}, environmentQuery(opts, nil))
+	activateURL, err := apiOperationURL(target, "activatePublish", map[string]string{"workspace": prepared.WorkspaceID, "publish": prepared.ID}, environmentQuery(opts, nil))
 	if err != nil {
-		return api.PublishResponse{}, "", err
+		return api.PublishResponse{}, err
 	}
 	if err := doJSON(ctx, http.MethodPost, activateURL, token, nil, &activated); err != nil {
-		return api.PublishResponse{}, "", err
+		return api.PublishResponse{}, err
 	}
-	return activated, digest, nil
+	if activated.ID != prepared.ID || activated.WorkspaceID != prepared.WorkspaceID || activated.Environment != prepared.Environment || activated.Status != string(servingstate.StatusActive) || activated.Digest != prepared.Digest {
+		return api.PublishResponse{}, fmt.Errorf("publish activation returned inconsistent scope or status")
+	}
+	return activated, nil
 }
 
 func streamProjectArtifact(ctx context.Context, uploadURL, token, projectPath string, options servingstatefs.PackProjectOptions) (string, error) {

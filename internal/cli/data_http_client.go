@@ -81,6 +81,18 @@ func (c *managedDataCLIClient) currentRevision(ctx context.Context, project, con
 	return response, err
 }
 
+func (c *managedDataCLIClient) createRollout(ctx context.Context, project, connection, key string, body apigenapi.ManagedDataRolloutCreateRequest) (apigenapi.ManagedDataRolloutResponse, error) {
+	var response apigenapi.ManagedDataRolloutResponse
+	err := c.json(ctx, http.MethodPost, "createManagedDataRollout", map[string]string{"project": project, "connection": connection}, nil, key, body, &response)
+	return response, err
+}
+
+func (c *managedDataCLIClient) activateRollout(ctx context.Context, project, connection, rolloutID, key string) (apigenapi.ManagedDataRolloutResponse, error) {
+	var response apigenapi.ManagedDataRolloutResponse
+	err := c.json(ctx, http.MethodPost, "activateManagedDataRollout", map[string]string{"project": project, "connection": connection, "rollout": rolloutID}, nil, key, nil, &response)
+	return response, err
+}
+
 func (c *managedDataCLIClient) json(ctx context.Context, method, operation string, pathParams map[string]string, query url.Values, idempotencyKey string, body, out any) error {
 	endpoint, err := apiOperationURL(c.target, operation, pathParams, query)
 	if err != nil {
