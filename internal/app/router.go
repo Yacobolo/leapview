@@ -103,6 +103,11 @@ func (s *Server) Routes() http.Handler {
 		mux.Group(func(r chi.Router) {
 			r.Use(s.rateLimits.apiMiddleware())
 			r.Use(s.csrf)
+			if s.managedDataTus != nil {
+				tus := s.protect(access.PrivilegeIngestData, managedDataTusHandler(s.managedDataTus))
+				r.Handle("/api/v1/managed-data/tus", tus)
+				r.Handle("/api/v1/managed-data/tus/*", tus)
+			}
 			agentHTTP := s.agentHTTPHandler()
 			r.Get("/api/v1/agent/conversations", s.protected(access.PrivilegeViewAgent, agentHTTP.ListConversations))
 			r.Post("/api/v1/agent/conversations", s.protected(access.PrivilegeUseAgent, agentHTTP.CreateConversation))
@@ -120,6 +125,18 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/static/*", staticAssetCache(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 
 	return mux
+}
+
+func managedDataTusHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodOptions, http.MethodHead, http.MethodPatch, http.MethodDelete:
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Allow", "OPTIONS, HEAD, PATCH, DELETE")
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
+	})
 }
 
 func (s *Server) protected(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {

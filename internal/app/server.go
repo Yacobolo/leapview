@@ -101,6 +101,7 @@ type Server struct {
 	chatTitleMu         sync.Mutex
 	pendingChatTitles   map[string]struct{}
 	managedDataOptions  manageddatahttp.Options
+	managedDataTus      http.Handler
 }
 
 func New(metrics QueryMetrics) *Server {
@@ -140,6 +141,7 @@ type Options struct {
 	Executor            *execution.Service
 	JobLeaseTimeout     time.Duration
 	ManagedData         manageddatahttp.Options
+	ManagedDataTus      http.Handler
 }
 
 func NewWithOptions(metrics QueryMetrics, options Options) *Server {
@@ -203,6 +205,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	server.requestLogging = options.RequestLogging
 	server.managedDataOptions = options.ManagedData
+	server.managedDataTus = options.ManagedDataTus
 	server.jobLeaseTimeout = options.JobLeaseTimeout
 	if server.jobLeaseTimeout <= 0 {
 		server.jobLeaseTimeout = 2 * time.Minute
