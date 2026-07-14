@@ -16,11 +16,17 @@ import (
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
 
+const olistManagedDataRevision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func olistManagedDataRevisions() map[string]string {
+	return map[string]string{"olist": olistManagedDataRevision}
+}
+
 func TestPackProjectValidatesSelectedWorkspace(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
 	var bundle bytes.Buffer
 	servingStateID := servingstate.ID("dep_ops")
-	manifest, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "operations", ServingStateID: servingStateID}, &bundle)
+	manifest, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "operations", ServingStateID: servingStateID, ManagedDataRevisions: olistManagedDataRevisions()}, &bundle)
 	if err != nil {
 		t.Fatalf("PackProject() error = %v", err)
 	}
@@ -172,7 +178,8 @@ func TestValidateArtifactRejectsUnlistedBundleFile(t *testing.T) {
 }
 
 func TestValidateArtifactWithDiscoveryPersistsValidatedCompiledGraph(t *testing.T) {
-	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
+	dataDir := t.TempDir()
+	projectPath := writeDiscoveryProject(t, dataDir)
 	var bundle bytes.Buffer
 	servingStateID := servingstate.ID("dep_discovered")
 	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingStateID}, &bundle); err != nil {
@@ -182,11 +189,6 @@ func TestValidateArtifactWithDiscoveryPersistsValidatedCompiledGraph(t *testing.
 	if err := os.WriteFile(path, bundle.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dataDir := filepath.Join("..", "..", "..", ".data", "olist")
-	if _, err := os.Stat(dataDir); err != nil {
-		t.Skipf("Olist data is not available: %v", err)
-	}
-
 	validation, err := ValidateArtifactWithOptions(path, "sales", servingStateID, ValidateOptions{DataDir: dataDir})
 	if err != nil {
 		t.Fatalf("ValidateArtifactWithOptions() error = %v", err)
@@ -216,7 +218,7 @@ func TestValidateArtifactWithDiscoveryPersistsValidatedCompiledGraph(t *testing.
 func TestValidateArtifactRejectsWrongDeploymentCompiledGraph(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
 	var bundle bytes.Buffer
-	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "operations", ServingStateID: "dep_ops"}, &bundle); err != nil {
+	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "operations", ServingStateID: "dep_ops", ManagedDataRevisions: olistManagedDataRevisions()}, &bundle); err != nil {
 		t.Fatalf("PackProject() error = %v", err)
 	}
 	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
@@ -292,7 +294,7 @@ func packedProjectArtifact(t *testing.T, workspaceID string, environment serving
 	t.Helper()
 	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
 	var bundle bytes.Buffer
-	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: workspaceID, Environment: environment, ServingStateID: servingStateID}, &bundle); err != nil {
+	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: workspaceID, Environment: environment, ServingStateID: servingStateID, ManagedDataRevisions: olistManagedDataRevisions()}, &bundle); err != nil {
 		t.Fatalf("PackProject() error = %v", err)
 	}
 	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
@@ -425,7 +427,7 @@ func TestPackProjectStoresActiveDeploymentPlanDiff(t *testing.T) {
 	})
 
 	var bundle bytes.Buffer
-	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "operations", ServingStateID: "dep_ops", ActiveGraph: activeGraph}, &bundle); err != nil {
+	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "operations", ServingStateID: "dep_ops", ActiveGraph: activeGraph, ManagedDataRevisions: olistManagedDataRevisions()}, &bundle); err != nil {
 		t.Fatalf("PackProject() error = %v", err)
 	}
 	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
@@ -607,6 +609,92 @@ func writeBundleProjectFixture(t *testing.T, files map[string]string) string {
 		}
 	}
 	return filepath.Join(dir, ProjectFile)
+}
+
+func writeDiscoveryProject(t *testing.T, dataDir string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dataDir, "orders.csv"), []byte("order_id\n1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return writeBundleProjectFixture(t, map[string]string{
+		"libredash.yaml": `
+apiVersion: libredash.dev/v1
+kind: Project
+metadata:
+  name: discovery
+spec:
+  connections:
+    include: [connections/*.yaml]
+  sources:
+    include: [sources/*.yaml]
+  workspaces:
+    include: [workspaces/*/workspace.yaml]
+`,
+		"connections/orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: Connection
+metadata:
+  name: orders
+spec:
+  kind: local
+`,
+		"sources/orders.orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: Source
+metadata:
+  name: orders.orders
+spec:
+  connection: orders
+  path: orders.csv
+  format: csv
+  fields:
+    order_id:
+      type: string
+`,
+		"workspaces/sales/workspace.yaml": `
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: sales
+spec:
+  uses:
+    sources: [orders.orders]
+  models:
+    include: [models/*.yaml]
+  semanticModels:
+    include: [semantic-models/*.yaml]
+  dashboards:
+    include: []
+  access:
+    include: []
+  agentPolicy:
+    include: []
+`,
+		"workspaces/sales/models/orders.yaml": `
+apiVersion: libredash.dev/v1
+kind: ModelTable
+metadata:
+  workspace: sales
+  name: orders
+spec:
+  source: orders.orders
+  primaryKey: order_id
+  fields:
+    order_id:
+      label: ID
+`,
+		"workspaces/sales/semantic-models/sales.yaml": `
+apiVersion: libredash.dev/v1
+kind: SemanticModel
+metadata:
+  workspace: sales
+  name: sales
+spec:
+  baseTable: orders
+  tables: [orders]
+  measures: {}
+`,
+	})
 }
 
 func writeManagedBundleProject(t *testing.T) string {
