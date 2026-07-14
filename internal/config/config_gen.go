@@ -77,7 +77,7 @@ type Config struct {
 	LocalAuth bool `env:"LIBREDASH_LOCAL_AUTH"`
 	// ManagedDataBackend Storage backend for project-global managed data; supported values are local and s3.
 	ManagedDataBackend string `env:"LIBREDASH_MANAGED_DATA_BACKEND" envDefault:"local"`
-	// ManagedDataDir Root directory for local managed-data objects and upload staging.
+	// ManagedDataDir Private local root for managed-data objects, upload staging, and verified runtime views; S3 deployments use it as the runtime cache.
 	ManagedDataDir string `env:"LIBREDASH_MANAGED_DATA_DIR" envDefault:".libredash/managed-data"`
 	// ManagedDataGCGracePeriod Minimum age of unreferenced managed-data objects before garbage collection.
 	ManagedDataGCGracePeriod time.Duration `env:"LIBREDASH_MANAGED_DATA_GC_GRACE_PERIOD" envDefault:"24h"`

@@ -110,7 +110,7 @@ Run `libredash config validate` to validate the active environment, or add `--pr
 | Environment variable | Type / default | Scope | Lifecycle | Description |
 |---|---|---|---|---|
 | `LIBREDASH_MANAGED_DATA_BACKEND` | string / `local` | serve | supported | Storage backend for project-global managed data; supported values are local and s3. |
-| `LIBREDASH_MANAGED_DATA_DIR` | string / `.libredash/managed-data` | serve | supported | Root directory for local managed-data objects and upload staging. |
+| `LIBREDASH_MANAGED_DATA_DIR` | string / `.libredash/managed-data` | serve | supported | Private local root for managed-data objects, upload staging, and verified runtime views; S3 deployments use it as the runtime cache. |
 | `LIBREDASH_MANAGED_DATA_GC_GRACE_PERIOD` | duration / `24h` | serve | supported | Minimum age of unreferenced managed-data objects before garbage collection. |
 | `LIBREDASH_MANAGED_DATA_GC_INTERVAL` | duration / `1h` | serve | supported | Interval between managed-data garbage-collection passes. |
 | `LIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES` | integer64 / `10737418240` | serve | supported | Free-space target retained after managed-data garbage collection. |
@@ -181,7 +181,7 @@ Run `libredash config validate` to validate the active environment, or add `--pr
 - **production-azure-callback-https:** The production Azure callback must use HTTPS. Failure: `production serve requires LIBREDASH_AZURE_CALLBACK_URL to be an https URL`.
 - **production-scim-token:** A configured production SCIM token must contain at least 32 characters. Failure: `production SCIM provisioning requires LIBREDASH_SCIM_BEARER_TOKEN with at least 32 characters`.
 - **managed-data-backend:** Managed data uses a supported storage backend. Failure: `LIBREDASH_MANAGED_DATA_BACKEND must be local or s3`.
-- **managed-data-local-dir:** The local managed-data backend requires a storage directory. Failure: `local managed-data storage requires LIBREDASH_MANAGED_DATA_DIR`.
+- **managed-data-runtime-dir:** Every managed-data backend requires a private local runtime and staging directory. Failure: `managed-data storage requires LIBREDASH_MANAGED_DATA_DIR`.
 - **managed-data-s3-location:** The S3 managed-data backend requires a bucket and region. Failure: `S3 managed-data storage requires LIBREDASH_MANAGED_DATA_S3_BUCKET and LIBREDASH_MANAGED_DATA_S3_REGION`.
 - **managed-data-s3-credentials:** Managed-data S3 credentials are either omitted or configured as a complete key pair. Failure: `managed-data S3 credentials require both LIBREDASH_MANAGED_DATA_S3_ACCESS_KEY_ID and LIBREDASH_MANAGED_DATA_S3_SECRET_ACCESS_KEY; a session token also requires that pair`.
 - **managed-data-positive-limits:** Managed-data upload, session, garbage-collection, and free-space limits are positive. Failure: `managed-data limits, durations, and free-space thresholds must be positive`.

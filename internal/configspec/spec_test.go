@@ -130,6 +130,12 @@ func TestManagedDataStorageCatalogAndRelationships(t *testing.T) {
 		{name: "gc target below reserve", mutate: func(values map[string]any) { values["LIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES"] = 1024 }},
 		{name: "zero session ttl", mutate: func(values map[string]any) { values["LIBREDASH_MANAGED_DATA_UPLOAD_SESSION_TTL"] = time.Duration(0) }},
 		{name: "s3 incomplete", mutate: func(values map[string]any) { values["LIBREDASH_MANAGED_DATA_BACKEND"] = "s3" }},
+		{name: "s3 missing runtime cache", mutate: func(values map[string]any) {
+			values["LIBREDASH_MANAGED_DATA_BACKEND"] = "s3"
+			values["LIBREDASH_MANAGED_DATA_S3_BUCKET"] = "bucket"
+			values["LIBREDASH_MANAGED_DATA_S3_REGION"] = "eu-west-1"
+			delete(values, "LIBREDASH_MANAGED_DATA_DIR")
+		}},
 		{name: "partial s3 credentials", mutate: func(values map[string]any) {
 			values["LIBREDASH_MANAGED_DATA_BACKEND"] = "s3"
 			values["LIBREDASH_MANAGED_DATA_S3_BUCKET"] = "bucket"
