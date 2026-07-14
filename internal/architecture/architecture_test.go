@@ -727,7 +727,7 @@ func isAdapterOrCompositionPackage(pkgDir string) bool {
 		strings.HasPrefix(pkgDir, "internal/testutil/") {
 		return true
 	}
-	for _, suffix := range []string{"/http", "/sqlite", "/filesystem", "/duckdb", "/ducklake", "/datastar", "/openai", "/ui"} {
+	for _, suffix := range []string{"/http", "/sqlite", "/filesystem", "/s3", "/tus", "/duckdb", "/ducklake", "/datastar", "/openai", "/ui"} {
 		if strings.HasSuffix(pkgDir, suffix) || strings.Contains(pkgDir, suffix+"/") {
 			return true
 		}
@@ -749,7 +749,7 @@ func isForbiddenUseCaseImport(imported string) bool {
 	if !strings.HasPrefix(imported, modulePath+"/internal/") {
 		return false
 	}
-	for _, segment := range []string{"/sqlite", "/filesystem", "/duckdb", "/ducklake", "/datastar", "/http", "/openai"} {
+	for _, segment := range []string{"/sqlite", "/filesystem", "/s3", "/tus", "/duckdb", "/ducklake", "/datastar", "/http", "/openai"} {
 		if strings.Contains(strings.TrimPrefix(imported, modulePath), segment) {
 			return true
 		}
