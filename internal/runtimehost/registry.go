@@ -15,16 +15,19 @@ type RegistryOptions struct {
 	Environment  servingstate.Environment
 	DataDir      string
 	Factory      RuntimeFactory
+	ManagedData  ManagedDataResolver
 	OnDrained    func(servingstate.ID, int64)
 }
 
 type Registry struct {
 	mu          sync.RWMutex
 	prepareMu   sync.Mutex
+	cutoverMu   sync.RWMutex
 	repo        ServingStateRepository
 	environment servingstate.Environment
 	dataDir     string
 	factory     RuntimeFactory
+	managedData ManagedDataResolver
 	onDrained   func(servingstate.ID, int64)
 	managers    map[servingstate.WorkspaceID]*Manager
 }
@@ -73,6 +76,7 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 		environment: servingstate.NormalizeEnvironment(options.Environment),
 		dataDir:     options.DataDir,
 		factory:     options.Factory,
+		managedData: options.ManagedData,
 		onDrained:   options.OnDrained,
 		managers:    map[servingstate.WorkspaceID]*Manager{},
 	}
@@ -193,8 +197,8 @@ func (r *Registry) CommitPreparedSet(set *PreparedSet, activate func() error) er
 		}
 	}
 
-	r.prepareMu.Lock()
-	defer r.prepareMu.Unlock()
+	r.cutoverMu.Lock()
+	defer r.cutoverMu.Unlock()
 	if err := activate(); err != nil {
 		return err
 	}
@@ -228,17 +232,20 @@ func (r *Registry) ActiveForWorkspace(ctx context.Context, workspaceID servingst
 }
 
 func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID servingstate.WorkspaceID) (Lease, error) {
+	r.cutoverMu.RLock()
+	defer r.cutoverMu.RUnlock()
 	r.mu.RLock()
 	manager := r.managers[workspaceID]
 	r.mu.RUnlock()
 	if manager == nil {
 		return nil, fmt.Errorf("no active LibreDash serving state")
 	}
-	r.prepareMu.Lock()
-	err := manager.ReloadBeforePrepare(ctx, r.closePreparedRuntimes)
-	r.prepareMu.Unlock()
-	if err != nil {
-		return nil, err
+	if r.prepareMu.TryLock() {
+		err := manager.ReloadBeforePrepare(ctx, r.closePreparedRuntimes)
+		r.prepareMu.Unlock()
+		if err != nil {
+			return nil, err
+		}
 	}
 	return manager.Acquire()
 }
@@ -290,6 +297,7 @@ func (r *Registry) managerForWorkspace(workspaceID servingstate.WorkspaceID) *Ma
 		Environment: r.environment,
 		DataDir:     r.dataDir,
 		Factory:     r.factory,
+		ManagedData: r.managedData,
 		OnDrained:   r.onDrained,
 	})
 	r.managers[workspaceID] = manager

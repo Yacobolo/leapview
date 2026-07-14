@@ -36,6 +36,15 @@ type RuntimeFactory interface {
 	Prepare(ctx context.Context, input RuntimeInput) (Runtime, error)
 }
 
+type ManagedDataResolution struct {
+	RevisionID string
+	Roots      map[string]string
+}
+
+type ManagedDataResolver interface {
+	ResolveManagedData(ctx context.Context, servingStateID servingstate.ID) (ManagedDataResolution, error)
+}
+
 type SnapshotLeaseRepository interface {
 	CreateQuerySnapshotLease(ctx context.Context, input servingstate.SnapshotLeaseInput) (string, error)
 	ReleaseQuerySnapshotLease(ctx context.Context, id string) error
@@ -43,11 +52,12 @@ type SnapshotLeaseRepository interface {
 }
 
 type RuntimeInput struct {
-	State      servingstate.State
-	Artifact   servingstate.Artifact
-	DataDir    string
-	DuckDBDir  string
-	RuntimeDir string
+	State       servingstate.State
+	Artifact    servingstate.Artifact
+	ManagedData ManagedDataResolution
+	DataDir     string
+	DuckDBDir   string
+	RuntimeDir  string
 }
 
 type Manager struct {
@@ -57,6 +67,7 @@ type Manager struct {
 	environment          servingstate.Environment
 	dataDir              string
 	factory              RuntimeFactory
+	managedData          ManagedDataResolver
 	onDrained            func(servingstate.ID, int64)
 	leaseTTL             time.Duration
 	leaseOwner           string
@@ -73,6 +84,7 @@ type ManagerOptions struct {
 	Environment servingstate.Environment
 	DataDir     string
 	Factory     RuntimeFactory
+	ManagedData ManagedDataResolver
 	OnDrained   func(servingstate.ID, int64)
 	LeaseTTL    time.Duration
 	LeaseOwner  string
@@ -107,6 +119,7 @@ func NewManagerWithFactory(options ManagerOptions) *Manager {
 		environment: servingstate.NormalizeEnvironment(options.Environment),
 		dataDir:     options.DataDir,
 		factory:     options.Factory,
+		managedData: options.ManagedData,
 		onDrained:   options.OnDrained,
 		leaseTTL:    normalizedLeaseTTL(options.LeaseTTL),
 		leaseOwner:  firstNonEmpty(options.LeaseOwner, "runtimehost"),
@@ -178,11 +191,15 @@ func (m *Manager) prepare(ctx context.Context, current servingstate.State, artif
 	}
 	m.mu.RUnlock()
 
-	runtime, err := m.factory.Prepare(ctx, RuntimeInput{
-		State:    current,
-		Artifact: artifact,
-		DataDir:  m.dataDir,
-	})
+	var managedData ManagedDataResolution
+	var err error
+	if m.managedData != nil {
+		managedData, err = m.managedData.ResolveManagedData(ctx, current.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	runtime, err := m.factory.Prepare(ctx, RuntimeInput{State: current, Artifact: artifact, ManagedData: managedData, DataDir: m.dataDir})
 	if err != nil {
 		return nil, err
 	}

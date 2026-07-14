@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -87,6 +88,31 @@ func TestManagerPrepareCommitSwapsRuntimeAndClosesOld(t *testing.T) {
 	}
 	if factory.prepareCalls != 1 {
 		t.Fatalf("factory calls = %d, want no-change reuse", factory.prepareCalls)
+	}
+}
+
+func TestManagerPassesManagedDataResolutionToRuntimeFactory(t *testing.T) {
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "prod", Status: servingstate.StatusValidated},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "prod", Digest: "digest"},
+	}
+	resolver := fakeManagedDataResolver{resolution: ManagedDataResolution{
+		RevisionID: "sha256:" + strings.Repeat("a", 64),
+		Roots:      map[string]string{"olist": "/managed/olist/revision"},
+	}}
+	factory := &fakeFactory{}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "prod", Factory: factory, ManagedData: resolver})
+
+	prepared, err := manager.PrepareServingState(context.Background(), "dep_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	if factory.input.ManagedData.RevisionID != resolver.resolution.RevisionID {
+		t.Fatalf("revision = %q", factory.input.ManagedData.RevisionID)
+	}
+	if got := factory.input.ManagedData.Roots["olist"]; got != "/managed/olist/revision" {
+		t.Fatalf("olist root = %q", got)
 	}
 }
 
@@ -570,6 +596,60 @@ func TestRegistryPreparedSetDoesNotCommitWhenMetadataActivationFails(t *testing.
 	}
 }
 
+func TestRegistryServesActiveGenerationWhilePreparedSetIsBuilding(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	repo.active["sales/prod"] = registryDeploymentArtifact{
+		deployment: servingstate.State{ID: "dep_sales_active", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusActive, DuckLakeSnapshotID: 1},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_sales_active", WorkspaceID: "sales", Environment: "prod", Digest: "active"},
+	}
+	repo.deployments["dep_sales_next"] = servingstate.State{ID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated}
+	repo.artifacts["dep_sales_next"] = servingstate.Artifact{ServingStateID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Digest: "next"}
+	factory := &blockingRegistryFactory{started: make(chan struct{}), release: make(chan struct{})}
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, WorkspaceIDs: []servingstate.WorkspaceID{"sales"}, Environment: "prod", Factory: factory})
+	if err := registry.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	preparedResult := make(chan *PreparedSet, 1)
+	errResult := make(chan error, 1)
+	go func() {
+		prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_next"})
+		preparedResult <- prepared
+		errResult <- err
+	}()
+	<-factory.started
+
+	leaseResult := make(chan Lease, 1)
+	leaseErr := make(chan error, 1)
+	go func() {
+		lease, err := registry.AcquireForWorkspace(context.Background(), "sales")
+		leaseResult <- lease
+		leaseErr <- err
+	}()
+	select {
+	case err := <-leaseErr:
+		if err != nil {
+			t.Fatalf("acquire active generation: %v", err)
+		}
+		lease := <-leaseResult
+		if lease.ServingStateID() != "dep_sales_active" {
+			t.Fatalf("serving state = %q", lease.ServingStateID())
+		}
+		lease.Release()
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("active acquisition blocked behind candidate materialization")
+	}
+
+	close(factory.release)
+	prepared := <-preparedResult
+	if err := <-errResult; err != nil {
+		t.Fatal(err)
+	}
+	if prepared != nil {
+		defer prepared.Close()
+	}
+}
+
 func TestRegistryRejectsPreparedDeploymentFromDifferentEnvironment(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	repo.deployments["dep_ops_dev"] = servingstate.State{ID: "dep_ops_dev", WorkspaceID: "operations", Environment: "dev", Status: servingstate.StatusValidated}
@@ -849,10 +929,12 @@ type fakeFactory struct {
 	prepareCalls int
 	err          error
 	snapshotID   int64
+	input        RuntimeInput
 }
 
 func (f *fakeFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, error) {
 	f.prepareCalls++
+	f.input = input
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -860,6 +942,15 @@ func (f *fakeFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, e
 		return &fakeRuntime{snapshotID: input.State.DuckLakeSnapshotID}, nil
 	}
 	return &fakeRuntime{snapshotID: f.snapshotID}, nil
+}
+
+type fakeManagedDataResolver struct {
+	resolution ManagedDataResolution
+	err        error
+}
+
+func (r fakeManagedDataResolver) ResolveManagedData(context.Context, servingstate.ID) (ManagedDataResolution, error) {
+	return r.resolution, r.err
 }
 
 type fakeRuntime struct {
@@ -963,6 +1054,19 @@ func (r *recordingRuntime) Close() error {
 type overlapDetectingRegistryFactory struct {
 	active     atomic.Int32
 	overlapped atomic.Bool
+}
+
+type blockingRegistryFactory struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingRegistryFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, error) {
+	if input.State.ID == "dep_sales_next" {
+		close(f.started)
+		<-f.release
+	}
+	return &recordingRuntime{}, nil
 }
 
 func (f *overlapDetectingRegistryFactory) Prepare(context.Context, RuntimeInput) (Runtime, error) {
