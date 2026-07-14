@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/access/httpauth"
@@ -130,7 +131,13 @@ func (s *Server) Routes() http.Handler {
 func managedDataTusHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
-		case http.MethodOptions, http.MethodHead, http.MethodPatch, http.MethodDelete:
+		case http.MethodPatch:
+			// Authentication and headers have already completed. The upload
+			// session TTL bounds abandoned bodies, while large chunks must not
+			// inherit the general page/API read deadline.
+			_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
+			next.ServeHTTP(w, r)
+		case http.MethodOptions, http.MethodHead, http.MethodDelete:
 			next.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Allow", "OPTIONS, HEAD, PATCH, DELETE")

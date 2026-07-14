@@ -22,7 +22,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const dataTransferAttempts = 5
+const (
+	dataTransferAttempts = 5
+	dataTusChunkSize     = 16 << 20
+)
 
 type dataSyncRequest struct {
 	ProjectPath string
@@ -164,10 +167,11 @@ func uploadManagedDataTus(ctx context.Context, client *managedDataCLIClient, roo
 	if err != nil {
 		return fmt.Errorf("invalid tus negotiation for %q", expected.Path)
 	}
-	for attempt := 0; attempt < dataTransferAttempts; attempt++ {
+	for failures := 0; ; {
 		offset, err := tusOffset(ctx, client, endpoint, expected.Size)
 		if err != nil {
-			if waitForTransferRetry(ctx, attempt) {
+			if failures < dataTransferAttempts-1 && waitForTransferRetry(ctx, failures) {
+				failures++
 				continue
 			}
 			return fmt.Errorf("tus upload failed for %q", expected.Path)
@@ -176,20 +180,24 @@ func uploadManagedDataTus(ctx context.Context, client *managedDataCLIClient, roo
 			return verifySourceFile(ctx, root, expected)
 		}
 		newOffset, retry, err := patchTusFile(ctx, client, endpoint, root, expected, offset)
-		if err == nil && newOffset == expected.Size {
-			return nil
+		if err == nil && newOffset > offset && newOffset <= expected.Size {
+			failures = 0
+			if newOffset == expected.Size {
+				return verifySourceFile(ctx, root, expected)
+			}
+			continue
 		}
-		if err == nil && newOffset > expected.Size {
+		if err == nil && (newOffset <= offset || newOffset > expected.Size) {
 			return fmt.Errorf("tus upload returned an invalid offset for %q", expected.Path)
 		}
-		if !retry || !waitForTransferRetry(ctx, attempt) {
+		if !retry || failures >= dataTransferAttempts-1 || !waitForTransferRetry(ctx, failures) {
 			if err != nil {
 				return err
 			}
 			return fmt.Errorf("tus upload did not complete for %q", expected.Path)
 		}
+		failures++
 	}
-	return fmt.Errorf("tus upload retries exhausted for %q", expected.Path)
 }
 
 func tusOffset(ctx context.Context, client *managedDataCLIClient, endpoint string, expectedSize int64) (int64, error) {
@@ -227,17 +235,17 @@ func patchTusFile(ctx context.Context, client *managedDataCLIClient, endpoint, r
 		return 0, false, err
 	}
 	defer file.Close()
-	digest := sha256.New()
-	if _, err := io.CopyN(digest, file, offset); err != nil {
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return 0, false, sourceChanged(expected.Path)
 	}
 	remaining := expected.Size - offset
-	counted := &countingReader{reader: io.TeeReader(io.LimitReader(file, remaining), digest)}
+	chunkSize := min(remaining, int64(dataTusChunkSize))
+	counted := &countingReader{reader: io.LimitReader(file, chunkSize)}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, io.NopCloser(counted))
 	if err != nil {
 		return 0, false, fmt.Errorf("build tus request for %q", expected.Path)
 	}
-	request.ContentLength = remaining
+	request.ContentLength = chunkSize
 	request.Header.Set("Authorization", "Bearer "+client.token)
 	request.Header.Set("Tus-Resumable", "1.0.0")
 	request.Header.Set("Upload-Offset", strconv.FormatInt(offset, 10))
@@ -254,14 +262,14 @@ func patchTusFile(ctx context.Context, client *managedDataCLIClient, endpoint, r
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return 0, false, fmt.Errorf("tus upload failed for %q with HTTP %d", expected.Path, response.StatusCode)
 	}
-	if counted.count != remaining || hex.EncodeToString(digest.Sum(nil)) != expected.SHA256 {
+	if counted.count != chunkSize {
 		return 0, false, sourceChanged(expected.Path)
 	}
 	if err := validateOpenSource(file, snapshot, root, expected); err != nil {
 		return 0, false, err
 	}
 	newOffset, err := strconv.ParseInt(response.Header.Get("Upload-Offset"), 10, 64)
-	if err != nil || newOffset != offset+remaining {
+	if err != nil || newOffset != offset+chunkSize {
 		return 0, false, fmt.Errorf("tus upload returned an invalid offset for %q", expected.Path)
 	}
 	return newOffset, false, nil
