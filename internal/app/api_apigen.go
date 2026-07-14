@@ -127,6 +127,70 @@ func (a apiGenAdapter) ListCurrentSessions(w http.ResponseWriter, r *http.Reques
 	a.server.accessHTTPHandler().ListCurrentSessions(w, r)
 }
 
+func (a apiGenAdapter) GetManagedDataEnvironmentRevision(w http.ResponseWriter, r *http.Request, project, connection, environment string) {
+	a.server.managedDataHTTPHandler().GetManagedDataEnvironmentRevision(w, r, project, connection, environment)
+}
+
+func (a apiGenAdapter) ListManagedDataRevisions(w http.ResponseWriter, r *http.Request, project, connection string, params apigenapi.GenListManagedDataRevisionsParams) {
+	a.server.managedDataHTTPHandler().ListManagedDataRevisions(w, r, project, connection, params)
+}
+
+func (a apiGenAdapter) GetManagedDataRevision(w http.ResponseWriter, r *http.Request, project, connection, revision string) {
+	a.server.managedDataHTTPHandler().GetManagedDataRevision(w, r, project, connection, revision)
+}
+
+func (a apiGenAdapter) ListManagedDataRollouts(w http.ResponseWriter, r *http.Request, project, connection string, params apigenapi.GenListManagedDataRolloutsParams) {
+	a.server.managedDataHTTPHandler().ListManagedDataRollouts(w, r, project, connection, params)
+}
+
+func (a apiGenAdapter) CreateManagedDataRollout(w http.ResponseWriter, r *http.Request, project, connection string, headers apigenapi.GenCreateManagedDataRolloutHeaders) {
+	a.server.managedDataHTTPHandler().CreateManagedDataRollout(w, r, project, connection, headers)
+}
+
+func (a apiGenAdapter) GetManagedDataRollout(w http.ResponseWriter, r *http.Request, project, connection, rollout string) {
+	a.server.managedDataHTTPHandler().GetManagedDataRollout(w, r, project, connection, rollout)
+}
+
+func (a apiGenAdapter) ActivateManagedDataRollout(w http.ResponseWriter, r *http.Request, project, connection, rollout string, headers apigenapi.GenActivateManagedDataRolloutHeaders) {
+	a.server.managedDataHTTPHandler().ActivateManagedDataRollout(w, r, project, connection, rollout, headers)
+}
+
+func (a apiGenAdapter) RollbackManagedDataRollout(w http.ResponseWriter, r *http.Request, project, connection, rollout string, headers apigenapi.GenRollbackManagedDataRolloutHeaders) {
+	a.server.managedDataHTTPHandler().RollbackManagedDataRollout(w, r, project, connection, rollout, headers)
+}
+
+func (a apiGenAdapter) CreateManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection string, headers apigenapi.GenCreateManagedDataUploadSessionHeaders) {
+	a.server.managedDataHTTPHandler().CreateManagedDataUploadSession(w, r, project, connection, headers)
+}
+
+func (a apiGenAdapter) GetManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string) {
+	a.server.managedDataHTTPHandler().GetManagedDataUploadSession(w, r, project, connection, uploadSession)
+}
+
+func (a apiGenAdapter) AbortManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenAbortManagedDataUploadSessionHeaders) {
+	a.server.managedDataHTTPHandler().AbortManagedDataUploadSession(w, r, project, connection, uploadSession, headers)
+}
+
+func (a apiGenAdapter) FinalizeManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenFinalizeManagedDataUploadSessionHeaders) {
+	a.server.managedDataHTTPHandler().FinalizeManagedDataUploadSession(w, r, project, connection, uploadSession, headers)
+}
+
+func (a apiGenAdapter) CreateManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenCreateManagedDataS3MultipartUploadHeaders) {
+	a.server.managedDataHTTPHandler().CreateManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, headers)
+}
+
+func (a apiGenAdapter) AbortManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, headers apigenapi.GenAbortManagedDataS3MultipartUploadHeaders) {
+	a.server.managedDataHTTPHandler().AbortManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, headers)
+}
+
+func (a apiGenAdapter) CompleteManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, headers apigenapi.GenCompleteManagedDataS3MultipartUploadHeaders) {
+	a.server.managedDataHTTPHandler().CompleteManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, headers)
+}
+
+func (a apiGenAdapter) SignManagedDataS3MultipartPart(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, partNumber int32) {
+	a.server.managedDataHTTPHandler().SignManagedDataS3MultipartPart(w, r, project, connection, uploadSession, multipartUpload, partNumber)
+}
+
 func (a apiGenAdapter) RevokeCurrentSession(w http.ResponseWriter, r *http.Request, _ string) {
 	a.server.accessHTTPHandler().RevokeCurrentSession(w, r)
 }

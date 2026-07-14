@@ -16,6 +16,7 @@ import (
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
 	"github.com/Yacobolo/libredash/internal/execution"
+	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
 	"github.com/Yacobolo/libredash/internal/platform"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
 	"github.com/Yacobolo/libredash/internal/queryruntime"
@@ -99,6 +100,7 @@ type Server struct {
 	backgroundStopping  bool
 	chatTitleMu         sync.Mutex
 	pendingChatTitles   map[string]struct{}
+	managedDataOptions  manageddatahttp.Options
 }
 
 func New(metrics QueryMetrics) *Server {
@@ -137,6 +139,7 @@ type Options struct {
 	Logger              *slog.Logger
 	Executor            *execution.Service
 	JobLeaseTimeout     time.Duration
+	ManagedData         manageddatahttp.Options
 }
 
 func NewWithOptions(metrics QueryMetrics, options Options) *Server {
@@ -199,6 +202,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 		server.requestBodyLimit = DefaultRequestBodyLimitConfig()
 	}
 	server.requestLogging = options.RequestLogging
+	server.managedDataOptions = options.ManagedData
 	server.jobLeaseTimeout = options.JobLeaseTimeout
 	if server.jobLeaseTimeout <= 0 {
 		server.jobLeaseTimeout = 2 * time.Minute
