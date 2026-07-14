@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 )
 
 const SecretPlaceholder = "<secret>"
@@ -18,6 +19,7 @@ const (
 	TypeString   ValueType = "string"
 	TypeBool     ValueType = "boolean"
 	TypeInt      ValueType = "integer"
+	TypeInt64    ValueType = "integer64"
 	TypeDuration ValueType = "duration"
 )
 
@@ -96,6 +98,24 @@ var settings = []Setting{
 	{Name: "LIBREDASH_HOME", Field: "HomeDir", Type: TypeString, Default: ".libredash", Category: "storage", Scope: "serve,admin,client", Description: "Instance state directory containing databases, artifacts, and runtime files.", Example: "/var/lib/libredash", Runtime: true, Lifecycle: "supported", EnvExample: "/var/lib/libredash"},
 	{Name: "LIBREDASH_IMAGE", Type: TypeString, Category: "deployment", Scope: "Hetzner provisioner", Description: "Immutable LibreDash OCI image reference consumed by deployment tooling.", Example: "ghcr.io/yacobolo/libredash@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Lifecycle: "tooling"},
 	{Name: "LIBREDASH_LOCAL_AUTH", Field: "LocalAuth", Type: TypeBool, Category: "authentication", Scope: "serve", Description: "Enable administrator-managed local browser authentication.", Example: "true", Runtime: true, Lifecycle: "supported", EnvExample: "true"},
+	{Name: "LIBREDASH_MANAGED_DATA_BACKEND", Field: "ManagedDataBackend", Type: TypeString, Default: "local", Category: "managed data", Scope: "serve", Description: "Storage backend for project-global managed data; supported values are local and s3.", Runtime: true, Lifecycle: "supported", EnvExample: "local"},
+	{Name: "LIBREDASH_MANAGED_DATA_DIR", Field: "ManagedDataDir", Type: TypeString, Default: ".libredash/managed-data", Category: "managed data", Scope: "serve", Description: "Root directory for local managed-data objects and upload staging.", Runtime: true, Lifecycle: "supported", EnvExample: "/var/lib/libredash/managed-data"},
+	{Name: "LIBREDASH_MANAGED_DATA_GC_GRACE_PERIOD", Field: "ManagedDataGCGracePeriod", Type: TypeDuration, Default: "24h", Category: "managed data", Scope: "serve", Description: "Minimum age of unreferenced managed-data objects before garbage collection.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_GC_INTERVAL", Field: "ManagedDataGCInterval", Type: TypeDuration, Default: "1h", Category: "managed data", Scope: "serve", Description: "Interval between managed-data garbage-collection passes.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES", Field: "ManagedDataGCTargetFreeBytes", Type: TypeInt64, Default: "10737418240", Category: "managed data", Scope: "serve", Description: "Free-space target retained after managed-data garbage collection.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_MAX_FILES", Field: "ManagedDataMaxFiles", Type: TypeInt, Default: "10000", Category: "managed data", Scope: "serve", Description: "Maximum number of files in one managed-data revision.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_MAX_FILE_BYTES", Field: "ManagedDataMaxFileBytes", Type: TypeInt64, Default: "1073741824", Category: "managed data", Scope: "serve", Description: "Maximum size in bytes of one managed-data file.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_MAX_REVISION_BYTES", Field: "ManagedDataMaxRevisionBytes", Type: TypeInt64, Default: "10737418240", Category: "managed data", Scope: "serve", Description: "Maximum total size in bytes of one managed-data revision.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES", Field: "ManagedDataMinFreeBytes", Type: TypeInt64, Default: "5368709120", Category: "managed data", Scope: "serve", Description: "Minimum free bytes required before accepting local managed-data uploads.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_ACCESS_KEY_ID", Field: "ManagedDataS3AccessKeyID", Type: TypeString, Category: "managed data", Scope: "serve", Description: "Optional S3 access-key identifier for managed-data storage.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_BUCKET", Field: "ManagedDataS3Bucket", Type: TypeString, Category: "managed data", Scope: "serve", Description: "S3 bucket used for managed-data objects and staging.", Example: "libredash-managed-data", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_ENDPOINT", Field: "ManagedDataS3Endpoint", Type: TypeString, Category: "managed data", Scope: "serve", Description: "Optional S3-compatible endpoint URL.", Example: "https://s3.example.com", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_PATH_STYLE", Field: "ManagedDataS3PathStyle", Type: TypeBool, Default: "false", Category: "managed data", Scope: "serve", Description: "Use path-style addressing for S3-compatible managed-data storage.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_PREFIX", Field: "ManagedDataS3Prefix", Type: TypeString, Default: "managed-data", Category: "managed data", Scope: "serve", Description: "Object-key prefix for managed data in the configured S3 bucket.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_REGION", Field: "ManagedDataS3Region", Type: TypeString, Category: "managed data", Scope: "serve", Description: "S3 region used for managed-data requests.", Example: "eu-west-1", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_SECRET_ACCESS_KEY", Field: "ManagedDataS3SecretAccessKey", Type: TypeString, Category: "managed data", Scope: "serve", Description: "Optional S3 secret access key for managed-data storage.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_S3_SESSION_TOKEN", Field: "ManagedDataS3SessionToken", Type: TypeString, Category: "managed data", Scope: "serve", Description: "Optional temporary S3 session token for managed-data storage.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LIBREDASH_MANAGED_DATA_UPLOAD_SESSION_TTL", Field: "ManagedDataUploadSessionTTL", Type: TypeDuration, Default: "24h", Category: "managed data", Scope: "serve", Description: "Lifetime of an incomplete managed-data upload session.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_METRICS_BEARER_TOKEN", Field: "MetricsBearerToken", Type: TypeString, Category: "operations", Scope: "serve", Description: "Bearer token protecting the Prometheus metrics endpoint; production requires at least 32 characters.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", EnvExample: "replace-with-at-least-32-characters"},
 	{Name: "LIBREDASH_OIDC_CALLBACK_URL", Field: "OIDCCallbackURL", Type: TypeString, Category: "authentication", Scope: "serve", Description: "HTTPS callback URL registered with the generic OIDC provider.", Example: "https://libredash.example.com/auth/oidc/callback", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_OIDC_CLIENT_ID", Field: "OIDCClientID", Type: TypeString, Category: "authentication", Scope: "serve", Description: "Generic OIDC client identifier.", Runtime: true, Lifecycle: "supported", Commented: true},
@@ -126,13 +146,20 @@ const (
 	PredicateMinLength PredicateKind = "min_length"
 	PredicateHTTPSURL  PredicateKind = "https_url"
 	PredicateSlug      PredicateKind = "route_slug"
+	PredicateEquals    PredicateKind = "equals"
+	PredicateOneOf     PredicateKind = "one_of"
+	PredicatePositive  PredicateKind = "positive"
+	PredicateAtLeast   PredicateKind = "at_least_setting"
 )
 
 type Predicate struct {
-	Kind     PredicateKind `json:"kind"`
-	Name     string        `json:"name,omitempty"`
-	Minimum  int           `json:"minimum,omitempty"`
-	Children []Predicate   `json:"children,omitempty"`
+	Kind      PredicateKind `json:"kind"`
+	Name      string        `json:"name,omitempty"`
+	Minimum   int           `json:"minimum,omitempty"`
+	Value     string        `json:"value,omitempty"`
+	Values    []string      `json:"values,omitempty"`
+	OtherName string        `json:"otherName,omitempty"`
+	Children  []Predicate   `json:"children,omitempty"`
 }
 
 func All(children ...Predicate) Predicate { return Predicate{Kind: PredicateAll, Children: children} }
@@ -147,6 +174,16 @@ func MinLength(name string, minimum int) Predicate {
 }
 func HTTPSURL(name string) Predicate  { return Predicate{Kind: PredicateHTTPSURL, Name: name} }
 func RouteSlug(name string) Predicate { return Predicate{Kind: PredicateSlug, Name: name} }
+func Equals(name, value string) Predicate {
+	return Predicate{Kind: PredicateEquals, Name: name, Value: value}
+}
+func OneOf(name string, values ...string) Predicate {
+	return Predicate{Kind: PredicateOneOf, Name: name, Values: append([]string(nil), values...)}
+}
+func Positive(name string) Predicate { return Predicate{Kind: PredicatePositive, Name: name} }
+func AtLeast(name, otherName string) Predicate {
+	return Predicate{Kind: PredicateAtLeast, Name: name, OtherName: otherName}
+}
 
 type Rule struct {
 	ID          string    `json:"id"`
@@ -165,6 +202,8 @@ var (
 	azureAny      = Any(Present("LIBREDASH_AZURE_CLIENT_ID"), Present("LIBREDASH_AZURE_CLIENT_SECRET"), Present("LIBREDASH_AZURE_CALLBACK_URL"), Present("LIBREDASH_AZURE_TENANT"))
 	azureComplete = All(Present("LIBREDASH_AZURE_CLIENT_ID"), Present("LIBREDASH_AZURE_CLIENT_SECRET"), Present("LIBREDASH_AZURE_CALLBACK_URL"))
 	browserAuth   = Any(True("LIBREDASH_LOCAL_AUTH"), oidcComplete, azureComplete)
+	managedData   = Present("LIBREDASH_MANAGED_DATA_BACKEND")
+	managedS3     = Equals("LIBREDASH_MANAGED_DATA_BACKEND", "s3")
 )
 
 var rules = []Rule{
@@ -181,6 +220,13 @@ var rules = []Rule{
 	{ID: "production-oidc-provider-slug", Description: "The OIDC provider identifier must be route-safe.", When: All(production, oidcComplete), Assert: RouteSlug("LIBREDASH_OIDC_PROVIDER_ID"), Message: "LIBREDASH_OIDC_PROVIDER_ID must be a route-safe slug containing only letters, numbers, dots, underscores, or dashes"},
 	{ID: "production-azure-callback-https", Description: "The production Azure callback must use HTTPS.", When: All(production, azureComplete), Assert: HTTPSURL("LIBREDASH_AZURE_CALLBACK_URL"), Message: "production serve requires LIBREDASH_AZURE_CALLBACK_URL to be an https URL"},
 	{ID: "production-scim-token", Description: "A configured production SCIM token must contain at least 32 characters.", When: All(production, Present("LIBREDASH_SCIM_BEARER_TOKEN")), Assert: MinLength("LIBREDASH_SCIM_BEARER_TOKEN", 32), Message: "production SCIM provisioning requires LIBREDASH_SCIM_BEARER_TOKEN with at least 32 characters"},
+	{ID: "managed-data-backend", Description: "Managed data uses a supported storage backend.", When: managedData, Assert: OneOf("LIBREDASH_MANAGED_DATA_BACKEND", "local", "s3"), Message: "LIBREDASH_MANAGED_DATA_BACKEND must be local or s3"},
+	{ID: "managed-data-local-dir", Description: "The local managed-data backend requires a storage directory.", When: Equals("LIBREDASH_MANAGED_DATA_BACKEND", "local"), Assert: Present("LIBREDASH_MANAGED_DATA_DIR"), Message: "local managed-data storage requires LIBREDASH_MANAGED_DATA_DIR"},
+	{ID: "managed-data-s3-location", Description: "The S3 managed-data backend requires a bucket and region.", When: managedS3, Assert: All(Present("LIBREDASH_MANAGED_DATA_S3_BUCKET"), Present("LIBREDASH_MANAGED_DATA_S3_REGION")), Message: "S3 managed-data storage requires LIBREDASH_MANAGED_DATA_S3_BUCKET and LIBREDASH_MANAGED_DATA_S3_REGION"},
+	{ID: "managed-data-s3-credentials", Description: "Managed-data S3 credentials are either omitted or configured as a complete key pair.", When: managedS3, Assert: Any(All(Not(Present("LIBREDASH_MANAGED_DATA_S3_ACCESS_KEY_ID")), Not(Present("LIBREDASH_MANAGED_DATA_S3_SECRET_ACCESS_KEY")), Not(Present("LIBREDASH_MANAGED_DATA_S3_SESSION_TOKEN"))), All(Present("LIBREDASH_MANAGED_DATA_S3_ACCESS_KEY_ID"), Present("LIBREDASH_MANAGED_DATA_S3_SECRET_ACCESS_KEY"))), Message: "managed-data S3 credentials require both LIBREDASH_MANAGED_DATA_S3_ACCESS_KEY_ID and LIBREDASH_MANAGED_DATA_S3_SECRET_ACCESS_KEY; a session token also requires that pair"},
+	{ID: "managed-data-positive-limits", Description: "Managed-data upload, session, garbage-collection, and free-space limits are positive.", When: managedData, Assert: All(Positive("LIBREDASH_MANAGED_DATA_MAX_FILES"), Positive("LIBREDASH_MANAGED_DATA_MAX_FILE_BYTES"), Positive("LIBREDASH_MANAGED_DATA_MAX_REVISION_BYTES"), Positive("LIBREDASH_MANAGED_DATA_UPLOAD_SESSION_TTL"), Positive("LIBREDASH_MANAGED_DATA_GC_INTERVAL"), Positive("LIBREDASH_MANAGED_DATA_GC_GRACE_PERIOD"), Positive("LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES"), Positive("LIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES")), Message: "managed-data limits, durations, and free-space thresholds must be positive"},
+	{ID: "managed-data-revision-limit", Description: "The managed-data revision limit is at least the per-file limit.", When: managedData, Assert: AtLeast("LIBREDASH_MANAGED_DATA_MAX_REVISION_BYTES", "LIBREDASH_MANAGED_DATA_MAX_FILE_BYTES"), Message: "LIBREDASH_MANAGED_DATA_MAX_REVISION_BYTES must be at least LIBREDASH_MANAGED_DATA_MAX_FILE_BYTES"},
+	{ID: "managed-data-free-space-target", Description: "The garbage-collection free-space target is at least the upload reserve.", When: managedData, Assert: AtLeast("LIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES", "LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES"), Message: "LIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES must be at least LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES"},
 }
 
 func (r Rule) References() []string {
@@ -198,6 +244,9 @@ func (r Rule) References() []string {
 func collectReferences(predicate Predicate, seen map[string]struct{}) {
 	if predicate.Name != "" {
 		seen[predicate.Name] = struct{}{}
+	}
+	if predicate.OtherName != "" {
+		seen[predicate.OtherName] = struct{}{}
 	}
 	for _, child := range predicate.Children {
 		collectReferences(child, seen)
@@ -250,8 +299,40 @@ func (p Predicate) Evaluate(values map[string]any) bool {
 		return err == nil && parsed.Scheme == "https" && parsed.Host != ""
 	case PredicateSlug:
 		return routeSlug(values[p.Name])
+	case PredicateEquals:
+		value, _ := values[p.Name].(string)
+		return strings.TrimSpace(value) == p.Value
+	case PredicateOneOf:
+		value, _ := values[p.Name].(string)
+		value = strings.TrimSpace(value)
+		for _, allowed := range p.Values {
+			if value == allowed {
+				return true
+			}
+		}
+		return false
+	case PredicatePositive:
+		value, ok := numericValue(values[p.Name])
+		return ok && value > 0
+	case PredicateAtLeast:
+		value, valueOK := numericValue(values[p.Name])
+		other, otherOK := numericValue(values[p.OtherName])
+		return valueOK && otherOK && value >= other
 	default:
 		return false
+	}
+}
+
+func numericValue(value any) (int64, bool) {
+	switch value := value.(type) {
+	case int:
+		return int64(value), true
+	case int64:
+		return value, true
+	case time.Duration:
+		return int64(value), true
+	default:
+		return 0, false
 	}
 }
 

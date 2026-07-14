@@ -164,6 +164,115 @@ type GroupMember struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type LocalUserCredential struct {
+	PrincipalID        string         `json:"principal_id"`
+	PasswordVerifier   string         `json:"password_verifier"`
+	MustChangePassword int64          `json:"must_change_password"`
+	CreatedAt          string         `json:"created_at"`
+	UpdatedAt          string         `json:"updated_at"`
+	PasswordChangedAt  sql.NullString `json:"password_changed_at"`
+}
+
+type ManagedDataCollection struct {
+	ID             string         `json:"id"`
+	ProjectID      string         `json:"project_id"`
+	ConnectionName string         `json:"connection_name"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	Status         string         `json:"status"`
+	CreatedBy      string         `json:"created_by"`
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
+	ArchivedAt     sql.NullString `json:"archived_at"`
+}
+
+type ManagedDataEnvironmentPointer struct {
+	CollectionID string `json:"collection_id"`
+	Environment  string `json:"environment"`
+	RevisionID   string `json:"revision_id"`
+	RolloutID    string `json:"rollout_id"`
+	Generation   int64  `json:"generation"`
+	UpdatedBy    string `json:"updated_by"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type ManagedDataRevision struct {
+	ID           string         `json:"id"`
+	CollectionID string         `json:"collection_id"`
+	Sequence     int64          `json:"sequence"`
+	Digest       string         `json:"digest"`
+	Status       string         `json:"status"`
+	ManifestJson string         `json:"manifest_json"`
+	FileCount    int64          `json:"file_count"`
+	SizeBytes    int64          `json:"size_bytes"`
+	CreatedBy    string         `json:"created_by"`
+	CreatedAt    string         `json:"created_at"`
+	ReadyAt      sql.NullString `json:"ready_at"`
+	Error        string         `json:"error"`
+}
+
+type ManagedDataRevisionFile struct {
+	RevisionID  string `json:"revision_id"`
+	LogicalPath string `json:"logical_path"`
+	SizeBytes   int64  `json:"size_bytes"`
+	Sha256      string `json:"sha256"`
+	StorageKey  string `json:"storage_key"`
+	MediaType   string `json:"media_type"`
+	Etag        string `json:"etag"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type ManagedDataRollout struct {
+	ID           string         `json:"id"`
+	CollectionID string         `json:"collection_id"`
+	Environment  string         `json:"environment"`
+	RevisionID   string         `json:"revision_id"`
+	Status       string         `json:"status"`
+	CreatedBy    string         `json:"created_by"`
+	CreatedAt    string         `json:"created_at"`
+	CompletedAt  sql.NullString `json:"completed_at"`
+	Error        string         `json:"error"`
+}
+
+type ManagedDataRolloutTarget struct {
+	RolloutID           string         `json:"rollout_id"`
+	WorkspaceID         string         `json:"workspace_id"`
+	ServingStateID      string         `json:"serving_state_id"`
+	PriorServingStateID sql.NullString `json:"prior_serving_state_id"`
+	Status              string         `json:"status"`
+	ActivatedAt         sql.NullString `json:"activated_at"`
+	Error               string         `json:"error"`
+}
+
+type ManagedDataServingStateBinding struct {
+	ServingStateID string `json:"serving_state_id"`
+	CollectionID   string `json:"collection_id"`
+	RevisionID     string `json:"revision_id"`
+	Environment    string `json:"environment"`
+	BoundAt        string `json:"bound_at"`
+}
+
+type ManagedDataUploadSession struct {
+	ID                string         `json:"id"`
+	CollectionID      string         `json:"collection_id"`
+	BaseRevisionID    sql.NullString `json:"base_revision_id"`
+	RevisionID        sql.NullString `json:"revision_id"`
+	Status            string         `json:"status"`
+	ManifestJson      string         `json:"manifest_json"`
+	ExpectedFileCount int64          `json:"expected_file_count"`
+	ExpectedSizeBytes int64          `json:"expected_size_bytes"`
+	UploadedFileCount int64          `json:"uploaded_file_count"`
+	UploadedSizeBytes int64          `json:"uploaded_size_bytes"`
+	StorageBackend    string         `json:"storage_backend"`
+	StagingPrefix     string         `json:"staging_prefix"`
+	CreatedBy         string         `json:"created_by"`
+	CreatedAt         string         `json:"created_at"`
+	UpdatedAt         string         `json:"updated_at"`
+	ExpiresAt         string         `json:"expires_at"`
+	CompletedAt       sql.NullString `json:"completed_at"`
+	Error             string         `json:"error"`
+}
+
 type OauthState struct {
 	ID          string `json:"id"`
 	StateHash   string `json:"state_hash"`

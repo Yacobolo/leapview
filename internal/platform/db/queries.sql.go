@@ -10,6 +10,42 @@ import (
 	"database/sql"
 )
 
+const abortManagedDataUploadSession = `-- name: AbortManagedDataUploadSession :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'aborted', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'open'
+`
+
+func (q *Queries) AbortManagedDataUploadSession(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, abortManagedDataUploadSession, id)
+}
+
+const activateManagedDataRollout = `-- name: ActivateManagedDataRollout :execresult
+UPDATE managed_data_rollouts
+SET status = 'active', completed_at = CURRENT_TIMESTAMP, error = ''
+WHERE id = ? AND status = 'pending'
+`
+
+func (q *Queries) ActivateManagedDataRollout(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, activateManagedDataRollout, id)
+}
+
+const activateManagedDataRolloutTarget = `-- name: ActivateManagedDataRolloutTarget :exec
+UPDATE managed_data_rollout_targets
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
+WHERE rollout_id = ? AND workspace_id = ? AND status = 'pending'
+`
+
+type ActivateManagedDataRolloutTargetParams struct {
+	RolloutID   string `json:"rollout_id"`
+	WorkspaceID string `json:"workspace_id"`
+}
+
+func (q *Queries) ActivateManagedDataRolloutTarget(ctx context.Context, arg ActivateManagedDataRolloutTargetParams) error {
+	_, err := q.db.ExecContext(ctx, activateManagedDataRolloutTarget, arg.RolloutID, arg.WorkspaceID)
+	return err
+}
+
 const appendAgentEvent = `-- name: AppendAgentEvent :one
 INSERT INTO agent_events (id, run_id, seq, event_type, severity, payload_json)
 SELECT
@@ -162,6 +198,16 @@ func (q *Queries) ArchiveAgentConversation(ctx context.Context, arg ArchiveAgent
 	return i, err
 }
 
+const archiveManagedDataCollection = `-- name: ArchiveManagedDataCollection :execresult
+UPDATE managed_data_collections
+SET status = 'archived', archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'active'
+`
+
+func (q *Queries) ArchiveManagedDataCollection(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, archiveManagedDataCollection, id)
+}
+
 const clearAssetEdgesForServingState = `-- name: ClearAssetEdgesForServingState :exec
 DELETE FROM asset_edges WHERE serving_state_id = ?
 `
@@ -178,6 +224,24 @@ DELETE FROM assets WHERE serving_state_id = ?
 func (q *Queries) ClearAssetsForServingState(ctx context.Context, servingStateID string) error {
 	_, err := q.db.ExecContext(ctx, clearAssetsForServingState, servingStateID)
 	return err
+}
+
+const completeManagedDataUploadSession = `-- name: CompleteManagedDataUploadSession :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'complete', revision_id = ?,
+    uploaded_file_count = expected_file_count,
+    uploaded_size_bytes = expected_size_bytes,
+    completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'committing'
+`
+
+type CompleteManagedDataUploadSessionParams struct {
+	RevisionID sql.NullString `json:"revision_id"`
+	ID         string         `json:"id"`
+}
+
+func (q *Queries) CompleteManagedDataUploadSession(ctx context.Context, arg CompleteManagedDataUploadSessionParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, completeManagedDataUploadSession, arg.RevisionID, arg.ID)
 }
 
 const createAPIToken = `-- name: CreateAPIToken :exec
@@ -305,6 +369,176 @@ func (q *Queries) CreateAgentRun(ctx context.Context, arg CreateAgentRunParams) 
 	return i, err
 }
 
+const createManagedDataCollection = `-- name: CreateManagedDataCollection :exec
+INSERT INTO managed_data_collections (id, project_id, connection_name, name, description, created_by)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type CreateManagedDataCollectionParams struct {
+	ID             string `json:"id"`
+	ProjectID      string `json:"project_id"`
+	ConnectionName string `json:"connection_name"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	CreatedBy      string `json:"created_by"`
+}
+
+func (q *Queries) CreateManagedDataCollection(ctx context.Context, arg CreateManagedDataCollectionParams) error {
+	_, err := q.db.ExecContext(ctx, createManagedDataCollection,
+		arg.ID,
+		arg.ProjectID,
+		arg.ConnectionName,
+		arg.Name,
+		arg.Description,
+		arg.CreatedBy,
+	)
+	return err
+}
+
+const createManagedDataRevisionFile = `-- name: CreateManagedDataRevisionFile :exec
+INSERT INTO managed_data_revision_files (
+  revision_id, logical_path, size_bytes, sha256, storage_key, media_type, etag
+)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+`
+
+type CreateManagedDataRevisionFileParams struct {
+	RevisionID  string `json:"revision_id"`
+	LogicalPath string `json:"logical_path"`
+	SizeBytes   int64  `json:"size_bytes"`
+	Sha256      string `json:"sha256"`
+	StorageKey  string `json:"storage_key"`
+	MediaType   string `json:"media_type"`
+	Etag        string `json:"etag"`
+}
+
+func (q *Queries) CreateManagedDataRevisionFile(ctx context.Context, arg CreateManagedDataRevisionFileParams) error {
+	_, err := q.db.ExecContext(ctx, createManagedDataRevisionFile,
+		arg.RevisionID,
+		arg.LogicalPath,
+		arg.SizeBytes,
+		arg.Sha256,
+		arg.StorageKey,
+		arg.MediaType,
+		arg.Etag,
+	)
+	return err
+}
+
+const createManagedDataRollout = `-- name: CreateManagedDataRollout :exec
+INSERT INTO managed_data_rollouts (id, collection_id, environment, revision_id, status, created_by)
+VALUES (?, ?, ?, ?, 'pending', ?)
+`
+
+type CreateManagedDataRolloutParams struct {
+	ID           string `json:"id"`
+	CollectionID string `json:"collection_id"`
+	Environment  string `json:"environment"`
+	RevisionID   string `json:"revision_id"`
+	CreatedBy    string `json:"created_by"`
+}
+
+func (q *Queries) CreateManagedDataRollout(ctx context.Context, arg CreateManagedDataRolloutParams) error {
+	_, err := q.db.ExecContext(ctx, createManagedDataRollout,
+		arg.ID,
+		arg.CollectionID,
+		arg.Environment,
+		arg.RevisionID,
+		arg.CreatedBy,
+	)
+	return err
+}
+
+const createManagedDataRolloutTarget = `-- name: CreateManagedDataRolloutTarget :exec
+INSERT INTO managed_data_rollout_targets (
+  rollout_id, workspace_id, serving_state_id, prior_serving_state_id, status
+)
+VALUES (?, ?, ?, ?, 'pending')
+`
+
+type CreateManagedDataRolloutTargetParams struct {
+	RolloutID           string         `json:"rollout_id"`
+	WorkspaceID         string         `json:"workspace_id"`
+	ServingStateID      string         `json:"serving_state_id"`
+	PriorServingStateID sql.NullString `json:"prior_serving_state_id"`
+}
+
+func (q *Queries) CreateManagedDataRolloutTarget(ctx context.Context, arg CreateManagedDataRolloutTargetParams) error {
+	_, err := q.db.ExecContext(ctx, createManagedDataRolloutTarget,
+		arg.RolloutID,
+		arg.WorkspaceID,
+		arg.ServingStateID,
+		arg.PriorServingStateID,
+	)
+	return err
+}
+
+const createManagedDataServingStateBinding = `-- name: CreateManagedDataServingStateBinding :exec
+INSERT INTO managed_data_serving_state_bindings (
+  serving_state_id, collection_id, revision_id, environment
+)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(serving_state_id, collection_id) DO UPDATE SET
+  revision_id = excluded.revision_id,
+  environment = excluded.environment,
+  bound_at = CURRENT_TIMESTAMP
+`
+
+type CreateManagedDataServingStateBindingParams struct {
+	ServingStateID string `json:"serving_state_id"`
+	CollectionID   string `json:"collection_id"`
+	RevisionID     string `json:"revision_id"`
+	Environment    string `json:"environment"`
+}
+
+func (q *Queries) CreateManagedDataServingStateBinding(ctx context.Context, arg CreateManagedDataServingStateBindingParams) error {
+	_, err := q.db.ExecContext(ctx, createManagedDataServingStateBinding,
+		arg.ServingStateID,
+		arg.CollectionID,
+		arg.RevisionID,
+		arg.Environment,
+	)
+	return err
+}
+
+const createManagedDataUploadSession = `-- name: CreateManagedDataUploadSession :exec
+INSERT INTO managed_data_upload_sessions (
+  id, collection_id, base_revision_id, status, manifest_json,
+  expected_file_count, expected_size_bytes, storage_backend, staging_prefix,
+  created_by, expires_at
+)
+VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)
+`
+
+type CreateManagedDataUploadSessionParams struct {
+	ID                string         `json:"id"`
+	CollectionID      string         `json:"collection_id"`
+	BaseRevisionID    sql.NullString `json:"base_revision_id"`
+	ManifestJson      string         `json:"manifest_json"`
+	ExpectedFileCount int64          `json:"expected_file_count"`
+	ExpectedSizeBytes int64          `json:"expected_size_bytes"`
+	StorageBackend    string         `json:"storage_backend"`
+	StagingPrefix     string         `json:"staging_prefix"`
+	CreatedBy         string         `json:"created_by"`
+	ExpiresAt         string         `json:"expires_at"`
+}
+
+func (q *Queries) CreateManagedDataUploadSession(ctx context.Context, arg CreateManagedDataUploadSessionParams) error {
+	_, err := q.db.ExecContext(ctx, createManagedDataUploadSession,
+		arg.ID,
+		arg.CollectionID,
+		arg.BaseRevisionID,
+		arg.ManifestJson,
+		arg.ExpectedFileCount,
+		arg.ExpectedSizeBytes,
+		arg.StorageBackend,
+		arg.StagingPrefix,
+		arg.CreatedBy,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
 const createQuerySnapshotLease = `-- name: CreateQuerySnapshotLease :exec
 INSERT INTO query_snapshot_leases (id, workspace_id, environment, serving_state_id, ducklake_snapshot_id, owner_id, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -329,6 +563,39 @@ func (q *Queries) CreateQuerySnapshotLease(ctx context.Context, arg CreateQueryS
 		arg.DucklakeSnapshotID,
 		arg.OwnerID,
 		arg.ExpiresAt,
+	)
+	return err
+}
+
+const createReadyManagedDataRevision = `-- name: CreateReadyManagedDataRevision :exec
+INSERT INTO managed_data_revisions (
+  id, collection_id, sequence, digest, status, manifest_json,
+  file_count, size_bytes, created_by, ready_at
+)
+VALUES (?, ?, ?, ?, 'ready', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+`
+
+type CreateReadyManagedDataRevisionParams struct {
+	ID           string `json:"id"`
+	CollectionID string `json:"collection_id"`
+	Sequence     int64  `json:"sequence"`
+	Digest       string `json:"digest"`
+	ManifestJson string `json:"manifest_json"`
+	FileCount    int64  `json:"file_count"`
+	SizeBytes    int64  `json:"size_bytes"`
+	CreatedBy    string `json:"created_by"`
+}
+
+func (q *Queries) CreateReadyManagedDataRevision(ctx context.Context, arg CreateReadyManagedDataRevisionParams) error {
+	_, err := q.db.ExecContext(ctx, createReadyManagedDataRevision,
+		arg.ID,
+		arg.CollectionID,
+		arg.Sequence,
+		arg.Digest,
+		arg.ManifestJson,
+		arg.FileCount,
+		arg.SizeBytes,
+		arg.CreatedBy,
 	)
 	return err
 }
@@ -440,6 +707,16 @@ func (q *Queries) DeleteGroupMember(ctx context.Context, arg DeleteGroupMemberPa
 	return err
 }
 
+const deleteManagedDataServingStateBindings = `-- name: DeleteManagedDataServingStateBindings :exec
+DELETE FROM managed_data_serving_state_bindings
+WHERE serving_state_id = ?
+`
+
+func (q *Queries) DeleteManagedDataServingStateBindings(ctx context.Context, servingStateID string) error {
+	_, err := q.db.ExecContext(ctx, deleteManagedDataServingStateBindings, servingStateID)
+	return err
+}
+
 const deletePrincipalRoleBindings = `-- name: DeletePrincipalRoleBindings :exec
 DELETE FROM role_bindings
 WHERE workspace_id = ? AND principal_id = ?
@@ -542,6 +819,16 @@ func (q *Queries) ExpireInactiveServingStates(ctx context.Context) error {
 	return err
 }
 
+const expireManagedDataUploadSessions = `-- name: ExpireManagedDataUploadSessions :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+WHERE status = 'open' AND expires_at <= ?
+`
+
+func (q *Queries) ExpireManagedDataUploadSessions(ctx context.Context, expiresAt string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, expireManagedDataUploadSessions, expiresAt)
+}
+
 const extendQuerySnapshotLease = `-- name: ExtendQuerySnapshotLease :exec
 UPDATE query_snapshot_leases
 SET expires_at = ?
@@ -557,6 +844,21 @@ type ExtendQuerySnapshotLeaseParams struct {
 func (q *Queries) ExtendQuerySnapshotLease(ctx context.Context, arg ExtendQuerySnapshotLeaseParams) error {
 	_, err := q.db.ExecContext(ctx, extendQuerySnapshotLease, arg.ExpiresAt, arg.ID)
 	return err
+}
+
+const failManagedDataRollout = `-- name: FailManagedDataRollout :execresult
+UPDATE managed_data_rollouts
+SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
+WHERE id = ? AND status = 'pending'
+`
+
+type FailManagedDataRolloutParams struct {
+	Error string `json:"error"`
+	ID    string `json:"id"`
+}
+
+func (q *Queries) FailManagedDataRollout(ctx context.Context, arg FailManagedDataRolloutParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, failManagedDataRollout, arg.Error, arg.ID)
 }
 
 const finishAgentRun = `-- name: FinishAgentRun :one
@@ -868,6 +1170,156 @@ func (q *Queries) GetGroupByProviderExternalID(ctx context.Context, arg GetGroup
 	return i, err
 }
 
+const getManagedDataCollection = `-- name: GetManagedDataCollection :one
+SELECT id, project_id, connection_name, name, description, status, created_by, created_at, updated_at, archived_at FROM managed_data_collections WHERE id = ?
+`
+
+func (q *Queries) GetManagedDataCollection(ctx context.Context, id string) (ManagedDataCollection, error) {
+	row := q.db.QueryRowContext(ctx, getManagedDataCollection, id)
+	var i ManagedDataCollection
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.ConnectionName,
+		&i.Name,
+		&i.Description,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const getManagedDataCollectionByProjectConnection = `-- name: GetManagedDataCollectionByProjectConnection :one
+SELECT id, project_id, connection_name, name, description, status, created_by, created_at, updated_at, archived_at FROM managed_data_collections
+WHERE project_id = ? AND connection_name = ?
+`
+
+type GetManagedDataCollectionByProjectConnectionParams struct {
+	ProjectID      string `json:"project_id"`
+	ConnectionName string `json:"connection_name"`
+}
+
+func (q *Queries) GetManagedDataCollectionByProjectConnection(ctx context.Context, arg GetManagedDataCollectionByProjectConnectionParams) (ManagedDataCollection, error) {
+	row := q.db.QueryRowContext(ctx, getManagedDataCollectionByProjectConnection, arg.ProjectID, arg.ConnectionName)
+	var i ManagedDataCollection
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.ConnectionName,
+		&i.Name,
+		&i.Description,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const getManagedDataEnvironmentPointer = `-- name: GetManagedDataEnvironmentPointer :one
+SELECT collection_id, environment, revision_id, rollout_id, generation, updated_by, updated_at FROM managed_data_environment_pointers
+WHERE collection_id = ? AND environment = ?
+`
+
+type GetManagedDataEnvironmentPointerParams struct {
+	CollectionID string `json:"collection_id"`
+	Environment  string `json:"environment"`
+}
+
+func (q *Queries) GetManagedDataEnvironmentPointer(ctx context.Context, arg GetManagedDataEnvironmentPointerParams) (ManagedDataEnvironmentPointer, error) {
+	row := q.db.QueryRowContext(ctx, getManagedDataEnvironmentPointer, arg.CollectionID, arg.Environment)
+	var i ManagedDataEnvironmentPointer
+	err := row.Scan(
+		&i.CollectionID,
+		&i.Environment,
+		&i.RevisionID,
+		&i.RolloutID,
+		&i.Generation,
+		&i.UpdatedBy,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getManagedDataRevision = `-- name: GetManagedDataRevision :one
+SELECT id, collection_id, sequence, digest, status, manifest_json, file_count, size_bytes, created_by, created_at, ready_at, error FROM managed_data_revisions WHERE id = ?
+`
+
+func (q *Queries) GetManagedDataRevision(ctx context.Context, id string) (ManagedDataRevision, error) {
+	row := q.db.QueryRowContext(ctx, getManagedDataRevision, id)
+	var i ManagedDataRevision
+	err := row.Scan(
+		&i.ID,
+		&i.CollectionID,
+		&i.Sequence,
+		&i.Digest,
+		&i.Status,
+		&i.ManifestJson,
+		&i.FileCount,
+		&i.SizeBytes,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ReadyAt,
+		&i.Error,
+	)
+	return i, err
+}
+
+const getManagedDataRollout = `-- name: GetManagedDataRollout :one
+SELECT id, collection_id, environment, revision_id, status, created_by, created_at, completed_at, error FROM managed_data_rollouts WHERE id = ?
+`
+
+func (q *Queries) GetManagedDataRollout(ctx context.Context, id string) (ManagedDataRollout, error) {
+	row := q.db.QueryRowContext(ctx, getManagedDataRollout, id)
+	var i ManagedDataRollout
+	err := row.Scan(
+		&i.ID,
+		&i.CollectionID,
+		&i.Environment,
+		&i.RevisionID,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.Error,
+	)
+	return i, err
+}
+
+const getManagedDataUploadSession = `-- name: GetManagedDataUploadSession :one
+SELECT id, collection_id, base_revision_id, revision_id, status, manifest_json, expected_file_count, expected_size_bytes, uploaded_file_count, uploaded_size_bytes, storage_backend, staging_prefix, created_by, created_at, updated_at, expires_at, completed_at, error FROM managed_data_upload_sessions WHERE id = ?
+`
+
+func (q *Queries) GetManagedDataUploadSession(ctx context.Context, id string) (ManagedDataUploadSession, error) {
+	row := q.db.QueryRowContext(ctx, getManagedDataUploadSession, id)
+	var i ManagedDataUploadSession
+	err := row.Scan(
+		&i.ID,
+		&i.CollectionID,
+		&i.BaseRevisionID,
+		&i.RevisionID,
+		&i.Status,
+		&i.ManifestJson,
+		&i.ExpectedFileCount,
+		&i.ExpectedSizeBytes,
+		&i.UploadedFileCount,
+		&i.UploadedSizeBytes,
+		&i.StorageBackend,
+		&i.StagingPrefix,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.Error,
+	)
+	return i, err
+}
+
 const getPrincipal = `-- name: GetPrincipal :one
 SELECT id, kind, email, display_name, disabled_at, created_at, updated_at FROM principals WHERE id = ?
 `
@@ -1152,6 +1604,24 @@ func (q *Queries) GetWorkspace(ctx context.Context, id string) (Workspace, error
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getWorkspaceActiveServingStateID = `-- name: GetWorkspaceActiveServingStateID :one
+SELECT serving_state_id
+FROM workspace_active_serving_states
+WHERE workspace_id = ? AND environment = ?
+`
+
+type GetWorkspaceActiveServingStateIDParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	Environment string `json:"environment"`
+}
+
+func (q *Queries) GetWorkspaceActiveServingStateID(ctx context.Context, arg GetWorkspaceActiveServingStateIDParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getWorkspaceActiveServingStateID, arg.WorkspaceID, arg.Environment)
+	var serving_state_id string
+	err := row.Scan(&serving_state_id)
+	return serving_state_id, err
 }
 
 const getWorkspaceWithActiveMetadata = `-- name: GetWorkspaceWithActiveMetadata :one
@@ -1580,6 +2050,46 @@ func (q *Queries) ListActiveDuckLakeSnapshots(ctx context.Context) ([]int64, err
 	return items, nil
 }
 
+const listActiveManagedDataCollections = `-- name: ListActiveManagedDataCollections :many
+SELECT id, project_id, connection_name, name, description, status, created_by, created_at, updated_at, archived_at FROM managed_data_collections
+WHERE status = 'active'
+ORDER BY project_id, connection_name, id
+`
+
+func (q *Queries) ListActiveManagedDataCollections(ctx context.Context) ([]ManagedDataCollection, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveManagedDataCollections)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ManagedDataCollection{}
+	for rows.Next() {
+		var i ManagedDataCollection
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ConnectionName,
+			&i.Name,
+			&i.Description,
+			&i.Status,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentConversations = `-- name: ListAgentConversations :many
 SELECT id, workspace_id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at FROM agent_conversations
 WHERE workspace_id = ?1
@@ -1764,6 +2274,45 @@ func (q *Queries) ListAgentRuns(ctx context.Context, arg ListAgentRunsParams) ([
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.MetadataJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllManagedDataCollections = `-- name: ListAllManagedDataCollections :many
+SELECT id, project_id, connection_name, name, description, status, created_by, created_at, updated_at, archived_at FROM managed_data_collections
+ORDER BY project_id, connection_name, id
+`
+
+func (q *Queries) ListAllManagedDataCollections(ctx context.Context) ([]ManagedDataCollection, error) {
+	rows, err := q.db.QueryContext(ctx, listAllManagedDataCollections)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ManagedDataCollection{}
+	for rows.Next() {
+		var i ManagedDataCollection
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ConnectionName,
+			&i.Name,
+			&i.Description,
+			&i.Status,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2171,6 +2720,158 @@ func (q *Queries) ListLeasedDuckLakeSnapshots(ctx context.Context) ([]int64, err
 			return nil, err
 		}
 		items = append(items, ducklake_snapshot_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listManagedDataRevisionFiles = `-- name: ListManagedDataRevisionFiles :many
+SELECT revision_id, logical_path, size_bytes, sha256, storage_key, media_type, etag, created_at FROM managed_data_revision_files
+WHERE revision_id = ?
+ORDER BY logical_path
+`
+
+func (q *Queries) ListManagedDataRevisionFiles(ctx context.Context, revisionID string) ([]ManagedDataRevisionFile, error) {
+	rows, err := q.db.QueryContext(ctx, listManagedDataRevisionFiles, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ManagedDataRevisionFile{}
+	for rows.Next() {
+		var i ManagedDataRevisionFile
+		if err := rows.Scan(
+			&i.RevisionID,
+			&i.LogicalPath,
+			&i.SizeBytes,
+			&i.Sha256,
+			&i.StorageKey,
+			&i.MediaType,
+			&i.Etag,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listManagedDataRevisions = `-- name: ListManagedDataRevisions :many
+SELECT id, collection_id, sequence, digest, status, manifest_json, file_count, size_bytes, created_by, created_at, ready_at, error FROM managed_data_revisions
+WHERE collection_id = ?
+ORDER BY sequence DESC
+`
+
+func (q *Queries) ListManagedDataRevisions(ctx context.Context, collectionID string) ([]ManagedDataRevision, error) {
+	rows, err := q.db.QueryContext(ctx, listManagedDataRevisions, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ManagedDataRevision{}
+	for rows.Next() {
+		var i ManagedDataRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.CollectionID,
+			&i.Sequence,
+			&i.Digest,
+			&i.Status,
+			&i.ManifestJson,
+			&i.FileCount,
+			&i.SizeBytes,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.ReadyAt,
+			&i.Error,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listManagedDataRolloutTargets = `-- name: ListManagedDataRolloutTargets :many
+SELECT rollout_id, workspace_id, serving_state_id, prior_serving_state_id, status, activated_at, error FROM managed_data_rollout_targets
+WHERE rollout_id = ?
+ORDER BY workspace_id
+`
+
+func (q *Queries) ListManagedDataRolloutTargets(ctx context.Context, rolloutID string) ([]ManagedDataRolloutTarget, error) {
+	rows, err := q.db.QueryContext(ctx, listManagedDataRolloutTargets, rolloutID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ManagedDataRolloutTarget{}
+	for rows.Next() {
+		var i ManagedDataRolloutTarget
+		if err := rows.Scan(
+			&i.RolloutID,
+			&i.WorkspaceID,
+			&i.ServingStateID,
+			&i.PriorServingStateID,
+			&i.Status,
+			&i.ActivatedAt,
+			&i.Error,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listManagedDataServingStateBindings = `-- name: ListManagedDataServingStateBindings :many
+SELECT serving_state_id, collection_id, revision_id, environment, bound_at FROM managed_data_serving_state_bindings
+WHERE serving_state_id = ?
+ORDER BY collection_id
+`
+
+func (q *Queries) ListManagedDataServingStateBindings(ctx context.Context, servingStateID string) ([]ManagedDataServingStateBinding, error) {
+	rows, err := q.db.QueryContext(ctx, listManagedDataServingStateBindings, servingStateID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ManagedDataServingStateBinding{}
+	for rows.Next() {
+		var i ManagedDataServingStateBinding
+		if err := rows.Scan(
+			&i.ServingStateID,
+			&i.CollectionID,
+			&i.RevisionID,
+			&i.Environment,
+			&i.BoundAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -2804,6 +3505,16 @@ func (q *Queries) MarkDrainingServingStatesDeleteScheduled(ctx context.Context) 
 	return err
 }
 
+const markManagedDataUploadCommitting = `-- name: MarkManagedDataUploadCommitting :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'committing', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'open' AND expires_at > CURRENT_TIMESTAMP
+`
+
+func (q *Queries) MarkManagedDataUploadCommitting(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, markManagedDataUploadCommitting, id)
+}
+
 const markOtherServingStatesDraining = `-- name: MarkOtherServingStatesDraining :exec
 UPDATE serving_states
 SET status = 'draining',
@@ -2852,6 +3563,19 @@ WHERE id = ?
 func (q *Queries) MarkServingStateActive(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, markServingStateActive, id)
 	return err
+}
+
+const nextManagedDataRevisionSequence = `-- name: NextManagedDataRevisionSequence :one
+SELECT COALESCE(MAX(sequence), 0) + 1
+FROM managed_data_revisions
+WHERE collection_id = ?
+`
+
+func (q *Queries) NextManagedDataRevisionSequence(ctx context.Context, collectionID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, nextManagedDataRevisionSequence, collectionID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const releaseExpiredQuerySnapshotLeases = `-- name: ReleaseExpiredQuerySnapshotLeases :exec
@@ -3026,6 +3750,17 @@ func (q *Queries) SetActiveServingState(ctx context.Context, arg SetActiveServin
 	return err
 }
 
+const supersedeManagedDataRollout = `-- name: SupersedeManagedDataRollout :exec
+UPDATE managed_data_rollouts
+SET status = 'superseded'
+WHERE id = ? AND status = 'active'
+`
+
+func (q *Queries) SupersedeManagedDataRollout(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, supersedeManagedDataRollout, id)
+	return err
+}
+
 const touchAPIToken = `-- name: TouchAPIToken :exec
 UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?
 `
@@ -3124,6 +3859,32 @@ func (q *Queries) UpdateDefaultAgentConversationTitle(ctx context.Context, arg U
 		&i.ArchivedAt,
 	)
 	return i, err
+}
+
+const updateManagedDataUploadProgress = `-- name: UpdateManagedDataUploadProgress :execresult
+UPDATE managed_data_upload_sessions
+SET uploaded_file_count = ?, uploaded_size_bytes = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'open'
+  AND ? <= expected_file_count
+  AND ? <= expected_size_bytes
+`
+
+type UpdateManagedDataUploadProgressParams struct {
+	UploadedFileCount int64  `json:"uploaded_file_count"`
+	UploadedSizeBytes int64  `json:"uploaded_size_bytes"`
+	ID                string `json:"id"`
+	ExpectedFileCount int64  `json:"expected_file_count"`
+	ExpectedSizeBytes int64  `json:"expected_size_bytes"`
+}
+
+func (q *Queries) UpdateManagedDataUploadProgress(ctx context.Context, arg UpdateManagedDataUploadProgressParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, updateManagedDataUploadProgress,
+		arg.UploadedFileCount,
+		arg.UploadedSizeBytes,
+		arg.ID,
+		arg.ExpectedFileCount,
+		arg.ExpectedSizeBytes,
+	)
 }
 
 const updateRoleBindingByID = `-- name: UpdateRoleBindingByID :exec
@@ -3259,6 +4020,40 @@ func (q *Queries) UpsertGroup(ctx context.Context, arg UpsertGroupParams) error 
 		arg.Provider,
 		arg.ExternalID,
 		arg.Name,
+	)
+	return err
+}
+
+const upsertManagedDataEnvironmentPointer = `-- name: UpsertManagedDataEnvironmentPointer :exec
+INSERT INTO managed_data_environment_pointers (
+  collection_id, environment, revision_id, rollout_id, generation, updated_by
+)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(collection_id, environment) DO UPDATE SET
+  revision_id = excluded.revision_id,
+  rollout_id = excluded.rollout_id,
+  generation = excluded.generation,
+  updated_by = excluded.updated_by,
+  updated_at = CURRENT_TIMESTAMP
+`
+
+type UpsertManagedDataEnvironmentPointerParams struct {
+	CollectionID string `json:"collection_id"`
+	Environment  string `json:"environment"`
+	RevisionID   string `json:"revision_id"`
+	RolloutID    string `json:"rollout_id"`
+	Generation   int64  `json:"generation"`
+	UpdatedBy    string `json:"updated_by"`
+}
+
+func (q *Queries) UpsertManagedDataEnvironmentPointer(ctx context.Context, arg UpsertManagedDataEnvironmentPointerParams) error {
+	_, err := q.db.ExecContext(ctx, upsertManagedDataEnvironmentPointer,
+		arg.CollectionID,
+		arg.Environment,
+		arg.RevisionID,
+		arg.RolloutID,
+		arg.Generation,
+		arg.UpdatedBy,
 	)
 	return err
 }

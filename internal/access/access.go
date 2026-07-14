@@ -28,6 +28,9 @@ const (
 	PrivilegeViewAudit       Privilege = "VIEW_AUDIT"
 	PrivilegeManageWorkspace Privilege = "MANAGE_WORKSPACE"
 	PrivilegeManagePlatform  Privilege = "MANAGE_PLATFORM"
+	PrivilegeViewData        Privilege = "VIEW_DATA"
+	PrivilegeIngestData      Privilege = "INGEST_DATA"
+	PrivilegeActivateData    Privilege = "ACTIVATE_DATA"
 )
 
 const (
@@ -38,6 +41,7 @@ const (
 	RoleEditor        = "editor"
 	RoleMember        = "member"
 	RoleViewer        = "viewer"
+	RoleDataDeployer  = "data_deployer"
 	RolePlatformAdmin = "platform_admin"
 )
 
@@ -141,9 +145,20 @@ var defaultRoles = []Role{
 		},
 	},
 	{
+		Name: RoleDataDeployer,
+		Privileges: []Privilege{
+			PrivilegeViewData,
+			PrivilegeIngestData,
+			PrivilegeActivateData,
+		},
+	},
+	{
 		Name: RolePlatformAdmin,
 		Privileges: []Privilege{
 			PrivilegeManagePlatform,
+			PrivilegeViewData,
+			PrivilegeIngestData,
+			PrivilegeActivateData,
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeEditItem,
@@ -671,6 +686,29 @@ func DefaultRoles() []Role {
 		}
 	}
 	return roles
+}
+
+func KnownPrivileges() []Privilege {
+	return []Privilege{
+		PrivilegeUseWorkspace,
+		PrivilegeViewItem,
+		PrivilegeEditItem,
+		PrivilegeManageItem,
+		PrivilegeQueryData,
+		PrivilegePreviewData,
+		PrivilegeRefreshData,
+		PrivilegeDeploy,
+		PrivilegeActivatePublish,
+		PrivilegeUseAgent,
+		PrivilegeViewAgent,
+		PrivilegeManageGrants,
+		PrivilegeViewAudit,
+		PrivilegeManageWorkspace,
+		PrivilegeManagePlatform,
+		PrivilegeViewData,
+		PrivilegeIngestData,
+		PrivilegeActivateData,
+	}
 }
 
 func PrincipalIDForEmail(email string) string {

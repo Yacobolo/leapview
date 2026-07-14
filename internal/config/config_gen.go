@@ -75,6 +75,42 @@ type Config struct {
 	HomeDir string `env:"LIBREDASH_HOME" envDefault:".libredash"`
 	// LocalAuth Enable administrator-managed local browser authentication.
 	LocalAuth bool `env:"LIBREDASH_LOCAL_AUTH"`
+	// ManagedDataBackend Storage backend for project-global managed data; supported values are local and s3.
+	ManagedDataBackend string `env:"LIBREDASH_MANAGED_DATA_BACKEND" envDefault:"local"`
+	// ManagedDataDir Root directory for local managed-data objects and upload staging.
+	ManagedDataDir string `env:"LIBREDASH_MANAGED_DATA_DIR" envDefault:".libredash/managed-data"`
+	// ManagedDataGCGracePeriod Minimum age of unreferenced managed-data objects before garbage collection.
+	ManagedDataGCGracePeriod time.Duration `env:"LIBREDASH_MANAGED_DATA_GC_GRACE_PERIOD" envDefault:"24h"`
+	// ManagedDataGCInterval Interval between managed-data garbage-collection passes.
+	ManagedDataGCInterval time.Duration `env:"LIBREDASH_MANAGED_DATA_GC_INTERVAL" envDefault:"1h"`
+	// ManagedDataGCTargetFreeBytes Free-space target retained after managed-data garbage collection.
+	ManagedDataGCTargetFreeBytes int64 `env:"LIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES" envDefault:"10737418240"`
+	// ManagedDataMaxFiles Maximum number of files in one managed-data revision.
+	ManagedDataMaxFiles int `env:"LIBREDASH_MANAGED_DATA_MAX_FILES" envDefault:"10000"`
+	// ManagedDataMaxFileBytes Maximum size in bytes of one managed-data file.
+	ManagedDataMaxFileBytes int64 `env:"LIBREDASH_MANAGED_DATA_MAX_FILE_BYTES" envDefault:"1073741824"`
+	// ManagedDataMaxRevisionBytes Maximum total size in bytes of one managed-data revision.
+	ManagedDataMaxRevisionBytes int64 `env:"LIBREDASH_MANAGED_DATA_MAX_REVISION_BYTES" envDefault:"10737418240"`
+	// ManagedDataMinFreeBytes Minimum free bytes required before accepting local managed-data uploads.
+	ManagedDataMinFreeBytes int64 `env:"LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES" envDefault:"5368709120"`
+	// ManagedDataS3AccessKeyID Optional S3 access-key identifier for managed-data storage.
+	ManagedDataS3AccessKeyID string `env:"LIBREDASH_MANAGED_DATA_S3_ACCESS_KEY_ID"`
+	// ManagedDataS3Bucket S3 bucket used for managed-data objects and staging.
+	ManagedDataS3Bucket string `env:"LIBREDASH_MANAGED_DATA_S3_BUCKET"`
+	// ManagedDataS3Endpoint Optional S3-compatible endpoint URL.
+	ManagedDataS3Endpoint string `env:"LIBREDASH_MANAGED_DATA_S3_ENDPOINT"`
+	// ManagedDataS3PathStyle Use path-style addressing for S3-compatible managed-data storage.
+	ManagedDataS3PathStyle bool `env:"LIBREDASH_MANAGED_DATA_S3_PATH_STYLE" envDefault:"false"`
+	// ManagedDataS3Prefix Object-key prefix for managed data in the configured S3 bucket.
+	ManagedDataS3Prefix string `env:"LIBREDASH_MANAGED_DATA_S3_PREFIX" envDefault:"managed-data"`
+	// ManagedDataS3Region S3 region used for managed-data requests.
+	ManagedDataS3Region string `env:"LIBREDASH_MANAGED_DATA_S3_REGION"`
+	// ManagedDataS3SecretAccessKey Optional S3 secret access key for managed-data storage.
+	ManagedDataS3SecretAccessKey string `env:"LIBREDASH_MANAGED_DATA_S3_SECRET_ACCESS_KEY"`
+	// ManagedDataS3SessionToken Optional temporary S3 session token for managed-data storage.
+	ManagedDataS3SessionToken string `env:"LIBREDASH_MANAGED_DATA_S3_SESSION_TOKEN"`
+	// ManagedDataUploadSessionTTL Lifetime of an incomplete managed-data upload session.
+	ManagedDataUploadSessionTTL time.Duration `env:"LIBREDASH_MANAGED_DATA_UPLOAD_SESSION_TTL" envDefault:"24h"`
 	// MetricsBearerToken Bearer token protecting the Prometheus metrics endpoint; production requires at least 32 characters.
 	MetricsBearerToken string `env:"LIBREDASH_METRICS_BEARER_TOKEN"`
 	// OIDCCallbackURL HTTPS callback URL registered with the generic OIDC provider.
@@ -105,51 +141,69 @@ type Config struct {
 
 func (c Config) catalogValues() map[string]any {
 	return map[string]any{
-		configspec.EnvADDR:                              c.AddrFallback,
-		configspec.EnvLIBREDASH_ADDR:                    c.Addr,
-		configspec.EnvLIBREDASH_AGENT_API_KEY:           c.AgentAPIKey,
-		configspec.EnvLIBREDASH_AGENT_BASE_URL:          c.AgentBaseURL,
-		configspec.EnvLIBREDASH_AGENT_MODEL:             c.AgentModel,
-		configspec.EnvLIBREDASH_ALLOWED_HOSTS:           c.AllowedHosts,
-		configspec.EnvLIBREDASH_API_TOKEN:               c.APIToken,
-		configspec.EnvLIBREDASH_API_TOKEN_ONLY_AUTH:     c.APITokenOnlyAuth,
-		configspec.EnvLIBREDASH_ASSET_VERSION:           c.AssetVersion,
-		configspec.EnvLIBREDASH_AZURE_CALLBACK_URL:      c.AzureCallbackURL,
-		configspec.EnvLIBREDASH_AZURE_CLIENT_ID:         c.AzureClientID,
-		configspec.EnvLIBREDASH_AZURE_CLIENT_SECRET:     c.AzureSecret,
-		configspec.EnvLIBREDASH_AZURE_TENANT:            c.AzureTenant,
-		configspec.EnvLIBREDASH_BOOTSTRAP_ADMIN_EMAIL:   c.BootstrapEmail,
-		configspec.EnvLIBREDASH_CATALOG_PATH:            c.CatalogPath,
-		configspec.EnvLIBREDASH_CLI_CONFIG:              c.CLIConfig,
-		configspec.EnvLIBREDASH_COOKIE_SECURE:           c.CookieSecureRaw,
-		configspec.EnvLIBREDASH_CSRF_KEY:                c.CSRFKey,
-		configspec.EnvLIBREDASH_DATA_DIR:                c.DataDir,
-		configspec.EnvLIBREDASH_DEV_AUTH_BYPASS:         c.DevAuthBypass,
-		configspec.EnvLIBREDASH_DUCKDB_DIR:              c.DuckDBDir,
-		configspec.EnvLIBREDASH_DUCKDB_PATH:             c.DuckDBPath,
-		configspec.EnvLIBREDASH_DUCKLAKE_CATALOG_PATH:   c.DuckLakeCatalog,
-		configspec.EnvLIBREDASH_EXEC_JOB_LEASE_TIMEOUT:  c.ExecJobLeaseTimeout,
-		configspec.EnvLIBREDASH_EXEC_MAX_QUEUED_READS:   c.ExecMaxQueuedReads,
-		configspec.EnvLIBREDASH_EXEC_MAX_QUEUED_WRITES:  c.ExecMaxQueuedWrites,
-		configspec.EnvLIBREDASH_EXEC_MAX_RUNNING_READS:  c.ExecMaxRunningReads,
-		configspec.EnvLIBREDASH_EXEC_MAX_RUNNING_WRITES: c.ExecMaxRunningWrites,
-		configspec.EnvLIBREDASH_EXEC_READ_QUEUE_TIMEOUT: c.ExecReadQueueTimeout,
-		configspec.EnvLIBREDASH_EXEC_READ_TIMEOUT:       c.ExecReadTimeout,
-		configspec.EnvLIBREDASH_HEALTHCHECK_URL:         c.HealthcheckURL,
-		configspec.EnvLIBREDASH_HOME:                    c.HomeDir,
-		configspec.EnvLIBREDASH_LOCAL_AUTH:              c.LocalAuth,
-		configspec.EnvLIBREDASH_METRICS_BEARER_TOKEN:    c.MetricsBearerToken,
-		configspec.EnvLIBREDASH_OIDC_CALLBACK_URL:       c.OIDCCallbackURL,
-		configspec.EnvLIBREDASH_OIDC_CLIENT_ID:          c.OIDCClientID,
-		configspec.EnvLIBREDASH_OIDC_CLIENT_SECRET:      c.OIDCSecret,
-		configspec.EnvLIBREDASH_OIDC_ISSUER_URL:         c.OIDCIssuerURL,
-		configspec.EnvLIBREDASH_OIDC_PROVIDER_ID:        c.OIDCProviderID,
-		configspec.EnvLIBREDASH_OIDC_SCOPES:             c.OIDCScopes,
-		configspec.EnvLIBREDASH_PRODUCTION:              c.Production,
-		configspec.EnvLIBREDASH_SCIM_BEARER_TOKEN:       c.SCIMBearerToken,
-		configspec.EnvLIBREDASH_TARGET:                  c.Target,
-		configspec.EnvLIBREDASH_TOKEN_HASH_KEY:          c.TokenHashKey,
-		configspec.EnvLIBREDASH_TRUST_PROXY_HEADERS:     c.TrustProxyHeaders,
-		configspec.EnvPORT:                              c.Port,
+		configspec.EnvADDR:                                        c.AddrFallback,
+		configspec.EnvLIBREDASH_ADDR:                              c.Addr,
+		configspec.EnvLIBREDASH_AGENT_API_KEY:                     c.AgentAPIKey,
+		configspec.EnvLIBREDASH_AGENT_BASE_URL:                    c.AgentBaseURL,
+		configspec.EnvLIBREDASH_AGENT_MODEL:                       c.AgentModel,
+		configspec.EnvLIBREDASH_ALLOWED_HOSTS:                     c.AllowedHosts,
+		configspec.EnvLIBREDASH_API_TOKEN:                         c.APIToken,
+		configspec.EnvLIBREDASH_API_TOKEN_ONLY_AUTH:               c.APITokenOnlyAuth,
+		configspec.EnvLIBREDASH_ASSET_VERSION:                     c.AssetVersion,
+		configspec.EnvLIBREDASH_AZURE_CALLBACK_URL:                c.AzureCallbackURL,
+		configspec.EnvLIBREDASH_AZURE_CLIENT_ID:                   c.AzureClientID,
+		configspec.EnvLIBREDASH_AZURE_CLIENT_SECRET:               c.AzureSecret,
+		configspec.EnvLIBREDASH_AZURE_TENANT:                      c.AzureTenant,
+		configspec.EnvLIBREDASH_BOOTSTRAP_ADMIN_EMAIL:             c.BootstrapEmail,
+		configspec.EnvLIBREDASH_CATALOG_PATH:                      c.CatalogPath,
+		configspec.EnvLIBREDASH_CLI_CONFIG:                        c.CLIConfig,
+		configspec.EnvLIBREDASH_COOKIE_SECURE:                     c.CookieSecureRaw,
+		configspec.EnvLIBREDASH_CSRF_KEY:                          c.CSRFKey,
+		configspec.EnvLIBREDASH_DATA_DIR:                          c.DataDir,
+		configspec.EnvLIBREDASH_DEV_AUTH_BYPASS:                   c.DevAuthBypass,
+		configspec.EnvLIBREDASH_DUCKDB_DIR:                        c.DuckDBDir,
+		configspec.EnvLIBREDASH_DUCKDB_PATH:                       c.DuckDBPath,
+		configspec.EnvLIBREDASH_DUCKLAKE_CATALOG_PATH:             c.DuckLakeCatalog,
+		configspec.EnvLIBREDASH_EXEC_JOB_LEASE_TIMEOUT:            c.ExecJobLeaseTimeout,
+		configspec.EnvLIBREDASH_EXEC_MAX_QUEUED_READS:             c.ExecMaxQueuedReads,
+		configspec.EnvLIBREDASH_EXEC_MAX_QUEUED_WRITES:            c.ExecMaxQueuedWrites,
+		configspec.EnvLIBREDASH_EXEC_MAX_RUNNING_READS:            c.ExecMaxRunningReads,
+		configspec.EnvLIBREDASH_EXEC_MAX_RUNNING_WRITES:           c.ExecMaxRunningWrites,
+		configspec.EnvLIBREDASH_EXEC_READ_QUEUE_TIMEOUT:           c.ExecReadQueueTimeout,
+		configspec.EnvLIBREDASH_EXEC_READ_TIMEOUT:                 c.ExecReadTimeout,
+		configspec.EnvLIBREDASH_HEALTHCHECK_URL:                   c.HealthcheckURL,
+		configspec.EnvLIBREDASH_HOME:                              c.HomeDir,
+		configspec.EnvLIBREDASH_LOCAL_AUTH:                        c.LocalAuth,
+		configspec.EnvLIBREDASH_MANAGED_DATA_BACKEND:              c.ManagedDataBackend,
+		configspec.EnvLIBREDASH_MANAGED_DATA_DIR:                  c.ManagedDataDir,
+		configspec.EnvLIBREDASH_MANAGED_DATA_GC_GRACE_PERIOD:      c.ManagedDataGCGracePeriod,
+		configspec.EnvLIBREDASH_MANAGED_DATA_GC_INTERVAL:          c.ManagedDataGCInterval,
+		configspec.EnvLIBREDASH_MANAGED_DATA_GC_TARGET_FREE_BYTES: c.ManagedDataGCTargetFreeBytes,
+		configspec.EnvLIBREDASH_MANAGED_DATA_MAX_FILES:            c.ManagedDataMaxFiles,
+		configspec.EnvLIBREDASH_MANAGED_DATA_MAX_FILE_BYTES:       c.ManagedDataMaxFileBytes,
+		configspec.EnvLIBREDASH_MANAGED_DATA_MAX_REVISION_BYTES:   c.ManagedDataMaxRevisionBytes,
+		configspec.EnvLIBREDASH_MANAGED_DATA_MIN_FREE_BYTES:       c.ManagedDataMinFreeBytes,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_ACCESS_KEY_ID:     c.ManagedDataS3AccessKeyID,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_BUCKET:            c.ManagedDataS3Bucket,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_ENDPOINT:          c.ManagedDataS3Endpoint,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_PATH_STYLE:        c.ManagedDataS3PathStyle,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_PREFIX:            c.ManagedDataS3Prefix,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_REGION:            c.ManagedDataS3Region,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_SECRET_ACCESS_KEY: c.ManagedDataS3SecretAccessKey,
+		configspec.EnvLIBREDASH_MANAGED_DATA_S3_SESSION_TOKEN:     c.ManagedDataS3SessionToken,
+		configspec.EnvLIBREDASH_MANAGED_DATA_UPLOAD_SESSION_TTL:   c.ManagedDataUploadSessionTTL,
+		configspec.EnvLIBREDASH_METRICS_BEARER_TOKEN:              c.MetricsBearerToken,
+		configspec.EnvLIBREDASH_OIDC_CALLBACK_URL:                 c.OIDCCallbackURL,
+		configspec.EnvLIBREDASH_OIDC_CLIENT_ID:                    c.OIDCClientID,
+		configspec.EnvLIBREDASH_OIDC_CLIENT_SECRET:                c.OIDCSecret,
+		configspec.EnvLIBREDASH_OIDC_ISSUER_URL:                   c.OIDCIssuerURL,
+		configspec.EnvLIBREDASH_OIDC_PROVIDER_ID:                  c.OIDCProviderID,
+		configspec.EnvLIBREDASH_OIDC_SCOPES:                       c.OIDCScopes,
+		configspec.EnvLIBREDASH_PRODUCTION:                        c.Production,
+		configspec.EnvLIBREDASH_SCIM_BEARER_TOKEN:                 c.SCIMBearerToken,
+		configspec.EnvLIBREDASH_TARGET:                            c.Target,
+		configspec.EnvLIBREDASH_TOKEN_HASH_KEY:                    c.TokenHashKey,
+		configspec.EnvLIBREDASH_TRUST_PROXY_HEADERS:               c.TrustProxyHeaders,
+		configspec.EnvPORT:                                        c.Port,
 	}
 }

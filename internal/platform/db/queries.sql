@@ -820,3 +820,179 @@ WHERE (sqlc.arg(workspace_id) = '' OR workspace_id = sqlc.arg(workspace_id))
   )
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg(limit);
+
+
+-- name: CreateManagedDataCollection :exec
+INSERT INTO managed_data_collections (id, project_id, connection_name, name, description, created_by)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: GetManagedDataCollection :one
+SELECT * FROM managed_data_collections WHERE id = ?;
+
+-- name: GetManagedDataCollectionByProjectConnection :one
+SELECT * FROM managed_data_collections
+WHERE project_id = ? AND connection_name = ?;
+
+-- name: ListActiveManagedDataCollections :many
+SELECT * FROM managed_data_collections
+WHERE status = 'active'
+ORDER BY project_id, connection_name, id;
+
+-- name: ListAllManagedDataCollections :many
+SELECT * FROM managed_data_collections
+ORDER BY project_id, connection_name, id;
+
+-- name: ArchiveManagedDataCollection :execresult
+UPDATE managed_data_collections
+SET status = 'archived', archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'active';
+
+-- name: CreateManagedDataUploadSession :exec
+INSERT INTO managed_data_upload_sessions (
+  id, collection_id, base_revision_id, status, manifest_json,
+  expected_file_count, expected_size_bytes, storage_backend, staging_prefix,
+  created_by, expires_at
+)
+VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetManagedDataUploadSession :one
+SELECT * FROM managed_data_upload_sessions WHERE id = ?;
+
+-- name: MarkManagedDataUploadCommitting :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'committing', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'open' AND expires_at > CURRENT_TIMESTAMP;
+
+-- name: UpdateManagedDataUploadProgress :execresult
+UPDATE managed_data_upload_sessions
+SET uploaded_file_count = ?, uploaded_size_bytes = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'open'
+  AND ? <= expected_file_count
+  AND ? <= expected_size_bytes;
+
+-- name: AbortManagedDataUploadSession :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'aborted', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'open';
+
+-- name: ExpireManagedDataUploadSessions :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+WHERE status = 'open' AND expires_at <= ?;
+
+-- name: NextManagedDataRevisionSequence :one
+SELECT COALESCE(MAX(sequence), 0) + 1
+FROM managed_data_revisions
+WHERE collection_id = ?;
+
+-- name: CreateReadyManagedDataRevision :exec
+INSERT INTO managed_data_revisions (
+  id, collection_id, sequence, digest, status, manifest_json,
+  file_count, size_bytes, created_by, ready_at
+)
+VALUES (?, ?, ?, ?, 'ready', ?, ?, ?, ?, CURRENT_TIMESTAMP);
+
+-- name: CreateManagedDataRevisionFile :exec
+INSERT INTO managed_data_revision_files (
+  revision_id, logical_path, size_bytes, sha256, storage_key, media_type, etag
+)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- name: CompleteManagedDataUploadSession :execresult
+UPDATE managed_data_upload_sessions
+SET status = 'complete', revision_id = ?,
+    uploaded_file_count = expected_file_count,
+    uploaded_size_bytes = expected_size_bytes,
+    completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'committing';
+
+-- name: GetManagedDataRevision :one
+SELECT * FROM managed_data_revisions WHERE id = ?;
+
+-- name: ListManagedDataRevisions :many
+SELECT * FROM managed_data_revisions
+WHERE collection_id = ?
+ORDER BY sequence DESC;
+
+-- name: ListManagedDataRevisionFiles :many
+SELECT * FROM managed_data_revision_files
+WHERE revision_id = ?
+ORDER BY logical_path;
+
+-- name: CreateManagedDataRollout :exec
+INSERT INTO managed_data_rollouts (id, collection_id, environment, revision_id, status, created_by)
+VALUES (?, ?, ?, ?, 'pending', ?);
+
+-- name: CreateManagedDataRolloutTarget :exec
+INSERT INTO managed_data_rollout_targets (
+  rollout_id, workspace_id, serving_state_id, prior_serving_state_id, status
+)
+VALUES (?, ?, ?, ?, 'pending');
+
+-- name: GetManagedDataRollout :one
+SELECT * FROM managed_data_rollouts WHERE id = ?;
+
+-- name: ListManagedDataRolloutTargets :many
+SELECT * FROM managed_data_rollout_targets
+WHERE rollout_id = ?
+ORDER BY workspace_id;
+
+-- name: GetWorkspaceActiveServingStateID :one
+SELECT serving_state_id
+FROM workspace_active_serving_states
+WHERE workspace_id = ? AND environment = ?;
+
+-- name: GetManagedDataEnvironmentPointer :one
+SELECT * FROM managed_data_environment_pointers
+WHERE collection_id = ? AND environment = ?;
+
+-- name: UpsertManagedDataEnvironmentPointer :exec
+INSERT INTO managed_data_environment_pointers (
+  collection_id, environment, revision_id, rollout_id, generation, updated_by
+)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(collection_id, environment) DO UPDATE SET
+  revision_id = excluded.revision_id,
+  rollout_id = excluded.rollout_id,
+  generation = excluded.generation,
+  updated_by = excluded.updated_by,
+  updated_at = CURRENT_TIMESTAMP;
+
+-- name: ActivateManagedDataRolloutTarget :exec
+UPDATE managed_data_rollout_targets
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
+WHERE rollout_id = ? AND workspace_id = ? AND status = 'pending';
+
+-- name: ActivateManagedDataRollout :execresult
+UPDATE managed_data_rollouts
+SET status = 'active', completed_at = CURRENT_TIMESTAMP, error = ''
+WHERE id = ? AND status = 'pending';
+
+-- name: SupersedeManagedDataRollout :exec
+UPDATE managed_data_rollouts
+SET status = 'superseded'
+WHERE id = ? AND status = 'active';
+
+-- name: FailManagedDataRollout :execresult
+UPDATE managed_data_rollouts
+SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
+WHERE id = ? AND status = 'pending';
+
+-- name: DeleteManagedDataServingStateBindings :exec
+DELETE FROM managed_data_serving_state_bindings
+WHERE serving_state_id = ?;
+
+-- name: CreateManagedDataServingStateBinding :exec
+INSERT INTO managed_data_serving_state_bindings (
+  serving_state_id, collection_id, revision_id, environment
+)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(serving_state_id, collection_id) DO UPDATE SET
+  revision_id = excluded.revision_id,
+  environment = excluded.environment,
+  bound_at = CURRENT_TIMESTAMP;
+
+-- name: ListManagedDataServingStateBindings :many
+SELECT * FROM managed_data_serving_state_bindings
+WHERE serving_state_id = ?
+ORDER BY collection_id;

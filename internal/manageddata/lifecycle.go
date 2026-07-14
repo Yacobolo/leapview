@@ -1,0 +1,294 @@
+package manageddata
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
+
+var (
+	ErrNotFound = errors.New("managed data record not found")
+	ErrConflict = errors.New("managed data conflict")
+)
+
+type CollectionStatus string
+
+const (
+	CollectionStatusActive   CollectionStatus = "active"
+	CollectionStatusArchived CollectionStatus = "archived"
+)
+
+type RevisionStatus string
+
+const (
+	RevisionStatusPending RevisionStatus = "pending"
+	RevisionStatusReady   RevisionStatus = "ready"
+	RevisionStatusFailed  RevisionStatus = "failed"
+)
+
+func (s RevisionStatus) CanTransitionTo(target string) bool {
+	return s == RevisionStatusPending && (RevisionStatus(target) == RevisionStatusReady || RevisionStatus(target) == RevisionStatusFailed)
+}
+
+type UploadStatus string
+
+const (
+	UploadStatusOpen       UploadStatus = "open"
+	UploadStatusCommitting UploadStatus = "committing"
+	UploadStatusComplete   UploadStatus = "complete"
+	UploadStatusAborted    UploadStatus = "aborted"
+	UploadStatusExpired    UploadStatus = "expired"
+	UploadStatusFailed     UploadStatus = "failed"
+)
+
+func (s UploadStatus) CanTransitionTo(target string) bool {
+	t := UploadStatus(target)
+	switch s {
+	case UploadStatusOpen:
+		return t == UploadStatusCommitting || t == UploadStatusAborted || t == UploadStatusExpired
+	case UploadStatusCommitting:
+		return t == UploadStatusComplete || t == UploadStatusFailed
+	default:
+		return false
+	}
+}
+
+type RolloutStatus string
+
+const (
+	RolloutStatusPending    RolloutStatus = "pending"
+	RolloutStatusActive     RolloutStatus = "active"
+	RolloutStatusFailed     RolloutStatus = "failed"
+	RolloutStatusSuperseded RolloutStatus = "superseded"
+)
+
+func (s RolloutStatus) CanTransitionTo(target string) bool {
+	t := RolloutStatus(target)
+	switch s {
+	case RolloutStatusPending:
+		return t == RolloutStatusActive || t == RolloutStatusFailed
+	case RolloutStatusActive:
+		return t == RolloutStatusSuperseded
+	default:
+		return false
+	}
+}
+
+type TargetStatus string
+
+const (
+	TargetStatusPending TargetStatus = "pending"
+	TargetStatusActive  TargetStatus = "active"
+	TargetStatusFailed  TargetStatus = "failed"
+)
+
+type Environment string
+
+func NormalizeEnvironment(value string) (Environment, error) {
+	value = strings.TrimSpace(value)
+	if err := validateSlug("environment", value); err != nil {
+		return "", err
+	}
+	return Environment(value), nil
+}
+
+func ValidateCollectionID(value string) error {
+	return validateSlug("collection id", strings.TrimSpace(value))
+}
+
+type Collection struct {
+	ID             string
+	ProjectID      string
+	ConnectionName string
+	Name           string
+	Description    string
+	Status         CollectionStatus
+	CreatedBy      string
+	CreatedAt      string
+	UpdatedAt      string
+	ArchivedAt     string
+}
+
+type CreateCollectionInput struct {
+	ID             string
+	ProjectID      string
+	ConnectionName string
+	Name           string
+	Description    string
+	CreatedBy      string
+}
+
+type Revision struct {
+	ID           string
+	CollectionID string
+	Sequence     int64
+	Digest       string
+	Status       RevisionStatus
+	ManifestJSON string
+	FileCount    int64
+	SizeBytes    int64
+	CreatedBy    string
+	CreatedAt    string
+	ReadyAt      string
+	Error        string
+}
+
+type StoredFile struct {
+	File
+	StorageKey string
+	MediaType  string
+	ETag       string
+}
+
+type RevisionFile struct {
+	RevisionID string
+	StoredFile
+	CreatedAt string
+}
+
+type UploadSession struct {
+	ID                string
+	CollectionID      string
+	BaseRevisionID    string
+	RevisionID        string
+	Status            UploadStatus
+	ManifestJSON      string
+	ExpectedFileCount int64
+	ExpectedSizeBytes int64
+	UploadedFileCount int64
+	UploadedSizeBytes int64
+	StorageBackend    string
+	StagingPrefix     string
+	CreatedBy         string
+	CreatedAt         string
+	UpdatedAt         string
+	ExpiresAt         string
+	CompletedAt       string
+	Error             string
+}
+
+type CreateUploadSessionInput struct {
+	ID             string
+	CollectionID   string
+	BaseRevisionID string
+	Manifest       Manifest
+	StorageBackend string
+	StagingPrefix  string
+	CreatedBy      string
+	ExpiresAt      time.Time
+}
+
+type UploadProgress struct {
+	UploadedFileCount int64
+	UploadedSizeBytes int64
+}
+
+type CompleteUploadInput struct {
+	SessionID  string
+	RevisionID string
+	Files      []StoredFile
+}
+
+type EnvironmentPointer struct {
+	CollectionID string
+	Environment  Environment
+	RevisionID   string
+	RolloutID    string
+	Generation   int64
+	UpdatedBy    string
+	UpdatedAt    string
+}
+
+type PointerExpectation struct {
+	RevisionID string
+	Generation int64
+}
+
+type Rollout struct {
+	ID           string
+	CollectionID string
+	Environment  Environment
+	RevisionID   string
+	Status       RolloutStatus
+	CreatedBy    string
+	CreatedAt    string
+	CompletedAt  string
+	Error        string
+	Targets      []RolloutTarget
+}
+
+type RolloutTarget struct {
+	RolloutID           string
+	WorkspaceID         string
+	ServingStateID      string
+	PriorServingStateID string
+	Status              TargetStatus
+	ActivatedAt         string
+	Error               string
+}
+
+type RolloutTargetInput struct {
+	WorkspaceID    string
+	ServingStateID string
+}
+
+type CreateRolloutInput struct {
+	ID           string
+	CollectionID string
+	Environment  Environment
+	RevisionID   string
+	Targets      []RolloutTargetInput
+	CreatedBy    string
+}
+
+type ServingStateBinding struct {
+	ServingStateID string
+	CollectionID   string
+	RevisionID     string
+	Environment    Environment
+	BoundAt        string
+}
+
+// Repository owns project-global managed-data metadata. Implementations must
+// make CompleteUpload, ActivateRollout, and ReplaceServingStateBindings atomic.
+type Repository interface {
+	CreateCollection(context.Context, CreateCollectionInput) (Collection, error)
+	CollectionByID(context.Context, string) (Collection, error)
+	CollectionByProjectConnection(context.Context, string, string) (Collection, error)
+	ListCollections(context.Context, bool) ([]Collection, error)
+	ArchiveCollection(context.Context, string) error
+	CreateUploadSession(context.Context, CreateUploadSessionInput) (UploadSession, error)
+	UploadSessionByID(context.Context, string) (UploadSession, error)
+	UpdateUploadProgress(context.Context, string, UploadProgress) error
+	AbortUploadSession(context.Context, string) error
+	ExpireUploadSessions(context.Context, time.Time) (int64, error)
+	CompleteUpload(context.Context, CompleteUploadInput) (Revision, error)
+	RevisionByID(context.Context, string) (Revision, error)
+	ListRevisions(context.Context, string) ([]Revision, error)
+	ListRevisionFiles(context.Context, string) ([]RevisionFile, error)
+	CreateRollout(context.Context, CreateRolloutInput) (Rollout, error)
+	RolloutByID(context.Context, string) (Rollout, error)
+	ActivateRollout(context.Context, string, PointerExpectation) (Rollout, error)
+	FailRollout(context.Context, string, error) error
+	EnvironmentPointer(context.Context, string, Environment) (EnvironmentPointer, error)
+	ReplaceServingStateBindings(context.Context, string, []ServingStateBinding) error
+	ListServingStateBindings(context.Context, string) ([]ServingStateBinding, error)
+}
+
+func validateSlug(kind, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required", kind)
+	}
+	if len(value) > 128 {
+		return fmt.Errorf("%s exceeds 128 characters", kind)
+	}
+	for i, char := range []byte(value) {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || i > 0 && (char == '-' || char == '_') {
+			continue
+		}
+		return fmt.Errorf("%s must contain only lowercase letters, numbers, dashes, or underscores", kind)
+	}
+	return nil
+}

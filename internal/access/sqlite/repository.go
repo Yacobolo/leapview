@@ -1274,23 +1274,7 @@ func (r *Repository) ensureWorkspaceSecurable(ctx context.Context, workspaceID s
 }
 
 func knownPrivileges() []access.Privilege {
-	return []access.Privilege{
-		access.PrivilegeUseWorkspace,
-		access.PrivilegeViewItem,
-		access.PrivilegeEditItem,
-		access.PrivilegeManageItem,
-		access.PrivilegeQueryData,
-		access.PrivilegePreviewData,
-		access.PrivilegeRefreshData,
-		access.PrivilegeDeploy,
-		access.PrivilegeActivatePublish,
-		access.PrivilegeUseAgent,
-		access.PrivilegeViewAgent,
-		access.PrivilegeManageGrants,
-		access.PrivilegeViewAudit,
-		access.PrivilegeManageWorkspace,
-		access.PrivilegeManagePlatform,
-	}
+	return access.KnownPrivileges()
 }
 
 func (r *Repository) BootstrapAdmin(ctx context.Context, workspaceID, email string) error {
