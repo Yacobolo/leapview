@@ -235,14 +235,16 @@ For file and table paths, LibreDash infers `format` from clear extensions such a
 
 ## Deploy
 
-Start the development server, then explicitly deploy the project to it:
+Start the development server; the default Olist project is synced and deployed
+before the command reports readiness:
 
 ```sh
 task dev
-task deploy:dev
 ```
 
-After YAML changes, run `task deploy:dev` again and refresh or navigate the UI. The server reads workspace assets, details, lineage, and versions from the active deployment records.
+After data or YAML changes, run `task deploy:dev` and refresh or navigate the
+UI. The server reads workspace assets, details, lineage, and versions from the
+active deployment records.
 
 For the supported small production topology, use the [Hetzner single-node
 guide](deploy/hetzner/README.md). It provisions pinned release images, HTTPS,
@@ -262,10 +264,14 @@ export LIBREDASH_METRICS_BEARER_TOKEN=<32+ byte secret>
 export LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 libredash serve --production
 libredash admin bootstrap
-libredash publish --project dashboards/libredash.yaml --target http://localhost:8080 --token <token> --environment prod --auto-approve
+SYNC_OUTPUT="$(libredash data sync --project dashboards/libredash.yaml --connection olist --from /srv/olist --target http://localhost:8080 --token <token>)"
+REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
+libredash data deploy --project dashboards/libredash.yaml --connection olist --revision "$REVISION" --target http://localhost:8080 --token <token> --environment prod --auto-approve
 ```
 
-Use `--workspace <id>` for a targeted deployment.
+`data deploy` updates every workspace that uses the managed connection in one
+atomic rollout. Projects without managed connections can use `libredash
+publish --workspace <id>` for a targeted deployment.
 Create consistent instance backups with `libredash admin backup --out /backup/libredash-$(date +%Y%m%d%H%M%S).tar.gz`.
 The archive includes the control-plane SQLite database, DuckLake catalog, deployed artifacts, DuckLake files, and other `LIBREDASH_HOME` state. Restore while the server is stopped; the command validates the archive and requires a backup path for the current instance before replacement:
 

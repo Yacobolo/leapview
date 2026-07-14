@@ -42,13 +42,14 @@ async function resolveBaseURL(): Promise<string> {
     LIBREDASH_DEV_LOG_LINES: '0',
     LIBREDASH_DEV_SKIP_PUBLISH: '1',
     LIBREDASH_HOME: qaHome,
+    LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES: '67108864',
   }, 'ignore')
   void devTask.exited.then((code) => {
     devTaskExitCode = code
   })
 
   const started = await waitForManagedServer()
-  await publishManagedProject(started)
+  await deployManagedProject()
   await waitForReachable(started)
   return started
 }
@@ -58,24 +59,8 @@ async function prepareManagedHome(): Promise<void> {
   await mkdir(qaHome, { recursive: true })
 }
 
-async function publishManagedProject(baseURL: string): Promise<void> {
-  const command = [
-      'go',
-      'run',
-      './cmd/libredash',
-      'publish',
-      '--workspace',
-      'visuals',
-      '--project',
-      'dashboards/libredash.yaml',
-      '--target',
-      baseURL,
-      '--token',
-      'dev',
-      '--environment',
-      'dev',
-      '--auto-approve',
-  ]
+async function deployManagedProject(): Promise<void> {
+  const command = ['task', 'deploy:dev']
   let lastError: unknown
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -106,7 +91,7 @@ async function waitForReachable(baseURL: string): Promise<void> {
     if (await reachable(baseURL)) return
     await sleep(200)
   }
-  throw new Error(`managed dev server did not become reachable after publish at ${baseURL}`)
+  throw new Error(`managed dev server did not become reachable after deployment at ${baseURL}`)
 }
 
 async function managedBaseURL(): Promise<string | null> {
@@ -146,6 +131,7 @@ async function cleanup(): Promise<void> {
         devTask.kill()
       }
     }
+    await rm(qaHome, { recursive: true, force: true })
   }
 }
 

@@ -180,23 +180,27 @@ func uploadManagedDataTus(ctx context.Context, client *managedDataCLIClient, roo
 			return verifySourceFile(ctx, root, expected)
 		}
 		newOffset, retry, err := patchTusFile(ctx, client, endpoint, root, expected, offset)
-		if err == nil && newOffset > offset && newOffset <= expected.Size {
+		if retry {
+			if failures < dataTransferAttempts-1 && waitForTransferRetry(ctx, failures) {
+				failures++
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("tus upload did not complete for %q", expected.Path)
+		}
+		if err != nil {
+			return err
+		}
+		if newOffset > offset && newOffset <= expected.Size {
 			failures = 0
 			if newOffset == expected.Size {
 				return verifySourceFile(ctx, root, expected)
 			}
 			continue
 		}
-		if err == nil && (newOffset <= offset || newOffset > expected.Size) {
-			return fmt.Errorf("tus upload returned an invalid offset for %q", expected.Path)
-		}
-		if !retry || failures >= dataTransferAttempts-1 || !waitForTransferRetry(ctx, failures) {
-			if err != nil {
-				return err
-			}
-			return fmt.Errorf("tus upload did not complete for %q", expected.Path)
-		}
-		failures++
+		return fmt.Errorf("tus upload returned an invalid offset for %q", expected.Path)
 	}
 }
 
@@ -252,12 +256,12 @@ func patchTusFile(ctx context.Context, client *managedDataCLIClient, endpoint, r
 	request.Header.Set("Content-Type", "application/offset+octet-stream")
 	response, err := client.http.Do(request)
 	if err != nil {
-		return 0, true, nil
+		return 0, true, fmt.Errorf("tus upload request failed for %q", expected.Path)
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
 	if response.StatusCode == http.StatusConflict || response.StatusCode >= 500 {
-		return 0, true, nil
+		return 0, true, fmt.Errorf("tus upload failed for %q with HTTP %d", expected.Path, response.StatusCode)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return 0, false, fmt.Errorf("tus upload failed for %q with HTTP %d", expected.Path, response.StatusCode)
@@ -268,9 +272,10 @@ func patchTusFile(ctx context.Context, client *managedDataCLIClient, endpoint, r
 	if err := validateOpenSource(file, snapshot, root, expected); err != nil {
 		return 0, false, err
 	}
-	newOffset, err := strconv.ParseInt(response.Header.Get("Upload-Offset"), 10, 64)
+	rawOffset := response.Header.Get("Upload-Offset")
+	newOffset, err := strconv.ParseInt(rawOffset, 10, 64)
 	if err != nil || newOffset != offset+chunkSize {
-		return 0, false, fmt.Errorf("tus upload returned an invalid offset for %q", expected.Path)
+		return 0, false, fmt.Errorf("tus upload returned an invalid offset for %q: expected %d, got %q", expected.Path, offset+chunkSize, rawOffset)
 	}
 	return newOffset, false, nil
 }

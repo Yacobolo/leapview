@@ -119,6 +119,42 @@ func TestDataSyncResumesTusFromHEADOffset(t *testing.T) {
 	}
 }
 
+func TestDataSyncRetriesTusCapacityFailureAndReportsHTTPStatus(t *testing.T) {
+	root := t.TempDir()
+	body := []byte("orders")
+	file := writeSyncFile(t, root, "orders.csv", body)
+	var patchAttempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodHead:
+			w.Header().Set("Tus-Resumable", "1.0.0")
+			w.Header().Set("Upload-Offset", "0")
+			w.Header().Set("Upload-Length", strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodPatch:
+			patchAttempts++
+			http.Error(w, "capacity details must not be exposed", http.StatusInsufficientStorage)
+		default:
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newManagedDataCLIClient(server.Client(), server.URL, "secret-token")
+	err := uploadManagedDataTus(context.Background(), client, root, file, apigenapi.ManagedDataTusUploadNegotiation{
+		Endpoint: "/tus", UploadId: "blob-1", ExpiresAt: "2030-01-01T00:00:00Z",
+	})
+	if err == nil || !strings.Contains(err.Error(), `tus upload failed for "orders.csv" with HTTP 507`) {
+		t.Fatalf("uploadManagedDataTus() error = %v", err)
+	}
+	if strings.Contains(err.Error(), "capacity details") || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("error exposed secret material: %v", err)
+	}
+	if patchAttempts != dataTransferAttempts {
+		t.Fatalf("PATCH attempts = %d, want %d", patchAttempts, dataTransferAttempts)
+	}
+}
+
 func TestDataSyncUploadsDeterministicS3PartsWithoutBearerToken(t *testing.T) {
 	root := t.TempDir()
 	body := []byte("abcdefghij")

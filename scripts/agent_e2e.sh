@@ -65,7 +65,14 @@ for _ in {1..80}; do
   sleep 0.25
 done
 
-"$BIN" publish --target "$TARGET" --token "$TOKEN" --workspace sales --project dashboards/libredash.yaml --auto-approve
+SYNC_OUTPUT="$("$BIN" data sync --project dashboards/libredash.yaml --connection olist --from .data/olist --target "$TARGET" --token "$TOKEN")"
+echo "$SYNC_OUTPUT"
+REVISION="$(awk '$1 == "staged" { print $2 }' <<<"$SYNC_OUTPUT")"
+[[ "$REVISION" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+  echo "managed data sync did not return a canonical revision" >&2
+  exit 1
+}
+"$BIN" data deploy --target "$TARGET" --token "$TOKEN" --project dashboards/libredash.yaml --connection olist --revision "$REVISION" --environment dev --auto-approve
 
 OUTPUT="$("$BIN" agent ask "List the dashboards I can use in this workspace and mention the Olist context." --target "$TARGET" --token "$TOKEN" --workspace sales --json)"
 echo "$OUTPUT"

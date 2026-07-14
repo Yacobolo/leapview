@@ -230,6 +230,18 @@ publish_project() {
     return 0
   fi
   local project="${LIBREDASH_DEV_PROJECT:-dashboards/libredash.yaml}"
+  if [[ "$project" == "dashboards/libredash.yaml" ]]; then
+    local sync_output revision
+    sync_output="$(go run ./cmd/libredash data sync --project "$project" --connection olist --from "${LIBREDASH_DATA_DIR:-.data/olist}" --target "http://localhost:${port}" --token dev)" || return 1
+    printf '%s\n' "$sync_output"
+    revision="$(printf '%s\n' "$sync_output" | awk '$1 == "staged" { print $2 }')"
+    [[ "$revision" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+      echo "Managed data sync did not return a canonical revision." >&2
+      return 1
+    }
+    go run ./cmd/libredash data deploy --project "$project" --connection olist --revision "$revision" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
+    return
+  fi
   go run ./cmd/libredash publish --project "$project" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
 }
 
