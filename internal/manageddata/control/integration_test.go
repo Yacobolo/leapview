@@ -110,7 +110,7 @@ func TestFilesystemAndSQLiteConcurrentFinalizeIsAtomicIdempotentAndDetectsLoss(t
 		t.Fatalf("revision count = %d, want 1", revisionCount)
 	}
 
-	if err := blobs.DeleteUnreachable(ctx, []string{digest}); err != nil {
+	if err := blobs.DeleteBlobs(ctx, []string{digest}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = service.FinalizeUpload(ctx, control.UploadRequest{Project: "project-a", Connection: "orders", UploadID: started.ID})

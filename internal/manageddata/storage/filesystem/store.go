@@ -142,19 +142,81 @@ func (s *Store) Open(ctx context.Context, digest string) (io.ReadCloser, error) 
 	return file, nil
 }
 
-func (s *Store) DeleteUnreachable(ctx context.Context, digests []string) error {
+func (s *Store) WalkBlobs(ctx context.Context, visit func(storage.BlobMetadata) error) error {
+	if visit == nil {
+		return fmt.Errorf("%w: blob visitor is required", storage.ErrInvalid)
+	}
+	shards, err := os.ReadDir(s.blobs)
+	if err != nil {
+		return filesystemInventoryError(ctx, "enumerate blob shards", err)
+	}
+	for _, shard := range shards {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !isCanonicalShard(shard.Name()) || shard.Type()&os.ModeSymlink != 0 || !shard.IsDir() {
+			return fmt.Errorf("%w: filesystem blob inventory is noncanonical", storage.ErrIntegrity)
+		}
+		files, err := os.ReadDir(filepath.Join(s.blobs, shard.Name()))
+		if err != nil {
+			return filesystemInventoryError(ctx, "enumerate blob shard", err)
+		}
+		for _, entry := range files {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			digest := entry.Name()
+			if storage.ValidateSHA256(digest) != nil || digest[:2] != shard.Name() || entry.Type()&os.ModeSymlink != 0 {
+				return fmt.Errorf("%w: filesystem blob inventory is noncanonical", storage.ErrIntegrity)
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return filesystemInventoryError(ctx, "inspect blob metadata", err)
+			}
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("%w: filesystem blob inventory contains a non-file", storage.ErrIntegrity)
+			}
+			if err := visit(storage.BlobMetadata{SHA256: digest, Size: info.Size(), LastModified: info.ModTime().UTC()}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) DeleteBlobs(ctx context.Context, digests []string) error {
+	if len(digests) > 1000 {
+		return fmt.Errorf("%w: blob deletion batch exceeds 1000 entries", storage.ErrInvalid)
+	}
 	for _, digest := range digests {
 		if err := storage.ValidateSHA256(digest); err != nil {
 			return err
 		}
 	}
+	touched := make(map[string]struct{})
 	for _, digest := range digests {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		path := s.blobPath(digest)
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("delete unreachable filesystem blob: %w", err)
+		blobPath := s.blobPath(digest)
+		info, err := os.Lstat(blobPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return filesystemInventoryError(ctx, "inspect blob for deletion", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("%w: filesystem blob deletion target is noncanonical", storage.ErrIntegrity)
+		}
+		if err := os.Remove(blobPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return filesystemInventoryError(ctx, "delete blob", err)
+		}
+		touched[filepath.Dir(blobPath)] = struct{}{}
+	}
+	for directory := range touched {
+		if err := syncDirectory(directory); err != nil {
+			return filesystemInventoryError(ctx, "sync blob deletion", err)
 		}
 	}
 	return nil
@@ -230,6 +292,28 @@ func (s *Store) BlobPath(digest string) string {
 
 func (s *Store) blobPath(digest string) string {
 	return filepath.Join(s.blobs, digest[:2], digest)
+}
+
+func isCanonicalShard(value string) bool {
+	if len(value) != 2 {
+		return false
+	}
+	for _, char := range []byte(value) {
+		if char < '0' || char > '9' && char < 'a' || char > 'f' {
+			return false
+		}
+	}
+	return true
+}
+
+func filesystemInventoryError(ctx context.Context, operation string, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return fmt.Errorf("%w: %s", storage.ErrBackend, operation)
 }
 
 func (s *Store) verifyPath(ctx context.Context, filePath string, expected storage.Blob) (storage.Blob, error) {
@@ -433,3 +517,5 @@ func syncDirectory(directory string) error {
 	defer file.Close()
 	return file.Sync()
 }
+
+var _ storage.BlobInventory = (*Store)(nil)

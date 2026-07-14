@@ -485,8 +485,6 @@ func (s *memoryBlobStore) Open(_ context.Context, digest string) (io.ReadCloser,
 	return io.NopCloser(bytes.NewReader(append([]byte(nil), body...))), nil
 }
 
-func (s *memoryBlobStore) DeleteUnreachable(context.Context, []string) error { return nil }
-
 func testResolver(t *testing.T, repo *fakeRepository, blobs storage.BlobStore) *Resolver {
 	t.Helper()
 	root := t.TempDir()

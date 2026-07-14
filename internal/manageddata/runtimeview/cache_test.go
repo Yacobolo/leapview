@@ -247,10 +247,6 @@ func (s *memoryStore) Open(_ context.Context, digest string) (io.ReadCloser, err
 	return s.open(append([]byte(nil), body...)), nil
 }
 
-func (s *memoryStore) DeleteUnreachable(context.Context, []string) error {
-	panic("unexpected DeleteUnreachable")
-}
-
 func (s *memoryStore) openCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

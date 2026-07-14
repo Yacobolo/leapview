@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +22,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/manageddata/storage/storagetest"
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 func TestBlobStoreConformance(t *testing.T) {
@@ -51,6 +54,55 @@ func TestStoreUsesContentAddressedKeyAndStableURI(t *testing.T) {
 	}
 	if client.lastPutIfNoneMatch != "*" {
 		t.Fatalf("IfNoneMatch = %q", client.lastPutIfNoneMatch)
+	}
+}
+
+func TestBlobInventoryPaginatesAndDeletesInOneBatch(t *testing.T) {
+	client := newFakeClient()
+	client.listPageSize = 1
+	store := newStore(t, client, &fakePresigner{})
+	first := blobFor([]byte("first"))
+	second := blobFor([]byte("second"))
+	for _, item := range []struct {
+		blob storage.Blob
+		body []byte
+	}{{first, []byte("first")}, {second, []byte("second")}} {
+		if _, err := store.Put(t.Context(), item.blob, bytes.NewReader(item.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var metadata []storage.BlobMetadata
+	if err := store.WalkBlobs(t.Context(), func(item storage.BlobMetadata) error {
+		metadata = append(metadata, item)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(metadata) != 2 || client.listCalls != 2 {
+		t.Fatalf("WalkBlobs() = %#v, list calls = %d", metadata, client.listCalls)
+	}
+	for _, item := range metadata {
+		if item.LastModified.IsZero() || item.Size <= 0 {
+			t.Fatalf("invalid metadata = %#v", item)
+		}
+	}
+	if err := store.DeleteBlobs(t.Context(), []string{first.SHA256, second.SHA256}); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.deleteBatches) != 1 || len(client.deleteBatches[0]) != 2 {
+		t.Fatalf("delete batches = %#v", client.deleteBatches)
+	}
+	if err := store.DeleteBlobs(t.Context(), []string{first.SHA256, second.SHA256}); err != nil {
+		t.Fatalf("idempotent DeleteBlobs() = %v", err)
+	}
+}
+
+func TestBlobInventoryRejectsMalformedProviderKeys(t *testing.T) {
+	client := newFakeClient()
+	client.objects["managed/blobs/sha256/not-canonical"] = fakeObject{body: []byte("x"), modified: time.Now()}
+	store := newStore(t, client, &fakePresigner{})
+	if err := store.WalkBlobs(t.Context(), func(storage.BlobMetadata) error { return nil }); !errors.Is(err, storage.ErrIntegrity) {
+		t.Fatalf("WalkBlobs() error = %v", err)
 	}
 }
 
@@ -146,11 +198,15 @@ type fakeClient struct {
 	failure            error
 	lastPutKey         string
 	lastPutIfNoneMatch string
+	listPageSize       int
+	listCalls          int
+	deleteBatches      [][]string
 }
 
 type fakeObject struct {
 	body     []byte
 	metadata map[string]string
+	modified time.Time
 }
 
 type fakeMultipart struct {
@@ -186,7 +242,7 @@ func (c *fakeClient) PutObject(_ context.Context, input *awss3.PutObjectInput, _
 	if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 != base64.StdEncoding.EncodeToString(sum[:]) {
 		return nil, fakeAPIError{code: "BadDigest"}
 	}
-	c.objects[key] = fakeObject{body: append([]byte(nil), body...), metadata: clone(input.Metadata)}
+	c.objects[key] = fakeObject{body: append([]byte(nil), body...), metadata: clone(input.Metadata), modified: time.Now().UTC()}
 	return &awss3.PutObjectOutput{}, nil
 }
 
@@ -217,14 +273,61 @@ func (c *fakeClient) GetObject(_ context.Context, input *awss3.GetObjectInput, _
 	return &awss3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(object.body))}, nil
 }
 
-func (c *fakeClient) DeleteObject(_ context.Context, input *awss3.DeleteObjectInput, _ ...func(*awss3.Options)) (*awss3.DeleteObjectOutput, error) {
+func (c *fakeClient) ListObjectsV2(_ context.Context, input *awss3.ListObjectsV2Input, _ ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.failure != nil {
 		return nil, c.failure
 	}
-	delete(c.objects, dereference(input.Key))
-	return &awss3.DeleteObjectOutput{}, nil
+	c.listCalls++
+	var keys []string
+	for key := range c.objects {
+		if strings.HasPrefix(key, dereference(input.Prefix)) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	start := 0
+	if token := dereference(input.ContinuationToken); token != "" {
+		parsed, err := strconv.Atoi(token)
+		if err != nil {
+			return nil, err
+		}
+		start = parsed
+	}
+	pageSize := c.listPageSize
+	if pageSize <= 0 {
+		pageSize = len(keys)
+	}
+	end := min(start+pageSize, len(keys))
+	result := &awss3.ListObjectsV2Output{}
+	for _, key := range keys[start:end] {
+		object := c.objects[key]
+		size := int64(len(object.body))
+		modified := object.modified
+		result.Contents = append(result.Contents, types.Object{Key: testPointer(key), Size: &size, LastModified: &modified})
+	}
+	if end < len(keys) {
+		result.IsTruncated = testPointer(true)
+		result.NextContinuationToken = testPointer(strconv.Itoa(end))
+	}
+	return result, nil
+}
+
+func (c *fakeClient) DeleteObjects(_ context.Context, input *awss3.DeleteObjectsInput, _ ...func(*awss3.Options)) (*awss3.DeleteObjectsOutput, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failure != nil {
+		return nil, c.failure
+	}
+	batch := make([]string, 0, len(input.Delete.Objects))
+	for _, object := range input.Delete.Objects {
+		key := dereference(object.Key)
+		batch = append(batch, key)
+		delete(c.objects, key)
+	}
+	c.deleteBatches = append(c.deleteBatches, batch)
+	return &awss3.DeleteObjectsOutput{}, nil
 }
 
 func (c *fakeClient) CreateMultipartUpload(_ context.Context, input *awss3.CreateMultipartUploadInput, _ ...func(*awss3.Options)) (*awss3.CreateMultipartUploadOutput, error) {
@@ -253,7 +356,7 @@ func (c *fakeClient) CompleteMultipartUpload(_ context.Context, input *awss3.Com
 	if _, exists := c.objects[upload.key]; exists && dereference(input.IfNoneMatch) == "*" {
 		return nil, fakeAPIError{code: "PreconditionFailed"}
 	}
-	c.objects[upload.key] = fakeObject{body: append([]byte(nil), upload.body...), metadata: clone(upload.metadata)}
+	c.objects[upload.key] = fakeObject{body: append([]byte(nil), upload.body...), metadata: clone(upload.metadata), modified: time.Now().UTC()}
 	delete(c.multipart, id)
 	return &awss3.CompleteMultipartUploadOutput{}, nil
 }
@@ -332,6 +435,8 @@ func clone(source map[string]string) map[string]string {
 	}
 	return result
 }
+
+func testPointer[T any](value T) *T { return &value }
 
 var _ manageds3.Client = (*fakeClient)(nil)
 var _ manageds3.PartPresigner = (*fakePresigner)(nil)

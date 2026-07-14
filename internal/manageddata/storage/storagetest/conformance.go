@@ -74,6 +74,10 @@ func BlobStoreConformance(t *testing.T, factory Factory) {
 
 	t.Run("deletes only explicit unreachable blobs", func(t *testing.T) {
 		store := factory(t)
+		inventory, ok := store.(storage.BlobInventory)
+		if !ok {
+			t.Fatal("BlobStore does not implement BlobInventory")
+		}
 		keepBody := []byte("keep")
 		deleteBody := []byte("delete")
 		keep := expectedBlob(keepBody)
@@ -81,11 +85,11 @@ func BlobStoreConformance(t *testing.T, factory Factory) {
 		mustPut(t, store, keep, keepBody)
 		mustPut(t, store, unreachable, deleteBody)
 
-		if err := store.DeleteUnreachable(t.Context(), []string{unreachable.SHA256, digest([]byte("missing"))}); err != nil {
+		if err := inventory.DeleteBlobs(t.Context(), []string{unreachable.SHA256, digest([]byte("missing"))}); err != nil {
 			t.Fatal(err)
 		}
-		if err := store.DeleteUnreachable(t.Context(), []string{unreachable.SHA256}); err != nil {
-			t.Fatalf("idempotent DeleteUnreachable() = %v", err)
+		if err := inventory.DeleteBlobs(t.Context(), []string{unreachable.SHA256}); err != nil {
+			t.Fatalf("idempotent DeleteBlobs() = %v", err)
 		}
 		if _, err := store.Stat(t.Context(), unreachable.SHA256); !errors.Is(err, storage.ErrNotFound) {
 			t.Fatalf("deleted Stat() error = %v", err)
@@ -97,11 +101,15 @@ func BlobStoreConformance(t *testing.T, factory Factory) {
 
 	t.Run("validates digests before backend access", func(t *testing.T) {
 		store := factory(t)
+		inventory, ok := store.(storage.BlobInventory)
+		if !ok {
+			t.Fatal("BlobStore does not implement BlobInventory")
+		}
 		if _, err := store.Stat(context.Background(), "../escape"); !errors.Is(err, storage.ErrInvalid) {
 			t.Fatalf("Stat() error = %v", err)
 		}
-		if err := store.DeleteUnreachable(context.Background(), []string{"../escape"}); !errors.Is(err, storage.ErrInvalid) {
-			t.Fatalf("DeleteUnreachable() error = %v", err)
+		if err := inventory.DeleteBlobs(context.Background(), []string{"../escape"}); !errors.Is(err, storage.ErrInvalid) {
+			t.Fatalf("DeleteBlobs() error = %v", err)
 		}
 	})
 }

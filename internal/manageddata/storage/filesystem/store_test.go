@@ -7,8 +7,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage/filesystem"
@@ -54,6 +56,65 @@ func TestStoreUsesPrivatePermissionsAndContentAddressedPath(t *testing.T) {
 	}
 	if got := rootInfo.Mode().Perm(); got != 0o700 {
 		t.Fatalf("root permissions = %o, want 700", got)
+	}
+}
+
+func TestBlobInventoryEnumeratesMetadataAndDeletesIdempotently(t *testing.T) {
+	store, err := filesystem.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("inventory")
+	blob := testBlob(body)
+	if _, err := store.Put(t.Context(), blob, bytes.NewReader(body)); err != nil {
+		t.Fatal(err)
+	}
+	modified := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(store.BlobPath(blob.SHA256), modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	var metadata []storage.BlobMetadata
+	if err := store.WalkBlobs(t.Context(), func(item storage.BlobMetadata) error {
+		metadata = append(metadata, item)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(metadata) != 1 || metadata[0].SHA256 != blob.SHA256 || metadata[0].Size != blob.Size || !metadata[0].LastModified.Equal(modified) {
+		t.Fatalf("WalkBlobs() = %#v", metadata)
+	}
+	if err := store.DeleteBlobs(t.Context(), []string{blob.SHA256}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteBlobs(t.Context(), []string{blob.SHA256}); err != nil {
+		t.Fatalf("idempotent DeleteBlobs() = %v", err)
+	}
+}
+
+func TestBlobInventoryRejectsNoncanonicalEntriesAndSymlinks(t *testing.T) {
+	root := t.TempDir()
+	store, err := filesystem.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventoryRoot := filepath.Join(root, "blobs", "sha256")
+	if err := os.WriteFile(filepath.Join(inventoryRoot, "unexpected"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WalkBlobs(t.Context(), func(storage.BlobMetadata) error { return nil }); !errors.Is(err, storage.ErrIntegrity) {
+		t.Fatalf("noncanonical WalkBlobs() error = %v", err)
+	}
+	if err := os.Remove(filepath.Join(inventoryRoot, "unexpected")); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires optional Windows privileges")
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(inventoryRoot, "aa")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WalkBlobs(t.Context(), func(storage.BlobMetadata) error { return nil }); !errors.Is(err, storage.ErrIntegrity) {
+		t.Fatalf("symlink WalkBlobs() error = %v", err)
 	}
 }
 
@@ -114,7 +175,7 @@ func TestMaterializeRevisionCreatesImmutableHardLinkedView(t *testing.T) {
 		t.Fatal("immutable revision file was writable")
 	}
 
-	if err := store.DeleteUnreachable(t.Context(), []string{one.SHA256}); err != nil {
+	if err := store.DeleteBlobs(t.Context(), []string{one.SHA256}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(first.Path, "orders", "one.csv"))

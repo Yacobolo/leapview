@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 )
 
 var (
@@ -22,12 +23,26 @@ type Blob struct {
 	URI    string
 }
 
+// BlobMetadata describes an immutable backend object without reading its body.
+type BlobMetadata struct {
+	SHA256       string
+	Size         int64
+	LastModified time.Time
+}
+
+// BlobInventory exposes bounded administrative operations used by garbage
+// collection. Implementations must enumerate only canonical managed-data blobs
+// and make deletion idempotent.
+type BlobInventory interface {
+	WalkBlobs(ctx context.Context, visit func(BlobMetadata) error) error
+	DeleteBlobs(ctx context.Context, sha256s []string) error
+}
+
 // BlobStore persists and verifies immutable, content-addressed blobs.
 type BlobStore interface {
 	Put(ctx context.Context, expected Blob, content io.Reader) (Blob, error)
 	Stat(ctx context.Context, sha256 string) (Blob, error)
 	Open(ctx context.Context, sha256 string) (io.ReadCloser, error)
-	DeleteUnreachable(ctx context.Context, sha256s []string) error
 }
 
 // RevisionFile maps one content-addressed blob into a logical revision path.

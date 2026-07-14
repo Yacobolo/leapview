@@ -276,10 +276,6 @@ func (s *fakeBlobStore) Open(context.Context, string) (io.ReadCloser, error) {
 	panic("unexpected Open")
 }
 
-func (s *fakeBlobStore) DeleteUnreachable(context.Context, []string) error {
-	panic("unexpected DeleteUnreachable")
-}
-
 type fakeTransport struct {
 	backend  string
 	requests []control.TransportRequest

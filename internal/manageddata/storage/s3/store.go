@@ -28,7 +28,8 @@ type Client interface {
 	PutObject(context.Context, *awss3.PutObjectInput, ...func(*awss3.Options)) (*awss3.PutObjectOutput, error)
 	HeadObject(context.Context, *awss3.HeadObjectInput, ...func(*awss3.Options)) (*awss3.HeadObjectOutput, error)
 	GetObject(context.Context, *awss3.GetObjectInput, ...func(*awss3.Options)) (*awss3.GetObjectOutput, error)
-	DeleteObject(context.Context, *awss3.DeleteObjectInput, ...func(*awss3.Options)) (*awss3.DeleteObjectOutput, error)
+	ListObjectsV2(context.Context, *awss3.ListObjectsV2Input, ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error)
+	DeleteObjects(context.Context, *awss3.DeleteObjectsInput, ...func(*awss3.Options)) (*awss3.DeleteObjectsOutput, error)
 	CreateMultipartUpload(context.Context, *awss3.CreateMultipartUploadInput, ...func(*awss3.Options)) (*awss3.CreateMultipartUploadOutput, error)
 	CompleteMultipartUpload(context.Context, *awss3.CompleteMultipartUploadInput, ...func(*awss3.Options)) (*awss3.CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(context.Context, *awss3.AbortMultipartUploadInput, ...func(*awss3.Options)) (*awss3.AbortMultipartUploadOutput, error)
@@ -153,17 +154,75 @@ func (s *Store) Open(ctx context.Context, digest string) (io.ReadCloser, error) 
 	return result.Body, nil
 }
 
-func (s *Store) DeleteUnreachable(ctx context.Context, digests []string) error {
+func (s *Store) WalkBlobs(ctx context.Context, visit func(storage.BlobMetadata) error) error {
+	if visit == nil {
+		return fmt.Errorf("%w: blob visitor is required", storage.ErrInvalid)
+	}
+	prefix := s.blobPrefix()
+	var continuation *string
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		result, err := s.client.ListObjectsV2(ctx, &awss3.ListObjectsV2Input{
+			Bucket:            pointer(s.bucket),
+			Prefix:            pointer(prefix),
+			ContinuationToken: continuation,
+			MaxKeys:           pointer(int32(1000)),
+		})
+		if err != nil {
+			return sanitizeError(ctx, "list S3 blobs", err)
+		}
+		if result == nil {
+			return fmt.Errorf("%w: list S3 blobs", storage.ErrBackend)
+		}
+		for _, object := range result.Contents {
+			if object.Key == nil || object.Size == nil || object.LastModified == nil {
+				return fmt.Errorf("%w: S3 blob inventory metadata is incomplete", storage.ErrIntegrity)
+			}
+			digest, valid := parseBlobKey(prefix, *object.Key)
+			if !valid || *object.Size < 0 || object.LastModified.IsZero() {
+				return fmt.Errorf("%w: S3 blob inventory is noncanonical", storage.ErrIntegrity)
+			}
+			if err := visit(storage.BlobMetadata{SHA256: digest, Size: *object.Size, LastModified: object.LastModified.UTC()}); err != nil {
+				return err
+			}
+		}
+		if result.IsTruncated == nil || !*result.IsTruncated {
+			return nil
+		}
+		if result.NextContinuationToken == nil || *result.NextContinuationToken == "" || continuation != nil && *result.NextContinuationToken == *continuation {
+			return fmt.Errorf("%w: S3 blob listing pagination is invalid", storage.ErrBackend)
+		}
+		continuation = result.NextContinuationToken
+	}
+}
+
+func (s *Store) DeleteBlobs(ctx context.Context, digests []string) error {
+	if len(digests) > 1000 {
+		return fmt.Errorf("%w: blob deletion batch exceeds 1000 entries", storage.ErrInvalid)
+	}
 	for _, digest := range digests {
 		if err := storage.ValidateSHA256(digest); err != nil {
 			return err
 		}
 	}
-	for _, digest := range digests {
-		_, err := s.client.DeleteObject(ctx, &awss3.DeleteObjectInput{Bucket: pointer(s.bucket), Key: pointer(s.blobKey(digest))})
-		if err != nil && !isCode(err, "NoSuchKey", "NotFound") {
-			return sanitizeError(ctx, "delete unreachable S3 blob", err)
-		}
+	if len(digests) == 0 {
+		return nil
+	}
+	objects := make([]types.ObjectIdentifier, len(digests))
+	for index, digest := range digests {
+		objects[index] = types.ObjectIdentifier{Key: pointer(s.blobKey(digest))}
+	}
+	result, err := s.client.DeleteObjects(ctx, &awss3.DeleteObjectsInput{
+		Bucket: pointer(s.bucket),
+		Delete: &types.Delete{Objects: objects, Quiet: pointer(true)},
+	})
+	if err != nil {
+		return sanitizeError(ctx, "delete S3 blobs", err)
+	}
+	if result == nil || len(result.Errors) != 0 {
+		return fmt.Errorf("%w: delete S3 blobs", storage.ErrBackend)
 	}
 	return nil
 }
@@ -264,7 +323,7 @@ func (s *Store) CompleteMultipart(ctx context.Context, upload MultipartUpload, p
 	if verifyErr == nil {
 		return blob, nil
 	}
-	if deleteErr := s.DeleteUnreachable(ctx, []string{expected.SHA256}); deleteErr != nil {
+	if deleteErr := s.DeleteBlobs(ctx, []string{expected.SHA256}); deleteErr != nil {
 		return storage.Blob{}, deleteErr
 	}
 	return storage.Blob{}, verifyErr
@@ -340,6 +399,25 @@ func (s *Store) blobKey(digest string) string {
 		return key
 	}
 	return s.prefix + "/" + key
+}
+
+func (s *Store) blobPrefix() string {
+	if s.prefix == "" {
+		return "blobs/sha256/"
+	}
+	return s.prefix + "/blobs/sha256/"
+}
+
+func parseBlobKey(prefix, key string) (string, bool) {
+	if !strings.HasPrefix(key, prefix) {
+		return "", false
+	}
+	relative := strings.TrimPrefix(key, prefix)
+	parts := strings.Split(relative, "/")
+	if len(parts) != 2 || len(parts[0]) != 2 || storage.ValidateSHA256(parts[1]) != nil || parts[0] != parts[1][:2] {
+		return "", false
+	}
+	return parts[1], true
 }
 
 func (s *Store) blobURI(key string) string {
@@ -432,3 +510,4 @@ func (r *contextReader) Read(buffer []byte) (int, error) {
 func pointer[T any](value T) *T { return &value }
 
 var _ storage.BlobStore = (*Store)(nil)
+var _ storage.BlobInventory = (*Store)(nil)
