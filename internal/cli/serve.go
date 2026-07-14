@@ -23,6 +23,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/execution"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
 	manageddataresolver "github.com/Yacobolo/libredash/internal/manageddata/resolver"
+	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
@@ -221,6 +222,15 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		cleanup()
 		return nil, nil, err
 	}
+	var managedDataMultipart manageddatahttp.MultipartCoordinator
+	if managedDataStorage.s3 != nil {
+		multipartService, multipartErr := s3multipart.New(managedDataRepo, managedDataStorage.s3, s3multipart.Config{Backend: "s3"})
+		if multipartErr != nil {
+			cleanup()
+			return nil, nil, multipartErr
+		}
+		managedDataMultipart = managedDataMultipartHTTP{service: multipartService}
+	}
 	if err := materializesqlite.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalServingStates(ctx, "refresh did not complete"); err != nil {
 		cleanup()
 		return nil, nil, err
@@ -342,7 +352,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		AllowedHosts:              allowedHosts,
 		Executor:                  execution.New(cfg.ExecutionConfig()),
 		JobLeaseTimeout:           cfg.ExecJobLeaseTimeout,
-		ManagedData:               manageddatahttp.Options{Uploads: managedDataControl},
+		ManagedData:               manageddatahttp.Options{Uploads: managedDataControl, Multipart: managedDataMultipart},
 		ManagedDataTus:            managedDataStorage.tus,
 		ManagedDataExpirer:        managedDataControl,
 		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,
