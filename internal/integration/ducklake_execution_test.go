@@ -183,16 +183,20 @@ func createAndActivateProjectDeployment(t *testing.T, ctx context.Context, repo 
 	if err != nil {
 		t.Fatalf("create artifact: %v", err)
 	}
-	if _, _, err := servingstatefs.PackProject(projectPath, servingstatefs.PackProjectOptions{WorkspaceID: workspaceID, Environment: servingstate.DefaultEnvironment, ServingStateID: created.ID}, file); err != nil {
+	if _, _, err := servingstatefs.PackProject(projectPath, servingstatefs.PackProjectOptions{
+		WorkspaceID:          workspaceID,
+		Environment:          servingstate.DefaultEnvironment,
+		ServingStateID:       created.ID,
+		ManagedDataRevisions: integrationOlistManagedDataRevisions(),
+	}, file); err != nil {
 		_ = file.Close()
 		t.Fatalf("pack artifact: %v", err)
 	}
 	if err := file.Close(); err != nil {
 		t.Fatalf("close artifact: %v", err)
 	}
+	bindManagedConnectionRootsInArtifact(t, artifactPath, dataDir)
 	validation, err := servingstatefs.ValidateArtifactWithOptions(artifactPath, servingstate.WorkspaceID(workspaceID), created.ID, servingstatefs.ValidateOptions{
-		DataDir:     dataDir,
-		DuckDBDir:   duckDBDir,
 		Environment: servingstate.DefaultEnvironment,
 	})
 	if err != nil {
@@ -250,6 +254,9 @@ func (f duckLakeIntegrationRuntimeFactory) Prepare(_ context.Context, input runt
 	}
 	compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(targetDir)
 	if err != nil {
+		return nil, err
+	}
+	if err := bindManagedConnectionRoots(compiled.Definition, dataDir); err != nil {
 		return nil, err
 	}
 	service, err := dashboardruntime.NewFromDefinition(dataDir, filepath.Join(f.duckDBDir, string(servingstate.NormalizeEnvironment(input.State.Environment))), duckLakeIntegrationDataRuntimeFactory{
