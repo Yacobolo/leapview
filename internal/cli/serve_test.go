@@ -98,7 +98,7 @@ func TestDefaultHTTPServerShutdownTimeout(t *testing.T) {
 
 func TestDeploymentBackedDevServerAlwaysOpensPlatformStore(t *testing.T) {
 	home := t.TempDir()
-	_, cleanup, err := servingStateBackedServer(context.Background(), config.Config{HomeDir: home}, "", false, servingstate.DefaultEnvironment)
+	_, cleanup, err := servingStateBackedServer(context.Background(), serveTestConfig(home), "", false, servingstate.DefaultEnvironment)
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestDeploymentBackedServerCreatesPrivateStateDirectories(t *testing.T) {
 	parent := t.TempDir()
 	home := filepath.Join(parent, "home")
 	restoreUmask := setServeTestUmask(t, 0)
-	_, cleanup, err := servingStateBackedServer(context.Background(), config.Config{HomeDir: home}, "", false, servingstate.DefaultEnvironment)
+	_, cleanup, err := servingStateBackedServer(context.Background(), serveTestConfig(home), "", false, servingstate.DefaultEnvironment)
 	restoreUmask()
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
@@ -149,16 +149,15 @@ func TestDeploymentBackedServerCreatesPrivateStateDirectories(t *testing.T) {
 
 func TestProductionServerAllowsCallbackHostAndRejectsOthers(t *testing.T) {
 	home := t.TempDir()
-	server, cleanup, err := servingStateBackedServer(context.Background(), config.Config{
-		HomeDir:            home,
-		Production:         true,
-		OIDCIssuerURL:      "https://issuer.example",
-		OIDCClientID:       "client-id",
-		OIDCSecret:         "client-secret",
-		OIDCCallbackURL:    "https://app.example.com/auth/oidc/callback",
-		CSRFKey:            "0123456789abcdef0123456789abcdef",
-		MetricsBearerToken: "0123456789abcdef0123456789abcdef",
-	}, "", true, servingstate.Environment("prod"))
+	cfg := serveTestConfig(home)
+	cfg.Production = true
+	cfg.OIDCIssuerURL = "https://issuer.example"
+	cfg.OIDCClientID = "client-id"
+	cfg.OIDCSecret = "client-secret"
+	cfg.OIDCCallbackURL = "https://app.example.com/auth/oidc/callback"
+	cfg.CSRFKey = "0123456789abcdef0123456789abcdef"
+	cfg.MetricsBearerToken = "0123456789abcdef0123456789abcdef"
+	server, cleanup, err := servingStateBackedServer(context.Background(), cfg, "", true, servingstate.Environment("prod"))
 	if err != nil {
 		t.Fatalf("production server: %v", err)
 	}
@@ -206,7 +205,7 @@ func TestDeploymentBackedDevServerRemovesLegacyDuckLakeArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, cleanup, err := servingStateBackedServer(context.Background(), config.Config{HomeDir: home}, "", false, servingstate.DefaultEnvironment)
+	_, cleanup, err := servingStateBackedServer(context.Background(), serveTestConfig(home), "", false, servingstate.DefaultEnvironment)
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
 	}
@@ -223,7 +222,7 @@ func TestDeploymentBackedDevServerRemovesLegacyDuckLakeArtifacts(t *testing.T) {
 func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	_, cleanup, err := servingStateBackedServer(ctx, config.Config{HomeDir: home}, "", false, servingstate.DefaultEnvironment)
+	_, cleanup, err := servingStateBackedServer(ctx, serveTestConfig(home), "", false, servingstate.DefaultEnvironment)
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
 	}
@@ -257,7 +256,7 @@ func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {
 func TestDeploymentBackedDevServerDoesNotCreateWorkspacesOrDeployments(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	_, cleanup, err := servingStateBackedServer(ctx, config.Config{HomeDir: home}, "", false, servingstate.DefaultEnvironment)
+	_, cleanup, err := servingStateBackedServer(ctx, serveTestConfig(home), "", false, servingstate.DefaultEnvironment)
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
 	}
@@ -283,5 +282,21 @@ func TestDeploymentBackedDevServerDoesNotCreateWorkspacesOrDeployments(t *testin
 	}
 	if len(deployments) != 0 {
 		t.Fatalf("deployments = %#v, want none before explicit deploy", deployments)
+	}
+}
+
+func serveTestConfig(home string) config.Config {
+	return config.Config{
+		HomeDir:                      home,
+		ManagedDataBackend:           "local",
+		ManagedDataDir:               filepath.Join(home, "managed-data"),
+		ManagedDataMaxFiles:          100,
+		ManagedDataMaxFileBytes:      1 << 20,
+		ManagedDataMaxRevisionBytes:  10 << 20,
+		ManagedDataUploadSessionTTL:  time.Hour,
+		ManagedDataGCInterval:        time.Hour,
+		ManagedDataGCGracePeriod:     time.Hour,
+		ManagedDataMinFreeBytes:      1,
+		ManagedDataGCTargetFreeBytes: 1,
 	}
 }

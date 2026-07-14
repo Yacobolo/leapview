@@ -21,6 +21,9 @@ import (
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/execution"
+	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
+	manageddataresolver "github.com/Yacobolo/libredash/internal/manageddata/resolver"
+	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
 	"github.com/Yacobolo/libredash/internal/securefs"
@@ -202,6 +205,22 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		}
 	}
 	servingStateRepo := servingstatesqlite.NewRepository(store.SQLDB())
+	managedDataRepo := manageddatasqlite.NewRepository(store.SQLDB())
+	managedDataStorage, err := newManagedDataStorage(ctx, cfg)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	managedDataControl, err := newManagedDataControl(managedDataRepo, managedDataStorage, cfg)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	managedDataResolver, err := manageddataresolver.New(managedDataRepo, servingStateRepo, managedDataStorage.cache)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	if err := materializesqlite.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalServingStates(ctx, "refresh did not complete"); err != nil {
 		cleanup()
 		return nil, nil, err
@@ -231,6 +250,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		WorkspaceIDs: workspaceIDs,
 		Environment:  environment,
 		DataDir:      dataDir,
+		ManagedData:  managedDataResolver,
 		OnDrained: func(servingstate.ID, int64) {
 			go func() {
 				protected := []int64(nil)
@@ -322,6 +342,8 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		AllowedHosts:        allowedHosts,
 		Executor:            execution.New(cfg.ExecutionConfig()),
 		JobLeaseTimeout:     cfg.ExecJobLeaseTimeout,
+		ManagedData:         manageddatahttp.Options{Uploads: managedDataControl},
+		ManagedDataTus:      managedDataStorage.tus,
 	})
 	return server, cleanupWithRegistry, nil
 }

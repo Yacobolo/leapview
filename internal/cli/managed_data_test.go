@@ -1,0 +1,57 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/Yacobolo/libredash/internal/config"
+	"github.com/Yacobolo/libredash/internal/manageddata/control"
+	"github.com/Yacobolo/libredash/internal/manageddata/storage"
+)
+
+func TestNewManagedDataStorageLocal(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "managed")
+	services, err := newManagedDataStorage(context.Background(), config.Config{
+		ManagedDataBackend:      "local",
+		ManagedDataDir:          root,
+		ManagedDataMaxFileBytes: 1024,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if services.blobs == nil || services.transport == nil || services.tus == nil || services.s3 != nil {
+		t.Fatalf("services = %#v", services)
+	}
+	if services.transport.Backend() != "local" {
+		t.Fatalf("backend = %q", services.transport.Backend())
+	}
+	for _, relative := range []string{"objects", "uploads", "runtime"} {
+		info, statErr := os.Stat(filepath.Join(root, relative))
+		if statErr != nil {
+			t.Fatalf("stat %s: %v", relative, statErr)
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			t.Fatalf("%s permissions = %o, want private", relative, info.Mode().Perm())
+		}
+	}
+}
+
+func TestNewManagedDataStorageRejectsUnknownBackend(t *testing.T) {
+	_, err := newManagedDataStorage(context.Background(), config.Config{
+		ManagedDataBackend: "shared-filesystem",
+		ManagedDataDir:     t.TempDir(),
+	})
+	if err == nil || !errors.Is(err, storage.ErrInvalid) {
+		t.Fatalf("error = %v, want storage.ErrInvalid", err)
+	}
+}
+
+func TestNewManagedDataControlRequiresStorage(t *testing.T) {
+	_, err := newManagedDataControl(nil, managedDataStorage{}, config.Config{})
+	if err == nil || !errors.Is(err, control.ErrInvalid) {
+		t.Fatalf("error = %v, want control.ErrInvalid", err)
+	}
+}
