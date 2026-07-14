@@ -45,6 +45,23 @@ or change any serving workspace. Activation is a separate, explicit deployment
 operation so every affected workspace can move to the new project and data
 revision together.
 
+Deploy the staged digest printed by `data sync`:
+
+```sh
+libredash data deploy \
+  --project dashboards/libredash.yaml \
+  --connection olist \
+  --revision sha256:<64-lowercase-hex> \
+  --environment prod \
+  --target https://libredash.example.com \
+  --auto-approve
+```
+
+The CLI uploads and validates every affected workspace candidate first. The
+server then switches the project-global revision pointer and all workspace
+serving states in one rollout. A failed candidate leaves the active revision
+and every active workspace unchanged.
+
 ## Inspect revisions
 
 Revision inspection uses the server project ID from the project's

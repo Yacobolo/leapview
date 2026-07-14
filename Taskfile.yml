@@ -53,13 +53,17 @@ tasks:
       - ./scripts/dev-server.sh status
 
   deploy:dev:
-    desc: Deploy all project workspaces to the managed dev server
+    desc: Sync Olist data and atomically deploy all project workspaces
     cmds:
       - |
         test -f .tmp/dev-server.port || { echo "Dev server port file missing. Run task dev first."; exit 1; }
         PORT="$(cat .tmp/dev-server.port)"
         curl -fsS "http://localhost:${PORT}/workspaces" >/dev/null || { echo "Dev server is not running on http://localhost:${PORT}. Run task dev first."; exit 1; }
-        go run ./cmd/libredash publish --project dashboards/libredash.yaml --target "http://localhost:${PORT}" --token dev --environment dev --auto-approve
+        SYNC_OUTPUT="$(go run ./cmd/libredash data sync --project dashboards/libredash.yaml --connection olist --from .data/olist --target "http://localhost:${PORT}" --token dev)"
+        printf '%s\n' "$SYNC_OUTPUT"
+        REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
+        printf '%s\n' "$REVISION" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "Managed data sync did not return a canonical revision."; exit 1; }
+        go run ./cmd/libredash data deploy --project dashboards/libredash.yaml --connection olist --revision "$REVISION" --target "http://localhost:${PORT}" --token dev --environment dev --auto-approve
 
   dev:quack:status:
     desc: Show managed LibreDash dev server status with the local Quack profile

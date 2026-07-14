@@ -24,8 +24,8 @@ func TestLoadOlistModel(t *testing.T) {
 	if got := model.DefaultConnection; got != "olist" {
 		t.Fatalf("default connection = %q, want olist", got)
 	}
-	if got := model.Connections["olist"].Kind; got != "local" {
-		t.Fatalf("olist connection kind = %q, want local", got)
+	if got := model.Connections["olist"].Kind; got != "managed" {
+		t.Fatalf("olist connection kind = %q, want managed", got)
 	}
 	if got := model.Sources["olist_orders"].Format; got != "csv" {
 		t.Fatalf("orders source format = %q, want csv", got)
