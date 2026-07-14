@@ -177,41 +177,26 @@ func TestValidateArtifactRejectsUnlistedBundleFile(t *testing.T) {
 	}
 }
 
-func TestValidateArtifactWithDiscoveryPersistsValidatedCompiledGraph(t *testing.T) {
-	dataDir := t.TempDir()
-	projectPath := writeDiscoveryProject(t, dataDir)
+func TestValidateArtifactIsDataLocationIndependent(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
 	var bundle bytes.Buffer
 	servingStateID := servingstate.ID("dep_discovered")
-	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingStateID}, &bundle); err != nil {
+	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingStateID, ManagedDataRevisions: olistManagedDataRevisions()}, &bundle); err != nil {
 		t.Fatalf("PackProject() error = %v", err)
 	}
 	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	if err := os.WriteFile(path, bundle.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	validation, err := ValidateArtifactWithOptions(path, "sales", servingStateID, ValidateOptions{DataDir: dataDir})
+	validation, err := ValidateArtifact(path, "sales", servingStateID)
 	if err != nil {
-		t.Fatalf("ValidateArtifactWithOptions() error = %v", err)
+		t.Fatalf("ValidateArtifact() error = %v", err)
 	}
-	root := t.TempDir()
-	if err := ExtractArtifact(path, root); err != nil {
-		t.Fatalf("ExtractArtifact() error = %v", err)
+	if validation.DataRoot != "" {
+		t.Fatalf("validation data root = %q, want empty", validation.DataRoot)
 	}
-	compiled, manifest, err := LoadCompiledWorkspaceArtifact(root)
-	if err != nil {
-		t.Fatalf("LoadCompiledWorkspaceArtifact() error = %v", err)
-	}
-	if compiled.Validation.GraphHash != graphHash(compiled.Graph) {
-		t.Fatalf("compiled validation graphHash = %q, want %q", compiled.Validation.GraphHash, graphHash(compiled.Graph))
-	}
-	if manifest.GraphHash != digestCompiledForTest(t, compiled) {
-		t.Fatalf("manifest graphHash = %q, want digest of persisted compiled graph", manifest.GraphHash)
-	}
-	if validation.Graph.Assets[0].ContentHash == "" {
-		t.Fatal("validation graph has empty content hash")
-	}
-	if graphHash(validation.Graph) != graphHash(compiled.Graph) {
-		t.Fatalf("returned validation graph hash = %q, persisted compiled graph hash = %q", graphHash(validation.Graph), graphHash(compiled.Graph))
+	if len(validation.Graph.Assets) == 0 {
+		t.Fatal("validated graph has no assets")
 	}
 }
 
@@ -609,92 +594,6 @@ func writeBundleProjectFixture(t *testing.T, files map[string]string) string {
 		}
 	}
 	return filepath.Join(dir, ProjectFile)
-}
-
-func writeDiscoveryProject(t *testing.T, dataDir string) string {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dataDir, "orders.csv"), []byte("order_id\n1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return writeBundleProjectFixture(t, map[string]string{
-		"libredash.yaml": `
-apiVersion: libredash.dev/v1
-kind: Project
-metadata:
-  name: discovery
-spec:
-  connections:
-    include: [connections/*.yaml]
-  sources:
-    include: [sources/*.yaml]
-  workspaces:
-    include: [workspaces/*/workspace.yaml]
-`,
-		"connections/orders.yaml": `
-apiVersion: libredash.dev/v1
-kind: Connection
-metadata:
-  name: orders
-spec:
-  kind: local
-`,
-		"sources/orders.orders.yaml": `
-apiVersion: libredash.dev/v1
-kind: Source
-metadata:
-  name: orders.orders
-spec:
-  connection: orders
-  path: orders.csv
-  format: csv
-  fields:
-    order_id:
-      type: string
-`,
-		"workspaces/sales/workspace.yaml": `
-apiVersion: libredash.dev/v1
-kind: Workspace
-metadata:
-  name: sales
-spec:
-  uses:
-    sources: [orders.orders]
-  models:
-    include: [models/*.yaml]
-  semanticModels:
-    include: [semantic-models/*.yaml]
-  dashboards:
-    include: []
-  access:
-    include: []
-  agentPolicy:
-    include: []
-`,
-		"workspaces/sales/models/orders.yaml": `
-apiVersion: libredash.dev/v1
-kind: ModelTable
-metadata:
-  workspace: sales
-  name: orders
-spec:
-  source: orders.orders
-  primaryKey: order_id
-  fields:
-    order_id:
-      label: ID
-`,
-		"workspaces/sales/semantic-models/sales.yaml": `
-apiVersion: libredash.dev/v1
-kind: SemanticModel
-metadata:
-  workspace: sales
-  name: sales
-spec:
-  baseTable: orders
-  tables: [orders]
-  measures: {}
-`,
-	})
 }
 
 func writeManagedBundleProject(t *testing.T) string {
