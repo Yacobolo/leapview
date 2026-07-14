@@ -386,7 +386,7 @@ model ManagedDataRolloutRollbackRequest {
 @route("/environments/{environment}/revision")
 @get
 @operationId("getManagedDataEnvironmentRevision")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
 op getManagedDataEnvironmentRevision(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -398,7 +398,7 @@ op getManagedDataEnvironmentRevision(
 @route("/revisions")
 @get
 @operationId("listManagedDataRevisions")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
 op listManagedDataRevisions(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -411,7 +411,7 @@ op listManagedDataRevisions(
 @route("/revisions/{revision}")
 @get
 @operationId("getManagedDataRevision")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
 op getManagedDataRevision(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -423,7 +423,7 @@ op getManagedDataRevision(
 @route("/upload-sessions")
 @post
 @operationId("createManagedDataUploadSession")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op createManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -436,7 +436,7 @@ op createManagedDataUploadSession(
 @route("/upload-sessions/{uploadSession}")
 @get
 @operationId("getManagedDataUploadSession")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op getManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -448,7 +448,7 @@ op getManagedDataUploadSession(
 @route("/upload-sessions/{uploadSession}/abort")
 @post
 @operationId("abortManagedDataUploadSession")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op abortManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -461,7 +461,7 @@ op abortManagedDataUploadSession(
 @route("/upload-sessions/{uploadSession}/finalize")
 @post
 @operationId("finalizeManagedDataUploadSession")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op finalizeManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -474,7 +474,7 @@ op finalizeManagedDataUploadSession(
 @route("/upload-sessions/{uploadSession}/s3-multipart-uploads")
 @post
 @operationId("createManagedDataS3MultipartUpload")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op createManagedDataS3MultipartUpload(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -488,7 +488,7 @@ op createManagedDataS3MultipartUpload(
 @route("/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/parts/{partNumber}/sign")
 @post
 @operationId("signManagedDataS3MultipartPart")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op signManagedDataS3MultipartPart(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -503,7 +503,7 @@ op signManagedDataS3MultipartPart(
 @route("/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/complete")
 @post
 @operationId("completeManagedDataS3MultipartUpload")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op completeManagedDataS3MultipartUpload(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -518,7 +518,7 @@ op completeManagedDataS3MultipartUpload(
 @route("/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/abort")
 @post
 @operationId("abortManagedDataS3MultipartUpload")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
 op abortManagedDataS3MultipartUpload(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -532,7 +532,7 @@ op abortManagedDataS3MultipartUpload(
 @route("/rollouts")
 @get
 @operationId("listManagedDataRollouts")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
 op listManagedDataRollouts(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -547,7 +547,7 @@ op listManagedDataRollouts(
 @route("/rollouts")
 @post
 @operationId("createManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DATA" })
 op createManagedDataRollout(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -560,7 +560,7 @@ op createManagedDataRollout(
 @route("/rollouts/{rollout}")
 @get
 @operationId("getManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
 op getManagedDataRollout(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -572,7 +572,7 @@ op getManagedDataRollout(
 @route("/rollouts/{rollout}/activate")
 @post
 @operationId("activateManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DATA" })
 op activateManagedDataRollout(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -585,7 +585,7 @@ op activateManagedDataRollout(
 @route("/rollouts/{rollout}/rollback")
 @post
 @operationId("rollbackManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DATA" })
 op rollbackManagedDataRollout(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
