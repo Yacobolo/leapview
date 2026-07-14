@@ -16,6 +16,7 @@ import (
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
 	"github.com/Yacobolo/libredash/internal/execution"
+	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
 	"github.com/Yacobolo/libredash/internal/platform"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
@@ -64,44 +65,47 @@ func (m multiWorkspaceMetrics) defaultMetrics() QueryMetrics {
 }
 
 type Server struct {
-	metrics             QueryMetrics
-	executor            *execution.Service
-	broker              *pagestream.Broker
-	store               *platform.Store
-	servingStateRepo    servingStateRepository
-	workspaceRepo       workspace.Repository
-	assetCatalog        workspace.AssetCatalogReader
-	accessRepo          access.Repository
-	agent               *agent.Service
-	auth                *Auth
-	reloader            runtimeReloader
-	artifactDir         string
-	duckDBDir           string
-	duckLakeCatalogPath string
-	duckLakeDataPath    string
-	defaultWorkspaceID  string
-	defaultEnvironment  string
-	scimBearerToken     string
-	metricsBearerToken  string
-	allowedHosts        []string
-	rateLimits          RateLimitConfig
-	securityHeaders     SecurityHeadersConfig
-	requestBodyLimit    RequestBodyLimitConfig
-	requestLogging      bool
-	telemetry           *httpTelemetry
-	logger              *slog.Logger
-	jobLeaseTimeout     time.Duration
-	jobDispatchMu       sync.Mutex
-	jobDispatching      bool
-	jobDispatchWG       sync.WaitGroup
-	backgroundMu        sync.Mutex
-	backgroundCtx       context.Context
-	backgroundCancel    context.CancelFunc
-	backgroundStopping  bool
-	chatTitleMu         sync.Mutex
-	pendingChatTitles   map[string]struct{}
-	managedDataOptions  manageddatahttp.Options
-	managedDataTus      http.Handler
+	metrics                       QueryMetrics
+	executor                      *execution.Service
+	broker                        *pagestream.Broker
+	store                         *platform.Store
+	servingStateRepo              servingStateRepository
+	workspaceRepo                 workspace.Repository
+	assetCatalog                  workspace.AssetCatalogReader
+	accessRepo                    access.Repository
+	agent                         *agent.Service
+	auth                          *Auth
+	reloader                      runtimeReloader
+	artifactDir                   string
+	duckDBDir                     string
+	duckLakeCatalogPath           string
+	duckLakeDataPath              string
+	defaultWorkspaceID            string
+	defaultEnvironment            string
+	scimBearerToken               string
+	metricsBearerToken            string
+	allowedHosts                  []string
+	rateLimits                    RateLimitConfig
+	securityHeaders               SecurityHeadersConfig
+	requestBodyLimit              RequestBodyLimitConfig
+	requestLogging                bool
+	telemetry                     *httpTelemetry
+	logger                        *slog.Logger
+	jobLeaseTimeout               time.Duration
+	jobDispatchMu                 sync.Mutex
+	jobDispatching                bool
+	jobDispatchWG                 sync.WaitGroup
+	backgroundMu                  sync.Mutex
+	backgroundCtx                 context.Context
+	backgroundCancel              context.CancelFunc
+	backgroundStopping            bool
+	chatTitleMu                   sync.Mutex
+	pendingChatTitles             map[string]struct{}
+	managedDataOptions            manageddatahttp.Options
+	managedDataTus                http.Handler
+	managedDataExpirer            managedDataUploadExpirer
+	managedDataExpireInterval     time.Duration
+	managedDataMaintenanceStarted bool
 }
 
 func New(metrics QueryMetrics) *Server {
@@ -116,32 +120,34 @@ func New(metrics QueryMetrics) *Server {
 }
 
 type Options struct {
-	Store               *platform.Store
-	ServingStateRepo    servingStateRepository
-	WorkspaceRepo       workspace.Repository
-	AssetCatalog        workspace.AssetCatalogReader
-	AccessRepo          access.Repository
-	Agent               *agent.Service
-	Auth                *Auth
-	Reloader            runtimeReloader
-	ArtifactDir         string
-	DuckDBDir           string
-	DuckLakeCatalogPath string
-	DuckLakeDataPath    string
-	DefaultWorkspaceID  string
-	DefaultEnvironment  string
-	SCIMBearerToken     string
-	MetricsBearerToken  string
-	AllowedHosts        []string
-	RateLimits          RateLimitConfig
-	SecurityHeaders     SecurityHeadersConfig
-	RequestBodyLimit    RequestBodyLimitConfig
-	RequestLogging      bool
-	Logger              *slog.Logger
-	Executor            *execution.Service
-	JobLeaseTimeout     time.Duration
-	ManagedData         manageddatahttp.Options
-	ManagedDataTus      http.Handler
+	Store                     *platform.Store
+	ServingStateRepo          servingStateRepository
+	WorkspaceRepo             workspace.Repository
+	AssetCatalog              workspace.AssetCatalogReader
+	AccessRepo                access.Repository
+	Agent                     *agent.Service
+	Auth                      *Auth
+	Reloader                  runtimeReloader
+	ArtifactDir               string
+	DuckDBDir                 string
+	DuckLakeCatalogPath       string
+	DuckLakeDataPath          string
+	DefaultWorkspaceID        string
+	DefaultEnvironment        string
+	SCIMBearerToken           string
+	MetricsBearerToken        string
+	AllowedHosts              []string
+	RateLimits                RateLimitConfig
+	SecurityHeaders           SecurityHeadersConfig
+	RequestBodyLimit          RequestBodyLimitConfig
+	RequestLogging            bool
+	Logger                    *slog.Logger
+	Executor                  *execution.Service
+	JobLeaseTimeout           time.Duration
+	ManagedData               manageddatahttp.Options
+	ManagedDataTus            http.Handler
+	ManagedDataExpirer        managedDataUploadExpirer
+	ManagedDataExpireInterval time.Duration
 }
 
 func NewWithOptions(metrics QueryMetrics, options Options) *Server {
@@ -206,6 +212,8 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.requestLogging = options.RequestLogging
 	server.managedDataOptions = options.ManagedData
 	server.managedDataTus = options.ManagedDataTus
+	server.managedDataExpirer = options.ManagedDataExpirer
+	server.managedDataExpireInterval = options.ManagedDataExpireInterval
 	server.jobLeaseTimeout = options.JobLeaseTimeout
 	if server.jobLeaseTimeout <= 0 {
 		server.jobLeaseTimeout = 2 * time.Minute
@@ -241,8 +249,15 @@ func (s *Server) StartBackgroundJobs(ctx context.Context) {
 		s.backgroundStopping = false
 	}
 	backgroundCtx := s.backgroundCtx
+	startManagedDataMaintenance := s.managedDataExpirer != nil && !s.managedDataMaintenanceStarted
+	if startManagedDataMaintenance {
+		s.managedDataMaintenanceStarted = true
+	}
 	s.backgroundMu.Unlock()
 	s.dispatchQueuedRefreshJobs(backgroundCtx)
+	if startManagedDataMaintenance {
+		s.startManagedDataMaintenance(backgroundCtx)
+	}
 }
 
 func (s *Server) StopBackgroundJobs(ctx context.Context) error {
@@ -273,11 +288,48 @@ func (s *Server) StopBackgroundJobs(ctx context.Context) error {
 		s.backgroundCtx = nil
 		s.backgroundCancel = nil
 		s.backgroundStopping = false
+		s.managedDataMaintenanceStarted = false
 		s.backgroundMu.Unlock()
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+type managedDataUploadExpirer interface {
+	ExpireUploads(context.Context) (control.ExpireResult, error)
+}
+
+func (s *Server) startManagedDataMaintenance(ctx context.Context) {
+	interval := s.managedDataExpireInterval
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	s.jobDispatchWG.Add(1)
+	go func() {
+		defer s.jobDispatchWG.Done()
+		run := func() {
+			result, err := s.managedDataExpirer.ExpireUploads(ctx)
+			if err != nil {
+				s.logger.WarnContext(ctx, "managed-data upload expiration failed", "error", err)
+				return
+			}
+			if result.Expired > 0 {
+				s.logger.InfoContext(ctx, "expired managed-data upload sessions", "count", result.Expired)
+			}
+		}
+		run()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
 }
 
 func (s *Server) workspaceRepository() (workspace.Repository, error) {

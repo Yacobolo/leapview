@@ -1,9 +1,13 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/Yacobolo/libredash/internal/manageddata/control"
 )
 
 func TestManagedDataTusRouteRejectsClientCreatedUploads(t *testing.T) {
@@ -25,6 +29,35 @@ func TestManagedDataTusRouteRejectsClientCreatedUploads(t *testing.T) {
 	}
 	if called {
 		t.Fatal("tus backend received a client-created upload request")
+	}
+}
+
+type testManagedDataExpirer struct{ called chan struct{} }
+
+func (e testManagedDataExpirer) ExpireUploads(context.Context) (control.ExpireResult, error) {
+	select {
+	case e.called <- struct{}{}:
+	default:
+	}
+	return control.ExpireResult{Expired: 1}, nil
+}
+
+func TestManagedDataUploadExpirationUsesBackgroundLifecycle(t *testing.T) {
+	called := make(chan struct{}, 1)
+	server := NewWithOptions(fakeMetrics{}, Options{
+		ManagedDataExpirer:        testManagedDataExpirer{called: called},
+		ManagedDataExpireInterval: time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	server.StartBackgroundJobs(ctx)
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("managed-data upload expiration did not run")
+	}
+	cancel()
+	if err := server.StopBackgroundJobs(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 
