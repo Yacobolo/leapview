@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	"github.com/Yacobolo/libredash/internal/manageddata/maintenance"
+	maintenancesqlite "github.com/Yacobolo/libredash/internal/manageddata/maintenance/sqlite"
 	"github.com/Yacobolo/libredash/internal/manageddata/runtimeview"
 	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
@@ -32,6 +34,7 @@ const (
 
 type managedDataStorage struct {
 	blobs     storage.BlobStore
+	inventory storage.BlobInventory
 	transport control.Transport
 	cache     *runtimeview.Cache
 	tus       http.Handler
@@ -89,12 +92,27 @@ func newManagedDataStorage(ctx context.Context, cfg config.Config) (managedDataS
 	default:
 		return managedDataStorage{}, fmt.Errorf("%w: managed-data backend must be local or s3", storage.ErrInvalid)
 	}
+	inventory, ok := result.blobs.(storage.BlobInventory)
+	if !ok {
+		return managedDataStorage{}, fmt.Errorf("%w: managed-data backend has no blob inventory", storage.ErrInvalid)
+	}
+	result.inventory = inventory
 	cache, err := runtimeview.New(filepath.Join(root, "runtime"), result.blobs)
 	if err != nil {
 		return managedDataStorage{}, err
 	}
 	result.cache = cache
 	return result, nil
+}
+
+func newManagedDataCollector(db *sql.DB, services managedDataStorage, cfg config.Config) (*maintenance.BlobCollector, error) {
+	reachability, err := maintenancesqlite.New(db)
+	if err != nil {
+		return nil, err
+	}
+	return maintenance.NewBlobCollector(services.inventory, reachability, maintenance.BlobGCConfig{
+		GraceAge: cfg.ManagedDataGCGracePeriod,
+	})
 }
 
 func capacityProtectedTus(next http.Handler, capacity *maintenance.CapacityChecker) http.Handler {

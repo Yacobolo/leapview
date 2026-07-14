@@ -219,6 +219,11 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		cleanup()
 		return nil, nil, err
 	}
+	managedDataCollector, err := newManagedDataCollector(store.SQLDB(), managedDataStorage, cfg)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	managedDataResolver, err := manageddataresolver.New(managedDataRepo, servingStateRepo, managedDataStorage.cache)
 	if err != nil {
 		cleanup()
@@ -381,7 +386,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		ManagedDataTus: managedDataStorage.tus,
 		ManagedDataExpirer: managedDataMaintenance{
 			uploads: managedDataControl, multipart: managedDataMultipartService,
-			uploadTTL: cfg.ManagedDataUploadSessionTTL,
+			uploadTTL: cfg.ManagedDataUploadSessionTTL, collector: managedDataCollector,
 		},
 		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,
 	})

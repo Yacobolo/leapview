@@ -6,6 +6,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
+	"github.com/Yacobolo/libredash/internal/manageddata/maintenance"
 	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 )
 
@@ -13,14 +14,23 @@ type managedDataMaintenance struct {
 	uploads   *control.Service
 	multipart *s3multipart.Service
 	uploadTTL time.Duration
+	collector *maintenance.BlobCollector
 }
 
 func (m managedDataMaintenance) ExpireUploads(ctx context.Context) (control.ExpireResult, error) {
 	result, err := m.uploads.ExpireUploads(ctx)
-	if err != nil || m.multipart == nil {
+	if err != nil {
 		return result, err
 	}
-	_, err = m.multipart.RecoverOrphaned(ctx, time.Now().UTC().Add(-m.uploadTTL), 100)
+	if m.multipart != nil {
+		_, err = m.multipart.RecoverOrphaned(ctx, time.Now().UTC().Add(-m.uploadTTL), 100)
+		if err != nil {
+			return result, err
+		}
+	}
+	if m.collector != nil {
+		_, err = m.collector.Run(ctx)
+	}
 	return result, err
 }
 
