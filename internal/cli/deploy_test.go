@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -55,15 +56,19 @@ func TestPubPrintsPlanAndRequiresApprovalBeforeMutation(t *testing.T) {
 }
 
 func TestPubAutoApproveActivatesAfterPlan(t *testing.T) {
+	managedRevision := "sha256:" + strings.Repeat("b", 64)
 	var sequence []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sequence = append(sequence, r.Method+" "+r.URL.Path)
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/sales/active-asset-graph":
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/libredash-showcase/data-connections/olist/environments/dev/revision":
+			writeCLIJSON(t, w, managedDataEnvironmentRevisionResponse("dev", managedRevision))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/sales/publishes":
 			writeCLIJSON(t, w, map[string]any{"id": "dep_1", "workspaceId": "sales", "environment": "dev", "status": "pending"})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/workspaces/sales/publishes/dep_1/artifact":
+			assertUploadedManagedDataPins(t, r, map[string]string{"olist": managedRevision})
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/sales/publishes/dep_1/validate":
 			writeCLIJSON(t, w, map[string]any{"id": "dep_1", "workspaceId": "sales", "environment": "dev", "status": "validated", "digest": "sha256:remote"})
@@ -91,6 +96,7 @@ func TestPubAutoApproveActivatesAfterPlan(t *testing.T) {
 	}
 	wantPrefix := []string{
 		"GET /api/v1/workspaces/sales/active-asset-graph",
+		"GET /api/v1/projects/libredash-showcase/data-connections/olist/environments/dev/revision",
 		"POST /api/v1/workspaces/sales/publishes",
 	}
 	for i, want := range wantPrefix {
@@ -110,35 +116,11 @@ func TestPubEmbedsCurrentManagedDataRevisionBeforeCreatingPublish(t *testing.T) 
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/sales/active-asset-graph":
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/project-a/data-connections/orders/environments/prod/revision":
-			writeCLIJSON(t, w, apigenapi.ManagedDataEnvironmentRevisionResponse{
-				Environment: "prod",
-				Revision:    &apigenapi.ManagedDataRevisionSummaryResponse{Id: digest, Status: apigenapi.ManagedDataRevisionStatusAvailable, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"},
-			})
+			writeCLIJSON(t, w, managedDataEnvironmentRevisionResponse("prod", digest))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/sales/publishes":
 			writeCLIJSON(t, w, map[string]any{"id": "dep_1", "workspaceId": "sales", "environment": "prod", "status": "pending"})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/workspaces/sales/publishes/dep_1/artifact":
-			path := filepath.Join(t.TempDir(), "artifact.tar.gz")
-			file, err := os.Create(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := io.Copy(file, r.Body); err != nil {
-				t.Fatal(err)
-			}
-			if err := file.Close(); err != nil {
-				t.Fatal(err)
-			}
-			root := t.TempDir()
-			if err := servingstatefs.ExtractArtifact(path, root); err != nil {
-				t.Fatal(err)
-			}
-			compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := compiled.ManagedDataRevisions; len(got) != 1 || got["orders"] != digest {
-				t.Fatalf("managedDataRevisions = %#v, want orders pin", got)
-			}
+			assertUploadedManagedDataPins(t, r, map[string]string{"orders": digest})
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/validate"):
 			writeCLIJSON(t, w, map[string]any{"id": "dep_1", "workspaceId": "sales", "environment": "prod", "status": "validated", "digest": "sha256:remote"})
@@ -186,6 +168,7 @@ func TestPubFailsBeforeCreatingPublishWhenManagedDataHasNoCurrentRevision(t *tes
 }
 
 func TestPubProjectPubsAllWorkspacesInDeterministicOrder(t *testing.T) {
+	managedRevision := "sha256:" + strings.Repeat("b", 64)
 	var sequence []string
 	deployments := map[string]string{
 		"operations": "dep_operations",
@@ -198,9 +181,12 @@ func TestPubProjectPubsAllWorkspacesInDeterministicOrder(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/libredash-showcase/data-connections/olist/environments/dev/revision":
+			writeCLIJSON(t, w, managedDataEnvironmentRevisionResponse("dev", managedRevision))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/publishes"):
 			writeCLIJSON(t, w, map[string]any{"id": deployments[workspaceID], "workspaceId": workspaceID, "environment": "dev", "status": "pending"})
 		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/publishes/"):
+			assertUploadedManagedDataPins(t, r, map[string]string{"olist": managedRevision})
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/validate"):
 			writeCLIJSON(t, w, map[string]any{"id": deployments[workspaceID], "workspaceId": workspaceID, "environment": "dev", "status": "validated", "digest": "sha256:remote"})
@@ -227,6 +213,7 @@ func TestPubProjectPubsAllWorkspacesInDeterministicOrder(t *testing.T) {
 		"GET /api/v1/workspaces/operations/active-asset-graph",
 		"GET /api/v1/workspaces/sales/active-asset-graph",
 		"GET /api/v1/workspaces/visuals/active-asset-graph",
+		"GET /api/v1/projects/libredash-showcase/data-connections/olist/environments/dev/revision",
 		"POST /api/v1/workspaces/operations/publishes",
 		"POST /api/v1/workspaces/sales/publishes",
 		"POST /api/v1/workspaces/visuals/publishes",
@@ -276,6 +263,7 @@ func TestPubProjectSkipsUnchangedWorkspaces(t *testing.T) {
 }
 
 func TestPubProjectWorkspaceFlagFiltersProject(t *testing.T) {
+	managedRevision := "sha256:" + strings.Repeat("b", 64)
 	var sequence []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sequence = append(sequence, r.Method+" "+r.URL.Path)
@@ -284,9 +272,12 @@ func TestPubProjectWorkspaceFlagFiltersProject(t *testing.T) {
 			t.Fatalf("workspace filter leaked request: %s %s", r.Method, r.URL.Path)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/libredash-showcase/data-connections/olist/environments/dev/revision":
+			writeCLIJSON(t, w, managedDataEnvironmentRevisionResponse("dev", managedRevision))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/publishes"):
 			writeCLIJSON(t, w, map[string]any{"id": "dep_sales", "workspaceId": "sales", "environment": "dev", "status": "pending"})
 		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/publishes/"):
+			assertUploadedManagedDataPins(t, r, map[string]string{"olist": managedRevision})
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/validate"):
 			writeCLIJSON(t, w, map[string]any{"id": "dep_sales", "workspaceId": "sales", "environment": "dev", "status": "validated", "digest": "sha256:remote"})
@@ -313,14 +304,20 @@ func TestPubProjectWorkspaceFlagFiltersProject(t *testing.T) {
 	if !strings.Contains(output, "published sales") {
 		t.Fatalf("output missing sales deploy:\n%s", output)
 	}
+	assertSequenceContainsInOrder(t, sequence, []string{
+		"GET /api/v1/workspaces/sales/active-asset-graph",
+		"GET /api/v1/projects/libredash-showcase/data-connections/olist/environments/dev/revision",
+		"POST /api/v1/workspaces/sales/publishes",
+	})
 	for _, request := range sequence {
-		if !strings.Contains(request, "/workspaces/sales/") {
+		if strings.Contains(request, "/workspaces/") && !strings.Contains(request, "/workspaces/sales/") {
 			t.Fatalf("request = %q, want only sales requests; sequence=%#v", request, sequence)
 		}
 	}
 }
 
 func TestPubProjectReportsMixedResults(t *testing.T) {
+	managedRevision := "sha256:" + strings.Repeat("b", 64)
 	graphs := compileProjectGraphsForPubTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		workspaceID := workspaceIDFromAPIPath(r.URL.Path)
@@ -331,9 +328,12 @@ func TestPubProjectReportsMixedResults(t *testing.T) {
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
 		case workspaceID == "visuals" && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
 			http.Error(w, "boom", http.StatusInternalServerError)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/libredash-showcase/data-connections/olist/environments/dev/revision":
+			writeCLIJSON(t, w, managedDataEnvironmentRevisionResponse("dev", managedRevision))
 		case workspaceID == "sales" && r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/publishes"):
 			writeCLIJSON(t, w, map[string]any{"id": "dep_sales", "workspaceId": "sales", "environment": "dev", "status": "pending"})
 		case workspaceID == "sales" && r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/publishes/"):
+			assertUploadedManagedDataPins(t, r, map[string]string{"olist": managedRevision})
 			w.WriteHeader(http.StatusNoContent)
 		case workspaceID == "sales" && r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/validate"):
 			writeCLIJSON(t, w, map[string]any{"id": "dep_sales", "workspaceId": "sales", "environment": "dev", "status": "validated", "digest": "sha256:remote"})
@@ -405,6 +405,42 @@ func activeGraphResponse(assets []workspace.Asset, edges []workspace.AssetEdge) 
 	return api.WorkspaceAssetGraphResponse{
 		Assets: assetGraphResponses(assets),
 		Edges:  assetEdgeResponses(edges),
+	}
+}
+
+func managedDataEnvironmentRevisionResponse(environment, revision string) apigenapi.ManagedDataEnvironmentRevisionResponse {
+	return apigenapi.ManagedDataEnvironmentRevisionResponse{
+		Environment: environment,
+		Revision: &apigenapi.ManagedDataRevisionSummaryResponse{
+			Id: revision, Status: apigenapi.ManagedDataRevisionStatusAvailable,
+			CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1",
+		},
+	}
+}
+
+func assertUploadedManagedDataPins(t *testing.T, r *http.Request, want map[string]string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(file, r.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := servingstatefs.ExtractArtifact(path, root); err != nil {
+		t.Fatal(err)
+	}
+	compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compiled.ManagedDataRevisions; !maps.Equal(got, want) {
+		t.Fatalf("managedDataRevisions = %#v, want %#v", got, want)
 	}
 }
 
