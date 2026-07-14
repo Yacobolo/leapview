@@ -489,6 +489,76 @@ func TestRegistryPrepareCommitRoutesDeploymentByWorkspace(t *testing.T) {
 	}
 }
 
+func TestRegistryPreparedSetActivatesAndCommitsEveryWorkspaceTogether(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales"} {
+		id := servingstate.ID("dep_" + string(workspaceID) + "_prod")
+		repo.deployments[id] = servingstate.State{ID: id, WorkspaceID: workspaceID, Environment: "prod", Status: servingstate.StatusValidated}
+		repo.artifacts[id] = servingstate.Artifact{ServingStateID: id, WorkspaceID: workspaceID, Environment: "prod", Digest: string(workspaceID) + "-prod"}
+	}
+	factory := &recordingRegistryFactory{}
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo:         repo,
+		WorkspaceIDs: []servingstate.WorkspaceID{"operations", "sales"},
+		Environment:  "prod",
+		DataDir:      "/data",
+		Factory:      factory,
+	})
+
+	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_prod", "dep_operations_prod"})
+	if err != nil {
+		t.Fatalf("prepare set: %v", err)
+	}
+	defer prepared.Close()
+	if _, err := registry.managerForWorkspace("operations").Active(); err == nil {
+		t.Fatal("operations runtime became active before metadata activation")
+	}
+	activated := false
+	err = registry.CommitPreparedSet(prepared, func() error {
+		activated = true
+		for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales"} {
+			id := servingstate.ID("dep_" + string(workspaceID) + "_prod")
+			repo.active[string(workspaceID)+"/prod"] = registryDeploymentArtifact{deployment: repo.deployments[id], artifact: repo.artifacts[id]}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("commit set: %v", err)
+	}
+	if !activated {
+		t.Fatal("metadata activation was not called")
+	}
+	for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales"} {
+		if _, err := registry.ActiveForWorkspace(context.Background(), workspaceID); err != nil {
+			t.Fatalf("%s active: %v", workspaceID, err)
+		}
+	}
+	if got := factory.inputs; !equalStrings(got, []string{"operations/prod/dep_operations_prod", "sales/prod/dep_sales_prod"}) {
+		t.Fatalf("factory inputs = %#v", got)
+	}
+}
+
+func TestRegistryPreparedSetDoesNotCommitWhenMetadataActivationFails(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	repo.deployments["dep_sales_prod"] = servingstate.State{ID: "dep_sales_prod", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated}
+	repo.artifacts["dep_sales_prod"] = servingstate.Artifact{ServingStateID: "dep_sales_prod", WorkspaceID: "sales", Environment: "prod", Digest: "sales-prod"}
+	factory := &recordingRegistryFactory{}
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, WorkspaceIDs: []servingstate.WorkspaceID{"sales"}, Environment: "prod", Factory: factory})
+
+	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	wantErr := errors.New("activation failed")
+	if err := registry.CommitPreparedSet(prepared, func() error { return wantErr }); !errors.Is(err, wantErr) {
+		t.Fatalf("commit error = %v, want %v", err, wantErr)
+	}
+	if _, err := registry.managerForWorkspace("sales").Active(); err == nil {
+		t.Fatal("runtime committed after metadata activation failed")
+	}
+}
+
 func TestRegistryRejectsPreparedDeploymentFromDifferentEnvironment(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	repo.deployments["dep_ops_dev"] = servingstate.State{ID: "dep_ops_dev", WorkspaceID: "operations", Environment: "dev", Status: servingstate.StatusValidated}

@@ -35,6 +35,26 @@ type RegistryPrepared struct {
 	prepared    servingstate.PreparedRuntime
 }
 
+// PreparedSet contains candidate runtimes that must become visible as one rollout.
+type PreparedSet struct {
+	registry  *Registry
+	items     []*RegistryPrepared
+	committed bool
+}
+
+func (p *PreparedSet) Close() error {
+	if p == nil {
+		return nil
+	}
+	var first error
+	for _, item := range p.items {
+		if err := item.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
 func (p *RegistryPrepared) Close() error {
 	if p == nil || p.prepared == nil {
 		return nil
@@ -97,6 +117,53 @@ func (r *Registry) PrepareServingState(ctx context.Context, servingStateID strin
 	return &RegistryPrepared{workspaceID: current.WorkspaceID, manager: manager, prepared: prepared}, nil
 }
 
+// PrepareServingStates prepares one candidate per workspace without exposing a
+// partial rollout. Preparation is serialized because DuckLake has one writer.
+func (r *Registry) PrepareServingStates(ctx context.Context, servingStateIDs []string) (*PreparedSet, error) {
+	type candidate struct {
+		state    servingstate.State
+		artifact servingstate.Artifact
+	}
+	candidates := make([]candidate, 0, len(servingStateIDs))
+	workspaces := make(map[servingstate.WorkspaceID]struct{}, len(servingStateIDs))
+	for _, servingStateID := range servingStateIDs {
+		current, err := r.repo.ByID(ctx, servingstate.ID(servingStateID))
+		if err != nil {
+			return nil, err
+		}
+		if servingstate.NormalizeEnvironment(current.Environment) != r.environment {
+			return nil, fmt.Errorf("serving state %s environment = %q, want %q", servingStateID, current.Environment, r.environment)
+		}
+		if _, duplicate := workspaces[current.WorkspaceID]; duplicate {
+			return nil, fmt.Errorf("multiple serving states supplied for workspace %s", current.WorkspaceID)
+		}
+		workspaces[current.WorkspaceID] = struct{}{}
+		artifact, err := r.repo.ArtifactByServingState(ctx, current.ID)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate{state: current, artifact: artifact})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].state.WorkspaceID < candidates[j].state.WorkspaceID })
+
+	r.prepareMu.Lock()
+	defer r.prepareMu.Unlock()
+	if err := r.closePreparedRuntimes(); err != nil {
+		return nil, err
+	}
+	set := &PreparedSet{registry: r, items: make([]*RegistryPrepared, 0, len(candidates))}
+	for _, candidate := range candidates {
+		manager := r.managerForWorkspace(candidate.state.WorkspaceID)
+		prepared, err := manager.prepare(ctx, candidate.state, candidate.artifact)
+		if err != nil {
+			_ = set.Close()
+			return nil, err
+		}
+		set.items = append(set.items, &RegistryPrepared{workspaceID: candidate.state.WorkspaceID, manager: manager, prepared: prepared})
+	}
+	return set, nil
+}
+
 func (r *Registry) CommitPrepared(candidate servingstate.PreparedRuntime) error {
 	prepared, ok := candidate.(*RegistryPrepared)
 	if !ok {
@@ -106,6 +173,41 @@ func (r *Registry) CommitPrepared(candidate servingstate.PreparedRuntime) error 
 		return fmt.Errorf("prepared runtime is nil")
 	}
 	return prepared.manager.CommitPrepared(prepared.prepared)
+}
+
+// CommitPreparedSet serializes the durable pointer transaction with the
+// in-memory swap, so requests cannot observe a mixture of rollout revisions.
+func (r *Registry) CommitPreparedSet(set *PreparedSet, activate func() error) error {
+	if set == nil || set.registry != r {
+		return fmt.Errorf("prepared set belongs to a different host")
+	}
+	if set.committed {
+		return fmt.Errorf("prepared set is already committed")
+	}
+	if activate == nil {
+		return fmt.Errorf("metadata activation is required")
+	}
+	for _, item := range set.items {
+		if item == nil || item.manager == nil || item.prepared == nil {
+			return fmt.Errorf("prepared runtime is nil")
+		}
+		if _, ok := item.prepared.(*Prepared); !ok {
+			return fmt.Errorf("prepared runtime belongs to a different host")
+		}
+	}
+
+	r.prepareMu.Lock()
+	defer r.prepareMu.Unlock()
+	if err := activate(); err != nil {
+		return err
+	}
+	for _, item := range set.items {
+		if err := item.manager.CommitPrepared(item.prepared); err != nil {
+			return err
+		}
+	}
+	set.committed = true
+	return nil
 }
 
 func (r *Registry) Close() error {
