@@ -2,19 +2,13 @@ package binding
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
-	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
-	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 const (
@@ -22,7 +16,7 @@ const (
 	digestB = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
-func TestBinderResolvesArtifactPinsWithinEachCollection(t *testing.T) {
+func TestBinderResolvesPinsWithinEachCollection(t *testing.T) {
 	repo := &fakeRepository{
 		collections: map[string]manageddata.Collection{
 			"project-a\x00orders":    activeCollection("collection-z", "orders"),
@@ -34,15 +28,11 @@ func TestBinderResolvesArtifactPinsWithinEachCollection(t *testing.T) {
 			"collection-a": {{ID: "customers-r4", CollectionID: "collection-a", Digest: digestA, Status: manageddata.RevisionStatusReady}},
 		},
 	}
-	artifact := compiledArtifact("project-a", map[string]map[string]string{
-		"sales":   {"orders": "managed", "local": "local"},
-		"service": {"customers": "managed", "orders": "managed"},
-	}, map[string]string{"customers": digestA, "orders": digestA})
-	binder := newBinder(repo, func(string) (servingstatefs.CompiledWorkspaceArtifact, error) { return artifact, nil })
+	binder := binderForRepository(repo)
 
 	err := binder.AfterArtifactValidation(t.Context(), servingstate.State{
 		ID: "state-1", WorkspaceID: "sales", Environment: "prod",
-	}, servingstate.Validation{RootDir: "/validated/artifact"})
+	}, validatedMetadata("project-a", map[string]string{"customers": digestA, "orders": digestA}))
 	if err != nil {
 		t.Fatalf("AfterArtifactValidation() error = %v", err)
 	}
@@ -61,7 +51,7 @@ func TestBinderResolvesArtifactPinsWithinEachCollection(t *testing.T) {
 func TestBinderCanPinBootstrapRevisionWithoutEnvironmentPointer(t *testing.T) {
 	repo := validFakeRepository()
 	binder := binderForRepository(repo)
-	if err := binder.AfterArtifactValidation(t.Context(), servingstate.State{ID: "bootstrap", Environment: "prod"}, servingstate.Validation{RootDir: "/artifact"}); err != nil {
+	if err := binder.AfterArtifactValidation(t.Context(), servingstate.State{ID: "bootstrap", Environment: "prod"}, validatedMetadata("project-a", map[string]string{"orders": digestA})); err != nil {
 		t.Fatalf("AfterArtifactValidation() error = %v", err)
 	}
 	if repo.listCalls != 1 || len(repo.replaced) != 1 || repo.replaced[0].RevisionID != "revision-1" {
@@ -69,11 +59,10 @@ func TestBinderCanPinBootstrapRevisionWithoutEnvironmentPointer(t *testing.T) {
 	}
 }
 
-func TestBinderReplacesFullBindingSetForArtifactWithoutManagedConnections(t *testing.T) {
+func TestBinderReplacesFullBindingSetWithoutManagedConnections(t *testing.T) {
 	repo := &fakeRepository{replaced: []manageddata.ServingStateBinding{{CollectionID: "stale"}}}
-	artifact := compiledArtifact("project-a", map[string]map[string]string{"sales": {"local": "local"}}, map[string]string{})
-	binder := newBinder(repo, func(string) (servingstatefs.CompiledWorkspaceArtifact, error) { return artifact, nil })
-	if err := binder.AfterArtifactValidation(t.Context(), servingstate.State{ID: "state-1", Environment: "dev"}, servingstate.Validation{RootDir: "/artifact"}); err != nil {
+	binder := binderForRepository(repo)
+	if err := binder.AfterArtifactValidation(t.Context(), servingstate.State{ID: "state-1", Environment: "dev"}, validatedMetadata("project-a", map[string]string{})); err != nil {
 		t.Fatal(err)
 	}
 	if repo.replaceCalls != 1 || len(repo.replaced) != 0 {
@@ -84,43 +73,52 @@ func TestBinderReplacesFullBindingSetForArtifactWithoutManagedConnections(t *tes
 func TestBinderRejectsInvalidOrUnavailablePinsBeforeAtomicReplacement(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(*fakeRepository, *servingstatefs.CompiledWorkspaceArtifact)
+		mutate func(*fakeRepository, *servingstate.Validation)
 		want   error
 	}{
-		{name: "missing collection", mutate: func(repo *fakeRepository, _ *servingstatefs.CompiledWorkspaceArtifact) {
+		{name: "missing project id", mutate: func(_ *fakeRepository, validation *servingstate.Validation) {
+			validation.ProjectID = ""
+		}, want: ErrArtifactMetadata},
+		{name: "whitespace project id", mutate: func(_ *fakeRepository, validation *servingstate.Validation) {
+			validation.ProjectID = " project-a"
+		}, want: ErrArtifactMetadata},
+		{name: "nil pins", mutate: func(_ *fakeRepository, validation *servingstate.Validation) {
+			validation.ManagedDataRevisions = nil
+		}, want: ErrArtifactMetadata},
+		{name: "missing collection", mutate: func(repo *fakeRepository, _ *servingstate.Validation) {
 			delete(repo.collections, "project-a\x00orders")
 		}, want: ErrPinnedRevisionUnavailable},
-		{name: "archived collection", mutate: func(repo *fakeRepository, _ *servingstatefs.CompiledWorkspaceArtifact) {
+		{name: "archived collection", mutate: func(repo *fakeRepository, _ *servingstate.Validation) {
 			collection := repo.collections["project-a\x00orders"]
 			collection.Status = manageddata.CollectionStatusArchived
 			repo.collections["project-a\x00orders"] = collection
 		}, want: ErrPinnedRevisionUnavailable},
-		{name: "missing ready revision", mutate: func(repo *fakeRepository, _ *servingstatefs.CompiledWorkspaceArtifact) {
+		{name: "missing ready revision", mutate: func(repo *fakeRepository, _ *servingstate.Validation) {
 			repo.revisions["orders"] = nil
 		}, want: ErrPinnedRevisionUnavailable},
-		{name: "pending revision", mutate: func(repo *fakeRepository, _ *servingstatefs.CompiledWorkspaceArtifact) {
+		{name: "pending revision", mutate: func(repo *fakeRepository, _ *servingstate.Validation) {
 			repo.revisions["orders"][0].Status = manageddata.RevisionStatusPending
 		}, want: ErrPinnedRevisionUnavailable},
-		{name: "ambiguous revision", mutate: func(repo *fakeRepository, _ *servingstatefs.CompiledWorkspaceArtifact) {
+		{name: "ambiguous revision", mutate: func(repo *fakeRepository, _ *servingstate.Validation) {
 			repo.revisions["orders"] = append(repo.revisions["orders"], repo.revisions["orders"][0])
 		}, want: ErrArtifactMetadata},
-		{name: "wrong collection revision", mutate: func(repo *fakeRepository, _ *servingstatefs.CompiledWorkspaceArtifact) {
+		{name: "wrong collection revision", mutate: func(repo *fakeRepository, _ *servingstate.Validation) {
 			repo.revisions["orders"][0].CollectionID = "other"
 		}, want: ErrArtifactMetadata},
-		{name: "missing pin", mutate: func(_ *fakeRepository, artifact *servingstatefs.CompiledWorkspaceArtifact) {
-			delete(artifact.ManagedDataRevisions, "orders")
+		{name: "empty connection pin", mutate: func(_ *fakeRepository, validation *servingstate.Validation) {
+			validation.ManagedDataRevisions[""] = digestA
 		}, want: ErrArtifactMetadata},
-		{name: "internal id pin", mutate: func(_ *fakeRepository, artifact *servingstatefs.CompiledWorkspaceArtifact) {
-			artifact.ManagedDataRevisions["orders"] = "revision-1"
+		{name: "internal id pin", mutate: func(_ *fakeRepository, validation *servingstate.Validation) {
+			validation.ManagedDataRevisions["orders"] = "revision-1"
 		}, want: ErrArtifactMetadata},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repo := validFakeRepository()
-			artifact := compiledArtifact("project-a", map[string]map[string]string{"sales": {"orders": "managed"}}, map[string]string{"orders": digestA})
-			test.mutate(repo, &artifact)
-			binder := newBinder(repo, func(string) (servingstatefs.CompiledWorkspaceArtifact, error) { return artifact, nil })
-			err := binder.AfterArtifactValidation(t.Context(), servingstate.State{ID: "state-1", Environment: "prod"}, servingstate.Validation{RootDir: "/artifact"})
+			validation := validatedMetadata("project-a", map[string]string{"orders": digestA})
+			test.mutate(repo, &validation)
+			binder := binderForRepository(repo)
+			err := binder.AfterArtifactValidation(t.Context(), servingstate.State{ID: "state-1", Environment: "prod"}, validation)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
@@ -131,18 +129,13 @@ func TestBinderRejectsInvalidOrUnavailablePinsBeforeAtomicReplacement(t *testing
 	}
 }
 
-func TestBinderSanitizesLoaderAndRepositoryErrors(t *testing.T) {
+func TestBinderSanitizesRepositoryErrors(t *testing.T) {
 	secret := "s3://private-bucket/object?token=secret"
 	tests := []struct {
 		name  string
 		build func() *Binder
 		want  error
 	}{
-		{name: "loader", build: func() *Binder {
-			return newBinder(&fakeRepository{}, func(string) (servingstatefs.CompiledWorkspaceArtifact, error) {
-				return servingstatefs.CompiledWorkspaceArtifact{}, errors.New(secret)
-			})
-		}, want: ErrArtifactMetadata},
 		{name: "collection", build: func() *Binder {
 			repo := validFakeRepository()
 			repo.collectionErr = errors.New(secret)
@@ -161,7 +154,7 @@ func TestBinderSanitizesLoaderAndRepositoryErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := test.build().AfterArtifactValidation(t.Context(), servingstate.State{ID: "state-1", Environment: "prod"}, servingstate.Validation{RootDir: secret})
+			err := test.build().AfterArtifactValidation(t.Context(), servingstate.State{ID: "state-1", Environment: "prod"}, validatedMetadata("project-a", map[string]string{"orders": digestA}))
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
@@ -184,25 +177,15 @@ func activeCollection(id, connection string) manageddata.Collection {
 }
 
 func binderForRepository(repo Repository) *Binder {
-	return newBinder(repo, func(string) (servingstatefs.CompiledWorkspaceArtifact, error) {
-		return compiledArtifact("project-a", map[string]map[string]string{"sales": {"orders": "managed"}}, map[string]string{"orders": digestA}), nil
-	})
+	binder, err := New(repo)
+	if err != nil {
+		panic(err)
+	}
+	return binder
 }
 
-func compiledArtifact(projectID string, models map[string]map[string]string, pins map[string]string) servingstatefs.CompiledWorkspaceArtifact {
-	definition := &workspace.Definition{Models: make(map[string]*semanticmodel.Model, len(models))}
-	for modelName, connections := range models {
-		model := &semanticmodel.Model{Connections: make(map[string]semanticmodel.Connection, len(connections))}
-		for connectionName, kind := range connections {
-			model.Connections[connectionName] = semanticmodel.Connection{Kind: kind}
-		}
-		definition.Models[modelName] = model
-	}
-	artifact := servingstatefs.CompiledWorkspaceArtifact{Version: 1, ProjectID: projectID, Definition: definition, ManagedDataRevisions: pins}
-	graphJSON, _ := json.Marshal(artifact.Graph)
-	graphDigest := sha256.Sum256(graphJSON)
-	artifact.Validation = servingstatefs.CompiledArtifactValidation{Status: "passed", SchemaVersion: "libredash.dev/v1", GraphHash: hex.EncodeToString(graphDigest[:])}
-	return artifact
+func validatedMetadata(projectID string, pins map[string]string) servingstate.Validation {
+	return servingstate.Validation{ProjectID: projectID, ManagedDataRevisions: pins}
 }
 
 type fakeRepository struct {

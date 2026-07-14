@@ -1,9 +1,7 @@
 package binding
 
 import (
-	"bytes"
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,13 +11,12 @@ import (
 	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
-	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
 
-func TestBinderPinsCompiledArtifactRevisionAfterEnvironmentPointerChanges(t *testing.T) {
+func TestBinderPinsRevisionAfterEnvironmentPointerChanges(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
 	if err != nil {
@@ -46,7 +43,10 @@ func TestBinderPinsCompiledArtifactRevisionAfterEnvironmentPointerChanges(t *tes
 	firstTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
 	activateRevision(t, ctx, repository, collection.ID, firstRevision.ID, firstTarget.ID, manageddata.PointerExpectation{})
 
-	validation := validateManagedProjectArtifact(t, candidate, firstRevision.Digest)
+	validation := servingstate.Validation{
+		ProjectID:            "project-a",
+		ManagedDataRevisions: map[string]string{"orders": firstRevision.Digest},
+	}
 	secondRevision := createReadyRevision(t, ctx, repository, collection.ID, "orders-v2.csv", "b")
 	secondTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
 	activateRevision(t, ctx, repository, collection.ID, secondRevision.ID, secondTarget.ID, manageddata.PointerExpectation{
@@ -120,122 +120,4 @@ func activateRevision(t *testing.T, ctx context.Context, repository *manageddata
 	if _, err := repository.ActivateRollout(ctx, rollout.ID, expectation); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func validateManagedProjectArtifact(t *testing.T, candidate servingstate.State, revisionDigest string) servingstate.Validation {
-	t.Helper()
-	projectPath := writeManagedProject(t)
-	var bundle bytes.Buffer
-	if _, _, err := servingstatefs.PackProject(projectPath, servingstatefs.PackProjectOptions{
-		WorkspaceID: "sales", Environment: "prod", ServingStateID: candidate.ID,
-		ManagedDataRevisions: map[string]string{"orders": revisionDigest},
-	}, &bundle); err != nil {
-		t.Fatalf("pack project: %v", err)
-	}
-	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
-	if err := os.WriteFile(path, bundle.Bytes(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	validation, err := (servingstatefs.Validator{}).ValidateArtifact(path, "sales", "prod", candidate.ID)
-	if err != nil {
-		t.Fatalf("validate artifact: %v", err)
-	}
-	t.Cleanup(func() { _ = (servingstatefs.Validator{}).Cleanup(validation) })
-	return validation
-}
-
-func writeManagedProject(t *testing.T) string {
-	t.Helper()
-	files := map[string]string{
-		"libredash.yaml": `
-apiVersion: libredash.dev/v1
-kind: Project
-metadata:
-  name: project-a
-spec:
-  connections:
-    include: [connections/*.yaml]
-  sources:
-    include: [sources/*.yaml]
-  workspaces:
-    include: [workspaces/*/workspace.yaml]
-`,
-		"connections/orders.yaml": `
-apiVersion: libredash.dev/v1
-kind: Connection
-metadata:
-  name: orders
-spec:
-  kind: managed
-  credentials:
-    provider: none
-`,
-		"sources/orders.orders.yaml": `
-apiVersion: libredash.dev/v1
-kind: Source
-metadata:
-  name: orders.orders
-spec:
-  connection: orders
-  path: orders.csv
-  format: csv
-  fields:
-    order_id:
-      type: string
-`,
-		"workspaces/sales/workspace.yaml": `
-apiVersion: libredash.dev/v1
-kind: Workspace
-metadata:
-  name: sales
-spec:
-  uses:
-    sources: [orders.orders]
-  models:
-    include: [models/*.yaml]
-  semanticModels:
-    include: [semantic-models/*.yaml]
-  dashboards:
-    include: []
-  access:
-    include: []
-  agentPolicy:
-    include: []
-`,
-		"workspaces/sales/models/orders.yaml": `
-apiVersion: libredash.dev/v1
-kind: ModelTable
-metadata:
-  workspace: sales
-  name: orders
-spec:
-  source: orders.orders
-  primaryKey: order_id
-  fields:
-    order_id:
-      label: Order ID
-`,
-		"workspaces/sales/semantic-models/sales.yaml": `
-apiVersion: libredash.dev/v1
-kind: SemanticModel
-metadata:
-  workspace: sales
-  name: sales
-spec:
-  baseTable: orders
-  tables: [orders]
-  measures: {}
-`,
-	}
-	dir := t.TempDir()
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return filepath.Join(dir, "libredash.yaml")
 }
