@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
-	managedhttp "github.com/Yacobolo/libredash/internal/manageddata/http"
+	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	"github.com/Yacobolo/libredash/internal/manageddata/rollout"
 )
 
@@ -26,9 +26,9 @@ func TestRepositoryRevisionIDsAreCanonicalDigests(t *testing.T) {
 		id      string
 		wantErr error
 	}{
-		{name: "internal id", id: "revision_a", wantErr: managedhttp.ErrInvalid},
-		{name: "uppercase digest", id: "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", wantErr: managedhttp.ErrInvalid},
-		{name: "unknown digest", id: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", wantErr: managedhttp.ErrNotFound},
+		{name: "internal id", id: "revision_a", wantErr: control.ErrInvalid},
+		{name: "uppercase digest", id: "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", wantErr: control.ErrInvalid},
+		{name: "unknown digest", id: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", wantErr: control.ErrNotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := adapter.RevisionByID(context.Background(), "collection_a", test.id)
@@ -83,17 +83,17 @@ func TestCreateRolloutResolvesDigestWithinCollectionAndIsDeterministic(t *testin
 		wantErr    error
 	}{
 		{name: "ready revision", collection: "collection_a", digest: digestA},
-		{name: "cross collection", collection: "collection_a", digest: digestC, wantErr: managedhttp.ErrNotFound},
-		{name: "internal id", collection: "collection_a", digest: "revision_a", wantErr: managedhttp.ErrInvalid},
+		{name: "cross collection", collection: "collection_a", digest: digestC, wantErr: control.ErrNotFound},
+		{name: "internal id", collection: "collection_a", digest: "revision_a", wantErr: control.ErrInvalid},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			repo := fixtureRepository()
 			service := &fakeRollouts{createResult: domainRollout("rollout_result", "collection_a", "revision_a", manageddata.RolloutStatusPending)}
 			adapter := mustNew(t, repo, service)
-			request := managedhttp.RolloutCreateRequest{
+			request := control.RolloutCreateRequest{
 				Project: "project_a", Connection: "orders", CollectionID: test.collection, RevisionID: test.digest,
 				Environment: "prod", Actor: "operator_a", IdempotencyKey: "deploy-42",
-				Targets: []managedhttp.RolloutTargetRequest{{Workspace: "sales", ServingStateID: "state_new"}},
+				Targets: []control.RolloutTargetRequest{{Workspace: "sales", ServingStateID: "state_new"}},
 			}
 			got, err := adapter.Create(context.Background(), request)
 			if test.wantErr != nil {
@@ -139,22 +139,22 @@ func TestRolloutMappingAndStrictScope(t *testing.T) {
 	service := &fakeRollouts{getResult: repo.rollouts[0], activateResult: repo.rollouts[1]}
 	adapter := mustNew(t, repo, service)
 
-	listed, err := adapter.List(context.Background(), managedhttp.RolloutListRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_a"})
+	listed, err := adapter.List(context.Background(), control.RolloutListRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_a"})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 	if len(listed) != 2 || listed[0].ID != "rollout_old" || listed[1].ID != "rollout_new" {
 		t.Fatalf("List() = %#v", listed)
 	}
-	if listed[0].Status != managedhttp.RolloutStatusRolledBack || listed[1].Status != managedhttp.RolloutStatusDraft {
+	if listed[0].Status != control.RolloutStatusRolledBack || listed[1].Status != control.RolloutStatusDraft {
 		t.Fatalf("mapped statuses = %q, %q", listed[0].Status, listed[1].Status)
 	}
 	if listed[0].Targets[0].PreviousRevisionID != digestB {
 		t.Fatalf("previous revision = %q", listed[0].Targets[0].PreviousRevisionID)
 	}
 
-	_, err = adapter.Get(context.Background(), managedhttp.RolloutRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_b", RolloutID: "rollout_old"})
-	if !errors.Is(err, managedhttp.ErrNotFound) || service.getCalls != 0 {
+	_, err = adapter.Get(context.Background(), control.RolloutRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_b", RolloutID: "rollout_old"})
+	if !errors.Is(err, control.ErrNotFound) || service.getCalls != 0 {
 		t.Fatalf("cross-scope Get() error = %v, calls = %d", err, service.getCalls)
 	}
 }
@@ -166,7 +166,7 @@ func TestActivateAndRollbackPreserveScopeAndSanitizeResults(t *testing.T) {
 		rollbackResult: domainRollout("rollout_compensating", "collection_a", "revision_b", manageddata.RolloutStatusActive),
 	}
 	adapter := mustNew(t, repo, service)
-	request := managedhttp.RolloutRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_a", RolloutID: "rollout_a", Actor: "operator_a", IdempotencyKey: "activate-1"}
+	request := control.RolloutRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_a", RolloutID: "rollout_a", Actor: "operator_a", IdempotencyKey: "activate-1"}
 
 	activated, err := adapter.Activate(context.Background(), request)
 	if err != nil {
@@ -176,11 +176,11 @@ func TestActivateAndRollbackPreserveScopeAndSanitizeResults(t *testing.T) {
 		t.Fatalf("Activate() = %#v, scope = %#v", activated, service.activateScope)
 	}
 
-	rolledBack, err := adapter.Rollback(context.Background(), managedhttp.RolloutRollbackRequest{RolloutRequest: request, Reason: "bad source"})
+	rolledBack, err := adapter.Rollback(context.Background(), control.RolloutRollbackRequest{RolloutRequest: request, Reason: "bad source"})
 	if err != nil {
 		t.Fatalf("Rollback() error = %v", err)
 	}
-	if service.rollbackReason != "bad source" || service.rollbackScope.Project != request.Project || rolledBack.ID != request.RolloutID || rolledBack.Status != managedhttp.RolloutStatusRolledBack || rolledBack.RevisionID != digestB {
+	if service.rollbackReason != "bad source" || service.rollbackScope.Project != request.Project || rolledBack.ID != request.RolloutID || rolledBack.Status != control.RolloutStatusRolledBack || rolledBack.RevisionID != digestB {
 		t.Fatalf("Rollback() = %#v, scope = %#v, reason = %q", rolledBack, service.rollbackScope, service.rollbackReason)
 	}
 }
@@ -195,7 +195,7 @@ func TestAdapterErrorsAreSanitized(t *testing.T) {
 			return err
 		}},
 		{name: "rollout service", call: func(adapter *Adapter) error {
-			_, err := adapter.Activate(context.Background(), managedhttp.RolloutRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_a", RolloutID: "rollout_a"})
+			_, err := adapter.Activate(context.Background(), control.RolloutRequest{Project: "project_a", Connection: "orders", CollectionID: "collection_a", RolloutID: "rollout_a"})
 			return err
 		}},
 	} {
@@ -208,7 +208,7 @@ func TestAdapterErrorsAreSanitized(t *testing.T) {
 				service.err = errors.New("runtime path=/secret/data")
 			}
 			err := test.call(mustNew(t, repo, service))
-			if !errors.Is(err, managedhttp.ErrBackend) {
+			if !errors.Is(err, control.ErrBackend) {
 				t.Fatalf("adapter error = %v", err)
 			}
 			if strings.Contains(err.Error(), "super-secret") || strings.Contains(err.Error(), "/secret/data") {
@@ -222,12 +222,12 @@ func TestStatusMappings(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		domain manageddata.RolloutStatus
-		public managedhttp.RolloutStatus
+		public control.RolloutStatus
 	}{
-		{name: "pending", domain: manageddata.RolloutStatusPending, public: managedhttp.RolloutStatusDraft},
-		{name: "active", domain: manageddata.RolloutStatusActive, public: managedhttp.RolloutStatusActive},
-		{name: "failed", domain: manageddata.RolloutStatusFailed, public: managedhttp.RolloutStatusFailed},
-		{name: "superseded", domain: manageddata.RolloutStatusSuperseded, public: managedhttp.RolloutStatusRolledBack},
+		{name: "pending", domain: manageddata.RolloutStatusPending, public: control.RolloutStatusDraft},
+		{name: "active", domain: manageddata.RolloutStatusActive, public: control.RolloutStatusActive},
+		{name: "failed", domain: manageddata.RolloutStatusFailed, public: control.RolloutStatusFailed},
+		{name: "superseded", domain: manageddata.RolloutStatusSuperseded, public: control.RolloutStatusRolledBack},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := publicRolloutStatus(test.domain)
@@ -440,6 +440,6 @@ func domainRollout(id, collectionID, revisionID string, status manageddata.Rollo
 }
 
 func TestInterfaceConformance(t *testing.T) {
-	var _ managedhttp.Repository = (*Adapter)(nil)
-	var _ managedhttp.RolloutCoordinator = (*Adapter)(nil)
+	var _ control.MetadataRepository = (*Adapter)(nil)
+	var _ control.RolloutCoordinator = (*Adapter)(nil)
 }

@@ -1,5 +1,5 @@
-// Package apiadapter maps managed-data domain services to the public HTTP
-// contract without exposing persistence identifiers or backend failures.
+// Package apiadapter maps managed-data domain services to transport-neutral
+// control contracts without exposing persistence identifiers or backend failures.
 package apiadapter
 
 import (
@@ -13,14 +13,14 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
-	managedhttp "github.com/Yacobolo/libredash/internal/manageddata/http"
+	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	"github.com/Yacobolo/libredash/internal/manageddata/rollout"
 )
 
 var canonicalRevisionID = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
-// Repository is the persistence surface needed to present managed data over
-// HTTP. RevisionByDigest must reject ambiguous digests across collections.
+// Repository is the persistence surface needed to present managed data through
+// the control API. Revision lookup must reject ambiguous digests across collections.
 type Repository interface {
 	CollectionByProjectConnection(context.Context, string, string) (manageddata.Collection, error)
 	RevisionByID(context.Context, string) (manageddata.Revision, error)
@@ -39,7 +39,7 @@ type RolloutService interface {
 	Rollback(context.Context, rollout.Scope, string) (manageddata.Rollout, error)
 }
 
-// Adapter implements the managed-data HTTP metadata and rollout contracts.
+// Adapter implements the managed-data metadata and rollout control contracts.
 type Adapter struct {
 	repository Repository
 	rollouts   RolloutService
@@ -58,26 +58,26 @@ func (a *Adapter) CollectionByProjectConnection(ctx context.Context, project, co
 		return manageddata.Collection{}, publicError(err)
 	}
 	if collection.ProjectID != strings.TrimSpace(project) || collection.ConnectionName != strings.TrimSpace(connection) || collection.Status != manageddata.CollectionStatusActive {
-		return manageddata.Collection{}, managedhttp.ErrNotFound
+		return manageddata.Collection{}, control.ErrNotFound
 	}
 	return collection, nil
 }
 
 // RevisionByID accepts only the public content-addressed revision identity.
-func (a *Adapter) RevisionByID(ctx context.Context, collectionID, publicID string) (managedhttp.RevisionMetadata, error) {
+func (a *Adapter) RevisionByID(ctx context.Context, collectionID, publicID string) (control.RevisionMetadata, error) {
 	collectionID = strings.TrimSpace(collectionID)
 	publicID = strings.TrimSpace(publicID)
 	if collectionID == "" || !canonicalRevisionID.MatchString(publicID) {
-		return managedhttp.RevisionMetadata{}, managedhttp.ErrInvalid
+		return control.RevisionMetadata{}, control.ErrInvalid
 	}
 	revision, err := a.scopedRevisionByDigest(ctx, collectionID, publicID)
 	if err != nil {
-		return managedhttp.RevisionMetadata{}, err
+		return control.RevisionMetadata{}, err
 	}
 	return a.revisionMetadata(ctx, revision)
 }
 
-func (a *Adapter) ListRevisions(ctx context.Context, collectionID string) ([]managedhttp.RevisionMetadata, error) {
+func (a *Adapter) ListRevisions(ctx context.Context, collectionID string) ([]control.RevisionMetadata, error) {
 	collectionID = strings.TrimSpace(collectionID)
 	rows, err := a.repository.ListRevisions(ctx, collectionID)
 	if err != nil {
@@ -89,10 +89,10 @@ func (a *Adapter) ListRevisions(ctx context.Context, collectionID string) ([]man
 		}
 		return rows[i].Sequence > rows[j].Sequence
 	})
-	out := make([]managedhttp.RevisionMetadata, 0, len(rows))
+	out := make([]control.RevisionMetadata, 0, len(rows))
 	for _, revision := range rows {
 		if revision.CollectionID != collectionID {
-			return nil, managedhttp.ErrBackend
+			return nil, control.ErrBackend
 		}
 		if revision.Status != manageddata.RevisionStatusReady {
 			continue
@@ -112,20 +112,20 @@ func (a *Adapter) EnvironmentPointer(ctx context.Context, collectionID string, e
 		return manageddata.EnvironmentPointer{}, publicError(err)
 	}
 	if pointer.CollectionID != collectionID || pointer.Environment != environment {
-		return manageddata.EnvironmentPointer{}, managedhttp.ErrNotFound
+		return manageddata.EnvironmentPointer{}, control.ErrNotFound
 	}
 	revision, err := a.repository.RevisionByID(ctx, pointer.RevisionID)
 	if err != nil {
 		return manageddata.EnvironmentPointer{}, publicError(err)
 	}
 	if revision.CollectionID != collectionID || revision.Status != manageddata.RevisionStatusReady || !canonicalRevisionID.MatchString(revision.Digest) {
-		return manageddata.EnvironmentPointer{}, managedhttp.ErrBackend
+		return manageddata.EnvironmentPointer{}, control.ErrBackend
 	}
 	pointer.RevisionID = revision.Digest
 	return pointer, nil
 }
 
-func (a *Adapter) List(ctx context.Context, request managedhttp.RolloutListRequest) ([]managedhttp.Rollout, error) {
+func (a *Adapter) List(ctx context.Context, request control.RolloutListRequest) ([]control.Rollout, error) {
 	collection, err := a.requestCollection(ctx, request.Project, request.Connection, request.CollectionID)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (a *Adapter) List(ctx context.Context, request managedhttp.RolloutListReque
 		return nil, err
 	}
 	if statusFilter && status == "" {
-		return []managedhttp.Rollout{}, nil
+		return []control.Rollout{}, nil
 	}
 	rows, err := a.repository.ListRollouts(ctx, collection.ID)
 	if err != nil {
@@ -147,10 +147,10 @@ func (a *Adapter) List(ctx context.Context, request managedhttp.RolloutListReque
 		}
 		return rows[i].CreatedAt > rows[j].CreatedAt
 	})
-	out := make([]managedhttp.Rollout, 0, len(rows))
+	out := make([]control.Rollout, 0, len(rows))
 	for _, row := range rows {
 		if row.CollectionID != collection.ID {
-			return nil, managedhttp.ErrBackend
+			return nil, control.ErrBackend
 		}
 		if request.Environment != "" && string(row.Environment) != request.Environment || statusFilter && row.Status != status {
 			continue
@@ -164,35 +164,35 @@ func (a *Adapter) List(ctx context.Context, request managedhttp.RolloutListReque
 	return out, nil
 }
 
-func (a *Adapter) Get(ctx context.Context, request managedhttp.RolloutRequest) (managedhttp.Rollout, error) {
+func (a *Adapter) Get(ctx context.Context, request control.RolloutRequest) (control.Rollout, error) {
 	if _, err := a.requestCollection(ctx, request.Project, request.Connection, request.CollectionID); err != nil {
-		return managedhttp.Rollout{}, err
+		return control.Rollout{}, err
 	}
 	row, err := a.rollouts.Get(ctx, rollout.Scope{Project: request.Project, Connection: request.Connection, RolloutID: request.RolloutID})
 	if err != nil {
-		return managedhttp.Rollout{}, publicError(err)
+		return control.Rollout{}, publicError(err)
 	}
 	if row.ID != request.RolloutID || row.CollectionID != request.CollectionID {
-		return managedhttp.Rollout{}, managedhttp.ErrNotFound
+		return control.Rollout{}, control.ErrNotFound
 	}
 	return a.mapRollout(ctx, row)
 }
 
-func (a *Adapter) Create(ctx context.Context, request managedhttp.RolloutCreateRequest) (managedhttp.Rollout, error) {
+func (a *Adapter) Create(ctx context.Context, request control.RolloutCreateRequest) (control.Rollout, error) {
 	collection, err := a.requestCollection(ctx, request.Project, request.Connection, request.CollectionID)
 	if err != nil {
-		return managedhttp.Rollout{}, err
+		return control.Rollout{}, err
 	}
 	if !canonicalRevisionID.MatchString(strings.TrimSpace(request.RevisionID)) || strings.TrimSpace(request.IdempotencyKey) == "" || strings.TrimSpace(request.Actor) == "" {
-		return managedhttp.Rollout{}, managedhttp.ErrInvalid
+		return control.Rollout{}, control.ErrInvalid
 	}
 	revision, err := a.scopedRevisionByDigest(ctx, collection.ID, request.RevisionID)
 	if err != nil {
-		return managedhttp.Rollout{}, err
+		return control.Rollout{}, err
 	}
 	environment, err := manageddata.NormalizeEnvironment(request.Environment)
 	if err != nil || len(request.Targets) == 0 {
-		return managedhttp.Rollout{}, managedhttp.ErrInvalid
+		return control.Rollout{}, control.ErrInvalid
 	}
 	targets := make([]manageddata.RolloutTargetInput, len(request.Targets))
 	seenWorkspaces := make(map[string]struct{}, len(request.Targets))
@@ -200,10 +200,10 @@ func (a *Adapter) Create(ctx context.Context, request managedhttp.RolloutCreateR
 		workspace := strings.TrimSpace(target.Workspace)
 		servingStateID := strings.TrimSpace(target.ServingStateID)
 		if workspace == "" || servingStateID == "" {
-			return managedhttp.Rollout{}, managedhttp.ErrInvalid
+			return control.Rollout{}, control.ErrInvalid
 		}
 		if _, exists := seenWorkspaces[workspace]; exists {
-			return managedhttp.Rollout{}, managedhttp.ErrInvalid
+			return control.Rollout{}, control.ErrInvalid
 		}
 		seenWorkspaces[workspace] = struct{}{}
 		targets[i] = manageddata.RolloutTargetInput{WorkspaceID: workspace, ServingStateID: servingStateID}
@@ -218,54 +218,54 @@ func (a *Adapter) Create(ctx context.Context, request managedhttp.RolloutCreateR
 	if errors.Is(err, manageddata.ErrConflict) {
 		row, err = a.rollouts.Get(ctx, rollout.Scope{Project: request.Project, Connection: request.Connection, RolloutID: id})
 		if err == nil && !sameRolloutRequest(row, collection.ID, revision.ID, environment, targets, request.Actor) {
-			return managedhttp.Rollout{}, managedhttp.ErrConflict
+			return control.Rollout{}, control.ErrConflict
 		}
 	}
 	if err != nil {
-		return managedhttp.Rollout{}, publicError(err)
+		return control.Rollout{}, publicError(err)
 	}
 	if row.ID != id || !sameRolloutRequest(row, collection.ID, revision.ID, environment, targets, request.Actor) {
-		return managedhttp.Rollout{}, managedhttp.ErrBackend
+		return control.Rollout{}, control.ErrBackend
 	}
 	return a.mapRollout(ctx, row)
 }
 
-func (a *Adapter) Activate(ctx context.Context, request managedhttp.RolloutRequest) (managedhttp.Rollout, error) {
+func (a *Adapter) Activate(ctx context.Context, request control.RolloutRequest) (control.Rollout, error) {
 	if _, err := a.requestCollection(ctx, request.Project, request.Connection, request.CollectionID); err != nil {
-		return managedhttp.Rollout{}, err
+		return control.Rollout{}, err
 	}
 	row, err := a.rollouts.Activate(ctx, rollout.Scope{Project: request.Project, Connection: request.Connection, RolloutID: request.RolloutID})
 	if err != nil {
-		return managedhttp.Rollout{}, publicError(err)
+		return control.Rollout{}, publicError(err)
 	}
 	if row.ID != request.RolloutID || row.CollectionID != request.CollectionID {
-		return managedhttp.Rollout{}, managedhttp.ErrNotFound
+		return control.Rollout{}, control.ErrNotFound
 	}
 	return a.mapRollout(ctx, row)
 }
 
-func (a *Adapter) Rollback(ctx context.Context, request managedhttp.RolloutRollbackRequest) (managedhttp.Rollout, error) {
+func (a *Adapter) Rollback(ctx context.Context, request control.RolloutRollbackRequest) (control.Rollout, error) {
 	if _, err := a.requestCollection(ctx, request.Project, request.Connection, request.CollectionID); err != nil {
-		return managedhttp.Rollout{}, err
+		return control.Rollout{}, err
 	}
 	row, err := a.rollouts.Rollback(ctx, rollout.Scope{Project: request.Project, Connection: request.Connection, RolloutID: request.RolloutID}, request.Reason)
 	if err != nil {
-		return managedhttp.Rollout{}, publicError(err)
+		return control.Rollout{}, publicError(err)
 	}
 	if row.CollectionID != request.CollectionID {
-		return managedhttp.Rollout{}, managedhttp.ErrNotFound
+		return control.Rollout{}, control.ErrNotFound
 	}
 	mapped, err := a.mapRollout(ctx, row)
 	if err != nil {
-		return managedhttp.Rollout{}, err
+		return control.Rollout{}, err
 	}
 	// Rollback is implemented as a compensating rollout internally. The public
 	// resource remains the rollout the operator requested to roll back.
 	mapped.ID = request.RolloutID
-	mapped.Status = managedhttp.RolloutStatusRolledBack
+	mapped.Status = control.RolloutStatusRolledBack
 	mapped.RolledBackAt = row.CompletedAt
 	for i := range mapped.Targets {
-		mapped.Targets[i].Status = managedhttp.RolloutTargetStatusRolledBack
+		mapped.Targets[i].Status = control.RolloutTargetStatusRolledBack
 		mapped.Targets[i].RolledBackAt = row.CompletedAt
 	}
 	return mapped, nil
@@ -277,24 +277,24 @@ func (a *Adapter) requestCollection(ctx context.Context, project, connection, ex
 		return manageddata.Collection{}, err
 	}
 	if collection.ID != strings.TrimSpace(expectedID) {
-		return manageddata.Collection{}, managedhttp.ErrNotFound
+		return manageddata.Collection{}, control.ErrNotFound
 	}
 	return collection, nil
 }
 
-func (a *Adapter) revisionMetadata(ctx context.Context, revision manageddata.Revision) (managedhttp.RevisionMetadata, error) {
+func (a *Adapter) revisionMetadata(ctx context.Context, revision manageddata.Revision) (control.RevisionMetadata, error) {
 	if revision.Status != manageddata.RevisionStatusReady || !canonicalRevisionID.MatchString(revision.Digest) {
-		return managedhttp.RevisionMetadata{}, managedhttp.ErrNotFound
+		return control.RevisionMetadata{}, control.ErrNotFound
 	}
 	uploadID, err := a.repository.UploadSessionIDByRevisionID(ctx, revision.ID)
 	if err != nil {
-		return managedhttp.RevisionMetadata{}, publicError(err)
+		return control.RevisionMetadata{}, publicError(err)
 	}
 	if strings.TrimSpace(uploadID) == "" {
-		return managedhttp.RevisionMetadata{}, managedhttp.ErrBackend
+		return control.RevisionMetadata{}, control.ErrBackend
 	}
 	revision.ID = revision.Digest
-	return managedhttp.RevisionMetadata{Revision: revision, UploadSessionID: uploadID}, nil
+	return control.RevisionMetadata{Revision: revision, UploadSessionID: uploadID}, nil
 }
 
 func (a *Adapter) scopedRevisionByDigest(ctx context.Context, collectionID, digest string) (manageddata.Revision, error) {
@@ -305,48 +305,48 @@ func (a *Adapter) scopedRevisionByDigest(ctx context.Context, collectionID, dige
 	var found *manageddata.Revision
 	for i := range rows {
 		if rows[i].CollectionID != collectionID {
-			return manageddata.Revision{}, managedhttp.ErrBackend
+			return manageddata.Revision{}, control.ErrBackend
 		}
 		if rows[i].Digest != digest || rows[i].Status != manageddata.RevisionStatusReady {
 			continue
 		}
 		if found != nil {
-			return manageddata.Revision{}, managedhttp.ErrBackend
+			return manageddata.Revision{}, control.ErrBackend
 		}
 		copy := rows[i]
 		found = &copy
 	}
 	if found == nil {
-		return manageddata.Revision{}, managedhttp.ErrNotFound
+		return manageddata.Revision{}, control.ErrNotFound
 	}
 	return *found, nil
 }
 
-func (a *Adapter) mapRollout(ctx context.Context, row manageddata.Rollout) (managedhttp.Rollout, error) {
+func (a *Adapter) mapRollout(ctx context.Context, row manageddata.Rollout) (control.Rollout, error) {
 	revision, err := a.repository.RevisionByID(ctx, row.RevisionID)
 	if err != nil {
-		return managedhttp.Rollout{}, publicError(err)
+		return control.Rollout{}, publicError(err)
 	}
 	if revision.CollectionID != row.CollectionID || revision.Status != manageddata.RevisionStatusReady || !canonicalRevisionID.MatchString(revision.Digest) {
-		return managedhttp.Rollout{}, managedhttp.ErrBackend
+		return control.Rollout{}, control.ErrBackend
 	}
 	status, err := publicRolloutStatus(row.Status)
 	if err != nil {
-		return managedhttp.Rollout{}, err
+		return control.Rollout{}, err
 	}
 	targets := append([]manageddata.RolloutTarget(nil), row.Targets...)
 	sort.Slice(targets, func(i, j int) bool { return targets[i].WorkspaceID < targets[j].WorkspaceID })
-	mappedTargets := make([]managedhttp.RolloutTarget, len(targets))
+	mappedTargets := make([]control.RolloutTarget, len(targets))
 	for i, target := range targets {
 		targetStatus, statusErr := publicTargetStatus(target.Status, row.Status)
 		if statusErr != nil {
-			return managedhttp.Rollout{}, statusErr
+			return control.Rollout{}, statusErr
 		}
 		previous, previousErr := a.previousRevisionDigest(ctx, row.CollectionID, target.PriorServingStateID)
 		if previousErr != nil {
-			return managedhttp.Rollout{}, previousErr
+			return control.Rollout{}, previousErr
 		}
-		mappedTargets[i] = managedhttp.RolloutTarget{
+		mappedTargets[i] = control.RolloutTarget{
 			Workspace: target.WorkspaceID, ServingStateID: target.ServingStateID, Status: targetStatus,
 			PreviousRevisionID: previous, ActivatedAt: target.ActivatedAt,
 		}
@@ -354,7 +354,7 @@ func (a *Adapter) mapRollout(ctx context.Context, row manageddata.Rollout) (mana
 			mappedTargets[i].RolledBackAt = row.CompletedAt
 		}
 	}
-	mapped := managedhttp.Rollout{
+	mapped := control.Rollout{
 		ID: row.ID, CollectionID: row.CollectionID, RevisionID: revision.Digest, Environment: string(row.Environment),
 		Status: status, Targets: mappedTargets, CreatedAt: row.CreatedAt,
 	}
@@ -387,60 +387,60 @@ func (a *Adapter) previousRevisionDigest(ctx context.Context, collectionID, serv
 			return "", publicError(revisionErr)
 		}
 		if revision.CollectionID != collectionID || revision.Status != manageddata.RevisionStatusReady || !canonicalRevisionID.MatchString(revision.Digest) {
-			return "", managedhttp.ErrBackend
+			return "", control.ErrBackend
 		}
 		return revision.Digest, nil
 	}
 	return "", nil
 }
 
-func publicRolloutStatus(status manageddata.RolloutStatus) (managedhttp.RolloutStatus, error) {
+func publicRolloutStatus(status manageddata.RolloutStatus) (control.RolloutStatus, error) {
 	switch status {
 	case manageddata.RolloutStatusPending:
-		return managedhttp.RolloutStatusDraft, nil
+		return control.RolloutStatusDraft, nil
 	case manageddata.RolloutStatusActive:
-		return managedhttp.RolloutStatusActive, nil
+		return control.RolloutStatusActive, nil
 	case manageddata.RolloutStatusFailed:
-		return managedhttp.RolloutStatusFailed, nil
+		return control.RolloutStatusFailed, nil
 	case manageddata.RolloutStatusSuperseded:
-		return managedhttp.RolloutStatusRolledBack, nil
+		return control.RolloutStatusRolledBack, nil
 	default:
-		return "", managedhttp.ErrBackend
+		return "", control.ErrBackend
 	}
 }
 
-func publicTargetStatus(status manageddata.TargetStatus, rolloutStatus manageddata.RolloutStatus) (managedhttp.RolloutTargetStatus, error) {
+func publicTargetStatus(status manageddata.TargetStatus, rolloutStatus manageddata.RolloutStatus) (control.RolloutTargetStatus, error) {
 	if rolloutStatus == manageddata.RolloutStatusSuperseded {
-		return managedhttp.RolloutTargetStatusRolledBack, nil
+		return control.RolloutTargetStatusRolledBack, nil
 	}
 	switch status {
 	case manageddata.TargetStatusPending:
-		return managedhttp.RolloutTargetStatusPending, nil
+		return control.RolloutTargetStatusPending, nil
 	case manageddata.TargetStatusActive:
-		return managedhttp.RolloutTargetStatusActive, nil
+		return control.RolloutTargetStatusActive, nil
 	case manageddata.TargetStatusFailed:
-		return managedhttp.RolloutTargetStatusFailed, nil
+		return control.RolloutTargetStatusFailed, nil
 	default:
-		return "", managedhttp.ErrBackend
+		return "", control.ErrBackend
 	}
 }
 
-func domainStatusFilter(status managedhttp.RolloutStatus) (manageddata.RolloutStatus, bool, error) {
+func domainStatusFilter(status control.RolloutStatus) (manageddata.RolloutStatus, bool, error) {
 	switch status {
 	case "":
 		return "", false, nil
-	case managedhttp.RolloutStatusDraft:
+	case control.RolloutStatusDraft:
 		return manageddata.RolloutStatusPending, true, nil
-	case managedhttp.RolloutStatusActive:
+	case control.RolloutStatusActive:
 		return manageddata.RolloutStatusActive, true, nil
-	case managedhttp.RolloutStatusFailed:
+	case control.RolloutStatusFailed:
 		return manageddata.RolloutStatusFailed, true, nil
-	case managedhttp.RolloutStatusRolledBack:
+	case control.RolloutStatusRolledBack:
 		return manageddata.RolloutStatusSuperseded, true, nil
-	case managedhttp.RolloutStatusActivating, managedhttp.RolloutStatusRollingBack:
+	case control.RolloutStatusActivating, control.RolloutStatusRollingBack:
 		return "", true, nil
 	default:
-		return "", false, managedhttp.ErrInvalid
+		return "", false, control.ErrInvalid
 	}
 }
 
@@ -469,16 +469,16 @@ func publicError(err error) error {
 		return nil
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err
-	case errors.Is(err, manageddata.ErrNotFound), errors.Is(err, managedhttp.ErrNotFound):
-		return managedhttp.ErrNotFound
-	case errors.Is(err, manageddata.ErrConflict), errors.Is(err, managedhttp.ErrConflict):
-		return managedhttp.ErrConflict
-	case errors.Is(err, managedhttp.ErrInvalid):
-		return managedhttp.ErrInvalid
+	case errors.Is(err, manageddata.ErrNotFound), errors.Is(err, control.ErrNotFound):
+		return control.ErrNotFound
+	case errors.Is(err, manageddata.ErrConflict), errors.Is(err, control.ErrConflict):
+		return control.ErrConflict
+	case errors.Is(err, control.ErrInvalid):
+		return control.ErrInvalid
 	default:
-		return managedhttp.ErrBackend
+		return control.ErrBackend
 	}
 }
 
-var _ managedhttp.Repository = (*Adapter)(nil)
-var _ managedhttp.RolloutCoordinator = (*Adapter)(nil)
+var _ control.MetadataRepository = (*Adapter)(nil)
+var _ control.RolloutCoordinator = (*Adapter)(nil)

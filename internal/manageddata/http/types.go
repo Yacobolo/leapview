@@ -11,31 +11,19 @@ import (
 )
 
 var (
-	ErrInvalid  = errors.New("invalid managed-data request")
-	ErrNotFound = errors.New("managed-data resource not found")
-	ErrConflict = errors.New("managed-data conflict")
+	ErrInvalid  = control.ErrInvalid
+	ErrNotFound = control.ErrNotFound
+	ErrConflict = control.ErrConflict
 	ErrTooLarge = errors.New("managed-data request is too large")
-	ErrBackend  = errors.New("managed-data backend is unavailable")
+	ErrBackend  = control.ErrBackend
 )
 
 type Principal struct {
 	ID string
 }
 
-// RevisionMetadata carries the upload provenance required by the public API.
-// Persistence adapters should populate it with a scoped metadata query rather
-// than exposing storage records to the transport layer.
-type RevisionMetadata struct {
-	Revision        manageddata.Revision
-	UploadSessionID string
-}
-
-type Repository interface {
-	CollectionByProjectConnection(context.Context, string, string) (manageddata.Collection, error)
-	RevisionByID(context.Context, string, string) (RevisionMetadata, error)
-	ListRevisions(context.Context, string) ([]RevisionMetadata, error)
-	EnvironmentPointer(context.Context, string, manageddata.Environment) (manageddata.EnvironmentPointer, error)
-}
+type RevisionMetadata = control.RevisionMetadata
+type Repository = control.MetadataRepository
 
 type UploadCoordinator interface {
 	BeginUpload(context.Context, control.BeginUploadRequest) (control.UploadResult, error)
@@ -121,96 +109,36 @@ type MultipartCoordinator interface {
 	Abort(context.Context, MultipartRequest) (MultipartUpload, error)
 }
 
-type RolloutStatus string
+type RolloutStatus = control.RolloutStatus
 
 const (
-	RolloutStatusDraft       RolloutStatus = "draft"
-	RolloutStatusActivating  RolloutStatus = "activating"
-	RolloutStatusActive      RolloutStatus = "active"
-	RolloutStatusFailed      RolloutStatus = "failed"
-	RolloutStatusRollingBack RolloutStatus = "rolling_back"
-	RolloutStatusRolledBack  RolloutStatus = "rolled_back"
+	RolloutStatusDraft       = control.RolloutStatusDraft
+	RolloutStatusActivating  = control.RolloutStatusActivating
+	RolloutStatusActive      = control.RolloutStatusActive
+	RolloutStatusFailed      = control.RolloutStatusFailed
+	RolloutStatusRollingBack = control.RolloutStatusRollingBack
+	RolloutStatusRolledBack  = control.RolloutStatusRolledBack
 )
 
-type RolloutTargetStatus string
+type RolloutTargetStatus = control.RolloutTargetStatus
 
 const (
-	RolloutTargetStatusPending     RolloutTargetStatus = "pending"
-	RolloutTargetStatusActivating  RolloutTargetStatus = "activating"
-	RolloutTargetStatusActive      RolloutTargetStatus = "active"
-	RolloutTargetStatusFailed      RolloutTargetStatus = "failed"
-	RolloutTargetStatusRollingBack RolloutTargetStatus = "rolling_back"
-	RolloutTargetStatusRolledBack  RolloutTargetStatus = "rolled_back"
+	RolloutTargetStatusPending     = control.RolloutTargetStatusPending
+	RolloutTargetStatusActivating  = control.RolloutTargetStatusActivating
+	RolloutTargetStatusActive      = control.RolloutTargetStatusActive
+	RolloutTargetStatusFailed      = control.RolloutTargetStatusFailed
+	RolloutTargetStatusRollingBack = control.RolloutTargetStatusRollingBack
+	RolloutTargetStatusRolledBack  = control.RolloutTargetStatusRolledBack
 )
 
-type RolloutTarget struct {
-	Workspace          string
-	ServingStateID     string
-	Status             RolloutTargetStatus
-	PreviousRevisionID string
-	ActivatedAt        string
-	RolledBackAt       string
-	Error              string
-}
-
-type Rollout struct {
-	ID           string
-	CollectionID string
-	RevisionID   string
-	Environment  string
-	Status       RolloutStatus
-	Targets      []RolloutTarget
-	CreatedAt    string
-	ActivatedAt  string
-	RolledBackAt string
-	Error        string
-}
-
-type RolloutListRequest struct {
-	Project      string
-	Connection   string
-	CollectionID string
-	Environment  string
-	Status       RolloutStatus
-}
-
-type RolloutRequest struct {
-	Project        string
-	Connection     string
-	CollectionID   string
-	RolloutID      string
-	Actor          string
-	IdempotencyKey string
-}
-
-type RolloutTargetRequest struct {
-	Workspace      string
-	ServingStateID string
-}
-
-type RolloutCreateRequest struct {
-	Project        string
-	Connection     string
-	CollectionID   string
-	RevisionID     string
-	Environment    string
-	Targets        []RolloutTargetRequest
-	Actor          string
-	IdempotencyKey string
-}
-
-type RolloutRollbackRequest struct {
-	RolloutRequest
-	Reason string
-}
-
-type RolloutCoordinator interface {
-	List(context.Context, RolloutListRequest) ([]Rollout, error)
-	Get(context.Context, RolloutRequest) (Rollout, error)
-	Create(context.Context, RolloutCreateRequest) (Rollout, error)
-	Activate(context.Context, RolloutRequest) (Rollout, error)
-	Rollback(context.Context, RolloutRollbackRequest) (Rollout, error)
-}
+type RolloutTarget = control.RolloutTarget
+type Rollout = control.Rollout
+type RolloutListRequest = control.RolloutListRequest
+type RolloutRequest = control.RolloutRequest
+type RolloutTargetRequest = control.RolloutTargetRequest
+type RolloutCreateRequest = control.RolloutCreateRequest
+type RolloutRollbackRequest = control.RolloutRollbackRequest
+type RolloutCoordinator = control.RolloutCoordinator
 
 type Options struct {
 	Repository       Repository
