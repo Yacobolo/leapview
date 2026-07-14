@@ -248,7 +248,8 @@ For the supported small production topology, use the [Hetzner single-node
 guide](deploy/hetzner/README.md). It provisions pinned release images, HTTPS,
 generated secrets, restricted SSH, backups, and healthchecked upgrades with
 rollback using Terraform. The remaining examples in this section describe
-custom deployments.
+custom deployments. See [managed data ingestion](docs/data-ingestion.md) for
+planning, staging, and inspecting project-global file revisions.
 
 Production mode serves the active deployed BI-as-code bundle from `.libredash` by default:
 
