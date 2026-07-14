@@ -122,11 +122,11 @@ func TestMultipartCreateSignCompleteAndAbort(t *testing.T) {
 	}
 	partBody := body[:5]
 	partDigest := blobFor(partBody).SHA256
-	signed, err := store.SignPart(t.Context(), upload, manageds3.PartRequest{Number: 1, Size: int64(len(partBody)), SHA256: partDigest})
+	signed, err := store.SignPart(t.Context(), upload, storage.MultipartPartRequest{Number: 1, Size: int64(len(partBody)), SHA256: partDigest})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if signed.URL != "https://uploads.example/part/1" || signed.Headers.Get("X-Test") != "signed" {
+	if signed.URL != "https://uploads.example/part/1" || http.Header(signed.Headers).Get("X-Test") != "signed" {
 		t.Fatalf("SignPart() = %#v", signed)
 	}
 	if presigner.lastChecksum != base64.StdEncoding.EncodeToString(mustDecodeHex(t, partDigest)) {
@@ -134,14 +134,14 @@ func TestMultipartCreateSignCompleteAndAbort(t *testing.T) {
 	}
 
 	client.setMultipartBody(upload.UploadID, body)
-	completed, err := store.CompleteMultipart(t.Context(), upload, []manageds3.CompletedPart{{Number: 1, ETag: "etag-1", SHA256: partDigest}})
+	completed, err := store.CompleteMultipart(t.Context(), upload, []storage.CompletedMultipartPart{{Number: 1, ETag: "etag-1", SHA256: partDigest}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if completed.SHA256 != expected.SHA256 || completed.Size != expected.Size {
 		t.Fatalf("CompleteMultipart() = %#v", completed)
 	}
-	completedAgain, err := store.CompleteMultipart(t.Context(), upload, []manageds3.CompletedPart{{Number: 1, ETag: "etag-1", SHA256: partDigest}})
+	completedAgain, err := store.CompleteMultipart(t.Context(), upload, []storage.CompletedMultipartPart{{Number: 1, ETag: "etag-1", SHA256: partDigest}})
 	if err != nil || completedAgain != completed {
 		t.Fatalf("idempotent CompleteMultipart() = %#v, %v", completedAgain, err)
 	}
@@ -162,7 +162,7 @@ func TestMultipartCompletionDeletesContentThatFailsStreamVerification(t *testing
 		t.Fatal(err)
 	}
 	client.setMultipartBody(upload.UploadID, []byte("tampered"))
-	_, err = store.CompleteMultipart(t.Context(), upload, []manageds3.CompletedPart{{Number: 1, ETag: "etag"}})
+	_, err = store.CompleteMultipart(t.Context(), upload, []storage.CompletedMultipartPart{{Number: 1, ETag: "etag"}})
 	if !errors.Is(err, storage.ErrIntegrity) {
 		t.Fatalf("CompleteMultipart() error = %v", err)
 	}

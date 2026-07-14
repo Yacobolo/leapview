@@ -90,6 +90,17 @@ func (m Manifest) RevisionID() string {
 	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
+func ValidateRevisionID(value string) error {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(value, prefix) {
+		return fmt.Errorf("revision ID must use the sha256 scheme")
+	}
+	if err := validateDigest(strings.TrimPrefix(value, prefix)); err != nil {
+		return fmt.Errorf("revision ID must contain a canonical SHA-256 digest: %w", err)
+	}
+	return nil
+}
+
 func DiffManifests(oldManifest, newManifest Manifest) Diff {
 	oldFiles := filesByPath(oldManifest.Files)
 	newFiles := filesByPath(newManifest.Files)

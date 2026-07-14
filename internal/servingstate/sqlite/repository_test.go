@@ -41,9 +41,6 @@ func TestRepositorySaveValidatedCommitsDeploymentGraph(t *testing.T) {
 	if gotArtifact.Path != "artifact.tar.gz" {
 		t.Fatalf("artifact path = %q, want artifact.tar.gz", gotArtifact.Path)
 	}
-	if gotArtifact.DataRoot != ".data/test" {
-		t.Fatalf("artifact data root = %q, want .data/test", gotArtifact.DataRoot)
-	}
 }
 
 func TestRepositorySaveValidatedRollsBackOnDuplicateEdge(t *testing.T) {
@@ -739,7 +736,6 @@ func artifactForEnvironment(servingStateID servingstate.ID, workspaceID servings
 		Digest:         "digest",
 		Format:         "tar.gz",
 		Path:           "artifact.tar.gz",
-		DataRoot:       ".data/" + string(workspaceID),
 		ManifestJSON:   "{}",
 	}
 }

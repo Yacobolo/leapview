@@ -3,7 +3,6 @@ package filesystem
 import (
 	"archive/tar"
 	"compress/gzip"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,7 +14,6 @@ import (
 	"sort"
 	"strings"
 
-	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
@@ -42,8 +40,6 @@ type ManifestFile struct {
 }
 
 type ValidateOptions struct {
-	DataDir     string
-	DuckDBDir   string
 	Environment servingstate.Environment
 }
 
@@ -356,89 +352,27 @@ func ValidateArtifactWithOptions(path string, workspaceID servingstate.Workspace
 		os.RemoveAll(root)
 		return servingstate.Validation{}, err
 	}
-	if options.DataDir != "" {
-		if err := discoverSchemasForDefinition(context.Background(), compiled.Definition, options); err != nil {
-			os.RemoveAll(root)
-			return servingstate.Validation{}, err
-		}
-		graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.ServingStateID(servingStateID), compiled.Definition)
-		if err != nil {
-			os.RemoveAll(root)
-			return servingstate.Validation{}, err
-		}
-		compiled.Graph = graph
-		if err := workspace.ValidateAssetGraphForServingState(compiled.Graph, workspace.WorkspaceID(workspaceID), workspace.ServingStateID(servingStateID)); err != nil {
-			os.RemoveAll(root)
-			return servingstate.Validation{}, err
-		}
-		compiled.Validation = CompiledArtifactValidation{
-			Status:        "passed",
-			GraphHash:     graphHash(compiled.Graph),
-			SchemaVersion: projectAPIVersion,
-		}
-		manifest, digest, err = persistValidatedArtifact(path, root, manifest, compiled)
-		if err != nil {
-			os.RemoveAll(root)
-			return servingstate.Validation{}, err
-		}
-	}
 	manifestJSON, err := json.Marshal(manifest)
 	if err != nil {
 		os.RemoveAll(root)
 		return servingstate.Validation{}, err
 	}
 	return servingstate.Validation{
-		Digest:       digest,
-		ManifestJSON: string(manifestJSON),
-		RootDir:      root,
-		DataRoot:     options.DataDir,
-		Graph:        compiled.Graph,
+		Digest:               digest,
+		ManifestJSON:         string(manifestJSON),
+		RootDir:              root,
+		ProjectID:            compiled.ProjectID,
+		ManagedDataRevisions: cloneStringMap(compiled.ManagedDataRevisions),
+		Graph:                compiled.Graph,
 	}, nil
 }
 
-func persistValidatedArtifact(path, root string, manifest Manifest, compiled CompiledWorkspaceArtifact) (Manifest, string, error) {
-	compiledRel, err := safeBundlePath(manifest.CompiledPath)
-	if err != nil {
-		return Manifest{}, "", err
+func cloneStringMap(values map[string]string) map[string]string {
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
 	}
-	compiledBytes, err := json.MarshalIndent(compiled, "", "  ")
-	if err != nil {
-		return Manifest{}, "", err
-	}
-	manifest.GraphHash = digestBytes(compiledBytes)
-	if err := os.WriteFile(filepath.Join(root, compiledRel), compiledBytes, 0o644); err != nil {
-		return Manifest{}, "", err
-	}
-	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return Manifest{}, "", err
-	}
-	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestBytes, 0o644); err != nil {
-		return Manifest{}, "", err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".libredash-validated-*.tar.gz")
-	if err != nil {
-		return Manifest{}, "", err
-	}
-	tmpPath := tmp.Name()
-	if err := writeExtractedRoot(root, tmp); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return Manifest{}, "", err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return Manifest{}, "", err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return Manifest{}, "", err
-	}
-	digest, err := fileDigest(path)
-	if err != nil {
-		return Manifest{}, "", err
-	}
-	return manifest, digest, nil
+	return cloned
 }
 
 func writeExtractedRoot(root string, out io.Writer) error {
@@ -575,34 +509,6 @@ func canonicalManagedRevisionDigest(value string) bool {
 }
 
 const projectAPIVersion = "libredash.dev/v1"
-
-func discoverSchemasForDefinition(ctx context.Context, definition *workspace.Definition, options ValidateOptions) error {
-	duckDBRoot := options.DuckDBDir
-	removeDuckDBRoot := false
-	if duckDBRoot == "" {
-		var err error
-		duckDBRoot, err = os.MkdirTemp("", "libredash-schema-*")
-		if err != nil {
-			return err
-		}
-		removeDuckDBRoot = true
-	}
-	if removeDuckDBRoot {
-		defer os.RemoveAll(duckDBRoot)
-	}
-	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:  definition.Models,
-		DataDir: options.DataDir,
-		DBDir:   duckDBRoot,
-	})
-	if err != nil {
-		return err
-	}
-	if err := runtime.Close(); err != nil {
-		return err
-	}
-	return nil
-}
 
 func ExtractArtifact(path, dest string) error {
 	file, err := os.Open(path)

@@ -14,13 +14,13 @@ type WorkspaceRefreshMaterializer struct {
 	DuckDBDir       string
 	DuckLakeCatalog string
 	DuckLakeData    string
-	DataDir         func(workspaceID string, artifact servingstate.Artifact) string
+	DataDir         func(workspaceID string) string
 }
 
 func (m WorkspaceRefreshMaterializer) Materialize(ctx context.Context, input refresh.MaterializeInput) (int64, error) {
 	dataDir := ""
 	if m.DataDir != nil {
-		dataDir = m.DataDir(string(input.Candidate.WorkspaceID), input.Artifact)
+		dataDir = m.DataDir(string(input.Candidate.WorkspaceID))
 	}
 	dbDir := m.DuckDBDir
 	if strings.TrimSpace(dbDir) == "" {

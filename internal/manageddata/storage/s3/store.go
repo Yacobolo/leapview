@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -51,32 +50,6 @@ type Store struct {
 	bucket     string
 	prefix     string
 	signExpiry time.Duration
-}
-
-type MultipartUpload struct {
-	UploadID string
-	SHA256   string
-	Size     int64
-	Key      string
-	Existing bool
-}
-
-type PartRequest struct {
-	Number int32
-	Size   int64
-	SHA256 string
-}
-
-type SignedPart struct {
-	Number  int32
-	URL     string
-	Headers http.Header
-}
-
-type CompletedPart struct {
-	Number int32
-	ETag   string
-	SHA256 string
 }
 
 func New(client Client, presigner PartPresigner, config Config) (*Store, error) {
@@ -227,15 +200,15 @@ func (s *Store) DeleteBlobs(ctx context.Context, digests []string) error {
 	return nil
 }
 
-func (s *Store) CreateMultipart(ctx context.Context, expected storage.Blob) (MultipartUpload, error) {
+func (s *Store) CreateMultipart(ctx context.Context, expected storage.Blob) (storage.MultipartUpload, error) {
 	if err := storage.ValidateBlob(expected); err != nil {
-		return MultipartUpload{}, err
+		return storage.MultipartUpload{}, err
 	}
 	key := s.blobKey(expected.SHA256)
 	if _, err := s.verify(ctx, expected); err == nil {
-		return MultipartUpload{SHA256: expected.SHA256, Size: expected.Size, Key: key, Existing: true}, nil
+		return storage.MultipartUpload{SHA256: expected.SHA256, Size: expected.Size, Key: key, Existing: true}, nil
 	} else if !errors.Is(err, storage.ErrNotFound) {
-		return MultipartUpload{}, err
+		return storage.MultipartUpload{}, err
 	}
 	result, err := s.client.CreateMultipartUpload(ctx, &awss3.CreateMultipartUploadInput{
 		Bucket:   pointer(s.bucket),
@@ -243,23 +216,23 @@ func (s *Store) CreateMultipart(ctx context.Context, expected storage.Blob) (Mul
 		Metadata: blobMetadata(expected),
 	})
 	if err != nil {
-		return MultipartUpload{}, sanitizeError(ctx, "create S3 multipart upload", err)
+		return storage.MultipartUpload{}, sanitizeError(ctx, "create S3 multipart upload", err)
 	}
 	if result.UploadId == nil || *result.UploadId == "" {
-		return MultipartUpload{}, fmt.Errorf("%w: S3 returned an empty multipart upload ID", storage.ErrBackend)
+		return storage.MultipartUpload{}, fmt.Errorf("%w: S3 returned an empty multipart upload ID", storage.ErrBackend)
 	}
-	return MultipartUpload{UploadID: *result.UploadId, SHA256: expected.SHA256, Size: expected.Size, Key: key}, nil
+	return storage.MultipartUpload{UploadID: *result.UploadId, SHA256: expected.SHA256, Size: expected.Size, Key: key}, nil
 }
 
-func (s *Store) SignPart(ctx context.Context, upload MultipartUpload, part PartRequest) (SignedPart, error) {
+func (s *Store) SignPart(ctx context.Context, upload storage.MultipartUpload, part storage.MultipartPartRequest) (storage.SignedMultipartPart, error) {
 	if err := s.validateMultipart(upload); err != nil {
-		return SignedPart{}, err
+		return storage.SignedMultipartPart{}, err
 	}
 	if upload.Existing || upload.UploadID == "" {
-		return SignedPart{}, fmt.Errorf("%w: existing blobs do not accept multipart parts", storage.ErrInvalid)
+		return storage.SignedMultipartPart{}, fmt.Errorf("%w: existing blobs do not accept multipart parts", storage.ErrInvalid)
 	}
 	if part.Number < 1 || part.Number > 10_000 || part.Size <= 0 {
-		return SignedPart{}, fmt.Errorf("%w: S3 multipart part number or size is invalid", storage.ErrInvalid)
+		return storage.SignedMultipartPart{}, fmt.Errorf("%w: S3 multipart part number or size is invalid", storage.ErrInvalid)
 	}
 	input := &awss3.UploadPartInput{
 		Bucket:        pointer(s.bucket),
@@ -271,7 +244,7 @@ func (s *Store) SignPart(ctx context.Context, upload MultipartUpload, part PartR
 	if part.SHA256 != "" {
 		checksum, err := checksumBase64(part.SHA256)
 		if err != nil {
-			return SignedPart{}, err
+			return storage.SignedMultipartPart{}, err
 		}
 		input.ChecksumSHA256 = pointer(checksum)
 	}
@@ -279,12 +252,20 @@ func (s *Store) SignPart(ctx context.Context, upload MultipartUpload, part PartR
 		options.Expires = s.signExpiry
 	})
 	if err != nil {
-		return SignedPart{}, sanitizeError(ctx, "sign S3 multipart part", err)
+		return storage.SignedMultipartPart{}, sanitizeError(ctx, "sign S3 multipart part", err)
 	}
-	return SignedPart{Number: part.Number, URL: result.URL, Headers: result.SignedHeader.Clone()}, nil
+	return storage.SignedMultipartPart{Number: part.Number, URL: result.URL, Headers: cloneHeaders(result.SignedHeader)}, nil
 }
 
-func (s *Store) CompleteMultipart(ctx context.Context, upload MultipartUpload, parts []CompletedPart) (storage.Blob, error) {
+func cloneHeaders(headers map[string][]string) map[string][]string {
+	cloned := make(map[string][]string, len(headers))
+	for name, values := range headers {
+		cloned[name] = append([]string(nil), values...)
+	}
+	return cloned
+}
+
+func (s *Store) CompleteMultipart(ctx context.Context, upload storage.MultipartUpload, parts []storage.CompletedMultipartPart) (storage.Blob, error) {
 	if err := s.validateMultipart(upload); err != nil {
 		return storage.Blob{}, err
 	}
@@ -329,7 +310,7 @@ func (s *Store) CompleteMultipart(ctx context.Context, upload MultipartUpload, p
 	return storage.Blob{}, verifyErr
 }
 
-func (s *Store) AbortMultipart(ctx context.Context, upload MultipartUpload) error {
+func (s *Store) AbortMultipart(ctx context.Context, upload storage.MultipartUpload) error {
 	if err := s.validateMultipart(upload); err != nil {
 		return err
 	}
@@ -382,7 +363,7 @@ func (s *Store) verify(ctx context.Context, expected storage.Blob) (storage.Blob
 	return storage.Blob{SHA256: digest, Size: written, URI: s.blobURI(key)}, nil
 }
 
-func (s *Store) validateMultipart(upload MultipartUpload) error {
+func (s *Store) validateMultipart(upload storage.MultipartUpload) error {
 	expected := storage.Blob{SHA256: upload.SHA256, Size: upload.Size}
 	if err := storage.ValidateBlob(expected); err != nil {
 		return err
@@ -424,11 +405,11 @@ func (s *Store) blobURI(key string) string {
 	return (&url.URL{Scheme: "s3", Host: s.bucket, Path: "/" + key}).String()
 }
 
-func completedParts(parts []CompletedPart) ([]types.CompletedPart, error) {
+func completedParts(parts []storage.CompletedMultipartPart) ([]types.CompletedPart, error) {
 	if len(parts) == 0 || len(parts) > 10_000 {
 		return nil, fmt.Errorf("%w: S3 multipart completion requires parts", storage.ErrInvalid)
 	}
-	ordered := append([]CompletedPart(nil), parts...)
+	ordered := append([]storage.CompletedMultipartPart(nil), parts...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Number < ordered[j].Number })
 	result := make([]types.CompletedPart, len(ordered))
 	for index, part := range ordered {

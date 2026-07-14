@@ -474,7 +474,6 @@ type ServingStateArtifact struct {
 	Digest         string `json:"digest"`
 	Format         string `json:"format"`
 	Path           string `json:"path"`
-	DataRoot       string `json:"data_root"`
 	ManifestJson   string `json:"manifest_json"`
 	SizeBytes      int64  `json:"size_bytes"`
 	CreatedAt      string `json:"created_at"`

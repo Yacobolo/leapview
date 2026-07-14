@@ -1163,7 +1163,7 @@ func (q *Queries) GetAgentConversation(ctx context.Context, arg GetAgentConversa
 }
 
 const getArtifactByServingState = `-- name: GetArtifactByServingState :one
-SELECT id, serving_state_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes, created_at FROM serving_state_artifacts WHERE serving_state_id = ?
+SELECT id, serving_state_id, workspace_id, environment, digest, format, path, manifest_json, size_bytes, created_at FROM serving_state_artifacts WHERE serving_state_id = ?
 `
 
 func (q *Queries) GetArtifactByServingState(ctx context.Context, servingStateID string) (ServingStateArtifact, error) {
@@ -1177,7 +1177,6 @@ func (q *Queries) GetArtifactByServingState(ctx context.Context, servingStateID 
 		&i.Digest,
 		&i.Format,
 		&i.Path,
-		&i.DataRoot,
 		&i.ManifestJson,
 		&i.SizeBytes,
 		&i.CreatedAt,
@@ -2189,14 +2188,13 @@ func (q *Queries) InsertRoleBinding(ctx context.Context, arg InsertRoleBindingPa
 }
 
 const insertServingStateArtifact = `-- name: InsertServingStateArtifact :exec
-INSERT INTO serving_state_artifacts (id, serving_state_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO serving_state_artifacts (id, serving_state_id, workspace_id, environment, digest, format, path, manifest_json, size_bytes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(serving_state_id) DO UPDATE SET
   environment = excluded.environment,
   digest = excluded.digest,
   format = excluded.format,
   path = excluded.path,
-  data_root = excluded.data_root,
   manifest_json = excluded.manifest_json,
   size_bytes = excluded.size_bytes
 `
@@ -2209,7 +2207,6 @@ type InsertServingStateArtifactParams struct {
 	Digest         string `json:"digest"`
 	Format         string `json:"format"`
 	Path           string `json:"path"`
-	DataRoot       string `json:"data_root"`
 	ManifestJson   string `json:"manifest_json"`
 	SizeBytes      int64  `json:"size_bytes"`
 }
@@ -2223,7 +2220,6 @@ func (q *Queries) InsertServingStateArtifact(ctx context.Context, arg InsertServ
 		arg.Digest,
 		arg.Format,
 		arg.Path,
-		arg.DataRoot,
 		arg.ManifestJson,
 		arg.SizeBytes,
 	)

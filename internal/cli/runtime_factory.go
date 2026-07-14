@@ -308,12 +308,5 @@ func runtimeFirstNonEmpty(values ...string) string {
 }
 
 func runtimeDataDir(input runtimehost.RuntimeInput, fallback string) string {
-	if input.Artifact.DataRoot != "" {
-		return input.Artifact.DataRoot
-	}
-	workspaceDataDir := filepath.Join(".data", string(input.State.WorkspaceID))
-	if info, err := os.Stat(workspaceDataDir); err == nil && info.IsDir() {
-		return workspaceDataDir
-	}
 	return runtimeFirstNonEmpty(input.DataDir, fallback)
 }

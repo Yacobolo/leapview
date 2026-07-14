@@ -10,7 +10,6 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
-	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 )
 
 var (
@@ -27,43 +26,25 @@ type Repository interface {
 	ReplaceServingStateBindings(context.Context, string, []manageddata.ServingStateBinding) error
 }
 
-type artifactLoader func(string) (servingstatefs.CompiledWorkspaceArtifact, error)
-
 // Binder resolves project-global revision pins during publish validation.
 type Binder struct {
 	repository Repository
-	load       artifactLoader
 }
 
 func New(repository Repository) (*Binder, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("managed data binding repository is required")
 	}
-	return newBinder(repository, loadCompiledArtifact), nil
-}
-
-func newBinder(repository Repository, load artifactLoader) *Binder {
-	return &Binder{repository: repository, load: load}
-}
-
-func loadCompiledArtifact(root string) (servingstatefs.CompiledWorkspaceArtifact, error) {
-	compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(root)
-	return compiled, err
+	return &Binder{repository: repository}, nil
 }
 
 // AfterArtifactValidation implements the serving-state publish validation hook.
 func (b *Binder) AfterArtifactValidation(ctx context.Context, candidate servingstate.State, validation servingstate.Validation) error {
-	if b == nil || b.repository == nil || b.load == nil {
+	if b == nil || b.repository == nil {
 		return ErrRepository
 	}
-	if strings.TrimSpace(string(candidate.ID)) == "" || strings.TrimSpace(validation.RootDir) == "" {
-		return ErrArtifactMetadata
-	}
-	compiled, err := b.load(validation.RootDir)
-	if err != nil {
-		return ErrArtifactMetadata
-	}
-	if err := servingstatefs.ValidateCompiledWorkspaceArtifact(compiled); err != nil {
+	projectID := strings.TrimSpace(validation.ProjectID)
+	if strings.TrimSpace(string(candidate.ID)) == "" || projectID == "" || projectID != validation.ProjectID || validation.ManagedDataRevisions == nil {
 		return ErrArtifactMetadata
 	}
 
@@ -71,14 +52,17 @@ func (b *Binder) AfterArtifactValidation(ctx context.Context, candidate servings
 	if err != nil {
 		return ErrArtifactMetadata
 	}
-	connections := make([]string, 0, len(compiled.ManagedDataRevisions))
-	for connection := range compiled.ManagedDataRevisions {
+	connections := make([]string, 0, len(validation.ManagedDataRevisions))
+	for connection, digest := range validation.ManagedDataRevisions {
+		if connection == "" || connection != strings.TrimSpace(connection) || manageddata.ValidateRevisionID(digest) != nil {
+			return ErrArtifactMetadata
+		}
 		connections = append(connections, connection)
 	}
 	sort.Strings(connections)
 	bindings := make([]manageddata.ServingStateBinding, 0, len(connections))
 	for _, connection := range connections {
-		binding, bindErr := b.pinnedBinding(ctx, candidate.ID, compiled.ProjectID, connection, compiled.ManagedDataRevisions[connection], environment)
+		binding, bindErr := b.pinnedBinding(ctx, candidate.ID, projectID, connection, validation.ManagedDataRevisions[connection], environment)
 		if bindErr != nil {
 			return bindErr
 		}

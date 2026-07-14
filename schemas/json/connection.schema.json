@@ -41,6 +41,7 @@
         "kind": {
           "enum": [
             "local",
+            "managed",
             "s3",
             "r2",
             "gcs",

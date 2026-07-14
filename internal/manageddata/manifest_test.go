@@ -31,6 +31,24 @@ func TestManifestCanonicalizesFilesAndProducesStableRevisionID(t *testing.T) {
 	}
 }
 
+func TestValidateRevisionIDRequiresCanonicalSHA256Identity(t *testing.T) {
+	valid := "sha256:" + strings.Repeat("a", 64)
+	if err := ValidateRevisionID(valid); err != nil {
+		t.Fatalf("ValidateRevisionID(%q) error = %v", valid, err)
+	}
+	for _, invalid := range []string{
+		strings.Repeat("a", 64),
+		"sha256:" + strings.Repeat("A", 64),
+		"sha256:" + strings.Repeat("a", 63),
+		"sha256:" + strings.Repeat("z", 64),
+		"sha512:" + strings.Repeat("a", 64),
+	} {
+		if err := ValidateRevisionID(invalid); err == nil {
+			t.Fatalf("ValidateRevisionID(%q) error = nil", invalid)
+		}
+	}
+}
+
 func TestManifestRejectsUnsafeOrAmbiguousPaths(t *testing.T) {
 	tests := []struct {
 		name  string

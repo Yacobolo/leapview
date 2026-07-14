@@ -73,7 +73,6 @@ type Artifact struct {
 	Digest         string
 	Format         string
 	Path           string
-	DataRoot       string
 	ManifestJSON   string
 	SizeBytes      int64
 	CreatedAt      string
@@ -89,11 +88,12 @@ type SnapshotLeaseInput struct {
 }
 
 type Validation struct {
-	Digest       string
-	ManifestJSON string
-	RootDir      string
-	DataRoot     string
-	Graph        workspace.AssetGraph
+	Digest               string
+	ManifestJSON         string
+	RootDir              string
+	ProjectID            string
+	ManagedDataRevisions map[string]string
+	Graph                workspace.AssetGraph
 }
 
 type PreparedRuntime interface {

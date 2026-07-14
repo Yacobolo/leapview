@@ -192,9 +192,6 @@ func TestValidateArtifactIsDataLocationIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateArtifact() error = %v", err)
 	}
-	if validation.DataRoot != "" {
-		t.Fatalf("validation data root = %q, want empty", validation.DataRoot)
-	}
 	if len(validation.Graph.Assets) == 0 {
 		t.Fatal("validated graph has no assets")
 	}

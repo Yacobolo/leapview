@@ -84,7 +84,6 @@ type QueueAssetInput struct {
 	Environment servingstate.Environment
 	PrincipalID string
 	Asset       workspace.AssetView
-	DataRoot    string
 }
 
 type QueueAssetResult struct {
@@ -107,9 +106,6 @@ func (s Service) QueueAssetRefresh(ctx context.Context, input QueueAssetInput) (
 	active, err := s.Active(ctx, input.WorkspaceID, environment)
 	if err != nil {
 		return QueueAssetResult{}, err
-	}
-	if input.DataRoot != "" {
-		active.Artifact.DataRoot = input.DataRoot
 	}
 	loaded, err := s.Artifacts.Load(ctx, active.Artifact)
 	if err != nil {
@@ -355,7 +351,6 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 		Digest:         active.Artifact.Digest,
 		Format:         active.Artifact.Format,
 		Path:           active.Artifact.Path,
-		DataRoot:       active.Artifact.DataRoot,
 		ManifestJSON:   active.Artifact.ManifestJSON,
 		SizeBytes:      active.Artifact.SizeBytes,
 		CreatedAt:      active.Artifact.CreatedAt,
@@ -364,7 +359,6 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 		Digest:       active.State.Digest,
 		ManifestJSON: active.State.ManifestJSON,
 		Graph:        RetargetAssetGraph(input.ArtifactGraph, workspace.WorkspaceID(input.WorkspaceID), workspace.ServingStateID(created.ID)),
-		DataRoot:     active.Artifact.DataRoot,
 	}, candidateArtifact)
 	if err != nil {
 		_ = s.ServingStates.MarkFailed(ctx, created.ID, err)

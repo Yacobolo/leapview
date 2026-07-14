@@ -215,7 +215,6 @@ func createAndActivateProjectDeployment(t *testing.T, ctx context.Context, repo 
 		Digest:         validation.Digest,
 		Format:         servingstatefs.BundleFormat,
 		Path:           artifactPath,
-		DataRoot:       validation.DataRoot,
 		ManifestJSON:   validation.ManifestJSON,
 		SizeBytes:      info.Size(),
 	})
@@ -238,10 +237,7 @@ type duckLakeIntegrationRuntimeFactory struct {
 }
 
 func (f duckLakeIntegrationRuntimeFactory) Prepare(_ context.Context, input runtimehost.RuntimeInput) (runtimehost.Runtime, error) {
-	dataDir := input.Artifact.DataRoot
-	if dataDir == "" {
-		dataDir = f.dataDir
-	}
+	dataDir := f.dataDir
 	targetDir := filepath.Join(f.runtimeDir, string(input.State.ID))
 	if err := os.RemoveAll(targetDir); err != nil {
 		return nil, err
@@ -813,7 +809,6 @@ func (h *duckLakeHarness) createQueuedWorkspaceAssetRefreshRun(t *testing.T, tar
 		Digest:         artifact.Digest,
 		Format:         artifact.Format,
 		Path:           artifact.Path,
-		DataRoot:       artifact.DataRoot,
 		ManifestJSON:   artifact.ManifestJSON,
 		SizeBytes:      artifact.SizeBytes,
 	}
@@ -821,7 +816,6 @@ func (h *duckLakeHarness) createQueuedWorkspaceAssetRefreshRun(t *testing.T, tar
 		Digest:       active.Digest,
 		ManifestJSON: active.ManifestJSON,
 		Graph:        integrationRetargetAssetGraph(compiled.Graph, workspace.WorkspaceID(active.WorkspaceID), workspace.ServingStateID(created.ID)),
-		DataRoot:     artifact.DataRoot,
 	}, candidateArtifact); err != nil {
 		t.Fatalf("save refresh candidate deployment: %v", err)
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	"github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
-	storages3 "github.com/Yacobolo/libredash/internal/manageddata/storage/s3"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )
@@ -183,28 +182,28 @@ type fakeMultipartStore struct {
 	completeCalls  int
 	abortCalls     int
 	completeErr    error
-	completedParts []storages3.CompletedPart
+	completedParts []storage.CompletedMultipartPart
 }
 
-func (f *fakeMultipartStore) CreateMultipart(_ context.Context, blob storage.Blob) (storages3.MultipartUpload, error) {
+func (f *fakeMultipartStore) CreateMultipart(_ context.Context, blob storage.Blob) (storage.MultipartUpload, error) {
 	f.createCalls++
-	return storages3.MultipartUpload{UploadID: "provider-1", SHA256: blob.SHA256, Size: blob.Size, Key: "blobs/" + blob.SHA256}, nil
+	return storage.MultipartUpload{UploadID: "provider-1", SHA256: blob.SHA256, Size: blob.Size, Key: "blobs/" + blob.SHA256}, nil
 }
 
-func (f *fakeMultipartStore) SignPart(_ context.Context, _ storages3.MultipartUpload, part storages3.PartRequest) (storages3.SignedPart, error) {
-	return storages3.SignedPart{Number: part.Number, URL: "https://s3.example/upload?signature=transient", Headers: http.Header{"X-Checksum": []string{"value"}}}, nil
+func (f *fakeMultipartStore) SignPart(_ context.Context, _ storage.MultipartUpload, part storage.MultipartPartRequest) (storage.SignedMultipartPart, error) {
+	return storage.SignedMultipartPart{Number: part.Number, URL: "https://s3.example/upload?signature=transient", Headers: http.Header{"X-Checksum": []string{"value"}}}, nil
 }
 
-func (f *fakeMultipartStore) CompleteMultipart(_ context.Context, upload storages3.MultipartUpload, parts []storages3.CompletedPart) (storage.Blob, error) {
+func (f *fakeMultipartStore) CompleteMultipart(_ context.Context, upload storage.MultipartUpload, parts []storage.CompletedMultipartPart) (storage.Blob, error) {
 	f.completeCalls++
-	f.completedParts = append([]storages3.CompletedPart(nil), parts...)
+	f.completedParts = append([]storage.CompletedMultipartPart(nil), parts...)
 	if f.completeErr != nil {
 		return storage.Blob{}, f.completeErr
 	}
 	return storage.Blob{SHA256: upload.SHA256, Size: upload.Size, URI: "s3://bucket/" + upload.Key}, nil
 }
 
-func (f *fakeMultipartStore) AbortMultipart(context.Context, storages3.MultipartUpload) error {
+func (f *fakeMultipartStore) AbortMultipart(context.Context, storage.MultipartUpload) error {
 	f.abortCalls++
 	return nil
 }

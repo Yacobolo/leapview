@@ -749,7 +749,6 @@ func mapArtifact(row platformdb.ServingStateArtifact) servingstate.Artifact {
 		Digest:         row.Digest,
 		Format:         row.Format,
 		Path:           row.Path,
-		DataRoot:       row.DataRoot,
 		ManifestJSON:   row.ManifestJson,
 		SizeBytes:      row.SizeBytes,
 		CreatedAt:      row.CreatedAt,
@@ -765,7 +764,6 @@ func mapArtifactParams(artifact servingstate.Artifact) platformdb.InsertServingS
 		Digest:         artifact.Digest,
 		Format:         artifact.Format,
 		Path:           artifact.Path,
-		DataRoot:       artifact.DataRoot,
 		ManifestJson:   artifact.ManifestJSON,
 		SizeBytes:      artifact.SizeBytes,
 	}

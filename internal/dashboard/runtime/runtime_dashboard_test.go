@@ -17,6 +17,7 @@ import (
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/workspace"
+	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
 
 type runtimeAuditRecorder struct {
@@ -32,30 +33,38 @@ func (r *runtimeAuditRecorder) RecordDataQuery(_ context.Context, query dataquer
 
 func newLegacyRuntime(t *testing.T, dataDir string) (*Service, error) {
 	t.Helper()
-	projectPath := filepath.Join("..", "..", "..", "dashboards", "libredash.yaml")
-	services, err := NewFromProject(dataDir, projectPath, dataDir, testDataRuntimeFactory{})
-	if err != nil {
-		return nil, err
-	}
-	service, ok := services["sales"]
-	if !ok {
-		return nil, fmt.Errorf("showcase project has no sales workspace")
-	}
-	return service, nil
+	return newManagedFixtureRuntime(dataDir, "sales")
 }
 
 func newOperationsRuntime(t *testing.T, dataDir string) (*Service, error) {
 	t.Helper()
+	return newManagedFixtureRuntime(dataDir, "operations")
+}
+
+func newManagedFixtureRuntime(dataDir, workspaceID string) (*Service, error) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", "libredash.yaml")
-	services, err := NewFromProject(dataDir, projectPath, dataDir, testDataRuntimeFactory{})
+	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{})
 	if err != nil {
 		return nil, err
 	}
-	service, ok := services["operations"]
+	compiledWorkspace, ok := compiled.Workspaces[workspaceID]
 	if !ok {
-		return nil, fmt.Errorf("showcase project has no operations workspace")
+		return nil, fmt.Errorf("showcase project has no %s workspace", workspaceID)
 	}
-	return service, nil
+	bindManagedFixtureRoots(compiledWorkspace.Definition, dataDir)
+	return NewFromDefinition(dataDir, filepath.Join(dataDir, workspaceID), testDataRuntimeFactory{}, compiledWorkspace.Definition)
+}
+
+func bindManagedFixtureRoots(definition *workspace.Definition, root string) {
+	for _, model := range definition.Models {
+		for name, connection := range model.Connections {
+			if connection.Kind != "managed" {
+				continue
+			}
+			connection.Root = root
+			model.Connections[name] = connection
+		}
+	}
 }
 
 func TestWorkspaceRuntimeUsesSingleDuckDBForSharedModelTables(t *testing.T) {

@@ -34,7 +34,6 @@ func (s *Server) workspaceRefreshSupport() workspacehttp.Support {
 		DispatchQueued: func() {
 			s.dispatchQueuedRefreshJobs(context.Background())
 		},
-		DataDir:      s.dataDirForWorkspace,
 		DirectRunner: appRefreshRunner{metrics: s.metrics},
 		ModelLookup:  refreshModelLookup(s.metrics),
 		Broker:       s.broker,

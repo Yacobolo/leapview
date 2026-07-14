@@ -48,7 +48,6 @@ type Options struct {
 	Runtime             RuntimeHost
 	CurrentPrincipal    func(*stdhttp.Request) (Principal, bool)
 	ArtifactDir         string
-	DataDir             func() string
 	DefaultEnvironment  string
 	WorkspaceID         func(string) string
 }
@@ -152,7 +151,7 @@ func (h *Handler) Validate(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	service := validate.NewService(repo, servingstatefs.NewArtifactStore(h.options.ArtifactDir), servingstatefs.Validator{DataDir: h.dataDir()}, binder)
+	service := validate.NewService(repo, servingstatefs.NewArtifactStore(h.options.ArtifactDir), servingstatefs.Validator{}, binder)
 	row, err := service.Validate(r.Context(), servingstate.ID(servingStateID))
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
@@ -298,13 +297,6 @@ func (h *Handler) workspaceID(candidate string) string {
 		return h.options.WorkspaceID(candidate)
 	}
 	return candidate
-}
-
-func (h *Handler) dataDir() string {
-	if h.options.DataDir == nil {
-		return ""
-	}
-	return h.options.DataDir()
 }
 
 func publishDTO(row servingstate.State) api.PublishResponse {

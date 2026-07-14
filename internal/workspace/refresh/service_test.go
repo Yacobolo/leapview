@@ -165,7 +165,7 @@ func TestServiceQueueAssetRefreshCreatesDependencyRuns(t *testing.T) {
 	}
 }
 
-func TestServiceCreateRefreshCandidatePersistsResolvedDataRoot(t *testing.T) {
+func TestServiceCreateRefreshCandidateCopiesActiveArtifactMetadata(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepo()
 	service := Service{ServingStates: repo}
@@ -184,7 +184,6 @@ func TestServiceCreateRefreshCandidatePersistsResolvedDataRoot(t *testing.T) {
 			Digest:         "artifact-digest",
 			Format:         "tar.gz",
 			Path:           "/tmp/artifact.tgz",
-			DataRoot:       ".data/movielens",
 		},
 	}
 
@@ -199,14 +198,8 @@ func TestServiceCreateRefreshCandidatePersistsResolvedDataRoot(t *testing.T) {
 		t.Fatalf("create refresh candidate: %v", err)
 	}
 
-	if repo.savedArtifact.DataRoot != ".data/movielens" {
-		t.Fatalf("saved artifact data root = %q, want .data/movielens", repo.savedArtifact.DataRoot)
-	}
-	if repo.savedValidation.DataRoot != ".data/movielens" {
-		t.Fatalf("saved validation data root = %q, want .data/movielens", repo.savedValidation.DataRoot)
-	}
-	if candidate.Artifact.DataRoot != ".data/movielens" {
-		t.Fatalf("candidate artifact data root = %q, want .data/movielens", candidate.Artifact.DataRoot)
+	if repo.savedArtifact.Path != active.Artifact.Path || candidate.Artifact.Path != active.Artifact.Path {
+		t.Fatalf("candidate artifact path = %q, want %q", candidate.Artifact.Path, active.Artifact.Path)
 	}
 }
 
@@ -254,7 +247,6 @@ func newFakeRepo() *fakeRepo {
 			Digest:         "digest",
 			Format:         "tar.gz",
 			Path:           "/tmp/artifact.tar.gz",
-			DataRoot:       ".data/sales",
 			ManifestJSON:   "{}",
 		},
 		candidateState: servingstate.State{
@@ -272,7 +264,6 @@ func newFakeRepo() *fakeRepo {
 			Digest:         "digest",
 			Format:         "tar.gz",
 			Path:           "/tmp/artifact.tar.gz",
-			DataRoot:       ".data/sales",
 			ManifestJSON:   "{}",
 		},
 		runStatuses: map[string]string{

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
-	storages3 "github.com/Yacobolo/libredash/internal/manageddata/storage/s3"
 )
 
 const (
@@ -143,7 +141,7 @@ func (s *Service) SignPart(ctx context.Context, request SignPartRequest) (Signed
 	if err != nil {
 		return SignedPartResult{}, repositoryError(err)
 	}
-	signed, err := s.store.SignPart(ctx, providerUpload(upload), storages3.PartRequest{Number: part.PartNumber, Size: part.SizeBytes, SHA256: part.SHA256})
+	signed, err := s.store.SignPart(ctx, providerUpload(upload), storage.MultipartPartRequest{Number: part.PartNumber, Size: part.SizeBytes, SHA256: part.SHA256})
 	if err != nil {
 		return SignedPartResult{}, storageError(err)
 	}
@@ -193,9 +191,9 @@ func (s *Service) Complete(ctx context.Context, request CompleteRequest) (Upload
 	if !claim.Execute {
 		return resultFor(claim.Upload, session, file)
 	}
-	providerParts := make([]storages3.CompletedPart, len(ordered))
+	providerParts := make([]storage.CompletedMultipartPart, len(ordered))
 	for index, part := range ordered {
-		providerParts[index] = storages3.CompletedPart{Number: part.PartNumber, ETag: part.ETag, SHA256: part.SHA256}
+		providerParts[index] = storage.CompletedMultipartPart{Number: part.PartNumber, ETag: part.ETag, SHA256: part.SHA256}
 	}
 	blob, err := s.store.CompleteMultipart(ctx, providerUpload(claim.Upload), providerParts)
 	if err != nil {
@@ -434,7 +432,7 @@ func validateCompletionShape(size int64, reserved []manageddata.S3MultipartPart,
 	return nil
 }
 
-func responseHeaders(headers http.Header) ([]Header, error) {
+func responseHeaders(headers map[string][]string) ([]Header, error) {
 	names := make([]string, 0, len(headers))
 	count := 0
 	for name, values := range headers {
@@ -475,8 +473,8 @@ func resultFor(upload manageddata.S3MultipartUpload, session manageddata.UploadS
 	return UploadResult{ID: upload.ID, UploadSessionID: upload.UploadSessionID, File: file, Status: status, Existing: upload.Existing, CreatedAt: upload.CreatedAt, ExpiresAt: session.ExpiresAt}, nil
 }
 
-func providerUpload(upload manageddata.S3MultipartUpload) storages3.MultipartUpload {
-	return storages3.MultipartUpload{UploadID: upload.ProviderUploadID, SHA256: upload.SHA256, Size: upload.SizeBytes, Key: upload.ObjectKey, Existing: upload.Existing}
+func providerUpload(upload manageddata.S3MultipartUpload) storage.MultipartUpload {
+	return storage.MultipartUpload{UploadID: upload.ProviderUploadID, SHA256: upload.SHA256, Size: upload.SizeBytes, Key: upload.ObjectKey, Existing: upload.Existing}
 }
 
 func validateScopeValue(name, value string) error {

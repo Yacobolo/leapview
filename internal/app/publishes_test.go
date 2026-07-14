@@ -19,6 +19,8 @@ import (
 	agentsqlite "github.com/Yacobolo/libredash/internal/agent/sqlite"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/api"
+	"github.com/Yacobolo/libredash/internal/manageddata"
+	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
@@ -29,6 +31,38 @@ import (
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 	"github.com/gorilla/csrf"
 )
+
+const testOlistManagedRevision = "sha256:2ee6eed1b2527ed7729965453ce0ef136157784b5f55028c85e3825614a25944"
+
+func testOlistManagedRevisions() map[string]string {
+	return map[string]string{"olist": testOlistManagedRevision}
+}
+
+func seedTestOlistManagedRevision(t *testing.T, store *platform.Store) {
+	t.Helper()
+	ctx := context.Background()
+	repository := manageddatasqlite.NewRepository(store.SQLDB())
+	collection, err := repository.CreateCollection(ctx, manageddata.CreateCollectionInput{
+		ID: "collection_test_olist", ProjectID: "libredash-showcase", ConnectionName: "olist", Name: "Olist",
+	})
+	if err != nil {
+		t.Fatalf("create managed Olist collection: %v", err)
+	}
+	session, err := repository.CreateUploadSession(ctx, manageddata.CreateUploadSessionInput{
+		ID: "upload_test_olist", CollectionID: collection.ID, Manifest: manageddata.Manifest{}, StorageBackend: "local",
+		StagingPrefix: "test/olist", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("create managed Olist upload: %v", err)
+	}
+	revision, err := repository.CompleteUpload(ctx, manageddata.CompleteUploadInput{SessionID: session.ID, RevisionID: "revision_test_olist"})
+	if err != nil {
+		t.Fatalf("complete managed Olist upload: %v", err)
+	}
+	if revision.Digest != testOlistManagedRevision {
+		t.Fatalf("managed Olist revision digest = %q, want %q", revision.Digest, testOlistManagedRevision)
+	}
+}
 
 type fakeReloader struct {
 	prepareCalls int
@@ -546,6 +580,7 @@ func TestDeploymentAPIV1WrongWorkspaceDeploymentReturnsNotFound(t *testing.T) {
 func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
+	seedTestOlistManagedRevision(t, store)
 	reloader := &fakeReloader{}
 	artifactDir := t.TempDir()
 	dataDir := t.TempDir()
@@ -567,7 +602,7 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 	}
 
 	var bundle bytes.Buffer
-	if _, _, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingstate.ID(created.ID)}, &bundle); err != nil {
+	if _, _, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingstate.ID(created.ID), ManagedDataRevisions: testOlistManagedRevisions()}, &bundle); err != nil {
 		t.Fatalf("pack project: %v", err)
 	}
 	uploadReq := httptest.NewRequest(http.MethodPut, "/api/v1/workspaces/sales/publishes/"+created.ID+"/artifact", bytes.NewReader(bundle.Bytes()))
@@ -756,7 +791,7 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 	if detail.ID != connection.ID || detail.SnapshotID != connection.SnapshotID || detail.PayloadSchema != "connection.v1" {
 		t.Fatalf("asset detail = %#v, list connection = %#v", detail, connection)
 	}
-	if detail.Payload["Kind"] != "local" || detail.Payload["credentials_configured"] != false {
+	if detail.Payload["Kind"] != "managed" || detail.Payload["credentials_configured"] != false {
 		t.Fatalf("asset detail payload = %#v", detail.Payload)
 	}
 
@@ -1126,7 +1161,7 @@ func TestConnectionsPageRendersGlobalConnectionSurface(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := renderedWithBootstrap(t, server, rec.Body.String(), "Bearer dev")
-	for _, want := range []string{"<ld-connections-page", "Connections", "Connection", "Source", "assetList", "Local CSV files for the Olist ecommerce demo dataset.", "orders"} {
+	for _, want := range []string{"<ld-connections-page", "Connections", "Connection", "Source", "assetList", "Project-global managed Olist ecommerce demo data.", "orders"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("connections page missing %q:\n%s", want, body)
 		}
@@ -2127,7 +2162,7 @@ func saveBundledValidatedPublish(t *testing.T, ctx context.Context, repo *servin
 		t.Fatalf("create deployment: %v", err)
 	}
 	var bundle bytes.Buffer
-	manifest, digest, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: string(workspaceID), ServingStateID: created.ID}, &bundle)
+	manifest, digest, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: string(workspaceID), ServingStateID: created.ID, ManagedDataRevisions: testOlistManagedRevisions()}, &bundle)
 	if err != nil {
 		t.Fatalf("pack project: %v", err)
 	}

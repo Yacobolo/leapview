@@ -169,6 +169,8 @@ func TestMultipartOperationsAreSDKFreeAndScopedToUpload(t *testing.T) {
 }
 
 func TestRolloutOperationsPropagateScopeActorAndFilters(t *testing.T) {
+	const expectedRollbackReason = "bad data"
+
 	rollouts := &fakeRollouts{result: rolloutFixture()}
 	handler := newHandler(metadataFixture(), nil, nil, rollouts)
 	status := apigenapi.ManagedDataRolloutStatusDraft
@@ -205,7 +207,7 @@ func TestRolloutOperationsPropagateScopeActorAndFilters(t *testing.T) {
 			}
 		})
 	}
-	if rollouts.list.Environment != "prod" || rollouts.list.Status != managedhttp.RolloutStatusDraft || rollouts.create.Actor != "principal-a" || rollouts.activate.IdempotencyKey != "activate-key" || rollouts.rollback.Reason != "bad data" {
+	if rollouts.list.Environment != "prod" || rollouts.list.Status != managedhttp.RolloutStatusDraft || rollouts.create.Actor != "principal-a" || rollouts.activate.IdempotencyKey != "activate-key" || rollouts.rollback.Reason != expectedRollbackReason {
 		t.Fatalf("rollout requests = list %#v create %#v activate %#v rollback %#v", rollouts.list, rollouts.create, rollouts.activate, rollouts.rollback)
 	}
 }

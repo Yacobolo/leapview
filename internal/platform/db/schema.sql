@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS serving_state_artifacts (
   digest TEXT NOT NULL,
   format TEXT NOT NULL,
   path TEXT NOT NULL,
-  data_root TEXT NOT NULL DEFAULT '',
   manifest_json TEXT NOT NULL DEFAULT '{}',
   size_bytes INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

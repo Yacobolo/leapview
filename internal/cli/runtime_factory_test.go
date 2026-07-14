@@ -10,14 +10,16 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
-func TestRuntimeDataDirPrefersArtifactDataRoot(t *testing.T) {
+func TestRuntimeDataDirUsesConfiguredDataDir(t *testing.T) {
 	input := runtimehost.RuntimeInput{
-		State:    servingstate.State{WorkspaceID: "movielens"},
-		Artifact: servingstate.Artifact{DataRoot: ".data/movielens"},
-		DataDir:  ".data/olist",
+		State:   servingstate.State{WorkspaceID: "movielens"},
+		DataDir: ".data/olist",
 	}
-	if got := runtimeDataDir(input, ".data/olist"); got != ".data/movielens" {
-		t.Fatalf("runtimeDataDir = %q, want artifact data root", got)
+	if got := runtimeDataDir(input, ".data/fallback"); got != ".data/olist" {
+		t.Fatalf("runtimeDataDir = %q, want configured data dir", got)
+	}
+	if got := runtimeDataDir(runtimehost.RuntimeInput{}, ".data/fallback"); got != ".data/fallback" {
+		t.Fatalf("runtimeDataDir = %q, want configured fallback", got)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
-	storages3 "github.com/Yacobolo/libredash/internal/manageddata/storage/s3"
 )
 
 const (
@@ -39,13 +38,11 @@ var _ Repository = (manageddata.Repository)(nil)
 
 // MultipartStore is the SDK-free subset of the S3 Store used by the coordinator.
 type MultipartStore interface {
-	CreateMultipart(context.Context, storage.Blob) (storages3.MultipartUpload, error)
-	SignPart(context.Context, storages3.MultipartUpload, storages3.PartRequest) (storages3.SignedPart, error)
-	CompleteMultipart(context.Context, storages3.MultipartUpload, []storages3.CompletedPart) (storage.Blob, error)
-	AbortMultipart(context.Context, storages3.MultipartUpload) error
+	CreateMultipart(context.Context, storage.Blob) (storage.MultipartUpload, error)
+	SignPart(context.Context, storage.MultipartUpload, storage.MultipartPartRequest) (storage.SignedMultipartPart, error)
+	CompleteMultipart(context.Context, storage.MultipartUpload, []storage.CompletedMultipartPart) (storage.Blob, error)
+	AbortMultipart(context.Context, storage.MultipartUpload) error
 }
-
-var _ MultipartStore = (*storages3.Store)(nil)
 
 type Config struct {
 	Backend    string

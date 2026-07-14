@@ -23,6 +23,32 @@ type Blob struct {
 	URI    string
 }
 
+type MultipartUpload struct {
+	UploadID string
+	SHA256   string
+	Size     int64
+	Key      string
+	Existing bool
+}
+
+type MultipartPartRequest struct {
+	Number int32
+	Size   int64
+	SHA256 string
+}
+
+type SignedMultipartPart struct {
+	Number  int32
+	URL     string
+	Headers map[string][]string
+}
+
+type CompletedMultipartPart struct {
+	Number int32
+	ETag   string
+	SHA256 string
+}
+
 // BlobMetadata describes an immutable backend object without reading its body.
 type BlobMetadata struct {
 	SHA256       string

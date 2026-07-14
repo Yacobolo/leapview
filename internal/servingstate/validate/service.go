@@ -64,6 +64,5 @@ func (s Service) Validate(ctx context.Context, servingStateID servingstate.ID) (
 	}
 	artifact.WorkspaceID = current.WorkspaceID
 	artifact.Environment = current.Environment
-	artifact.DataRoot = validation.DataRoot
 	return s.repo.SaveValidated(ctx, current.ID, validation, artifact)
 }

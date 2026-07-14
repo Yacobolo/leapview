@@ -47,13 +47,7 @@ func (s *Server) publishHTTPHandler() *servingstatehttp.Handler {
 			principal, ok := s.auth.Principal(r)
 			return servingstatehttp.Principal{ID: principal.ID}, ok
 		},
-		ArtifactDir: s.artifactDir,
-		DataDir: func() string {
-			if s.metrics == nil {
-				return ""
-			}
-			return s.metrics.DataDir()
-		},
+		ArtifactDir:        s.artifactDir,
 		DefaultEnvironment: s.defaultEnvironment,
 		WorkspaceID:        s.workspaceID,
 	})

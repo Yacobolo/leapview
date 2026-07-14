@@ -149,14 +149,13 @@ SET status = 'inactive'
 WHERE workspace_id = ? AND environment = ? AND id <> ? AND status = 'active';
 
 -- name: InsertServingStateArtifact :exec
-INSERT INTO serving_state_artifacts (id, serving_state_id, workspace_id, environment, digest, format, path, data_root, manifest_json, size_bytes)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO serving_state_artifacts (id, serving_state_id, workspace_id, environment, digest, format, path, manifest_json, size_bytes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(serving_state_id) DO UPDATE SET
   environment = excluded.environment,
   digest = excluded.digest,
   format = excluded.format,
   path = excluded.path,
-  data_root = excluded.data_root,
   manifest_json = excluded.manifest_json,
   size_bytes = excluded.size_bytes;
 
