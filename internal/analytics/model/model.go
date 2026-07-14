@@ -866,7 +866,7 @@ func (s Source) Validate(name string, connections map[string]Connection) error {
 		if !ok || !connectionSpec.AllowsPathSource {
 			return fmt.Errorf("source %q path cannot use %s connection %q", name, connection.Kind, s.Connection)
 		}
-		if (connection.Kind == "local" || connection.Kind == "managed") && !IsLocalPath(s.Path) {
+		if connection.Kind == "managed" && !IsLocalPath(s.Path) {
 			return fmt.Errorf("source %q %s connection %q cannot use remote path %q", name, connection.Kind, s.Connection, s.Path)
 		}
 		if connection.Kind == "managed" {
@@ -878,7 +878,7 @@ func (s Source) Validate(name string, connections map[string]Connection) error {
 		if !sourceWithinConnectionScope(connection, s.Path) {
 			return fmt.Errorf("source %q path %q escapes connection scope", name, s.Path)
 		}
-		if connectionSpec.AllowsPathSource && connection.Kind != "local" && connection.Kind != "managed" && IsLocalPath(s.Path) && connection.Scope == "" {
+		if connectionSpec.AllowsPathSource && connection.Kind != "managed" && IsLocalPath(s.Path) && connection.Scope == "" {
 			return fmt.Errorf("source %q remote connection %q requires scope for relative path %q", name, s.Connection, s.Path)
 		}
 		if s.Format == "" {

@@ -75,7 +75,7 @@ if [[ ! -e /etc/libredash/admin-initialized ]]; then
   publish_payload="$(jq -nc --arg expires "$publish_expires_at" '{
     name:"initial-publisher",
     expiresAt:$expires,
-    privileges:["USE_WORKSPACE","VIEW_ITEM","QUERY_DATA","REFRESH_DATA","DEPLOY","ACTIVATE_PUBLISH","VIEW_DATA","INGEST_DATA","ACTIVATE_DATA"]
+    privileges:["USE_WORKSPACE","VIEW_ITEM","QUERY_DATA","REFRESH_DATA","DEPLOY","ACTIVATE_DEPLOYMENT","VIEW_DATA","INGEST_DATA"]
   }')"
   publish_response="$(curl -fsS \
     -X POST \

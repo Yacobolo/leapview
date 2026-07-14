@@ -20,11 +20,14 @@ import (
 	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
+	projectdeployment "github.com/Yacobolo/libredash/internal/deployment"
+	deploymentapiadapter "github.com/Yacobolo/libredash/internal/deployment/apiadapter"
+	deploymenthttp "github.com/Yacobolo/libredash/internal/deployment/http"
+	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/execution"
 	manageddataapiadapter "github.com/Yacobolo/libredash/internal/manageddata/apiadapter"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
 	manageddataresolver "github.com/Yacobolo/libredash/internal/manageddata/resolver"
-	manageddatarollout "github.com/Yacobolo/libredash/internal/manageddata/rollout"
 	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -50,7 +53,6 @@ func serveCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.addr, "addr", "", "listen address; defaults to the configured address")
-	cmd.Flags().StringVar(&opts.dataDir, "data-dir", "", "dashboard source data directory; defaults to the configured data directory")
 	cmd.Flags().StringVar(&opts.environment, "environment", "", "serving environment; defaults to prod in production and dev otherwise")
 	cmd.Flags().BoolVar(&opts.production, "production", false, "serve active serving state from the platform DB")
 	return cmd
@@ -67,15 +69,11 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if addr == "" {
 		addr = cfg.ListenAddr()
 	}
-	dataDir := opts.dataDir
-	if dataDir == "" {
-		dataDir = cfg.DataDir
-	}
 	if err := cfg.Validate(config.ProfileServe); err != nil {
 		return err
 	}
 	environment := serveEnvironment(production, opts.environment)
-	server, cleanup, err := servingStateBackedServer(ctx, cfg, dataDir, production, environment)
+	server, cleanup, err := servingStateBackedServer(ctx, cfg, production, environment)
 	if err != nil {
 		return err
 	}
@@ -165,7 +163,7 @@ func runHTTPServer(ctx context.Context, server *http.Server) error {
 	}
 }
 
-func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir string, production bool, environment servingstate.Environment) (*app.Server, func(), error) {
+func servingStateBackedServer(ctx context.Context, cfg config.Config, production bool, environment servingstate.Environment) (*app.Server, func(), error) {
 	cookieSecure, err := cfg.CookieSecure()
 	if err != nil {
 		return nil, nil, err
@@ -184,9 +182,6 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		if err := securefs.EnsurePrivateDir(dir); err != nil {
 			return nil, nil, err
 		}
-	}
-	if err := analyticsducklake.MigrateSharedSQLiteCatalog(ctx, cfg.DBPath(), duckLakeCatalogPath, cfg.DuckLakeDataDir()); err != nil {
-		return nil, nil, err
 	}
 	if err := analyticsducklake.MigrateSQLiteCatalogDataPath(ctx, duckLakeCatalogPath, cfg.DuckLakeDataDir()); err != nil {
 		return nil, nil, err
@@ -268,7 +263,6 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		Repo:         servingStateRepo,
 		WorkspaceIDs: workspaceIDs,
 		Environment:  environment,
-		DataDir:      dataDir,
 		ManagedData:  managedDataResolver,
 		OnDrained: func(servingstate.ID, int64) {
 			go func() {
@@ -288,7 +282,6 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 			}()
 		},
 		Factory: servingStateRuntimeFactory{
-			dataDir:          dataDir,
 			duckDBDir:        cfg.DuckDBDirPath(),
 			runtimeDir:       cfg.RuntimeDir(),
 			catalogPath:      duckLakeCatalogPath,
@@ -299,19 +292,25 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		cleanup()
 		return nil, nil, err
 	}
-	managedDataRuntime, err := manageddatarollout.NewRegistryRuntime(registry)
+	deploymentRuntime, err := projectdeployment.NewRegistryRuntime(registry)
 	if err != nil {
 		_ = registry.Close()
 		cleanup()
 		return nil, nil, err
 	}
-	managedDataRollouts, err := manageddatarollout.New(managedDataRepo, servingStateRepo, managedDataRuntime, managedDataResolver)
+	deploymentService, err := projectdeployment.New(deploymentsqlite.NewRepository(store.SQLDB()), servingStateRepo, deploymentRuntime, managedDataResolver)
 	if err != nil {
 		_ = registry.Close()
 		cleanup()
 		return nil, nil, err
 	}
-	managedDataAPI, err := manageddataapiadapter.New(managedDataRepo, managedDataRollouts)
+	deploymentAPI, err := deploymentapiadapter.New(deploymentService, managedDataRepo)
+	if err != nil {
+		_ = registry.Close()
+		cleanup()
+		return nil, nil, err
+	}
+	managedDataAPI, err := manageddataapiadapter.New(managedDataRepo)
 	if err != nil {
 		_ = registry.Close()
 		cleanup()
@@ -321,7 +320,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		_ = registry.Close()
 		cleanup()
 	}
-	runtimeMetrics := app.NewDynamicRuntimeMetrics("", dataDir, func(workspaceID string) app.RuntimeProvider {
+	runtimeMetrics := app.NewDynamicRuntimeMetrics("", func(workspaceID string) app.RuntimeProvider {
 		return registry.ProviderForWorkspace(servingstate.WorkspaceID(workspaceID))
 	})
 	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo)
@@ -381,8 +380,9 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, dataDir st
 		JobLeaseTimeout:     cfg.ExecJobLeaseTimeout,
 		ManagedData: manageddatahttp.Options{
 			Repository: managedDataAPI, Uploads: managedDataControl,
-			Multipart: managedDataMultipart, Rollouts: managedDataAPI,
+			Multipart: managedDataMultipart,
 		},
+		Deployment:     deploymenthttp.Options{Coordinator: deploymentAPI},
 		ManagedDataTus: managedDataStorage.tus,
 		ManagedDataExpirer: managedDataMaintenance{
 			uploads: managedDataControl, multipart: managedDataMultipartService,

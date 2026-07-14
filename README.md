@@ -15,16 +15,14 @@ Generated files such as `static/app.css`, route entrypoints, and other bundled c
 ```sh
 bun install
 bun run build
-go run ./internal/tools/bootstrapolist
+go run ./internal/tools/bootstrapolist --out .data/olist
 go run ./cmd/libredash
 ```
 
-By default, the bootstrap tool copies CSVs into `.data/olist`. To use a different path:
+Local files are staged through managed data sync before deployment:
 
 ```sh
-export LIBREDASH_DATA_DIR=/path/to/olist-csvs
-bun run build
-go run ./cmd/libredash
+go run ./cmd/libredash data sync --project dashboards/libredash.yaml --connection olist --from .data/olist
 ```
 
 ## Architecture
@@ -103,14 +101,14 @@ semantic_models:
 
 `base_table` is the required semantic-model root; every table in the model must be reachable from it through one safe active relationship path.
 
-Local CSV:
+Managed CSV:
 
 ```yaml
 default_connection: olist
 
 connections:
   olist:
-    kind: local
+    kind: managed
     defaults:
       options:
         header: true
@@ -266,12 +264,14 @@ libredash serve --production
 libredash admin bootstrap
 SYNC_OUTPUT="$(libredash data sync --project dashboards/libredash.yaml --connection olist --from /srv/olist --target http://localhost:8080 --token <token>)"
 REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
-libredash data deploy --project dashboards/libredash.yaml --connection olist --revision "$REVISION" --target http://localhost:8080 --token <token> --environment prod --auto-approve
+libredash deploy --project dashboards/libredash.yaml --revision "olist=$REVISION" --target http://localhost:8080 --token <token> --environment prod --auto-approve
 ```
 
-`data deploy` updates every workspace that uses the managed connection in one
-atomic rollout. Projects without managed connections can use `libredash
-publish --workspace <id>` for a targeted deployment.
+`deploy` validates the complete project, pins each supplied managed data
+revision into its workspace artifacts, and activates all project workspaces in
+one atomic rollout. Supply exactly one repeatable `--revision
+"<connection>=sha256:<64-lowercase-hex>"` pin for every managed project
+connection. Projects without managed connections omit the flag.
 Create consistent instance backups with `libredash admin backup --out /backup/libredash-$(date +%Y%m%d%H%M%S).tar.gz`.
 The archive includes the control-plane SQLite database, DuckLake catalog, deployed artifacts, DuckLake files, and other `LIBREDASH_HOME` state. Restore while the server is stopped; the command validates the archive and requires a backup path for the current instance before replacement:
 
@@ -319,7 +319,6 @@ production configuration is:
 ```sh
 LIBREDASH_PRODUCTION=1
 LIBREDASH_HOME=/var/lib/libredash
-LIBREDASH_DATA_DIR=/path/to/data
 LIBREDASH_LOCAL_AUTH=1
 LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 LIBREDASH_CSRF_KEY=<32+ byte secret>

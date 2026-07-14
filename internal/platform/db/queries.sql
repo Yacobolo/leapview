@@ -125,7 +125,7 @@ WHERE status = 'delete_scheduled';
 
 -- name: UpdateServingStateValidated :exec
 UPDATE serving_states
-SET status = ?, digest = ?, manifest_json = ?, error = ''
+SET status = ?, project_id = ?, digest = ?, manifest_json = ?, error = ''
 WHERE id = ?;
 
 -- name: UpdateServingStateDuckLakeSnapshot :exec
@@ -1010,28 +1010,34 @@ SELECT * FROM managed_data_revision_files
 WHERE revision_id = ?
 ORDER BY logical_path;
 
--- name: CreateManagedDataRollout :exec
-INSERT INTO managed_data_rollouts (id, collection_id, environment, revision_id, status, created_by)
+-- name: CreateProjectDeployment :exec
+INSERT INTO project_deployments (id, project_id, environment, request_digest, status, created_by)
 VALUES (?, ?, ?, ?, 'pending', ?);
 
--- name: CreateManagedDataRolloutTarget :exec
-INSERT INTO managed_data_rollout_targets (
-  rollout_id, workspace_id, serving_state_id, prior_serving_state_id, status
+-- name: CreateProjectDeploymentTarget :exec
+INSERT INTO project_deployment_targets (
+  deployment_id, workspace_id, serving_state_id, prior_serving_state_id, status
 )
 VALUES (?, ?, ?, ?, 'pending');
 
--- name: GetManagedDataRollout :one
-SELECT * FROM managed_data_rollouts WHERE id = ?;
+-- name: CreateProjectDeploymentConnection :exec
+INSERT INTO project_deployment_connections (
+  deployment_id, collection_id, revision_id, prior_revision_id, prior_generation
+)
+VALUES (?, ?, ?, ?, ?);
 
--- name: ListManagedDataRollouts :many
-SELECT * FROM managed_data_rollouts
-WHERE collection_id = ?
-ORDER BY created_at DESC, id DESC;
+-- name: GetProjectDeployment :one
+SELECT * FROM project_deployments WHERE id = ?;
 
--- name: ListManagedDataRolloutTargets :many
-SELECT * FROM managed_data_rollout_targets
-WHERE rollout_id = ?
+-- name: ListProjectDeploymentTargets :many
+SELECT * FROM project_deployment_targets
+WHERE deployment_id = ?
 ORDER BY workspace_id;
+
+-- name: ListProjectDeploymentConnections :many
+SELECT * FROM project_deployment_connections
+WHERE deployment_id = ?
+ORDER BY collection_id;
 
 -- name: GetWorkspaceActiveServingStateID :one
 SELECT serving_state_id
@@ -1044,34 +1050,39 @@ WHERE collection_id = ? AND environment = ?;
 
 -- name: UpsertManagedDataEnvironmentPointer :exec
 INSERT INTO managed_data_environment_pointers (
-  collection_id, environment, revision_id, rollout_id, generation, updated_by
+  collection_id, environment, revision_id, deployment_id, generation, updated_by
 )
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(collection_id, environment) DO UPDATE SET
   revision_id = excluded.revision_id,
-  rollout_id = excluded.rollout_id,
+  deployment_id = excluded.deployment_id,
   generation = excluded.generation,
   updated_by = excluded.updated_by,
   updated_at = CURRENT_TIMESTAMP;
 
--- name: ActivateManagedDataRolloutTarget :exec
-UPDATE managed_data_rollout_targets
+-- name: ActivateProjectDeploymentTarget :execresult
+UPDATE project_deployment_targets
 SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
-WHERE rollout_id = ? AND workspace_id = ? AND status = 'pending';
+WHERE deployment_id = ? AND workspace_id = ? AND status = 'pending';
 
--- name: ActivateManagedDataRollout :execresult
-UPDATE managed_data_rollouts
-SET status = 'active', completed_at = CURRENT_TIMESTAMP, error = ''
+-- name: ActivateProjectDeploymentConnection :execresult
+UPDATE project_deployment_connections
+SET activated_generation = ?
+WHERE deployment_id = ? AND collection_id = ? AND activated_generation IS NULL;
+
+-- name: ActivateProjectDeployment :execresult
+UPDATE project_deployments
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
 WHERE id = ? AND status = 'pending';
 
--- name: SupersedeManagedDataRollout :exec
-UPDATE managed_data_rollouts
+-- name: SupersedeOtherProjectDeployments :exec
+UPDATE project_deployments
 SET status = 'superseded'
-WHERE id = ? AND status = 'active';
+WHERE project_id = ? AND environment = ? AND id <> ? AND status = 'active';
 
--- name: FailManagedDataRollout :execresult
-UPDATE managed_data_rollouts
-SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
+-- name: FailProjectDeployment :execresult
+UPDATE project_deployments
+SET status = 'failed', error = ?
 WHERE id = ? AND status = 'pending';
 
 -- name: DeleteManagedDataServingStateBindings :exec

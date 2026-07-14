@@ -81,15 +81,15 @@ func (c *managedDataCLIClient) currentRevision(ctx context.Context, project, con
 	return response, err
 }
 
-func (c *managedDataCLIClient) createRollout(ctx context.Context, project, connection, key string, body apigenapi.ManagedDataRolloutCreateRequest) (apigenapi.ManagedDataRolloutResponse, error) {
-	var response apigenapi.ManagedDataRolloutResponse
-	err := c.json(ctx, http.MethodPost, "createManagedDataRollout", map[string]string{"project": project, "connection": connection}, nil, key, body, &response)
+func (c *managedDataCLIClient) createProjectDeployment(ctx context.Context, project, key string, body apigenapi.ProjectDeploymentCreateRequest) (apigenapi.ProjectDeploymentResponse, error) {
+	var response apigenapi.ProjectDeploymentResponse
+	err := c.json(ctx, http.MethodPost, "createProjectDeployment", map[string]string{"project": project}, nil, key, body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) activateRollout(ctx context.Context, project, connection, rolloutID, key string) (apigenapi.ManagedDataRolloutResponse, error) {
-	var response apigenapi.ManagedDataRolloutResponse
-	err := c.json(ctx, http.MethodPost, "activateManagedDataRollout", map[string]string{"project": project, "connection": connection, "rollout": rolloutID}, nil, key, nil, &response)
+func (c *managedDataCLIClient) activateProjectDeployment(ctx context.Context, project, deploymentID, key string) (apigenapi.ProjectDeploymentResponse, error) {
+	var response apigenapi.ProjectDeploymentResponse
+	err := c.json(ctx, http.MethodPost, "activateProjectDeployment", map[string]string{"project": project, "deployment": deploymentID}, nil, key, nil, &response)
 	return response, err
 }
 
@@ -98,6 +98,10 @@ func (c *managedDataCLIClient) json(ctx context.Context, method, operation strin
 	if err != nil {
 		return fmt.Errorf("build managed-data request: %w", err)
 	}
+	return c.jsonEndpoint(ctx, method, endpoint, operation, idempotencyKey, body, out)
+}
+
+func (c *managedDataCLIClient) jsonEndpoint(ctx context.Context, method, endpoint, operation, idempotencyKey string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -122,12 +126,12 @@ func (c *managedDataCLIClient) json(ctx context.Context, method, operation strin
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
-		return fmt.Errorf("managed-data operation %s could not reach the server", operation)
+		return fmt.Errorf("operation %s could not reach the server", operation)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
-		return fmt.Errorf("managed-data operation %s failed with HTTP %d", operation, response.StatusCode)
+		return fmt.Errorf("operation %s failed with HTTP %d", operation, response.StatusCode)
 	}
 	if out == nil {
 		_, _ = io.Copy(io.Discard, response.Body)
@@ -136,10 +140,10 @@ func (c *managedDataCLIClient) json(ctx context.Context, method, operation strin
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 16<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(out); err != nil {
-		return fmt.Errorf("decode managed-data operation %s response: %w", operation, err)
+		return fmt.Errorf("decode operation %s response: %w", operation, err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return fmt.Errorf("decode managed-data operation %s response: trailing data", operation)
+		return fmt.Errorf("decode operation %s response: trailing data", operation)
 	}
 	return nil
 }

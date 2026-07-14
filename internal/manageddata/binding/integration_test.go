@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/deployment"
+	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -41,7 +43,7 @@ func TestBinderPinsRevisionAfterEnvironmentPointerChanges(t *testing.T) {
 	}
 	firstRevision := createReadyRevision(t, ctx, repository, collection.ID, "orders-v1.csv", "a")
 	firstTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
-	activateRevision(t, ctx, repository, collection.ID, firstRevision.ID, firstTarget.ID, manageddata.PointerExpectation{})
+	activateRevision(t, ctx, store, repository, collection.ID, firstRevision.ID, firstTarget.ID)
 
 	validation := servingstate.Validation{
 		ProjectID:            "project-a",
@@ -49,10 +51,7 @@ func TestBinderPinsRevisionAfterEnvironmentPointerChanges(t *testing.T) {
 	}
 	secondRevision := createReadyRevision(t, ctx, repository, collection.ID, "orders-v2.csv", "b")
 	secondTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
-	activateRevision(t, ctx, repository, collection.ID, secondRevision.ID, secondTarget.ID, manageddata.PointerExpectation{
-		RevisionID: firstRevision.ID,
-		Generation: 1,
-	})
+	activateRevision(t, ctx, store, repository, collection.ID, secondRevision.ID, secondTarget.ID)
 	binder, err := New(repository)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +64,7 @@ func TestBinderPinsRevisionAfterEnvironmentPointerChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(bindings) != 1 || bindings[0].RevisionID != firstRevision.ID {
-		t.Fatalf("later rollout mutated pinned publish bindings: %#v", bindings)
+		t.Fatalf("later deployment mutated pinned publish bindings: %#v", bindings)
 	}
 }
 
@@ -97,27 +96,29 @@ func createValidatedState(t *testing.T, ctx context.Context, store *platform.Sto
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE serving_states SET status = 'validated' WHERE id = ?`, state.ID); err != nil {
+	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE serving_states SET status = 'validated', project_id = 'project-a' WHERE id = ?`, state.ID); err != nil {
 		t.Fatal(err)
 	}
 	state.Status = servingstate.StatusValidated
 	return state
 }
 
-func activateRevision(t *testing.T, ctx context.Context, repository *manageddatasqlite.Repository, collectionID, revisionID string, targetID servingstate.ID, expectation manageddata.PointerExpectation) {
+func activateRevision(t *testing.T, ctx context.Context, store *platform.Store, repository *manageddatasqlite.Repository, collectionID, revisionID string, targetID servingstate.ID) {
 	t.Helper()
-	rollout, err := repository.CreateRollout(ctx, manageddata.CreateRolloutInput{
-		CollectionID: collectionID,
-		Environment:  "prod",
-		RevisionID:   revisionID,
-		Targets: []manageddata.RolloutTargetInput{{
-			WorkspaceID: "sales", ServingStateID: string(targetID),
-		}},
+	if err := repository.ReplaceServingStateBindings(ctx, string(targetID), []manageddata.ServingStateBinding{{
+		ServingStateID: string(targetID), CollectionID: collectionID, RevisionID: revisionID, Environment: "prod",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	deployments := deploymentsqlite.NewRepository(store.SQLDB())
+	created, err := deployments.CreateDeployment(ctx, deployment.CreateInput{
+		ID: "deployment-" + revisionID, ProjectID: "project-a", Environment: "prod", RequestDigest: "sha256:" + strings.Repeat("d", 64),
+		Targets: []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: string(targetID)}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.ActivateRollout(ctx, rollout.ID, expectation); err != nil {
+	if _, err := deployments.ActivateDeployment(ctx, created.ID); err != nil {
 		t.Fatal(err)
 	}
 }

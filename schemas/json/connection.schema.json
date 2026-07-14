@@ -40,7 +40,6 @@
         },
         "kind": {
           "enum": [
-            "local",
             "managed",
             "s3",
             "r2",

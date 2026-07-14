@@ -55,7 +55,6 @@ type RuntimeInput struct {
 	State       servingstate.State
 	Artifact    servingstate.Artifact
 	ManagedData ManagedDataResolution
-	DataDir     string
 	DuckDBDir   string
 	RuntimeDir  string
 }
@@ -65,7 +64,6 @@ type Manager struct {
 	repo                  ServingStateRepository
 	workspaceID           servingstate.WorkspaceID
 	environment           servingstate.Environment
-	dataDir               string
 	factory               RuntimeFactory
 	managedData           ManagedDataResolver
 	onDrained             func(servingstate.ID, int64)
@@ -83,7 +81,6 @@ type ManagerOptions struct {
 	Repo        ServingStateRepository
 	WorkspaceID servingstate.WorkspaceID
 	Environment servingstate.Environment
-	DataDir     string
 	Factory     RuntimeFactory
 	ManagedData ManagedDataResolver
 	OnDrained   func(servingstate.ID, int64)
@@ -119,7 +116,6 @@ func NewManagerWithFactory(options ManagerOptions) *Manager {
 		repo:        options.Repo,
 		workspaceID: options.WorkspaceID,
 		environment: servingstate.NormalizeEnvironment(options.Environment),
-		dataDir:     options.DataDir,
 		factory:     options.Factory,
 		managedData: options.ManagedData,
 		onDrained:   options.OnDrained,
@@ -212,7 +208,7 @@ func (m *Manager) prepareResolved(ctx context.Context, current servingstate.Stat
 		return &Prepared{servingStateID: current.ID, digest: artifact.Digest, managedRevision: managedData.RevisionID, noChange: true}, nil
 	}
 	m.mu.RUnlock()
-	runtime, err := m.factory.Prepare(ctx, RuntimeInput{State: current, Artifact: artifact, ManagedData: managedData, DataDir: m.dataDir})
+	runtime, err := m.factory.Prepare(ctx, RuntimeInput{State: current, Artifact: artifact, ManagedData: managedData})
 	if err != nil {
 		return nil, err
 	}

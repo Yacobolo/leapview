@@ -68,6 +68,20 @@ func TestCatalogIsCompleteAndDeterministic(t *testing.T) {
 	}
 }
 
+func TestCatalogExcludesRemovedLegacySettings(t *testing.T) {
+	removed := map[string]struct{}{
+		"ADDR":                  {},
+		"PORT":                  {},
+		"LIBREDASH_DATA_DIR":    {},
+		"LIBREDASH_DUCKDB_PATH": {},
+	}
+	for _, setting := range Settings() {
+		if _, ok := removed[setting.Name]; ok {
+			t.Errorf("Settings() still contains removed setting %s", setting.Name)
+		}
+	}
+}
+
 func TestRulesOnlyReferenceCatalogSettings(t *testing.T) {
 	known := map[string]struct{}{}
 	for _, setting := range Settings() {

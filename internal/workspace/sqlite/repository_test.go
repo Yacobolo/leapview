@@ -59,6 +59,7 @@ func TestRepositoryActiveServingStateGraphUsesLogicalAssetIDs(t *testing.T) {
 	validation := servingstate.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
+		ProjectID:    "project",
 		Graph: workspace.AssetGraph{
 			Assets: []workspace.Asset{model, dashboard},
 			Edges: []workspace.AssetEdge{
@@ -190,6 +191,7 @@ func seedVersionDeployment(t *testing.T, ctx context.Context, repo *servingstate
 	validation := servingstate.Validation{
 		Digest:       "digest-" + string(created.ID),
 		ManifestJSON: "{}",
+		ProjectID:    "project",
 		Graph:        workspace.AssetGraph{Assets: []workspace.Asset{asset}},
 	}
 	artifact := servingstate.Artifact{ID: "artifact_" + string(created.ID), ServingStateID: created.ID, WorkspaceID: seed.WorkspaceID, Environment: seed.Environment, Digest: validation.Digest, Format: "tar.gz", Path: "artifact.tar.gz", ManifestJSON: "{}"}

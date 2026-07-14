@@ -41,6 +41,7 @@ const (
 type State struct {
 	ID                 ID
 	WorkspaceID        WorkspaceID
+	ProjectID          string
 	Environment        Environment
 	Status             Status
 	Source             Source

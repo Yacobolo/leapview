@@ -78,7 +78,7 @@ func TestLocalManagedDataStorageContracts(t *testing.T) {
 			"/var/lib/libredash/managed-data",
 			"LIBREDASH_MANAGED_DATA_BACKEND=local",
 			"LIBREDASH_MANAGED_DATA_DIR=/var/lib/libredash/managed-data",
-			`"VIEW_DATA","INGEST_DATA","ACTIVATE_DATA"`,
+			`"ACTIVATE_DEPLOYMENT","VIEW_DATA","INGEST_DATA"`,
 		},
 	} {
 		for _, fragment := range contract {

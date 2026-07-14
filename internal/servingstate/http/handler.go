@@ -211,7 +211,7 @@ func (h *Handler) recordRollbackAudit(r *stdhttp.Request, repo access.Repository
 		Action:        "publish.rolled_back",
 		TargetType:    "publish",
 		TargetID:      string(row.ID),
-		Privilege:     access.PrivilegeActivatePublish,
+		Privilege:     access.PrivilegeActivateDeployment,
 		Status:        "success",
 		RequestID:     r.Header.Get("X-Request-Id"),
 		CorrelationID: r.Header.Get("X-Correlation-Id"),

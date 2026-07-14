@@ -15,7 +15,6 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
-	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 )
 
 type Repository struct {
@@ -666,207 +665,6 @@ func (r *Repository) ListRevisionFiles(ctx context.Context, revisionID string) (
 	return out, nil
 }
 
-func (r *Repository) CreateRollout(ctx context.Context, input manageddata.CreateRolloutInput) (manageddata.Rollout, error) {
-	input.CollectionID = strings.TrimSpace(input.CollectionID)
-	input.RevisionID = strings.TrimSpace(input.RevisionID)
-	environment, err := manageddata.NormalizeEnvironment(string(input.Environment))
-	if err != nil {
-		return manageddata.Rollout{}, err
-	}
-	if len(input.Targets) == 0 {
-		return manageddata.Rollout{}, fmt.Errorf("rollout requires at least one workspace target")
-	}
-	revision, err := r.RevisionByID(ctx, input.RevisionID)
-	if err != nil {
-		return manageddata.Rollout{}, err
-	}
-	if revision.CollectionID != input.CollectionID || revision.Status != manageddata.RevisionStatusReady {
-		return manageddata.Rollout{}, fmt.Errorf("revision %q is not a ready revision of collection %q", input.RevisionID, input.CollectionID)
-	}
-	id := strings.TrimSpace(input.ID)
-	if id == "" {
-		id, err = newID("rollout")
-		if err != nil {
-			return manageddata.Rollout{}, err
-		}
-	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return manageddata.Rollout{}, err
-	}
-	defer tx.Rollback()
-	q := r.q.WithTx(tx)
-	if err := q.CreateManagedDataRollout(ctx, platformdb.CreateManagedDataRolloutParams{
-		ID: id, CollectionID: input.CollectionID, Environment: string(environment), RevisionID: input.RevisionID, CreatedBy: strings.TrimSpace(input.CreatedBy),
-	}); err != nil {
-		return manageddata.Rollout{}, mapError(err)
-	}
-	targets := append([]manageddata.RolloutTargetInput(nil), input.Targets...)
-	sort.Slice(targets, func(i, j int) bool { return targets[i].WorkspaceID < targets[j].WorkspaceID })
-	seen := map[string]struct{}{}
-	for _, target := range targets {
-		target.WorkspaceID = strings.TrimSpace(target.WorkspaceID)
-		target.ServingStateID = strings.TrimSpace(target.ServingStateID)
-		if target.WorkspaceID == "" || target.ServingStateID == "" {
-			return manageddata.Rollout{}, fmt.Errorf("rollout target workspace and serving state ids are required")
-		}
-		if _, exists := seen[target.WorkspaceID]; exists {
-			return manageddata.Rollout{}, fmt.Errorf("duplicate rollout workspace %q", target.WorkspaceID)
-		}
-		seen[target.WorkspaceID] = struct{}{}
-		candidate, err := q.GetServingState(ctx, target.ServingStateID)
-		if err != nil {
-			return manageddata.Rollout{}, mapError(err)
-		}
-		candidateState := servingstate.State{Status: servingstate.Status(candidate.Status)}
-		if candidate.WorkspaceID != target.WorkspaceID || candidate.Environment != string(environment) || !candidateState.CanActivate() {
-			return manageddata.Rollout{}, fmt.Errorf("%w: serving state %q is not an activatable %s candidate for workspace %q", manageddata.ErrConflict, target.ServingStateID, environment, target.WorkspaceID)
-		}
-		priorID, err := q.GetWorkspaceActiveServingStateID(ctx, platformdb.GetWorkspaceActiveServingStateIDParams{WorkspaceID: target.WorkspaceID, Environment: string(environment)})
-		if errors.Is(err, sql.ErrNoRows) {
-			priorID = ""
-		} else if err != nil {
-			return manageddata.Rollout{}, err
-		}
-		if err := q.CreateManagedDataRolloutTarget(ctx, platformdb.CreateManagedDataRolloutTargetParams{
-			RolloutID: id, WorkspaceID: target.WorkspaceID, ServingStateID: target.ServingStateID, PriorServingStateID: nullable(priorID),
-		}); err != nil {
-			return manageddata.Rollout{}, mapError(err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return manageddata.Rollout{}, err
-	}
-	return r.RolloutByID(ctx, id)
-}
-
-func (r *Repository) RolloutByID(ctx context.Context, id string) (manageddata.Rollout, error) {
-	row, err := r.q.GetManagedDataRollout(ctx, strings.TrimSpace(id))
-	if err != nil {
-		return manageddata.Rollout{}, mapError(err)
-	}
-	targetRows, err := r.q.ListManagedDataRolloutTargets(ctx, row.ID)
-	if err != nil {
-		return manageddata.Rollout{}, err
-	}
-	return mapRollout(row, targetRows), nil
-}
-
-func (r *Repository) ListRollouts(ctx context.Context, collectionID string) ([]manageddata.Rollout, error) {
-	rows, err := r.q.ListManagedDataRollouts(ctx, strings.TrimSpace(collectionID))
-	if err != nil {
-		return nil, mapError(err)
-	}
-	out := make([]manageddata.Rollout, 0, len(rows))
-	for _, row := range rows {
-		targetRows, targetErr := r.q.ListManagedDataRolloutTargets(ctx, row.ID)
-		if targetErr != nil {
-			return nil, mapError(targetErr)
-		}
-		out = append(out, mapRollout(row, targetRows))
-	}
-	return out, nil
-}
-
-func (r *Repository) ActivateRollout(ctx context.Context, id string, expected manageddata.PointerExpectation) (manageddata.Rollout, error) {
-	id = strings.TrimSpace(id)
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return manageddata.Rollout{}, err
-	}
-	defer tx.Rollback()
-	q := r.q.WithTx(tx)
-	rollout, err := q.GetManagedDataRollout(ctx, id)
-	if err != nil {
-		return manageddata.Rollout{}, mapError(err)
-	}
-	if rollout.Status != string(manageddata.RolloutStatusPending) {
-		return manageddata.Rollout{}, fmt.Errorf("%w: rollout is %s", manageddata.ErrConflict, rollout.Status)
-	}
-	pointer, getErr := q.GetManagedDataEnvironmentPointer(ctx, platformdb.GetManagedDataEnvironmentPointerParams{CollectionID: rollout.CollectionID, Environment: rollout.Environment})
-	if errors.Is(getErr, sql.ErrNoRows) {
-		if expected.Generation != 0 || expected.RevisionID != "" {
-			return manageddata.Rollout{}, fmt.Errorf("%w: collection environment has no current revision", manageddata.ErrConflict)
-		}
-		pointer = platformdb.ManagedDataEnvironmentPointer{CollectionID: rollout.CollectionID, Environment: rollout.Environment}
-	} else if getErr != nil {
-		return manageddata.Rollout{}, getErr
-	} else if pointer.Generation != expected.Generation || pointer.RevisionID != expected.RevisionID {
-		return manageddata.Rollout{}, fmt.Errorf("%w: collection environment pointer changed", manageddata.ErrConflict)
-	}
-	targets, err := q.ListManagedDataRolloutTargets(ctx, id)
-	if err != nil {
-		return manageddata.Rollout{}, err
-	}
-	for _, target := range targets {
-		candidate, err := q.GetServingState(ctx, target.ServingStateID)
-		if err != nil {
-			return manageddata.Rollout{}, mapError(err)
-		}
-		candidateState := servingstate.State{Status: servingstate.Status(candidate.Status)}
-		if candidate.WorkspaceID != target.WorkspaceID || candidate.Environment != rollout.Environment || !candidateState.CanActivate() {
-			return manageddata.Rollout{}, fmt.Errorf("%w: rollout target %q is no longer activatable", manageddata.ErrConflict, target.ServingStateID)
-		}
-		activeID, err := q.GetWorkspaceActiveServingStateID(ctx, platformdb.GetWorkspaceActiveServingStateIDParams{WorkspaceID: target.WorkspaceID, Environment: rollout.Environment})
-		if errors.Is(err, sql.ErrNoRows) {
-			activeID = ""
-		} else if err != nil {
-			return manageddata.Rollout{}, err
-		}
-		if activeID != target.PriorServingStateID.String {
-			return manageddata.Rollout{}, fmt.Errorf("%w: workspace %q active serving state changed", manageddata.ErrConflict, target.WorkspaceID)
-		}
-	}
-	generation := pointer.Generation + 1
-	if err := q.UpsertManagedDataEnvironmentPointer(ctx, platformdb.UpsertManagedDataEnvironmentPointerParams{
-		CollectionID: rollout.CollectionID, Environment: rollout.Environment, RevisionID: rollout.RevisionID,
-		RolloutID: rollout.ID, Generation: generation, UpdatedBy: rollout.CreatedBy,
-	}); err != nil {
-		return manageddata.Rollout{}, err
-	}
-	for _, target := range targets {
-		if err := q.MarkOtherServingStatesDraining(ctx, platformdb.MarkOtherServingStatesDrainingParams{WorkspaceID: target.WorkspaceID, Environment: rollout.Environment, ID: target.ServingStateID}); err != nil {
-			return manageddata.Rollout{}, err
-		}
-		if err := q.MarkServingStateActive(ctx, target.ServingStateID); err != nil {
-			return manageddata.Rollout{}, err
-		}
-		if err := q.SetActiveServingState(ctx, platformdb.SetActiveServingStateParams{WorkspaceID: target.WorkspaceID, Environment: rollout.Environment, ServingStateID: target.ServingStateID}); err != nil {
-			return manageddata.Rollout{}, err
-		}
-		if err := q.CreateManagedDataServingStateBinding(ctx, platformdb.CreateManagedDataServingStateBindingParams{ServingStateID: target.ServingStateID, CollectionID: rollout.CollectionID, RevisionID: rollout.RevisionID, Environment: rollout.Environment}); err != nil {
-			return manageddata.Rollout{}, err
-		}
-		if err := q.ActivateManagedDataRolloutTarget(ctx, platformdb.ActivateManagedDataRolloutTargetParams{RolloutID: rollout.ID, WorkspaceID: target.WorkspaceID}); err != nil {
-			return manageddata.Rollout{}, err
-		}
-	}
-	result, err := q.ActivateManagedDataRollout(ctx, rollout.ID)
-	if err != nil {
-		return manageddata.Rollout{}, err
-	}
-	if err := requireOne(result, "rollout changed while activating"); err != nil {
-		return manageddata.Rollout{}, err
-	}
-	if pointer.RolloutID != "" && pointer.RolloutID != rollout.ID {
-		if err := q.SupersedeManagedDataRollout(ctx, pointer.RolloutID); err != nil {
-			return manageddata.Rollout{}, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return manageddata.Rollout{}, mapError(err)
-	}
-	return r.RolloutByID(ctx, id)
-}
-
-func (r *Repository) FailRollout(ctx context.Context, id string, cause error) error {
-	if cause == nil || strings.TrimSpace(cause.Error()) == "" {
-		return fmt.Errorf("rollout failure cause is required")
-	}
-	result, err := r.q.FailManagedDataRollout(ctx, platformdb.FailManagedDataRolloutParams{Error: cause.Error(), ID: strings.TrimSpace(id)})
-	return expectOne(result, err, "rollout is not pending")
-}
-
 func (r *Repository) EnvironmentPointer(ctx context.Context, collectionID string, environment manageddata.Environment) (manageddata.EnvironmentPointer, error) {
 	normalized, err := manageddata.NormalizeEnvironment(string(environment))
 	if err != nil {
@@ -1057,14 +855,6 @@ func safeMetadata(value string, max int) bool {
 	return true
 }
 
-func mapRollout(row platformdb.ManagedDataRollout, targetRows []platformdb.ManagedDataRolloutTarget) manageddata.Rollout {
-	targets := make([]manageddata.RolloutTarget, 0, len(targetRows))
-	for _, target := range targetRows {
-		targets = append(targets, manageddata.RolloutTarget{RolloutID: target.RolloutID, WorkspaceID: target.WorkspaceID, ServingStateID: target.ServingStateID, PriorServingStateID: target.PriorServingStateID.String, Status: manageddata.TargetStatus(target.Status), ActivatedAt: target.ActivatedAt.String, Error: target.Error})
-	}
-	return manageddata.Rollout{ID: row.ID, CollectionID: row.CollectionID, Environment: manageddata.Environment(row.Environment), RevisionID: row.RevisionID, Status: manageddata.RolloutStatus(row.Status), CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, CompletedAt: row.CompletedAt.String, Error: row.Error, Targets: targets}
-}
-
 func validateIdentityPart(name, value string) error {
 	if value == "" {
 		return fmt.Errorf("%s is required", name)
@@ -1088,7 +878,7 @@ func idempotentCollection(existing manageddata.Collection, input manageddata.Cre
 }
 
 func mapEnvironmentPointer(row platformdb.ManagedDataEnvironmentPointer) manageddata.EnvironmentPointer {
-	return manageddata.EnvironmentPointer{CollectionID: row.CollectionID, Environment: manageddata.Environment(row.Environment), RevisionID: row.RevisionID, RolloutID: row.RolloutID, Generation: row.Generation, UpdatedBy: row.UpdatedBy, UpdatedAt: row.UpdatedAt}
+	return manageddata.EnvironmentPointer{CollectionID: row.CollectionID, Environment: manageddata.Environment(row.Environment), RevisionID: row.RevisionID, DeploymentID: row.DeploymentID, Generation: row.Generation, UpdatedBy: row.UpdatedBy, UpdatedAt: row.UpdatedAt}
 }
 
 func timestamp(value time.Time) string { return value.UTC().Format("2006-01-02 15:04:05.000000000") }

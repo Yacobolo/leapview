@@ -75,7 +75,7 @@ func (s *Service) Plan(ctx context.Context, request Request) (Result, error) {
 		}
 	}
 
-	root, err := planningRoot(project.BaseDir, request.From, connection)
+	root, err := planningRoot(request.From, connection)
 	if err != nil {
 		return Result{}, fmt.Errorf("connection %q root: %w", request.Connection, err)
 	}
@@ -84,7 +84,7 @@ func (s *Service) Plan(ctx context.Context, request Request) (Result, error) {
 	}
 
 	sourceNames := selectedSourceNames(project, request.Connection)
-	files, err := discoverFiles(s.files, root, sourceNames, project, connection.Kind == "managed")
+	files, err := discoverFiles(s.files, root, sourceNames, project)
 	if err != nil {
 		return Result{}, err
 	}
@@ -129,37 +129,17 @@ func (s *Service) Plan(ctx context.Context, request Request) (Result, error) {
 	}, nil
 }
 
-func planningRoot(projectBaseDir, from string, connection semanticmodel.Connection) (string, error) {
-	switch connection.Kind {
-	case "managed":
-		if strings.TrimSpace(connection.Root) != "" || strings.TrimSpace(connection.Scope) != "" {
-			return "", fmt.Errorf("managed connection cannot define root or scope")
-		}
-		if strings.TrimSpace(from) == "" {
-			return "", fmt.Errorf("from is required for managed connection")
-		}
-		return absoluteRoot(from)
-	case "local":
-		if strings.TrimSpace(from) != "" {
-			return absoluteRoot(from)
-		}
-		return localConnectionRoot(projectBaseDir, connection.Root)
-	default:
-		return "", fmt.Errorf("connection kind %q cannot plan local files", connection.Kind)
+func planningRoot(from string, connection semanticmodel.Connection) (string, error) {
+	if connection.Kind != "managed" {
+		return "", fmt.Errorf("connection kind %q cannot plan managed data", connection.Kind)
 	}
-}
-
-func localConnectionRoot(projectBaseDir, connectionRoot string) (string, error) {
-	if strings.TrimSpace(projectBaseDir) == "" {
-		return "", fmt.Errorf("project base directory is required")
+	if strings.TrimSpace(connection.Root) != "" || strings.TrimSpace(connection.Scope) != "" {
+		return "", fmt.Errorf("managed connection cannot define root or scope")
 	}
-	root := connectionRoot
-	if root == "" {
-		root = projectBaseDir
-	} else if !filepath.IsAbs(root) {
-		root = filepath.Join(projectBaseDir, root)
+	if strings.TrimSpace(from) == "" {
+		return "", fmt.Errorf("from is required for managed connection")
 	}
-	return absoluteRoot(root)
+	return absoluteRoot(from)
 }
 
 func absoluteRoot(root string) (string, error) {
@@ -201,18 +181,16 @@ type sourcePattern struct {
 	matched bool
 }
 
-func discoverFiles(files fileSystem, root string, sourceNames []string, project workspacecompiler.Project, managed bool) (map[string]string, error) {
+func discoverFiles(files fileSystem, root string, sourceNames []string, project workspacecompiler.Project) (map[string]string, error) {
 	discovered := make(map[string]string)
 	patterns := make([]sourcePattern, 0)
 	for _, sourceName := range sourceNames {
 		source := project.Sources[sourceName]
-		if managed {
-			if !semanticmodel.IsLocalPath(source.Path) {
-				return nil, fmt.Errorf("source %q managed path must be local: %q", sourceName, source.Path)
-			}
-			if filepath.IsAbs(filepath.FromSlash(source.Path)) {
-				return nil, fmt.Errorf("source %q managed path must be relative: %q", sourceName, source.Path)
-			}
+		if !semanticmodel.IsLocalPath(source.Path) {
+			return nil, fmt.Errorf("source %q managed path must be local: %q", sourceName, source.Path)
+		}
+		if filepath.IsAbs(filepath.FromSlash(source.Path)) {
+			return nil, fmt.Errorf("source %q managed path must be relative: %q", sourceName, source.Path)
 		}
 		logicalPath, glob, err := normalizeSourcePath(root, source.Path)
 		if err != nil {

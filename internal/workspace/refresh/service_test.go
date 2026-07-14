@@ -173,6 +173,7 @@ func TestServiceCreateRefreshCandidateCopiesActiveArtifactMetadata(t *testing.T)
 		State: servingstate.State{
 			ID:           "dep_active",
 			WorkspaceID:  "movielens",
+			ProjectID:    "movie-project",
 			Environment:  servingstate.DefaultEnvironment,
 			Digest:       "artifact-digest",
 			ManifestJSON: "{}",
@@ -200,6 +201,9 @@ func TestServiceCreateRefreshCandidateCopiesActiveArtifactMetadata(t *testing.T)
 
 	if repo.savedArtifact.Path != active.Artifact.Path || candidate.Artifact.Path != active.Artifact.Path {
 		t.Fatalf("candidate artifact path = %q, want %q", candidate.Artifact.Path, active.Artifact.Path)
+	}
+	if repo.savedValidation.ProjectID != active.State.ProjectID {
+		t.Fatalf("candidate project = %q, want %q", repo.savedValidation.ProjectID, active.State.ProjectID)
 	}
 }
 

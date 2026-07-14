@@ -190,7 +190,7 @@ type ManagedDataEnvironmentPointer struct {
 	CollectionID string `json:"collection_id"`
 	Environment  string `json:"environment"`
 	RevisionID   string `json:"revision_id"`
-	RolloutID    string `json:"rollout_id"`
+	DeploymentID string `json:"deployment_id"`
 	Generation   int64  `json:"generation"`
 	UpdatedBy    string `json:"updated_by"`
 	UpdatedAt    string `json:"updated_at"`
@@ -220,28 +220,6 @@ type ManagedDataRevisionFile struct {
 	MediaType   string `json:"media_type"`
 	Etag        string `json:"etag"`
 	CreatedAt   string `json:"created_at"`
-}
-
-type ManagedDataRollout struct {
-	ID           string         `json:"id"`
-	CollectionID string         `json:"collection_id"`
-	Environment  string         `json:"environment"`
-	RevisionID   string         `json:"revision_id"`
-	Status       string         `json:"status"`
-	CreatedBy    string         `json:"created_by"`
-	CreatedAt    string         `json:"created_at"`
-	CompletedAt  sql.NullString `json:"completed_at"`
-	Error        string         `json:"error"`
-}
-
-type ManagedDataRolloutTarget struct {
-	RolloutID           string         `json:"rollout_id"`
-	WorkspaceID         string         `json:"workspace_id"`
-	ServingStateID      string         `json:"serving_state_id"`
-	PriorServingStateID sql.NullString `json:"prior_serving_state_id"`
-	Status              string         `json:"status"`
-	ActivatedAt         sql.NullString `json:"activated_at"`
-	Error               string         `json:"error"`
 }
 
 type ManagedDataS3MultipartPart struct {
@@ -333,6 +311,37 @@ type Principal struct {
 	DisabledAt  sql.NullString `json:"disabled_at"`
 	CreatedAt   string         `json:"created_at"`
 	UpdatedAt   string         `json:"updated_at"`
+}
+
+type ProjectDeployment struct {
+	ID            string         `json:"id"`
+	ProjectID     string         `json:"project_id"`
+	Environment   string         `json:"environment"`
+	RequestDigest string         `json:"request_digest"`
+	Status        string         `json:"status"`
+	CreatedBy     string         `json:"created_by"`
+	CreatedAt     string         `json:"created_at"`
+	ActivatedAt   sql.NullString `json:"activated_at"`
+	Error         string         `json:"error"`
+}
+
+type ProjectDeploymentConnection struct {
+	DeploymentID        string         `json:"deployment_id"`
+	CollectionID        string         `json:"collection_id"`
+	RevisionID          string         `json:"revision_id"`
+	PriorRevisionID     sql.NullString `json:"prior_revision_id"`
+	PriorGeneration     int64          `json:"prior_generation"`
+	ActivatedGeneration sql.NullInt64  `json:"activated_generation"`
+}
+
+type ProjectDeploymentTarget struct {
+	DeploymentID        string         `json:"deployment_id"`
+	WorkspaceID         string         `json:"workspace_id"`
+	ServingStateID      string         `json:"serving_state_id"`
+	PriorServingStateID sql.NullString `json:"prior_serving_state_id"`
+	Status              string         `json:"status"`
+	ActivatedAt         sql.NullString `json:"activated_at"`
+	Error               string         `json:"error"`
 }
 
 type QueryEvent struct {
@@ -453,6 +462,7 @@ type ServicePrincipalSecret struct {
 type ServingState struct {
 	ID                 string         `json:"id"`
 	WorkspaceID        string         `json:"workspace_id"`
+	ProjectID          string         `json:"project_id"`
 	Environment        string         `json:"environment"`
 	Status             string         `json:"status"`
 	Source             string         `json:"source"`

@@ -230,7 +230,7 @@ func coordinatorFixture(t *testing.T, files []manageddata.File) (context.Context
 	}
 	session, err := repo.CreateUploadSession(ctx, manageddata.CreateUploadSessionInput{
 		ID: "upload-a", CollectionID: collection.ID, Manifest: manageddata.Manifest{Files: files}, StorageBackend: "s3",
-		StagingPrefix: "uploads/upload-a", ExpiresAt: time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC),
+		StagingPrefix: "uploads/upload-a", ExpiresAt: time.Now().Add(24 * time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)

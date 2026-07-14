@@ -178,7 +178,7 @@ func TestServicePlanValidatesConnectionAndRequest(t *testing.T) {
 	service := testService(testProject(root, semanticmodel.Connection{Kind: "s3"}, nil))
 
 	_, err := service.Plan(context.Background(), Request{ProjectPath: "project.yaml", Connection: "warehouse"})
-	assertErrorContains(t, err, "cannot plan local files")
+	assertErrorContains(t, err, "cannot plan managed data")
 
 	_, err = service.Plan(context.Background(), Request{ProjectPath: "project.yaml", Connection: "missing"})
 	assertErrorContains(t, err, "unknown connection")
@@ -202,20 +202,15 @@ func TestServicePlanValidatesConnectionAndRequest(t *testing.T) {
 	}
 }
 
-func TestServicePlanKeepsLocalConnectionCompatibility(t *testing.T) {
+func TestServicePlanRejectsRemovedLocalConnection(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "legacy", "file.csv"), "legacy")
 	project := testProject(root, semanticmodel.Connection{Kind: "local", Root: "legacy"}, map[string]semanticmodel.Source{
 		"warehouse.file": {Connection: "warehouse", Path: "file.csv", Format: "csv"},
 	})
 
-	result, err := testService(project).Plan(context.Background(), Request{ProjectPath: "project.yaml", Connection: "warehouse"})
-	if err != nil {
-		t.Fatalf("Plan() error = %v", err)
-	}
-	if len(result.Manifest.Files) != 1 || result.Manifest.Files[0].Path != "file.csv" {
-		t.Fatalf("Manifest.Files = %#v", result.Manifest.Files)
-	}
+	_, err := testService(project).Plan(context.Background(), Request{ProjectPath: "project.yaml", Connection: "warehouse", From: root})
+	assertErrorContains(t, err, `connection kind "local" cannot plan managed data`)
 }
 
 func TestServicePlanHonorsManifestLimits(t *testing.T) {
@@ -263,7 +258,7 @@ func testProject(root string, connection semanticmodel.Connection, sources map[s
 		BaseDir: root,
 		Connections: map[string]semanticmodel.Connection{
 			"warehouse": connection,
-			"other":     {Kind: "local"},
+			"other":     {Kind: "managed"},
 		},
 		Sources: sources,
 	}

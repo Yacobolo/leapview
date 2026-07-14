@@ -20,30 +20,45 @@ func (q *Queries) AbortManagedDataUploadSession(ctx context.Context, id string) 
 	return q.db.ExecContext(ctx, abortManagedDataUploadSession, id)
 }
 
-const activateManagedDataRollout = `-- name: ActivateManagedDataRollout :execresult
-UPDATE managed_data_rollouts
-SET status = 'active', completed_at = CURRENT_TIMESTAMP, error = ''
+const activateProjectDeployment = `-- name: ActivateProjectDeployment :execresult
+UPDATE project_deployments
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
 WHERE id = ? AND status = 'pending'
 `
 
-func (q *Queries) ActivateManagedDataRollout(ctx context.Context, id string) (sql.Result, error) {
-	return q.db.ExecContext(ctx, activateManagedDataRollout, id)
+func (q *Queries) ActivateProjectDeployment(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, activateProjectDeployment, id)
 }
 
-const activateManagedDataRolloutTarget = `-- name: ActivateManagedDataRolloutTarget :exec
-UPDATE managed_data_rollout_targets
-SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
-WHERE rollout_id = ? AND workspace_id = ? AND status = 'pending'
+const activateProjectDeploymentConnection = `-- name: ActivateProjectDeploymentConnection :execresult
+UPDATE project_deployment_connections
+SET activated_generation = ?
+WHERE deployment_id = ? AND collection_id = ? AND activated_generation IS NULL
 `
 
-type ActivateManagedDataRolloutTargetParams struct {
-	RolloutID   string `json:"rollout_id"`
-	WorkspaceID string `json:"workspace_id"`
+type ActivateProjectDeploymentConnectionParams struct {
+	ActivatedGeneration sql.NullInt64 `json:"activated_generation"`
+	DeploymentID        string        `json:"deployment_id"`
+	CollectionID        string        `json:"collection_id"`
 }
 
-func (q *Queries) ActivateManagedDataRolloutTarget(ctx context.Context, arg ActivateManagedDataRolloutTargetParams) error {
-	_, err := q.db.ExecContext(ctx, activateManagedDataRolloutTarget, arg.RolloutID, arg.WorkspaceID)
-	return err
+func (q *Queries) ActivateProjectDeploymentConnection(ctx context.Context, arg ActivateProjectDeploymentConnectionParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, activateProjectDeploymentConnection, arg.ActivatedGeneration, arg.DeploymentID, arg.CollectionID)
+}
+
+const activateProjectDeploymentTarget = `-- name: ActivateProjectDeploymentTarget :execresult
+UPDATE project_deployment_targets
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
+WHERE deployment_id = ? AND workspace_id = ? AND status = 'pending'
+`
+
+type ActivateProjectDeploymentTargetParams struct {
+	DeploymentID string `json:"deployment_id"`
+	WorkspaceID  string `json:"workspace_id"`
+}
+
+func (q *Queries) ActivateProjectDeploymentTarget(ctx context.Context, arg ActivateProjectDeploymentTargetParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, activateProjectDeploymentTarget, arg.DeploymentID, arg.WorkspaceID)
 }
 
 const appendAgentEvent = `-- name: AppendAgentEvent :one
@@ -456,54 +471,6 @@ func (q *Queries) CreateManagedDataRevisionFile(ctx context.Context, arg CreateM
 	return err
 }
 
-const createManagedDataRollout = `-- name: CreateManagedDataRollout :exec
-INSERT INTO managed_data_rollouts (id, collection_id, environment, revision_id, status, created_by)
-VALUES (?, ?, ?, ?, 'pending', ?)
-`
-
-type CreateManagedDataRolloutParams struct {
-	ID           string `json:"id"`
-	CollectionID string `json:"collection_id"`
-	Environment  string `json:"environment"`
-	RevisionID   string `json:"revision_id"`
-	CreatedBy    string `json:"created_by"`
-}
-
-func (q *Queries) CreateManagedDataRollout(ctx context.Context, arg CreateManagedDataRolloutParams) error {
-	_, err := q.db.ExecContext(ctx, createManagedDataRollout,
-		arg.ID,
-		arg.CollectionID,
-		arg.Environment,
-		arg.RevisionID,
-		arg.CreatedBy,
-	)
-	return err
-}
-
-const createManagedDataRolloutTarget = `-- name: CreateManagedDataRolloutTarget :exec
-INSERT INTO managed_data_rollout_targets (
-  rollout_id, workspace_id, serving_state_id, prior_serving_state_id, status
-)
-VALUES (?, ?, ?, ?, 'pending')
-`
-
-type CreateManagedDataRolloutTargetParams struct {
-	RolloutID           string         `json:"rollout_id"`
-	WorkspaceID         string         `json:"workspace_id"`
-	ServingStateID      string         `json:"serving_state_id"`
-	PriorServingStateID sql.NullString `json:"prior_serving_state_id"`
-}
-
-func (q *Queries) CreateManagedDataRolloutTarget(ctx context.Context, arg CreateManagedDataRolloutTargetParams) error {
-	_, err := q.db.ExecContext(ctx, createManagedDataRolloutTarget,
-		arg.RolloutID,
-		arg.WorkspaceID,
-		arg.ServingStateID,
-		arg.PriorServingStateID,
-	)
-	return err
-}
-
 const createManagedDataS3MultipartPart = `-- name: CreateManagedDataS3MultipartPart :exec
 INSERT INTO managed_data_s3_multipart_parts (
   multipart_upload_id, part_number, size_bytes, sha256
@@ -618,6 +585,80 @@ func (q *Queries) CreateManagedDataUploadSession(ctx context.Context, arg Create
 		arg.StagingPrefix,
 		arg.CreatedBy,
 		arg.ExpiresAt,
+	)
+	return err
+}
+
+const createProjectDeployment = `-- name: CreateProjectDeployment :exec
+INSERT INTO project_deployments (id, project_id, environment, request_digest, status, created_by)
+VALUES (?, ?, ?, ?, 'pending', ?)
+`
+
+type CreateProjectDeploymentParams struct {
+	ID            string `json:"id"`
+	ProjectID     string `json:"project_id"`
+	Environment   string `json:"environment"`
+	RequestDigest string `json:"request_digest"`
+	CreatedBy     string `json:"created_by"`
+}
+
+func (q *Queries) CreateProjectDeployment(ctx context.Context, arg CreateProjectDeploymentParams) error {
+	_, err := q.db.ExecContext(ctx, createProjectDeployment,
+		arg.ID,
+		arg.ProjectID,
+		arg.Environment,
+		arg.RequestDigest,
+		arg.CreatedBy,
+	)
+	return err
+}
+
+const createProjectDeploymentConnection = `-- name: CreateProjectDeploymentConnection :exec
+INSERT INTO project_deployment_connections (
+  deployment_id, collection_id, revision_id, prior_revision_id, prior_generation
+)
+VALUES (?, ?, ?, ?, ?)
+`
+
+type CreateProjectDeploymentConnectionParams struct {
+	DeploymentID    string         `json:"deployment_id"`
+	CollectionID    string         `json:"collection_id"`
+	RevisionID      string         `json:"revision_id"`
+	PriorRevisionID sql.NullString `json:"prior_revision_id"`
+	PriorGeneration int64          `json:"prior_generation"`
+}
+
+func (q *Queries) CreateProjectDeploymentConnection(ctx context.Context, arg CreateProjectDeploymentConnectionParams) error {
+	_, err := q.db.ExecContext(ctx, createProjectDeploymentConnection,
+		arg.DeploymentID,
+		arg.CollectionID,
+		arg.RevisionID,
+		arg.PriorRevisionID,
+		arg.PriorGeneration,
+	)
+	return err
+}
+
+const createProjectDeploymentTarget = `-- name: CreateProjectDeploymentTarget :exec
+INSERT INTO project_deployment_targets (
+  deployment_id, workspace_id, serving_state_id, prior_serving_state_id, status
+)
+VALUES (?, ?, ?, ?, 'pending')
+`
+
+type CreateProjectDeploymentTargetParams struct {
+	DeploymentID        string         `json:"deployment_id"`
+	WorkspaceID         string         `json:"workspace_id"`
+	ServingStateID      string         `json:"serving_state_id"`
+	PriorServingStateID sql.NullString `json:"prior_serving_state_id"`
+}
+
+func (q *Queries) CreateProjectDeploymentTarget(ctx context.Context, arg CreateProjectDeploymentTargetParams) error {
+	_, err := q.db.ExecContext(ctx, createProjectDeploymentTarget,
+		arg.DeploymentID,
+		arg.WorkspaceID,
+		arg.ServingStateID,
+		arg.PriorServingStateID,
 	)
 	return err
 }
@@ -929,21 +970,6 @@ func (q *Queries) ExtendQuerySnapshotLease(ctx context.Context, arg ExtendQueryS
 	return err
 }
 
-const failManagedDataRollout = `-- name: FailManagedDataRollout :execresult
-UPDATE managed_data_rollouts
-SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
-WHERE id = ? AND status = 'pending'
-`
-
-type FailManagedDataRolloutParams struct {
-	Error string `json:"error"`
-	ID    string `json:"id"`
-}
-
-func (q *Queries) FailManagedDataRollout(ctx context.Context, arg FailManagedDataRolloutParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, failManagedDataRollout, arg.Error, arg.ID)
-}
-
 const failManagedDataS3MultipartUpload = `-- name: FailManagedDataS3MultipartUpload :execresult
 UPDATE managed_data_s3_multipart_uploads
 SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP
@@ -957,6 +983,21 @@ type FailManagedDataS3MultipartUploadParams struct {
 
 func (q *Queries) FailManagedDataS3MultipartUpload(ctx context.Context, arg FailManagedDataS3MultipartUploadParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, failManagedDataS3MultipartUpload, arg.Error, arg.ID)
+}
+
+const failProjectDeployment = `-- name: FailProjectDeployment :execresult
+UPDATE project_deployments
+SET status = 'failed', error = ?
+WHERE id = ? AND status = 'pending'
+`
+
+type FailProjectDeploymentParams struct {
+	Error string `json:"error"`
+	ID    string `json:"id"`
+}
+
+func (q *Queries) FailProjectDeployment(ctx context.Context, arg FailProjectDeploymentParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, failProjectDeployment, arg.Error, arg.ID)
 }
 
 const finishAgentRun = `-- name: FinishAgentRun :one
@@ -1099,7 +1140,7 @@ func (q *Queries) GetAPITokenByFingerprintForAudit(ctx context.Context, tokenFin
 }
 
 const getActiveServingState = `-- name: GetActiveServingState :one
-SELECT d.id, d.workspace_id, d.environment, d.status, d.source, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.superseded_at, d.error
+SELECT d.id, d.workspace_id, d.project_id, d.environment, d.status, d.source, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.superseded_at, d.error
 FROM serving_states d
 JOIN workspace_active_serving_states active ON active.serving_state_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?
@@ -1116,6 +1157,7 @@ func (q *Queries) GetActiveServingState(ctx context.Context, arg GetActiveServin
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
+		&i.ProjectID,
 		&i.Environment,
 		&i.Status,
 		&i.Source,
@@ -1338,7 +1380,7 @@ func (q *Queries) GetManagedDataCollectionByProjectConnection(ctx context.Contex
 }
 
 const getManagedDataEnvironmentPointer = `-- name: GetManagedDataEnvironmentPointer :one
-SELECT collection_id, environment, revision_id, rollout_id, generation, updated_by, updated_at FROM managed_data_environment_pointers
+SELECT collection_id, environment, revision_id, deployment_id, generation, updated_by, updated_at FROM managed_data_environment_pointers
 WHERE collection_id = ? AND environment = ?
 `
 
@@ -1354,7 +1396,7 @@ func (q *Queries) GetManagedDataEnvironmentPointer(ctx context.Context, arg GetM
 		&i.CollectionID,
 		&i.Environment,
 		&i.RevisionID,
-		&i.RolloutID,
+		&i.DeploymentID,
 		&i.Generation,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
@@ -1381,27 +1423,6 @@ func (q *Queries) GetManagedDataRevision(ctx context.Context, id string) (Manage
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ReadyAt,
-		&i.Error,
-	)
-	return i, err
-}
-
-const getManagedDataRollout = `-- name: GetManagedDataRollout :one
-SELECT id, collection_id, environment, revision_id, status, created_by, created_at, completed_at, error FROM managed_data_rollouts WHERE id = ?
-`
-
-func (q *Queries) GetManagedDataRollout(ctx context.Context, id string) (ManagedDataRollout, error) {
-	row := q.db.QueryRowContext(ctx, getManagedDataRollout, id)
-	var i ManagedDataRollout
-	err := row.Scan(
-		&i.ID,
-		&i.CollectionID,
-		&i.Environment,
-		&i.RevisionID,
-		&i.Status,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.CompletedAt,
 		&i.Error,
 	)
 	return i, err
@@ -1577,6 +1598,27 @@ func (q *Queries) GetPrincipalByEmail(ctx context.Context, lower string) (Princi
 	return i, err
 }
 
+const getProjectDeployment = `-- name: GetProjectDeployment :one
+SELECT id, project_id, environment, request_digest, status, created_by, created_at, activated_at, error FROM project_deployments WHERE id = ?
+`
+
+func (q *Queries) GetProjectDeployment(ctx context.Context, id string) (ProjectDeployment, error) {
+	row := q.db.QueryRowContext(ctx, getProjectDeployment, id)
+	var i ProjectDeployment
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Environment,
+		&i.RequestDigest,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+		&i.Error,
+	)
+	return i, err
+}
+
 const getQueryEvent = `-- name: GetQueryEvent :one
 SELECT id, workspace_id, principal_id, surface, operation, query_kind, model_id, target, object_type, object_id, request_id, correlation_id, status, duration_ms, queue_wait_ms, execution_ms, execution_state, rows_returned, bytes_estimate, error, sql_text, plan_text, query_json, created_at
 FROM query_events
@@ -1740,7 +1782,7 @@ func (q *Queries) GetServicePrincipalSecretByFingerprint(ctx context.Context, ar
 }
 
 const getServingState = `-- name: GetServingState :one
-SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states WHERE id = ?
+SELECT id, workspace_id, project_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states WHERE id = ?
 `
 
 func (q *Queries) GetServingState(ctx context.Context, id string) (ServingState, error) {
@@ -1749,6 +1791,7 @@ func (q *Queries) GetServingState(ctx context.Context, id string) (ServingState,
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
+		&i.ProjectID,
 		&i.Environment,
 		&i.Status,
 		&i.Source,
@@ -3058,82 +3101,6 @@ func (q *Queries) ListManagedDataRevisions(ctx context.Context, collectionID str
 	return items, nil
 }
 
-const listManagedDataRolloutTargets = `-- name: ListManagedDataRolloutTargets :many
-SELECT rollout_id, workspace_id, serving_state_id, prior_serving_state_id, status, activated_at, error FROM managed_data_rollout_targets
-WHERE rollout_id = ?
-ORDER BY workspace_id
-`
-
-func (q *Queries) ListManagedDataRolloutTargets(ctx context.Context, rolloutID string) ([]ManagedDataRolloutTarget, error) {
-	rows, err := q.db.QueryContext(ctx, listManagedDataRolloutTargets, rolloutID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ManagedDataRolloutTarget{}
-	for rows.Next() {
-		var i ManagedDataRolloutTarget
-		if err := rows.Scan(
-			&i.RolloutID,
-			&i.WorkspaceID,
-			&i.ServingStateID,
-			&i.PriorServingStateID,
-			&i.Status,
-			&i.ActivatedAt,
-			&i.Error,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listManagedDataRollouts = `-- name: ListManagedDataRollouts :many
-SELECT id, collection_id, environment, revision_id, status, created_by, created_at, completed_at, error FROM managed_data_rollouts
-WHERE collection_id = ?
-ORDER BY created_at DESC, id DESC
-`
-
-func (q *Queries) ListManagedDataRollouts(ctx context.Context, collectionID string) ([]ManagedDataRollout, error) {
-	rows, err := q.db.QueryContext(ctx, listManagedDataRollouts, collectionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ManagedDataRollout{}
-	for rows.Next() {
-		var i ManagedDataRollout
-		if err := rows.Scan(
-			&i.ID,
-			&i.CollectionID,
-			&i.Environment,
-			&i.RevisionID,
-			&i.Status,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.CompletedAt,
-			&i.Error,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listManagedDataS3MultipartParts = `-- name: ListManagedDataS3MultipartParts :many
 SELECT multipart_upload_id, part_number, size_bytes, sha256, created_at, updated_at FROM managed_data_s3_multipart_parts
 WHERE multipart_upload_id = ?
@@ -3191,6 +3158,79 @@ func (q *Queries) ListManagedDataServingStateBindings(ctx context.Context, servi
 			&i.RevisionID,
 			&i.Environment,
 			&i.BoundAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectDeploymentConnections = `-- name: ListProjectDeploymentConnections :many
+SELECT deployment_id, collection_id, revision_id, prior_revision_id, prior_generation, activated_generation FROM project_deployment_connections
+WHERE deployment_id = ?
+ORDER BY collection_id
+`
+
+func (q *Queries) ListProjectDeploymentConnections(ctx context.Context, deploymentID string) ([]ProjectDeploymentConnection, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectDeploymentConnections, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDeploymentConnection{}
+	for rows.Next() {
+		var i ProjectDeploymentConnection
+		if err := rows.Scan(
+			&i.DeploymentID,
+			&i.CollectionID,
+			&i.RevisionID,
+			&i.PriorRevisionID,
+			&i.PriorGeneration,
+			&i.ActivatedGeneration,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectDeploymentTargets = `-- name: ListProjectDeploymentTargets :many
+SELECT deployment_id, workspace_id, serving_state_id, prior_serving_state_id, status, activated_at, error FROM project_deployment_targets
+WHERE deployment_id = ?
+ORDER BY workspace_id
+`
+
+func (q *Queries) ListProjectDeploymentTargets(ctx context.Context, deploymentID string) ([]ProjectDeploymentTarget, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectDeploymentTargets, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDeploymentTarget{}
+	for rows.Next() {
+		var i ProjectDeploymentTarget
+		if err := rows.Scan(
+			&i.DeploymentID,
+			&i.WorkspaceID,
+			&i.ServingStateID,
+			&i.PriorServingStateID,
+			&i.Status,
+			&i.ActivatedAt,
+			&i.Error,
 		); err != nil {
 			return nil, err
 		}
@@ -3699,7 +3739,7 @@ func (q *Queries) ListServicePrincipals(ctx context.Context) ([]Principal, error
 }
 
 const listServingStates = `-- name: ListServingStates :many
-SELECT id, workspace_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states
+SELECT id, workspace_id, project_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states
 WHERE workspace_id = ? AND environment = ?
 ORDER BY created_at DESC
 `
@@ -3721,6 +3761,7 @@ func (q *Queries) ListServingStates(ctx context.Context, arg ListServingStatesPa
 		if err := rows.Scan(
 			&i.ID,
 			&i.WorkspaceID,
+			&i.ProjectID,
 			&i.Environment,
 			&i.Status,
 			&i.Source,
@@ -4154,14 +4195,20 @@ func (q *Queries) SumManagedDataS3MultipartPartSizes(ctx context.Context, multip
 	return column_1, err
 }
 
-const supersedeManagedDataRollout = `-- name: SupersedeManagedDataRollout :exec
-UPDATE managed_data_rollouts
+const supersedeOtherProjectDeployments = `-- name: SupersedeOtherProjectDeployments :exec
+UPDATE project_deployments
 SET status = 'superseded'
-WHERE id = ? AND status = 'active'
+WHERE project_id = ? AND environment = ? AND id <> ? AND status = 'active'
 `
 
-func (q *Queries) SupersedeManagedDataRollout(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, supersedeManagedDataRollout, id)
+type SupersedeOtherProjectDeploymentsParams struct {
+	ProjectID   string `json:"project_id"`
+	Environment string `json:"environment"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) SupersedeOtherProjectDeployments(ctx context.Context, arg SupersedeOtherProjectDeploymentsParams) error {
+	_, err := q.db.ExecContext(ctx, supersedeOtherProjectDeployments, arg.ProjectID, arg.Environment, arg.ID)
 	return err
 }
 
@@ -4351,12 +4398,13 @@ func (q *Queries) UpdateServingStateStatus(ctx context.Context, arg UpdateServin
 
 const updateServingStateValidated = `-- name: UpdateServingStateValidated :exec
 UPDATE serving_states
-SET status = ?, digest = ?, manifest_json = ?, error = ''
+SET status = ?, project_id = ?, digest = ?, manifest_json = ?, error = ''
 WHERE id = ?
 `
 
 type UpdateServingStateValidatedParams struct {
 	Status       string `json:"status"`
+	ProjectID    string `json:"project_id"`
 	Digest       string `json:"digest"`
 	ManifestJson string `json:"manifest_json"`
 	ID           string `json:"id"`
@@ -4365,6 +4413,7 @@ type UpdateServingStateValidatedParams struct {
 func (q *Queries) UpdateServingStateValidated(ctx context.Context, arg UpdateServingStateValidatedParams) error {
 	_, err := q.db.ExecContext(ctx, updateServingStateValidated,
 		arg.Status,
+		arg.ProjectID,
 		arg.Digest,
 		arg.ManifestJson,
 		arg.ID,
@@ -4430,12 +4479,12 @@ func (q *Queries) UpsertGroup(ctx context.Context, arg UpsertGroupParams) error 
 
 const upsertManagedDataEnvironmentPointer = `-- name: UpsertManagedDataEnvironmentPointer :exec
 INSERT INTO managed_data_environment_pointers (
-  collection_id, environment, revision_id, rollout_id, generation, updated_by
+  collection_id, environment, revision_id, deployment_id, generation, updated_by
 )
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(collection_id, environment) DO UPDATE SET
   revision_id = excluded.revision_id,
-  rollout_id = excluded.rollout_id,
+  deployment_id = excluded.deployment_id,
   generation = excluded.generation,
   updated_by = excluded.updated_by,
   updated_at = CURRENT_TIMESTAMP
@@ -4445,7 +4494,7 @@ type UpsertManagedDataEnvironmentPointerParams struct {
 	CollectionID string `json:"collection_id"`
 	Environment  string `json:"environment"`
 	RevisionID   string `json:"revision_id"`
-	RolloutID    string `json:"rollout_id"`
+	DeploymentID string `json:"deployment_id"`
 	Generation   int64  `json:"generation"`
 	UpdatedBy    string `json:"updated_by"`
 }
@@ -4455,7 +4504,7 @@ func (q *Queries) UpsertManagedDataEnvironmentPointer(ctx context.Context, arg U
 		arg.CollectionID,
 		arg.Environment,
 		arg.RevisionID,
-		arg.RolloutID,
+		arg.DeploymentID,
 		arg.Generation,
 		arg.UpdatedBy,
 	)

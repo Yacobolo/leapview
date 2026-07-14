@@ -13,9 +13,6 @@ func TestLifecycleTransitionsRejectRegressions(t *testing.T) {
 		{name: "upload complete is terminal", from: UploadStatusComplete, to: string(UploadStatusOpen), want: false},
 		{name: "revision pending to ready", from: RevisionStatusPending, to: string(RevisionStatusReady), want: true},
 		{name: "revision ready is immutable", from: RevisionStatusReady, to: string(RevisionStatusFailed), want: false},
-		{name: "rollout pending to active", from: RolloutStatusPending, to: string(RolloutStatusActive), want: true},
-		{name: "rollout active can be superseded", from: RolloutStatusActive, to: string(RolloutStatusSuperseded), want: true},
-		{name: "rollout failed is terminal", from: RolloutStatusFailed, to: string(RolloutStatusActive), want: false},
 	}
 
 	for _, test := range tests {

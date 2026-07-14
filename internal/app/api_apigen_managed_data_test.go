@@ -28,6 +28,23 @@ func TestManagedDataGeneratedByteCountsAreInt64(t *testing.T) {
 	}
 }
 
+func TestProjectDeploymentGeneratedGenerationsAreInt64(t *testing.T) {
+	typeOf := reflect.TypeOf(apigenapi.ProjectDeploymentConnectionResponse{})
+	for _, fieldName := range []string{"PriorGeneration", "ActivatedGeneration"} {
+		field, ok := typeOf.FieldByName(fieldName)
+		if !ok {
+			t.Fatalf("missing %s.%s", typeOf.Name(), fieldName)
+		}
+		kind := field.Type.Kind()
+		if kind == reflect.Pointer {
+			kind = field.Type.Elem().Kind()
+		}
+		if kind != reflect.Int64 {
+			t.Fatalf("%s.%s type = %s, want int64", typeOf.Name(), fieldName, field.Type)
+		}
+	}
+}
+
 func TestManagedDataAPIGenAdapterImplementsEveryGeneratedOperation(t *testing.T) {
 	var _ apigenapi.GenOperationDispatcher = apiGenAdapter{}
 
@@ -53,11 +70,9 @@ func TestManagedDataAPIGenPrivilegesArePlatformGlobal(t *testing.T) {
 		"signManagedDataS3MultipartPart":       access.PrivilegeIngestData,
 		"completeManagedDataS3MultipartUpload": access.PrivilegeIngestData,
 		"abortManagedDataS3MultipartUpload":    access.PrivilegeIngestData,
-		"listManagedDataRollouts":              access.PrivilegeViewData,
-		"createManagedDataRollout":             access.PrivilegeActivateData,
-		"getManagedDataRollout":                access.PrivilegeViewData,
-		"activateManagedDataRollout":           access.PrivilegeActivateData,
-		"rollbackManagedDataRollout":           access.PrivilegeActivateData,
+		"createProjectDeployment":              access.PrivilegeDeploy,
+		"getProjectDeployment":                 access.PrivilegeViewItem,
+		"activateProjectDeployment":            access.PrivilegeActivateDeployment,
 	}
 	for operation, privilege := range want {
 		if got := apigenOperationPrivileges[operation]; got != privilege {
@@ -65,6 +80,11 @@ func TestManagedDataAPIGenPrivilegesArePlatformGlobal(t *testing.T) {
 		}
 		if resolver, exists := apigenOperationObjectResolvers[operation]; exists || resolver != nil {
 			t.Errorf("%s must not have a workspace object resolver", operation)
+		}
+	}
+	for _, removed := range []string{"listManagedDataRollouts", "createManagedDataRollout", "getManagedDataRollout", "activateManagedDataRollout", "rollbackManagedDataRollout", "activatePublish"} {
+		if _, exists := apigenOperationPrivileges[removed]; exists {
+			t.Errorf("removed operation %s retains a privilege", removed)
 		}
 	}
 }

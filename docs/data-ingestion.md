@@ -41,26 +41,28 @@ libredash data sync \
 ```
 
 `data sync` stages an immutable revision only. It does not activate the revision
-or change any serving workspace. Activation is a separate, explicit deployment
-operation so every affected workspace can move to the new project and data
-revision together.
+or change any serving workspace. Activation happens through the project deploy
+command so project configuration and managed data revisions move together.
 
-Deploy the staged digest printed by `data sync`:
+Deploy the project with the staged digest printed by `data sync`:
 
 ```sh
-libredash data deploy \
+libredash deploy \
   --project dashboards/libredash.yaml \
-  --connection olist \
-  --revision sha256:<64-lowercase-hex> \
+  --revision "olist=sha256:<64-lowercase-hex>" \
   --environment prod \
   --target https://libredash.example.com \
   --auto-approve
 ```
 
-The CLI uploads and validates every affected workspace candidate first. The
-server then switches the project-global revision pointer and all workspace
-serving states in one rollout. A failed candidate leaves the active revision
-and every active workspace unchanged.
+Supply exactly one repeatable `--revision
+"<connection>=sha256:<64-lowercase-hex>"` flag for every managed connection in
+the project. The CLI rejects missing, duplicate, and unknown connection pins
+before deployment. It uploads and validates every project workspace candidate
+first, then the server switches all project-global revision pointers and
+workspace serving states in one atomic rollout. A failed candidate leaves every
+active revision and workspace unchanged. Projects with no managed connections
+use the same deploy command without revision flags.
 
 ## Inspect revisions
 

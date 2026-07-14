@@ -109,42 +109,10 @@ type MultipartCoordinator interface {
 	Abort(context.Context, MultipartRequest) (MultipartUpload, error)
 }
 
-type RolloutStatus = control.RolloutStatus
-
-const (
-	RolloutStatusDraft       = control.RolloutStatusDraft
-	RolloutStatusActivating  = control.RolloutStatusActivating
-	RolloutStatusActive      = control.RolloutStatusActive
-	RolloutStatusFailed      = control.RolloutStatusFailed
-	RolloutStatusRollingBack = control.RolloutStatusRollingBack
-	RolloutStatusRolledBack  = control.RolloutStatusRolledBack
-)
-
-type RolloutTargetStatus = control.RolloutTargetStatus
-
-const (
-	RolloutTargetStatusPending     = control.RolloutTargetStatusPending
-	RolloutTargetStatusActivating  = control.RolloutTargetStatusActivating
-	RolloutTargetStatusActive      = control.RolloutTargetStatusActive
-	RolloutTargetStatusFailed      = control.RolloutTargetStatusFailed
-	RolloutTargetStatusRollingBack = control.RolloutTargetStatusRollingBack
-	RolloutTargetStatusRolledBack  = control.RolloutTargetStatusRolledBack
-)
-
-type RolloutTarget = control.RolloutTarget
-type Rollout = control.Rollout
-type RolloutListRequest = control.RolloutListRequest
-type RolloutRequest = control.RolloutRequest
-type RolloutTargetRequest = control.RolloutTargetRequest
-type RolloutCreateRequest = control.RolloutCreateRequest
-type RolloutRollbackRequest = control.RolloutRollbackRequest
-type RolloutCoordinator = control.RolloutCoordinator
-
 type Options struct {
 	Repository       Repository
 	Uploads          UploadCoordinator
 	Multipart        MultipartCoordinator
-	Rollouts         RolloutCoordinator
 	CurrentPrincipal func(*stdhttp.Request) (Principal, bool)
 	MaxJSONBodyBytes int64
 }

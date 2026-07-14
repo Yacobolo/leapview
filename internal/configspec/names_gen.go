@@ -3,7 +3,6 @@
 package configspec
 
 const (
-	EnvADDR                                        = "ADDR"
 	EnvLIBREDASH_ADDR                              = "LIBREDASH_ADDR"
 	EnvLIBREDASH_AGENT_API_KEY                     = "LIBREDASH_AGENT_API_KEY"
 	EnvLIBREDASH_AGENT_BASE_URL                    = "LIBREDASH_AGENT_BASE_URL"
@@ -26,7 +25,6 @@ const (
 	EnvLIBREDASH_CLI_CONFIG                        = "LIBREDASH_CLI_CONFIG"
 	EnvLIBREDASH_COOKIE_SECURE                     = "LIBREDASH_COOKIE_SECURE"
 	EnvLIBREDASH_CSRF_KEY                          = "LIBREDASH_CSRF_KEY"
-	EnvLIBREDASH_DATA_DIR                          = "LIBREDASH_DATA_DIR"
 	EnvLIBREDASH_DEV_AUTH_BYPASS                   = "LIBREDASH_DEV_AUTH_BYPASS"
 	EnvLIBREDASH_DEV_LOG_LINES                     = "LIBREDASH_DEV_LOG_LINES"
 	EnvLIBREDASH_DEV_PORT_COUNT                    = "LIBREDASH_DEV_PORT_COUNT"
@@ -38,7 +36,6 @@ const (
 	EnvLIBREDASH_DEV_SKIP_PUBLISH                  = "LIBREDASH_DEV_SKIP_PUBLISH"
 	EnvLIBREDASH_DEV_WORKTREE                      = "LIBREDASH_DEV_WORKTREE"
 	EnvLIBREDASH_DUCKDB_DIR                        = "LIBREDASH_DUCKDB_DIR"
-	EnvLIBREDASH_DUCKDB_PATH                       = "LIBREDASH_DUCKDB_PATH"
 	EnvLIBREDASH_DUCKLAKE_CATALOG_PATH             = "LIBREDASH_DUCKLAKE_CATALOG_PATH"
 	EnvLIBREDASH_EXEC_JOB_LEASE_TIMEOUT            = "LIBREDASH_EXEC_JOB_LEASE_TIMEOUT"
 	EnvLIBREDASH_EXEC_MAX_QUEUED_READS             = "LIBREDASH_EXEC_MAX_QUEUED_READS"
@@ -85,5 +82,4 @@ const (
 	EnvLIBREDASH_TRUST_PROXY_HEADERS               = "LIBREDASH_TRUST_PROXY_HEADERS"
 	EnvLIBREDASH_UID                               = "LIBREDASH_UID"
 	EnvLIBREDASH_WAREHOUSE_DSN                     = "LIBREDASH_WAREHOUSE_DSN"
-	EnvPORT                                        = "PORT"
 )

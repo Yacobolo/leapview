@@ -14,9 +14,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/Yacobolo/libredash/internal/api"
+	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -24,137 +24,231 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func publishCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "publish",
-		Short: "Publish a configuration-as-code project",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPublish(ctx, opts)
-		},
-	}
-	cmd.Flags().StringVar(&opts.target, "target", "", "LibreDash server URL")
-	cmd.Flags().StringVar(&opts.token, "token", "", "API token")
-	cmd.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "libredash.yaml"), "project path")
-	cmd.Flags().StringVar(&opts.environment, "environment", "dev", "publish environment")
-	cmd.Flags().BoolVar(&opts.autoApprove, "auto-approve", false, "approve and activate the publish without prompting")
-	return cmd
+type deployRequest struct {
+	ProjectPath string
+	Environment string
+	Revisions   map[string]string
+	Target      string
+	Token       string
+	AutoApprove bool
+	Out         io.Writer
+	HTTPClient  *http.Client
 }
 
-func publishesCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	parent := &cobra.Command{Use: "publishes", Short: "Inspect publishes"}
-	list := &cobra.Command{
-		Use:   "list",
-		Short: "List publishes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPublishesList(ctx, opts)
-		},
-	}
-	list.Flags().StringVar(&opts.target, "target", "", "LibreDash server URL")
-	list.Flags().StringVar(&opts.token, "token", "", "API token")
-	list.Flags().StringVar(&opts.environment, "environment", "dev", "publish environment")
-	addPaginationFlags(list, opts)
-	parent.AddCommand(list)
-	return parent
-}
-
-func runPublish(ctx context.Context, opts *rootOptions) error {
-	target, token, err := clientTargetAndToken(opts)
-	if err != nil {
-		return err
-	}
-	project, err := workspacecompiler.LoadProject(opts.catalog)
-	if err != nil {
-		return err
-	}
-	workspaceIDs := sortedPublishWorkspaceIDs(project.Workspaces, opts.workspaceID)
-	if len(workspaceIDs) == 0 {
-		if opts.workspaceID != "" {
-			return fmt.Errorf("project %q has no workspace %q", opts.catalog, opts.workspaceID)
-		}
-		return fmt.Errorf("project %q has no workspaces", opts.catalog)
-	}
-
-	results := make([]publishWorkspaceResult, 0, len(workspaceIDs))
-	needsApproval := false
-	for _, workspaceID := range workspaceIDs {
-		result := publishWorkspaceResult{WorkspaceID: workspaceID}
-		activeGraph, err := fetchActiveWorkspaceGraphFor(ctx, opts, workspaceID)
-		if err != nil {
-			result.Err = err
-			results = append(results, result)
-			continue
-		}
-		plan, err := workspacecompiler.PlanProjectAgainstGraph(opts.catalog, workspaceID, activeGraph)
-		if err != nil {
-			result.Err = err
-			results = append(results, result)
-			continue
-		}
-		workspacePlan := plan.Workspaces[0]
-		if len(workspaceIDs) == 1 {
-			if err := renderProjectPlan(os.Stdout, plan); err != nil {
+func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
+	var revisions []string
+	command := &cobra.Command{
+		Use:   "deploy",
+		Short: "Atomically deploy a configuration-as-code project",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if strings.TrimSpace(opts.workspaceID) != "" {
+				return fmt.Errorf("deploy is project-wide and does not accept --workspace")
+			}
+			target, token, err := clientTargetAndToken(opts)
+			if err != nil {
 				return err
 			}
-		} else {
-			printPublishPlanSummary(workspacePlan)
-		}
-		if projectPlanWorkspaceUnchanged(workspacePlan) {
-			result.Status = "skipped"
-			results = append(results, result)
-			continue
-		}
-		result.Status = "pending"
-		result.ActiveGraph = activeGraph
-		result.ManagedConnections = managedConnectionsForWorkspace(project, project.Workspaces[workspaceID])
-		needsApproval = true
-		results = append(results, result)
+			pins, err := parseManagedRevisionPins(revisions)
+			if err != nil {
+				return err
+			}
+			return runDeploy(ctx, deployRequest{
+				ProjectPath: opts.catalog, Environment: opts.environment, Revisions: pins,
+				Target: target, Token: token, AutoApprove: opts.autoApprove,
+				Out: cmd.OutOrStdout(), HTTPClient: http.DefaultClient,
+			})
+		},
 	}
-	if needsApproval {
-		if err := confirmPublish(opts, os.Stdin, os.Stdout); err != nil {
-			return err
-		}
+	command.Flags().StringVar(&opts.target, "target", "", "LibreDash server URL")
+	command.Flags().StringVar(&opts.token, "token", "", "API token")
+	command.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "libredash.yaml"), "project path")
+	command.Flags().StringVar(&opts.environment, "environment", "dev", "deployment environment")
+	command.Flags().StringArrayVar(&revisions, "revision", nil, "managed revision pin as connection=sha256:<digest> (repeatable)")
+	command.Flags().BoolVar(&opts.autoApprove, "auto-approve", false, "approve and activate the deployment without prompting")
+	return command
+}
+
+func runDeploy(ctx context.Context, request deployRequest) error {
+	request.ProjectPath = strings.TrimSpace(request.ProjectPath)
+	request.Environment = strings.TrimSpace(request.Environment)
+	request.Target = strings.TrimSpace(request.Target)
+	request.Token = strings.TrimSpace(request.Token)
+	if ctx == nil || request.ProjectPath == "" || request.Environment == "" || request.Target == "" || request.Token == "" {
+		return fmt.Errorf("deploy requires project, environment, target, and token")
 	}
-	managedDataPins, err := fetchManagedDataPins(ctx, target, token, project.Name, cliEnvironment(opts), results)
+	project, err := workspacecompiler.LoadProject(request.ProjectPath)
 	if err != nil {
+		return fmt.Errorf("load project: %w", err)
+	}
+	if _, err := workspacecompiler.CompileProject(request.ProjectPath, workspacecompiler.Options{ServingStateID: "deployment-preflight"}); err != nil {
+		return fmt.Errorf("compile project: %w", err)
+	}
+	if err := validateManagedRevisionPins(project, request.Revisions); err != nil {
+		return err
+	}
+	workspaceIDs := sortedProjectWorkspaceIDs(project.Workspaces)
+	if len(workspaceIDs) == 0 {
+		return fmt.Errorf("project %q has no workspaces", request.ProjectPath)
+	}
+
+	cliOpts := &rootOptions{
+		target: request.Target, token: request.Token, catalog: request.ProjectPath,
+		environment: request.Environment, autoApprove: request.AutoApprove,
+	}
+	type candidate struct {
+		workspaceID string
+		activeGraph workspace.AssetGraph
+	}
+	candidates := make([]candidate, 0, len(workspaceIDs))
+	for _, workspaceID := range workspaceIDs {
+		graph, graphErr := fetchActiveWorkspaceGraphFor(ctx, cliOpts, workspaceID)
+		if graphErr != nil {
+			return fmt.Errorf("read active graph for workspace %q", workspaceID)
+		}
+		plan, planErr := workspacecompiler.PlanProjectAgainstGraph(request.ProjectPath, workspaceID, graph)
+		if planErr != nil {
+			return fmt.Errorf("plan workspace %q: %w", workspaceID, planErr)
+		}
+		printPublishPlanSummaryTo(outputOrDiscard(request.Out), plan.Workspaces[0])
+		candidates = append(candidates, candidate{workspaceID: workspaceID, activeGraph: graph})
+	}
+	if err := confirmDeployment(cliOpts, os.Stdin, outputOrDiscard(request.Out)); err != nil {
 		return err
 	}
 
-	var failures []string
-	for index := range results {
-		result := &results[index]
-		if result.Err != nil {
-			result.Status = "failed"
-			failures = append(failures, fmt.Sprintf("%s: %v", result.WorkspaceID, result.Err))
-			fmt.Printf("failed %s: %v\n", result.WorkspaceID, result.Err)
-			continue
+	targets := make([]apigenapi.ProjectDeploymentTargetRequest, 0, len(candidates))
+	for _, item := range candidates {
+		workspaceProject := project.Workspaces[item.workspaceID]
+		pins := selectManagedDataPins(request.Revisions, managedConnectionsForWorkspace(project, workspaceProject))
+		prepared, localDigest, prepareErr := prepareWorkspaceCandidate(ctx, cliOpts, request.Target, request.Token, item.workspaceID, workspaceProject, item.activeGraph, pins)
+		if prepareErr != nil {
+			return fmt.Errorf("prepare workspace %q failed", item.workspaceID)
 		}
-		if result.Status == "skipped" {
-			fmt.Printf("skipped %s unchanged\n", result.WorkspaceID)
-			continue
+		if prepared.Digest != localDigest || !canonicalArtifactDigest(prepared.Digest) {
+			return fmt.Errorf("prepare workspace %q returned an invalid artifact digest", item.workspaceID)
 		}
-		workspaceProject := project.Workspaces[result.WorkspaceID]
-		activated, digest, err := publishWorkspace(ctx, opts, target, token, result.WorkspaceID, workspaceProject, result.ActiveGraph, selectManagedDataPins(managedDataPins, result.ManagedConnections))
-		if err != nil {
-			result.Status = "failed"
-			failures = append(failures, fmt.Sprintf("%s: %v", result.WorkspaceID, err))
-			fmt.Printf("failed %s: %v\n", result.WorkspaceID, err)
-			continue
-		}
-		result.Status = "published"
-		fmt.Printf("published %s publish=%s environment=%s digest=%s localDigest=%s status=%s\n", result.WorkspaceID, activated.ID, activated.Environment, activated.Digest, digest, activated.Status)
+		targets = append(targets, apigenapi.ProjectDeploymentTargetRequest{Workspace: item.workspaceID, ServingStateId: prepared.ID})
 	}
-	if len(failures) > 0 {
-		return fmt.Errorf("publish failed: %s", strings.Join(failures, "; "))
+
+	client := newManagedDataCLIClient(request.HTTPClient, request.Target, request.Token)
+	createBody := apigenapi.ProjectDeploymentCreateRequest{Environment: request.Environment, Targets: targets}
+	createKeyValues := []string{project.Name, request.Environment}
+	createKeyValues = append(createKeyValues, projectDeploymentTargetValues(targets)...)
+	created, err := client.createProjectDeployment(ctx, project.Name, deploymentIdempotencyKey("create", createKeyValues...), createBody)
+	if err != nil {
+		return fmt.Errorf("create project deployment failed")
+	}
+	if err := validateProjectDeploymentResponse(created, "", project.Name, request.Environment, apigenapi.ProjectDeploymentStatusPending, apigenapi.ProjectDeploymentTargetStatusPending, targets); err != nil {
+		return err
+	}
+	activated, err := client.activateProjectDeployment(ctx, project.Name, created.Id, deploymentIdempotencyKey("activate", project.Name, created.Id))
+	if err != nil {
+		return fmt.Errorf("activate project deployment failed")
+	}
+	if err := validateProjectDeploymentResponse(activated, created.Id, project.Name, request.Environment, apigenapi.ProjectDeploymentStatusActive, apigenapi.ProjectDeploymentTargetStatusActive, targets); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(outputOrDiscard(request.Out), "deployed %s deployment=%s environment=%s status=%s\n", project.Name, activated.Id, request.Environment, activated.Status)
+	return err
+}
+
+func parseManagedRevisionPins(values []string) (map[string]string, error) {
+	pins := make(map[string]string, len(values))
+	for _, value := range values {
+		name, revision, ok := strings.Cut(value, "=")
+		name = strings.TrimSpace(name)
+		revision = strings.TrimSpace(revision)
+		if !ok || name == "" || !canonicalManagedRevisionID(revision) {
+			return nil, fmt.Errorf("revision must use connection=sha256:<64 lowercase hex>")
+		}
+		if _, duplicate := pins[name]; duplicate {
+			return nil, fmt.Errorf("duplicate revision for managed connection %q", name)
+		}
+		pins[name] = revision
+	}
+	return pins, nil
+}
+
+func validateManagedRevisionPins(project workspacecompiler.Project, pins map[string]string) error {
+	want := make(map[string]struct{})
+	for _, workspaceProject := range project.Workspaces {
+		for _, name := range managedConnectionsForWorkspace(project, workspaceProject) {
+			want[name] = struct{}{}
+		}
+	}
+	for name := range want {
+		revision, ok := pins[name]
+		if !ok {
+			return fmt.Errorf("managed connection %q requires an explicit revision pin", name)
+		}
+		if !canonicalManagedRevisionID(revision) {
+			return fmt.Errorf("managed connection %q revision must be canonical sha256:<64 lowercase hex>", name)
+		}
+	}
+	for name := range pins {
+		if _, ok := want[name]; !ok {
+			return fmt.Errorf("revision provided for unknown managed connection %q", name)
+		}
 	}
 	return nil
 }
 
-type publishWorkspaceResult struct {
-	WorkspaceID        string
-	Status             string
-	ActiveGraph        workspace.AssetGraph
-	ManagedConnections []string
-	Err                error
+func printPublishPlanSummaryTo(out io.Writer, workspacePlan workspacecompiler.ProjectPlanWorkspace) {
+	summary := workspacePlan.Summary
+	fmt.Fprintf(out, "workspace %s changes +%d ~%d -%d dependencies %d\n", workspacePlan.ID, summary.Added, summary.Changed, summary.Removed, summary.DependencyChanges)
+}
+
+func projectDeploymentTargetValues(targets []apigenapi.ProjectDeploymentTargetRequest) []string {
+	values := make([]string, 0, len(targets)*2)
+	for _, target := range targets {
+		values = append(values, target.Workspace, target.ServingStateId)
+	}
+	return values
+}
+
+func validateProjectDeploymentResponse(response apigenapi.ProjectDeploymentResponse, expectedID, project, environment string, status apigenapi.ProjectDeploymentStatus, targetStatus apigenapi.ProjectDeploymentTargetStatus, targets []apigenapi.ProjectDeploymentTargetRequest) error {
+	if strings.TrimSpace(response.Id) == "" || expectedID != "" && response.Id != expectedID || response.Project != project || response.Environment != environment || response.Status != status || len(response.Targets) != len(targets) {
+		return fmt.Errorf("project deployment returned inconsistent scope or status")
+	}
+	expected := make(map[string]string, len(targets))
+	for _, target := range targets {
+		expected[target.Workspace] = target.ServingStateId
+	}
+	for _, target := range response.Targets {
+		if expected[target.Workspace] != target.ServingStateId || target.Status != targetStatus {
+			return fmt.Errorf("project deployment returned inconsistent targets")
+		}
+		delete(expected, target.Workspace)
+	}
+	if len(expected) != 0 {
+		return fmt.Errorf("project deployment omitted targets")
+	}
+	return nil
+}
+
+func canonicalArtifactDigest(value string) bool {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func deploymentIdempotencyKey(kind string, values ...string) string {
+	digest := sha256.New()
+	writeHashValue(digest, kind)
+	for _, value := range values {
+		writeHashValue(digest, value)
+	}
+	return "deployment-" + kind + "-" + hex.EncodeToString(digest.Sum(nil))
+}
+
+func outputOrDiscard(out io.Writer) io.Writer {
+	if out == nil {
+		return io.Discard
+	}
+	return out
 }
 
 func managedConnectionsForWorkspace(project workspacecompiler.Project, workspaceProject *workspacecompiler.WorkspaceProject) []string {
@@ -175,39 +269,6 @@ func managedConnectionsForWorkspace(project workspacecompiler.Project, workspace
 	}
 	sort.Strings(result)
 	return result
-}
-
-func fetchManagedDataPins(ctx context.Context, target, token, projectID, environment string, results []publishWorkspaceResult) (map[string]string, error) {
-	connections := map[string]struct{}{}
-	for _, result := range results {
-		if result.Err != nil || result.Status != "pending" {
-			continue
-		}
-		for _, connection := range result.ManagedConnections {
-			connections[connection] = struct{}{}
-		}
-	}
-	names := make([]string, 0, len(connections))
-	for connection := range connections {
-		names = append(names, connection)
-	}
-	sort.Strings(names)
-	pins := make(map[string]string, len(names))
-	if len(names) == 0 {
-		return pins, nil
-	}
-	client := newManagedDataCLIClient(http.DefaultClient, target, token)
-	for _, connection := range names {
-		current, err := client.currentRevision(ctx, projectID, connection, environment)
-		if err != nil {
-			return nil, fmt.Errorf("resolve managed data connection %q current revision: %w", connection, err)
-		}
-		if current.Environment != environment || current.Revision == nil || current.Revision.Status != "available" || !canonicalManagedRevisionID(current.Revision.Id) {
-			return nil, fmt.Errorf("managed data connection %q has no valid current revision in environment %q", connection, environment)
-		}
-		pins[connection] = current.Revision.Id
-	}
-	return pins, nil
 }
 
 func selectManagedDataPins(all map[string]string, connections []string) map[string]string {
@@ -231,13 +292,7 @@ func canonicalManagedRevisionID(value string) bool {
 	return err == nil
 }
 
-func sortedPublishWorkspaceIDs(workspaces map[string]*workspacecompiler.WorkspaceProject, filter string) []string {
-	if filter != "" {
-		if _, ok := workspaces[filter]; !ok {
-			return nil
-		}
-		return []string{filter}
-	}
+func sortedProjectWorkspaceIDs(workspaces map[string]*workspacecompiler.WorkspaceProject) []string {
 	ids := make([]string, 0, len(workspaces))
 	for id := range workspaces {
 		ids = append(ids, id)
@@ -246,33 +301,7 @@ func sortedPublishWorkspaceIDs(workspaces map[string]*workspacecompiler.Workspac
 	return ids
 }
 
-func projectPlanWorkspaceUnchanged(workspacePlan workspacecompiler.ProjectPlanWorkspace) bool {
-	return workspacePlan.Summary.Added == 0 &&
-		workspacePlan.Summary.Changed == 0 &&
-		workspacePlan.Summary.Removed == 0 &&
-		workspacePlan.Summary.DependencyChanges == 0 &&
-		len(workspacePlan.Changes) == 0 &&
-		len(workspacePlan.DependencyChanges) == 0
-}
-
-func printPublishPlanSummary(workspacePlan workspacecompiler.ProjectPlanWorkspace) {
-	summary := workspacePlan.Summary
-	fmt.Printf("workspace %s changes +%d ~%d -%d dependencies %d\n", workspacePlan.ID, summary.Added, summary.Changed, summary.Removed, summary.DependencyChanges)
-}
-
-func publishWorkspace(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (api.PublishResponse, string, error) {
-	prepared, digest, err := prepareWorkspacePublish(ctx, opts, target, token, workspaceID, workspaceProject, activeGraph, managedDataRevisions)
-	if err != nil {
-		return api.PublishResponse{}, "", err
-	}
-	activated, err := activateWorkspacePublish(ctx, opts, target, token, prepared)
-	if err != nil {
-		return api.PublishResponse{}, "", err
-	}
-	return activated, digest, nil
-}
-
-func prepareWorkspacePublish(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (api.PublishResponse, string, error) {
+func prepareWorkspaceCandidate(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (api.PublishResponse, string, error) {
 	createBody, _ := json.Marshal(map[string]any{
 		"title":       workspaceProject.Title,
 		"description": workspaceProject.Description,
@@ -307,24 +336,9 @@ func prepareWorkspacePublish(ctx context.Context, opts *rootOptions, target, tok
 		return api.PublishResponse{}, "", err
 	}
 	if validated.ID != created.ID || validated.WorkspaceID != workspaceID || validated.Environment != cliEnvironment(opts) || validated.Status != string(servingstate.StatusValidated) || strings.TrimSpace(validated.Digest) == "" {
-		return api.PublishResponse{}, "", fmt.Errorf("publish validation returned inconsistent scope or status")
+		return api.PublishResponse{}, "", fmt.Errorf("workspace candidate validation returned inconsistent scope or status")
 	}
 	return validated, digest, nil
-}
-
-func activateWorkspacePublish(ctx context.Context, opts *rootOptions, target, token string, prepared api.PublishResponse) (api.PublishResponse, error) {
-	var activated api.PublishResponse
-	activateURL, err := apiOperationURL(target, "activatePublish", map[string]string{"workspace": prepared.WorkspaceID, "publish": prepared.ID}, environmentQuery(opts, nil))
-	if err != nil {
-		return api.PublishResponse{}, err
-	}
-	if err := doJSON(ctx, http.MethodPost, activateURL, token, nil, &activated); err != nil {
-		return api.PublishResponse{}, err
-	}
-	if activated.ID != prepared.ID || activated.WorkspaceID != prepared.WorkspaceID || activated.Environment != prepared.Environment || activated.Status != string(servingstate.StatusActive) || activated.Digest != prepared.Digest {
-		return api.PublishResponse{}, fmt.Errorf("publish activation returned inconsistent scope or status")
-	}
-	return activated, nil
 }
 
 func streamProjectArtifact(ctx context.Context, uploadURL, token, projectPath string, options servingstatefs.PackProjectOptions) (string, error) {
@@ -351,31 +365,6 @@ func streamProjectArtifact(ctx context.Context, uploadURL, token, projectPath st
 	return packed.digest, nil
 }
 
-func runPublishesList(ctx context.Context, opts *rootOptions) error {
-	if opts.workspaceID == "" {
-		return fmt.Errorf("publishes list requires --workspace")
-	}
-	target, token, err := clientTargetAndToken(opts)
-	if err != nil {
-		return err
-	}
-	listURL, err := apiOperationURL(target, "listPublishes", map[string]string{"workspace": opts.workspaceID}, environmentQuery(opts, paginationQuery(opts)))
-	if err != nil {
-		return err
-	}
-	var response apiListResponse[api.PublishResponse]
-	if err := doJSON(ctx, http.MethodGet, listURL, token, nil, &response); err != nil {
-		return err
-	}
-	rows := response.Items
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tENVIRONMENT\tSTATUS\tDIGEST\tCREATED\tACTIVATED")
-	for _, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", row.ID, row.Environment, row.Status, shortDigest(row.Digest), row.CreatedAt, row.ActivatedAt)
-	}
-	return tw.Flush()
-}
-
 func cliEnvironment(opts *rootOptions) string {
 	if opts.environment == "" {
 		return "dev"
@@ -383,7 +372,7 @@ func cliEnvironment(opts *rootOptions) string {
 	return opts.environment
 }
 
-func confirmPublish(opts *rootOptions, in *os.File, out io.Writer) error {
+func confirmDeployment(opts *rootOptions, in *os.File, out io.Writer) error {
 	if opts.autoApprove {
 		return nil
 	}
@@ -392,18 +381,18 @@ func confirmPublish(opts *rootOptions, in *os.File, out io.Writer) error {
 		return err
 	}
 	if info.Mode()&os.ModeCharDevice == 0 {
-		return fmt.Errorf("publish requires --auto-approve when stdin is not interactive")
+		return fmt.Errorf("deploy requires --auto-approve when stdin is not interactive")
 	}
-	fmt.Fprint(out, "Activate this publish? Type yes to continue: ")
+	fmt.Fprint(out, "Activate this project deployment? Type yes to continue: ")
 	answer, err := bufio.NewReader(in).ReadString('\n')
 	if err != nil {
 		if err == io.EOF {
-			return fmt.Errorf("publish requires --auto-approve when stdin is not interactive")
+			return fmt.Errorf("deploy requires --auto-approve when stdin is not interactive")
 		}
 		return err
 	}
 	if strings.TrimSpace(strings.ToLower(answer)) != "yes" {
-		return fmt.Errorf("publish activation cancelled")
+		return fmt.Errorf("deployment activation cancelled")
 	}
 	return nil
 }

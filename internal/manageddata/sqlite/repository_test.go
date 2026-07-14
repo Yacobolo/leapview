@@ -121,105 +121,6 @@ func TestCompleteUploadRollsBackWhenStoredFilesDoNotMatchManifest(t *testing.T) 
 	}
 }
 
-func TestActivateRolloutAtomicallyUpdatesMultipleWorkspaceTargets(t *testing.T) {
-	ctx, store, repo := testRepository(t)
-	collection, revision := readyRevision(t, ctx, repo, "sales", "project-a", "sales", "sales.csv", "a")
-	for i := 1; i <= 3; i++ {
-		workspaceID := "workspace-" + string(rune('0'+i))
-		insertWorkspaceState(t, ctx, store, workspaceID, "old-"+workspaceID, "prod", "active")
-		insertServingState(t, ctx, store, workspaceID, "candidate-"+workspaceID, "prod", "validated")
-		setActiveState(t, ctx, store, workspaceID, "prod", "old-"+workspaceID)
-	}
-	rollout, err := repo.CreateRollout(ctx, manageddata.CreateRolloutInput{
-		ID: "rollout-1", CollectionID: collection.ID, Environment: "prod", RevisionID: revision.ID, CreatedBy: "principal-1",
-		Targets: []manageddata.RolloutTargetInput{
-			{WorkspaceID: "workspace-1", ServingStateID: "candidate-workspace-1"},
-			{WorkspaceID: "workspace-2", ServingStateID: "candidate-workspace-2"},
-			{WorkspaceID: "workspace-3", ServingStateID: "candidate-workspace-3"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("create rollout: %v", err)
-	}
-	if len(rollout.Targets) != 3 || rollout.Targets[1].PriorServingStateID != "old-workspace-2" {
-		t.Fatalf("targets = %#v", rollout.Targets)
-	}
-
-	// The middle candidate becomes invalid after rollout planning. No earlier target may commit.
-	if _, err := store.ExecContext(ctx, `UPDATE serving_states SET status = 'failed' WHERE id = 'candidate-workspace-2'`); err != nil {
-		t.Fatal(err)
-	}
-	_, err = repo.ActivateRollout(ctx, rollout.ID, manageddata.PointerExpectation{Generation: 0})
-	if !errors.Is(err, manageddata.ErrConflict) {
-		t.Fatalf("invalid middle target error = %v, want conflict", err)
-	}
-	assertRolloutNotApplied(t, ctx, store, collection.ID, "prod")
-
-	if _, err := store.ExecContext(ctx, `UPDATE serving_states SET status = 'validated' WHERE id = 'candidate-workspace-2'`); err != nil {
-		t.Fatal(err)
-	}
-	setActiveState(t, ctx, store, "workspace-2", "prod", "candidate-workspace-2")
-	_, err = repo.ActivateRollout(ctx, rollout.ID, manageddata.PointerExpectation{Generation: 0})
-	if !errors.Is(err, manageddata.ErrConflict) {
-		t.Fatalf("stale workspace pointer error = %v, want conflict", err)
-	}
-	setActiveState(t, ctx, store, "workspace-2", "prod", "old-workspace-2")
-	assertRolloutNotApplied(t, ctx, store, collection.ID, "prod")
-
-	active, err := repo.ActivateRollout(ctx, rollout.ID, manageddata.PointerExpectation{Generation: 0})
-	if err != nil {
-		t.Fatalf("activate rollout: %v", err)
-	}
-	if active.Status != manageddata.RolloutStatusActive {
-		t.Fatalf("rollout status = %q", active.Status)
-	}
-	for _, target := range active.Targets {
-		if target.Status != manageddata.TargetStatusActive {
-			t.Fatalf("target %s status = %q", target.WorkspaceID, target.Status)
-		}
-	}
-	pointer, err := repo.EnvironmentPointer(ctx, collection.ID, "prod")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pointer.RevisionID != revision.ID || pointer.Generation != 1 {
-		t.Fatalf("environment pointer = %#v", pointer)
-	}
-	for i := 1; i <= 3; i++ {
-		workspaceID := "workspace-" + string(rune('0'+i))
-		candidateID := "candidate-" + workspaceID
-		assertActiveState(t, ctx, store, workspaceID, "prod", candidateID)
-		assertServingStateStatus(t, ctx, store, candidateID, "active")
-		assertServingStateStatus(t, ctx, store, "old-"+workspaceID, "draining")
-		bindings, err := repo.ListServingStateBindings(ctx, candidateID)
-		if err != nil || len(bindings) != 1 || bindings[0].RevisionID != revision.ID {
-			t.Fatalf("bindings for %s = %#v, err=%v", candidateID, bindings, err)
-		}
-	}
-}
-
-func TestRolloutCanReactivateInactiveServingState(t *testing.T) {
-	ctx, store, repo := testRepository(t)
-	collection, revision := readyRevision(t, ctx, repo, "sales", "project-a", "sales", "sales.csv", "a")
-	insertWorkspaceState(t, ctx, store, "workspace-1", "current-state", "prod", "active")
-	insertServingState(t, ctx, store, "workspace-1", "prior-state", "prod", "inactive")
-	setActiveState(t, ctx, store, "workspace-1", "prod", "current-state")
-
-	rollout, err := repo.CreateRollout(ctx, manageddata.CreateRolloutInput{
-		ID: "rollout-rollback", CollectionID: collection.ID, Environment: "prod", RevisionID: revision.ID,
-		Targets: []manageddata.RolloutTargetInput{{WorkspaceID: "workspace-1", ServingStateID: "prior-state"}},
-	})
-	if err != nil {
-		t.Fatalf("create rollback rollout: %v", err)
-	}
-	if _, err := repo.ActivateRollout(ctx, rollout.ID, manageddata.PointerExpectation{}); err != nil {
-		t.Fatalf("activate rollback rollout: %v", err)
-	}
-	assertActiveState(t, ctx, store, "workspace-1", "prod", "prior-state")
-	assertServingStateStatus(t, ctx, store, "prior-state", "active")
-	assertServingStateStatus(t, ctx, store, "current-state", "draining")
-}
-
 func TestServingStateBindingsAllowMultipleCollections(t *testing.T) {
 	ctx, store, repo := testRepository(t)
 	firstCollection, firstRevision := readyRevision(t, ctx, repo, "inventory", "project-a", "inventory", "inventory.csv", "c")
@@ -303,28 +204,6 @@ func setActiveState(t *testing.T, ctx context.Context, db *sql.DB, workspaceID, 
 	t.Helper()
 	if _, err := db.ExecContext(ctx, `INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id) VALUES (?, ?, ?) ON CONFLICT(workspace_id, environment) DO UPDATE SET serving_state_id = excluded.serving_state_id`, workspaceID, environment, stateID); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func assertRolloutNotApplied(t *testing.T, ctx context.Context, db *sql.DB, collectionID, environment string) {
-	t.Helper()
-	var count int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM managed_data_environment_pointers WHERE collection_id = ? AND environment = ?`, collectionID, environment).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatal("collection environment pointer changed despite rollback")
-	}
-	for i := 1; i <= 3; i++ {
-		workspaceID := "workspace-" + string(rune('0'+i))
-		assertActiveState(t, ctx, db, workspaceID, environment, "old-"+workspaceID)
-		var status string
-		if err := db.QueryRowContext(ctx, `SELECT status FROM serving_states WHERE id = ?`, "candidate-"+workspaceID).Scan(&status); err != nil {
-			t.Fatal(err)
-		}
-		if workspaceID != "workspace-2" && status != "validated" {
-			t.Fatalf("candidate %s status = %q", workspaceID, status)
-		}
 	}
 }
 

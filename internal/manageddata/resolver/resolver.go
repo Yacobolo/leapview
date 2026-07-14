@@ -73,34 +73,6 @@ func (r *Resolver) ResolveManagedData(ctx context.Context, servingStateID servin
 	return r.resolveBindings(ctx, servingStateID, bindings)
 }
 
-// ResolveRolloutCandidate resolves an unpublished rollout view without
-// persisting it. The named collection's existing binding is replaced while all
-// other bindings from the candidate serving state are retained unchanged.
-func (r *Resolver) ResolveRolloutCandidate(ctx context.Context, servingStateID servingstate.ID, collectionID, revisionID string) (runtimehost.ManagedDataResolution, error) {
-	if !canonicalIdentifier(collectionID) || !canonicalIdentifier(revisionID) {
-		return runtimehost.ManagedDataResolution{}, invalidMetadata("rollout candidate identifiers are invalid")
-	}
-	bindings, err := r.loadBindings(ctx, servingStateID)
-	if err != nil {
-		return runtimehost.ManagedDataResolution{}, err
-	}
-	replaced := false
-	for index := range bindings {
-		if bindings[index].CollectionID != collectionID {
-			continue
-		}
-		if replaced {
-			return runtimehost.ManagedDataResolution{}, invalidMetadata("rollout collection has duplicate bindings")
-		}
-		bindings[index].RevisionID = revisionID
-		replaced = true
-	}
-	if !replaced {
-		return runtimehost.ManagedDataResolution{}, invalidMetadata("rollout collection is not bound to the candidate serving state")
-	}
-	return r.resolveBindings(ctx, servingStateID, bindings)
-}
-
 type resolvedBinding struct {
 	project        string
 	connection     string

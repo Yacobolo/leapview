@@ -52,7 +52,7 @@ func newManagedFixtureRuntime(dataDir, workspaceID string) (*Service, error) {
 		return nil, fmt.Errorf("showcase project has no %s workspace", workspaceID)
 	}
 	bindManagedFixtureRoots(compiledWorkspace.Definition, dataDir)
-	return NewFromDefinition(dataDir, filepath.Join(dataDir, workspaceID), testDataRuntimeFactory{}, compiledWorkspace.Definition)
+	return NewFromDefinition(filepath.Join(dataDir, workspaceID), testDataRuntimeFactory{}, compiledWorkspace.Definition)
 }
 
 func bindManagedFixtureRoots(definition *workspace.Definition, root string) {
@@ -73,18 +73,9 @@ func TestWorkspaceRuntimeUsesSingleDuckDBForSharedModelTables(t *testing.T) {
 o1,10
 o2,20
 `)
-	if err := os.WriteFile(filepath.Join(dir, "libredash-model_a.duckdb"), []byte("stale"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "libredash-model_b.duckdb.wal"), []byte("stale"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "libredash-workspace.duckdb"), []byte("stale"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	definition := sharedOrdersWorkspaceDefinition(t)
-	metrics, err := NewFromDefinition(dir, dir, testDataRuntimeFactory{}, definition)
+	bindManagedFixtureRoots(definition, dir)
+	metrics, err := NewFromDefinition(dir, testDataRuntimeFactory{}, definition)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,12 +106,6 @@ o2,20
 	if _, err := os.Stat(filepath.Join(dir, "data")); err != nil {
 		t.Fatalf("data dir stat error = %v", err)
 	}
-	if matches, err := filepath.Glob(filepath.Join(dir, "libredash-*.duckdb*")); err != nil {
-		t.Fatal(err)
-	} else if len(matches) != 0 {
-		t.Fatalf("legacy DuckDB files = %v, want none", matches)
-	}
-
 	db, err := sql.Open("duckdb", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +166,7 @@ func sharedOrdersModel(name string) *semanticmodel.Model {
 	return &semanticmodel.Model{
 		Name:              name,
 		DefaultConnection: "local",
-		Connections:       map[string]semanticmodel.Connection{"local": {Kind: "local"}},
+		Connections:       map[string]semanticmodel.Connection{"local": {Kind: "managed"}},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Connection: "local", Path: "orders.csv", Format: "csv"},
 		},

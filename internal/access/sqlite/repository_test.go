@@ -29,7 +29,7 @@ func TestRepositoryChecksGrantPrivileges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set principal role: %v", err)
 	}
-	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivatePublish)
+	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivateDeployment)
 	if err != nil {
 		t.Fatalf("check privilege: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestRepositoryChecksGroupRolePrivileges(t *testing.T) {
 		t.Fatalf("binding subject = %q/%q, want group/%q", binding.SubjectType, binding.SubjectID, group.ID)
 	}
 
-	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivatePublish)
+	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivateDeployment)
 	if err != nil {
 		t.Fatalf("check privilege: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestRepositoryChecksGroupRolePrivileges(t *testing.T) {
 	if err := repo.RemoveGroupMember(ctx, "test", group.ID, principal.ID); err != nil {
 		t.Fatalf("remove group member: %v", err)
 	}
-	allowed, err = testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivatePublish)
+	allowed, err = testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivateDeployment)
 	if err != nil {
 		t.Fatalf("check privilege after remove: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestRepositoryResolveExternalPrincipalAttachesBootstrappedEmail(t *testing.
 	if principal.ID != access.PrincipalIDForEmail("owner@example.com") {
 		t.Fatalf("principal id = %q, want bootstrapped email principal", principal.ID)
 	}
-	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivatePublish)
+	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivateDeployment)
 	if err != nil {
 		t.Fatalf("check privilege: %v", err)
 	}
@@ -880,7 +880,7 @@ func TestRepositoryResolveExternalPrincipalWithoutEmailCreatesUnprivilegedPrinci
 	if err != nil {
 		t.Fatalf("resolve external principal: %v", err)
 	}
-	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivatePublish)
+	allowed, err := testAuthorize(ctx, repo, "test", principal.ID, access.PrivilegeActivateDeployment)
 	if err != nil {
 		t.Fatalf("check privilege: %v", err)
 	}

@@ -34,7 +34,6 @@ func dataCommandWithOptions(ctx context.Context, planner dataPlanner, opts *root
 	}
 	parent.AddCommand(dataPlanCommand(ctx, planner))
 	parent.AddCommand(dataSyncCommand(ctx, planner, opts))
-	parent.AddCommand(dataDeployCommand(ctx, opts))
 	parent.AddCommand(dataRevisionsCommand(ctx, opts))
 	return parent
 }

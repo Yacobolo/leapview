@@ -49,7 +49,6 @@ func Settings() []Setting {
 }
 
 var settings = []Setting{
-	{Name: "ADDR", Field: "AddrFallback", Type: TypeString, Category: "server", Scope: "serve", Description: "Compatibility listen-address alias used after LIBREDASH_ADDR.", Runtime: true, Lifecycle: "compatibility", AliasFor: "LIBREDASH_ADDR"},
 	{Name: "LIBREDASH_ADDR", Field: "Addr", Type: TypeString, Category: "server", Scope: "serve,healthcheck", Description: "HTTP listen address.", Example: ":8080", Runtime: true, Lifecycle: "supported"},
 	{Name: "LIBREDASH_AGENT_API_KEY", Field: "AgentAPIKey", Type: TypeString, Category: "agent", Scope: "serve", Description: "API key for the configured agent model provider.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_AGENT_BASE_URL", Field: "AgentBaseURL", Type: TypeString, Default: "https://api.openai.com/v1", Category: "agent", Scope: "serve", Description: "OpenAI-compatible agent API base URL.", Example: "https://api.openai.com/v1", Runtime: true, Lifecycle: "supported", Commented: true},
@@ -72,7 +71,6 @@ var settings = []Setting{
 	{Name: "LIBREDASH_CLI_CONFIG", Field: "CLIConfig", Type: TypeString, Category: "client", Scope: "client commands", Description: "Path to the local CLI target and token configuration file.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_COOKIE_SECURE", Field: "CookieSecureRaw", Type: TypeBool, DecodeType: TypeString, Category: "security", Scope: "serve", Description: "Secure-cookie override; defaults to true for production browser authentication.", Example: "true", Runtime: true, Lifecycle: "supported", EnvExample: "true"},
 	{Name: "LIBREDASH_CSRF_KEY", Field: "CSRFKey", Type: TypeString, Category: "security", Scope: "serve", Description: "Key used for CSRF protection and OAuth state cookies; production requires at least 32 characters.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", EnvExample: "replace-with-at-least-32-characters"},
-	{Name: "LIBREDASH_DATA_DIR", Field: "DataDir", Type: TypeString, Default: ".data/olist", Category: "storage", Scope: "serve,bootstrap tools", Description: "Directory containing source data files.", Example: "/path/to/data", Runtime: true, Lifecycle: "supported", EnvExample: "/path/to/data"},
 	{Name: "LIBREDASH_DEV_AUTH_BYPASS", Field: "DevAuthBypass", Type: TypeBool, Category: "authentication", Scope: "serve", Description: "Bypass authentication in development; forbidden in production.", Default: "false", Runtime: true, Lifecycle: "development", Commented: true},
 	{Name: "LIBREDASH_DEV_LOG_LINES", Type: TypeInt, Default: "120", Category: "development", Scope: "dev server", Description: "Number of log lines shown by the managed development server.", Lifecycle: "development"},
 	{Name: "LIBREDASH_DEV_PORT_COUNT", Type: TypeInt, Default: "100", Category: "development", Scope: "dev server", Description: "Number of ports scanned by the managed development server.", Lifecycle: "development"},
@@ -84,7 +82,6 @@ var settings = []Setting{
 	{Name: "LIBREDASH_DEV_SKIP_PUBLISH", Type: TypeBool, Default: "false", Category: "development", Scope: "dev server", Description: "Skip automatic project publishing in the managed development server.", Lifecycle: "development"},
 	{Name: "LIBREDASH_DEV_WORKTREE", Type: TypeString, Category: "development", Scope: "dev server", Description: "Worktree path exported by the managed development server.", Lifecycle: "internal"},
 	{Name: "LIBREDASH_DUCKDB_DIR", Field: "DuckDBDir", Type: TypeString, Category: "storage", Scope: "serve", Description: "Directory containing workspace DuckDB runtime files.", Runtime: true, Lifecycle: "supported", Commented: true},
-	{Name: "LIBREDASH_DUCKDB_PATH", Field: "DuckDBPath", Type: TypeString, Category: "storage", Scope: "serve", Description: "Explicit legacy DuckDB database path override.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_DUCKLAKE_CATALOG_PATH", Field: "DuckLakeCatalog", Type: TypeString, Category: "storage", Scope: "serve,admin", Description: "Path to the single global DuckLake catalog.", Example: "/var/lib/libredash/ducklake/catalog.sqlite", Runtime: true, Lifecycle: "supported", EnvExample: "/var/lib/libredash/ducklake/catalog.sqlite"},
 	{Name: "LIBREDASH_EXEC_JOB_LEASE_TIMEOUT", Field: "ExecJobLeaseTimeout", Type: TypeDuration, Default: "2m", Category: "execution", Scope: "serve", Description: "Lease duration before an abandoned refresh job may be reclaimed.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_EXEC_MAX_QUEUED_READS", Field: "ExecMaxQueuedReads", Type: TypeInt, Default: "64", Category: "execution", Scope: "serve", Description: "Maximum queued interactive read queries; negative disables queuing.", Runtime: true, Lifecycle: "supported", EnvExample: "64"},
@@ -131,7 +128,6 @@ var settings = []Setting{
 	{Name: "LIBREDASH_TRUST_PROXY_HEADERS", Field: "TrustProxyHeaders", Type: TypeBool, Category: "security", Scope: "serve", Description: "Trust client-address headers only when a trusted proxy overwrites them.", Default: "false", Runtime: true, Lifecycle: "supported", EnvExample: "false"},
 	{Name: "LIBREDASH_UID", Type: TypeInt, Category: "deployment", Scope: "Hetzner provisioner", Description: "Temporary container user identifier used during provisioning.", Lifecycle: "internal"},
 	{Name: "LIBREDASH_WAREHOUSE_DSN", Type: TypeString, Category: "connection", Scope: "example connection", Description: "Example externally supplied warehouse connection credential.", Example: SecretPlaceholder, Secret: true, Lifecycle: "external"},
-	{Name: "PORT", Field: "Port", Type: TypeString, Category: "server", Scope: "serve,healthcheck", Description: "Compatibility port alias used after LIBREDASH_ADDR and ADDR.", Runtime: true, Lifecycle: "compatibility", AliasFor: "LIBREDASH_ADDR"},
 }
 
 type PredicateKind string

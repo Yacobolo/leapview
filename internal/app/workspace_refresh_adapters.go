@@ -70,7 +70,6 @@ func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh
 			DuckDBDir:       s.duckDBDir,
 			DuckLakeCatalog: s.duckLakeCatalogPath,
 			DuckLakeData:    s.duckLakeDataPath,
-			DataDir:         s.dataDirForWorkspace,
 		},
 		Runtime:   appRefreshRuntimeHost{reloader: s.reloader},
 		Retention: appRefreshRetention{server: s},

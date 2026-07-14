@@ -77,7 +77,6 @@ type integrationMetrics interface {
 	QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error)
 	PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error)
 	RefreshMaterializations(ctx context.Context, modelID string) error
-	DataDir() string
 	Pages(dashboardID string) []dashboard.Page
 }
 
@@ -216,7 +215,7 @@ func newHarnessRuntime(dataDir, catalogPath, duckDBDir string) (*dashboardruntim
 	if err := bindManagedConnectionRoots(compiledWorkspace.Definition, dataDir); err != nil {
 		return nil, err
 	}
-	service, err := dashboardruntime.NewFromDefinition(dataDir, filepath.Join(duckDBDir, "sales"), integrationDataRuntimeFactory{}, compiledWorkspace.Definition)
+	service, err := dashboardruntime.NewFromDefinition(filepath.Join(duckDBDir, "sales"), integrationDataRuntimeFactory{}, compiledWorkspace.Definition)
 	if err != nil {
 		return nil, fmt.Errorf("loading workspace %q: %w", "sales", err)
 	}
@@ -810,6 +809,7 @@ func seedIntegrationActiveDeployment(t *testing.T, store *platform.Store, worksp
 	validation := servingstate.Validation{
 		Digest:       "digest-" + string(created.ID),
 		ManifestJSON: "{}",
+		ProjectID:    compiled.Project.Name,
 		Graph:        graph,
 	}
 	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, integrationZeroArtifact(created.ID, workspaceID)); err != nil {
@@ -857,7 +857,6 @@ func (integrationDataRuntimeFactory) OpenDashboardDataRuntime(ctx context.Contex
 	runtime, err := analyticsduckdb.OpenMaterializeRuntime(ctx, materializeruntime.RuntimeConfig{
 		ModelID: config.ModelID,
 		Model:   config.Model,
-		DataDir: config.DataDir,
 		DBDir:   config.DBDir,
 	})
 	if err != nil {

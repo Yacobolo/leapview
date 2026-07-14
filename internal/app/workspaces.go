@@ -9,18 +9,6 @@ import (
 	"github.com/gorilla/csrf"
 )
 
-func (s *Server) dataDirForWorkspace(workspaceID string) string {
-	if workspaceMetrics, ok := s.metrics.(workspaceMetrics); ok {
-		if metrics, ok := workspaceMetrics.MetricsForWorkspace(workspaceID); ok && metrics != nil {
-			return metrics.DataDir()
-		}
-	}
-	if s.metrics != nil {
-		return s.metrics.DataDir()
-	}
-	return ""
-}
-
 func (s *Server) assetVersionsStateForSection(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
 	state := ui.AssetVersionsState{CurrentContentHash: asset.ContentHash}
 	if section != "versions" {

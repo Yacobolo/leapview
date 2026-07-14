@@ -32,10 +32,9 @@ type Config struct {
 }
 
 type Layout struct {
-	RootDir          string
-	CatalogPath      string
-	DataPath         string
-	LegacyDuckDBPath string
+	RootDir     string
+	CatalogPath string
+	DataPath    string
 }
 
 type Environment struct {
@@ -49,10 +48,9 @@ type Snapshot struct {
 
 func NewLayout(rootDir string) Layout {
 	return Layout{
-		RootDir:          rootDir,
-		CatalogPath:      filepath.Join(rootDir, "catalog.sqlite"),
-		DataPath:         filepath.Join(rootDir, "data"),
-		LegacyDuckDBPath: filepath.Join(rootDir, "libredash-workspace.duckdb"),
+		RootDir:     rootDir,
+		CatalogPath: filepath.Join(rootDir, "catalog.sqlite"),
+		DataPath:    filepath.Join(rootDir, "data"),
 	}
 }
 
@@ -157,55 +155,8 @@ func MigrateSQLiteCatalogDataPath(ctx context.Context, catalogPath, targetDataPa
 	return secureSQLiteCatalogFiles(catalogPath)
 }
 
-func MigrateSharedSQLiteCatalog(ctx context.Context, sharedCatalogPath, targetCatalogPath, targetDataPath string) error {
-	sharedCatalogPath = strings.TrimSpace(sharedCatalogPath)
-	targetCatalogPath = strings.TrimSpace(targetCatalogPath)
-	if sharedCatalogPath == "" || targetCatalogPath == "" || sameFilesystemPath(sharedCatalogPath, targetCatalogPath) {
-		return nil
-	}
-	if _, err := os.Stat(targetCatalogPath); err == nil {
-		return nil
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if _, err := os.Stat(sharedCatalogPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	unlock := lockCatalogWrites(sharedCatalogPath)
-	defer unlock()
-	db, err := sql.Open("sqlite", sqliteFileDSN(sharedCatalogPath))
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	var hasDuckLakeMetadata int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'ducklake_metadata'`).Scan(&hasDuckLakeMetadata); err != nil {
-		return fmt.Errorf("inspect shared DuckLake catalog: %w", err)
-	}
-	if hasDuckLakeMetadata == 0 {
-		return nil
-	}
-	if err := securefs.EnsurePrivateDir(filepath.Dir(targetCatalogPath)); err != nil {
-		return err
-	}
-	if _, err := db.ExecContext(ctx, `VACUUM main INTO '`+sqliteString(targetCatalogPath)+`'`); err != nil {
-		return fmt.Errorf("migrate shared DuckLake catalog: %w", err)
-	}
-	if err := secureSQLiteCatalogFiles(targetCatalogPath); err != nil {
-		return fmt.Errorf("secure migrated DuckLake catalog: %w", err)
-	}
-	return MigrateSQLiteCatalogDataPath(ctx, targetCatalogPath, targetDataPath)
-}
-
 func sqliteFileDSN(path string) string {
 	return "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)"
-}
-
-func sqliteString(value string) string {
-	return strings.ReplaceAll(value, "'", "''")
 }
 
 func secureSQLiteCatalogFiles(path string) error {

@@ -15,6 +15,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
+	deploymenthttp "github.com/Yacobolo/libredash/internal/deployment/http"
 	"github.com/Yacobolo/libredash/internal/execution"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
@@ -102,6 +103,7 @@ type Server struct {
 	chatTitleMu                   sync.Mutex
 	pendingChatTitles             map[string]struct{}
 	managedDataOptions            manageddatahttp.Options
+	deploymentOptions             deploymenthttp.Options
 	managedDataTus                http.Handler
 	managedDataExpirer            managedDataUploadExpirer
 	managedDataExpireInterval     time.Duration
@@ -145,6 +147,7 @@ type Options struct {
 	Executor                  *execution.Service
 	JobLeaseTimeout           time.Duration
 	ManagedData               manageddatahttp.Options
+	Deployment                deploymenthttp.Options
 	ManagedDataTus            http.Handler
 	ManagedDataExpirer        managedDataUploadExpirer
 	ManagedDataExpireInterval time.Duration
@@ -211,6 +214,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	server.requestLogging = options.RequestLogging
 	server.managedDataOptions = options.ManagedData
+	server.deploymentOptions = options.Deployment
 	server.managedDataTus = options.ManagedDataTus
 	server.managedDataExpirer = options.ManagedDataExpirer
 	server.managedDataExpireInterval = options.ManagedDataExpireInterval

@@ -6,11 +6,16 @@ import (
 )
 
 func TestManagedDataPrivilegesAndDataDeployerRole(t *testing.T) {
-	wantPrivileges := []Privilege{PrivilegeViewData, PrivilegeIngestData, PrivilegeActivateData}
+	wantPrivileges := []Privilege{PrivilegeViewData, PrivilegeIngestData}
 	known := KnownPrivileges()
 	for _, privilege := range wantPrivileges {
 		if !slices.Contains(known, privilege) {
 			t.Fatalf("KnownPrivileges() = %#v, missing %s", known, privilege)
+		}
+	}
+	for _, removed := range []Privilege{"ACTIVATE_DATA", "ACTIVATE_PUBLISH"} {
+		if slices.Contains(known, removed) {
+			t.Fatalf("KnownPrivileges() retains removed privilege %s", removed)
 		}
 	}
 

@@ -78,46 +78,6 @@ func TestResolveManagedDataJoinsAndMaterializesMultipleBindingsDeterministically
 	}
 }
 
-func TestResolveRolloutCandidateReplacesOnlyTargetBindingWithoutPersistence(t *testing.T) {
-	oldManifest, oldBlobs := testManifest(map[string]string{"orders.csv": "old"})
-	newManifest, newBlobs := testManifest(map[string]string{"orders.csv": "new"})
-	pricesManifest, priceBlobs := testManifest(map[string]string{"prices.csv": "prices"})
-	repo := &fakeRepository{
-		bindings: []manageddata.ServingStateBinding{
-			{ServingStateID: "candidate-1", CollectionID: "orders", RevisionID: "orders-old", Environment: "prod"},
-			{ServingStateID: "candidate-1", CollectionID: "prices", RevisionID: "prices-r1", Environment: "prod"},
-		},
-		collections: map[string]manageddata.Collection{
-			"orders": {ID: "orders", ProjectID: "sales", ConnectionName: "orders"},
-			"prices": {ID: "prices", ProjectID: "sales", ConnectionName: "prices"},
-		},
-		revisions: map[string]manageddata.Revision{
-			"orders-old": testRevision("orders-old", "orders", oldManifest, manageddata.RevisionStatusReady),
-			"orders-new": testRevision("orders-new", "orders", newManifest, manageddata.RevisionStatusReady),
-			"prices-r1":  testRevision("prices-r1", "prices", pricesManifest, manageddata.RevisionStatusReady),
-		},
-		files: map[string][]manageddata.RevisionFile{
-			"orders-old": testRevisionFiles("orders-old", oldManifest),
-			"orders-new": testRevisionFiles("orders-new", newManifest),
-			"prices-r1":  testRevisionFiles("prices-r1", pricesManifest),
-		},
-	}
-	resolver := testResolver(t, repo, &memoryBlobStore{blobs: mergeBlobs(oldBlobs, newBlobs, priceBlobs)})
-
-	got, err := resolver.ResolveRolloutCandidate(t.Context(), "candidate-1", "orders", "orders-new")
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertFileContent(t, got.Roots["orders"], "orders.csv", "new")
-	assertFileContent(t, got.Roots["prices"], "prices.csv", "prices")
-	if repo.replaceCalls != 0 {
-		t.Fatalf("ReplaceServingStateBindings called %d times", repo.replaceCalls)
-	}
-	if repo.bindings[0].RevisionID != "orders-old" {
-		t.Fatalf("persisted binding was mutated: %#v", repo.bindings[0])
-	}
-}
-
 func TestResolveRejectsInvalidRelationshipsEnvironmentAndReadiness(t *testing.T) {
 	manifest, blobs := testManifest(map[string]string{"data.csv": "data"})
 	valid := func() *fakeRepository {
@@ -274,26 +234,6 @@ func TestResolveRejectsDuplicateConnectionNameAmbiguity(t *testing.T) {
 	}
 }
 
-func TestResolveRolloutCandidateRejectsMissingTargetAndNonReadyReplacement(t *testing.T) {
-	manifest, blobs := testManifest(map[string]string{"data.csv": "data"})
-	repo := &fakeRepository{
-		bindings:    []manageddata.ServingStateBinding{{ServingStateID: "candidate-1", CollectionID: "collection-1", RevisionID: "ready", Environment: "prod"}},
-		collections: map[string]manageddata.Collection{"collection-1": {ID: "collection-1", ProjectID: "project-1", ConnectionName: "warehouse"}},
-		revisions: map[string]manageddata.Revision{
-			"ready":   testRevision("ready", "collection-1", manifest, manageddata.RevisionStatusReady),
-			"pending": testRevision("pending", "collection-1", manifest, manageddata.RevisionStatusPending),
-		},
-		files: map[string][]manageddata.RevisionFile{"ready": testRevisionFiles("ready", manifest), "pending": testRevisionFiles("pending", manifest)},
-	}
-	resolver := testResolver(t, repo, &memoryBlobStore{blobs: blobs})
-	if _, err := resolver.ResolveRolloutCandidate(t.Context(), "candidate-1", "missing", "ready"); !errors.Is(err, ErrInvalidMetadata) {
-		t.Fatalf("missing target error = %v", err)
-	}
-	if _, err := resolver.ResolveRolloutCandidate(t.Context(), "candidate-1", "collection-1", "pending"); !errors.Is(err, ErrRevisionNotReady) {
-		t.Fatalf("pending replacement error = %v", err)
-	}
-}
-
 func TestResolveSanitizesRepositoryErrors(t *testing.T) {
 	resolver := testResolver(t, &fakeRepository{listErr: errors.New("database failed at s3://private/key?secret=value")}, &memoryBlobStore{})
 	_, err := resolver.ResolveManagedData(t.Context(), "state-1")
@@ -398,7 +338,6 @@ type fakeRepository struct {
 	stateErr         error
 	stateID          servingstate.ID
 	stateEnvironment servingstate.Environment
-	replaceCalls     int
 }
 
 func (r *fakeRepository) ListServingStateBindings(context.Context, string) ([]manageddata.ServingStateBinding, error) {
@@ -445,11 +384,6 @@ func (r *fakeRepository) ByID(_ context.Context, id servingstate.ID) (servingsta
 		environment = "prod"
 	}
 	return servingstate.State{ID: stateID, Environment: environment}, nil
-}
-
-func (r *fakeRepository) ReplaceServingStateBindings(context.Context, string, []manageddata.ServingStateBinding) error {
-	r.replaceCalls++
-	return nil
 }
 
 type memoryBlobStore struct {

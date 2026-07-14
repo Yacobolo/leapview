@@ -98,45 +98,59 @@ CREATE INDEX IF NOT EXISTS managed_data_upload_sessions_expiry_idx
 CREATE INDEX IF NOT EXISTS managed_data_revisions_collection_created_idx
   ON managed_data_revisions(collection_id, sequence DESC);
 
-CREATE TABLE IF NOT EXISTS managed_data_rollouts (
+CREATE TABLE IF NOT EXISTS project_deployments (
   id TEXT PRIMARY KEY,
-  collection_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
   environment TEXT NOT NULL,
-  revision_id TEXT NOT NULL,
+  request_digest TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'failed', 'superseded')),
   created_by TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at TEXT,
+  activated_at TEXT,
   error TEXT NOT NULL DEFAULT '',
-  FOREIGN KEY(collection_id, revision_id) REFERENCES managed_data_revisions(collection_id, id) ON DELETE RESTRICT,
+  CHECK(length(trim(project_id)) > 0),
   CHECK(length(environment) BETWEEN 1 AND 128),
-  CHECK((status <> 'pending') = (completed_at IS NOT NULL)),
+  CHECK(length(request_digest) > 0),
+  CHECK((status IN ('active', 'superseded')) = (activated_at IS NOT NULL)),
   CHECK(status <> 'failed' OR length(error) > 0)
 );
 
-CREATE TABLE IF NOT EXISTS managed_data_rollout_targets (
-  rollout_id TEXT NOT NULL REFERENCES managed_data_rollouts(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS project_deployment_targets (
+  deployment_id TEXT NOT NULL REFERENCES project_deployments(id) ON DELETE CASCADE,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
   serving_state_id TEXT NOT NULL REFERENCES serving_states(id) ON DELETE RESTRICT,
   prior_serving_state_id TEXT REFERENCES serving_states(id) ON DELETE RESTRICT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'failed')),
   activated_at TEXT,
   error TEXT NOT NULL DEFAULT '',
-  PRIMARY KEY(rollout_id, workspace_id),
-  UNIQUE(rollout_id, serving_state_id),
+  PRIMARY KEY(deployment_id, workspace_id),
+  UNIQUE(deployment_id, serving_state_id),
   CHECK(serving_state_id <> COALESCE(prior_serving_state_id, '')),
   CHECK((status = 'active') = (activated_at IS NOT NULL)),
   CHECK(status <> 'failed' OR length(error) > 0)
 );
 
-CREATE INDEX IF NOT EXISTS managed_data_rollout_targets_serving_state_idx
-  ON managed_data_rollout_targets(serving_state_id);
+CREATE INDEX IF NOT EXISTS project_deployment_targets_serving_state_idx
+  ON project_deployment_targets(serving_state_id);
+
+CREATE TABLE IF NOT EXISTS project_deployment_connections (
+  deployment_id TEXT NOT NULL REFERENCES project_deployments(id) ON DELETE CASCADE,
+  collection_id TEXT NOT NULL,
+  revision_id TEXT NOT NULL,
+  prior_revision_id TEXT,
+  prior_generation INTEGER NOT NULL DEFAULT 0 CHECK(prior_generation >= 0),
+  activated_generation INTEGER CHECK(activated_generation > 0),
+  PRIMARY KEY(deployment_id, collection_id),
+  FOREIGN KEY(collection_id, revision_id) REFERENCES managed_data_revisions(collection_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY(collection_id, prior_revision_id) REFERENCES managed_data_revisions(collection_id, id) ON DELETE RESTRICT,
+  CHECK((prior_generation = 0) = (prior_revision_id IS NULL))
+);
 
 CREATE TABLE IF NOT EXISTS managed_data_environment_pointers (
   collection_id TEXT NOT NULL,
   environment TEXT NOT NULL,
   revision_id TEXT NOT NULL,
-  rollout_id TEXT NOT NULL REFERENCES managed_data_rollouts(id) ON DELETE RESTRICT,
+  deployment_id TEXT NOT NULL REFERENCES project_deployments(id) ON DELETE RESTRICT,
   generation INTEGER NOT NULL CHECK(generation > 0),
   updated_by TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -147,6 +161,9 @@ CREATE TABLE IF NOT EXISTS managed_data_environment_pointers (
 
 CREATE INDEX IF NOT EXISTS managed_data_environment_pointers_revision_idx
   ON managed_data_environment_pointers(revision_id);
+
+CREATE INDEX IF NOT EXISTS project_deployments_project_environment_idx
+  ON project_deployments(project_id, environment, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS managed_data_serving_state_bindings (
   serving_state_id TEXT NOT NULL REFERENCES serving_states(id) ON DELETE CASCADE,
@@ -165,8 +182,9 @@ CREATE INDEX IF NOT EXISTS managed_data_serving_state_bindings_revision_idx
 -- +goose Down
 DROP TABLE IF EXISTS managed_data_serving_state_bindings;
 DROP TABLE IF EXISTS managed_data_environment_pointers;
-DROP TABLE IF EXISTS managed_data_rollout_targets;
-DROP TABLE IF EXISTS managed_data_rollouts;
+DROP TABLE IF EXISTS project_deployment_connections;
+DROP TABLE IF EXISTS project_deployment_targets;
+DROP TABLE IF EXISTS project_deployments;
 DROP TABLE IF EXISTS managed_data_upload_sessions;
 DROP TABLE IF EXISTS managed_data_revision_files;
 DROP TRIGGER IF EXISTS managed_data_ready_revision_immutable;

@@ -26,7 +26,7 @@ const (
 
 func TestRevisionOperationsAreScopedAndPaginated(t *testing.T) {
 	repo := metadataFixture()
-	handler := newHandler(repo, nil, nil, nil)
+	handler := newHandler(repo, nil, nil)
 
 	recorder := call(t, ``, func(w http.ResponseWriter, r *http.Request) {
 		handler.GetManagedDataEnvironmentRevision(w, r, "project-a", "orders", "prod")
@@ -36,7 +36,7 @@ func TestRevisionOperationsAreScopedAndPaginated(t *testing.T) {
 	}
 	var current apigenapi.ManagedDataEnvironmentRevisionResponse
 	decodeResponse(t, recorder, &current)
-	if current.Revision == nil || current.Revision.Id != revisionA || current.Revision.UploadSessionId != "upload-a" || current.RolloutId == nil || *current.RolloutId != "rollout-a" {
+	if current.Revision == nil || current.Revision.Id != revisionA || current.Revision.UploadSessionId != "upload-a" || current.DeploymentId == nil || *current.DeploymentId != "deployment-a" {
 		t.Fatalf("environment response = %#v", current)
 	}
 
@@ -75,7 +75,7 @@ func TestRevisionOperationsAreScopedAndPaginated(t *testing.T) {
 
 func TestUploadSessionOperationsUseControlServiceAndPrincipal(t *testing.T) {
 	uploads := &fakeUploads{result: uploadFixture()}
-	handler := newHandler(metadataFixture(), uploads, nil, nil)
+	handler := newHandler(metadataFixture(), uploads, nil)
 
 	created := call(t, `{"manifest":{"files":[{"path":"orders.csv","size":3,"sha256":"`+digestA+`"}]}}`, func(w http.ResponseWriter, r *http.Request) {
 		handler.CreateManagedDataUploadSession(w, r, "project-a", "orders", apigenapi.GenCreateManagedDataUploadSessionHeaders{IdempotencyKey: "create-key"})
@@ -125,7 +125,7 @@ func TestMultipartOperationsAreSDKFreeAndScopedToUpload(t *testing.T) {
 		ID: "multipart-a", UploadSessionID: "upload-a", File: manageddata.File{Path: "orders.csv", Size: 3, SHA256: digestA},
 		Status: managedhttp.MultipartStatusOpen, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2026-01-01T01:00:00Z",
 	}}
-	handler := newHandler(metadataFixture(), uploads, multipart, nil)
+	handler := newHandler(metadataFixture(), uploads, multipart)
 
 	tests := []struct {
 		name string
@@ -168,53 +168,9 @@ func TestMultipartOperationsAreSDKFreeAndScopedToUpload(t *testing.T) {
 	}
 }
 
-func TestRolloutOperationsPropagateScopeActorAndFilters(t *testing.T) {
-	const expectedRollbackReason = "bad data"
-
-	rollouts := &fakeRollouts{result: rolloutFixture()}
-	handler := newHandler(metadataFixture(), nil, nil, rollouts)
-	status := apigenapi.ManagedDataRolloutStatusDraft
-	environment := "prod"
-	limit := int32(10)
-
-	tests := []struct {
-		name string
-		body string
-		want int
-		call func(http.ResponseWriter, *http.Request)
-	}{
-		{"list", ``, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
-			handler.ListManagedDataRollouts(w, r, "project-a", "orders", apigenapi.GenListManagedDataRolloutsParams{Environment: &environment, Status: &status, Limit: &limit})
-		}},
-		{"create", `{"revisionId":"` + revisionA + `","environment":"prod","targets":[{"workspace":"workspace-a","servingStateId":"state-a"}]}`, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
-			handler.CreateManagedDataRollout(w, r, "project-a", "orders", apigenapi.GenCreateManagedDataRolloutHeaders{IdempotencyKey: "create-key"})
-		}},
-		{"get", ``, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
-			handler.GetManagedDataRollout(w, r, "project-a", "orders", "rollout-a")
-		}},
-		{"activate", ``, http.StatusAccepted, func(w http.ResponseWriter, r *http.Request) {
-			handler.ActivateManagedDataRollout(w, r, "project-a", "orders", "rollout-a", apigenapi.GenActivateManagedDataRolloutHeaders{IdempotencyKey: "activate-key"})
-		}},
-		{"rollback", `{"reason":"bad data"}`, http.StatusAccepted, func(w http.ResponseWriter, r *http.Request) {
-			handler.RollbackManagedDataRollout(w, r, "project-a", "orders", "rollout-a", apigenapi.GenRollbackManagedDataRolloutHeaders{IdempotencyKey: "rollback-key"})
-		}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			recorder := call(t, test.body, test.call)
-			if recorder.Code != test.want {
-				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
-			}
-		})
-	}
-	if rollouts.list.Environment != "prod" || rollouts.list.Status != managedhttp.RolloutStatusDraft || rollouts.create.Actor != "principal-a" || rollouts.activate.IdempotencyKey != "activate-key" || rollouts.rollback.Reason != expectedRollbackReason {
-		t.Fatalf("rollout requests = list %#v create %#v activate %#v rollback %#v", rollouts.list, rollouts.create, rollouts.activate, rollouts.rollback)
-	}
-}
-
 func TestStrictDecodingErrorMappingAndSanitization(t *testing.T) {
 	t.Run("unknown JSON field", func(t *testing.T) {
-		handler := newHandler(metadataFixture(), &fakeUploads{result: uploadFixture()}, nil, nil)
+		handler := newHandler(metadataFixture(), &fakeUploads{result: uploadFixture()}, nil)
 		recorder := call(t, `{"manifest":{"files":[]},"secret":"credential"}`, func(w http.ResponseWriter, r *http.Request) {
 			handler.CreateManagedDataUploadSession(w, r, "project-a", "orders", apigenapi.GenCreateManagedDataUploadSessionHeaders{IdempotencyKey: "key"})
 		})
@@ -222,7 +178,7 @@ func TestStrictDecodingErrorMappingAndSanitization(t *testing.T) {
 	})
 
 	t.Run("oversized JSON", func(t *testing.T) {
-		options := handlerOptions(metadataFixture(), &fakeUploads{result: uploadFixture()}, nil, nil)
+		options := handlerOptions(metadataFixture(), &fakeUploads{result: uploadFixture()}, nil)
 		options.MaxJSONBodyBytes = 32
 		handler := managedhttp.NewHandler(options)
 		recorder := call(t, `{"manifest":{"files":[{"path":"orders.csv"}]}}`, func(w http.ResponseWriter, r *http.Request) {
@@ -246,7 +202,7 @@ func TestStrictDecodingErrorMappingAndSanitization(t *testing.T) {
 		t.Run(http.StatusText(test.want), func(t *testing.T) {
 			repo := metadataFixture()
 			repo.revisionErr = test.err
-			handler := newHandler(repo, nil, nil, nil)
+			handler := newHandler(repo, nil, nil)
 			recorder := call(t, ``, func(w http.ResponseWriter, r *http.Request) {
 				handler.GetManagedDataRevision(w, r, "project-a", "orders", revisionA)
 			})
@@ -254,7 +210,7 @@ func TestStrictDecodingErrorMappingAndSanitization(t *testing.T) {
 		})
 	}
 
-	handler := newHandler(metadataFixture(), nil, nil, nil)
+	handler := newHandler(metadataFixture(), nil, nil)
 	recorder := call(t, ``, func(w http.ResponseWriter, r *http.Request) {
 		handler.CreateManagedDataS3MultipartUpload(w, r, "project-a", "orders", "upload-a", apigenapi.GenCreateManagedDataS3MultipartUploadHeaders{IdempotencyKey: "key"})
 	})
@@ -265,7 +221,7 @@ func TestMutationResponsesCannotCrossRequestedIDs(t *testing.T) {
 	t.Run("upload session", func(t *testing.T) {
 		uploads := &fakeUploads{result: uploadFixture()}
 		uploads.result.ID = "upload-other"
-		handler := newHandler(metadataFixture(), uploads, nil, nil)
+		handler := newHandler(metadataFixture(), uploads, nil)
 		recorder := call(t, ``, func(w http.ResponseWriter, r *http.Request) {
 			handler.AbortManagedDataUploadSession(w, r, "project-a", "orders", "upload-a", apigenapi.GenAbortManagedDataUploadSessionHeaders{IdempotencyKey: "key"})
 		})
@@ -275,22 +231,13 @@ func TestMutationResponsesCannotCrossRequestedIDs(t *testing.T) {
 	t.Run("multipart upload", func(t *testing.T) {
 		uploads := &fakeUploads{result: uploadFixture()}
 		multipart := &fakeMultipart{upload: managedhttp.MultipartUpload{ID: "multipart-other", UploadSessionID: "upload-a", File: manageddata.File{Path: "orders.csv", Size: 3, SHA256: digestA}, Status: managedhttp.MultipartStatusCompleted, CreatedAt: "2026-01-01T00:00:00Z"}}
-		handler := newHandler(metadataFixture(), uploads, multipart, nil)
+		handler := newHandler(metadataFixture(), uploads, multipart)
 		recorder := call(t, `{"parts":[{"partNumber":1,"etag":"etag-a"}]}`, func(w http.ResponseWriter, r *http.Request) {
 			handler.CompleteManagedDataS3MultipartUpload(w, r, "project-a", "orders", "upload-a", "multipart-a", apigenapi.GenCompleteManagedDataS3MultipartUploadHeaders{IdempotencyKey: "key"})
 		})
 		assertPublicError(t, recorder, http.StatusNotFound, "orders.csv")
 	})
 
-	t.Run("rollout revision", func(t *testing.T) {
-		rollouts := &fakeRollouts{result: rolloutFixture()}
-		rollouts.result.RevisionID = revisionB
-		handler := newHandler(metadataFixture(), nil, nil, rollouts)
-		recorder := call(t, `{"revisionId":"`+revisionA+`","environment":"prod","targets":[{"workspace":"workspace-a","servingStateId":"state-a"}]}`, func(w http.ResponseWriter, r *http.Request) {
-			handler.CreateManagedDataRollout(w, r, "project-a", "orders", apigenapi.GenCreateManagedDataRolloutHeaders{IdempotencyKey: "key"})
-		})
-		assertPublicError(t, recorder, http.StatusNotFound, "state-a")
-	})
 }
 
 type fakeRepository struct {
@@ -309,7 +256,7 @@ func metadataFixture() *fakeRepository {
 			revisionB: {Revision: manageddata.Revision{ID: revisionB, CollectionID: collection.ID, Status: manageddata.RevisionStatusReady, ManifestJSON: `{"files":[{"path":"customers.csv","size":4,"sha256":"` + digestB + `"}]}`, FileCount: 1, SizeBytes: 4, CreatedAt: "2026-01-02T00:00:00Z"}, UploadSessionID: "upload-b"},
 			revisionC: {Revision: manageddata.Revision{ID: revisionC, CollectionID: "collection-other", Status: manageddata.RevisionStatusReady, ManifestJSON: `{"files":[{"path":"unrelated-secret.csv","size":4,"sha256":"` + digestC + `"}]}`}, UploadSessionID: "upload-secret"},
 		},
-		pointer: manageddata.EnvironmentPointer{CollectionID: collection.ID, Environment: "prod", RevisionID: revisionA, RolloutID: "rollout-a", UpdatedAt: "2026-01-03T00:00:00Z"},
+		pointer: manageddata.EnvironmentPointer{CollectionID: collection.ID, Environment: "prod", RevisionID: revisionA, DeploymentID: "deployment-a", UpdatedAt: "2026-01-03T00:00:00Z"},
 	}
 }
 
@@ -406,52 +353,13 @@ func (m *fakeMultipart) Abort(context.Context, managedhttp.MultipartRequest) (ma
 	return result, nil
 }
 
-type fakeRollouts struct {
-	result   managedhttp.Rollout
-	list     managedhttp.RolloutListRequest
-	create   managedhttp.RolloutCreateRequest
-	activate managedhttp.RolloutRequest
-	rollback managedhttp.RolloutRollbackRequest
+func newHandler(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart managedhttp.MultipartCoordinator) *managedhttp.Handler {
+	return managedhttp.NewHandler(handlerOptions(repo, uploads, multipart))
 }
 
-func (r *fakeRollouts) List(_ context.Context, request managedhttp.RolloutListRequest) ([]managedhttp.Rollout, error) {
-	r.list = request
-	return []managedhttp.Rollout{r.result}, nil
-}
-
-func (r *fakeRollouts) Get(context.Context, managedhttp.RolloutRequest) (managedhttp.Rollout, error) {
-	return r.result, nil
-}
-
-func (r *fakeRollouts) Create(_ context.Context, request managedhttp.RolloutCreateRequest) (managedhttp.Rollout, error) {
-	r.create = request
-	return r.result, nil
-}
-
-func (r *fakeRollouts) Activate(_ context.Context, request managedhttp.RolloutRequest) (managedhttp.Rollout, error) {
-	r.activate = request
-	return r.result, nil
-}
-
-func (r *fakeRollouts) Rollback(_ context.Context, request managedhttp.RolloutRollbackRequest) (managedhttp.Rollout, error) {
-	r.rollback = request
-	return r.result, nil
-}
-
-func rolloutFixture() managedhttp.Rollout {
-	return managedhttp.Rollout{
-		ID: "rollout-a", CollectionID: "collection-a", RevisionID: revisionA, Environment: "prod", Status: managedhttp.RolloutStatusDraft,
-		CreatedAt: "2026-01-01T00:00:00Z", Targets: []managedhttp.RolloutTarget{{Workspace: "workspace-a", ServingStateID: "state-a", Status: managedhttp.RolloutTargetStatusPending}},
-	}
-}
-
-func newHandler(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart managedhttp.MultipartCoordinator, rollouts managedhttp.RolloutCoordinator) *managedhttp.Handler {
-	return managedhttp.NewHandler(handlerOptions(repo, uploads, multipart, rollouts))
-}
-
-func handlerOptions(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart managedhttp.MultipartCoordinator, rollouts managedhttp.RolloutCoordinator) managedhttp.Options {
+func handlerOptions(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart managedhttp.MultipartCoordinator) managedhttp.Options {
 	return managedhttp.Options{
-		Repository: repo, Uploads: uploads, Multipart: multipart, Rollouts: rollouts,
+		Repository: repo, Uploads: uploads, Multipart: multipart,
 		CurrentPrincipal: func(*http.Request) (managedhttp.Principal, bool) {
 			return managedhttp.Principal{ID: "principal-a"}, true
 		},

@@ -1264,14 +1264,6 @@
     }
   ],
   "properties": {
-    "ADDR": {
-      "deprecated": true,
-      "description": "Compatibility listen-address alias used after LIBREDASH_ADDR.",
-      "type": "string",
-      "x-alias-for": "LIBREDASH_ADDR",
-      "x-lifecycle": "compatibility",
-      "x-scope": "serve"
-    },
     "LIBREDASH_ADDR": {
       "description": "HTTP listen address.",
       "type": "string",
@@ -1418,13 +1410,6 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
-    "LIBREDASH_DATA_DIR": {
-      "default": ".data/olist",
-      "description": "Directory containing source data files.",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve,bootstrap tools"
-    },
     "LIBREDASH_DEV_AUTH_BYPASS": {
       "default": "false",
       "description": "Bypass authentication in development; forbidden in production.",
@@ -1504,12 +1489,6 @@
     },
     "LIBREDASH_DUCKDB_DIR": {
       "description": "Directory containing workspace DuckDB runtime files.",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
-    "LIBREDASH_DUCKDB_PATH": {
-      "description": "Explicit legacy DuckDB database path override.",
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "serve"
@@ -1842,14 +1821,6 @@
       "writeOnly": true,
       "x-lifecycle": "external",
       "x-scope": "example connection"
-    },
-    "PORT": {
-      "deprecated": true,
-      "description": "Compatibility port alias used after LIBREDASH_ADDR and ADDR.",
-      "type": "string",
-      "x-alias-for": "LIBREDASH_ADDR",
-      "x-lifecycle": "compatibility",
-      "x-scope": "serve,healthcheck"
     }
   },
   "title": "LibreDash process-global environment",

@@ -79,6 +79,22 @@ func TestDataPlanCommandPlansWithPreviousManifest(t *testing.T) {
 	}
 }
 
+func TestDataCommandRetainsStagingAndInspectionCommandsOnly(t *testing.T) {
+	command := dataCommandWithPlanner(context.Background(), &recordingDataPlanner{})
+	got := map[string]bool{}
+	for _, child := range command.Commands() {
+		got[child.Name()] = true
+	}
+	for _, want := range []string{"plan", "sync", "revisions"} {
+		if !got[want] {
+			t.Fatalf("data command missing %q: %#v", want, got)
+		}
+	}
+	if got["deploy"] {
+		t.Fatalf("data command still registers removed deploy subcommand: %#v", got)
+	}
+}
+
 func TestDataPlanCommandRequiresConnection(t *testing.T) {
 	command := dataCommandWithPlanner(context.Background(), &recordingDataPlanner{})
 	command.SetArgs([]string{"plan"})

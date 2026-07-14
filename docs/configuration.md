@@ -148,19 +148,15 @@ Run `libredash config validate` to validate the active environment, or add `--pr
 
 | Environment variable | Type / default | Scope | Lifecycle | Description |
 |---|---|---|---|---|
-| `ADDR` | string | serve | compatibility | Compatibility listen-address alias used after LIBREDASH_ADDR. Alias for `LIBREDASH_ADDR`. |
 | `LIBREDASH_ADDR` | string | serve,healthcheck | supported | HTTP listen address. |
 | `LIBREDASH_PRODUCTION` | boolean / `false` | serve,admin | supported | Enable production serving and validation behavior. |
-| `PORT` | string | serve,healthcheck | compatibility | Compatibility port alias used after LIBREDASH_ADDR and ADDR. Alias for `LIBREDASH_ADDR`. |
 
 ## Storage
 
 | Environment variable | Type / default | Scope | Lifecycle | Description |
 |---|---|---|---|---|
 | `LIBREDASH_CATALOG_PATH` | string | serve | supported | Legacy dashboard catalog path override. |
-| `LIBREDASH_DATA_DIR` | string / `.data/olist` | serve,bootstrap tools | supported | Directory containing source data files. |
 | `LIBREDASH_DUCKDB_DIR` | string | serve | supported | Directory containing workspace DuckDB runtime files. |
-| `LIBREDASH_DUCKDB_PATH` | string | serve | supported | Explicit legacy DuckDB database path override. |
 | `LIBREDASH_DUCKLAKE_CATALOG_PATH` | string | serve,admin | supported | Path to the single global DuckLake catalog. |
 | `LIBREDASH_HOME` | string / `.libredash` | serve,admin,client | supported | Instance state directory containing databases, artifacts, and runtime files. |
 

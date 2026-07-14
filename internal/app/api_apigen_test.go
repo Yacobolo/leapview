@@ -229,7 +229,6 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		"/api/v1/workspaces/{workspace}/publishes/{publish}",
 		"/api/v1/workspaces/{workspace}/publishes/{publish}/artifact",
 		"/api/v1/workspaces/{workspace}/publishes/{publish}/validate",
-		"/api/v1/workspaces/{workspace}/publishes/{publish}/activate",
 		"/api/v1/workspaces/{workspace}/refresh-runs",
 		"/api/v1/workspaces/{workspace}/refresh-runs/{run}",
 		"/api/v1/workspaces/{workspace}/agent/conversations",

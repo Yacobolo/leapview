@@ -41,10 +41,6 @@ scalar ManagedDataTusUploadId extends string;
 scalar ManagedDataMultipartUploadId extends string;
 
 @minLength(1)
-@maxLength(160)
-scalar ManagedDataRolloutId extends string;
-
-@minLength(1)
 @maxLength(255)
 scalar ManagedDataIdempotencyKey extends string;
 
@@ -78,10 +74,6 @@ scalar ManagedDataPositiveByteCount extends int64;
 @minValue(1)
 @maxValue(10000)
 scalar ManagedDataFileCount extends int32;
-
-@minValue(1)
-@maxValue(1000)
-scalar ManagedDataRolloutTargetCount extends int32;
 
 @minValue(1)
 @maxValue(200)
@@ -141,24 +133,6 @@ enum ManagedDataS3MultipartStatus {
   aborted;
 }
 
-enum ManagedDataRolloutStatus {
-  draft;
-  activating;
-  active;
-  failed;
-  rollingBack: "rolling_back";
-  rolledBack: "rolled_back";
-}
-
-enum ManagedDataRolloutTargetStatus {
-  pending;
-  activating;
-  active;
-  failed;
-  rollingBack: "rolling_back";
-  rolledBack: "rolled_back";
-}
-
 model ManagedDataFileMetadata {
   @pattern("^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$")
   path: ManagedDataLogicalPath;
@@ -215,7 +189,7 @@ model ManagedDataRevisionListResponse {
 model ManagedDataEnvironmentRevisionResponse {
   environment: ManagedDataEnvironmentId;
   revision?: ManagedDataRevisionSummaryResponse;
-  rolloutId?: ManagedDataRolloutId;
+  deploymentId?: ProjectDeploymentId;
   activatedAt?: utcDateTime;
 }
 
@@ -314,71 +288,6 @@ model ManagedDataS3MultipartCompleteRequest {
   @minItems(1)
   @maxItems(10000)
   parts: ManagedDataS3CompletedPart[];
-}
-
-model ManagedDataRolloutTargetRequest {
-  workspace: ManagedDataWorkspaceId;
-  servingStateId: ManagedDataServingStateId;
-}
-
-model ManagedDataRolloutCreateRequest {
-  @pattern("^sha256:[0-9a-f]{64}$")
-  revisionId: ManagedDataRevisionId;
-  environment: ManagedDataEnvironmentId;
-  @minItems(1)
-  @maxItems(1000)
-  targets: ManagedDataRolloutTargetRequest[];
-}
-
-model ManagedDataRolloutTargetResponse {
-  workspace: ManagedDataWorkspaceId;
-  servingStateId: ManagedDataServingStateId;
-  status: ManagedDataRolloutTargetStatus;
-  @pattern("^sha256:[0-9a-f]{64}$")
-  previousRevisionId?: ManagedDataRevisionId;
-  activatedAt?: utcDateTime;
-  rolledBackAt?: utcDateTime;
-  error?: ManagedDataErrorMessage;
-}
-
-model ManagedDataRolloutResponse {
-  id: ManagedDataRolloutId;
-  @pattern("^sha256:[0-9a-f]{64}$")
-  revisionId: ManagedDataRevisionId;
-  environment: ManagedDataEnvironmentId;
-  status: ManagedDataRolloutStatus;
-  @minItems(1)
-  @maxItems(1000)
-  targets: ManagedDataRolloutTargetResponse[];
-  createdAt: utcDateTime;
-  activatedAt?: utcDateTime;
-  rolledBackAt?: utcDateTime;
-  error?: ManagedDataErrorMessage;
-}
-
-model ManagedDataRolloutSummaryResponse {
-  id: ManagedDataRolloutId;
-  @pattern("^sha256:[0-9a-f]{64}$")
-  revisionId: ManagedDataRevisionId;
-  environment: ManagedDataEnvironmentId;
-  status: ManagedDataRolloutStatus;
-  targetCount: ManagedDataRolloutTargetCount;
-  createdAt: utcDateTime;
-  activatedAt?: utcDateTime;
-  rolledBackAt?: utcDateTime;
-  error?: ManagedDataErrorMessage;
-}
-
-model ManagedDataRolloutListResponse {
-  @maxItems(200)
-  items: ManagedDataRolloutSummaryResponse[];
-  page: PageInfo;
-}
-
-model ManagedDataRolloutRollbackRequest {
-  @minLength(1)
-  @maxLength(2048)
-  reason?: string;
 }
 
 @tag("Managed Data")
@@ -526,70 +435,3 @@ op abortManagedDataS3MultipartUpload(
   @path multipartUpload: ManagedDataMultipartUploadId,
   @header("Idempotency-Key") idempotencyKey: ManagedDataIdempotencyKey,
 ): OkJson<ManagedDataS3MultipartUploadResponse> | CommonErrors;
-
-@tag("Managed Data")
-@summary("List managed-data rollouts")
-@route("/rollouts")
-@get
-@operationId("listManagedDataRollouts")
-@apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
-op listManagedDataRollouts(
-  @path project: ManagedDataProjectId,
-  @path connection: ManagedDataConnectionId,
-  @query environment?: ManagedDataEnvironmentId,
-  @query status?: ManagedDataRolloutStatus,
-  @query limit?: ManagedDataPageLimit,
-  @query pageToken?: ManagedDataPageToken,
-): OkJson<ManagedDataRolloutListResponse> | CommonErrors;
-
-@tag("Managed Data")
-@summary("Create a managed-data rollout")
-@route("/rollouts")
-@post
-@operationId("createManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DATA" })
-op createManagedDataRollout(
-  @path project: ManagedDataProjectId,
-  @path connection: ManagedDataConnectionId,
-  @header("Idempotency-Key") idempotencyKey: ManagedDataIdempotencyKey,
-  @body body: ManagedDataRolloutCreateRequest,
-): CreatedJson<ManagedDataRolloutResponse> | CommonErrors;
-
-@tag("Managed Data")
-@summary("Get a managed-data rollout")
-@route("/rollouts/{rollout}")
-@get
-@operationId("getManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
-op getManagedDataRollout(
-  @path project: ManagedDataProjectId,
-  @path connection: ManagedDataConnectionId,
-  @path rollout: ManagedDataRolloutId,
-): OkJson<ManagedDataRolloutResponse> | CommonErrors;
-
-@tag("Managed Data")
-@summary("Activate a managed-data rollout")
-@route("/rollouts/{rollout}/activate")
-@post
-@operationId("activateManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DATA" })
-op activateManagedDataRollout(
-  @path project: ManagedDataProjectId,
-  @path connection: ManagedDataConnectionId,
-  @path rollout: ManagedDataRolloutId,
-  @header("Idempotency-Key") idempotencyKey: ManagedDataIdempotencyKey,
-): AcceptedJson<ManagedDataRolloutResponse> | CommonErrors;
-
-@tag("Managed Data")
-@summary("Roll back a managed-data rollout")
-@route("/rollouts/{rollout}/rollback")
-@post
-@operationId("rollbackManagedDataRollout")
-@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DATA" })
-op rollbackManagedDataRollout(
-  @path project: ManagedDataProjectId,
-  @path connection: ManagedDataConnectionId,
-  @path rollout: ManagedDataRolloutId,
-  @header("Idempotency-Key") idempotencyKey: ManagedDataIdempotencyKey,
-  @body body?: ManagedDataRolloutRollbackRequest,
-): AcceptedJson<ManagedDataRolloutResponse> | CommonErrors;

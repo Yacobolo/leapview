@@ -12,7 +12,7 @@ PORT_COUNT="${LIBREDASH_DEV_PORT_COUNT:-100}"
 mkdir -p "$TMP_DIR"
 
 usage() {
-  echo "Usage: $0 start|stop|status|logs"
+	echo "Usage: $0 start [project [connection source-root]]|stop|status|logs"
 }
 
 is_alive() {
@@ -223,26 +223,36 @@ wait_ready() {
   return 1
 }
 
-publish_project() {
-  local port="$1"
-  if [[ "${LIBREDASH_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
-    echo "Skipping dev project publish"
+deploy_project() {
+	local port="$1"
+	local project="${2:-${LIBREDASH_DEV_PROJECT:-dashboards/libredash.yaml}}"
+	local connection="${3:-}"
+	local from="${4:-}"
+	if [[ "${LIBREDASH_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
+    echo "Skipping dev project deploy"
     return 0
   fi
-  local project="${LIBREDASH_DEV_PROJECT:-dashboards/libredash.yaml}"
-  if [[ "$project" == "dashboards/libredash.yaml" ]]; then
-    local sync_output revision
-    sync_output="$(go run ./cmd/libredash data sync --project "$project" --connection olist --from "${LIBREDASH_DATA_DIR:-.data/olist}" --target "http://localhost:${port}" --token dev)" || return 1
+	local -a revision_args=()
+	if [[ "$project" == "dashboards/libredash.yaml" ]]; then
+		connection="${connection:-olist}"
+		from="${from:-.data/olist}"
+	fi
+	if [[ -n "$connection" ]]; then
+		[[ -n "$from" ]] || {
+			echo "source-root is required when a managed data connection is provided." >&2
+			return 1
+		}
+		local sync_output revision
+		sync_output="$(go run ./cmd/libredash data sync --project "$project" --connection "$connection" --from "$from" --target "http://localhost:${port}" --token dev)" || return 1
     printf '%s\n' "$sync_output"
     revision="$(printf '%s\n' "$sync_output" | awk '$1 == "staged" { print $2 }')"
     [[ "$revision" =~ ^sha256:[0-9a-f]{64}$ ]] || {
       echo "Managed data sync did not return a canonical revision." >&2
       return 1
     }
-    go run ./cmd/libredash data deploy --project "$project" --connection olist --revision "$revision" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
-    return
-  fi
-  go run ./cmd/libredash publish --project "$project" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
+		revision_args=(--revision "$connection=$revision")
+	fi
+  go run ./cmd/libredash deploy --project "$project" "${revision_args[@]}" --target "http://localhost:${port}" --token dev --environment dev --auto-approve
 }
 
 attach_server() {
@@ -272,6 +282,9 @@ attach_server() {
 }
 
 start() {
+	local project="${1:-${LIBREDASH_DEV_PROJECT:-dashboards/libredash.yaml}}"
+	local connection="${2:-}"
+	local from="${3:-}"
   if [[ "${LIBREDASH_DEV_RESTART:-}" != "1" ]]; then
     local existing_pid
     existing_pid="$(running_server_pid || true)"
@@ -282,8 +295,8 @@ start() {
       echo "PID: $existing_pid"
       echo "URL: http://localhost:$existing_port"
       echo "Logs: $LOG_FILE"
-      echo "Publishing project to existing server..."
-      publish_project "$existing_port"
+      echo "Deploying project to existing server..."
+			deploy_project "$existing_port" "$project" "$connection" "$from"
       echo "Attached to LibreDash logs. Press Ctrl-C to stop."
       attach_server "$existing_pid" "$existing_port"
       return 0
@@ -308,9 +321,9 @@ start() {
     echo "Runner: local binary (install air for hot reload)"
   fi
   if [[ "${LIBREDASH_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
-    echo "Project publish disabled. Press Ctrl-C to stop."
+    echo "Project deploy disabled. Press Ctrl-C to stop."
   else
-    echo "Publishing project after startup. Press Ctrl-C to stop."
+    echo "Deploying project after startup. Press Ctrl-C to stop."
   fi
 
   cd "$ROOT"
@@ -333,7 +346,7 @@ start() {
     exit 1
   fi
 
-  if ! publish_project "$port"; then
+	if ! deploy_project "$port" "$project" "$connection" "$from"; then
     stop_pid "$pid" "LibreDash dev server"
     exit 1
   fi
@@ -386,8 +399,10 @@ logs() {
   tail -n "${LIBREDASH_DEV_LOG_LINES:-120}" -f "$LOG_FILE"
 }
 
-case "${1:-}" in
-  start) start ;;
+action="${1:-}"
+shift || true
+case "$action" in
+  start) start "$@" ;;
   stop) stop ;;
   status) status ;;
   logs) logs ;;

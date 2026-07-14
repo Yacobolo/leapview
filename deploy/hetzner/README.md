@@ -56,19 +56,22 @@ libredash login \
 The unrestricted bootstrap token exists only in provisioning memory and is
 rotated after these credentials are created.
 
-## Publish
+## Deploy Project
 
 ```sh
-libredash publish \
+libredash deploy \
   --project ../../dashboards/libredash.yaml \
+  --revision "olist=sha256:<64-lowercase-hex>" \
   --target "$(terraform output -raw url)" \
   --environment prod \
   --auto-approve
 ```
 
 For project-global file ingestion, follow the [managed data ingestion
-guide](../../docs/data-ingestion.md). `data sync` stages a revision; activation
-is a separate explicit deployment operation.
+guide](../../docs/data-ingestion.md). `data sync` stages a revision; the
+project-level deploy pins that revision and atomically activates every project
+workspace. Omit `--revision` for projects without managed connections, or
+repeat it exactly once per managed connection.
 
 ## Operations
 

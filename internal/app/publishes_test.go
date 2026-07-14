@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -76,11 +75,6 @@ type runtimeAssetMetrics struct {
 
 type emptyPageRuntimeAssetMetrics struct {
 	fakeMetrics
-}
-
-type dataDirMetrics struct {
-	fakeMetrics
-	dataDir string
 }
 
 type testRuntimeProvider struct {
@@ -171,10 +165,6 @@ func (emptyPageRuntimeAssetMetrics) RefreshModelTables(context.Context, string, 
 func testWorkspaceAsset(workspaceID workspace.WorkspaceID, servingStateID workspace.ServingStateID, typ workspace.AssetType, key string, parentID workspace.AssetID, title, description, payloadSchema string, payload any) (workspace.Asset, error) {
 	sourceFile := "testdata/" + strings.ReplaceAll(string(typ)+"-"+key, ".", "-") + ".yaml"
 	return workspace.NewAssetWithSourceFile(workspaceID, servingStateID, typ, key, parentID, title, description, sourceFile, payloadSchema, payload)
-}
-
-func (m dataDirMetrics) DataDir() string {
-	return m.dataDir
 }
 
 func (p testRuntimeProvider) Active(context.Context) (runtimehost.Runtime, error) {
@@ -549,7 +539,7 @@ func TestDeploymentAPIV1WrongWorkspaceDeploymentReturnsNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}
-	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: "digest", ManifestJSON: "{}"}, zeroArtifact(created.ID, "test")); err != nil {
+	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: "digest", ManifestJSON: "{}", ProjectID: "project"}, zeroArtifact(created.ID, "test")); err != nil {
 		t.Fatalf("validate deployment: %v", err)
 	}
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
@@ -561,7 +551,6 @@ func TestDeploymentAPIV1WrongWorkspaceDeploymentReturnsNotFound(t *testing.T) {
 		path   string
 	}{
 		{name: "get", method: http.MethodGet, path: "/api/v1/workspaces/other/publishes/" + string(created.ID)},
-		{name: "activate", method: http.MethodPost, path: "/api/v1/workspaces/other/publishes/" + string(created.ID) + "/activate"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
@@ -577,16 +566,14 @@ func TestDeploymentAPIV1WrongWorkspaceDeploymentReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
+func TestDeploymentAPIValidatesBundle(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
 	seedTestOlistManagedRevision(t, store)
 	reloader := &fakeReloader{}
 	artifactDir := t.TempDir()
-	dataDir := t.TempDir()
-	writeMinimalOlistFixture(t, dataDir)
 	auth := testAuth(store, "sales", AuthConfig{DevBypass: true})
-	server := NewWithOptions(dataDirMetrics{dataDir: dataDir}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "sales"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "sales"})
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/publishes", bytes.NewBufferString(`{"title":"Test"}`))
 	createReq.Header.Set("Authorization", "Bearer dev")
@@ -624,105 +611,6 @@ func TestDeploymentAPIValidatesAndActivatesBundle(t *testing.T) {
 		t.Fatalf("validate status = %d body=%s", validateRec.Code, validateRec.Body.String())
 	}
 
-	activateReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/publishes/"+created.ID+"/activate", nil)
-	activateReq.Header.Set("Authorization", "Bearer dev")
-	activateReq.Header.Set("Accept", "application/json")
-	activateRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(activateRec, activateReq)
-	if activateRec.Code != http.StatusOK {
-		t.Fatalf("activate status = %d body=%s", activateRec.Code, activateRec.Body.String())
-	}
-	if reloader.prepareCalls != 1 {
-		t.Fatalf("prepare calls = %d, want 1", reloader.prepareCalls)
-	}
-	if reloader.commitCalls != 1 {
-		t.Fatalf("commit calls = %d, want 1", reloader.commitCalls)
-	}
-}
-
-func TestDeploymentAPIAuditsRollbackWhenInactiveDeploymentIsActivated(t *testing.T) {
-	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
-	store := testStore(t)
-	ctx := context.Background()
-	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
-		t.Fatalf("ensure sales workspace: %v", err)
-	}
-	artifactDir := t.TempDir()
-	servingStateRepo := servingstatesqlite.NewRepository(store.SQLDB())
-	first := saveBundledValidatedPublish(t, ctx, servingStateRepo, artifactDir, "sales")
-	if _, err := servingStateRepo.Activate(ctx, "sales", servingstate.DefaultEnvironment, first.ID); err != nil {
-		t.Fatalf("activate first deployment: %v", err)
-	}
-	second := saveBundledValidatedPublish(t, ctx, servingStateRepo, artifactDir, "sales")
-	if _, err := servingStateRepo.Activate(ctx, "sales", servingstate.DefaultEnvironment, second.ID); err != nil {
-		t.Fatalf("activate second deployment: %v", err)
-	}
-	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE serving_states SET status = ? WHERE id = ?`, servingstate.StatusInactive, first.ID); err != nil {
-		t.Fatalf("mark first deployment inactive: %v", err)
-	}
-	auth := testAuth(store, "sales", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: &fakeReloader{}, ArtifactDir: artifactDir, DefaultWorkspaceID: "sales"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/publishes/"+string(first.ID)+"/activate", nil)
-	req.Header.Set("Authorization", "Bearer dev")
-	req.Header.Set("Accept", "application/json")
-	rec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("rollback activate status = %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	events, err := accesssqlite.NewRepository(store.SQLDB()).ListAuditEvents(ctx, access.AuditEventFilter{
-		WorkspaceID: "sales",
-		Action:      "publish.rolled_back",
-		TargetID:    string(first.ID),
-	})
-	if err != nil {
-		t.Fatalf("list audit events: %v", err)
-	}
-	if len(events) != 1 {
-		t.Fatalf("rollback audit events = %d, want 1: %#v", len(events), events)
-	}
-	if events[0].Privilege != access.PrivilegeActivatePublish || events[0].Status != "success" {
-		t.Fatalf("rollback audit event = %#v, want activate privilege success", events[0])
-	}
-}
-
-func TestDeploymentActivationPrepareFailureLeavesDeploymentInactive(t *testing.T) {
-	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
-	store := testStore(t)
-	ctx := context.Background()
-	servingStateRepo := servingstatesqlite.NewRepository(store.SQLDB())
-	created, err := servingStateRepo.Create(ctx, servingstate.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
-	if err != nil {
-		t.Fatalf("create deployment: %v", err)
-	}
-	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: "digest", ManifestJSON: "{}"}, zeroArtifact(created.ID, "test")); err != nil {
-		t.Fatalf("validate deployment: %v", err)
-	}
-	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	reloader := &fakeReloader{prepareErr: errors.New("runtime load failed")}
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/publishes/"+string(created.ID)+"/activate", nil)
-	req.Header.Set("Authorization", "Bearer dev")
-	req.Header.Set("Accept", "application/json")
-	rec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
-	}
-	after, err := servingStateRepo.ByID(ctx, servingstate.ID(created.ID))
-	if err != nil {
-		t.Fatalf("get deployment: %v", err)
-	}
-	if after.Status != servingstate.StatusValidated {
-		t.Fatalf("status = %q, want validated", after.Status)
-	}
-	if reloader.commitCalls != 0 {
-		t.Fatalf("commit calls = %d, want 0", reloader.commitCalls)
-	}
 }
 
 func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
@@ -1472,6 +1360,7 @@ func TestWorkspaceAssetsDoesNotRefreshCleanGraphWithoutPageItems(t *testing.T) {
 	validation := servingstate.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
+		ProjectID:    "project",
 		Graph:        workspace.AssetGraph{Assets: runtimeAssets, Edges: runtimeEdges},
 	}
 	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, "test")); err != nil {
@@ -2020,6 +1909,7 @@ func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID strin
 	validation := servingstate.Validation{
 		Digest:       "digest-" + string(created.ID),
 		ManifestJSON: "{}",
+		ProjectID:    compiled.Project.Name,
 		Graph:        graph,
 	}
 	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, workspaceID)); err != nil {
@@ -2048,6 +1938,7 @@ func seedActiveDeploymentFromWorkspaceAssets(t *testing.T, store *platform.Store
 	validation := servingstate.Validation{
 		Digest:       "digest-" + string(created.ID),
 		ManifestJSON: "{}",
+		ProjectID:    "project",
 		Graph:        workspace.AssetGraph{Assets: assets, Edges: edges},
 	}
 	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, workspaceID)); err != nil {
@@ -2087,7 +1978,7 @@ func seedEnvironmentAssetDeployment(t *testing.T, store *platform.Store, workspa
 	}
 	artifact := zeroArtifact(created.ID, workspaceID)
 	artifact.Environment = environment
-	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: "digest-" + string(environment), ManifestJSON: "{}", Graph: graph}, artifact); err != nil {
+	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: "digest-" + string(environment), ManifestJSON: "{}", ProjectID: "project", Graph: graph}, artifact); err != nil {
 		t.Fatalf("save validated: %v", err)
 	}
 	if _, err := servingStateRepo.Activate(ctx, servingstate.WorkspaceID(workspaceID), environment, created.ID); err != nil {
@@ -2198,7 +2089,7 @@ func saveBundledValidatedPublish(t *testing.T, ctx context.Context, repo *servin
 		ManifestJSON:   string(manifestBytes),
 		SizeBytes:      int64(bundle.Len()),
 	}
-	validated, err := repo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: digest, ManifestJSON: string(manifestBytes), Graph: graph}, artifact)
+	validated, err := repo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: digest, ManifestJSON: string(manifestBytes), ProjectID: compiled.Project.Name, Graph: graph}, artifact)
 	if err != nil {
 		t.Fatalf("validate deployment: %v", err)
 	}

@@ -30,10 +30,6 @@ func TestManagedDataAPIContractIsProjectGlobalAndComplete(t *testing.T) {
 		"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/parts/{partNumber}/sign": {"post", "signManagedDataS3MultipartPart"},
 		"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/complete":                {"post", "completeManagedDataS3MultipartUpload"},
 		"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/abort":                   {"post", "abortManagedDataS3MultipartUpload"},
-		"/api/v1/projects/{project}/data-connections/{connection}/rollouts":                                                                                       {"get", "listManagedDataRollouts"},
-		"/api/v1/projects/{project}/data-connections/{connection}/rollouts/{rollout}":                                                                             {"get", "getManagedDataRollout"},
-		"/api/v1/projects/{project}/data-connections/{connection}/rollouts/{rollout}/activate":                                                                    {"post", "activateManagedDataRollout"},
-		"/api/v1/projects/{project}/data-connections/{connection}/rollouts/{rollout}/rollback":                                                                    {"post", "rollbackManagedDataRollout"},
 	}
 
 	for path, want := range operations {
@@ -51,12 +47,6 @@ func TestManagedDataAPIContractIsProjectGlobalAndComplete(t *testing.T) {
 		}
 	}
 
-	rolloutPath := "/api/v1/projects/{project}/data-connections/{connection}/rollouts"
-	createRollout := openAPIOperation(t, paths, rolloutPath, "post")
-	if got := createRollout["operationId"]; got != "createManagedDataRollout" {
-		t.Fatalf("POST %s operationId = %#v", rolloutPath, got)
-	}
-
 	for _, tc := range []struct {
 		path   string
 		status string
@@ -64,9 +54,6 @@ func TestManagedDataAPIContractIsProjectGlobalAndComplete(t *testing.T) {
 		{"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions", "201"},
 		{"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/finalize", "202"},
 		{"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads", "201"},
-		{rolloutPath, "201"},
-		{"/api/v1/projects/{project}/data-connections/{connection}/rollouts/{rollout}/activate", "202"},
-		{"/api/v1/projects/{project}/data-connections/{connection}/rollouts/{rollout}/rollback", "202"},
 	} {
 		operation := openAPIOperation(t, paths, tc.path, "post")
 		responses := openAPIMap(t, operation, "responses")
@@ -75,10 +62,7 @@ func TestManagedDataAPIContractIsProjectGlobalAndComplete(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{
-		"/api/v1/projects/{project}/data-connections/{connection}/revisions",
-		rolloutPath,
-	} {
+	for _, path := range []string{"/api/v1/projects/{project}/data-connections/{connection}/revisions"} {
 		operation := openAPIOperation(t, paths, path, "get")
 		for _, parameter := range []string{"limit", "pageToken"} {
 			if !operationHasParameter(operation, "query", parameter) {
@@ -91,6 +75,7 @@ func TestManagedDataAPIContractIsProjectGlobalAndComplete(t *testing.T) {
 		"/api/v1/workspaces/{workspace}/data-connections/{connection}/revisions",
 		"/api/v1/projects/{project}/workspaces/{workspace}/data-connections/{connection}/revisions",
 		"/api/v1/projects/{project}/data-connections/{connection}/tus",
+		"/api/v1/projects/{project}/data-connections/{connection}/rollouts",
 	} {
 		if _, exists := paths[path]; exists {
 			t.Fatalf("managed-data API must not expose forbidden route %s", path)
@@ -109,9 +94,6 @@ func TestManagedDataAPIMutationsDeclareIdempotency(t *testing.T) {
 		"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads",
 		"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/complete",
 		"/api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/abort",
-		"/api/v1/projects/{project}/data-connections/{connection}/rollouts",
-		"/api/v1/projects/{project}/data-connections/{connection}/rollouts/{rollout}/activate",
-		"/api/v1/projects/{project}/data-connections/{connection}/rollouts/{rollout}/rollback",
 	} {
 		operation := openAPIOperation(t, paths, path, "post")
 		if !operationHasParameter(operation, "header", "Idempotency-Key") {
@@ -141,17 +123,12 @@ func TestManagedDataAPIModelsAreBoundedAndBackendNeutral(t *testing.T) {
 	if files["type"] != "array" {
 		t.Fatalf("manifest files schema = %#v", files)
 	}
-	targets := schemaProperty(t, openAPISchema(t, schemas, "ManagedDataRolloutCreateRequest"), "targets")
-	if targets["type"] != "array" {
-		t.Fatalf("rollout targets schema = %#v", targets)
-	}
 	parts := schemaProperty(t, openAPISchema(t, schemas, "ManagedDataS3MultipartCompleteRequest"), "parts")
 	if parts["type"] != "array" {
 		t.Fatalf("multipart parts schema = %#v", parts)
 	}
 	for schemaName, itemRef := range map[string]string{
 		"ManagedDataRevisionListResponse": "#/components/schemas/ManagedDataRevisionSummaryResponse",
-		"ManagedDataRolloutListResponse":  "#/components/schemas/ManagedDataRolloutSummaryResponse",
 	} {
 		listItems := schemaProperty(t, openAPISchema(t, schemas, schemaName), "items")
 		itemSchema := openAPIMap(t, listItems, "items")
@@ -166,7 +143,6 @@ func TestManagedDataAPIModelsAreBoundedAndBackendNeutral(t *testing.T) {
 	}
 	for _, bounds := range []string{
 		"@minItems(1)\n  @maxItems(10000)\n  files:",
-		"@minItems(1)\n  @maxItems(1000)\n  targets:",
 		"@minItems(1)\n  @maxItems(10000)\n  parts:",
 	} {
 		if !strings.Contains(string(typespec), bounds) {
@@ -180,8 +156,6 @@ func TestManagedDataAPIModelsAreBoundedAndBackendNeutral(t *testing.T) {
 	assertEnum(t, openAPISchema(t, schemas, "ManagedDataUploadSessionStatus"), "open", "finalizing", "completed", "aborted", "failed", "expired")
 	assertEnum(t, openAPISchema(t, schemas, "ManagedDataFileUploadStatus"), "pending", "uploading", "uploaded", "verified", "skipped", "failed")
 	assertEnum(t, openAPISchema(t, schemas, "ManagedDataS3MultipartStatus"), "open", "completed", "aborted")
-	assertEnum(t, openAPISchema(t, schemas, "ManagedDataRolloutStatus"), "draft", "activating", "active", "failed", "rolling_back", "rolled_back")
-	assertEnum(t, openAPISchema(t, schemas, "ManagedDataRolloutTargetStatus"), "pending", "activating", "active", "failed", "rolling_back", "rolled_back")
 
 	negotiation := openAPISchema(t, schemas, "ManagedDataUploadNegotiation")
 	for _, property := range []string{"protocol", "tus", "s3Multipart"} {
@@ -202,8 +176,8 @@ func TestManagedDataAPIDoesNotGenerateHighLevelCLICommands(t *testing.T) {
 			managedOperationIDs[operationID] = true
 		}
 	}
-	if len(managedOperationIDs) != 16 {
-		t.Fatalf("managed-data generated operations = %d, want 16", len(managedOperationIDs))
+	if len(managedOperationIDs) != 11 {
+		t.Fatalf("managed-data generated operations = %d, want 11", len(managedOperationIDs))
 	}
 	for _, command := range cligen.APIGeneratedCommandSpecs {
 		if managedOperationIDs[command.OperationID] {

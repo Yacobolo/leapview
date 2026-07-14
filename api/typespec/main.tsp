@@ -9,6 +9,7 @@ import "./agent.tsp";
 import "./access.tsp";
 import "./audit.tsp";
 import "./managed_data.tsp";
+import "./deployments.tsp";
 
 using Http;
 using TypeSpec.OpenAPI;
@@ -17,5 +18,5 @@ using TypeSpec.OpenAPI;
 @doc("Headless API for LibreDash workspaces, publishes, managed data, access control, refreshes, and agent operations.")
 @info(#{ version: "1.0.0" })
 @useAuth(BearerAuth)
-@tagMetadata(#[#{ name: "Current User", description: "Current principal, sessions, tokens, and privileges." }, #{ name: "Workspaces", description: "Workspace and lineage discovery." }, #{ name: "Search", description: "Progressive workspace discovery across BI assets." }, #{ name: "BI", description: "Dashboard and semantic model read APIs." }, #{ name: "Publishes", description: "Dashboard-as-code publish operations." }, #{ name: "Refresh Runs", description: "Headless refresh run operations." }, #{ name: "Agent", description: "Headless agent conversation and run operations." }, #{ name: "Access", description: "Principals, groups, roles, and role bindings." }, #{ name: "Audit", description: "Workspace audit event discovery." }, #{ name: "Managed Data", description: "Project-global managed-data revisions, uploads, and rollouts." }])
+@tagMetadata(#[#{ name: "Current User", description: "Current principal, sessions, tokens, and privileges." }, #{ name: "Workspaces", description: "Workspace and lineage discovery." }, #{ name: "Search", description: "Progressive workspace discovery across BI assets." }, #{ name: "BI", description: "Dashboard and semantic model read APIs." }, #{ name: "Publishes", description: "Dashboard-as-code publish operations." }, #{ name: "Deployments", description: "Project-scoped atomic serving-state and managed-data activation." }, #{ name: "Refresh Runs", description: "Headless refresh run operations." }, #{ name: "Agent", description: "Headless agent conversation and run operations." }, #{ name: "Access", description: "Principals, groups, roles, and role bindings." }, #{ name: "Audit", description: "Workspace audit event discovery." }, #{ name: "Managed Data", description: "Project-global managed-data revisions and uploads." }])
 namespace LibreDashAPI;

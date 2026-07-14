@@ -55,35 +55,6 @@ func (s UploadStatus) CanTransitionTo(target string) bool {
 	}
 }
 
-type RolloutStatus string
-
-const (
-	RolloutStatusPending    RolloutStatus = "pending"
-	RolloutStatusActive     RolloutStatus = "active"
-	RolloutStatusFailed     RolloutStatus = "failed"
-	RolloutStatusSuperseded RolloutStatus = "superseded"
-)
-
-func (s RolloutStatus) CanTransitionTo(target string) bool {
-	t := RolloutStatus(target)
-	switch s {
-	case RolloutStatusPending:
-		return t == RolloutStatusActive || t == RolloutStatusFailed
-	case RolloutStatusActive:
-		return t == RolloutStatusSuperseded
-	default:
-		return false
-	}
-}
-
-type TargetStatus string
-
-const (
-	TargetStatusPending TargetStatus = "pending"
-	TargetStatusActive  TargetStatus = "active"
-	TargetStatusFailed  TargetStatus = "failed"
-)
-
 type Environment string
 
 func NormalizeEnvironment(value string) (Environment, error) {
@@ -273,52 +244,10 @@ type EnvironmentPointer struct {
 	CollectionID string
 	Environment  Environment
 	RevisionID   string
-	RolloutID    string
+	DeploymentID string
 	Generation   int64
 	UpdatedBy    string
 	UpdatedAt    string
-}
-
-type PointerExpectation struct {
-	RevisionID string
-	Generation int64
-}
-
-type Rollout struct {
-	ID           string
-	CollectionID string
-	Environment  Environment
-	RevisionID   string
-	Status       RolloutStatus
-	CreatedBy    string
-	CreatedAt    string
-	CompletedAt  string
-	Error        string
-	Targets      []RolloutTarget
-}
-
-type RolloutTarget struct {
-	RolloutID           string
-	WorkspaceID         string
-	ServingStateID      string
-	PriorServingStateID string
-	Status              TargetStatus
-	ActivatedAt         string
-	Error               string
-}
-
-type RolloutTargetInput struct {
-	WorkspaceID    string
-	ServingStateID string
-}
-
-type CreateRolloutInput struct {
-	ID           string
-	CollectionID string
-	Environment  Environment
-	RevisionID   string
-	Targets      []RolloutTargetInput
-	CreatedBy    string
 }
 
 type ServingStateBinding struct {
@@ -330,7 +259,7 @@ type ServingStateBinding struct {
 }
 
 // Repository owns project-global managed-data metadata. Implementations must
-// make CompleteUpload, ActivateRollout, and ReplaceServingStateBindings atomic.
+// make CompleteUpload and ReplaceServingStateBindings atomic.
 type Repository interface {
 	CreateCollection(context.Context, CreateCollectionInput) (Collection, error)
 	CollectionByID(context.Context, string) (Collection, error)
@@ -357,10 +286,6 @@ type Repository interface {
 	RevisionByID(context.Context, string) (Revision, error)
 	ListRevisions(context.Context, string) ([]Revision, error)
 	ListRevisionFiles(context.Context, string) ([]RevisionFile, error)
-	CreateRollout(context.Context, CreateRolloutInput) (Rollout, error)
-	RolloutByID(context.Context, string) (Rollout, error)
-	ActivateRollout(context.Context, string, PointerExpectation) (Rollout, error)
-	FailRollout(context.Context, string, error) error
 	EnvironmentPointer(context.Context, string, Environment) (EnvironmentPointer, error)
 	ReplaceServingStateBindings(context.Context, string, []ServingStateBinding) error
 	ListServingStateBindings(context.Context, string) ([]ServingStateBinding, error)

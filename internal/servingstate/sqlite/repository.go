@@ -173,6 +173,10 @@ func (r *Repository) ReconcileRetention(ctx context.Context, now time.Time) erro
 }
 
 func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingstate.ID, validation servingstate.Validation, artifact servingstate.Artifact) (servingstate.State, error) {
+	validation.ProjectID = strings.TrimSpace(validation.ProjectID)
+	if validation.ProjectID == "" {
+		return servingstate.State{}, fmt.Errorf("validated serving state requires project id")
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return servingstate.State{}, err
@@ -235,6 +239,7 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 	}
 	if err := q.UpdateServingStateValidated(ctx, platformdb.UpdateServingStateValidatedParams{
 		Status:       string(servingstate.StatusValidated),
+		ProjectID:    validation.ProjectID,
 		Digest:       validation.Digest,
 		ManifestJson: validation.ManifestJSON,
 		ID:           string(servingStateID),
@@ -721,6 +726,7 @@ func mapServingState(row platformdb.ServingState) servingstate.State {
 	out := servingstate.State{
 		ID:                 servingstate.ID(row.ID),
 		WorkspaceID:        servingstate.WorkspaceID(row.WorkspaceID),
+		ProjectID:          row.ProjectID,
 		Environment:        servingstate.Environment(row.Environment),
 		Status:             servingstate.Status(row.Status),
 		Source:             servingstate.NormalizeSource(servingstate.Source(row.Source)),

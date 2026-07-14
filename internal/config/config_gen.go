@@ -9,8 +9,6 @@ import (
 )
 
 type Config struct {
-	// AddrFallback Compatibility listen-address alias used after LIBREDASH_ADDR.
-	AddrFallback string `env:"ADDR"`
 	// Addr HTTP listen address.
 	Addr string `env:"LIBREDASH_ADDR"`
 	// AgentAPIKey API key for the configured agent model provider.
@@ -45,14 +43,10 @@ type Config struct {
 	CookieSecureRaw string `env:"LIBREDASH_COOKIE_SECURE"`
 	// CSRFKey Key used for CSRF protection and OAuth state cookies; production requires at least 32 characters.
 	CSRFKey string `env:"LIBREDASH_CSRF_KEY"`
-	// DataDir Directory containing source data files.
-	DataDir string `env:"LIBREDASH_DATA_DIR" envDefault:".data/olist"`
 	// DevAuthBypass Bypass authentication in development; forbidden in production.
 	DevAuthBypass bool `env:"LIBREDASH_DEV_AUTH_BYPASS" envDefault:"false"`
 	// DuckDBDir Directory containing workspace DuckDB runtime files.
 	DuckDBDir string `env:"LIBREDASH_DUCKDB_DIR"`
-	// DuckDBPath Explicit legacy DuckDB database path override.
-	DuckDBPath string `env:"LIBREDASH_DUCKDB_PATH"`
 	// DuckLakeCatalog Path to the single global DuckLake catalog.
 	DuckLakeCatalog string `env:"LIBREDASH_DUCKLAKE_CATALOG_PATH"`
 	// ExecJobLeaseTimeout Lease duration before an abandoned refresh job may be reclaimed.
@@ -133,13 +127,10 @@ type Config struct {
 	TokenHashKey string `env:"LIBREDASH_TOKEN_HASH_KEY"`
 	// TrustProxyHeaders Trust client-address headers only when a trusted proxy overwrites them.
 	TrustProxyHeaders bool `env:"LIBREDASH_TRUST_PROXY_HEADERS" envDefault:"false"`
-	// Port Compatibility port alias used after LIBREDASH_ADDR and ADDR.
-	Port string `env:"PORT"`
 }
 
 func (c Config) catalogValues() map[string]any {
 	return map[string]any{
-		configspec.EnvADDR:                                        c.AddrFallback,
 		configspec.EnvLIBREDASH_ADDR:                              c.Addr,
 		configspec.EnvLIBREDASH_AGENT_API_KEY:                     c.AgentAPIKey,
 		configspec.EnvLIBREDASH_AGENT_BASE_URL:                    c.AgentBaseURL,
@@ -157,10 +148,8 @@ func (c Config) catalogValues() map[string]any {
 		configspec.EnvLIBREDASH_CLI_CONFIG:                        c.CLIConfig,
 		configspec.EnvLIBREDASH_COOKIE_SECURE:                     c.CookieSecureRaw,
 		configspec.EnvLIBREDASH_CSRF_KEY:                          c.CSRFKey,
-		configspec.EnvLIBREDASH_DATA_DIR:                          c.DataDir,
 		configspec.EnvLIBREDASH_DEV_AUTH_BYPASS:                   c.DevAuthBypass,
 		configspec.EnvLIBREDASH_DUCKDB_DIR:                        c.DuckDBDir,
-		configspec.EnvLIBREDASH_DUCKDB_PATH:                       c.DuckDBPath,
 		configspec.EnvLIBREDASH_DUCKLAKE_CATALOG_PATH:             c.DuckLakeCatalog,
 		configspec.EnvLIBREDASH_EXEC_JOB_LEASE_TIMEOUT:            c.ExecJobLeaseTimeout,
 		configspec.EnvLIBREDASH_EXEC_MAX_QUEUED_READS:             c.ExecMaxQueuedReads,
@@ -201,6 +190,5 @@ func (c Config) catalogValues() map[string]any {
 		configspec.EnvLIBREDASH_TARGET:                            c.Target,
 		configspec.EnvLIBREDASH_TOKEN_HASH_KEY:                    c.TokenHashKey,
 		configspec.EnvLIBREDASH_TRUST_PROXY_HEADERS:               c.TrustProxyHeaders,
-		configspec.EnvPORT:                                        c.Port,
 	}
 }

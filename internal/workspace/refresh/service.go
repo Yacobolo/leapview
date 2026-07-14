@@ -358,6 +358,7 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 	validated, err := s.ServingStates.SaveValidated(ctx, created.ID, servingstate.Validation{
 		Digest:       active.State.Digest,
 		ManifestJSON: active.State.ManifestJSON,
+		ProjectID:    active.State.ProjectID,
 		Graph:        RetargetAssetGraph(input.ArtifactGraph, workspace.WorkspaceID(input.WorkspaceID), workspace.ServingStateID(created.ID)),
 	}, candidateArtifact)
 	if err != nil {

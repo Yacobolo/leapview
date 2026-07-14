@@ -13,7 +13,6 @@ type RegistryOptions struct {
 	Repo         ServingStateRepository
 	WorkspaceIDs []servingstate.WorkspaceID
 	Environment  servingstate.Environment
-	DataDir      string
 	Factory      RuntimeFactory
 	ManagedData  ManagedDataResolver
 	OnDrained    func(servingstate.ID, int64)
@@ -25,7 +24,6 @@ type Registry struct {
 	cutoverMu   sync.RWMutex
 	repo        ServingStateRepository
 	environment servingstate.Environment
-	dataDir     string
 	factory     RuntimeFactory
 	managedData ManagedDataResolver
 	onDrained   func(servingstate.ID, int64)
@@ -113,7 +111,6 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 	registry := &Registry{
 		repo:        options.Repo,
 		environment: servingstate.NormalizeEnvironment(options.Environment),
-		dataDir:     options.DataDir,
 		factory:     options.Factory,
 		managedData: options.ManagedData,
 		onDrained:   options.OnDrained,
@@ -366,7 +363,6 @@ func (r *Registry) managerForWorkspace(workspaceID servingstate.WorkspaceID) *Ma
 		Repo:        r.repo,
 		WorkspaceID: workspaceID,
 		Environment: r.environment,
-		DataDir:     r.dataDir,
 		Factory:     r.factory,
 		ManagedData: r.managedData,
 		OnDrained:   r.onDrained,

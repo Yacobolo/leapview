@@ -13,24 +13,23 @@ import (
 type Privilege string
 
 const (
-	PrivilegeUseWorkspace    Privilege = "USE_WORKSPACE"
-	PrivilegeViewItem        Privilege = "VIEW_ITEM"
-	PrivilegeEditItem        Privilege = "EDIT_ITEM"
-	PrivilegeManageItem      Privilege = "MANAGE_ITEM"
-	PrivilegeQueryData       Privilege = "QUERY_DATA"
-	PrivilegePreviewData     Privilege = "PREVIEW_DATA"
-	PrivilegeRefreshData     Privilege = "REFRESH_DATA"
-	PrivilegeDeploy          Privilege = "DEPLOY"
-	PrivilegeActivatePublish Privilege = "ACTIVATE_PUBLISH"
-	PrivilegeUseAgent        Privilege = "USE_AGENT"
-	PrivilegeViewAgent       Privilege = "VIEW_AGENT"
-	PrivilegeManageGrants    Privilege = "MANAGE_GRANTS"
-	PrivilegeViewAudit       Privilege = "VIEW_AUDIT"
-	PrivilegeManageWorkspace Privilege = "MANAGE_WORKSPACE"
-	PrivilegeManagePlatform  Privilege = "MANAGE_PLATFORM"
-	PrivilegeViewData        Privilege = "VIEW_DATA"
-	PrivilegeIngestData      Privilege = "INGEST_DATA"
-	PrivilegeActivateData    Privilege = "ACTIVATE_DATA"
+	PrivilegeUseWorkspace       Privilege = "USE_WORKSPACE"
+	PrivilegeViewItem           Privilege = "VIEW_ITEM"
+	PrivilegeEditItem           Privilege = "EDIT_ITEM"
+	PrivilegeManageItem         Privilege = "MANAGE_ITEM"
+	PrivilegeQueryData          Privilege = "QUERY_DATA"
+	PrivilegePreviewData        Privilege = "PREVIEW_DATA"
+	PrivilegeRefreshData        Privilege = "REFRESH_DATA"
+	PrivilegeDeploy             Privilege = "DEPLOY"
+	PrivilegeActivateDeployment Privilege = "ACTIVATE_DEPLOYMENT"
+	PrivilegeUseAgent           Privilege = "USE_AGENT"
+	PrivilegeViewAgent          Privilege = "VIEW_AGENT"
+	PrivilegeManageGrants       Privilege = "MANAGE_GRANTS"
+	PrivilegeViewAudit          Privilege = "VIEW_AUDIT"
+	PrivilegeManageWorkspace    Privilege = "MANAGE_WORKSPACE"
+	PrivilegeManagePlatform     Privilege = "MANAGE_PLATFORM"
+	PrivilegeViewData           Privilege = "VIEW_DATA"
+	PrivilegeIngestData         Privilege = "INGEST_DATA"
 )
 
 const (
@@ -57,7 +56,7 @@ var defaultRoles = []Role{
 			PrivilegePreviewData,
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
-			PrivilegeActivatePublish,
+			PrivilegeActivateDeployment,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -76,7 +75,7 @@ var defaultRoles = []Role{
 			PrivilegePreviewData,
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
-			PrivilegeActivatePublish,
+			PrivilegeActivateDeployment,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -92,7 +91,7 @@ var defaultRoles = []Role{
 			PrivilegeQueryData,
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
-			PrivilegeActivatePublish,
+			PrivilegeActivateDeployment,
 		},
 	},
 	{
@@ -149,7 +148,6 @@ var defaultRoles = []Role{
 		Privileges: []Privilege{
 			PrivilegeViewData,
 			PrivilegeIngestData,
-			PrivilegeActivateData,
 		},
 	},
 	{
@@ -158,7 +156,6 @@ var defaultRoles = []Role{
 			PrivilegeManagePlatform,
 			PrivilegeViewData,
 			PrivilegeIngestData,
-			PrivilegeActivateData,
 			PrivilegeUseWorkspace,
 			PrivilegeViewItem,
 			PrivilegeEditItem,
@@ -167,7 +164,7 @@ var defaultRoles = []Role{
 			PrivilegePreviewData,
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
-			PrivilegeActivatePublish,
+			PrivilegeActivateDeployment,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -698,7 +695,7 @@ func KnownPrivileges() []Privilege {
 		PrivilegePreviewData,
 		PrivilegeRefreshData,
 		PrivilegeDeploy,
-		PrivilegeActivatePublish,
+		PrivilegeActivateDeployment,
 		PrivilegeUseAgent,
 		PrivilegeViewAgent,
 		PrivilegeManageGrants,
@@ -707,7 +704,6 @@ func KnownPrivileges() []Privilege {
 		PrivilegeManagePlatform,
 		PrivilegeViewData,
 		PrivilegeIngestData,
-		PrivilegeActivateData,
 	}
 }
 

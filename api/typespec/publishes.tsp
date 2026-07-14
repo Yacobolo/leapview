@@ -75,13 +75,6 @@ op createPublish(@path workspace: string, @body body?: PublishCreateRequest): Cr
 op getPublish(@path workspace: string, @path publish: string, @query environment?: string): OkJson<PublishResponse> | CommonErrors;
 
 @tag("Publishes")
-@summary("Activate a publish")
-@route("/workspaces/{workspace}/publishes/{publish}/activate")
-@post
-@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_PUBLISH" })
-op activatePublish(@path workspace: string, @path publish: string, @query environment?: string): OkJson<PublishResponse> | CommonErrors;
-
-@tag("Publishes")
 @summary("Upload a publish artifact")
 @route("/workspaces/{workspace}/publishes/{publish}/artifact")
 @put

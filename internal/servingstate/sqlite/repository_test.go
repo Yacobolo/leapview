@@ -130,6 +130,7 @@ func TestRepositoryActivateRegistersSecurablesFromDeploymentGraph(t *testing.T) 
 	validation := servingstate.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
+		ProjectID:    "project",
 		Graph: workspace.AssetGraph{
 			Assets: []workspace.Asset{model, table, field, dashboard},
 			Edges: []workspace.AssetEdge{
@@ -175,6 +176,25 @@ func TestRepositorySaveValidatedRollsBackOnDuplicateLogicalAsset(t *testing.T) {
 	}
 	if _, err := repo.ArtifactByServingState(ctx, created.ID); !errors.Is(err, servingstate.ErrNotFound) {
 		t.Fatalf("artifact error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRepositorySaveValidatedPersistsProjectIdentity(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	created, err := repo.Create(ctx, servingstate.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	validated, err := repo.SaveValidated(ctx, created.ID, validationGraph(created.ID), artifact(created.ID, "test"))
+	if err != nil {
+		t.Fatalf("save validated: %v", err)
+	}
+	if validated.ProjectID != "project" {
+		t.Fatalf("project id = %q, want project", validated.ProjectID)
 	}
 }
 
@@ -705,6 +725,7 @@ func validationGraph(servingStateID servingstate.ID) servingstate.Validation {
 	return servingstate.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
+		ProjectID:    "project",
 		Graph: workspace.AssetGraph{
 			Assets: []workspace.Asset{assetA, assetB},
 			Edges: []workspace.AssetEdge{

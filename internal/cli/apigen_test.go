@@ -8,11 +8,11 @@ import (
 )
 
 func TestAPIGenOperationURLUsesGeneratedContracts(t *testing.T) {
-	u, err := apiOperationURL("https://libredash.example/", "activatePublish", map[string]string{"workspace": "demo", "publish": "state 1"}, nil)
+	u, err := apiOperationURL("https://libredash.example/", "activateProjectDeployment", map[string]string{"project": "sales project", "deployment": "deploy 1"}, nil)
 	if err != nil {
 		t.Fatalf("operation URL: %v", err)
 	}
-	if u != "https://libredash.example/api/v1/workspaces/demo/publishes/state%201/activate" {
+	if u != "https://libredash.example/api/v1/projects/sales%20project/deployments/deploy%201/activate" {
 		t.Fatalf("url = %q", u)
 	}
 
@@ -34,12 +34,12 @@ func TestAPIGenOperationURLUsesGeneratedContracts(t *testing.T) {
 	}
 }
 
-func TestGeneratedCLIRegistryContainsCompatibilityCommands(t *testing.T) {
+func TestGeneratedCLIRegistryContainsCoreCommands(t *testing.T) {
 	commands := map[string]bool{}
 	for _, spec := range cligen.APIGeneratedCommandSpecs {
 		commands[spec.OperationID] = true
 	}
-	for _, operationID := range []string{"listPublishes", "listAgentConversations", "listDashboards", "getDashboard", "queryDashboardPage", "queryDashboardTable", "listSemanticModels", "getSemanticModel"} {
+	for _, operationID := range []string{"listAgentConversations", "listDashboards", "getDashboard", "queryDashboardPage", "queryDashboardTable", "listSemanticModels", "getSemanticModel"} {
 		if !commands[operationID] {
 			t.Fatalf("generated CLI registry missing %s", operationID)
 		}

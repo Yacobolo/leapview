@@ -126,11 +126,6 @@ var formats = map[string]Format{
 }
 
 var connections = map[string]ConnectionSpec{
-	"local": {
-		Kind:             "local",
-		AllowsPathSource: true,
-		AllowNoAuth:      true,
-	},
 	"managed": {
 		Kind:             "managed",
 		AllowsPathSource: true,
