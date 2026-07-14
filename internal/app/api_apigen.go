@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -279,24 +280,16 @@ func (a apiGenAdapter) ListDashboardFilterOptions(w http.ResponseWriter, r *http
 	a.server.dashboardHTTP().ListDashboardFilterOptions(w, r)
 }
 
-func (a apiGenAdapter) ListPublishes(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListPublishesParams) {
-	a.server.publishHTTPHandler().List(w, r)
+func (a apiGenAdapter) CreateDeploymentCandidate(w http.ResponseWriter, r *http.Request, project, workspace string) {
+	a.server.deploymentCandidateHTTPHandler().CreateCandidate(w, r, project, workspace)
 }
 
-func (a apiGenAdapter) CreatePublish(w http.ResponseWriter, r *http.Request, _ string) {
-	a.server.publishHTTPHandler().Create(w, r)
+func (a apiGenAdapter) UploadDeploymentCandidateArtifact(w http.ResponseWriter, r *http.Request, project, workspace, candidate string, _ apigenapi.GenUploadDeploymentCandidateArtifactHeaders) {
+	a.server.deploymentCandidateHTTPHandler().UploadCandidateArtifact(w, r, project, workspace, servingstate.ID(candidate))
 }
 
-func (a apiGenAdapter) GetPublish(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenGetPublishParams) {
-	a.server.publishHTTPHandler().Get(w, r)
-}
-
-func (a apiGenAdapter) UploadPublishArtifact(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenUploadPublishArtifactHeaders) {
-	a.server.publishHTTPHandler().UploadArtifact(w, r)
-}
-
-func (a apiGenAdapter) ValidatePublish(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenValidatePublishParams) {
-	a.server.publishHTTPHandler().Validate(w, r)
+func (a apiGenAdapter) ValidateDeploymentCandidate(w http.ResponseWriter, r *http.Request, project, workspace, candidate string) {
+	a.server.deploymentCandidateHTTPHandler().ValidateCandidate(w, r, project, workspace, servingstate.ID(candidate))
 }
 
 func (a apiGenAdapter) CreateRefreshRun(w http.ResponseWriter, r *http.Request, _ string) {

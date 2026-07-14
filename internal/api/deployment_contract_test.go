@@ -39,7 +39,7 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 		_ = schemaProperty(t, response, field)
 	}
 	target := openAPISchema(t, schemas, "ProjectDeploymentTargetResponse")
-	for _, field := range []string{"workspace", "servingStateId", "status"} {
+	for _, field := range []string{"workspace", "candidateId", "status"} {
 		_ = schemaProperty(t, target, field)
 	}
 	assertEnum(t, openAPISchema(t, schemas, "ProjectDeploymentStatus"), "pending", "active", "failed", "superseded")

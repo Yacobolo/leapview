@@ -30,6 +30,8 @@ type Service struct {
 	now        func() time.Time
 }
 
+var _ Coordinator = (*Service)(nil)
+
 func New(repo Repository, store MultipartStore, config Config) (*Service, error) {
 	if repo == nil || store == nil {
 		return nil, fmt.Errorf("%w: multipart repository and store are required", control.ErrInvalid)
@@ -153,6 +155,7 @@ func (s *Service) SignPart(ctx context.Context, request SignPartRequest) (Signed
 		return SignedPartResult{}, err
 	}
 	return SignedPartResult{
+		UploadSessionID: request.UploadSessionID, MultipartUploadID: request.MultipartUploadID,
 		PartNumber: signed.Number, URL: signed.URL, Headers: headers,
 		ExpiresAt: s.now().UTC().Add(s.signExpiry).Format(time.RFC3339Nano),
 	}, nil

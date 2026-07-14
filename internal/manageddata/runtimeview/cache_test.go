@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
@@ -31,18 +33,16 @@ func TestMaterializePublishesImmutableVerifiedRevision(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = cache.DeleteRevision(context.Background(), manifest.RevisionID()) })
 
-	view, err := cache.Materialize(t.Context(), manifest.RevisionID(), manifest)
+	view, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.ID != manifest.RevisionID() {
-		t.Fatalf("view ID = %q, want %q", view.ID, manifest.RevisionID())
-	}
-	if view.Path != filepath.Join(root, "revisions", strings.TrimPrefix(manifest.RevisionID(), "sha256:"), "data") {
-		t.Fatalf("view path = %q", view.Path)
+	t.Cleanup(func() { _ = view.Release() })
+	if view.Root() != filepath.Join(root, "revisions", strings.TrimPrefix(manifest.RevisionID(), "sha256:"), "data") {
+		t.Fatalf("view path = %q", view.Root())
 	}
 	for logicalPath, want := range bodyByPath {
-		got, readErr := os.ReadFile(filepath.Join(view.Path, filepath.FromSlash(logicalPath)))
+		got, readErr := os.ReadFile(filepath.Join(view.Root(), filepath.FromSlash(logicalPath)))
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
@@ -51,18 +51,19 @@ func TestMaterializePublishesImmutableVerifiedRevision(t *testing.T) {
 		}
 	}
 	assertPermissions(t, root, 0o700)
-	assertPermissions(t, view.Path, 0o500)
-	assertPermissions(t, filepath.Join(view.Path, "customers.csv"), 0o400)
-	assertPermissions(t, filepath.Join(view.Path, "orders"), 0o500)
-	assertPermissions(t, filepath.Join(view.Path, "orders", "2026"), 0o500)
+	assertPermissions(t, view.Root(), 0o500)
+	assertPermissions(t, filepath.Join(view.Root(), "customers.csv"), 0o400)
+	assertPermissions(t, filepath.Join(view.Root(), "orders"), 0o500)
+	assertPermissions(t, filepath.Join(view.Root(), "orders", "2026"), 0o500)
 
 	before := store.openCount()
-	reused, err := cache.Materialize(t.Context(), manifest.RevisionID(), manifest)
+	reused, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reused != view {
-		t.Fatalf("reused view = %#v, want %#v", reused, view)
+	t.Cleanup(func() { _ = reused.Release() })
+	if reused.Root() != view.Root() {
+		t.Fatalf("reused root = %q, want %q", reused.Root(), view.Root())
 	}
 	if got := store.openCount(); got != before {
 		t.Fatalf("idempotent reuse opened blob store %d additional times", got-before)
@@ -97,7 +98,7 @@ func TestMaterializeRequiresCanonicalMatchingRevisionIDAndSafePaths(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := cache.Materialize(t.Context(), test.revisionID, test.manifest); !errors.Is(err, storage.ErrInvalid) {
+			if _, err := cache.MaterializeRevision(t.Context(), test.revisionID, test.manifest); !errors.Is(err, storage.ErrInvalid) {
 				t.Fatalf("Materialize() error = %v, want %v", err, storage.ErrInvalid)
 			}
 		})
@@ -122,7 +123,7 @@ func TestMaterializeRejectsBlobSizeAndDigestMismatchWithoutPublishing(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = cache.Materialize(t.Context(), manifest.RevisionID(), manifest)
+			_, err = cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
 			if !errors.Is(err, storage.ErrIntegrity) {
 				t.Fatalf("Materialize() error = %v, want %v", err, storage.ErrIntegrity)
 			}
@@ -157,7 +158,10 @@ func TestMaterializeDoesNotExposeRevisionBeforeCompleteReadOnlyPublication(t *te
 	t.Cleanup(func() { _ = cache.DeleteRevision(context.Background(), manifest.RevisionID()) })
 	result := make(chan error, 1)
 	go func() {
-		_, materializeErr := cache.Materialize(t.Context(), manifest.RevisionID(), manifest)
+		lease, materializeErr := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
+		if materializeErr == nil {
+			materializeErr = lease.Release()
+		}
 		result <- materializeErr
 	}()
 	<-started
@@ -179,11 +183,14 @@ func TestMaterializeRejectsCorruptOrSymlinkedExistingView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := cache.Materialize(t.Context(), manifest.RevisionID(), manifest)
+	view, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filePath := filepath.Join(view.Path, "nested", "data.csv")
+	if err := view.Release(); err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(view.Root(), "nested", "data.csv")
 	if err := os.Chmod(filepath.Dir(filePath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +201,7 @@ func TestMaterializeRejectsCorruptOrSymlinkedExistingView(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := store.openCount()
-	if _, err := cache.Materialize(t.Context(), manifest.RevisionID(), manifest); !errors.Is(err, storage.ErrIntegrity) {
+	if _, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest); !errors.Is(err, storage.ErrIntegrity) {
 		t.Fatalf("corrupt existing Materialize() error = %v, want %v", err, storage.ErrIntegrity)
 	}
 	if got := store.openCount(); got != before {
@@ -204,14 +211,125 @@ func TestMaterializeRejectsCorruptOrSymlinkedExistingView(t *testing.T) {
 	if err := cache.DeleteRevision(t.Context(), manifest.RevisionID()); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(view.Path, 0o700); err != nil {
+	if err := os.MkdirAll(view.Root(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(t.TempDir(), filepath.Join(view.Path, "nested")); err != nil {
+	if err := os.Symlink(t.TempDir(), filepath.Join(view.Root(), "nested")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cache.Materialize(t.Context(), manifest.RevisionID(), manifest); !errors.Is(err, storage.ErrIntegrity) {
+	if _, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest); !errors.Is(err, storage.ErrIntegrity) {
 		t.Fatalf("symlinked existing Materialize() error = %v, want %v", err, storage.ErrIntegrity)
+	}
+}
+
+func TestRuntimeCacheEvictionWaitsForRevisionLease(t *testing.T) {
+	manifest, blobs := manifestAndBlobs(map[string][]byte{"data.csv": []byte("leased")})
+	cache, err := New(filepath.Join(t.TempDir(), "runtime"), newMemoryStore(blobs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cache.DeleteRevision(context.Background(), manifest.RevisionID()) })
+	lease, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := lease.Root()
+	candidates, err := cache.ListEvictionCandidates(t.Context(), time.Now().UTC().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %#v, want one", candidates)
+	}
+	deleted, err := cache.DeleteIfIdle(t.Context(), candidates[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted {
+		t.Fatal("deleted runtime view while its revision lease was active")
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("leased runtime root disappeared: %v", err)
+	}
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err = cache.DeleteIfIdle(t.Context(), candidates[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deleted {
+		t.Fatal("released idle runtime view was not deleted")
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("deleted runtime root stat error = %v, want not exist", err)
+	}
+}
+
+func TestRuntimeCacheEvictionRejectsCandidateAfterRevisionReuse(t *testing.T) {
+	manifest, blobs := manifestAndBlobs(map[string][]byte{"data.csv": []byte("reused")})
+	cache, err := New(filepath.Join(t.TempDir(), "runtime"), newMemoryStore(blobs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cache.DeleteRevision(context.Background(), manifest.RevisionID()) })
+	first, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Release(); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := cache.ListEvictionCandidates(t.Context(), time.Now().UTC().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %#v, want one", candidates)
+	}
+	second, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Release(); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := cache.DeleteIfIdle(t.Context(), candidates[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted {
+		t.Fatal("stale eviction candidate deleted a reused revision")
+	}
+	if _, err := os.Stat(second.Root()); err != nil {
+		t.Fatalf("reused runtime root disappeared: %v", err)
+	}
+}
+
+func TestRuntimeCacheEvictionCandidateListingIsBounded(t *testing.T) {
+	cache, err := New(filepath.Join(t.TempDir(), "runtime"), newMemoryStore(map[string][]byte{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		manifest, blobs := manifestAndBlobs(map[string][]byte{fmt.Sprintf("%d.csv", i): []byte(fmt.Sprintf("value-%d", i))})
+		revisionID := manifest.RevisionID()
+		t.Cleanup(func() { _ = cache.DeleteRevision(context.Background(), revisionID) })
+		cache.blobs = newMemoryStore(blobs)
+		lease, materializeErr := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
+		if materializeErr != nil {
+			t.Fatal(materializeErr)
+		}
+		if err := lease.Release(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidates, err := cache.ListEvictionCandidates(t.Context(), time.Now().UTC().Add(time.Hour), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("candidate count = %d, want bounded count 2", len(candidates))
 	}
 }
 

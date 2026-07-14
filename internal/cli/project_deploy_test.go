@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/api"
+	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 )
 
@@ -34,8 +35,8 @@ func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/publishes"):
-			writeCLIJSON(t, w, api.PublishResponse{ID: "state-" + workspaceID, WorkspaceID: workspaceID, Environment: "prod", Status: "pending"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/workspaces/"+workspaceID+"/deployment-candidates"):
+			writeCLIJSON(t, w, apigenapi.DeploymentCandidateResponse{Id: "state-" + workspaceID, Project: "libredash-showcase", Workspace: workspaceID, Environment: "prod", Status: "pending"})
 		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/artifact"):
 			pins, digest := readManagedDataPinsFromUpload(t, r.Body)
 			if len(pins) != 1 || pins["olist"] != revision {
@@ -44,23 +45,23 @@ func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
 			artifactDigests[workspaceID] = digest
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/validate"):
-			writeCLIJSON(t, w, api.PublishResponse{ID: "state-" + workspaceID, WorkspaceID: workspaceID, Environment: "prod", Status: "validated", Digest: artifactDigests[workspaceID]})
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/publishes/") && strings.HasSuffix(r.URL.Path, "/activate"):
+			writeCLIJSON(t, w, apigenapi.DeploymentCandidateResponse{Id: "state-" + workspaceID, Project: "libredash-showcase", Workspace: workspaceID, Environment: "prod", Status: "validated", Digest: artifactDigests[workspaceID]})
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/deployment-candidates/") && strings.HasSuffix(r.URL.Path, "/activate"):
 			t.Fatalf("deploy activated an individual workspace: %s", r.URL.Path)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/libredash-showcase/deployments":
 			assertRequestsBefore(t, sequence, r.Method+" "+r.URL.Path, []string{
-				"POST /api/v1/workspaces/operations/publishes/state-operations/validate",
-				"POST /api/v1/workspaces/sales/publishes/state-sales/validate",
-				"POST /api/v1/workspaces/visuals/publishes/state-visuals/validate",
+				"POST /api/v1/projects/libredash-showcase/workspaces/operations/deployment-candidates/state-operations/validate",
+				"POST /api/v1/projects/libredash-showcase/workspaces/sales/deployment-candidates/state-sales/validate",
+				"POST /api/v1/projects/libredash-showcase/workspaces/visuals/deployment-candidates/state-visuals/validate",
 			})
 			writeCLIJSON(t, w, map[string]any{
 				"id": "deployment-1", "project": "libredash-showcase", "environment": "prod", "status": "pending",
-				"targets": []map[string]string{{"workspace": "operations", "servingStateId": "state-operations", "status": "pending"}, {"workspace": "sales", "servingStateId": "state-sales", "status": "pending"}, {"workspace": "visuals", "servingStateId": "state-visuals", "status": "pending"}},
+				"targets": []map[string]string{{"workspace": "operations", "candidateId": "state-operations", "status": "pending"}, {"workspace": "sales", "candidateId": "state-sales", "status": "pending"}, {"workspace": "visuals", "candidateId": "state-visuals", "status": "pending"}},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/libredash-showcase/deployments/deployment-1/activate":
 			writeCLIJSON(t, w, map[string]any{
 				"id": "deployment-1", "project": "libredash-showcase", "environment": "prod", "status": "active",
-				"targets": []map[string]string{{"workspace": "operations", "servingStateId": "state-operations", "status": "active"}, {"workspace": "sales", "servingStateId": "state-sales", "status": "active"}, {"workspace": "visuals", "servingStateId": "state-visuals", "status": "active"}},
+				"targets": []map[string]string{{"workspace": "operations", "candidateId": "state-operations", "status": "active"}, {"workspace": "sales", "candidateId": "state-sales", "status": "active"}, {"workspace": "visuals", "candidateId": "state-visuals", "status": "active"}},
 			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -88,9 +89,9 @@ func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
 	assertSequenceContainsInOrder(t, sequence, []string{
 		"GET /api/v1/workspaces/operations/active-asset-graph",
 		"GET /api/v1/workspaces/sales/active-asset-graph",
-		"POST /api/v1/workspaces/operations/publishes",
-		"POST /api/v1/workspaces/sales/publishes",
-		"POST /api/v1/workspaces/visuals/publishes",
+		"POST /api/v1/projects/libredash-showcase/workspaces/operations/deployment-candidates",
+		"POST /api/v1/projects/libredash-showcase/workspaces/sales/deployment-candidates",
+		"POST /api/v1/projects/libredash-showcase/workspaces/visuals/deployment-candidates",
 		"POST /api/v1/projects/libredash-showcase/deployments",
 		"POST /api/v1/projects/libredash-showcase/deployments/deployment-1/activate",
 	})

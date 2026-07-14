@@ -9,8 +9,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func tryLockFile(file *os.File) (bool, error) {
-	err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+func tryLockFile(file *os.File, shared bool) (bool, error) {
+	operation := unix.LOCK_EX
+	if shared {
+		operation = unix.LOCK_SH
+	}
+	err := unix.Flock(int(file.Fd()), operation|unix.LOCK_NB)
 	if err == nil {
 		return true, nil
 	}

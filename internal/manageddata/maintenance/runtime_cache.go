@@ -6,19 +6,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/manageddata/runtimeview"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
 )
 
 // RuntimeViewCandidate is an opaque eviction candidate. Token must identify
 // the exact cache state observed while listing candidates.
-type RuntimeViewCandidate struct {
-	RevisionID string
-	LastUsed   time.Time
-	Token      string
-}
+type RuntimeViewCandidate = runtimeview.EvictionCandidate
 
-// LeasedRuntimeViewCache is deliberately not implemented by the current
-// runtime cache. DeleteIfIdle must atomically verify Token, prove that no query
+// LeasedRuntimeViewCache must atomically verify Token, prove that no query
 // lease exists, prove that no materialization is in progress, and only then
 // delete the revision. Returning false is the normal response to a race.
 type LeasedRuntimeViewCache interface {

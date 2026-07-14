@@ -35,8 +35,8 @@ const (
 )
 
 type TargetRequest struct {
-	Workspace      string `json:"workspace"`
-	ServingStateID string `json:"servingStateId"`
+	Workspace   string `json:"workspace"`
+	CandidateID string `json:"candidateId"`
 }
 
 type CreateRequest struct {
@@ -72,12 +72,12 @@ type Deployment struct {
 }
 
 type Target struct {
-	Workspace           string
-	ServingStateID      string
-	PriorServingStateID string
-	Status              TargetStatus
-	ActivatedAt         string
-	Error               string
+	Workspace        string
+	CandidateID      string
+	PriorCandidateID string
+	Status           TargetStatus
+	ActivatedAt      string
+	Error            string
 }
 
 type Connection struct {
@@ -125,23 +125,23 @@ func (a *Adapter) Create(ctx context.Context, request CreateRequest) (Deployment
 	states := make(map[string]struct{}, len(request.Targets))
 	for _, target := range request.Targets {
 		target.Workspace = strings.TrimSpace(target.Workspace)
-		target.ServingStateID = strings.TrimSpace(target.ServingStateID)
-		if target.Workspace == "" || target.ServingStateID == "" {
-			return Deployment{}, fmt.Errorf("%w: target workspace and serving state are required", ErrInvalid)
+		target.CandidateID = strings.TrimSpace(target.CandidateID)
+		if target.Workspace == "" || target.CandidateID == "" {
+			return Deployment{}, fmt.Errorf("%w: target workspace and candidate are required", ErrInvalid)
 		}
 		if _, duplicate := workspaces[target.Workspace]; duplicate {
 			return Deployment{}, fmt.Errorf("%w: duplicate workspace target %q", ErrInvalid, target.Workspace)
 		}
-		if _, duplicate := states[target.ServingStateID]; duplicate {
-			return Deployment{}, fmt.Errorf("%w: duplicate serving state target %q", ErrInvalid, target.ServingStateID)
+		if _, duplicate := states[target.CandidateID]; duplicate {
+			return Deployment{}, fmt.Errorf("%w: duplicate candidate target %q", ErrInvalid, target.CandidateID)
 		}
 		workspaces[target.Workspace] = struct{}{}
-		states[target.ServingStateID] = struct{}{}
+		states[target.CandidateID] = struct{}{}
 		targets = append(targets, target)
 	}
 	sort.Slice(targets, func(i, j int) bool {
 		if targets[i].Workspace == targets[j].Workspace {
-			return targets[i].ServingStateID < targets[j].ServingStateID
+			return targets[i].CandidateID < targets[j].CandidateID
 		}
 		return targets[i].Workspace < targets[j].Workspace
 	})
@@ -158,7 +158,7 @@ func (a *Adapter) Create(ctx context.Context, request CreateRequest) (Deployment
 		Targets:       make([]deployment.TargetInput, 0, len(targets)),
 	}
 	for _, target := range targets {
-		input.Targets = append(input.Targets, deployment.TargetInput{WorkspaceID: target.Workspace, ServingStateID: target.ServingStateID})
+		input.Targets = append(input.Targets, deployment.TargetInput{WorkspaceID: target.Workspace, ServingStateID: target.CandidateID})
 	}
 	row, err := a.service.Create(ctx, input)
 	if err != nil {
@@ -194,7 +194,7 @@ func (a *Adapter) mapDeployment(ctx context.Context, row deployment.Deployment) 
 	}
 	for _, target := range row.Targets {
 		result.Targets = append(result.Targets, Target{
-			Workspace: target.WorkspaceID, ServingStateID: target.ServingStateID, PriorServingStateID: target.PriorServingStateID,
+			Workspace: target.WorkspaceID, CandidateID: target.ServingStateID, PriorCandidateID: target.PriorServingStateID,
 			Status: TargetStatus(target.Status), ActivatedAt: target.ActivatedAt, Error: target.Error,
 		})
 	}

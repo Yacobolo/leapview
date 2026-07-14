@@ -35,8 +35,6 @@ type Config struct {
 	AzureTenant string `env:"LIBREDASH_AZURE_TENANT"`
 	// BootstrapEmail Email assigned to the production bootstrap administrator.
 	BootstrapEmail string `env:"LIBREDASH_BOOTSTRAP_ADMIN_EMAIL"`
-	// CatalogPath Legacy dashboard catalog path override.
-	CatalogPath string `env:"LIBREDASH_CATALOG_PATH"`
 	// CLIConfig Path to the local CLI target and token configuration file.
 	CLIConfig string `env:"LIBREDASH_CLI_CONFIG"`
 	// CookieSecureRaw Secure-cookie override; defaults to true for production browser authentication.
@@ -144,7 +142,6 @@ func (c Config) catalogValues() map[string]any {
 		configspec.EnvLIBREDASH_AZURE_CLIENT_SECRET:               c.AzureSecret,
 		configspec.EnvLIBREDASH_AZURE_TENANT:                      c.AzureTenant,
 		configspec.EnvLIBREDASH_BOOTSTRAP_ADMIN_EMAIL:             c.BootstrapEmail,
-		configspec.EnvLIBREDASH_CATALOG_PATH:                      c.CatalogPath,
 		configspec.EnvLIBREDASH_CLI_CONFIG:                        c.CLIConfig,
 		configspec.EnvLIBREDASH_COOKIE_SECURE:                     c.CookieSecureRaw,
 		configspec.EnvLIBREDASH_CSRF_KEY:                          c.CSRFKey,

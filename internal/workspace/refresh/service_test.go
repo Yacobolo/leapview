@@ -171,12 +171,15 @@ func TestServiceCreateRefreshCandidateCopiesActiveArtifactMetadata(t *testing.T)
 	service := Service{ServingStates: repo}
 	active := ServingState{
 		State: servingstate.State{
-			ID:           "dep_active",
-			WorkspaceID:  "movielens",
-			ProjectID:    "movie-project",
-			Environment:  servingstate.DefaultEnvironment,
-			Digest:       "artifact-digest",
-			ManifestJSON: "{}",
+			ID:                "dep_active",
+			WorkspaceID:       "movielens",
+			ProjectID:         "movie-project",
+			ProjectDigest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			ProjectWorkspaces: []string{"movielens", "ratings"},
+			AccessPolicyJSON:  `{"groups":{"readers":{"name":"Readers"}}}`,
+			Environment:       servingstate.DefaultEnvironment,
+			Digest:            "artifact-digest",
+			ManifestJSON:      "{}",
 		},
 		Artifact: servingstate.Artifact{
 			ServingStateID: "dep_active",
@@ -204,6 +207,12 @@ func TestServiceCreateRefreshCandidateCopiesActiveArtifactMetadata(t *testing.T)
 	}
 	if repo.savedValidation.ProjectID != active.State.ProjectID {
 		t.Fatalf("candidate project = %q, want %q", repo.savedValidation.ProjectID, active.State.ProjectID)
+	}
+	if repo.savedValidation.ProjectDigest != active.State.ProjectDigest || !reflect.DeepEqual(repo.savedValidation.ProjectWorkspaces, active.State.ProjectWorkspaces) {
+		t.Fatalf("candidate project provenance = (%q, %#v), want (%q, %#v)", repo.savedValidation.ProjectDigest, repo.savedValidation.ProjectWorkspaces, active.State.ProjectDigest, active.State.ProjectWorkspaces)
+	}
+	if group := repo.savedValidation.AccessPolicy.Groups["readers"]; group.Name != "Readers" {
+		t.Fatalf("candidate access policy = %#v, want active policy", repo.savedValidation.AccessPolicy)
 	}
 }
 
@@ -237,12 +246,16 @@ type fakeRepo struct {
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		activeDeployment: servingstate.State{
-			ID:           "dep_active",
-			WorkspaceID:  "sales",
-			Environment:  servingstate.DefaultEnvironment,
-			Status:       servingstate.StatusActive,
-			Digest:       "digest",
-			ManifestJSON: "{}",
+			ID:                "dep_active",
+			WorkspaceID:       "sales",
+			ProjectID:         "project",
+			ProjectDigest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			ProjectWorkspaces: []string{"sales"},
+			AccessPolicyJSON:  "{}",
+			Environment:       servingstate.DefaultEnvironment,
+			Status:            servingstate.StatusActive,
+			Digest:            "digest",
+			ManifestJSON:      "{}",
 		},
 		activeArtifact: servingstate.Artifact{
 			ServingStateID: "dep_active",

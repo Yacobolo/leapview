@@ -96,7 +96,7 @@ func createValidatedState(t *testing.T, ctx context.Context, store *platform.Sto
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE serving_states SET status = 'validated', project_id = 'project-a' WHERE id = ?`, state.ID); err != nil {
+	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE serving_states SET status = 'validated', project_id = 'project-a', project_digest = ?, project_workspaces_json = ? WHERE id = ?`, "sha256:"+strings.Repeat("a", 64), `["`+workspaceID+`"]`, state.ID); err != nil {
 		t.Fatal(err)
 	}
 	state.Status = servingstate.StatusValidated

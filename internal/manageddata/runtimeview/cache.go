@@ -3,8 +3,10 @@ package runtimeview
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +15,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
@@ -31,7 +35,9 @@ type Cache struct {
 	revisions string
 	staging   string
 	locks     string
+	access    string
 	blobs     storage.BlobStore
+	now       func() time.Time
 }
 
 // New initializes a private runtime-view cache rooted at root.
@@ -51,9 +57,11 @@ func New(root string, blobs storage.BlobStore) (*Cache, error) {
 		revisions: filepath.Join(absoluteRoot, "revisions"),
 		staging:   filepath.Join(absoluteRoot, "staging"),
 		locks:     filepath.Join(absoluteRoot, "locks"),
+		access:    filepath.Join(absoluteRoot, "access"),
 		blobs:     blobs,
+		now:       time.Now,
 	}
-	for _, directory := range []string{cache.root, cache.revisions, cache.staging, cache.locks} {
+	for _, directory := range []string{cache.root, cache.revisions, cache.staging, cache.locks, cache.access} {
 		if err := ensurePrivateDirectory(directory); err != nil {
 			return nil, err
 		}
@@ -64,43 +72,43 @@ func New(root string, blobs storage.BlobStore) (*Cache, error) {
 	return cache, nil
 }
 
-// Materialize returns the verified local root for revisionID. The revision ID
-// must be the canonical digest of manifest.
-func (c *Cache) Materialize(ctx context.Context, revisionID string, manifest manageddata.Manifest) (storage.RevisionView, error) {
+// MaterializeRevision returns a lease for the verified local root. The
+// revision ID must be the canonical digest of manifest.
+func (c *Cache) MaterializeRevision(ctx context.Context, revisionID string, manifest manageddata.Manifest) (manageddata.RevisionLease, error) {
 	if err := validateMaterialization(revisionID, manifest); err != nil {
-		return storage.RevisionView{}, err
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
-		return storage.RevisionView{}, err
+		return nil, err
 	}
 	digest := revisionDigest(revisionID)
 	lock, err := acquireFileLock(ctx, filepath.Join(c.locks, digest+".lock"))
 	if err != nil {
-		return storage.RevisionView{}, fmt.Errorf("lock runtime revision %s: %w", revisionID, err)
+		return nil, fmt.Errorf("lock runtime revision %s: %w", revisionID, err)
 	}
 	defer lock.release()
 
 	if err := c.cleanupStaging(digest); err != nil {
-		return storage.RevisionView{}, err
+		return nil, err
 	}
 	finalContainer := c.revisionContainerPath(revisionID)
 	finalPath := c.revisionPath(revisionID)
 	if _, err := os.Lstat(finalContainer); err == nil {
 		if err := verifyRevisionContainer(ctx, finalContainer, finalPath, manifest); err != nil {
-			return storage.RevisionView{}, err
+			return nil, err
 		}
-		return storage.RevisionView{ID: revisionID, Path: finalPath}, nil
+		return c.acquireRevisionLease(ctx, revisionID, finalPath)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return storage.RevisionView{}, fmt.Errorf("inspect runtime revision %s: %w", revisionID, err)
+		return nil, fmt.Errorf("inspect runtime revision %s: %w", revisionID, err)
 	}
 
 	temporary, err := os.MkdirTemp(c.staging, digest+".")
 	if err != nil {
-		return storage.RevisionView{}, fmt.Errorf("create runtime revision staging directory: %w", err)
+		return nil, fmt.Errorf("create runtime revision staging directory: %w", err)
 	}
 	if err := os.Chmod(temporary, privateDirectory); err != nil {
 		_ = removeTree(temporary)
-		return storage.RevisionView{}, fmt.Errorf("secure runtime revision staging directory: %w", err)
+		return nil, fmt.Errorf("secure runtime revision staging directory: %w", err)
 	}
 	cleanup := true
 	defer func() {
@@ -111,39 +119,263 @@ func (c *Cache) Materialize(ctx context.Context, revisionID string, manifest man
 
 	temporaryView := filepath.Join(temporary, "data")
 	if err := os.Mkdir(temporaryView, privateDirectory); err != nil {
-		return storage.RevisionView{}, fmt.Errorf("create runtime revision data root: %w", err)
+		return nil, fmt.Errorf("create runtime revision data root: %w", err)
 	}
 	files := append([]manageddata.File(nil), manifest.Files...)
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	for _, file := range files {
 		if err := c.materializeFile(ctx, temporaryView, file); err != nil {
-			return storage.RevisionView{}, err
+			return nil, err
 		}
 	}
 	if err := makeTreeReadOnly(temporaryView); err != nil {
-		return storage.RevisionView{}, fmt.Errorf("make runtime revision read-only: %w", err)
+		return nil, fmt.Errorf("make runtime revision read-only: %w", err)
 	}
 	if err := syncDirectory(temporary); err != nil {
-		return storage.RevisionView{}, fmt.Errorf("sync runtime revision staging envelope: %w", err)
+		return nil, fmt.Errorf("sync runtime revision staging envelope: %w", err)
 	}
 	if err := os.Rename(temporary, finalContainer); err != nil {
 		if _, statErr := os.Lstat(finalContainer); statErr == nil {
 			if verifyErr := verifyRevisionContainer(ctx, finalContainer, finalPath, manifest); verifyErr != nil {
-				return storage.RevisionView{}, verifyErr
+				return nil, verifyErr
 			}
-			return storage.RevisionView{ID: revisionID, Path: finalPath}, nil
+			return c.acquireRevisionLease(ctx, revisionID, finalPath)
 		}
-		return storage.RevisionView{}, fmt.Errorf("publish runtime revision %s: %w", revisionID, err)
+		return nil, fmt.Errorf("publish runtime revision %s: %w", revisionID, err)
 	}
 	cleanup = false
 	if err := syncDirectory(c.revisions); err != nil {
-		return storage.RevisionView{}, fmt.Errorf("sync published runtime revision: %w", err)
+		return nil, fmt.Errorf("sync published runtime revision: %w", err)
 	}
-	return storage.RevisionView{ID: revisionID, Path: finalPath}, nil
+	return c.acquireRevisionLease(ctx, revisionID, finalPath)
 }
 
-// DeleteRevision removes a local revision cache entry. Callers must first
-// prove that no query or other consumer is using the returned revision root.
+// EvictionCandidate identifies the exact access generation observed by a
+// bounded cache scan.
+type EvictionCandidate struct {
+	RevisionID string
+	LastUsed   time.Time
+	Token      string
+}
+
+type accessRecord struct {
+	RevisionID string    `json:"revision_id"`
+	LastUsed   time.Time `json:"last_used"`
+	Token      string    `json:"token"`
+}
+
+type revisionLease struct {
+	root string
+	lock *fileLock
+	once sync.Once
+	err  error
+}
+
+func (l *revisionLease) Root() string { return l.root }
+
+func (l *revisionLease) Release() error {
+	if l == nil {
+		return nil
+	}
+	l.once.Do(func() { l.err = l.lock.release() })
+	return l.err
+}
+
+func (c *Cache) acquireRevisionLease(ctx context.Context, revisionID, root string) (manageddata.RevisionLease, error) {
+	if err := c.writeAccessRecord(revisionID); err != nil {
+		return nil, err
+	}
+	lease, err := acquireSharedFileLock(ctx, c.lifetimeLockPath(revisionID))
+	if err != nil {
+		return nil, fmt.Errorf("lease runtime revision %s: %w", revisionID, err)
+	}
+	return &revisionLease{root: root, lock: lease}, nil
+}
+
+func (c *Cache) writeAccessRecord(revisionID string) error {
+	tokenBytes := make([]byte, 16)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return fmt.Errorf("generate runtime revision access token: %w", err)
+	}
+	record := accessRecord{RevisionID: revisionID, LastUsed: c.now().UTC(), Token: hex.EncodeToString(tokenBytes)}
+	payload, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("encode runtime revision access record: %w", err)
+	}
+	temporary, err := os.CreateTemp(c.staging, revisionDigest(revisionID)+".access.*")
+	if err != nil {
+		return fmt.Errorf("create runtime revision access record: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(stagingFile); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(payload); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, c.accessRecordPath(revisionID)); err != nil {
+		return fmt.Errorf("publish runtime revision access record: %w", err)
+	}
+	if err := syncDirectory(c.access); err != nil {
+		return fmt.Errorf("sync runtime revision access record: %w", err)
+	}
+	return nil
+}
+
+// ListEvictionCandidates returns at most limit idle generations ordered from
+// least recently used to most recently used.
+func (c *Cache) ListEvictionCandidates(ctx context.Context, cutoff time.Time, limit int) ([]EvictionCandidate, error) {
+	if cutoff.IsZero() || limit <= 0 || limit > 10_000 {
+		return nil, fmt.Errorf("%w: invalid runtime cache eviction bounds", storage.ErrInvalid)
+	}
+	directory, err := os.Open(c.revisions)
+	if err != nil {
+		return nil, fmt.Errorf("open runtime revision directory: %w", err)
+	}
+	defer directory.Close()
+	candidates := make([]EvictionCandidate, 0, limit)
+	for {
+		entries, readErr := directory.ReadDir(128)
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if storage.ValidateSHA256(entry.Name()) != nil || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("%w: runtime cache contains a noncanonical revision", storage.ErrIntegrity)
+			}
+			candidate, candidateErr := c.readEvictionCandidate("sha256:" + entry.Name())
+			if candidateErr != nil {
+				return nil, candidateErr
+			}
+			if candidate.LastUsed.After(cutoff) {
+				continue
+			}
+			candidates = append(candidates, candidate)
+			sort.Slice(candidates, func(i, j int) bool {
+				if !candidates[i].LastUsed.Equal(candidates[j].LastUsed) {
+					return candidates[i].LastUsed.Before(candidates[j].LastUsed)
+				}
+				return candidates[i].RevisionID < candidates[j].RevisionID
+			})
+			if len(candidates) > limit {
+				candidates = candidates[:limit]
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return candidates, nil
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("scan runtime revision directory: %w", readErr)
+		}
+	}
+}
+
+func (c *Cache) readEvictionCandidate(revisionID string) (EvictionCandidate, error) {
+	file, err := os.Open(c.accessRecordPath(revisionID))
+	if errors.Is(err, os.ErrNotExist) {
+		info, statErr := os.Lstat(c.revisionContainerPath(revisionID))
+		if statErr != nil {
+			return EvictionCandidate{}, statErr
+		}
+		return EvictionCandidate{RevisionID: revisionID, LastUsed: info.ModTime().UTC(), Token: fmt.Sprintf("legacy:%d", info.ModTime().UnixNano())}, nil
+	}
+	if err != nil {
+		return EvictionCandidate{}, fmt.Errorf("open runtime revision access record: %w", err)
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !openedInfo.Mode().IsRegular() {
+		return EvictionCandidate{}, fmt.Errorf("%w: runtime revision access record is not regular", storage.ErrIntegrity)
+	}
+	pathInfo, err := os.Lstat(c.accessRecordPath(revisionID))
+	if err != nil || pathInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(openedInfo, pathInfo) {
+		return EvictionCandidate{}, fmt.Errorf("%w: runtime revision access record is unstable", storage.ErrIntegrity)
+	}
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	var record accessRecord
+	if err := decoder.Decode(&record); err != nil {
+		return EvictionCandidate{}, fmt.Errorf("%w: invalid runtime revision access record", storage.ErrIntegrity)
+	}
+	if err := requireJSONEnd(decoder); err != nil || record.RevisionID != revisionID || record.Token == "" || record.LastUsed.IsZero() {
+		return EvictionCandidate{}, fmt.Errorf("%w: invalid runtime revision access record", storage.ErrIntegrity)
+	}
+	return EvictionCandidate(record), nil
+}
+
+// DeleteIfIdle atomically proves that a candidate is unchanged and has no
+// active materializer or runtime lease before deleting it.
+func (c *Cache) DeleteIfIdle(ctx context.Context, candidate EvictionCandidate) (bool, error) {
+	if err := validateRevisionID(candidate.RevisionID); err != nil || candidate.Token == "" || candidate.LastUsed.IsZero() {
+		return false, fmt.Errorf("%w: invalid runtime cache eviction candidate", storage.ErrInvalid)
+	}
+	mutation, acquired, err := tryAcquireFileLock(filepath.Join(c.locks, revisionDigest(candidate.RevisionID)+".lock"))
+	if err != nil || !acquired {
+		return false, err
+	}
+	defer mutation.release()
+	lifetime, acquired, err := tryAcquireFileLock(c.lifetimeLockPath(candidate.RevisionID))
+	if err != nil || !acquired {
+		return false, err
+	}
+	defer lifetime.release()
+	current, err := c.readEvictionCandidate(candidate.RevisionID)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if current != candidate {
+		return false, nil
+	}
+	if err := removeTree(c.revisionContainerPath(candidate.RevisionID)); err != nil {
+		return false, fmt.Errorf("delete idle runtime revision: %w", err)
+	}
+	if err := os.Remove(c.accessRecordPath(candidate.RevisionID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("delete runtime revision access record: %w", err)
+	}
+	if err := syncDirectory(c.revisions); err != nil {
+		return false, err
+	}
+	if err := syncDirectory(c.access); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *Cache) lifetimeLockPath(revisionID string) string {
+	return filepath.Join(c.locks, revisionDigest(revisionID)+".lease")
+}
+
+func (c *Cache) accessRecordPath(revisionID string) string {
+	return filepath.Join(c.access, revisionDigest(revisionID)+".json")
+}
+
+func requireJSONEnd(decoder *json.Decoder) error {
+	var extra any
+	err := decoder.Decode(&extra)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err == nil {
+		return errors.New("multiple JSON values")
+	}
+	return err
+}
+
+// DeleteRevision removes a local revision cache entry after waiting for all
+// active revision leases to drain.
 func (c *Cache) DeleteRevision(ctx context.Context, revisionID string) error {
 	if err := validateRevisionID(revisionID); err != nil {
 		return err
@@ -157,14 +389,25 @@ func (c *Cache) DeleteRevision(ctx context.Context, revisionID string) error {
 		return fmt.Errorf("lock runtime revision %s for deletion: %w", revisionID, err)
 	}
 	defer lock.release()
+	lifetime, err := acquireFileLock(ctx, c.lifetimeLockPath(revisionID))
+	if err != nil {
+		return fmt.Errorf("wait for runtime revision %s leases: %w", revisionID, err)
+	}
+	defer lifetime.release()
 	if err := c.cleanupStaging(digest); err != nil {
 		return err
 	}
 	if err := removeTree(c.revisionContainerPath(revisionID)); err != nil {
 		return fmt.Errorf("delete runtime revision %s: %w", revisionID, err)
 	}
+	if err := os.Remove(c.accessRecordPath(revisionID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("delete runtime revision access record: %w", err)
+	}
 	if err := syncDirectory(c.revisions); err != nil {
 		return fmt.Errorf("sync deleted runtime revision: %w", err)
+	}
+	if err := syncDirectory(c.access); err != nil {
+		return fmt.Errorf("sync deleted runtime revision access record: %w", err)
 	}
 	return nil
 }
@@ -523,6 +766,8 @@ func syncDirectory(directory string) error {
 	}
 	return closeErr
 }
+
+var _ manageddata.RevisionMaterializer = (*Cache)(nil)
 
 type contextReader struct {
 	ctx    context.Context

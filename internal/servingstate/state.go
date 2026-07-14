@@ -42,6 +42,9 @@ type State struct {
 	ID                 ID
 	WorkspaceID        WorkspaceID
 	ProjectID          string
+	ProjectDigest      string
+	ProjectWorkspaces  []string
+	AccessPolicyJSON   string
 	Environment        Environment
 	Status             Status
 	Source             Source
@@ -61,6 +64,7 @@ func (d State) CanActivate() bool {
 
 type CreateInput struct {
 	WorkspaceID WorkspaceID
+	ProjectID   string
 	Environment Environment
 	CreatedBy   string
 	Source      Source
@@ -93,6 +97,9 @@ type Validation struct {
 	ManifestJSON         string
 	RootDir              string
 	ProjectID            string
+	ProjectDigest        string
+	ProjectWorkspaces    []string
+	AccessPolicy         workspace.AccessPolicy
 	ManagedDataRevisions map[string]string
 	Graph                workspace.AssetGraph
 }

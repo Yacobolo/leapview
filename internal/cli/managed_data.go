@@ -33,12 +33,13 @@ const (
 )
 
 type managedDataStorage struct {
-	blobs     storage.BlobStore
-	inventory storage.BlobInventory
-	transport control.Transport
-	cache     *runtimeview.Cache
-	tus       http.Handler
-	s3        *manageds3.Store
+	blobs        storage.BlobStore
+	inventory    storage.BlobInventory
+	transport    control.Transport
+	materializer manageddata.RevisionMaterializer
+	runtimeCache *runtimeview.Cache
+	tus          http.Handler
+	s3           *manageds3.Store
 }
 
 func newManagedDataStorage(ctx context.Context, cfg config.Config) (managedDataStorage, error) {
@@ -73,7 +74,7 @@ func newManagedDataStorage(ctx context.Context, cfg config.Config) (managedDataS
 		if err != nil {
 			return managedDataStorage{}, err
 		}
-		result.blobs, result.transport, result.tus = blobs, transport, capacityProtectedTus(handler, capacity)
+		result.blobs, result.transport, result.materializer, result.tus = blobs, transport, blobs, capacityProtectedTus(handler, capacity)
 	case "s3":
 		store, err := newManagedDataS3Store(ctx, cfg)
 		if err != nil {
@@ -88,7 +89,11 @@ func newManagedDataStorage(ctx context.Context, cfg config.Config) (managedDataS
 		if err != nil {
 			return managedDataStorage{}, err
 		}
-		result.blobs, result.transport, result.s3 = store, transport, store
+		cache, err := runtimeview.New(filepath.Join(root, "runtime"), store)
+		if err != nil {
+			return managedDataStorage{}, err
+		}
+		result.blobs, result.transport, result.materializer, result.runtimeCache, result.s3 = store, transport, cache, cache, store
 	default:
 		return managedDataStorage{}, fmt.Errorf("%w: managed-data backend must be local or s3", storage.ErrInvalid)
 	}
@@ -97,11 +102,6 @@ func newManagedDataStorage(ctx context.Context, cfg config.Config) (managedDataS
 		return managedDataStorage{}, fmt.Errorf("%w: managed-data backend has no blob inventory", storage.ErrInvalid)
 	}
 	result.inventory = inventory
-	cache, err := runtimeview.New(filepath.Join(root, "runtime"), result.blobs)
-	if err != nil {
-		return managedDataStorage{}, err
-	}
-	result.cache = cache
 	return result, nil
 }
 
@@ -112,6 +112,16 @@ func newManagedDataCollector(db *sql.DB, services managedDataStorage, cfg config
 	}
 	return maintenance.NewBlobCollector(services.inventory, reachability, maintenance.BlobGCConfig{
 		GraceAge: cfg.ManagedDataGCGracePeriod,
+	})
+}
+
+func newManagedDataRuntimeCollector(services managedDataStorage, cfg config.Config) (*maintenance.RuntimeViewCollector, error) {
+	if services.runtimeCache == nil {
+		return nil, nil
+	}
+	return maintenance.NewRuntimeViewCollector(services.runtimeCache, maintenance.RuntimeViewGCConfig{
+		GraceAge: cfg.ManagedDataGCGracePeriod,
+		Limit:    100,
 	})
 }
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
 )
 
@@ -31,14 +32,14 @@ func TestConcurrentMaterializeStreamsRevisionOnlyOnce(t *testing.T) {
 	t.Cleanup(func() { _ = cache.DeleteRevision(context.Background(), manifest.RevisionID()) })
 
 	const callers = 16
-	results := make(chan storage.RevisionView, callers)
+	results := make(chan manageddata.RevisionLease, callers)
 	errorsFound := make(chan error, callers)
 	var wait sync.WaitGroup
 	wait.Add(callers)
 	for range callers {
 		go func() {
 			defer wait.Done()
-			view, materializeErr := cache.Materialize(context.Background(), manifest.RevisionID(), manifest)
+			view, materializeErr := cache.MaterializeRevision(context.Background(), manifest.RevisionID(), manifest)
 			results <- view
 			errorsFound <- materializeErr
 		}()
@@ -56,10 +57,13 @@ func TestConcurrentMaterializeStreamsRevisionOnlyOnce(t *testing.T) {
 	var path string
 	for view := range results {
 		if path == "" {
-			path = view.Path
+			path = view.Root()
 		}
-		if view.Path != path {
-			t.Fatalf("concurrent view path = %q, want %q", view.Path, path)
+		if view.Root() != path {
+			t.Fatalf("concurrent view path = %q, want %q", view.Root(), path)
+		}
+		if err := view.Release(); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if got := store.openCount(); got != len(manifest.Files) {
@@ -198,14 +202,17 @@ func TestDeleteRevisionIsExplicitIdempotentAndValidatesID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := cache.Materialize(t.Context(), manifest.RevisionID(), manifest)
+	view, err := cache.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Release(); err != nil {
 		t.Fatal(err)
 	}
 	if err := cache.DeleteRevision(t.Context(), manifest.RevisionID()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Lstat(view.Path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(view.Root()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("deleted revision still exists: %v", err)
 	}
 	if err := cache.DeleteRevision(t.Context(), manifest.RevisionID()); err != nil {

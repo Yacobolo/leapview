@@ -24,7 +24,7 @@ scalar ProjectDeploymentWorkspaceId extends string;
 
 @minLength(1)
 @maxLength(160)
-scalar ProjectDeploymentServingStateId extends string;
+scalar DeploymentCandidateId extends string;
 
 @minLength(1)
 @maxLength(255)
@@ -50,7 +50,7 @@ enum ProjectDeploymentTargetStatus {
 
 model ProjectDeploymentTargetRequest {
   workspace: ProjectDeploymentWorkspaceId;
-  servingStateId: ProjectDeploymentServingStateId;
+  candidateId: DeploymentCandidateId;
 }
 
 model ProjectDeploymentCreateRequest {
@@ -62,8 +62,8 @@ model ProjectDeploymentCreateRequest {
 
 model ProjectDeploymentTargetResponse {
   workspace: ProjectDeploymentWorkspaceId;
-  servingStateId: ProjectDeploymentServingStateId;
-  priorServingStateId?: ProjectDeploymentServingStateId;
+  candidateId: DeploymentCandidateId;
+  priorCandidateId?: DeploymentCandidateId;
   status: ProjectDeploymentTargetStatus;
   activatedAt?: utcDateTime;
   error?: string;

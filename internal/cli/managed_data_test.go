@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
@@ -27,13 +28,20 @@ func TestNewManagedDataStorageLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if services.blobs == nil || services.transport == nil || services.tus == nil || services.s3 != nil {
+	if services.blobs == nil || services.transport == nil || services.materializer == nil || services.tus == nil || services.s3 != nil {
 		t.Fatalf("services = %#v", services)
+	}
+	if services.runtimeCache != nil {
+		t.Fatal("local backend unexpectedly allocated a copying runtime cache")
+	}
+	collector, err := newManagedDataRuntimeCollector(services, config.Config{ManagedDataGCGracePeriod: time.Hour})
+	if err != nil || collector != nil {
+		t.Fatalf("local runtime collector = %#v, %v; want nil", collector, err)
 	}
 	if services.transport.Backend() != "local" {
 		t.Fatalf("backend = %q", services.transport.Backend())
 	}
-	for _, relative := range []string{"objects", "uploads", "runtime"} {
+	for _, relative := range []string{"objects", "uploads"} {
 		info, statErr := os.Stat(filepath.Join(root, relative))
 		if statErr != nil {
 			t.Fatalf("stat %s: %v", relative, statErr)
@@ -41,6 +49,9 @@ func TestNewManagedDataStorageLocal(t *testing.T) {
 		if info.Mode().Perm()&0o077 != 0 {
 			t.Fatalf("%s permissions = %o, want private", relative, info.Mode().Perm())
 		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "runtime")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("local runtime cache stat error = %v, want not exist", err)
 	}
 }
 

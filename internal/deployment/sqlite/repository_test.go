@@ -3,11 +3,15 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/deployment"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )
@@ -19,6 +23,7 @@ func TestCreateDeploymentSnapshotsCompleteTargetsAndManagedPointers(t *testing.T
 	insertReadyRevision(t, ctx, db, "orders", "project", "orders", "orders_v2")
 	insertBinding(t, ctx, db, "sales_new", "orders", "orders_v2", "prod")
 	insertBinding(t, ctx, db, "support_new", "orders", "orders_v2", "prod")
+	setCandidateProjectMetadata(t, ctx, db, []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}, {WorkspaceID: "support", ServingStateID: "support_new"}})
 
 	created, err := repository.CreateDeployment(ctx, deployment.CreateInput{
 		ID: "deployment_1", ProjectID: "project", Environment: "prod", RequestDigest: "sha256:request", CreatedBy: "principal",
@@ -52,6 +57,91 @@ func TestCreateDeploymentSnapshotsCompleteTargetsAndManagedPointers(t *testing.T
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("conflicting replay error = %v", err)
 	}
+}
+
+func TestCreateDeploymentRejectsIncompleteOrMixedProjectTargets(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(context.Context, *sql.DB)
+	}{
+		{name: "incomplete target set"},
+		{name: "mixed project source", mutate: func(ctx context.Context, db *sql.DB) {
+			if _, err := db.ExecContext(ctx, `UPDATE serving_states SET project_digest = ? WHERE id = 'support_new'`, "sha256:"+strings.Repeat("b", 64)); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, db, repository := testRepository(t)
+			insertWorkspaceCandidate(t, ctx, db, "sales", "sales_old", "sales_new", "prod")
+			insertWorkspaceCandidate(t, ctx, db, "support", "support_old", "support_new", "prod")
+			targets := []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}, {WorkspaceID: "support", ServingStateID: "support_new"}}
+			setCandidateProjectMetadata(t, ctx, db, targets)
+			if test.mutate != nil {
+				test.mutate(ctx, db)
+			}
+			requestTargets := targets
+			if test.name == "incomplete target set" {
+				requestTargets = targets[:1]
+			}
+			_, err := repository.CreateDeployment(ctx, deployment.CreateInput{
+				ID: "deployment_invalid", ProjectID: "project", Environment: "prod", RequestDigest: "sha256:request", CreatedBy: "principal", Targets: requestTargets,
+			})
+			if !errors.Is(err, deployment.ErrConflict) {
+				t.Fatalf("CreateDeployment() error = %v, want conflict", err)
+			}
+		})
+	}
+}
+
+func TestActivateDeploymentAtomicallyAppliesArtifactAccessPolicy(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	insertWorkspaceCandidate(t, ctx, db, "sales", "sales_old", "sales_new", "prod")
+	targets := []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}}
+	setCandidateProjectMetadata(t, ctx, db, targets)
+	policy, err := json.Marshal(workspace.AccessPolicy{
+		Groups: map[string]workspace.WorkspaceGroup{"analysts": {Name: "Analysts", Members: []workspace.WorkspaceGroupMember{{Email: "analyst@example.com"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET access_policy_json = ? WHERE id = 'sales_new'`, string(policy)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO assets (snapshot_id, logical_asset_id, workspace_id, serving_state_id, asset_type, asset_key, payload_schema, content_hash) VALUES ('asset:sales_new', 'dashboard:sales', 'sales', 'sales_new', 'dashboard', 'sales.executive', 'v1', 'hash')`); err != nil {
+		t.Fatal(err)
+	}
+	created := createDeployment(t, ctx, repository, "deployment_access", targets)
+	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	var groupCount, objectCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM groups WHERE workspace_id = 'sales' AND name = 'Analysts'`).Scan(&groupCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM securable_objects WHERE id = 'dashboard:sales:executive' AND parent_id = 'workspace:sales'`).Scan(&objectCount); err != nil {
+		t.Fatal(err)
+	}
+	if groupCount != 1 || objectCount != 1 {
+		t.Fatalf("activated access state: groups=%d dashboard_objects=%d", groupCount, objectCount)
+	}
+}
+
+func TestActivateDeploymentRollsBackOnInvalidAccessPolicy(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	insertWorkspaceCandidate(t, ctx, db, "sales", "sales_old", "sales_new", "prod")
+	targets := []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}}
+	created := createDeployment(t, ctx, repository, "deployment_invalid_access", targets)
+	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET access_policy_json = '{"unknown":true}' WHERE id = 'sales_new'`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+		t.Fatalf("ActivateDeployment() error = %v, want conflict", err)
+	}
+	assertActiveState(t, ctx, db, "sales", "prod", "sales_old")
+	assertStateStatus(t, ctx, db, "sales_new", "validated")
 }
 
 func TestActivateDeploymentAtomicallyUpdatesAllWorkspaceAndManagedPointers(t *testing.T) {
@@ -243,11 +333,30 @@ func insertBinding(t *testing.T, ctx context.Context, db *sql.DB, stateID, colle
 
 func createDeployment(t *testing.T, ctx context.Context, repository *Repository, id string, targets []deployment.TargetInput) deployment.Deployment {
 	t.Helper()
+	setCandidateProjectMetadata(t, ctx, repository.db, targets)
 	created, err := repository.CreateDeployment(ctx, deployment.CreateInput{ID: id, ProjectID: "project", Environment: "prod", RequestDigest: "sha256:" + id, Targets: targets, CreatedBy: "principal"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return created
+}
+
+func setCandidateProjectMetadata(t *testing.T, ctx context.Context, db *sql.DB, targets []deployment.TargetInput) {
+	t.Helper()
+	workspaces := make([]string, 0, len(targets))
+	for _, target := range targets {
+		workspaces = append(workspaces, target.WorkspaceID)
+	}
+	sort.Strings(workspaces)
+	encoded, err := json.Marshal(workspaces)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		if _, err := db.ExecContext(ctx, `UPDATE serving_states SET project_digest = ?, project_workspaces_json = ? WHERE id = ?`, "sha256:"+strings.Repeat("a", 64), string(encoded), target.ServingStateID); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func setActiveState(t *testing.T, ctx context.Context, db *sql.DB, workspaceID, environment, stateID string) {

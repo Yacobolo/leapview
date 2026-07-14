@@ -16,7 +16,6 @@ import (
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agent"
 	agentsqlite "github.com/Yacobolo/libredash/internal/agent/sqlite"
-	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/config"
@@ -183,12 +182,6 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 			return nil, nil, err
 		}
 	}
-	if err := analyticsducklake.MigrateSQLiteCatalogDataPath(ctx, duckLakeCatalogPath, cfg.DuckLakeDataDir()); err != nil {
-		return nil, nil, err
-	}
-	if err := removeLegacyDuckLakeArtifacts(cfg.DuckDBDirPath()); err != nil {
-		return nil, nil, err
-	}
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return nil, nil, err
@@ -219,12 +212,17 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		cleanup()
 		return nil, nil, err
 	}
-	managedDataResolver, err := manageddataresolver.New(managedDataRepo, servingStateRepo, managedDataStorage.cache)
+	managedDataRuntimeCollector, err := newManagedDataRuntimeCollector(managedDataStorage, cfg)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	var managedDataMultipart manageddatahttp.MultipartCoordinator
+	managedDataResolver, err := manageddataresolver.New(managedDataRepo, servingStateRepo, managedDataStorage.materializer)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	var managedDataMultipart s3multipart.Coordinator
 	var managedDataMultipartService *s3multipart.Service
 	if managedDataStorage.s3 != nil {
 		multipartService, multipartErr := s3multipart.New(managedDataRepo, managedDataStorage.s3, s3multipart.Config{Backend: "s3"})
@@ -232,7 +230,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 			cleanup()
 			return nil, nil, multipartErr
 		}
-		managedDataMultipart = managedDataMultipartHTTP{service: multipartService}
+		managedDataMultipart = multipartService
 		managedDataMultipartService = multipartService
 	}
 	if err := materializesqlite.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalServingStates(ctx, "refresh did not complete"); err != nil {
@@ -386,43 +384,9 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		ManagedDataTus: managedDataStorage.tus,
 		ManagedDataExpirer: managedDataMaintenance{
 			uploads: managedDataControl, multipart: managedDataMultipartService,
-			uploadTTL: cfg.ManagedDataUploadSessionTTL, collector: managedDataCollector,
+			uploadTTL: cfg.ManagedDataUploadSessionTTL, collector: managedDataCollector, runtime: managedDataRuntimeCollector,
 		},
 		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,
 	})
 	return server, cleanupWithRegistry, nil
-}
-
-func removeLegacyDuckLakeArtifacts(root string) error {
-	info, err := os.Stat(root)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if !info.IsDir() {
-		return nil
-	}
-	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if os.IsNotExist(walkErr) {
-				return nil
-			}
-			return walkErr
-		}
-		if entry.IsDir() || entry.Name() != "catalog.sqlite" {
-			return nil
-		}
-		dir := filepath.Dir(path)
-		for _, suffix := range []string{"", "-wal", "-shm"} {
-			if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
-				return err
-			}
-		}
-		if err := os.RemoveAll(filepath.Join(dir, "data")); err != nil {
-			return err
-		}
-		return nil
-	})
 }

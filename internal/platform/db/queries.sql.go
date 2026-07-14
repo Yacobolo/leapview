@@ -751,13 +751,14 @@ func (q *Queries) CreateServicePrincipalSecret(ctx context.Context, arg CreateSe
 }
 
 const createServingState = `-- name: CreateServingState :exec
-INSERT INTO serving_states (id, workspace_id, environment, status, source, created_by)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO serving_states (id, workspace_id, project_id, environment, status, source, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateServingStateParams struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspace_id"`
+	ProjectID   string `json:"project_id"`
 	Environment string `json:"environment"`
 	Status      string `json:"status"`
 	Source      string `json:"source"`
@@ -768,6 +769,7 @@ func (q *Queries) CreateServingState(ctx context.Context, arg CreateServingState
 	_, err := q.db.ExecContext(ctx, createServingState,
 		arg.ID,
 		arg.WorkspaceID,
+		arg.ProjectID,
 		arg.Environment,
 		arg.Status,
 		arg.Source,
@@ -1140,7 +1142,7 @@ func (q *Queries) GetAPITokenByFingerprintForAudit(ctx context.Context, tokenFin
 }
 
 const getActiveServingState = `-- name: GetActiveServingState :one
-SELECT d.id, d.workspace_id, d.project_id, d.environment, d.status, d.source, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.superseded_at, d.error
+SELECT d.id, d.workspace_id, d.project_id, d.project_digest, d.project_workspaces_json, d.access_policy_json, d.environment, d.status, d.source, d.digest, d.manifest_json, d.ducklake_snapshot_id, d.created_by, d.created_at, d.activated_at, d.superseded_at, d.error
 FROM serving_states d
 JOIN workspace_active_serving_states active ON active.serving_state_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?
@@ -1158,6 +1160,9 @@ func (q *Queries) GetActiveServingState(ctx context.Context, arg GetActiveServin
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ProjectID,
+		&i.ProjectDigest,
+		&i.ProjectWorkspacesJson,
+		&i.AccessPolicyJson,
 		&i.Environment,
 		&i.Status,
 		&i.Source,
@@ -1782,7 +1787,7 @@ func (q *Queries) GetServicePrincipalSecretByFingerprint(ctx context.Context, ar
 }
 
 const getServingState = `-- name: GetServingState :one
-SELECT id, workspace_id, project_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states WHERE id = ?
+SELECT id, workspace_id, project_id, project_digest, project_workspaces_json, access_policy_json, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states WHERE id = ?
 `
 
 func (q *Queries) GetServingState(ctx context.Context, id string) (ServingState, error) {
@@ -1792,6 +1797,9 @@ func (q *Queries) GetServingState(ctx context.Context, id string) (ServingState,
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ProjectID,
+		&i.ProjectDigest,
+		&i.ProjectWorkspacesJson,
+		&i.AccessPolicyJson,
 		&i.Environment,
 		&i.Status,
 		&i.Source,
@@ -3738,55 +3746,6 @@ func (q *Queries) ListServicePrincipals(ctx context.Context) ([]Principal, error
 	return items, nil
 }
 
-const listServingStates = `-- name: ListServingStates :many
-SELECT id, workspace_id, project_id, environment, status, source, digest, manifest_json, ducklake_snapshot_id, created_by, created_at, activated_at, superseded_at, error FROM serving_states
-WHERE workspace_id = ? AND environment = ?
-ORDER BY created_at DESC
-`
-
-type ListServingStatesParams struct {
-	WorkspaceID string `json:"workspace_id"`
-	Environment string `json:"environment"`
-}
-
-func (q *Queries) ListServingStates(ctx context.Context, arg ListServingStatesParams) ([]ServingState, error) {
-	rows, err := q.db.QueryContext(ctx, listServingStates, arg.WorkspaceID, arg.Environment)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ServingState{}
-	for rows.Next() {
-		var i ServingState
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.ProjectID,
-			&i.Environment,
-			&i.Status,
-			&i.Source,
-			&i.Digest,
-			&i.ManifestJson,
-			&i.DucklakeSnapshotID,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.ActivatedAt,
-			&i.SupersededAt,
-			&i.Error,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listSessionsByPrincipal = `-- name: ListSessionsByPrincipal :many
 SELECT id, principal_id, token_fingerprint, token_verifier, expires_at, created_at, last_seen_at, revoked_at FROM sessions
 WHERE principal_id = ?
@@ -4398,22 +4357,28 @@ func (q *Queries) UpdateServingStateStatus(ctx context.Context, arg UpdateServin
 
 const updateServingStateValidated = `-- name: UpdateServingStateValidated :exec
 UPDATE serving_states
-SET status = ?, project_id = ?, digest = ?, manifest_json = ?, error = ''
+SET status = ?, project_id = ?, project_digest = ?, project_workspaces_json = ?, access_policy_json = ?, digest = ?, manifest_json = ?, error = ''
 WHERE id = ?
 `
 
 type UpdateServingStateValidatedParams struct {
-	Status       string `json:"status"`
-	ProjectID    string `json:"project_id"`
-	Digest       string `json:"digest"`
-	ManifestJson string `json:"manifest_json"`
-	ID           string `json:"id"`
+	Status                string `json:"status"`
+	ProjectID             string `json:"project_id"`
+	ProjectDigest         string `json:"project_digest"`
+	ProjectWorkspacesJson string `json:"project_workspaces_json"`
+	AccessPolicyJson      string `json:"access_policy_json"`
+	Digest                string `json:"digest"`
+	ManifestJson          string `json:"manifest_json"`
+	ID                    string `json:"id"`
 }
 
 func (q *Queries) UpdateServingStateValidated(ctx context.Context, arg UpdateServingStateValidatedParams) error {
 	_, err := q.db.ExecContext(ctx, updateServingStateValidated,
 		arg.Status,
 		arg.ProjectID,
+		arg.ProjectDigest,
+		arg.ProjectWorkspacesJson,
+		arg.AccessPolicyJson,
 		arg.Digest,
 		arg.ManifestJson,
 		arg.ID,

@@ -807,10 +807,12 @@ func seedIntegrationActiveDeployment(t *testing.T, store *platform.Store, worksp
 		t.Fatalf("extract workspace assets: %v", err)
 	}
 	validation := servingstate.Validation{
-		Digest:       "digest-" + string(created.ID),
-		ManifestJSON: "{}",
-		ProjectID:    compiled.Project.Name,
-		Graph:        graph,
+		Digest:            "digest-" + string(created.ID),
+		ManifestJSON:      "{}",
+		ProjectID:         compiled.Project.Name,
+		ProjectDigest:     "sha256:" + strings.Repeat("a", 64),
+		ProjectWorkspaces: []string{workspaceID},
+		Graph:             graph,
 	}
 	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, integrationZeroArtifact(created.ID, workspaceID)); err != nil {
 		t.Fatalf("save validated deployment: %v", err)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -63,6 +64,19 @@ func TestPackProjectValidatesSelectedWorkspace(t *testing.T) {
 	}
 	if compiled.ProjectID != "libredash-showcase" {
 		t.Fatalf("ProjectID = %q, want libredash-showcase", compiled.ProjectID)
+	}
+	if compiled.ProjectDigest == "" {
+		t.Fatal("ProjectDigest is empty")
+	}
+	wantWorkspaces := []string{"operations", "sales", "visuals"}
+	if !reflect.DeepEqual(compiled.ProjectWorkspaces, wantWorkspaces) {
+		t.Fatalf("ProjectWorkspaces = %#v, want %#v", compiled.ProjectWorkspaces, wantWorkspaces)
+	}
+	if validation.ProjectDigest != compiled.ProjectDigest || !reflect.DeepEqual(validation.ProjectWorkspaces, wantWorkspaces) {
+		t.Fatalf("validation project identity = (%q, %#v), want (%q, %#v)", validation.ProjectDigest, validation.ProjectWorkspaces, compiled.ProjectDigest, wantWorkspaces)
+	}
+	if !reflect.DeepEqual(validation.AccessPolicy, compiled.Definition.Access) {
+		t.Fatalf("validation access policy does not match compiled artifact")
 	}
 	if compiled.Validation.Status != "passed" || compiled.Validation.SchemaVersion != "libredash.dev/v1" {
 		t.Fatalf("compiled validation = %#v, want passed libredash.dev/v1", compiled.Validation)

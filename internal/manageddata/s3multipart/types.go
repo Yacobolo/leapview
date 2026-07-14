@@ -50,6 +50,15 @@ type Config struct {
 	Clock      func() time.Time
 }
 
+// Coordinator exposes S3 multipart upload operations independently of HTTP and
+// the provider SDK.
+type Coordinator interface {
+	Create(context.Context, CreateRequest) (UploadResult, error)
+	SignPart(context.Context, SignPartRequest) (SignedPartResult, error)
+	Complete(context.Context, CompleteRequest) (UploadResult, error)
+	Abort(context.Context, AbortRequest) (UploadResult, error)
+}
+
 type CreateRequest struct {
 	Project         string
 	Connection      string
@@ -115,10 +124,12 @@ type Header struct {
 }
 
 type SignedPartResult struct {
-	PartNumber int32
-	URL        string
-	Headers    []Header
-	ExpiresAt  string
+	UploadSessionID   string
+	MultipartUploadID string
+	PartNumber        int32
+	URL               string
+	Headers           []Header
+	ExpiresAt         string
 }
 
 type RecoveryResult struct {

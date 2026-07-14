@@ -70,20 +70,3 @@ type BlobStore interface {
 	Stat(ctx context.Context, sha256 string) (Blob, error)
 	Open(ctx context.Context, sha256 string) (io.ReadCloser, error)
 }
-
-// RevisionFile maps one content-addressed blob into a logical revision path.
-type RevisionFile struct {
-	Path   string
-	SHA256 string
-}
-
-// RevisionView is an immutable local projection of revision files.
-type RevisionView struct {
-	ID   string
-	Path string
-}
-
-// RevisionViewStore materializes immutable revision views when a backend supports them.
-type RevisionViewStore interface {
-	MaterializeRevision(ctx context.Context, revisionID string, files []RevisionFile) (RevisionView, error)
-}

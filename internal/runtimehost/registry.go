@@ -2,6 +2,7 @@ package runtimehost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -184,7 +185,16 @@ type servingStateCandidate struct {
 	managedData    *ManagedDataResolution
 }
 
-func (r *Registry) prepareServingStateCandidates(ctx context.Context, inputs []servingStateCandidate) (*PreparedSet, error) {
+func (r *Registry) prepareServingStateCandidates(ctx context.Context, inputs []servingStateCandidate) (_ *PreparedSet, resultErr error) {
+	defer func() {
+		for _, input := range inputs {
+			if input.managedData == nil || input.managedData.Lifetime == nil {
+				continue
+			}
+			resultErr = errors.Join(resultErr, releaseManagedDataLifetime(input.managedData.Lifetime))
+			input.managedData.Lifetime = nil
+		}
+	}()
 	type candidate struct {
 		state       servingstate.State
 		artifact    servingstate.Artifact
@@ -223,6 +233,7 @@ func (r *Registry) prepareServingStateCandidates(ctx context.Context, inputs []s
 			prepared, err = manager.prepare(ctx, candidate.state, candidate.artifact)
 		} else {
 			prepared, err = manager.prepareResolved(ctx, candidate.state, candidate.artifact, *candidate.managedData)
+			candidate.managedData.Lifetime = nil
 		}
 		if err != nil {
 			_ = set.Close()

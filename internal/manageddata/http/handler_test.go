@@ -13,6 +13,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	managedhttp "github.com/Yacobolo/libredash/internal/manageddata/http"
+	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 )
 
 const (
@@ -23,6 +24,10 @@ const (
 	revisionB = "sha256:" + digestB
 	revisionC = "sha256:" + digestC
 )
+
+func TestS3MultipartServiceWiresDirectlyIntoHTTPHandler(t *testing.T) {
+	_ = managedhttp.Options{Multipart: (*s3multipart.Service)(nil)}
+}
 
 func TestRevisionOperationsAreScopedAndPaginated(t *testing.T) {
 	repo := metadataFixture()
@@ -121,9 +126,9 @@ func TestMultipartOperationsAreSDKFreeAndScopedToUpload(t *testing.T) {
 	uploadResult := uploadFixture()
 	uploadResult.Files[0].Transport = control.TransportDescription{Protocol: control.ProtocolS3Multipart, S3Multipart: &control.S3MultipartDescription{CreateEndpoint: "/multipart", MinimumPartSize: 1, MaximumPartSize: 1024, MaximumParts: 100}}
 	uploads := &fakeUploads{result: uploadResult}
-	multipart := &fakeMultipart{upload: managedhttp.MultipartUpload{
+	multipart := &fakeMultipart{upload: s3multipart.UploadResult{
 		ID: "multipart-a", UploadSessionID: "upload-a", File: manageddata.File{Path: "orders.csv", Size: 3, SHA256: digestA},
-		Status: managedhttp.MultipartStatusOpen, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2026-01-01T01:00:00Z",
+		Status: s3multipart.StatusOpen, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2026-01-01T01:00:00Z",
 	}}
 	handler := newHandler(metadataFixture(), uploads, multipart)
 
@@ -154,7 +159,7 @@ func TestMultipartOperationsAreSDKFreeAndScopedToUpload(t *testing.T) {
 			}
 		})
 	}
-	if multipart.create.Actor != "principal-a" || multipart.create.File.Path != "orders.csv" || multipart.sign.PartNumber != 1 || multipart.complete.Parts[0].ETag != "etag-a" {
+	if multipart.create.Path != "orders.csv" || multipart.sign.PartNumber != 1 || multipart.complete.Parts[0].ETag != "etag-a" {
 		t.Fatalf("multipart requests = create %#v sign %#v complete %#v", multipart.create, multipart.sign, multipart.complete)
 	}
 
@@ -230,7 +235,7 @@ func TestMutationResponsesCannotCrossRequestedIDs(t *testing.T) {
 
 	t.Run("multipart upload", func(t *testing.T) {
 		uploads := &fakeUploads{result: uploadFixture()}
-		multipart := &fakeMultipart{upload: managedhttp.MultipartUpload{ID: "multipart-other", UploadSessionID: "upload-a", File: manageddata.File{Path: "orders.csv", Size: 3, SHA256: digestA}, Status: managedhttp.MultipartStatusCompleted, CreatedAt: "2026-01-01T00:00:00Z"}}
+		multipart := &fakeMultipart{upload: s3multipart.UploadResult{ID: "multipart-other", UploadSessionID: "upload-a", File: manageddata.File{Path: "orders.csv", Size: 3, SHA256: digestA}, Status: s3multipart.StatusCompleted, CreatedAt: "2026-01-01T00:00:00Z"}}
 		handler := newHandler(metadataFixture(), uploads, multipart)
 		recorder := call(t, `{"parts":[{"partNumber":1,"etag":"etag-a"}]}`, func(w http.ResponseWriter, r *http.Request) {
 			handler.CompleteManagedDataS3MultipartUpload(w, r, "project-a", "orders", "upload-a", "multipart-a", apigenapi.GenCompleteManagedDataS3MultipartUploadHeaders{IdempotencyKey: "key"})
@@ -324,40 +329,40 @@ func uploadFixture() control.UploadResult {
 }
 
 type fakeMultipart struct {
-	upload   managedhttp.MultipartUpload
-	create   managedhttp.MultipartCreateRequest
-	sign     managedhttp.MultipartSignPartRequest
-	complete managedhttp.MultipartCompleteRequest
+	upload   s3multipart.UploadResult
+	create   s3multipart.CreateRequest
+	sign     s3multipart.SignPartRequest
+	complete s3multipart.CompleteRequest
 }
 
-func (m *fakeMultipart) Create(_ context.Context, request managedhttp.MultipartCreateRequest) (managedhttp.MultipartUpload, error) {
+func (m *fakeMultipart) Create(_ context.Context, request s3multipart.CreateRequest) (s3multipart.UploadResult, error) {
 	m.create = request
 	return m.upload, nil
 }
 
-func (m *fakeMultipart) SignPart(_ context.Context, request managedhttp.MultipartSignPartRequest) (managedhttp.MultipartSignedPart, error) {
+func (m *fakeMultipart) SignPart(_ context.Context, request s3multipart.SignPartRequest) (s3multipart.SignedPartResult, error) {
 	m.sign = request
-	return managedhttp.MultipartSignedPart{UploadSessionID: request.UploadSessionID, MultipartUploadID: request.MultipartUploadID, PartNumber: request.PartNumber, URL: "https://signed.example/part", Headers: []managedhttp.HTTPHeader{{Name: "x-checksum", Value: "secret-signature"}}, ExpiresAt: "2026-01-01T00:15:00Z"}, nil
+	return s3multipart.SignedPartResult{UploadSessionID: request.UploadSessionID, MultipartUploadID: request.MultipartUploadID, PartNumber: request.PartNumber, URL: "https://signed.example/part", Headers: []s3multipart.Header{{Name: "x-checksum", Value: "secret-signature"}}, ExpiresAt: "2026-01-01T00:15:00Z"}, nil
 }
 
-func (m *fakeMultipart) Complete(_ context.Context, request managedhttp.MultipartCompleteRequest) (managedhttp.MultipartUpload, error) {
+func (m *fakeMultipart) Complete(_ context.Context, request s3multipart.CompleteRequest) (s3multipart.UploadResult, error) {
 	m.complete = request
 	result := m.upload
-	result.Status = managedhttp.MultipartStatusCompleted
+	result.Status = s3multipart.StatusCompleted
 	return result, nil
 }
 
-func (m *fakeMultipart) Abort(context.Context, managedhttp.MultipartRequest) (managedhttp.MultipartUpload, error) {
+func (m *fakeMultipart) Abort(context.Context, s3multipart.AbortRequest) (s3multipart.UploadResult, error) {
 	result := m.upload
-	result.Status = managedhttp.MultipartStatusAborted
+	result.Status = s3multipart.StatusAborted
 	return result, nil
 }
 
-func newHandler(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart managedhttp.MultipartCoordinator) *managedhttp.Handler {
+func newHandler(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart s3multipart.Coordinator) *managedhttp.Handler {
 	return managedhttp.NewHandler(handlerOptions(repo, uploads, multipart))
 }
 
-func handlerOptions(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart managedhttp.MultipartCoordinator) managedhttp.Options {
+func handlerOptions(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart s3multipart.Coordinator) managedhttp.Options {
 	return managedhttp.Options{
 		Repository: repo, Uploads: uploads, Multipart: multipart,
 		CurrentPrincipal: func(*http.Request) (managedhttp.Principal, bool) {

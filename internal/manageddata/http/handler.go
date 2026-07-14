@@ -16,6 +16,7 @@ import (
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
+	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 )
 
 const (
@@ -249,13 +250,12 @@ func (h *Handler) CreateManagedDataS3MultipartUpload(w stdhttp.ResponseWriter, r
 		h.writeError(w, r, ErrConflict)
 		return
 	}
-	actor, ok := h.actor(w, r)
-	if !ok {
+	if _, ok := h.actor(w, r); !ok {
 		return
 	}
-	result, err := h.options.Multipart.Create(r.Context(), MultipartCreateRequest{
-		Project: project, Connection: connection, CollectionID: upload.Collection.ID, UploadSessionID: uploadSession,
-		File: file.File, Actor: actor, IdempotencyKey: headers.IdempotencyKey,
+	result, err := h.options.Multipart.Create(r.Context(), s3multipart.CreateRequest{
+		Project: project, Connection: connection, UploadSessionID: uploadSession,
+		Path: body.Path, IdempotencyKey: headers.IdempotencyKey,
 	})
 	if err != nil {
 		h.writeError(w, r, err)
@@ -287,17 +287,15 @@ func (h *Handler) SignManagedDataS3MultipartPart(w stdhttp.ResponseWriter, r *st
 		h.writeError(w, r, ErrInvalid)
 		return
 	}
-	upload, ok := h.recoverUpload(w, r, project, connection, uploadSession)
-	if !ok {
+	if _, ok := h.recoverUpload(w, r, project, connection, uploadSession); !ok {
 		return
 	}
-	actor, ok := h.actor(w, r)
-	if !ok {
+	if _, ok := h.actor(w, r); !ok {
 		return
 	}
-	result, err := h.options.Multipart.SignPart(r.Context(), MultipartSignPartRequest{
-		MultipartRequest: MultipartRequest{Project: project, Connection: connection, CollectionID: upload.Collection.ID, UploadSessionID: uploadSession, MultipartUploadID: multipartUpload, Actor: actor},
-		PartNumber:       partNumber, Size: int64(body.Size), SHA256: valueOrEmpty(body.Sha256),
+	result, err := h.options.Multipart.SignPart(r.Context(), s3multipart.SignPartRequest{
+		Project: project, Connection: connection, UploadSessionID: uploadSession, MultipartUploadID: multipartUpload,
+		PartNumber: partNumber, Size: int64(body.Size), SHA256: valueOrEmpty(body.Sha256),
 	})
 	if err != nil {
 		h.writeError(w, r, err)
@@ -329,7 +327,7 @@ func (h *Handler) CompleteManagedDataS3MultipartUpload(w stdhttp.ResponseWriter,
 		h.writeError(w, r, ErrTooLarge)
 		return
 	}
-	parts := make([]CompletedPart, len(body.Parts))
+	parts := make([]s3multipart.CompletedPart, len(body.Parts))
 	seen := make(map[int32]struct{}, len(body.Parts))
 	for i, part := range body.Parts {
 		if part.PartNumber < 1 || part.PartNumber > 10_000 || strings.TrimSpace(part.Etag) == "" || len(part.Etag) > 1024 || part.Sha256 != nil && !digestPattern.MatchString(*part.Sha256) {
@@ -341,19 +339,18 @@ func (h *Handler) CompleteManagedDataS3MultipartUpload(w stdhttp.ResponseWriter,
 			return
 		}
 		seen[part.PartNumber] = struct{}{}
-		parts[i] = CompletedPart{PartNumber: part.PartNumber, ETag: part.Etag, SHA256: valueOrEmpty(part.Sha256)}
+		parts[i] = s3multipart.CompletedPart{PartNumber: part.PartNumber, ETag: part.Etag, SHA256: valueOrEmpty(part.Sha256)}
 	}
 	upload, ok := h.recoverUpload(w, r, project, connection, uploadSession)
 	if !ok {
 		return
 	}
-	actor, ok := h.actor(w, r)
-	if !ok {
+	if _, ok := h.actor(w, r); !ok {
 		return
 	}
-	result, err := h.options.Multipart.Complete(r.Context(), MultipartCompleteRequest{
-		MultipartRequest: MultipartRequest{Project: project, Connection: connection, CollectionID: upload.Collection.ID, UploadSessionID: uploadSession, MultipartUploadID: multipartUpload, Actor: actor, IdempotencyKey: headers.IdempotencyKey},
-		Parts:            parts,
+	result, err := h.options.Multipart.Complete(r.Context(), s3multipart.CompleteRequest{
+		Project: project, Connection: connection, UploadSessionID: uploadSession, MultipartUploadID: multipartUpload,
+		IdempotencyKey: headers.IdempotencyKey, Parts: parts,
 	})
 	if err != nil {
 		h.writeError(w, r, err)
@@ -380,13 +377,12 @@ func (h *Handler) AbortManagedDataS3MultipartUpload(w stdhttp.ResponseWriter, r 
 	if !ok {
 		return
 	}
-	actor, ok := h.actor(w, r)
-	if !ok {
+	if _, ok := h.actor(w, r); !ok {
 		return
 	}
-	result, err := h.options.Multipart.Abort(r.Context(), MultipartRequest{
-		Project: project, Connection: connection, CollectionID: upload.Collection.ID, UploadSessionID: uploadSession,
-		MultipartUploadID: multipartUpload, Actor: actor, IdempotencyKey: headers.IdempotencyKey,
+	result, err := h.options.Multipart.Abort(r.Context(), s3multipart.AbortRequest{
+		Project: project, Connection: connection, UploadSessionID: uploadSession,
+		MultipartUploadID: multipartUpload, IdempotencyKey: headers.IdempotencyKey,
 	})
 	if err != nil {
 		h.writeError(w, r, err)
@@ -699,7 +695,7 @@ func negotiationToWire(value control.TransportDescription) (apigenapi.ManagedDat
 	}
 }
 
-func multipartResponse(result MultipartUpload, upload control.UploadResult, expectedID string) (apigenapi.ManagedDataS3MultipartUploadResponse, error) {
+func multipartResponse(result s3multipart.UploadResult, upload control.UploadResult, expectedID string) (apigenapi.ManagedDataS3MultipartUploadResponse, error) {
 	if result.UploadSessionID != upload.ID || !validResourceID(result.ID, 160) || expectedID != "" && result.ID != expectedID || result.CreatedAt == "" {
 		return apigenapi.ManagedDataS3MultipartUploadResponse{}, ErrNotFound
 	}
@@ -718,7 +714,7 @@ func multipartResponse(result MultipartUpload, upload control.UploadResult, expe
 	return apigenapi.ManagedDataS3MultipartUploadResponse{Id: result.ID, UploadSessionId: result.UploadSessionID, File: file, Status: status, Existing: result.Existing, CreatedAt: result.CreatedAt, ExpiresAt: stringPointer(result.ExpiresAt)}, nil
 }
 
-func signedPartResponse(result MultipartSignedPart, uploadSession, multipartUpload string, partNumber int32) (apigenapi.ManagedDataS3MultipartSignedPartResponse, error) {
+func signedPartResponse(result s3multipart.SignedPartResult, uploadSession, multipartUpload string, partNumber int32) (apigenapi.ManagedDataS3MultipartSignedPartResponse, error) {
 	if result.UploadSessionID != uploadSession || result.MultipartUploadID != multipartUpload || result.PartNumber != partNumber || result.URL == "" || len(result.URL) > 8192 || result.ExpiresAt == "" || len(result.Headers) > 32 {
 		return apigenapi.ManagedDataS3MultipartSignedPartResponse{}, ErrNotFound
 	}

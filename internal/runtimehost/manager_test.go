@@ -115,6 +115,9 @@ func TestManagerPassesManagedDataResolutionToRuntimeFactory(t *testing.T) {
 	if got := factory.input.ManagedData.Roots["olist"]; got != "/managed/olist/revision" {
 		t.Fatalf("olist root = %q", got)
 	}
+	if factory.input.ManagedData.Lifetime != nil {
+		t.Fatal("runtime factory received the manager-owned managed-data lifetime")
+	}
 }
 
 func TestManagerReloadsWhenManagedDataRevisionChanges(t *testing.T) {
@@ -195,6 +198,72 @@ func TestManagerKeepsOldRuntimeOpenUntilLeaseRelease(t *testing.T) {
 	}
 	if !equalInt64s(drained, []int64{11}) {
 		t.Fatalf("drained snapshots = %#v, want [11]", drained)
+	}
+}
+
+func TestManagerKeepsManagedDataLifetimeUntilRuntimeDrains(t *testing.T) {
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest-1"},
+	}
+	lifetime := &fakeManagedDataLifetime{}
+	resolver := &fakeManagedDataResolver{resolution: ManagedDataResolution{
+		RevisionID: "sha256:" + strings.Repeat("a", 64),
+		Roots:      map[string]string{"warehouse": "/runtime/revision"},
+		Lifetime:   lifetime,
+	}}
+	manager := NewManagerWithFactory(ManagerOptions{
+		Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: &fakeFactory{}, ManagedData: resolver,
+	})
+	if err := manager.Reload(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	queryLease, err := manager.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := queryLease.Runtime().(*fakeRuntime)
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if lifetime.releases != 0 {
+		t.Fatal("managed-data lifetime released while a query still held the runtime")
+	}
+	queryLease.Release()
+	if !runtime.closed {
+		t.Fatal("runtime was not closed after its final query lease")
+	}
+	if lifetime.releases != 1 {
+		t.Fatalf("managed-data lifetime releases = %d, want 1", lifetime.releases)
+	}
+}
+
+func TestPreparedReleasesManagedDataLifetimeOnFailureAndAbandonment(t *testing.T) {
+	state := servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusValidated}
+	artifact := servingstate.Artifact{ServingStateID: state.ID, WorkspaceID: state.WorkspaceID, Environment: state.Environment, Digest: "digest"}
+	repo := &fakeRepo{deployment: state, artifact: artifact}
+
+	failureLifetime := &fakeManagedDataLifetime{}
+	failing := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: &fakeFactory{err: errors.New("prepare failed")}})
+	_, err := failing.prepareResolved(t.Context(), state, artifact, ManagedDataResolution{Lifetime: failureLifetime})
+	if err == nil {
+		t.Fatal("prepare unexpectedly succeeded")
+	}
+	if failureLifetime.releases != 1 {
+		t.Fatalf("failed preparation releases = %d, want 1", failureLifetime.releases)
+	}
+
+	abandonedLifetime := &fakeManagedDataLifetime{}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: &fakeFactory{}})
+	prepared, err := manager.prepareResolved(t.Context(), state, artifact, ManagedDataResolution{Lifetime: abandonedLifetime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prepared.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if abandonedLifetime.releases != 1 {
+		t.Fatalf("abandoned preparation releases = %d, want 1", abandonedLifetime.releases)
 	}
 }
 
@@ -635,6 +704,28 @@ func TestRegistryPreparesExplicitManagedDataCandidateBeforeActivation(t *testing
 	}
 }
 
+func TestRegistryPreparationFailureReleasesUnprocessedManagedDataLifetimes(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales"} {
+		stateID := servingstate.ID("dep_" + string(workspaceID) + "_prod")
+		repo.deployments[stateID] = servingstate.State{ID: stateID, WorkspaceID: workspaceID, Environment: "prod", Status: servingstate.StatusValidated}
+		repo.artifacts[stateID] = servingstate.Artifact{ServingStateID: stateID, WorkspaceID: workspaceID, Environment: "prod", Digest: string(workspaceID)}
+	}
+	first := &fakeManagedDataLifetime{}
+	second := &fakeManagedDataLifetime{}
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: &fakeFactory{err: errors.New("prepare failed")}})
+	_, err := registry.PrepareServingStateCandidates(t.Context(), []ServingStateCandidate{
+		{ServingStateID: "dep_operations_prod", ManagedData: ManagedDataResolution{RevisionID: "sha256:" + strings.Repeat("a", 64), Lifetime: first}},
+		{ServingStateID: "dep_sales_prod", ManagedData: ManagedDataResolution{RevisionID: "sha256:" + strings.Repeat("b", 64), Lifetime: second}},
+	})
+	if err == nil {
+		t.Fatal("preparation unexpectedly succeeded")
+	}
+	if first.releases != 1 || second.releases != 1 {
+		t.Fatalf("managed-data releases = (%d, %d), want (1, 1)", first.releases, second.releases)
+	}
+}
+
 func TestPreparedSetReportsCandidateSnapshots(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	repo.deployments["dep_sales_prod"] = servingstate.State{ID: "dep_sales_prod", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated}
@@ -997,6 +1088,15 @@ func (f *fakeFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, e
 type fakeManagedDataResolver struct {
 	resolution ManagedDataResolution
 	err        error
+}
+
+type fakeManagedDataLifetime struct {
+	releases int
+}
+
+func (l *fakeManagedDataLifetime) Release() error {
+	l.releases++
+	return nil
 }
 
 func (r fakeManagedDataResolver) ResolveManagedData(context.Context, servingstate.ID) (ManagedDataResolution, error) {

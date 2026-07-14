@@ -17,12 +17,15 @@ import (
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
 	deploymenthttp "github.com/Yacobolo/libredash/internal/deployment/http"
 	"github.com/Yacobolo/libredash/internal/execution"
+	manageddatabinding "github.com/Yacobolo/libredash/internal/manageddata/binding"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
+	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
 	"github.com/Yacobolo/libredash/internal/queryruntime"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
+	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -71,6 +74,7 @@ type Server struct {
 	broker                        *pagestream.Broker
 	store                         *platform.Store
 	servingStateRepo              servingStateRepository
+	managedDataBindingRepo        manageddatabinding.Repository
 	workspaceRepo                 workspace.Repository
 	assetCatalog                  workspace.AssetCatalogReader
 	accessRepo                    access.Repository
@@ -124,6 +128,7 @@ func New(metrics QueryMetrics) *Server {
 type Options struct {
 	Store                     *platform.Store
 	ServingStateRepo          servingStateRepository
+	ManagedDataBindingRepo    manageddatabinding.Repository
 	WorkspaceRepo             workspace.Repository
 	AssetCatalog              workspace.AssetCatalogReader
 	AccessRepo                access.Repository
@@ -184,10 +189,21 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 			defaultWorkspaceID: options.DefaultWorkspaceID,
 		}
 	}
+	servingStateRepo := options.ServingStateRepo
+	managedDataBindingRepo := options.ManagedDataBindingRepo
+	if options.Store != nil {
+		if servingStateRepo == nil {
+			servingStateRepo = servingstatesqlite.NewRepository(options.Store.SQLDB())
+		}
+		if managedDataBindingRepo == nil {
+			managedDataBindingRepo = manageddatasqlite.NewRepository(options.Store.SQLDB())
+		}
+	}
 	server := New(metrics)
 	server.executor = executor
 	server.store = options.Store
-	server.servingStateRepo = options.ServingStateRepo
+	server.servingStateRepo = servingStateRepo
+	server.managedDataBindingRepo = managedDataBindingRepo
 	server.workspaceRepo = options.WorkspaceRepo
 	server.assetCatalog = options.AssetCatalog
 	server.accessRepo = options.AccessRepo

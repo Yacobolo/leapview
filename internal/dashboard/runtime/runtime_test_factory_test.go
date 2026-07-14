@@ -19,8 +19,8 @@ func (testDataRuntimeFactory) OpenDashboardWorkspaceDataRuntimes(ctx context.Con
 		return nil, fmt.Errorf("workspace definition is required")
 	}
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:  config.Definition.Models,
-		DBDir:   config.DBDir,
+		Models: config.Definition.Models,
+		DBDir:  config.DBDir,
 	})
 	if err != nil {
 		return nil, err

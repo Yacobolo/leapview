@@ -460,20 +460,23 @@ type ServicePrincipalSecret struct {
 }
 
 type ServingState struct {
-	ID                 string         `json:"id"`
-	WorkspaceID        string         `json:"workspace_id"`
-	ProjectID          string         `json:"project_id"`
-	Environment        string         `json:"environment"`
-	Status             string         `json:"status"`
-	Source             string         `json:"source"`
-	Digest             string         `json:"digest"`
-	ManifestJson       string         `json:"manifest_json"`
-	DucklakeSnapshotID int64          `json:"ducklake_snapshot_id"`
-	CreatedBy          string         `json:"created_by"`
-	CreatedAt          string         `json:"created_at"`
-	ActivatedAt        sql.NullString `json:"activated_at"`
-	SupersededAt       sql.NullString `json:"superseded_at"`
-	Error              string         `json:"error"`
+	ID                    string         `json:"id"`
+	WorkspaceID           string         `json:"workspace_id"`
+	ProjectID             string         `json:"project_id"`
+	ProjectDigest         string         `json:"project_digest"`
+	ProjectWorkspacesJson string         `json:"project_workspaces_json"`
+	AccessPolicyJson      string         `json:"access_policy_json"`
+	Environment           string         `json:"environment"`
+	Status                string         `json:"status"`
+	Source                string         `json:"source"`
+	Digest                string         `json:"digest"`
+	ManifestJson          string         `json:"manifest_json"`
+	DucklakeSnapshotID    int64          `json:"ducklake_snapshot_id"`
+	CreatedBy             string         `json:"created_by"`
+	CreatedAt             string         `json:"created_at"`
+	ActivatedAt           sql.NullString `json:"activated_at"`
+	SupersededAt          sql.NullString `json:"superseded_at"`
+	Error                 string         `json:"error"`
 }
 
 type ServingStateArtifact struct {

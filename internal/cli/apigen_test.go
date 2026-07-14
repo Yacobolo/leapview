@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"net/url"
 	"testing"
 
 	cligen "github.com/Yacobolo/libredash/internal/cli/gen"
@@ -16,12 +15,11 @@ func TestAPIGenOperationURLUsesGeneratedContracts(t *testing.T) {
 		t.Fatalf("url = %q", u)
 	}
 
-	query := url.Values{"limit": []string{"10"}}
-	u, err = apiOperationURL("https://libredash.example", "listPublishes", map[string]string{"workspace": "demo"}, query)
+	u, err = apiOperationURL("https://libredash.example", "validateDeploymentCandidate", map[string]string{"project": "demo project", "workspace": "demo", "candidate": "candidate 1"}, nil)
 	if err != nil {
 		t.Fatalf("operation URL: %v", err)
 	}
-	if u != "https://libredash.example/api/v1/workspaces/demo/publishes?limit=10" {
+	if u != "https://libredash.example/api/v1/projects/demo%20project/workspaces/demo/deployment-candidates/candidate%201/validate" {
 		t.Fatalf("url = %q", u)
 	}
 

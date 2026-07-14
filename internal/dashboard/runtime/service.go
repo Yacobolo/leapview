@@ -4,18 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
-	"github.com/Yacobolo/libredash/internal/configspec"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/workspace"
-	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
 
 type DataRuntimeConfig struct {
@@ -71,53 +66,6 @@ type modelRuntime struct {
 	data    DataRuntime
 	ready   bool
 	missing error
-}
-
-func New(factory DataRuntimeFactory) (*Service, error) {
-	catalogPath := os.Getenv(configspec.EnvLIBREDASH_CATALOG_PATH)
-	if catalogPath == "" {
-		var err error
-		catalogPath, err = discoverCatalogPath()
-		if err != nil {
-			return nil, err
-		}
-	}
-	duckDBDir := filepath.Join(".libredash", "duckdb")
-	if path := os.Getenv(configspec.EnvLIBREDASH_DUCKDB_DIR); path != "" {
-		duckDBDir = path
-	}
-	services, err := NewFromProject(catalogPath, duckDBDir, factory)
-	if err != nil {
-		return nil, err
-	}
-	workspaceIDs := make([]string, 0, len(services))
-	for workspaceID := range services {
-		workspaceIDs = append(workspaceIDs, workspaceID)
-	}
-	sort.Strings(workspaceIDs)
-	if len(workspaceIDs) == 0 {
-		return nil, fmt.Errorf("project %q has no workspaces", catalogPath)
-	}
-	return services[workspaceIDs[0]], nil
-}
-
-func NewFromProject(projectPath, duckDBDir string, factory DataRuntimeFactory) (map[string]*Service, error) {
-	if factory == nil {
-		return nil, fmt.Errorf("dashboard data runtime factory is required")
-	}
-	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{})
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-	services := make(map[string]*Service, len(compiled.Workspaces))
-	for workspaceID, compiledWorkspace := range compiled.Workspaces {
-		service, err := newFromDefinition(filepath.Join(duckDBDir, workspaceID), factory, compiledWorkspace.Definition)
-		if err != nil {
-			return nil, fmt.Errorf("loading workspace %q: %w", workspaceID, err)
-		}
-		services[workspaceID] = service
-	}
-	return services, nil
 }
 
 func NewFromDefinition(duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
@@ -258,25 +206,6 @@ func (m *Service) DuckLakeSnapshotID() int64 {
 		}
 	}
 	return snapshotID
-}
-
-func discoverCatalogPath() (string, error) {
-	candidates := []string{
-		filepath.Join("dashboards", "libredash.yaml"),
-		filepath.Join("..", "dashboards", "libredash.yaml"),
-		filepath.Join("..", "..", "dashboards", "libredash.yaml"),
-		filepath.Join("..", "..", "..", "dashboards", "libredash.yaml"),
-	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("could not find dashboards/libredash.yaml")
-}
-
-func DiscoverCatalogPath() (string, error) {
-	return discoverCatalogPath()
 }
 
 func setupRequired(err error) bool {

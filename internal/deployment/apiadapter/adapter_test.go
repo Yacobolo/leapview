@@ -18,7 +18,7 @@ func TestCreateProducesStableIdAndRequestDigestForIdempotentReplay(t *testing.T)
 	}
 	request := CreateRequest{
 		Project: "project", Environment: "prod", Actor: "principal", IdempotencyKey: "deploy-1",
-		Targets: []TargetRequest{{Workspace: "support", ServingStateID: "support_2"}, {Workspace: "sales", ServingStateID: "sales_2"}},
+		Targets: []TargetRequest{{Workspace: "support", CandidateID: "support_2"}, {Workspace: "sales", CandidateID: "sales_2"}},
 	}
 
 	first, err := adapter.Create(context.Background(), request)
@@ -44,7 +44,7 @@ func TestCreateRejectsDuplicateWorkspaceAsInvalidRequest(t *testing.T) {
 	}
 	_, err = adapter.Create(context.Background(), CreateRequest{
 		Project: "project", Environment: "prod", Actor: "principal", IdempotencyKey: "deploy-1",
-		Targets: []TargetRequest{{Workspace: "sales", ServingStateID: "sales_1"}, {Workspace: "sales", ServingStateID: "sales_2"}},
+		Targets: []TargetRequest{{Workspace: "sales", CandidateID: "sales_1"}, {Workspace: "sales", CandidateID: "sales_2"}},
 	})
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("error = %v, want invalid request", err)

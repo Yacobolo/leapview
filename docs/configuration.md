@@ -155,7 +155,6 @@ Run `libredash config validate` to validate the active environment, or add `--pr
 
 | Environment variable | Type / default | Scope | Lifecycle | Description |
 |---|---|---|---|---|
-| `LIBREDASH_CATALOG_PATH` | string | serve | supported | Legacy dashboard catalog path override. |
 | `LIBREDASH_DUCKDB_DIR` | string | serve | supported | Directory containing workspace DuckDB runtime files. |
 | `LIBREDASH_DUCKLAKE_CATALOG_PATH` | string | serve,admin | supported | Path to the single global DuckLake catalog. |
 | `LIBREDASH_HOME` | string / `.libredash` | serve,admin,client | supported | Instance state directory containing databases, artifacts, and runtime files. |

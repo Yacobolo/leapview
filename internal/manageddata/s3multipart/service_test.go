@@ -62,7 +62,7 @@ func TestCoordinatorCreateSignCompleteIsStrictAndRetrySafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sign final part: %v", err)
 	}
-	if signed.URL == "" || signed.ExpiresAt != "2026-07-14T10:15:00Z" || len(signed.Headers) != 1 {
+	if signed.UploadSessionID != session.ID || signed.MultipartUploadID != upload.ID || signed.URL == "" || signed.ExpiresAt != "2026-07-14T10:15:00Z" || len(signed.Headers) != 1 {
 		t.Fatalf("signed part = %#v", signed)
 	}
 	if _, err := service.SignPart(ctx, SignPartRequest{

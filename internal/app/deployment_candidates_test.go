@@ -18,6 +18,7 @@ import (
 	agentsqlite "github.com/Yacobolo/libredash/internal/agent/sqlite"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/api"
+	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -210,13 +211,14 @@ func TestDeploymentAPIRequiresAuthentication(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/publishes", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/project/workspaces/test/deployment-candidates", bytes.NewBufferString(`{"environment":"dev"}`))
+	req.Header.Set("Authorization", "Bearer invalid-token")
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusUnauthorized, rec.Body.String())
 	}
 	assertAPIError(t, rec, http.StatusUnauthorized, "unauthorized")
 }
@@ -230,7 +232,7 @@ func TestDeploymentAPIRejectsBrowserPostWithoutCSRF(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/publishes", bytes.NewBufferString(`{"title":"Test"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/project/workspaces/test/deployment-candidates", bytes.NewBufferString(`{"title":"Test","environment":"dev"}`))
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -368,7 +370,7 @@ func TestDeploymentAPIRejectsViewer(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/publishes", bytes.NewBufferString(`{"title":"Test"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/project/workspaces/test/deployment-candidates", bytes.NewBufferString(`{"title":"Test","environment":"dev"}`))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
@@ -389,7 +391,7 @@ func TestDeploymentAPIV1CreateUsesPathWorkspaceAndRejectsMalformedJSON(t *testin
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
 
-	malformedReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/path-workspace/publishes", bytes.NewBufferString(`{"workspaceId":`))
+	malformedReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/project/workspaces/path-workspace/deployment-candidates", bytes.NewBufferString(`{"workspaceId":`))
 	malformedReq.Header.Set("Authorization", "Bearer dev")
 	malformedReq.Header.Set("Accept", "application/json")
 	malformedRec := httptest.NewRecorder()
@@ -399,7 +401,7 @@ func TestDeploymentAPIV1CreateUsesPathWorkspaceAndRejectsMalformedJSON(t *testin
 	}
 	assertAPIError(t, malformedRec, http.StatusBadRequest, "malformed JSON")
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/path-workspace/publishes", bytes.NewBufferString(`{"title":"Path wins"}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/project/workspaces/path-workspace/deployment-candidates", bytes.NewBufferString(`{"title":"Path wins","environment":"dev"}`))
 	createReq.Header.Set("Authorization", "Bearer dev")
 	createReq.Header.Set("Accept", "application/json")
 	createRec := httptest.NewRecorder()
@@ -407,12 +409,12 @@ func TestDeploymentAPIV1CreateUsesPathWorkspaceAndRejectsMalformedJSON(t *testin
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", createRec.Code, createRec.Body.String())
 	}
-	var created api.PublishResponse
+	var created apigenapi.DeploymentCandidateResponse
 	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
-	if created.WorkspaceID != "path-workspace" {
-		t.Fatalf("workspaceID = %q, want path-workspace", created.WorkspaceID)
+	if created.Workspace != "path-workspace" || created.Project != "project" {
+		t.Fatalf("candidate scope = (%q, %q), want (project, path-workspace)", created.Project, created.Workspace)
 	}
 }
 
@@ -429,11 +431,11 @@ func TestDeploymentAPIV1CreateRejectsBodyWorkspaceID(t *testing.T) {
 		name string
 		body string
 	}{
-		{name: "matching", body: `{"workspaceId":"path-workspace","title":"Ignored"}`},
-		{name: "mismatched", body: `{"workspaceId":"other-workspace","title":"Ignored"}`},
+		{name: "matching", body: `{"workspaceId":"path-workspace","title":"Ignored","environment":"dev"}`},
+		{name: "mismatched", body: `{"workspaceId":"other-workspace","title":"Ignored","environment":"dev"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/path-workspace/publishes", bytes.NewBufferString(tc.body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/project/workspaces/path-workspace/deployment-candidates", bytes.NewBufferString(tc.body))
 			req.Header.Set("Authorization", "Bearer dev")
 			req.Header.Set("Accept", "application/json")
 			rec := httptest.NewRecorder()
@@ -441,127 +443,6 @@ func TestDeploymentAPIV1CreateRejectsBodyWorkspaceID(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
 			}
-		})
-	}
-}
-
-func TestDeploymentAPIListUsesEnvelopeAndOpaquePageToken(t *testing.T) {
-	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
-	store := testStore(t)
-	ctx := context.Background()
-	for i, id := range []string{"dep_old", "dep_mid", "dep_new"} {
-		createdAt := time.Date(2026, 1, 2, 15, 4, i+1, 0, time.UTC).Format(time.RFC3339)
-		if _, err := store.SQLDB().ExecContext(ctx, `
-			INSERT INTO serving_states (id, workspace_id, status, digest, manifest_json, created_by, created_at)
-			VALUES (?, 'test', 'created', ?, '{}', 'tester', ?)
-		`, id, "sha256:"+id, createdAt); err != nil {
-			t.Fatalf("seed deployment %s: %v", id, err)
-		}
-	}
-	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-
-	firstReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/publishes?limit=2", nil)
-	firstReq.Header.Set("Authorization", "Bearer dev")
-	firstReq.Header.Set("Accept", "application/json")
-	firstRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(firstRec, firstReq)
-	if firstRec.Code != http.StatusOK {
-		t.Fatalf("first status = %d body=%s", firstRec.Code, firstRec.Body.String())
-	}
-	var first struct {
-		Items []api.PublishResponse `json:"items"`
-		Page  struct {
-			NextCursor string `json:"nextCursor"`
-		} `json:"page"`
-	}
-	if err := json.Unmarshal(firstRec.Body.Bytes(), &first); err != nil {
-		t.Fatalf("decode first page: %v", err)
-	}
-	if len(first.Items) != 2 || first.Items[0].ID != "dep_new" || first.Items[1].ID != "dep_mid" {
-		t.Fatalf("first items = %#v", first.Items)
-	}
-	if first.Page.NextCursor == "" || first.Page.NextCursor == "dep_mid" {
-		t.Fatalf("next cursor = %q, want non-empty opaque cursor", first.Page.NextCursor)
-	}
-
-	nextReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/publishes?limit=2&pageToken="+first.Page.NextCursor, nil)
-	nextReq.Header.Set("Authorization", "Bearer dev")
-	nextReq.Header.Set("Accept", "application/json")
-	nextRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(nextRec, nextReq)
-	if nextRec.Code != http.StatusOK {
-		t.Fatalf("next status = %d body=%s", nextRec.Code, nextRec.Body.String())
-	}
-	var next struct {
-		Items []api.PublishResponse `json:"items"`
-		Page  struct {
-			NextCursor string `json:"nextCursor"`
-		} `json:"page"`
-	}
-	if err := json.Unmarshal(nextRec.Body.Bytes(), &next); err != nil {
-		t.Fatalf("decode next page: %v", err)
-	}
-	if len(next.Items) != 1 || next.Items[0].ID != "dep_old" {
-		t.Fatalf("next items = %#v", next.Items)
-	}
-	if next.Page.NextCursor != "" {
-		t.Fatalf("next cursor = %q, want empty final cursor", next.Page.NextCursor)
-	}
-}
-
-func TestDeploymentAPIQueryBindingErrorUsesErrorContract(t *testing.T) {
-	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
-	store := testStore(t)
-	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/publishes?limit=oops", nil)
-	req.Header.Set("Authorization", "Bearer dev")
-	req.Header.Set("Accept", "application/json")
-	rec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
-	}
-	assertAPIError(t, rec, http.StatusBadRequest, "limit")
-}
-
-func TestDeploymentAPIV1WrongWorkspaceDeploymentReturnsNotFound(t *testing.T) {
-	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
-	store := testStore(t)
-	ctx := context.Background()
-	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "other", Title: "Other"}); err != nil {
-		t.Fatalf("ensure other workspace: %v", err)
-	}
-	servingStateRepo := servingstatesqlite.NewRepository(store.SQLDB())
-	created, err := servingStateRepo.Create(ctx, servingstate.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
-	if err != nil {
-		t.Fatalf("create deployment: %v", err)
-	}
-	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: "digest", ManifestJSON: "{}", ProjectID: "project"}, zeroArtifact(created.ID, "test")); err != nil {
-		t.Fatalf("validate deployment: %v", err)
-	}
-	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: &fakeReloader{}, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
-
-	for _, tc := range []struct {
-		name   string
-		method string
-		path   string
-	}{
-		{name: "get", method: http.MethodGet, path: "/api/v1/workspaces/other/publishes/" + string(created.ID)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, nil)
-			req.Header.Set("Authorization", "Bearer dev")
-			req.Header.Set("Accept", "application/json")
-			rec := httptest.NewRecorder()
-			server.Routes().ServeHTTP(rec, req)
-			if rec.Code != http.StatusNotFound {
-				t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
-			}
-			assertAPIError(t, rec, http.StatusNotFound, "not found")
 		})
 	}
 }
@@ -575,7 +456,7 @@ func TestDeploymentAPIValidatesBundle(t *testing.T) {
 	auth := testAuth(store, "sales", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Reloader: reloader, ArtifactDir: artifactDir, DefaultWorkspaceID: "sales"})
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/publishes", bytes.NewBufferString(`{"title":"Test"}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/libredash-showcase/workspaces/sales/deployment-candidates", bytes.NewBufferString(`{"title":"Test","environment":"dev"}`))
 	createReq.Header.Set("Authorization", "Bearer dev")
 	createReq.Header.Set("Accept", "application/json")
 	createRec := httptest.NewRecorder()
@@ -583,16 +464,16 @@ func TestDeploymentAPIValidatesBundle(t *testing.T) {
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", createRec.Code, createRec.Body.String())
 	}
-	var created api.PublishResponse
+	var created apigenapi.DeploymentCandidateResponse
 	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
 
 	var bundle bytes.Buffer
-	if _, _, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingstate.ID(created.ID), ManagedDataRevisions: testOlistManagedRevisions()}, &bundle); err != nil {
+	if _, _, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: "sales", ServingStateID: servingstate.ID(created.Id), ManagedDataRevisions: testOlistManagedRevisions()}, &bundle); err != nil {
 		t.Fatalf("pack project: %v", err)
 	}
-	uploadReq := httptest.NewRequest(http.MethodPut, "/api/v1/workspaces/sales/publishes/"+created.ID+"/artifact", bytes.NewReader(bundle.Bytes()))
+	uploadReq := httptest.NewRequest(http.MethodPut, "/api/v1/projects/libredash-showcase/workspaces/sales/deployment-candidates/"+created.Id+"/artifact", bytes.NewReader(bundle.Bytes()))
 	uploadReq.Header.Set("Authorization", "Bearer dev")
 	uploadReq.Header.Set("Accept", "application/json")
 	uploadReq.Header.Set("Content-Type", "application/octet-stream")
@@ -602,7 +483,7 @@ func TestDeploymentAPIValidatesBundle(t *testing.T) {
 		t.Fatalf("upload status = %d body=%s", uploadRec.Code, uploadRec.Body.String())
 	}
 
-	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/publishes/"+created.ID+"/validate", nil)
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/libredash-showcase/workspaces/sales/deployment-candidates/"+created.Id+"/validate", nil)
 	validateReq.Header.Set("Authorization", "Bearer dev")
 	validateReq.Header.Set("Accept", "application/json")
 	validateRec := httptest.NewRecorder()
@@ -1357,12 +1238,12 @@ func TestWorkspaceAssetsDoesNotRefreshCleanGraphWithoutPageItems(t *testing.T) {
 	if !ok {
 		t.Fatal("runtime graph unavailable")
 	}
-	validation := servingstate.Validation{
+	validation := completeTestValidation("test", servingstate.Validation{
 		Digest:       "digest",
 		ManifestJSON: "{}",
 		ProjectID:    "project",
 		Graph:        workspace.AssetGraph{Assets: runtimeAssets, Edges: runtimeEdges},
-	}
+	})
 	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, "test")); err != nil {
 		t.Fatalf("save validated: %v", err)
 	}
@@ -1906,12 +1787,12 @@ func seedActiveDeployment(t *testing.T, store *platform.Store, workspaceID strin
 	if err != nil {
 		t.Fatalf("extract assets: %v", err)
 	}
-	validation := servingstate.Validation{
+	validation := completeTestValidation(workspaceID, servingstate.Validation{
 		Digest:       "digest-" + string(created.ID),
 		ManifestJSON: "{}",
 		ProjectID:    compiled.Project.Name,
 		Graph:        graph,
-	}
+	})
 	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, workspaceID)); err != nil {
 		t.Fatalf("validate deployment: %v", err)
 	}
@@ -1935,12 +1816,12 @@ func seedActiveDeploymentFromWorkspaceAssets(t *testing.T, store *platform.Store
 	if !ok {
 		t.Fatal("workspace asset graph unavailable")
 	}
-	validation := servingstate.Validation{
+	validation := completeTestValidation(workspaceID, servingstate.Validation{
 		Digest:       "digest-" + string(created.ID),
 		ManifestJSON: "{}",
 		ProjectID:    "project",
 		Graph:        workspace.AssetGraph{Assets: assets, Edges: edges},
-	}
+	})
 	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, workspaceID)); err != nil {
 		t.Fatalf("validate deployment: %v", err)
 	}
@@ -1978,7 +1859,7 @@ func seedEnvironmentAssetDeployment(t *testing.T, store *platform.Store, workspa
 	}
 	artifact := zeroArtifact(created.ID, workspaceID)
 	artifact.Environment = environment
-	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: "digest-" + string(environment), ManifestJSON: "{}", ProjectID: "project", Graph: graph}, artifact); err != nil {
+	if _, err := servingStateRepo.SaveValidated(ctx, created.ID, completeTestValidation(workspaceID, servingstate.Validation{Digest: "digest-" + string(environment), ManifestJSON: "{}", ProjectID: "project", Graph: graph}), artifact); err != nil {
 		t.Fatalf("save validated: %v", err)
 	}
 	if _, err := servingStateRepo.Activate(ctx, servingstate.WorkspaceID(workspaceID), environment, created.ID); err != nil {
@@ -2046,54 +1927,10 @@ func zeroArtifact(servingStateID servingstate.ID, workspaceID string) servingsta
 	}
 }
 
-func saveBundledValidatedPublish(t *testing.T, ctx context.Context, repo *servingstatesqlite.Repository, artifactDir, workspaceID string) servingstate.State {
-	t.Helper()
-	created, err := repo.Create(ctx, servingstate.CreateInput{WorkspaceID: servingstate.WorkspaceID(workspaceID), CreatedBy: "tester"})
-	if err != nil {
-		t.Fatalf("create deployment: %v", err)
-	}
-	var bundle bytes.Buffer
-	manifest, digest, err := servingstatefs.PackProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), servingstatefs.PackProjectOptions{WorkspaceID: string(workspaceID), ServingStateID: created.ID, ManagedDataRevisions: testOlistManagedRevisions()}, &bundle)
-	if err != nil {
-		t.Fatalf("pack project: %v", err)
-	}
-	artifactPath := filepath.Join(artifactDir, digest+".tar.gz")
-	if err := os.WriteFile(artifactPath, bundle.Bytes(), 0o644); err != nil {
-		t.Fatalf("write artifact: %v", err)
-	}
-	manifestBytes, err := json.Marshal(manifest)
-	if err != nil {
-		t.Fatalf("marshal manifest: %v", err)
-	}
-	compiled, err := workspacecompiler.CompileProject(filepath.Join("..", "..", "dashboards", "libredash.yaml"), workspacecompiler.Options{})
-	if err != nil {
-		t.Fatalf("compile project: %v", err)
-	}
-	workspaceDef := compiled.Workspaces[workspaceID].Definition
-	if workspaceDef == nil {
-		t.Fatalf("compile project: missing %s workspace definition", workspaceID)
-	}
-	workspaceDef.SourceFiles = remapTestSourceFiles(workspaceDef.SourceFiles, "sales", workspaceID)
-	graph, err := workspacecompiler.ExtractLineage(workspace.WorkspaceID(workspaceID), workspace.ServingStateID(created.ID), workspaceDef)
-	if err != nil {
-		t.Fatalf("extract assets: %v", err)
-	}
-	artifact := servingstate.Artifact{
-		ID:             "artifact_" + string(created.ID),
-		ServingStateID: created.ID,
-		WorkspaceID:    servingstate.WorkspaceID(workspaceID),
-		Environment:    servingstate.DefaultEnvironment,
-		Digest:         digest,
-		Format:         servingstatefs.BundleFormat,
-		Path:           artifactPath,
-		ManifestJSON:   string(manifestBytes),
-		SizeBytes:      int64(bundle.Len()),
-	}
-	validated, err := repo.SaveValidated(ctx, created.ID, servingstate.Validation{Digest: digest, ManifestJSON: string(manifestBytes), ProjectID: compiled.Project.Name, Graph: graph}, artifact)
-	if err != nil {
-		t.Fatalf("validate deployment: %v", err)
-	}
-	return validated
+func completeTestValidation(workspaceID string, validation servingstate.Validation) servingstate.Validation {
+	validation.ProjectDigest = "sha256:" + strings.Repeat("a", 64)
+	validation.ProjectWorkspaces = []string{workspaceID}
+	return validation
 }
 
 func writeMinimalOlistFixture(t *testing.T, dir string) {

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage/filesystem"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage/storagetest"
@@ -143,23 +144,23 @@ func TestMaterializeRevisionCreatesImmutableHardLinkedView(t *testing.T) {
 		}
 	}
 
-	files := []storage.RevisionFile{
-		{Path: "orders/one.csv", SHA256: one.SHA256},
-		{Path: "two.csv", SHA256: two.SHA256},
-	}
-	first, err := store.MaterializeRevision(t.Context(), "sha256:"+one.SHA256, files)
+	manifest := manageddata.Manifest{Files: []manageddata.File{
+		{Path: "orders/one.csv", SHA256: one.SHA256, Size: one.Size},
+		{Path: "two.csv", SHA256: two.SHA256, Size: two.Size},
+	}}
+	first, err := store.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.MaterializeRevision(t.Context(), "sha256:"+one.SHA256, files)
+	second, err := store.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first != second {
-		t.Fatalf("idempotent MaterializeRevision() = %#v, %#v", first, second)
+	if first.Root() != second.Root() {
+		t.Fatalf("idempotent MaterializeRevision() roots = %q, %q", first.Root(), second.Root())
 	}
 
-	viewInfo, err := os.Stat(first.Path)
+	viewInfo, err := os.Stat(first.Root())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,23 +168,23 @@ func TestMaterializeRevisionCreatesImmutableHardLinkedView(t *testing.T) {
 		t.Fatalf("revision permissions = %o, want 500", got)
 	}
 	sourceInfo, _ := os.Stat(store.BlobPath(one.SHA256))
-	viewFileInfo, _ := os.Stat(filepath.Join(first.Path, "orders", "one.csv"))
+	viewFileInfo, _ := os.Stat(filepath.Join(first.Root(), "orders", "one.csv"))
 	if !os.SameFile(sourceInfo, viewFileInfo) {
 		t.Fatal("revision file is not a hard link to its blob")
 	}
-	if err := os.WriteFile(filepath.Join(first.Path, "orders", "one.csv"), []byte("mutation"), 0o600); err == nil {
+	if err := os.WriteFile(filepath.Join(first.Root(), "orders", "one.csv"), []byte("mutation"), 0o600); err == nil {
 		t.Fatal("immutable revision file was writable")
 	}
 
 	if err := store.DeleteBlobs(t.Context(), []string{one.SHA256}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(first.Path, "orders", "one.csv"))
+	got, err := os.ReadFile(filepath.Join(first.Root(), "orders", "one.csv"))
 	if err != nil || string(got) != "one" {
 		t.Fatalf("hard-linked view after blob deletion = %q, %v", got, err)
 	}
-	third, err := store.MaterializeRevision(t.Context(), "sha256:"+one.SHA256, files)
-	if err != nil || third != first {
+	third, err := store.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
+	if err != nil || third.Root() != first.Root() {
 		t.Fatalf("MaterializeRevision() after blob deletion = %#v, %v", third, err)
 	}
 }
@@ -206,7 +207,12 @@ func TestMaterializeRevisionRejectsUnsafePathsAndMissingBlobs(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := store.MaterializeRevision(t.Context(), test.revisionID, []storage.RevisionFile{{Path: test.path, SHA256: digest}})
+			manifest := manageddata.Manifest{Files: []manageddata.File{{Path: test.path, SHA256: digest, Size: 7}}}
+			revisionID := test.revisionID
+			if revisionID == "sha256:"+digest {
+				revisionID = manifest.RevisionID()
+			}
+			_, err := store.MaterializeRevision(t.Context(), revisionID, manifest)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("MaterializeRevision() error = %v, want %v", err, test.want)
 			}
@@ -220,6 +226,7 @@ func TestMaterializeRevisionRequiresCanonicalManagedRevisionID(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := testBlob([]byte("revision")).SHA256
+	manifest := manageddata.Manifest{}
 	for _, revisionID := range []string{
 		digest,
 		"sha256:" + strings.ToUpper(digest),
@@ -227,11 +234,45 @@ func TestMaterializeRevisionRequiresCanonicalManagedRevisionID(t *testing.T) {
 		"md5:" + digest,
 	} {
 		t.Run(revisionID, func(t *testing.T) {
-			_, err := store.MaterializeRevision(t.Context(), revisionID, nil)
+			_, err := store.MaterializeRevision(t.Context(), revisionID, manifest)
 			if !errors.Is(err, storage.ErrInvalid) {
 				t.Fatalf("MaterializeRevision(%q) error = %v", revisionID, err)
 			}
 		})
+	}
+}
+
+func TestMaterializeRevisionRejectsCorruptExistingView(t *testing.T) {
+	root := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err == nil && entry.IsDir() {
+				_ = os.Chmod(path, 0o700)
+			}
+			return nil
+		})
+	})
+	store, err := filesystem.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := testBlob([]byte("verified"))
+	if _, err := store.Put(t.Context(), blob, bytes.NewReader([]byte("verified"))); err != nil {
+		t.Fatal(err)
+	}
+	manifest := manageddata.Manifest{Files: []manageddata.File{{Path: "data.csv", SHA256: blob.SHA256, Size: blob.Size}}}
+	lease, err := store.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(lease.Root(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(lease.Root(), "unexpected"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MaterializeRevision(t.Context(), manifest.RevisionID(), manifest); !errors.Is(err, storage.ErrIntegrity) {
+		t.Fatalf("corrupt existing view error = %v, want %v", err, storage.ErrIntegrity)
 	}
 }
 

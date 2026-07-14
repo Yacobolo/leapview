@@ -4,14 +4,18 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/deployment"
+	"github.com/Yacobolo/libredash/internal/manageddata"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
+	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 )
 
 type Repository struct {
@@ -51,6 +55,7 @@ func (r *Repository) CreateDeployment(ctx context.Context, input deployment.Crea
 	}
 
 	bindings := make(map[string]string)
+	var contract projectContract
 	for _, target := range input.Targets {
 		candidate, err := q.GetServingState(ctx, target.ServingStateID)
 		if err != nil {
@@ -58,6 +63,15 @@ func (r *Repository) CreateDeployment(ctx context.Context, input deployment.Crea
 		}
 		if candidate.WorkspaceID != target.WorkspaceID || candidate.ProjectID != input.ProjectID || candidate.Environment != input.Environment || !servingStateCanActivate(candidate.Status) {
 			return deployment.Deployment{}, fmt.Errorf("%w: serving state %q is not an activatable target", deployment.ErrConflict, target.ServingStateID)
+		}
+		candidateContract, err := parseProjectContract(candidate)
+		if err != nil {
+			return deployment.Deployment{}, fmt.Errorf("%w: serving state %q has invalid project metadata: %v", deployment.ErrConflict, target.ServingStateID, err)
+		}
+		if contract.Digest == "" {
+			contract = candidateContract
+		} else if contract.Digest != candidateContract.Digest || !slices.Equal(contract.Workspaces, candidateContract.Workspaces) {
+			return deployment.Deployment{}, fmt.Errorf("%w: deployment targets were not validated from the same project source", deployment.ErrConflict)
 		}
 		priorID, err := activeServingStateID(ctx, q, target.WorkspaceID, input.Environment)
 		if err != nil {
@@ -96,6 +110,9 @@ func (r *Repository) CreateDeployment(ctx context.Context, input deployment.Crea
 			}
 			bindings[collection.ID] = revision.ID
 		}
+	}
+	if !slices.Equal(targetWorkspaceIDs(input.Targets), contract.Workspaces) {
+		return deployment.Deployment{}, fmt.Errorf("%w: deployment targets must contain the complete project workspace set", deployment.ErrConflict)
 	}
 
 	collections := sortedKeys(bindings)
@@ -169,13 +186,23 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 	}
 
 	currentBindings := make(map[string]string, len(connections))
+	var contract projectContract
 	for _, target := range targets {
 		candidate, err := q.GetServingState(ctx, target.ServingStateID)
 		if err != nil {
 			return deployment.Deployment{}, mapError(err)
 		}
-		if candidate.WorkspaceID != target.WorkspaceID || candidate.Environment != row.Environment || !servingStateCanActivate(candidate.Status) {
+		if candidate.WorkspaceID != target.WorkspaceID || candidate.ProjectID != row.ProjectID || candidate.Environment != row.Environment || !servingStateCanActivate(candidate.Status) {
 			return deployment.Deployment{}, fmt.Errorf("%w: deployment target %q is no longer activatable", deployment.ErrConflict, target.ServingStateID)
+		}
+		candidateContract, err := parseProjectContract(candidate)
+		if err != nil {
+			return deployment.Deployment{}, fmt.Errorf("%w: deployment target %q has invalid project metadata: %v", deployment.ErrConflict, target.ServingStateID, err)
+		}
+		if contract.Digest == "" {
+			contract = candidateContract
+		} else if contract.Digest != candidateContract.Digest || !slices.Equal(contract.Workspaces, candidateContract.Workspaces) {
+			return deployment.Deployment{}, fmt.Errorf("%w: deployment targets no longer share one project source", deployment.ErrConflict)
 		}
 		activeID, err := activeServingStateID(ctx, q, target.WorkspaceID, row.Environment)
 		if err != nil {
@@ -197,6 +224,9 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 			}
 			currentBindings[binding.CollectionID] = binding.RevisionID
 		}
+	}
+	if !slices.Equal(deploymentTargetWorkspaceIDs(targets), contract.Workspaces) {
+		return deployment.Deployment{}, fmt.Errorf("%w: deployment no longer contains the complete project workspace set", deployment.ErrConflict)
 	}
 	if !sameConnectionBindings(connections, currentBindings) {
 		return deployment.Deployment{}, fmt.Errorf("%w: candidate managed-data bindings changed", deployment.ErrConflict)
@@ -230,6 +260,13 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 	}
 
 	for _, target := range targets {
+		candidate, err := q.GetServingState(ctx, target.ServingStateID)
+		if err != nil {
+			return deployment.Deployment{}, mapError(err)
+		}
+		if err := servingstatesqlite.ApplyAccessSnapshotTx(ctx, tx, q, candidate); err != nil {
+			return deployment.Deployment{}, fmt.Errorf("%w: apply access snapshot for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
+		}
 		if err := q.MarkOtherServingStatesDraining(ctx, platformdb.MarkOtherServingStatesDrainingParams{WorkspaceID: target.WorkspaceID, Environment: row.Environment, ID: target.ServingStateID}); err != nil {
 			return deployment.Deployment{}, err
 		}
@@ -255,6 +292,50 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 		return deployment.Deployment{}, mapError(err)
 	}
 	return r.DeploymentByID(ctx, id)
+}
+
+type projectContract struct {
+	Digest     string
+	Workspaces []string
+}
+
+func parseProjectContract(candidate platformdb.ServingState) (projectContract, error) {
+	if err := manageddata.ValidateRevisionID(candidate.ProjectDigest); err != nil {
+		return projectContract{}, err
+	}
+	var workspaces []string
+	if err := json.Unmarshal([]byte(candidate.ProjectWorkspacesJson), &workspaces); err != nil {
+		return projectContract{}, fmt.Errorf("decode project workspaces: %w", err)
+	}
+	if len(workspaces) == 0 || !sort.StringsAreSorted(workspaces) {
+		return projectContract{}, fmt.Errorf("project workspaces must be non-empty and sorted")
+	}
+	for index, workspaceID := range workspaces {
+		if strings.TrimSpace(workspaceID) == "" || workspaceID != strings.TrimSpace(workspaceID) || (index > 0 && workspaces[index-1] == workspaceID) {
+			return projectContract{}, fmt.Errorf("project workspaces must contain unique canonical identifiers")
+		}
+	}
+	if !slices.Contains(workspaces, candidate.WorkspaceID) {
+		return projectContract{}, fmt.Errorf("project workspaces omit candidate workspace %q", candidate.WorkspaceID)
+	}
+	return projectContract{Digest: candidate.ProjectDigest, Workspaces: workspaces}, nil
+}
+
+func targetWorkspaceIDs(targets []deployment.TargetInput) []string {
+	workspaces := make([]string, len(targets))
+	for index, target := range targets {
+		workspaces[index] = target.WorkspaceID
+	}
+	return workspaces
+}
+
+func deploymentTargetWorkspaceIDs(targets []platformdb.ProjectDeploymentTarget) []string {
+	workspaces := make([]string, len(targets))
+	for index, target := range targets {
+		workspaces[index] = target.WorkspaceID
+	}
+	sort.Strings(workspaces)
+	return workspaces
 }
 
 func (r *Repository) FailDeployment(ctx context.Context, id string, cause error) error {

@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
@@ -334,8 +335,13 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 	active := input.Active
 	workspaceID := servingstate.WorkspaceID(input.WorkspaceID)
 	environment := servingstate.NormalizeEnvironment(input.Environment)
+	var accessPolicy workspace.AccessPolicy
+	if err := json.Unmarshal([]byte(active.State.AccessPolicyJSON), &accessPolicy); err != nil {
+		return ServingState{}, fmt.Errorf("decode active access policy: %w", err)
+	}
 	created, err := s.ServingStates.Create(ctx, servingstate.CreateInput{
 		WorkspaceID: workspaceID,
+		ProjectID:   active.State.ProjectID,
 		Environment: environment,
 		CreatedBy:   input.CreatedBy,
 		Source:      servingstate.SourceRefresh,
@@ -356,10 +362,13 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 		CreatedAt:      active.Artifact.CreatedAt,
 	}
 	validated, err := s.ServingStates.SaveValidated(ctx, created.ID, servingstate.Validation{
-		Digest:       active.State.Digest,
-		ManifestJSON: active.State.ManifestJSON,
-		ProjectID:    active.State.ProjectID,
-		Graph:        RetargetAssetGraph(input.ArtifactGraph, workspace.WorkspaceID(input.WorkspaceID), workspace.ServingStateID(created.ID)),
+		Digest:            active.State.Digest,
+		ManifestJSON:      active.State.ManifestJSON,
+		ProjectID:         active.State.ProjectID,
+		ProjectDigest:     active.State.ProjectDigest,
+		ProjectWorkspaces: append([]string(nil), active.State.ProjectWorkspaces...),
+		AccessPolicy:      accessPolicy,
+		Graph:             RetargetAssetGraph(input.ArtifactGraph, workspace.WorkspaceID(input.WorkspaceID), workspace.ServingStateID(created.ID)),
 	}, candidateArtifact)
 	if err != nil {
 		_ = s.ServingStates.MarkFailed(ctx, created.ID, err)

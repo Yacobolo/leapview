@@ -6,8 +6,8 @@ import (
 	"errors"
 	stdhttp "net/http"
 
-	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
+	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
 )
 
 var (
@@ -32,87 +32,10 @@ type UploadCoordinator interface {
 	AbortUpload(context.Context, control.UploadRequest) (control.UploadResult, error)
 }
 
-type MultipartStatus string
-
-const (
-	MultipartStatusOpen      MultipartStatus = "open"
-	MultipartStatusCompleted MultipartStatus = "completed"
-	MultipartStatusAborted   MultipartStatus = "aborted"
-)
-
-type MultipartUpload struct {
-	ID              string
-	UploadSessionID string
-	File            manageddata.File
-	Status          MultipartStatus
-	Existing        bool
-	CreatedAt       string
-	ExpiresAt       string
-}
-
-type MultipartCreateRequest struct {
-	Project         string
-	Connection      string
-	CollectionID    string
-	UploadSessionID string
-	File            manageddata.File
-	Actor           string
-	IdempotencyKey  string
-}
-
-type MultipartRequest struct {
-	Project           string
-	Connection        string
-	CollectionID      string
-	UploadSessionID   string
-	MultipartUploadID string
-	Actor             string
-	IdempotencyKey    string
-}
-
-type MultipartSignPartRequest struct {
-	MultipartRequest
-	PartNumber int32
-	Size       int64
-	SHA256     string
-}
-
-type CompletedPart struct {
-	PartNumber int32
-	ETag       string
-	SHA256     string
-}
-
-type MultipartCompleteRequest struct {
-	MultipartRequest
-	Parts []CompletedPart
-}
-
-type HTTPHeader struct {
-	Name  string
-	Value string
-}
-
-type MultipartSignedPart struct {
-	UploadSessionID   string
-	MultipartUploadID string
-	PartNumber        int32
-	URL               string
-	Headers           []HTTPHeader
-	ExpiresAt         string
-}
-
-type MultipartCoordinator interface {
-	Create(context.Context, MultipartCreateRequest) (MultipartUpload, error)
-	SignPart(context.Context, MultipartSignPartRequest) (MultipartSignedPart, error)
-	Complete(context.Context, MultipartCompleteRequest) (MultipartUpload, error)
-	Abort(context.Context, MultipartRequest) (MultipartUpload, error)
-}
-
 type Options struct {
 	Repository       Repository
 	Uploads          UploadCoordinator
-	Multipart        MultipartCoordinator
+	Multipart        s3multipart.Coordinator
 	CurrentPrincipal func(*stdhttp.Request) (Principal, bool)
 	MaxJSONBodyBytes int64
 }

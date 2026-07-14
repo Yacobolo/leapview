@@ -15,7 +15,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/api"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
@@ -110,7 +109,7 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 		if planErr != nil {
 			return fmt.Errorf("plan workspace %q: %w", workspaceID, planErr)
 		}
-		printPublishPlanSummaryTo(outputOrDiscard(request.Out), plan.Workspaces[0])
+		printDeploymentPlanSummaryTo(outputOrDiscard(request.Out), plan.Workspaces[0])
 		candidates = append(candidates, candidate{workspaceID: workspaceID, activeGraph: graph})
 	}
 	if err := confirmDeployment(cliOpts, os.Stdin, outputOrDiscard(request.Out)); err != nil {
@@ -121,14 +120,14 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	for _, item := range candidates {
 		workspaceProject := project.Workspaces[item.workspaceID]
 		pins := selectManagedDataPins(request.Revisions, managedConnectionsForWorkspace(project, workspaceProject))
-		prepared, localDigest, prepareErr := prepareWorkspaceCandidate(ctx, cliOpts, request.Target, request.Token, item.workspaceID, workspaceProject, item.activeGraph, pins)
+		prepared, localDigest, prepareErr := prepareWorkspaceCandidate(ctx, cliOpts, request.Target, request.Token, project.Name, item.workspaceID, workspaceProject, item.activeGraph, pins)
 		if prepareErr != nil {
 			return fmt.Errorf("prepare workspace %q failed", item.workspaceID)
 		}
 		if prepared.Digest != localDigest || !canonicalArtifactDigest(prepared.Digest) {
 			return fmt.Errorf("prepare workspace %q returned an invalid artifact digest", item.workspaceID)
 		}
-		targets = append(targets, apigenapi.ProjectDeploymentTargetRequest{Workspace: item.workspaceID, ServingStateId: prepared.ID})
+		targets = append(targets, apigenapi.ProjectDeploymentTargetRequest{Workspace: item.workspaceID, CandidateId: prepared.Id})
 	}
 
 	client := newManagedDataCLIClient(request.HTTPClient, request.Target, request.Token)
@@ -194,7 +193,7 @@ func validateManagedRevisionPins(project workspacecompiler.Project, pins map[str
 	return nil
 }
 
-func printPublishPlanSummaryTo(out io.Writer, workspacePlan workspacecompiler.ProjectPlanWorkspace) {
+func printDeploymentPlanSummaryTo(out io.Writer, workspacePlan workspacecompiler.ProjectPlanWorkspace) {
 	summary := workspacePlan.Summary
 	fmt.Fprintf(out, "workspace %s changes +%d ~%d -%d dependencies %d\n", workspacePlan.ID, summary.Added, summary.Changed, summary.Removed, summary.DependencyChanges)
 }
@@ -202,7 +201,7 @@ func printPublishPlanSummaryTo(out io.Writer, workspacePlan workspacecompiler.Pr
 func projectDeploymentTargetValues(targets []apigenapi.ProjectDeploymentTargetRequest) []string {
 	values := make([]string, 0, len(targets)*2)
 	for _, target := range targets {
-		values = append(values, target.Workspace, target.ServingStateId)
+		values = append(values, target.Workspace, target.CandidateId)
 	}
 	return values
 }
@@ -213,10 +212,10 @@ func validateProjectDeploymentResponse(response apigenapi.ProjectDeploymentRespo
 	}
 	expected := make(map[string]string, len(targets))
 	for _, target := range targets {
-		expected[target.Workspace] = target.ServingStateId
+		expected[target.Workspace] = target.CandidateId
 	}
 	for _, target := range response.Targets {
-		if expected[target.Workspace] != target.ServingStateId || target.Status != targetStatus {
+		if expected[target.Workspace] != target.CandidateId || target.Status != targetStatus {
 			return fmt.Errorf("project deployment returned inconsistent targets")
 		}
 		delete(expected, target.Workspace)
@@ -301,42 +300,42 @@ func sortedProjectWorkspaceIDs(workspaces map[string]*workspacecompiler.Workspac
 	return ids
 }
 
-func prepareWorkspaceCandidate(ctx context.Context, opts *rootOptions, target, token, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (api.PublishResponse, string, error) {
+func prepareWorkspaceCandidate(ctx context.Context, opts *rootOptions, target, token, projectID, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (apigenapi.DeploymentCandidateResponse, string, error) {
 	createBody, _ := json.Marshal(map[string]any{
 		"title":       workspaceProject.Title,
 		"description": workspaceProject.Description,
 		"environment": cliEnvironment(opts),
 	})
-	var created api.PublishResponse
-	workspacePathParams := map[string]string{"workspace": workspaceID}
-	createURL, err := apiOperationURL(target, "createPublish", workspacePathParams, environmentQuery(opts, nil))
+	var created apigenapi.DeploymentCandidateResponse
+	candidatePathParams := map[string]string{"project": projectID, "workspace": workspaceID}
+	createURL, err := apiOperationURL(target, "createDeploymentCandidate", candidatePathParams, nil)
 	if err != nil {
-		return api.PublishResponse{}, "", err
+		return apigenapi.DeploymentCandidateResponse{}, "", err
 	}
 	if err := doJSON(ctx, http.MethodPost, createURL, token, bytes.NewReader(createBody), &created); err != nil {
-		return api.PublishResponse{}, "", err
+		return apigenapi.DeploymentCandidateResponse{}, "", err
 	}
-	uploadURL, err := apiOperationURL(target, "uploadPublishArtifact", map[string]string{"workspace": workspaceID, "publish": created.ID}, environmentQuery(opts, nil))
+	uploadURL, err := apiOperationURL(target, "uploadDeploymentCandidateArtifact", map[string]string{"project": projectID, "workspace": workspaceID, "candidate": created.Id}, nil)
 	if err != nil {
-		return api.PublishResponse{}, "", err
+		return apigenapi.DeploymentCandidateResponse{}, "", err
 	}
 	digest, err := streamProjectArtifact(ctx, uploadURL, token, opts.catalog, servingstatefs.PackProjectOptions{
-		WorkspaceID: workspaceID, Environment: servingstate.Environment(cliEnvironment(opts)), ServingStateID: servingstate.ID(created.ID),
+		WorkspaceID: workspaceID, Environment: servingstate.Environment(cliEnvironment(opts)), ServingStateID: servingstate.ID(created.Id),
 		ActiveGraph: activeGraph, ManagedDataRevisions: managedDataRevisions,
 	})
 	if err != nil {
-		return api.PublishResponse{}, "", err
+		return apigenapi.DeploymentCandidateResponse{}, "", err
 	}
-	var validated api.PublishResponse
-	validateURL, err := apiOperationURL(target, "validatePublish", map[string]string{"workspace": workspaceID, "publish": created.ID}, environmentQuery(opts, nil))
+	var validated apigenapi.DeploymentCandidateResponse
+	validateURL, err := apiOperationURL(target, "validateDeploymentCandidate", map[string]string{"project": projectID, "workspace": workspaceID, "candidate": created.Id}, nil)
 	if err != nil {
-		return api.PublishResponse{}, "", err
+		return apigenapi.DeploymentCandidateResponse{}, "", err
 	}
 	if err := doJSON(ctx, http.MethodPost, validateURL, token, nil, &validated); err != nil {
-		return api.PublishResponse{}, "", err
+		return apigenapi.DeploymentCandidateResponse{}, "", err
 	}
-	if validated.ID != created.ID || validated.WorkspaceID != workspaceID || validated.Environment != cliEnvironment(opts) || validated.Status != string(servingstate.StatusValidated) || strings.TrimSpace(validated.Digest) == "" {
-		return api.PublishResponse{}, "", fmt.Errorf("workspace candidate validation returned inconsistent scope or status")
+	if validated.Id != created.Id || validated.Project != projectID || validated.Workspace != workspaceID || validated.Environment != cliEnvironment(opts) || validated.Status != string(servingstate.StatusValidated) || strings.TrimSpace(validated.Digest) == "" {
+		return apigenapi.DeploymentCandidateResponse{}, "", fmt.Errorf("workspace candidate validation returned inconsistent scope or status")
 	}
 	return validated, digest, nil
 }

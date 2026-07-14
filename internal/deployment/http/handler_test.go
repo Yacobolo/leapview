@@ -17,12 +17,12 @@ func TestCreateResponseUsesProjectDeploymentWireContract(t *testing.T) {
 	coordinator := &fakeCoordinator{response: apiadapter.Deployment{
 		ID: "deployment_1", Project: "project", Environment: "prod", RequestDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		Status: apiadapter.StatusPending, CreatedAt: "2026-07-14T10:00:00Z",
-		Targets:     []apiadapter.Target{{Workspace: "sales", ServingStateID: "state_2", Status: apiadapter.TargetStatusPending}},
+		Targets:     []apiadapter.Target{{Workspace: "sales", CandidateID: "state_2", Status: apiadapter.TargetStatusPending}},
 		Connections: []apiadapter.Connection{},
 	}}
 	handler := NewHandler(Options{Coordinator: coordinator, CurrentPrincipal: func(*stdhttp.Request) (Principal, bool) { return Principal{ID: "principal"}, true }})
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(stdhttp.MethodPost, "/api/v1/projects/project/deployments", strings.NewReader(`{"environment":"prod","targets":[{"workspace":"sales","servingStateId":"state_2"}]}`))
+	request := httptest.NewRequest(stdhttp.MethodPost, "/api/v1/projects/project/deployments", strings.NewReader(`{"environment":"prod","targets":[{"workspace":"sales","candidateId":"state_2"}]}`))
 	request.Header.Set("Content-Type", "application/json")
 
 	handler.Create(recorder, request, "project", apigenapi.GenCreateProjectDeploymentHeaders{IdempotencyKey: "deploy-1"})
@@ -35,7 +35,7 @@ func TestCreateResponseUsesProjectDeploymentWireContract(t *testing.T) {
 	}
 	targets := body["targets"].([]any)
 	target := targets[0].(map[string]any)
-	if body["project"] != "project" || body["status"] != "pending" || target["workspace"] != "sales" || target["servingStateId"] != "state_2" {
+	if body["project"] != "project" || body["status"] != "pending" || target["workspace"] != "sales" || target["candidateId"] != "state_2" {
 		t.Fatalf("response = %#v", body)
 	}
 }

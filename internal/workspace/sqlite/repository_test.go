@@ -57,9 +57,11 @@ func TestRepositoryActiveServingStateGraphUsesLogicalAssetIDs(t *testing.T) {
 	model := mustAsset(t, workspace.AssetTypeSemanticModel, "olist", "", created.ID)
 	dashboard := mustAsset(t, workspace.AssetTypeDashboard, "sales", model.ID, created.ID)
 	validation := servingstate.Validation{
-		Digest:       "digest",
-		ManifestJSON: "{}",
-		ProjectID:    "project",
+		Digest:            "digest",
+		ManifestJSON:      "{}",
+		ProjectID:         "project",
+		ProjectDigest:     "sha256:" + strings.Repeat("a", 64),
+		ProjectWorkspaces: []string{"test"},
 		Graph: workspace.AssetGraph{
 			Assets: []workspace.Asset{model, dashboard},
 			Edges: []workspace.AssetEdge{
@@ -189,10 +191,12 @@ func seedVersionDeployment(t *testing.T, ctx context.Context, repo *servingstate
 	assetWorkspaceID := workspace.WorkspaceID(seed.WorkspaceID)
 	asset := mustAssetForWorkspaceWithVersion(t, assetWorkspaceID, workspace.AssetTypeDashboard, "sales", "", created.ID, seed.VersionKey)
 	validation := servingstate.Validation{
-		Digest:       "digest-" + string(created.ID),
-		ManifestJSON: "{}",
-		ProjectID:    "project",
-		Graph:        workspace.AssetGraph{Assets: []workspace.Asset{asset}},
+		Digest:            "digest-" + string(created.ID),
+		ManifestJSON:      "{}",
+		ProjectID:         "project",
+		ProjectDigest:     "sha256:" + strings.Repeat("a", 64),
+		ProjectWorkspaces: []string{string(seed.WorkspaceID)},
+		Graph:             workspace.AssetGraph{Assets: []workspace.Asset{asset}},
 	}
 	artifact := servingstate.Artifact{ID: "artifact_" + string(created.ID), ServingStateID: created.ID, WorkspaceID: seed.WorkspaceID, Environment: seed.Environment, Digest: validation.Digest, Format: "tar.gz", Path: "artifact.tar.gz", ManifestJSON: "{}"}
 	if _, err := repo.SaveValidated(ctx, created.ID, validation, artifact); err != nil {

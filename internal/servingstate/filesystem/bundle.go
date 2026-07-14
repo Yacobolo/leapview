@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/manageddata"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
@@ -46,6 +47,8 @@ type ValidateOptions struct {
 type CompiledWorkspaceArtifact struct {
 	Version              int                                    `json:"version"`
 	ProjectID            string                                 `json:"projectId"`
+	ProjectDigest        string                                 `json:"projectDigest"`
+	ProjectWorkspaces    []string                               `json:"projectWorkspaces"`
 	WorkspaceID          string                                 `json:"workspaceId"`
 	WorkspaceTitle       string                                 `json:"workspaceTitle"`
 	Environment          string                                 `json:"environment"`
@@ -85,10 +88,10 @@ func PackProject(projectPath string, options PackProjectOptions, out io.Writer) 
 	}
 	environment := servingstate.NormalizeEnvironment(options.Environment)
 	if options.WorkspaceID == "" {
-		return Manifest{}, "", fmt.Errorf("project publish requires explicit workspace")
+		return Manifest{}, "", fmt.Errorf("project candidate requires explicit workspace")
 	}
 	if options.ServingStateID == "" {
-		return Manifest{}, "", fmt.Errorf("project publish requires serving state id")
+		return Manifest{}, "", fmt.Errorf("project candidate requires serving state id")
 	}
 	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{ServingStateID: workspace.ServingStateID(options.ServingStateID)})
 	if err != nil {
@@ -113,9 +116,25 @@ func PackProject(projectPath string, options PackProjectOptions, out io.Writer) 
 	for connection, digest := range options.ManagedDataRevisions {
 		pins[connection] = digest
 	}
+	baseDir := filepath.Dir(projectPath)
+	relFiles, err := collectProjectBundleFiles(baseDir, projectPath)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	projectDigest, err := digestProjectSources(baseDir, projectPath, relFiles)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	projectWorkspaces := make([]string, 0, len(compiled.Workspaces))
+	for workspaceID := range compiled.Workspaces {
+		projectWorkspaces = append(projectWorkspaces, workspaceID)
+	}
+	sort.Strings(projectWorkspaces)
 	compiledArtifact := CompiledWorkspaceArtifact{
 		Version:              1,
 		ProjectID:            compiled.Project.Name,
+		ProjectDigest:        projectDigest,
+		ProjectWorkspaces:    projectWorkspaces,
 		WorkspaceID:          options.WorkspaceID,
 		WorkspaceTitle:       compiledWorkspace.Workspace.Title,
 		Environment:          string(environment),
@@ -137,11 +156,6 @@ func PackProject(projectPath string, options PackProjectOptions, out io.Writer) 
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	baseDir := filepath.Dir(projectPath)
-	relFiles, err := collectProjectBundleFiles(baseDir, projectPath)
-	if err != nil {
-		return Manifest{}, "", err
-	}
 	manifest := Manifest{
 		Version:        1,
 		WorkspaceID:    options.WorkspaceID,
@@ -159,6 +173,23 @@ func PackProject(projectPath string, options PackProjectOptions, out io.Writer) 
 		manifest.Dashboards = append(manifest.Dashboards, report.ID)
 	}
 	return writeBundle(baseDir, relFiles, ProjectFile, projectPath, map[string][]byte{CompiledProjectFile: compiledBytes}, manifest, out)
+}
+
+func digestProjectSources(baseDir, projectPath string, relFiles []string) (string, error) {
+	hash := sha256.New()
+	for _, rel := range relFiles {
+		sourcePath := filepath.Join(baseDir, filepath.FromSlash(rel))
+		if rel == cleanBundlePath(filepath.Base(projectPath)) {
+			sourcePath = projectPath
+		}
+		content, err := os.ReadFile(sourcePath)
+		if err != nil {
+			return "", err
+		}
+		_, _ = fmt.Fprintf(hash, "%d:%s:%d:", len(rel), rel, len(content))
+		_, _ = hash.Write(content)
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func collectProjectBundleFiles(baseDir, projectPath string) ([]string, error) {
@@ -362,6 +393,9 @@ func ValidateArtifactWithOptions(path string, workspaceID servingstate.Workspace
 		ManifestJSON:         string(manifestJSON),
 		RootDir:              root,
 		ProjectID:            compiled.ProjectID,
+		ProjectDigest:        compiled.ProjectDigest,
+		ProjectWorkspaces:    append([]string(nil), compiled.ProjectWorkspaces...),
+		AccessPolicy:         compiled.Definition.Access,
 		ManagedDataRevisions: cloneStringMap(compiled.ManagedDataRevisions),
 		Graph:                compiled.Graph,
 	}, nil
@@ -431,6 +465,25 @@ func validateCompiledArtifactValidation(compiled CompiledWorkspaceArtifact) erro
 func ValidateCompiledWorkspaceArtifact(compiled CompiledWorkspaceArtifact) error {
 	if compiled.ProjectID == "" || compiled.ProjectID != strings.TrimSpace(compiled.ProjectID) {
 		return fmt.Errorf("compiled artifact projectId is required")
+	}
+	if err := manageddata.ValidateRevisionID(compiled.ProjectDigest); err != nil {
+		return fmt.Errorf("compiled artifact project digest: %w", err)
+	}
+	if len(compiled.ProjectWorkspaces) == 0 || !sort.StringsAreSorted(compiled.ProjectWorkspaces) {
+		return fmt.Errorf("compiled artifact requires sorted project workspaces")
+	}
+	seenWorkspaces := make(map[string]struct{}, len(compiled.ProjectWorkspaces))
+	for _, workspaceID := range compiled.ProjectWorkspaces {
+		if strings.TrimSpace(workspaceID) == "" || workspaceID != strings.TrimSpace(workspaceID) {
+			return fmt.Errorf("compiled artifact has invalid project workspace %q", workspaceID)
+		}
+		if _, duplicate := seenWorkspaces[workspaceID]; duplicate {
+			return fmt.Errorf("compiled artifact has duplicate project workspace %q", workspaceID)
+		}
+		seenWorkspaces[workspaceID] = struct{}{}
+	}
+	if _, exists := seenWorkspaces[compiled.WorkspaceID]; !exists {
+		return fmt.Errorf("compiled artifact project workspaces omit workspace %q", compiled.WorkspaceID)
 	}
 	if compiled.Definition == nil {
 		return fmt.Errorf("compiled artifact definition is required")

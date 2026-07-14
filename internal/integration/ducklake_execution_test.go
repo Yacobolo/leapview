@@ -808,11 +808,18 @@ func (h *duckLakeHarness) createQueuedWorkspaceAssetRefreshRun(t *testing.T, tar
 		ManifestJSON:   artifact.ManifestJSON,
 		SizeBytes:      artifact.SizeBytes,
 	}
+	var accessPolicy workspace.AccessPolicy
+	if err := json.Unmarshal([]byte(active.AccessPolicyJSON), &accessPolicy); err != nil {
+		t.Fatalf("decode active access policy: %v", err)
+	}
 	if _, err := h.deployments.SaveValidated(ctx, created.ID, servingstate.Validation{
-		Digest:       active.Digest,
-		ManifestJSON: active.ManifestJSON,
-		ProjectID:    active.ProjectID,
-		Graph:        integrationRetargetAssetGraph(compiled.Graph, workspace.WorkspaceID(active.WorkspaceID), workspace.ServingStateID(created.ID)),
+		Digest:            active.Digest,
+		ManifestJSON:      active.ManifestJSON,
+		ProjectID:         active.ProjectID,
+		ProjectDigest:     active.ProjectDigest,
+		ProjectWorkspaces: append([]string(nil), active.ProjectWorkspaces...),
+		AccessPolicy:      accessPolicy,
+		Graph:             integrationRetargetAssetGraph(compiled.Graph, workspace.WorkspaceID(active.WorkspaceID), workspace.ServingStateID(created.ID)),
 	}, candidateArtifact); err != nil {
 		t.Fatalf("save refresh candidate deployment: %v", err)
 	}

@@ -12,9 +12,9 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
-	"github.com/Yacobolo/libredash/internal/manageddata/runtimeview"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 )
@@ -45,21 +45,21 @@ type ServingStateRepository interface {
 type Resolver struct {
 	repository    Repository
 	servingStates ServingStateRepository
-	cache         *runtimeview.Cache
+	materializer  manageddata.RevisionMaterializer
 }
 
 // New constructs a managed-data runtime resolver.
-func New(repository Repository, servingStates ServingStateRepository, cache *runtimeview.Cache) (*Resolver, error) {
+func New(repository Repository, servingStates ServingStateRepository, materializer manageddata.RevisionMaterializer) (*Resolver, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("repository is required")
 	}
 	if servingStates == nil {
 		return nil, fmt.Errorf("serving state repository is required")
 	}
-	if cache == nil {
-		return nil, fmt.Errorf("runtime view cache is required")
+	if materializer == nil {
+		return nil, fmt.Errorf("revision materializer is required")
 	}
-	return &Resolver{repository: repository, servingStates: servingStates, cache: cache}, nil
+	return &Resolver{repository: repository, servingStates: servingStates, materializer: materializer}, nil
 }
 
 // ResolveManagedData resolves the bindings already persisted for servingStateID.
@@ -166,14 +166,44 @@ func (r *Resolver) resolveBindings(ctx context.Context, servingStateID servingst
 	})
 
 	roots := make(map[string]string, len(resolved))
+	leases := make([]manageddata.RevisionLease, 0, len(resolved))
 	for _, binding := range resolved {
-		view, materializeErr := r.cache.Materialize(ctx, binding.manifestDigest, binding.manifest)
+		lease, materializeErr := r.materializer.MaterializeRevision(ctx, binding.manifestDigest, binding.manifest)
 		if materializeErr != nil {
+			_ = (&managedDataLifetime{leases: leases}).Release()
 			return runtimehost.ManagedDataResolution{}, sanitizeMaterializationError(ctx, materializeErr)
 		}
-		roots[binding.connection] = view.Path
+		if lease == nil || strings.TrimSpace(lease.Root()) == "" {
+			_ = (&managedDataLifetime{leases: append(leases, lease)}).Release()
+			return runtimehost.ManagedDataResolution{}, ErrMaterialization
+		}
+		leases = append(leases, lease)
+		roots[binding.connection] = lease.Root()
 	}
-	return runtimehost.ManagedDataResolution{RevisionID: aggregateRevisionID(resolved), Roots: roots}, nil
+	return runtimehost.ManagedDataResolution{
+		RevisionID: aggregateRevisionID(resolved), Roots: roots, Lifetime: &managedDataLifetime{leases: leases},
+	}, nil
+}
+
+type managedDataLifetime struct {
+	leases []manageddata.RevisionLease
+	once   sync.Once
+	err    error
+}
+
+func (l *managedDataLifetime) Release() error {
+	if l == nil {
+		return nil
+	}
+	l.once.Do(func() {
+		for index := len(l.leases) - 1; index >= 0; index-- {
+			if l.leases[index] != nil {
+				l.err = errors.Join(l.err, l.leases[index].Release())
+			}
+		}
+		l.leases = nil
+	})
+	return l.err
 }
 
 func (r *Resolver) loadBindings(ctx context.Context, servingStateID servingstate.ID) ([]manageddata.ServingStateBinding, error) {

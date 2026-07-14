@@ -50,6 +50,7 @@ func TestResolveManagedDataJoinsAndMaterializesMultipleBindingsDeterministically
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = got.Lifetime.Release() })
 	wantRevisionID := aggregateForTest([]aggregateForTestInput{
 		{project: "crm", connection: "customers", digest: customersManifest.RevisionID()},
 		{project: "sales", connection: "orders", digest: ordersManifest.RevisionID()},
@@ -68,6 +69,7 @@ func TestResolveManagedDataJoinsAndMaterializesMultipleBindingsDeterministically
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = reordered.Lifetime.Release() })
 	if reordered.RevisionID != got.RevisionID {
 		t.Fatalf("reordered RevisionID = %q, want %q", reordered.RevisionID, got.RevisionID)
 	}
@@ -263,6 +265,41 @@ func TestResolveSanitizesMaterializationErrors(t *testing.T) {
 	}
 }
 
+func TestResolveUsesRevisionMaterializerAndReleasesPartialResolution(t *testing.T) {
+	firstManifest, _ := testManifest(map[string]string{"first.csv": "first"})
+	secondManifest, _ := testManifest(map[string]string{"second.csv": "second"})
+	repo := &fakeRepository{
+		bindings: []manageddata.ServingStateBinding{
+			{ServingStateID: "state-1", CollectionID: "first", RevisionID: "first-r1", Environment: "prod"},
+			{ServingStateID: "state-1", CollectionID: "second", RevisionID: "second-r1", Environment: "prod"},
+		},
+		collections: map[string]manageddata.Collection{
+			"first":  {ID: "first", ProjectID: "project", ConnectionName: "first"},
+			"second": {ID: "second", ProjectID: "project", ConnectionName: "second"},
+		},
+		revisions: map[string]manageddata.Revision{
+			"first-r1":  testRevision("first-r1", "first", firstManifest, manageddata.RevisionStatusReady),
+			"second-r1": testRevision("second-r1", "second", secondManifest, manageddata.RevisionStatusReady),
+		},
+		files: map[string][]manageddata.RevisionFile{
+			"first-r1":  testRevisionFiles("first-r1", firstManifest),
+			"second-r1": testRevisionFiles("second-r1", secondManifest),
+		},
+	}
+	materializer := &recordingRevisionMaterializer{failAt: 2}
+	resolver, err := New(repo, repo, materializer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolver.ResolveManagedData(t.Context(), "state-1")
+	if !errors.Is(err, ErrMaterialization) {
+		t.Fatalf("ResolveManagedData() error = %v, want %v", err, ErrMaterialization)
+	}
+	if len(materializer.leases) != 1 || materializer.leases[0].releases != 1 {
+		t.Fatalf("materialized leases = %#v, want the partial result released", materializer.leases)
+	}
+}
+
 func TestResolveWithFilesystemBlobStoreAndRuntimeViewIsConcurrentAndIdempotent(t *testing.T) {
 	manifest, bodies := testManifest(map[string]string{
 		"customers.csv":       "customer_id\n1\n",
@@ -308,6 +345,9 @@ func TestResolveWithFilesystemBlobStoreAndRuntimeViewIsConcurrentAndIdempotent(t
 				return
 			}
 			results <- resolution.Roots["warehouse"]
+			if releaseErr := resolution.Lifetime.Release(); releaseErr != nil {
+				errorsFound <- releaseErr
+			}
 		}()
 	}
 	wait.Wait()
@@ -338,6 +378,33 @@ type fakeRepository struct {
 	stateErr         error
 	stateID          servingstate.ID
 	stateEnvironment servingstate.Environment
+}
+
+type recordingRevisionMaterializer struct {
+	calls  int
+	failAt int
+	leases []*recordingRevisionLease
+}
+
+func (m *recordingRevisionMaterializer) MaterializeRevision(_ context.Context, revisionID string, _ manageddata.Manifest) (manageddata.RevisionLease, error) {
+	m.calls++
+	if m.calls == m.failAt {
+		return nil, errors.New("materialization failed")
+	}
+	lease := &recordingRevisionLease{root: filepath.Join("/runtime", strings.TrimPrefix(revisionID, "sha256:"))}
+	m.leases = append(m.leases, lease)
+	return lease, nil
+}
+
+type recordingRevisionLease struct {
+	root     string
+	releases int
+}
+
+func (l *recordingRevisionLease) Root() string { return l.root }
+func (l *recordingRevisionLease) Release() error {
+	l.releases++
+	return nil
 }
 
 func (r *fakeRepository) ListServingStateBindings(context.Context, string) ([]manageddata.ServingStateBinding, error) {

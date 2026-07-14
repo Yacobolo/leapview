@@ -54,8 +54,8 @@ ON CONFLICT(workspace_id, environment) DO UPDATE SET
   updated_at = CURRENT_TIMESTAMP;
 
 -- name: CreateServingState :exec
-INSERT INTO serving_states (id, workspace_id, environment, status, source, created_by)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO serving_states (id, workspace_id, project_id, environment, status, source, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetServingState :one
 SELECT * FROM serving_states WHERE id = ?;
@@ -65,11 +65,6 @@ SELECT d.*
 FROM serving_states d
 JOIN workspace_active_serving_states active ON active.serving_state_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?;
-
--- name: ListServingStates :many
-SELECT * FROM serving_states
-WHERE workspace_id = ? AND environment = ?
-ORDER BY created_at DESC;
 
 -- name: ListReferencedDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
@@ -125,7 +120,7 @@ WHERE status = 'delete_scheduled';
 
 -- name: UpdateServingStateValidated :exec
 UPDATE serving_states
-SET status = ?, project_id = ?, digest = ?, manifest_json = ?, error = ''
+SET status = ?, project_id = ?, project_digest = ?, project_workspaces_json = ?, access_policy_json = ?, digest = ?, manifest_json = ?, error = ''
 WHERE id = ?;
 
 -- name: UpdateServingStateDuckLakeSnapshot :exec

@@ -10,10 +10,9 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/api"
 	manageddatabinding "github.com/Yacobolo/libredash/internal/manageddata/binding"
-	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatehttp "github.com/Yacobolo/libredash/internal/servingstate/http"
-	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
+	workspacerefresh "github.com/Yacobolo/libredash/internal/workspace/refresh"
 )
 
 type runtimeReloader interface {
@@ -24,22 +23,21 @@ type runtimeReloader interface {
 
 type servingStateRepository interface {
 	servingstatehttp.Repository
+	workspacerefresh.ServingStateRepository
 }
 
-func (s *Server) publishHTTPHandler() *servingstatehttp.Handler {
+func (s *Server) deploymentCandidateHTTPHandler() *servingstatehttp.Handler {
 	return servingstatehttp.NewHandler(servingstatehttp.Options{
 		Repository: func() (servingstatehttp.Repository, error) {
 			return s.servingStateRepository()
 		},
 		BindingRepository: func() (manageddatabinding.Repository, error) {
-			if s.store == nil {
+			if s.managedDataBindingRepo == nil {
 				return nil, fmt.Errorf("managed data binding repository is not configured")
 			}
-			return manageddatasqlite.NewRepository(s.store.SQLDB()), nil
+			return s.managedDataBindingRepo, nil
 		},
 		WorkspaceRepository: s.workspaceRepository,
-		AccessRepository:    s.accessRepository,
-		Runtime:             s.reloader,
 		CurrentPrincipal: func(r *http.Request) (servingstatehttp.Principal, bool) {
 			if s.auth == nil {
 				return servingstatehttp.Principal{}, false
@@ -57,11 +55,7 @@ func (s *Server) servingStateRepository() (servingStateRepository, error) {
 	if s.servingStateRepo != nil {
 		return s.servingStateRepo, nil
 	}
-	if s.store == nil {
-		return nil, fmt.Errorf("serving state repository is not configured")
-	}
-	s.servingStateRepo = servingstatesqlite.NewRepository(s.store.SQLDB())
-	return s.servingStateRepo, nil
+	return nil, fmt.Errorf("serving state repository is not configured")
 }
 
 func (s *Server) workspaceID(candidate string) string {

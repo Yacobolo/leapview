@@ -31,7 +31,7 @@ func (h *Handler) Create(w stdhttp.ResponseWriter, r *stdhttp.Request, project s
 	}
 	targets := make([]apiadapter.TargetRequest, 0, len(body.Targets))
 	for _, target := range body.Targets {
-		targets = append(targets, apiadapter.TargetRequest{Workspace: target.Workspace, ServingStateID: target.ServingStateId})
+		targets = append(targets, apiadapter.TargetRequest{Workspace: target.Workspace, CandidateID: target.CandidateId})
 	}
 	result, err := h.options.Coordinator.Create(r.Context(), apiadapter.CreateRequest{
 		Project: project, Environment: body.Environment, Targets: targets, Actor: principal.ID, IdempotencyKey: headers.IdempotencyKey,
@@ -94,9 +94,9 @@ func response(value apiadapter.Deployment) apigenapi.ProjectDeploymentResponse {
 		result.Error = &value.Error
 	}
 	for _, target := range value.Targets {
-		mapped := apigenapi.ProjectDeploymentTargetResponse{Workspace: target.Workspace, ServingStateId: target.ServingStateID, Status: apigenapi.ProjectDeploymentTargetStatus(target.Status)}
-		if target.PriorServingStateID != "" {
-			mapped.PriorServingStateId = &target.PriorServingStateID
+		mapped := apigenapi.ProjectDeploymentTargetResponse{Workspace: target.Workspace, CandidateId: target.CandidateID, Status: apigenapi.ProjectDeploymentTargetStatus(target.Status)}
+		if target.PriorCandidateID != "" {
+			mapped.PriorCandidateId = &target.PriorCandidateID
 		}
 		if target.ActivatedAt != "" {
 			mapped.ActivatedAt = &target.ActivatedAt

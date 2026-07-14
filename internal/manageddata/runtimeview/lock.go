@@ -14,12 +14,20 @@ type fileLock struct {
 }
 
 func acquireFileLock(ctx context.Context, path string) (*fileLock, error) {
+	return acquireLock(ctx, path, false)
+}
+
+func acquireSharedFileLock(ctx context.Context, path string) (*fileLock, error) {
+	return acquireLock(ctx, path, true)
+}
+
+func acquireLock(ctx context.Context, path string, shared bool) (*fileLock, error) {
 	file, err := openLockFile(path)
 	if err != nil {
 		return nil, err
 	}
 	for {
-		acquired, err := tryLockFile(file)
+		acquired, err := tryLockFile(file, shared)
 		if err != nil {
 			_ = file.Close()
 			return nil, err
@@ -45,7 +53,7 @@ func tryAcquireFileLock(path string) (*fileLock, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	acquired, err := tryLockFile(file)
+	acquired, err := tryLockFile(file, false)
 	if err != nil {
 		_ = file.Close()
 		return nil, false, err

@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/manageddata"
 	"github.com/Yacobolo/libredash/internal/manageddata/storage"
 )
 
@@ -222,66 +223,83 @@ func (s *Store) DeleteBlobs(ctx context.Context, digests []string) error {
 	return nil
 }
 
-func (s *Store) MaterializeRevision(ctx context.Context, revisionID string, files []storage.RevisionFile) (storage.RevisionView, error) {
+func (s *Store) MaterializeRevision(ctx context.Context, revisionID string, manifest manageddata.Manifest) (manageddata.RevisionLease, error) {
 	if err := validateRevisionID(revisionID); err != nil {
-		return storage.RevisionView{}, err
+		return nil, err
 	}
-	if err := validateRevisionFiles(files); err != nil {
-		return storage.RevisionView{}, err
+	if err := manifest.Validate(manageddata.Limits{}); err != nil || revisionID != manifest.RevisionID() {
+		return nil, fmt.Errorf("%w: revision ID and manifest must be canonical and matching", storage.ErrInvalid)
 	}
-	finalPath := filepath.Join(s.revisions, revisionID)
-	if _, err := os.Stat(finalPath); err == nil {
-		if err := s.verifyRevision(ctx, finalPath, files); err != nil {
-			return storage.RevisionView{}, err
+	files := manifest.Files
+	if err := validateManifestPaths(files); err != nil {
+		return nil, err
+	}
+	finalContainer := filepath.Join(s.revisions, revisionID)
+	finalPath := filepath.Join(finalContainer, "data")
+	if _, err := os.Lstat(finalContainer); err == nil {
+		if err := s.verifyRevisionContainer(ctx, finalContainer, finalPath, files); err != nil {
+			return nil, err
 		}
-		return storage.RevisionView{ID: revisionID, Path: finalPath}, nil
+		return staticRevisionLease{root: finalPath}, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return storage.RevisionView{}, fmt.Errorf("stat filesystem revision: %w", err)
+		return nil, fmt.Errorf("stat filesystem revision: %w", err)
 	}
 
 	temporary, err := os.MkdirTemp(s.revisions, ".revision-*")
 	if err != nil {
-		return storage.RevisionView{}, fmt.Errorf("create filesystem revision staging directory: %w", err)
+		return nil, fmt.Errorf("create filesystem revision staging directory: %w", err)
 	}
 	cleanup := func() {
 		_ = makeTreeWritable(temporary)
 		_ = os.RemoveAll(temporary)
 	}
 	defer cleanup()
+	temporaryView := filepath.Join(temporary, "data")
+	if err := os.Mkdir(temporaryView, privateDir); err != nil {
+		return nil, fmt.Errorf("create filesystem revision data root: %w", err)
+	}
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
-			return storage.RevisionView{}, err
+			return nil, err
 		}
 		blob, err := s.Stat(ctx, file.SHA256)
 		if err != nil {
-			return storage.RevisionView{}, err
+			return nil, err
 		}
-		destination := filepath.Join(temporary, filepath.FromSlash(file.Path))
+		destination := filepath.Join(temporaryView, filepath.FromSlash(file.Path))
 		if err := mkdirPrivate(filepath.Dir(destination)); err != nil {
-			return storage.RevisionView{}, fmt.Errorf("create filesystem revision directory: %w", err)
+			return nil, fmt.Errorf("create filesystem revision directory: %w", err)
 		}
 		if err := os.Link(s.blobPath(blob.SHA256), destination); err != nil {
-			return storage.RevisionView{}, fmt.Errorf("link filesystem revision blob: %w", err)
+			return nil, fmt.Errorf("link filesystem revision blob: %w", err)
 		}
 	}
-	if err := os.Rename(temporary, finalPath); err != nil {
-		if _, statErr := os.Stat(finalPath); statErr == nil {
-			if verifyErr := s.verifyRevision(ctx, finalPath, files); verifyErr != nil {
-				return storage.RevisionView{}, verifyErr
+	if err := makeTreeReadOnly(temporaryView); err != nil {
+		return nil, fmt.Errorf("make filesystem revision immutable: %w", err)
+	}
+	if err := syncDirectory(temporary); err != nil {
+		return nil, fmt.Errorf("sync filesystem revision staging directory: %w", err)
+	}
+	if err := os.Rename(temporary, finalContainer); err != nil {
+		if _, statErr := os.Lstat(finalContainer); statErr == nil {
+			if verifyErr := s.verifyRevisionContainer(ctx, finalContainer, finalPath, files); verifyErr != nil {
+				return nil, verifyErr
 			}
-			return storage.RevisionView{ID: revisionID, Path: finalPath}, nil
+			return staticRevisionLease{root: finalPath}, nil
 		}
-		return storage.RevisionView{}, fmt.Errorf("atomically finalize filesystem revision: %w", err)
+		return nil, fmt.Errorf("atomically finalize filesystem revision: %w", err)
 	}
 	temporary = ""
-	if err := makeTreeReadOnly(finalPath); err != nil {
-		return storage.RevisionView{}, fmt.Errorf("make filesystem revision immutable: %w", err)
-	}
 	if err := syncDirectory(s.revisions); err != nil {
-		return storage.RevisionView{}, fmt.Errorf("sync filesystem revision directory: %w", err)
+		return nil, fmt.Errorf("sync filesystem revision directory: %w", err)
 	}
-	return storage.RevisionView{ID: revisionID, Path: finalPath}, nil
+	return staticRevisionLease{root: finalPath}, nil
 }
+
+type staticRevisionLease struct{ root string }
+
+func (l staticRevisionLease) Root() string { return l.root }
+func (staticRevisionLease) Release() error { return nil }
 
 func (s *Store) BlobPath(digest string) string {
 	if storage.ValidateSHA256(digest) != nil {
@@ -343,12 +361,16 @@ func (s *Store) verifyPath(ctx context.Context, filePath string, expected storag
 	return storage.Blob{SHA256: actualDigest, Size: info.Size(), URI: (&url.URL{Scheme: "file", Path: filePath}).String()}, nil
 }
 
-func (s *Store) verifyRevision(ctx context.Context, revisionPath string, files []storage.RevisionFile) error {
-	expected := make(map[string]string, len(files))
+func (s *Store) verifyRevision(ctx context.Context, revisionPath string, files []manageddata.File) error {
+	expected := make(map[string]manageddata.File, len(files))
+	expectedDirectories := map[string]struct{}{".": {}}
 	for _, file := range files {
-		expected[file.Path] = file.SHA256
+		expected[file.Path] = file
+		for parent := path.Dir(file.Path); parent != "."; parent = path.Dir(parent) {
+			expectedDirectories[parent] = struct{}{}
+		}
 	}
-	seen := 0
+	seen := make(map[string]struct{}, len(files))
 	err := filepath.WalkDir(revisionPath, func(current string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -356,31 +378,46 @@ func (s *Store) verifyRevision(ctx context.Context, revisionPath string, files [
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if entry.IsDir() {
-			return nil
-		}
 		relative, err := filepath.Rel(revisionPath, current)
 		if err != nil {
 			return err
 		}
 		logicalPath := filepath.ToSlash(relative)
-		digest, ok := expected[logicalPath]
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: filesystem revision path %q is a symlink", storage.ErrIntegrity, logicalPath)
+		}
+		if entry.IsDir() {
+			if _, ok := expectedDirectories[logicalPath]; !ok {
+				return fmt.Errorf("%w: filesystem revision contains unexpected directory %q", storage.ErrIntegrity, logicalPath)
+			}
+			if info.Mode().Perm() != readOnlyDir {
+				return fmt.Errorf("%w: filesystem revision directory %q is not read-only", storage.ErrIntegrity, logicalPath)
+			}
+			return nil
+		}
+		expectedFile, ok := expected[logicalPath]
 		if !ok {
 			return fmt.Errorf("%w: filesystem revision contains unexpected path %q", storage.ErrIntegrity, logicalPath)
 		}
-		sourceInfo, err := os.Stat(s.blobPath(digest))
+		sourceInfo, err := os.Stat(s.blobPath(expectedFile.SHA256))
 		sourceExists := err == nil
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		viewInfo, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !viewInfo.Mode().IsRegular() {
+		if !info.Mode().IsRegular() {
 			return fmt.Errorf("%w: filesystem revision path %q is not a regular file", storage.ErrIntegrity, logicalPath)
 		}
-		if sourceExists && !os.SameFile(sourceInfo, viewInfo) {
+		if info.Mode().Perm() != readOnlyFile {
+			return fmt.Errorf("%w: filesystem revision path %q is not read-only", storage.ErrIntegrity, logicalPath)
+		}
+		if info.Size() != expectedFile.Size {
+			return fmt.Errorf("%w: filesystem revision path %q has the wrong size", storage.ErrIntegrity, logicalPath)
+		}
+		if sourceExists && !os.SameFile(sourceInfo, info) {
 			return fmt.Errorf("%w: filesystem revision path %q is not linked to its blob", storage.ErrIntegrity, logicalPath)
 		}
 		viewFile, err := os.Open(current)
@@ -396,19 +433,34 @@ func (s *Store) verifyRevision(ctx context.Context, revisionPath string, files [
 		if closeErr != nil {
 			return closeErr
 		}
-		if hex.EncodeToString(hash.Sum(nil)) != digest {
+		if hex.EncodeToString(hash.Sum(nil)) != expectedFile.SHA256 {
 			return fmt.Errorf("%w: filesystem revision path %q does not match its content address", storage.ErrIntegrity, logicalPath)
 		}
-		seen++
+		seen[logicalPath] = struct{}{}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	if seen != len(expected) {
+	if len(seen) != len(expected) {
 		return fmt.Errorf("%w: filesystem revision is missing files", storage.ErrIntegrity)
 	}
 	return nil
+}
+
+func (s *Store) verifyRevisionContainer(ctx context.Context, container, root string, files []manageddata.File) error {
+	info, err := os.Lstat(container)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || info.Mode().Perm() != privateDir {
+		return fmt.Errorf("%w: filesystem revision envelope is invalid", storage.ErrIntegrity)
+	}
+	entries, err := os.ReadDir(container)
+	if err != nil {
+		return fmt.Errorf("%w: inspect filesystem revision envelope", storage.ErrIntegrity)
+	}
+	if len(entries) != 1 || entries[0].Name() != "data" || !entries[0].IsDir() || entries[0].Type()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: filesystem revision envelope must contain only its data root", storage.ErrIntegrity)
+	}
+	return s.verifyRevision(ctx, root, files)
 }
 
 func copyExpected(ctx context.Context, destination io.Writer, source io.Reader, expectedSize int64) (int64, error) {
@@ -446,7 +498,7 @@ func validateRevisionID(value string) error {
 	return nil
 }
 
-func validateRevisionFiles(files []storage.RevisionFile) error {
+func validateManifestPaths(files []manageddata.File) error {
 	seen := make(map[string]string, len(files))
 	for _, file := range files {
 		if err := storage.ValidateSHA256(file.SHA256); err != nil {
@@ -519,3 +571,4 @@ func syncDirectory(directory string) error {
 }
 
 var _ storage.BlobInventory = (*Store)(nil)
+var _ manageddata.RevisionMaterializer = (*Store)(nil)
