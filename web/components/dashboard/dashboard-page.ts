@@ -40,6 +40,7 @@ const emptyStatus: DashboardStatus = {
   refreshId: '',
   dataDirectory: '',
   setupRequired: false,
+  progressPercent: 100,
 }
 
 type DashboardRenderSnapshot = {
@@ -51,6 +52,14 @@ type DashboardRenderSnapshot = {
   tables: Record<string, DashboardTable>
   status: DashboardStatus
   componentStatus: Record<string, DashboardComponentStatus>
+}
+
+type DashboardRefreshProgress = {
+  active: boolean
+  complete: boolean
+  generation: number
+  percent?: number
+  indeterminate: boolean
 }
 
 class LibreDashDashboardPage extends DatastarLit(LitElement) {
@@ -169,12 +178,52 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     }
 
     .body {
+      position: relative;
       display: grid;
       min-width: 0;
       min-height: 0;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: stretch;
       overflow: hidden;
+    }
+
+    .dashboard-refresh-progress {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: var(--zIndex-sticky, 50);
+      height: 2px;
+      overflow: hidden;
+      background: var(--ld-line-muted);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--motion-transition-stateChange);
+      transition-delay: 0s;
+    }
+
+    .dashboard-refresh-progress[data-active='true'] {
+      opacity: 1;
+      transition-delay: 0s;
+    }
+
+    .dashboard-refresh-progress[data-active='false'][data-complete='true'] {
+      transition-delay: 180ms;
+    }
+
+    .dashboard-refresh-progress-value {
+      width: 0;
+      height: 100%;
+      background: var(--ld-line-accent);
+      transition: width var(--motion-transition-stateChange);
+    }
+
+    .dashboard-refresh-progress[data-indeterminate] .dashboard-refresh-progress-value {
+      width: 36%;
+      animation: dashboard-refresh-indeterminate 900ms ease-in-out infinite;
+    }
+
+    @keyframes dashboard-refresh-indeterminate {
+      from { transform: translateX(-110%); }
+      to { transform: translateX(310%); }
     }
 
     .canvas-wrap {
@@ -262,6 +311,17 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       }
 
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      .dashboard-refresh-progress,
+      .dashboard-refresh-progress-value {
+        transition: none;
+      }
+
+      .dashboard-refresh-progress[data-indeterminate] .dashboard-refresh-progress-value {
+        animation: none;
+      }
+    }
   `
 
   connectedCallback(): void {
@@ -345,6 +405,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       componentStatus: this.componentStatus,
     }
     this.renderSnapshot = snapshot
+    const refreshProgress = this.refreshProgress(snapshot)
     return html`
       <div class="route">
         <ld-sub-sidebar .config=${this.pageSidebar(page)}></ld-sub-sidebar>
@@ -361,6 +422,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
             </div>
           </header>
           <div class="body">
+            ${this.renderRefreshProgress(refreshProgress)}
             <div class="canvas-wrap">
               <ld-report-canvas width=${page.canvas.width} height=${page.canvas.height}>
                 ${page.components.map((component) => this.renderCanvasComponent(component))}
@@ -373,6 +435,45 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       </div>
       <ld-visual-modal></ld-visual-modal>
     `
+  }
+
+  private renderRefreshProgress(progress: DashboardRefreshProgress) {
+    const valueText = progress.percent !== undefined
+      ? `${Math.round(progress.percent)}% of dashboard refresh complete`
+      : 'Refreshing dashboard'
+    return html`
+      <div
+        class="dashboard-refresh-progress"
+        data-dashboard-refresh-progress
+        data-active=${String(progress.active)}
+        data-complete=${String(progress.complete)}
+        data-generation=${progress.generation}
+        ?data-indeterminate=${progress.indeterminate}
+        role="progressbar"
+        aria-label="Refreshing dashboard"
+        aria-hidden=${String(!progress.active)}
+        aria-valuemin="0"
+        aria-valuenow=${progress.indeterminate ? nothing : progress.percent}
+        aria-valuemax=${progress.indeterminate ? nothing : 100}
+        aria-valuetext=${valueText}
+      >
+        <div
+          class="dashboard-refresh-progress-value"
+          style=${progress.percent === undefined ? nothing : `width:${progress.percent}%`}
+        ></div>
+      </div>
+    `
+  }
+
+  private refreshProgress(snapshot: DashboardRenderSnapshot): DashboardRefreshProgress {
+    const percent = snapshot.status.progressPercent
+    return {
+      active: snapshot.status.loading,
+      complete: !snapshot.status.loading && percent === 100,
+      generation: snapshot.status.generation,
+      percent,
+      indeterminate: snapshot.status.loading && percent === undefined,
+    }
   }
 
   private pageSidebar(page: DashboardPageSignal) {

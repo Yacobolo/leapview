@@ -58,8 +58,12 @@ func TestBrokerCoalescesBurstWithoutDroppingMergeSignals(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		id := fmt.Sprintf("visual-%03d", i)
-		broker.Publish("client:page", SignalPatch{
-			"visuals": map[string]any{id: i},
+		broker.PublishEnvelope("client:page", Envelope{
+			Signals: SignalPatch{"visuals": map[string]any{id: i}},
+			Delivery: DeliveryMetadata{
+				CoalesceGroup: "visual-results",
+				MergeRoots:    []string{"visuals"},
+			},
 		})
 	}
 
@@ -86,9 +90,15 @@ func TestBrokerCoalescesReplaceSignalsToNewestValue(t *testing.T) {
 	updates, unsubscribe := broker.Subscribe("client:page")
 	defer unsubscribe()
 
-	broker.Publish("client:page", SignalPatch{"status": map[string]any{"generation": 1}})
+	broker.PublishEnvelope("client:page", Envelope{
+		Signals:  SignalPatch{"status": map[string]any{"generation": 1}},
+		Delivery: DeliveryMetadata{CoalesceGroup: "status"},
+	})
 	for generation := 2; generation <= 100; generation++ {
-		broker.Publish("client:page", SignalPatch{"status": map[string]any{"generation": generation}})
+		broker.PublishEnvelope("client:page", Envelope{
+			Signals:  SignalPatch{"status": map[string]any{"generation": generation}},
+			Delivery: DeliveryMetadata{CoalesceGroup: "status"},
+		})
 	}
 
 	latest := 0
@@ -129,6 +139,42 @@ func TestBrokerPreservesLoadingFeedbackBeforeImmediateCompletion(t *testing.T) {
 	}
 }
 
+func TestBrokerPreservesDashboardRefreshPercentageMilestones(t *testing.T) {
+	previous := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previous)
+
+	broker := NewBroker()
+	updates, unsubscribe := broker.Subscribe("client:page")
+	defer unsubscribe()
+
+	progressPatch := func(percent int) SignalPatch {
+		return SignalPatch{"status": map[string]any{
+			"loading":         true,
+			"generation":      int64(7),
+			"progressPercent": percent,
+		}}
+	}
+
+	for percent := 0; percent <= 100; percent += 25 {
+		broker.PublishEnvelope("client:page", Envelope{
+			Signals:  progressPatch(percent),
+			Delivery: DeliveryMetadata{Generation: 7, Boundary: true},
+		})
+	}
+
+	for wantPercent := 0; wantPercent <= 100; wantPercent += 25 {
+		select {
+		case patch := <-updates:
+			status := patch["status"].(map[string]any)
+			if status["progressPercent"] != wantPercent {
+				t.Fatalf("milestone %d patch = %#v", wantPercent, patch)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for milestone %d", wantPercent)
+		}
+	}
+}
+
 func TestBrokerPreservesNestedRunningFeedbackBeforeImmediateCompletion(t *testing.T) {
 	previous := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(previous)
@@ -165,8 +211,9 @@ func TestBrokerDropsPendingOlderGenerationWhenNewGenerationStarts(t *testing.T) 
 	updates, unsubscribe := broker.Subscribe("client:page")
 	defer unsubscribe()
 
-	broker.Publish("client:page", SignalPatch{
-		"status": map[string]any{"loading": true, "generation": int64(1)},
+	broker.PublishEnvelope("client:page", Envelope{
+		Signals:  SignalPatch{"status": map[string]any{"loading": true, "generation": int64(1)}},
+		Delivery: DeliveryMetadata{Generation: 1, Boundary: true},
 	})
 	select {
 	case <-updates:
@@ -177,14 +224,14 @@ func TestBrokerDropsPendingOlderGenerationWhenNewGenerationStarts(t *testing.T) 
 	// Let a generation 1 component result reach the slow subscriber's output
 	// buffer, but do not consume it. A generation 2 start must evict that result
 	// rather than merge it into generation 2 or deliver it afterward.
-	broker.Publish("client:page", SignalPatch{
+	broker.PublishEnvelope("client:page", Envelope{Signals: SignalPatch{
 		"visuals":       map[string]any{"old-visual": "generation-1"},
 		"tables":        map[string]any{"old-table": "generation-1"},
 		"filterOptions": map[string]any{"old-filter": "generation-1"},
 		"componentStatus": map[string]any{
 			"visual:old-visual": map[string]any{"generation": int64(1), "loading": false},
 		},
-	})
+	}, Delivery: DeliveryMetadata{Generation: 1, CoalesceGroup: "dashboard-results"}})
 	deadline := time.Now().Add(time.Second)
 	for len(updates) == 0 && time.Now().Before(deadline) {
 		runtime.Gosched()
@@ -193,12 +240,12 @@ func TestBrokerDropsPendingOlderGenerationWhenNewGenerationStarts(t *testing.T) 
 		t.Fatal("generation 1 component result never reached the subscriber buffer")
 	}
 
-	broker.Publish("client:page", SignalPatch{
+	broker.PublishEnvelope("client:page", Envelope{Signals: SignalPatch{
 		"status": map[string]any{"loading": true, "generation": int64(2)},
 		"componentStatus": map[string]any{
 			"visual:new-visual": map[string]any{"generation": int64(2), "loading": true},
 		},
-	})
+	}, Delivery: DeliveryMetadata{Generation: 2, Boundary: true}})
 
 	select {
 	case patch := <-updates:
@@ -219,8 +266,9 @@ func TestBrokerDropsPendingOlderGenerationWhenNewGenerationStarts(t *testing.T) 
 		t.Fatal("timed out waiting for generation 2 start")
 	}
 
-	broker.Publish("client:page", SignalPatch{
-		"status": map[string]any{"loading": false, "generation": int64(2)},
+	broker.PublishEnvelope("client:page", Envelope{
+		Signals:  SignalPatch{"status": map[string]any{"loading": false, "generation": int64(2)}},
+		Delivery: DeliveryMetadata{Generation: 2, Boundary: true},
 	})
 	select {
 	case patch := <-updates:

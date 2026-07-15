@@ -62,6 +62,51 @@ func TestCoordinatorPublishesStartBeforeWorkCompletes(t *testing.T) {
 	assertRefreshEvent(t, events, RefreshEventComplete, 1)
 }
 
+func TestCoordinatorPublishesMonotonicBackendProgressAndCompletesThePlan(t *testing.T) {
+	events := make(chan RefreshEvent, 8)
+	coordinator := NewCoordinator(context.Background(), func(event RefreshEvent) {
+		events <- event
+	})
+	t.Cleanup(coordinator.Close)
+
+	_, err := coordinator.Begin(nil, func(_ context.Context, publish RefreshPublisher) {
+		publish(RefreshEvent{Type: RefreshEventProgress, ProgressPercent: testProgressPercent(0)})
+		for completed := 1; completed <= 4; completed++ {
+			publish(RefreshEvent{Type: RefreshEventProgress, ProgressPercent: testProgressPercent(float64(completed) * 25)})
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := func() RefreshEvent {
+		t.Helper()
+		select {
+		case event := <-events:
+			return event
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for progress event")
+			return RefreshEvent{}
+		}
+	}
+
+	start := next()
+	if start.Type != RefreshEventStart || start.ProgressPercent != nil {
+		t.Fatalf("start event = %#v", start)
+	}
+	for completed := 0; completed <= 4; completed++ {
+		event := next()
+		if event.Type != RefreshEventProgress || event.ProgressPercent == nil || *event.ProgressPercent != float64(completed)*25 {
+			t.Fatalf("progress %d = %#v", completed, event)
+		}
+	}
+	complete := next()
+	if complete.Type != RefreshEventComplete || complete.ProgressPercent == nil || *complete.ProgressPercent != 100 {
+		t.Fatalf("complete event = %#v", complete)
+	}
+}
+
+func testProgressPercent(value float64) *float64 { return &value }
+
 func TestCoordinatorDebounceSkipsSupersededGenerationWork(t *testing.T) {
 	coordinator := NewCoordinator(context.Background(), func(RefreshEvent) {})
 	t.Cleanup(coordinator.Close)

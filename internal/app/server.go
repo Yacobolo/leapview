@@ -21,6 +21,7 @@ import (
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
 	"github.com/Yacobolo/libredash/internal/queryruntime"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
+	"github.com/Yacobolo/libredash/internal/staticasset"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -67,6 +68,7 @@ type Server struct {
 	metrics             QueryMetrics
 	executor            *execution.Service
 	broker              *pagestream.Broker
+	pageStreamTrace     *pagestream.TraceStore
 	dashboardRefreshes  *dashboardstream.Registry
 	store               *platform.Store
 	servingStateRepo    servingStateRepository
@@ -104,13 +106,23 @@ type Server struct {
 }
 
 func New(metrics QueryMetrics) *Server {
+	logger := slog.Default()
+	var trace *pagestream.TraceStore
+	if !staticasset.Production() {
+		trace = pagestream.NewTraceStore(pagestream.TraceOptions{
+			CapacityPerStream: 512,
+			MaxStreams:        32,
+			IncludePayloads:   true,
+		})
+	}
 	return &Server{
 		metrics:            metrics,
-		broker:             pagestream.NewBroker(),
+		broker:             pagestream.NewBroker(pagestream.WithTraceStore(trace)),
+		pageStreamTrace:    trace,
 		dashboardRefreshes: dashboardstream.NewRegistry(),
 		requestBodyLimit:   DefaultRequestBodyLimitConfig(),
 		telemetry:          newHTTPTelemetry(),
-		logger:             slog.Default(),
+		logger:             logger,
 		pendingChatTitles:  map[string]struct{}{},
 	}
 }
@@ -208,6 +220,9 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	if options.Logger != nil {
 		server.logger = options.Logger
+		if server.pageStreamTrace != nil {
+			server.pageStreamTrace.SetLogger(options.Logger)
+		}
 	}
 	if err := server.registerDefaultWorkspaceSecurable(context.Background()); err != nil {
 		server.logger.ErrorContext(context.Background(), "register default workspace securable failed", "workspace", server.defaultWorkspaceID, "error", err)

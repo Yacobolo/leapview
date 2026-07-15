@@ -23,23 +23,25 @@ const (
 	RefreshEventTableCountErr RefreshEventType = "table_count_error"
 	RefreshEventTargetError   RefreshEventType = "target_error"
 	RefreshEventCacheOutcome  RefreshEventType = "cache_outcome"
+	RefreshEventProgress      RefreshEventType = "progress"
 	RefreshEventComplete      RefreshEventType = "complete"
 )
 
 type RefreshEvent struct {
-	Type           RefreshEventType
-	RefreshID      string
-	Generation     uint64
-	Command        string
-	Filters        dashboard.Filters
-	Targets        []string
-	Target         string
-	Value          any
-	Err            error
-	Queries        int
-	Duration       time.Duration
-	StageTimingsMs map[string]float64
-	CacheOutcome   string
+	Type            RefreshEventType
+	RefreshID       string
+	Generation      uint64
+	Command         string
+	Filters         dashboard.Filters
+	Targets         []string
+	Target          string
+	Value           any
+	Err             error
+	Queries         int
+	Duration        time.Duration
+	StageTimingsMs  map[string]float64
+	CacheOutcome    string
+	ProgressPercent *float64
 }
 
 type Refresh struct {
@@ -119,6 +121,7 @@ type activeRefresh struct {
 	cacheOutcomes    map[string]int
 	targetDuration   time.Duration
 	stageTimingsMs   map[string]float64
+	progressPercent  *float64
 }
 
 func NewCoordinator(parent context.Context, publish EventPublisher) *Coordinator {
@@ -186,7 +189,9 @@ func (c *Coordinator) BeginPrepared(prepare RefreshPrepare, work func(RefreshPre
 		Command:    preparation.Command,
 		Filters:    cloneFilters(filters),
 	}
-	c.active = &activeRefresh{refresh: refresh, startedAt: time.Now(), plannedTargets: len(preparation.Targets)}
+	c.active = &activeRefresh{
+		refresh: refresh, startedAt: time.Now(), plannedTargets: len(preparation.Targets),
+	}
 	c.mu.Unlock()
 
 	if canceledSummary != nil {
@@ -298,6 +303,20 @@ func (c *Coordinator) emitCurrent(refresh Refresh, event RefreshEvent) bool {
 		c.active.queryCount += event.Queries
 	}
 	if c.active != nil && c.active.refresh.Generation == refresh.Generation {
+		switch event.Type {
+		case RefreshEventStart:
+			event.ProgressPercent = cloneProgressPercent(c.active.progressPercent)
+		case RefreshEventProgress:
+			next := dashboard.NormalizeProgressPercent(event.ProgressPercent, true)
+			if progressRegresses(c.active.progressPercent, next) {
+				return false
+			}
+			c.active.progressPercent = next
+			event.ProgressPercent = cloneProgressPercent(next)
+		case RefreshEventComplete:
+			c.active.progressPercent = dashboard.NormalizeProgressPercent(nil, false)
+			event.ProgressPercent = cloneProgressPercent(c.active.progressPercent)
+		}
 		c.active.targetDuration += event.Duration
 		if len(event.StageTimingsMs) > 0 {
 			if c.active.stageTimingsMs == nil {
@@ -335,6 +354,18 @@ func (c *Coordinator) emitCurrent(refresh Refresh, event RefreshEvent) bool {
 		c.publish(event)
 	}
 	return true
+}
+
+func progressRegresses(current, next *float64) bool {
+	return current != nil && (next == nil || *next < *current)
+}
+
+func cloneProgressPercent(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func (c *Coordinator) finish(refresh Refresh, outcome string, cancellationCount int) {

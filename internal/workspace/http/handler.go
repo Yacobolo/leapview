@@ -791,7 +791,13 @@ func (h Handler) AssetUpdatesStream(w nethttp.ResponseWriter, r *nethttp.Request
 		workspaceID = selected.WorkspaceID
 	}
 
-	updates := pagestream.NewSignalStream(w, r)
+	streamID := workspacedatastar.WorkspaceAssetStreamID(workspaceID, assetID, section)
+	broker := h.broker()
+	var trace *pagestream.TraceStore
+	if broker != nil {
+		trace = broker.TraceStore()
+	}
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, streamID, "workspace.asset.bootstrap"))
 	refresh, err := h.assetRefreshState(r.Context(), workspaceID, selected)
 	if err != nil {
 		nethttp.Error(w, err.Error(), statusForNotFound(err))
@@ -820,8 +826,8 @@ func (h Handler) AssetUpdatesStream(w nethttp.ResponseWriter, r *nethttp.Request
 		return
 	}
 	if workspaceAssetRefreshable(selected) {
-		if broker := h.broker(); broker != nil {
-			_ = updates.Forward(r.Context(), broker, workspacedatastar.WorkspaceAssetStreamID(workspaceID, assetID, section))
+		if broker != nil {
+			_ = updates.Forward(r.Context(), broker, streamID)
 			return
 		}
 		updates.Wait(r.Context())
@@ -831,8 +837,13 @@ func (h Handler) AssetUpdatesStream(w nethttp.ResponseWriter, r *nethttp.Request
 }
 
 func (h Handler) patchAndWait(w nethttp.ResponseWriter, r *nethttp.Request, patch pagestream.SignalPatch) {
-	_ = pagestream.EnsureClientID(w, r)
-	updates := pagestream.NewSignalStream(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
+	broker := h.broker()
+	var trace *pagestream.TraceStore
+	if broker != nil {
+		trace = broker.TraceStore()
+	}
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, "workspace:"+clientID, "workspace.bootstrap"))
 	if err := updates.Patch(patch); err != nil {
 		return
 	}

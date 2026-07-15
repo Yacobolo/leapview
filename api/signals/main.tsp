@@ -692,6 +692,8 @@ model DashboardStatus {
   `generation`: int64;
   `lastUpdated`: string;
   `loading`: boolean;
+  /** Backend-owned dashboard refresh completion percentage; absent while the execution plan is unknown. */
+  `progressPercent`?: float64;
   `refreshId`: string;
   `setupRequired`: boolean;
 }

@@ -3,8 +3,38 @@ package dashboard
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"testing"
 )
+
+func TestNormalizeProgressPercentKeepsThePublicSignalBounded(t *testing.T) {
+	if progress := NormalizeProgressPercent(nil, true); progress != nil {
+		t.Fatalf("planning progress = %v, want nil", *progress)
+	}
+	if progress := NormalizeProgressPercent(nil, false); progress == nil || *progress != 100 {
+		t.Fatalf("complete progress = %v, want 100", progress)
+	}
+	for _, test := range []struct {
+		name  string
+		value float64
+		want  float64
+	}{
+		{name: "lower bound", value: -5, want: 0},
+		{name: "middle", value: 37.5, want: 37.5},
+		{name: "upper bound", value: 105, want: 100},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			progress := NormalizeProgressPercent(&test.value, true)
+			if progress == nil || *progress != test.want {
+				t.Fatalf("progress = %v, want %v", progress, test.want)
+			}
+		})
+	}
+	notANumber := math.NaN()
+	if progress := NormalizeProgressPercent(&notANumber, true); progress != nil {
+		t.Fatalf("invalid progress = %v, want nil", *progress)
+	}
+}
 
 func TestTableRequestWithDefaultsClampsRuntimePolicy(t *testing.T) {
 	request := TableRequest{

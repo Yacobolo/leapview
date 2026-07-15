@@ -339,7 +339,10 @@ c2,RJ
 	recorder.queries = nil
 	recorder.results = nil
 	visuals := map[string]dashboard.Visual{}
-	err = metrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "fulfillment-operations", PageID: "overview", Targets: []consumer.Target{
+	progress := []consumer.Progress{}
+	err = metrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "fulfillment-operations", PageID: "overview", Progress: func(value consumer.Progress) {
+		progress = append(progress, value)
+	}, Targets: []consumer.Target{
 		{Kind: consumer.KindVisual, ID: "total_orders"},
 		{Kind: consumer.KindVisual, ID: "delivery_days"},
 		{Kind: consumer.KindVisual, ID: "review_score"},
@@ -355,6 +358,9 @@ c2,RJ
 	}
 	if len(recorder.queries) != 1 || len(recorder.queries[0].Measures) != 3 {
 		t.Fatalf("targeted KPI queries = %#v, want one three-measure query", recorder.queries)
+	}
+	if len(progress) != 2 || progress[0] != (consumer.Progress{Total: 1}) || progress[1] != (consumer.Progress{Completed: 1, Total: 1}) {
+		t.Fatalf("optimizer job progress = %#v", progress)
 	}
 }
 

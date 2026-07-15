@@ -94,8 +94,9 @@ func (s *Server) noopUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchAndWait(w http.ResponseWriter, r *http.Request, patch pagestream.SignalPatch) {
-	_ = pagestream.EnsureClientID(w, r)
-	updates := pagestream.NewSignalStream(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
+	streamID := streamRoute(r) + ":" + clientID
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(s.pageStreamTrace, streamID, streamRoute(r)+".bootstrap"))
 	if err := updates.Patch(patch); err != nil {
 		return
 	}

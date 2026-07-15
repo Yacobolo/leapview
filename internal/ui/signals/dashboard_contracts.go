@@ -68,6 +68,7 @@ func DashboardStatusFromDashboard(value dashboard.Status) DashboardStatus {
 	return DashboardStatus{
 		Loading: value.Loading, Error: value.Error, RefreshID: value.RefreshID, Generation: value.Generation, LastUpdated: value.LastUpdated,
 		DataDirectory: value.DataDirectory, SetupRequired: value.SetupRequired,
+		ProgressPercent: dashboard.NormalizeProgressPercent(value.ProgressPercent, value.Loading),
 	}
 }
 

@@ -580,6 +580,7 @@ export interface DashboardStatus {
   generation: number
   lastUpdated: string
   loading: boolean
+  progressPercent?: number
   refreshId: string
   setupRequired: boolean
 }

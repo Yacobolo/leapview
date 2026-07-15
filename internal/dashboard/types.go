@@ -600,13 +600,26 @@ type FilterOption struct {
 }
 
 type Status struct {
-	Loading       bool   `json:"loading"`
-	Error         string `json:"error"`
-	RefreshID     string `json:"refreshId"`
-	Generation    int64  `json:"generation"`
-	LastUpdated   string `json:"lastUpdated"`
-	DataDirectory string `json:"dataDirectory"`
-	SetupRequired bool   `json:"setupRequired"`
+	Loading         bool     `json:"loading"`
+	Error           string   `json:"error"`
+	RefreshID       string   `json:"refreshId"`
+	Generation      int64    `json:"generation"`
+	LastUpdated     string   `json:"lastUpdated"`
+	DataDirectory   string   `json:"dataDirectory"`
+	SetupRequired   bool     `json:"setupRequired"`
+	ProgressPercent *float64 `json:"progressPercent"`
+}
+
+func NormalizeProgressPercent(percent *float64, loading bool) *float64 {
+	if percent == nil || math.IsNaN(*percent) || math.IsInf(*percent, 0) {
+		if loading {
+			return nil
+		}
+		value := float64(100)
+		return &value
+	}
+	value := math.Max(0, math.Min(100, *percent))
+	return &value
 }
 
 type Visual struct {
@@ -887,10 +900,11 @@ func EmptyPatch(filters Filters, dataDir string, err error) Patch {
 	return Patch{
 		Filters: filters.WithDefaults(),
 		Status: Status{
-			Loading:       false,
-			Error:         message,
-			DataDirectory: dataDir,
-			SetupRequired: err != nil,
+			Loading:         false,
+			Error:           message,
+			DataDirectory:   dataDir,
+			SetupRequired:   err != nil,
+			ProgressPercent: NormalizeProgressPercent(nil, false),
 		},
 		Visuals: map[string]Visual{},
 	}

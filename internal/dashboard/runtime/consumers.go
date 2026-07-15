@@ -76,12 +76,29 @@ func (s *QueryService) ExecuteConsumersPage(ctx context.Context, request consume
 	if err != nil {
 		return err
 	}
+	if request.Progress != nil {
+		request.Progress(consumer.Progress{Total: len(plan.Jobs)})
+	}
 	limit := request.Concurrency
 	if limit <= 0 {
 		limit = 1
 	}
 	semaphore := make(chan struct{}, limit)
 	var group sync.WaitGroup
+	var progressMu sync.Mutex
+	completedJobs := 0
+	publishProgress := func() {
+		if request.Progress == nil || ctx.Err() != nil {
+			return
+		}
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
+		completedJobs++
+		request.Progress(consumer.Progress{Completed: completedJobs, Total: len(plan.Jobs)})
+	}
 jobLoop:
 	for _, job := range plan.Jobs {
 		if ctx.Err() != nil {
@@ -98,6 +115,7 @@ jobLoop:
 			defer group.Done()
 			defer func() { <-semaphore }()
 			s.executeConsumerJob(ctx, request, job, publish)
+			publishProgress()
 		}()
 	}
 	group.Wait()

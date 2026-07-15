@@ -92,6 +92,12 @@ func executeConsumers(ctx context.Context, executor consumer.Executor, request W
 		Filters:     request.Filters,
 		Targets:     append([]consumer.Target{}, request.Plan.Targets...),
 		Concurrency: refreshConcurrencyFromExecutor(executor),
+		Progress: func(progress consumer.Progress) {
+			publish(RefreshEvent{
+				Type:            RefreshEventProgress,
+				ProgressPercent: consumerProgressPercent(progress),
+			})
+		},
 	}
 	return executor.ExecuteConsumersPage(ctx, consumerRequest, func(result consumer.Result) bool {
 		event := RefreshEvent{
@@ -130,6 +136,15 @@ func executeConsumers(ctx context.Context, executor consumer.Executor, request W
 		}
 		return publish(event)
 	})
+}
+
+func consumerProgressPercent(progress consumer.Progress) *float64 {
+	percent := float64(100)
+	if progress.Total > 0 {
+		completed := max(0, min(progress.Completed, progress.Total))
+		percent = (float64(completed) / float64(progress.Total)) * 100
+	}
+	return &percent
 }
 
 func refreshConcurrencyFromExecutor(executor consumer.Executor) int {

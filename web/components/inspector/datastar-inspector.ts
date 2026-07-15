@@ -9,7 +9,12 @@ import { customElement, state } from 'lit/decorators.js'
 import { ChevronDown, ChevronRight, X } from 'lucide'
 
 import { lucideIcon } from '../shared/lucide-icons'
-import type { InspectorState, SignalObject } from './types.js'
+import type {
+  InspectorState,
+  PageStreamTraceEvent,
+  PageStreamTraceResponse,
+  SignalObject,
+} from './types.js'
 import {
   countSignals,
   filterObject,
@@ -19,6 +24,8 @@ import {
 
 const FLASH_DURATION = 400
 const STORAGE_KEY = 'ds-inspector'
+const TRACE_POLL_INTERVAL = 500
+const TRACE_EVENT_LIMIT = 500
 
 @customElement('datastar-inspector')
 export class DatastarInspector extends LitElement {
@@ -29,6 +36,9 @@ export class DatastarInspector extends LitElement {
   @state() private changedPaths: Set<string> = new Set()
   @state() private expandedPaths: Set<string> = new Set()
   @state() private hasUnseenChanges = false
+  @state() private activeView: 'signals' | 'events' = 'signals'
+  @state() private traceEvents: PageStreamTraceEvent[] = []
+  @state() private traceError = ''
 
   private observer: MutationObserver | null = null
   private signalsElementId = `ds-inspector-signals-${Math.random().toString(36).slice(2, 9)}`
@@ -36,6 +46,10 @@ export class DatastarInspector extends LitElement {
   private previousSignals: SignalObject = {}
   private flashTimeout: number | null = null
   private parseFrame: number | null = null
+  private traceAfter = 0
+  private traceTimer: number | null = null
+  private traceLoading = false
+  private traceAbort: AbortController | null = null
 
   static styles = css`
     :host {
@@ -139,6 +153,28 @@ export class DatastarInspector extends LitElement {
       border-bottom: 1px solid var(--ds-border-muted);
       background: color-mix(in srgb, var(--ds-panel-muted), var(--ds-panel) 32%);
       padding: 8px 10px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--ds-border-muted);
+      padding: 6px 10px;
+    }
+
+    .tab {
+      border: 0;
+      border-radius: var(--ds-radius);
+      background: transparent;
+      color: var(--ds-muted);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 5px 8px;
+    }
+
+    .tab[aria-selected='true'] {
+      background: var(--ds-panel-muted);
+      color: var(--ds-fg);
     }
 
     .badge {
@@ -313,12 +349,105 @@ export class DatastarInspector extends LitElement {
     .string {
       color: var(--ds-success);
     }
+
+    .trace-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 8px;
+    }
+
+    .trace-action {
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius);
+      background: transparent;
+      color: var(--ds-muted);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 4px 7px;
+    }
+
+    .trace-event {
+      border: 1px solid var(--ds-border-muted);
+      border-radius: var(--ds-radius);
+      background: var(--ds-bg);
+      margin-bottom: 7px;
+    }
+
+    .trace-event summary {
+      display: grid;
+      grid-template-columns: auto auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+      font-size: 11px;
+      list-style: none;
+      padding: 7px;
+    }
+
+    .trace-event summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .trace-sequence,
+    .trace-meta,
+    .trace-roots {
+      color: var(--ds-muted);
+    }
+
+    .trace-stage {
+      border-radius: var(--ds-radius-full);
+      background: var(--ds-panel-muted);
+      color: var(--ds-fg);
+      padding: 2px 6px;
+    }
+
+    .trace-origin {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--ds-fg);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .trace-detail {
+      border-top: 1px solid var(--ds-border-muted);
+      padding: 7px;
+    }
+
+    .trace-roots {
+      font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .trace-payload {
+      max-height: 240px;
+      overflow: auto;
+      border-radius: 4px;
+      background: var(--ds-panel-muted);
+      color: var(--ds-fg);
+      font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+      font-size: 10px;
+      line-height: 1.45;
+      margin: 0;
+      padding: 7px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .trace-error {
+      color: var(--ds-warning);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
   `
 
   override connectedCallback() {
     super.connectedCallback()
     this.ensureSignalsElement()
     this.loadState()
+    this.startTracePolling()
   }
 
   override disconnectedCallback() {
@@ -330,6 +459,10 @@ export class DatastarInspector extends LitElement {
     if (this.flashTimeout) {
       clearTimeout(this.flashTimeout)
     }
+    if (this.traceTimer !== null) {
+      clearInterval(this.traceTimer)
+    }
+    this.traceAbort?.abort()
   }
 
   override firstUpdated() {
@@ -356,6 +489,7 @@ export class DatastarInspector extends LitElement {
         this.expanded = state.expanded ?? false
         this.filter = state.filter ?? ''
         this.expandedPaths = new Set(state.expandedPaths ?? [])
+        this.activeView = state.view === 'events' ? 'events' : 'signals'
       }
     } catch {
       /* ignore parse errors */
@@ -367,6 +501,7 @@ export class DatastarInspector extends LitElement {
       expanded: this.expanded,
       filter: this.filter,
       expandedPaths: [...this.expandedPaths],
+      view: this.activeView,
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }
@@ -457,6 +592,69 @@ export class DatastarInspector extends LitElement {
     this.saveState()
   }
 
+  private selectView(view: 'signals' | 'events') {
+    this.activeView = view
+    this.saveState()
+    if (view === 'events') {
+      void this.loadTraceEvents()
+    }
+  }
+
+  private startTracePolling() {
+    if (!this.traceURL()) return
+    void this.loadTraceEvents()
+    this.traceTimer = window.setInterval(() => void this.loadTraceEvents(), TRACE_POLL_INTERVAL)
+  }
+
+  private traceURL() {
+    return this.getAttribute('trace-url')?.trim() ?? ''
+  }
+
+  private async loadTraceEvents() {
+    const rawURL = this.traceURL()
+    if (!rawURL || this.traceLoading) return
+    this.traceLoading = true
+    this.traceAbort?.abort()
+    this.traceAbort = new AbortController()
+    try {
+      const url = new URL(rawURL, window.location.href)
+      if (this.traceAfter > 0) url.searchParams.set('after', String(this.traceAfter))
+      url.searchParams.set('limit', '200')
+      const response = await fetch(url, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: this.traceAbort.signal,
+      })
+      if (!response.ok) throw new Error(`Trace request failed (${response.status})`)
+      const body = await response.json() as PageStreamTraceResponse
+      const incoming = Array.isArray(body.events) ? body.events.filter((event) => event.id > this.traceAfter) : []
+      if (incoming.length > 0) {
+        const byID = new Map(this.traceEvents.map((event) => [event.id, event]))
+        for (const event of incoming) byID.set(event.id, event)
+        this.traceEvents = [...byID.values()].sort((left, right) => left.id - right.id).slice(-TRACE_EVENT_LIMIT)
+        if (!this.expanded) this.hasUnseenChanges = true
+      }
+      this.traceAfter = Math.max(this.traceAfter, Number(body.nextAfter) || 0)
+      this.traceError = ''
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        this.traceError = error instanceof Error ? error.message : String(error)
+      }
+    } finally {
+      this.traceLoading = false
+    }
+  }
+
+  private filteredTraceEvents() {
+    const filter = this.filter.trim().toLowerCase()
+    if (!filter) return this.traceEvents
+    return this.traceEvents.filter((event) => JSON.stringify(event).toLowerCase().includes(filter))
+  }
+
+  private clearTraceEvents() {
+    this.traceEvents = []
+  }
+
   private togglePath(path: string) {
     const next = new Set(this.expandedPaths)
     if (next.has(path)) {
@@ -488,25 +686,31 @@ export class DatastarInspector extends LitElement {
   }
 
   private renderOpenPanel() {
+    if (this.activeView === 'events') {
+      const events = this.filteredTraceEvents()
+      return this.renderPanel(this.renderTraceEvents(events), events.length, this.traceEvents.length)
+    }
     const filteredSignals = this.getFilteredSignals()
     const filteredCount = countSignals(filteredSignals)
     const hasFilter = this.filter.trim().length > 0
-    return this.renderPanel(filteredSignals, filteredCount, hasFilter)
+    return this.renderPanel(this.renderSignalContent(filteredSignals, hasFilter), filteredCount, this.signalCount)
   }
 
-  private renderPanel(filteredSignals: SignalObject, filteredCount: number, hasFilter: boolean) {
+  private renderPanel(content: unknown, filteredCount: number, totalCount: number) {
+    const hasFilter = this.filter.trim().length > 0
     return html`
       <div class="panel">
-        ${this.renderHeader(filteredCount, hasFilter)}
-        ${this.renderContent(filteredSignals, hasFilter)}
+        ${this.renderHeader(filteredCount, totalCount, hasFilter)}
+        ${this.renderTabs()}
+        ${content}
       </div>
     `
   }
 
-  private renderHeader(filteredCount: number, hasFilter: boolean) {
+  private renderHeader(filteredCount: number, totalCount: number, hasFilter: boolean) {
     const placeholder = hasFilter
-      ? `${filteredCount}/${this.signalCount} match...`
-      : `Filter ${this.signalCount} signals...`
+      ? `${filteredCount}/${totalCount} match...`
+      : `Filter ${totalCount} ${this.activeView}...`
 
     return html`
       <div class="header">
@@ -526,7 +730,16 @@ export class DatastarInspector extends LitElement {
     `
   }
 
-  private renderContent(filteredSignals: SignalObject, hasFilter: boolean) {
+  private renderTabs() {
+    return html`
+      <div class="tabs" role="tablist" aria-label="Inspector views">
+        <button class="tab" data-view="signals" role="tab" aria-selected=${String(this.activeView === 'signals')} @click=${() => this.selectView('signals')}>Signals</button>
+        <button class="tab" data-view="events" role="tab" aria-selected=${String(this.activeView === 'events')} @click=${() => this.selectView('events')}>Events</button>
+      </div>
+    `
+  }
+
+  private renderSignalContent(filteredSignals: SignalObject, hasFilter: boolean) {
     const isEmpty = Object.keys(filteredSignals).length === 0
 
     return html`
@@ -537,6 +750,43 @@ export class DatastarInspector extends LitElement {
             </div>`
           : this.renderJsonView(filteredSignals)}
       </div>
+    `
+  }
+
+  private renderTraceEvents(events: PageStreamTraceEvent[]) {
+    return html`
+      <div class="content">
+        <div class="trace-toolbar">
+          <button class="trace-action" data-clear-events @click=${this.clearTraceEvents} ?disabled=${this.traceEvents.length === 0}>Clear events</button>
+        </div>
+        ${this.traceError ? html`<div class="trace-error" role="alert">${this.traceError}</div>` : nothing}
+        ${events.length === 0
+          ? html`<div class="empty">${this.filter.trim() ? 'No page-stream events match filter' : 'No page-stream events'}</div>`
+          : events.map((event) => this.renderTraceEvent(event))}
+      </div>
+    `
+  }
+
+  private renderTraceEvent(event: PageStreamTraceEvent) {
+    const queue = event.queueMilliseconds && event.queueMilliseconds > 0
+      ? `${event.queueMilliseconds.toFixed(1)} ms`
+      : ''
+    const origin = event.origin || 'unknown origin'
+    return html`
+      <details class="trace-event">
+        <summary>
+          <span class="trace-sequence">#${event.sequence}</span>
+          <span class="trace-stage">${event.stage}</span>
+          <span class="trace-origin" title=${origin}>${origin}</span>
+          <span class="trace-meta">${queue || `${event.bytes} B`}</span>
+        </summary>
+        <div class="trace-detail">
+          <div class="trace-roots">
+            ${event.streamId} · generation ${event.generation ?? '—'} · ${event.roots.join(', ') || 'no roots'}
+          </div>
+          <pre class="trace-payload">${JSON.stringify(event.payload ?? {}, null, 2)}</pre>
+        </div>
+      </details>
     `
   }
 

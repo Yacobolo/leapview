@@ -89,9 +89,10 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 	patch := dashboard.Patch{
 		Filters: filters,
 		Status: dashboard.Status{
-			Loading:       false,
-			LastUpdated:   refreshLabel(runtime),
-			DataDirectory: s.dataDir,
+			Loading:         false,
+			LastUpdated:     refreshLabel(runtime),
+			DataDirectory:   s.dataDir,
+			ProgressPercent: dashboard.NormalizeProgressPercent(nil, false),
 		},
 		Visuals: map[string]dashboard.Visual{},
 	}

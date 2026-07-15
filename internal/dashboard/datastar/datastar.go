@@ -58,6 +58,7 @@ func StreamID(clientID, dashboardID, pageID string, streamInstanceID ...string) 
 }
 
 func DashboardPatch(patch dashboard.Patch) pagestream.SignalPatch {
+	patch.Status.ProgressPercent = dashboard.NormalizeProgressPercent(patch.Status.ProgressPercent, patch.Status.Loading)
 	return pagestream.SignalPatch{
 		"filters":       patch.Filters,
 		"filterOptions": patch.FilterOptions,
@@ -81,13 +82,14 @@ func TablesPatch(tables map[string]dashboard.Table) pagestream.SignalPatch {
 func LoadingPatch(dataDir string) pagestream.SignalPatch {
 	return pagestream.SignalPatch{
 		"status": map[string]any{
-			"loading":       true,
-			"error":         "",
-			"refreshId":     "",
-			"generation":    int64(0),
-			"lastUpdated":   "",
-			"dataDirectory": dataDir,
-			"setupRequired": false,
+			"loading":         true,
+			"error":           "",
+			"refreshId":       "",
+			"generation":      int64(0),
+			"lastUpdated":     "",
+			"dataDirectory":   dataDir,
+			"setupRequired":   false,
+			"progressPercent": (*float64)(nil),
 		},
 	}
 }
@@ -100,13 +102,14 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent, dataDir string) pages
 			message = err.Error()
 		}
 		return map[string]any{
-			"loading":       loading,
-			"error":         message,
-			"refreshId":     event.RefreshID,
-			"generation":    generation,
-			"lastUpdated":   time.Now().Format("15:04:05"),
-			"dataDirectory": dataDir,
-			"setupRequired": errorSetupRequired(err),
+			"loading":         loading,
+			"error":           message,
+			"refreshId":       event.RefreshID,
+			"generation":      generation,
+			"lastUpdated":     time.Now().Format("15:04:05"),
+			"dataDirectory":   dataDir,
+			"setupRequired":   errorSetupRequired(err),
+			"progressPercent": dashboard.NormalizeProgressPercent(event.ProgressPercent, loading),
 		}
 	}
 	component := func(loading bool, err string) map[string]any {
@@ -128,6 +131,8 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent, dataDir string) pages
 	case dashboardstream.RefreshEventFilterOptions:
 		options, _ := event.Value.(map[string][]dashboard.FilterOption)
 		return pagestream.SignalPatch{"filterOptions": options}
+	case dashboardstream.RefreshEventProgress:
+		return pagestream.SignalPatch{"status": status(true, nil)}
 	case dashboardstream.RefreshEventVisual:
 		visual, _ := event.Value.(dashboard.Visual)
 		key := "visual:" + event.Target
@@ -159,6 +164,43 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent, dataDir string) pages
 	default:
 		return pagestream.SignalPatch{}
 	}
+}
+
+// RefreshEventEnvelope keeps refresh ordering and mailbox behavior outside the
+// signal payload. The browser receives Signals only; pagestream consumes the
+// explicit delivery metadata.
+func RefreshEventEnvelope(event dashboardstream.RefreshEvent, dataDir string) pagestream.Envelope {
+	generation := uint64(0)
+	if event.Generation > 0 {
+		generation = uint64(event.Generation)
+	}
+	delivery := pagestream.DeliveryMetadata{Generation: generation}
+	switch event.Type {
+	case dashboardstream.RefreshEventStart, dashboardstream.RefreshEventProgress, dashboardstream.RefreshEventComplete:
+		delivery.Boundary = true
+	case dashboardstream.RefreshEventTargetError:
+		if event.Target == "refresh" {
+			delivery.Boundary = true
+		} else {
+			delivery.CoalesceGroup = "dashboard-results"
+			delivery.MergeRoots = dashboardMergeRoots()
+		}
+	default:
+		delivery.CoalesceGroup = "dashboard-results"
+		delivery.MergeRoots = dashboardMergeRoots()
+	}
+	return pagestream.Envelope{
+		Signals:  RefreshEventPatch(event, dataDir),
+		Delivery: delivery,
+		Trace: pagestream.TraceMetadata{
+			Origin:        "dashboard.refresh",
+			CorrelationID: event.RefreshID,
+		},
+	}
+}
+
+func dashboardMergeRoots() []string {
+	return []string{"componentStatus", "filterOptions", "tables", "visuals"}
 }
 
 func errorSetupRequired(err error) bool {

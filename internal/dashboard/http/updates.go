@@ -57,7 +57,9 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	mailbox, unsubscribe := broker.Subscribe(streamID)
 	defer unsubscribe()
 
-	updates := pagestream.NewSignalStream(w, r)
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(
+		broker.TraceStore(), streamID, "dashboard.bootstrap",
+	))
 	bootstrap := reportui.BootstrapSignals(metrics.DataDir(), clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
 	bootstrap["status"] = lddatastar.LoadingPatch(metrics.DataDir())["status"]
 	if err := updates.Patch(bootstrap); err != nil {
@@ -69,7 +71,7 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		registry = dashboardstream.NewRegistry()
 	}
 	coordinator, closeCoordinator := registry.Open(streamID, r.Context(), func(event dashboardstream.RefreshEvent) {
-		broker.Publish(streamID, lddatastar.RefreshEventPatch(event, metrics.DataDir()))
+		broker.PublishEnvelope(streamID, lddatastar.RefreshEventEnvelope(event, metrics.DataDir()))
 	})
 	defer closeCoordinator()
 	h.observeRefreshes(coordinator, dashboardID, activePage.ID)

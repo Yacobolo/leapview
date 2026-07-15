@@ -12,6 +12,8 @@ export interface InspectorState {
   filter: string
   /** Expanded tree paths */
   expandedPaths?: string[]
+  /** Active inspector surface. */
+  view?: 'signals' | 'events'
 }
 
 /**
@@ -21,4 +23,29 @@ export type SignalValue = string | number | boolean | null | SignalValue[] | Sig
 
 export interface SignalObject {
   [key: string]: SignalValue
+}
+
+export type PageStreamTraceStage = 'published' | 'coalesced' | 'dropped' | 'delivered'
+
+export interface PageStreamTraceEvent {
+  id: number
+  timestamp: string
+  streamId: string
+  sequence: number
+  stage: PageStreamTraceStage
+  generation?: number
+  origin?: string
+  correlationId?: string
+  roots: string[]
+  bytes: number
+  digest?: string
+  queueMilliseconds?: number
+  coalesced?: number
+  outcome?: string
+  payload?: Record<string, unknown>
+}
+
+export interface PageStreamTraceResponse {
+  events: PageStreamTraceEvent[]
+  nextAfter: number
 }

@@ -308,6 +308,145 @@ for (const viewport of [
   })
 }
 
+test('dashboard refresh progress follows only the latest generation', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => (
+      customElements.get('ld-dashboard-page')
+        && (document.querySelector('ld-dashboard-page') as any)?.page?.title === 'Executive Sales Dashboard'
+    ))
+
+    const states = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev')
+      const read = async () => {
+        await element.updateComplete
+        const progress = element.shadowRoot.querySelector('[data-dashboard-refresh-progress]')
+        const value = progress?.querySelector('.dashboard-refresh-progress-value')
+        return {
+          active: progress?.getAttribute('data-active'),
+          complete: progress?.getAttribute('data-complete'),
+          generation: progress?.getAttribute('data-generation'),
+          now: progress?.getAttribute('aria-valuenow'),
+          max: progress?.getAttribute('aria-valuemax'),
+          text: progress?.getAttribute('aria-valuetext'),
+          indeterminate: progress?.hasAttribute('data-indeterminate'),
+          width: value?.getAttribute('style'),
+          fadeDelay: getComputedStyle(progress).transitionDelay,
+        }
+      }
+
+      const initial = await read()
+      mergePatch({
+        status: {
+          generation: 4,
+          refreshId: 'refresh-4',
+          loading: true,
+          progressPercent: null,
+        },
+        componentStatus: {
+          'visual:orders_chart': { generation: 4, loading: true, error: '' },
+        },
+      })
+      const planning = await read()
+      mergePatch({
+        status: {
+          generation: 4,
+          refreshId: 'refresh-4',
+          loading: true,
+          progressPercent: 0,
+        },
+        componentStatus: {
+          'visual:orders_chart': { generation: 4, loading: true, error: '' },
+        },
+      })
+      const started = await read()
+      mergePatch({
+        status: { progressPercent: 33.33333333333333 },
+        componentStatus: {
+          'visual:orders_chart': { generation: 4, loading: false, error: '' },
+          'visual:stale': { generation: 3, loading: false, error: '' },
+        },
+      })
+      const progressive = await read()
+      mergePatch({
+        componentStatus: {
+          'visual:orders_kpi': { generation: 4, loading: false, error: 'Query failed' },
+          'table:orders': { generation: 4, loading: false, error: '' },
+        },
+        status: {
+          generation: 4,
+          refreshId: 'refresh-4',
+          loading: false,
+          progressPercent: 100,
+        },
+      })
+      const complete = await read()
+      return { initial, planning, started, progressive, complete }
+    })
+
+    expect(states).toEqual({
+      initial: {
+        active: 'true',
+        complete: 'false',
+        generation: '3',
+        now: '50',
+        max: '100',
+        text: '50% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:50%',
+        fadeDelay: '0s',
+      },
+      planning: {
+        active: 'true',
+        complete: 'false',
+        generation: '4',
+        now: null,
+        max: null,
+        text: 'Refreshing dashboard',
+        indeterminate: true,
+        width: null,
+        fadeDelay: '0s',
+      },
+      started: {
+        active: 'true',
+        complete: 'false',
+        generation: '4',
+        now: '0',
+        max: '100',
+        text: '0% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:0%',
+        fadeDelay: '0s',
+      },
+      progressive: {
+        active: 'true',
+        complete: 'false',
+        generation: '4',
+        now: '33.33333333333333',
+        max: '100',
+        text: '33% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:33.33333333333333%',
+        fadeDelay: '0s',
+      },
+      complete: {
+        active: 'false',
+        complete: 'true',
+        generation: '4',
+        now: '100',
+        max: '100',
+        text: '100% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:100%',
+        fadeDelay: '0.18s',
+      },
+    })
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   const page = {
     kind: 'dashboard',
@@ -428,7 +567,16 @@ function testDocument(): string {
       error: '',
     },
   }
-  const status = { loading: true, error: '', refreshId: 'refresh-3', generation: 3, lastUpdated: '12:00:00', dataDirectory: '.data/olist', setupRequired: false }
+  const status = {
+    loading: true,
+    error: '',
+    refreshId: 'refresh-3',
+    generation: 3,
+    lastUpdated: '12:00:00',
+    dataDirectory: '.data/olist',
+    setupRequired: false,
+    progressPercent: 50,
+  }
   const componentStatus = {
     'visual:orders_chart': { generation: 3, loading: true, error: '' },
     'table:orders': { generation: 3, loading: false, error: 'Ratings query failed' },

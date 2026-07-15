@@ -32,7 +32,15 @@ type Request struct {
 	Filters     dashboard.Filters
 	Targets     []Target
 	Concurrency int
+	Progress    ProgressPublisher
 }
+
+type Progress struct {
+	Completed int
+	Total     int
+}
+
+type ProgressPublisher func(Progress)
 
 type Result struct {
 	Target         Target

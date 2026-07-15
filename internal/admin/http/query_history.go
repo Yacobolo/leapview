@@ -30,7 +30,8 @@ func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "admin query-history broker is not configured", http.StatusInternalServerError)
 		return
 	}
-	updates := pagestream.NewSignalStream(w, r)
+	streamID := queryHistoryStreamID(clientID)
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(h.Broker.TraceStore(), streamID, "admin.queries.bootstrap"))
 	data, err := h.adminDataForUpdates(r, "queries")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -39,7 +40,7 @@ func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "queries", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
 		return
 	}
-	_ = updates.Forward(r.Context(), h.Broker, queryHistoryStreamID(clientID))
+	_ = updates.Forward(r.Context(), h.Broker, streamID)
 }
 
 func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {

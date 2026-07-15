@@ -10,41 +10,65 @@ import (
 // signal patches only; it does not transport element morphs or scripts.
 type SignalPatch map[string]any
 
-// Broker fans patches out to every subscriber of a stream. Each subscriber
-// owns a coalescing mailbox: replace-mode signals retain their newest value,
-// while independently completed component maps are merged. Publishing never
-// waits for a slow SSE connection and current-generation component updates are
-// never discarded.
+// Broker fans envelopes out to every subscriber of a stream. Delivery
+// semantics are explicit on Envelope; the broker never inspects application
+// signal shapes to discover generations or boundaries.
 type Broker struct {
 	mu      sync.Mutex
 	clients map[string]map[*brokerSubscription]struct{}
+	trace   *TraceStore
+}
+
+type BrokerOption func(*Broker)
+
+func WithTraceStore(store *TraceStore) BrokerOption {
+	return func(broker *Broker) { broker.trace = store }
 }
 
 type brokerSubscription struct {
-	mu         sync.Mutex
-	pending    []pendingSignalPatch
-	generation uint64
-	closed     bool
-	out        chan SignalPatch
-	wake       chan struct{}
-	done       chan struct{}
-	once       sync.Once
+	mu            sync.Mutex
+	pending       []pendingEnvelope
+	generation    uint64
+	hasGeneration bool
+	closed        bool
+	out           chan SignalPatch
+	wake          chan struct{}
+	done          chan struct{}
+	once          sync.Once
 }
 
-type pendingSignalPatch struct {
-	patch      SignalPatch
-	generation uint64
+type pendingEnvelope struct {
+	envelope Envelope
 }
 
-var mergeSignalKeys = map[string]struct{}{
-	"componentStatus": {},
-	"filterOptions":   {},
-	"tables":          {},
-	"visuals":         {},
+const maxPendingEnvelopes = 64
+
+func NewBroker(options ...BrokerOption) *Broker {
+	broker := &Broker{clients: map[string]map[*brokerSubscription]struct{}{}}
+	for _, option := range options {
+		if option != nil {
+			option(broker)
+		}
+	}
+	return broker
 }
 
-func NewBroker() *Broker {
-	return &Broker{clients: map[string]map[*brokerSubscription]struct{}{}}
+func (b *Broker) SetTraceStore(store *TraceStore) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	b.trace = store
+	b.mu.Unlock()
+}
+
+func (b *Broker) TraceStore() *TraceStore {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.trace
 }
 
 func (b *Broker) Subscribe(streamID string) (<-chan SignalPatch, func()) {
@@ -75,19 +99,44 @@ func (b *Broker) Subscribe(streamID string) (<-chan SignalPatch, func()) {
 	}
 }
 
+// Publish uses the safe lossless default: each patch is an observable
+// boundary. High-volume producers should use PublishEnvelope and explicitly
+// declare their coalescing policy.
 func (b *Broker) Publish(streamID string, patch SignalPatch) {
-	if len(patch) == 0 {
+	b.PublishEnvelope(streamID, Envelope{
+		Signals:  patch,
+		Delivery: DeliveryMetadata{Boundary: true},
+	})
+}
+
+func (b *Broker) PublishEnvelope(streamID string, envelope Envelope) {
+	if b == nil || len(envelope.Signals) == 0 || streamID == "" {
 		return
 	}
 	b.mu.Lock()
+	store := b.trace
 	subscriptions := make([]*brokerSubscription, 0, len(b.clients[streamID]))
 	for subscription := range b.clients[streamID] {
 		subscriptions = append(subscriptions, subscription)
 	}
 	b.mu.Unlock()
 
+	if store != nil {
+		event := store.Record(TraceRecord{
+			StreamID:      streamID,
+			Stage:         TraceStagePublished,
+			Signals:       envelope.Signals,
+			Generation:    envelope.Delivery.Generation,
+			Origin:        envelope.Trace.Origin,
+			CorrelationID: envelope.Trace.CorrelationID,
+		})
+		envelope.trace = &traceSpan{
+			store: store, streamID: streamID, sequence: event.Sequence,
+			publishedAt: time.Now().UnixNano(), coalesced: 1,
+		}
+	}
 	for _, subscription := range subscriptions {
-		subscription.enqueue(patch)
+		subscription.enqueue(envelope)
 	}
 }
 
@@ -97,26 +146,27 @@ func (b *Broker) SubscriberCount(streamID string) int {
 	return len(b.clients[streamID])
 }
 
-func (s *brokerSubscription) enqueue(patch SignalPatch) {
+func (s *brokerSubscription) enqueue(envelope Envelope) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		return
 	}
-	generation, explicitGeneration := patchGeneration(patch)
-	if explicitGeneration && generation < s.generation {
+	generation := envelope.Delivery.Generation
+	if generation > 0 && s.hasGeneration && generation < s.generation {
+		recordEnvelopeTrace(envelope, TraceStageDropped, "stale_generation", 0)
 		s.mu.Unlock()
 		return
 	}
-	if explicitGeneration && generation > s.generation {
+	if generation > 0 && (!s.hasGeneration || generation > s.generation) {
 		s.generation = generation
-		// A queued or output-buffered patch belongs to an older generation.
-		// Evict it atomically before the new start becomes observable so a
-		// slow subscriber can never receive stale component data afterward.
+		s.hasGeneration = true
 		kept := s.pending[:0]
 		for _, pending := range s.pending {
-			if pending.generation >= generation {
+			if pending.envelope.Delivery.Generation >= generation {
 				kept = append(kept, pending)
+			} else {
+				recordEnvelopeTrace(pending.envelope, TraceStageDropped, "superseded_generation", 0)
 			}
 		}
 		s.pending = kept
@@ -125,31 +175,80 @@ func (s *brokerSubscription) enqueue(patch SignalPatch) {
 		default:
 		}
 	}
-	if !explicitGeneration {
-		generation = s.generation
-	}
-	next := pendingSignalPatch{
-		patch:      coalesceSignalPatches(nil, patch),
-		generation: generation,
-	}
-	if len(s.pending) == 0 {
+
+	next := pendingEnvelope{envelope: cloneEnvelope(envelope)}
+	switch {
+	case len(s.pending) == 0:
 		s.pending = append(s.pending, next)
-	} else if preservesProgressBoundary(s.pending[len(s.pending)-1].patch, patch) {
-		if len(s.pending) == 2 {
-			// Keep the bounded mailbox focused on the newest observable
-			// start/complete pair when generations overtake a slow client.
-			s.pending = s.pending[1:]
-		}
-		s.pending = append(s.pending, next)
-	} else {
+	case shouldCoalesce(s.pending[len(s.pending)-1].envelope, next.envelope):
 		last := len(s.pending) - 1
-		s.pending[last].patch = coalesceSignalPatches(s.pending[last].patch, patch)
+		s.pending[last].envelope = coalesceEnvelopes(s.pending[last].envelope, next.envelope)
+	case len(s.pending) < maxPendingEnvelopes:
+		s.pending = append(s.pending, next)
+	default:
+		recordEnvelopeTrace(s.pending[0].envelope, TraceStageDropped, "mailbox_capacity", 0)
+		copy(s.pending, s.pending[1:])
+		s.pending[len(s.pending)-1] = next
 	}
 	s.mu.Unlock()
 	select {
 	case s.wake <- struct{}{}:
 	default:
 	}
+}
+
+func shouldCoalesce(current, next Envelope) bool {
+	if current.Delivery.Boundary || next.Delivery.Boundary {
+		return false
+	}
+	if current.Delivery.Generation != next.Delivery.Generation {
+		return false
+	}
+	return current.Delivery.CoalesceGroup != "" && current.Delivery.CoalesceGroup == next.Delivery.CoalesceGroup
+}
+
+func coalesceEnvelopes(current, next Envelope) Envelope {
+	mergeRoots := make(map[string]struct{}, len(current.Delivery.MergeRoots)+len(next.Delivery.MergeRoots))
+	for _, root := range current.Delivery.MergeRoots {
+		mergeRoots[root] = struct{}{}
+	}
+	for _, root := range next.Delivery.MergeRoots {
+		mergeRoots[root] = struct{}{}
+	}
+	next.Signals = coalesceSignalPatches(current.Signals, next.Signals, mergeRoots)
+	if next.trace != nil {
+		count := 1
+		if current.trace != nil && current.trace.coalesced > 0 {
+			count += current.trace.coalesced
+		}
+		next.trace.coalesced = count
+		recordEnvelopeTrace(next, TraceStageCoalesced, "same_group", 0)
+	}
+	return next
+}
+
+func cloneEnvelope(envelope Envelope) Envelope {
+	envelope.Signals = coalesceSignalPatches(nil, envelope.Signals, nil)
+	envelope.Delivery.MergeRoots = append([]string(nil), envelope.Delivery.MergeRoots...)
+	return envelope
+}
+
+func recordEnvelopeTrace(envelope Envelope, stage TraceStage, outcome string, queueMilliseconds float64) {
+	if envelope.trace == nil || envelope.trace.store == nil {
+		return
+	}
+	envelope.trace.store.Record(TraceRecord{
+		StreamID:          envelope.trace.streamID,
+		Stage:             stage,
+		Signals:           envelope.Signals,
+		Sequence:          envelope.trace.sequence,
+		Generation:        envelope.Delivery.Generation,
+		Origin:            envelope.Trace.Origin,
+		CorrelationID:     envelope.Trace.CorrelationID,
+		QueueMilliseconds: queueMilliseconds,
+		Coalesced:         envelope.trace.coalesced,
+		Outcome:           outcome,
+	})
 }
 
 func (s *brokerSubscription) forward() {
@@ -159,9 +258,15 @@ func (s *brokerSubscription) forward() {
 		pending := len(s.pending) > 0
 		sent := false
 		if pending {
+			envelope := s.pending[0].envelope
 			select {
-			case s.out <- s.pending[0].patch:
+			case s.out <- envelope.Signals:
 				s.pending = s.pending[1:]
+				queueMilliseconds := float64(0)
+				if envelope.trace != nil && envelope.trace.publishedAt > 0 {
+					queueMilliseconds = float64(time.Now().UnixNano()-envelope.trace.publishedAt) / float64(time.Millisecond)
+				}
+				recordEnvelopeTrace(envelope, TraceStageDelivered, "", queueMilliseconds)
 				sent = true
 			default:
 			}
@@ -178,8 +283,6 @@ func (s *brokerSubscription) forward() {
 			}
 			continue
 		}
-		// The subscriber output is full. Retry only while backpressured;
-		// enqueue remains non-blocking and can atomically supersede this data.
 		timer := time.NewTimer(time.Millisecond)
 		select {
 		case <-s.done:
@@ -196,173 +299,6 @@ func (s *brokerSubscription) forward() {
 	}
 }
 
-func patchGeneration(patch SignalPatch) (uint64, bool) {
-	if generation, ok := valueGeneration(reflect.ValueOf(patch["status"])); ok {
-		return generation, true
-	}
-	statuses := reflect.ValueOf(patch["componentStatus"])
-	for statuses.IsValid() && (statuses.Kind() == reflect.Pointer || statuses.Kind() == reflect.Interface) {
-		if statuses.IsNil() {
-			return 0, false
-		}
-		statuses = statuses.Elem()
-	}
-	if !statuses.IsValid() || statuses.Kind() != reflect.Map {
-		return 0, false
-	}
-	iterator := statuses.MapRange()
-	var newest uint64
-	found := false
-	for iterator.Next() {
-		if generation, ok := valueGeneration(iterator.Value()); ok && (!found || generation > newest) {
-			newest = generation
-			found = true
-		}
-	}
-	return newest, found
-}
-
-func valueGeneration(value reflect.Value) (uint64, bool) {
-	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
-		if value.IsNil() {
-			return 0, false
-		}
-		value = value.Elem()
-	}
-	if !value.IsValid() {
-		return 0, false
-	}
-	var generation reflect.Value
-	switch value.Kind() {
-	case reflect.Map:
-		if value.Type().Key().Kind() != reflect.String {
-			return 0, false
-		}
-		generation = value.MapIndex(reflect.ValueOf("generation").Convert(value.Type().Key()))
-	case reflect.Struct:
-		generation = value.FieldByName("Generation")
-	default:
-		return 0, false
-	}
-	for generation.IsValid() && (generation.Kind() == reflect.Pointer || generation.Kind() == reflect.Interface) {
-		if generation.IsNil() {
-			return 0, false
-		}
-		generation = generation.Elem()
-	}
-	if !generation.IsValid() {
-		return 0, false
-	}
-	switch generation.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if generation.Int() < 0 {
-			return 0, false
-		}
-		return uint64(generation.Int()), true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return generation.Uint(), true
-	default:
-		return 0, false
-	}
-}
-
-func preservesLoadingBoundary(current, next SignalPatch) bool {
-	currentLoading, currentOK := patchLoading(current)
-	nextLoading, nextOK := patchLoading(next)
-	return currentOK && nextOK && currentLoading && !nextLoading
-}
-
-func preservesProgressBoundary(current, next SignalPatch) bool {
-	if preservesLoadingBoundary(current, next) {
-		return true
-	}
-	currentRunning, currentOK := patchRunning(current)
-	nextRunning, nextOK := patchRunning(next)
-	return currentOK && nextOK && currentRunning && !nextRunning
-}
-
-func patchRunning(patch SignalPatch) (bool, bool) {
-	if running, ok := nestedBool(reflect.ValueOf(patch["page"]), "refresh", "running"); ok {
-		return running, true
-	}
-	return nestedBool(reflect.ValueOf(patch["assetRefresh"]), "running")
-}
-
-func nestedBool(value reflect.Value, path ...string) (bool, bool) {
-	for _, part := range path {
-		for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
-			if value.IsNil() {
-				return false, false
-			}
-			value = value.Elem()
-		}
-		if !value.IsValid() {
-			return false, false
-		}
-		switch value.Kind() {
-		case reflect.Map:
-			if value.Type().Key().Kind() != reflect.String {
-				return false, false
-			}
-			value = value.MapIndex(reflect.ValueOf(part).Convert(value.Type().Key()))
-		case reflect.Struct:
-			field := part
-			if field != "" && field[0] >= 'a' && field[0] <= 'z' {
-				field = string(field[0]-'a'+'A') + field[1:]
-			}
-			value = value.FieldByName(field)
-		default:
-			return false, false
-		}
-	}
-	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
-		if value.IsNil() {
-			return false, false
-		}
-		value = value.Elem()
-	}
-	if !value.IsValid() || value.Kind() != reflect.Bool {
-		return false, false
-	}
-	return value.Bool(), true
-}
-
-func patchLoading(patch SignalPatch) (bool, bool) {
-	status, ok := patch["status"]
-	if !ok || status == nil {
-		return false, false
-	}
-	value := reflect.ValueOf(status)
-	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
-		if value.IsNil() {
-			return false, false
-		}
-		value = value.Elem()
-	}
-	switch value.Kind() {
-	case reflect.Map:
-		if value.Type().Key().Kind() != reflect.String {
-			return false, false
-		}
-		loading := value.MapIndex(reflect.ValueOf("loading").Convert(value.Type().Key()))
-		for loading.IsValid() && (loading.Kind() == reflect.Interface || loading.Kind() == reflect.Pointer) {
-			if loading.IsNil() {
-				return false, false
-			}
-			loading = loading.Elem()
-		}
-		if loading.IsValid() && loading.Kind() == reflect.Bool {
-			return loading.Bool(), true
-		}
-	case reflect.Struct:
-		loading := value.FieldByName("Loading")
-		if loading.IsValid() && loading.Kind() == reflect.Bool {
-			return loading.Bool(), true
-		}
-	}
-	return false, false
-}
-
 func (s *brokerSubscription) close() {
 	s.mu.Lock()
 	s.closed = true
@@ -371,13 +307,13 @@ func (s *brokerSubscription) close() {
 	close(s.done)
 }
 
-func coalesceSignalPatches(current, next SignalPatch) SignalPatch {
+func coalesceSignalPatches(current, next SignalPatch, mergeRoots map[string]struct{}) SignalPatch {
 	result := make(SignalPatch, len(current)+len(next))
 	for key, value := range current {
 		result[key] = value
 	}
 	for key, value := range next {
-		if _, merge := mergeSignalKeys[key]; merge {
+		if _, merge := mergeRoots[key]; merge {
 			if combined, ok := mergeStringMaps(result[key], value); ok {
 				result[key] = combined
 				continue
@@ -388,8 +324,7 @@ func coalesceSignalPatches(current, next SignalPatch) SignalPatch {
 	return result
 }
 
-// mergeStringMaps preserves the concrete map type used by signal contracts
-// (for example map[string]dashboard.Visual) while merging target entries.
+// mergeStringMaps preserves concrete signal contract map types.
 func mergeStringMaps(current, next any) (any, bool) {
 	nextValue := reflect.ValueOf(next)
 	if !nextValue.IsValid() || nextValue.Kind() != reflect.Map || nextValue.Type().Key().Kind() != reflect.String {
