@@ -216,8 +216,8 @@ func TestManagerKeepsOldRuntimeOpenUntilLeaseRelease(t *testing.T) {
 	if got := oldLease.DuckLakeSnapshotID(); got != 11 {
 		t.Fatalf("old lease snapshot = %d, want 11", got)
 	}
-	if got := manager.LeasedSnapshots(); !equalInt64s(got, []int64{11}) {
-		t.Fatalf("leased snapshots = %#v, want old snapshot only", got)
+	if got := manager.LeasedSnapshots(); !equalInt64s(got, []int64{11, 22}) {
+		t.Fatalf("leased snapshots = %#v, want active and draining generations", got)
 	}
 
 	oldLease.Release()
@@ -295,7 +295,29 @@ func TestPreparedReleasesManagedDataLifetimeOnFailureAndAbandonment(t *testing.T
 	}
 }
 
-func TestManagerPersistsSnapshotLeaseOnAcquireAndRelease(t *testing.T) {
+func TestManagerPreparationFailsClosedWhenGenerationLeaseCannotPersist(t *testing.T) {
+	state := servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusValidated}
+	artifact := servingstate.Artifact{ServingStateID: state.ID, WorkspaceID: state.WorkspaceID, Environment: state.Environment, Digest: "digest"}
+	repo := &fakeRepo{deployment: state, artifact: artifact, createLeaseErr: errors.New("lease unavailable")}
+	lifetime := &fakeManagedDataLifetime{}
+	factory := &fakeFactory{snapshotID: 42}
+	manager := NewManagerWithFactory(ManagerOptions{
+		Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: factory,
+		ManagedData: fakeManagedDataResolver{resolution: ManagedDataResolution{Lifetime: lifetime}},
+	})
+
+	if _, err := manager.PrepareServingState(t.Context(), "dep_1"); err == nil {
+		t.Fatal("prepare error = nil, want durable generation lease failure")
+	}
+	if factory.runtime == nil || !factory.runtime.closed {
+		t.Fatalf("prepared runtime = %#v, want closed after lease failure", factory.runtime)
+	}
+	if lifetime.releases != 1 {
+		t.Fatalf("managed-data lifetime releases = %d, want 1", lifetime.releases)
+	}
+}
+
+func TestManagerPersistsOneSnapshotLeaseForRuntimeGeneration(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeRepo{
 		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 11},
@@ -312,10 +334,6 @@ func TestManagerPersistsSnapshotLeaseOnAcquireAndRelease(t *testing.T) {
 	if err := manager.Reload(ctx); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	lease, err := manager.Acquire()
-	if err != nil {
-		t.Fatalf("acquire: %v", err)
-	}
 	if len(repo.createdLeases) != 1 {
 		t.Fatalf("created leases = %#v, want one", repo.createdLeases)
 	}
@@ -323,13 +341,57 @@ func TestManagerPersistsSnapshotLeaseOnAcquireAndRelease(t *testing.T) {
 	if created.WorkspaceID != "test" || created.Environment != "dev" || created.ServingStateID != "dep_1" || created.DuckLakeSnapshotID != 11 || created.OwnerID != "test-owner" {
 		t.Fatalf("created lease = %#v", created)
 	}
-	lease.Release()
-	if got := repo.releasedLeases; len(got) != 1 || got[0] != "lease_1" {
-		t.Fatalf("released leases = %#v, want [lease_1]", got)
+	for range 3 {
+		lease, err := manager.Acquire()
+		if err != nil {
+			t.Fatalf("acquire: %v", err)
+		}
+		lease.Release()
 	}
-	lease.Release()
-	if got := repo.releasedLeases; len(got) != 1 {
-		t.Fatalf("released leases after second release = %#v, want one release", got)
+	if len(repo.createdLeases) != 1 || len(repo.releasedLeases) != 0 {
+		t.Fatalf("request acquisitions changed durable leases: created=%d released=%d", len(repo.createdLeases), len(repo.releasedLeases))
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if got := repo.releasedLeases; len(got) != 1 || got[0] != "lease_1" {
+		t.Fatalf("released leases = %#v, want [lease_1] after generation close", got)
+	}
+}
+
+func TestManagerRetiredGenerationKeepsSnapshotLeaseUntilReadersDrain(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest-1"},
+	}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: &fakeFactory{}})
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("first reload: %v", err)
+	}
+	reader, err := manager.Acquire()
+	if err != nil {
+		t.Fatalf("acquire old generation: %v", err)
+	}
+
+	repo.deployment = servingstate.State{ID: "dep_2", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 22}
+	repo.artifact = servingstate.Artifact{ServingStateID: "dep_2", WorkspaceID: "test", Environment: "dev", Digest: "digest-2"}
+	if err := manager.Reload(ctx); err != nil {
+		t.Fatalf("second reload: %v", err)
+	}
+	if len(repo.createdLeases) != 2 || len(repo.releasedLeases) != 0 {
+		t.Fatalf("leases after cutover: created=%d released=%d, want 2 and 0", len(repo.createdLeases), len(repo.releasedLeases))
+	}
+
+	reader.Release()
+	if got := repo.releasedLeases; len(got) != 1 || got[0] != "lease_1" {
+		t.Fatalf("released leases after old reader drained = %#v, want [lease_1]", got)
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatalf("close current generation: %v", err)
+	}
+	if got := repo.releasedLeases; len(got) != 2 || got[1] != "lease_2" {
+		t.Fatalf("released leases after close = %#v, want [lease_1 lease_2]", got)
 	}
 }
 
@@ -350,12 +412,9 @@ func TestManagerRetriesPersistentLeaseRelease(t *testing.T) {
 	if err := manager.Reload(ctx); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	lease, err := manager.Acquire()
-	if err != nil {
-		t.Fatalf("acquire: %v", err)
+	if err := manager.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
-
-	lease.Release()
 
 	if got := len(repo.releasedLeases); got != 3 {
 		t.Fatalf("release attempts = %d, want retry until success", got)
@@ -923,7 +982,7 @@ func TestRegistryPrepareServingStateClosesLoadedRuntimesBeforePrepare(t *testing
 	}
 }
 
-func TestRegistryAcquireForWorkspaceClosesLoadedRuntimesBeforeLazyPrepare(t *testing.T) {
+func TestRegistryAcquireForWorkspaceDoesNotDiscoverRepositoryChanges(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	repo.active["operations/prod"] = registryDeploymentArtifact{
 		deployment: servingstate.State{ID: "dep_ops_prod", WorkspaceID: "operations", Environment: "prod", Status: servingstate.StatusActive, DuckLakeSnapshotID: 7},
@@ -951,20 +1010,19 @@ func TestRegistryAcquireForWorkspaceClosesLoadedRuntimesBeforeLazyPrepare(t *tes
 		artifact:   servingstate.Artifact{ServingStateID: "dep_visuals_prod", WorkspaceID: "visuals", Environment: "prod", Digest: "visuals-prod"},
 	}
 
-	lease, err := registry.AcquireForWorkspace(context.Background(), "visuals")
-	if err != nil {
-		t.Fatalf("acquire visuals: %v", err)
+	activeCalls := len(repo.activeCalls)
+	if _, err := registry.AcquireForWorkspace(context.Background(), "visuals"); err == nil {
+		t.Fatal("acquire visuals error = nil, want explicit activation requirement")
 	}
-	defer lease.Release()
-	if !factory.runtimes[0].closed || !factory.runtimes[1].closed {
-		t.Fatalf("previous active runtimes were not closed before lazy prepare: %#v", factory.runtimes)
+	if len(repo.activeCalls) != activeCalls {
+		t.Fatalf("repository active calls = %d, want unchanged %d", len(repo.activeCalls), activeCalls)
 	}
-	if len(factory.runtimes) != 3 || factory.runtimes[2].closed {
-		t.Fatalf("prepared runtime = %#v, want new open runtime", factory.runtimes)
+	if len(factory.runtimes) != 2 || factory.runtimes[0].closed || factory.runtimes[1].closed {
+		t.Fatalf("acquisition mutated loaded runtimes: %#v", factory.runtimes)
 	}
 }
 
-func TestRegistryAcquireForWorkspaceKeepsLoadedRuntimesOpenOnNoChangeReload(t *testing.T) {
+func TestRegistryAcquireForWorkspaceIsMemoryOnly(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	repo.active["operations/prod"] = registryDeploymentArtifact{
 		deployment: servingstate.State{ID: "dep_ops_prod", WorkspaceID: "operations", Environment: "prod", Status: servingstate.StatusActive, DuckLakeSnapshotID: 7},
@@ -984,12 +1042,16 @@ func TestRegistryAcquireForWorkspaceKeepsLoadedRuntimesOpenOnNoChangeReload(t *t
 	if err := registry.Reload(context.Background()); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
+	activeCalls := len(repo.activeCalls)
 
 	lease, err := registry.AcquireForWorkspace(context.Background(), "sales")
 	if err != nil {
 		t.Fatalf("acquire sales: %v", err)
 	}
 	lease.Release()
+	if len(repo.activeCalls) != activeCalls {
+		t.Fatalf("repository active calls = %d, want unchanged %d", len(repo.activeCalls), activeCalls)
+	}
 	if len(factory.runtimes) != 2 {
 		t.Fatalf("runtime count = %d, want no new prepare", len(factory.runtimes))
 	}
@@ -1041,6 +1103,7 @@ type fakeRepo struct {
 	extendedLeases         []string
 	releaseFailures        int
 	releaseFailureErr      error
+	createLeaseErr         error
 }
 
 func (r *fakeRepo) ActiveArtifact(_ context.Context, _ servingstate.WorkspaceID, environment servingstate.Environment) (servingstate.State, servingstate.Artifact, error) {
@@ -1073,6 +1136,9 @@ func (r *fakeRepo) RecordDuckLakeSnapshot(_ context.Context, servingStateID serv
 }
 
 func (r *fakeRepo) CreateQuerySnapshotLease(_ context.Context, input servingstate.SnapshotLeaseInput) (string, error) {
+	if r.createLeaseErr != nil {
+		return "", r.createLeaseErr
+	}
 	r.createdLeases = append(r.createdLeases, input)
 	return fmt.Sprintf("lease_%d", len(r.createdLeases)), nil
 }
@@ -1099,6 +1165,7 @@ type fakeFactory struct {
 	err          error
 	snapshotID   int64
 	input        RuntimeInput
+	runtime      *fakeRuntime
 }
 
 func (f *fakeFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, error) {
@@ -1107,10 +1174,12 @@ func (f *fakeFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, e
 	if f.err != nil {
 		return nil, f.err
 	}
+	snapshotID := f.snapshotID
 	if input.State.DuckLakeSnapshotID > 0 {
-		return &fakeRuntime{snapshotID: input.State.DuckLakeSnapshotID}, nil
+		snapshotID = input.State.DuckLakeSnapshotID
 	}
-	return &fakeRuntime{snapshotID: f.snapshotID}, nil
+	f.runtime = &fakeRuntime{snapshotID: snapshotID}
+	return f.runtime, nil
 }
 
 type fakeManagedDataResolver struct {

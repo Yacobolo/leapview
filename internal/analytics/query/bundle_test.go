@@ -48,7 +48,7 @@ func TestPlanBundleRejectsDifferentGovernedScopes(t *testing.T) {
 	}
 }
 
-func TestPlanBundleRejectsMultiFactBranch(t *testing.T) {
+func TestPlanBundleScansEachFactOnceForMultiFactBranches(t *testing.T) {
 	bundle, err := NewPlanner(executableMultiFactModel()).PlanBundle([]BundleRequest{
 		{ID: "by_customer", Request: Request{Dimensions: []Field{{Field: "customer", Alias: "label"}}, Measures: []Field{{Field: "tags_per_order", Alias: "value"}}}},
 		{ID: "by_segment", Request: Request{Dimensions: []Field{{Field: "segment", Alias: "label"}}, Measures: []Field{{Field: "tags_per_order", Alias: "value"}}}},
@@ -63,6 +63,86 @@ func TestPlanBundleRejectsMultiFactBranch(t *testing.T) {
 		if !strings.Contains(bundle.Plan.SQL, want) {
 			t.Fatalf("multi-fact bundle missing %q:\n%s", want, bundle.Plan.SQL)
 		}
+	}
+}
+
+func TestPlanBundleSharesFactScansAcrossSingleAndMultiFactBranches(t *testing.T) {
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, statement := range []string{
+		"CREATE SCHEMA model",
+		"CREATE TABLE model.orders(customer_id VARCHAR, segment VARCHAR, amount DOUBLE)",
+		"INSERT INTO model.orders VALUES ('a', 'consumer', 10), ('a', 'consumer', 20), ('b', 'business', 30)",
+		"CREATE TABLE model.tags(customer_id VARCHAR, segment VARCHAR, tag VARCHAR)",
+		"INSERT INTO model.tags VALUES ('a', 'consumer', 'new'), ('c', 'consumer', 'vip'), ('c', 'consumer', 'repeat')",
+		"CREATE TABLE model.clicks(customer_id VARCHAR, segment VARCHAR)",
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bundle, err := NewPlanner(executableMultiFactModel()).PlanBundle([]BundleRequest{
+		{
+			ID: "orders_by_local_segment",
+			Request: Request{
+				Table:      "orders",
+				Dimensions: []Field{{Field: "orders.segment", Alias: "label"}},
+				Measures:   []Field{{Field: "revenue", Alias: "value"}},
+				Sort:       []Sort{{Field: "label", Direction: "asc"}},
+			},
+		},
+		{
+			ID: "orders_by_customer",
+			Request: Request{
+				Table:      "orders",
+				Dimensions: []Field{{Field: "customer", Alias: "label"}},
+				Measures:   []Field{{Field: "revenue", Alias: "value"}},
+				Sort:       []Sort{{Field: "label", Direction: "asc"}},
+			},
+		},
+		{
+			ID: "ratio_by_customer",
+			Request: Request{
+				Dimensions: []Field{{Field: "customer", Alias: "label"}},
+				Measures:   []Field{{Field: "tags_per_order", Alias: "value"}},
+				Sort:       []Sort{{Field: "label", Direction: "asc"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(bundle.Plan.SQL, "FROM model.orders"); got != 1 {
+		t.Fatalf("orders scans = %d, want 1:\n%s", got, bundle.Plan.SQL)
+	}
+	if got := strings.Count(bundle.Plan.SQL, "FROM model.tags"); got != 1 {
+		t.Fatalf("tags scans = %d, want 1:\n%s", got, bundle.Plan.SQL)
+	}
+	if !strings.Contains(bundle.Plan.SQL, "AS MATERIALIZED") || strings.Contains(bundle.Plan.SQL, "CROSS JOIN UNNEST") {
+		t.Fatalf("heterogeneous bundle did not reuse a statement-local governed projection:\n%s", bundle.Plan.SQL)
+	}
+	rows, err := queryBundlePlan(db, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := bundle.Decode(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segments := decoded["orders_by_local_segment"]
+	if len(segments) != 2 || segments[0]["label"] != "business" || segments[0]["value"] != float64(30) || segments[1]["label"] != "consumer" || segments[1]["value"] != float64(30) {
+		t.Fatalf("single-fact local branch = %#v", segments)
+	}
+	orderCustomers := decoded["orders_by_customer"]
+	if len(orderCustomers) != 2 || orderCustomers[0]["label"] != "a" || orderCustomers[0]["value"] != float64(30) || orderCustomers[1]["label"] != "b" || orderCustomers[1]["value"] != float64(30) {
+		t.Fatalf("single-fact conformed branch leaked multi-fact-only groups: %#v", orderCustomers)
+	}
+	customers := decoded["ratio_by_customer"]
+	if len(customers) != 3 || customers[0]["label"] != "a" || customers[0]["value"] != 0.5 || customers[1]["label"] != "b" || customers[1]["value"] != 0.0 || customers[2]["label"] != "c" || customers[2]["value"] != nil {
+		t.Fatalf("multi-fact branch = %#v", customers)
 	}
 }
 

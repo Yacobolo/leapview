@@ -15,9 +15,9 @@ type bundleDimension struct {
 }
 
 // PlanBundle fuses independently shaped aggregates with identical governed
-// scope and participating facts. Single-fact bundles scan their fact once;
-// multi-fact bundles scan each fact once and retain the regular outer-stitch
-// semantics before decoding consumer branches.
+// scope. Single-fact bundles scan their fact once; heterogeneous and
+// multi-fact bundles materialize one statement-local projection per fact and
+// retain the regular outer-stitch semantics before decoding consumer branches.
 func (p *Planner) PlanBundle(requests []BundleRequest) (BundlePlan, error) {
 	if len(requests) == 0 {
 		return BundlePlan{}, fmt.Errorf("aggregate bundle requires at least one request")
@@ -25,6 +25,8 @@ func (p *Planner) PlanBundle(requests []BundleRequest) (BundlePlan, error) {
 	resolutions := make([]aggregateResolution, len(requests))
 	fact := ""
 	factSignature := ""
+	heterogeneousFacts := false
+	containsMultiFact := false
 	ids := map[string]bool{}
 	for i, item := range requests {
 		if item.ID == "" || ids[item.ID] {
@@ -51,16 +53,16 @@ func (p *Planner) PlanBundle(requests []BundleRequest) (BundlePlan, error) {
 		if factSignature == "" {
 			factSignature = branchFacts
 			fact = resolved.Facts[0]
+		} else if branchFacts != factSignature {
+			heterogeneousFacts = true
 		}
-		if branchFacts != factSignature {
-			return BundlePlan{}, fmt.Errorf("bundle branch %q has facts %q; bundle facts are %q", item.ID, branchFacts, factSignature)
-		}
+		containsMultiFact = containsMultiFact || resolved.MultiFact
 		if i > 0 && (!reflect.DeepEqual(item.Request.Filters, requests[0].Request.Filters) || !reflect.DeepEqual(item.Request.ColumnMasks, requests[0].Request.ColumnMasks)) {
 			return BundlePlan{}, fmt.Errorf("bundle branch %q has a different governed scope", item.ID)
 		}
 		resolutions[i] = resolved
 	}
-	if resolutions[0].MultiFact {
+	if containsMultiFact || heterogeneousFacts {
 		return p.planMultiFactBundle(requests, resolutions)
 	}
 

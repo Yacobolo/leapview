@@ -353,7 +353,7 @@ c2,RJ
 	if len(recorder.queries) != 1 || len(recorder.queries[0].Measures) != 3 {
 		t.Fatalf("targeted KPI queries = %#v, want one three-measure query", recorder.queries)
 	}
-	if len(progress) != 2 || progress[0] != (consumer.Progress{Total: 1}) || progress[1] != (consumer.Progress{Completed: 1, Total: 1}) {
+	if len(progress) != 2 || progress[0] != (consumer.Progress{Total: 1}) || progress[1].Completed != 1 || progress[1].Total != 1 || progress[1].WorkDuration <= 0 || progress[1].CriticalPathDuration <= 0 {
 		t.Fatalf("optimizer job progress = %#v", progress)
 	}
 }

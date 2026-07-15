@@ -52,8 +52,6 @@ type analyzedQuery struct {
 	facts     string
 	scalar    bool
 	grouped   bool
-	additive  map[string]bool
-	atomic    map[string]bool
 	aggregate bool
 }
 
@@ -69,6 +67,18 @@ func Optimize(model *semanticmodel.Model, queries []LogicalQuery) (Plan, error) 
 }
 
 func (o *Optimizer) Optimize(queries []LogicalQuery) (Plan, error) {
+	return o.optimize(queries, true)
+}
+
+// OptimizeForConcurrency chooses between one heterogeneous shared projection
+// and independent fact-signature bundles. A serial executor benefits from one
+// governed fact scan; concurrent readers can execute the smaller bundles in
+// parallel without paying projection materialization on the critical path.
+func (o *Optimizer) OptimizeForConcurrency(queries []LogicalQuery, concurrency int) (Plan, error) {
+	return o.optimize(queries, concurrency <= 1)
+}
+
+func (o *Optimizer) optimize(queries []LogicalQuery, fuseHeterogeneousFacts bool) (Plan, error) {
 	planner := o.planner
 	if planner == nil || planner.Model == nil {
 		return Plan{}, fmt.Errorf("compiled semantic planner is required")
@@ -86,19 +96,6 @@ func (o *Optimizer) Optimize(queries []LogicalQuery) (Plan, error) {
 			item.scalar = len(logical.Query.Fields) == 0 && logical.Query.Time.Field == ""
 			item.grouped = !item.scalar
 			item.facts = strings.Join(analysis.Facts, ",")
-			item.atomic = stringSet(analysis.AtomicMeasures)
-			item.additive = map[string]bool{}
-			for _, member := range logical.Query.Measures {
-				dependencies, additive, err := planner.AdditiveMeasureDependencies(member.Field)
-				if err != nil {
-					return Plan{}, fmt.Errorf("consumer %s:%s: %w", logical.Target.Kind, logical.Target.ID, err)
-				}
-				if additive {
-					for _, dependency := range dependencies {
-						item.additive[dependency] = true
-					}
-				}
-			}
 		}
 		scope, err := physicalScopeKey(logical.Query)
 		if err != nil {
@@ -123,9 +120,10 @@ func (o *Optimizer) Optimize(queries []LogicalQuery) (Plan, error) {
 			if candidateIndex == sourceIndex || assigned[candidateIndex] || !candidate.aggregate || candidate.scope != source.scope {
 				continue
 			}
-			if candidate.grouped && candidate.facts == source.facts || candidate.scalar && setContains(source.atomic, candidate.additive) && len(candidate.additive) > 0 {
-				members = append(members, candidateIndex)
+			if !fuseHeterogeneousFacts && candidate.facts != source.facts {
+				continue
 			}
+			members = append(members, candidateIndex)
 		}
 		if len(members) < 2 {
 			continue
@@ -211,10 +209,9 @@ func (o *Optimizer) Optimize(queries []LogicalQuery) (Plan, error) {
 func physicalScopeKey(query dataquery.Query) (string, error) {
 	encoded, err := json.Marshal(struct {
 		ModelID     string                 `json:"modelId"`
-		Target      string                 `json:"target"`
 		Filters     []dataquery.Filter     `json:"filters"`
 		ColumnMasks []dataquery.ColumnMask `json:"columnMasks"`
-	}{ModelID: query.ModelID, Target: query.Target, Filters: query.Filters, ColumnMasks: query.ColumnMasks})
+	}{ModelID: query.ModelID, Filters: query.Filters, ColumnMasks: query.ColumnMasks})
 	if err != nil {
 		return "", fmt.Errorf("encode governed query scope: %w", err)
 	}
@@ -254,23 +251,6 @@ func semanticFilter(filter dataquery.Filter) semanticquery.Filter {
 		}
 	}
 	return semanticquery.Filter{Field: filter.Field, Fact: filter.Fact, Operator: filter.Operator, Values: append([]any{}, filter.Values...), Groups: groups}
-}
-
-func stringSet(values []string) map[string]bool {
-	result := make(map[string]bool, len(values))
-	for _, value := range values {
-		result[value] = true
-	}
-	return result
-}
-
-func setContains(haystack, needles map[string]bool) bool {
-	for needle := range needles {
-		if !haystack[needle] {
-			return false
-		}
-	}
-	return true
 }
 
 func consumerKindPriority(kind Kind) int {

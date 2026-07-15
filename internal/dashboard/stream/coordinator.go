@@ -119,7 +119,7 @@ type activeRefresh struct {
 	setupRequiredErr error
 	refreshError     error
 	cacheOutcomes    map[string]int
-	targetDuration   time.Duration
+	targetWork       time.Duration
 	stageTimingsMs   map[string]float64
 	progressPercent  *float64
 }
@@ -318,7 +318,9 @@ func (c *Coordinator) emitCurrent(refresh Refresh, event RefreshEvent) bool {
 			c.active.progressPercent = dashboard.NormalizeProgressPercent(nil, false)
 			event.ProgressPercent = cloneProgressPercent(c.active.progressPercent)
 		}
-		c.active.targetDuration += event.Duration
+		if event.Type == RefreshEventProgress {
+			c.active.targetWork += event.Duration
+		}
 		if len(event.StageTimingsMs) > 0 {
 			if c.active.stageTimingsMs == nil {
 				c.active.stageTimingsMs = map[string]float64{}
@@ -397,7 +399,7 @@ func (c *Coordinator) summaryLocked(active *activeRefresh, outcome string, cance
 		stageTimings[stage] = duration
 	}
 	stageTimings["endToEnd"] = float64(time.Since(active.startedAt).Microseconds()) / 1000
-	stageTimings["targetExecution"] = float64(active.targetDuration.Microseconds()) / 1000
+	stageTimings["targetWorkSum"] = float64(active.targetWork.Microseconds()) / 1000
 	cacheOutcomes := make(map[string]int, len(active.cacheOutcomes))
 	for cacheOutcome, count := range active.cacheOutcomes {
 		cacheOutcomes[cacheOutcome] = count

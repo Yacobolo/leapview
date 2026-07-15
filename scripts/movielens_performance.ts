@@ -385,8 +385,10 @@ async function runInteraction(page: Page, visualId: string, datumOffset: number)
   }, input.command)
 
   await page.waitForFunction(() => (window as any).__ldPerfObserver?.active?.optimisticAt !== null, undefined, { timeout: 10_000 })
-  const feedback = await waitForStatus(page, (status) => status.generation > before.generation && status.loading, 10_000)
-  const settled = await waitForStatus(page, (status) => status.generation === feedback.generation && !status.loading, 600_000)
+  const accepted = await waitForStatus(page, (status) => refreshWasAccepted(before.generation, status), 10_000)
+  const settled = accepted.loading
+    ? await waitForStatus(page, (status) => status.generation === accepted.generation && !status.loading, 600_000)
+    : accepted
   const trace = await finishPerformanceTrace(page)
   return {
     refreshId: settled.refreshId,
@@ -683,7 +685,11 @@ async function waitForDashboardIdle(page: Page, timeoutMs: number): Promise<void
   await waitForStatus(page, (status) => status.generation > 0 && !status.loading, timeoutMs)
 }
 
-type DashboardStatusSnapshot = { refreshId: string; generation: number; loading: boolean }
+export type DashboardStatusSnapshot = { refreshId: string; generation: number; loading: boolean }
+
+export function refreshWasAccepted(beforeGeneration: number, status: DashboardStatusSnapshot): boolean {
+  return status.generation > beforeGeneration
+}
 
 async function dashboardStatus(page: Page): Promise<DashboardStatusSnapshot> {
   return page.locator('ld-dashboard-page').evaluate((element: any) => ({

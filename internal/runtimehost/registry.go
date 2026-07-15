@@ -311,6 +311,9 @@ func (r *Registry) ActiveForWorkspace(ctx context.Context, workspaceID servingst
 }
 
 func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID servingstate.WorkspaceID) (Lease, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	r.cutoverMu.RLock()
 	defer r.cutoverMu.RUnlock()
 	r.mu.RLock()
@@ -318,13 +321,6 @@ func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID servings
 	r.mu.RUnlock()
 	if manager == nil {
 		return nil, fmt.Errorf("no active LibreDash serving state")
-	}
-	if r.prepareMu.TryLock() {
-		err := manager.ReloadBeforePrepare(ctx, r.closePreparedRuntimes)
-		r.prepareMu.Unlock()
-		if err != nil {
-			return nil, err
-		}
 	}
 	return manager.Acquire()
 }

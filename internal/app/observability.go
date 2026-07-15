@@ -182,7 +182,7 @@ func dashboardOutcomeLabel(value string) string {
 func dashboardStageLabel(value string) string {
 	value = normalizedMetricLabel(value)
 	switch value {
-	case "end_to_end", "target_execution", "admission_wait", "connection_wait", "planning", "database", "execution":
+	case "end_to_end", "target_work_sum", "target_critical_path", "admission_wait", "connection_wait", "planning", "database", "execution":
 		return value
 	default:
 		return "other"
@@ -230,8 +230,10 @@ func normalizedMetricLabel(value string) string {
 		return "admission_wait"
 	case "connectionwait":
 		return "connection_wait"
-	case "targetexecution":
-		return "target_execution"
+	case "targetworksum":
+		return "target_work_sum"
+	case "targetcriticalpath":
+		return "target_critical_path"
 	default:
 		return value
 	}

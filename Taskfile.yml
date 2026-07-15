@@ -107,14 +107,14 @@ tasks:
       - bun scripts/qa_ui_framework.ts
 
   qa:movielens-performance:
-    desc: Run the generic dashboard performance runner with the MovieLens scenario
+    desc: Run the local/nightly dashboard performance runner with the MovieLens scenario (not part of CI)
     deps:
       - node:deps
     cmds:
       - bun run qa:movielens-performance
 
   qa:dashboard-performance:
-    desc: Run a configured dashboard performance scenario against a running dev server
+    desc: Run a configured local/nightly performance scenario against a running dev server (not part of CI)
     deps:
       - node:deps
     cmds:
