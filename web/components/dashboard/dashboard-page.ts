@@ -38,7 +38,6 @@ const emptyStatus: DashboardStatus = {
   generation: 0,
   lastUpdated: '',
   refreshId: '',
-  dataDirectory: '',
   setupRequired: false,
   progressPercent: 100,
 }

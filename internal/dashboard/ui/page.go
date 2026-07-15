@@ -103,7 +103,7 @@ func csrfMeta(token string) g.Node {
 	return h.Meta(h.Name("csrf-token"), h.Content(token))
 }
 
-func Page(dataDir, clientID, csrfToken string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
+func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
@@ -164,8 +164,8 @@ func defaultPage() dashboard.Page {
 	}
 }
 
-func BootstrapSignals(dataDir, clientID, streamInstanceID string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
-	envelope := uisignals.DashboardInitialEnvelope(dataDir, clientID, streamInstanceID, catalog, report, model, pages, activePage, initialFilters)
+func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
+	envelope := uisignals.DashboardInitialEnvelope(clientID, streamInstanceID, catalog, report, model, pages, activePage, initialFilters)
 	envelope.Runtime.WorkspaceID = uisignals.Optional(catalog.Workspace.ID)
 	for _, decorate := range chromeDecorators {
 		if decorate != nil {

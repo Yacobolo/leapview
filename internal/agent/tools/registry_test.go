@@ -9,8 +9,8 @@ import (
 
 func TestAPIGenOperationsUseGeneratedReadOnlyToolContracts(t *testing.T) {
 	operations := APIGenOperations()
-	if len(operations) != 31 {
-		t.Fatalf("APIGenOperations() count = %d, want 31", len(operations))
+	if len(operations) != 29 {
+		t.Fatalf("APIGenOperations() count = %d, want 29", len(operations))
 	}
 	operationsByName := make(map[string]APIGenOperation, len(operations))
 	for _, operation := range operations {

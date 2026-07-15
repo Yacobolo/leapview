@@ -18,7 +18,6 @@ type QueryService struct {
 
 type SnapshotService struct {
 	mu       *sync.RWMutex
-	dataDir  string
 	reports  *ReportService
 	runtimes map[string]*modelRuntime
 	filters  *FilterService
@@ -77,10 +76,10 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 		filters = filters.WithDefaults()
 	}
 	if err != nil {
-		return dashboard.EmptyPatch(filters, s.dataDir, err), nil
+		return dashboard.EmptyPatch(filters, err), nil
 	}
 	if !runtime.ready {
-		return dashboard.EmptyPatch(filters, s.dataDir, runtime.missing), nil
+		return dashboard.EmptyPatch(filters, runtime.missing), nil
 	}
 
 	s.mu.RLock()
@@ -91,7 +90,6 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 		Status: dashboard.Status{
 			Loading:         false,
 			LastUpdated:     refreshLabel(runtime),
-			DataDirectory:   s.dataDir,
 			ProgressPercent: dashboard.NormalizeProgressPercent(nil, false),
 		},
 		Visuals: map[string]dashboard.Visual{},
@@ -100,13 +98,13 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 	page := dashboardPage(report, pageID)
 	options, err := s.filters.filterOptions(ctx, runtime, report, report.PageFilterIDs(page.ID))
 	if err != nil {
-		return dashboard.EmptyPatch(filters, s.dataDir, err), nil
+		return dashboard.EmptyPatch(filters, err), nil
 	}
 	patch.FilterOptions = options
 
 	visuals, err := s.visuals.visuals(ctx, runtime, report, filters, pageVisualIDs(page))
 	if err != nil {
-		return dashboard.EmptyPatch(filters, s.dataDir, err), nil
+		return dashboard.EmptyPatch(filters, err), nil
 	}
 	patch.Visuals = visuals
 

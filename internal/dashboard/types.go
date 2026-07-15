@@ -605,7 +605,6 @@ type Status struct {
 	RefreshID       string   `json:"refreshId"`
 	Generation      int64    `json:"generation"`
 	LastUpdated     string   `json:"lastUpdated"`
-	DataDirectory   string   `json:"dataDirectory"`
 	SetupRequired   bool     `json:"setupRequired"`
 	ProgressPercent *float64 `json:"progressPercent"`
 }
@@ -891,7 +890,7 @@ func emptyTableBlocks() map[string]TableBlock {
 	}
 }
 
-func EmptyPatch(filters Filters, dataDir string, err error) Patch {
+func EmptyPatch(filters Filters, err error) Patch {
 	message := ""
 	if err != nil {
 		message = err.Error()
@@ -902,7 +901,6 @@ func EmptyPatch(filters Filters, dataDir string, err error) Patch {
 		Status: Status{
 			Loading:         false,
 			Error:           message,
-			DataDirectory:   dataDir,
 			SetupRequired:   err != nil,
 			ProgressPercent: NormalizeProgressPercent(nil, false),
 		},

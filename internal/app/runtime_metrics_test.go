@@ -12,7 +12,7 @@ import (
 
 func TestRuntimeMetricsQueryDashboardUsesRuntimeLease(t *testing.T) {
 	provider := &leaseRecordingProvider{}
-	metrics := NewRuntimeMetrics(provider, "/data", "test")
+	metrics := NewRuntimeMetrics(provider, "test")
 
 	if _, err := metrics.QueryDashboardPage(context.Background(), "dashboard", "page", dashboard.Filters{}); err != nil {
 		t.Fatalf("query dashboard: %v", err)
@@ -35,7 +35,7 @@ func TestRuntimeMetricsDashboardRefreshLeasePinsOneRuntimeAcrossTargets(t *testi
 	first := &targetLeaseRuntime{id: "first"}
 	second := &targetLeaseRuntime{id: "second"}
 	provider := &switchingLeaseProvider{current: first}
-	metrics := runtimeMetrics{provider: provider, dataDir: "/data", workspaceID: "test"}
+	metrics := runtimeMetrics{provider: provider, workspaceID: "test"}
 
 	err := metrics.WithDashboardRefreshLease(context.Background(), func(ctx context.Context) error {
 		provider.current = second

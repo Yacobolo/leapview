@@ -22,7 +22,6 @@ import (
 type RuntimeConfig struct {
 	ModelID string
 	Model   *semanticmodel.Model
-	DataDir string
 	DBDir   string
 	// QueryCacheNamespace identifies the immutable serving snapshot and source
 	// digests backing this runtime. Mutable refreshes additionally advance the
@@ -49,7 +48,6 @@ type Runtime struct {
 	modelID     string
 	model       *semanticmodel.Model
 	planner     *semanticquery.Planner
-	dataDir     string
 	db          Database
 	sources     SourceRegistrar
 	queries     *semanticquery.Service
@@ -94,7 +92,7 @@ func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error)
 	if resolver == nil {
 		resolver = defaultSourcePathResolver{}
 	}
-	if err := ValidateFilesWithResolver(config.Model, config.DataDir, resolver); err != nil {
+	if err := ValidateFilesWithResolver(config.Model, resolver); err != nil {
 		return nil, err
 	}
 	planner, err := semanticquery.NewCompiledPlanner(config.Model)
@@ -106,7 +104,6 @@ func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error)
 		modelID:    config.ModelID,
 		model:      config.Model,
 		planner:    planner,
-		dataDir:    config.DataDir,
 		db:         config.Database,
 		sources:    config.Sources,
 		queries:    semanticquery.NewService(planner, config.Database),
@@ -141,17 +138,7 @@ func queryCacheLimits(config RuntimeConfig) (int, int64) {
 }
 
 func DatabasePath(dbDir, modelID string) string {
-	if path := os.Getenv(configspec.EnvLIBREDASH_DUCKDB_PATH); path != "" {
-		return path
-	}
 	return filepath.Join(dbDir, "libredash-"+modelID+".duckdb")
-}
-
-func WorkspaceDatabasePath(dbDir string) string {
-	if path := os.Getenv(configspec.EnvLIBREDASH_DUCKDB_PATH); path != "" {
-		return path
-	}
-	return filepath.Join(dbDir, "libredash-workspace.duckdb")
 }
 
 func (r *Runtime) Close() error {
@@ -747,7 +734,7 @@ func (r *Runtime) executeSourceRows(ctx context.Context, request dataquery.Query
 	if err := r.sources.PrepareSourceRuntime(ctx, r.model); err != nil {
 		return dataquery.Result{}, err
 	}
-	relation, err := planner.SourceRelation(r.model, source, r.dataDir)
+	relation, err := planner.SourceRelation(r.model, source)
 	if err != nil {
 		return dataquery.Result{}, err
 	}

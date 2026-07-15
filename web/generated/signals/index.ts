@@ -575,12 +575,11 @@ export interface DashboardPageSignal {
 }
 
 export interface DashboardStatus {
-  dataDirectory: string
   error: string
   generation: number
   lastUpdated: string
   loading: boolean
-  progressPercent?: number
+  progressPercent: number
   refreshId: string
   setupRequired: boolean
 }

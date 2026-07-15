@@ -579,7 +579,6 @@ function testDocument(): string {
     refreshId: 'refresh-3',
     generation: 3,
     lastUpdated: '12:00:00',
-    dataDirectory: '.data/olist',
     setupRequired: false,
     progressPercent: 50,
   }

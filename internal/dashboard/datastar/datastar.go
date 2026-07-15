@@ -79,7 +79,7 @@ func TablesPatch(tables map[string]dashboard.Table) pagestream.SignalPatch {
 	return pagestream.SignalPatch{"tables": tables}
 }
 
-func LoadingPatch(dataDir string) pagestream.SignalPatch {
+func LoadingPatch() pagestream.SignalPatch {
 	return pagestream.SignalPatch{
 		"status": map[string]any{
 			"loading":         true,
@@ -87,14 +87,13 @@ func LoadingPatch(dataDir string) pagestream.SignalPatch {
 			"refreshId":       "",
 			"generation":      int64(0),
 			"lastUpdated":     "",
-			"dataDirectory":   dataDir,
 			"setupRequired":   false,
 			"progressPercent": dashboard.NormalizeProgressPercent(nil, true),
 		},
 	}
 }
 
-func RefreshEventPatch(event dashboardstream.RefreshEvent, dataDir string) pagestream.SignalPatch {
+func RefreshEventPatch(event dashboardstream.RefreshEvent) pagestream.SignalPatch {
 	generation := int64(event.Generation)
 	status := func(loading bool, err error) map[string]any {
 		message := ""
@@ -107,7 +106,6 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent, dataDir string) pages
 			"refreshId":       event.RefreshID,
 			"generation":      generation,
 			"lastUpdated":     time.Now().Format("15:04:05"),
-			"dataDirectory":   dataDir,
 			"setupRequired":   errorSetupRequired(err),
 			"progressPercent": dashboard.NormalizeProgressPercent(event.ProgressPercent, loading),
 		}
@@ -169,7 +167,7 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent, dataDir string) pages
 // RefreshEventEnvelope keeps refresh ordering and mailbox behavior outside the
 // signal payload. The browser receives Signals only; pagestream consumes the
 // explicit delivery metadata.
-func RefreshEventEnvelope(event dashboardstream.RefreshEvent, dataDir string) pagestream.Envelope {
+func RefreshEventEnvelope(event dashboardstream.RefreshEvent) pagestream.Envelope {
 	generation := uint64(0)
 	if event.Generation > 0 {
 		generation = uint64(event.Generation)
@@ -190,7 +188,7 @@ func RefreshEventEnvelope(event dashboardstream.RefreshEvent, dataDir string) pa
 		delivery.MergeRoots = dashboardMergeRoots()
 	}
 	return pagestream.Envelope{
-		Signals:  RefreshEventPatch(event, dataDir),
+		Signals:  RefreshEventPatch(event),
 		Delivery: delivery,
 		Trace: pagestream.TraceMetadata{
 			Origin:        "dashboard.refresh",

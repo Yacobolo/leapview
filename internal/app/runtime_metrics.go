@@ -27,7 +27,6 @@ type runtimeLeaseProvider interface {
 
 type runtimeMetrics struct {
 	provider    runtimeProvider
-	dataDir     string
 	workspaceID string
 }
 
@@ -40,7 +39,6 @@ type dashboardRefreshRuntime struct {
 
 type dynamicRuntimeMetrics struct {
 	defaultID string
-	dataDir   string
 	factory   func(workspaceID string) RuntimeProvider
 	mu        sync.Mutex
 	metrics   map[string]QueryMetrics
@@ -86,14 +84,13 @@ type agentPolicyProvider interface {
 	AgentPolicy() workspace.AgentPolicy
 }
 
-func NewRuntimeMetrics(provider runtimeProvider, dataDir, workspaceID string) QueryMetrics {
-	return runtimeMetrics{provider: provider, dataDir: dataDir, workspaceID: workspaceID}
+func NewRuntimeMetrics(provider runtimeProvider, workspaceID string) QueryMetrics {
+	return runtimeMetrics{provider: provider, workspaceID: workspaceID}
 }
 
-func NewDynamicRuntimeMetrics(defaultWorkspaceID, dataDir string, factory func(workspaceID string) RuntimeProvider) QueryMetrics {
+func NewDynamicRuntimeMetrics(defaultWorkspaceID string, factory func(workspaceID string) RuntimeProvider) QueryMetrics {
 	return &dynamicRuntimeMetrics{
 		defaultID: defaultWorkspaceID,
-		dataDir:   dataDir,
 		factory:   factory,
 		metrics:   map[string]QueryMetrics{},
 	}
@@ -123,7 +120,7 @@ func (m *dynamicRuntimeMetrics) MetricsForWorkspace(workspaceID string) (QueryMe
 	if provider == nil {
 		return nil, false
 	}
-	metrics := NewRuntimeMetrics(provider, m.dataDir, workspaceID)
+	metrics := NewRuntimeMetrics(provider, workspaceID)
 	m.metrics[workspaceID] = metrics
 	return metrics, true
 }
@@ -236,13 +233,13 @@ func (m runtimeMetrics) QueryDashboard(ctx context.Context, dashboardID string, 
 func (m runtimeMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	runtime, release, err := m.active(ctx)
 	if err != nil {
-		return dashboard.EmptyPatch(filters.WithDefaults(), m.dataDir, err), nil
+		return dashboard.EmptyPatch(filters.WithDefaults(), err), nil
 	}
 	defer release()
 	port, ok := runtime.(dashboardRuntime)
 	if !ok {
 		err := fmt.Errorf("active runtime does not provide dashboard data")
-		return dashboard.EmptyPatch(filters.WithDefaults(), m.dataDir, err), nil
+		return dashboard.EmptyPatch(filters.WithDefaults(), err), nil
 	}
 	return port.QueryDashboardPage(ctx, dashboardID, pageID, filters)
 }
@@ -371,10 +368,6 @@ func (m runtimeMetrics) RefreshModelTables(ctx context.Context, modelID string, 
 		return fmt.Errorf("active runtime does not support model table refresh")
 	}
 	return port.RefreshTables(ctx, modelID, tableNames)
-}
-
-func (m runtimeMetrics) DataDir() string {
-	return m.dataDir
 }
 
 func (m runtimeMetrics) Pages(dashboardID string) []dashboard.Page {

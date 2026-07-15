@@ -35,9 +35,12 @@ func TestPatchKeys(t *testing.T) {
 		t.Fatalf("table patch = %#v", tablePatch)
 	}
 
-	status, ok := LoadingPatch(".data")["status"].(map[string]any)
-	if !ok || status["loading"] != true || status["dataDirectory"] != ".data" {
-		t.Fatalf("loading patch = %#v", LoadingPatch(".data"))
+	status, ok := LoadingPatch()["status"].(map[string]any)
+	if !ok || status["loading"] != true {
+		t.Fatalf("loading patch = %#v", LoadingPatch())
+	}
+	if _, exists := status["dataDirectory"]; exists {
+		t.Fatalf("loading patch exposes dataDirectory: %#v", status)
 	}
 	progress, ok := status["progressPercent"].(*float64)
 	if !ok || progress == nil || *progress != 0 {
@@ -48,7 +51,7 @@ func TestPatchKeys(t *testing.T) {
 func TestRefreshCompletePreservesFatalError(t *testing.T) {
 	patch := RefreshEventPatch(dashboardstream.RefreshEvent{
 		Type: dashboardstream.RefreshEventComplete, RefreshID: "refresh-1", Generation: 1, Err: errors.New("refresh failed"),
-	}, ".data")
+	})
 	status, ok := patch["status"].(map[string]any)
 	if !ok || status["loading"] != false || status["error"] != "refresh failed" {
 		t.Fatalf("terminal patch = %#v", patch)
@@ -86,7 +89,7 @@ func TestRefreshProgressIsBackendOwned(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			patch := RefreshEventPatch(test.event, ".data")
+			patch := RefreshEventPatch(test.event)
 			status, ok := patch["status"].(map[string]any)
 			progress, progressOK := status["progressPercent"].(*float64)
 			if !ok || !progressOK || !equalOptionalPercent(progress, test.percent) {
@@ -134,7 +137,7 @@ func TestRefreshEventEnvelopeCarriesExplicitDeliveryMetadata(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			envelope := RefreshEventEnvelope(test.event, "/data")
+			envelope := RefreshEventEnvelope(test.event)
 			if envelope.Delivery.Generation != 9 || envelope.Delivery.Boundary != test.wantBoundary || envelope.Delivery.CoalesceGroup != test.wantGroup {
 				t.Fatalf("delivery metadata = %#v", envelope.Delivery)
 			}
@@ -152,7 +155,7 @@ func TestTableMetadataUpdatesDataWithoutChangingComponentStatus(t *testing.T) {
 	table := dashboard.Table{Title: "Orders", Cardinality: dashboard.ExactCardinality(42)}
 	patch := RefreshEventPatch(dashboardstream.RefreshEvent{
 		Type: dashboardstream.RefreshEventTableMetadata, Target: "orders", Value: table,
-	}, ".data")
+	})
 	tables, ok := patch["tables"].(map[string]dashboard.Table)
 	total, exact := tables["orders"].Cardinality.ExactValue()
 	if !ok || total != 42 || !exact {
@@ -171,7 +174,7 @@ func (setupRequiredPatchError) SetupRequired() bool { return true }
 func TestRefreshCompleteMarksSetupRequiredErrors(t *testing.T) {
 	patch := RefreshEventPatch(dashboardstream.RefreshEvent{
 		Type: dashboardstream.RefreshEventComplete, RefreshID: "refresh-1", Generation: 1, Err: setupRequiredPatchError{},
-	}, ".data")
+	})
 	status, ok := patch["status"].(map[string]any)
 	if !ok || status["setupRequired"] != true || status["error"] != "source data is missing" {
 		t.Fatalf("terminal patch = %#v", patch)

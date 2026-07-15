@@ -28,7 +28,7 @@ func TestModelTableExecutesPlannedSQL(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name: "test",
 		Connections: map[string]semanticmodel.Connection{
-			"local_files": {Kind: "local"},
+			"local_files": {Kind: "managed"},
 		},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
@@ -67,7 +67,7 @@ func TestModelTableExecutesPlannedSQL(t *testing.T) {
 func TestModelTablePlannerErrorStopsMaterialization(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name:        "test",
-		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
@@ -106,7 +106,7 @@ func TestSQLModelTableUsesPlannedSQL(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name: "test",
 		Connections: map[string]semanticmodel.Connection{
-			"local_files": {Kind: "local"},
+			"local_files": {Kind: "managed"},
 		},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {
@@ -146,7 +146,7 @@ func TestSQLModelTableUsesPlannedSQL(t *testing.T) {
 func TestModelTableExecutionErrorReturnsMaterializationError(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name:        "test",
-		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
@@ -173,7 +173,7 @@ func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name: "test",
 		Connections: map[string]semanticmodel.Connection{
-			"local_files": {Kind: "local"},
+			"local_files": {Kind: "managed"},
 		},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
@@ -220,7 +220,7 @@ func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
 func TestMovieLensModelTableOrderMaterializesDimensionsBeforeFacts(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name:        "movielens",
-		Connections: map[string]semanticmodel.Connection{"movielens": {Kind: "local"}},
+		Connections: map[string]semanticmodel.Connection{"movielens": {Kind: "managed"}},
 		Sources: map[string]semanticmodel.Source{
 			"ratings": {Path: "ratings.csv", Format: "csv", Connection: "movielens"},
 			"movies":  {Path: "movies.csv", Format: "csv", Connection: "movielens"},
@@ -287,7 +287,7 @@ func TestWorkspaceRuntimeCommitsModelTablesInOneDuckLakeSnapshot(t *testing.T) {
 	}
 	model := &semanticmodel.Model{
 		Name:        "workspace",
-		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
@@ -318,11 +318,11 @@ func TestWorkspaceRuntimeCommitsModelTablesInOneDuckLakeSnapshot(t *testing.T) {
 	if err := model.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	bindManagedTestRoot(model, dir)
 
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:  map[string]*semanticmodel.Model{"sales": model},
-		DataDir: dir,
-		DBDir:   dir,
+		Models: map[string]*semanticmodel.Model{"sales": model},
+		DBDir:  dir,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -381,7 +381,7 @@ func TestWorkspaceRuntimeUsesPlatformDBAsDuckLakeCatalog(t *testing.T) {
 	}
 	model := &semanticmodel.Model{
 		Name:        "workspace",
-		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
@@ -403,11 +403,11 @@ func TestWorkspaceRuntimeUsesPlatformDBAsDuckLakeCatalog(t *testing.T) {
 	if err := model.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	bindManagedTestRoot(model, dataDir)
 	duckRoot := filepath.Join(dir, "duckdb", "dev")
 	duckLakeDataPath := filepath.Join(dir, ".libredash", "data")
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
 		Models:           map[string]*semanticmodel.Model{"sales": model},
-		DataDir:          dataDir,
 		DBDir:            duckRoot,
 		CatalogPath:      catalogPath,
 		DuckLakeDataPath: duckLakeDataPath,
@@ -462,11 +462,10 @@ func TestWorkspaceRuntimeQueriesPinnedDuckLakeSnapshots(t *testing.T) {
 		t.Fatalf("open platform store: %v", err)
 	}
 	defer store.Close()
-	model := simpleOrdersModel(t)
+	model := simpleOrdersModel(t, dataDir)
 	duckRoot := filepath.Join(dir, "duckdb", "dev")
 	config := analyticsduckdb.WorkspaceRuntimeConfig{
 		Models:           map[string]*semanticmodel.Model{"sales": model},
-		DataDir:          dataDir,
 		DBDir:            duckRoot,
 		CatalogPath:      catalogPath,
 		DuckLakeDataPath: filepath.Join(dir, ".libredash", "data"),
@@ -529,8 +528,7 @@ func TestWorkspaceRuntimeCanCommitWhilePinnedSnapshotIsOpen(t *testing.T) {
 	}
 	defer store.Close()
 	config := analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t)},
-		DataDir:          dataDir,
+		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t, dataDir)},
 		DBDir:            filepath.Join(dir, "duckdb", "dev"),
 		CatalogPath:      catalogPath,
 		DuckLakeDataPath: filepath.Join(dir, ".libredash", "data"),
@@ -581,8 +579,7 @@ func TestWorkspaceRuntimeWritesDuckLakeDataUnderConfiguredInstanceStore(t *testi
 	oldEnvironmentDataPath := filepath.Join(dir, ".libredash", "duckdb", "dev", "data")
 
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t)},
-		DataDir:          dataDir,
+		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t, dataDir)},
 		DBDir:            filepath.Join(dir, ".libredash", "duckdb", "dev"),
 		CatalogPath:      catalogPath,
 		DuckLakeDataPath: dataPath,
@@ -615,8 +612,7 @@ func TestWorkspaceRuntimeWritesDuckLakeCommitMetadata(t *testing.T) {
 	dataPath := filepath.Join(dir, ".libredash", "data")
 
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t)},
-		DataDir:          dataDir,
+		Models:           map[string]*semanticmodel.Model{"sales": simpleOrdersModel(t, dataDir)},
 		DBDir:            filepath.Join(dir, ".libredash", "duckdb", "dev"),
 		CatalogPath:      catalogPath,
 		DuckLakeDataPath: dataPath,
@@ -671,11 +667,11 @@ func duckLakeSnapshotExtraInfo(t *testing.T, ctx context.Context, catalogPath, d
 	return extra
 }
 
-func simpleOrdersModel(t *testing.T) *semanticmodel.Model {
+func simpleOrdersModel(t *testing.T, root string) *semanticmodel.Model {
 	t.Helper()
 	model := &semanticmodel.Model{
 		Name:        "workspace",
-		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "local"}},
+		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
@@ -697,7 +693,18 @@ func simpleOrdersModel(t *testing.T) *semanticmodel.Model {
 	if err := model.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	bindManagedTestRoot(model, root)
 	return model
+}
+
+func bindManagedTestRoot(model *semanticmodel.Model, root string) {
+	for name, connection := range model.Connections {
+		if connection.Kind != "managed" {
+			continue
+		}
+		connection.Root = root
+		model.Connections[name] = connection
+	}
 }
 
 func writeOrdersCSV(t *testing.T, dir string, firstRevenue, secondRevenue int) {
@@ -770,7 +777,7 @@ func TestModelTablesNamedMaterializesOnlyRequestedOrder(t *testing.T) {
 	model := &semanticmodel.Model{
 		Name: "test",
 		Connections: map[string]semanticmodel.Connection{
-			"local_files": {Kind: "local"},
+			"local_files": {Kind: "managed"},
 		},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
@@ -812,7 +819,7 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 		DefaultConnection: "local_files",
 		Connections: map[string]semanticmodel.Connection{
 			"local_files": {
-				Kind:     "local",
+				Kind:     "managed",
 				Defaults: semanticmodel.ConnectionDefaults{Options: map[string]any{"header": true}},
 			},
 		},
@@ -836,7 +843,8 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 	if err := model.Validate(); err != nil {
 		t.Fatalf("validate model: %v", err)
 	}
-	if _, err := analyticsmaterialize.Refresh(context.Background(), db, analyticsduckdb.NewSourceRuntime(db, dir), model); err != nil {
+	bindManagedTestRoot(model, dir)
+	if _, err := analyticsmaterialize.Refresh(context.Background(), db, analyticsduckdb.NewSourceRuntime(db), model); err != nil {
 		t.Fatalf("refresh materializations: %v", err)
 	}
 
@@ -948,7 +956,7 @@ func TestRegistersDatabaseSourceTwice(t *testing.T) {
 			},
 		},
 	}
-	sources := analyticsduckdb.NewSourceRuntime(db, dir)
+	sources := analyticsduckdb.NewSourceRuntime(db)
 	for i := 0; i < 2; i++ {
 		if _, err := analyticsmaterialize.Refresh(context.Background(), db, sources, model); err != nil {
 			t.Fatalf("refresh pass %d: %v", i+1, err)
@@ -973,22 +981,22 @@ func TestValidateFilesIgnoresRemoteSources(t *testing.T) {
 			"events": {Format: "parquet", Path: "s3://bucket/events/*.parquet", Connection: "lake"},
 		},
 	}
-	if err := analyticsmaterialize.ValidateFiles(model, t.TempDir()); err != nil {
+	if err := analyticsmaterialize.ValidateFiles(model); err != nil {
 		t.Fatalf("validate files = %v, want nil", err)
 	}
 }
 
-func TestValidateFilesUsesLocalConnectionRoot(t *testing.T) {
+func TestValidateFilesUsesManagedRevisionRoot(t *testing.T) {
 	dir := t.TempDir()
 	model := &semanticmodel.Model{
 		Connections: map[string]semanticmodel.Connection{
-			"local_files": {Kind: "local", Root: "fixtures"},
+			"local_files": {Kind: "managed", Root: filepath.Join(dir, "fixtures")},
 		},
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Format: "csv", Path: "orders.csv", Connection: "local_files"},
 		},
 	}
-	err := analyticsmaterialize.ValidateFiles(model, dir)
+	err := analyticsmaterialize.ValidateFiles(model)
 	var missing *analyticsmaterialize.MissingDataError
 	if !errors.As(err, &missing) {
 		t.Fatalf("validate files error = %v, want MissingDataError", err)

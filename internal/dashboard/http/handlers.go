@@ -22,7 +22,6 @@ import (
 type Metrics interface {
 	consumer.Executor
 	Catalog() dashboard.Catalog
-	DataDir() string
 	DefaultDashboardID() string
 	DefaultFilters(dashboardID string) dashboard.Filters
 	ModelIDForDashboard(dashboardID string) string
@@ -112,7 +111,7 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 	if h.ChromeDecorators != nil {
 		chromeDecorators = h.ChromeDecorators(r)
 	}
-	if err := reportui.Page(metrics.DataDir(), clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, chromeDecorators...).Render(w); err != nil {
+	if err := reportui.Page(clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, chromeDecorators...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }
