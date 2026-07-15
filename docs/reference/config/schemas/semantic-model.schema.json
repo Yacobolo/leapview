@@ -1,0 +1,206 @@
+{
+  "$defs": {
+    "#APIVersion": {
+      "const": "libredash.dev/v1"
+    },
+    "#FieldRef": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$",
+      "type": "string"
+    },
+    "#Identifier": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": "string"
+    },
+    "#Measure": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "grain": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "grains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "label": {
+          "type": "string"
+        },
+        "table": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "time": {
+          "$ref": "#/$defs/%23FieldRef"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "#MeasureDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "grain": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "grains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "table": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "time": {
+          "$ref": "#/$defs/%23FieldRef"
+        }
+      },
+      "type": "object"
+    },
+    "#Metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/%23ResourceID"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/%23ResourceID"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "#ProjectSemanticModelSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "baseTable": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "measures": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/%23Measure"
+                },
+                {
+                  "$ref": "#/$defs/%23MeasureDefaults"
+                }
+              ]
+            }
+          },
+          "properties": {
+            "defaults": {
+              "$ref": "#/$defs/%23MeasureDefaults"
+            }
+          },
+          "type": "object"
+        },
+        "relationships": {
+          "items": {
+            "$ref": "#/$defs/%23Relationship"
+          },
+          "type": "array"
+        },
+        "tables": {
+          "items": {
+            "$ref": "#/$defs/%23Identifier"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "baseTable"
+      ],
+      "type": "object"
+    },
+    "#Relationship": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "cardinality": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/%23FieldRef"
+        },
+        "id": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "to": {
+          "$ref": "#/$defs/%23FieldRef"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "#ResourceID": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/$defs/%23APIVersion"
+    },
+    "kind": {
+      "const": "SemanticModel"
+    },
+    "metadata": {
+      "$ref": "#/$defs/%23Metadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/%23ProjectSemanticModelSpec"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "type": "object"
+}

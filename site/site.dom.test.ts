@@ -121,7 +121,11 @@ test('getting started route gives users a code-native first path', async () => {
     expect(await sidebar.evaluate((element) => getComputedStyle(element).position)).toBe('sticky')
     const docsNavigation = page.getByRole('navigation', { name: 'Documentation' })
     expect(await docsNavigation.getByRole('link', { name: 'Get started with LibreDash' }).getAttribute('aria-current')).toBe('page')
-    expect(await docsNavigation.getByRole('link', { name: 'Configuration reference' }).count()).toBe(1)
+    const configurationGroup = sidebar.locator('details[data-site-docs-group="configuration"]')
+    expect(await configurationGroup.count()).toBe(1)
+    expect(await configurationGroup.getAttribute('open')).toBeNull()
+    await configurationGroup.locator('summary').click()
+    expect(await configurationGroup.getByRole('link', { name: 'Environment' }).count()).toBe(1)
     expect(await docsNavigation.getByRole('link', { name: 'Enterprise auth' }).count()).toBe(1)
     expect(await docsNavigation.getByRole('link', { name: 'Storage architecture' }).count()).toBe(1)
     expect(await docsNavigation.getByRole('link', { name: 'Dashboard demo' }).count()).toBe(0)
@@ -223,6 +227,26 @@ test('documentation articles apply the shared Markdown treatment', async () => {
     await page.goto(`${baseURL}/docs/configuration`)
     const tableHeader = await page.locator('.site-docs-article th').first().evaluate((element) => getComputedStyle(element).backgroundColor)
     expect(tableHeader).not.toBe('rgba(0, 0, 0, 0)')
+  } finally {
+    await page.close()
+  }
+})
+
+test('documentation header keeps the Markdown copy action in the viewport', async () => {
+  const page = await browser.newPage()
+  try {
+    await page.setViewportSize({ width: 802, height: 793 })
+    await page.goto(`${baseURL}/docs/configuration`)
+    const layout = await page.locator('.site-docs-article-header').evaluate((header) => {
+      const button = document.querySelector('ld-site-markdown-copy')?.shadowRoot?.querySelector('button')
+      return {
+        buttonRight: button?.getBoundingClientRect().right ?? 0,
+        pageWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+      }
+    })
+    expect(layout.buttonRight).toBeLessThanOrEqual(layout.viewportWidth)
+    expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewportWidth)
   } finally {
     await page.close()
   }

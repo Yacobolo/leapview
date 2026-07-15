@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -268,8 +270,12 @@ func siteDocsIndex() g.Node {
 func siteDocsSidebar(current *siteDocument) g.Node {
 	documentationLinks := make([]g.Node, 0, len(siteDocuments)+1)
 	documentationActive := false
+	configurationActive := current != nil && (current.slug == "configuration" || strings.HasPrefix(current.slug, "config/"))
 	chartActive := current != nil && current.slug == chartOverviewDocument.slug
 	for _, document := range siteDocuments {
+		if document.slug == "configuration" {
+			continue
+		}
 		isCurrent := current != nil && current.slug == document.slug
 		if isCurrent {
 			documentationActive = true
@@ -286,10 +292,41 @@ func siteDocsSidebar(current *siteDocument) g.Node {
 		}
 		visualLinks = append(visualLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, isCurrent)))
 	}
+	configurationLinks := []g.Node{
+		h.Li(siteDocsLink("/docs/configuration", "Environment", current != nil && current.slug == "configuration")),
+	}
+	for _, document := range configurationReferenceDocuments {
+		isCurrent := current != nil && current.slug == document.slug
+		configurationLinks = append(configurationLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, isCurrent)))
+	}
+	if configurationActive {
+		documentationActive = true
+	}
+	documentationLinks = append(documentationLinks, h.Li(siteDocsNavGroup("configuration", "Configuration", configurationActive, configurationLinks)))
 	if chartActive {
 		documentationActive = true
 	}
 	documentationLinks = append(documentationLinks, h.Li(siteDocsNavGroup("charts", chartDocuments.section, chartActive, visualLinks)))
+	cliGuideActive := current != nil && (current.slug == "cli" || current.slug == "cli/authentication" || current.slug == "cli/targets" || current.slug == "cli/validate-publish" || current.slug == "cli/automation" || current.slug == "cli/troubleshooting")
+	cliReferenceActive := current != nil && strings.HasPrefix(current.slug, "cli/") && !cliGuideActive
+	cliActive := cliGuideActive || cliReferenceActive
+	cliLinks := make([]g.Node, 0, len(cliGuideDocuments)+1)
+	for _, document := range cliGuideDocuments {
+		label := document.title
+		if document.slug == "cli" {
+			label = "Overview"
+		}
+		cliLinks = append(cliLinks, h.Li(siteDocsLink("/docs/"+document.slug, label, current != nil && current.slug == document.slug)))
+	}
+	commandLinks := make([]g.Node, 0, len(cliReferenceDocuments))
+	for _, document := range cliReferenceDocuments {
+		commandLinks = append(commandLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, current != nil && current.slug == document.slug)))
+	}
+	cliLinks = append(cliLinks, h.Li(siteDocsNavGroup("cli-commands", "Command reference", cliReferenceActive, commandLinks)))
+	if cliActive {
+		documentationActive = true
+	}
+	documentationLinks = append(documentationLinks, h.Li(siteDocsNavGroup("cli", "CLI reference", cliActive, cliLinks)))
 	apiLinks := []g.Node{
 		h.Li(siteDocsLink("/docs/api", "Overview", current != nil && current.slug == "api")),
 	}

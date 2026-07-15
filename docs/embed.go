@@ -35,3 +35,18 @@ var Visuals embed.FS
 //
 //go:embed api/*.md api/*.json api/*.yaml
 var API embed.FS
+
+// Config contains Markdown and JSON Schema generated from LibreDash YAML contracts.
+//
+//go:embed reference/config/*.md reference/config/*.json reference/config/schemas/*.json
+var Config embed.FS
+
+// CLI contains Markdown generated from the Cobra command tree.
+//
+//go:embed reference/cli/*.md reference/cli/*.json
+var CLI embed.FS
+
+// CLIGuides contains the hand-authored CLI workflows.
+//
+//go:embed guides/cli/*.md
+var CLIGuides embed.FS

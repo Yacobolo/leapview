@@ -100,7 +100,8 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 		`<article id="main-content" class="site-docs-article">`,
 		`<aside class="site-docs-sidebar" id="site-docs-sidebar">`,
 		`<a class="site-docs-link site-docs-link-current" href="/docs/getting-started" aria-current="page">Get started with LibreDash</a>`,
-		`<a class="site-docs-link" href="/docs/configuration">Configuration reference</a>`,
+		`<details class="site-docs-nav-group" data-site-docs-group="configuration">`,
+		`<a class="site-docs-link" href="/docs/configuration">Environment</a>`,
 		`<a class="site-docs-link" href="/docs/enterprise-auth">Enterprise auth</a>`,
 		`<a class="site-docs-link" href="/docs/storage-architecture">Storage architecture</a>`,
 		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="documentation" open="true">`,
@@ -264,6 +265,41 @@ func TestSiteEveryChartTypeHasDocumentation(t *testing.T) {
 		if !strings.Contains(body, `<ld-site-doc-chart chart-id="`+document.chartID+`"></ld-site-doc-chart>`) {
 			t.Errorf("%s documentation has no live chart component", document.slug)
 		}
+	}
+}
+
+func TestSiteServesGeneratedConfigurationReferenceAndSchema(t *testing.T) {
+	server := httptest.NewServer(newHandler())
+	defer server.Close()
+
+	article, err := server.Client().Get(server.URL + "/docs/config/project")
+	if err != nil {
+		t.Fatalf("get generated project configuration reference: %v", err)
+	}
+	defer article.Body.Close()
+	if article.StatusCode != http.StatusOK {
+		t.Fatalf("project configuration status = %d, want %d", article.StatusCode, http.StatusOK)
+	}
+	body := readBody(t, article)
+	for _, want := range []string{"<h1>Project configuration</h1>", "<h2>Example</h2>", "<h2>Fields</h2>", "/docs/schemas/project.schema.json", `href="/docs/config/project"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("project configuration reference missing %q:\n%s", want, body)
+		}
+	}
+
+	schema, err := server.Client().Get(server.URL + "/docs/schemas/project.schema.json")
+	if err != nil {
+		t.Fatalf("get project configuration schema: %v", err)
+	}
+	defer schema.Body.Close()
+	if schema.StatusCode != http.StatusOK {
+		t.Fatalf("project schema status = %d, want %d", schema.StatusCode, http.StatusOK)
+	}
+	if got := schema.Header.Get("Content-Type"); !strings.Contains(got, "application/schema+json") {
+		t.Errorf("project schema content type = %q", got)
+	}
+	if !strings.Contains(readBody(t, schema), `"kind": {`) {
+		t.Error("project schema does not contain the generated contract")
 	}
 }
 

@@ -1,0 +1,255 @@
+{
+  "title": "CLI reference",
+  "documents": [
+    {
+      "slug": "admin",
+      "title": "libredash admin",
+      "summary": "Administrative utilities"
+    },
+    {
+      "slug": "admin-backup",
+      "title": "libredash admin backup",
+      "summary": "Create a consistent LibreDash instance backup"
+    },
+    {
+      "slug": "admin-bootstrap",
+      "title": "libredash admin bootstrap",
+      "summary": "Bootstrap an owner principal and API token"
+    },
+    {
+      "slug": "admin-maintenance",
+      "title": "libredash admin maintenance",
+      "summary": "Prune bounded operational history"
+    },
+    {
+      "slug": "admin-restore",
+      "title": "libredash admin restore",
+      "summary": "Restore LibreDash from a validated instance backup"
+    },
+    {
+      "slug": "admin-storage",
+      "title": "libredash admin storage",
+      "summary": "Maintain analytical storage"
+    },
+    {
+      "slug": "admin-storage-cleanup",
+      "title": "libredash admin storage cleanup",
+      "summary": "Reconcile serving-state snapshots and clean DuckLake storage"
+    },
+    {
+      "slug": "agent",
+      "title": "libredash agent",
+      "summary": "Use the LibreDash read-only agent"
+    },
+    {
+      "slug": "agent-ask",
+      "title": "libredash agent ask",
+      "summary": "Ask the LibreDash read-only agent a question"
+    },
+    {
+      "slug": "agent-conversations",
+      "title": "libredash agent conversations",
+      "summary": "List agent conversations"
+    },
+    {
+      "slug": "agent-tools",
+      "title": "libredash agent tools",
+      "summary": "List generated agent tools"
+    },
+    {
+      "slug": "api",
+      "title": "libredash api",
+      "summary": "Call any generated LibreDash API operation"
+    },
+    {
+      "slug": "api-call",
+      "title": "libredash api call",
+      "summary": "Call a generated API operation"
+    },
+    {
+      "slug": "api-describe",
+      "title": "libredash api describe",
+      "summary": "Describe a generated API operation"
+    },
+    {
+      "slug": "api-list",
+      "title": "libredash api list",
+      "summary": "List generated API operations"
+    },
+    {
+      "slug": "config",
+      "title": "libredash config",
+      "summary": "Inspect and validate process-global configuration"
+    },
+    {
+      "slug": "config-validate",
+      "title": "libredash config validate",
+      "summary": "Validate the active server environment"
+    },
+    {
+      "slug": "dashboards",
+      "title": "libredash dashboards",
+      "summary": "Inspect dashboards"
+    },
+    {
+      "slug": "dashboards-components",
+      "title": "libredash dashboards components",
+      "summary": "List dashboard page components"
+    },
+    {
+      "slug": "dashboards-describe",
+      "title": "libredash dashboards describe",
+      "summary": "Describe a dashboard"
+    },
+    {
+      "slug": "dashboards-filter-options",
+      "title": "libredash dashboards filter-options",
+      "summary": "List dashboard filter options"
+    },
+    {
+      "slug": "dashboards-list",
+      "title": "libredash dashboards list",
+      "summary": "List dashboards"
+    },
+    {
+      "slug": "dashboards-query-page",
+      "title": "libredash dashboards query-page",
+      "summary": "Query a dashboard page"
+    },
+    {
+      "slug": "dashboards-query-table",
+      "title": "libredash dashboards query-table",
+      "summary": "Query a dashboard table"
+    },
+    {
+      "slug": "dashboards-table-data",
+      "title": "libredash dashboards table-data",
+      "summary": "Query dashboard table data"
+    },
+    {
+      "slug": "dashboards-visual",
+      "title": "libredash dashboards visual",
+      "summary": "Describe a dashboard visual"
+    },
+    {
+      "slug": "dashboards-visual-data",
+      "title": "libredash dashboards visual-data",
+      "summary": "Query dashboard visual data"
+    },
+    {
+      "slug": "healthcheck",
+      "title": "libredash healthcheck",
+      "summary": "Check the local LibreDash readiness endpoint"
+    },
+    {
+      "slug": "login",
+      "title": "libredash login",
+      "summary": "Store a LibreDash API token for a target"
+    },
+    {
+      "slug": "plan",
+      "title": "libredash plan",
+      "summary": "Emit a deterministic configuration-as-code plan"
+    },
+    {
+      "slug": "publish",
+      "title": "libredash publish",
+      "summary": "Publish a configuration-as-code project"
+    },
+    {
+      "slug": "publishes",
+      "title": "libredash publishes",
+      "summary": "Inspect publishes"
+    },
+    {
+      "slug": "publishes-list",
+      "title": "libredash publishes list",
+      "summary": "List publishes"
+    },
+    {
+      "slug": "schema",
+      "title": "libredash schema",
+      "summary": "Inspect LibreDash YAML schemas"
+    },
+    {
+      "slug": "schema-export",
+      "title": "libredash schema export",
+      "summary": "Export generated schema artifacts"
+    },
+    {
+      "slug": "search",
+      "title": "libredash search",
+      "summary": "Search workspace assets"
+    },
+    {
+      "slug": "semantic-models",
+      "title": "libredash semantic-models",
+      "summary": "Inspect semantic models"
+    },
+    {
+      "slug": "semantic-models-dataset",
+      "title": "libredash semantic-models dataset",
+      "summary": "Describe a semantic model dataset"
+    },
+    {
+      "slug": "semantic-models-datasets",
+      "title": "libredash semantic-models datasets",
+      "summary": "List semantic model datasets"
+    },
+    {
+      "slug": "semantic-models-describe",
+      "title": "libredash semantic-models describe",
+      "summary": "Describe a semantic model"
+    },
+    {
+      "slug": "semantic-models-explain-preview",
+      "title": "libredash semantic-models explain-preview",
+      "summary": "Explain a semantic model dataset row preview"
+    },
+    {
+      "slug": "semantic-models-explain-query",
+      "title": "libredash semantic-models explain-query",
+      "summary": "Explain a semantic model dataset query"
+    },
+    {
+      "slug": "semantic-models-fields",
+      "title": "libredash semantic-models fields",
+      "summary": "List semantic model dataset fields"
+    },
+    {
+      "slug": "semantic-models-list",
+      "title": "libredash semantic-models list",
+      "summary": "List semantic models"
+    },
+    {
+      "slug": "semantic-models-preview",
+      "title": "libredash semantic-models preview",
+      "summary": "Preview semantic model dataset rows"
+    },
+    {
+      "slug": "semantic-models-query",
+      "title": "libredash semantic-models query",
+      "summary": "Query a semantic model dataset"
+    },
+    {
+      "slug": "serve",
+      "title": "libredash serve",
+      "summary": "Run the LibreDash HTTP server"
+    },
+    {
+      "slug": "validate",
+      "title": "libredash validate",
+      "summary": "Validate a configuration-as-code project"
+    },
+    {
+      "slug": "workspaces",
+      "title": "libredash workspaces",
+      "summary": "Inspect workspaces"
+    },
+    {
+      "slug": "workspaces-list",
+      "title": "libredash workspaces list",
+      "summary": "List workspaces"
+    }
+  ]
+}

@@ -26,8 +26,11 @@ func newHandler() http.Handler {
 	mux.HandleFunc("GET /charts", charts)
 	mux.HandleFunc("GET /docs", docsIndex)
 	mux.HandleFunc("GET /docs/openapi.yaml", docsOpenAPISpecification)
+	mux.HandleFunc("GET /docs/schemas/{schema}", docsConfigurationSchema)
 	mux.HandleFunc("GET /docs/api/{resource}", docsAPIReference)
 	mux.HandleFunc("GET /docs/charts/{chart}", docsChart)
+	mux.HandleFunc("GET /docs/config/{resource}", docsConfigurationReference)
+	mux.HandleFunc("GET /docs/cli/{command}", docsCLIReference)
 	mux.HandleFunc("GET /docs/{article}", docsArticle)
 	mux.HandleFunc("GET /getting-started", gettingStarted)
 	mux.HandleFunc("GET /updates", updates)
@@ -96,6 +99,38 @@ func docsAPIReference(w http.ResponseWriter, r *http.Request) {
 func docsOpenAPISpecification(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	_, _ = w.Write(siteOpenAPISpecification())
+}
+
+func docsConfigurationSchema(w http.ResponseWriter, r *http.Request) {
+	schema, ok := siteConfigurationSchema(r.PathValue("schema"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/schema+json; charset=utf-8")
+	_, _ = w.Write(schema)
+}
+
+func docsConfigurationReference(w http.ResponseWriter, r *http.Request) {
+	document, ok := siteDocumentBySlug("config/" + r.PathValue("resource"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if err := docsArticlePage(document).Render(w); err != nil {
+		http.Error(w, "render configuration reference", http.StatusInternalServerError)
+	}
+}
+
+func docsCLIReference(w http.ResponseWriter, r *http.Request) {
+	document, ok := siteDocumentBySlug("cli/" + r.PathValue("command"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if err := docsArticlePage(document).Render(w); err != nil {
+		http.Error(w, "render CLI reference", http.StatusInternalServerError)
+	}
 }
 
 func updates(w http.ResponseWriter, r *http.Request) {

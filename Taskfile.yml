@@ -123,6 +123,19 @@ tasks:
       - task: api:generate
       - task: ui-signals:generate
       - task: schema:generate
+      - task: cli-docs:generate
+
+  cli-docs:generate:
+    desc: Generate public CLI reference documentation from Cobra commands
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - internal/cli/**/*.go
+      - internal/tools/clidocgen/**/*.go
+    generates:
+      - docs/reference/cli/catalog.json
+    cmds:
+      - go run ./internal/tools/clidocgen
 
   config:generate:
     desc: Generate runtime configuration, reference documentation, example environment, and schema
@@ -181,12 +194,16 @@ tasks:
       - internal/configschema/**/*.go
       - internal/dashboard/report/**/*.go
       - internal/semantic/**/*.go
+      - internal/tools/schemadocgen/**/*.go
+      - dashboards/**/*.yaml
     generates:
       - schemas/json/catalog.schema.json
       - schemas/json/dashboard.schema.json
       - schemas/json/semantic-model.schema.json
+      - docs/reference/config/catalog.json
     cmds:
       - go run ./cmd/libredash schema export --format json-schema --out schemas/json
+      - go run ./internal/tools/schemadocgen
 
   ui-signals:generate:
     desc: Generate UI signal Go and TypeScript contracts from TypeSpec

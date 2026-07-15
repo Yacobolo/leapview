@@ -135,6 +135,12 @@ func loadChartDocuments() chartDocumentation {
 
 var apiReferenceDocuments = loadAPIReferenceDocuments()
 
+var configurationReferenceDocuments = loadConfigurationReferenceDocuments()
+
+var cliReferenceDocuments = loadCLIReferenceDocuments()
+
+var cliGuideDocuments = loadCLIGuideDocuments()
+
 type apiReferenceCatalog struct {
 	Title       string `json:"title"`
 	Version     string `json:"version"`
@@ -189,6 +195,91 @@ func mustReadAPIDocument(name string) string {
 	return string(markdown)
 }
 
+type configurationReferenceCatalog struct {
+	Title     string `json:"title"`
+	Documents []struct {
+		Slug    string `json:"slug"`
+		Title   string `json:"title"`
+		Summary string `json:"summary"`
+	} `json:"documents"`
+}
+
+func loadConfigurationReferenceDocuments() []siteDocument {
+	catalogContents, err := content.Config.ReadFile("reference/config/catalog.json")
+	if err != nil {
+		panic(fmt.Sprintf("read configuration reference catalog: %v", err))
+	}
+	var catalog configurationReferenceCatalog
+	if err := json.Unmarshal(catalogContents, &catalog); err != nil {
+		panic(fmt.Sprintf("decode configuration reference catalog: %v", err))
+	}
+	documents := make([]siteDocument, 0, len(catalog.Documents))
+	for _, document := range catalog.Documents {
+		markdown, err := content.Config.ReadFile("reference/config/" + document.Slug + ".md")
+		if err != nil {
+			panic(fmt.Sprintf("read configuration reference %q: %v", document.Slug, err))
+		}
+		documents = append(documents, siteDocument{
+			slug:               "config/" + document.Slug,
+			title:              document.Title,
+			breadcrumb:         document.Title,
+			breadcrumbRoot:     "Configuration",
+			breadcrumbRootHref: "/docs/configuration",
+			summary:            document.Summary,
+			markdown:           string(markdown),
+		})
+	}
+	return documents
+}
+
+func siteConfigurationSchema(name string) ([]byte, bool) {
+	if strings.Contains(name, "/") || !strings.HasSuffix(name, ".schema.json") {
+		return nil, false
+	}
+	schema, err := content.Config.ReadFile("reference/config/schemas/" + name)
+	return schema, err == nil
+}
+
+func loadCLIReferenceDocuments() []siteDocument {
+	catalogContents, err := content.CLI.ReadFile("reference/cli/catalog.json")
+	if err != nil {
+		panic(fmt.Sprintf("read CLI reference catalog: %v", err))
+	}
+	var catalog configurationReferenceCatalog
+	if err := json.Unmarshal(catalogContents, &catalog); err != nil {
+		panic(fmt.Sprintf("decode CLI reference catalog: %v", err))
+	}
+	documents := make([]siteDocument, 0, len(catalog.Documents))
+	for _, document := range catalog.Documents {
+		markdown, err := content.CLI.ReadFile("reference/cli/" + document.Slug + ".md")
+		if err != nil {
+			panic(fmt.Sprintf("read CLI reference %q: %v", document.Slug, err))
+		}
+		documents = append(documents, siteDocument{slug: "cli/" + document.Slug, title: document.Title, breadcrumb: document.Title, breadcrumbRoot: "CLI", breadcrumbRootHref: "/docs/cli", summary: document.Summary, markdown: string(markdown)})
+	}
+	return documents
+}
+
+func loadCLIGuideDocuments() []siteDocument {
+	guides := []struct{ slug, title, summary, source string }{
+		{"cli", "CLI overview", "Install, validate, plan, and publish with the LibreDash CLI.", "overview"},
+		{"cli/authentication", "Install and authenticate", "Configure a CLI target and use tokens safely.", "authentication"},
+		{"cli/targets", "Targets and environments", "Keep local, staging, and production operations explicit.", "targets"},
+		{"cli/validate-publish", "Validate, plan, and publish", "Use the standard dashboard-as-code delivery workflow.", "validate-publish"},
+		{"cli/automation", "Automation and CI", "Run LibreDash safely in continuous integration.", "automation"},
+		{"cli/troubleshooting", "Troubleshooting", "Diagnose local validation and remote operation failures.", "troubleshooting"},
+	}
+	documents := make([]siteDocument, 0, len(guides))
+	for _, guide := range guides {
+		markdown, err := content.CLIGuides.ReadFile("guides/cli/" + guide.source + ".md")
+		if err != nil {
+			panic(fmt.Sprintf("read CLI guide %q: %v", guide.source, err))
+		}
+		documents = append(documents, siteDocument{slug: guide.slug, title: guide.title, breadcrumb: guide.title, breadcrumbRoot: "CLI", breadcrumbRootHref: "/docs/cli", summary: guide.summary, markdown: string(markdown)})
+	}
+	return documents
+}
+
 func siteOpenAPISpecification() []byte {
 	specification, err := content.API.ReadFile("api/openapi.yaml")
 	if err != nil {
@@ -206,11 +297,14 @@ func visualMarkdown(name string) string {
 }
 
 func allSiteDocuments() []siteDocument {
-	documents := make([]siteDocument, 0, len(siteDocuments)+1+len(visualDocuments)+len(apiReferenceDocuments))
+	documents := make([]siteDocument, 0, len(siteDocuments)+1+len(visualDocuments)+len(apiReferenceDocuments)+len(configurationReferenceDocuments)+len(cliReferenceDocuments)+len(cliGuideDocuments))
 	documents = append(documents, siteDocuments...)
 	documents = append(documents, chartOverviewDocument)
 	documents = append(documents, visualDocuments...)
 	documents = append(documents, apiReferenceDocuments...)
+	documents = append(documents, configurationReferenceDocuments...)
+	documents = append(documents, cliReferenceDocuments...)
+	documents = append(documents, cliGuideDocuments...)
 	return documents
 }
 

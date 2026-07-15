@@ -44,6 +44,11 @@ type rootOptions struct {
 }
 
 func Execute(ctx context.Context) error {
+	return NewCommand(ctx).ExecuteContext(ctx)
+}
+
+// NewCommand constructs the LibreDash CLI command tree for execution and documentation.
+func NewCommand(ctx context.Context) *cobra.Command {
 	opts := &rootOptions{}
 	root := &cobra.Command{
 		Use:   "libredash",
@@ -70,7 +75,7 @@ func Execute(ctx context.Context) error {
 	root.AddCommand(publishesCommand(ctx, opts))
 	root.AddCommand(adminCommand(ctx, opts))
 	root.AddCommand(healthcheckCommand(ctx, opts))
-	return root.ExecuteContext(ctx)
+	return root
 }
 
 func loginCommand(opts *rootOptions) *cobra.Command {
