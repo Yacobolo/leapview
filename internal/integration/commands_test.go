@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
 )
 
@@ -26,14 +27,14 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 			name: "/commands/select",
 			path: "/commands/select",
 			signals: mergeSignals(runtimeSignals("cmd-select", "overview"), map[string]any{
-				"interactionCommand": pointSelectionCommand("orders", "orders.status", "delivered"),
+				"interactionCommand": ordersRowSelectionCommand("delivered"),
 				"tableCommand":       tableCommand("orders_table", "all", 0, 50, 3, 0),
 			}),
 			assert: func(t *testing.T, patches []map[string]any) {
 				t.Helper()
 				requireStatusLoading(t, patches, true)
-				requireSelection(t, patches, "orders", "orders.status", "delivered")
-				requireTable(t, patches, "orders_table")
+				requireSelection(t, patches, "orders_table", "orders.status", "delivered")
+				requireVisual(t, patches, "category_revenue")
 			},
 		},
 		{
@@ -41,7 +42,7 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 			path: "/commands/clear-selection",
 			signals: mergeSignals(runtimeSignals("cmd-clear", "overview"), map[string]any{
 				"filters": map[string]any{
-					"selections": []map[string]any{selectionSignal("orders", "orders.status", "delivered")},
+					"selections": []map[string]any{selectionSignal("orders_table", "orders.status", "delivered")},
 				},
 				"tableCommand": tableCommand("orders_table", "all", 0, 50, 4, 0),
 			}),
@@ -49,7 +50,7 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 				t.Helper()
 				requireStatusLoading(t, patches, true)
 				requireNoSelection(t, patches)
-				requireTable(t, patches, "orders_table")
+				requireVisual(t, patches, "category_revenue")
 			},
 		},
 		{
@@ -80,12 +81,21 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals(clientIDFromSignals(tt.signals), "overview"))
 			drainInitialSnapshot(t, stream)
-
-			if got := h.postCommand(t, tt.path, tt.signals); got != http.StatusNoContent {
-				t.Fatalf("status = %d, want %d", got, http.StatusNoContent)
+			if tt.path == "/commands/clear-selection" {
+				primeSignals := mergeSignals(runtimeSignals(clientIDFromSignals(tt.signals), "overview"), map[string]any{
+					"interactionCommand": ordersRowSelectionCommand("delivered"),
+				})
+				if got := h.postCommand(t, "/commands/select", primeSignals); got != http.StatusOK {
+					t.Fatalf("prime selection status = %d, want %d", got, http.StatusOK)
+				}
+				_ = nextRefreshPatches(t, stream)
 			}
 
-			tt.assert(t, nextPatches(t, stream, 3))
+			if got := h.postCommand(t, tt.path, tt.signals); got != http.StatusOK {
+				t.Fatalf("status = %d, want %d", got, http.StatusOK)
+			}
+
+			tt.assert(t, nextRefreshPatches(t, stream))
 		})
 	}
 }
@@ -98,14 +108,16 @@ func TestTableWindowCommandPublishesOnlyRequestedTablePatch(t *testing.T) {
 	status := h.postCommand(t, "/commands/table-window", mergeSignals(runtimeSignals("cmd-table", "overview"), map[string]any{
 		"tableCommand": tableCommand("orders_table", "a", 0, 1, 7, 0),
 	}))
-	if status != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", status, http.StatusNoContent)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
 	}
 
-	patch := stream.nextPatch(t)
-	requireTableBlock(t, []map[string]any{patch}, "orders_table", "a", 0, 7)
-	if hasKey(patch, "status") || hasKey(patch, "visuals") || hasKey(patch, "filters") {
-		t.Fatalf("table-window command streamed non-table patch: %#v", patch)
+	patches := nextRefreshPatches(t, stream)
+	requireTableBlock(t, patches, "orders_table", "a", 0, 7)
+	for _, patch := range patches {
+		if hasKey(patch, "visuals") || hasKey(patch, "filterOptions") {
+			t.Fatalf("table-window command streamed non-target data: %#v", patch)
+		}
 	}
 	stream.expectNoPatch(t, 150*time.Millisecond)
 }
@@ -120,11 +132,17 @@ func TestTableWindowCommandDoesNotPublishCanceledTablePatch(t *testing.T) {
 	status := h.postCommand(t, "/commands/table-window", mergeSignals(runtimeSignals("cmd-table-canceled", "overview"), map[string]any{
 		"tableCommand": tableCommand("orders_table", "a", 0, 1, 8, 0),
 	}))
-	if status != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", status, http.StatusNoContent)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
 	}
 
-	stream.expectNoPatch(t, 500*time.Millisecond)
+	patches := nextRefreshPatches(t, stream)
+	for _, patch := range patches {
+		if hasKey(patch, "tables") {
+			t.Fatalf("canceled table-window command streamed table data: %#v", patch)
+		}
+	}
+	requireStatusLoading(t, patches, false)
 }
 
 func TestRefreshMaterializationsCommandIsRemoved(t *testing.T) {
@@ -173,6 +191,13 @@ func TestCommandRejectsMalformedDatastarBody(t *testing.T) {
 
 type canceledTableWindowMetrics struct {
 	integrationMetrics
+}
+
+func (m canceledTableWindowMetrics) ExecuteConsumersPage(_ context.Context, request consumer.Request, publish consumer.Publisher) error {
+	for _, target := range request.Targets {
+		publish(consumer.Result{Target: target, Err: context.Canceled})
+	}
+	return nil
 }
 
 func (m canceledTableWindowMetrics) QueryTable(_ context.Context, dashboardID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
@@ -232,21 +257,32 @@ func tableHasSnapshot(patch map[string]any, tableID string) bool {
 	return hasKey(table, "blocks")
 }
 
-func nextPatches(t *testing.T, stream *streamClient, count int) []map[string]any {
+func nextRefreshPatches(t *testing.T, stream *streamClient) []map[string]any {
 	t.Helper()
-	patches := make([]map[string]any, 0, count)
-	for i := 0; i < count; i++ {
-		patches = append(patches, stream.nextPatch(t))
+	patches := []map[string]any{}
+	var generation float64
+	for {
+		patch := stream.nextPatch(t)
+		patches = append(patches, patch)
+		status := mapAt(patch, "status")
+		loading, hasLoading := status["loading"].(bool)
+		currentGeneration, _ := status["generation"].(float64)
+		if hasLoading && loading && currentGeneration > 0 && generation == 0 {
+			generation = currentGeneration
+		}
+		if hasLoading && !loading && generation > 0 && currentGeneration == generation {
+			return patches
+		}
 	}
-	return patches
 }
 
 func runtimeSignals(clientID, pageID string) map[string]any {
 	return map[string]any{
 		"runtime": map[string]any{
-			"clientId":    clientID,
-			"dashboardId": "executive-sales",
-			"pageId":      pageID,
+			"clientId":         clientID,
+			"dashboardId":      "executive-sales",
+			"pageId":           pageID,
+			"streamInstanceId": clientID + "-stream",
 		},
 	}
 }
@@ -257,30 +293,52 @@ func clientIDFromSignals(signals map[string]any) string {
 	return clientID
 }
 
-func pointSelectionCommand(sourceID, field, value string) map[string]any {
+func streamInstanceIDFromSignals(signals map[string]any) string {
+	runtime, _ := signals["runtime"].(map[string]any)
+	streamInstanceID, _ := runtime["streamInstanceId"].(string)
+	return streamInstanceID
+}
+
+func ordersRowSelectionCommand(status string) map[string]any {
 	return map[string]any{
-		"sourceKind":      "visual",
-		"sourceId":        sourceID,
-		"interactionKind": "point_selection",
+		"sourceKind":      "table",
+		"sourceId":        "orders_table",
+		"interactionKind": "row_selection",
 		"action":          "set",
 		"toggle":          true,
-		"mappings": []map[string]any{{
-			"field": field,
-			"value": value,
-			"label": value,
-		}},
+		"mappings": []map[string]any{
+			{
+				"field": "orders.order_id",
+				"fact":  "orders",
+				"value": "fixture-order-id",
+				"label": "fixture-order-id",
+			},
+			{
+				"field": "orders.status",
+				"fact":  "orders",
+				"value": status,
+				"label": status,
+			},
+			{
+				"field": "orders.category",
+				"fact":  "orders",
+				"value": "fixture-category",
+				"label": "fixture-category",
+			},
+		},
 	}
 }
 
 func selectionSignal(sourceID, field, value string) map[string]any {
 	return map[string]any{
-		"id":              "visual:" + sourceID + ":point_selection",
-		"sourceKind":      "visual",
+		"id":              "table:" + sourceID + ":row_selection",
+		"sourceKind":      "table",
 		"sourceId":        sourceID,
-		"interactionKind": "point_selection",
+		"interactionKind": "row_selection",
 		"entries": []map[string]any{{
 			"mappings": []map[string]any{{
 				"field": field,
+				"fact":  "orders",
 				"value": value,
 				"label": value,
 			}},

@@ -114,12 +114,15 @@ spec:
         row_selection:
           mappings:
             - field: orders.order_id
+              fact: orders
               value: order_id
               label: order_id
             - field: orders.status
+              fact: orders
               value: status
               label: status
             - field: orders.category
+              fact: orders
               value: category
               label: category
           targets:

@@ -1463,14 +1463,13 @@ metadata:
   workspace: ` + workspace + `
   name: ` + name + `
 spec:
-  baseTable: ` + table + `
   tables:
     - ` + table + `
   measures:
-    defaults:
-      table: ` + table + `
     ` + measure + `:
-      expression: count(` + table + `.order_id)
+      fact: ` + table + `
+      aggregation: count
+      empty: zero
 `
 }
 
@@ -1482,13 +1481,12 @@ metadata:
   workspace: ` + workspace + `
   name: ` + workspace + `
 spec:
-  baseTable: ` + tables[0] + `
   tables:
 ` + semanticTableListYAML(tables) + `  measures:
-    defaults:
-      table: ` + tables[0] + `
     ` + measure + `:
-      expression: count(` + tables[0] + `.order_id)
+      fact: ` + tables[0] + `
+      aggregation: count
+      empty: zero
 `
 }
 

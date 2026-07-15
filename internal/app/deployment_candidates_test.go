@@ -152,9 +152,8 @@ func (emptyPageRuntimeAssetMetrics) SemanticModel(modelID string) (*semanticmode
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv"},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
-			"orders": {Kind: "fact", Source: "orders", PrimaryKey: "order_id"},
+			"orders": {Source: "orders", PrimaryKey: "order_id"},
 		},
 	}, true
 }

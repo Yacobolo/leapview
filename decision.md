@@ -31,7 +31,8 @@ Generated physical serving shapes are internal optimizations. They are not autho
 | Model table | Semantic table exposed by a semantic model. |
 | Field | Groupable/filterable semantic field on a model table. |
 | Relationship | Governed join path between model tables. |
-| Measure | Governed aggregate expression with table, grain/scope, time, and format metadata. |
+| Measure | Governed typed atomic aggregate owned by one fact table. |
+| Metric | Governed arithmetic expression over measures and other metrics. |
 | Semantic model | The governed business model used by dashboards. |
 | Dashboard | Presentation layer that queries a semantic model. |
 | Materialization | Internal generated physical serving structure. |
@@ -58,44 +59,44 @@ models:
 
 semantic_models:
   olist:
-    base_table: orders
     tables:
-      orders:
-        model: orders
-        primary_key: order_id
-        fields:
-          status:
-            expr: status
-          purchase_month:
-            expr: strftime(purchase_timestamp, '%Y-%m')
-            order_expr: strftime(purchase_timestamp, '%Y-%m')
-
-      customers:
-        model: customers
-        primary_key: customer_id
-        fields:
-          state:
-            expr: customer_state
+      - orders
+      - customers
 
     relationships:
-      - from: orders.customer_id
+      - id: orders_customers
+        from: orders.customer_id
         to: customers.customer_id
         cardinality: many_to_one
-        active: true
+
+    dimensions:
+      customer_state:
+        type: string
+        bindings:
+          orders:
+            field: customers.state
+            path: [orders_customers]
 
     measures:
-      defaults:
-        table: orders
-        grain: order_id
-        time: orders.purchase_timestamp
-        grains: [day, week, month, quarter, year]
-
       revenue:
-        expr: SUM(orders.revenue)
+        fact: orders
+        aggregation: sum
+        input: {field: orders.revenue}
+        empty: zero
+        format: currency
+
+      order_count:
+        fact: orders
+        aggregation: count
+        empty: zero
+
+    metrics:
+      revenue_per_order:
+        expression: safe_divide(${revenue}, ${order_count})
         format: currency
 ```
 
-`base_table` is the required semantic-model root. For v1, every table in the semantic model must be reachable from that root through one safe active path.
+Facts are inferred from atomic measure ownership. Model-scoped queries may combine facts only through semantic dimensions with compatible bindings for every participating fact.
 
 Dashboards query that model directly:
 
@@ -119,15 +120,15 @@ LibreDash should force a safe default path:
 2. Models are light preparation only: casts, cleanup, naming, and grain-alignment preparation.
 3. Semantic models own fields, relationships, and measures.
 4. Dashboards never reference SQL joins, physical files, source names, or generated serving structures.
-5. Measures declare or inherit one table and one grain/scope.
-6. Multiple measures in one query must use a compatible table and grain/scope.
-7. Dimensions may come from the base table.
-8. Dimensions may come from related tables through active `many_to_one` or `one_to_one` paths.
-9. One-to-many, many-to-many, circular, ambiguous, inactive, or missing paths are rejected for dashboard queries.
-10. Cross-fact measures are rejected in v1.
+5. Atomic measures declare one owning fact, one supported aggregation, and an explicit empty-value policy.
+6. Metrics contain parsed arithmetic over measures and metrics; SQL aggregates and field references are rejected.
+7. Multi-fact dimensions are conformed semantic dimensions bound to every participating fact.
+8. Dimension bindings may follow safe `many_to_one` or `one_to_one` paths.
+9. One-to-many, many-to-many, circular, ambiguous implicit, or missing paths are rejected.
+10. Multi-fact aggregate queries pre-aggregate each fact and stitch results without joining fact rows.
 11. Row/detail queries without measures must declare a table.
 12. Authored model SQL uses `source.<name>` only; `raw.<name>` is internal runtime plumbing.
-13. One semantic model is one connected relationship graph; unrelated subject areas belong in separate semantic models.
+13. Semantic models remain the domain and curation boundary; models are not composed implicitly at runtime.
 
 ## Why This Shape
 

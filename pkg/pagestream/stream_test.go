@@ -31,6 +31,42 @@ func TestSignalStreamPatchSendsOnePatchSignalsEventPerCall(t *testing.T) {
 	}
 }
 
+func TestSignalStreamTracesDirectPatchesWithoutTracingForwardedPatchesTwice(t *testing.T) {
+	store := NewTraceStore(TraceOptions{CapacityPerStream: 16, MaxStreams: 2, IncludePayloads: true})
+	req := httptest.NewRequest(http.MethodGet, "/updates", nil)
+	rec := httptest.NewRecorder()
+	stream := NewSignalStream(rec, req, WithStreamTrace(store, "dashboard:page", "dashboard.bootstrap"))
+	if err := stream.Patch(SignalPatch{"status": "bootstrap"}); err != nil {
+		t.Fatalf("patch bootstrap: %v", err)
+	}
+	events := store.Events(TraceQuery{StreamID: "dashboard:page", Limit: 10})
+	if len(events) != 2 || events[0].Stage != TraceStagePublished || events[1].Stage != TraceStageDelivered || events[1].Origin != "dashboard.bootstrap" {
+		t.Fatalf("direct trace events = %#v", events)
+	}
+
+	broker := NewBroker(WithTraceStore(store))
+	updates, unsubscribe := broker.Subscribe("dashboard:page")
+	defer unsubscribe()
+	broker.PublishEnvelope("dashboard:page", Envelope{
+		Signals: SignalPatch{"status": "async"},
+		Trace:   TraceMetadata{Origin: "dashboard.refresh"},
+	})
+	select {
+	case patch := <-updates:
+		if err := stream.writeForwarded(patch); err != nil {
+			t.Fatalf("write forwarded: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for forwarded patch")
+	}
+	waitFor(t, time.Second, func() bool {
+		return len(store.Events(TraceQuery{StreamID: "dashboard:page", Limit: 10})) >= 4
+	})
+	if events := store.Events(TraceQuery{StreamID: "dashboard:page", Limit: 10}); len(events) != 4 {
+		t.Fatalf("forwarded patch was traced twice: %#v", events)
+	}
+}
+
 func TestPatchResponseSendsOnePatchSignalsEvent(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/command", nil)
 	rec := httptest.NewRecorder()

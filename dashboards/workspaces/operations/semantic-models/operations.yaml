@@ -5,7 +5,6 @@ metadata:
   name: operations
   title: Operations Semantic Model
 spec:
-  baseTable: orders
   tables:
     - orders
     - customers
@@ -14,17 +13,22 @@ spec:
       from: orders.customer_id
       to: customers.customer_id
       cardinality: many_to_one
-      active: true
   measures:
-    defaults:
-      table: orders
-      grain: order_id
     order_count:
       label: Orders
-      expression: COUNT(DISTINCT orders.order_id)
+      fact: orders
+      aggregation: count_distinct
+      input: {field: orders.order_id}
+      empty: zero
     review_score:
       label: Review score
-      expression: avg(orders.review_score)
+      fact: orders
+      aggregation: avg
+      input: {field: orders.review_score}
+      empty: "null"
     delivery_days:
       label: Delivery days
-      expression: avg(orders.delivery_days)
+      fact: orders
+      aggregation: avg
+      input: {field: orders.delivery_days}
+      empty: "null"

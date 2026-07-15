@@ -20,8 +20,8 @@ func TestDashboardContractConversionsPreserveJSON(t *testing.T) {
 		Title: "Orders", Unit: "orders", Format: "0,0", Dimensions: []string{"state"}, Measure: "orders",
 		Measures: []string{"orders"}, Series: []string{"status"}, Options: map[string]any{"stacked": true},
 		RendererOptions: map[string]map[string]any{"echarts": {"animation": false}},
-		Interaction:     dashboard.InteractionConfig{Kind: "point_selection", Toggle: true, Targets: []string{"orders_table"}, Mappings: []dashboard.InteractionConfigMapping{{Field: "state", Value: "state", Label: "State"}}},
-		Selection:       []dashboard.InteractionSelectionEntry{{Label: "SP", Mappings: []dashboard.InteractionSelectionMapping{{Field: "state", Value: "SP", Label: "Sao Paulo"}}}},
+		Interaction:     dashboard.InteractionConfig{Kind: "point_selection", Toggle: true, Targets: []string{"orders_table"}, Mappings: []dashboard.InteractionConfigMapping{{Field: "activity_date", Grain: "month", Value: "state", Label: "State"}}},
+		Selection:       []dashboard.InteractionSelectionEntry{{Label: "42", Mappings: []dashboard.InteractionSelectionMapping{{Field: "ratings.rating_bucket", Fact: "ratings", Value: float64(42), Label: "Rating"}}}},
 		Data:            []dashboard.Datum{{"state": "SP", "orders": 42}},
 	}
 	table := dashboard.Table{
@@ -31,17 +31,17 @@ func TestDashboardContractConversionsPreserveJSON(t *testing.T) {
 		Columns: []dashboard.TableColumn{{Key: "amount", Label: "Amount", Align: "right", Role: "measure", Group: "sales", Measure: "amount", ColumnValue: "amount", Width: 120, Format: "currency", Formatting: []dashboard.TableFormattingRule{{
 			Kind: "gradient", Values: map[string]string{"high": "green"}, Min: &min, Max: &max, Color: "white", Background: "black", LowColor: "red", HighColor: "green",
 		}}}},
-		TotalRows: 1, AvailableRows: 1, RowCap: 100, ChunkSize: 50, RowHeight: 28, ResetVersion: 2,
+		Cardinality: dashboard.ExactCardinality(1), AvailableRows: 1, RowCap: 100, ChunkSize: 50, RowHeight: 28, ResetVersion: 2,
 		Sort: dashboard.TableSort{Key: "amount", Direction: "desc"}, Blocks: map[string]dashboard.TableBlock{"a": {Start: 0, RequestSeq: 3, ResetVersion: 2, Sort: dashboard.TableSort{Key: "amount", Direction: "desc"}, Rows: []map[string]any{{"amount": 42}}}},
 	}
 	filters := dashboard.Filters{
 		Controls:   map[string]dashboard.FilterControl{"state": {Type: "multi_select", Operator: "in", Values: []string{"SP"}}},
-		Selections: []dashboard.InteractionSelection{{ID: "visual:orders:point", SourceKind: "visual", SourceID: "orders", InteractionKind: "point", Label: "SP", Order: 1, Entries: []dashboard.InteractionSelectionEntry{{Label: "SP", Mappings: []dashboard.InteractionSelectionMapping{{Field: "state", Value: "SP", Label: "State"}}}}}},
+		Selections: []dashboard.InteractionSelection{{ID: "visual:orders:point", SourceKind: "visual", SourceID: "orders", InteractionKind: "point", Label: "42", Order: 1, Entries: []dashboard.InteractionSelectionEntry{{Label: "42", Mappings: []dashboard.InteractionSelectionMapping{{Field: "ratings.rating_bucket", Fact: "ratings", Value: float64(42), Label: "Rating"}}}}}},
 	}
 	filterConfig := []reportdef.FilterConfig{{
 		ID: "state",
 		FilterDefinition: reportdef.FilterDefinition{
-			Type: "multi_select", Label: "State", Description: "Order state", Dimension: "orders.state", Custom: true,
+			Type: "multi_select", Label: "State", Description: "Order state", Dimension: "orders.state", Fact: "orders", Custom: true,
 			Default: reportdef.FilterDefault{Operator: "in", Values: []string{"SP"}}, Operator: "in", DefaultOperator: "in", Operators: []string{"in"},
 			Options: []reportdef.FilterOption{{Value: "SP", Label: "Sao Paulo"}}, Presets: []reportdef.FilterPreset{{Value: "recent", Label: "Recent", From: "2026-01-01", To: "2026-12-31", RelativeDays: 30}},
 			Values: reportdef.FilterValues{Source: "orders.state", Limit: 100}, URLParam: "state", FromURLParam: "from", ToURLParam: "to", OperatorURLParam: "op",

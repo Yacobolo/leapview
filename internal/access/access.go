@@ -202,6 +202,7 @@ const (
 	SecurableWorkspace     SecurableType = "workspace"
 	SecurableDashboard     SecurableType = "dashboard"
 	SecurableSemanticModel SecurableType = "semantic_model"
+	SecurableSemanticField SecurableType = "semantic_field"
 	SecurableSource        SecurableType = "source"
 	SecurableModelTable    SecurableType = "model_table"
 	SecurableAgentPolicy   SecurableType = "agent_policy"

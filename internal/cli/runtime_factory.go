@@ -229,6 +229,10 @@ func (r dashboardWorkspaceDataRuntime) ExecuteDataQuery(ctx context.Context, req
 	return r.runtime.ExecuteDataQuery(ctx, request)
 }
 
+func (r dashboardWorkspaceDataRuntime) ExecuteDataQueryBundle(ctx context.Context, requests []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	return r.runtime.ExecuteDataQueryBundle(ctx, requests)
+}
+
 func (r dashboardWorkspaceDataRuntime) Refresh(ctx context.Context) error {
 	return r.runtime.Refresh(ctx)
 }
@@ -247,6 +251,10 @@ func (r dashboardWorkspaceDataRuntime) LastRefresh() time.Time {
 
 func (r dashboardWorkspaceDataRuntime) DuckLakeSnapshotID() int64 {
 	return r.runtime.DuckLakeSnapshotID()
+}
+
+func (r dashboardWorkspaceDataRuntime) ReadConcurrency() int {
+	return r.runtime.ReadConcurrency()
 }
 
 type dashboardDataRuntime struct {
@@ -276,6 +284,10 @@ func (r dashboardDataRuntime) Distribution(ctx context.Context, request reportde
 
 func (r dashboardDataRuntime) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
 	return r.runtime.ExecuteDataQuery(ctx, request)
+}
+
+func (r dashboardDataRuntime) ExecuteDataQueryBundle(ctx context.Context, requests []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	return r.runtime.ExecuteDataQueryBundle(ctx, requests)
 }
 
 func (r dashboardDataRuntime) Refresh(ctx context.Context) error {

@@ -337,7 +337,6 @@ func TestPlanModelTableFallsBackToInlineQuackForModelDependency(t *testing.T) {
 		Columns:     map[string]semanticmodel.ModelColumn{"order_id": {Name: "order_id", Field: "previous_orders.order_id", SourceField: "order_id", Type: "VARCHAR"}},
 		Dimensions:  map[string]semanticmodel.MetricDimension{"order_id": {Label: "Order ID"}},
 		Grain:       "order_id",
-		Kind:        "model",
 		Description: "stub",
 	}
 
@@ -396,7 +395,6 @@ func planningModel(sourceColumns map[string][]string, table semanticmodel.Table)
 		Name:        "test",
 		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources:     sources,
-		BaseTable:   "orders",
 		Tables:      map[string]semanticmodel.Table{"orders": table},
 		Measures:    map[string]semanticmodel.MetricMeasure{},
 	}
@@ -430,7 +428,6 @@ func planningQuackModel() *semanticmodel.Model {
 				}},
 			},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Sources:    []string{"orders", "payments"},

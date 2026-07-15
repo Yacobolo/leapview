@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
+	"github.com/Yacobolo/libredash/internal/configspec"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 )
 
@@ -82,6 +84,7 @@ type WorkspaceRuntimeConfig struct {
 	ArtifactDigest     string
 	SourceDataDigest   string
 	SkipInitialRefresh bool
+	MaxReaders         int
 }
 
 type WorkspaceRuntime struct {
@@ -93,6 +96,7 @@ type WorkspaceRuntime struct {
 	models               map[string]*semanticmodel.Model
 	materializationModel *semanticmodel.Model
 	queries              map[string]*semanticquery.Service
+	views                map[string]*analyticsmaterialize.Runtime
 	lastRefresh          time.Time
 	lastSnapshotID       int64
 	commitMetadata       map[string]string
@@ -119,7 +123,7 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 	var db *analyticsducklake.Environment
 	var err error
 	if config.SnapshotID > 0 {
-		db, err = analyticsducklake.OpenSnapshot(ctx, analyticsducklake.Config{RootDir: config.DBDir, CatalogPath: layout.CatalogPath, DataPath: layout.DataPath, SnapshotID: config.SnapshotID})
+		db, err = analyticsducklake.OpenSnapshot(ctx, analyticsducklake.Config{RootDir: config.DBDir, CatalogPath: layout.CatalogPath, DataPath: layout.DataPath, SnapshotID: config.SnapshotID, MaxReaders: workspaceReaderCount(config.MaxReaders)})
 	} else {
 		db, err = analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: config.DBDir, CatalogPath: layout.CatalogPath, DataPath: layout.DataPath})
 	}
@@ -146,10 +150,24 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 		models:               config.Models,
 		materializationModel: materializationModel,
 		queries:              map[string]*semanticquery.Service{},
+		views:                map[string]*analyticsmaterialize.Runtime{},
 		commitMetadata:       workspaceCommitMetadata(config),
 	}
 	for modelID, model := range config.Models {
-		runtime.queries[modelID] = semanticquery.NewService(semanticquery.NewPlanner(model), db)
+		view, err := analyticsmaterialize.NewRuntimeView(ctx, analyticsmaterialize.RuntimeConfig{
+			ModelID:             modelID,
+			Model:               model,
+			QueryCacheNamespace: workspaceQueryCacheNamespace(config),
+			Database:            db,
+			Sources:             sources,
+			Resolver:            sources,
+		})
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("compile semantic model %q runtime: %w", modelID, err)
+		}
+		runtime.views[modelID] = view
+		runtime.queries[modelID] = view.Queries()
 	}
 	if config.SnapshotID > 0 {
 		runtime.lastSnapshotID = config.SnapshotID
@@ -160,6 +178,29 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 		}
 	}
 	return runtime, nil
+}
+
+func workspaceQueryCacheNamespace(config WorkspaceRuntimeConfig) string {
+	return fmt.Sprintf(
+		"snapshot=%d;serving=%q;workspace=%q;environment=%q;semantic=%q;artifact=%q;source=%q",
+		config.SnapshotID,
+		config.ServingStateID,
+		config.WorkspaceID,
+		config.Environment,
+		config.SemanticDigest,
+		config.ArtifactDigest,
+		config.SourceDataDigest,
+	)
+}
+
+func workspaceReaderCount(configured int) int {
+	if configured > 0 {
+		return configured
+	}
+	if value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(configspec.EnvLIBREDASH_EXEC_MAX_RUNNING_READS))); err == nil && value > 0 {
+		return value
+	}
+	return 4
 }
 
 func (r *WorkspaceRuntime) Queries(modelID string) (*semanticquery.Service, error) {
@@ -183,22 +224,41 @@ func (r *WorkspaceRuntime) ExecuteDataQuery(ctx context.Context, request dataque
 			modelID = id
 		}
 	}
-	model, ok := r.models[modelID]
+	_, ok := r.models[modelID]
 	if !ok {
 		return dataquery.Result{}, fmt.Errorf("unknown semantic model %q", modelID)
 	}
 	request.ModelID = modelID
-	view, err := analyticsmaterialize.NewRuntimeView(ctx, analyticsmaterialize.RuntimeConfig{
-		ModelID:  modelID,
-		Model:    model,
-		Database: r.db,
-		Sources:  r.sources,
-		Resolver: r.sources,
-	})
-	if err != nil {
-		return dataquery.Result{}, err
+	view := r.views[modelID]
+	if view == nil {
+		return dataquery.Result{}, fmt.Errorf("semantic model %q runtime is not compiled", modelID)
 	}
 	return view.ExecuteDataQuery(ctx, request)
+}
+
+func (r *WorkspaceRuntime) ExecuteDataQueryBundle(ctx context.Context, requests []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	if len(requests) == 0 {
+		return dataquery.BundleResult{}, &dataquery.BundleIncompatibleError{Err: fmt.Errorf("bundle is empty")}
+	}
+	modelID := strings.TrimSpace(requests[0].Query.ModelID)
+	if modelID == "" && len(r.models) == 1 {
+		for id := range r.models {
+			modelID = id
+		}
+	}
+	view := r.views[modelID]
+	if view == nil {
+		return dataquery.BundleResult{}, fmt.Errorf("semantic model %q runtime is not compiled", modelID)
+	}
+	for i := range requests {
+		if requests[i].Query.ModelID == "" {
+			requests[i].Query.ModelID = modelID
+		}
+		if requests[i].Query.ModelID != modelID {
+			return dataquery.BundleResult{}, &dataquery.BundleIncompatibleError{Err: fmt.Errorf("bundle spans semantic models")}
+		}
+	}
+	return view.ExecuteDataQueryBundle(ctx, requests)
 }
 
 func (r *WorkspaceRuntime) Refresh(ctx context.Context) error {
@@ -212,6 +272,7 @@ func (r *WorkspaceRuntime) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	r.clearQueryCaches()
 	for modelID, model := range r.models {
 		if err := discoverSchemas(ctx, r.sqlDB, model); err != nil {
 			return fmt.Errorf("discovering semantic model %q schemas: %w", modelID, err)
@@ -238,6 +299,7 @@ func (r *WorkspaceRuntime) RefreshModelTables(ctx context.Context, modelID strin
 	if err != nil {
 		return err
 	}
+	r.clearQueryCaches()
 	for discoverModelID, discoverModel := range r.models {
 		if err := discoverSchemas(ctx, r.sqlDB, discoverModel); err != nil {
 			return fmt.Errorf("discovering semantic model %q schemas: %w", discoverModelID, err)
@@ -263,6 +325,7 @@ func (r *WorkspaceRuntime) RefreshWorkspaceTables(ctx context.Context, tableName
 	if err != nil {
 		return err
 	}
+	r.clearQueryCaches()
 	for discoverModelID, discoverModel := range r.models {
 		if err := discoverSchemas(ctx, r.sqlDB, discoverModel); err != nil {
 			return fmt.Errorf("discovering semantic model %q schemas: %w", discoverModelID, err)
@@ -271,6 +334,12 @@ func (r *WorkspaceRuntime) RefreshWorkspaceTables(ctx context.Context, tableName
 	r.lastRefresh = lastRefresh
 	r.lastSnapshotID = snapshotID
 	return nil
+}
+
+func (r *WorkspaceRuntime) clearQueryCaches() {
+	for _, view := range r.views {
+		view.ClearQueryCache()
+	}
 }
 
 func WorkspaceModelTableDependencyOrder(models map[string]*semanticmodel.Model, selectedTable string) ([]string, error) {
@@ -373,6 +442,22 @@ func (r *WorkspaceRuntime) DuckLakeSnapshotID() int64 {
 	return r.lastSnapshotID
 }
 
+func (r *WorkspaceRuntime) ReadConcurrency() int {
+	if r == nil {
+		return 1
+	}
+	r.mu.Lock()
+	snapshotID := r.lastSnapshotID
+	r.mu.Unlock()
+	if snapshotID <= 0 {
+		return 1
+	}
+	if concurrency, ok := r.db.(interface{ ReadConcurrency() int }); ok {
+		return max(1, concurrency.ReadConcurrency())
+	}
+	return 1
+}
+
 type txExecutor struct {
 	tx *sql.Tx
 }
@@ -440,7 +525,6 @@ func sourcePhysicalSignature(source semanticmodel.Source) semanticmodel.Source {
 }
 
 type tablePhysicalSignatureValue struct {
-	Kind               string
 	Source             string
 	Sources            []string
 	SQL                string
@@ -454,7 +538,6 @@ type tablePhysicalSignatureValue struct {
 
 func tablePhysicalSignature(table semanticmodel.Table) tablePhysicalSignatureValue {
 	return tablePhysicalSignatureValue{
-		Kind:               table.Kind,
 		Source:             table.Source,
 		Sources:            append([]string{}, table.Sources...),
 		SQL:                table.SQL,

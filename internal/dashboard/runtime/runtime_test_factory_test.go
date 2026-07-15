@@ -106,6 +106,10 @@ func (r testWorkspaceDataRuntime) ExecuteDataQuery(ctx context.Context, request 
 	return r.runtime.ExecuteDataQuery(ctx, request)
 }
 
+func (r testWorkspaceDataRuntime) ExecuteDataQueryBundle(ctx context.Context, requests []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	return r.runtime.ExecuteDataQueryBundle(ctx, requests)
+}
+
 func (r testWorkspaceDataRuntime) Refresh(ctx context.Context) error {
 	return r.runtime.Refresh(ctx)
 }
@@ -149,6 +153,10 @@ func (r testDataRuntime) Distribution(ctx context.Context, request reportdef.Raw
 
 func (r testDataRuntime) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
 	return r.runtime.ExecuteDataQuery(ctx, request)
+}
+
+func (r testDataRuntime) ExecuteDataQueryBundle(ctx context.Context, requests []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	return r.runtime.ExecuteDataQueryBundle(ctx, requests)
 }
 
 func (r testDataRuntime) Refresh(ctx context.Context) error {

@@ -120,7 +120,7 @@ func TestManagerPassesManagedDataResolutionToRuntimeFactory(t *testing.T) {
 	}
 }
 
-func TestManagerReloadsWhenManagedDataRevisionChanges(t *testing.T) {
+func TestManagerReloadResolvesManagedDataWhenArtifactChanges(t *testing.T) {
 	repo := &fakeRepo{
 		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "prod", Status: servingstate.StatusActive},
 		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "prod", Digest: "digest"},
@@ -133,14 +133,42 @@ func TestManagerReloadsWhenManagedDataRevisionChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolver.resolution = ManagedDataResolution{RevisionID: "sha256:" + strings.Repeat("b", 64)}
+	repo.artifact.Digest = "digest-2"
 	if err := manager.Reload(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if factory.prepareCalls != 2 {
-		t.Fatalf("factory calls = %d, want reload for managed-data revision change", factory.prepareCalls)
+		t.Fatalf("factory calls = %d, want reload for artifact change", factory.prepareCalls)
 	}
 	if got := factory.input.ManagedData.RevisionID; got != resolver.resolution.RevisionID {
 		t.Fatalf("prepared managed-data revision = %q, want %q", got, resolver.resolution.RevisionID)
+	}
+}
+
+func TestManagerReloadDoesNotResolveManagedDataForUnchangedArtifact(t *testing.T) {
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "prod", Status: servingstate.StatusActive},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "prod", Digest: "digest"},
+	}
+	resolver := &countingManagedDataResolver{resolution: ManagedDataResolution{
+		RevisionID: "sha256:" + strings.Repeat("a", 64),
+	}}
+	manager := NewManagerWithFactory(ManagerOptions{
+		Repo:        repo,
+		WorkspaceID: "test",
+		Environment: "prod",
+		Factory:     &fakeFactory{},
+		ManagedData: resolver,
+	})
+
+	if err := manager.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("managed-data resolutions = %d, want one resolution for unchanged artifact", resolver.calls)
 	}
 }
 
@@ -1088,6 +1116,17 @@ func (f *fakeFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, e
 type fakeManagedDataResolver struct {
 	resolution ManagedDataResolution
 	err        error
+}
+
+type countingManagedDataResolver struct {
+	resolution ManagedDataResolution
+	err        error
+	calls      int
+}
+
+func (r *countingManagedDataResolver) ResolveManagedData(context.Context, servingstate.ID) (ManagedDataResolution, error) {
+	r.calls++
+	return r.resolution, r.err
 }
 
 type fakeManagedDataLifetime struct {

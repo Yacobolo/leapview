@@ -1,4 +1,9 @@
 import type { ChartDatum, ChartPayload, ChartShape, ChartTokens, ChartType } from './types'
+import {
+	interactionMappingIdentityEqual,
+	interactionMappingKey,
+	interactionSelectionValue,
+} from '../interaction-selection'
 
 export const libreDashPayloadRowIndexKey = '__libredashPayloadRowIndex'
 
@@ -307,16 +312,22 @@ function selectedEntryKey(entry: NonNullable<ChartPayload['selection']>[number],
 	if (!mappings?.length || !entry.mappings?.length) return ''
 	const parts: string[] = []
 	for (const mapping of mappings) {
-		const selected = entry.mappings.find((candidate) => candidate.field === mapping.field)
-		if (!selected?.value) return ''
-		parts.push(`${mapping.field}\u0000${selected.value}`)
+		const selected = entry.mappings.find((candidate) => interactionMappingIdentityEqual(candidate, mapping))
+		if (!selected || selected.value === undefined) return ''
+		parts.push(interactionMappingKey(mapping, selected.value))
 	}
 	return parts.join('\u0001')
 }
 
 function datumSelectionKey(row: ChartDatum, mappings: NonNullable<ChartPayload['interaction']>['mappings']): string {
 	if (!mappings?.length) return ''
-	return mappings.map((mapping) => `${mapping.field}\u0000${stringValue(row, mapping.value)}`).join('\u0001')
+	const parts: string[] = []
+	for (const mapping of mappings) {
+		const value = interactionSelectionValue(row[mapping.value])
+		if (value === undefined) return ''
+		parts.push(interactionMappingKey(mapping, value))
+	}
+	return parts.join('\u0001')
 }
 
 export function titleCase(value: string): string {

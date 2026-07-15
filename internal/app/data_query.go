@@ -44,20 +44,6 @@ func queryFieldsToDataFields(fields []reportdef.QueryField) []dataquery.Field {
 		out = append(out, dataquery.Field{
 			Field: field.Field,
 			Alias: field.Alias,
-			Measure: dataquery.InlineMeasure{
-				Field:       field.Measure.Field,
-				Name:        field.Measure.Name,
-				Label:       field.Measure.Label,
-				Description: field.Measure.Description,
-				Expr:        field.Measure.Expr,
-				Expression:  field.Measure.Expression,
-				Table:       field.Measure.Table,
-				Grain:       field.Measure.Grain,
-				Time:        field.Measure.Time,
-				Grains:      append([]string{}, field.Measure.Grains...),
-				Unit:        field.Measure.Unit,
-				Format:      field.Measure.Format,
-			},
 		})
 	}
 	return out
@@ -72,6 +58,7 @@ func queryFiltersToDataFilters(filters []reportdef.QueryFilter) []dataquery.Filt
 		}
 		out = append(out, dataquery.Filter{
 			Field:    filter.Field,
+			Fact:     filter.Fact,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
 			Groups:   groups,

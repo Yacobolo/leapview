@@ -14,7 +14,6 @@ import (
 
 func projectModelTable(spec projectModelTableSpec) semanticmodel.Table {
 	table := semanticmodel.Table{
-		Kind:        spec.Kind,
 		Source:      spec.Source,
 		Sources:     append([]string{}, spec.Sources...),
 		SourceReads: copyStringSliceMap(spec.SourceReads),
@@ -24,7 +23,6 @@ func projectModelTable(spec projectModelTableSpec) semanticmodel.Table {
 		PrimaryKey:  spec.PrimaryKey,
 		Grain:       spec.Grain,
 		Dimensions:  map[string]semanticmodel.MetricDimension{},
-		Measures:    copyMeasures(spec.Measures),
 		Description: spec.Description,
 	}
 	for name, field := range spec.Fields {
@@ -319,9 +317,10 @@ func (workspaceProject *WorkspaceProject) semanticModel(project Project, modelNa
 		Connections:   workspaceConnections(project, workspaceProject),
 		Sources:       map[string]semanticmodel.Source{},
 		Tables:        copyTables(workspaceProject.Models),
-		BaseTable:     semanticSpec.BaseTable,
 		Relationships: append([]semanticmodel.Relationship{}, semanticSpec.Relationships...),
+		Dimensions:    map[string]semanticmodel.SemanticDimension{},
 		Measures:      map[string]semanticmodel.MetricMeasure{},
+		Metrics:       map[string]semanticmodel.Metric{},
 	}
 	model.DefaultConnection = firstConnectionName(model.Connections)
 	for source, alias := range sourceAliases {
@@ -400,9 +399,6 @@ func workspaceConnections(project Project, workspaceProject *WorkspaceProject) m
 }
 
 func applySemanticModelSpec(model *semanticmodel.Model, spec projectSemanticModelSpec) error {
-	if spec.BaseTable == "" {
-		return fmt.Errorf("SemanticModel %q requires baseTable", model.Name)
-	}
 	if len(spec.Tables) == 0 {
 		return fmt.Errorf("SemanticModel %q requires tables", model.Name)
 	}
@@ -414,26 +410,17 @@ func applySemanticModelSpec(model *semanticmodel.Model, spec projectSemanticMode
 		}
 		tables[tableName] = table
 	}
-	defaults := spec.Measures.Defaults
 	measures := map[string]semanticmodel.MetricMeasure{}
-	for name, measure := range spec.Measures.Items {
-		if measure.Expression == "" {
-			measure.Expression = measure.Expr
-		}
-		measure.Table = firstNonEmpty(measure.Table, defaults.Table)
-		measure.Grain = firstNonEmpty(measure.Grain, defaults.Grain)
-		measure.Time = firstNonEmpty(measure.Time, defaults.Time)
-		if len(measure.Grains) == 0 {
-			measure.Grains = append([]string{}, defaults.Grains...)
-		}
+	for name, measure := range spec.Measures {
 		measure.Field = name
 		measure.Name = name
 		measures[name] = measure
 	}
 	model.Tables = tables
-	model.BaseTable = spec.BaseTable
 	model.Relationships = append([]semanticmodel.Relationship{}, spec.Relationships...)
+	model.Dimensions = spec.Dimensions
 	model.Measures = measures
+	model.Metrics = spec.Metrics
 	return nil
 }
 
@@ -481,17 +468,6 @@ func copyModelColumns(in map[string]semanticmodel.ModelColumn) map[string]semant
 		return nil
 	}
 	out := make(map[string]semanticmodel.ModelColumn, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
-	return out
-}
-
-func copyMeasures(in map[string]semanticmodel.MetricMeasure) map[string]semanticmodel.MetricMeasure {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]semanticmodel.MetricMeasure, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

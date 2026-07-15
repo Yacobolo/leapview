@@ -54,6 +54,7 @@ export interface AdminPageSignal {
 }
 
 export interface AdminQueryDetailSignal {
+  connectionWaitMs: number
   correlationId?: string
   createdAt?: string
   durationMs: number
@@ -61,10 +62,12 @@ export interface AdminQueryDetailSignal {
   eventId?: string
   loading: boolean
   modelId?: string
+  databaseMs: number
   objectId?: string
   objectType?: string
   operation?: string
   planText?: string
+  planningMs: number
   principalId?: string
   queryError?: string
   queryJson?: string
@@ -81,7 +84,9 @@ export interface AdminQueryDetailSignal {
 
 export interface AdminQueryEventSignal {
   correlationId: string
+  connectionWaitMs: number
   createdAt: string
+  databaseMs: number
   durationMs: number
   error: string
   id: string
@@ -90,6 +95,7 @@ export interface AdminQueryEventSignal {
   objectType: string
   operation: string
   planText: string
+  planningMs: number
   principalId: string
   queryJson: string
   queryKind: string
@@ -427,8 +433,15 @@ export interface DashboardComponentSignal {
   y: number
 }
 
+export interface DashboardComponentStatus {
+  error: string
+  generation: number
+  loading: boolean
+}
+
 export interface DashboardEnvelope {
   chrome: ChromeSignal
+  componentStatus: Record<string, DashboardComponentStatus>
   filterConfig: ReportFilterConfig[]
   filterOptions: Record<string, DashboardFilterOption[]>
   filters: DashboardFilters
@@ -473,9 +486,11 @@ export interface DashboardInteractionCommand {
 }
 
 export interface DashboardInteractionCommandMapping {
+  fact?: string
   field: string
+  grain?: string
   label?: string
-  value: string
+  value: string | number | boolean | null
 }
 
 export interface DashboardInteractionConfig {
@@ -486,7 +501,9 @@ export interface DashboardInteractionConfig {
 }
 
 export interface DashboardInteractionConfigMapping {
+  fact?: string
   field: string
+  grain?: string
   label?: string
   value: string
 }
@@ -507,9 +524,11 @@ export interface DashboardInteractionSelectionEntry {
 }
 
 export interface DashboardInteractionSelectionMapping {
+  fact?: string
   field: string
+  grain?: string
   label?: string
-  value: string
+  value: string | number | boolean | null
 }
 
 export interface DashboardPageCanvas {
@@ -557,8 +576,11 @@ export interface DashboardPageSignal {
 
 export interface DashboardStatus {
   error: string
+  generation: number
   lastUpdated: string
   loading: boolean
+  progressPercent: number
+  refreshId: string
   setupRequired: boolean
 }
 
@@ -579,7 +601,7 @@ export interface DashboardTable {
   sort: DashboardTableSort
   style: DashboardTableStyle
   title: string
-  totalRows: number
+  cardinality: DashboardTableCardinality
   version: number
 }
 
@@ -589,6 +611,11 @@ export interface DashboardTableBlock {
   rows: Record<string, unknown>[]
   sort: DashboardTableSort
   start: number
+}
+
+export interface DashboardTableCardinality {
+  kind: 'unknown' | 'lower_bound' | 'estimated' | 'exact'
+  value: number
 }
 
 export interface DashboardTableColumn {
@@ -853,6 +880,7 @@ export interface ReportFilterConfig {
   defaultOperator?: string
   description?: string
   dimension: string
+  fact?: string
   fromURLParam?: string
   id: string
   label: string
@@ -908,11 +936,11 @@ export interface RouteRuntimeSignal {
   kind: RouteKind
   modelId?: string
   pageId?: string
+  streamInstanceId?: string
   workspaceId?: string
 }
 
 export interface SemanticModelGraphEdgeSignal {
-  active: boolean
   cardinality: string
   id: string
   label: string
@@ -932,6 +960,7 @@ export interface SemanticModelGraphFieldSignal {
 }
 
 export interface SemanticModelGraphNodeSignal {
+  badges?: string[]
   description?: string
   fields: SemanticModelGraphFieldSignal[]
   id: string
@@ -940,8 +969,8 @@ export interface SemanticModelGraphNodeSignal {
 }
 
 export interface SemanticModelGraphSignal {
-  baseTable?: string
   edges: SemanticModelGraphEdgeSignal[]
+  facts?: string[]
   nodes: SemanticModelGraphNodeSignal[]
 }
 

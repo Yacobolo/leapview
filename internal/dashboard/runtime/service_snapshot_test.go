@@ -2,12 +2,116 @@ package runtime
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 )
+
+type failingBundleDataRuntime struct{ snapshotDataRuntime }
+
+func (f failingBundleDataRuntime) ExecuteDataQueryBundle(context.Context, []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	return dataquery.BundleResult{}, errors.New("bundle failed")
+}
+
+type cacheOutcomeBundleDataRuntime struct {
+	snapshotDataRuntime
+	result dataquery.BundleResult
+}
+
+func (r cacheOutcomeBundleDataRuntime) ExecuteDataQueryBundle(ctx context.Context, _ []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	for _, result := range r.result.Results {
+		dataquery.ObserveCacheOutcome(ctx, result.CacheOutcome)
+	}
+	return r.result, nil
+}
+
+func TestGovernedBundleAuditSummarizesCacheOutcomeConservatively(t *testing.T) {
+	tests := []struct {
+		name     string
+		outcomes map[string]string
+		want     string
+	}{
+		{name: "all hit", outcomes: map[string]string{"one": dataquery.CacheHit, "two": dataquery.CacheHit}, want: dataquery.CacheHit},
+		{name: "all coalesced", outcomes: map[string]string{"one": dataquery.CacheCoalesced, "two": dataquery.CacheCoalesced}, want: dataquery.CacheCoalesced},
+		{name: "all miss", outcomes: map[string]string{"one": dataquery.CacheMiss, "two": dataquery.CacheMiss}, want: dataquery.CacheMiss},
+		{name: "mixed hit and coalesced", outcomes: map[string]string{"one": dataquery.CacheHit, "two": dataquery.CacheCoalesced}, want: dataquery.CacheCoalesced},
+		{name: "mixed miss coalesced and hit", outcomes: map[string]string{"one": dataquery.CacheHit, "two": dataquery.CacheMiss, "three": dataquery.CacheCoalesced}, want: dataquery.CacheMiss},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := make(map[string]dataquery.Result, len(tt.outcomes))
+			requests := make([]dataquery.BundleRequest, 0, len(tt.outcomes))
+			for id, outcome := range tt.outcomes {
+				results[id] = dataquery.Result{CacheOutcome: outcome}
+				requests = append(requests, dataquery.BundleRequest{
+					ID: id,
+					Query: dataquery.Query{
+						PrincipalID: "user",
+						ModelID:     "sales",
+						Kind:        dataquery.KindSemanticAggregate,
+						Measures:    []dataquery.Field{{Field: id}},
+					},
+				})
+			}
+			runtime := newGovernedDataRuntime("sales", "sales", cacheOutcomeBundleDataRuntime{
+				result: dataquery.BundleResult{Results: results},
+			})
+			port := runtime.(dataquery.BundleExecutor)
+			recorder := &runtimeAuditRecorder{}
+			observed := map[string]int{}
+			ctx := dataquery.WithCacheOutcomeObserver(context.Background(), func(outcome string) {
+				observed[outcome]++
+			})
+			ctx = dataquery.WithAuditRecorder(ctx, recorder)
+
+			if _, err := port.ExecuteDataQueryBundle(ctx, requests); err != nil {
+				t.Fatalf("ExecuteDataQueryBundle() error = %v", err)
+			}
+			if len(recorder.results) != 1 {
+				t.Fatalf("audit results = %#v, want one bundle summary", recorder.results)
+			}
+			if got := recorder.results[0].CacheOutcome; got != tt.want {
+				t.Fatalf("bundle audit cache outcome = %q, want %q", got, tt.want)
+			}
+			wantObserved := map[string]int{}
+			for _, outcome := range tt.outcomes {
+				wantObserved[outcome]++
+			}
+			if !reflect.DeepEqual(observed, wantObserved) {
+				t.Fatalf("per-branch cache events = %#v, want %#v", observed, wantObserved)
+			}
+		})
+	}
+}
+
+func TestGovernedBundleAuditDoesNotReportSucceededExecutionOnError(t *testing.T) {
+	runtime := newGovernedDataRuntime("sales", "sales", failingBundleDataRuntime{})
+	port, ok := runtime.(dataquery.BundleExecutor)
+	if !ok {
+		t.Fatal("governed runtime does not expose bundle execution")
+	}
+	recorder := &runtimeAuditRecorder{}
+	ctx := dataquery.WithAuditRecorder(context.Background(), recorder)
+	requests := []dataquery.BundleRequest{
+		{ID: "one", Query: dataquery.Query{PrincipalID: "user", ModelID: "sales", Kind: dataquery.KindSemanticAggregate, Measures: []dataquery.Field{{Field: "one"}}}},
+		{ID: "two", Query: dataquery.Query{PrincipalID: "user", ModelID: "sales", Kind: dataquery.KindSemanticAggregate, Measures: []dataquery.Field{{Field: "two"}}}},
+	}
+	if _, err := port.ExecuteDataQueryBundle(ctx, requests); err == nil {
+		t.Fatal("bundle error = nil")
+	}
+	if len(recorder.results) != 1 {
+		t.Fatalf("audit results = %#v", recorder.results)
+	}
+	result := recorder.results[0]
+	if result.Status != dataquery.StatusError || result.ExecutionState != dataquery.ExecutionFailed {
+		t.Fatalf("audit result status=%q execution=%q, want error/failed", result.Status, result.ExecutionState)
+	}
+}
 
 func TestServiceDuckLakeSnapshotIDRequiresOneWorkspaceSnapshot(t *testing.T) {
 	service := &Service{
@@ -26,6 +130,21 @@ func TestServiceDuckLakeSnapshotIDRequiresOneWorkspaceSnapshot(t *testing.T) {
 	}
 }
 
+func TestServiceAdvertisesConcurrencyOnlyForPinnedSnapshotReaders(t *testing.T) {
+	service := &Service{
+		runtimes: map[string]*modelRuntime{
+			"orders": {ready: true, data: snapshotDataRuntime{snapshotID: 42, readConcurrency: 3}},
+		},
+	}
+	if got := service.DashboardTargetConcurrency(); got != 3 {
+		t.Fatalf("DashboardTargetConcurrency = %d, want 3", got)
+	}
+	service.runtimes["orders"].data = snapshotDataRuntime{readConcurrency: 3}
+	if got := service.DashboardTargetConcurrency(); got != 1 {
+		t.Fatalf("mutable DashboardTargetConcurrency = %d, want 1", got)
+	}
+}
+
 func TestGovernedDataRuntimeForwardsDuckLakeSnapshotID(t *testing.T) {
 	runtime := newGovernedDataRuntime("sales", "sales", snapshotDataRuntime{snapshotID: 42})
 	snapshot, ok := runtime.(DataRuntimeSnapshot)
@@ -38,7 +157,8 @@ func TestGovernedDataRuntimeForwardsDuckLakeSnapshotID(t *testing.T) {
 }
 
 type snapshotDataRuntime struct {
-	snapshotID int64
+	snapshotID      int64
+	readConcurrency int
 }
 
 func (r snapshotDataRuntime) Query(context.Context, reportdef.AggregateQuery) (reportdef.QueryRows, error) {
@@ -79,4 +199,8 @@ func (r snapshotDataRuntime) LastRefresh() time.Time {
 
 func (r snapshotDataRuntime) DuckLakeSnapshotID() int64 {
 	return r.snapshotID
+}
+
+func (r snapshotDataRuntime) ReadConcurrency() int {
+	return max(1, r.readConcurrency)
 }

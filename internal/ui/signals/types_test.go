@@ -12,7 +12,7 @@ import (
 func TestDashboardInitialEnvelopeValidatesPageScopedPayloads(t *testing.T) {
 	report := testDashboardReport()
 	model := testSemanticModel()
-	envelope := DashboardInitialEnvelope("client", dashboard.Catalog{}, report, model, report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, report, model, report.Pages, report.Pages[0], dashboard.Filters{})
 
 	if err := ValidateDashboardEnvelope(envelope); err != nil {
 		t.Fatalf("validate dashboard envelope: %v", err)
@@ -29,11 +29,20 @@ func TestDashboardInitialEnvelopeValidatesPageScopedPayloads(t *testing.T) {
 	if _, ok := envelope.Filters.Controls["category"]; ok {
 		t.Fatalf("off-page filter control was emitted: %#v", envelope.Filters)
 	}
+	if envelope.Runtime.StreamInstanceID == nil || *envelope.Runtime.StreamInstanceID != "stream-instance" {
+		t.Fatalf("stream instance id = %#v", envelope.Runtime.StreamInstanceID)
+	}
+	if envelope.Status.RefreshID != "" || envelope.Status.Generation != 0 {
+		t.Fatalf("initial refresh status = %#v", envelope.Status)
+	}
+	if len(envelope.ComponentStatus) != 0 {
+		t.Fatalf("initial component status = %#v, want empty", envelope.ComponentStatus)
+	}
 }
 
 func TestDashboardEnvelopeRejectsMissingReferencedPayload(t *testing.T) {
 	report := testDashboardReport()
-	envelope := DashboardInitialEnvelope("client", dashboard.Catalog{}, report, testSemanticModel(), report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, report, testSemanticModel(), report.Pages, report.Pages[0], dashboard.Filters{})
 	delete(envelope.Visuals, "active_chart")
 
 	err := ValidateDashboardEnvelope(envelope)
@@ -44,12 +53,33 @@ func TestDashboardEnvelopeRejectsMissingReferencedPayload(t *testing.T) {
 
 func TestDashboardEnvelopeRejectsUnusedPayload(t *testing.T) {
 	report := testDashboardReport()
-	envelope := DashboardInitialEnvelope("client", dashboard.Catalog{}, report, testSemanticModel(), report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, report, testSemanticModel(), report.Pages, report.Pages[0], dashboard.Filters{})
 	envelope.Visuals["off_page_chart"] = DashboardVisual{ID: "off_page_chart"}
 
 	err := ValidateDashboardEnvelope(envelope)
 	if err == nil || !strings.Contains(err.Error(), `unused visual payload "off_page_chart"`) {
 		t.Fatalf("validate error = %v", err)
+	}
+}
+
+func TestInteractionSignalPreservesSelectionScope(t *testing.T) {
+	got := interactionSignal("point_selection", reportdef.SelectionInteraction{
+		Toggle: true,
+		Mappings: []reportdef.SelectionMapping{
+			{Field: "activity_date", Grain: "month", Value: "label"},
+			{Field: "ratings.rating_bucket", Fact: "ratings", Value: "series"},
+		},
+		Targets: []string{"activity_by_month"},
+	})
+
+	if !got.Toggle || len(got.Mappings) != 2 {
+		t.Fatalf("interaction signal = %#v", got)
+	}
+	if got.Mappings[0].Fact != "" || got.Mappings[0].Grain != "month" {
+		t.Fatalf("conformed mapping = %#v", got.Mappings[0])
+	}
+	if got.Mappings[1].Fact != "ratings" || got.Mappings[1].Grain != "" {
+		t.Fatalf("fact-local mapping = %#v", got.Mappings[1])
 	}
 }
 
@@ -224,9 +254,9 @@ func testSemanticModel() *semanticmodel.Model {
 		Name:  "test",
 		Title: "Test",
 		Tables: map[string]semanticmodel.Table{
-			"orders": {Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id", Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}, "status": {Expr: "status"}, "state": {Expr: "state"}, "category": {Expr: "category"}}},
+			"orders": {Source: "orders", PrimaryKey: "order_id", Grain: "order_id", Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}, "status": {Expr: "status"}, "state": {Expr: "state"}, "category": {Expr: "category"}}},
 		},
-		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Table: "orders", Grain: "order_id", Label: "Orders", Expression: "COUNT(*)"}},
+		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
 	}
 }
 

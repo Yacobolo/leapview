@@ -43,7 +43,18 @@ func (m *Model) ValidateDiscoveredSchemas() error {
 		}
 	}
 	for measureName, measure := range m.Measures {
-		for _, ref := range discoveredFieldRefs(measure.SQLExpression()) {
+		refs := []string{measure.Input.Field}
+		if measure.Input.Expression != "" {
+			expression, err := ParseExpression(measure.Input.Expression)
+			if err != nil {
+				return fmt.Errorf("measure %q input expression: %w", measureName, err)
+			}
+			refs = append(refs, expression.References()...)
+		}
+		for _, ref := range refs {
+			if ref == "" {
+				continue
+			}
 			if _, err := m.ResolveDimension(ref); err != nil {
 				return fmt.Errorf("measure %q references unknown field %q", measureName, ref)
 			}

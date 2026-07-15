@@ -1580,6 +1580,10 @@ func objectWithInferredParent(typ access.SecurableType, workspaceID, objectID st
 			parent := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, parts[0]+"/"+parts[1], access.ItemObject(access.SecurableSemanticModel, workspaceID, parts[0]))
 			return access.ItemObjectWithParent(typ, workspaceID, objectID, parent)
 		}
+	case access.SecurableSemanticField:
+		if len(parts) >= 2 && strings.TrimSpace(parts[0]) != "" {
+			return access.ItemObjectWithParent(typ, workspaceID, objectID, access.ItemObject(access.SecurableSemanticModel, workspaceID, parts[0]))
+		}
 	}
 	return access.ItemObject(typ, workspaceID, objectID)
 }
@@ -1620,6 +1624,7 @@ func validWorkspaceSecurableType(typ access.SecurableType) bool {
 	switch typ {
 	case access.SecurableDashboard,
 		access.SecurableSemanticModel,
+		access.SecurableSemanticField,
 		access.SecurableSource,
 		access.SecurableModelTable,
 		access.SecurableAgentPolicy,

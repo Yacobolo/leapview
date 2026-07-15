@@ -624,13 +624,13 @@ func fieldPayloadBreaking(next, prev fieldPayloadV1) bool {
 }
 
 func measurePayloadBreaking(next, prev measurePayloadV1) bool {
-	if prev.Field != next.Field || prev.Table != next.Table || prev.Name != next.Name {
+	if prev.Field != next.Field || prev.Fact != next.Fact || prev.Name != next.Name {
 		return true
 	}
-	if strings.TrimSpace(prev.Expr) != strings.TrimSpace(next.Expr) || strings.TrimSpace(prev.Expression) != strings.TrimSpace(next.Expression) {
+	if prev.Aggregation != next.Aggregation || prev.Empty != next.Empty || prev.InputField != next.InputField {
 		return true
 	}
-	if prev.Time != next.Time || prev.Grain != next.Grain || !sameStringList(prev.Grains, next.Grains) {
+	if strings.TrimSpace(prev.InputExpression) != strings.TrimSpace(next.InputExpression) {
 		return true
 	}
 	return false

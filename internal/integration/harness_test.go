@@ -29,6 +29,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
 	"github.com/Yacobolo/libredash/internal/dataquery"
@@ -62,6 +63,7 @@ type harnessConfig struct {
 type harnessOption func(*harnessConfig)
 
 type integrationMetrics interface {
+	consumer.Executor
 	Catalog() dashboard.Catalog
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
@@ -353,6 +355,9 @@ func (h *harness) getUpdatesWithQuery(t *testing.T, dashboardID, pageID string, 
 	values.Set("workspace", h.workspaceIDOrDefault())
 	values.Set("dashboard", dashboardID)
 	values.Set("page", pageID)
+	if streamInstanceID := streamInstanceIDFromSignals(signals); streamInstanceID != "" {
+		values.Set("streamInstance", streamInstanceID)
+	}
 	values.Set("datastar", string(encodedSignals))
 	for key, vals := range query {
 		for _, value := range vals {
@@ -412,6 +417,9 @@ func (h *harness) openUpdatesStream(t *testing.T, dashboardID, pageID string, si
 	values.Set("workspace", h.workspaceIDOrDefault())
 	values.Set("dashboard", dashboardID)
 	values.Set("page", pageID)
+	if streamInstanceID := streamInstanceIDFromSignals(signals); streamInstanceID != "" {
+		values.Set("streamInstance", streamInstanceID)
+	}
 	values.Set("datastar", string(encodedSignals))
 
 	ctx, cancel := context.WithCancel(context.Background())

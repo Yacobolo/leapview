@@ -3,10 +3,12 @@ package report
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"gopkg.in/yaml.v3"
 )
 
 type fakeMetrics struct {
@@ -42,6 +44,14 @@ func TestActivePageResolution(t *testing.T) {
 	}
 	if _, ok := ActivePage(pages, "missing"); ok {
 		t.Fatal("missing explicit page resolved")
+	}
+}
+
+func TestVisualQueryRejectsInlineMeasure(t *testing.T) {
+	var query VisualQuery
+	err := yaml.Unmarshal([]byte("measures:\n  revenue:\n    expr: SUM(orders.revenue)\n"), &query)
+	if err == nil || !strings.Contains(err.Error(), "inline dashboard measures are not supported") {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 }
 

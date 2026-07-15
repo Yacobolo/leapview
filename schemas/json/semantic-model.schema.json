@@ -14,61 +14,88 @@
     "#Measure": {
       "additionalProperties": false,
       "properties": {
+        "aggregation": {
+          "enum": [
+            "sum",
+            "count",
+            "count_distinct",
+            "avg",
+            "min",
+            "max"
+          ]
+        },
         "description": {
           "type": "string"
         },
-        "expr": {
-          "type": "string"
+        "empty": {
+          "enum": [
+            "zero",
+            "null"
+          ]
         },
-        "expression": {
-          "type": "string"
+        "fact": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "filters": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "$ref": "#/$defs/%23FieldRef"
+              },
+              "operator": {
+                "enum": [
+                  "equals",
+                  "in",
+                  "contains",
+                  "starts_with",
+                  "greater_than_or_equal",
+                  "less_than"
+                ]
+              },
+              "values": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "field",
+              "operator",
+              "values"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "format": {
           "type": "string"
         },
-        "grain": {
-          "$ref": "#/$defs/%23Identifier"
+        "hidden": {
+          "type": "boolean"
         },
-        "grains": {
-          "items": {
-            "type": "string"
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "expression": {
+              "type": "string"
+            },
+            "field": {
+              "$ref": "#/$defs/%23FieldRef"
+            }
           },
-          "type": "array"
+          "type": "object"
         },
         "label": {
           "type": "string"
-        },
-        "table": {
-          "$ref": "#/$defs/%23Identifier"
-        },
-        "time": {
-          "$ref": "#/$defs/%23FieldRef"
         },
         "unit": {
           "type": "string"
         }
       },
-      "type": "object"
-    },
-    "#MeasureDefaults": {
-      "additionalProperties": false,
-      "properties": {
-        "grain": {
-          "$ref": "#/$defs/%23Identifier"
-        },
-        "grains": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "table": {
-          "$ref": "#/$defs/%23Identifier"
-        },
-        "time": {
-          "$ref": "#/$defs/%23FieldRef"
-        }
-      },
+      "required": [
+        "aggregation",
+        "empty",
+        "fact"
+      ],
       "type": "object"
     },
     "#Metadata": {
@@ -101,29 +128,59 @@
       ],
       "type": "object"
     },
+    "#Metric": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expression"
+      ],
+      "type": "object"
+    },
     "#ProjectSemanticModelSpec": {
       "additionalProperties": false,
       "properties": {
-        "baseTable": {
-          "$ref": "#/$defs/%23Identifier"
+        "dimensions": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/%23SemanticDimension"
+            }
+          },
+          "type": "object"
         },
         "measures": {
           "additionalProperties": false,
           "patternProperties": {
             "^[A-Za-z_][A-Za-z0-9_]*$": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/%23Measure"
-                },
-                {
-                  "$ref": "#/$defs/%23MeasureDefaults"
-                }
-              ]
+              "$ref": "#/$defs/%23Measure"
             }
           },
-          "properties": {
-            "defaults": {
-              "$ref": "#/$defs/%23MeasureDefaults"
+          "type": "object"
+        },
+        "metrics": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/%23Metric"
             }
           },
           "type": "object"
@@ -143,18 +200,19 @@
         }
       },
       "required": [
-        "baseTable"
+        "measures",
+        "tables"
       ],
       "type": "object"
     },
     "#Relationship": {
       "additionalProperties": false,
       "properties": {
-        "active": {
-          "type": "boolean"
-        },
         "cardinality": {
-          "type": "string"
+          "enum": [
+            "many_to_one",
+            "one_to_one"
+          ]
         },
         "description": {
           "type": "string"
@@ -170,7 +228,9 @@
         }
       },
       "required": [
+        "cardinality",
         "from",
+        "id",
         "to"
       ],
       "type": "object"
@@ -178,6 +238,67 @@
     "#ResourceID": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
       "type": "string"
+    },
+    "#SemanticDimension": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "$ref": "#/$defs/%23FieldRef"
+                },
+                "path": {
+                  "items": {
+                    "$ref": "#/$defs/%23Identifier"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "description": {
+          "type": "string"
+        },
+        "grains": {
+          "items": {
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ]
+          },
+          "type": "array"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "date",
+            "timestamp"
+          ]
+        }
+      },
+      "required": [
+        "bindings",
+        "type"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

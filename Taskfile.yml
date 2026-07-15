@@ -106,6 +106,20 @@ tasks:
     cmds:
       - bun scripts/qa_ui_framework.ts
 
+  qa:movielens-performance:
+    desc: Run the generic dashboard performance runner with the MovieLens scenario
+    deps:
+      - node:deps
+    cmds:
+      - bun run qa:movielens-performance
+
+  qa:dashboard-performance:
+    desc: Run a configured dashboard performance scenario against a running dev server
+    deps:
+      - node:deps
+    cmds:
+      - bun run qa:dashboard-performance
+
   generate:
     desc: Generate all checked-out derived code needed for local development
     cmds:
@@ -218,7 +232,8 @@ tasks:
       - bun run test:theme
       - bun run test:datastar-lit
       - bun run test:app-shell
-      - bun run test:table-selection
+      - bun run test:interaction-selection
+      - bun run test:movielens-performance-harness
       - bun run test:record-table
       - bun run test:visual-modal
       - bun run test:catalog-page
@@ -231,6 +246,7 @@ tasks:
       - bun run test:data-explorer
       - bun run test:windowed-table
       - bun run test:filter-menu
+      - bun run test:datastar-inspector
       - bun run test:admin-page
       - bun run test:code-editor
       - bun run test:markdown-view

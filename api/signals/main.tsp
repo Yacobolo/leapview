@@ -91,6 +91,7 @@ model AdminPageSignal {
 @apigen.contract(#{ kind: "ui-signal", tags: #["admin", "signal"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "admin" })
 model AdminQueryDetailSignal {
+  `connectionWaitMs`: int64;
   `correlationId`?: string;
   `createdAt`?: string;
   `durationMs`: int64;
@@ -98,10 +99,12 @@ model AdminQueryDetailSignal {
   `eventId`?: string;
   `loading`: boolean;
   `modelId`?: string;
+  `databaseMs`: int64;
   `objectId`?: string;
   `objectType`?: string;
   `operation`?: string;
   `planText`?: string;
+  `planningMs`: int64;
   `principalId`?: string;
   `queryError`?: string;
   `queryJson`?: string;
@@ -120,7 +123,9 @@ model AdminQueryDetailSignal {
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "admin" })
 model AdminQueryEventSignal {
   `correlationId`: string;
+  `connectionWaitMs`: int64;
   `createdAt`: string;
+  `databaseMs`: int64;
   `durationMs`: int64;
   `error`: string;
   `id`: string;
@@ -129,6 +134,7 @@ model AdminQueryEventSignal {
   `objectType`: string;
   `operation`: string;
   `planText`: string;
+  `planningMs`: int64;
   `principalId`: string;
   `queryJson`: string;
   `queryKind`: string;
@@ -516,11 +522,20 @@ model DashboardComponentSignal {
   `y`: float64;
 }
 
+/** Progressive refresh state for one visual or table target. */
+model DashboardComponentStatus {
+  `error`: string;
+  `generation`: int64;
+  `loading`: boolean;
+}
+
 @apigen.contract(#{ kind: "ui-envelope", tags: #["dashboard", "envelope"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "envelope", `x-libredash-surface`: "dashboard" })
 model DashboardEnvelope {
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "chrome" })
   `chrome`: ChromeSignal;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "componentStatus" })
+  `componentStatus`: Record<DashboardComponentStatus>;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "filterConfig" })
   `filterConfig`: ReportFilterConfig[];
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "filterOptions" })
@@ -577,9 +592,12 @@ model DashboardInteractionCommand {
 }
 
 model DashboardInteractionCommandMapping {
+  `fact`?: string;
   `field`: string;
+  `grain`?: string;
   `label`?: string;
-  `value`: string;
+  /** A typed JSON scalar. Runtime command validation rejects arrays and objects. */
+  `value`: unknown;
 }
 
 model DashboardInteractionConfig {
@@ -590,7 +608,9 @@ model DashboardInteractionConfig {
 }
 
 model DashboardInteractionConfigMapping {
+  `fact`?: string;
   `field`: string;
+  `grain`?: string;
   `label`?: string;
   `value`: string;
 }
@@ -611,9 +631,12 @@ model DashboardInteractionSelectionEntry {
 }
 
 model DashboardInteractionSelectionMapping {
+  `fact`?: string;
   `field`: string;
+  `grain`?: string;
   `label`?: string;
-  `value`: string;
+  /** A typed JSON scalar. Runtime selection validation rejects arrays and objects. */
+  `value`: unknown;
 }
 
 model DashboardPageCanvas {
@@ -664,9 +687,13 @@ model DashboardPageSignal {
 }
 
 model DashboardStatus {
-	`error`: string;
+  `error`: string;
+  `generation`: int64;
   `lastUpdated`: string;
   `loading`: boolean;
+  /** Backend-owned dashboard refresh completion percentage from 0 through 100. */
+  `progressPercent`: float64;
+  `refreshId`: string;
   `setupRequired`: boolean;
 }
 
@@ -687,8 +714,13 @@ model DashboardTable {
   `sort`: DashboardTableSort;
   `style`: DashboardTableStyle;
   `title`: string;
-  `totalRows`: int64;
+  `cardinality`: DashboardTableCardinality;
   `version`: int64;
+}
+
+model DashboardTableCardinality {
+  `kind`: "unknown" | "lower_bound" | "estimated" | "exact";
+  `value`: int64;
 }
 
 model DashboardTableBlock {
@@ -1007,6 +1039,7 @@ model ReportFilterConfig {
   `defaultOperator`?: string;
   `description`?: string;
   `dimension`: string;
+  `fact`?: string;
   `fromURLParam`?: string;
   `id`: string;
   `label`: string;
@@ -1037,6 +1070,7 @@ model ReportFilterDefinition {
   `defaultOperator`?: string;
   `description`?: string;
   `dimension`: string;
+  `fact`?: string;
   `fromURLParam`?: string;
   `label`: string;
   `operator`?: string;
@@ -1082,13 +1116,13 @@ model RouteRuntimeSignal {
   `kind`: RouteKind;
   `modelId`?: string;
   `pageId`?: string;
+  `streamInstanceId`?: string;
   `workspaceId`?: string;
 }
 
 @apigen.contract(#{ kind: "ui-signal", tags: #["workspace", "signal"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "workspace" })
 model SemanticModelGraphEdgeSignal {
-  `active`: boolean;
   `cardinality`: string;
   `id`: string;
   `label`: string;
@@ -1112,6 +1146,7 @@ model SemanticModelGraphFieldSignal {
 @apigen.contract(#{ kind: "ui-signal", tags: #["workspace", "signal"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "workspace" })
 model SemanticModelGraphNodeSignal {
+  `badges`?: string[];
   `description`?: string;
   `fields`: SemanticModelGraphFieldSignal[];
   `id`: string;
@@ -1122,8 +1157,8 @@ model SemanticModelGraphNodeSignal {
 @apigen.contract(#{ kind: "ui-signal", tags: #["workspace", "signal"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "workspace" })
 model SemanticModelGraphSignal {
-  `baseTable`?: string;
   `edges`: SemanticModelGraphEdgeSignal[];
+  `facts`?: string[];
   `nodes`: SemanticModelGraphNodeSignal[];
 }
 

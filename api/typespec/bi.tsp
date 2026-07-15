@@ -115,13 +115,16 @@ model SemanticModelCounts {
   sources: int32;
   `model_tables`: int32;
   fields: int32;
-  measures: int32;
+  facts: int32;
+  `conformed_dimensions`: int32;
+  `atomic_measures`: int32;
+  metrics: int32;
   relationships: int32;
 }
 
 model SemanticModelTableSummary {
   id: string;
-  kind: string;
+  roles: string[];
   source: string;
   description: string;
   fields: int32;
@@ -156,6 +159,7 @@ model SemanticDatasetResponse {
 enum SemanticFieldKind {
   dimension;
   measure;
+  metric;
 }
 
 model SemanticFieldResponse {
@@ -165,6 +169,7 @@ model SemanticFieldResponse {
   name: string;
   label: string;
   description?: string;
+  type?: string;
   unit?: string;
   format?: string;
   grain?: string;
@@ -193,11 +198,23 @@ model SemanticSort {
   direction?: string;
 }
 
+model SemanticFilterGroup {
+  filters: SemanticFilter[];
+}
+
+model SemanticFilter {
+  field?: string;
+  fact?: string;
+  operator?: string;
+  values?: string[];
+  groups?: SemanticFilterGroup[];
+}
+
 model SemanticQueryRequest {
   dimensions?: SemanticFieldRef[];
   measures?: SemanticFieldRef[];
   time?: SemanticTimeRef;
-  filters?: Record<string>[];
+  filters?: SemanticFilter[];
   sort?: SemanticSort[];
   limit?: int32;
   pageToken?: string;
@@ -206,7 +223,7 @@ model SemanticQueryRequest {
 model SemanticPreviewRequest {
   dimensions?: SemanticFieldRef[];
   measures?: SemanticFieldRef[];
-  filters?: Record<string>[];
+  filters?: SemanticFilter[];
   sort?: SemanticSort[];
   limit?: int32;
   pageToken?: string;
@@ -222,6 +239,10 @@ model SemanticQueryResponse {
 
 model SemanticExplainResponse {
   mode: string;
+  facts: string[];
+  stitchDimensions: string[];
+  physicalDependencies: string[];
+  relationshipPaths: string[];
   sql: string;
   args: Record<string>[];
   columns: string[];
@@ -401,6 +422,45 @@ op listSemanticModels(@path workspace: string, @query limit?: int32, @query page
   output: #{ mode: "project", select: #[#{ source: "/id" }, #{ source: "/title" }, #{ source: "/description" }, #{ source: "/dashboards" }, #{ source: "/counts" }, #{ source: "/tables" }] },
 })
 op getSemanticModel(@path workspace: string, @path("model") modelName: string): OkJson<SemanticModelDescriptionResponse> | CommonErrors;
+
+@tag("BI")
+@summary("List semantic model fields")
+@route("/workspaces/{workspace}/semantic-models/{model}/fields")
+@get
+@apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@apigen.cli(#{ command: #["semantic-models", "model-fields"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
+@apigen.tool(#{
+  name: "list_semantic_model_fields", effect: "read", tags: #["semantic-model", "field"],
+  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "query", name: "limit", default: 25 }] },
+  output: #{ mode: "project", select: #[#{ source: "/items", countAs: "count", select: #[#{ source: "/kind" }, #{ source: "/id" }, #{ source: "/label" }, #{ source: "/description" }] }], cursor: #{ source: "/page/nextCursor" } },
+})
+op listSemanticModelFields(@path workspace: string, @path("model") modelName: string, @query limit?: int32, @query pageToken?: string): OkJson<SemanticFieldListResponse> | CommonErrors;
+
+@tag("BI")
+@summary("Query semantic model")
+@route("/workspaces/{workspace}/semantic-models/{model}/query")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@apigen.cli(#{ command: #["semantic-models", "model-query"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
+@apigen.tool(#{
+  name: "query_semantic_model", effect: "read", tags: #["semantic-model", "query"],
+  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "body", name: "limit", default: 25 }] },
+  output: #{ mode: "project", select: #[#{ source: "/columns" }, #{ source: "/items", countAs: "count" }], cursor: #{ source: "/page/nextCursor" } },
+})
+op querySemanticModel(@path workspace: string, @path("model") modelName: string, @body body?: SemanticQueryRequest): OkJson<SemanticQueryResponse> | CommonErrors;
+
+@tag("BI")
+@summary("Explain semantic model query")
+@route("/workspaces/{workspace}/semantic-models/{model}/query/explain")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@apigen.cli(#{ command: #["semantic-models", "model-explain"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
+@apigen.tool(#{
+  name: "explain_semantic_model_query", effect: "read", tags: #["semantic-model", "query"],
+  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }] },
+  output: #{ mode: "project", select: #[#{ source: "/mode" }, #{ source: "/facts" }, #{ source: "/stitchDimensions" }, #{ source: "/physicalDependencies" }, #{ source: "/relationshipPaths" }, #{ source: "/sql" }, #{ source: "/args" }, #{ source: "/columns" }, #{ source: "/warnings" }] },
+})
+op explainSemanticModelQuery(@path workspace: string, @path("model") modelName: string, @body body?: SemanticQueryRequest): OkJson<SemanticExplainResponse> | CommonErrors;
 
 @tag("BI")
 @summary("List semantic model datasets")

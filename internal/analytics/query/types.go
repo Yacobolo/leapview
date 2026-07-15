@@ -1,53 +1,32 @@
 package query
 
+import semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+
 type Field struct {
-	Field   string
-	Alias   string
-	Measure InlineMeasure
-}
-
-type InlineMeasure struct {
-	Field       string
-	Name        string
-	Label       string
-	Description string
-	Expr        string
-	Expression  string
-	Table       string
-	Grain       string
-	Time        string
-	Grains      []string
-	Unit        string
-	Format      string
-}
-
-func (m InlineMeasure) SQLExpression() string {
-	if m.Expression != "" {
-		return m.Expression
-	}
-	return m.Expr
+	Field string
+	Alias string
 }
 
 type ResolvedMeasure struct {
-	Field       string
-	Name        string
-	Label       string
-	Description string
-	Expr        string
-	Expression  string
-	Table       string
-	Grain       string
-	Time        string
-	Grains      []string
-	Unit        string
-	Format      string
+	Field           string
+	Name            string
+	Label           string
+	Description     string
+	Fact            string
+	Aggregation     string
+	InputField      string
+	InputExpr       string
+	InputExpression *semanticmodel.Expression
+	Filters         []MeasureFilter
+	Empty           string
+	Unit            string
+	Format          string
 }
 
-func (m ResolvedMeasure) SQLExpression() string {
-	if m.Expression != "" {
-		return m.Expression
-	}
-	return m.Expr
+type MeasureFilter struct {
+	Field    string
+	Operator string
+	Values   []any
 }
 
 type Time struct {
@@ -58,6 +37,7 @@ type Time struct {
 
 type Filter struct {
 	Field    string
+	Fact     string
 	Operator string
 	Values   []any
 	Groups   []FilterGroup
@@ -116,7 +96,43 @@ type CountRequest struct {
 }
 
 type Plan struct {
-	SQL     string
-	Args    []any
-	Columns []string
+	SQL                  string
+	Args                 []any
+	Columns              []string
+	Mode                 string
+	Facts                []string
+	StitchDimensions     []string
+	PhysicalDependencies []string
+	RelationshipPaths    []string
 }
+
+// BundleRequest is one independently shaped aggregate in a shared governed
+// single-fact scan. ID is an opaque consumer key and must be unique in a
+// bundle.
+type BundleRequest struct {
+	ID      string
+	Request Request
+}
+
+// BundlePlan is one physical statement containing independently shaped result
+// branches over a common governed scan.
+type BundlePlan struct {
+	Plan     Plan
+	Branches []BundleBranch
+}
+
+type BundleBranch struct {
+	ID      string
+	Ordinal int
+	Columns []BundleColumn
+}
+
+type BundleColumn struct {
+	Output   string
+	Physical string
+}
+
+const (
+	BundleBranchColumn = "__bundle_branch"
+	BundleRowColumn    = "__bundle_row"
+)

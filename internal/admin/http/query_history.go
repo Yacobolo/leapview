@@ -30,7 +30,8 @@ func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "admin query-history broker is not configured", http.StatusInternalServerError)
 		return
 	}
-	updates := pagestream.NewSignalStream(w, r)
+	streamID := queryHistoryStreamID(clientID)
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(h.Broker.TraceStore(), streamID, "admin.queries.bootstrap"))
 	data, err := h.adminDataForUpdates(r, "queries")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -39,7 +40,7 @@ func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "queries", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
 		return
 	}
-	_ = updates.Forward(r.Context(), h.Broker, queryHistoryStreamID(clientID))
+	_ = updates.Forward(r.Context(), h.Broker, streamID)
 }
 
 func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {
@@ -457,26 +458,29 @@ func queryHistoryPage(r *http.Request, repo queryaudit.Repository, filters uisig
 
 func queryEventFromAudit(row queryaudit.Event) ui.AdminQueryEvent {
 	return ui.AdminQueryEvent{
-		ID:            row.ID,
-		WorkspaceID:   row.WorkspaceID,
-		PrincipalID:   row.PrincipalID,
-		Surface:       row.Surface,
-		Operation:     row.Operation,
-		QueryKind:     row.QueryKind,
-		ModelID:       row.ModelID,
-		Target:        row.Target,
-		ObjectType:    row.ObjectType,
-		ObjectID:      row.ObjectID,
-		RequestID:     row.RequestID,
-		CorrelationID: row.CorrelationID,
-		Status:        row.Status,
-		DurationMS:    row.DurationMS,
-		RowsReturned:  row.RowsReturned,
-		Error:         row.Error,
-		SQL:           row.SQL,
-		PlanText:      row.PlanText,
-		QueryJSON:     row.QueryJSON,
-		CreatedAt:     row.CreatedAt,
+		ID:               row.ID,
+		WorkspaceID:      row.WorkspaceID,
+		PrincipalID:      row.PrincipalID,
+		Surface:          row.Surface,
+		Operation:        row.Operation,
+		QueryKind:        row.QueryKind,
+		ModelID:          row.ModelID,
+		Target:           row.Target,
+		ObjectType:       row.ObjectType,
+		ObjectID:         row.ObjectID,
+		RequestID:        row.RequestID,
+		CorrelationID:    row.CorrelationID,
+		Status:           row.Status,
+		DurationMS:       row.DurationMS,
+		PlanningMS:       row.PlanningMS,
+		ConnectionWaitMS: row.ConnectionWaitMS,
+		DatabaseMS:       row.DatabaseMS,
+		RowsReturned:     row.RowsReturned,
+		Error:            row.Error,
+		SQL:              row.SQL,
+		PlanText:         row.PlanText,
+		QueryJSON:        row.QueryJSON,
+		CreatedAt:        row.CreatedAt,
 	}
 }
 

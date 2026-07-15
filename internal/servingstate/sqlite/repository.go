@@ -595,6 +595,10 @@ func policyObjectRef(workspaceID string, object workspace.WorkspaceSecurableObje
 			parent := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, parts[0]+"/"+parts[1], access.ItemObject(access.SecurableSemanticModel, workspaceID, parts[0]))
 			return access.ItemObjectWithParent(typ, workspaceID, objectID, parent)
 		}
+	case access.SecurableSemanticField:
+		if modelID, _, ok := strings.Cut(objectID, "/"); ok && strings.TrimSpace(modelID) != "" {
+			return access.ItemObjectWithParent(typ, workspaceID, objectID, access.ItemObject(access.SecurableSemanticModel, workspaceID, modelID))
+		}
 	}
 	return access.ItemObject(typ, workspaceID, objectID)
 }
@@ -616,6 +620,11 @@ func registerServingStateSecurablesTx(ctx context.Context, tx *sql.Tx, workspace
 		}
 		if _, err := ensureSecurableObjectTx(ctx, tx, object, ownerPrincipalID); err != nil {
 			return err
+		}
+		if workspace.AssetType(asset.AssetType) == workspace.AssetTypeSemanticModel {
+			if err := registerSemanticFieldSecurablesTx(ctx, tx, workspaceID, ownerPrincipalID, asset); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -652,9 +661,43 @@ func securableRefsForAsset(workspaceID string, asset platformdb.Asset) ([]access
 		table := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, modelID+"/"+tableID, model)
 		column := access.ItemObjectWithParent(access.SecurableColumn, workspaceID, modelID+"/"+tableID+"/"+columnID, table)
 		return []access.ObjectRef{workspaceObject, model, table}, column, true
+	case workspace.AssetTypeMeasure:
+		modelID, memberID, ok := strings.Cut(key, ".")
+		if !ok || modelID == "" || memberID == "" {
+			return nil, access.ObjectRef{}, false
+		}
+		model := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, workspaceObject)
+		field := access.ItemObjectWithParent(access.SecurableSemanticField, workspaceID, modelID+"/"+memberID, model)
+		return []access.ObjectRef{workspaceObject, model}, field, true
 	default:
 		return nil, access.ObjectRef{}, false
 	}
+}
+
+func registerSemanticFieldSecurablesTx(ctx context.Context, tx *sql.Tx, workspaceID, ownerPrincipalID string, asset platformdb.Asset) error {
+	modelID := runtimeAssetKey(workspaceID, asset.AssetKey)
+	if modelID == "" {
+		return nil
+	}
+	var payload struct {
+		Dimensions map[string]json.RawMessage `json:"Dimensions"`
+		Measures   map[string]json.RawMessage `json:"Measures"`
+		Metrics    map[string]json.RawMessage `json:"Metrics"`
+	}
+	if err := json.Unmarshal([]byte(asset.PayloadJson), &payload); err != nil {
+		return fmt.Errorf("decode semantic model %q payload for securable registration: %w", modelID, err)
+	}
+	workspaceObject := access.WorkspaceObject(workspaceID)
+	modelObject := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, workspaceObject)
+	for _, members := range []map[string]json.RawMessage{payload.Dimensions, payload.Measures, payload.Metrics} {
+		for name := range members {
+			object := access.ItemObjectWithParent(access.SecurableSemanticField, workspaceID, modelID+"/"+name, modelObject)
+			if _, err := ensureSecurableObjectTx(ctx, tx, object, ownerPrincipalID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func runtimeAssetKey(workspaceID, key string) string {

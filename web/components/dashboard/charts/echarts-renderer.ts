@@ -14,7 +14,7 @@ registerChartRenderer('echarts', {
     let currentPayload: ChartPayload = {}
 
     instance.on('click', (event) => {
-      const selected = datumForEvent(currentPayload, event)
+      const selected = datumForEChartsEvent(currentPayload, event)
       if (selected) context.selectDatum(selected.datum, selected.index)
     })
 
@@ -43,7 +43,7 @@ function buildOption(payload: ChartPayload, tokens: ChartTokens): EChartsOption 
   return deepMerge(generated, override) as EChartsOption
 }
 
-function datumForEvent(payload: ChartPayload, event: echarts.ECElementEvent): { datum: ChartDatum; index: number } | undefined {
+export function datumForEChartsEvent(payload: ChartPayload, event: Pick<echarts.ECElementEvent, 'data'>): { datum: ChartDatum; index: number } | undefined {
   const index = payloadRowIndexFromData(event.data)
   if (index === undefined) return undefined
   const datum = payload.data?.[index]

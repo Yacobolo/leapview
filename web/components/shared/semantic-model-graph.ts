@@ -28,7 +28,6 @@ import type {
 type ModelNodeData = SemanticModelGraphNodeSignal & {
   selected: boolean
   dimmed: boolean
-  base: boolean
   onSelect: (id: string) => void
 }
 
@@ -42,6 +41,7 @@ type NodePosition = { x: number; y: number }
 
 const NODE_WIDTH = 280
 const HEADER_HEIGHT = 40
+const BADGE_HEIGHT = 30
 const FIELD_HEIGHT = 28
 const NODE_GAP_X = 380
 const NODE_GAP_Y = 92
@@ -109,9 +109,9 @@ class SemanticModelGraphElement extends LitElement {
     )
   }
 
-  private get resolvedGraph(): SemanticModelGraphSignal {
-    return {
-      baseTable: this.graph?.baseTable ?? '',
+	private get resolvedGraph(): SemanticModelGraphSignal {
+		return {
+			facts: this.graph?.facts ?? [],
       nodes: this.graph?.nodes ?? [],
       edges: this.graph?.edges ?? [],
     }
@@ -151,7 +151,6 @@ function SemanticModelGraphFlow({
         ...node.data,
         selected: node.id === selectedID,
         dimmed: nodeDimmed(node.id, graph.edges, selectedID, selectedEdges),
-        base: node.id === graph.baseTable,
       },
     })))
   }, [graph.edges, selectedID, selectedEdges, setNodes])
@@ -240,7 +239,6 @@ function toFlowNode(
       ...node,
       selected: node.id === selectedID,
       dimmed: nodeDimmed(node.id, graph.edges, selectedID, selectedEdges),
-      base: node.id === graph.baseTable,
       onSelect,
     },
   }
@@ -264,11 +262,12 @@ function modelNodePosition(node: SemanticModelGraphNodeSignal, graph: SemanticMo
 }
 
 function modelNodeRanks(graph: SemanticModelGraphSignal): Map<string, number> {
-  const ranks = new Map<string, number>()
-  const base = graph.baseTable && graph.nodes.some((node) => node.id === graph.baseTable) ? graph.baseTable : graph.nodes[0]?.id
-  if (!base) return ranks
-  ranks.set(base, 0)
-  const queue = [base]
+	const ranks = new Map<string, number>()
+	const roots = (graph.facts ?? []).filter((fact) => graph.nodes.some((node) => node.id === fact))
+	if (!roots.length && graph.nodes[0]?.id) roots.push(graph.nodes[0].id)
+	if (!roots.length) return ranks
+	for (const root of roots) ranks.set(root, 0)
+	const queue = [...roots]
   while (queue.length) {
     const current = queue.shift() ?? ''
     const currentRank = ranks.get(current) ?? 0
@@ -294,7 +293,7 @@ function minRankOffset(ranks: Map<string, number>): number {
 }
 
 function nodeHeight(node: SemanticModelGraphNodeSignal): number {
-  return HEADER_HEIGHT + Math.max(1, node.fields.length) * FIELD_HEIGHT + 12
+  return HEADER_HEIGHT + BADGE_HEIGHT + Math.max(1, node.fields.length) * FIELD_HEIGHT + 12
 }
 
 function toFlowEdge(edge: SemanticModelGraphEdgeSignal, selectedEdges: Set<string>): Edge {
@@ -310,9 +309,8 @@ function toFlowEdge(edge: SemanticModelGraphEdgeSignal, selectedEdges: Set<strin
     interactionWidth: 18,
     data: { ...edge, selected, sourceMarker, targetMarker },
     style: {
-      stroke: edge.active ? 'var(--ld-fg-muted)' : 'color-mix(in srgb, var(--ld-fg-muted), transparent 42%)',
+		stroke: 'var(--ld-fg-muted)',
       strokeWidth: selected ? 2.2 : 1.4,
-      strokeDasharray: edge.active ? undefined : '5 6',
       opacity: selected ? 0.92 : 0.18,
     },
   }
@@ -370,7 +368,7 @@ function relationshipEndpointMarkers(cardinality: string): [string, string] {
 function graphLayoutKey(graph: SemanticModelGraphSignal, storageKey: string): string {
   const nodePart = graph.nodes.map((node) => `${node.id}:${node.fields.map((field) => field.name).join(',')}`).join('|')
   const edgePart = graph.edges.map((edge) => `${edge.id}:${edge.source}.${edge.sourceField}->${edge.target}.${edge.targetField}:${edge.cardinality}`).join('|')
-  return `libredash:semantic-model-graph:v1:${storageKey || graph.baseTable || 'model'}:${nodePart}:${edgePart}`
+  return `libredash:semantic-model-graph:v2:${storageKey || (graph.facts ?? []).join(',') || 'model'}:${nodePart}:${edgePart}`
 }
 
 function loadLayout(key: string): Map<string, NodePosition> {
@@ -425,12 +423,14 @@ function ModelTableNode({ data }: { data: ModelNodeData }) {
       },
     },
     React.createElement('div', { className: 'semantic-model-node-header' },
-      React.createElement('div', { className: 'semantic-model-node-title', title: data.base ? `${data.title}, base table` : data.title },
-        iconElement(Table2, 'semantic-model-table-icon'),
-        React.createElement('span', { className: data.base ? 'semantic-model-node-title-base' : '' }, data.title),
-        data.base ? React.createElement('span', { className: 'semantic-model-node-base-text' }, '\u00b7 base table') : null,
-      ),
-    ),
+		React.createElement('div', { className: 'semantic-model-node-title', title: data.title },
+			iconElement(Table2, 'semantic-model-table-icon'),
+			React.createElement('span', null, data.title),
+		),
+	),
+	React.createElement('div', { className: 'semantic-model-node-badges' },
+		(data.badges ?? []).map((badge) => React.createElement('span', { key: badge, className: 'semantic-model-node-badge' }, badge)),
+	),
     React.createElement('div', { className: 'semantic-model-node-fields' },
       data.fields.map((field, index) => React.createElement(ModelFieldRow, { key: field.name, field, index })),
     ),
@@ -438,7 +438,7 @@ function ModelTableNode({ data }: { data: ModelNodeData }) {
 }
 
 function ModelFieldRow({ field, index }: { field: SemanticModelGraphFieldSignal; index: number }) {
-  const top = HEADER_HEIGHT + index * FIELD_HEIGHT + FIELD_HEIGHT / 2
+  const top = HEADER_HEIGHT + BADGE_HEIGHT + index * FIELD_HEIGHT + FIELD_HEIGHT / 2
   const className = [
     'semantic-model-field',
     field.join ? 'semantic-model-field-join' : '',
@@ -758,15 +758,25 @@ const semanticModelGraphStyles = `
     white-space: nowrap;
   }
 
-  ld-semantic-model-graph .semantic-model-node-title-base {
-    font-style: italic;
+  ld-semantic-model-graph .semantic-model-node-badges {
+    display: flex;
+    min-height: ${BADGE_HEIGHT}px;
+    align-items: center;
+    gap: var(--base-size-4);
+    overflow: hidden;
+    border-bottom: var(--ld-border-muted);
+    padding: 0 var(--base-size-12);
   }
 
-  ld-semantic-model-graph .semantic-model-node-base-text {
+  ld-semantic-model-graph .semantic-model-node-badge {
     flex: 0 0 auto;
+    border: var(--ld-border-muted);
+    border-radius: var(--ld-radius-full);
     color: var(--ld-fg-muted);
     font-size: var(--ld-font-size-caption);
     font-weight: var(--ld-font-weight-normal);
+    line-height: 1;
+    padding: 3px 6px;
   }
 
   ld-semantic-model-graph .semantic-model-table-icon {

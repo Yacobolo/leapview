@@ -7,21 +7,25 @@ import (
 
 func reportAggregateDataQuery(modelID string, request reportdef.AggregateQuery) dataquery.Query {
 	return dataquery.Query{
-		ModelID:  modelID,
-		Kind:     dataquery.KindSemanticAggregate,
-		Target:   request.Table,
-		Fields:   reportFieldsToDataFields(request.Dimensions),
-		Measures: reportFieldsToDataFields(request.Measures),
-		Time:     dataquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias},
-		Filters:  reportFiltersToDataFilters(request.Filters),
-		Sort:     reportSortToDataSort(request.Sort),
-		Limit:    request.Limit,
-		Offset:   request.Offset,
+		Surface:   dataquery.SurfaceDashboard,
+		Operation: dataquery.OperationDashboardAggregate,
+		ModelID:   modelID,
+		Kind:      dataquery.KindSemanticAggregate,
+		Target:    request.Table,
+		Fields:    reportFieldsToDataFields(request.Dimensions),
+		Measures:  reportFieldsToDataFields(request.Measures),
+		Time:      dataquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias},
+		Filters:   reportFiltersToDataFilters(request.Filters),
+		Sort:      reportSortToDataSort(request.Sort),
+		Limit:     request.Limit,
+		Offset:    request.Offset,
 	}
 }
 
 func reportRowDataQuery(modelID string, request reportdef.RowQuery, includeTotal bool) dataquery.Query {
 	return dataquery.Query{
+		Surface:      dataquery.SurfaceDashboard,
+		Operation:    dataquery.OperationDashboardRows,
 		ModelID:      modelID,
 		Kind:         dataquery.KindSemanticRows,
 		Target:       request.Table,
@@ -35,26 +39,24 @@ func reportRowDataQuery(modelID string, request reportdef.RowQuery, includeTotal
 	}
 }
 
+func countOnlyDataQuery(request dataquery.Query) dataquery.Query {
+	request.Operation = dataquery.OperationDashboardCount
+	request.AuthorizationFields = append(append([]dataquery.Field{}, request.Fields...), request.Measures...)
+	request.Fields = nil
+	request.Measures = nil
+	request.Sort = nil
+	request.Offset = 0
+	request.Limit = 0
+	request.IncludeTotal = true
+	return request
+}
+
 func reportFieldsToDataFields(fields []reportdef.QueryField) []dataquery.Field {
 	out := make([]dataquery.Field, 0, len(fields))
 	for _, field := range fields {
 		out = append(out, dataquery.Field{
 			Field: field.Field,
 			Alias: field.Alias,
-			Measure: dataquery.InlineMeasure{
-				Field:       field.Measure.Field,
-				Name:        field.Measure.Name,
-				Label:       field.Measure.Label,
-				Description: field.Measure.Description,
-				Expr:        field.Measure.Expr,
-				Expression:  field.Measure.Expression,
-				Table:       field.Measure.Table,
-				Grain:       field.Measure.Grain,
-				Time:        field.Measure.Time,
-				Grains:      append([]string{}, field.Measure.Grains...),
-				Unit:        field.Measure.Unit,
-				Format:      field.Measure.Format,
-			},
 		})
 	}
 	return out
@@ -69,6 +71,7 @@ func reportFiltersToDataFilters(filters []reportdef.QueryFilter) []dataquery.Fil
 		}
 		out = append(out, dataquery.Filter{
 			Field:    filter.Field,
+			Fact:     filter.Fact,
 			Operator: filter.Operator,
 			Values:   append([]any{}, filter.Values...),
 			Groups:   groups,

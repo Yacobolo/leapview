@@ -33,19 +33,19 @@ func TestModelTableExecutesPlannedSQL(t *testing.T) {
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Source:     "orders",
 				PrimaryKey: "order_id",
 				Dimensions: map[string]semanticmodel.MetricDimension{
 					"order_id": {Label: "Order ID"},
+					"revenue":  {Label: "Revenue"},
 					"status":   {Label: "Status"},
 				},
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -69,7 +69,6 @@ func TestModelTablePlannerErrorStopsMaterialization(t *testing.T) {
 		Name:        "test",
 		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
-		BaseTable:   "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Source:     "orders",
@@ -81,12 +80,13 @@ func TestModelTablePlannerErrorStopsMaterialization(t *testing.T) {
 				},
 				Dimensions: map[string]semanticmodel.MetricDimension{
 					"order_id": {Label: "Order ID"},
+					"revenue":  {Label: "Revenue"},
 					"status":   {Label: "Status"},
 				},
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -118,7 +118,6 @@ func TestSQLModelTableUsesPlannedSQL(t *testing.T) {
 				},
 			},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Sources:    []string{"orders"},
@@ -128,7 +127,7 @@ func TestSQLModelTableUsesPlannedSQL(t *testing.T) {
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -149,7 +148,6 @@ func TestModelTableExecutionErrorReturnsMaterializationError(t *testing.T) {
 		Name:        "test",
 		Connections: map[string]semanticmodel.Connection{"local_files": {Kind: "managed"}},
 		Sources:     map[string]semanticmodel.Source{"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"}},
-		BaseTable:   "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Source:     "orders",
@@ -180,7 +178,6 @@ func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
-		BaseTable: "order_summary",
 		Tables: map[string]semanticmodel.Table{
 			"order_summary": {
 				Sources:    []string{},
@@ -202,7 +199,7 @@ func TestModelTablesMaterializeAfterModelDependencies(t *testing.T) {
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "order_summary", Grain: "status", Expression: "SUM(order_summary.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "order_summary", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "order_summary.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -230,7 +227,6 @@ func TestMovieLensModelTableOrderMaterializesDimensionsBeforeFacts(t *testing.T)
 			"tags":    {Path: "tags.csv", Format: "csv", Connection: "movielens"},
 			"links":   {Path: "links.csv", Format: "csv", Connection: "movielens"},
 		},
-		BaseTable: "ratings",
 		Tables: map[string]semanticmodel.Table{
 			"ratings": {
 				Source:     "ratings",
@@ -261,7 +257,7 @@ func TestMovieLensModelTableOrderMaterializesDimensionsBeforeFacts(t *testing.T)
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"rating_count": {Table: "ratings", Grain: "rating_id", Expression: "COUNT(*)", Label: "Ratings"},
+			"rating_count": {Fact: "ratings", Aggregation: "count", Empty: "zero", Label: "Ratings"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -295,7 +291,6 @@ func TestWorkspaceRuntimeCommitsModelTablesInOneDuckLakeSnapshot(t *testing.T) {
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
-		BaseTable: "order_summary",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Source:     "orders",
@@ -317,7 +312,7 @@ func TestWorkspaceRuntimeCommitsModelTablesInOneDuckLakeSnapshot(t *testing.T) {
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "order_summary", Grain: "status", Expression: "SUM(order_summary.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "order_summary", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "order_summary.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -390,7 +385,6 @@ func TestWorkspaceRuntimeUsesPlatformDBAsDuckLakeCatalog(t *testing.T) {
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Source:     "orders",
@@ -403,7 +397,7 @@ func TestWorkspaceRuntimeUsesPlatformDBAsDuckLakeCatalog(t *testing.T) {
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -496,11 +490,15 @@ func TestWorkspaceRuntimeQueriesPinnedDuckLakeSnapshots(t *testing.T) {
 	}
 
 	config.SnapshotID = snapshot1
+	config.MaxReaders = 2
 	first, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, config)
 	if err != nil {
 		t.Fatalf("open first snapshot: %v", err)
 	}
 	defer first.Close()
+	if got := first.ReadConcurrency(); got != 2 {
+		t.Fatalf("first snapshot read concurrency = %d, want 2", got)
+	}
 	if got := queryRevenue(t, ctx, first); got != 25 {
 		t.Fatalf("first snapshot revenue = %v, want 25", got)
 	}
@@ -677,7 +675,6 @@ func simpleOrdersModel(t *testing.T, root string) *semanticmodel.Model {
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
 				Source:     "orders",
@@ -690,7 +687,7 @@ func simpleOrdersModel(t *testing.T, root string) *semanticmodel.Model {
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"revenue": {Table: "orders", Grain: "order_id", Expression: "SUM(orders.revenue)", Label: "Revenue"},
+			"revenue": {Fact: "orders", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero", Label: "Revenue"},
 		},
 	}
 	if err := model.Validate(); err != nil {
@@ -748,8 +745,7 @@ func queryRevenue(t *testing.T, ctx context.Context, runtime *analyticsduckdb.Wo
 
 func TestModelTableDependencyOrderIncludesUpstreamBeforeSelected(t *testing.T) {
 	model := &semanticmodel.Model{
-		Name:      "test",
-		BaseTable: "daily_summary",
+		Name: "test",
 		Tables: map[string]semanticmodel.Table{
 			"customers":     {PrimaryKey: "customer_id"},
 			"orders":        {PrimaryKey: "order_id"},
@@ -786,7 +782,6 @@ func TestModelTablesNamedMaterializesOnlyRequestedOrder(t *testing.T) {
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv", Connection: "local_files"},
 		},
-		BaseTable: "order_summary",
 		Tables: map[string]semanticmodel.Table{
 			"orders":        {Source: "orders", PrimaryKey: "order_id"},
 			"customers":     {Source: "orders", PrimaryKey: "customer_id"},
@@ -831,20 +826,19 @@ func TestRegistersCSVSourcesAndMaterializesModelTables(t *testing.T) {
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Connection: "local_files"},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
-				Kind: "fact", Sources: []string{"orders"},
+				Sources: []string{"orders"},
 				Transform: semanticmodel.Transform{SQL: `
 					SELECT order_id, try_cast(revenue AS DOUBLE) AS revenue
 					FROM source.orders
 				`},
 				PrimaryKey: "order_id",
 				Grain:      "order_id",
-				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}},
-				Measures:   map[string]semanticmodel.MetricMeasure{"revenue": {Label: "Revenue", Expression: "SUM(orders.revenue)"}},
+				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}, "revenue": {Expr: "revenue", Type: "number"}},
 			},
 		},
+		Measures: map[string]semanticmodel.MetricMeasure{"revenue": {Fact: "orders", Label: "Revenue", Aggregation: "sum", Input: semanticmodel.MeasureInput{Field: "orders.revenue"}, Empty: "zero"}},
 	}
 	if err := model.Validate(); err != nil {
 		t.Fatalf("validate model: %v", err)
@@ -955,10 +949,9 @@ func TestRegistersDatabaseSourceTwice(t *testing.T) {
 		Sources: map[string]semanticmodel.Source{
 			"accounts": {Connection: "crm", Object: "accounts"},
 		},
-		BaseTable: "accounts",
 		Tables: map[string]semanticmodel.Table{
 			"accounts": {
-				Kind: "dimension", Source: "accounts", PrimaryKey: "id", Grain: "id",
+				Source: "accounts", PrimaryKey: "id", Grain: "id",
 				Dimensions: map[string]semanticmodel.MetricDimension{"id": {Expr: "id"}, "name": {Expr: "name"}},
 			},
 		},

@@ -221,8 +221,8 @@ func refreshTestDefinition() *workspace.Definition {
 		"sales": {
 			Name: "sales",
 			Tables: map[string]semanticmodel.Table{
-				"customers": {Kind: "dimension"},
-				"orders":    {Kind: "fact", ModelDependencies: []string{"customers"}},
+				"customers": {},
+				"orders":    {ModelDependencies: []string{"customers"}},
 			},
 		},
 	}}

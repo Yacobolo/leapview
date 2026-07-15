@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -48,8 +51,16 @@ func updatesURLWithParams(workspaceID, dashboardID, pageID string, params map[st
 	return "/updates?" + values.Encode()
 }
 
-func postAction(path string) string {
-	return "@post('" + path + "', {headers: window.LibreDashCommand.headers()})"
+func postAction(path string, signalPaths ...string) string {
+	if len(signalPaths) == 0 {
+		signalPaths = []string{"runtime"}
+	}
+	patterns := make([]string, 0, len(signalPaths))
+	for _, signalPath := range signalPaths {
+		patterns = append(patterns, strings.ReplaceAll(signalPath, ".", "[.]"))
+	}
+	include := "/^(?:" + strings.Join(patterns, "|") + ")(?:[.]|$)/"
+	return "@post('" + path + "', {filterSignals: {include: " + include + "}, headers: window.LibreDashCommand.headers()})"
 }
 
 func staticAsset(path string) string {
@@ -73,7 +84,7 @@ func inspectorElement() g.Node {
 	if staticasset.Production() {
 		return nil
 	}
-	return g.El("datastar-inspector")
+	return g.El("datastar-inspector", g.Attr("signals-url", "/__dev/pagestream/signals"))
 }
 
 func pageHead(extra ...g.Node) []g.Node {
@@ -99,8 +110,9 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 	tableReset := tableResetExpression()
 	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters)
 	initialURLParams := report.URLParamsFromFiltersForPage(activePage.ID, initialFilters)
+	initialURLParams["streamInstance"] = newStreamInstanceID()
 	dashboardUpdatesURL := updatesURLWithParams(catalog.Workspace.ID, report.ID, activePage.ID, initialURLParams)
-	reloadAction := postAction("/workspaces/" + catalog.Workspace.ID + "/commands/reload")
+	reloadAction := postAction("/workspaces/"+catalog.Workspace.ID+"/commands/reload", "runtime", "filters.controls")
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + tableReset
 	return pagestream.RenderPage(pagestream.PageSpec{
 		Title: "LibreDash",
@@ -130,12 +142,12 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 					g.Attr("dashboard-id", report.ID),
 					g.Attr("page-id", activePage.ID),
 					g.Attr("data-on:ld-filters-change", filtersUpdate+reloadAction),
-					g.Attr("data-on:ld-filters-reset", filtersUpdate+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters")),
+					g.Attr("data-on:ld-filters-reset", filtersUpdate+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters", "runtime")),
 					g.Attr("data-on:ld-filters-refresh", reloadAction),
-					g.Attr("data-on:ld-selection-clear", "$filters.selections = []; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection")),
-					g.Attr("data-on:ld-interaction-select", "$interactionCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/select")),
-					g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/table-window")),
-					g.Attr("data-on:ld-refresh-materializations", postAction("/workspaces/"+catalog.Workspace.ID+"/commands/refresh-materializations?model="+model.Name+"&dashboard="+report.ID)),
+					g.Attr("data-on:ld-selection-clear", "$filters.selections = []; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection", "runtime")),
+					g.Attr("data-on:ld-interaction-select", "$interactionCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/select", "runtime", "interactionCommand")),
+					g.Attr("data-on:ld-table-window-change", "$tableCommand = evt.detail; "+postAction("/workspaces/"+catalog.Workspace.ID+"/commands/table-window", "runtime", "tableCommand")),
+					g.Attr("data-on:ld-refresh-materializations", postAction("/workspaces/"+catalog.Workspace.ID+"/commands/refresh-materializations?model="+model.Name+"&dashboard="+report.ID, "runtime")),
 				),
 			),
 			inspectorElement(),
@@ -152,8 +164,8 @@ func defaultPage() dashboard.Page {
 	}
 }
 
-func BootstrapSignals(clientID string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
-	envelope := uisignals.DashboardInitialEnvelope(clientID, catalog, report, model, pages, activePage, initialFilters)
+func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
+	envelope := uisignals.DashboardInitialEnvelope(clientID, streamInstanceID, catalog, report, model, pages, activePage, initialFilters)
 	envelope.Runtime.WorkspaceID = uisignals.Optional(catalog.Workspace.ID)
 	for _, decorate := range chromeDecorators {
 		if decorate != nil {
@@ -162,6 +174,7 @@ func BootstrapSignals(clientID string, catalog dashboard.Catalog, report reportd
 	}
 	return map[string]any{
 		"chrome":             envelope.Chrome,
+		"componentStatus":    envelope.ComponentStatus,
 		"page":               envelope.Page,
 		"runtime":            envelope.Runtime,
 		"filterConfig":       envelope.FilterConfig,
@@ -175,6 +188,14 @@ func BootstrapSignals(clientID string, catalog dashboard.Catalog, report reportd
 		"visuals":            envelope.Visuals,
 		"status":             envelope.Status,
 	}
+}
+
+func newStreamInstanceID() string {
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err == nil {
+		return hex.EncodeToString(bytes[:])
+	}
+	return hex.EncodeToString([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
 }
 
 func tableResetExpression() string {

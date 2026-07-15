@@ -54,6 +54,7 @@ for (const viewport of [
       await page.goto(baseURL)
       await page.waitForFunction(() => customElements.get('ld-semantic-model-graph'))
       await page.waitForFunction(() => document.querySelectorAll('ld-semantic-model-graph .react-flow__node').length >= 2)
+      await page.waitForFunction(() => document.querySelectorAll('ld-semantic-model-graph .react-flow__edge').length >= 1)
 
       const state = await page.evaluate(() => {
         const graph = document.querySelector('ld-semantic-model-graph') as HTMLElement
@@ -64,8 +65,7 @@ for (const viewport of [
         const endpointLabels = Array.from(graph.querySelectorAll('.semantic-model-edge-endpoint')).map((label) => label.textContent?.trim())
         const nodeTexts = nodes.map((node) => node.textContent ?? '')
         const headerTexts = Array.from(graph.querySelectorAll('.semantic-model-node-header')).map((node) => node.textContent?.trim())
-        const baseTitle = graph.querySelector('.semantic-model-node-title-base')
-        const baseText = graph.querySelector<HTMLElement>('.semantic-model-node-base-text')
+        const badges = Array.from(graph.querySelectorAll('.semantic-model-node-badge')).map((badge) => badge.textContent?.trim())
         const joinRow = graph.querySelector<HTMLElement>('.semantic-model-field-join')
         const primaryKeyName = graph.querySelector<HTMLElement>('.semantic-model-field-primary .semantic-model-field-name')
         const primaryKeyMarker = graph.querySelector<HTMLElement>('.semantic-model-field-key')
@@ -93,12 +93,8 @@ for (const viewport of [
           primaryKeyFontWeight: primaryKeyName ? getComputedStyle(primaryKeyName).fontWeight : '',
           primaryKeyMarkerText: primaryKeyMarker?.textContent?.trim(),
           primaryKeyMarkerTitle: primaryKeyMarker?.getAttribute('title'),
-          hasBadgeElement: Boolean(graph.querySelector('.semantic-model-field-badge, .semantic-model-node-base')),
-          baseTitleText: baseTitle?.textContent?.trim(),
-          baseTitleFontStyle: baseTitle ? getComputedStyle(baseTitle).fontStyle : '',
-          baseText: baseText?.textContent?.trim(),
-          baseTextColor: baseText ? getComputedStyle(baseText).color : '',
-          hasBaseHeaderClass: Boolean(graph.querySelector('.semantic-model-node-header-base')),
+          hasBadgeElement: Boolean(graph.querySelector('.semantic-model-node-badge')),
+          badges,
           joinRowBackground: joinRow ? getComputedStyle(joinRow).backgroundColor : '',
           joinRowBoxShadow: joinRow ? getComputedStyle(joinRow).boxShadow : '',
           hasTypeIcon: Boolean(graph.querySelector('.semantic-model-type-icon')),
@@ -128,16 +124,12 @@ for (const viewport of [
       expect(Number(state.primaryKeyFontWeight)).toBeGreaterThanOrEqual(600)
       expect(state.primaryKeyMarkerText).toBe('PK')
       expect(state.primaryKeyMarkerTitle).toBe('Primary key')
-      expect(state.hasBadgeElement).toBe(false)
-      expect(state.baseTitleText).toBe('orders')
-      expect(state.baseTitleFontStyle).toBe('italic')
-      expect(state.baseText).toBe('\u00b7 base table')
-      expect(state.baseTextColor).not.toBe('')
-      expect(state.hasBaseHeaderClass).toBe(false)
+      expect(state.hasBadgeElement).toBe(true)
+      expect(state.badges).toEqual(['fact', '2 measures'])
       expect(state.joinRowBackground).not.toBe('')
       expect(state.joinRowBoxShadow).toContain('inset')
       expect(state.hasTypeIcon).toBe(true)
-      expect(state.headerTexts).toEqual(['orders\u00b7 base table', 'customers'])
+      expect(state.headerTexts).toEqual(['orders', 'customers'])
       expect(state.hasReset).toBe(true)
       expect(state.resetText).toBe('')
       expect(state.resetLabel).toBe('Reset layout')
@@ -179,7 +171,7 @@ test('semantic model graph persists dragged node layout and resets it', async ()
     if (!afterSelect) throw new Error('orders node has no bounding box after selection')
     const persisted = await page.evaluate(() => {
       const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index) ?? '')
-      const key = keys.find((candidate) => candidate.startsWith('libredash:semantic-model-graph:v1:'))
+      const key = keys.find((candidate) => candidate.startsWith('libredash:semantic-model-graph:v2:'))
       return {
         keyFound: Boolean(key),
         value: key ? localStorage.getItem(key) ?? '' : '',
@@ -192,7 +184,7 @@ test('semantic model graph persists dragged node layout and resets it', async ()
     expect(persisted.value).toContain('orders')
 
     await page.locator('ld-semantic-model-graph .semantic-model-reset-button').click()
-    const remaining = await page.evaluate(() => Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index) ?? '').filter((key) => key.startsWith('libredash:semantic-model-graph:v1:')).length)
+    const remaining = await page.evaluate(() => Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index) ?? '').filter((key) => key.startsWith('libredash:semantic-model-graph:v2:')).length)
     expect(remaining).toBe(0)
   } finally {
     await page.close()
@@ -242,12 +234,13 @@ function testDocument(): string {
         <script type="module" src="/semantic-model-graph-under-test.js"></script>
         <script type="module">
           const graph = {
-            baseTable: 'orders',
+            facts: ['orders'],
             nodes: [
               {
                 id: 'orders',
                 title: 'orders',
                 primaryKey: 'order_id',
+                badges: ['fact', '2 measures'],
                 fields: [
                   { name: 'order_id', label: 'Order ID', type: 'VARCHAR', primaryKey: true },
                   { name: 'customer_id', label: 'Customer ID', type: 'VARCHAR', join: true, relationships: ['orders_customers'] },
@@ -273,7 +266,6 @@ function testDocument(): string {
                 targetField: 'customer_id',
                 cardinality: 'many_to_one',
                 label: '*:1',
-                active: true,
               },
             ],
           }

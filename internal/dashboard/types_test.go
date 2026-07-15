@@ -1,6 +1,40 @@
 package dashboard
 
-import "testing"
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"testing"
+)
+
+func TestNormalizeProgressPercentKeepsThePublicSignalBounded(t *testing.T) {
+	if progress := NormalizeProgressPercent(nil, true); progress == nil || *progress != 0 {
+		t.Fatalf("planning progress = %v, want 0", progress)
+	}
+	if progress := NormalizeProgressPercent(nil, false); progress == nil || *progress != 100 {
+		t.Fatalf("complete progress = %v, want 100", progress)
+	}
+	for _, test := range []struct {
+		name  string
+		value float64
+		want  float64
+	}{
+		{name: "lower bound", value: -5, want: 0},
+		{name: "middle", value: 37.5, want: 37.5},
+		{name: "upper bound", value: 105, want: 100},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			progress := NormalizeProgressPercent(&test.value, true)
+			if progress == nil || *progress != test.want {
+				t.Fatalf("progress = %v, want %v", progress, test.want)
+			}
+		})
+	}
+	notANumber := math.NaN()
+	if progress := NormalizeProgressPercent(&notANumber, true); progress == nil || *progress != 0 {
+		t.Fatalf("invalid progress = %v, want 0", progress)
+	}
+}
 
 func TestTableRequestWithDefaultsClampsRuntimePolicy(t *testing.T) {
 	request := TableRequest{
@@ -235,6 +269,123 @@ func TestApplyInteractionReplaceReplacesEntries(t *testing.T) {
 	}
 }
 
+func TestApplyInteractionPreservesTypedScalarValuesAndCanonicalIdentity(t *testing.T) {
+	filters := Filters{}
+	for _, value := range []any{0.0, false, nil, "0"} {
+		filters = filters.ApplyInteraction(InteractionCommand{
+			SourceKind:      "visual",
+			SourceID:        "typed",
+			InteractionKind: "point_selection",
+			Action:          "set",
+			Toggle:          true,
+			Mappings: []InteractionCommandMapping{{
+				Field: "rating_bucket",
+				Fact:  "ratings",
+				Grain: "month",
+				Value: value,
+			}},
+		})
+	}
+
+	if got := len(filters.Selections[0].Entries); got != 4 {
+		t.Fatalf("entry count = %d, want 4 typed identities: %#v", got, filters.Selections)
+	}
+	for index, want := range []any{0.0, false, nil, "0"} {
+		mapping := filters.Selections[0].Entries[index].Mappings[0]
+		if mapping.Field != "rating_bucket" || mapping.Fact != "ratings" || mapping.Grain != "month" {
+			t.Fatalf("mapping %d identity = %#v", index, mapping)
+		}
+		if fmt.Sprintf("%T:%v", mapping.Value, mapping.Value) != fmt.Sprintf("%T:%v", want, want) {
+			t.Fatalf("mapping %d value = %T(%v), want %T(%v)", index, mapping.Value, mapping.Value, want, want)
+		}
+	}
+}
+
+func TestApplyInteractionIdentityIncludesFactAndGrain(t *testing.T) {
+	filters := Filters{}
+	for _, mapping := range []InteractionCommandMapping{
+		{Field: "activity_date", Fact: "ratings", Grain: "month", Value: "2026-01-01"},
+		{Field: "activity_date", Fact: "tags", Grain: "month", Value: "2026-01-01"},
+		{Field: "activity_date", Fact: "ratings", Grain: "year", Value: "2026-01-01"},
+	} {
+		filters = filters.ApplyInteraction(interactionCommandFixture([]InteractionCommandMapping{mapping}))
+	}
+	if got := len(filters.Selections[0].Entries); got != 3 {
+		t.Fatalf("entry count = %d, want distinct fact/grain identities: %#v", got, filters.Selections)
+	}
+}
+
+func TestInteractionSelectionValueMatchesSemanticType(t *testing.T) {
+	for _, test := range []struct {
+		value    any
+		typeName string
+		want     bool
+	}{
+		{value: nil, typeName: "number", want: true},
+		{value: 0.0, typeName: "number", want: true},
+		{value: "0", typeName: "number", want: false},
+		{value: false, typeName: "boolean", want: true},
+		{value: "false", typeName: "boolean", want: false},
+		{value: "2026-01-01", typeName: "date", want: true},
+		{value: "2026-02-30", typeName: "date", want: false},
+		{value: "not-a-date", typeName: "date", want: false},
+		{value: 20260101, typeName: "date", want: false},
+		{value: "2026-01-01T12:30:45Z", typeName: "timestamp", want: true},
+		{value: "2026-01-01 12:30:45", typeName: "timestamp", want: true},
+		{value: "2026-01-01", typeName: "timestamp", want: true},
+		{value: "not-a-timestamp", typeName: "timestamp", want: false},
+	} {
+		if got := InteractionSelectionValueMatchesType(test.value, test.typeName); got != test.want {
+			t.Fatalf("value %T(%v) matches %q = %t, want %t", test.value, test.value, test.typeName, got, test.want)
+		}
+	}
+}
+
+func TestInteractionSelectionValueMatchesGrainedTemporalLabels(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		grain string
+		want  bool
+	}{
+		{value: "2026-02-03", grain: "day", want: true},
+		{value: "2026-02-02", grain: "week", want: true},
+		{value: "2026-02", grain: "month", want: true},
+		{value: "2026-Q2", grain: "quarter", want: true},
+		{value: "2026", grain: "year", want: true},
+		{value: "2026-13", grain: "month", want: false},
+		{value: "2026-Q5", grain: "quarter", want: false},
+	} {
+		if got := InteractionSelectionValueMatchesType(test.value, "timestamp", test.grain); got != test.want {
+			t.Fatalf("value %q grain %q matches timestamp = %t, want %t", test.value, test.grain, got, test.want)
+		}
+	}
+}
+
+func TestInteractionCommandMappingDistinguishesOmittedValueFromExplicitNull(t *testing.T) {
+	var command InteractionCommand
+	if err := json.Unmarshal([]byte(`{
+		"sourceKind":"visual",
+		"sourceId":"chart",
+		"interactionKind":"point_selection",
+		"action":"set",
+		"mappings":[
+			{"field":"missing"},
+			{"field":"explicit_null","value":null}
+		]
+	}`), &command); err != nil {
+		t.Fatal(err)
+	}
+	if len(command.Mappings) != 2 {
+		t.Fatalf("mappings = %#v", command.Mappings)
+	}
+	if command.Mappings[0].HasValue() {
+		t.Fatal("omitted mapping value was treated as present")
+	}
+	if !command.Mappings[1].HasValue() || command.Mappings[1].Value != nil {
+		t.Fatalf("explicit null mapping = %#v, want present null", command.Mappings[1])
+	}
+}
+
 func interactionCommandFixture(mappings []InteractionCommandMapping) InteractionCommand {
 	return InteractionCommand{
 		SourceKind:      "visual",
@@ -282,7 +433,7 @@ func selectionEntryValues(selection InteractionSelection, field string) []string
 	for _, entry := range selection.Entries {
 		for _, mapping := range entry.Mappings {
 			if mapping.Field == field {
-				values = append(values, mapping.Value)
+				values = append(values, fmt.Sprint(mapping.Value))
 			}
 		}
 	}
@@ -292,7 +443,7 @@ func selectionEntryValues(selection InteractionSelection, field string) []string
 func tupleValue(entry InteractionSelectionEntry, field string) string {
 	for _, mapping := range entry.Mappings {
 		if mapping.Field == field {
-			return mapping.Value
+			return fmt.Sprint(mapping.Value)
 		}
 	}
 	return ""

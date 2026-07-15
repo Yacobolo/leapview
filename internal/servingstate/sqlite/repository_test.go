@@ -127,6 +127,7 @@ func TestRepositoryActivateRegistersSecurablesFromDeploymentGraph(t *testing.T) 
 	workspaceID := workspace.WorkspaceID("test")
 	servingStateID := workspace.ServingStateID(created.ID)
 	model := mustTestAsset(workspaceID, servingStateID, workspace.AssetTypeSemanticModel, "test.sales", "")
+	model.PayloadJSON = `{"Dimensions":{"activity_date":{}},"Measures":{"rating_count":{}},"Metrics":{"tags_per_rating":{}}}`
 	table := mustTestAsset(workspaceID, servingStateID, workspace.AssetTypeSemanticTable, "test.sales.orders", model.ID)
 	field := mustTestAsset(workspaceID, servingStateID, workspace.AssetTypeField, "test.sales.orders.email", table.ID)
 	dashboard := mustTestAsset(workspaceID, servingStateID, workspace.AssetTypeDashboard, "test.executive", "")
@@ -152,6 +153,9 @@ func TestRepositoryActivateRegistersSecurablesFromDeploymentGraph(t *testing.T) 
 	}
 
 	assertSecurableParent(t, store, "semantic_model:test:sales", "workspace:test")
+	assertSecurableParent(t, store, "semantic_field:test:sales/activity_date", "semantic_model:test:sales")
+	assertSecurableParent(t, store, "semantic_field:test:sales/rating_count", "semantic_model:test:sales")
+	assertSecurableParent(t, store, "semantic_field:test:sales/tags_per_rating", "semantic_model:test:sales")
 	assertSecurableParent(t, store, "dataset:test:sales/orders", "semantic_model:test:sales")
 	assertSecurableParent(t, store, "column:test:sales/orders/email", "dataset:test:sales/orders")
 	assertSecurableParent(t, store, "dashboard:test:executive", "workspace:test")

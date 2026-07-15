@@ -114,7 +114,12 @@ func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	signal, view := h.chatBootstrapSignal(r, scope)
 	workspaceID := h.chatDefaultWorkspaceID()
 	catalog := h.catalogForWorkspace(workspaceID)
-	updates := pagestream.NewSignalStream(w, r)
+	streamID := chatStreamID(scope, chatClientID(r))
+	var trace *pagestream.TraceStore
+	if h.options.Broker != nil {
+		trace = h.options.Broker.TraceStore()
+	}
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, streamID, "chat.bootstrap"))
 	if err := updates.Patch(ui.ChatBootstrapSignals(catalog, workspaceID, h.currentRoleLabel(r), view, signal)); err != nil {
 		return
 	}
@@ -122,7 +127,7 @@ func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		updates.Wait(r.Context())
 		return
 	}
-	_ = updates.Forward(r.Context(), h.options.Broker, chatStreamID(scope, chatClientID(r)))
+	_ = updates.Forward(r.Context(), h.options.Broker, streamID)
 }
 
 func (h *Handler) renderChat(w nethttp.ResponseWriter, r *nethttp.Request, view string, signal ui.ChatViewState) {
@@ -183,7 +188,12 @@ func (h *Handler) runChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, serv
 	}
 	transcript := state.Transcript
 	streamArtifacts := state.Artifacts
-	updates := pagestream.NewSignalStream(w, r)
+	streamID := chatStreamID(scope, clientID)
+	var trace *pagestream.TraceStore
+	if h.options.Broker != nil {
+		trace = h.options.Broker.TraceStore()
+	}
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, streamID, "chat.turn"))
 	started, err := service.StartPrompt(r.Context(), agent.PromptInput{
 		Scope:          scope,
 		ConversationID: conversationID,

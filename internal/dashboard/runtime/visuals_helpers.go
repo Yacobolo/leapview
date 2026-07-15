@@ -1,13 +1,15 @@
 package runtime
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
@@ -18,26 +20,8 @@ func fieldRef(field string, alias string) reportdef.QueryField {
 
 func queryFieldRef(ref reportdef.FieldRef, alias string) reportdef.QueryField {
 	return reportdef.QueryField{
-		Field:   ref.Field,
-		Alias:   alias,
-		Measure: queryInlineMeasure(ref.Measure),
-	}
-}
-
-func queryInlineMeasure(measure semanticmodel.MetricMeasure) reportdef.InlineMeasure {
-	return reportdef.InlineMeasure{
-		Field:       measure.Field,
-		Name:        measure.Name,
-		Label:       measure.Label,
-		Description: measure.Description,
-		Expr:        measure.Expr,
-		Expression:  measure.Expression,
-		Table:       measure.Table,
-		Grain:       measure.Grain,
-		Time:        measure.Time,
-		Grains:      append([]string{}, measure.Grains...),
-		Unit:        measure.Unit,
-		Format:      measure.Format,
+		Field: ref.Field,
+		Alias: alias,
 	}
 }
 
@@ -101,6 +85,22 @@ func measureLabel(name string, measure semanticmodel.MetricMeasure) string {
 		return measure.Label
 	}
 	return name
+}
+
+func aggregateMemberMetadata(model *semanticmodel.Model, name string) semanticmodel.MetricMeasure {
+	if model == nil {
+		return semanticmodel.MetricMeasure{Name: name, Field: name}
+	}
+	if measure, err := model.ResolveMeasure(name); err == nil {
+		return measure
+	}
+	if metric, ok := model.Metrics[name]; ok {
+		return semanticmodel.MetricMeasure{
+			Name: name, Field: name, Label: metric.Label, Description: metric.Description,
+			Unit: metric.Unit, Format: metric.Format, Hidden: metric.Hidden,
+		}
+	}
+	return semanticmodel.MetricMeasure{Name: name, Field: name}
 }
 
 func optionInt(options map[string]any, key string, fallback, minValue, maxValue int) int {
@@ -225,6 +225,8 @@ func interactionConfig(kind string, selection reportdef.SelectionInteraction) da
 	for _, mapping := range selection.Mappings {
 		mappings = append(mappings, dashboard.InteractionConfigMapping{
 			Field: mapping.Field,
+			Fact:  mapping.Fact,
+			Grain: mapping.Grain,
 			Value: mapping.Value,
 			Label: mapping.Label,
 		})
@@ -284,25 +286,31 @@ func datumMatchesSelectionEntry(row dashboard.Datum, mappings []reportdef.Select
 		return false
 	}
 	for _, mapping := range mappings {
-		selectedValue, ok := selectionEntryMappingValue(entry, mapping.Field)
-		if !ok || selectedValue == "" {
+		selectedValue, ok := selectionEntryMappingValue(entry, mapping.Field, mapping.Fact, mapping.Grain)
+		if !ok {
 			return false
 		}
 		value, ok := row[mapping.Value]
-		if !ok || fmt.Sprint(value) != selectedValue {
+		if !ok || !selectionValuesEqual(value, selectedValue) {
 			return false
 		}
 	}
 	return true
 }
 
-func selectionEntryMappingValue(entry dashboard.InteractionSelectionEntry, field string) (string, bool) {
+func selectionEntryMappingValue(entry dashboard.InteractionSelectionEntry, field, fact, grain string) (dashboard.InteractionSelectionValue, bool) {
 	for _, mapping := range entry.Mappings {
-		if mapping.Field == field {
+		if mapping.Field == field && mapping.Fact == fact && mapping.Grain == grain {
 			return mapping.Value, true
 		}
 	}
-	return "", false
+	return nil, false
+}
+
+func selectionValuesEqual(left, right any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
 func normalizeDatumValue(value any) any {

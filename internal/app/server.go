@@ -15,6 +15,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
+	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	deploymenthttp "github.com/Yacobolo/libredash/internal/deployment/http"
 	"github.com/Yacobolo/libredash/internal/execution"
 	manageddatabinding "github.com/Yacobolo/libredash/internal/manageddata/binding"
@@ -26,6 +27,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/queryruntime"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
+	"github.com/Yacobolo/libredash/internal/staticasset"
 	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -72,6 +74,8 @@ type Server struct {
 	metrics                       QueryMetrics
 	executor                      *execution.Service
 	broker                        *pagestream.Broker
+	pageStreamTrace               *pagestream.TraceStore
+	dashboardRefreshes            *dashboardstream.Registry
 	store                         *platform.Store
 	servingStateRepo              servingStateRepository
 	managedDataBindingRepo        manageddatabinding.Repository
@@ -115,13 +119,24 @@ type Server struct {
 }
 
 func New(metrics QueryMetrics) *Server {
+	logger := slog.Default()
+	var trace *pagestream.TraceStore
+	if !staticasset.Production() {
+		trace = pagestream.NewTraceStore(pagestream.TraceOptions{
+			CapacityPerStream: 512,
+			MaxStreams:        32,
+			IncludePayloads:   true,
+		})
+	}
 	return &Server{
-		metrics:           metrics,
-		broker:            pagestream.NewBroker(),
-		requestBodyLimit:  DefaultRequestBodyLimitConfig(),
-		telemetry:         newHTTPTelemetry(),
-		logger:            slog.Default(),
-		pendingChatTitles: map[string]struct{}{},
+		metrics:            metrics,
+		broker:             pagestream.NewBroker(pagestream.WithTraceStore(trace)),
+		pageStreamTrace:    trace,
+		dashboardRefreshes: dashboardstream.NewRegistry(),
+		requestBodyLimit:   DefaultRequestBodyLimitConfig(),
+		telemetry:          newHTTPTelemetry(),
+		logger:             logger,
+		pendingChatTitles:  map[string]struct{}{},
 	}
 }
 
@@ -240,6 +255,9 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	if options.Logger != nil {
 		server.logger = options.Logger
+		if server.pageStreamTrace != nil {
+			server.pageStreamTrace.SetLogger(options.Logger)
+		}
 	}
 	if err := server.registerDefaultWorkspaceSecurable(context.Background()); err != nil {
 		server.logger.ErrorContext(context.Background(), "register default workspace securable failed", "workspace", server.defaultWorkspaceID, "error", err)
@@ -509,7 +527,15 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			}
 			return selected, true
 		},
-		Broker: s.broker,
+		Broker:       s.broker,
+		Coordinators: s.dashboardRefreshes,
+		Logger:       s.logger,
+		RefreshStarted: func(refresh dashboardstream.Refresh) {
+			s.telemetry.dashboardRefreshStarted(refresh.Command)
+		},
+		RefreshFinished:      s.telemetry.dashboardRefreshFinished,
+		RefreshEventObserved: s.telemetry.dashboardRefreshEventObserved,
+		CacheObserved:        s.telemetry.dashboardCacheObserved,
 		CurrentPrincipalID: func(r *http.Request) string {
 			principal, ok := principalFromContext(r.Context())
 			if !ok {

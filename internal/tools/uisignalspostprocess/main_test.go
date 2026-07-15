@@ -55,3 +55,37 @@ func TestPostprocessGeneratedModelsIsIdempotent(t *testing.T) {
 		t.Fatalf("postprocessed model did not preserve the wire name and Go initialism:\n%s", text)
 	}
 }
+
+func TestPostprocessGeneratedTypescriptNarrowsInteractionValues(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "index.ts")
+	source := `export interface DashboardInteractionCommandMapping {
+  field: string
+  value: unknown
+}
+
+export interface DashboardInteractionSelectionMapping {
+  field: string
+  value: unknown
+}
+`
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := postprocessGeneratedTypescript(path); err != nil {
+			t.Fatalf("postprocess generated TypeScript: %v", err)
+		}
+	}
+	generated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(generated), "value: string | number | boolean | null"); got != 2 {
+		t.Fatalf("typed scalar fields = %d, want 2:\n%s", got, generated)
+	}
+	if strings.Contains(string(generated), "value: unknown") {
+		t.Fatalf("unknown interaction value remains:\n%s", generated)
+	}
+}

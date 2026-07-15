@@ -26,7 +26,7 @@ export const emptyTable: TableSignal = {
   style: defaultTableStyle,
   interaction: { kind: 'row_selection', toggle: true, mappings: [] },
   columns: [],
-  totalRows: 0,
+  cardinality: { kind: 'unknown', value: 0 },
   availableRows: 0,
   isCapped: false,
   rowCap: 10000,
@@ -61,8 +61,8 @@ export function normalizeTable(value: Partial<TableSignal>): TableSignal {
     version: 2,
     kind: value.kind === 'matrix_table' || value.kind === 'pivot_table' ? value.kind : 'data_table',
     style: normalizeStyle(value.style),
-    totalRows: positiveNumber(value.totalRows, 0),
-    availableRows: positiveNumber(value.availableRows, positiveNumber(value.totalRows, 0)),
+    cardinality: normalizeCardinality(value.cardinality),
+    availableRows: positiveNumber(value.availableRows, positiveNumber(value.cardinality?.value, 0)),
     rowCap: positiveNumber(value.rowCap, 10000),
     chunkSize,
     rowHeight: positiveNumber(value.rowHeight, defaultRowHeight),
@@ -77,6 +77,38 @@ export function normalizeTable(value: Partial<TableSignal>): TableSignal {
     loadingBlock: value.loadingBlock ?? '',
     error: value.error ?? '',
   }
+}
+
+// A scrolling-window payload intentionally omits the expensive exact count.
+// Keep cardinality already resolved for the same reset/sort identity while
+// still allowing a new reset to discard stale metadata immediately.
+export function preserveCardinality(previous: TableSignal, incoming: TableSignal): TableSignal {
+	if (previous.resetVersion !== incoming.resetVersion || !sameSort(previous.sort, incoming.sort)) return incoming
+	const previousRank = cardinalityRank(previous.cardinality.kind)
+	const incomingRank = cardinalityRank(incoming.cardinality.kind)
+	if (previousRank < incomingRank) return incoming
+	if (previousRank === incomingRank && previous.cardinality.value <= incoming.cardinality.value) return incoming
+  return {
+    ...incoming,
+    cardinality: previous.cardinality,
+	availableRows: previous.cardinality.kind === 'exact' ? previous.availableRows : Math.max(previous.availableRows, incoming.availableRows),
+    isCapped: previous.isCapped,
+  }
+}
+
+function normalizeCardinality(value: Partial<TableSignal['cardinality']> | undefined): TableSignal['cardinality'] {
+	const kind = value?.kind
+	if (kind !== 'lower_bound' && kind !== 'estimated' && kind !== 'exact') return { kind: 'unknown', value: 0 }
+	return { kind, value: positiveNumber(value.value, 0) }
+}
+
+function cardinalityRank(kind: TableSignal['cardinality']['kind']): number {
+	switch (kind) {
+		case 'exact': return 3
+		case 'estimated': return 2
+		case 'lower_bound': return 1
+		default: return 0
+	}
 }
 
 export function normalizeStyle(style: Partial<TableStyle> | undefined): TableStyle {

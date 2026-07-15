@@ -19,7 +19,20 @@ func fieldAssetID(modelID string, model *semanticmodel.Model, ref string, assetI
 }
 
 func lineageMeasureFieldRefs(model *semanticmodel.Model, measure semanticmodel.MetricMeasure) []string {
-	return lineageExpressionFieldRefs(model, measure.SQLExpression())
+	refs := []string{}
+	if measure.Input.Field != "" {
+		refs = append(refs, measure.Input.Field)
+	}
+	if measure.Input.Expression != "" {
+		if expression, err := semanticmodel.ParseExpression(measure.Input.Expression); err == nil {
+			refs = append(refs, expression.References()...)
+		}
+	}
+	for _, filter := range measure.Filters {
+		refs = append(refs, filter.Field)
+	}
+	sort.Strings(refs)
+	return refs
 }
 
 func lineageExpressionFieldRefs(model *semanticmodel.Model, expression string) []string {

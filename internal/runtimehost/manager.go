@@ -150,6 +150,12 @@ func (m *Manager) ReloadBeforePrepare(ctx context.Context, beforePrepare func() 
 		}
 		return err
 	}
+	// The validated artifact is immutable and its digest includes the managed-data
+	// revision pins. Avoid reconstructing and verifying those revisions on every
+	// runtime acquisition when the active artifact has not changed.
+	if !m.needsArtifactPrepare(current, artifact) {
+		return nil
+	}
 	managedData, err := m.resolveManagedData(ctx, current.ID)
 	if err != nil {
 		return err
@@ -173,6 +179,15 @@ func (m *Manager) ReloadBeforePrepare(ctx context.Context, beforePrepare func() 
 		}
 	}
 	return m.CommitPrepared(prepared)
+}
+
+func (m *Manager) needsArtifactPrepare(current servingstate.State, artifact servingstate.Artifact) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.current == nil ||
+		m.activeServingStateID != current.ID ||
+		m.activeDigest != artifact.Digest ||
+		m.activeSnapshotID != current.DuckLakeSnapshotID
 }
 
 func (m *Manager) needsPrepare(current servingstate.State, artifact servingstate.Artifact, managedRevision string) bool {

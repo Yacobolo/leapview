@@ -78,10 +78,8 @@ func (m dataExplorerFixtureMetrics) SemanticModel(modelID string) (*semanticmode
 				}},
 			},
 		},
-		BaseTable: "orders",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
-				Kind:       "fact",
 				Source:     "orders",
 				PrimaryKey: "order_id",
 				Columns: map[string]semanticmodel.ModelColumn{
@@ -99,7 +97,7 @@ func (m dataExplorerFixtureMetrics) SemanticModel(modelID string) (*semanticmode
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"order_count": {Table: "orders", Expression: "COUNT(*)", Label: "Orders"},
+			"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"},
 		},
 	}, true
 }

@@ -8,6 +8,7 @@ import {
   filterConfigEntries,
   filterConfigMap,
   filtersToURLParams,
+  interactionSelectionLabel,
   type DatePreset,
   type FilterConfig,
   type FilterControl,
@@ -630,7 +631,7 @@ class FilterPanel extends LitElement {
           <button class="clear" type="button" @click=${this.clearSelections}>Clear</button>
         </div>
         <div class="chips">
-          ${selections.map((selection) => html`<span class="chip">${selectionLabel(selection)}</span>`)}
+          ${selections.map((selection) => html`<span class="chip">${interactionSelectionLabel(selection)}</span>`)}
         </div>
       </article>
     `
@@ -891,14 +892,6 @@ function dateSummary(definition: FilterDefinition, control: FilterControl): stri
   }
   const preset = control.preset || definition.default?.preset || 'all'
   return (definition.presets ?? []).find((item) => item.value === preset)?.label ?? 'Custom range'
-}
-
-function selectionLabel(selection: InteractionSelection): string {
-  if (selection.label) return selection.label
-  return (selection.entries ?? [])
-    .map((entry) => entry.label || (entry.mappings ?? []).map((mapping) => mapping.label || mapping.value || '').filter(Boolean).join(', '))
-    .filter(Boolean)
-    .join(', ')
 }
 
 function monthSeed(definition: FilterDefinition, from: string, to: string): string {

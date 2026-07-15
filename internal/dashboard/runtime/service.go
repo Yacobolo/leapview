@@ -8,6 +8,7 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -44,6 +45,10 @@ type DataRuntimeSnapshot interface {
 	DuckLakeSnapshotID() int64
 }
 
+type DataRuntimeReadConcurrency interface {
+	ReadConcurrency() int
+}
+
 type setupRequiredError interface {
 	SetupRequired() bool
 }
@@ -62,10 +67,11 @@ type Service struct {
 }
 
 type modelRuntime struct {
-	model   *semanticmodel.Model
-	data    DataRuntime
-	ready   bool
-	missing error
+	model     *semanticmodel.Model
+	optimizer *consumer.Optimizer
+	data      DataRuntime
+	ready     bool
+	missing   error
 }
 
 func NewFromDefinition(duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
@@ -112,7 +118,11 @@ func newFromDefinition(duckDBDir string, factory DataRuntimeFactory, definition 
 	}
 
 	for modelID, model := range definition.Models {
-		service.runtimes[modelID] = &modelRuntime{model: model}
+		optimizer, err := consumer.NewOptimizer(model)
+		if err != nil {
+			return nil, fmt.Errorf("compile semantic model %q: %w", modelID, err)
+		}
+		service.runtimes[modelID] = &modelRuntime{model: model, optimizer: optimizer}
 	}
 	if workspaceFactory, ok := factory.(WorkspaceDataRuntimeFactory); ok {
 		dataRuntimes, err := workspaceFactory.OpenDashboardWorkspaceDataRuntimes(context.Background(), WorkspaceDataRuntimeConfig{
@@ -206,6 +216,28 @@ func (m *Service) DuckLakeSnapshotID() int64 {
 		}
 	}
 	return snapshotID
+}
+
+func (m *Service) DashboardTargetConcurrency() int {
+	if m == nil || m.DuckLakeSnapshotID() <= 0 {
+		return 1
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	limit := 0
+	for _, runtime := range m.runtimes {
+		if runtime == nil || !runtime.ready || runtime.data == nil {
+			continue
+		}
+		capability, ok := runtime.data.(DataRuntimeReadConcurrency)
+		if !ok || capability.ReadConcurrency() <= 1 {
+			return 1
+		}
+		if limit == 0 || capability.ReadConcurrency() < limit {
+			limit = capability.ReadConcurrency()
+		}
+	}
+	return max(1, limit)
 }
 
 func setupRequired(err error) bool {

@@ -240,6 +240,18 @@ func (a apiGenAdapter) GetSemanticDataset(w http.ResponseWriter, r *http.Request
 	a.server.semanticQueryHTTP().GetSemanticDataset(w, r)
 }
 
+func (a apiGenAdapter) ListSemanticModelFields(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListSemanticModelFieldsParams) {
+	a.server.semanticQueryHTTP().ListSemanticModelFields(w, r)
+}
+
+func (a apiGenAdapter) QuerySemanticModel(w http.ResponseWriter, r *http.Request, _, _ string) {
+	a.server.semanticQueryHTTP().QuerySemanticModel(w, r)
+}
+
+func (a apiGenAdapter) ExplainSemanticModelQuery(w http.ResponseWriter, r *http.Request, _, _ string) {
+	a.server.semanticQueryHTTP().ExplainSemanticModelQuery(w, r)
+}
+
 func (a apiGenAdapter) ListSemanticFields(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenListSemanticFieldsParams) {
 	a.server.semanticQueryHTTP().ListSemanticFields(w, r)
 }
