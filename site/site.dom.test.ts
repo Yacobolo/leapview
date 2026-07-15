@@ -100,6 +100,42 @@ test('site supports system, light, and dark color modes', async () => {
   }
 })
 
+test('mobile landing page uses a compact menu and proof cards', async () => {
+  const page = await browser.newPage()
+  try {
+    await page.setViewportSize({ width: 320, height: 900 })
+    await page.goto(baseURL)
+
+    expect(await page.locator('.site-nav-links').evaluate((element) => getComputedStyle(element).display)).toBe('none')
+    const headerHeight = await page.locator('.site-header').evaluate((element) => element.getBoundingClientRect().height)
+    expect(headerHeight).toBeLessThanOrEqual(45)
+    const menu = page.locator('ld-site-mobile-menu')
+    const menuButton = menu.locator('button')
+    expect(await menuButton.count()).toBe(1)
+    expect(await menuButton.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30)
+
+    const principleColumns = await page.locator('.site-principles').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+    expect(principleColumns).toBe(2)
+    expect(await menuButton.getAttribute('aria-expanded')).toBe('false')
+
+    await menuButton.click()
+    expect(await menuButton.getAttribute('aria-expanded')).toBe('true')
+    expect(await menu.getByRole('link', { name: 'Docs' }).count()).toBe(1)
+
+    const proofHeights = await page.locator('.site-hero-proof .site-proof-item').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
+    expect(proofHeights).toHaveLength(3)
+    expect(Math.max(...proofHeights)).toBeLessThan(180)
+
+    await page.setViewportSize({ width: 533, height: 900 })
+    const mobileHeroTitleSize = await page.locator('.site-hero h1').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+    expect(mobileHeroTitleSize).toBeLessThanOrEqual(40)
+    expect(await page.locator('.site-principles-heading').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  } finally {
+    await page.close()
+  }
+})
+
 test('getting started route gives users a code-native first path', async () => {
   const page = await browser.newPage()
   try {

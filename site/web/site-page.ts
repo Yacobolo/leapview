@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Server, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Server, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import '../../web/components/dashboard/charts/echart'
 import '../../web/components/dashboard/table/report-table'
@@ -40,8 +40,8 @@ class SiteThemeToggle extends LitElement {
 
     button {
       display: inline-grid;
-      width: var(--control-medium-size);
-      height: var(--control-medium-size);
+      width: var(--site-header-control-size);
+      height: var(--site-header-control-size);
       place-items: center;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
@@ -107,6 +107,119 @@ if (!customElements.get('ld-site-theme-toggle')) {
   customElements.define('ld-site-theme-toggle', SiteThemeToggle)
 }
 
+class SiteMobileMenu extends LitElement {
+  private open = false
+
+  static styles = css`
+    :host {
+      display: none;
+    }
+
+    @media (width < 48rem) {
+      :host {
+        display: block;
+      }
+    }
+
+    button {
+      display: inline-grid;
+      width: var(--site-header-control-size);
+      height: var(--site-header-control-size);
+      place-items: center;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    button:hover,
+    button:focus-visible {
+      border-color: var(--ld-button-border-hover);
+      background: var(--ld-button-bg-hover);
+      color: var(--ld-fg-default);
+    }
+
+    button:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-offset);
+    }
+
+    nav {
+      position: fixed;
+      z-index: var(--zIndex-overlay);
+      top: calc(var(--site-header-height) + var(--base-size-8));
+      right: var(--base-size-16);
+      display: grid;
+      min-width: calc(var(--base-size-128) + var(--base-size-64));
+      overflow: hidden;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-large);
+      background: var(--ld-bg-panel);
+      box-shadow: var(--shadow-floating-medium);
+    }
+
+    a {
+      padding: var(--base-size-12) var(--base-size-16);
+      color: var(--ld-fg-default);
+      font-size: var(--ld-text-body-md-size);
+      font-weight: var(--ld-font-weight-medium);
+      text-decoration: none;
+    }
+
+    a:hover,
+    a:focus-visible {
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-accent);
+    }
+
+    nav[hidden] {
+      display: none;
+    }
+  `
+
+  connectedCallback(): void {
+    super.connectedCallback()
+    document.addEventListener('keydown', this.handleKeydown)
+  }
+
+  disconnectedCallback(): void {
+    document.removeEventListener('keydown', this.handleKeydown)
+    super.disconnectedCallback()
+  }
+
+  render() {
+    const label = this.open ? 'Close site navigation' : 'Open site navigation'
+    return html`<button type="button" aria-label=${label} aria-controls="site-mobile-navigation" aria-expanded=${String(this.open)} @click=${this.toggle}>
+      ${lucideIcon(this.open ? X : Menu, { size: 20, strokeWidth: 2 })}
+    </button>
+    <nav id="site-mobile-navigation" aria-label="Site navigation" ?hidden=${!this.open}>
+      <a href="/docs" @click=${this.close}>Docs</a>
+      <a href="/#demo" @click=${this.close}>Demo</a>
+      <a href="/charts" @click=${this.close}>Charts</a>
+    </nav>`
+  }
+
+  private toggle = (): void => {
+    this.open = !this.open
+    this.requestUpdate()
+  }
+
+  private close = (): void => {
+    this.open = false
+    this.requestUpdate()
+  }
+
+  private readonly handleKeydown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && this.open) this.close()
+  }
+}
+
+if (!customElements.get('ld-site-mobile-menu')) {
+  customElements.define('ld-site-mobile-menu', SiteMobileMenu)
+}
+
 class SiteDocsDrawerToggle extends LitElement {
   static properties = {
     placement: { type: String },
@@ -133,8 +246,8 @@ class SiteDocsDrawerToggle extends LitElement {
 
     button {
       display: inline-grid;
-      width: var(--control-medium-size);
-      height: var(--control-medium-size);
+      width: var(--site-header-control-size);
+      height: var(--site-header-control-size);
       place-items: center;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);

@@ -1,4 +1,8 @@
 :root {
+  --site-header-height: var(--control-xlarge-size);
+  --site-header-control-size: var(--control-medium-size);
+  --site-header-inline-space: var(--base-size-16);
+  --site-header-gap: var(--base-size-16);
   background: var(--ld-bg-page);
   color: var(--ld-fg-default);
   font-family: var(--ld-font-family-ui);
@@ -60,15 +64,15 @@ a {
 
 .site-nav {
   display: flex;
-  min-height: var(--control-xlarge-size);
+  min-height: var(--site-header-height);
   align-items: center;
   justify-content: space-between;
-  gap: var(--base-size-16);
+  gap: var(--site-header-gap);
 }
 
 .site-brand {
   color: var(--ld-fg-default);
-  font-size: var(--ld-text-title-sm-size);
+  font-size: clamp(1.125rem, 6vw, var(--ld-text-title-sm-size));
   font-weight: var(--ld-font-weight-strong);
   text-decoration: none;
 }
@@ -79,7 +83,7 @@ a {
 .site-demo-controls {
   display: flex;
   align-items: center;
-  gap: var(--base-size-16);
+  gap: var(--site-header-gap);
 }
 
 .site-nav-links a {
@@ -228,15 +232,15 @@ a {
 
 .site-docs-layout {
   display: grid;
-  min-height: calc(100svh - var(--control-xlarge-size));
+  min-height: calc(100svh - var(--site-header-height));
   grid-template-columns: minmax(var(--base-size-128), calc(var(--base-size-128) + var(--base-size-128))) minmax(0, 1fr);
 }
 
 .site-docs-sidebar {
   position: sticky;
-  top: var(--control-xlarge-size);
+  top: var(--site-header-height);
   align-self: start;
-  height: calc(100svh - var(--control-xlarge-size));
+  height: calc(100svh - var(--site-header-height));
   overflow-y: auto;
   border-right: var(--ld-border-muted);
   background: var(--ld-bg-panel);
@@ -819,11 +823,18 @@ a {
 
 .site-principles-heading {
   display: grid;
+  width: min(100%, var(--container-workspace-search));
+  min-width: 0;
   justify-items: center;
-  max-width: var(--container-workspace-search);
   margin: 0 auto;
   gap: var(--base-size-16);
   text-align: center;
+}
+
+.site-principles-heading :is(h2, p) {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .site-principle {
@@ -924,18 +935,49 @@ a {
 }
 
 @media (width < 48rem) {
+  :root {
+    --site-header-height: clamp(2.75rem, 12vw, var(--control-xlarge-size));
+    --site-header-control-size: clamp(1.875rem, 8vw, var(--control-medium-size));
+    --site-header-inline-space: clamp(var(--base-size-8), 3vw, var(--base-size-16));
+    --site-header-gap: clamp(var(--base-size-4), 2vw, var(--base-size-12));
+  }
+
+  .site-nav {
+    width: min(calc(100% - (var(--site-header-inline-space) * 2)), var(--container-workspace-detail));
+  }
+
+  .site-nav {
+    min-height: var(--site-header-height);
+  }
+
+  .site-nav-links {
+    display: none;
+  }
+
   .site-shell {
     gap: var(--base-size-40);
     padding-block: var(--base-size-32);
   }
 
-	.site-hero {
-		min-height: 100svh;
-		padding: var(--base-size-32);
+  .site-hero {
+    grid-template-rows: auto auto;
+    min-height: auto;
+    gap: var(--base-size-32);
+    padding: var(--base-size-48) var(--base-size-16) var(--base-size-40);
   }
 
   .site-hero-content {
-    min-height: calc(var(--base-size-128) + var(--base-size-128));
+    min-height: 0;
+    gap: var(--base-size-16);
+    padding-block: var(--base-size-40);
+  }
+
+  .site-hero h1 {
+    font-size: clamp(2.25rem, 5vw, var(--ld-text-display-size));
+  }
+
+  .site-hero .site-lede {
+    font-size: var(--ld-text-body-md-size);
   }
 
   .site-hero-proof,
@@ -945,8 +987,28 @@ a {
 
   .site-proof-item,
   .site-proof-item:first-child {
+    grid-template-columns: var(--control-large-size) minmax(0, 1fr);
+    column-gap: var(--base-size-16);
+    row-gap: var(--base-size-4);
+    align-items: center;
     border: var(--ld-border-default);
-    padding: var(--base-size-20);
+    padding: var(--base-size-16);
+  }
+
+  .site-proof-item ld-site-feature-icon {
+    grid-row: 1 / span 2;
+  }
+
+  .site-proof-item :is(h3, p) {
+    grid-column: 2;
+  }
+
+  .site-proof-item h3 {
+    font-size: var(--ld-text-body-sm-size);
+  }
+
+  .site-proof-item p {
+    font-size: var(--ld-text-caption-size);
   }
 
   .site-product-proof {
@@ -954,7 +1016,9 @@ a {
   }
 
   .site-principles {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: clamp(var(--base-size-16), 4vw, var(--base-size-24));
+    row-gap: var(--base-size-40);
   }
 
   .site-docs-layout {

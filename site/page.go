@@ -146,6 +146,7 @@ func siteHeader(hasDocsDrawer bool) g.Node {
 		actions = append(actions, g.El("ld-site-docs-drawer-toggle"))
 	}
 	actions = append(actions, g.El("ld-site-theme-toggle"))
+	actions = append(actions, g.El("ld-site-mobile-menu"))
 
 	return h.Header(h.Class("site-header"),
 		h.Nav(h.Class("site-nav"),
