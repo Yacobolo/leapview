@@ -22,6 +22,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/starfederation/datastar-go v1.2.2
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
+	github.com/yuin/goldmark v1.4.13
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
 	gopkg.in/yaml.v3 v3.0.1

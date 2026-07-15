@@ -88,6 +88,20 @@ tasks:
     cmds:
       - bun run build
 
+  site:build:
+    desc: Build the LibreDash public site assets
+    deps:
+      - node:deps
+    cmds:
+      - bun run build:site
+
+  site:dev:
+    desc: Start the LibreDash public site on http://localhost:8081
+    deps:
+      - site:build
+    cmds:
+      - go run ./site
+
   bench:datastar-bridge:
     desc: Benchmark legacy, Ignition, and DatastarLit bridges in Chromium
     deps:
@@ -139,16 +153,20 @@ tasks:
       - api/apigen.yaml
       - api/typespec/**/*.tsp
       - internal/tools/apigenpostprocess/**/*.go
+      - internal/tools/openapidocgen/**/*.go
     generates:
       - api/gen/json-ir.json
       - api/gen/openapi.yaml
       - internal/api/gen/request_models.gen.go
       - internal/api/gen/server.apigen.gen.go
       - internal/cli/gen/apigen_registry.gen.go
+      - docs/api/catalog.json
+      - docs/api/openapi.yaml
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target libredash-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all -manifest api/apigen.yaml -target libredash-v1
       - go run ./internal/tools/apigenpostprocess
+      - go run ./internal/tools/openapidocgen
 
   schema:generate:
     desc: Generate JSON Schema artifacts for LibreDash YAML contracts
@@ -196,6 +214,7 @@ tasks:
       - bun run test:primer-primitives
       - bun run test:primer-alignment
       - bun run test:theme
+      - bun run test:site
       - bun run test:datastar-lit
       - bun run test:app-shell
       - bun run test:table-selection
