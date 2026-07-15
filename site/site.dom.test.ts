@@ -235,16 +235,20 @@ test('documentation articles apply the shared Markdown treatment', async () => {
 test('documentation header keeps the Markdown copy action in the viewport', async () => {
   const page = await browser.newPage()
   try {
-    await page.setViewportSize({ width: 802, height: 793 })
+    await page.setViewportSize({ width: 559, height: 793 })
     await page.goto(`${baseURL}/docs/configuration`)
-    const layout = await page.locator('.site-docs-article-header').evaluate((header) => {
+    const layout = await page.locator('.site-docs-article').evaluate((article) => {
       const button = document.querySelector('ld-site-markdown-copy')?.shadowRoot?.querySelector('button')
+      const title = article.querySelector('h1')
       return {
+        buttonLeft: button?.getBoundingClientRect().left ?? 0,
         buttonRight: button?.getBoundingClientRect().right ?? 0,
         pageWidth: document.documentElement.scrollWidth,
+        titleLeft: title?.getBoundingClientRect().left ?? 0,
         viewportWidth: window.innerWidth,
       }
     })
+    expect(layout.buttonLeft).toBe(layout.titleLeft)
     expect(layout.buttonRight).toBeLessThanOrEqual(layout.viewportWidth)
     expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewportWidth)
   } finally {

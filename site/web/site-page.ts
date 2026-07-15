@@ -396,6 +396,54 @@ if (!customElements.get('ld-site-chart-demo')) {
   customElements.define('ld-site-chart-demo', SiteChartDemo)
 }
 
+type ArticleSection = { id: string; label: string; level: number }
+
+class SiteArticleToc extends LitElement {
+  private sections: ArticleSection[] = []
+  private activeId = ''
+  private observer?: IntersectionObserver
+
+  static styles = css`
+    :host { display: block; position: sticky; top: calc(var(--control-xlarge-size) + var(--base-size-32)); align-self: start; max-height: calc(100svh - var(--control-xlarge-size) - var(--base-size-64)); overflow: auto; }
+    nav { display: grid; gap: var(--space-xs); border-left: var(--ld-border-muted); padding-left: var(--base-size-16); }
+    h2 { margin: 0 0 var(--base-size-4); color: var(--ld-fg-muted); font-size: var(--ld-text-caption-size); font-weight: var(--ld-font-weight-strong); letter-spacing: var(--base-size-2); text-transform: uppercase; }
+    a { color: var(--ld-fg-muted); font-size: var(--ld-text-body-sm-size); line-height: var(--ld-line-height-default); text-decoration: none; }
+    a[data-level="3"] { padding-left: var(--base-size-8); }
+    a:hover, a:focus-visible, a.active { color: var(--ld-fg-default); font-weight: var(--ld-font-weight-strong); }
+    @media (width < 80rem) { :host { display: none; } }
+  `
+
+  connectedCallback() {
+    super.connectedCallback()
+    requestAnimationFrame(() => this.collectSections())
+  }
+
+  disconnectedCallback() { this.observer?.disconnect(); super.disconnectedCallback() }
+
+  private collectSections() {
+    const headings = Array.from(document.querySelectorAll<HTMLElement>('.site-docs-article h2, .site-docs-article h3'))
+    const used = new Set<string>()
+    this.sections = headings.map((heading) => {
+      let id = heading.id || heading.textContent?.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section'
+      const base = id; let suffix = 2
+      while (used.has(id)) id = `${base}-${suffix++}`
+      used.add(id); heading.id = id
+      return { id, label: heading.textContent?.trim() ?? '', level: Number(heading.tagName.slice(1)) }
+    })
+    this.activeId = this.sections[0]?.id ?? ''
+    this.observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
+      if (visible?.target.id && this.activeId !== visible.target.id) { this.activeId = visible.target.id; this.requestUpdate() }
+    }, { rootMargin: '-18% 0px -70% 0px', threshold: 0 })
+    headings.forEach((heading) => this.observer?.observe(heading))
+    this.requestUpdate()
+  }
+
+  render() { return this.sections.length ? html`<nav aria-label="In this article"><h2>In this article</h2>${this.sections.map((section) => html`<a class=${section.id === this.activeId ? 'active' : ''} data-level=${section.level} href=${`#${section.id}`}>${section.label}</a>`)}</nav>` : null }
+}
+
+if (!customElements.get('ld-site-article-toc')) customElements.define('ld-site-article-toc', SiteArticleToc)
+
 class SiteDocsChart extends DatastarLit(LitElement) {
   static properties = {
     chartId: { type: String, attribute: 'chart-id' },

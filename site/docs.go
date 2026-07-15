@@ -347,6 +347,7 @@ func siteDocsArticle(document siteDocument) g.Node {
 	return h.Article(
 		h.ID("main-content"),
 		h.Class("site-docs-article"),
+		h.Div(h.Class("site-docs-article-actions"), g.El("ld-site-markdown-copy", g.Attr("markdown", document.markdown))),
 		g.Raw(renderedHTML),
 	)
 }

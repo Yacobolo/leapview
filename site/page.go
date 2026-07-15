@@ -215,9 +215,12 @@ func siteDocsLayout(document *siteDocument, content ...g.Node) g.Node {
 		siteDocsSidebar(document),
 		h.Button(h.Class("site-docs-drawer-backdrop"), h.Type("button"), g.Attr("aria-label", "Close documentation menu"), g.Attr("aria-hidden", "true"), g.Attr("tabindex", "-1"), g.Attr("data-site-docs-drawer-close", "true")),
 		h.Div(h.Class("site-docs-content"),
-			h.Div(h.Class("site-guide-shell"),
-				siteDocsArticleHeader(document),
-				g.Group(content),
+			h.Div(h.Class("site-docs-reading-layout"),
+				h.Div(h.Class("site-guide-shell"),
+					siteDocsArticleHeader(document),
+					g.Group(content),
+				),
+				g.El("ld-site-article-toc"),
 			),
 		),
 	)
@@ -241,14 +244,8 @@ func siteDocsArticleHeader(document *siteDocument) g.Node {
 		breadcrumb[0] = h.Li(h.Span(g.Attr("aria-current", "page"), g.Text("Documentation")))
 	}
 
-	contents := []g.Node{
-		h.Nav(h.Class("site-docs-breadcrumb"), g.Attr("aria-label", "Breadcrumb"), h.Ol(g.Group(breadcrumb))),
-	}
-	if document != nil {
-		contents = append(contents, g.El("ld-site-markdown-copy", g.Attr("markdown", document.markdown)))
-	}
 	return h.Header(h.Class("site-docs-article-header"),
-		g.Group(contents),
+		h.Nav(h.Class("site-docs-breadcrumb"), g.Attr("aria-label", "Breadcrumb"), h.Ol(g.Group(breadcrumb))),
 	)
 }
 
