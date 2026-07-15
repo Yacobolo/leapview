@@ -8,6 +8,16 @@
   font-family: var(--ld-font-family-ui);
 }
 
+@view-transition {
+  navigation: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) {
+    animation-duration: 0s;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

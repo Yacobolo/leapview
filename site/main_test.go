@@ -31,6 +31,7 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 		`/shared/app.css`,
 		`/static/site.css`,
 		`/static/site-page.js`,
+		`<meta name="view-transition" content="same-origin">`,
 		`<ld-topology-background class="site-hero-background" aria-hidden="true"></ld-topology-background>`,
 		`<section id="main-content" class="site-hero">`,
 		`<div class="site-hero-proof">`,

@@ -131,6 +131,7 @@ func docsArticlePage(document siteDocument) g.Node {
 
 func siteHead() []g.Node {
 	return []g.Node{
+		h.Meta(h.Name("view-transition"), h.Content("same-origin")),
 		h.Link(h.Rel("stylesheet"), h.Href("/shared/app.css")),
 		h.Link(h.Rel("stylesheet"), h.Href("/static/site.css")),
 		h.Script(h.Src("/shared/theme.js")),
