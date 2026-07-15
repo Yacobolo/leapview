@@ -109,10 +109,26 @@ tasks:
   generate:
     desc: Generate all checked-out derived code needed for local development
     cmds:
+      - task: db:generate
       - task: config:generate
       - task: api:generate
       - task: ui-signals:generate
       - task: schema:generate
+
+  db:generate:
+    desc: Generate SQLite adapter code from the checked-in schema and queries
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - sqlc.yaml
+      - internal/platform/db/schema.sql
+      - internal/platform/db/queries.sql
+    generates:
+      - internal/platform/db/db.go
+      - internal/platform/db/models.go
+      - internal/platform/db/queries.sql.go
+    cmds:
+      - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 
   config:generate:
     desc: Generate runtime configuration, reference documentation, example environment, and schema

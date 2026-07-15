@@ -542,6 +542,51 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	}
 }
 
+func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
+	root := repoRoot(t)
+	files := map[string][]string{
+		"Taskfile.yml": {
+			"db:generate:",
+			"go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate",
+			"- task: db:generate",
+		},
+		".gitignore": {
+			"internal/platform/db/db.go",
+			"internal/platform/db/models.go",
+			"internal/platform/db/queries.sql.go",
+		},
+		".dockerignore": {
+			"internal/platform/db/db.go",
+			"internal/platform/db/models.go",
+			"internal/platform/db/queries.sql.go",
+		},
+		filepath.Join(".github", "workflows", "ci.yml"): {
+			"Check generated database code is untracked",
+			"git ls-files -- internal/platform/db/db.go internal/platform/db/models.go internal/platform/db/queries.sql.go",
+			"internal/platform/db/db.go",
+			"internal/platform/db/models.go",
+			"internal/platform/db/queries.sql.go",
+		},
+		"Dockerfile": {
+			"go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate",
+			"COPY --from=sourcegen /src/internal/platform/db/db.go ./internal/platform/db/db.go",
+			"COPY --from=sourcegen /src/internal/platform/db/models.go ./internal/platform/db/models.go",
+			"COPY --from=sourcegen /src/internal/platform/db/queries.sql.go ./internal/platform/db/queries.sql.go",
+		},
+	}
+	for name, fragments := range files {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, fragment := range fragments {
+			if !strings.Contains(string(body), fragment) {
+				t.Errorf("%s missing sqlc generation contract fragment %q", name, fragment)
+			}
+		}
+	}
+}
+
 func TestStorageArchitectureSpecDocumentsGlobalDuckLakeCatalog(t *testing.T) {
 	root := repoRoot(t)
 	spec, err := os.ReadFile(filepath.Join(root, "docs", "storage-architecture-spec.md"))
