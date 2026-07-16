@@ -322,14 +322,14 @@ func siteDocsSidebar(current *siteDocument) g.Node {
 		links := make([]g.Node, 0, len(section.Documents)+len(section.Groups))
 		for _, document := range section.Documents {
 			isCurrent := current != nil && current.slug == document.Slug
-			links = append(links, h.Li(siteDocsLink("/docs/"+document.Slug, siteDocsNavigationLabel(section.Title, document.Title), isCurrent)))
+			links = append(links, h.Li(siteDocsLink("/docs/"+document.Slug, siteDocsNavigationLabel(section.Title, document.Title, document.NavigationTitle), isCurrent)))
 		}
 		for _, group := range section.Groups {
 			groupActive := sectionActive && current.groupID == group.ID
 			groupLinks := make([]g.Node, 0, len(group.Documents))
 			for _, document := range group.Documents {
 				isCurrent := current != nil && current.slug == document.Slug
-				groupLinks = append(groupLinks, h.Li(siteDocsLink("/docs/"+document.Slug, siteDocsNavigationLabel(group.Title, document.Title), isCurrent)))
+				groupLinks = append(groupLinks, h.Li(siteDocsLink("/docs/"+document.Slug, siteDocsNavigationLabel(group.Title, document.Title, document.NavigationTitle), isCurrent)))
 			}
 			links = append(links, h.Li(siteDocsNavGroup(section.ID+"-"+group.ID, group.Title, groupActive, groupLinks)))
 		}
@@ -343,7 +343,10 @@ func siteDocsSidebar(current *siteDocument) g.Node {
 	)
 }
 
-func siteDocsNavigationLabel(parent, document string) string {
+func siteDocsNavigationLabel(parent, document, navigationTitle string) string {
+	if strings.TrimSpace(navigationTitle) != "" {
+		return navigationTitle
+	}
 	if strings.EqualFold(strings.TrimSpace(parent), strings.TrimSpace(document)) {
 		return "Overview"
 	}

@@ -174,14 +174,14 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 		`<a class="site-docs-link site-docs-link-current" href="/docs/getting-started" title="Get started with LibreDash" aria-current="page">Get started with LibreDash</a>`,
 		`<details class="site-docs-nav-group" data-site-docs-group="reference-configuration">`,
 		`<a class="site-docs-link" href="/docs/configuration" title="Environment variable reference">Environment variable reference</a>`,
-		`<a class="site-docs-link" href="/docs/enterprise-auth" title="Authentication and authorization">Authentication and authorization</a>`,
+		`<a class="site-docs-link" href="/docs/enterprise-auth" title="Overview">Overview</a>`,
 		`<a class="site-docs-link" href="/docs/storage-architecture" title="Storage architecture">Storage architecture</a>`,
 		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="start" open="true">`,
 		`<summary title="Start here"><span class="site-docs-nav-label">Start here</span></summary>`,
 		`<details class="site-docs-nav-group" data-site-docs-group="reference-visuals">`,
 		`<summary title="Charts"><span class="site-docs-nav-label">Charts</span></summary>`,
 		`<ul class="site-docs-nav-tree">`,
-		`<a class="site-docs-link" href="/docs/charts/overview" title="Chart types">Chart types</a>`,
+		`<a class="site-docs-link" href="/docs/charts/overview" title="Overview">Overview</a>`,
 		"<h1>Get started with LibreDash</h1>",
 		"<h2>Bootstrap the workspace</h2>",
 		"task bootstrap",
@@ -293,9 +293,14 @@ func TestSiteDocumentationSupportsNestedArticleSlugs(t *testing.T) {
 		t.Fatalf("nested documentation status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 	body := readBody(t, response)
-	for _, want := range []string{"<h1>Query and interaction lifecycle</h1>", "Core concepts", "Datastar signal flow", `class="site-docs-pagination"`, `href="/docs/concepts/dashboards"`, `href="/docs/guides/build"`, "Edit this page"} {
+	for _, want := range []string{"<h1>Query and interaction lifecycle</h1>", "Core concepts", "Datastar signal flow", "About this page", "Edit this page"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("nested documentation missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{`class="site-docs-pagination"`, `aria-label="Documentation pagination"`} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("nested documentation unexpectedly contains %q", unwanted)
 		}
 	}
 }
@@ -316,6 +321,51 @@ func TestSiteDocumentationSearchFindsCatalogContent(t *testing.T) {
 	for _, want := range []string{"Search documentation", `value="semantic relationships"`, `href="/docs/concepts/semantic-models"`, "Semantic models"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("search result missing %q", want)
+		}
+	}
+}
+
+func TestDocumentationNavigationUsesExplicitOverviewLabelsAndDeveloperGroups(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs/architecture/runtime")
+	if err != nil {
+		t.Fatalf("get architecture documentation: %v", err)
+	}
+	defer response.Body.Close()
+	body := readBody(t, response)
+	for _, want := range []string{
+		`data-site-docs-group="architecture-architecture"`,
+		`data-site-docs-group="architecture-contributing"`,
+		`href="/docs/architecture" title="Overview">Overview</a>`,
+		`href="/docs/data-ingestion" title="Overview">Overview</a>`,
+		`href="/docs/config" title="Overview">Overview</a>`,
+		`title="Projects, workspaces, and environments">Projects, workspaces, and environments</a>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("architecture navigation missing %q", want)
+		}
+	}
+}
+
+func TestDocumentationSearchPrefersAuthoredGuidanceOverGeneratedReference(t *testing.T) {
+	documents := []siteDocument{
+		{slug: "generated-exact", title: "Access policy", generated: true},
+		{slug: "authored-title", title: "Access policy guide"},
+		{slug: "authored-body", title: "Authorization guide", markdown: "Choose a workspace access policy."},
+		{slug: "generated-title", title: "Workspace access policy configuration", generated: true},
+		{slug: "generated-body", title: "Grant configuration", markdown: "Exact workspace access policy fields.", generated: true},
+	}
+
+	results := searchDocuments(documents, "access policy")
+	if len(results) != 5 {
+		t.Fatalf("search results = %d, want 5", len(results))
+	}
+	want := []string{"generated-exact", "authored-title", "authored-body", "generated-title", "generated-body"}
+	for index, document := range results {
+		if document.slug != want[index] {
+			t.Errorf("search result %d = %q, want %q", index, document.slug, want[index])
 		}
 	}
 }

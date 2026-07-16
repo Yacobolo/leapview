@@ -873,7 +873,7 @@ ld-site-search:not(:defined) > .site-search-active-input {
   display: flex;
   width: 100%;
   justify-content: space-between;
-  margin-top: 45px;
+  margin-top: 0;
   border-radius: var(--ld-radius-default);
   background: var(--ld-bg-control);
   padding: var(--base-size-20);
@@ -912,50 +912,6 @@ ld-site-search:not(:defined) > .site-search-active-input {
 .site-docs-page-meta a:hover,
 .site-docs-page-meta a:focus-visible {
   color: var(--ld-fg-default);
-}
-
-.site-docs-pagination {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--base-size-12);
-}
-
-.site-docs-pagination-link {
-  display: grid;
-  gap: var(--base-size-4);
-  border: var(--ld-border-default);
-  border-radius: var(--ld-radius-default);
-  color: var(--ld-fg-default);
-  padding: var(--base-size-16);
-  text-decoration: none;
-}
-
-.site-docs-pagination-link:hover,
-.site-docs-pagination-link:focus-visible {
-  border-color: var(--ld-button-border-hover);
-  background: var(--ld-button-bg-hover);
-}
-
-.site-docs-pagination-link span {
-  margin: 0;
-  color: var(--ld-fg-muted);
-  font-size: var(--ld-text-body-sm-size);
-}
-
-.site-docs-pagination-next {
-  grid-column: 2;
-  text-align: right;
-}
-
-@media (width < 40rem) {
-  .site-docs-pagination {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .site-docs-pagination-next {
-    grid-column: 1;
-    text-align: left;
-  }
 }
 
 .site-eyebrow {

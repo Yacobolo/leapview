@@ -448,7 +448,7 @@ test('documentation articles provide a readable, navigable reference experience'
     expect(await searchInput.getAttribute('data-bind')).toBe('docsSearch.query')
     expect(await searchInput.getAttribute('data-on:input__debounce.200ms')).toBe("@get('/docs/search/active', {filterSignals: {include: /^docsSearch\\./}})")
     await searchInput.fill('semantic relationships')
-    const semanticModelsResult = search.getByRole('link', { name: 'Semantic models' })
+    const semanticModelsResult = search.locator('a[href="/docs/concepts/semantic-models"]')
     await semanticModelsResult.waitFor({ state: 'visible' })
     expect(await semanticModelsResult.isVisible()).toBe(true)
     expect(page.url()).toBe(`${baseURL}/docs/guides/build`)
@@ -500,6 +500,15 @@ test('documentation navigation uses compact rows and Overview labels', async () 
     const overview = navigation.locator('a[href="/docs/guides/build"]')
     expect(await overview.innerText()).toBe('Overview')
     expect(await overview.getAttribute('title')).toBe('Overview')
+    for (const href of ['/docs/data-ingestion', '/docs/guides/operate', '/docs/enterprise-auth', '/docs/integrate', '/docs/config', '/docs/architecture', '/docs/contributing/repository']) {
+      const sectionOverview = navigation.locator(`a[href="${href}"]`)
+      expect(await sectionOverview.getAttribute('title')).toBe('Overview')
+    }
+    expect(await navigation.locator('details[data-site-docs-group="architecture-architecture"]').count()).toBe(1)
+    expect(await navigation.locator('details[data-site-docs-group="architecture-contributing"]').count()).toBe(1)
+    const projectsLink = navigation.locator('a[href="/docs/concepts/projects-workspaces-environments"]')
+    expect(await projectsLink.count()).toBe(1)
+    expect(await projectsLink.textContent()).toBe('Projects, workspaces, and environments')
     expect(await navigation.getByRole('link', { name: 'Build dashboards', exact: true }).count()).toBe(0)
     expect(await page.getByRole('heading', { name: 'Build dashboards', exact: true }).isVisible()).toBe(true)
 
@@ -704,6 +713,8 @@ test('documentation articles end with a DuckDB-style About this page panel', asy
     await page.goto(`${baseURL}/docs/getting-started`)
     const article = page.locator('.site-docs-article')
     const panel = article.locator('.site-docs-page-meta')
+    expect(await article.getByRole('navigation', { name: 'Documentation pagination' }).count()).toBe(0)
+    expect(await article.getByRole('link', { name: /^(Previous|Next)/ }).count()).toBe(0)
     expect(await panel.getByRole('heading', { name: 'About this page', exact: true }).count()).toBe(1)
     expect(await panel.getByRole('link', { name: 'Report content issue', exact: true }).getAttribute('href')).toContain('github.com/Yacobolo/libredash/issues/new?')
     expect(await panel.getByRole('link', { name: 'See this page as Markdown', exact: true }).getAttribute('href')).toBe('https://raw.githubusercontent.com/Yacobolo/libredash/main/docs/getting-started.md')
@@ -728,6 +739,7 @@ test('documentation articles end with a DuckDB-style About this page panel', asy
         itemFontSize: Number.parseFloat(itemStyle.fontSize),
         itemLineHeight: Number.parseFloat(itemStyle.lineHeight),
         listStyle: listStyle.listStyleType,
+        marginTop: Number.parseFloat(panelStyle.marginTop),
         padding: Number.parseFloat(panelStyle.paddingTop),
         paddingLeft: Number.parseFloat(listStyle.paddingLeft),
         panelWidth: element.getBoundingClientRect().width,
@@ -744,6 +756,7 @@ test('documentation articles end with a DuckDB-style About this page panel', asy
     expect(desktop.itemFontSize).toBe(14)
     expect(desktop.itemLineHeight / desktop.itemFontSize).toBeCloseTo(1.4, 2)
     expect(desktop.listStyle).toBe('disc')
+    expect(desktop.marginTop).toBe(0)
     expect(desktop.paddingLeft).toBe(20)
     expect(Math.abs(desktop.panelWidth - desktop.articleWidth)).toBeLessThanOrEqual(1)
 

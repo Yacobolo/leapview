@@ -63,12 +63,14 @@ type collectionSpec struct {
 }
 
 type documentSpec struct {
-	Slug       string `yaml:"slug" json:"slug"`
-	Title      string `yaml:"title" json:"title"`
-	Summary    string `yaml:"summary" json:"summary"`
-	Source     string `yaml:"source" json:"source"`
-	Breadcrumb string `yaml:"breadcrumb" json:"breadcrumb,omitempty"`
-	ChartID    string `yaml:"chartID" json:"chartID,omitempty"`
+	Slug            string `yaml:"slug" json:"slug"`
+	Title           string `yaml:"title" json:"title"`
+	NavigationTitle string `yaml:"navigationTitle" json:"navigationTitle,omitempty"`
+	Summary         string `yaml:"summary" json:"summary"`
+	Source          string `yaml:"source" json:"source"`
+	Breadcrumb      string `yaml:"breadcrumb" json:"breadcrumb,omitempty"`
+	ChartID         string `yaml:"chartID" json:"chartID,omitempty"`
+	Generated       bool   `yaml:"generated,omitempty" json:"generated,omitempty"`
 }
 
 type generatedCatalog struct {
@@ -93,12 +95,13 @@ type generatedGroup struct {
 }
 
 type searchDocument struct {
-	Slug    string `json:"slug"`
-	Title   string `json:"title"`
-	Summary string `json:"summary"`
-	Section string `json:"section"`
-	Group   string `json:"group,omitempty"`
-	Text    string `json:"text"`
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	Summary   string `json:"summary"`
+	Section   string `json:"section"`
+	Group     string `json:"group,omitempty"`
+	Text      string `json:"text"`
+	Generated bool   `json:"generated,omitempty"`
 }
 
 type referenceCatalog struct {
@@ -128,7 +131,9 @@ func generate(navigationPath, catalogPath, searchPath string) error {
 		return fmt.Errorf("read navigation: %w", err)
 	}
 	var manifest navigationManifest
-	if err := yaml.Unmarshal(contents, &manifest); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(contents))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&manifest); err != nil {
 		return fmt.Errorf("decode navigation: %w", err)
 	}
 	root := filepath.Dir(navigationPath)
@@ -250,7 +255,7 @@ func addDocument(root, section, group string, document documentSpec, seenSlugs, 
 	}
 	seenSources[filepath.ToSlash(document.Source)] = struct{}{}
 	*output = append(*output, document)
-	*search = append(*search, searchDocument{Slug: document.Slug, Title: document.Title, Summary: document.Summary, Section: section, Group: group, Text: string(contents)})
+	*search = append(*search, searchDocument{Slug: document.Slug, Title: document.Title, Summary: document.Summary, Section: section, Group: group, Text: string(contents), Generated: document.Generated})
 	return nil
 }
 
@@ -337,10 +342,11 @@ func loadCollection(root string, collection collectionSpec) ([]documentSpec, err
 		}
 		for _, document := range catalog.Documents {
 			documents = append(documents, documentSpec{
-				Slug:    joinSlug(collection.SlugPrefix, document.Slug),
-				Title:   document.Title,
-				Summary: document.Summary,
-				Source:  filepath.ToSlash(filepath.Join(collection.SourceDir, document.Slug+".md")),
+				Slug:      joinSlug(collection.SlugPrefix, document.Slug),
+				Title:     document.Title,
+				Summary:   document.Summary,
+				Source:    filepath.ToSlash(filepath.Join(collection.SourceDir, document.Slug+".md")),
+				Generated: true,
 			})
 		}
 	case "visual":
@@ -368,6 +374,7 @@ func visualDocument(collection collectionSpec, source, title, breadcrumb string)
 		Source:     filepath.ToSlash(filepath.Join(collection.SourceDir, source+".md")),
 		Breadcrumb: breadcrumb,
 		ChartID:    source,
+		Generated:  true,
 	}
 }
 

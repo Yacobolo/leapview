@@ -29,15 +29,19 @@ type siteDocument struct {
 	sectionID          string
 	groupID            string
 	source             string
+	navigationTitle    string
+	generated          bool
 }
 
 type siteCatalogDocument struct {
-	Slug       string `json:"slug"`
-	Title      string `json:"title"`
-	Summary    string `json:"summary"`
-	Source     string `json:"source"`
-	Breadcrumb string `json:"breadcrumb"`
-	ChartID    string `json:"chartID"`
+	Slug            string `json:"slug"`
+	Title           string `json:"title"`
+	NavigationTitle string `json:"navigationTitle"`
+	Summary         string `json:"summary"`
+	Source          string `json:"source"`
+	Breadcrumb      string `json:"breadcrumb"`
+	ChartID         string `json:"chartID"`
+	Generated       bool   `json:"generated"`
 }
 
 type siteCatalogGroup struct {
@@ -123,6 +127,8 @@ func (loaded *loadedDocumentation) add(section siteCatalogSection, group siteCat
 		sectionID:          section.ID,
 		groupID:            group.ID,
 		source:             document.Source,
+		navigationTitle:    document.NavigationTitle,
+		generated:          document.Generated,
 	}
 	loaded.documents = append(loaded.documents, entry)
 	loaded.bySlug[entry.slug] = entry
@@ -169,32 +175,53 @@ func siteDocumentBySlug(slug string) (siteDocument, bool) {
 }
 
 func searchSiteDocuments(query string) []siteDocument {
+	return searchDocuments(siteDocuments, query)
+}
+
+func searchDocuments(documents []siteDocument, query string) []siteDocument {
 	terms := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
 	if len(terms) == 0 {
 		return nil
 	}
+	normalizedQuery := strings.Join(terms, " ")
 	type match struct {
 		document siteDocument
 		score    int
 	}
 	matches := make([]match, 0)
-	for _, document := range siteDocuments {
+	for _, document := range documents {
 		title := strings.ToLower(document.title)
 		haystack := strings.ToLower(document.title + " " + document.summary + " " + document.markdown)
-		score := 0
+		matchesTitle := true
+		matchesDocument := true
+		titleMatchCount := 0
 		for _, term := range terms {
 			if !strings.Contains(haystack, term) {
-				score = -1
+				matchesDocument = false
 				break
 			}
-			score++
-			if strings.Contains(title, term) {
-				score += 4
+			if !strings.Contains(title, term) {
+				matchesTitle = false
+			} else {
+				titleMatchCount++
 			}
 		}
-		if score >= 0 {
-			matches = append(matches, match{document: document, score: score})
+		if !matchesDocument {
+			continue
 		}
+		score := 100
+		switch {
+		case title == normalizedQuery:
+			score = 500
+		case !document.generated && matchesTitle:
+			score = 400
+		case !document.generated:
+			score = 300
+		case matchesTitle:
+			score = 200
+		}
+		score += titleMatchCount * 10
+		matches = append(matches, match{document: document, score: score})
 	}
 	sort.SliceStable(matches, func(i, j int) bool {
 		if matches[i].score == matches[j].score {
@@ -261,29 +288,8 @@ func siteDocsArticle(document siteDocument) g.Node {
 }
 
 func siteDocsArticleFooter(document siteDocument) g.Node {
-	var previous, next *siteDocument
-	for index := range siteDocuments {
-		if siteDocuments[index].slug != document.slug {
-			continue
-		}
-		if index > 0 {
-			previous = &siteDocuments[index-1]
-		}
-		if index+1 < len(siteDocuments) {
-			next = &siteDocuments[index+1]
-		}
-		break
-	}
-	links := make([]g.Node, 0, 2)
-	if previous != nil {
-		links = append(links, h.A(h.Class("site-docs-pagination-link site-docs-pagination-previous"), h.Href("/docs/"+previous.slug), h.Span(g.Text("Previous")), h.Strong(g.Text(previous.title))))
-	}
-	if next != nil {
-		links = append(links, h.A(h.Class("site-docs-pagination-link site-docs-pagination-next"), h.Href("/docs/"+next.slug), h.Span(g.Text("Next")), h.Strong(g.Text(next.title))))
-	}
 	sourceLabel, sourceHref := documentationSourceLink(document)
 	return h.Footer(h.Class("site-docs-article-footer"),
-		h.Nav(h.Class("site-docs-pagination"), g.Attr("aria-label", "Documentation pagination"), g.Group(links)),
 		h.Section(h.Class("site-docs-page-meta"), g.Attr("aria-labelledby", "site-docs-about-this-page"),
 			h.H2(h.ID("site-docs-about-this-page"), g.Text("About this page")),
 			h.Ul(

@@ -17,6 +17,7 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
     documents:
       - slug: getting-started
         title: Getting started
+        navigationTitle: Overview
         summary: Run the sample project.
         source: articles/getting-started.md
   - id: reference
@@ -56,6 +57,15 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
 	if got, want := catalog.Sections[1].Groups[0].Documents[1].Source, "reference/cli/deploy.md"; got != want {
 		t.Fatalf("generated CLI source = %q, want %q", got, want)
 	}
+	if got, want := catalog.Sections[0].Documents[0].NavigationTitle, "Overview"; got != want {
+		t.Fatalf("navigation title = %q, want %q", got, want)
+	}
+	if catalog.Sections[1].Groups[0].Documents[0].Generated {
+		t.Fatal("authored collection index marked as generated")
+	}
+	if !catalog.Sections[1].Groups[0].Documents[1].Generated {
+		t.Fatal("generated collection document is not marked as generated")
+	}
 
 	var search []searchDocument
 	decodeFixture(t, filepath.Join(root, "search-index.json"), &search)
@@ -64,6 +74,22 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
 	}
 	if !strings.Contains(search[2].Text, "Deploy") {
 		t.Fatalf("search text does not include Markdown content: %q", search[2].Text)
+	}
+}
+
+func TestGenerateRejectsUnknownNavigationFields(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "navigation.yaml", `sections:
+  - id: concepts
+    title: Core concepts
+    documents:
+      - {slug: projects, title: Projects, workspaces, and environments, source: projects.md}
+`)
+	writeFixture(t, root, "projects.md", "# Projects, workspaces, and environments\n")
+
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json"))
+	if err == nil || !strings.Contains(err.Error(), "field workspaces not found") {
+		t.Fatalf("generate error = %v, want strict unknown-field error", err)
 	}
 }
 
