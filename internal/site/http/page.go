@@ -155,7 +155,9 @@ func siteHead() []g.Node {
 func siteHeader(hasDocsDrawer bool) g.Node {
 	navigationLinks := []g.Node{h.A(h.Href("/docs"), g.Text("Docs"))}
 	if hasDocsDrawer {
-		navigationLinks = append(navigationLinks, h.A(h.Href("/docs/search"), g.Text("Search")))
+		navigationLinks = append(navigationLinks, g.El("ld-site-search",
+			h.A(h.Href("/docs/search"), g.Text("Search")),
+		))
 	}
 	navigationLinks = append(navigationLinks, h.A(h.Href("/#demo"), g.Text("Demo")), h.A(h.Href("/charts"), g.Text("Charts")))
 	actions := []g.Node{

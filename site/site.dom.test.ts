@@ -101,9 +101,12 @@ test('site supports system, light, and dark color modes', async () => {
 })
 
 test('mobile landing page uses a compact menu and proof cards', async () => {
-  const page = await browser.newPage()
+  const context = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 320, height: 900 },
+  })
+  const page = await context.newPage()
   try {
-    await page.setViewportSize({ width: 320, height: 900 })
     await page.goto(baseURL)
 
     expect(await page.locator('.site-nav-links').evaluate((element) => getComputedStyle(element).display)).toBe('none')
@@ -112,7 +115,7 @@ test('mobile landing page uses a compact menu and proof cards', async () => {
     const menu = page.locator('ld-site-mobile-menu')
     const menuButton = menu.locator('button')
     expect(await menuButton.count()).toBe(1)
-    expect(await menuButton.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30)
+    expect(await menuButton.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
 
     const principleColumns = await page.locator('.site-principles').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
     expect(principleColumns).toBe(2)
@@ -120,7 +123,9 @@ test('mobile landing page uses a compact menu and proof cards', async () => {
 
     await menuButton.click()
     expect(await menuButton.getAttribute('aria-expanded')).toBe('true')
-    expect(await menu.getByRole('link', { name: 'Docs' }).count()).toBe(1)
+    const docsLink = menu.getByRole('link', { name: 'Docs' })
+    expect(await docsLink.count()).toBe(1)
+    expect(await docsLink.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
 
     const proofHeights = await page.locator('.site-hero-proof .site-proof-item').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
     expect(proofHeights).toHaveLength(3)
@@ -132,7 +137,7 @@ test('mobile landing page uses a compact menu and proof cards', async () => {
     expect(await page.locator('.site-principles-heading').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   } finally {
-    await page.close()
+    await context.close()
   }
 })
 
@@ -268,7 +273,7 @@ test('documentation articles apply the shared Markdown treatment', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs/charts/line`)
-    const codeBlock = await page.locator('.site-docs-article pre').evaluate((element) => {
+    const codeBlock = await page.locator('.site-docs-code-block').evaluate((element) => {
       const style = getComputedStyle(element)
       return { borderTopWidth: style.borderTopWidth, borderRadius: style.borderRadius }
     })
@@ -278,6 +283,140 @@ test('documentation articles apply the shared Markdown treatment', async () => {
     await page.goto(`${baseURL}/docs/configuration`)
     const tableHeader = await page.locator('.site-docs-article th').first().evaluate((element) => getComputedStyle(element).backgroundColor)
     expect(tableHeader).not.toBe('rgba(0, 0, 0, 0)')
+
+    const siteCSS = await (await fetch(`${baseURL}/static/site.css`)).text()
+    expect(siteCSS).not.toContain('--ld-chat-')
+  } finally {
+    await page.close()
+  }
+})
+
+test('documentation articles provide a readable, navigable reference experience', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/docs/guides/build`)
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async (value: string) => {
+            document.documentElement.dataset.copiedCode = value
+          },
+        },
+      })
+    })
+
+    const typography = await page.locator('.site-docs-article').evaluate((article) => {
+      const paragraph = article.querySelector('p') as HTMLElement
+      const orderedList = article.querySelector('ol') as HTMLElement
+      const unorderedList = article.querySelector('ul') as HTMLElement
+      const heading = article.querySelector('h1') as HTMLElement
+      const action = article.querySelector('ld-site-markdown-copy') as HTMLElement
+      return {
+        articleWidth: article.getBoundingClientRect().width,
+        paragraphWidth: paragraph.getBoundingClientRect().width,
+        paragraphFontSize: Number.parseFloat(getComputedStyle(paragraph).fontSize),
+        paragraphColor: getComputedStyle(paragraph).color,
+        articleColor: getComputedStyle(article).color,
+        orderedListStyle: getComputedStyle(orderedList).listStyleType,
+        unorderedListStyle: getComputedStyle(unorderedList).listStyleType,
+        headingRight: heading.getBoundingClientRect().right,
+        actionLeft: action.getBoundingClientRect().left,
+      }
+    })
+    expect(typography.paragraphFontSize).toBeGreaterThanOrEqual(16)
+    expect(typography.paragraphColor).toBe(typography.articleColor)
+    expect(typography.orderedListStyle).toBe('decimal')
+    expect(typography.unorderedListStyle).toBe('disc')
+    expect(typography.paragraphWidth).toBeGreaterThanOrEqual(620)
+    expect(typography.articleWidth).toBeGreaterThan(typography.paragraphWidth)
+    expect(typography.actionLeft).toBeGreaterThanOrEqual(typography.headingRight)
+
+    expect(await page.locator('.site-docs-callout[data-callout="tip"]').count()).toBe(1)
+    expect(await page.locator('.site-docs-callout-label').getByText('Tip', { exact: true }).isVisible()).toBe(true)
+    const codeBlock = page.locator('.site-docs-code-block').first()
+    expect(await codeBlock.getByText('Shell', { exact: true }).isVisible()).toBe(true)
+    await codeBlock.getByRole('button', { name: 'Copy code' }).click()
+    await page.waitForFunction(() => document.documentElement.dataset.copiedCode === 'libredash validate --project dashboards/libredash.yaml\n')
+    expect(await codeBlock.getByRole('button', { name: 'Code copied' }).isVisible()).toBe(true)
+
+    const activeGroup = page.locator('.site-docs-nav-group-active > summary').first()
+    const currentLink = page.locator('.site-docs-link-current')
+    const navigationTreatment = await activeGroup.evaluate((summary, link) => ({
+      groupBackground: getComputedStyle(summary).backgroundColor,
+      linkBackground: getComputedStyle(link as Element).backgroundColor,
+    }), await currentLink.elementHandle())
+    expect(navigationTreatment.groupBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(navigationTreatment.linkBackground).not.toBe(navigationTreatment.groupBackground)
+
+    const search = page.locator('ld-site-search')
+    await search.getByRole('button', { name: 'Search documentation' }).click()
+    expect(await search.getByRole('dialog', { name: 'Search documentation' }).isVisible()).toBe(true)
+    await page.waitForFunction(() => {
+      const search = document.querySelector('ld-site-search')
+      return search?.shadowRoot?.activeElement?.matches('input[type="search"]')
+    })
+    expect(await search.evaluate((element) => element.shadowRoot?.activeElement?.matches('input[type="search"]'))).toBe(true)
+    expect(await search.locator('form').getAttribute('action')).toBe('/docs/search')
+    await search.getByRole('button', { name: 'Close search' }).click()
+    await page.keyboard.press('/')
+    expect(await search.getByRole('dialog', { name: 'Search documentation' }).isVisible()).toBe(true)
+  } finally {
+    await page.close()
+  }
+})
+
+test('documentation navigation collapses before the prose becomes cramped', async () => {
+  const page = await browser.newPage({ viewport: { width: 768, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/docs/guides/build`)
+    const sidebar = page.locator('.site-docs-sidebar')
+    expect(await sidebar.evaluate((element) => getComputedStyle(element).position)).toBe('fixed')
+    expect(await sidebar.getAttribute('aria-hidden')).toBe('true')
+    expect(await page.getByRole('button', { name: 'Open documentation menu' }).isVisible()).toBe(true)
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    const hierarchy = await page.locator('.site-docs-article').evaluate((article) => ({
+      h1: Number.parseFloat(getComputedStyle(article.querySelector('h1') as Element).fontSize),
+      h2: Number.parseFloat(getComputedStyle(article.querySelector('h2') as Element).fontSize),
+    }))
+    expect(hierarchy.h1).toBeGreaterThan(hierarchy.h2)
+  } finally {
+    await page.close()
+  }
+})
+
+test('documentation CSS keeps site tokens available and fragment targets below the sticky header', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/docs/getting-started`)
+    const runtimeStyles = await page.locator('.site-docs-article').evaluate((article) => ({
+      articleMaxWidth: getComputedStyle(article).maxWidth,
+      articleWidth: article.getBoundingClientRect().width,
+      readingWidth: getComputedStyle(document.documentElement).getPropertyValue('--site-reading-width').trim(),
+    }))
+    expect(runtimeStyles.readingWidth).not.toBe('')
+    expect(runtimeStyles.articleMaxWidth).not.toBe('none')
+    expect(runtimeStyles.articleWidth).toBeLessThanOrEqual(816)
+
+    await page.getByRole('navigation', { name: 'In this article' }).getByRole('link', { name: 'Run LibreDash' }).click()
+    await page.waitForFunction(() => location.hash === '#run-libredash')
+    const anchorPosition = await page.locator('#run-libredash').evaluate((heading) => ({
+      headingTop: heading.getBoundingClientRect().top,
+      headerBottom: document.querySelector('.site-header')?.getBoundingClientRect().bottom ?? 0,
+    }))
+    expect(anchorPosition.headingTop).toBeGreaterThan(anchorPosition.headerBottom)
+  } finally {
+    await page.close()
+  }
+})
+
+test('site disables smooth scrolling for reduced motion', async () => {
+  const page = await browser.newPage()
+  try {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${baseURL}/docs/getting-started`)
+    expect(await page.locator('html').evaluate((element) => getComputedStyle(element).scrollBehavior)).toBe('auto')
   } finally {
     await page.close()
   }
@@ -308,15 +447,19 @@ test('documentation header keeps the Markdown copy action in the viewport', asyn
 })
 
 test('compact documentation navigation opens in a drawer', async () => {
-  const page = await browser.newPage()
+  const context = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 640, height: 900 },
+  })
+  const page = await context.newPage()
   try {
-    await page.setViewportSize({ width: 640, height: 900 })
     await page.goto(`${baseURL}/docs/getting-started`)
 
     const sidebar = page.locator('.site-docs-sidebar')
     const headerDrawerToggle = page.locator('ld-site-docs-drawer-toggle').first()
     const toggle = page.getByRole('button', { name: 'Open documentation menu' })
     expect(await toggle.isVisible()).toBe(true)
+    expect(await toggle.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
     expect(await toggle.getAttribute('aria-expanded')).toBe('false')
     expect(await sidebar.getAttribute('aria-hidden')).toBe('true')
 
@@ -324,12 +467,14 @@ test('compact documentation navigation opens in a drawer', async () => {
     await page.waitForFunction(() => document.querySelector('.site-docs-layout')?.classList.contains('site-docs-drawer-open'))
     expect(await headerDrawerToggle.evaluate((element) => element.shadowRoot?.querySelector('button')?.getAttribute('aria-expanded'))).toBe('true')
     expect(await sidebar.getAttribute('aria-hidden')).toBe('false')
+    expect(await sidebar.locator('.site-docs-link').first().evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
+    expect(await sidebar.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s')
 
     await page.getByRole('button', { name: 'Close documentation menu' }).last().click()
     await page.waitForFunction(() => !document.querySelector('.site-docs-layout')?.classList.contains('site-docs-drawer-open'))
     expect(await headerDrawerToggle.evaluate((element) => element.shadowRoot?.querySelector('button')?.getAttribute('aria-expanded'))).toBe('false')
   } finally {
-    await page.close()
+    await context.close()
   }
 })
 

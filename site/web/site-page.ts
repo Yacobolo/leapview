@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Server, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
@@ -37,8 +37,8 @@ class SiteThemeToggle extends LitElement {
 
     button {
       display: inline-grid;
-      width: var(--site-header-control-size);
-      height: var(--site-header-control-size);
+      width: var(--site-interactive-target-size);
+      height: var(--site-interactive-target-size);
       place-items: center;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
@@ -120,8 +120,8 @@ class SiteMobileMenu extends LitElement {
 
     button {
       display: inline-grid;
-      width: var(--site-header-control-size);
-      height: var(--site-header-control-size);
+      width: var(--site-interactive-target-size);
+      height: var(--site-interactive-target-size);
       place-items: center;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
@@ -158,6 +158,9 @@ class SiteMobileMenu extends LitElement {
     }
 
     a {
+      display: flex;
+      min-height: var(--control-minTarget-auto);
+      align-items: center;
       padding: var(--base-size-12) var(--base-size-16);
       color: var(--ld-fg-default);
       font-size: var(--ld-text-body-md-size);
@@ -218,6 +221,221 @@ if (!customElements.get('ld-site-mobile-menu')) {
   customElements.define('ld-site-mobile-menu', SiteMobileMenu)
 }
 
+class SiteSearch extends LitElement {
+  private readonly handleGlobalKeydown = (event: KeyboardEvent): void => {
+    const target = event.target as HTMLElement | null
+    const editing = target?.matches('input, textarea, select, [contenteditable="true"]') ?? false
+    const commandShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'
+    const slashShortcut = event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !editing
+    if (event.defaultPrevented || event.repeat || (!commandShortcut && !slashShortcut)) return
+
+    event.preventDefault()
+    this.openDialog()
+  }
+
+  static styles = css`
+    :host {
+      display: block;
+    }
+
+    slot {
+      display: none;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .trigger {
+      display: inline-flex;
+      min-height: var(--site-interactive-target-size);
+      align-items: center;
+      gap: var(--base-size-8);
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
+      cursor: pointer;
+      padding-inline: var(--base-size-12) var(--base-size-8);
+      font-size: var(--ld-text-body-sm-size);
+      font-weight: var(--ld-font-weight-medium);
+    }
+
+    .trigger:hover,
+    .trigger:focus-visible {
+      border-color: var(--ld-button-border-hover);
+      background: var(--ld-button-bg-hover);
+      color: var(--ld-fg-default);
+    }
+
+    button:focus-visible,
+    input:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-offset);
+    }
+
+    kbd {
+      border: var(--ld-border-muted);
+      border-radius: var(--borderRadius-small);
+      background: var(--ld-bg-panel);
+      color: var(--ld-fg-muted);
+      padding: var(--base-size-2) var(--base-size-4);
+      font-family: var(--ld-font-family-mono);
+      font-size: var(--ld-text-caption-size);
+      line-height: 1;
+    }
+
+    dialog {
+      width: min(calc(100vw - var(--base-size-32)), calc(var(--base-size-128) * 4));
+      max-width: none;
+      margin: min(18vh, calc(var(--base-size-128) + var(--base-size-32))) auto auto;
+      overflow: hidden;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-large);
+      background: var(--ld-bg-panel);
+      color: var(--ld-fg-default);
+      box-shadow: var(--shadow-floating-large);
+      padding: 0;
+    }
+
+    dialog::backdrop {
+      background: var(--bgColor-black);
+      opacity: 0.45;
+    }
+
+    form {
+      display: grid;
+      gap: var(--base-size-16);
+      padding: var(--base-size-20);
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--base-size-16);
+    }
+
+    h2 {
+      margin: 0;
+      font-size: var(--ld-text-title-md-size);
+    }
+
+    .close {
+      display: inline-grid;
+      width: var(--control-minTarget-auto);
+      height: var(--control-minTarget-auto);
+      place-items: center;
+      border: 0;
+      border-radius: var(--ld-radius-default);
+      background: transparent;
+      color: var(--ld-fg-muted);
+      cursor: pointer;
+    }
+
+    .close:hover,
+    .close:focus-visible {
+      background: var(--ld-button-bg-hover);
+      color: var(--ld-fg-default);
+    }
+
+    .controls {
+      display: flex;
+      gap: var(--base-size-8);
+    }
+
+    input {
+      min-width: 0;
+      min-height: var(--control-minTarget-auto);
+      flex: 1 1 auto;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-default);
+      padding: var(--control-medium-paddingBlock) var(--control-medium-paddingInline-normal);
+      font: inherit;
+    }
+
+    .submit {
+      min-height: var(--control-minTarget-auto);
+      flex: 0 0 auto;
+      border: var(--ld-border-default);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-button-bg-rest);
+      color: var(--ld-button-fg-rest);
+      cursor: pointer;
+      padding-inline: var(--control-medium-paddingInline-normal);
+      font-weight: var(--ld-font-weight-medium);
+    }
+
+    .submit:hover,
+    .submit:focus-visible {
+      border-color: var(--ld-button-border-hover);
+      background: var(--ld-button-bg-hover);
+    }
+
+    @media (width < 30rem) {
+      .trigger kbd {
+        display: none;
+      }
+
+      .controls {
+        display: grid;
+      }
+    }
+  `
+
+  connectedCallback(): void {
+    super.connectedCallback()
+    document.addEventListener('keydown', this.handleGlobalKeydown)
+  }
+
+  disconnectedCallback(): void {
+    document.removeEventListener('keydown', this.handleGlobalKeydown)
+    super.disconnectedCallback()
+  }
+
+  render() {
+    return html`<slot></slot>
+      <button class="trigger" type="button" aria-label="Search documentation" aria-keyshortcuts="/ Meta+K Control+K" @click=${this.openDialog}>
+        ${lucideIcon(Search, { size: 16, strokeWidth: 2 })}
+        <span>Search</span>
+        <kbd aria-hidden="true">⌘K</kbd>
+      </button>
+      <dialog aria-labelledby="site-search-title" @click=${this.closeFromBackdrop}>
+        <form action="/docs/search" method="get" role="search">
+          <header>
+            <h2 id="site-search-title">Search documentation</h2>
+            <button class="close" type="button" aria-label="Close search" @click=${this.closeDialog}>${lucideIcon(X, { size: 18, strokeWidth: 2 })}</button>
+          </header>
+          <div class="controls">
+            <input name="q" type="search" aria-label="Search documentation" placeholder="Search concepts, guides, commands, and APIs" autocomplete="off">
+            <button class="submit" type="submit">Search</button>
+          </div>
+        </form>
+      </dialog>`
+  }
+
+  private openDialog = (): void => {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>('dialog')
+    if (!dialog || dialog.open) return
+    dialog.showModal()
+    requestAnimationFrame(() => this.renderRoot.querySelector<HTMLInputElement>('input')?.focus())
+  }
+
+  private closeDialog = (): void => {
+    this.renderRoot.querySelector<HTMLDialogElement>('dialog')?.close()
+  }
+
+  private closeFromBackdrop = (event: MouseEvent): void => {
+    if (event.target === event.currentTarget) this.closeDialog()
+  }
+}
+
+if (!customElements.get('ld-site-search')) {
+  customElements.define('ld-site-search', SiteSearch)
+}
+
 class SiteDocsDrawerToggle extends LitElement {
   static properties = {
     placement: { type: String },
@@ -236,7 +454,7 @@ class SiteDocsDrawerToggle extends LitElement {
       display: none;
     }
 
-    @media (width < 48rem) {
+    @media (width < 63.25rem) {
       :host {
         display: block;
       }
@@ -244,8 +462,8 @@ class SiteDocsDrawerToggle extends LitElement {
 
     button {
       display: inline-grid;
-      width: var(--site-header-control-size);
-      height: var(--site-header-control-size);
+      width: var(--site-interactive-target-size);
+      height: var(--site-interactive-target-size);
       place-items: center;
       border: var(--ld-border-default);
       border-radius: var(--ld-radius-default);
@@ -307,7 +525,7 @@ function syncDocsDrawer(open = false): void {
   const sidebar = document.querySelector<HTMLElement>('.site-docs-sidebar')
   if (!layout || !sidebar) return
 
-  const compact = window.matchMedia('(width < 48rem)').matches
+  const compact = window.matchMedia('(width < 63.25rem)').matches
   const nextOpen = compact && open
   const wasOpen = layout.classList.contains('site-docs-drawer-open')
   layout.classList.toggle('site-docs-drawer-open', nextOpen)
@@ -354,7 +572,7 @@ class SiteMarkdownCopy extends LitElement {
 
     button {
       display: inline-flex;
-      min-height: var(--control-medium-size);
+      min-height: max(var(--control-medium-size), var(--control-minTarget-auto));
       align-items: center;
       gap: var(--base-size-8);
       border: var(--ld-border-default);
@@ -397,11 +615,7 @@ class SiteMarkdownCopy extends LitElement {
     if (!this.markdown) return
 
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(this.markdown)
-      } else {
-        this.copyWithSelection()
-      }
+      await writeClipboard(this.markdown)
     } catch {
       return
     }
@@ -414,25 +628,183 @@ class SiteMarkdownCopy extends LitElement {
       this.requestUpdate()
     }, 2_000)
   }
-
-  private copyWithSelection(): void {
-    const textarea = document.createElement('textarea')
-    textarea.value = this.markdown
-    textarea.setAttribute('readonly', '')
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.append(textarea)
-    textarea.select()
-
-    const copied = document.execCommand('copy')
-    textarea.remove()
-    if (!copied) throw new Error('clipboard write failed')
-  }
 }
 
 if (!customElements.get('ld-site-markdown-copy')) {
   customElements.define('ld-site-markdown-copy', SiteMarkdownCopy)
 }
+
+class SiteCodeCopy extends LitElement {
+  private copied = false
+  private resetTimer?: number
+
+  static styles = css`
+    :host {
+      display: block;
+    }
+
+    button {
+      display: inline-flex;
+      min-height: var(--control-minTarget-auto);
+      align-items: center;
+      gap: var(--base-size-4);
+      border: 0;
+      border-radius: var(--ld-radius-default);
+      background: transparent;
+      color: var(--ld-fg-muted);
+      cursor: pointer;
+      padding-inline: var(--base-size-8);
+      font: inherit;
+      font-size: var(--ld-text-caption-size);
+      font-weight: var(--ld-font-weight-medium);
+    }
+
+    button:hover,
+    button:focus-visible {
+      background: var(--ld-button-bg-hover);
+      color: var(--ld-fg-default);
+    }
+
+    button:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-offset);
+    }
+  `
+
+  disconnectedCallback(): void {
+    window.clearTimeout(this.resetTimer)
+    super.disconnectedCallback()
+  }
+
+  render() {
+    const label = this.copied ? 'Code copied' : 'Copy code'
+    return html`<button type="button" aria-label=${label} @click=${this.copyCode}>
+      ${lucideIcon(this.copied ? Check : Copy, { size: 14, strokeWidth: 2 })}
+      <span>${this.copied ? 'Copied' : 'Copy'}</span>
+    </button>`
+  }
+
+  private copyCode = async (): Promise<void> => {
+    const source = this.closest('.site-docs-code-block')?.querySelector('pre code, pre')?.textContent
+    if (!source) return
+
+    try {
+      await writeClipboard(source)
+    } catch {
+      return
+    }
+
+    this.copied = true
+    this.requestUpdate()
+    window.clearTimeout(this.resetTimer)
+    this.resetTimer = window.setTimeout(() => {
+      this.copied = false
+      this.requestUpdate()
+    }, 2_000)
+  }
+}
+
+if (!customElements.get('ld-site-code-copy')) {
+  customElements.define('ld-site-code-copy', SiteCodeCopy)
+}
+
+const codeLanguageLabels: Record<string, string> = {
+  bash: 'Shell',
+  css: 'CSS',
+  go: 'Go',
+  html: 'HTML',
+  javascript: 'JavaScript',
+  js: 'JavaScript',
+  json: 'JSON',
+  markdown: 'Markdown',
+  md: 'Markdown',
+  sh: 'Shell',
+  shell: 'Shell',
+  sql: 'SQL',
+  ts: 'TypeScript',
+  typescript: 'TypeScript',
+  yaml: 'YAML',
+  yml: 'YAML',
+}
+
+function enhanceDocsCodeBlocks(): void {
+  document.querySelectorAll<HTMLElement>('.site-docs-article pre').forEach((pre) => {
+    if (pre.closest('.site-docs-code-block')) return
+
+    const code = pre.querySelector('code')
+    const languageClass = Array.from(code?.classList ?? []).find((name) => name.startsWith('language-'))
+    const language = languageClass?.slice('language-'.length).toLowerCase() ?? ''
+    const label = codeLanguageLabels[language] ?? (language ? language.toUpperCase() : 'Code')
+    const wrapper = document.createElement('div')
+    const toolbar = document.createElement('div')
+    const languageLabel = document.createElement('span')
+
+    wrapper.className = 'site-docs-code-block'
+    toolbar.className = 'site-docs-code-toolbar'
+    languageLabel.className = 'site-docs-code-language'
+    languageLabel.textContent = label
+    pre.replaceWith(wrapper)
+    toolbar.append(languageLabel, document.createElement('ld-site-code-copy'))
+    wrapper.append(toolbar, pre)
+  })
+}
+
+type CalloutKind = 'note' | 'tip' | 'warning' | 'danger'
+
+const calloutKinds: Record<string, { kind: CalloutKind; label: string }> = {
+  CAUTION: { kind: 'danger', label: 'Caution' },
+  DANGER: { kind: 'danger', label: 'Danger' },
+  IMPORTANT: { kind: 'note', label: 'Important' },
+  NOTE: { kind: 'note', label: 'Note' },
+  TIP: { kind: 'tip', label: 'Tip' },
+  WARNING: { kind: 'warning', label: 'Warning' },
+}
+
+function enhanceDocsCallouts(): void {
+  document.querySelectorAll<HTMLElement>('.site-docs-article blockquote').forEach((blockquote) => {
+    if (blockquote.classList.contains('site-docs-callout')) return
+    const paragraph = blockquote.querySelector<HTMLElement>(':scope > p')
+    if (!paragraph) return
+
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT)
+    const markerNode = walker.nextNode() as Text | null
+    const marker = markerNode?.data.match(/^\s*\[!(NOTE|TIP|WARNING|CAUTION|DANGER|IMPORTANT)\]\s*/i)
+    if (!markerNode || !marker) return
+
+    const definition = calloutKinds[marker[1].toUpperCase()]
+    markerNode.data = markerNode.data.slice(marker[0].length)
+    blockquote.classList.add('site-docs-callout', `site-docs-callout-${definition.kind}`)
+    blockquote.dataset.callout = definition.kind
+
+    const label = document.createElement('p')
+    label.className = 'site-docs-callout-label'
+    const strong = document.createElement('strong')
+    strong.textContent = definition.label
+    label.append(strong)
+    blockquote.prepend(label)
+  })
+}
+
+async function writeClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.append(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('clipboard write failed')
+}
+
+enhanceDocsCodeBlocks()
+enhanceDocsCallouts()
 
 const featureIcons: Record<string, IconNode> = {
   blocks: Blocks,
