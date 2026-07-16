@@ -15,6 +15,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	"github.com/Yacobolo/libredash/internal/asyncjob"
 	"github.com/Yacobolo/libredash/internal/deployment/apiadapter"
 	"github.com/Yacobolo/libredash/internal/manageddata/control"
 	"github.com/Yacobolo/libredash/internal/release"
@@ -26,6 +27,25 @@ const asyncEventPollInterval = time.Second
 
 type asyncEventLoader func(context.Context) ([]apigenapi.AsyncEventResponse, error)
 
+func storedAsyncEvents(ctx context.Context, repo asyncjob.Repository, resourceKind, resourceID string) ([]apigenapi.AsyncEventResponse, error) {
+	if repo == nil {
+		return nil, fmt.Errorf("async event repository is unavailable")
+	}
+	rows, err := repo.ListEvents(ctx, resourceKind, resourceID, 0, 200)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]apigenapi.AsyncEventResponse, 0, len(rows))
+	for _, row := range rows {
+		data := map[string]any{}
+		if err := json.Unmarshal(row.Data, &data); err != nil {
+			return nil, err
+		}
+		events = append(events, apigenapi.AsyncEventResponse{Id: fmt.Sprintf("%020d", row.ID), Event: row.EventType, Data: data, CreatedAt: row.CreatedAt})
+	}
+	return events, nil
+}
+
 var asyncCursorKey = func() [32]byte {
 	var key [32]byte
 	if _, err := rand.Read(key[:]); err != nil {
@@ -36,7 +56,7 @@ var asyncCursorKey = func() [32]byte {
 
 type asyncCursor struct {
 	Scope   string `json:"scope"`
-	Offset  int    `json:"offset"`
+	LastID  string `json:"lastId"`
 	Expires int64  `json:"expires"`
 }
 
@@ -253,10 +273,19 @@ func pageAsyncEvents(events []apigenapi.AsyncEventResponse, limit int, token, sc
 	offset := 0
 	if token != "" {
 		cursor, err := decodeAsyncCursor(token)
-		if err != nil || cursor.Scope != scope || cursor.Expires < time.Now().Unix() || cursor.Offset < 0 || cursor.Offset > len(events) {
+		if err != nil || cursor.Scope != scope || cursor.Expires < time.Now().Unix() || cursor.LastID == "" {
 			return nil, "", fmt.Errorf("invalid cursor")
 		}
-		offset = cursor.Offset
+		offset = -1
+		for index, event := range events {
+			if event.Id == cursor.LastID {
+				offset = index + 1
+				break
+			}
+		}
+		if offset < 0 {
+			return nil, "", fmt.Errorf("cursor event is unavailable")
+		}
 	}
 	end := offset + limit
 	if end > len(events) {
@@ -264,7 +293,7 @@ func pageAsyncEvents(events []apigenapi.AsyncEventResponse, limit int, token, sc
 	}
 	next := ""
 	if end < len(events) {
-		next = encodeAsyncCursor(asyncCursor{Scope: scope, Offset: end, Expires: time.Now().Add(asyncCursorLifetime).Unix()})
+		next = encodeAsyncCursor(asyncCursor{Scope: scope, LastID: events[end-1].Id, Expires: time.Now().Add(asyncCursorLifetime).Unix()})
 	}
 	return append([]apigenapi.AsyncEventResponse(nil), events[offset:end]...), next, nil
 }

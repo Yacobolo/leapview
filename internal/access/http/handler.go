@@ -117,7 +117,7 @@ func (h Handler) CreateCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Requ
 		Privileges  []string `json:"privileges"`
 		ExpiresAt   string   `json:"expiresAt"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -225,7 +225,7 @@ func (h Handler) ListPrincipals(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	if _, ok := apiLimitForRequest(w, r); !ok {
 		return
 	}
-	if _, ok := apiCursorOffsetForRequest(w, r); !ok {
+	if _, ok := apiCursorKeyForRequest(w, r); !ok {
 		return
 	}
 	repo, err := h.repository()
@@ -258,7 +258,7 @@ func (h Handler) CreatePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		DisplayName string `json:"displayName"`
 	}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		if err := decodeStrictJSON(r, &input); err != nil {
 			writeJSONError(w, err, stdhttp.StatusBadRequest)
 			return
 		}
@@ -384,7 +384,7 @@ func (h Handler) OAuthToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		WorkspaceID  string `json:"workspace_id"`
 	}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		if err := decodeStrictJSON(r, &input); err != nil {
 			writeJSONError(w, err, stdhttp.StatusBadRequest)
 			return
 		}
@@ -472,7 +472,7 @@ func (h Handler) CreateServicePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Req
 		ID          string `json:"id"`
 		DisplayName string `json:"displayName"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -543,7 +543,7 @@ func (h Handler) CreateServicePrincipalSecret(w stdhttp.ResponseWriter, r *stdht
 		Name      string `json:"name"`
 		ExpiresAt string `json:"expiresAt"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -659,7 +659,7 @@ func (h Handler) CreateGroup(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		Name        string `json:"name"`
 		DisplayName string `json:"displayName"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -931,7 +931,7 @@ func (h Handler) CreateGrant(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		SubjectID   string `json:"subjectId"`
 		Privilege   string `json:"privilege"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -1102,7 +1102,7 @@ func (h Handler) CreateDataPolicy(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 		PolicyType  string         `json:"policyType"`
 		Expression  map[string]any `json:"expression"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -1239,7 +1239,7 @@ func (h Handler) CheckAuthorizationBatch(w stdhttp.ResponseWriter, r *stdhttp.Re
 	var input struct {
 		Checks []struct{ Privilege, ObjectType, ObjectID string } `json:"checks"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -1312,7 +1312,7 @@ func (h Handler) TransferOwnership(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		ObjectID         string `json:"objectId"`
 		OwnerPrincipalID string `json:"ownerPrincipalId"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -1974,7 +1974,7 @@ func (h Handler) authorizeCurrentObject(w stdhttp.ResponseWriter, r *stdhttp.Req
 		return false
 	}
 	if credential, ok := h.currentCredential(r); ok && !apiTokenAllows(credential.Token, object.WorkspaceID, privilege) {
-		writeJSONError(w, errForbidden, stdhttp.StatusForbidden)
+		writeJSONError(w, errForbidden, objectAuthorizationDenialStatus(r))
 		return false
 	}
 	repo, err := h.repository()
@@ -1988,10 +1988,20 @@ func (h Handler) authorizeCurrentObject(w stdhttp.ResponseWriter, r *stdhttp.Req
 		return false
 	}
 	if !decision.Allowed {
-		writeJSONError(w, errForbidden, stdhttp.StatusForbidden)
+		writeJSONError(w, errForbidden, objectAuthorizationDenialStatus(r))
 		return false
 	}
 	return true
+}
+
+func objectAuthorizationDenialStatus(r *stdhttp.Request) int {
+	// Only routes whose path identifies a concrete access resource conceal its
+	// existence. Collection commands describe their target in the request body
+	// and therefore report an ordinary authorization failure.
+	if chi.URLParam(r, "grant") != "" || chi.URLParam(r, "policy") != "" {
+		return stdhttp.StatusNotFound
+	}
+	return stdhttp.StatusForbidden
 }
 
 func (h Handler) groupByID(w stdhttp.ResponseWriter, r *stdhttp.Request) (access.Group, bool) {
@@ -2020,7 +2030,7 @@ func decodeRoleBindingInput(w stdhttp.ResponseWriter, r *stdhttp.Request) (acces
 		SubjectID   string `json:"subjectId"`
 		Role        string `json:"role"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeStrictJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return access.RoleBindingInput{}, false
 	}
@@ -2069,12 +2079,23 @@ func pageSliceForRequest[T any](w stdhttp.ResponseWriter, r *stdhttp.Request, it
 	if !ok {
 		return nil, "", false
 	}
-	start, ok := apiCursorOffsetForRequest(w, r)
+	cursorKey, ok := apiCursorKeyForRequest(w, r)
 	if !ok {
 		return nil, "", false
 	}
-	if start > len(items) {
-		start = len(items)
+	start := 0
+	if cursorKey != "" {
+		start = -1
+		for index, item := range items {
+			if apiItemPageKey(item) == cursorKey {
+				start = index + 1
+				break
+			}
+		}
+		if start < 0 {
+			writeJSONError(w, fmt.Errorf("pageToken key is unavailable"), stdhttp.StatusBadRequest)
+			return nil, "", false
+		}
 	}
 	end := start + limit
 	if end > len(items) {
@@ -2082,14 +2103,14 @@ func pageSliceForRequest[T any](w stdhttp.ResponseWriter, r *stdhttp.Request, it
 	}
 	nextCursor := ""
 	if end < len(items) {
-		nextCursor = encodeIndexCursor(end)
+		nextCursor = encodeKeyCursor(apiItemPageKey(items[end-1]))
 	}
 	return append([]T(nil), items[start:end]...), nextCursor, true
 }
 
 const (
 	defaultAPILimit = 50
-	maxAPILimit     = 100
+	maxAPILimit     = 200
 )
 
 func apiLimitForRequest(w stdhttp.ResponseWriter, r *stdhttp.Request) (int, bool) {
@@ -2111,10 +2132,10 @@ func parseAPILimit(raw string) (int, error) {
 		return 0, fmt.Errorf("limit must be an integer")
 	}
 	if value <= 0 {
-		return defaultAPILimit, nil
+		return 0, fmt.Errorf("limit must be at least 1")
 	}
 	if value > maxAPILimit {
-		return maxAPILimit, nil
+		return 0, fmt.Errorf("limit must not exceed 200")
 	}
 	return value, nil
 }
@@ -2139,40 +2160,50 @@ func privilegeStrings(values []access.Privilege) []string {
 	return out
 }
 
-func apiCursorOffsetForRequest(w stdhttp.ResponseWriter, r *stdhttp.Request) (int, bool) {
-	offset, err := decodeIndexCursor(r.URL.Query().Get("pageToken"))
+func apiCursorKeyForRequest(w stdhttp.ResponseWriter, r *stdhttp.Request) (string, bool) {
+	key, err := decodeKeyCursor(r.URL.Query().Get("pageToken"))
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return 0, false
+		return "", false
 	}
-	return offset, true
+	return key, true
 }
 
-func encodeIndexCursor(offset int) string {
-	if offset <= 0 {
+func encodeKeyCursor(key string) string {
+	if key == "" {
 		return ""
 	}
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("idx:%d", offset)))
+	return base64.RawURLEncoding.EncodeToString([]byte("key:" + key))
 }
 
-func decodeIndexCursor(token string) (int, error) {
+func decodeKeyCursor(token string) (string, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return 0, nil
+		return "", nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		return 0, fmt.Errorf("pageToken is invalid")
+		return "", fmt.Errorf("pageToken is invalid")
 	}
 	text := string(raw)
-	if !strings.HasPrefix(text, "idx:") {
-		return 0, fmt.Errorf("pageToken is invalid")
+	if !strings.HasPrefix(text, "key:") || strings.TrimPrefix(text, "key:") == "" {
+		return "", fmt.Errorf("pageToken is invalid")
 	}
-	value, err := strconv.Atoi(strings.TrimPrefix(text, "idx:"))
-	if err != nil || value < 0 {
-		return 0, fmt.Errorf("pageToken is invalid")
+	return strings.TrimPrefix(text, "key:"), nil
+}
+
+func apiItemPageKey(value any) string {
+	encoded, _ := json.Marshal(value)
+	var object map[string]any
+	if json.Unmarshal(encoded, &object) == nil {
+		id, _ := object["id"].(string)
+		created, _ := object["createdAt"].(string)
+		if id != "" {
+			return created + "\x00" + id
+		}
 	}
-	return value, nil
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
 }
 
 func cleanQueryValues(values []string) []string {

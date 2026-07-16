@@ -369,11 +369,13 @@ func (a apiGenAdapter) ExplainSemanticPreview(w http.ResponseWriter, r *http.Req
 	a.server.semanticQueryHTTP().ExplainSemanticPreview(w, r)
 }
 
-func (a apiGenAdapter) QueryDashboardPage(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+func (a apiGenAdapter) QueryDashboardPage(w http.ResponseWriter, r *http.Request, workspaceID, _, _ string) {
+	a.setServingSnapshot(r, workspaceID)
 	a.server.dashboardHTTP().QueryDashboardPage(w, r)
 }
 
-func (a apiGenAdapter) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, _, _, _, _ string) {
+func (a apiGenAdapter) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, workspaceID, _, _, _ string) {
+	a.setServingSnapshot(r, workspaceID)
 	a.server.dashboardHTTP().QueryDashboardVisualData(w, r)
 }
 
@@ -383,9 +385,7 @@ func (a apiGenAdapter) QueryDashboardTable(w http.ResponseWriter, r *http.Reques
 }
 
 func (a apiGenAdapter) setServingSnapshot(r *http.Request, workspaceID string) {
-	if r.Header.Get("X-Serving-Snapshot") != "" {
-		return
-	}
+	r.Header.Del("X-Serving-Snapshot")
 	repo, err := a.server.workspaceRepository()
 	if err != nil || repo == nil {
 		return
@@ -396,7 +396,8 @@ func (a apiGenAdapter) setServingSnapshot(r *http.Request, workspaceID string) {
 	}
 }
 
-func (a apiGenAdapter) ListDashboardFilterValues(w http.ResponseWriter, r *http.Request, _, _, _, _ string, _ apigenapi.GenListDashboardFilterValuesParams) {
+func (a apiGenAdapter) ListDashboardFilterValues(w http.ResponseWriter, r *http.Request, workspaceID, _, _, _ string, _ apigenapi.GenListDashboardFilterValuesParams) {
+	a.setServingSnapshot(r, workspaceID)
 	a.server.dashboardHTTP().ListDashboardFilterOptions(w, r)
 }
 
@@ -455,15 +456,6 @@ func (a apiGenAdapter) ListAgentEvents(w http.ResponseWriter, r *http.Request, _
 
 func (a apiGenAdapter) CancelAgentRun(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenCancelAgentRunHeaders) {
 	a.server.agentHTTPHandler().CancelRun(w, r)
-}
-
-func (a apiGenAdapter) GetAdminAgentConfig(w http.ResponseWriter, r *http.Request) {
-	a.server.agentHTTPHandler().GetAdminConfig(w, r)
-}
-
-func (a apiGenAdapter) UpdateAdminAgentConfig(w http.ResponseWriter, r *http.Request, headers apigenapi.GenUpdateAdminAgentConfigHeaders) {
-	r.Header.Set("If-Match", headers.IfMatch)
-	a.server.agentHTTPHandler().UpdateAdminConfig(w, r)
 }
 
 func (a apiGenAdapter) ListPrincipals(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListPrincipalsParams) {

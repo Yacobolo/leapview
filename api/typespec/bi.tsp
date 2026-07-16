@@ -68,6 +68,18 @@ model DashboardComponentResponse {
   height?: float64;
 }
 
+model DashboardVisualComponentResponse extends DashboardComponentResponse {
+  kind: "visual";
+}
+
+model DashboardTableComponentResponse extends DashboardComponentResponse {
+  kind: "table";
+}
+
+model DashboardFilterComponentResponse extends DashboardComponentResponse {
+  kind: "filter";
+}
+
 model DashboardPageResponse {
   id: string;
   title: string;
@@ -86,7 +98,7 @@ model DashboardVisualDescribeResponse {
   description?: string;
   query?: Record<string>;
   options?: Record<string>;
-  rendererOptions?: Record<string>;
+  extensions?: Record<Record<unknown>>;
   interaction?: Record<string>;
   placement?: DashboardComponentPlacement;
   x?: float64;
@@ -262,22 +274,30 @@ model SemanticFilter {
 }
 
 model SemanticQueryRequest {
+  @maxItems(50)
   dimensions?: SemanticFieldRef[];
+  @maxItems(50)
   measures?: SemanticFieldRef[];
   time?: SemanticTimeRef;
+  @maxItems(100)
   filters?: SemanticFilter[];
+  @maxItems(50)
   sort?: SemanticSort[];
-  limit?: int32;
-  pageToken?: string;
+  limit?: QueryLimit;
+  pageToken?: PageToken;
 }
 
 model SemanticPreviewRequest {
+  @maxItems(50)
   dimensions?: SemanticFieldRef[];
+  @maxItems(50)
   measures?: SemanticFieldRef[];
+  @maxItems(100)
   filters?: SemanticFilter[];
+  @maxItems(50)
   sort?: SemanticSort[];
-  limit?: int32;
-  pageToken?: string;
+  limit?: QueryLimit;
+  pageToken?: PageToken;
 }
 
 enum QueryColumnType {
@@ -348,8 +368,8 @@ model DashboardPageQueryRequest {
 }
 
 model DashboardTableQueryRequest {
-  limit?: int32;
-  pageToken?: string;
+  limit?: QueryLimit;
+  pageToken?: PageToken;
   filters?: DashboardFilters;
 }
 
@@ -491,9 +511,9 @@ model DashboardVisualDataResponse {
   measures?: string[];
   series?: string[];
   options?: Record<string>;
-  rendererOptions?: Record<string>;
   extensions?: Record<Record<unknown>>;
   selection?: Record<string>[];
+  @maxItems(1000)
   data: DashboardVisualDatum[];
 }
 
@@ -595,7 +615,7 @@ model DashboardFilterOptionListResponse {
   input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "query", name: "limit", default: 25 }] },
   output: #{ mode: "project", select: #[#{ source: "/items", countAs: "count", select: #[#{ source: "/id" }, #{ source: "/title" }, #{ source: "/description" }, #{ source: "/pageCount" }] }], cursor: #{ source: "/page/nextCursor" } },
 })
-op listDashboards(@path workspace: string, @query limit?: int32, @query pageToken?: string): OkJson<DashboardListResponse> | CommonErrors;
+op listDashboards(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<DashboardListResponse> | CommonErrors;
 
 @tag("BI")
 @summary("Describe dashboard")
@@ -661,7 +681,7 @@ op getDashboardFilter(@path workspace: string, @path dashboard: string, @path pa
   input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "query", name: "limit", default: 25 }] },
   output: #{ mode: "project", select: #[#{ source: "/items", countAs: "count", select: #[#{ source: "/id" }, #{ source: "/title" }, #{ source: "/description" }] }], cursor: #{ source: "/page/nextCursor" } },
 })
-op listSemanticModels(@path workspace: string, @query limit?: int32, @query pageToken?: string): OkJson<SemanticModelListResponse> | CommonErrors;
+op listSemanticModels(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<SemanticModelListResponse> | CommonErrors;
 
 @tag("BI")
 @summary("Describe semantic model")
@@ -681,14 +701,14 @@ op getSemanticModel(@path workspace: string, @path("model") modelName: string): 
 @route("/workspaces/{workspace}/semantic-models/{model}/relationships")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
-op listSemanticRelationships(@path workspace: string, @path("model") modelName: string, @query limit?: int32, @query pageToken?: string): OkJson<SemanticRelationshipListResponse> | CommonErrors;
+op listSemanticRelationships(@path workspace: string, @path("model") modelName: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<SemanticRelationshipListResponse> | CommonErrors;
 
 @tag("BI")
 @summary("List semantic model sources")
 @route("/workspaces/{workspace}/semantic-models/{model}/sources")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
-op listSemanticSources(@path workspace: string, @path("model") modelName: string, @query limit?: int32, @query pageToken?: string): OkJson<SemanticSourceListResponse> | CommonErrors;
+op listSemanticSources(@path workspace: string, @path("model") modelName: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<SemanticSourceListResponse> | CommonErrors;
 
 @tag("BI")
 @summary("List semantic model fields")
@@ -701,7 +721,7 @@ op listSemanticSources(@path workspace: string, @path("model") modelName: string
   input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "query", name: "limit", default: 25 }] },
   output: #{ mode: "project", select: #[#{ source: "/items", countAs: "count", select: #[#{ source: "/kind" }, #{ source: "/id" }, #{ source: "/label" }, #{ source: "/description" }] }], cursor: #{ source: "/page/nextCursor" } },
 })
-op listSemanticModelFields(@path workspace: string, @path("model") modelName: string, @query limit?: int32, @query pageToken?: string): OkJson<SemanticFieldListResponse> | CommonErrors;
+op listSemanticModelFields(@path workspace: string, @path("model") modelName: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<SemanticFieldListResponse> | CommonErrors;
 
 @tag("BI")
 @summary("Query semantic model")
@@ -740,7 +760,7 @@ op explainSemanticModelQuery(@path workspace: string, @path("model") modelName: 
   input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "query", name: "limit", default: 25 }] },
   output: #{ mode: "project", select: #[#{ source: "/items", countAs: "count", select: #[#{ source: "/id" }, #{ source: "/kind" }, #{ source: "/description" }] }], cursor: #{ source: "/page/nextCursor" } },
 })
-op listSemanticDatasets(@path workspace: string, @path("model") modelName: string, @query limit?: int32, @query pageToken?: string): OkJson<SemanticDatasetListResponse> | CommonErrors;
+op listSemanticDatasets(@path workspace: string, @path("model") modelName: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<SemanticDatasetListResponse> | CommonErrors;
 
 @tag("BI")
 @summary("Describe semantic model dataset")
@@ -766,7 +786,7 @@ op getSemanticDataset(@path workspace: string, @path("model") modelName: string,
   input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "query", name: "limit", default: 25 }] },
   output: #{ mode: "project", select: #[#{ source: "/items", countAs: "count", select: #[#{ source: "/kind" }, #{ source: "/id" }, #{ source: "/label" }, #{ source: "/description" }] }], cursor: #{ source: "/page/nextCursor" } },
 })
-op listSemanticFields(@path workspace: string, @path("model") modelName: string, @path dataset: string, @query limit?: int32, @query pageToken?: string): OkJson<SemanticFieldListResponse> | CommonErrors;
+op listSemanticFields(@path workspace: string, @path("model") modelName: string, @path dataset: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<SemanticFieldListResponse> | CommonErrors;
 
 @tag("BI")
 @summary("Preview semantic model dataset rows")
@@ -844,4 +864,4 @@ op queryDashboardTable(@path workspace: string, @path dashboard: string, @path p
   input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "query", name: "limit", default: 25 }] },
   output: #{ mode: "project", select: #[#{ source: "/items", countAs: "count", select: #[#{ source: "/value" }, #{ source: "/label" }] }], cursor: #{ source: "/page/nextCursor" } },
 })
-op listDashboardFilterValues(@path workspace: string, @path dashboard: string, @path page: string, @path filter: string, @query limit?: int32, @query pageToken?: string, @body body?: DashboardPageQueryRequest): OkJson<DashboardFilterOptionListResponse> | CommonErrors;
+op listDashboardFilterValues(@path workspace: string, @path dashboard: string, @path page: string, @path filter: string, @query limit?: ListLimit, @query pageToken?: PageToken, @body body?: DashboardPageQueryRequest): OkJson<DashboardFilterOptionListResponse> | CommonErrors;

@@ -122,23 +122,23 @@ type DashboardFilterDescribeResponse struct {
 }
 
 type DashboardVisualDescribeResponse struct {
-	ID              string                       `json:"id"`
-	ComponentID     string                       `json:"componentId,omitempty"`
-	Kind            string                       `json:"kind,omitempty"`
-	Shape           string                       `json:"shape,omitempty"`
-	Renderer        string                       `json:"renderer,omitempty"`
-	Type            string                       `json:"type,omitempty"`
-	Title           string                       `json:"title,omitempty"`
-	Description     string                       `json:"description,omitempty"`
-	Query           map[string]any               `json:"query,omitempty"`
-	Options         map[string]any               `json:"options,omitempty"`
-	RendererOptions map[string]any               `json:"rendererOptions,omitempty"`
-	Interaction     map[string]any               `json:"interaction,omitempty"`
-	Placement       *DashboardComponentPlacement `json:"placement,omitempty"`
-	X               float64                      `json:"x,omitempty"`
-	Y               float64                      `json:"y,omitempty"`
-	Width           float64                      `json:"width,omitempty"`
-	Height          float64                      `json:"height,omitempty"`
+	ID          string                       `json:"id"`
+	ComponentID string                       `json:"componentId,omitempty"`
+	Kind        string                       `json:"kind,omitempty"`
+	Shape       string                       `json:"shape,omitempty"`
+	Renderer    string                       `json:"renderer,omitempty"`
+	Type        string                       `json:"type,omitempty"`
+	Title       string                       `json:"title,omitempty"`
+	Description string                       `json:"description,omitempty"`
+	Query       map[string]any               `json:"query,omitempty"`
+	Options     map[string]any               `json:"options,omitempty"`
+	Extensions  map[string]map[string]any    `json:"extensions,omitempty"`
+	Interaction map[string]any               `json:"interaction,omitempty"`
+	Placement   *DashboardComponentPlacement `json:"placement,omitempty"`
+	X           float64                      `json:"x,omitempty"`
+	Y           float64                      `json:"y,omitempty"`
+	Width       float64                      `json:"width,omitempty"`
+	Height      float64                      `json:"height,omitempty"`
 }
 
 type SemanticModelDescriptionResponse struct {

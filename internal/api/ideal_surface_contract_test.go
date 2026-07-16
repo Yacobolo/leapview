@@ -143,6 +143,19 @@ func operationHasResponseMedia(operation map[string]any, status, media string) b
 	return ok
 }
 
+func requiredOperationParameter(t *testing.T, operation map[string]any, location, name string) map[string]any {
+	t.Helper()
+	parameters, _ := operation["parameters"].([]any)
+	for _, raw := range parameters {
+		parameter, _ := raw.(map[string]any)
+		if parameter["in"] == location && parameter["name"] == name {
+			return parameter
+		}
+	}
+	t.Fatalf("operation parameter %s %s is missing", location, name)
+	return nil
+}
+
 func TestIdealAPIUsesProblemDetailsAndMutationHeaders(t *testing.T) {
 	spec := managedDataOpenAPISpec(t)
 	paths := openAPIMap(t, spec, "paths")
@@ -172,4 +185,45 @@ func TestIdealAPIUsesProblemDetailsAndMutationHeaders(t *testing.T) {
 	if !strings.Contains(encoded, "application/problem+json") {
 		t.Fatal("OpenAPI does not declare application/problem+json")
 	}
+}
+
+func TestIdealAPIUsesBoundedInputsAndBodylessDeletes(t *testing.T) {
+	spec := managedDataOpenAPISpec(t)
+	paths := openAPIMap(t, spec, "paths")
+	for _, path := range []string{
+		"/api/v1/me/api-tokens/{token}",
+		"/api/v1/me/sessions/{session}",
+		"/api/v1/service-principals/{servicePrincipal}",
+		"/api/v1/workspaces/{workspace}/groups/{group}",
+		"/api/v1/workspaces/{workspace}/role-bindings/{binding}",
+		"/api/v1/workspaces/{workspace}/grants/{grant}",
+		"/api/v1/workspaces/{workspace}/data-policies/{policy}",
+	} {
+		op := openAPIOperation(t, paths, path, "delete")
+		responses := openAPIMap(t, op, "responses")
+		if _, ok := responses["204"]; !ok {
+			t.Errorf("DELETE %s does not declare 204: %#v", path, responses)
+		}
+		if _, ok := responses["200"]; ok {
+			t.Errorf("DELETE %s still declares a response body", path)
+		}
+	}
+
+	list := openAPIOperation(t, paths, "/api/v1/projects", "get")
+	limit := requiredOperationParameter(t, list, "query", "limit")
+	limitSchema := openAPIMap(t, limit, "schema")
+	if limitSchema["minimum"] != float64(1) || limitSchema["maximum"] != float64(200) {
+		t.Fatalf("list limit schema = %#v", limitSchema)
+	}
+	schemas := openAPIMap(t, openAPIMap(t, spec, "components"), "schemas")
+	queryLimit := schemaProperty(t, openAPISchema(t, schemas, "SemanticQueryRequest"), "limit")
+	if queryLimit["minimum"] != float64(1) || queryLimit["maximum"] != float64(1000) {
+		t.Fatalf("query limit schema = %#v", queryLimit)
+	}
+	visual := openAPISchema(t, schemas, "DashboardVisualDataResponse")
+	properties := openAPIMap(t, visual, "properties")
+	if _, ok := properties["rendererOptions"]; ok {
+		t.Fatalf("renderer-specific options leaked at the top level: %#v", properties)
+	}
+	_ = schemaProperty(t, visual, "extensions")
 }

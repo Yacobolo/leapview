@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	manageddatabinding "github.com/Yacobolo/libredash/internal/manageddata/binding"
 	"github.com/Yacobolo/libredash/internal/release"
 	"github.com/Yacobolo/libredash/internal/servingstate"
@@ -36,31 +36,39 @@ func (s *Server) releaseService() (*release.Service, error) {
 	}
 	store := servingstatefs.NewArtifactStore(s.artifactDir)
 	hooks := []validate.Hook{}
+	var pinValidator release.PinValidator
 	if s.managedDataBindingRepo != nil {
 		binder, err := manageddatabinding.New(s.managedDataBindingRepo)
 		if err != nil {
 			return nil, err
 		}
 		hooks = append(hooks, binder)
+		pinValidator = binder
 	}
 	validator := validate.NewService(states, store, servingstatefs.Validator{}, hooks...)
 	return release.NewService(release.ServiceOptions{
 		Releases: s.releaseRepository(), States: states, Workspaces: workspaces,
-		Artifacts: store, Validator: validator, Environment: servingstate.Environment(s.defaultEnvironment),
+		Artifacts: store, Validator: validator, Pins: pinValidator, Environment: servingstate.Environment(s.defaultEnvironment),
 	})
 }
 
 func (a apiGenAdapter) GetCapabilities(w http.ResponseWriter, r *http.Request) {
+	uploadProtocols := []apigenapi.UploadProtocol{}
+	if a.server.managedDataTus != nil {
+		uploadProtocols = append(uploadProtocols, apigenapi.UploadProtocolTus)
+	}
+	if a.server.managedDataOptions.Multipart != nil {
+		uploadProtocols = append(uploadProtocols, apigenapi.UploadProtocolS3Multipart)
+	}
+	visualShapes := make([]apigenapi.VisualShape, 0, len(reportdef.SupportedVisualShapes()))
+	for _, shape := range reportdef.SupportedVisualShapes() {
+		visualShapes = append(visualShapes, apigenapi.VisualShape(shape))
+	}
 	writeAPIJSON(w, http.StatusOK, apigenapi.CapabilitiesResponse{
 		ApiVersion: "v1", BuildVersion: staticasset.Version(), Authentication: []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer}, Environment: a.server.defaultEnvironment,
 		QueryFormats:    []apigenapi.QueryFormat{apigenapi.QueryFormatApplicationJson, apigenapi.QueryFormatApplicationVndApacheArrowStream},
-		UploadProtocols: []apigenapi.UploadProtocol{apigenapi.UploadProtocolTus, apigenapi.UploadProtocolS3Multipart},
-		VisualShapes: []apigenapi.VisualShape{
-			apigenapi.VisualShapeCategoryValue, apigenapi.VisualShapeCategorySeriesValue, apigenapi.VisualShapeCategoryMultiMeasure,
-			apigenapi.VisualShapeCategoryDelta, apigenapi.VisualShapeBinnedMeasure, apigenapi.VisualShapeHierarchy,
-			apigenapi.VisualShapeSingleValue, apigenapi.VisualShapeMatrix, apigenapi.VisualShapeGraph,
-			apigenapi.VisualShapeGeo, apigenapi.VisualShapeOhlc, apigenapi.VisualShapeDistribution,
-		},
+		UploadProtocols: uploadProtocols,
+		VisualShapes:    visualShapes,
 	})
 }
 
@@ -92,11 +100,15 @@ func (a apiGenAdapter) CreateRelease(w http.ResponseWriter, r *http.Request, pro
 		writeReleaseError(w, r, err)
 		return
 	}
+	if err := a.server.appendAsyncEvent(r.Context(), "release", created.ID, "release.created", releaseResponse(created)); err != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Release event history could not be persisted", nil)
+		return
+	}
 	w.Header().Set("Location", releaseLocation(project, created.ID))
 	writeAPIJSON(w, http.StatusCreated, releaseResponse(created))
 }
 
-func (a apiGenAdapter) ListReleases(w http.ResponseWriter, r *http.Request, project string, _ apigenapi.GenListReleasesParams) {
+func (a apiGenAdapter) ListReleases(w http.ResponseWriter, r *http.Request, project string, params apigenapi.GenListReleasesParams) {
 	service, err := a.server.releaseService()
 	if err != nil {
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "RELEASE_SERVICE_UNAVAILABLE", "Release service is unavailable", nil)
@@ -111,7 +123,12 @@ func (a apiGenAdapter) ListReleases(w http.ResponseWriter, r *http.Request, proj
 	for _, row := range rows {
 		items = append(items, releaseResponse(row))
 	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.ReleaseListResponse{Items: items, Page: apigenapi.PageInfo{}})
+	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ReleaseResponse) string { return item.CreatedAt + "\x00" + item.Id })
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, apigenapi.ReleaseListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
 }
 
 func (a apiGenAdapter) GetRelease(w http.ResponseWriter, r *http.Request, project, releaseID string) {
@@ -159,29 +176,37 @@ func (a apiGenAdapter) FinalizeRelease(w http.ResponseWriter, r *http.Request, p
 		writeReleaseError(w, r, err)
 		return
 	}
+	if err := a.server.appendAsyncEvent(r.Context(), "release", releaseID, "release.validating", releaseResponse(row)); err != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Release finalization could not be queued", nil)
+		return
+	}
+	if err := a.server.enqueueAsyncJobPayload(r.Context(), "release:"+releaseID+":finalize", apiJobReleaseFinalize, "release", releaseID, releaseFinalizeJob{Project: project, Release: releaseID}); err != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Release finalization could not be queued", nil)
+		return
+	}
 	w.Header().Set("Location", releaseLocation(project, releaseID))
 	writeAPIJSON(w, http.StatusAccepted, releaseResponse(row))
-	go a.validateRelease(service, project, releaseID)
-}
-
-func (a apiGenAdapter) validateRelease(service *release.Service, project, releaseID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
-	if _, err := service.ValidateFinalization(ctx, project, releaseID); err != nil && a.server.logger != nil {
-		a.server.logger.Error("asynchronous release validation failed", "project", project, "release", releaseID, "error", err)
-	}
 }
 
 func (a apiGenAdapter) ListReleaseEvents(w http.ResponseWriter, r *http.Request, project, releaseID string, params apigenapi.GenListReleaseEventsParams, _ apigenapi.GenListReleaseEventsHeaders) {
 	repo := a.server.releaseRepository()
-	row, err := repo.Get(r.Context(), project, releaseID)
+	_, err := repo.Get(r.Context(), project, releaseID)
 	if err != nil {
 		writeReleaseError(w, r, err)
 		return
 	}
-	writeAsyncEventPage(w, r, releaseEvents(row), params.Limit, params.PageToken, "release:"+project+":"+releaseID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		latest, err := repo.Get(ctx, project, releaseID)
-		return releaseEvents(latest), err
+	eventsRepo, repoErr := a.server.asyncRepository()
+	if repoErr != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Release events are unavailable", nil)
+		return
+	}
+	events, err := storedAsyncEvents(r.Context(), eventsRepo, "release", releaseID)
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Release events could not be loaded", nil)
+		return
+	}
+	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "release:"+project+":"+releaseID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
+		return storedAsyncEvents(ctx, eventsRepo, "release", releaseID)
 	})
 }
 
@@ -262,6 +287,11 @@ func writeAPIProblem(w http.ResponseWriter, r *http.Request, status int, code, d
 	if requestID == "" {
 		requestID = w.Header().Get("X-Request-ID")
 	}
+	if requestID == "" {
+		requestID = newAPIRequestID()
+		r.Header.Set("X-Request-ID", requestID)
+	}
+	w.Header().Set("X-Request-ID", requestID)
 	w.Header().Set("Content-Type", "application/problem+json")
 	writeAPIJSON(w, status, apigenapi.ProblemDetails{
 		Type: "https://libredash.dev/problems/" + strings.ToLower(code), Title: http.StatusText(status), Status: int32(status),

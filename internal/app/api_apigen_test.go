@@ -1,7 +1,10 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +12,43 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
+
+func TestServingSnapshotIsOwnedByServer(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{
+		Store: testStore(t),
+		WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{
+			ID: "sales", ActiveServingStateID: "state-current",
+		}},
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/semantic-models/orders/query", nil)
+	request.Header.Set("X-Serving-Snapshot", "state-attacker-controlled")
+
+	apiGenAdapter{server: server}.setServingSnapshot(request, "sales")
+
+	if got := request.Header.Get("X-Serving-Snapshot"); got != "state-current" {
+		t.Fatalf("serving snapshot = %q, want server-owned state-current", got)
+	}
+}
+
+type apiSnapshotWorkspaceRepository struct{ summary workspace.Summary }
+
+func (r apiSnapshotWorkspaceRepository) Ensure(context.Context, workspace.EnsureInput) error {
+	return nil
+}
+func (r apiSnapshotWorkspaceRepository) ByID(context.Context, workspace.WorkspaceID) (workspace.Summary, error) {
+	return r.summary, nil
+}
+func (r apiSnapshotWorkspaceRepository) List(context.Context) ([]workspace.Summary, error) {
+	return []workspace.Summary{r.summary}, nil
+}
+func (r apiSnapshotWorkspaceRepository) ActiveServingStateGraph(context.Context, workspace.WorkspaceID, string) (workspace.AssetGraph, bool, error) {
+	return workspace.AssetGraph{}, false, nil
+}
+func (r apiSnapshotWorkspaceRepository) AssetVersions(context.Context, workspace.WorkspaceID, string, workspace.AssetID) ([]workspace.AssetVersion, error) {
+	return nil, nil
+}
 
 func TestAPIGenUsesTypeSpecV040(t *testing.T) {
 	root := projectRoot(t)
@@ -240,7 +279,6 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs",
 		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}",
 		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events",
-		"/api/v1/admin/agent/config",
 		"/api/v1/principals",
 		"/api/v1/principals/{principal}",
 		"/api/v1/principals/{principal}/password-reset",
@@ -258,7 +296,7 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{"/api/workspaces", "/api/publishes", "/api/v1/workspaces/{workspace}/publishes", "/api/v1/workspaces/{workspace}/publishes/{publish}", "/updates", "/commands/select", "/workspaces/{workspace}/chat/updates", "/dashboards/{dashboard}"} {
+	for _, path := range []string{"/api/workspaces", "/api/publishes", "/api/v1/workspaces/{workspace}/publishes", "/api/v1/workspaces/{workspace}/publishes/{publish}", "/api/v1/admin/agent/config", "/updates", "/commands/select", "/workspaces/{workspace}/chat/updates", "/dashboards/{dashboard}"} {
 		if _, ok := paths[path]; ok {
 			t.Fatalf("generated OpenAPI should not include UI transport path %s", path)
 		}

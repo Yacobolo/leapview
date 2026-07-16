@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	"github.com/Yacobolo/libredash/internal/deployment"
@@ -60,20 +59,16 @@ func (a apiGenAdapter) createDeployment(w http.ResponseWriter, r *http.Request, 
 		writeDeploymentError(w, r, err)
 		return
 	}
+	if err := a.server.appendAsyncEvent(r.Context(), "deployment", created.ID, "deployment.queued", map[string]any{"deploymentId": created.ID, "projectId": project, "releaseId": releaseID, "status": "queued"}); err != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Deployment event history could not be persisted", nil)
+		return
+	}
+	if err := a.server.enqueueAsyncJobPayload(r.Context(), "deployment:"+created.ID+":activate", apiJobDeploymentActivate, "deployment", created.ID, deploymentActivateJob{Project: project, Deployment: created.ID, Actor: principal.ID, IdempotencyKey: idempotencyKey + ":cutover"}); err != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Deployment could not be queued", nil)
+		return
+	}
 	w.Header().Set("Location", deploymentLocation(project, created.ID))
 	writeAPIJSON(w, http.StatusAccepted, deploymentResponse(created, releaseID, principal.ID))
-	go a.activateDeployment(project, created.ID, principal.ID, idempotencyKey+":cutover")
-}
-
-func (a apiGenAdapter) activateDeployment(project, deploymentID, actor, idempotencyKey string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
-	_, err := a.server.deploymentOptions.Coordinator.Activate(ctx, apiadapter.ActivateRequest{
-		Scope: apiadapter.Scope{Project: project, DeploymentID: deploymentID}, Actor: actor, IdempotencyKey: idempotencyKey,
-	})
-	if err != nil && a.server.logger != nil {
-		a.server.logger.Error("asynchronous deployment failed", "project", project, "deployment", deploymentID, "error", err)
-	}
 }
 
 func (a apiGenAdapter) GetDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string) {
@@ -95,7 +90,7 @@ func (a apiGenAdapter) GetDeployment(w http.ResponseWriter, r *http.Request, pro
 	writeAPIJSON(w, http.StatusOK, deploymentResponse(row, releaseID, ""))
 }
 
-func (a apiGenAdapter) ListDeployments(w http.ResponseWriter, r *http.Request, project string, _ apigenapi.GenListDeploymentsParams) {
+func (a apiGenAdapter) ListDeployments(w http.ResponseWriter, r *http.Request, project string, params apigenapi.GenListDeploymentsParams) {
 	if a.server.store == nil || a.server.deploymentOptions.Coordinator == nil {
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "DEPLOYMENT_SERVICE_UNAVAILABLE", "Deployment service is unavailable", nil)
 		return
@@ -118,7 +113,12 @@ func (a apiGenAdapter) ListDeployments(w http.ResponseWriter, r *http.Request, p
 		}
 		items = append(items, deploymentResponse(row, releaseID, ""))
 	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.DeploymentListResponse{Items: items, Page: apigenapi.PageInfo{}})
+	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.DeploymentResponse) string { return item.CreatedAt + "\x00" + item.Id })
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, apigenapi.DeploymentListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
 }
 
 func (a apiGenAdapter) CancelDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string, _ apigenapi.GenCancelDeploymentHeaders) {
@@ -131,11 +131,16 @@ func (a apiGenAdapter) CancelDeployment(w http.ResponseWriter, r *http.Request, 
 		writeDeploymentError(w, r, err)
 		return
 	}
+	if _, err := a.server.cancelQueuedAsyncJob(r.Context(), "deployment:"+deploymentID+":activate"); err != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Deployment cancellation could not be persisted", nil)
+		return
+	}
 	row, err := a.server.deploymentOptions.Coordinator.Cancel(r.Context(), apiadapter.Scope{Project: project, DeploymentID: deploymentID})
 	if err != nil {
 		writeDeploymentError(w, r, err)
 		return
 	}
+	_ = a.server.appendAsyncEvent(r.Context(), "deployment", deploymentID, "deployment.cancelled", map[string]any{"deploymentId": deploymentID, "status": "cancelled"})
 	w.Header().Set("Location", deploymentLocation(project, deploymentID))
 	writeAPIJSON(w, http.StatusAccepted, deploymentResponse(row, releaseID, ""))
 }
@@ -156,19 +161,28 @@ func (a apiGenAdapter) RollbackDeployment(w http.ResponseWriter, r *http.Request
 
 func (a apiGenAdapter) ListDeploymentEvents(w http.ResponseWriter, r *http.Request, project, deploymentID string, params apigenapi.GenListDeploymentEventsParams, _ apigenapi.GenListDeploymentEventsHeaders) {
 	releases := a.server.releaseRepository()
-	releaseID, _, err := releases.DeploymentRelease(r.Context(), project, deploymentID)
+	_, _, err := releases.DeploymentRelease(r.Context(), project, deploymentID)
 	if err != nil {
 		writeDeploymentError(w, r, err)
 		return
 	}
-	row, err := a.server.deploymentOptions.Coordinator.Get(r.Context(), apiadapter.Scope{Project: project, DeploymentID: deploymentID})
+	_, err = a.server.deploymentOptions.Coordinator.Get(r.Context(), apiadapter.Scope{Project: project, DeploymentID: deploymentID})
 	if err != nil {
 		writeDeploymentError(w, r, err)
 		return
 	}
-	writeAsyncEventPage(w, r, deploymentEvents(row, releaseID), params.Limit, params.PageToken, "deployment:"+project+":"+deploymentID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		latest, err := a.server.deploymentOptions.Coordinator.Get(ctx, apiadapter.Scope{Project: project, DeploymentID: deploymentID})
-		return deploymentEvents(latest, releaseID), err
+	eventsRepo, repoErr := a.server.asyncRepository()
+	if repoErr != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Deployment events are unavailable", nil)
+		return
+	}
+	events, err := storedAsyncEvents(r.Context(), eventsRepo, "deployment", deploymentID)
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Deployment events could not be loaded", nil)
+		return
+	}
+	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "deployment:"+project+":"+deploymentID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
+		return storedAsyncEvents(ctx, eventsRepo, "deployment", deploymentID)
 	})
 }
 

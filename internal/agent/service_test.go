@@ -261,6 +261,37 @@ func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
 	}
 }
 
+func TestServiceResumesPersistedPromptAfterProcessRestart(t *testing.T) {
+	ctx := context.Background()
+	store := openAgentAppStore(t, ctx)
+	defer store.Close()
+	principal := createAgentAppPrincipal(t, ctx, store, "restart@example.com")
+	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	first := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
+	conversation, err := first.CreateConversation(ctx, scope, "Restart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := first.StartPrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "Resume this", CorrelationID: "correlation-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel(agentcore.ModelResponse{Content: "Resumed.", FinishReason: agentcore.FinishReasonStop})))
+	resumed, err := restarted.ResumePrompt(ctx, scope, conversation.ID, started.RunID, "correlation-1")
+	if err != nil {
+		t.Fatalf("ResumePrompt() error = %v", err)
+	}
+	result, err := resumed.Complete(ctx, nil)
+	if err != nil || result.RunID != started.RunID || result.Content != "Resumed." {
+		t.Fatalf("resumed result = %#v, err=%v", result, err)
+	}
+	run, err := restarted.GetRun(ctx, scope, conversation.ID, started.RunID)
+	if err != nil || run.Status != RunStatusCompleted {
+		t.Fatalf("run = %#v, err=%v", run, err)
+	}
+}
+
 func TestServiceCompletePromptFailureLeavesSubmittedUserMessage(t *testing.T) {
 	ctx := context.Background()
 	store := openAgentAppStore(t, ctx)

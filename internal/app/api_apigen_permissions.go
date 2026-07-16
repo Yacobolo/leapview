@@ -94,8 +94,6 @@ var apigenOperationPrivileges = map[string]access.Privilege{
 	"getAgentRun":                          access.PrivilegeViewAgent,
 	"listAgentEvents":                      access.PrivilegeViewAgent,
 	"cancelAgentRun":                       access.PrivilegeUseAgent,
-	"getAdminAgentConfig":                  access.PrivilegeManageGrants,
-	"updateAdminAgentConfig":               access.PrivilegeManageGrants,
 	"listPrincipals":                       access.PrivilegeManageGrants,
 	"createPrincipal":                      access.PrivilegeManageGrants,
 	"getPrincipal":                         access.PrivilegeManageGrants,

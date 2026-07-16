@@ -2,7 +2,9 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -349,7 +351,31 @@ func (h Handler) Assets(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if r.URL.Query().Get("include") == "all" {
 		filtered = workspace.FilterAssets(assets, r.URL.Query().Get("type"), r.URL.Query().Get("q"))
 	}
+	filtered, err = h.filterReadableAssets(r, workspaceID, filtered)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusInternalServerError)
+		return
+	}
 	_ = writePagedJSON(w, r, apiAssetSummaryDTOs(filtered))
+}
+
+func (h Handler) filterReadableAssets(r *nethttp.Request, workspaceID string, assets []workspace.AssetView) ([]workspace.AssetView, error) {
+	out := make([]workspace.AssetView, 0, len(assets))
+	for _, asset := range assets {
+		object, ok := assetObjectForID(workspaceID, asset.ID)
+		if !ok {
+			out = append(out, asset)
+			continue
+		}
+		allowed, err := h.ReadModel.CanReadObject(r, object)
+		if err != nil {
+			return nil, err
+		}
+		if allowed {
+			out = append(out, asset)
+		}
+	}
+	return out, nil
 }
 
 func (h Handler) ActiveDeploymentGraph(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -704,6 +730,10 @@ func objectPrivilegeRoleViews() []workspace.RoleView {
 
 func assetAccessObject(r *nethttp.Request, workspaceID string) (access.ObjectRef, bool) {
 	raw := strings.TrimSpace(chi.URLParam(r, "asset"))
+	return assetObjectForID(workspaceID, raw)
+}
+
+func assetObjectForID(workspaceID, raw string) (access.ObjectRef, bool) {
 	if raw == "" {
 		return access.ObjectRef{}, false
 	}
@@ -1223,12 +1253,24 @@ func pageSliceForRequest[T any](w nethttp.ResponseWriter, r *nethttp.Request, it
 	if !ok {
 		return nil, "", false
 	}
-	start, ok := apiCursorOffsetForRequest(w, r)
-	if !ok {
+	lastKey, err := decodeKeysetCursor(r.URL.Query().Get("pageToken"))
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusBadRequest)
 		return nil, "", false
 	}
-	if start > len(items) {
-		start = len(items)
+	start := 0
+	if lastKey != "" {
+		start = -1
+		for index, item := range items {
+			if workspacePageItemKey(item) == lastKey {
+				start = index + 1
+				break
+			}
+		}
+		if start < 0 {
+			writeJSONError(w, fmt.Errorf("cursor serving snapshot is unavailable"), nethttp.StatusConflict)
+			return nil, "", false
+		}
 	}
 	end := start + limit
 	if end > len(items) {
@@ -1236,14 +1278,14 @@ func pageSliceForRequest[T any](w nethttp.ResponseWriter, r *nethttp.Request, it
 	}
 	nextCursor := ""
 	if end < len(items) {
-		nextCursor = encodeIndexCursor(end)
+		nextCursor = encodeKeysetCursor(workspacePageItemKey(items[end-1]))
 	}
 	return append([]T(nil), items[start:end]...), nextCursor, true
 }
 
 const (
 	defaultAPILimit = 50
-	maxAPILimit     = 100
+	maxAPILimit     = 200
 )
 
 func apiLimitForRequest(w nethttp.ResponseWriter, r *nethttp.Request) (int, bool) {
@@ -1267,37 +1309,37 @@ func parseAPILimit(value string) (int, error) {
 		return 0, fmt.Errorf("limit must be at least 1")
 	}
 	if limit > maxAPILimit {
-		return maxAPILimit, nil
+		return 0, fmt.Errorf("limit must not exceed %d", maxAPILimit)
 	}
 	return limit, nil
 }
 
-func apiCursorOffsetForRequest(w nethttp.ResponseWriter, r *nethttp.Request) (int, bool) {
-	offset, err := decodeIndexCursor(r.URL.Query().Get("pageToken"))
-	if err != nil {
-		writeJSONError(w, err, nethttp.StatusBadRequest)
-		return 0, false
-	}
-	return offset, true
-}
-
-func decodeIndexCursor(token string) (int, error) {
+func decodeKeysetCursor(token string) (string, error) {
 	if token == "" {
-		return 0, nil
+		return "", nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		return 0, fmt.Errorf("invalid page token")
+		return "", fmt.Errorf("invalid page token")
 	}
-	var offset int
-	if _, err := fmt.Sscanf(string(raw), "offset:%d", &offset); err != nil || offset < 0 {
-		return 0, fmt.Errorf("invalid page token")
+	var cursor struct {
+		Key string `json:"key"`
 	}
-	return offset, nil
+	if json.Unmarshal(raw, &cursor) != nil || cursor.Key == "" {
+		return "", fmt.Errorf("invalid page token")
+	}
+	return cursor.Key, nil
 }
 
-func encodeIndexCursor(offset int) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("offset:%d", offset)))
+func encodeKeysetCursor(key string) string {
+	payload, _ := json.Marshal(map[string]string{"key": key})
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func workspacePageItemKey(value any) string {
+	payload, _ := json.Marshal(value)
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:])
 }
 
 func writeJSON(w nethttp.ResponseWriter, status int, value any) {

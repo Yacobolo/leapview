@@ -29,12 +29,28 @@ func pageSliceForRequest[T any](w nethttp.ResponseWriter, r *nethttp.Request, it
 		return nil, "", false
 	}
 	scope, snapshot := dashboardRequestCursorScope(r, nil), dashboardServingSnapshot(r)
-	start, ok := apiCursorOffsetForRequest(w, r, scope, snapshot)
-	if !ok {
+	lastKey, err := decodeDashboardKeysetCursor(r.URL.Query().Get("pageToken"), scope, snapshot)
+	if err != nil {
+		status := nethttp.StatusBadRequest
+		if errors.Is(err, errDashboardCursorSnapshot) {
+			status = nethttp.StatusConflict
+		}
+		writeJSONError(w, err, status)
 		return nil, "", false
 	}
-	if start > len(items) {
-		start = len(items)
+	start := 0
+	if lastKey != "" {
+		start = -1
+		for index, item := range items {
+			if apiPageItemKey(item) == lastKey {
+				start = index + 1
+				break
+			}
+		}
+		if start < 0 {
+			writeJSONError(w, errDashboardCursorSnapshot, nethttp.StatusConflict)
+			return nil, "", false
+		}
 	}
 	end := start + limit
 	if end > len(items) {
@@ -42,9 +58,56 @@ func pageSliceForRequest[T any](w nethttp.ResponseWriter, r *nethttp.Request, it
 	}
 	nextCursor := ""
 	if end < len(items) {
-		nextCursor = encodeIndexCursor(end, scope, snapshot)
+		nextCursor = encodeDashboardKeysetCursor(apiPageItemKey(items[end-1]), scope, snapshot)
 	}
 	return append([]T(nil), items[start:end]...), nextCursor, true
+}
+
+type dashboardKeysetCursor struct {
+	Key      string `json:"key"`
+	Scope    string `json:"scope"`
+	Snapshot string `json:"snapshot,omitempty"`
+	Expires  int64  `json:"expires"`
+}
+
+func apiPageItemKey(value any) string {
+	payload, _ := json.Marshal(value)
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:])
+}
+
+func encodeDashboardKeysetCursor(key, scope, snapshot string) string {
+	payload, _ := json.Marshal(dashboardKeysetCursor{Key: key, Scope: scope, Snapshot: snapshot, Expires: time.Now().Add(dashboardCursorLifetime).Unix()})
+	mac := hmac.New(sha256.New, dashboardCursorKey[:])
+	_, _ = mac.Write(payload)
+	return "d2." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+}
+
+func decodeDashboardKeysetCursor(token, scope, snapshot string) (string, error) {
+	if token == "" {
+		return "", nil
+	}
+	if !strings.HasPrefix(token, "d2.") {
+		return "", fmt.Errorf("invalid page token")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, "d2."))
+	if err != nil || len(raw) <= sha256.Size {
+		return "", fmt.Errorf("invalid page token")
+	}
+	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
+	mac := hmac.New(sha256.New, dashboardCursorKey[:])
+	_, _ = mac.Write(payload)
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return "", fmt.Errorf("invalid page token")
+	}
+	var cursor dashboardKeysetCursor
+	if json.Unmarshal(payload, &cursor) != nil || cursor.Key == "" || cursor.Expires < time.Now().Unix() || cursor.Scope != scope {
+		return "", fmt.Errorf("invalid page token")
+	}
+	if cursor.Snapshot != snapshot {
+		return "", errDashboardCursorSnapshot
+	}
+	return cursor.Key, nil
 }
 
 const (
@@ -73,7 +136,7 @@ func parseAPILimit(value string) (int, error) {
 		return 0, fmt.Errorf("limit must be at least 1")
 	}
 	if limit > maxAPILimit {
-		return maxAPILimit, nil
+		return 0, fmt.Errorf("limit must not exceed %d", maxAPILimit)
 	}
 	return limit, nil
 }

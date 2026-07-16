@@ -22,7 +22,7 @@ model ManagedConnectionListResponse {
 @route("/projects/{project}/connections")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
-op listManagedConnections(@path project: string, @query limit?: int32, @query pageToken?: string): OkJson<ManagedConnectionListResponse> | CommonErrors;
+op listManagedConnections(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ManagedConnectionListResponse> | CommonErrors;
 
 @tag("Managed Data")
 @summary("Describe a project managed connection")

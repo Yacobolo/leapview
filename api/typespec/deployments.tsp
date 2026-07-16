@@ -63,14 +63,14 @@ model DeploymentListResponse {
 @route("/projects/{project}/deployments")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
-op listDeployments(@path project: string, @query limit?: int32, @query pageToken?: string): OkJson<DeploymentListResponse> | CommonErrors;
+op listDeployments(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<DeploymentListResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Deploy a ready project release")
 @route("/projects/{project}/deployments")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
-op createDeployment(@path project: string, @header("Idempotency-Key") idempotencyKey: string, @body body: DeploymentCreateRequest): AcceptedJson<DeploymentResponse> | CommonErrors;
+op createDeployment(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentCreateRequest): AcceptedJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Get a project deployment")
@@ -84,18 +84,18 @@ op getDeployment(@path project: string, @path deployment: string): OkJson<Deploy
 @route("/projects/{project}/deployments/{deployment}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
-op listDeploymentEvents(@path project: string, @path deployment: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: int32, @query pageToken?: string): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
+op listDeploymentEvents(@path project: string, @path deployment: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Cancel a deployment before cutover")
 @route("/projects/{project}/deployments/{deployment}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
-op cancelDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: string): AcceptedJson<DeploymentResponse> | CommonErrors;
+op cancelDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Roll back by creating a deployment of the prior release")
 @route("/projects/{project}/deployments/{deployment}/rollback")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
-op rollbackDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: string): AcceptedJson<DeploymentResponse> | CommonErrors;
+op rollbackDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;

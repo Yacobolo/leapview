@@ -63,6 +63,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/admin/groups", s.protected(access.PrivilegeManageGrants, adminHTTP.Groups))
 		r.Get("/admin/groups/{group}", s.protected(access.PrivilegeManageGrants, adminHTTP.GroupDetail))
 		r.Get("/admin/agent", s.protected(access.PrivilegeManageGrants, adminHTTP.Agent))
+		r.Patch("/admin/agent/config", s.protected(access.PrivilegeManageGrants, agentHTTP.UpdateAdminConfig))
 		r.Get("/admin/storage", s.protected(access.PrivilegeManageGrants, adminHTTP.Storage))
 		r.Post("/admin/storage/select-table", s.protected(access.PrivilegeManageGrants, adminHTTP.StorageTableSelect))
 		r.Get("/admin/queries", s.protected(access.PrivilegeViewAudit, adminHTTP.Queries))

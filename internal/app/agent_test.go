@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agent"
 	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
 )
@@ -89,6 +88,14 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
+	backgroundCtx, cancelBackground := context.WithCancel(context.Background())
+	server.StartBackgroundJobs(backgroundCtx)
+	t.Cleanup(func() {
+		cancelBackground()
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.StopBackgroundJobs(stopCtx)
+	})
 
 	createReq := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/agent/conversations", token, `{"title":"Ask"}`)
 	createRec := httptest.NewRecorder()
@@ -139,81 +146,14 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 	}
 }
 
-func TestAdminAgentAPIReturnsAndUpdatesSystemPrompt(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t)
-	owner := testPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleOwner)
-	token := testAPIToken(t, ctx, store, owner.ID, "test")
-	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
-
-	getReq := authedJSONRequest(http.MethodGet, "/api/v1/admin/agent/config", token, "")
-	getRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(getRec, getReq)
-	if getRec.Code != http.StatusOK {
-		t.Fatalf("get status=%d body=%s", getRec.Code, getRec.Body.String())
-	}
-	if !strings.Contains(getRec.Body.String(), `"systemPrompt":"You are LibreDash`) || !strings.Contains(getRec.Body.String(), `"tools"`) || !strings.Contains(getRec.Body.String(), `"query_visual"`) {
-		t.Fatalf("get body missing prompt or tools: %s", getRec.Body.String())
-	}
-
-	putReq := authedJSONRequest(http.MethodPatch, "/api/v1/admin/agent/config", token, `{"systemPrompt":"  Updated platform prompt.  "}`)
-	putReq.Header.Set("If-Match", getRec.Header().Get("ETag"))
-	putRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(putRec, putReq)
-	if putRec.Code != http.StatusOK {
-		t.Fatalf("put status=%d body=%s", putRec.Code, putRec.Body.String())
-	}
-	if !strings.Contains(putRec.Body.String(), `"systemPrompt":"Updated platform prompt."`) {
-		t.Fatalf("put body did not return trimmed prompt: %s", putRec.Body.String())
-	}
-
-	getUpdatedReq := authedJSONRequest(http.MethodGet, "/api/v1/admin/agent/config", token, "")
-	getUpdatedRec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(getUpdatedRec, getUpdatedReq)
-	if getUpdatedRec.Code != http.StatusOK || !strings.Contains(getUpdatedRec.Body.String(), `"systemPrompt":"Updated platform prompt."`) {
-		t.Fatalf("updated get status=%d body=%s", getUpdatedRec.Code, getUpdatedRec.Body.String())
-	}
-}
-
-func TestAdminAgentAPIRejectsEmptySystemPrompt(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t)
-	owner := testPrincipal(t, ctx, store, "owner-empty@example.com", "Owner", access.RoleOwner)
-	token := testAPIToken(t, ctx, store, owner.ID, "test")
-	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
-
-	req := authedJSONRequest(http.MethodPatch, "/api/v1/admin/agent/config", token, `{"systemPrompt":"   "}`)
-	rec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status=%d want 400 body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestAdminAgentAPIRequiresGrantPrivileges(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t)
-	viewer := testPrincipal(t, ctx, store, "viewer-admin-agent@example.com", "Viewer", access.RoleViewer)
-	token := testAPIToken(t, ctx, store, viewer.ID, "test")
-	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
-
-	for _, tc := range []struct {
-		method string
-		path   string
-		body   string
-	}{
-		{method: http.MethodGet, path: "/api/v1/admin/agent/config"},
-		{method: http.MethodPatch, path: "/api/v1/admin/agent/config", body: `{"systemPrompt":"Updated"}`},
-	} {
-		req := authedJSONRequest(tc.method, tc.path, token, tc.body)
+func TestAdminAgentConfigurationIsNotPublicAPI(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+	for _, method := range []string{http.MethodGet, http.MethodPatch} {
+		req := httptest.NewRequest(method, "/api/v1/admin/agent/config", nil)
 		rec := httptest.NewRecorder()
 		server.Routes().ServeHTTP(rec, req)
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("%s %s status=%d want 403 body=%s", tc.method, tc.path, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s status=%d want 404 body=%s", method, rec.Code, rec.Body.String())
 		}
 	}
 }

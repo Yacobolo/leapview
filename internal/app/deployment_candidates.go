@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/Yacobolo/libredash/internal/api"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
@@ -39,6 +40,9 @@ func (s *Server) defaultServingEnvironment() servingstate.Environment {
 }
 
 func (s *Server) requestServingEnvironment(r *http.Request) servingstate.Environment {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		return s.defaultServingEnvironment()
+	}
 	if query := r.URL.Query().Get("environment"); query != "" {
 		return servingstate.NormalizeEnvironment(servingstate.Environment(query))
 	}

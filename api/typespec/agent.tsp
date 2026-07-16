@@ -88,44 +88,6 @@ model AgentEventListResponse {
   page: PageInfo;
 }
 
-model AdminAgentToolResponse {
-  name: string;
-  description: string;
-  effect: string;
-  defaults: Record<unknown>;
-  inputSchema: Record<unknown>;
-  outputSchema: Record<unknown>;
-}
-
-model AdminAgentResponse {
-  enabled: boolean;
-  "model"?: string;
-  systemPrompt: string;
-  tools: AdminAgentToolResponse[];
-}
-
-model AdminAgentConfigPatchRequest {
-  systemPrompt: string;
-}
-
-alias GetAdminAgentConfigOK = OkJson<AdminAgentResponse>;
-
-@tag("Agent")
-@summary("Get admin agent configuration")
-@route("/admin/agent/config")
-@get
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
-op getAdminAgentConfig(): GetAdminAgentConfigOK | CommonErrors;
-
-alias UpdateAdminAgentConfigOK = OkJson<AdminAgentResponse>;
-
-@tag("Agent")
-@summary("Update admin agent configuration")
-@route("/admin/agent/config")
-@patch
-@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
-op updateAdminAgentConfig(@header("If-Match") ifMatch: string, @body body: AdminAgentConfigPatchRequest): UpdateAdminAgentConfigOK | CommonErrors;
-
 alias ListAgentConversationsOK = OkJson<AgentConversationListResponse>;
 
 @tag("Agent")
@@ -134,7 +96,7 @@ alias ListAgentConversationsOK = OkJson<AgentConversationListResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
 @apigen.cli(#{ command: #["agent", "conversations"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
-op listAgentConversations(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListAgentConversationsOK | CommonErrors;
+op listAgentConversations(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentConversationsOK | CommonErrors;
 
 alias CreateAgentConversationCreated = CreatedJson<AgentConversationResponse>;
 
@@ -143,16 +105,14 @@ alias CreateAgentConversationCreated = CreatedJson<AgentConversationResponse>;
 @route("/workspaces/{workspace}/agent/conversations")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-op createAgentConversation(@path workspace: string, @header("Idempotency-Key") idempotencyKey: string, @body body: AgentConversationCreateRequest): CreateAgentConversationCreated | CommonErrors;
-
-alias ArchiveAgentConversationOK = OkJson<AgentConversationResponse>;
+op createAgentConversation(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: AgentConversationCreateRequest): CreateAgentConversationCreated | CommonErrors;
 
 @tag("Agent")
 @summary("Archive an agent conversation")
 @route("/workspaces/{workspace}/agent/conversations/{conversation}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-op archiveAgentConversation(@path workspace: string, @path conversation: string): ArchiveAgentConversationOK | CommonErrors;
+op archiveAgentConversation(@path workspace: string, @path conversation: string): NoContentResponse | CommonErrors;
 
 alias GetAgentConversationOK = OkJson<AgentConversationResponse>;
 
@@ -179,7 +139,7 @@ alias ListAgentMessagesOK = OkJson<AgentMessageListResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/messages")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-op listAgentMessages(@path workspace: string, @path conversation: string, @query limit?: int32, @query pageToken?: string): ListAgentMessagesOK | CommonErrors;
+op listAgentMessages(@path workspace: string, @path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentMessagesOK | CommonErrors;
 
 alias ListAgentRunsOK = OkJson<AgentRunListResponse>;
 
@@ -188,7 +148,7 @@ alias ListAgentRunsOK = OkJson<AgentRunListResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-op listAgentRuns(@path workspace: string, @path conversation: string, @query limit?: int32, @query pageToken?: string): ListAgentRunsOK | CommonErrors;
+op listAgentRuns(@path workspace: string, @path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentRunsOK | CommonErrors;
 
 alias GetAgentRunOK = OkJson<AgentRunResponse>;
 
@@ -206,18 +166,18 @@ alias ListAgentEventsOK = OkJson<AgentEventListResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: int32, @query pageToken?: string): EventHistoryResponse<AgentEventListResponse> | CommonErrors;
+op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AgentEventListResponse> | CommonErrors;
 
 @tag("Agent")
 @summary("Create an asynchronous agent run")
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-op createAgentRun(@path workspace: string, @path conversation: string, @header("Idempotency-Key") idempotencyKey: string, @body body: AgentRunCreateRequest): AcceptedJson<AgentRunResponse> | CommonErrors;
+op createAgentRun(@path workspace: string, @path conversation: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: AgentRunCreateRequest): AcceptedJson<AgentRunResponse> | CommonErrors;
 
 @tag("Agent")
 @summary("Cancel an agent run")
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-op cancelAgentRun(@path workspace: string, @path conversation: string, @path run: string, @header("Idempotency-Key") idempotencyKey: string): AcceptedJson<AgentRunResponse> | CommonErrors;
+op cancelAgentRun(@path workspace: string, @path conversation: string, @path run: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<AgentRunResponse> | CommonErrors;

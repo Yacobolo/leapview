@@ -61,11 +61,11 @@ alias ListQueryEventsOK = OkJson<QueryEventListResponse>;
 @route("/workspaces/{workspace}/audit-events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AUDIT" })
-op listAuditEvents(@path workspace: string, @query actor?: string, @query action?: string, @query targetType?: string, @query targetId?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: int32, @query pageToken?: string): ListAuditEventsOK | CommonErrors;
+op listAuditEvents(@path workspace: string, @query actor?: string, @query action?: string, @query targetType?: string, @query targetId?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: ListLimit, @query pageToken?: PageToken): ListAuditEventsOK | CommonErrors;
 
 @tag("Audit")
 @summary("List workspace query audit events")
 @route("/workspaces/{workspace}/query-events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AUDIT" })
-op listQueryEvents(@path workspace: string, @query principal?: string, @query surface?: string, @query operation?: string, @query kind?: string, @query modelId?: string, @query target?: string, @query status?: string, @query search?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: int32, @query pageToken?: string): ListQueryEventsOK | CommonErrors;
+op listQueryEvents(@path workspace: string, @query principal?: string, @query surface?: string, @query operation?: string, @query kind?: string, @query modelId?: string, @query target?: string, @query status?: string, @query search?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: ListLimit, @query pageToken?: PageToken): ListQueryEventsOK | CommonErrors;

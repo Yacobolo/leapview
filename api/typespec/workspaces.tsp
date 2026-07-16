@@ -115,7 +115,7 @@ alias ListWorkspacesOK = OkJson<WorkspaceListResponse>;
     cursor: #{ source: "/page/nextCursor" },
   },
 })
-op listWorkspaces(@query limit?: int32, @query pageToken?: string): ListWorkspacesOK | CommonErrors;
+op listWorkspaces(@query limit?: ListLimit, @query pageToken?: PageToken): ListWorkspacesOK | CommonErrors;
 
 @tag("Workspaces")
 @summary("Get a workspace")
@@ -146,7 +146,7 @@ alias ListWorkspaceAssetEdgesOK = OkJson<AssetEdgeListResponse>;
     cursor: #{ source: "/page/nextCursor" },
   },
 })
-op listWorkspaceAssetEdges(@path workspace: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetEdgesOK | CommonErrors;
+op listWorkspaceAssetEdges(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListWorkspaceAssetEdgesOK | CommonErrors;
 
 alias ListWorkspaceAssetsOK = OkJson<AssetListResponse>;
 
@@ -170,7 +170,7 @@ alias ListWorkspaceAssetsOK = OkJson<AssetListResponse>;
     cursor: #{ source: "/page/nextCursor" },
   },
 })
-op listWorkspaceAssets(@path workspace: string, @query type?: string, @query q?: string, @query limit?: int32, @query pageToken?: string): ListWorkspaceAssetsOK | CommonErrors;
+op listWorkspaceAssets(@path workspace: string, @query type?: string, @query q?: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListWorkspaceAssetsOK | CommonErrors;
 
 @tag("Workspaces")
 @summary("Get the active asset graph")

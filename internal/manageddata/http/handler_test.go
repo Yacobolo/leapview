@@ -397,6 +397,7 @@ func newHandler(repo managedhttp.Repository, uploads managedhttp.UploadCoordinat
 func handlerOptions(repo managedhttp.Repository, uploads managedhttp.UploadCoordinator, multipart s3multipart.Coordinator) managedhttp.Options {
 	return managedhttp.Options{
 		Repository: repo, Uploads: uploads, Multipart: multipart, Environment: "prod",
+		EnqueueFinalize: func(context.Context, control.UploadRequest) error { return nil },
 		CurrentPrincipal: func(*http.Request) (managedhttp.Principal, bool) {
 			return managedhttp.Principal{ID: "principal-a"}, true
 		},

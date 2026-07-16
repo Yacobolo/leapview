@@ -41,12 +41,17 @@ type ArtifactValidator interface {
 	Validate(context.Context, servingstate.ID) (servingstate.State, error)
 }
 
+type PinValidator interface {
+	ValidateServingStatePins(context.Context, string, string, map[string]string) error
+}
+
 type Service struct {
 	releases    Repository
 	states      ServingStateRepository
 	workspaces  WorkspaceRepository
 	artifacts   ArtifactStore
 	validator   ArtifactValidator
+	pins        PinValidator
 	environment servingstate.Environment
 }
 
@@ -56,6 +61,7 @@ type ServiceOptions struct {
 	Workspaces  WorkspaceRepository
 	Artifacts   ArtifactStore
 	Validator   ArtifactValidator
+	Pins        PinValidator
 	Environment servingstate.Environment
 }
 
@@ -63,7 +69,7 @@ func NewService(options ServiceOptions) (*Service, error) {
 	if options.Releases == nil || options.States == nil || options.Workspaces == nil || options.Artifacts == nil || options.Validator == nil {
 		return nil, fmt.Errorf("release repositories, artifact store, and validator are required")
 	}
-	return &Service{releases: options.Releases, states: options.States, workspaces: options.Workspaces, artifacts: options.Artifacts, validator: options.Validator, environment: servingstate.NormalizeEnvironment(options.Environment)}, nil
+	return &Service{releases: options.Releases, states: options.States, workspaces: options.Workspaces, artifacts: options.Artifacts, validator: options.Validator, pins: options.Pins, environment: servingstate.NormalizeEnvironment(options.Environment)}, nil
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error) {
@@ -160,26 +166,44 @@ func (s *Service) ValidateFinalization(ctx context.Context, projectID, releaseID
 		return Release{}, ErrConflict
 	}
 	digests := make(map[string]string, len(current.Artifacts))
+	expectedPins := make(map[string]string, len(current.Manifest.Connections))
+	for _, pin := range current.Manifest.Connections {
+		if pin.ConnectionID == "" || pin.RevisionID == "" {
+			return s.failFinalization(ctx, current, ErrInvalid)
+		}
+		if _, duplicate := expectedPins[pin.ConnectionID]; duplicate {
+			return s.failFinalization(ctx, current, ErrInvalid)
+		}
+		expectedPins[pin.ConnectionID] = pin.RevisionID
+	}
+	if len(expectedPins) > 0 && s.pins == nil {
+		return s.failFinalization(ctx, current, fmt.Errorf("%w: managed-data pin validation is unavailable", ErrConflict))
+	}
 	for _, artifact := range current.Artifacts {
 		state, validateErr := s.validator.Validate(ctx, servingstate.ID(artifact.ServingStateID))
 		if validateErr != nil {
-			failed, failErr := s.releases.FailFinalization(ctx, projectID, releaseID, validateErr)
-			if failErr != nil {
-				return Release{}, errorsJoin(validateErr, failErr)
-			}
-			return failed, validateErr
+			return s.failFinalization(ctx, current, validateErr)
 		}
 		if state.ProjectID != current.ProjectID || state.ProjectDigest != current.ProjectDigest || state.Digest != artifact.ExpectedDigest {
 			mismatch := fmt.Errorf("%w: artifact %q does not match the release manifest", ErrConflict, artifact.WorkspaceID)
-			failed, failErr := s.releases.FailFinalization(ctx, projectID, releaseID, mismatch)
-			if failErr != nil {
-				return Release{}, errorsJoin(mismatch, failErr)
+			return s.failFinalization(ctx, current, mismatch)
+		}
+		if s.pins != nil {
+			if pinErr := s.pins.ValidateServingStatePins(ctx, artifact.ServingStateID, current.ProjectID, expectedPins); pinErr != nil {
+				return s.failFinalization(ctx, current, pinErr)
 			}
-			return failed, mismatch
 		}
 		digests[artifact.WorkspaceID] = state.Digest
 	}
 	return s.releases.CompleteFinalization(ctx, projectID, releaseID, digests)
+}
+
+func (s *Service) failFinalization(ctx context.Context, current Release, cause error) (Release, error) {
+	failed, failErr := s.releases.FailFinalization(ctx, current.ProjectID, current.ID, cause)
+	if failErr != nil {
+		return Release{}, errorsJoin(cause, failErr)
+	}
+	return failed, cause
 }
 
 func stableID(prefix string, values ...string) string {

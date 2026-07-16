@@ -36,7 +36,7 @@ model ProjectWorkspaceListResponse {
 @route("/projects")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
-op listProjects(@query limit?: int32, @query pageToken?: string): OkJson<ProjectListResponse> | CommonErrors;
+op listProjects(@query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ProjectListResponse> | CommonErrors;
 
 @tag("Projects")
 @summary("Get a materialized project")
@@ -50,4 +50,4 @@ op getProject(@path project: string): OkJson<ProjectResponse> | CommonErrors;
 @route("/projects/{project}/workspaces")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
-op listProjectWorkspaces(@path project: string, @query limit?: int32, @query pageToken?: string): OkJson<ProjectWorkspaceListResponse> | CommonErrors;
+op listProjectWorkspaces(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ProjectWorkspaceListResponse> | CommonErrors;

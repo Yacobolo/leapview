@@ -15,6 +15,7 @@ import (
 	"time"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 type apiIdempotencyRecord struct {
@@ -36,10 +37,13 @@ var apiCursorKey = func() [32]byte {
 }()
 
 type apiCursor struct {
-	Value   string `json:"value"`
-	Scope   string `json:"scope"`
-	Expires int64  `json:"expires"`
+	Value    string `json:"value"`
+	Scope    string `json:"scope"`
+	Snapshot string `json:"snapshot"`
+	Expires  int64  `json:"expires"`
 }
+
+const apiCursorSnapshotHeader = "X-LibreDash-Cursor-Snapshot"
 
 func (s *Server) publicProtocolMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +53,7 @@ func (s *Server) publicProtocolMiddleware(next http.Handler) http.Handler {
 			r.Header.Set("X-Request-ID", requestID)
 		}
 		w.Header().Set("X-Request-ID", requestID)
+		r.Header.Set(apiCursorSnapshotHeader, s.cursorSnapshot(r))
 		if s.auth != nil && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Authorization"))), "bearer ") {
 			writeAPIProblem(w, r, http.StatusUnauthorized, "BEARER_REQUIRED", "The public API accepts bearer credentials only", nil)
 			return
@@ -90,6 +95,10 @@ func unwrapAPIPageCursor(w http.ResponseWriter, r *http.Request) bool {
 		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", "The page cursor is invalid or expired", nil)
 		return false
 	}
+	if cursor.Snapshot != apiCursorSnapshotForRequest(r) {
+		writeAPIProblem(w, r, http.StatusConflict, "SNAPSHOT_UNAVAILABLE", "The serving snapshot bound to this cursor is no longer available", nil)
+		return false
+	}
 	query.Set("pageToken", cursor.Value)
 	r.URL.RawQuery = query.Encode()
 	return true
@@ -100,10 +109,61 @@ func signAPIPageCursor(r *http.Request, value string) string {
 	if value == "" || strings.HasPrefix(value, "g1.") || strings.HasPrefix(value, "q1.") || strings.HasPrefix(value, "d1.") || strings.HasPrefix(value, "e1.") {
 		return value
 	}
-	payload, _ := json.Marshal(apiCursor{Value: value, Scope: apiCursorScope(r), Expires: time.Now().Add(apiCursorLifetime).Unix()})
+	payload, _ := json.Marshal(apiCursor{Value: value, Scope: apiCursorScope(r), Snapshot: apiCursorSnapshotForRequest(r), Expires: time.Now().Add(apiCursorLifetime).Unix()})
 	mac := hmac.New(sha256.New, apiCursorKey[:])
 	_, _ = mac.Write(payload)
 	return "g1." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+}
+
+func apiCursorSnapshotForRequest(r *http.Request) string {
+	if r != nil {
+		if snapshot := strings.TrimSpace(r.Header.Get(apiCursorSnapshotHeader)); snapshot != "" {
+			return snapshot
+		}
+		segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		for index, segment := range segments {
+			if segment == "workspaces" && index+1 < len(segments) {
+				return "workspace:" + segments[index+1] + ":unversioned"
+			}
+			if segment == "projects" && index+1 < len(segments) {
+				return "project:" + segments[index+1] + ":unversioned"
+			}
+		}
+	}
+	return "instance"
+}
+
+func (s *Server) cursorSnapshot(r *http.Request) string {
+	fallback := apiCursorSnapshotForRequest(r)
+	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	for index, segment := range segments {
+		if index+1 >= len(segments) {
+			continue
+		}
+		switch segment {
+		case "workspaces":
+			repo, err := s.workspaceRepository()
+			if err == nil && repo != nil {
+				row, rowErr := repo.ByID(r.Context(), workspace.WorkspaceID(s.workspaceID(segments[index+1])))
+				if rowErr == nil && row.ActiveServingStateID != "" {
+					return string(row.ActiveServingStateID)
+				}
+			}
+		case "projects":
+			if repo := s.releaseRepository(); repo != nil {
+				row, rowErr := repo.GetProject(r.Context(), segments[index+1])
+				if rowErr == nil {
+					if row.ActiveDeploymentID != "" {
+						return "deployment:" + row.ActiveDeploymentID
+					}
+					if row.LatestReleaseID != "" {
+						return "release:" + row.LatestReleaseID
+					}
+				}
+			}
+		}
+	}
+	return fallback
 }
 
 func apiCursorScope(r *http.Request) string {

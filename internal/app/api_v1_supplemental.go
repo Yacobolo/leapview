@@ -12,7 +12,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
-func (a apiGenAdapter) ListProjects(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListProjectsParams) {
+func (a apiGenAdapter) ListProjects(w http.ResponseWriter, r *http.Request, params apigenapi.GenListProjectsParams) {
 	repo := a.server.releaseRepository()
 	if repo == nil {
 		writeAPIJSON(w, http.StatusOK, apigenapi.ProjectListResponse{Items: []apigenapi.ProjectResponse{}, Page: apigenapi.PageInfo{}})
@@ -34,7 +34,12 @@ func (a apiGenAdapter) ListProjects(w http.ResponseWriter, r *http.Request, _ ap
 		}
 		items = append(items, item)
 	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.ProjectListResponse{Items: items, Page: apigenapi.PageInfo{}})
+	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ProjectResponse) string { return item.Id })
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, apigenapi.ProjectListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
 }
 
 func (a apiGenAdapter) GetProject(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -58,7 +63,7 @@ func (a apiGenAdapter) GetProject(w http.ResponseWriter, r *http.Request, projec
 	writeAPIJSON(w, http.StatusOK, item)
 }
 
-func (a apiGenAdapter) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, _ apigenapi.GenListProjectWorkspacesParams) {
+func (a apiGenAdapter) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListProjectWorkspacesParams) {
 	repo := a.server.releaseRepository()
 	if repo == nil {
 		writeAPIProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
@@ -80,10 +85,15 @@ func (a apiGenAdapter) ListProjectWorkspaces(w http.ResponseWriter, r *http.Requ
 		}
 		items = append(items, item)
 	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.ProjectWorkspaceListResponse{Items: items, Page: apigenapi.PageInfo{}})
+	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ProjectWorkspaceResponse) string { return item.Id })
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, apigenapi.ProjectWorkspaceListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
 }
 
-func (a apiGenAdapter) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, _ apigenapi.GenListManagedConnectionsParams) {
+func (a apiGenAdapter) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListManagedConnectionsParams) {
 	repo := a.server.releaseRepository()
 	if repo == nil {
 		writeAPIJSON(w, http.StatusOK, apigenapi.ManagedConnectionListResponse{Items: []apigenapi.ManagedConnectionResponse{}, Page: apigenapi.PageInfo{}})
@@ -105,7 +115,12 @@ func (a apiGenAdapter) ListManagedConnections(w http.ResponseWriter, r *http.Req
 		}
 		items = append(items, item)
 	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.ManagedConnectionListResponse{Items: items, Page: apigenapi.PageInfo{}})
+	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ManagedConnectionResponse) string { return item.Id })
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
+		return
+	}
+	writeAPIJSON(w, http.StatusOK, apigenapi.ManagedConnectionListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
 }
 
 func (a apiGenAdapter) GetManagedConnection(w http.ResponseWriter, r *http.Request, projectID, connectionID string) {
@@ -134,14 +149,23 @@ func (a apiGenAdapter) ListManagedDataUploadSessionEvents(w http.ResponseWriter,
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "UPLOAD_SERVICE_UNAVAILABLE", "Managed-data uploads are unavailable", nil)
 		return
 	}
-	result, err := a.server.managedDataOptions.Uploads.RecoverUpload(r.Context(), control.UploadRequest{Project: projectID, Connection: connectionID, UploadID: sessionID})
+	_, err := a.server.managedDataOptions.Uploads.RecoverUpload(r.Context(), control.UploadRequest{Project: projectID, Connection: connectionID, UploadID: sessionID})
 	if err != nil {
 		writeAPIProblem(w, r, http.StatusNotFound, "UPLOAD_SESSION_NOT_FOUND", "Upload session not found", nil)
 		return
 	}
-	writeAsyncEventPage(w, r, uploadSessionEvents(result), params.Limit, params.PageToken, "upload:"+projectID+":"+connectionID+":"+sessionID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		latest, err := a.server.managedDataOptions.Uploads.RecoverUpload(ctx, control.UploadRequest{Project: projectID, Connection: connectionID, UploadID: sessionID})
-		return uploadSessionEvents(latest), err
+	eventsRepo, repoErr := a.server.asyncRepository()
+	if repoErr != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Upload events are unavailable", nil)
+		return
+	}
+	events, err := storedAsyncEvents(r.Context(), eventsRepo, "upload", sessionID)
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Upload events could not be loaded", nil)
+		return
+	}
+	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "upload:"+projectID+":"+connectionID+":"+sessionID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
+		return storedAsyncEvents(ctx, eventsRepo, "upload", sessionID)
 	})
 }
 
@@ -179,6 +203,10 @@ func (a apiGenAdapter) CancelRefreshRun(w http.ResponseWriter, r *http.Request, 
 		writeAPIProblem(w, r, http.StatusNotFound, "REFRESH_RUN_NOT_FOUND", "Refresh run not found", nil)
 		return
 	}
+	if err := a.server.appendAsyncEvent(r.Context(), "refresh", runID, "refresh.cancelled", row); err != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Refresh cancellation could not be recorded", nil)
+		return
+	}
 	w.Header().Set("Location", "/api/v1/workspaces/"+workspaceID+"/refresh-runs/"+runID)
 	writeAPIJSON(w, http.StatusAccepted, row)
 }
@@ -189,14 +217,23 @@ func (a apiGenAdapter) ListRefreshRunEvents(w http.ResponseWriter, r *http.Reque
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "REFRESH_SERVICE_UNAVAILABLE", "Refresh service is unavailable", nil)
 		return
 	}
-	row, err := repo.GetRun(r.Context(), a.server.workspaceID(workspaceID), runID)
+	_, err = repo.GetRun(r.Context(), a.server.workspaceID(workspaceID), runID)
 	if err != nil {
 		writeAPIProblem(w, r, http.StatusNotFound, "REFRESH_RUN_NOT_FOUND", "Refresh run not found", nil)
 		return
 	}
-	writeAsyncEventPage(w, r, refreshRunEvents(row), params.Limit, params.PageToken, "refresh:"+workspaceID+":"+runID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		latest, err := repo.GetRun(ctx, a.server.workspaceID(workspaceID), runID)
-		return refreshRunEvents(latest), err
+	eventsRepo, repoErr := a.server.asyncRepository()
+	if repoErr != nil {
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Refresh events are unavailable", nil)
+		return
+	}
+	events, err := storedAsyncEvents(r.Context(), eventsRepo, "refresh", runID)
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Refresh events could not be loaded", nil)
+		return
+	}
+	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "refresh:"+workspaceID+":"+runID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
+		return storedAsyncEvents(ctx, eventsRepo, "refresh", runID)
 	})
 }
 

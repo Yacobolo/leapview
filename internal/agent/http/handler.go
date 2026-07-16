@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	stdhttp "net/http"
 	"strings"
 	"time"
@@ -48,6 +49,8 @@ type Options struct {
 	ChatSignalWith         func(context.Context, agent.Scope, string, []agent.ChatTranscriptItem, agent.ChatArtifactSignals, string, bool) ui.ChatViewState
 	QueueMissingTitle      func(context.Context, agent.Scope, string, string)
 	ExecuteStartedChatTurn func(context.Context, *agent.Service, agent.Scope, *agent.StartedPrompt, ChatTurnExecution) (agent.PromptResult, error)
+	EnqueueRun             func(context.Context, agent.Scope, *agent.StartedPrompt) error
+	CancelQueuedRun        func(context.Context, agent.Scope, string, string) (bool, error)
 }
 
 type Handler struct {
@@ -64,7 +67,7 @@ func (h *Handler) CreateConversation(w stdhttp.ResponseWriter, r *stdhttp.Reques
 		return
 	}
 	var input api.AgentConversationCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeAgentJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -132,9 +135,7 @@ func (h *Handler) UpdateConversation(w stdhttp.ResponseWriter, r *stdhttp.Reques
 		return
 	}
 	var input api.AgentConversationUpdateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
+	if err := decodeAgentJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -243,7 +244,7 @@ func (h *Handler) CreateTurn(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	var input api.AgentTurnRequest
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := decodeAgentJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -286,9 +287,7 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	var input apigenapi.AgentRunCreateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
+	if err := decodeAgentJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -321,10 +320,17 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	w.Header().Set("Location", "/api/v1/workspaces/"+scope.WorkspaceID+"/agent/conversations/"+started.ConversationID+"/runs/"+started.RunID)
+	if h.options.EnqueueRun == nil {
+		_ = started.Abort(context.Background(), fmt.Errorf("durable agent queue is unavailable"))
+		writeJSONError(w, fmt.Errorf("durable agent queue is unavailable"), stdhttp.StatusServiceUnavailable)
+		return
+	}
+	if err := h.options.EnqueueRun(r.Context(), scope, started); err != nil {
+		_ = started.Abort(context.Background(), err)
+		writeJSONError(w, fmt.Errorf("durable agent queue is unavailable"), stdhttp.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, stdhttp.StatusAccepted, agentRunDTO(run, scope))
-	go func() {
-		_, _ = started.Complete(context.Background(), nil)
-	}()
 }
 
 func (h *Handler) CancelRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -334,6 +340,23 @@ func (h *Handler) CancelRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	}
 	conversationID := chi.URLParam(r, "conversation")
 	runID := chi.URLParam(r, "run")
+	if h.options.CancelQueuedRun != nil {
+		cancelled, err := h.options.CancelQueuedRun(r.Context(), scope, conversationID, runID)
+		if err != nil {
+			writeJSONError(w, err, stdhttp.StatusServiceUnavailable)
+			return
+		}
+		if cancelled {
+			run, err := service.GetRun(r.Context(), scope, conversationID, runID)
+			if err != nil {
+				writeJSONError(w, err, stdhttp.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Location", "/api/v1/workspaces/"+scope.WorkspaceID+"/agent/conversations/"+conversationID+"/runs/"+runID)
+			writeJSON(w, stdhttp.StatusAccepted, agentRunDTO(run, scope))
+			return
+		}
+	}
 	if err := service.CancelRun(r.Context(), scope, conversationID, runID); err != nil {
 		status := stdhttp.StatusConflict
 		if errors.Is(err, agent.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
@@ -720,8 +743,8 @@ func agentPageFromRequest(w stdhttp.ResponseWriter, r *stdhttp.Request) (agent.P
 
 func pageAgentEvents(events []agent.Event, page agent.Page) []agent.Event {
 	limit := page.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 100
+	if limit <= 0 || limit > maxAPILimit {
+		limit = maxAPILimit
 	}
 	start := 0
 	after := strings.TrimSpace(page.After)
@@ -780,7 +803,7 @@ func pagedResponseWithCursor(items any, nextCursor string) map[string]any {
 
 const (
 	defaultAPILimit = 50
-	maxAPILimit     = 100
+	maxAPILimit     = 200
 )
 
 func apiLimitForRequest(w stdhttp.ResponseWriter, r *stdhttp.Request) (int, bool) {
@@ -804,7 +827,7 @@ func parseAPILimit(value string) (int, error) {
 		return 0, fmt.Errorf("limit must be at least 1")
 	}
 	if limit > maxAPILimit {
-		return maxAPILimit, nil
+		return 0, fmt.Errorf("limit must not exceed 200")
 	}
 	return limit, nil
 }
@@ -836,6 +859,22 @@ func writeJSONError(w stdhttp.ResponseWriter, err error, status int) {
 		Details:   map[string]any{},
 		RequestID: "",
 	})
+}
+
+func decodeAgentJSON(r *stdhttp.Request, target any) error {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("request body must contain exactly one JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func jsonObject(raw string) map[string]any {

@@ -209,6 +209,18 @@ func (s *Service) CancelRun(ctx context.Context, scope Scope, conversationID, ru
 	return nil
 }
 
+func (s *Service) CancelPersistedRun(ctx context.Context, scope Scope, conversationID, runID string) error {
+	run, err := s.GetRun(ctx, scope, conversationID, runID)
+	if err != nil {
+		return err
+	}
+	if run.Status != RunStatusRunning {
+		return ErrRunNotCancellable
+	}
+	s.release(conversationID)
+	return s.finishRun(ctx, PromptInput{Scope: scope, ConversationID: conversationID}, runID, RunStatusCanceled, "", agentcore.Usage{}, context.Canceled)
+}
+
 func (s *Service) GetRunByID(ctx context.Context, scope Scope, runID string) (Run, error) {
 	return s.repo.GetRunByID(ctx, scope.WorkspaceID, scope.PrincipalID, runID)
 }

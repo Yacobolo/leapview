@@ -3,6 +3,26 @@ using TypeSpec.OpenAPI;
 
 namespace LibreDashAPI;
 
+@minLength(1)
+@maxLength(200)
+scalar ResourceId extends string;
+
+@minValue(1)
+@maxValue(200)
+scalar ListLimit extends int32;
+
+@minValue(1)
+@maxValue(1000)
+scalar QueryLimit extends int32;
+
+@minLength(1)
+@maxLength(2048)
+scalar PageToken extends string;
+
+@minLength(1)
+@maxLength(200)
+scalar IdempotencyKey extends string;
+
 model NoContentResponse {
   @statusCode statusCode: 204;
 }

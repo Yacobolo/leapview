@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	"github.com/Yacobolo/libredash/internal/manageddata"
@@ -101,7 +99,9 @@ func (h *Handler) ListManagedDataRevisions(w stdhttp.ResponseWriter, r *stdhttp.
 		}
 		items = append(items, item)
 	}
-	page, next, err := pageSlice(items, params.Limit, params.PageToken, "revisions\x00"+collection.ID)
+	page, next, err := pageSlice(items, params.Limit, params.PageToken, "revisions\x00"+collection.ID, func(item apigenapi.ManagedDataRevisionSummaryResponse) string {
+		return item.CreatedAt + "\x00" + item.Id
+	})
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -161,6 +161,12 @@ func (h *Handler) CreateManagedDataUploadSession(w stdhttp.ResponseWriter, r *st
 		h.writeError(w, r, err)
 		return
 	}
+	if h.options.RecordUploadCreated != nil {
+		if err := h.options.RecordUploadCreated(r.Context(), result); err != nil {
+			h.writeUnavailable(w, r)
+			return
+		}
+	}
 	response, err := uploadResponse(result, project, connection, "")
 	if err != nil {
 		h.writeError(w, r, err)
@@ -196,7 +202,13 @@ func (h *Handler) ListManagedDataUploadSessions(w stdhttp.ResponseWriter, r *std
 		h.writeError(w, r, err)
 		return
 	}
-	page, next, err := pageSlice(rows, params.Limit, params.PageToken, "upload-sessions\x00"+collection.ID)
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].CreatedAt == rows[j].CreatedAt {
+			return rows[i].ID > rows[j].ID
+		}
+		return rows[i].CreatedAt > rows[j].CreatedAt
+	})
+	page, next, err := pageSlice(rows, params.Limit, params.PageToken, "upload-sessions\x00"+collection.ID, func(item manageddata.UploadSession) string { return item.CreatedAt + "\x00" + item.ID })
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -260,13 +272,16 @@ func (h *Handler) FinalizeManagedDataUploadSession(w stdhttp.ResponseWriter, r *
 		h.writeError(w, r, err)
 		return
 	}
+	if h.options.EnqueueFinalize == nil {
+		h.writeUnavailable(w, r)
+		return
+	}
+	if err := h.options.EnqueueFinalize(r.Context(), request); err != nil {
+		h.writeUnavailable(w, r)
+		return
+	}
 	w.Header().Set("Location", "/api/v1/projects/"+project+"/connections/"+connection+"/upload-sessions/"+uploadSession)
 	h.writeJSON(w, stdhttp.StatusAccepted, response)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
-		_, _ = h.options.Uploads.CompleteFinalizeUpload(ctx, request)
-	}()
 }
 
 func (h *Handler) CreateManagedDataS3MultipartUpload(w stdhttp.ResponseWriter, r *stdhttp.Request, project, connection, uploadSession string, headers apigenapi.GenCreateManagedDataS3MultipartUploadHeaders) {
@@ -798,7 +813,7 @@ func fileToWire(file manageddata.File) (apigenapi.ManagedDataFileMetadata, error
 	return apigenapi.ManagedDataFileMetadata{Path: file.Path, Size: file.Size, Sha256: file.SHA256}, nil
 }
 
-func pageSlice[T any](items []T, limitValue *int32, tokenValue *string, scope string) ([]T, *string, error) {
+func pageSlice[T any](items []T, limitValue *int32, tokenValue *string, scope string, key func(T) string) ([]T, *string, error) {
 	limit := defaultPageLimit
 	if limitValue != nil {
 		if *limitValue < 1 || *limitValue > maxPageLimit {
@@ -806,55 +821,65 @@ func pageSlice[T any](items []T, limitValue *int32, tokenValue *string, scope st
 		}
 		limit = int(*limitValue)
 	}
-	offset, err := decodePageToken(valueOrEmpty(tokenValue), scope)
+	cursorKey, err := decodePageToken(valueOrEmpty(tokenValue), scope)
 	if err != nil {
 		return nil, nil, err
 	}
-	if offset > len(items) {
-		return nil, nil, ErrInvalid
+	start := 0
+	if cursorKey != "" {
+		start = -1
+		for index, item := range items {
+			if key(item) == cursorKey {
+				start = index + 1
+				break
+			}
+		}
+		if start < 0 {
+			return nil, nil, ErrInvalid
+		}
 	}
-	end := offset + limit
+	end := start + limit
 	if end > len(items) {
 		end = len(items)
 	}
 	var next *string
 	if end < len(items) {
-		next = stringPointer(encodePageToken(scope, end))
+		next = stringPointer(encodePageToken(scope, key(items[end-1])))
 	}
-	return append([]T(nil), items[offset:end]...), next, nil
+	return append([]T(nil), items[start:end]...), next, nil
 }
 
 type pageToken struct {
-	Scope  string `json:"scope"`
-	Offset int    `json:"offset"`
+	Scope string `json:"scope"`
+	Key   string `json:"key"`
 }
 
-func encodePageToken(scope string, offset int) string {
-	value, _ := json.Marshal(pageToken{Scope: scope, Offset: offset})
+func encodePageToken(scope, key string) string {
+	value, _ := json.Marshal(pageToken{Scope: scope, Key: key})
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func decodePageToken(value, scope string) (int, error) {
+func decodePageToken(value, scope string) (string, error) {
 	if value == "" {
-		return 0, nil
+		return "", nil
 	}
 	if len(value) > 2048 {
-		return 0, ErrInvalid
+		return "", ErrInvalid
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
-		return 0, ErrInvalid
+		return "", ErrInvalid
 	}
 	var token pageToken
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&token); err != nil || token.Scope != scope || token.Offset < 0 {
-		return 0, ErrInvalid
+	if err := decoder.Decode(&token); err != nil || token.Scope != scope || token.Key == "" {
+		return "", ErrInvalid
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return 0, ErrInvalid
+		return "", ErrInvalid
 	}
-	return token.Offset, nil
+	return token.Key, nil
 }
 
 func validScope(project, connection string) bool {

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
 func TestAPIGenResponseBufferNormalizesLegacyErrorsAsProblemDetails(t *testing.T) {
@@ -134,5 +136,19 @@ func TestPublicListCursorsAreSignedBoundAndUnwrapped(t *testing.T) {
 	handler.ServeHTTP(crossRec, cross)
 	if crossRec.Code != http.StatusBadRequest {
 		t.Fatalf("cross-resource cursor status=%d body=%s", crossRec.Code, crossRec.Body.String())
+	}
+}
+
+func TestPublicListCursorRejectsUnavailableServingSnapshot(t *testing.T) {
+	first := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1", nil)
+	first.Header.Set(apiCursorSnapshotHeader, "state-old")
+	cursor := signAPIPageCursor(first, "last-asset")
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{ID: "sales", ActiveServingStateID: "state-new"}}})
+	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	next := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1&pageToken="+url.QueryEscape(cursor), nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, next)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "SNAPSHOT_UNAVAILABLE") {
+		t.Fatalf("snapshot change status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

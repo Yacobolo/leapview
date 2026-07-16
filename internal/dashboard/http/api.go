@@ -26,6 +26,19 @@ func (h Handler) ListDashboards(w nethttp.ResponseWriter, r *nethttp.Request) {
 	for _, row := range catalog.Dashboards {
 		out = append(out, dashboardSummaryDTO(row))
 	}
+	workspaceID := chi.URLParam(r, "workspace")
+	if workspaceID == "" {
+		workspaceID = catalog.Workspace.ID
+	}
+	principalID := ""
+	if h.CurrentPrincipalID != nil {
+		principalID = h.CurrentPrincipalID(r)
+	}
+	out, err := h.filterAuthorizedDashboards(r.Context(), principalID, workspaceID, out)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusInternalServerError)
+		return
+	}
 	page, nextCursor, ok := pageSliceForRequest(w, r, out)
 	if !ok {
 		return
@@ -169,7 +182,7 @@ func (h Handler) QueryDashboardPage(w nethttp.ResponseWriter, r *nethttp.Request
 		writeJSONError(w, err, nethttp.StatusBadRequest)
 		return
 	}
-	writeJSON(w, nethttp.StatusOK, boundedPatch(patch))
+	writeJSON(w, nethttp.StatusOK, publicDashboardPatch(patch))
 }
 
 func (h Handler) QueryDashboardVisualData(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -211,7 +224,7 @@ func (h Handler) QueryDashboardVisualData(w nethttp.ResponseWriter, r *nethttp.R
 		writeJSONError(w, fmt.Errorf("visual %q data not found", visualID), nethttp.StatusNotFound)
 		return
 	}
-	writeJSON(w, nethttp.StatusOK, boundedVisual(visual))
+	writeJSON(w, nethttp.StatusOK, publicDashboardVisual(boundedVisual(visual)))
 }
 
 func (h Handler) QueryDashboardTableData(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -437,6 +450,51 @@ func boundedVisual(visual dashboard.Visual) dashboard.Visual {
 	return visual
 }
 
+func publicDashboardPatch(patch dashboard.Patch) map[string]any {
+	visuals := make(map[string]any, len(patch.Visuals))
+	for key, visual := range patch.Visuals {
+		visuals[key] = publicDashboardVisual(boundedVisual(visual))
+	}
+	return map[string]any{"filters": patch.Filters, "filterOptions": patch.FilterOptions, "status": patch.Status, "visuals": visuals}
+}
+
+func publicDashboardVisual(visual dashboard.Visual) map[string]any {
+	extensions := map[string]map[string]any{}
+	for namespace, options := range visual.RendererOptions {
+		extensions[namespace] = options
+	}
+	data := make([]map[string]any, 0, len(visual.Data))
+	known := map[string]struct{}{
+		"label": {}, "series": {}, "value": {}, "selected": {}, "start": {}, "end": {}, "positive": {},
+		"binStart": {}, "binEnd": {}, "path": {}, "row": {}, "column": {}, "source": {}, "target": {},
+		"name": {}, "open": {}, "close": {}, "low": {}, "high": {}, "min": {}, "q1": {}, "median": {}, "q3": {}, "max": {},
+	}
+	for _, datum := range visual.Data {
+		item, plugin := map[string]any{}, map[string]any{}
+		for key, value := range datum {
+			if _, ok := known[key]; ok || key == "extensions" {
+				item[key] = value
+			} else {
+				plugin[key] = value
+			}
+		}
+		if len(plugin) > 0 {
+			item["extensions"] = map[string]any{visual.Renderer: plugin}
+		}
+		data = append(data, item)
+	}
+	out := map[string]any{
+		"version": visual.Version, "id": visual.ID, "kind": visual.Kind, "shape": visual.Shape, "renderer": visual.Renderer,
+		"type": visual.Type, "title": visual.Title, "unit": visual.Unit, "format": visual.Format, "interaction": visual.Interaction,
+		"dimensions": visual.Dimensions, "measure": visual.Measure, "measures": visual.Measures, "series": visual.Series,
+		"options": visual.Options, "selection": visual.Selection, "data": data,
+	}
+	if len(extensions) > 0 {
+		out["extensions"] = extensions
+	}
+	return out
+}
+
 func dashboardSummaryDTO(row dashboard.CatalogDashboard) api.DashboardSummary {
 	return api.DashboardSummary{
 		ID:            row.ID,
@@ -484,22 +542,24 @@ func componentPlacement(component dashboard.PageVisual) *api.DashboardComponentP
 
 func dashboardVisualDTO(visualID string, visual reportdef.Visual, component dashboard.PageVisual) api.DashboardVisualDescribeResponse {
 	out := api.DashboardVisualDescribeResponse{
-		ID:              visualID,
-		ComponentID:     component.ID,
-		Kind:            firstNonEmpty(visual.Kind, component.Kind),
-		Shape:           visual.Shape,
-		Renderer:        visual.Renderer,
-		Type:            visual.Type,
-		Title:           firstNonEmpty(component.Title, visual.Title),
-		Description:     firstNonEmpty(component.Description, visual.Description),
-		Query:           jsonMap(visual.Query),
-		Options:         visual.Options,
-		RendererOptions: visual.RendererOptions,
-		Interaction:     jsonMap(visual.Interaction),
-		X:               component.X,
-		Y:               component.Y,
-		Width:           component.Width,
-		Height:          component.Height,
+		ID:          visualID,
+		ComponentID: component.ID,
+		Kind:        firstNonEmpty(visual.Kind, component.Kind),
+		Shape:       visual.Shape,
+		Renderer:    visual.Renderer,
+		Type:        visual.Type,
+		Title:       firstNonEmpty(component.Title, visual.Title),
+		Description: firstNonEmpty(component.Description, visual.Description),
+		Query:       jsonMap(visual.Query),
+		Options:     visual.Options,
+		Interaction: jsonMap(visual.Interaction),
+		X:           component.X,
+		Y:           component.Y,
+		Width:       component.Width,
+		Height:      component.Height,
+	}
+	if len(visual.RendererOptions) > 0 {
+		out.Extensions = map[string]map[string]any{firstNonEmpty(visual.Renderer, "plugin"): visual.RendererOptions}
 	}
 	if !component.Placement.IsZero() {
 		out.Placement = &api.DashboardComponentPlacement{

@@ -43,8 +43,8 @@ func TestAuthSpecItemSharingAndDataPrivileges(t *testing.T) {
 		t.Fatalf("dashboard query via semantic model grant status=%d body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
-	if status != http.StatusForbidden {
-		t.Fatalf("raw preview status=%d want=403 body=%s", status, body)
+	if status != http.StatusNotFound {
+		t.Fatalf("raw preview status=%d want=404 body=%s", status, body)
 	}
 }
 
@@ -85,8 +85,8 @@ func TestAuthSpecItemManagerCanShareAndRevokeDashboardAccess(t *testing.T) {
 		t.Fatalf("item manager delete grant status=%d body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards/executive-sales", viewerToken, "")
-	if status != http.StatusForbidden {
-		t.Fatalf("revoked shared viewer dashboard status=%d want=403 body=%s", status, body)
+	if status != http.StatusNotFound {
+		t.Fatalf("revoked shared viewer dashboard status=%d want=404 body=%s", status, body)
 	}
 }
 
@@ -127,8 +127,8 @@ func TestAuthSpecGroupSharingFollowsMembershipChanges(t *testing.T) {
 		t.Fatalf("remove group member status=%d body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/dashboards/executive-sales", memberToken, "")
-	if status != http.StatusForbidden {
-		t.Fatalf("removed group member dashboard status=%d want=403 body=%s", status, body)
+	if status != http.StatusNotFound {
+		t.Fatalf("removed group member dashboard status=%d want=404 body=%s", status, body)
 	}
 }
 
@@ -161,8 +161,8 @@ func TestAuthSpecWorkspaceRoleSharingCompilesToGrants(t *testing.T) {
 		t.Fatalf("viewer dashboard query status=%d body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", viewerToken, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
-	if status != http.StatusForbidden {
-		t.Fatalf("viewer raw preview status=%d want=403 body=%s", status, body)
+	if status != http.StatusNotFound {
+		t.Fatalf("viewer raw preview status=%d want=404 body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/grants", viewerToken, `{"objectType":"dashboard","objectId":"executive-sales","subjectType":"principal","subjectId":"email_other","privilege":"VIEW_ITEM"}`)
 	if status != http.StatusForbidden {
@@ -349,8 +349,8 @@ func TestAuthSpecAPITokenAllowlistReducesEffectiveDataPrivileges(t *testing.T) {
 		t.Fatalf("query with QUERY_DATA token status=%d body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
-	if status != http.StatusForbidden {
-		t.Fatalf("preview with query-only token status=%d want=403 body=%s", status, body)
+	if status != http.StatusNotFound {
+		t.Fatalf("preview with query-only token status=%d want=404 body=%s", status, body)
 	}
 }
 
@@ -374,8 +374,8 @@ func TestAuthSpecColumnGrantAllowsOnlyGrantedPreviewColumns(t *testing.T) {
 		t.Fatalf("preview granted column status=%d body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", token, `{"dimensions":[{"field":"orders.status"},{"field":"orders.revenue"}],"limit":1}`)
-	if status != http.StatusForbidden {
-		t.Fatalf("preview ungranted column status=%d want=403 body=%s", status, body)
+	if status != http.StatusNotFound {
+		t.Fatalf("preview ungranted column status=%d want=404 body=%s", status, body)
 	}
 }
 
@@ -433,8 +433,8 @@ func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
 		t.Fatalf("service principal query status=%d body=%s", status, body)
 	}
 	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", tokenResponse.AccessToken, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
-	if status != http.StatusForbidden {
-		t.Fatalf("service principal preview status=%d want=403 body=%s", status, body)
+	if status != http.StatusNotFound {
+		t.Fatalf("service principal preview status=%d want=404 body=%s", status, body)
 	}
 
 	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/service-principals/sp_ci/secrets/"+secretResponse.ClientSecret.ID, adminToken, "")

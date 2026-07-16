@@ -14,6 +14,8 @@ import (
 	agentopenai "github.com/Yacobolo/libredash/internal/agent/openai"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
+	"github.com/Yacobolo/libredash/internal/asyncjob"
+	asyncjobsqlite "github.com/Yacobolo/libredash/internal/asyncjob/sqlite"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	deploymenthttp "github.com/Yacobolo/libredash/internal/deployment/http"
@@ -83,6 +85,7 @@ type Server struct {
 	workspaceRepo                 workspace.Repository
 	assetCatalog                  workspace.AssetCatalogReader
 	accessRepo                    access.Repository
+	asyncJobs                     asyncjob.Repository
 	agent                         *agent.Service
 	auth                          *Auth
 	reloader                      runtimeReloader
@@ -104,6 +107,7 @@ type Server struct {
 	jobLeaseTimeout               time.Duration
 	jobDispatchMu                 sync.Mutex
 	jobDispatching                bool
+	apiJobDispatching             bool
 	jobDispatchWG                 sync.WaitGroup
 	backgroundMu                  sync.Mutex
 	backgroundCtx                 context.Context
@@ -221,6 +225,9 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server := New(metrics)
 	server.executor = executor
 	server.store = options.Store
+	if options.Store != nil {
+		server.asyncJobs = asyncjobsqlite.NewRepository(options.Store.SQLDB())
+	}
 	server.servingStateRepo = servingStateRepo
 	server.managedDataBindingRepo = managedDataBindingRepo
 	server.workspaceRepo = options.WorkspaceRepo
@@ -297,6 +304,7 @@ func (s *Server) StartBackgroundJobs(ctx context.Context) {
 	}
 	s.backgroundMu.Unlock()
 	s.dispatchQueuedRefreshJobs(backgroundCtx)
+	s.dispatchQueuedAsyncJobs(backgroundCtx)
 	if startManagedDataMaintenance {
 		s.startManagedDataMaintenance(backgroundCtx)
 	}
@@ -400,6 +408,24 @@ func (s *Server) accessRepository() (access.Repository, error) {
 	}
 	s.accessRepo = accesssqlite.NewRepository(s.store.SQLDB())
 	return s.accessRepo, nil
+}
+
+func (s *Server) authorizeListObject(ctx context.Context, principalID string, object access.ObjectRef) (bool, error) {
+	if s.auth == nil {
+		return true, nil
+	}
+	repo, err := s.accessRepository()
+	if err != nil {
+		return false, err
+	}
+	if repo == nil || strings.TrimSpace(principalID) == "" {
+		return false, nil
+	}
+	decision, err := repo.Authorize(ctx, principalID, access.PrivilegeViewItem, object)
+	if err != nil {
+		return false, err
+	}
+	return decision.Allowed, nil
 }
 
 func (s *Server) releaseRepository() *releasesqlite.Repository {
@@ -554,6 +580,7 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			}
 			return principal.ID
 		},
+		AuthorizeListObject: s.authorizeListObject,
 		CSRFToken: func(r *http.Request) string {
 			if s.auth == nil {
 				return ""

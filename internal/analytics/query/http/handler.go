@@ -40,6 +40,28 @@ type Handler struct {
 	Metrics             Metrics
 	MetricsForWorkspace func(workspaceID string) (Metrics, bool)
 	CurrentPrincipalID  func(r *nethttp.Request) string
+	AuthorizeListObject func(ctx context.Context, principalID string, object access.ObjectRef) (bool, error)
+}
+
+func filterAuthorized[T any](h Handler, r *nethttp.Request, objectFor func(T) access.ObjectRef, rows []T) ([]T, error) {
+	if h.AuthorizeListObject == nil {
+		return rows, nil
+	}
+	principalID := ""
+	if h.CurrentPrincipalID != nil {
+		principalID = h.CurrentPrincipalID(r)
+	}
+	out := make([]T, 0, len(rows))
+	for _, row := range rows {
+		allowed, err := h.AuthorizeListObject(r.Context(), principalID, objectFor(row))
+		if err != nil {
+			return nil, err
+		}
+		if allowed {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 func SemanticDatasetObjectRefs(r *nethttp.Request, workspaceID string) []access.ObjectRef {
@@ -67,6 +89,17 @@ func (h Handler) ListSemanticModels(w nethttp.ResponseWriter, r *nethttp.Request
 	out := make([]api.SemanticModelSummary, 0, len(catalog.Models))
 	for _, row := range catalog.Models {
 		out = append(out, semanticModelSummaryDTO(row))
+	}
+	workspaceID := chi.URLParam(r, "workspace")
+	if workspaceID == "" {
+		workspaceID = catalog.Workspace.ID
+	}
+	out, err := filterAuthorized(h, r, func(row api.SemanticModelSummary) access.ObjectRef {
+		return access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, row.ID, access.WorkspaceObject(workspaceID))
+	}, out)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusInternalServerError)
+		return
 	}
 	page, nextCursor, ok := pageSliceForRequest(w, r, out)
 	if !ok {
@@ -228,6 +261,15 @@ func (h Handler) ListSemanticDatasets(w nethttp.ResponseWriter, r *nethttp.Reque
 			FieldCount:   len(table.Dimensions),
 			MeasureCount: semanticDatasetMeasureCount(model, datasetID),
 		})
+	}
+	workspaceID, modelID := chi.URLParam(r, "workspace"), chi.URLParam(r, "model")
+	parent := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, access.WorkspaceObject(workspaceID))
+	out, err := filterAuthorized(h, r, func(row api.SemanticDatasetSummary) access.ObjectRef {
+		return access.ItemObjectWithParent(access.SecurableDataset, workspaceID, modelID+"/"+row.ID, parent)
+	}, out)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusInternalServerError)
+		return
 	}
 	items, nextCursor, ok := pageSliceForRequest(w, r, out)
 	if !ok {
@@ -935,7 +977,9 @@ func statusForDataExecutionError(err error) int {
 		return nethttp.StatusOK
 	}
 	if queryauthz.IsDenied(err) {
-		return nethttp.StatusForbidden
+		// Query routes identify a concrete semantic model or dataset. Conceal
+		// inaccessible IDs consistently with metadata handlers.
+		return nethttp.StatusNotFound
 	}
 	return nethttp.StatusBadRequest
 }
@@ -1060,12 +1104,24 @@ func pageSliceForRequest[T any](w nethttp.ResponseWriter, r *nethttp.Request, it
 		return nil, "", false
 	}
 	scope, snapshot := requestCursorScope(r, nil), servingSnapshotForRequest(r)
-	start, ok := apiCursorOffsetForRequest(w, r, scope, snapshot)
-	if !ok {
+	lastKey, err := decodeListKeysetCursor(r.URL.Query().Get("pageToken"), scope, snapshot)
+	if err != nil {
+		writeJSONError(w, err, statusForCursorError(err))
 		return nil, "", false
 	}
-	if start > len(items) {
-		start = len(items)
+	start := 0
+	if lastKey != "" {
+		start = -1
+		for index, item := range items {
+			if listPageItemKey(item) == lastKey {
+				start = index + 1
+				break
+			}
+		}
+		if start < 0 {
+			writeJSONError(w, errCursorSnapshotUnavailable, nethttp.StatusConflict)
+			return nil, "", false
+		}
 	}
 	end := start + limit
 	if end > len(items) {
@@ -1073,9 +1129,56 @@ func pageSliceForRequest[T any](w nethttp.ResponseWriter, r *nethttp.Request, it
 	}
 	nextCursor := ""
 	if end < len(items) {
-		nextCursor = encodeIndexCursor(end, scope, snapshot)
+		nextCursor = encodeListKeysetCursor(listPageItemKey(items[end-1]), scope, snapshot)
 	}
 	return append([]T(nil), items[start:end]...), nextCursor, true
+}
+
+type listKeysetCursor struct {
+	Key      string `json:"key"`
+	Scope    string `json:"scope"`
+	Snapshot string `json:"snapshot,omitempty"`
+	Expires  int64  `json:"expires"`
+}
+
+func listPageItemKey(value any) string {
+	payload, _ := json.Marshal(value)
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:])
+}
+
+func encodeListKeysetCursor(key, scope, snapshot string) string {
+	payload, _ := json.Marshal(listKeysetCursor{Key: key, Scope: scope, Snapshot: snapshot, Expires: time.Now().Add(indexCursorLifetime).Unix()})
+	mac := hmac.New(sha256.New, indexCursorKey[:])
+	_, _ = mac.Write(payload)
+	return "q2." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+}
+
+func decodeListKeysetCursor(token, scope, snapshot string) (string, error) {
+	if token == "" {
+		return "", nil
+	}
+	if !strings.HasPrefix(token, "q2.") {
+		return "", fmt.Errorf("invalid page token")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, "q2."))
+	if err != nil || len(raw) <= sha256.Size {
+		return "", fmt.Errorf("invalid page token")
+	}
+	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
+	mac := hmac.New(sha256.New, indexCursorKey[:])
+	_, _ = mac.Write(payload)
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return "", fmt.Errorf("invalid page token")
+	}
+	var cursor listKeysetCursor
+	if json.Unmarshal(payload, &cursor) != nil || cursor.Key == "" || cursor.Expires < time.Now().Unix() || cursor.Scope != scope {
+		return "", fmt.Errorf("invalid page token")
+	}
+	if cursor.Snapshot != snapshot {
+		return "", errCursorSnapshotUnavailable
+	}
+	return cursor.Key, nil
 }
 
 const (
@@ -1106,7 +1209,7 @@ func parseAPILimit(value string) (int, error) {
 		return 0, fmt.Errorf("limit must be at least 1")
 	}
 	if limit > maxAPILimit {
-		return maxAPILimit, nil
+		return 0, fmt.Errorf("limit must not exceed %d", maxAPILimit)
 	}
 	return limit, nil
 }

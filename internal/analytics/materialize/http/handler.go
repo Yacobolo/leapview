@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ type Handler struct {
 	DispatchQueued   func()
 	CurrentPrincipal func(*nethttp.Request) (Principal, bool)
 	WorkspaceID      func(string) string
+	RunCreated       func(context.Context, materialize.RunRecord) error
 }
 
 type materializationRunRequest struct {
@@ -45,7 +47,9 @@ func (h Handler) CreateRun(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 	var input materializationRunRequest
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
 		writeJSONError(w, err, nethttp.StatusBadRequest)
 		return
 	}
@@ -92,6 +96,12 @@ func (h Handler) CreateRun(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if err != nil {
 		writeJSONError(w, err, nethttp.StatusBadRequest)
 		return
+	}
+	if h.RunCreated != nil {
+		if err := h.RunCreated(r.Context(), run); err != nil {
+			writeJSONError(w, err, nethttp.StatusServiceUnavailable)
+			return
+		}
 	}
 	if h.DispatchQueued != nil {
 		h.DispatchQueued()

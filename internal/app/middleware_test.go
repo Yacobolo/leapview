@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -454,6 +455,15 @@ func TestDeploymentAPIRateLimitPreservesAuth(t *testing.T) {
 		}
 		if i == 1 && rec.Code != http.StatusTooManyRequests {
 			t.Fatalf("second API status = %d, want %d", rec.Code, http.StatusTooManyRequests)
+		}
+		if i == 1 {
+			if rec.Header().Get("Content-Type") != "application/problem+json" || rec.Header().Get("X-Request-ID") == "" {
+				t.Fatalf("rate limit headers = %#v body=%s", rec.Header(), rec.Body.String())
+			}
+			var problem map[string]any
+			if json.Unmarshal(rec.Body.Bytes(), &problem) != nil || problem["code"] != "RATE_LIMITED" || problem["requestId"] == "" {
+				t.Fatalf("rate limit problem = %#v", problem)
+			}
 		}
 	}
 }

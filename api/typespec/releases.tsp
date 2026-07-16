@@ -70,14 +70,14 @@ model AsyncEventListResponse {
 @route("/projects/{project}/releases")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
-op listReleases(@path project: string, @query limit?: int32, @query pageToken?: string): OkJson<ReleaseListResponse> | CommonErrors;
+op listReleases(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ReleaseListResponse> | CommonErrors;
 
 @tag("Releases")
 @summary("Create a draft project release")
 @route("/projects/{project}/releases")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
-op createRelease(@path project: string, @header("Idempotency-Key") idempotencyKey: string, @body body: ReleaseCreateRequest): CreatedJson<ReleaseResponse> | CommonErrors;
+op createRelease(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: ReleaseCreateRequest): CreatedJson<ReleaseResponse> | CommonErrors;
 
 @tag("Releases")
 @summary("Get a project release")
@@ -99,11 +99,11 @@ op uploadReleaseArtifact(@path project: string, @path release: string, @path wor
 @route("/projects/{project}/releases/{release}/finalize")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
-op finalizeRelease(@path project: string, @path release: string, @header("Idempotency-Key") idempotencyKey: string): AcceptedJson<ReleaseResponse> | CommonErrors;
+op finalizeRelease(@path project: string, @path release: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<ReleaseResponse> | CommonErrors;
 
 @tag("Releases")
 @summary("List or stream release events")
 @route("/projects/{project}/releases/{release}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
-op listReleaseEvents(@path project: string, @path release: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: int32, @query pageToken?: string): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
+op listReleaseEvents(@path project: string, @path release: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;

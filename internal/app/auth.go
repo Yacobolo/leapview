@@ -384,7 +384,11 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 		if privilege != "" {
 			workspaceID := a.privilegeWorkspaceID(r)
 			if credential != nil && !apiTokenAllows((*credential).Token, workspaceID, privilege) {
-				writeAuthError(w, r, errForbidden, http.StatusForbidden)
+				status := http.StatusForbidden
+				if objectResolver != nil && strings.HasPrefix(r.URL.Path, "/api/v1/") {
+					status = http.StatusNotFound
+				}
+				writeAuthError(w, r, errForbidden, status)
 				return
 			}
 			objects := httpauth.ObjectsForRequest(privilege, r, workspaceID)
@@ -429,7 +433,14 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				}
 			}
 			if !decision.Allowed {
-				writeAuthError(w, r, errForbidden, http.StatusForbidden)
+				status := http.StatusForbidden
+				// Public object routes deliberately conceal whether an inaccessible
+				// identifier exists. Collection and platform authorization failures
+				// remain explicit 403 responses.
+				if objectResolver != nil && strings.HasPrefix(r.URL.Path, "/api/v1/") {
+					status = http.StatusNotFound
+				}
+				writeAuthError(w, r, errForbidden, status)
 				return
 			}
 		}
@@ -462,6 +473,10 @@ func (a *Auth) mustChangeLocalPassword(r *http.Request, principalID string) bool
 
 func writeBearerChallenge(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="libredash"`)
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		writeAPIProblem(w, r, http.StatusUnauthorized, "AUTHENTICATION_REQUIRED", "A valid bearer credential is required", nil)
+		return
+	}
 	if wantsJSON(r) {
 		writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
 		return
@@ -470,6 +485,18 @@ func writeBearerChallenge(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeAuthError(w http.ResponseWriter, r *http.Request, err error, status int) {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		code := "AUTHORIZATION_DENIED"
+		if status == http.StatusUnauthorized {
+			code = "AUTHENTICATION_REQUIRED"
+		} else if status >= http.StatusInternalServerError {
+			code = "AUTHORIZATION_UNAVAILABLE"
+		} else if status == http.StatusNotFound {
+			code = "RESOURCE_NOT_FOUND"
+		}
+		writeAPIProblem(w, r, status, code, http.StatusText(status), nil)
+		return
+	}
 	if wantsJSON(r) {
 		writeJSONError(w, err, status)
 		return
