@@ -7,12 +7,19 @@ import {
   logTextAfterCursor,
   parseRefreshSummaries,
   percentile,
+  refreshWasAccepted,
 } from './movielens_performance'
 
 test('percentile uses nearest-rank values', () => {
   expect(percentile([5, 1, 3, 2, 4], 50)).toBe(3)
   expect(percentile([5, 1, 3, 2, 4], 95)).toBe(5)
   expect(percentile([], 95)).toBe(0)
+})
+
+test('refresh acceptance does not require observing a transient loading state', () => {
+  expect(refreshWasAccepted(7, { refreshId: 'refresh-8', generation: 8, loading: true })).toBe(true)
+  expect(refreshWasAccepted(7, { refreshId: 'refresh-8', generation: 8, loading: false })).toBe(true)
+  expect(refreshWasAccepted(7, { refreshId: 'refresh-7', generation: 7, loading: false })).toBe(false)
 })
 
 test('log cursor excludes refresh IDs from earlier server processes', () => {

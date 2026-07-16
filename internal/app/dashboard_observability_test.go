@@ -147,7 +147,10 @@ func TestDashboardTelemetryUsesBoundedLabelsAndRecordsRefreshLifecycle(t *testin
 	if got := dashboardCacheLabel("coalesced"); got != "coalesced" {
 		t.Fatalf("coalesced cache label = %q, want coalesced", got)
 	}
-	if got := dashboardStageLabel("targetExecution"); got != "target_execution" {
-		t.Fatalf("target execution stage label = %q, want target_execution", got)
+	if got := dashboardStageLabel("targetWorkSum"); got != "target_work_sum" {
+		t.Fatalf("target work sum stage label = %q, want target_work_sum", got)
+	}
+	if got := dashboardStageLabel("targetCriticalPath"); got != "target_critical_path" {
+		t.Fatalf("target critical path stage label = %q, want target_critical_path", got)
 	}
 }

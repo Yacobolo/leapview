@@ -8,15 +8,17 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 )
 
-// planMultiFactBundle builds one expanded grouping aggregate per participating
-// fact, then applies the ordinary null-safe full-outer stitch before decoding
-// consumer branches. Each governed fact relation is scanned exactly once.
+// planMultiFactBundle builds one statement-local governed projection and
+// independently pruned grouping aggregates per participating fact, then
+// applies the ordinary null-safe full-outer stitch before decoding consumer
+// branches. Each governed fact relation is scanned exactly once.
 func (p *Planner) planMultiFactBundle(requests []BundleRequest, resolutions []aggregateResolution) (BundlePlan, error) {
 	dimensions, branchDimensions, err := multiFactBundleDimensions(resolutions)
 	if err != nil {
 		return BundlePlan{}, err
 	}
-	groupSets, branchGroups := bundleGroups(branchDimensions)
+	facts := bundleFacts(resolutions)
+	groupSets, branchGroups := bundleGroupsByFacts(branchDimensions, resolutions)
 	measures := map[string]ResolvedMeasure{}
 	metrics := map[string]semanticmodel.Expression{}
 	for _, resolved := range resolutions {
@@ -36,8 +38,9 @@ func (p *Planner) planMultiFactBundle(requests []BundleRequest, resolutions []ag
 	ctes := []string{}
 	args := []any{}
 	dependencies := map[string]struct{}{}
-	for factIndex, fact := range resolutions[0].Facts {
-		factCTEs, factArgs, factDependencies, compileErr := p.compileMultiFactBundleFact(requests, resolutions, dimensions, groupSets, branchGroups, measures, measureNames, measureColumns, fact, factIndex)
+	filterResolution := aggregateResolution{Facts: append([]string{}, facts...), MultiFact: len(facts) > 1}
+	for factIndex, fact := range facts {
+		factCTEs, factArgs, factDependencies, compileErr := p.compileMultiFactBundleFact(requests, resolutions, filterResolution, dimensions, groupSets, branchGroups, branchDimensions, measures, measureNames, measureColumns, fact, factIndex)
 		if compileErr != nil {
 			return BundlePlan{}, compileErr
 		}
@@ -47,7 +50,7 @@ func (p *Planner) planMultiFactBundle(requests []BundleRequest, resolutions []ag
 			dependencies[dependency] = struct{}{}
 		}
 	}
-	stitched, stitchCTEs := stitchBundleFacts(resolutions[0].Facts, dimensions, measures, measureNames, measureColumns)
+	stitched, stitchCTEs := stitchBundleFacts(facts, dimensions, measures, measureNames, measureColumns)
 	ctes = append(ctes, stitchCTEs...)
 
 	memberNames, memberColumns := bundleMemberColumns(resolutions)
@@ -71,7 +74,7 @@ func (p *Planner) planMultiFactBundle(requests []BundleRequest, resolutions []ag
 	}
 	sort.Strings(deps)
 	sql := "WITH " + strings.Join(ctes, ",\n") + "\n" + bundleUnionSQL(branchSQL) + "\nORDER BY " + BundleBranchColumn + " ASC, " + BundleRowColumn + " ASC"
-	return BundlePlan{Plan: Plan{SQL: sql, Args: args, Columns: physicalColumns, Mode: "multi_fact", Facts: append([]string{}, resolutions[0].Facts...), PhysicalDependencies: deps}, Branches: branches}, nil
+	return BundlePlan{Plan: Plan{SQL: sql, Args: args, Columns: physicalColumns, Mode: "multi_fact", Facts: append([]string{}, facts...), PhysicalDependencies: deps}, Branches: branches}, nil
 }
 
 func multiFactBundleDimensions(resolutions []aggregateResolution) ([]bundleDimension, [][]int, error) {
@@ -80,9 +83,6 @@ func multiFactBundleDimensions(resolutions []aggregateResolution) ([]bundleDimen
 	branches := make([][]int, len(resolutions))
 	for branchIndex, resolved := range resolutions {
 		for _, dimension := range resolved.Dimensions {
-			if !dimension.Semantic {
-				return nil, nil, fmt.Errorf("multi-fact bundle dimension %q is not conformed", dimension.Name)
-			}
 			key := bundleDimensionKey(dimension)
 			index, ok := indexes[key]
 			if !ok {
@@ -96,7 +96,22 @@ func multiFactBundleDimensions(resolutions []aggregateResolution) ([]bundleDimen
 	return dimensions, branches, nil
 }
 
-func bundleGroups(branchDimensions [][]int) ([][]int, []int) {
+func bundleFacts(resolutions []aggregateResolution) []string {
+	set := map[string]bool{}
+	for _, resolved := range resolutions {
+		for _, fact := range resolved.Facts {
+			set[fact] = true
+		}
+	}
+	facts := make([]string, 0, len(set))
+	for fact := range set {
+		facts = append(facts, fact)
+	}
+	sort.Strings(facts)
+	return facts
+}
+
+func bundleGroupsByFacts(branchDimensions [][]int, resolutions []aggregateResolution) ([][]int, []int) {
 	groups := [][]int{}
 	byKey := map[string]int{}
 	branchGroups := make([]int, len(branchDimensions))
@@ -105,7 +120,7 @@ func bundleGroups(branchDimensions [][]int) ([][]int, []int) {
 		for i, index := range indexes {
 			parts[i] = fmt.Sprint(index)
 		}
-		key := strings.Join(parts, ",")
+		key := strings.Join(resolutions[branchIndex].Facts, ",") + "|" + strings.Join(parts, ",")
 		group, ok := byKey[key]
 		if !ok {
 			group = len(groups)
@@ -117,10 +132,28 @@ func bundleGroups(branchDimensions [][]int) ([][]int, []int) {
 	return groups, branchGroups
 }
 
-func (p *Planner) compileMultiFactBundleFact(requests []BundleRequest, resolutions []aggregateResolution, dimensions []bundleDimension, groupSets [][]int, branchGroups []int, measures map[string]ResolvedMeasure, measureNames []string, measureColumns map[string]string, fact string, factIndex int) ([]string, []any, []string, error) {
+func (p *Planner) compileMultiFactBundleFact(requests []BundleRequest, resolutions []aggregateResolution, filterResolution aggregateResolution, dimensions []bundleDimension, groupSets [][]int, branchGroups []int, branchDimensions [][]int, measures map[string]ResolvedMeasure, measureNames []string, measureColumns map[string]string, fact string, factIndex int) ([]string, []any, []string, error) {
 	bindings := []physicalFieldBinding{}
 	dependencies := map[string]struct{}{fact: {}}
-	for _, item := range dimensions {
+	factGroupSet := map[int]bool{}
+	dimensionGroups := make([]map[int]bool, len(dimensions))
+	for branchIndex, resolved := range resolutions {
+		if !bundleFactParticipates(resolved, fact) {
+			continue
+		}
+		group := branchGroups[branchIndex]
+		factGroupSet[group] = true
+		for _, dimensionIndex := range branchDimensions[branchIndex] {
+			if dimensionGroups[dimensionIndex] == nil {
+				dimensionGroups[dimensionIndex] = map[int]bool{}
+			}
+			dimensionGroups[dimensionIndex][group] = true
+		}
+	}
+	for dimensionIndex, item := range dimensions {
+		if len(dimensionGroups[dimensionIndex]) == 0 {
+			continue
+		}
 		field, path, err := p.aggregateDimensionBinding(fact, item.dimension)
 		if err != nil {
 			return nil, nil, nil, err
@@ -147,7 +180,7 @@ func (p *Planner) compileMultiFactBundleFact(requests []BundleRequest, resolutio
 			addPathDependencies(dependencies, path)
 		}
 	}
-	filterBindings, err := p.factFilterFields(requests[0].Request.Filters, resolutions[0], fact)
+	filterBindings, err := p.factFilterFields(requests[0].Request.Filters, filterResolution, fact)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -167,6 +200,9 @@ func (p *Planner) compileMultiFactBundleFact(requests []BundleRequest, resolutio
 	baseSelects := []string{}
 	baseArgs := []any{}
 	for dimensionIndex, item := range dimensions {
+		if len(dimensionGroups[dimensionIndex]) == 0 {
+			continue
+		}
 		field, path, err := p.aggregateDimensionBinding(fact, item.dimension)
 		if err != nil {
 			return nil, nil, nil, err
@@ -234,80 +270,116 @@ func (p *Planner) compileMultiFactBundleFact(requests []BundleRequest, resolutio
 	if len(baseSelects) == 0 {
 		baseSelects = append(baseSelects, "1 AS __row")
 	}
-	where, whereArgs, err := p.factWhereParts(requests[0].Request.Filters, resolutions[0], fact, aliases)
+	where, whereArgs, err := p.factWhereParts(requests[0].Request.Filters, filterResolution, fact, aliases)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	baseArgs = append(baseArgs, whereArgs...)
 	baseName := fmt.Sprintf("bundle_base_%d", factIndex)
-	expandedName := fmt.Sprintf("bundle_expanded_%d", factIndex)
 	aggregateName := fmt.Sprintf("bundle_fact_%d", factIndex)
-	base := baseName + " AS (\n  SELECT " + strings.Join(baseSelects, ", ") + "\n  FROM " + strings.ReplaceAll(from, "\n", "\n  ")
+	base := baseName + " AS MATERIALIZED (\n  SELECT " + strings.Join(baseSelects, ", ") + "\n  FROM " + strings.ReplaceAll(from, "\n", "\n  ")
 	if len(where) > 0 {
 		base += "\n  WHERE " + strings.Join(where, " AND ")
 	}
 	base += "\n)"
-	groupIDs := make([]string, len(groupSets))
-	for i := range groupSets {
-		groupIDs[i] = fmt.Sprint(i)
-	}
-	expanded := expandedName + " AS (\n  SELECT " + baseName + ".*, __bundle_group\n  FROM " + baseName + "\n  CROSS JOIN UNNEST([" + strings.Join(groupIDs, ", ") + "]) AS groups(__bundle_group)\n)"
-	selects := []string{"__bundle_group"}
-	for dimensionIndex := range dimensions {
-		groups := []int{}
-		for groupIndex, indexes := range groupSets {
-			if containsInt(indexes, dimensionIndex) {
-				groups = append(groups, groupIndex)
-			}
-		}
-		selects = append(selects, fmt.Sprintf("CASE WHEN %s THEN __d%d END AS __d%d", integerPredicate("__bundle_group", groups), dimensionIndex, dimensionIndex))
-	}
-	for measureIndex, name := range measureNames {
-		measure := measures[name]
-		if measure.Fact != fact {
+	groupCTEs := make([]string, 0, len(factGroupSet))
+	groupNames := make([]string, 0, len(factGroupSet))
+	for groupIndex := range groupSets {
+		if !factGroupSet[groupIndex] {
 			continue
 		}
-		input := fmt.Sprintf("__v%d", measureIndex)
-		expr := ""
-		switch measure.Aggregation {
-		case "count":
-			expr = "COUNT(*)"
-		case "count_distinct":
-			expr = "COUNT(DISTINCT " + input + ")"
-		case "sum", "avg", "min", "max":
-			expr = strings.ToUpper(measure.Aggregation) + "(" + input + ")"
-		default:
-			return nil, nil, nil, fmt.Errorf("measure %q has unsupported aggregation %q", name, measure.Aggregation)
-		}
-		groups := []int{}
-		seen := map[int]bool{}
-		for branchIndex, resolved := range resolutions {
-			if _, selected := resolved.Measures[name]; selected && !seen[branchGroups[branchIndex]] {
-				seen[branchGroups[branchIndex]] = true
-				groups = append(groups, branchGroups[branchIndex])
+		selects := []string{fmt.Sprintf("%d AS __bundle_group", groupIndex)}
+		groupBy := []string{}
+		for dimensionIndex := range dimensions {
+			if containsInt(groupSets[groupIndex], dimensionIndex) {
+				selects = append(selects, fmt.Sprintf("__d%d", dimensionIndex))
+				groupBy = append(groupBy, fmt.Sprintf("__d%d", dimensionIndex))
+			} else {
+				selects = append(selects, fmt.Sprintf("NULL AS __d%d", dimensionIndex))
 			}
 		}
-		filterParts := []string{integerPredicate("__bundle_group", groups)}
-		if len(measure.Filters) > 0 {
-			filterParts = append(filterParts, fmt.Sprintf("__f%d", measureIndex))
+		for measureIndex, name := range measureNames {
+			measure := measures[name]
+			if measure.Fact != fact {
+				continue
+			}
+			selected := false
+			for branchIndex, resolved := range resolutions {
+				if branchGroups[branchIndex] != groupIndex {
+					continue
+				}
+				if _, selected = resolved.Measures[name]; selected {
+					break
+				}
+			}
+			if !selected {
+				selects = append(selects, "NULL AS "+measureColumns[name])
+				continue
+			}
+			expr, aggregateErr := bundleFactMeasureAggregate(measure, measureIndex)
+			if aggregateErr != nil {
+				return nil, nil, nil, fmt.Errorf("measure %q: %w", name, aggregateErr)
+			}
+			selects = append(selects, expr+" AS "+measureColumns[name])
 		}
-		expr += " FILTER (WHERE " + strings.Join(filterParts, " AND ") + ")"
-		if measure.Empty == "zero" && measure.Aggregation != "count" && measure.Aggregation != "count_distinct" {
-			expr = "COALESCE(" + expr + ", 0)"
+		groupName := fmt.Sprintf("bundle_group_%d_%d", factIndex, groupIndex)
+		groupNames = append(groupNames, groupName)
+		groupSQL := groupName + " AS (\n  SELECT " + strings.Join(selects, ", ") + "\n  FROM " + baseName
+		if len(groupBy) > 0 {
+			groupSQL += "\n  GROUP BY " + strings.Join(groupBy, ", ")
 		}
-		selects = append(selects, expr+" AS "+measureColumns[name])
+		groupCTEs = append(groupCTEs, groupSQL+"\n)")
 	}
-	positions := make([]string, len(dimensions)+1)
-	for i := range positions {
-		positions[i] = fmt.Sprint(i + 1)
+	groupSelects := make([]string, len(groupNames))
+	for i, groupName := range groupNames {
+		groupSelects[i] = "SELECT * FROM " + groupName
 	}
-	aggregate := aggregateName + " AS (\n  SELECT " + strings.Join(selects, ", ") + "\n  FROM " + expandedName + "\n  GROUP BY " + strings.Join(positions, ", ") + "\n)"
+	aggregate := aggregateName + " AS (\n  " + strings.Join(groupSelects, "\n  UNION ALL\n  ") + "\n)"
 	deps := make([]string, 0, len(dependencies))
 	for dependency := range dependencies {
 		deps = append(deps, dependency)
 	}
 	sort.Strings(deps)
-	return []string{base, expanded, aggregate}, baseArgs, deps, nil
+	ctes := append([]string{base}, groupCTEs...)
+	ctes = append(ctes, aggregate)
+	return ctes, baseArgs, deps, nil
+}
+
+func bundleFactMeasureAggregate(measure ResolvedMeasure, measureIndex int) (string, error) {
+	input := fmt.Sprintf("__v%d", measureIndex)
+	expr := ""
+	switch measure.Aggregation {
+	case "count":
+		expr = "COUNT(*)"
+	case "count_distinct":
+		expr = "COUNT(DISTINCT " + input + ")"
+	case "sum", "avg", "min", "max":
+		expr = strings.ToUpper(measure.Aggregation) + "(" + input + ")"
+	default:
+		return "", fmt.Errorf("unsupported aggregation %q", measure.Aggregation)
+	}
+	if len(measure.Filters) > 0 {
+		expr += fmt.Sprintf(" FILTER (WHERE __f%d)", measureIndex)
+	}
+	if measure.Empty == "zero" && measure.Aggregation != "count" && measure.Aggregation != "count_distinct" {
+		expr = "COALESCE(" + expr + ", 0)"
+	}
+	return expr, nil
+}
+
+func bundleFactParticipates(resolved aggregateResolution, fact string) bool {
+	if hasFactMeasures(resolved.Measures, fact) {
+		return true
+	}
+	if len(resolved.Measures) != 0 {
+		return false
+	}
+	for _, candidate := range resolved.Facts {
+		if candidate == fact {
+			return true
+		}
+	}
+	return false
 }
 
 func stitchBundleFacts(facts []string, dimensions []bundleDimension, measures map[string]ResolvedMeasure, measureNames []string, measureColumns map[string]string) (string, []string) {

@@ -36,8 +36,10 @@ type Request struct {
 }
 
 type Progress struct {
-	Completed int
-	Total     int
+	Completed            int
+	Total                int
+	WorkDuration         time.Duration
+	CriticalPathDuration time.Duration
 }
 
 type ProgressPublisher func(Progress)

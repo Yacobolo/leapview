@@ -72,13 +72,14 @@ func (s *QueryService) ExecuteConsumersPage(ctx context.Context, request consume
 		}
 		logical = append(logical, item)
 	}
-	plan, err := runtime.optimizer.Optimize(logical)
+	plan, err := runtime.optimizer.OptimizeForConcurrency(logical, request.Concurrency)
 	if err != nil {
 		return err
 	}
 	if request.Progress != nil {
 		request.Progress(consumer.Progress{Total: len(plan.Jobs)})
 	}
+	executionStarted := time.Now()
 	limit := request.Concurrency
 	if limit <= 0 {
 		limit = 1
@@ -87,7 +88,7 @@ func (s *QueryService) ExecuteConsumersPage(ctx context.Context, request consume
 	var group sync.WaitGroup
 	var progressMu sync.Mutex
 	completedJobs := 0
-	publishProgress := func() {
+	publishProgress := func(workDuration time.Duration) {
 		if request.Progress == nil || ctx.Err() != nil {
 			return
 		}
@@ -97,7 +98,11 @@ func (s *QueryService) ExecuteConsumersPage(ctx context.Context, request consume
 			return
 		}
 		completedJobs++
-		request.Progress(consumer.Progress{Completed: completedJobs, Total: len(plan.Jobs)})
+		progress := consumer.Progress{Completed: completedJobs, Total: len(plan.Jobs), WorkDuration: workDuration}
+		if completedJobs == len(plan.Jobs) {
+			progress.CriticalPathDuration = time.Since(executionStarted)
+		}
+		request.Progress(progress)
 	}
 jobLoop:
 	for _, job := range plan.Jobs {
@@ -114,8 +119,9 @@ jobLoop:
 		go func() {
 			defer group.Done()
 			defer func() { <-semaphore }()
+			startedAt := time.Now()
 			s.executeConsumerJob(ctx, request, job, publish)
-			publishProgress()
+			publishProgress(time.Since(startedAt))
 		}()
 	}
 	group.Wait()

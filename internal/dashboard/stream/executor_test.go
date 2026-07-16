@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/command"
@@ -36,9 +37,9 @@ func TestTargetWorkPublishesProgressiveConsumerResultsWithoutPresentationKnowled
 		request.Progress(consumer.Progress{Total: 2})
 		publish(consumer.Result{Target: request.Targets[1], Table: dashboard.Table{Title: "Orders"}})
 		publish(consumer.Result{Target: request.Targets[1], Table: dashboard.Table{Title: "Orders", Cardinality: dashboard.ExactCardinality(42)}, TableMetadata: true})
-		request.Progress(consumer.Progress{Completed: 1, Total: 2})
+		request.Progress(consumer.Progress{Completed: 1, Total: 2, WorkDuration: 20 * time.Millisecond})
 		publish(consumer.Result{Target: request.Targets[0], Visual: dashboard.Visual{ID: "revenue"}})
-		request.Progress(consumer.Progress{Completed: 2, Total: 2})
+		request.Progress(consumer.Progress{Completed: 2, Total: 2, WorkDuration: 30 * time.Millisecond, CriticalPathDuration: 40 * time.Millisecond})
 		return nil
 	}}
 	events := runTargetWork(t, executor, command.RefreshPlan{Targets: []command.Target{
@@ -52,6 +53,9 @@ func TestTargetWorkPublishesProgressiveConsumerResultsWithoutPresentationKnowled
 		events[4].Type != RefreshEventVisual ||
 		events[5].Type != RefreshEventProgress || events[5].ProgressPercent == nil || *events[5].ProgressPercent != 100 {
 		t.Fatalf("progressive events = %#v", events)
+	}
+	if events[3].Duration != 20*time.Millisecond || events[5].Duration != 30*time.Millisecond || events[5].StageTimingsMs["targetCriticalPath"] != 40 {
+		t.Fatalf("progress timing events = %#v", events)
 	}
 	if executor.leases.Load() != 1 {
 		t.Fatalf("refresh leases = %d", executor.leases.Load())

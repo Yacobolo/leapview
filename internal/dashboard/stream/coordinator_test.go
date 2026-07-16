@@ -354,6 +354,31 @@ func TestCoordinatorSummaryIncludesTargetsCachesAndCancellationReason(t *testing
 	}
 }
 
+func TestCoordinatorSummarySeparatesTargetWorkSumFromCriticalPath(t *testing.T) {
+	summaries := make(chan RefreshSummary, 1)
+	coordinator := NewCoordinator(context.Background(), func(RefreshEvent) {})
+	coordinator.SetObserver(func(summary RefreshSummary) { summaries <- summary })
+	t.Cleanup(coordinator.Close)
+
+	if _, err := coordinator.Begin(nil, func(_ context.Context, publish RefreshPublisher) {
+		publish(RefreshEvent{Type: RefreshEventProgress, Duration: 30 * time.Millisecond})
+		publish(RefreshEvent{Type: RefreshEventVisual, Target: "a", Duration: 90 * time.Millisecond})
+		publish(RefreshEvent{Type: RefreshEventProgress, Duration: 20 * time.Millisecond, StageTimingsMs: map[string]float64{"targetCriticalPath": 35}})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	summary := <-summaries
+	if got := summary.StageTimingsMs["targetWorkSum"]; got != 50 {
+		t.Fatalf("target work sum = %v, want 50", got)
+	}
+	if got := summary.StageTimingsMs["targetCriticalPath"]; got != 35 {
+		t.Fatalf("target critical path = %v, want 35", got)
+	}
+	if _, legacy := summary.StageTimingsMs["targetExecution"]; legacy {
+		t.Fatalf("summary retained misleading targetExecution: %#v", summary.StageTimingsMs)
+	}
+}
+
 type setupRequiredTestError struct{}
 
 func (setupRequiredTestError) Error() string       { return "source data is missing" }

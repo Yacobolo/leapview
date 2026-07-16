@@ -93,9 +93,17 @@ func executeConsumers(ctx context.Context, executor consumer.Executor, request W
 		Targets:     append([]consumer.Target{}, request.Plan.Targets...),
 		Concurrency: refreshConcurrencyFromExecutor(executor),
 		Progress: func(progress consumer.Progress) {
+			stageTimings := map[string]float64(nil)
+			if progress.CriticalPathDuration > 0 {
+				stageTimings = map[string]float64{
+					"targetCriticalPath": float64(progress.CriticalPathDuration.Microseconds()) / 1000,
+				}
+			}
 			publish(RefreshEvent{
 				Type:            RefreshEventProgress,
 				ProgressPercent: consumerProgressPercent(progress),
+				Duration:        progress.WorkDuration,
+				StageTimingsMs:  stageTimings,
 			})
 		},
 	}

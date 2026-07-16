@@ -59,11 +59,84 @@ func TestOptimizerBatchesScalarConsumersAcrossFacts(t *testing.T) {
 	}
 }
 
+func TestOptimizerBundlesSameFactNonAdditiveScalarWithGroupedConsumers(t *testing.T) {
+	plan, err := Optimize(optimizerTestModel(), []LogicalQuery{
+		{
+			Target: Target{Kind: KindVisual, ID: "orders_by_customer"},
+			Query: dataquery.Query{
+				Kind:     dataquery.KindSemanticAggregate,
+				Fields:   []dataquery.Field{{Field: "customer", Alias: "label"}},
+				Measures: []dataquery.Field{{Field: "order_count", Alias: "value"}},
+			},
+		},
+		{
+			Target: Target{Kind: KindVisual, ID: "unique_customers"},
+			Query: dataquery.Query{
+				Kind:     dataquery.KindSemanticAggregate,
+				Measures: []dataquery.Field{{Field: "unique_customers", Alias: "value"}},
+			},
+		},
+		{
+			Target: Target{Kind: KindVisual, ID: "average_order_value"},
+			Query: dataquery.Query{
+				Kind:     dataquery.KindSemanticAggregate,
+				Measures: []dataquery.Field{{Field: "average_order_value", Alias: "value"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Jobs) != 1 || plan.Jobs[0].Strategy != StrategyBundle || len(plan.Jobs[0].Queries) != 3 {
+		t.Fatalf("same-fact non-additive plan = %#v, want one exact grouping-set bundle", plan)
+	}
+}
+
+func TestOptimizerBundlesGroupedConsumersAcrossFactSignatures(t *testing.T) {
+	queries := []LogicalQuery{
+		{
+			Target: Target{Kind: KindVisual, ID: "orders_by_customer"},
+			Query: dataquery.Query{
+				Kind:     dataquery.KindSemanticAggregate,
+				Target:   "orders",
+				Fields:   []dataquery.Field{{Field: "orders.customer", Alias: "label"}},
+				Measures: []dataquery.Field{{Field: "order_count", Alias: "value"}},
+			},
+		},
+		{
+			Target: Target{Kind: KindVisual, ID: "tags_per_order_by_customer"},
+			Query: dataquery.Query{
+				Kind:     dataquery.KindSemanticAggregate,
+				Fields:   []dataquery.Field{{Field: "customer", Alias: "label"}},
+				Measures: []dataquery.Field{{Field: "tags_per_order", Alias: "value"}},
+			},
+		},
+	}
+	optimizer, err := NewOptimizer(optimizerTestModel())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := optimizer.OptimizeForConcurrency(queries, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Jobs) != 1 || plan.Jobs[0].Strategy != StrategyBundle || len(plan.Jobs[0].Queries) != 2 {
+		t.Fatalf("heterogeneous fact plan = %#v, want one shared-scan bundle", plan)
+	}
+	plan, err = optimizer.OptimizeForConcurrency(queries, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Jobs) != 2 {
+		t.Fatalf("concurrent heterogeneous fact plan = %#v, want independent fact-signature bundles", plan)
+	}
+}
+
 func optimizerTestModel() *semanticmodel.Model {
 	return &semanticmodel.Model{
 		Name: "commerce",
 		Tables: map[string]semanticmodel.Table{
-			"orders": {Dimensions: map[string]semanticmodel.MetricDimension{"customer": {Field: "orders.customer_id", Table: "orders", Name: "customer"}, "segment": {Field: "orders.segment", Table: "orders", Name: "segment"}}},
+			"orders": {Dimensions: map[string]semanticmodel.MetricDimension{"customer": {Field: "orders.customer_id", Table: "orders", Name: "customer"}, "segment": {Field: "orders.segment", Table: "orders", Name: "segment"}, "amount": {Field: "orders.amount", Table: "orders", Name: "amount"}}},
 			"tags":   {Dimensions: map[string]semanticmodel.MetricDimension{"customer": {Field: "tags.customer_id", Table: "tags", Name: "customer"}, "segment": {Field: "tags.segment", Table: "tags", Name: "segment"}}},
 		},
 		Dimensions: map[string]semanticmodel.SemanticDimension{
@@ -71,8 +144,10 @@ func optimizerTestModel() *semanticmodel.Model {
 			"segment":  {Type: "string", Bindings: map[string]semanticmodel.DimensionBinding{"orders": {Field: "orders.segment"}, "tags": {Field: "tags.segment"}}},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero"},
-			"tag_count":   {Fact: "tags", Aggregation: "count", Empty: "zero"},
+			"order_count":         {Fact: "orders", Aggregation: "count", Empty: "zero"},
+			"unique_customers":    {Fact: "orders", Aggregation: "count_distinct", Input: semanticmodel.MeasureInput{Field: "orders.customer_id"}, Empty: "zero"},
+			"average_order_value": {Fact: "orders", Aggregation: "avg", Input: semanticmodel.MeasureInput{Field: "orders.amount"}, Empty: "null"},
+			"tag_count":           {Fact: "tags", Aggregation: "count", Empty: "zero"},
 		},
 		Metrics: map[string]semanticmodel.Metric{
 			"tags_per_order": {Expression: "safe_divide(${tag_count}, ${order_count})"},
