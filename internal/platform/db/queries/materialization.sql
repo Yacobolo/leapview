@@ -54,7 +54,7 @@ WHERE COALESCE(r.parent_run_id, '') = ''
 -- name: GetMaterializationRun :one
 SELECT r.id, j.workspace_id, j.serving_state_id, j.model_id, r.principal_id,
        COALESCE(NULLIF(p.display_name, ''), NULLIF(p.email, ''), r.principal_id, '') AS principal_display_name,
-       r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.status, j.created_at, j.updated_at,
+       r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.retry_of, r.status, j.created_at, j.updated_at,
        r.started_at, r.finished_at, r.error
 FROM refresh_job_runs r
 JOIN refresh_jobs j ON j.id = r.job_id
@@ -64,7 +64,7 @@ WHERE r.id = sqlc.arg(run_id) AND j.workspace_id = sqlc.arg(workspace_id);
 -- name: ListChildMaterializationRuns :many
 SELECT r.id, j.workspace_id, j.serving_state_id, j.model_id, r.principal_id,
        COALESCE(NULLIF(p.display_name, ''), NULLIF(p.email, ''), r.principal_id, '') AS principal_display_name,
-       r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.status, j.created_at, j.updated_at,
+       r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.retry_of, r.status, j.created_at, j.updated_at,
        r.started_at, r.finished_at, r.error
 FROM refresh_job_runs r
 JOIN refresh_jobs j ON j.id = r.job_id
@@ -75,7 +75,7 @@ ORDER BY r.rowid ASC;
 -- name: LatestSuccessfulMaterializationRun :one
 SELECT r.id, j.workspace_id, j.serving_state_id, j.model_id, r.principal_id,
        COALESCE(NULLIF(p.display_name, ''), NULLIF(p.email, ''), r.principal_id, '') AS principal_display_name,
-       r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.status, j.created_at, j.updated_at,
+       r.target_type, r.target_id, r.trigger_type, r.parent_run_id, r.retry_of, r.status, j.created_at, j.updated_at,
        r.started_at, r.finished_at, r.error
 FROM refresh_job_runs r
 JOIN refresh_jobs j ON j.id = r.job_id

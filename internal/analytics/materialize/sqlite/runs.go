@@ -450,6 +450,7 @@ type materializationRunDBRow struct {
 	TargetID             string
 	TriggerType          string
 	ParentRunID          sql.NullString
+	RetryOf              sql.NullString
 	Status               string
 	CreatedAt            string
 	UpdatedAt            string
@@ -462,7 +463,7 @@ func materializationRunFromGetRow(row platformdb.GetMaterializationRunRow) mater
 	return materializationRunFromDB(materializationRunDBRow{
 		ID: row.ID, WorkspaceID: row.WorkspaceID, ServingStateID: row.ServingStateID, ModelID: row.ModelID,
 		PrincipalID: row.PrincipalID, PrincipalDisplayName: row.PrincipalDisplayName, TargetType: row.TargetType,
-		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID, Status: row.Status,
+		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID, RetryOf: row.RetryOf, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, Error: row.Error,
 	})
 }
@@ -471,7 +472,7 @@ func materializationRunFromChildRow(row platformdb.ListChildMaterializationRunsR
 	return materializationRunFromDB(materializationRunDBRow{
 		ID: row.ID, WorkspaceID: row.WorkspaceID, ServingStateID: row.ServingStateID, ModelID: row.ModelID,
 		PrincipalID: row.PrincipalID, PrincipalDisplayName: row.PrincipalDisplayName, TargetType: row.TargetType,
-		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID, Status: row.Status,
+		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID, RetryOf: row.RetryOf, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, Error: row.Error,
 	})
 }
@@ -480,7 +481,7 @@ func materializationRunFromLatestRow(row platformdb.LatestSuccessfulMaterializat
 	return materializationRunFromDB(materializationRunDBRow{
 		ID: row.ID, WorkspaceID: row.WorkspaceID, ServingStateID: row.ServingStateID, ModelID: row.ModelID,
 		PrincipalID: row.PrincipalID, PrincipalDisplayName: row.PrincipalDisplayName, TargetType: row.TargetType,
-		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID, Status: row.Status,
+		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID, RetryOf: row.RetryOf, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, Error: row.Error,
 	})
 }
@@ -489,7 +490,7 @@ func materializationRunFromDB(row materializationRunDBRow) materialize.RunRecord
 	run := materialize.RunRecord{
 		ID: row.ID, WorkspaceID: row.WorkspaceID, ServingStateID: row.ServingStateID.String, ModelID: row.ModelID,
 		PrincipalID: row.PrincipalID.String, PrincipalDisplayName: row.PrincipalDisplayName, TargetType: row.TargetType,
-		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID.String, Status: row.Status,
+		TargetID: row.TargetID, TriggerType: row.TriggerType, ParentRunID: row.ParentRunID.String, RetryOf: row.RetryOf.String, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt.String, Error: row.Error,
 	}
 	if run.Status == materialize.RunStatusQueued {

@@ -1081,19 +1081,29 @@ func (h Handler) UpdateGrant(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, fmt.Errorf("unsupported grant subject or privilege"), stdhttp.StatusUnprocessableEntity)
 		return
 	}
-	updater, ok := repo.(interface {
+	_, ok = repo.(interface {
 		UpdateGrant(context.Context, string, string, access.GrantInput) (access.Grant, error)
 	})
 	if !ok {
 		writeJSONError(w, fmt.Errorf("grant updates are unavailable"), stdhttp.StatusServiceUnavailable)
 		return
 	}
-	updated, err := updater.UpdateGrant(r.Context(), workspaceID, id, access.GrantInput{Object: object, SubjectType: subjectType, SubjectID: input.SubjectID, Privilege: privilege})
+	var updated access.Grant
+	err = runAuditedMutation(r, repo, func(txRepo access.Repository) (access.AuditEventInput, error) {
+		txUpdater, ok := txRepo.(interface {
+			UpdateGrant(context.Context, string, string, access.GrantInput) (access.Grant, error)
+		})
+		if !ok {
+			return access.AuditEventInput{}, fmt.Errorf("grant updates are unavailable")
+		}
+		var mutationErr error
+		updated, mutationErr = txUpdater.UpdateGrant(r.Context(), workspaceID, id, access.GrantInput{Object: object, SubjectType: subjectType, SubjectID: input.SubjectID, Privilege: privilege})
+		return grantAuditInput(r, "grant.updated", principal.ID, updated), mutationErr
+	})
 	if err != nil {
-		writeJSONError(w, err, stdhttp.StatusUnprocessableEntity)
+		writeAuditedMutationError(w, err, stdhttp.StatusUnprocessableEntity)
 		return
 	}
-	recordGrantAudit(r, repo, "grant.updated", principal.ID, updated)
 	dto := grantDTO(updated)
 	w.Header().Set("ETag", resourceETag(dto))
 	writeJSON(w, stdhttp.StatusOK, dto)
@@ -1282,12 +1292,16 @@ func (h Handler) UpdateDataPolicy(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
-	updated, err := repo.UpsertDataPolicy(r.Context(), access.DataPolicyInput{ID: id, Object: object, SubjectType: subjectType, SubjectID: input.SubjectID, PolicyType: input.PolicyType, ExpressionJSON: string(expression)})
+	var updated access.DataPolicy
+	err = runAuditedMutation(r, repo, func(txRepo access.Repository) (access.AuditEventInput, error) {
+		var mutationErr error
+		updated, mutationErr = txRepo.UpsertDataPolicy(r.Context(), access.DataPolicyInput{ID: id, Object: object, SubjectType: subjectType, SubjectID: input.SubjectID, PolicyType: input.PolicyType, ExpressionJSON: string(expression)})
+		return accessAuditInput(r, "data_policy.updated", principal.ID, updated.WorkspaceID, "data_policy", updated.ID, access.PrivilegeManageGrants, "success", map[string]any{"objectId": updated.ObjectID, "policyType": updated.PolicyType}), mutationErr
+	})
 	if err != nil {
-		writeJSONError(w, err, stdhttp.StatusUnprocessableEntity)
+		writeAuditedMutationError(w, err, stdhttp.StatusUnprocessableEntity)
 		return
 	}
-	recordAccessAudit(r, repo, "data_policy.updated", principal.ID, updated.WorkspaceID, "data_policy", updated.ID, access.PrivilegeManageGrants, "success", map[string]any{"objectId": updated.ObjectID, "policyType": updated.PolicyType})
 	dto := dataPolicyDTO(updated)
 	w.Header().Set("ETag", resourceETag(dto))
 	writeJSON(w, stdhttp.StatusOK, dto)

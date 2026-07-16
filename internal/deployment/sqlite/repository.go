@@ -348,11 +348,7 @@ func (r *Repository) FailDeployment(ctx context.Context, id string, cause error)
 
 func (r *Repository) CancelDeployment(ctx context.Context, id string) (deployment.Deployment, error) {
 	id = strings.TrimSpace(id)
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE project_deployments
-		SET status = 'cancelled'
-		WHERE id = ? AND status = 'pending'
-	`, id)
+	result, err := r.q.CancelProjectDeployment(ctx, id)
 	if err := requireOne(result, err, "deployment is not pending"); err != nil {
 		return deployment.Deployment{}, err
 	}

@@ -698,6 +698,25 @@ func TestFixedPlatformSQLiteQueriesUseSQLC(t *testing.T) {
 	}
 }
 
+func TestAPIv1SQLiteAdaptersUseSQLC(t *testing.T) {
+	packages := map[string]struct{}{
+		"internal/apiidempotency/sqlite": {},
+		"internal/asyncjob/sqlite":       {},
+		"internal/cursorsigning/sqlite":  {},
+		"internal/release/sqlite":        {},
+	}
+	for _, file := range productionGoFiles(t) {
+		if _, ok := packages[file.pkgDir]; !ok {
+			continue
+		}
+		for _, forbidden := range []string{".ExecContext(", ".QueryContext(", ".QueryRowContext("} {
+			if strings.Contains(file.body, forbidden) {
+				t.Errorf("%s bypasses sqlc via %s", file.path, forbidden)
+			}
+		}
+	}
+}
+
 func TestStorageArchitectureSpecDocumentsGlobalDuckLakeCatalog(t *testing.T) {
 	root := repoRoot(t)
 	spec, err := os.ReadFile(filepath.Join(root, "docs", "storage-architecture-spec.md"))

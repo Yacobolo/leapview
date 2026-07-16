@@ -10,12 +10,16 @@ import (
 	"sort"
 	"strings"
 
+	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 	"github.com/Yacobolo/libredash/internal/release"
 )
 
-type Repository struct{ db *sql.DB }
+type Repository struct {
+	db *sql.DB
+	q  *platformdb.Queries
+}
 
-func NewRepository(db *sql.DB) *Repository { return &Repository{db: db} }
+func NewRepository(db *sql.DB) *Repository { return &Repository{db: db, q: platformdb.New(db)} }
 
 func (r *Repository) Create(ctx context.Context, input release.CreateInput) (release.Release, error) {
 	if err := normalizeCreate(&input); err != nil {
@@ -31,11 +35,11 @@ func (r *Repository) Create(ctx context.Context, input release.CreateInput) (rel
 		return release.Release{}, err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO api_releases
-      (id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by)
-      VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)`, input.ID, input.ProjectID, input.ProjectDigest, input.RequestDigest, input.IdempotencyKey, string(encoded), input.CreatedBy)
+	qtx := r.q.WithTx(tx)
+	err = qtx.CreateAPIRelease(ctx, platformdb.CreateAPIReleaseParams{ID: input.ID, ProjectID: input.ProjectID, ProjectDigest: input.ProjectDigest,
+		RequestDigest: input.RequestDigest, IdempotencyKey: input.IdempotencyKey, ManifestJson: string(encoded), CreatedBy: input.CreatedBy})
 	if err != nil {
-		existing, getErr := getWith(ctx, tx, input.ProjectID, "", input.IdempotencyKey)
+		existing, getErr := getWith(ctx, qtx, input.ProjectID, "", input.IdempotencyKey)
 		if getErr == nil {
 			if existing.RequestDigest != input.RequestDigest {
 				return release.Release{}, release.ErrConflict
@@ -45,12 +49,12 @@ func (r *Repository) Create(ctx context.Context, input release.CreateInput) (rel
 		return release.Release{}, err
 	}
 	for _, workspace := range input.Workspaces {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO api_release_artifacts (release_id, workspace_id, expected_digest) VALUES (?, ?, ?)`, input.ID, workspace.WorkspaceID, workspace.ArtifactDigest); err != nil {
+		if err := qtx.CreateAPIReleaseArtifact(ctx, platformdb.CreateAPIReleaseArtifactParams{ReleaseID: input.ID, WorkspaceID: workspace.WorkspaceID, ExpectedDigest: workspace.ArtifactDigest}); err != nil {
 			return release.Release{}, err
 		}
 	}
 	for _, connection := range input.Connections {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO api_release_connections (release_id, connection_id, revision_id) VALUES (?, ?, ?)`, input.ID, connection.ConnectionID, connection.RevisionID); err != nil {
+		if err := qtx.CreateAPIReleaseConnection(ctx, platformdb.CreateAPIReleaseConnectionParams{ReleaseID: input.ID, ConnectionID: connection.ConnectionID, RevisionID: connection.RevisionID}); err != nil {
 			return release.Release{}, err
 		}
 	}
@@ -61,24 +65,12 @@ func (r *Repository) Create(ctx context.Context, input release.CreateInput) (rel
 }
 
 func (r *Repository) Get(ctx context.Context, projectID, releaseID string) (release.Release, error) {
-	return getWith(ctx, r.db, strings.TrimSpace(projectID), strings.TrimSpace(releaseID), "")
+	return getWith(ctx, r.q, strings.TrimSpace(projectID), strings.TrimSpace(releaseID), "")
 }
 
 func (r *Repository) List(ctx context.Context, projectID string) ([]release.Release, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id FROM api_releases WHERE project_id = ? ORDER BY created_at DESC, id DESC`, strings.TrimSpace(projectID))
+	ids, err := r.q.ListAPIReleaseIDs(ctx, strings.TrimSpace(projectID))
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	result := make([]release.Release, 0, len(ids))
@@ -96,26 +88,23 @@ func (r *Repository) RecordArtifact(ctx context.Context, artifact release.Artifa
 	if strings.TrimSpace(artifact.ReleaseID) == "" || strings.TrimSpace(artifact.WorkspaceID) == "" || strings.TrimSpace(artifact.ServingStateID) == "" || artifact.SizeBytes < 0 {
 		return release.ErrInvalid
 	}
-	var status string
-	var expected string
-	err := r.db.QueryRowContext(ctx, `SELECT r.status, a.expected_digest FROM api_releases r JOIN api_release_artifacts a ON a.release_id = r.id WHERE r.id = ? AND a.workspace_id = ?`, artifact.ReleaseID, artifact.WorkspaceID).Scan(&status, &expected)
+	state, err := r.q.GetAPIReleaseArtifactUploadState(ctx, platformdb.GetAPIReleaseArtifactUploadStateParams{ID: artifact.ReleaseID, WorkspaceID: artifact.WorkspaceID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return release.ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if release.Status(status) != release.StatusDraft {
+	if release.Status(state.Status) != release.StatusDraft {
 		return release.ErrImmutable
 	}
-	if artifact.ExpectedDigest != "" && artifact.ExpectedDigest != expected {
+	if artifact.ExpectedDigest != "" && artifact.ExpectedDigest != state.ExpectedDigest {
 		return release.ErrConflict
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE api_release_artifacts SET size_bytes = ?, uploaded_at = CURRENT_TIMESTAMP WHERE release_id = ? AND workspace_id = ? AND serving_state_id = ? AND uploaded_at IS NULL`, artifact.SizeBytes, artifact.ReleaseID, artifact.WorkspaceID, artifact.ServingStateID)
+	changed, err := r.q.RecordAPIReleaseArtifact(ctx, platformdb.RecordAPIReleaseArtifactParams{SizeBytes: artifact.SizeBytes, ReleaseID: artifact.ReleaseID, WorkspaceID: artifact.WorkspaceID, ServingStateID: sql.NullString{String: artifact.ServingStateID, Valid: true}})
 	if err != nil {
 		return err
 	}
-	changed, _ := result.RowsAffected()
 	if changed != 1 {
 		return release.ErrConflict
 	}
@@ -123,14 +112,10 @@ func (r *Repository) RecordArtifact(ctx context.Context, artifact release.Artifa
 }
 
 func (r *Repository) AssignArtifactTarget(ctx context.Context, projectID, releaseID, workspaceID, servingStateID string) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE api_release_artifacts SET serving_state_id = ?
-    WHERE release_id = ? AND workspace_id = ? AND serving_state_id IS NULL
-      AND EXISTS (SELECT 1 FROM api_releases WHERE id = ? AND project_id = ? AND status = 'draft')`,
-		strings.TrimSpace(servingStateID), releaseID, workspaceID, releaseID, projectID)
+	changed, err := r.q.AssignAPIReleaseArtifactTarget(ctx, platformdb.AssignAPIReleaseArtifactTargetParams{ServingStateID: sql.NullString{String: strings.TrimSpace(servingStateID), Valid: true}, ReleaseID: releaseID, WorkspaceID: workspaceID, ID: releaseID, ProjectID: projectID})
 	if err != nil {
 		return err
 	}
-	changed, _ := result.RowsAffected()
 	if changed != 1 {
 		return release.ErrConflict
 	}
@@ -143,7 +128,8 @@ func (r *Repository) BeginFinalization(ctx context.Context, projectID, releaseID
 		return release.Release{}, err
 	}
 	defer tx.Rollback()
-	current, err := getWith(ctx, tx, projectID, releaseID, "")
+	qtx := r.q.WithTx(tx)
+	current, err := getWith(ctx, qtx, projectID, releaseID, "")
 	if err != nil {
 		return release.Release{}, err
 	}
@@ -158,7 +144,7 @@ func (r *Repository) BeginFinalization(ctx context.Context, projectID, releaseID
 			return release.Release{}, release.ErrIncomplete
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE api_releases SET status = 'validating' WHERE id = ? AND project_id = ? AND status = 'draft'`, releaseID, projectID); err != nil {
+	if _, err := qtx.MarkAPIReleaseValidating(ctx, platformdb.MarkAPIReleaseValidatingParams{ID: releaseID, ProjectID: projectID}); err != nil {
 		return release.Release{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -173,7 +159,8 @@ func (r *Repository) CompleteFinalization(ctx context.Context, projectID, releas
 		return release.Release{}, err
 	}
 	defer tx.Rollback()
-	current, err := getWith(ctx, tx, projectID, releaseID, "")
+	qtx := r.q.WithTx(tx)
+	current, err := getWith(ctx, qtx, projectID, releaseID, "")
 	if err != nil {
 		return release.Release{}, err
 	}
@@ -185,11 +172,11 @@ func (r *Repository) CompleteFinalization(ctx context.Context, projectID, releas
 		if !ok || digest != artifact.ExpectedDigest {
 			return release.Release{}, release.ErrConflict
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE api_release_artifacts SET actual_digest = ? WHERE release_id = ? AND workspace_id = ?`, digest, releaseID, artifact.WorkspaceID); err != nil {
+		if err := qtx.SetAPIReleaseArtifactDigest(ctx, platformdb.SetAPIReleaseArtifactDigestParams{ActualDigest: digest, ReleaseID: releaseID, WorkspaceID: artifact.WorkspaceID}); err != nil {
 			return release.Release{}, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE api_releases SET status = 'ready', finalized_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ? AND status = 'validating'`, releaseID, projectID); err != nil {
+	if _, err := qtx.MarkAPIReleaseReady(ctx, platformdb.MarkAPIReleaseReadyParams{ID: releaseID, ProjectID: projectID}); err != nil {
 		return release.Release{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -203,11 +190,10 @@ func (r *Repository) FailFinalization(ctx context.Context, projectID, releaseID 
 	if cause != nil && strings.TrimSpace(cause.Error()) != "" {
 		message = cause.Error()
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE api_releases SET status = 'failed', error = ?, finalized_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ? AND status = 'validating'`, message, releaseID, projectID)
+	changed, err := r.q.MarkAPIReleaseFailed(ctx, platformdb.MarkAPIReleaseFailedParams{Error: message, ID: releaseID, ProjectID: projectID})
 	if err != nil {
 		return release.Release{}, err
 	}
-	changed, _ := result.RowsAffected()
 	if changed != 1 {
 		return release.Release{}, release.ErrImmutable
 	}
@@ -215,91 +201,60 @@ func (r *Repository) FailFinalization(ctx context.Context, projectID, releaseID 
 }
 
 func (r *Repository) LinkDeployment(ctx context.Context, projectID, deploymentID, releaseID, rollbackOf string) error {
-	var rollback any
-	if strings.TrimSpace(rollbackOf) != "" {
-		rollback = strings.TrimSpace(rollbackOf)
-	}
-	_, err := r.db.ExecContext(ctx, `INSERT INTO api_deployment_releases (deployment_id, project_id, release_id, rollback_of) VALUES (?, ?, ?, ?)
-    ON CONFLICT(deployment_id) DO UPDATE SET release_id = excluded.release_id
-    WHERE api_deployment_releases.project_id = excluded.project_id AND api_deployment_releases.release_id = excluded.release_id`,
-		strings.TrimSpace(deploymentID), strings.TrimSpace(projectID), strings.TrimSpace(releaseID), rollback)
-	return err
+	rollbackValue := strings.TrimSpace(rollbackOf)
+	return r.q.LinkAPIReleaseDeployment(ctx, platformdb.LinkAPIReleaseDeploymentParams{DeploymentID: strings.TrimSpace(deploymentID), ProjectID: strings.TrimSpace(projectID), ReleaseID: strings.TrimSpace(releaseID), RollbackOf: sql.NullString{String: rollbackValue, Valid: rollbackValue != ""}})
 }
 
 func (r *Repository) DeploymentRelease(ctx context.Context, projectID, deploymentID string) (string, string, error) {
-	var releaseID, rollbackOf string
-	err := r.db.QueryRowContext(ctx, `SELECT release_id, COALESCE(rollback_of, '') FROM api_deployment_releases WHERE project_id = ? AND deployment_id = ?`, strings.TrimSpace(projectID), strings.TrimSpace(deploymentID)).Scan(&releaseID, &rollbackOf)
+	row, err := r.q.GetAPIReleaseDeployment(ctx, platformdb.GetAPIReleaseDeploymentParams{ProjectID: strings.TrimSpace(projectID), DeploymentID: strings.TrimSpace(deploymentID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", release.ErrNotFound
 	}
-	return releaseID, rollbackOf, err
+	return row.ReleaseID, row.RollbackOf, err
 }
 
 func (r *Repository) ListDeploymentIDs(ctx context.Context, projectID string) ([]string, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT deployment_id FROM api_deployment_releases WHERE project_id = ? ORDER BY created_at DESC, deployment_id DESC`, strings.TrimSpace(projectID))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return r.q.ListAPIReleaseDeploymentIDs(ctx, strings.TrimSpace(projectID))
 }
 
 func (r *Repository) PriorDeploymentRelease(ctx context.Context, projectID, deploymentID string) (string, error) {
-	var releaseID string
-	err := r.db.QueryRowContext(ctx, `SELECT prior.release_id
-    FROM api_deployment_releases current
-    JOIN api_deployment_releases prior ON prior.project_id = current.project_id AND prior.created_at < current.created_at
-    WHERE current.project_id = ? AND current.deployment_id = ?
-    ORDER BY prior.created_at DESC, prior.deployment_id DESC LIMIT 1`, strings.TrimSpace(projectID), strings.TrimSpace(deploymentID)).Scan(&releaseID)
+	releaseID, err := r.q.GetPriorAPIReleaseDeployment(ctx, platformdb.GetPriorAPIReleaseDeploymentParams{ProjectID: strings.TrimSpace(projectID), DeploymentID: strings.TrimSpace(deploymentID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", release.ErrNotFound
 	}
 	return releaseID, err
 }
 
-type queryer interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
-func getWith(ctx context.Context, q queryer, projectID, releaseID, idempotencyKey string) (release.Release, error) {
-	query := `SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by, created_at, COALESCE(finalized_at, ''), error FROM api_releases WHERE project_id = ? AND id = ?`
-	args := []any{projectID, releaseID}
+func getWith(ctx context.Context, q *platformdb.Queries, projectID, releaseID, idempotencyKey string) (release.Release, error) {
+	var raw releaseRow
+	var err error
 	if idempotencyKey != "" {
-		query = `SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by, created_at, COALESCE(finalized_at, ''), error FROM api_releases WHERE project_id = ? AND idempotency_key = ?`
-		args = []any{projectID, idempotencyKey}
+		row, queryErr := q.GetAPIReleaseByIdempotencyKey(ctx, platformdb.GetAPIReleaseByIdempotencyKeyParams{ProjectID: projectID, IdempotencyKey: idempotencyKey})
+		err = queryErr
+		raw = releaseRow{row.ID, row.ProjectID, row.ProjectDigest, row.RequestDigest, row.IdempotencyKey, row.Status, row.ManifestJson, row.CreatedBy, row.CreatedAt, row.FinalizedAt, row.Error}
+	} else {
+		row, queryErr := q.GetAPIReleaseByID(ctx, platformdb.GetAPIReleaseByIDParams{ProjectID: projectID, ID: releaseID})
+		err = queryErr
+		raw = releaseRow{row.ID, row.ProjectID, row.ProjectDigest, row.RequestDigest, row.IdempotencyKey, row.Status, row.ManifestJson, row.CreatedBy, row.CreatedAt, row.FinalizedAt, row.Error}
 	}
-	var item release.Release
-	var status, manifestJSON string
-	err := q.QueryRowContext(ctx, query, args...).Scan(&item.ID, &item.ProjectID, &item.ProjectDigest, &item.RequestDigest, &item.IdempotencyKey, &status, &manifestJSON, &item.CreatedBy, &item.CreatedAt, &item.FinalizedAt, &item.Error)
 	if errors.Is(err, sql.ErrNoRows) {
 		return release.Release{}, release.ErrNotFound
 	}
 	if err != nil {
 		return release.Release{}, err
 	}
-	item.Status = release.Status(status)
-	if err := json.Unmarshal([]byte(manifestJSON), &item.Manifest); err != nil {
+	item := release.Release{ID: raw.id, ProjectID: raw.projectID, ProjectDigest: raw.projectDigest, RequestDigest: raw.requestDigest,
+		IdempotencyKey: raw.idempotencyKey, Status: release.Status(raw.status), CreatedBy: raw.createdBy, CreatedAt: raw.createdAt, FinalizedAt: raw.finalizedAt, Error: raw.errorText}
+	if err := json.Unmarshal([]byte(raw.manifestJSON), &item.Manifest); err != nil {
 		return release.Release{}, err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT workspace_id, expected_digest, COALESCE(serving_state_id, ''), actual_digest, size_bytes, COALESCE(uploaded_at, '') FROM api_release_artifacts WHERE release_id = ? ORDER BY workspace_id`, item.ID)
+	rows, err := q.GetAPIReleaseArtifacts(ctx, item.ID)
 	if err != nil {
 		return release.Release{}, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		artifact := release.Artifact{ReleaseID: item.ID}
-		if err := rows.Scan(&artifact.WorkspaceID, &artifact.ExpectedDigest, &artifact.ServingStateID, &artifact.ActualDigest, &artifact.SizeBytes, &artifact.UploadedAt); err != nil {
-			return release.Release{}, err
-		}
+	for _, row := range rows {
+		artifact := release.Artifact{ReleaseID: item.ID, WorkspaceID: row.WorkspaceID, ExpectedDigest: row.ExpectedDigest,
+			ServingStateID: row.ServingStateID, ActualDigest: row.ActualDigest, SizeBytes: row.SizeBytes, UploadedAt: row.UploadedAt}
 		item.Artifacts = append(item.Artifacts, artifact)
 	}
 	for i := range item.Manifest.Workspaces {
@@ -310,7 +265,12 @@ func getWith(ctx context.Context, q queryer, projectID, releaseID, idempotencyKe
 			}
 		}
 	}
-	return item, rows.Err()
+	return item, nil
+}
+
+type releaseRow struct {
+	id, projectID, projectDigest, requestDigest, idempotencyKey, status, manifestJSON string
+	createdBy, createdAt, finalizedAt, errorText                                      string
 }
 
 func normalizeCreate(input *release.CreateInput) error {

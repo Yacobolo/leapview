@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+
+	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
 )
 
 type ProjectRecord struct {
@@ -18,32 +20,23 @@ type ConnectionRecord struct {
 }
 
 func (r *Repository) ListProjects(ctx context.Context) ([]ProjectRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT project_id, MIN(created_at), MAX(updated_at) FROM (
-      SELECT project_id, created_at, COALESCE(finalized_at, created_at) AS updated_at FROM api_releases
-      UNION ALL SELECT project_id, created_at, updated_at FROM managed_data_collections
-    ) GROUP BY project_id ORDER BY project_id`)
+	rows, err := r.q.ListAPIProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	result := []ProjectRecord{}
-	for rows.Next() {
-		var item ProjectRecord
-		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
-		}
+	result := make([]ProjectRecord, 0, len(rows))
+	for _, row := range rows {
+		item := ProjectRecord{ID: row.ProjectID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 		r.populateProjectPointers(ctx, &item)
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 func (r *Repository) GetProject(ctx context.Context, projectID string) (ProjectRecord, error) {
 	item := ProjectRecord{ID: projectID}
-	err := r.db.QueryRowContext(ctx, `SELECT MIN(created_at), MAX(updated_at) FROM (
-      SELECT created_at, COALESCE(finalized_at, created_at) AS updated_at FROM api_releases WHERE project_id = ?
-      UNION ALL SELECT created_at, updated_at FROM managed_data_collections WHERE project_id = ?
-    )`, projectID, projectID).Scan(&item.CreatedAt, &item.UpdatedAt)
+	row, err := r.q.GetAPIProject(ctx, projectID)
+	item.CreatedAt, item.UpdatedAt = row.CreatedAt, row.UpdatedAt
 	if err != nil || item.CreatedAt == "" {
 		return ProjectRecord{}, sql.ErrNoRows
 	}
@@ -52,56 +45,37 @@ func (r *Repository) GetProject(ctx context.Context, projectID string) (ProjectR
 }
 
 func (r *Repository) populateProjectPointers(ctx context.Context, item *ProjectRecord) {
-	_ = r.db.QueryRowContext(ctx, `SELECT id FROM api_releases WHERE project_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`, item.ID).Scan(&item.LatestReleaseID)
-	_ = r.db.QueryRowContext(ctx, `SELECT d.id FROM project_deployments d JOIN api_deployment_releases l ON l.deployment_id = d.id WHERE l.project_id = ? AND d.status = 'active' ORDER BY d.activated_at DESC LIMIT 1`, item.ID).Scan(&item.ActiveDeploymentID)
+	item.LatestReleaseID, _ = r.q.GetLatestAPIProjectReleaseID(ctx, item.ID)
+	item.ActiveDeploymentID, _ = r.q.GetActiveAPIProjectDeploymentID(ctx, item.ID)
 }
 
 func (r *Repository) ListProjectWorkspaces(ctx context.Context, projectID, environment string) ([]WorkspaceRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT a.workspace_id, COALESCE(w.title, a.workspace_id), COALESCE(w.description, ''),
-    COALESCE(active.serving_state_id, '') FROM api_release_artifacts a JOIN api_releases rel ON rel.id = a.release_id
-    LEFT JOIN workspaces w ON w.id = a.workspace_id
-    LEFT JOIN workspace_active_serving_states active ON active.workspace_id = a.workspace_id AND active.environment = ?
-    WHERE rel.project_id = ? ORDER BY a.workspace_id`, environment, projectID)
+	rows, err := r.q.ListAPIProjectWorkspaces(ctx, platformdb.ListAPIProjectWorkspacesParams{Environment: environment, ProjectID: projectID})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	result := []WorkspaceRecord{}
-	for rows.Next() {
-		var item WorkspaceRecord
-		if err := rows.Scan(&item.ID, &item.Title, &item.Description, &item.ActiveServingStateID); err != nil {
-			return nil, err
-		}
-		result = append(result, item)
+	result := make([]WorkspaceRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, WorkspaceRecord{ID: row.WorkspaceID, Title: row.Title, Description: row.Description, ActiveServingStateID: row.ActiveServingStateID})
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 func (r *Repository) ListConnections(ctx context.Context, projectID, environment string) ([]ConnectionRecord, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT c.connection_name, c.name, c.description, COALESCE(rev.digest, '')
-    FROM managed_data_collections c LEFT JOIN managed_data_environment_pointers ptr ON ptr.collection_id = c.id AND ptr.environment = ?
-    LEFT JOIN managed_data_revisions rev ON rev.id = ptr.revision_id WHERE c.project_id = ? AND c.status = 'active' ORDER BY c.connection_name`, environment, projectID)
+	rows, err := r.q.ListAPIProjectConnections(ctx, platformdb.ListAPIProjectConnectionsParams{Environment: environment, ProjectID: projectID})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	result := []ConnectionRecord{}
-	for rows.Next() {
-		var item ConnectionRecord
-		if err := rows.Scan(&item.ID, &item.Title, &item.Description, &item.ActiveRevisionID); err != nil {
-			return nil, err
-		}
-		result = append(result, item)
+	result := make([]ConnectionRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, ConnectionRecord{ID: row.ConnectionName, Title: row.Name, Description: row.Description, ActiveRevisionID: row.ActiveRevisionID})
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 func (r *Repository) GetConnection(ctx context.Context, projectID, connectionID, environment string) (ConnectionRecord, error) {
 	item := ConnectionRecord{ID: connectionID}
-	err := r.db.QueryRowContext(ctx, `SELECT c.name, c.description, COALESCE(rev.digest, '') FROM managed_data_collections c
-    LEFT JOIN managed_data_environment_pointers ptr ON ptr.collection_id = c.id AND ptr.environment = ?
-    LEFT JOIN managed_data_revisions rev ON rev.id = ptr.revision_id
-    WHERE c.project_id = ? AND c.connection_name = ? AND c.status = 'active'`, environment, projectID, connectionID).
-		Scan(&item.Title, &item.Description, &item.ActiveRevisionID)
+	row, err := r.q.GetAPIProjectConnection(ctx, platformdb.GetAPIProjectConnectionParams{Environment: environment, ProjectID: projectID, ConnectionName: connectionID})
+	item.Title, item.Description, item.ActiveRevisionID = row.Name, row.Description, row.ActiveRevisionID
 	return item, err
 }
