@@ -66,8 +66,9 @@ func DashboardPagePlacementFromDashboard(value dashboard.PagePlacement) Dashboar
 
 func DashboardStatusFromDashboard(value dashboard.Status) DashboardStatus {
 	return DashboardStatus{
-		Loading: value.Loading, Error: value.Error, LastUpdated: value.LastUpdated,
-		DataDirectory: value.DataDirectory, SetupRequired: value.SetupRequired,
+		Loading: value.Loading, Error: value.Error, RefreshID: value.RefreshID, Generation: value.Generation, LastUpdated: value.LastUpdated,
+		SetupRequired:   value.SetupRequired,
+		ProgressPercent: ValueOrZero(dashboard.NormalizeProgressPercent(value.ProgressPercent, value.Loading)),
 	}
 }
 
@@ -97,7 +98,10 @@ func DashboardFiltersFromDashboard(value dashboard.Filters) DashboardFilters {
 func DashboardInteractionCommandFromDashboard(value dashboard.InteractionCommand) DashboardInteractionCommand {
 	mappings := make([]DashboardInteractionCommandMapping, len(value.Mappings))
 	for index, mapping := range value.Mappings {
-		mappings[index] = DashboardInteractionCommandMapping{Field: mapping.Field, Value: mapping.Value, Label: optionalValue(mapping.Label)}
+		mappings[index] = DashboardInteractionCommandMapping{
+			Field: mapping.Field, Fact: optionalValue(mapping.Fact), Grain: optionalValue(mapping.Grain),
+			Value: mapping.Value, Label: optionalValue(mapping.Label),
+		}
 	}
 	return DashboardInteractionCommand{
 		SourceKind: value.SourceKind, SourceID: value.SourceID, InteractionKind: value.InteractionKind,
@@ -167,7 +171,7 @@ func DashboardTableFromDashboard(value dashboard.Table) DashboardTable {
 		Version: int64(value.Version), Kind: value.Kind, Title: value.Title,
 		Style:       DashboardTableStyle{Density: value.Style.Density, Zebra: zebra, Grid: value.Style.Grid},
 		Interaction: dashboardInteractionConfig(value.Interaction), Selection: dashboardInteractionSelectionEntries(value.Selection),
-		Columns: columns, TotalRows: int64(value.TotalRows), AvailableRows: int64(value.AvailableRows), IsCapped: value.IsCapped,
+		Columns: columns, Cardinality: DashboardTableCardinality{Kind: value.Cardinality.Kind, Value: int64(value.Cardinality.Value)}, AvailableRows: int64(value.AvailableRows), IsCapped: value.IsCapped,
 		RowCap: int64(value.RowCap), ChunkSize: int64(value.ChunkSize), RowHeight: int64(value.RowHeight), ResetVersion: int64(value.ResetVersion),
 		Sort: dashboardTableSort(value.Sort), Blocks: blocks, LoadingBlock: value.LoadingBlock, Error: value.Error,
 	}
@@ -184,7 +188,10 @@ func DashboardTablesFromDashboard(values map[string]dashboard.Table) map[string]
 func dashboardInteractionConfig(value dashboard.InteractionConfig) DashboardInteractionConfig {
 	mappings := make([]DashboardInteractionConfigMapping, len(value.Mappings))
 	for index, mapping := range value.Mappings {
-		mappings[index] = DashboardInteractionConfigMapping{Field: mapping.Field, Value: mapping.Value, Label: optionalValue(mapping.Label)}
+		mappings[index] = DashboardInteractionConfigMapping{
+			Field: mapping.Field, Fact: optionalValue(mapping.Fact), Grain: optionalValue(mapping.Grain),
+			Value: mapping.Value, Label: optionalValue(mapping.Label),
+		}
 	}
 	return DashboardInteractionConfig{Kind: value.Kind, Toggle: value.Toggle, Mappings: mappings, Targets: optionalSlice(value.Targets)}
 }
@@ -205,7 +212,10 @@ func dashboardInteractionSelectionEntries(values []dashboard.InteractionSelectio
 	for index, value := range values {
 		mappings := make([]DashboardInteractionSelectionMapping, len(value.Mappings))
 		for mappingIndex, mapping := range value.Mappings {
-			mappings[mappingIndex] = DashboardInteractionSelectionMapping{Field: mapping.Field, Value: mapping.Value, Label: optionalValue(mapping.Label)}
+			mappings[mappingIndex] = DashboardInteractionSelectionMapping{
+				Field: mapping.Field, Fact: optionalValue(mapping.Fact), Grain: optionalValue(mapping.Grain),
+				Value: mapping.Value, Label: optionalValue(mapping.Label),
+			}
 		}
 		out[index] = DashboardInteractionSelectionEntry{Mappings: mappings, Label: optionalValue(value.Label)}
 	}
@@ -242,7 +252,7 @@ func ReportFilterConfigsFromReport(values []reportdef.FilterConfig) []ReportFilt
 		}
 		out[index] = ReportFilterConfig{
 			ID: value.ID, Type: definition.Type, Label: definition.Label, Description: optionalValue(definition.Description),
-			Dimension: definition.Dimension, Custom: optionalValue(definition.Custom), Operator: optionalValue(definition.Operator),
+			Dimension: definition.Dimension, Fact: optionalValue(definition.Fact), Custom: optionalValue(definition.Custom), Operator: optionalValue(definition.Operator),
 			DefaultOperator: optionalValue(definition.DefaultOperator), Operators: optionalSlice(definition.Operators), Options: optionalSlice(options),
 			Presets: optionalSlice(presets), URLParam: optionalValue(definition.URLParam), FromURLParam: optionalValue(definition.FromURLParam),
 			ToURLParam: optionalValue(definition.ToURLParam), OperatorURLParam: optionalValue(definition.OperatorURLParam), Targets: targets, Values: filterValues,

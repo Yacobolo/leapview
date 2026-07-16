@@ -27,13 +27,22 @@ func TestMovieLensExperimentProjectCompiles(t *testing.T) {
 			t.Fatalf("missing semantic model %q", modelID)
 		}
 		for _, relationship := range model.Relationships {
-			if !relationship.Active {
-				t.Fatalf("semantic model %q has inactive relationship %#v", modelID, relationship)
-			}
 			if relationship.Cardinality != "many_to_one" && relationship.Cardinality != "one_to_one" {
 				t.Fatalf("semantic model %q has unsafe relationship cardinality %#v", modelID, relationship)
 			}
 		}
+	}
+	movieRatings := workspaceProject.Definition.Models["movie_ratings"]
+	movieTitle, ok := movieRatings.Dimensions["movie_title"]
+	if !ok || len(movieTitle.Bindings) != 2 || movieTitle.Bindings["ratings"].Field != "movies.title" || movieTitle.Bindings["tags"].Field != "movies.title" {
+		t.Fatalf("movie_title dimension = %#v, want conformed ratings/tags bindings", movieTitle)
+	}
+	ratingsOverview := workspaceProject.Definition.Dashboards["ratings-overview"]
+	if filter := ratingsOverview.Filters["rating_bucket"]; filter.Dimension != "ratings.rating_bucket" || filter.Fact != "ratings" {
+		t.Fatalf("rating_bucket filter = %#v, want explicit ratings fact", filter)
+	}
+	if filter := ratingsOverview.Filters["title"]; filter.Dimension != "movie_title" || filter.Fact != "" {
+		t.Fatalf("title filter = %#v, want conformed movie_title", filter)
 	}
 	assertGraphAsset(t, workspaceProject.Workspace.Graph, "connection:movielens")
 	assertGraphAsset(t, workspaceProject.Workspace.Graph, "source:movielens.ratings")

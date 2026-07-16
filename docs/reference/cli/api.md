@@ -10,12 +10,6 @@ Call any generated LibreDash API operation
 libredash api
 ```
 
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
-
 ## Subcommands
 
 - `libredash call`: Call a generated API operation

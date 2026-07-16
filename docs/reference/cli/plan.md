@@ -14,14 +14,9 @@ libredash plan [project] [flags]
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--environment` | string | `dev` | publish environment for active diff |
+| `--environment` | string | `dev` | deployment environment for active diff |
 | `--json` | bool | `false` | emit JSON plan |
 | `--project` | string | `dashboards/libredash.yaml` | project path |
-| `--target` | string | `` | LibreDash server URL for active publish diff |
+| `--target` | string | `` | LibreDash server URL for active deployment diff |
 | `--token` | string | `` | API token |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
+| `--workspace` | string | `` | workspace id for active diff |

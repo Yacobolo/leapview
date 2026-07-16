@@ -3,52 +3,9 @@
     "#APIVersion": {
       "const": "libredash.dev/v1"
     },
-    "#FieldRef": {
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$",
-      "type": "string"
-    },
     "#Identifier": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
       "type": "string"
-    },
-    "#Measure": {
-      "additionalProperties": false,
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "expr": {
-          "type": "string"
-        },
-        "expression": {
-          "type": "string"
-        },
-        "format": {
-          "type": "string"
-        },
-        "grain": {
-          "$ref": "#/$defs/%23Identifier"
-        },
-        "grains": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "label": {
-          "type": "string"
-        },
-        "table": {
-          "$ref": "#/$defs/%23Identifier"
-        },
-        "time": {
-          "$ref": "#/$defs/%23FieldRef"
-        },
-        "unit": {
-          "type": "string"
-        }
-      },
-      "type": "object"
     },
     "#Metadata": {
       "additionalProperties": false,
@@ -118,15 +75,6 @@
         },
         "kind": {
           "type": "string"
-        },
-        "measures": {
-          "additionalProperties": false,
-          "patternProperties": {
-            "^[A-Za-z_][A-Za-z0-9_]*$": {
-              "$ref": "#/$defs/%23Measure"
-            }
-          },
-          "type": "object"
         },
         "primaryKey": {
           "$ref": "#/$defs/%23Identifier"

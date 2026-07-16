@@ -20,9 +20,4 @@ libredash search <query> [flags]
 | `--target` | string | `` | LibreDash server URL |
 | `--token` | string | `` | API token |
 | `--type` | stringArray | `[]` | result type filter; repeatable or comma-separated |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
 | `--workspace` | string | `` | workspace id |

@@ -10,12 +10,6 @@ Maintain analytical storage
 libredash admin storage
 ```
 
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
-
 ## Subcommands
 
 - `libredash cleanup`: Reconcile serving-state snapshots and clean DuckLake storage

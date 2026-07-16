@@ -10,7 +10,6 @@ import (
 
 type rootOptions struct {
 	addr               string
-	dataDir            string
 	production         bool
 	workspaceID        string
 	environment        string
@@ -52,19 +51,19 @@ func NewCommand(ctx context.Context) *cobra.Command {
 	opts := &rootOptions{}
 	root := &cobra.Command{
 		Use:   "libredash",
-		Short: "LibreDash BI-as-code server and publish CLI",
+		Short: "LibreDash BI-as-code server and deployment CLI",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.environment = ""
 			return runServe(ctx, opts)
 		},
 	}
-	root.PersistentFlags().StringVar(&opts.workspaceID, "workspace", "", "workspace id")
 	root.AddCommand(serveCommand(ctx, opts))
-	root.AddCommand(publishCommand(ctx, opts))
+	root.AddCommand(deployCommand(ctx, opts))
 	root.AddCommand(validateCommand(ctx, opts))
 	root.AddCommand(planCommand(ctx, opts))
 	root.AddCommand(schemaCommand(opts))
 	root.AddCommand(configCommand())
+	root.AddCommand(dataCommand(ctx, opts))
 	root.AddCommand(apiCommand(ctx, opts))
 	root.AddCommand(agentCommand(ctx, opts))
 	root.AddCommand(searchCommand(ctx, opts))
@@ -72,7 +71,6 @@ func NewCommand(ctx context.Context) *cobra.Command {
 	root.AddCommand(dashboardsCommand(ctx, opts))
 	root.AddCommand(semanticModelsCommand(ctx, opts))
 	root.AddCommand(loginCommand(opts))
-	root.AddCommand(publishesCommand(ctx, opts))
 	root.AddCommand(adminCommand(ctx, opts))
 	root.AddCommand(healthcheckCommand(ctx, opts))
 	return root

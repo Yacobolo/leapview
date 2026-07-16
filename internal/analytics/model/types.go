@@ -8,16 +8,17 @@ var (
 )
 
 type Model struct {
-	Name              string                   `yaml:"-"`
-	Title             string                   `yaml:"-"`
-	Description       string                   `yaml:"-"`
-	DefaultConnection string                   `yaml:"-"`
-	Connections       map[string]Connection    `yaml:"-"`
-	Sources           map[string]Source        `yaml:"-"`
-	Tables            map[string]Table         `yaml:"-"`
-	BaseTable         string                   `yaml:"-"`
-	Relationships     []Relationship           `yaml:"-"`
-	Measures          map[string]MetricMeasure `yaml:"-"`
+	Name              string                       `yaml:"-"`
+	Title             string                       `yaml:"-"`
+	Description       string                       `yaml:"-"`
+	DefaultConnection string                       `yaml:"-"`
+	Connections       map[string]Connection        `yaml:"-"`
+	Sources           map[string]Source            `yaml:"-"`
+	Tables            map[string]Table             `yaml:"-"`
+	Relationships     []Relationship               `yaml:"-"`
+	Measures          map[string]MetricMeasure     `yaml:"-"`
+	Dimensions        map[string]SemanticDimension `yaml:"-"`
+	Metrics           map[string]Metric            `yaml:"-"`
 }
 
 type Connection struct {
@@ -60,7 +61,6 @@ type Source struct {
 }
 
 type Table struct {
-	Kind               string                     `yaml:"kind"`
 	Source             string                     `yaml:"source"`
 	Sources            []string                   `yaml:"sources"`
 	SourceReads        map[string][]string        `yaml:"source_reads"`
@@ -70,7 +70,6 @@ type Table struct {
 	PrimaryKey         string                     `yaml:"primary_key"`
 	Grain              string                     `yaml:"grain"`
 	Dimensions         map[string]MetricDimension `yaml:"fields"`
-	Measures           map[string]MetricMeasure   `yaml:"measures"`
 	Description        string                     `yaml:"description"`
 	Schema             TableSchema                `yaml:"-"`
 	SourceDependencies []string                   `yaml:"-"`
@@ -95,13 +94,6 @@ type ModelColumn struct {
 	SourceField string `yaml:"source_field"`
 	Description string `yaml:"description"`
 	Type        string `yaml:"type"`
-}
-
-type MeasureDefaults struct {
-	Table  string   `yaml:"table"`
-	Grain  string   `yaml:"grain"`
-	Time   string   `yaml:"time"`
-	Grains []string `yaml:"grains"`
 }
 
 type MetricDimension struct {
@@ -130,18 +122,53 @@ type ColumnSchema struct {
 }
 
 type MetricMeasure struct {
-	Field       string   `yaml:"-"`
-	Table       string   `yaml:"table"`
-	Name        string   `yaml:"-"`
-	Label       string   `yaml:"label"`
-	Description string   `yaml:"description"`
-	Expr        string   `yaml:"expr"`
-	Expression  string   `yaml:"expression"`
-	Unit        string   `yaml:"unit"`
-	Format      string   `yaml:"format"`
-	Grain       string   `yaml:"grain"`
-	Time        string   `yaml:"time"`
-	Grains      []string `yaml:"grains"`
+	Field       string          `yaml:"-"`
+	Name        string          `yaml:"-"`
+	Fact        string          `yaml:"fact"`
+	Label       string          `yaml:"label"`
+	Description string          `yaml:"description"`
+	Aggregation string          `yaml:"aggregation"`
+	Input       MeasureInput    `yaml:"input"`
+	Filters     []MeasureFilter `yaml:"filters"`
+	Empty       string          `yaml:"empty"`
+	Unit        string          `yaml:"unit"`
+	Format      string          `yaml:"format"`
+	Hidden      bool            `yaml:"hidden"`
+}
+
+type MeasureInput struct {
+	Field      string `yaml:"field"`
+	Expression string `yaml:"expression"`
+}
+
+type MeasureFilter struct {
+	Field    string `yaml:"field"`
+	Operator string `yaml:"operator"`
+	Values   []any  `yaml:"values"`
+}
+
+type SemanticDimension struct {
+	Name        string                      `yaml:"-"`
+	Label       string                      `yaml:"label"`
+	Description string                      `yaml:"description"`
+	Type        string                      `yaml:"type"`
+	Grains      []string                    `yaml:"grains"`
+	Bindings    map[string]DimensionBinding `yaml:"bindings"`
+}
+
+type DimensionBinding struct {
+	Field string   `yaml:"field"`
+	Path  []string `yaml:"path"`
+}
+
+type Metric struct {
+	Name        string `yaml:"-"`
+	Label       string `yaml:"label"`
+	Description string `yaml:"description"`
+	Expression  string `yaml:"expression"`
+	Unit        string `yaml:"unit"`
+	Format      string `yaml:"format"`
+	Hidden      bool   `yaml:"hidden"`
 }
 
 type Relationship struct {
@@ -150,5 +177,4 @@ type Relationship struct {
 	From        string `yaml:"from"`
 	To          string `yaml:"to"`
 	Cardinality string `yaml:"cardinality"`
-	Active      bool   `yaml:"active"`
 }

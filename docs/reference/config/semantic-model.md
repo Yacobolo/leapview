@@ -15,7 +15,6 @@ metadata:
   title: Genre Ratings Semantic Model
   description: Rating-by-genre semantic model for safe genre analysis.
 spec:
-  baseTable: rating_genres
   tables:
     - rating_genres
     - ratings
@@ -27,38 +26,42 @@ spec:
       from: rating_genres.movie_id
       to: movies.movie_id
       cardinality: many_to_one
-      active: true
     - id: rating_genres_users
       description: Links each rating-genre row to the anonymized user who made the rating.
       from: rating_genres.user_id
       to: users.user_id
       cardinality: many_to_one
-      active: true
   measures:
-    defaults:
-      table: rating_genres
-      grain: rating_genre_id
-      time: rating_genres.rated_at
-      grains: [month, year]
     genre_rating_count:
       label: Genre ratings
       description: Count of rating-genre rows.
-      expression: COUNT(*)
+      fact: rating_genres
+      aggregation: count
+      empty: zero
       format: integer
     average_rating:
       label: Average rating
       description: Average MovieLens rating for the rating-genre rows.
-      expression: AVG(rating_genres.rating)
+      fact: rating_genres
+      aggregation: avg
+      input: {field: rating_genres.rating}
+      empty: "null"
       format: decimal
     active_users:
       label: Active users
       description: Distinct users represented by the rating-genre rows.
-      expression: COUNT(DISTINCT rating_genres.user_id)
+      fact: rating_genres
+      aggregation: count_distinct
+      input: {field: rating_genres.user_id}
+      empty: zero
       format: integer
     rated_movies:
       label: Rated movies
       description: Distinct movies represented by the rating-genre rows.
-      expression: COUNT(DISTINCT rating_genres.movie_id)
+      fact: rating_genres
+      aggregation: count_distinct
+      input: {field: rating_genres.movie_id}
+      empty: zero
       format: integer
 ```
 
@@ -92,25 +95,16 @@ spec:
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
+| `aggregation` | object | Yes | one of `sum`, `count`, `count_distinct`, `avg`, `min`, `max` |
 | `description` | string | No |  |
-| `expr` | string | No |  |
-| `expression` | string | No |  |
+| `empty` | object | Yes | one of `zero`, `null` |
+| `fact` | `Identifier` | Yes |  |
+| `filters` | array of object | No |  |
 | `format` | string | No |  |
-| `grain` | `Identifier` | No |  |
-| `grains` | array of string | No |  |
+| `hidden` | boolean | No |  |
+| `input` | object | No | no additional fields |
 | `label` | string | No |  |
-| `table` | `Identifier` | No |  |
-| `time` | `FieldRef` | No |  |
 | `unit` | string | No |  |
-
-### MeasureDefaults
-
-| Field | Type | Required | Rules |
-| --- | --- | --- | --- |
-| `grain` | `Identifier` | No |  |
-| `grains` | array of string | No |  |
-| `table` | `Identifier` | No |  |
-| `time` | `FieldRef` | No |  |
 
 ### Metadata
 
@@ -123,27 +117,48 @@ spec:
 | `title` | string | No |  |
 | `workspace` | `ResourceID` | No |  |
 
+### Metric
+
+| Field | Type | Required | Rules |
+| --- | --- | --- | --- |
+| `description` | string | No |  |
+| `expression` | string | Yes |  |
+| `format` | string | No |  |
+| `hidden` | boolean | No |  |
+| `label` | string | No |  |
+| `unit` | string | No |  |
+
 ### ProjectSemanticModelSpec
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
-| `baseTable` | `Identifier` | Yes |  |
-| `measures` | object | No | no additional fields |
+| `dimensions` | object | No | no additional fields |
+| `measures` | object | Yes | no additional fields |
+| `metrics` | object | No | no additional fields |
 | `relationships` | array of `Relationship` | No |  |
-| `tables` | array of `Identifier` | No |  |
+| `tables` | array of `Identifier` | Yes |  |
 
 ### Relationship
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
-| `active` | boolean | No |  |
-| `cardinality` | string | No |  |
+| `cardinality` | object | Yes | one of `many_to_one`, `one_to_one` |
 | `description` | string | No |  |
 | `from` | `FieldRef` | Yes |  |
-| `id` | `Identifier` | No |  |
+| `id` | `Identifier` | Yes |  |
 | `to` | `FieldRef` | Yes |  |
 
 ### ResourceID
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
+
+### SemanticDimension
+
+| Field | Type | Required | Rules |
+| --- | --- | --- | --- |
+| `bindings` | object | Yes | no additional fields |
+| `description` | string | No |  |
+| `grains` | array of object | No |  |
+| `label` | string | No |  |
+| `type` | object | Yes | one of `string`, `number`, `boolean`, `date`, `timestamp` |

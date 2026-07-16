@@ -16,9 +16,3 @@ libredash validate [project] [flags]
 | --- | --- | --- | --- |
 | `--json` | bool | `false` | emit JSON diagnostics |
 | `--project` | string | `dashboards/libredash.yaml` | project path |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

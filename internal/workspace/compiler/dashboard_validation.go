@@ -20,7 +20,7 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 		return fmt.Errorf("dashboard %q references unknown semantic model %q", d.ID, d.SemanticModel)
 	}
 	for name, filter := range d.Filters {
-		if _, err := model.ResolveDimension(filter.Dimension); err != nil {
+		if err := model.ValidateQueryDimension(filter.Dimension); err != nil {
 			return fmt.Errorf("filter %q references unknown dimension %q", name, filter.Dimension)
 		}
 	}
@@ -31,33 +31,25 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 			}
 		}
 		for _, dimension := range visual.Query.Dimensions {
-			if _, err := model.ResolveDimension(dimension.Field); err != nil {
+			if err := model.ValidateQueryDimension(dimension.Field); err != nil {
 				return fmt.Errorf("visual %q references unknown dimension %q", name, dimension.Field)
 			}
 		}
 		if !visual.Query.Series.IsZero() {
-			if _, err := model.ResolveDimension(visual.Query.Series.Field); err != nil {
+			if err := model.ValidateQueryDimension(visual.Query.Series.Field); err != nil {
 				return fmt.Errorf("visual %q references unknown series dimension %q", name, visual.Query.Series.Field)
 			}
 		}
 		for _, measure := range visual.Query.Measures {
-			if measure.Measure.Expression != "" || measure.Measure.Expr != "" {
-				if _, ok := model.Tables[measure.Measure.Table]; !ok {
-					return fmt.Errorf("visual %q inline measure %q references unknown table %q", name, measure.Alias, measure.Measure.Table)
-				}
-				continue
-			}
-			if _, err := model.ResolveMeasure(measure.Field); err != nil {
+			if err := model.ValidateAggregateMember(measure.Field); err != nil {
 				return fmt.Errorf("visual %q references unknown measure %q", name, measure.Field)
-			}
-		}
-		for _, mapping := range visual.Interaction.PointSelection.Mappings {
-			if _, err := model.ResolveDimension(mapping.Field); err != nil {
-				return fmt.Errorf("visual %q interaction references unknown field %q", name, mapping.Field)
 			}
 		}
 		if !visual.Interaction.PointSelection.IsZero() {
 			if err := report.ValidateVisualPointSelectionMappingKeys(name, visual); err != nil {
+				return err
+			}
+			if _, err := reportmodel.ResolveSelectionInteraction(d, model, "visual", name); err != nil {
 				return err
 			}
 		}
@@ -68,7 +60,7 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 	for name, table := range d.Tables {
 		normalizeTableFormatting(model, &table)
 		for measure := range table.MeasureFormatting {
-			if _, err := model.ResolveMeasure(measure); err != nil {
+			if err := model.ValidateAggregateMember(measure); err != nil {
 				return fmt.Errorf("table %q measure_formatting references unknown measure %q", name, measure)
 			}
 		}
@@ -82,15 +74,20 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 				return err
 			}
 		}
+		// Selection resolution reads sources from the dashboard definition. Publish
+		// the normalized table before resolving its configured row interaction.
+		d.Tables[name] = table
 		for _, mapping := range table.Interaction.RowSelection.Mappings {
-			if _, err := model.ResolveDimension(mapping.Field); err != nil {
-				return fmt.Errorf("table %q interaction references unknown field %q", name, mapping.Field)
-			}
 			if !tableHasOutputColumn(table, mapping.Value) {
 				return fmt.Errorf("table %q interaction references unknown value column %q", name, mapping.Value)
 			}
 			if mapping.Label != "" && !tableHasOutputColumn(table, mapping.Label) {
 				return fmt.Errorf("table %q interaction references unknown label column %q", name, mapping.Label)
+			}
+		}
+		if !table.Interaction.RowSelection.IsZero() {
+			if _, err := reportmodel.ResolveSelectionInteraction(d, model, "table", name); err != nil {
+				return err
 			}
 		}
 		if err := validateTableQueryPlan(d, model, name, table); err != nil {
@@ -169,7 +166,7 @@ func scopedQueryFilters(d *report.Dashboard, model *semanticmodel.Model, targetK
 		if err != nil || !applies {
 			continue
 		}
-		filters = append(filters, semanticquery.Filter{Field: filter.Dimension, Operator: "in"})
+		filters = append(filters, semanticquery.Filter{Field: filter.Dimension, Fact: filter.Fact, Operator: "in"})
 	}
 	return filters
 }
@@ -186,20 +183,6 @@ func reportFieldRefToQueryField(field report.FieldRef) semanticquery.Field {
 	return semanticquery.Field{
 		Field: field.Field,
 		Alias: field.Alias,
-		Measure: semanticquery.InlineMeasure{
-			Field:       field.Measure.Field,
-			Name:        field.Measure.Name,
-			Label:       field.Measure.Label,
-			Description: field.Measure.Description,
-			Expr:        field.Measure.Expr,
-			Expression:  field.Measure.Expression,
-			Table:       field.Measure.Table,
-			Grain:       field.Measure.Grain,
-			Time:        field.Measure.Time,
-			Grains:      append([]string{}, field.Measure.Grains...),
-			Unit:        field.Measure.Unit,
-			Format:      field.Measure.Format,
-		},
 	}
 }
 
@@ -256,11 +239,10 @@ func normalizeTableFields(name string, model *semanticmodel.Model, table *report
 	}
 	table.Measures = make([]string, len(table.Query.Measures))
 	for index, measure := range table.Query.Measures {
-		item, err := model.ResolveMeasure(measure.Field)
-		if err != nil {
+		if err := model.ValidateAggregateMember(measure.Field); err != nil {
 			return fmt.Errorf("table %q query.measures references unknown measure %q", name, measure.Field)
 		}
-		table.Measures[index] = item.Field
+		table.Measures[index] = measure.Field
 	}
 	return nil
 }
@@ -338,11 +320,7 @@ func normalizeTableFormatting(model *semanticmodel.Model, table *report.TableVis
 	}
 	next := map[string][]dashboard.TableFormattingRule{}
 	for measure, rules := range table.MeasureFormatting {
-		field := measure
-		if resolved, err := model.ResolveMeasure(measure); err == nil {
-			field = resolved.Name
-		}
-		next[field] = rules
+		next[measure] = rules
 	}
 	table.MeasureFormatting = next
 }

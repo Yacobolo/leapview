@@ -87,7 +87,6 @@ func sourceFieldsPayload(fields map[string]semanticmodel.SourceField) map[string
 func modelTablePayload(table semanticmodel.Table) modelTablePayloadV1 {
 	dimensions := dimensionsPayload(table.Dimensions)
 	return modelTablePayloadV1{
-		Kind:               table.Kind,
 		Source:             table.Source,
 		Sources:            table.Sources,
 		SourceDependencies: table.SourceDependencies,
@@ -98,7 +97,6 @@ func modelTablePayload(table semanticmodel.Table) modelTablePayloadV1 {
 		Grain:              table.Grain,
 		Dimensions:         dimensions,
 		Fields:             dimensions,
-		Measures:           measuresPayload(table.Measures),
 		Columns:            columnsPayload(table.Columns),
 		Schema:             schemaPayload(table.Schema),
 	}
@@ -121,12 +119,13 @@ func semanticModelPayload(model *semanticmodel.Model) semanticModelPayloadV1 {
 		Name:          model.Name,
 		Title:         model.Title,
 		Description:   model.Description,
-		BaseTable:     model.BaseTable,
 		Connections:   connections,
 		Sources:       sources,
 		Tables:        tables,
 		Models:        tables,
 		Measures:      measuresPayload(model.Measures),
+		Dimensions:    semanticDimensionsPayload(model.Dimensions),
+		Metrics:       metricsPayload(model.Metrics),
 		Relationships: relationshipsPayload(model.Relationships),
 	}
 }
@@ -158,19 +157,42 @@ func dimensionsPayload(fields map[string]semanticmodel.MetricDimension) map[stri
 
 func measurePayload(measure semanticmodel.MetricMeasure) measurePayloadV1 {
 	return measurePayloadV1{
-		Field:       measure.Field,
-		Table:       measure.Table,
-		Name:        measure.Name,
-		Label:       measure.Label,
-		Description: measure.Description,
-		Expr:        measure.Expr,
-		Expression:  measure.SQLExpression(),
-		Unit:        measure.Unit,
-		Format:      measure.Format,
-		Grain:       measure.Grain,
-		Time:        measure.Time,
-		Grains:      measure.Grains,
+		Field:           measure.Field,
+		Fact:            measure.Fact,
+		Name:            measure.Name,
+		Label:           measure.Label,
+		Description:     measure.Description,
+		Aggregation:     measure.Aggregation,
+		InputField:      measure.Input.Field,
+		InputExpression: measure.Input.Expression,
+		Empty:           measure.Empty,
+		Unit:            measure.Unit,
+		Format:          measure.Format,
+		Hidden:          measure.Hidden,
 	}
+}
+
+func semanticDimensionsPayload(dimensions map[string]semanticmodel.SemanticDimension) map[string]semanticDimensionPayloadV1 {
+	out := map[string]semanticDimensionPayloadV1{}
+	for _, name := range sortedMapKeys(dimensions) {
+		dimension := dimensions[name]
+		bindings := map[string]semanticDimensionBindingPayloadV1{}
+		for _, fact := range sortedMapKeys(dimension.Bindings) {
+			binding := dimension.Bindings[fact]
+			bindings[fact] = semanticDimensionBindingPayloadV1{Field: binding.Field, Path: append([]string{}, binding.Path...)}
+		}
+		out[name] = semanticDimensionPayloadV1{Name: name, Label: dimension.Label, Description: dimension.Description, Type: dimension.Type, Grains: append([]string{}, dimension.Grains...), Bindings: bindings}
+	}
+	return out
+}
+
+func metricsPayload(metrics map[string]semanticmodel.Metric) map[string]metricPayloadV1 {
+	out := map[string]metricPayloadV1{}
+	for _, name := range sortedMapKeys(metrics) {
+		metric := metrics[name]
+		out[name] = metricPayloadV1{Name: name, Label: metric.Label, Description: metric.Description, Expression: metric.Expression, Unit: metric.Unit, Format: metric.Format, Hidden: metric.Hidden}
+	}
+	return out
 }
 
 func measuresPayload(measures map[string]semanticmodel.MetricMeasure) map[string]measurePayloadV1 {
@@ -188,7 +210,6 @@ func relationshipPayload(relationship semanticmodel.Relationship) relationshipPa
 		From:        relationship.From,
 		To:          relationship.To,
 		Cardinality: relationship.Cardinality,
-		Active:      relationship.Active,
 	}
 }
 
@@ -241,6 +262,7 @@ func filterPayload(filter reportdef.FilterDefinition) filterPayloadV1 {
 		Label:            filter.Label,
 		Description:      filter.Description,
 		Dimension:        filter.Dimension,
+		Fact:             filter.Fact,
 		Default:          filter.Default,
 		Custom:           filter.Custom,
 		Presets:          filterPresetsPayload(filter.Presets),
@@ -299,6 +321,25 @@ func visualPayload(visual reportdef.Visual) visualPayloadV1 {
 		Options:         visual.CoreOptions(),
 		RendererOptions: visual.RendererOptions,
 		Encode:          visual.Encode,
+		Interaction:     selectionPayload(visual.Interaction.PointSelection),
+	}
+}
+
+func selectionPayload(selection reportdef.SelectionInteraction) selectionPayloadV1 {
+	mappings := make([]selectionMappingPayloadV1, 0, len(selection.Mappings))
+	for _, mapping := range selection.Mappings {
+		mappings = append(mappings, selectionMappingPayloadV1{
+			Field: mapping.Field,
+			Fact:  mapping.Fact,
+			Grain: mapping.Grain,
+			Value: mapping.Value,
+			Label: mapping.Label,
+		})
+	}
+	return selectionPayloadV1{
+		Toggle:   selection.Toggle,
+		Mappings: mappings,
+		Targets:  append([]string{}, selection.Targets...),
 	}
 }
 
@@ -356,6 +397,7 @@ func tableVisualPayload(table reportdef.TableVisual) tablePayloadV1 {
 		DataColumns: fieldRefsPayload(table.DataColumns),
 		Style:       tableStylePayload(table.Style),
 		DefaultSort: tableSortPayload(table.DefaultSort),
+		Interaction: selectionPayload(table.Interaction.RowSelection),
 	}
 }
 

@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: LibreDash Headless API
   version: 1.0.0
-  description: Headless API for LibreDash workspaces, publishes, access control, refreshes, and agent operations.
+  description: Headless API for LibreDash workspaces, deployments, managed data, access control, refreshes, and agent operations.
 tags:
   - name: Current User
     description: Current principal, sessions, tokens, and privileges.
@@ -12,8 +12,8 @@ tags:
     description: Progressive workspace discovery across BI assets.
   - name: BI
     description: Dashboard and semantic model read APIs.
-  - name: Publishes
-    description: Dashboard-as-code publish operations.
+  - name: Deployments
+    description: Project-scoped candidate staging and atomic serving-state and managed-data activation.
   - name: Refresh Runs
     description: Headless refresh run operations.
   - name: Agent
@@ -22,6 +22,8 @@ tags:
     description: Principals, groups, roles, and role bindings.
   - name: Audit
     description: Workspace audit event discovery.
+  - name: Managed Data
+    description: Project-global managed-data revisions and uploads.
 paths:
   /api/v1/admin/agent/config:
     get:
@@ -1684,6 +1686,2565 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+  /api/v1/projects/{project}/data-connections/{connection}/environments/{environment}/revision:
+    get:
+      operationId: getManagedDataEnvironmentRevision
+      summary: Get the current managed-data revision for an environment
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: environment
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataEnvironmentRevisionResponse'
+              example:
+                activatedAt: "2026-01-02T15:04:05Z"
+                deploymentId: example
+                environment: example
+                revision:
+                  createdAt: "2026-01-02T15:04:05Z"
+                  fileCount: 1
+                  id: example
+                  size: 1
+                  status: available
+                  uploadSessionId: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      x-authz:
+        mode: privilege
+        privilege: VIEW_DATA
+  /api/v1/projects/{project}/data-connections/{connection}/revisions:
+    get:
+      operationId: listManagedDataRevisions
+      summary: List immutable managed-data revisions
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: !!float 1
+            maximum: !!float 200
+          example: 1
+          explode: false
+        - name: pageToken
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+          example: example
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataRevisionListResponse'
+              example:
+                items:
+                  - createdAt: "2026-01-02T15:04:05Z"
+                    fileCount: 1
+                    id: example
+                    size: 1
+                    status: available
+                    uploadSessionId: example
+                page:
+                  nextCursor: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      x-authz:
+        mode: privilege
+        privilege: VIEW_DATA
+  /api/v1/projects/{project}/data-connections/{connection}/revisions/{revision}:
+    get:
+      operationId: getManagedDataRevision
+      summary: Get an immutable managed-data revision
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: revision
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 71
+            maxLength: 71
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataRevisionResponse'
+              example:
+                createdAt: "2026-01-02T15:04:05Z"
+                fileCount: 1
+                id: example
+                manifest:
+                  files:
+                    - path: example
+                      sha256: example
+                      size: 1
+                size: 1
+                status: available
+                uploadSessionId: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      x-authz:
+        mode: privilege
+        privilege: VIEW_DATA
+  /api/v1/projects/{project}/data-connections/{connection}/upload-sessions:
+    post:
+      operationId: createManagedDataUploadSession
+      summary: Create a managed-data upload session from a canonical manifest
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataUploadSessionResponse'
+              example:
+                completedAt: "2026-01-02T15:04:05Z"
+                connection: example
+                createdAt: "2026-01-02T15:04:05Z"
+                error: example
+                expiresAt: "2026-01-02T15:04:05Z"
+                files:
+                  - error: example
+                    file:
+                      path: example
+                      sha256: example
+                      size: 1
+                    negotiation:
+                      protocol: tus
+                      s3Multipart:
+                        createEndpoint: example
+                        maximumPartSize: 1
+                        maximumParts: 1
+                        minimumPartSize: 1
+                      tus:
+                        endpoint: example
+                        expiresAt: "2026-01-02T15:04:05Z"
+                        offset: 1
+                        uploadId: example
+                    status: pending
+                id: example
+                manifest:
+                  files:
+                    - path: example
+                      sha256: example
+                      size: 1
+                project: example
+                revisionId: example
+                status: open
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedDataUploadSessionCreateRequest'
+            example:
+              manifest:
+                files:
+                  - path: example
+                    sha256: example
+                    size: 1
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  /api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}:
+    get:
+      operationId: getManagedDataUploadSession
+      summary: Get a managed-data upload session
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: uploadSession
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataUploadSessionResponse'
+              example:
+                completedAt: "2026-01-02T15:04:05Z"
+                connection: example
+                createdAt: "2026-01-02T15:04:05Z"
+                error: example
+                expiresAt: "2026-01-02T15:04:05Z"
+                files:
+                  - error: example
+                    file:
+                      path: example
+                      sha256: example
+                      size: 1
+                    negotiation:
+                      protocol: tus
+                      s3Multipart:
+                        createEndpoint: example
+                        maximumPartSize: 1
+                        maximumParts: 1
+                        minimumPartSize: 1
+                      tus:
+                        endpoint: example
+                        expiresAt: "2026-01-02T15:04:05Z"
+                        offset: 1
+                        uploadId: example
+                    status: pending
+                id: example
+                manifest:
+                  files:
+                    - path: example
+                      sha256: example
+                      size: 1
+                project: example
+                revisionId: example
+                status: open
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  /api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/abort:
+    post:
+      operationId: abortManagedDataUploadSession
+      summary: Abort a managed-data upload session
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: uploadSession
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataUploadSessionResponse'
+              example:
+                completedAt: "2026-01-02T15:04:05Z"
+                connection: example
+                createdAt: "2026-01-02T15:04:05Z"
+                error: example
+                expiresAt: "2026-01-02T15:04:05Z"
+                files:
+                  - error: example
+                    file:
+                      path: example
+                      sha256: example
+                      size: 1
+                    negotiation:
+                      protocol: tus
+                      s3Multipart:
+                        createEndpoint: example
+                        maximumPartSize: 1
+                        maximumParts: 1
+                        minimumPartSize: 1
+                      tus:
+                        endpoint: example
+                        expiresAt: "2026-01-02T15:04:05Z"
+                        offset: 1
+                        uploadId: example
+                    status: pending
+                id: example
+                manifest:
+                  files:
+                    - path: example
+                      sha256: example
+                      size: 1
+                project: example
+                revisionId: example
+                status: open
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  /api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/finalize:
+    post:
+      operationId: finalizeManagedDataUploadSession
+      summary: Finalize a managed-data upload session
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: uploadSession
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '202':
+          description: The request has been accepted for processing, but processing has not yet completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataUploadSessionResponse'
+              example:
+                completedAt: "2026-01-02T15:04:05Z"
+                connection: example
+                createdAt: "2026-01-02T15:04:05Z"
+                error: example
+                expiresAt: "2026-01-02T15:04:05Z"
+                files:
+                  - error: example
+                    file:
+                      path: example
+                      sha256: example
+                      size: 1
+                    negotiation:
+                      protocol: tus
+                      s3Multipart:
+                        createEndpoint: example
+                        maximumPartSize: 1
+                        maximumParts: 1
+                        minimumPartSize: 1
+                      tus:
+                        endpoint: example
+                        expiresAt: "2026-01-02T15:04:05Z"
+                        offset: 1
+                        uploadId: example
+                    status: pending
+                id: example
+                manifest:
+                  files:
+                    - path: example
+                      sha256: example
+                      size: 1
+                project: example
+                revisionId: example
+                status: open
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  /api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads:
+    post:
+      operationId: createManagedDataS3MultipartUpload
+      summary: Create an S3 multipart upload for a session file
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: uploadSession
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataS3MultipartUploadResponse'
+              example:
+                createdAt: "2026-01-02T15:04:05Z"
+                existing: true
+                expiresAt: "2026-01-02T15:04:05Z"
+                file:
+                  path: example
+                  sha256: example
+                  size: 1
+                id: example
+                status: open
+                uploadSessionId: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedDataS3MultipartCreateRequest'
+            example:
+              path: example
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  ? /api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/abort
+  : post:
+      operationId: abortManagedDataS3MultipartUpload
+      summary: Abort an S3 multipart upload
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: uploadSession
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: multipartUpload
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataS3MultipartUploadResponse'
+              example:
+                createdAt: "2026-01-02T15:04:05Z"
+                existing: true
+                expiresAt: "2026-01-02T15:04:05Z"
+                file:
+                  path: example
+                  sha256: example
+                  size: 1
+                id: example
+                status: open
+                uploadSessionId: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  ? /api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/complete
+  : post:
+      operationId: completeManagedDataS3MultipartUpload
+      summary: Complete an S3 multipart upload
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: uploadSession
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: multipartUpload
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataS3MultipartUploadResponse'
+              example:
+                createdAt: "2026-01-02T15:04:05Z"
+                existing: true
+                expiresAt: "2026-01-02T15:04:05Z"
+                file:
+                  path: example
+                  sha256: example
+                  size: 1
+                id: example
+                status: open
+                uploadSessionId: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedDataS3MultipartCompleteRequest'
+            example:
+              parts:
+                - etag: example
+                  partNumber: 1
+                  sha256: example
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  ? /api/v1/projects/{project}/data-connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/parts/{partNumber}/sign
+  : post:
+      operationId: signManagedDataS3MultipartPart
+      summary: Sign one S3 multipart upload part
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: connection
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: uploadSession
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: multipartUpload
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: partNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+            minimum: !!float 1
+            maximum: !!float 10000
+          example: 1
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDataS3MultipartSignedPartResponse'
+              example:
+                expiresAt: "2026-01-02T15:04:05Z"
+                headers:
+                  - name: example
+                    value: example
+                partNumber: 1
+                url: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Managed Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedDataS3MultipartSignPartRequest'
+            example:
+              sha256: example
+              size: 1
+      x-authz:
+        mode: privilege
+        privilege: INGEST_DATA
+  /api/v1/projects/{project}/deployments:
+    post:
+      operationId: createProjectDeployment
+      summary: Create an atomic project deployment
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDeploymentResponse'
+              example:
+                activatedAt: "2026-01-02T15:04:05Z"
+                connections:
+                  - activatedGeneration: 1
+                    connection: example
+                    priorGeneration: 1
+                    priorRevisionId: example
+                    revisionId: example
+                createdAt: "2026-01-02T15:04:05Z"
+                environment: example
+                error: example
+                id: example
+                project: example
+                requestDigest: example
+                status: pending
+                targets:
+                  - activatedAt: "2026-01-02T15:04:05Z"
+                    candidateId: example
+                    error: example
+                    priorCandidateId: example
+                    status: pending
+                    workspace: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Deployments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectDeploymentCreateRequest'
+            example:
+              environment: example
+              targets:
+                - candidateId: example
+                  workspace: example
+      x-authz:
+        mode: privilege
+        privilege: DEPLOY
+  /api/v1/projects/{project}/deployments/{deployment}:
+    get:
+      operationId: getProjectDeployment
+      summary: Get an atomic project deployment
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: deployment
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDeploymentResponse'
+              example:
+                activatedAt: "2026-01-02T15:04:05Z"
+                connections:
+                  - activatedGeneration: 1
+                    connection: example
+                    priorGeneration: 1
+                    priorRevisionId: example
+                    revisionId: example
+                createdAt: "2026-01-02T15:04:05Z"
+                environment: example
+                error: example
+                id: example
+                project: example
+                requestDigest: example
+                status: pending
+                targets:
+                  - activatedAt: "2026-01-02T15:04:05Z"
+                    candidateId: example
+                    error: example
+                    priorCandidateId: example
+                    status: pending
+                    workspace: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Deployments
+      x-authz:
+        mode: privilege
+        privilege: VIEW_ITEM
+  /api/v1/projects/{project}/deployments/{deployment}/activate:
+    post:
+      operationId: activateProjectDeployment
+      summary: Atomically activate a project deployment
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: deployment
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDeploymentResponse'
+              example:
+                activatedAt: "2026-01-02T15:04:05Z"
+                connections:
+                  - activatedGeneration: 1
+                    connection: example
+                    priorGeneration: 1
+                    priorRevisionId: example
+                    revisionId: example
+                createdAt: "2026-01-02T15:04:05Z"
+                environment: example
+                error: example
+                id: example
+                project: example
+                requestDigest: example
+                status: pending
+                targets:
+                  - activatedAt: "2026-01-02T15:04:05Z"
+                    candidateId: example
+                    error: example
+                    priorCandidateId: example
+                    status: pending
+                    workspace: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Deployments
+      x-authz:
+        mode: privilege
+        privilege: ACTIVATE_DEPLOYMENT
+  /api/v1/projects/{project}/workspaces/{workspace}/deployment-candidates:
+    post:
+      operationId: createDeploymentCandidate
+      summary: Create a workspace candidate for a project deployment
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: workspace
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentCandidateResponse'
+              example:
+                createdAt: "2026-01-02T15:04:05Z"
+                digest: example
+                environment: example
+                error: example
+                id: example
+                project: example
+                status: example
+                workspace: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Deployments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentCandidateCreateRequest'
+            example:
+              description: example
+              environment: example
+              title: example
+      x-authz:
+        mode: privilege
+        privilege: DEPLOY
+  /api/v1/projects/{project}/workspaces/{workspace}/deployment-candidates/{candidate}/artifact:
+    put:
+      operationId: uploadDeploymentCandidateArtifact
+      summary: Upload a project deployment candidate artifact
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: workspace
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: candidate
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+        - name: Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - application/octet-stream
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentCandidateArtifactResponse'
+              example:
+                candidateId: example
+                sizeBytes: 1
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Deployments
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+            example: example
+      x-authz:
+        mode: privilege
+        privilege: DEPLOY
+      x-apigen-manual: true
+  /api/v1/projects/{project}/workspaces/{workspace}/deployment-candidates/{candidate}/validate:
+    post:
+      operationId: validateDeploymentCandidate
+      summary: Validate a project deployment candidate
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: workspace
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: example
+        - name: candidate
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentCandidateResponse'
+              example:
+                createdAt: "2026-01-02T15:04:05Z"
+                digest: example
+                environment: example
+                error: example
+                id: example
+                project: example
+                status: example
+                workspace: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Deployments
+      x-authz:
+        mode: privilege
+        privilege: DEPLOY
   /api/v1/service-principals:
     get:
       operationId: listServicePrincipals
@@ -8499,840 +11060,6 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_ITEM
-  /api/v1/workspaces/{workspace}/publishes:
-    get:
-      operationId: listPublishes
-      summary: List publishes
-      parameters:
-        - name: workspace
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: environment
-          in: query
-          required: false
-          schema:
-            type: string
-          example: example
-          explode: false
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-          example: 1
-          explode: false
-        - name: pageToken
-          in: query
-          required: false
-          schema:
-            type: string
-          example: example
-          explode: false
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublishListResponse'
-              example:
-                items:
-                  - activatedAt: "2026-01-02T15:04:05Z"
-                    createdAt: "2026-01-02T15:04:05Z"
-                    digest: example
-                    environment: example
-                    error: example
-                    id: example
-                    status: example
-                    workspaceId: example
-                page:
-                  nextCursor: example
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '403':
-          description: Access is forbidden.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '409':
-          description: The request conflicts with the current state of the server.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '429':
-          description: Client error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-      tags:
-        - Publishes
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_publishes
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /id
-                - source: /environment
-                - source: /status
-                - source: /createdAt
-              source: /items
-        tags:
-          - publish
-      x-authz:
-        mode: privilege
-        privilege: VIEW_ITEM
-    post:
-      operationId: createPublish
-      summary: Create a publish
-      parameters:
-        - name: workspace
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-      responses:
-        '201':
-          description: The request has succeeded and a new resource has been created as a result.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublishResponse'
-              example:
-                activatedAt: "2026-01-02T15:04:05Z"
-                createdAt: "2026-01-02T15:04:05Z"
-                digest: example
-                environment: example
-                error: example
-                id: example
-                status: example
-                workspaceId: example
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '403':
-          description: Access is forbidden.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '409':
-          description: The request conflicts with the current state of the server.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '429':
-          description: Client error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-      tags:
-        - Publishes
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PublishCreateRequest'
-            example:
-              description: example
-              environment: example
-              title: example
-      x-authz:
-        mode: privilege
-        privilege: DEPLOY
-  /api/v1/workspaces/{workspace}/publishes/{publish}:
-    get:
-      operationId: getPublish
-      summary: Get a publish
-      parameters:
-        - name: workspace
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: publish
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: environment
-          in: query
-          required: false
-          schema:
-            type: string
-          example: example
-          explode: false
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublishResponse'
-              example:
-                activatedAt: "2026-01-02T15:04:05Z"
-                createdAt: "2026-01-02T15:04:05Z"
-                digest: example
-                environment: example
-                error: example
-                id: example
-                status: example
-                workspaceId: example
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '403':
-          description: Access is forbidden.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '409':
-          description: The request conflicts with the current state of the server.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '429':
-          description: Client error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-      tags:
-        - Publishes
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: get_publish
-        output:
-          mode: project
-          select:
-            - source: /id
-            - source: /environment
-            - source: /status
-            - source: /createdAt
-            - source: /activatedAt
-            - source: /error
-        tags:
-          - publish
-      x-authz:
-        mode: privilege
-        privilege: VIEW_ITEM
-  /api/v1/workspaces/{workspace}/publishes/{publish}/activate:
-    post:
-      operationId: activatePublish
-      summary: Activate a publish
-      parameters:
-        - name: workspace
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: publish
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: environment
-          in: query
-          required: false
-          schema:
-            type: string
-          example: example
-          explode: false
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublishResponse'
-              example:
-                activatedAt: "2026-01-02T15:04:05Z"
-                createdAt: "2026-01-02T15:04:05Z"
-                digest: example
-                environment: example
-                error: example
-                id: example
-                status: example
-                workspaceId: example
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '403':
-          description: Access is forbidden.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '409':
-          description: The request conflicts with the current state of the server.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '429':
-          description: Client error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-      tags:
-        - Publishes
-      x-authz:
-        mode: privilege
-        privilege: ACTIVATE_PUBLISH
-  /api/v1/workspaces/{workspace}/publishes/{publish}/artifact:
-    put:
-      operationId: uploadPublishArtifact
-      summary: Upload a publish artifact
-      parameters:
-        - name: workspace
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: publish
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: Content-Type
-          in: header
-          required: true
-          schema:
-            type: string
-            enum:
-              - application/octet-stream
-          example: example
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublishArtifactResponse'
-              example:
-                publishId: example
-                sizeBytes: 1
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '403':
-          description: Access is forbidden.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '409':
-          description: The request conflicts with the current state of the server.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '429':
-          description: Client error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-      tags:
-        - Publishes
-      requestBody:
-        required: true
-        content:
-          application/octet-stream:
-            schema:
-              type: string
-              format: binary
-            example: example
-      x-authz:
-        mode: privilege
-        privilege: DEPLOY
-      x-apigen-manual: true
-  /api/v1/workspaces/{workspace}/publishes/{publish}/validate:
-    post:
-      operationId: validatePublish
-      summary: Validate a publish
-      parameters:
-        - name: workspace
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: publish
-          in: path
-          required: true
-          schema:
-            type: string
-          example: example
-        - name: environment
-          in: query
-          required: false
-          schema:
-            type: string
-          example: example
-          explode: false
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublishResponse'
-              example:
-                activatedAt: "2026-01-02T15:04:05Z"
-                createdAt: "2026-01-02T15:04:05Z"
-                digest: example
-                environment: example
-                error: example
-                id: example
-                status: example
-                workspaceId: example
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '403':
-          description: Access is forbidden.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '404':
-          description: The server cannot find the requested resource.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '409':
-          description: The request conflicts with the current state of the server.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '429':
-          description: Client error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                code: 1
-                details:
-                  key: example
-                message: example
-                requestId: example
-      tags:
-        - Publishes
-      x-authz:
-        mode: privilege
-        privilege: DEPLOY
   /api/v1/workspaces/{workspace}/query-events:
     get:
       operationId: listQueryEvents
@@ -11028,8 +12755,11 @@ paths:
                 $ref: '#/components/schemas/SemanticModelDescriptionResponse'
               example:
                 counts:
+                  atomic_measures: 1
+                  conformed_dimensions: 1
+                  facts: 1
                   fields: 1
-                  measures: 1
+                  metrics: 1
                   model_tables: 1
                   relationships: 1
                   sources: 1
@@ -11044,7 +12774,8 @@ paths:
                   - description: example
                     fields: 1
                     id: example
-                    kind: example
+                    roles:
+                      - example
                     source: example
                 title: example
         '400':
@@ -11536,6 +13267,7 @@ paths:
                     name: example
                     table: example
                     time: example
+                    type: example
                     unit: example
                 page:
                   nextCursor: example
@@ -11791,7 +13523,13 @@ paths:
                 - alias: example
                   field: example
               filters:
-                - key: example
+                - fact: example
+                  field: example
+                  groups:
+                    - filters: []
+                  operator: example
+                  values:
+                    - example
               limit: 1
               measures:
                 - alias: example
@@ -11863,8 +13601,16 @@ paths:
                   - key: example
                 columns:
                   - example
+                facts:
+                  - example
                 mode: example
+                physicalDependencies:
+                  - example
+                relationshipPaths:
+                  - example
                 sql: example
+                stitchDimensions:
+                  - example
                 warnings:
                   - example
         '400':
@@ -11964,7 +13710,13 @@ paths:
                 - alias: example
                   field: example
               filters:
-                - key: example
+                - fact: example
+                  field: example
+                  groups:
+                    - filters: []
+                  operator: example
+                  values:
+                    - example
               limit: 1
               measures:
                 - alias: example
@@ -12132,7 +13884,13 @@ paths:
                 - alias: example
                   field: example
               filters:
-                - key: example
+                - fact: example
+                  field: example
+                  groups:
+                    - filters: []
+                  operator: example
+                  values:
+                    - example
               limit: 1
               measures:
                 - alias: example
@@ -12208,8 +13966,16 @@ paths:
                   - key: example
                 columns:
                   - example
+                facts:
+                  - example
                 mode: example
+                physicalDependencies:
+                  - example
+                relationshipPaths:
+                  - example
                 sql: example
+                stitchDimensions:
+                  - example
                 warnings:
                   - example
         '400':
@@ -12309,7 +14075,13 @@ paths:
                 - alias: example
                   field: example
               filters:
-                - key: example
+                - fact: example
+                  field: example
+                  groups:
+                    - filters: []
+                  operator: example
+                  values:
+                    - example
               limit: 1
               measures:
                 - alias: example
@@ -12343,6 +14115,538 @@ paths:
         tags:
           - semantic-model
           - dataset
+          - query
+      x-authz:
+        mode: privilege
+        privilege: QUERY_DATA
+  /api/v1/workspaces/{workspace}/semantic-models/{model}/fields:
+    get:
+      operationId: listSemanticModelFields
+      summary: List semantic model fields
+      parameters:
+        - name: workspace
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+          example: 1
+          explode: false
+        - name: pageToken
+          in: query
+          required: false
+          schema:
+            type: string
+          example: example
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticFieldListResponse'
+              example:
+                items:
+                  - description: example
+                    format: example
+                    grain: example
+                    grains:
+                      - example
+                    id: example
+                    kind: dimension
+                    label: example
+                    name: example
+                    table: example
+                    time: example
+                    type: example
+                    unit: example
+                page:
+                  nextCursor: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - BI
+      x-apigen-tool:
+        confirmation: never
+        effect: read
+        input:
+          fields:
+            - context_key: workspace
+              mode: context
+              name: workspace
+              source: path
+            - default: !!float 25
+              name: limit
+              source: query
+        name: list_semantic_model_fields
+        output:
+          cursor:
+            source: /page/nextCursor
+          mode: project
+          select:
+            - count_as: count
+              select:
+                - source: /kind
+                - source: /id
+                - source: /label
+                - source: /description
+              source: /items
+        tags:
+          - semantic-model
+          - field
+      x-authz:
+        mode: privilege
+        privilege: VIEW_ITEM
+  /api/v1/workspaces/{workspace}/semantic-models/{model}/query:
+    post:
+      operationId: querySemanticModel
+      summary: Query semantic model
+      parameters:
+        - name: workspace
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticQueryResponse'
+              example:
+                columns:
+                  - example
+                items:
+                  - {}
+                page:
+                  nextCursor: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - BI
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticQueryRequest'
+            example:
+              dimensions:
+                - alias: example
+                  field: example
+              filters:
+                - fact: example
+                  field: example
+                  groups:
+                    - filters: []
+                  operator: example
+                  values:
+                    - example
+              limit: 1
+              measures:
+                - alias: example
+                  field: example
+              pageToken: example
+              sort:
+                - direction: example
+                  field: example
+              time:
+                alias: example
+                field: example
+                grain: example
+      x-apigen-tool:
+        confirmation: never
+        effect: read
+        input:
+          fields:
+            - context_key: workspace
+              mode: context
+              name: workspace
+              source: path
+            - default: !!float 25
+              name: limit
+              source: body
+        name: query_semantic_model
+        output:
+          cursor:
+            source: /page/nextCursor
+          mode: project
+          select:
+            - source: /columns
+            - count_as: count
+              source: /items
+        tags:
+          - semantic-model
+          - query
+      x-authz:
+        mode: privilege
+        privilege: QUERY_DATA
+  /api/v1/workspaces/{workspace}/semantic-models/{model}/query/explain:
+    post:
+      operationId: explainSemanticModelQuery
+      summary: Explain semantic model query
+      parameters:
+        - name: workspace
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticExplainResponse'
+              example:
+                args:
+                  - key: example
+                columns:
+                  - example
+                facts:
+                  - example
+                mode: example
+                physicalDependencies:
+                  - example
+                relationshipPaths:
+                  - example
+                sql: example
+                stitchDimensions:
+                  - example
+                warnings:
+                  - example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - BI
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticQueryRequest'
+            example:
+              dimensions:
+                - alias: example
+                  field: example
+              filters:
+                - fact: example
+                  field: example
+                  groups:
+                    - filters: []
+                  operator: example
+                  values:
+                    - example
+              limit: 1
+              measures:
+                - alias: example
+                  field: example
+              pageToken: example
+              sort:
+                - direction: example
+                  field: example
+              time:
+                alias: example
+                field: example
+                grain: example
+      x-apigen-tool:
+        confirmation: never
+        effect: read
+        input:
+          fields:
+            - context_key: workspace
+              mode: context
+              name: workspace
+              source: path
+        name: explain_semantic_model_query
+        output:
+          mode: project
+          select:
+            - source: /mode
+            - source: /facts
+            - source: /stitchDimensions
+            - source: /physicalDependencies
+            - source: /relationshipPaths
+            - source: /sql
+            - source: /args
+            - source: /columns
+            - source: /warnings
+        tags:
+          - semantic-model
           - query
       x-authz:
         mode: privilege
@@ -14482,6 +16786,97 @@ components:
         subjectType: example
         updatedAt: "2026-01-02T15:04:05Z"
         workspaceId: example
+    DeploymentCandidateArtifactResponse:
+      type: object
+      required:
+        - candidateId
+        - sizeBytes
+      properties:
+        candidateId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        sizeBytes:
+          type: integer
+          format: int64
+          example: 1
+      example:
+        candidateId: example
+        sizeBytes: 1
+    DeploymentCandidateCreateRequest:
+      type: object
+      required:
+        - environment
+      properties:
+        title:
+          type: string
+          example: example
+        description:
+          type: string
+          example: example
+        environment:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+      example:
+        description: example
+        environment: example
+        title: example
+    DeploymentCandidateResponse:
+      type: object
+      required:
+        - id
+        - project
+        - workspace
+        - environment
+        - status
+        - digest
+        - createdAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        project:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        workspace:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        environment:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        status:
+          type: string
+          example: example
+        digest:
+          type: string
+          example: example
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        error:
+          type: string
+          example: example
+      example:
+        createdAt: "2026-01-02T15:04:05Z"
+        digest: example
+        environment: example
+        error: example
+        id: example
+        project: example
+        status: example
+        workspace: example
     EffectivePrivilegeListResponse:
       type: object
       required:
@@ -14847,6 +17242,676 @@ components:
           kind: example
           updatedAt: "2026-01-02T15:04:05Z"
         temporaryPassword: example
+    ManagedDataEnvironmentRevisionResponse:
+      type: object
+      required:
+        - environment
+      properties:
+        environment:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        revision:
+          $ref: '#/components/schemas/ManagedDataRevisionSummaryResponse'
+        deploymentId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        activatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+      example:
+        activatedAt: "2026-01-02T15:04:05Z"
+        deploymentId: example
+        environment: example
+        revision:
+          createdAt: "2026-01-02T15:04:05Z"
+          fileCount: 1
+          id: example
+          size: 1
+          status: available
+          uploadSessionId: example
+    ManagedDataFileMetadata:
+      type: object
+      required:
+        - path
+        - size
+        - sha256
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          example: example
+        size:
+          type: integer
+          format: int64
+          minimum: !!float 0
+          example: 1
+        sha256:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: A lowercase 64-character hexadecimal SHA-256 digest.
+          example: example
+      example:
+        path: example
+        sha256: example
+        size: 1
+    ManagedDataFileUploadResponse:
+      type: object
+      required:
+        - file
+        - status
+        - negotiation
+      properties:
+        file:
+          $ref: '#/components/schemas/ManagedDataFileMetadata'
+        status:
+          $ref: '#/components/schemas/ManagedDataFileUploadStatus'
+        negotiation:
+          $ref: '#/components/schemas/ManagedDataUploadNegotiation'
+        error:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          example: example
+      example:
+        error: example
+        file:
+          path: example
+          sha256: example
+          size: 1
+        negotiation:
+          protocol: tus
+          s3Multipart:
+            createEndpoint: example
+            maximumPartSize: 1
+            maximumParts: 1
+            minimumPartSize: 1
+          tus:
+            endpoint: example
+            expiresAt: "2026-01-02T15:04:05Z"
+            offset: 1
+            uploadId: example
+        status: pending
+    ManagedDataFileUploadStatus:
+      type: string
+      enum:
+        - pending
+        - uploading
+        - uploaded
+        - verified
+        - skipped
+        - failed
+      example: pending
+    ManagedDataHTTPHeader:
+      type: object
+      required:
+        - name
+        - value
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+          example: example
+        value:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          example: example
+      example:
+        name: example
+        value: example
+    ManagedDataManifest:
+      type: object
+      required:
+        - files
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedDataFileMetadata'
+          example:
+            - path: example
+              sha256: example
+              size: 1
+      example:
+        files:
+          - path: example
+            sha256: example
+            size: 1
+    ManagedDataRevisionListResponse:
+      type: object
+      required:
+        - items
+        - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedDataRevisionSummaryResponse'
+          example:
+            - createdAt: "2026-01-02T15:04:05Z"
+              fileCount: 1
+              id: example
+              size: 1
+              status: available
+              uploadSessionId: example
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      example:
+        items:
+          - createdAt: "2026-01-02T15:04:05Z"
+            fileCount: 1
+            id: example
+            size: 1
+            status: available
+            uploadSessionId: example
+        page:
+          nextCursor: example
+    ManagedDataRevisionResponse:
+      type: object
+      required:
+        - id
+        - status
+        - manifest
+        - fileCount
+        - size
+        - createdAt
+        - uploadSessionId
+      properties:
+        id:
+          type: string
+          minLength: 71
+          maxLength: 71
+          description: The immutable revision identity, formatted as sha256 followed by a colon and 64 lowercase hexadecimal characters.
+          example: example
+        status:
+          $ref: '#/components/schemas/ManagedDataRevisionStatus'
+        manifest:
+          $ref: '#/components/schemas/ManagedDataManifest'
+        fileCount:
+          type: integer
+          format: int32
+          minimum: !!float 1
+          maximum: !!float 10000
+          example: 1
+        size:
+          type: integer
+          format: int64
+          minimum: !!float 0
+          example: 1
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        uploadSessionId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+      example:
+        createdAt: "2026-01-02T15:04:05Z"
+        fileCount: 1
+        id: example
+        manifest:
+          files:
+            - path: example
+              sha256: example
+              size: 1
+        size: 1
+        status: available
+        uploadSessionId: example
+    ManagedDataRevisionStatus:
+      type: string
+      enum:
+        - available
+      example: available
+    ManagedDataRevisionSummaryResponse:
+      type: object
+      required:
+        - id
+        - status
+        - fileCount
+        - size
+        - createdAt
+        - uploadSessionId
+      properties:
+        id:
+          type: string
+          minLength: 71
+          maxLength: 71
+          description: The immutable revision identity, formatted as sha256 followed by a colon and 64 lowercase hexadecimal characters.
+          example: example
+        status:
+          $ref: '#/components/schemas/ManagedDataRevisionStatus'
+        fileCount:
+          type: integer
+          format: int32
+          minimum: !!float 1
+          maximum: !!float 10000
+          example: 1
+        size:
+          type: integer
+          format: int64
+          minimum: !!float 0
+          example: 1
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        uploadSessionId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+      example:
+        createdAt: "2026-01-02T15:04:05Z"
+        fileCount: 1
+        id: example
+        size: 1
+        status: available
+        uploadSessionId: example
+    ManagedDataS3CompletedPart:
+      type: object
+      required:
+        - partNumber
+        - etag
+      properties:
+        partNumber:
+          type: integer
+          format: int32
+          minimum: !!float 1
+          maximum: !!float 10000
+          example: 1
+        etag:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          example: example
+        sha256:
+          type: string
+          minLength: 64
+          maxLength: 64
+          example: example
+      example:
+        etag: example
+        partNumber: 1
+        sha256: example
+    ManagedDataS3MultipartCompleteRequest:
+      type: object
+      required:
+        - parts
+      properties:
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedDataS3CompletedPart'
+          example:
+            - etag: example
+              partNumber: 1
+              sha256: example
+      example:
+        parts:
+          - etag: example
+            partNumber: 1
+            sha256: example
+    ManagedDataS3MultipartCreateRequest:
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          example: example
+      example:
+        path: example
+    ManagedDataS3MultipartNegotiation:
+      type: object
+      required:
+        - createEndpoint
+        - minimumPartSize
+        - maximumPartSize
+        - maximumParts
+      properties:
+        createEndpoint:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          example: example
+        minimumPartSize:
+          type: integer
+          format: int64
+          minimum: !!float 1
+          example: 1
+        maximumPartSize:
+          type: integer
+          format: int64
+          minimum: !!float 1
+          example: 1
+        maximumParts:
+          type: integer
+          format: int32
+          minimum: !!float 1
+          maximum: !!float 10000
+          example: 1
+      example:
+        createEndpoint: example
+        maximumPartSize: 1
+        maximumParts: 1
+        minimumPartSize: 1
+    ManagedDataS3MultipartSignPartRequest:
+      type: object
+      required:
+        - size
+      properties:
+        size:
+          type: integer
+          format: int64
+          minimum: !!float 1
+          example: 1
+        sha256:
+          type: string
+          minLength: 64
+          maxLength: 64
+          example: example
+      example:
+        sha256: example
+        size: 1
+    ManagedDataS3MultipartSignedPartResponse:
+      type: object
+      required:
+        - partNumber
+        - url
+        - headers
+        - expiresAt
+      properties:
+        partNumber:
+          type: integer
+          format: int32
+          minimum: !!float 1
+          maximum: !!float 10000
+          example: 1
+        url:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          example: example
+        headers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedDataHTTPHeader'
+          example:
+            - name: example
+              value: example
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+      example:
+        expiresAt: "2026-01-02T15:04:05Z"
+        headers:
+          - name: example
+            value: example
+        partNumber: 1
+        url: example
+    ManagedDataS3MultipartStatus:
+      type: string
+      enum:
+        - open
+        - completed
+        - aborted
+      example: open
+    ManagedDataS3MultipartUploadResponse:
+      type: object
+      required:
+        - id
+        - uploadSessionId
+        - file
+        - status
+        - existing
+        - createdAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        uploadSessionId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        file:
+          $ref: '#/components/schemas/ManagedDataFileMetadata'
+        status:
+          $ref: '#/components/schemas/ManagedDataS3MultipartStatus'
+        existing:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+      example:
+        createdAt: "2026-01-02T15:04:05Z"
+        existing: true
+        expiresAt: "2026-01-02T15:04:05Z"
+        file:
+          path: example
+          sha256: example
+          size: 1
+        id: example
+        status: open
+        uploadSessionId: example
+    ManagedDataTusUploadNegotiation:
+      type: object
+      required:
+        - endpoint
+        - uploadId
+        - offset
+        - expiresAt
+      properties:
+        endpoint:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          example: example
+        uploadId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        offset:
+          type: integer
+          format: int64
+          minimum: !!float 0
+          example: 1
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+      example:
+        endpoint: example
+        expiresAt: "2026-01-02T15:04:05Z"
+        offset: 1
+        uploadId: example
+    ManagedDataUploadNegotiation:
+      type: object
+      required:
+        - protocol
+      properties:
+        protocol:
+          $ref: '#/components/schemas/ManagedDataUploadProtocol'
+        tus:
+          $ref: '#/components/schemas/ManagedDataTusUploadNegotiation'
+        s3Multipart:
+          $ref: '#/components/schemas/ManagedDataS3MultipartNegotiation'
+      description: Backend-neutral upload instructions. Exactly one protocol-specific object is present for tus or S3 multipart; already-present files have neither.
+      example:
+        protocol: tus
+        s3Multipart:
+          createEndpoint: example
+          maximumPartSize: 1
+          maximumParts: 1
+          minimumPartSize: 1
+        tus:
+          endpoint: example
+          expiresAt: "2026-01-02T15:04:05Z"
+          offset: 1
+          uploadId: example
+    ManagedDataUploadProtocol:
+      type: string
+      enum:
+        - tus
+        - s3_multipart
+        - already_present
+      example: tus
+    ManagedDataUploadSessionCreateRequest:
+      type: object
+      required:
+        - manifest
+      properties:
+        manifest:
+          $ref: '#/components/schemas/ManagedDataManifest'
+      example:
+        manifest:
+          files:
+            - path: example
+              sha256: example
+              size: 1
+    ManagedDataUploadSessionResponse:
+      type: object
+      required:
+        - id
+        - project
+        - connection
+        - revisionId
+        - status
+        - manifest
+        - files
+        - createdAt
+        - expiresAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        project:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        connection:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        revisionId:
+          type: string
+          minLength: 71
+          maxLength: 71
+          example: example
+        status:
+          $ref: '#/components/schemas/ManagedDataUploadSessionStatus'
+        manifest:
+          $ref: '#/components/schemas/ManagedDataManifest'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedDataFileUploadResponse'
+          example:
+            - error: example
+              file:
+                path: example
+                sha256: example
+                size: 1
+              negotiation:
+                protocol: tus
+                s3Multipart:
+                  createEndpoint: example
+                  maximumPartSize: 1
+                  maximumParts: 1
+                  minimumPartSize: 1
+                tus:
+                  endpoint: example
+                  expiresAt: "2026-01-02T15:04:05Z"
+                  offset: 1
+                  uploadId: example
+              status: pending
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        completedAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        error:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          example: example
+      example:
+        completedAt: "2026-01-02T15:04:05Z"
+        connection: example
+        createdAt: "2026-01-02T15:04:05Z"
+        error: example
+        expiresAt: "2026-01-02T15:04:05Z"
+        files:
+          - error: example
+            file:
+              path: example
+              sha256: example
+              size: 1
+            negotiation:
+              protocol: tus
+              s3Multipart:
+                createEndpoint: example
+                maximumPartSize: 1
+                maximumParts: 1
+                minimumPartSize: 1
+              tus:
+                endpoint: example
+                expiresAt: "2026-01-02T15:04:05Z"
+                offset: 1
+                uploadId: example
+            status: pending
+        id: example
+        manifest:
+          files:
+            - path: example
+              sha256: example
+              size: 1
+        project: example
+        revisionId: example
+        status: open
+    ManagedDataUploadSessionStatus:
+      type: string
+      enum:
+        - open
+        - finalizing
+        - completed
+        - aborted
+        - failed
+        - expired
+      example: open
     ModelDashboardUsage:
       type: object
       required:
@@ -15002,96 +18067,114 @@ components:
         id: example
         kind: example
         updatedAt: "2026-01-02T15:04:05Z"
-    PublishArtifactResponse:
+    ProjectDeploymentConnectionResponse:
       type: object
       required:
-        - publishId
-        - sizeBytes
+        - connection
+        - revisionId
+        - priorGeneration
       properties:
-        publishId:
+        connection:
           type: string
           example: example
-        sizeBytes:
+        revisionId:
+          type: string
+          example: example
+        priorRevisionId:
+          type: string
+          example: example
+        priorGeneration:
+          type: integer
+          format: int64
+          example: 1
+        activatedGeneration:
           type: integer
           format: int64
           example: 1
       example:
-        publishId: example
-        sizeBytes: 1
-    PublishCreateRequest:
-      type: object
-      properties:
-        title:
-          type: string
-          example: example
-        description:
-          type: string
-          example: example
-        environment:
-          type: string
-          example: example
-      example:
-        description: example
-        environment: example
-        title: example
-    PublishListResponse:
+        activatedGeneration: 1
+        connection: example
+        priorGeneration: 1
+        priorRevisionId: example
+        revisionId: example
+    ProjectDeploymentCreateRequest:
       type: object
       required:
-        - items
-        - page
+        - environment
+        - targets
       properties:
-        items:
+        environment:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        targets:
           type: array
           items:
-            $ref: '#/components/schemas/PublishResponse'
+            $ref: '#/components/schemas/ProjectDeploymentTargetRequest'
           example:
-            - activatedAt: "2026-01-02T15:04:05Z"
-              createdAt: "2026-01-02T15:04:05Z"
-              digest: example
-              environment: example
-              error: example
-              id: example
-              status: example
-              workspaceId: example
-        page:
-          $ref: '#/components/schemas/PageInfo'
+            - candidateId: example
+              workspace: example
       example:
-        items:
-          - activatedAt: "2026-01-02T15:04:05Z"
-            createdAt: "2026-01-02T15:04:05Z"
-            digest: example
-            environment: example
-            error: example
-            id: example
-            status: example
-            workspaceId: example
-        page:
-          nextCursor: example
-    PublishResponse:
+        environment: example
+        targets:
+          - candidateId: example
+            workspace: example
+    ProjectDeploymentResponse:
       type: object
       required:
         - id
-        - workspaceId
+        - project
         - environment
+        - requestDigest
         - status
-        - digest
+        - targets
+        - connections
         - createdAt
       properties:
         id:
           type: string
+          minLength: 1
+          maxLength: 160
           example: example
-        workspaceId:
+        project:
           type: string
+          minLength: 1
+          maxLength: 128
           example: example
         environment:
           type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        requestDigest:
+          type: string
+          minLength: 71
+          maxLength: 71
           example: example
         status:
-          type: string
-          example: example
-        digest:
-          type: string
-          example: example
+          $ref: '#/components/schemas/ProjectDeploymentStatus'
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectDeploymentTargetResponse'
+          example:
+            - activatedAt: "2026-01-02T15:04:05Z"
+              candidateId: example
+              error: example
+              priorCandidateId: example
+              status: pending
+              workspace: example
+        connections:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectDeploymentConnectionResponse'
+          example:
+            - activatedGeneration: 1
+              connection: example
+              priorGeneration: 1
+              priorRevisionId: example
+              revisionId: example
         createdAt:
           type: string
           format: date-time
@@ -15105,13 +18188,98 @@ components:
           example: example
       example:
         activatedAt: "2026-01-02T15:04:05Z"
+        connections:
+          - activatedGeneration: 1
+            connection: example
+            priorGeneration: 1
+            priorRevisionId: example
+            revisionId: example
         createdAt: "2026-01-02T15:04:05Z"
-        digest: example
         environment: example
         error: example
         id: example
-        status: example
-        workspaceId: example
+        project: example
+        requestDigest: example
+        status: pending
+        targets:
+          - activatedAt: "2026-01-02T15:04:05Z"
+            candidateId: example
+            error: example
+            priorCandidateId: example
+            status: pending
+            workspace: example
+    ProjectDeploymentStatus:
+      type: string
+      enum:
+        - pending
+        - active
+        - failed
+        - superseded
+      example: pending
+    ProjectDeploymentTargetRequest:
+      type: object
+      required:
+        - workspace
+        - candidateId
+      properties:
+        workspace:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        candidateId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+      example:
+        candidateId: example
+        workspace: example
+    ProjectDeploymentTargetResponse:
+      type: object
+      required:
+        - workspace
+        - candidateId
+        - status
+      properties:
+        workspace:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: example
+        candidateId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        priorCandidateId:
+          type: string
+          minLength: 1
+          maxLength: 160
+          example: example
+        status:
+          $ref: '#/components/schemas/ProjectDeploymentTargetStatus'
+        activatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+        error:
+          type: string
+          example: example
+      example:
+        activatedAt: "2026-01-02T15:04:05Z"
+        candidateId: example
+        error: example
+        priorCandidateId: example
+        status: pending
+        workspace: example
+    ProjectDeploymentTargetStatus:
+      type: string
+      enum:
+        - pending
+        - active
+        - failed
+      example: pending
     QueryEventListResponse:
       type: object
       required:
@@ -15853,6 +19021,10 @@ components:
       type: object
       required:
         - mode
+        - facts
+        - stitchDimensions
+        - physicalDependencies
+        - relationshipPaths
         - sql
         - args
         - columns
@@ -15861,6 +19033,30 @@ components:
         mode:
           type: string
           example: example
+        facts:
+          type: array
+          items:
+            type: string
+          example:
+            - example
+        stitchDimensions:
+          type: array
+          items:
+            type: string
+          example:
+            - example
+        physicalDependencies:
+          type: array
+          items:
+            type: string
+          example:
+            - example
+        relationshipPaths:
+          type: array
+          items:
+            type: string
+          example:
+            - example
         sql:
           type: string
           example: example
@@ -15889,8 +19085,16 @@ components:
           - key: example
         columns:
           - example
+        facts:
+          - example
         mode: example
+        physicalDependencies:
+          - example
+        relationshipPaths:
+          - example
         sql: example
+        stitchDimensions:
+          - example
         warnings:
           - example
     SemanticFieldKind:
@@ -15898,6 +19102,7 @@ components:
       enum:
         - dimension
         - measure
+        - metric
       example: dimension
     SemanticFieldListResponse:
       type: object
@@ -15921,6 +19126,7 @@ components:
               name: example
               table: example
               time: example
+              type: example
               unit: example
         page:
           $ref: '#/components/schemas/PageInfo'
@@ -15937,6 +19143,7 @@ components:
             name: example
             table: example
             time: example
+            type: example
             unit: example
         page:
           nextCursor: example
@@ -15980,6 +19187,9 @@ components:
         description:
           type: string
           example: example
+        type:
+          type: string
+          example: example
         unit:
           type: string
           example: example
@@ -16010,14 +19220,69 @@ components:
         name: example
         table: example
         time: example
+        type: example
         unit: example
+    SemanticFilter:
+      type: object
+      properties:
+        field:
+          type: string
+          example: example
+        fact:
+          type: string
+          example: example
+        operator:
+          type: string
+          example: example
+        values:
+          type: array
+          items:
+            type: string
+          example:
+            - example
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticFilterGroup'
+          example:
+            - filters: []
+      example:
+        fact: example
+        field: example
+        groups:
+          - filters: []
+        operator: example
+        values:
+          - example
+    SemanticFilterGroup:
+      type: object
+      required:
+        - filters
+      properties:
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticFilter'
+          example:
+            - fact: example
+              field: example
+              groups:
+                - filters: []
+              operator: example
+              values:
+                - example
+      example:
+        filters: []
     SemanticModelCounts:
       type: object
       required:
         - sources
         - model_tables
         - fields
-        - measures
+        - facts
+        - conformed_dimensions
+        - atomic_measures
+        - metrics
         - relationships
       properties:
         sources:
@@ -16032,7 +19297,19 @@ components:
           type: integer
           format: int32
           example: 1
-        measures:
+        facts:
+          type: integer
+          format: int32
+          example: 1
+        conformed_dimensions:
+          type: integer
+          format: int32
+          example: 1
+        atomic_measures:
+          type: integer
+          format: int32
+          example: 1
+        metrics:
           type: integer
           format: int32
           example: 1
@@ -16041,8 +19318,11 @@ components:
           format: int32
           example: 1
       example:
+        atomic_measures: 1
+        conformed_dimensions: 1
+        facts: 1
         fields: 1
-        measures: 1
+        metrics: 1
         model_tables: 1
         relationships: 1
         sources: 1
@@ -16082,12 +19362,16 @@ components:
             - description: example
               fields: 1
               id: example
-              kind: example
+              roles:
+                - example
               source: example
       example:
         counts:
+          atomic_measures: 1
+          conformed_dimensions: 1
+          facts: 1
           fields: 1
-          measures: 1
+          metrics: 1
           model_tables: 1
           relationships: 1
           sources: 1
@@ -16102,7 +19386,8 @@ components:
           - description: example
             fields: 1
             id: example
-            kind: example
+            roles:
+              - example
             source: example
         title: example
     SemanticModelListResponse:
@@ -16152,7 +19437,7 @@ components:
       type: object
       required:
         - id
-        - kind
+        - roles
         - source
         - description
         - fields
@@ -16160,9 +19445,12 @@ components:
         id:
           type: string
           example: example
-        kind:
-          type: string
-          example: example
+        roles:
+          type: array
+          items:
+            type: string
+          example:
+            - example
         source:
           type: string
           example: example
@@ -16177,7 +19465,8 @@ components:
         description: example
         fields: 1
         id: example
-        kind: example
+        roles:
+          - example
         source: example
     SemanticPreviewRequest:
       type: object
@@ -16199,11 +19488,15 @@ components:
         filters:
           type: array
           items:
-            type: object
-            additionalProperties:
-              type: string
+            $ref: '#/components/schemas/SemanticFilter'
           example:
-            - key: example
+            - fact: example
+              field: example
+              groups:
+                - filters: []
+              operator: example
+              values:
+                - example
         sort:
           type: array
           items:
@@ -16223,7 +19516,13 @@ components:
           - alias: example
             field: example
         filters:
-          - key: example
+          - fact: example
+            field: example
+            groups:
+              - filters: []
+            operator: example
+            values:
+              - example
         limit: 1
         measures:
           - alias: example
@@ -16254,11 +19553,15 @@ components:
         filters:
           type: array
           items:
-            type: object
-            additionalProperties:
-              type: string
+            $ref: '#/components/schemas/SemanticFilter'
           example:
-            - key: example
+            - fact: example
+              field: example
+              groups:
+                - filters: []
+              operator: example
+              values:
+                - example
         sort:
           type: array
           items:
@@ -16278,7 +19581,13 @@ components:
           - alias: example
             field: example
         filters:
-          - key: example
+          - fact: example
+            field: example
+            groups:
+              - filters: []
+            operator: example
+            values:
+              - example
         limit: 1
         measures:
           - alias: example

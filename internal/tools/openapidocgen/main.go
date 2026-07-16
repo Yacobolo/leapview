@@ -179,7 +179,7 @@ func renderIndexDocument(catalog generatedCatalog) string {
 		}
 		markdown.WriteString("\n")
 	}
-	return markdown.String()
+	return strings.TrimRight(markdown.String(), "\n") + "\n"
 }
 
 func renderTagDocument(tag openAPITag, operations []taggedOperation) string {
@@ -203,7 +203,7 @@ func renderTagDocument(tag openAPITag, operations []taggedOperation) string {
 		writeRequestBody(&markdown, operation.Value.RequestBody)
 		writeResponses(&markdown, operation.Value.Responses)
 	}
-	return markdown.String()
+	return strings.TrimRight(markdown.String(), "\n") + "\n"
 }
 
 func writeParameters(markdown *strings.Builder, parameters []parameter) {

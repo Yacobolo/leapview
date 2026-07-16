@@ -10,12 +10,6 @@ Administrative utilities
 libredash admin
 ```
 
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
-
 ## Subcommands
 
 - `libredash backup`: Create a consistent LibreDash instance backup

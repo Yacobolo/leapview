@@ -3,20 +3,21 @@ package ducklake
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/securefs"
-	_ "github.com/duckdb/duckdb-go/v2"
-	_ "modernc.org/sqlite"
+	duckdb "github.com/duckdb/duckdb-go/v2"
 )
 
 const catalogAlias = "lake"
@@ -29,18 +30,19 @@ type Config struct {
 	CatalogPath string
 	DataPath    string
 	SnapshotID  int64
+	MaxReaders  int
 }
 
 type Layout struct {
-	RootDir          string
-	CatalogPath      string
-	DataPath         string
-	LegacyDuckDBPath string
+	RootDir     string
+	CatalogPath string
+	DataPath    string
 }
 
 type Environment struct {
-	db     *sql.DB
-	layout Layout
+	db              *sql.DB
+	layout          Layout
+	readConcurrency int
 }
 
 type Snapshot struct {
@@ -49,10 +51,9 @@ type Snapshot struct {
 
 func NewLayout(rootDir string) Layout {
 	return Layout{
-		RootDir:          rootDir,
-		CatalogPath:      filepath.Join(rootDir, "catalog.sqlite"),
-		DataPath:         filepath.Join(rootDir, "data"),
-		LegacyDuckDBPath: filepath.Join(rootDir, "libredash-workspace.duckdb"),
+		RootDir:     rootDir,
+		CatalogPath: filepath.Join(rootDir, "catalog.sqlite"),
+		DataPath:    filepath.Join(rootDir, "data"),
 	}
 }
 
@@ -81,23 +82,53 @@ func open(ctx context.Context, config Config, snapshot bool) (*Environment, erro
 	if err := securefs.EnsurePrivateDir(layout.DataPath); err != nil {
 		return nil, err
 	}
-	if err := MigrateSQLiteCatalogDataPath(ctx, layout.CatalogPath, layout.DataPath); err != nil {
-		return nil, err
+	var env *Environment
+	if snapshot {
+		env, err = openSnapshotEnvironment(ctx, layout, config.SnapshotID, max(1, config.MaxReaders))
+	} else {
+		var db *sql.DB
+		db, err = sql.Open("duckdb", ":memory:")
+		if err == nil {
+			db.SetMaxOpenConns(1)
+			db.SetMaxIdleConns(1)
+			env = &Environment{db: db, layout: layout, readConcurrency: 1}
+			err = env.initialize(ctx, false, config.SnapshotID)
+		}
 	}
-	db, err := sql.Open("duckdb", ":memory:")
 	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	env := &Environment{db: db, layout: layout}
-	if err := env.initialize(ctx, snapshot, config.SnapshotID); err != nil {
-		db.Close()
+		if env != nil && env.db != nil {
+			env.db.Close()
+		}
 		return nil, err
 	}
 	if err := secureSQLiteCatalogFiles(layout.CatalogPath); err != nil {
-		db.Close()
+		env.db.Close()
 		return nil, err
+	}
+	return env, nil
+}
+
+func openSnapshotEnvironment(ctx context.Context, layout Layout, snapshotID int64, readers int) (*Environment, error) {
+	threads := max(1, runtime.GOMAXPROCS(0)/readers)
+	attach := fmt.Sprintf("ATTACH IF NOT EXISTS 'ducklake:sqlite:%s' AS %s (DATA_PATH '%s', SNAPSHOT_VERSION %d)", sqlLiteral(layout.CatalogPath), catalogAlias, sqlLiteral(layout.DataPath), snapshotID)
+	connector, err := duckdb.NewConnector(":memory:", func(execer driver.ExecerContext) error {
+		for _, statement := range []string{"LOAD sqlite", "LOAD ducklake", attach, "USE " + catalogAlias, fmt.Sprintf("SET threads = %d", threads)} {
+			if _, err := execer.ExecContext(context.Background(), statement, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	db := sql.OpenDB(connector)
+	db.SetMaxOpenConns(readers)
+	db.SetMaxIdleConns(readers)
+	env := &Environment{db: db, layout: layout, readConcurrency: readers}
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize pinned DuckLake snapshot: %w", err)
 	}
 	return env, nil
 }
@@ -120,94 +151,6 @@ func (c Config) layout() (Layout, error) {
 	return layout, nil
 }
 
-func MigrateSQLiteCatalogDataPath(ctx context.Context, catalogPath, targetDataPath string) error {
-	if strings.TrimSpace(catalogPath) == "" || strings.TrimSpace(targetDataPath) == "" {
-		return nil
-	}
-	unlock := lockCatalogWrites(catalogPath)
-	defer unlock()
-	if _, err := os.Stat(catalogPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	db, err := sql.Open("sqlite", sqliteFileDSN(catalogPath))
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	var stored string
-	err = db.QueryRowContext(ctx, `SELECT value FROM ducklake_metadata WHERE "key" = 'data_path' AND scope IS NULL LIMIT 1`).Scan(&stored)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return nil
-		}
-		return err
-	}
-	if sameFilesystemPath(stored, targetDataPath) {
-		return secureSQLiteCatalogFiles(catalogPath)
-	}
-	if err := migrateLocalDataDir(stored, targetDataPath); err != nil {
-		return err
-	}
-	if _, err = db.ExecContext(ctx, `UPDATE ducklake_metadata SET value = ? WHERE "key" = 'data_path' AND scope IS NULL`, duckLakeMetadataPath(targetDataPath)); err != nil {
-		return err
-	}
-	return secureSQLiteCatalogFiles(catalogPath)
-}
-
-func MigrateSharedSQLiteCatalog(ctx context.Context, sharedCatalogPath, targetCatalogPath, targetDataPath string) error {
-	sharedCatalogPath = strings.TrimSpace(sharedCatalogPath)
-	targetCatalogPath = strings.TrimSpace(targetCatalogPath)
-	if sharedCatalogPath == "" || targetCatalogPath == "" || sameFilesystemPath(sharedCatalogPath, targetCatalogPath) {
-		return nil
-	}
-	if _, err := os.Stat(targetCatalogPath); err == nil {
-		return nil
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if _, err := os.Stat(sharedCatalogPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	unlock := lockCatalogWrites(sharedCatalogPath)
-	defer unlock()
-	db, err := sql.Open("sqlite", sqliteFileDSN(sharedCatalogPath))
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	var hasDuckLakeMetadata int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'ducklake_metadata'`).Scan(&hasDuckLakeMetadata); err != nil {
-		return fmt.Errorf("inspect shared DuckLake catalog: %w", err)
-	}
-	if hasDuckLakeMetadata == 0 {
-		return nil
-	}
-	if err := securefs.EnsurePrivateDir(filepath.Dir(targetCatalogPath)); err != nil {
-		return err
-	}
-	if _, err := db.ExecContext(ctx, `VACUUM main INTO '`+sqliteString(targetCatalogPath)+`'`); err != nil {
-		return fmt.Errorf("migrate shared DuckLake catalog: %w", err)
-	}
-	if err := secureSQLiteCatalogFiles(targetCatalogPath); err != nil {
-		return fmt.Errorf("secure migrated DuckLake catalog: %w", err)
-	}
-	return MigrateSQLiteCatalogDataPath(ctx, targetCatalogPath, targetDataPath)
-}
-
-func sqliteFileDSN(path string) string {
-	return "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)"
-}
-
-func sqliteString(value string) string {
-	return strings.ReplaceAll(value, "'", "''")
-}
-
 func secureSQLiteCatalogFiles(path string) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -219,141 +162,6 @@ func secureSQLiteCatalogFiles(path string) error {
 		}
 	}
 	return nil
-}
-
-func sameFilesystemPath(left, right string) bool {
-	leftAbs, leftErr := filepath.Abs(filepath.Clean(left))
-	rightAbs, rightErr := filepath.Abs(filepath.Clean(right))
-	if leftErr == nil && rightErr == nil {
-		return leftAbs == rightAbs
-	}
-	return filepath.Clean(left) == filepath.Clean(right)
-}
-
-func duckLakeMetadataPath(path string) string {
-	path = filepath.ToSlash(filepath.Clean(path))
-	if !strings.HasSuffix(path, "/") {
-		path += "/"
-	}
-	return path
-}
-
-func migrateLocalDataDir(source, target string) error {
-	source = filepath.Clean(source)
-	target = filepath.Clean(target)
-	if sameFilesystemPath(source, target) {
-		return nil
-	}
-	sourceInfo, sourceErr := os.Stat(source)
-	if sourceErr != nil {
-		if os.IsNotExist(sourceErr) {
-			return securefs.EnsurePrivateDir(target)
-		}
-		return sourceErr
-	}
-	if !sourceInfo.IsDir() {
-		return fmt.Errorf("DuckLake data path %s is not a directory", source)
-	}
-	targetInfo, targetErr := os.Stat(target)
-	if targetErr != nil {
-		if os.IsNotExist(targetErr) {
-			if err := securefs.EnsurePrivateDir(filepath.Dir(target)); err != nil {
-				return err
-			}
-			if err := os.Rename(source, target); err == nil {
-				if err := securefs.EnsurePrivateDir(target); err != nil {
-					return err
-				}
-				return nil
-			}
-			return copyDir(source, target)
-		}
-		return targetErr
-	}
-	if !targetInfo.IsDir() {
-		return fmt.Errorf("DuckLake target data path %s is not a directory", target)
-	}
-	empty, err := dirIsEmpty(target)
-	if err != nil {
-		return err
-	}
-	if empty {
-		if err := os.Remove(target); err != nil {
-			return err
-		}
-		if err := os.Rename(source, target); err == nil {
-			if err := securefs.EnsurePrivateDir(target); err != nil {
-				return err
-			}
-			return nil
-		}
-		if err := securefs.EnsurePrivateDir(target); err != nil {
-			return err
-		}
-	}
-	return copyDir(source, target)
-}
-
-func dirIsEmpty(path string) (bool, error) {
-	dir, err := os.Open(path)
-	if err != nil {
-		return false, err
-	}
-	defer dir.Close()
-	_, err = dir.Readdirnames(1)
-	if errors.Is(err, io.EOF) {
-		return true, nil
-	}
-	return false, err
-}
-
-func copyDir(source, target string) error {
-	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-		targetPath := filepath.Join(target, rel)
-		if entry.IsDir() {
-			return securefs.EnsurePrivateDir(targetPath)
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if existing, err := os.Stat(targetPath); err == nil && existing.Size() == info.Size() {
-			return nil
-		} else if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		return copyFile(path, targetPath, securefs.PrivateFileMode)
-	})
-}
-
-func copyFile(source, target string, mode os.FileMode) error {
-	if err := securefs.EnsurePrivateDir(filepath.Dir(target)); err != nil {
-		return err
-	}
-	src, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-	dst, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(dst, src); err != nil {
-		_ = dst.Close()
-		return err
-	}
-	if err := dst.Close(); err != nil {
-		return err
-	}
-	return os.Chmod(target, mode)
 }
 
 func (e *Environment) initialize(ctx context.Context, snapshot bool, snapshotID int64) error {
@@ -542,6 +350,13 @@ func (e *Environment) SQLDB() *sql.DB {
 	return e.db
 }
 
+func (e *Environment) ReadConcurrency() int {
+	if e == nil || e.readConcurrency <= 0 {
+		return 1
+	}
+	return e.readConcurrency
+}
+
 func (e *Environment) Path() string {
 	if e == nil {
 		return ""
@@ -555,7 +370,16 @@ func (e *Environment) Exec(ctx context.Context, statement string) error {
 }
 
 func (e *Environment) Query(ctx context.Context, plan semanticquery.Plan) (semanticquery.Rows, error) {
-	rows, err := e.db.QueryContext(ctx, plan.SQL, plan.Args...)
+	conn, err := e.queryConnection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	return queryRows(ctx, conn, plan)
+}
+
+func queryRows(ctx context.Context, conn *sql.Conn, plan semanticquery.Plan) (semanticquery.Rows, error) {
+	rows, err := conn.QueryContext(ctx, plan.SQL, plan.Args...)
 	if err != nil {
 		return nil, err
 	}
@@ -581,8 +405,13 @@ func (e *Environment) Query(ctx context.Context, plan semanticquery.Plan) (seman
 }
 
 func (e *Environment) Count(ctx context.Context, plan semanticquery.Plan) (int, error) {
+	conn, err := e.queryConnection(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
 	var count int
-	if err := e.db.QueryRowContext(ctx, plan.SQL, plan.Args...).Scan(&count); err != nil {
+	if err := conn.QueryRowContext(ctx, plan.SQL, plan.Args...).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -592,9 +421,21 @@ func (e *Environment) FloatBounds(ctx context.Context, plan semanticquery.Plan, 
 	if err := validateColumnAlias(valueColumn); err != nil {
 		return semanticquery.FloatBounds{}, err
 	}
+	conn, err := e.queryConnection(ctx)
+	if err != nil {
+		return semanticquery.FloatBounds{}, err
+	}
+	defer conn.Close()
+	return floatBounds(ctx, conn, plan, valueColumn)
+}
+
+func floatBounds(ctx context.Context, conn *sql.Conn, plan semanticquery.Plan, valueColumn string) (semanticquery.FloatBounds, error) {
+	if err := validateColumnAlias(valueColumn); err != nil {
+		return semanticquery.FloatBounds{}, err
+	}
 	query := "WITH raw AS (" + plan.SQL + ")\nSELECT MIN(" + valueColumn + "), MAX(" + valueColumn + ") FROM raw"
 	var minValue, maxValue sql.NullFloat64
-	if err := e.db.QueryRowContext(ctx, query, plan.Args...).Scan(&minValue, &maxValue); err != nil {
+	if err := conn.QueryRowContext(ctx, query, plan.Args...).Scan(&minValue, &maxValue); err != nil {
 		return semanticquery.FloatBounds{}, err
 	}
 	if !minValue.Valid || !maxValue.Valid {
@@ -607,7 +448,12 @@ func (e *Environment) Histogram(ctx context.Context, plan semanticquery.Plan, sp
 	if err := validateColumnAlias(spec.ValueColumn); err != nil {
 		return nil, err
 	}
-	bounds, err := e.FloatBounds(ctx, plan, spec.ValueColumn)
+	conn, err := e.queryConnection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	bounds, err := floatBounds(ctx, conn, plan, spec.ValueColumn)
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +466,7 @@ func (e *Environment) Histogram(ctx context.Context, plan semanticquery.Plan, sp
 	if bounds.Min == bounds.Max {
 		var count int
 		query := "WITH raw AS (" + plan.SQL + ")\nSELECT COUNT(*) FROM raw"
-		if err := e.db.QueryRowContext(ctx, query, plan.Args...).Scan(&count); err != nil {
+		if err := conn.QueryRowContext(ctx, query, plan.Args...).Scan(&count); err != nil {
 			return nil, err
 		}
 		return []semanticquery.HistogramBin{{Bucket: 0, Count: count, Start: bounds.Min, End: bounds.Max}}, nil
@@ -633,7 +479,7 @@ FROM raw
 GROUP BY bucket
 ORDER BY bucket ASC`, plan.SQL, bucketExpr)
 	args := append(append([]any{}, plan.Args...), bounds.Min, bounds.Max, bounds.Min, spec.BinCount)
-	rows, err := e.db.QueryContext(ctx, query, args...)
+	rows, err := conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -669,6 +515,11 @@ func (e *Environment) Distribution(ctx context.Context, plan semanticquery.Plan,
 	if err != nil {
 		return nil, err
 	}
+	conn, err := e.queryConnection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
 	query := fmt.Sprintf(`WITH raw AS (%s)
 SELECT %s AS label,
        MIN(%s) AS min,
@@ -682,11 +533,18 @@ ORDER BY %s`, plan.SQL, spec.GroupColumn, spec.ValueColumn, spec.ValueColumn, sp
 	if spec.Limit > 0 {
 		query += fmt.Sprintf("\nLIMIT %d", spec.Limit)
 	}
-	return e.Query(ctx, semanticquery.Plan{
+	return queryRows(ctx, conn, semanticquery.Plan{
 		SQL:     query,
 		Args:    plan.Args,
 		Columns: []string{"label", "min", "q1", "median", "q3", "max"},
 	})
+}
+
+func (e *Environment) queryConnection(ctx context.Context) (*sql.Conn, error) {
+	started := time.Now()
+	conn, err := e.db.Conn(ctx)
+	dataquery.ObserveConnectionWait(ctx, time.Since(started))
+	return conn, err
 }
 
 func (e *Environment) Layout() Layout {

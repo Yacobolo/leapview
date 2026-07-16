@@ -15,12 +15,5 @@ libredash serve [flags]
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--addr` | string | `` | listen address; defaults to the configured address |
-| `--data-dir` | string | `` | dashboard source data directory; defaults to the configured data directory |
 | `--environment` | string | `` | serving environment; defaults to prod in production and dev otherwise |
 | `--production` | bool | `false` | serve active serving state from the platform DB |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -223,7 +224,7 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 				return workspace.AssetGraph{}, err
 			}
 			edge(modelID, id, workspace.AssetEdgeContains)
-			tableID, err := assetID(workspace.AssetTypeSemanticTable, modelKey+"."+measure.Table)
+			tableID, err := assetID(workspace.AssetTypeSemanticTable, modelKey+"."+measure.Fact)
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
@@ -252,33 +253,12 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 		}
 		edge(reportID, modelID, workspace.AssetEdgeUsesSemanticModel)
 		model := definition.Models[report.SemanticModel]
-		addSemanticTableUse := func(fromID workspace.AssetID, tableName string) error {
-			if tableName == "" {
-				return nil
-			}
-			tableID, err := assetID(workspace.AssetTypeSemanticTable, modelKey+"."+tableName)
-			if err != nil {
-				return err
-			}
-			edge(fromID, tableID, workspace.AssetEdgeUsesSemanticTable)
-			return nil
-		}
 		addMeasureUse := func(fromID workspace.AssetID, ref reportdef.FieldRef) error {
-			if ref.Measure.Expression != "" || ref.Measure.Expr != "" {
-				if err := addSemanticTableUse(fromID, ref.Measure.Table); err != nil {
-					return err
-				}
-				for _, fieldRef := range lineageExpressionFieldRefs(model, ref.Measure.SQLExpression()) {
-					fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+fieldRef)
-					if err != nil {
-						return err
-					}
-					edge(fromID, fieldID, workspace.AssetEdgeUsesField)
-				}
-				return nil
-			}
 			measure, err := model.ResolveMeasure(ref.Field)
 			if err != nil {
+				if _, ok := model.Metrics[ref.Field]; ok {
+					return nil
+				}
 				return err
 			}
 			measureID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+measure.Name)
@@ -290,6 +270,21 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 		}
 		addFieldUse := func(fromID workspace.AssetID, ref string, edgeType workspace.AssetEdgeType) error {
 			if ref == "" {
+				return nil
+			}
+			if dimension, ok := model.Dimensions[ref]; ok {
+				bindings := make([]string, 0, len(dimension.Bindings))
+				for _, binding := range dimension.Bindings {
+					bindings = append(bindings, binding.Field)
+				}
+				sort.Strings(bindings)
+				for _, binding := range bindings {
+					fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+binding)
+					if err != nil {
+						return err
+					}
+					edge(fromID, fieldID, edgeType)
+				}
 				return nil
 			}
 			if dimension, err := model.ResolveDimension(ref); err == nil {

@@ -10,12 +10,6 @@ Inspect workspaces
 libredash workspaces
 ```
 
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
-
 ## Subcommands
 
 - `libredash list`: List workspaces

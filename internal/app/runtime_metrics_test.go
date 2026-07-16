@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 )
 
 func TestRuntimeMetricsQueryDashboardUsesRuntimeLease(t *testing.T) {
 	provider := &leaseRecordingProvider{}
-	metrics := NewRuntimeMetrics(provider, "/data", "test")
+	metrics := NewRuntimeMetrics(provider, "test")
 
 	if _, err := metrics.QueryDashboardPage(context.Background(), "dashboard", "page", dashboard.Filters{}); err != nil {
 		t.Fatalf("query dashboard: %v", err)
@@ -28,6 +29,70 @@ func TestRuntimeMetricsQueryDashboardUsesRuntimeLease(t *testing.T) {
 	if provider.runtime.releasedDuringCall {
 		t.Fatal("runtime lease was released before query completed")
 	}
+}
+
+func TestRuntimeMetricsDashboardRefreshLeasePinsOneRuntimeAcrossTargets(t *testing.T) {
+	first := &targetLeaseRuntime{id: "first"}
+	second := &targetLeaseRuntime{id: "second"}
+	provider := &switchingLeaseProvider{current: first}
+	metrics := runtimeMetrics{provider: provider, workspaceID: "test"}
+
+	err := metrics.WithDashboardRefreshLease(context.Background(), func(ctx context.Context) error {
+		provider.current = second
+		if err := metrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "dashboard", PageID: "page", Targets: []consumer.Target{{Kind: consumer.KindVisual, ID: "one"}}}, func(consumer.Result) bool { return true }); err != nil {
+			return err
+		}
+		if err := metrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "dashboard", PageID: "page", Targets: []consumer.Target{{Kind: consumer.KindVisual, ID: "two"}}}, func(consumer.Result) bool { return true }); err != nil {
+			return err
+		}
+		if provider.lease.released {
+			t.Fatal("refresh runtime lease released before targets completed")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.acquires != 1 {
+		t.Fatalf("runtime lease acquisitions = %d, want 1", provider.acquires)
+	}
+	if first.calls != 2 || second.calls != 0 {
+		t.Fatalf("target calls first=%d second=%d, want 2/0", first.calls, second.calls)
+	}
+	if !provider.lease.released {
+		t.Fatal("refresh runtime lease was not released")
+	}
+}
+
+type switchingLeaseProvider struct {
+	current  runtimehost.Runtime
+	lease    *recordingLease
+	acquires int
+}
+
+func (p *switchingLeaseProvider) Active(context.Context) (runtimehost.Runtime, error) {
+	return p.current, nil
+}
+
+func (p *switchingLeaseProvider) Acquire(context.Context) (runtimehost.Lease, error) {
+	p.acquires++
+	p.lease = &recordingLease{runtime: p.current, snapshotID: 42}
+	return p.lease, nil
+}
+
+type targetLeaseRuntime struct {
+	id    string
+	calls int
+}
+
+func (r *targetLeaseRuntime) Close() error { return nil }
+
+func (r *targetLeaseRuntime) ExecuteConsumersPage(_ context.Context, request consumer.Request, publish consumer.Publisher) error {
+	for _, target := range request.Targets {
+		r.calls++
+		publish(consumer.Result{Target: target, Visual: dashboard.Visual{ID: r.id}})
+	}
+	return nil
 }
 
 type leaseRecordingProvider struct {

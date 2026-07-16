@@ -19,9 +19,8 @@ func (testDataRuntimeFactory) OpenDashboardWorkspaceDataRuntimes(ctx context.Con
 		return nil, fmt.Errorf("workspace definition is required")
 	}
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models:  config.Definition.Models,
-		DataDir: config.DataDir,
-		DBDir:   config.DBDir,
+		Models: config.Definition.Models,
+		DBDir:  config.DBDir,
 	})
 	if err != nil {
 		return nil, err
@@ -48,7 +47,6 @@ func (testDataRuntimeFactory) OpenDashboardDataRuntime(ctx context.Context, conf
 	runtime, err := analyticsduckdb.OpenMaterializeRuntime(ctx, materializeruntime.RuntimeConfig{
 		ModelID: config.ModelID,
 		Model:   config.Model,
-		DataDir: config.DataDir,
 		DBDir:   config.DBDir,
 	})
 	if err != nil {
@@ -108,6 +106,10 @@ func (r testWorkspaceDataRuntime) ExecuteDataQuery(ctx context.Context, request 
 	return r.runtime.ExecuteDataQuery(ctx, request)
 }
 
+func (r testWorkspaceDataRuntime) ExecuteDataQueryBundle(ctx context.Context, requests []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	return r.runtime.ExecuteDataQueryBundle(ctx, requests)
+}
+
 func (r testWorkspaceDataRuntime) Refresh(ctx context.Context) error {
 	return r.runtime.Refresh(ctx)
 }
@@ -151,6 +153,10 @@ func (r testDataRuntime) Distribution(ctx context.Context, request reportdef.Raw
 
 func (r testDataRuntime) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
 	return r.runtime.ExecuteDataQuery(ctx, request)
+}
+
+func (r testDataRuntime) ExecuteDataQueryBundle(ctx context.Context, requests []dataquery.BundleRequest) (dataquery.BundleResult, error) {
+	return r.runtime.ExecuteDataQueryBundle(ctx, requests)
 }
 
 func (r testDataRuntime) Refresh(ctx context.Context) error {

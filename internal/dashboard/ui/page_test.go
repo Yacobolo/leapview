@@ -4,6 +4,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"html"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -28,12 +29,12 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 			"category": {Type: "text", Label: "Category", Dimension: "orders.category", URLParam: "category", DefaultOperator: "contains"},
 		},
 		Visuals: map[string]reportdef.Visual{
-			"active_chart":   {Title: "Active", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: reportdef.Interaction{PointSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.status", Value: "label"}}, Targets: []string{"orders"}}}},
+			"active_chart":   {Title: "Active", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: reportdef.Interaction{PointSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.status", Fact: "orders", Value: "label"}}, Targets: []string{"orders"}}}},
 			"active_kpi":     {Kind: "kpi", Shape: "single_value", Query: reportdef.VisualQuery{Measures: fieldRefs("order_count")}, Options: map[string]any{"note": "Filtered", "tone": "ink"}},
 			"off_page_chart": {Title: "Off Page", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}},
 		},
 		Tables: map[string]reportdef.TableVisual{
-			"orders":   {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, Interaction: reportdef.Interaction{RowSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.order_id", Value: "order_id"}}, Targets: []string{"active_chart"}}}, Style: dashboard.TableStyle{Density: "compact", Grid: "full"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order", Width: 220, Format: "text"}}},
+			"orders":   {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, Interaction: reportdef.Interaction{RowSelection: reportdef.SelectionInteraction{Mappings: []reportdef.SelectionMapping{{Field: "orders.order_id", Fact: "orders", Value: "order_id"}}, Targets: []string{"active_chart"}}}, Style: dashboard.TableStyle{Density: "compact", Grid: "full"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order", Width: 220, Format: "text"}}},
 			"matrix":   {Title: "Matrix", Kind: "matrix_table", Query: reportdef.TableQuery{Rows: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Columns: []dashboard.TableColumn{{Key: "status", Label: "Status"}}},
 			"pivot":    {Title: "Pivot", Kind: "pivot_table", Query: reportdef.TableQuery{Rows: fieldRefs("orders.status"), Columns: fieldRefs("orders.category"), Measures: fieldRefs("order_count")}, Columns: []dashboard.TableColumn{{Key: "status", Label: "Status"}}},
 			"off_page": {Title: "Off Page", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
@@ -66,11 +67,11 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		Title: "Test",
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
-				Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+				Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
 				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}, "status": {Expr: "status"}, "state": {Expr: "state"}, "category": {Expr: "category"}},
 			},
 		},
-		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Table: "orders", Grain: "order_id", Label: "Orders", Expression: "COUNT(*)"}},
+		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
 	}
 
 	showcase := renderPageForTest(t, report, model, report.Pages[0])
@@ -97,7 +98,29 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 			t.Fatalf("%s segment = %q, want reload command without updates stream reopen:\n%s", attr, segment, showcase)
 		}
 	}
-	showcaseSignals := html.UnescapeString(jsonString(BootstrapSignals(".data", "client", dashboard.Catalog{}, report, model, report.Pages, report.Pages[0], dashboard.Filters{})))
+	commandSignalFilters := map[string][]string{
+		"data-on:ld-interaction-select":  {"runtime", "interactionCommand"},
+		"data-on:ld-table-window-change": {"runtime", "tableCommand"},
+		"data-on:ld-filters-change":      {"runtime", "filters[.]controls"},
+		"data-on:ld-selection-clear":     {"runtime"},
+	}
+	for attr, signalPaths := range commandSignalFilters {
+		segment := renderedAttrSegment(showcase, attr)
+		if !strings.Contains(segment, `filterSignals`) {
+			t.Fatalf("%s segment = %q, want command-scoped Datastar signal filter", attr, segment)
+		}
+		for _, signalPath := range signalPaths {
+			if !strings.Contains(segment, signalPath) {
+				t.Fatalf("%s segment = %q, want signal path %q", attr, segment, signalPath)
+			}
+		}
+		for _, forbidden := range []string{"visuals", "tables", "filterOptions", "componentStatus"} {
+			if strings.Contains(segment, forbidden) {
+				t.Fatalf("%s segment = %q, must not post heavy signal %q", attr, segment, forbidden)
+			}
+		}
+	}
+	showcaseSignals := html.UnescapeString(jsonString(BootstrapSignals("client", "stream-instance", dashboard.Catalog{}, report, model, report.Pages, report.Pages[0], dashboard.Filters{})))
 	if !strings.Contains(showcaseSignals, `"active_chart"`) || !strings.Contains(showcaseSignals, `"active_kpi"`) {
 		t.Fatalf("showcase bootstrap did not include active chart and KPI visuals:\n%s", showcaseSignals)
 	}
@@ -127,7 +150,7 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	}
 
 	tables := renderPageForTest(t, report, model, report.Pages[1])
-	tableSignals := html.UnescapeString(jsonString(BootstrapSignals(".data", "client", dashboard.Catalog{}, report, model, report.Pages, report.Pages[1], dashboard.Filters{})))
+	tableSignals := html.UnescapeString(jsonString(BootstrapSignals("client", "stream-instance", dashboard.Catalog{}, report, model, report.Pages, report.Pages[1], dashboard.Filters{})))
 	for _, tableID := range []string{"orders", "matrix", "pivot"} {
 		if !strings.Contains(tableSignals, `"`+tableID+`":{`) || !strings.Contains(tableSignals, `"availableRows"`) {
 			t.Fatalf("tables bootstrap did not include table %q with row metadata:\n%s", tableID, tableSignals)
@@ -137,10 +160,10 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		t.Fatalf("tables bootstrap did not include table style and column display metadata:\n%s", tableSignals)
 	}
 	assertNoDashboardProductDOM(t, tables)
-	if !strings.Contains(showcaseSignals, `"kind":"point_selection"`) || !strings.Contains(showcaseSignals, `"field":"orders.status","value":"label"`) || strings.Contains(showcaseSignals, `"mode":"multi"`) {
+	if !strings.Contains(showcaseSignals, `"interaction":{"kind":"point_selection","mappings":[{"fact":"orders","field":"orders.status","value":"label"}],"targets":["orders"],"toggle":false}`) || strings.Contains(showcaseSignals, `"mode":"multi"`) {
 		t.Fatalf("showcase bootstrap did not include point selection without mode:\n%s", showcaseSignals)
 	}
-	if !strings.Contains(tableSignals, `"kind":"row_selection"`) || !strings.Contains(tableSignals, `"field":"orders.order_id","value":"order_id"`) || strings.Contains(tableSignals, `"mode":"multi"`) {
+	if !strings.Contains(tableSignals, `"interaction":{"kind":"row_selection","mappings":[{"fact":"orders","field":"orders.order_id","value":"order_id"}],"targets":["active_chart"],"toggle":false}`) || strings.Contains(tableSignals, `"mode":"multi"`) {
 		t.Fatalf("tables bootstrap did not include row selection without mode:\n%s", tableSignals)
 	}
 	if strings.Contains(tableSignals, `"off_page"`) {
@@ -154,11 +177,42 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 func renderPageForTest(t *testing.T, report reportdef.Dashboard, model *semanticmodel.Model, activePage dashboard.Page) string {
 	t.Helper()
 	var out strings.Builder
-	err := Page(".data", "client", "", dashboard.Catalog{}, report, model, report.Pages, activePage, dashboard.Filters{}).Render(&out)
+	err := Page("client", "", dashboard.Catalog{}, report, model, report.Pages, activePage, dashboard.Filters{}).Render(&out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return html.UnescapeString(out.String())
+}
+
+func TestPageCreatesUniqueStreamInstancePerRender(t *testing.T) {
+	report := reportdef.Dashboard{ID: "report", SemanticModel: "model", Pages: []dashboard.Page{{ID: "overview"}}}
+	model := &semanticmodel.Model{Name: "model"}
+
+	first := renderPageForTest(t, report, model, report.Pages[0])
+	second := renderPageForTest(t, report, model, report.Pages[0])
+	firstID := queryParamFromRenderedPage(t, first, "streamInstance")
+	secondID := queryParamFromRenderedPage(t, second, "streamInstance")
+	if firstID == "" || secondID == "" || firstID == secondID {
+		t.Fatalf("stream instances = %q and %q, want unique non-empty ids", firstID, secondID)
+	}
+}
+
+func queryParamFromRenderedPage(t *testing.T, body, name string) string {
+	t.Helper()
+	start := strings.Index(body, "/updates?")
+	if start < 0 {
+		t.Fatalf("rendered page has no updates URL")
+	}
+	end := strings.IndexAny(body[start:], "'\"")
+	if end < 0 {
+		t.Fatalf("rendered page has unterminated updates URL")
+	}
+	raw := strings.ReplaceAll(body[start:start+end], "&amp;", "&")
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse updates URL: %v", err)
+	}
+	return parsed.Query().Get(name)
 }
 
 func renderedAttrSegment(body, name string) string {

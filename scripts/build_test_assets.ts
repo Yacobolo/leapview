@@ -38,10 +38,19 @@ const fixtures = new Map<string, FixtureBuild>([
   ['data-explorer', single('data-explorer', 'web/components/data/data-explorer.ts', '.tmp/data-explorer-test/data-explorer-under-test.js')],
   ['windowed-table', single('windowed-table', 'web/components/shared/windowed-table.ts', '.tmp/windowed-table-test/windowed-table-under-test.js')],
   ['filter-menu', single('filter-menu', 'web/components/shared/filter-menu.ts', '.tmp/filter-menu-test/filter-menu-under-test.js')],
+  ['datastar-inspector', single('datastar-inspector', 'web/components/inspector/datastar-inspector.ts', '.tmp/datastar-inspector-test/datastar-inspector-under-test.js')],
   ['admin-page', pageWithMonacoWorker('admin-page', 'web/components/admin/admin-page.ts', '.tmp/admin-page-test', 'admin-page-under-test.js')],
   ['code-editor', pageWithMonacoWorker('code-editor', 'web/components/shared/code-editor.ts', '.tmp/code-editor-test', 'code-editor-under-test.js')],
   ['markdown-view', single('markdown-view', 'web/components/shared/markdown-view.ts', '.tmp/markdown-view-test/markdown-view-under-test.js')],
   ['login-page', single('login-page', 'web/components/login/login-page.ts', '.tmp/login-page-test/login-page-under-test.js')],
+  [
+    'topology-background',
+    single(
+      'topology-background',
+      'web/components/login/topology-background.ts',
+      '.tmp/topology-background-test/topology-background-under-test.js',
+    ),
+  ],
   ['record-table', single('record-table', 'web/components/shared/record-table.ts', '.tmp/record-table-test/record-table-under-test.js')],
   ['visual-modal', single('visual-modal', 'web/components/dashboard/visual-modal.ts', '.tmp/visual-modal-under-test.js')],
   [

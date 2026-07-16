@@ -18,6 +18,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
@@ -38,13 +39,37 @@ func fieldRefs(fields ...string) []reportdef.FieldRef {
 
 type fakeMetrics struct{}
 
+func (fakeMetrics) ExecuteConsumersPage(ctx context.Context, request consumer.Request, publish consumer.Publisher) error {
+	for _, target := range request.Targets {
+		switch target.Kind {
+		case consumer.KindVisual:
+			visual, err := fakeMetrics{}.QueryVisualPage(ctx, request.DashboardID, request.PageID, request.Filters, target.ID)
+			publish(consumer.Result{Target: target, Visual: visual, Err: err})
+		case consumer.KindFilterOptions:
+			options, err := fakeMetrics{}.QueryFilterOptionsPage(ctx, request.DashboardID, request.PageID, []string{target.ID})
+			publish(consumer.Result{Target: target, FilterOptions: options, Err: err})
+		case consumer.KindTable:
+			table, err := fakeMetrics{}.QueryTablePage(ctx, request.DashboardID, request.PageID, request.Filters, target.TableRequest)
+			publish(consumer.Result{Target: target, Table: table, Err: err})
+		}
+	}
+	return ctx.Err()
+}
+
 type canceledTableMetrics struct {
 	fakeMetrics
 }
 
 type recordingMetrics struct {
 	fakeMetrics
-	pageIDs []string
+	pageIDs chan string
+}
+
+func (m *recordingMetrics) ExecuteConsumersPage(ctx context.Context, request consumer.Request, publish consumer.Publisher) error {
+	for range request.Targets {
+		m.pageIDs <- request.PageID
+	}
+	return m.fakeMetrics.ExecuteConsumersPage(ctx, request, publish)
 }
 
 type namedWorkspaceMetrics struct {
@@ -117,10 +142,6 @@ func (fakeMetrics) ModelIDForDashboard(dashboardID string) string {
 	return ""
 }
 
-func (fakeMetrics) DataDir() string {
-	return "../../.data/olist"
-}
-
 func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
 	if dashboardID != "executive-sales" {
 		return reportdef.Dashboard{}, nil, false
@@ -134,8 +155,8 @@ func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmod
 				"category": {Type: "text", Label: "Category", Dimension: "orders.status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
 			},
 			Visuals: map[string]reportdef.Visual{
-				"orders":       {Title: "Orders", Type: "donut", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders")},
-				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders")},
+				"orders":       {Title: "Orders", Type: "donut", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
+				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
 			},
 			Tables: map[string]reportdef.TableVisual{
 				"orders": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
@@ -146,11 +167,11 @@ func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmod
 			Title: "Test Model",
 			Tables: map[string]semanticmodel.Table{
 				"orders": {
-					Kind: "fact", Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
-					Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id"}, "status": {Expr: "status"}},
+					Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+					Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id", Type: "string"}, "status": {Expr: "status", Type: "string"}},
 				},
 			},
-			Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Table: "orders", Grain: "order_id", Label: "Orders", Expression: "COUNT(*)"}},
+			Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
 		}, true
 }
 
@@ -285,12 +306,13 @@ func (fakeMetrics) DefaultFilters(_ string) dashboard.Filters {
 	}
 }
 
-func pointInteraction(field string, targets ...string) reportdef.Interaction {
+func pointInteraction(field, fact string, targets ...string) reportdef.Interaction {
 	return reportdef.Interaction{
 		PointSelection: reportdef.SelectionInteraction{
 			Toggle: true,
 			Mappings: []reportdef.SelectionMapping{{
 				Field: field,
+				Fact:  fact,
 				Value: "label",
 				Label: "label",
 			}},
@@ -350,9 +372,8 @@ func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, pageID string
 			"state": {{Value: "SP", Label: "SP"}},
 		},
 		Status: dashboard.Status{
-			Loading:       false,
-			LastUpdated:   "12:00:00",
-			DataDirectory: ".data/olist",
+			Loading:     false,
+			LastUpdated: "12:00:00",
 		},
 		Visuals: map[string]dashboard.Visual{
 			chartID: {Title: chartTitle, Unit: "orders", Data: []dashboard.Datum{{"label": "delivered", "value": 1}}},
@@ -360,9 +381,47 @@ func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, pageID string
 	}, nil
 }
 
+func (fakeMetrics) QueryVisualPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, visualID string) (dashboard.Visual, error) {
+	patch, err := fakeMetrics{}.QueryDashboardPage(ctx, dashboardID, pageID, filters)
+	return patch.Visuals[visualID], err
+}
+
+func (fakeMetrics) QueryVisualsPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, visualIDs []string) (map[string]dashboard.Visual, error) {
+	patch, err := fakeMetrics{}.QueryDashboardPage(ctx, dashboardID, pageID, filters)
+	visuals := make(map[string]dashboard.Visual, len(visualIDs))
+	for _, id := range visualIDs {
+		visuals[id] = patch.Visuals[id]
+	}
+	return visuals, err
+}
+
+func (fakeMetrics) QueryFilterOptionsPage(ctx context.Context, dashboardID, pageID string, filterIDs []string) (map[string][]dashboard.FilterOption, error) {
+	patch, err := fakeMetrics{}.QueryDashboardPage(ctx, dashboardID, pageID, dashboard.Filters{})
+	options := make(map[string][]dashboard.FilterOption, len(filterIDs))
+	for _, id := range filterIDs {
+		options[id] = patch.FilterOptions[id]
+	}
+	return options, err
+}
+
 func (m *recordingMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {
-	m.pageIDs = append(m.pageIDs, pageID)
+	m.pageIDs <- pageID
 	return m.fakeMetrics.QueryDashboardPage(ctx, dashboardID, pageID, filters)
+}
+
+func (m *recordingMetrics) QueryVisualPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, visualID string) (dashboard.Visual, error) {
+	m.pageIDs <- pageID
+	return m.fakeMetrics.QueryVisualPage(ctx, dashboardID, pageID, filters, visualID)
+}
+
+func (m *recordingMetrics) QueryVisualsPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, visualIDs []string) (map[string]dashboard.Visual, error) {
+	m.pageIDs <- pageID
+	return m.fakeMetrics.QueryVisualsPage(ctx, dashboardID, pageID, filters, visualIDs)
+}
+
+func (m *recordingMetrics) QueryFilterOptionsPage(ctx context.Context, dashboardID, pageID string, filterIDs []string) (map[string][]dashboard.FilterOption, error) {
+	m.pageIDs <- pageID
+	return m.fakeMetrics.QueryFilterOptionsPage(ctx, dashboardID, pageID, filterIDs)
 }
 
 func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
@@ -638,6 +697,7 @@ func assertDevDatastarRuntime(t *testing.T, body string) {
 		`/static/vendor/datastar-1.0.2.js?v=dev`,
 		`/static/datastar-inspector.js`,
 		`<datastar-inspector`,
+		`signals-url="/__dev/pagestream/signals"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("page missing Datastar inspector marker %q:\n%s", want, body)
@@ -867,7 +927,7 @@ func (fakeMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashb
 		Columns: []dashboard.TableColumn{
 			{Key: "order_id", Label: "Order"},
 		},
-		TotalRows:     1,
+		Cardinality:   dashboard.ExactCardinality(1),
 		AvailableRows: 1,
 		IsCapped:      false,
 		RowCap:        dashboard.TableInteractiveRowCap,
@@ -896,6 +956,13 @@ func (canceledTableMetrics) QueryTablePage(_ context.Context, _ string, _ string
 	return dashboard.EmptyTable(request, context.Canceled), nil
 }
 
+func (canceledTableMetrics) ExecuteConsumersPage(_ context.Context, request consumer.Request, publish consumer.Publisher) error {
+	for _, target := range request.Targets {
+		publish(consumer.Result{Target: target, Err: context.Canceled})
+	}
+	return nil
+}
+
 func (fakeMetrics) RefreshMaterializations(_ context.Context, _ string) error {
 	return nil
 }
@@ -922,6 +989,10 @@ type localDevStyleModelTableMetrics struct {
 	done      chan []string
 }
 
+func (m *localDevStyleModelTableMetrics) ExecuteConsumersPage(ctx context.Context, request consumer.Request, publish consumer.Publisher) error {
+	return fakeMetrics{}.ExecuteConsumersPage(ctx, request, publish)
+}
+
 func (m *localDevStyleModelTableMetrics) Catalog() dashboard.Catalog {
 	return fakeMetrics{}.Catalog()
 }
@@ -932,10 +1003,6 @@ func (m *localDevStyleModelTableMetrics) DefaultDashboardID() string {
 
 func (m *localDevStyleModelTableMetrics) ModelIDForDashboard(dashboardID string) string {
 	return fakeMetrics{}.ModelIDForDashboard(dashboardID)
-}
-
-func (m *localDevStyleModelTableMetrics) DataDir() string {
-	return fakeMetrics{}.DataDir()
 }
 
 func (m *localDevStyleModelTableMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
@@ -1049,13 +1116,12 @@ func (m *dependentModelTableMetrics) SemanticModel(modelID string) (*semanticmod
 		return fakeMetrics{}.SemanticModel(modelID)
 	}
 	return &semanticmodel.Model{
-		Name:      "olist",
-		BaseTable: "order_summary",
+		Name: "olist",
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv", Format: "csv"},
 		},
 		Tables: map[string]semanticmodel.Table{
-			"orders":        {Kind: "fact", Source: "orders", PrimaryKey: "order_id"},
+			"orders":        {Source: "orders", PrimaryKey: "order_id"},
 			"order_summary": {PrimaryKey: "status", Transform: semanticmodel.Transform{SQL: "SELECT status FROM model.orders"}, ModelDependencies: []string{"orders"}},
 		},
 	}, true
@@ -1184,60 +1250,80 @@ func TestDashboardRefreshCommandRouteIsRemoved(t *testing.T) {
 }
 
 func TestSelectCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[]},"runtime":{"clientId":"test-client"},"interactionCommand":{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]},"tableCommand":{"table":"orders","block":"all","start":0,"count":50}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[]},"runtime":{"clientId":"test-client"},"interactionCommand":{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]},"tableCommand":{"table":"orders","block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/select", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	assertDatastarCommandAccepted(t, rec)
+}
+
+func assertDatastarCommandAccepted(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("content type = %q, want application/json", got)
+	}
+	if got := rec.Body.String(); got != "{}\n" {
+		t.Fatalf("body = %q, want empty Datastar JSON signal patch", got)
 	}
 }
 
 func TestPageCommandsQueryActivePage(t *testing.T) {
 	tests := []struct {
-		name string
-		path string
-		body string
+		name    string
+		path    string
+		body    string
+		queries int
 	}{
 		{
-			name: "interaction select",
-			path: "/workspaces/test-workspace/commands/select",
-			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[]},"interactionCommand":{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
+			name:    "interaction select",
+			path:    "/workspaces/test-workspace/commands/select",
+			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[]},"interactionCommand":{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
+			queries: 1,
 		},
 		{
 			name: "clear selection",
 			path: "/workspaces/test-workspace/commands/clear-selection",
-			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"tableCommand":{"block":"all","start":0,"count":50}}`,
 		},
 		{
-			name: "reload",
-			path: "/workspaces/test-workspace/commands/reload",
-			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,
+			name:    "reload",
+			path:    "/workspaces/test-workspace/commands/reload",
+			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,
+			queries: 2,
 		},
 		{
-			name: "reset filters",
-			path: "/workspaces/test-workspace/commands/reset-filters",
-			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,
+			name:    "reset filters",
+			path:    "/workspaces/test-workspace/commands/reset-filters",
+			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"tableCommand":{"block":"all","start":200,"count":50}}`,
+			queries: 2,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			metrics := &recordingMetrics{}
+			metrics := &recordingMetrics{pageIDs: make(chan string, 4)}
 			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
 			New(metrics).Routes().ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusNoContent {
-				t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
-			}
-			if len(metrics.pageIDs) != 1 || metrics.pageIDs[0] != "operations" {
-				t.Fatalf("queried page IDs = %#v, want [operations]", metrics.pageIDs)
+			assertDatastarCommandAccepted(t, rec)
+			for i := 0; i < tt.queries; i++ {
+				select {
+				case pageID := <-metrics.pageIDs:
+					if pageID != "operations" {
+						t.Fatalf("queried page ID = %q, want operations", pageID)
+					}
+				case <-time.After(time.Second):
+					t.Fatalf("timed out after %d/%d targeted page queries", i, tt.queries)
+				}
 			}
 		})
 	}
@@ -1388,7 +1474,7 @@ func TestWorkspaceAssetRefreshCommandPublishesRunningAndFinalState(t *testing.T)
 	if runs[0].PrincipalID != principal.ID || runs[0].PrincipalDisplayName != "Owner" {
 		t.Fatalf("run attribution = %#v, want Owner principal", runs[0])
 	}
-	patches := drainPatches(updates)
+	patches := awaitAssetRefreshPatches(t, updates, materialize.RunStatusSucceeded)
 	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusRunning) {
 		t.Fatalf("patches did not include running state: %#v", patches)
 	}
@@ -1424,7 +1510,7 @@ func TestWorkspaceAssetRefreshCommandPublishesFailedError(t *testing.T) {
 	if len(runs) != 1 || runs[0].Status != materialize.RunStatusFailed || !strings.Contains(runs[0].Error, "refresh failed") {
 		t.Fatalf("runs = %#v, want one failed run with error", runs)
 	}
-	patches := drainPatches(updates)
+	patches := awaitAssetRefreshPatches(t, updates, materialize.RunStatusFailed)
 	if !patchesContainAssetRefreshStatus(patches, materialize.RunStatusFailed) || !strings.Contains(anyPatchesString(patches), "refresh failed") {
 		t.Fatalf("patches did not include failed error state: %#v", patches)
 	}
@@ -1478,16 +1564,16 @@ func TestWorkspaceAssetRefreshPlanModelTableUsesWorkspaceDependencies(t *testing
 		"genre_ratings": {
 			Name: "genre_ratings",
 			Tables: map[string]semanticmodel.Table{
-				"ratings":       {Kind: "fact"},
-				"movies":        {Kind: "dimension"},
-				"rating_genres": {Kind: "fact", ModelDependencies: []string{"ratings", "movies"}},
+				"ratings":       {},
+				"movies":        {},
+				"rating_genres": {ModelDependencies: []string{"ratings", "movies"}},
 			},
 		},
 		"movie_ratings": {
 			Name: "movie_ratings",
 			Tables: map[string]semanticmodel.Table{
-				"ratings": {Kind: "fact"},
-				"movies":  {Kind: "dimension"},
+				"ratings": {},
+				"movies":  {},
 			},
 		},
 	}}
@@ -1516,9 +1602,9 @@ func TestWorkspaceAssetRefreshPlanSemanticModelUsesModelTables(t *testing.T) {
 		"genre_ratings": {
 			Name: "genre_ratings",
 			Tables: map[string]semanticmodel.Table{
-				"ratings":       {Kind: "fact"},
-				"movies":        {Kind: "dimension"},
-				"rating_genres": {Kind: "fact", ModelDependencies: []string{"ratings", "movies"}},
+				"ratings":       {},
+				"movies":        {},
+				"rating_genres": {ModelDependencies: []string{"ratings", "movies"}},
 			},
 		},
 	}}
@@ -1830,6 +1916,23 @@ func drainPatches(ch <-chan pagestream.SignalPatch) []pagestream.SignalPatch {
 	}
 }
 
+func awaitAssetRefreshPatches(t *testing.T, ch <-chan pagestream.SignalPatch, terminal string) []pagestream.SignalPatch {
+	t.Helper()
+	patches := []pagestream.SignalPatch{}
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case patch := <-ch:
+			patches = append(patches, patch)
+			if patchesContainAssetRefreshStatus([]pagestream.SignalPatch{patch}, terminal) {
+				return patches
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for asset refresh status %q; patches=%#v", terminal, patches)
+		}
+	}
+}
+
 func patchesContainAssetRefreshStatus(patches []pagestream.SignalPatch, status string) bool {
 	for _, patch := range patches {
 		refresh, ok := patch["assetRefresh"].(map[string]any)
@@ -1855,29 +1958,25 @@ func anyPatchesString(patches []pagestream.SignalPatch) string {
 }
 
 func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":0,"count":50}}`)
+	body := strings.NewReader(`{"filters":{"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/clear-selection", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
+	assertDatastarCommandAccepted(t, rec)
 }
 
 func TestResetFiltersCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":200,"count":50}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"tableCommand":{"table":"orders","block":"all","start":200,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/reset-filters", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
+	assertDatastarCommandAccepted(t, rec)
 }
 
 func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
@@ -1888,9 +1987,7 @@ func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
 
 	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
+	assertDatastarCommandAccepted(t, rec)
 }
 
 func TestTableWindowCommandDoesNotPublishCanceledQueries(t *testing.T) {
@@ -1905,12 +2002,24 @@ func TestTableWindowCommandDoesNotPublishCanceledQueries(t *testing.T) {
 
 	server.Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
-	select {
-	case patch := <-updates:
-		t.Fatalf("received canceled table patch: %#v", patch)
-	default:
+	assertDatastarCommandAccepted(t, rec)
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case patch := <-updates:
+			if _, ok := patch["tables"]; ok {
+				t.Fatalf("received canceled table payload: %#v", patch)
+			}
+			if statuses, ok := patch["componentStatus"].(map[string]any); ok {
+				if status, ok := statuses["table:orders"].(map[string]any); ok && status["error"] != "" {
+					t.Fatalf("cancellation surfaced as target error: %#v", patch)
+				}
+			}
+			if status, ok := patch["status"].(map[string]any); ok && status["loading"] == false {
+				return
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for canceled table generation to complete")
+		}
 	}
 }

@@ -15,9 +15,3 @@ libredash admin storage cleanup [flags]
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--apply` | bool | `false` | perform destructive cleanup instead of dry-run |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

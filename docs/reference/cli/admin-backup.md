@@ -16,9 +16,3 @@ libredash admin backup [flags]
 | --- | --- | --- | --- |
 | `--database-only` | bool | `false` | backup only the platform SQLite database |
 | `--out` | string | `` | backup archive output path |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

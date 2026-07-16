@@ -13,7 +13,10 @@ import (
 	"strings"
 )
 
-const generatedModelsPath = "internal/ui/signals/models.gen.go"
+const (
+	generatedModelsPath     = "internal/ui/signals/models.gen.go"
+	generatedTypescriptPath = "web/generated/signals/index.ts"
+)
 
 var goInitialisms = map[string]string{
 	"api":   "API",
@@ -42,6 +45,53 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if err := postprocessGeneratedTypescript(generatedTypescriptPath); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// postprocessGeneratedTypescript narrows interaction values from TypeSpec's
+// unknown to the JSON-scalar contract enforced by the dashboard runtime. APIGen
+// v0.4 does not emit non-literal TypeSpec unions, so keeping this small,
+// fail-closed specialization next to the existing Go postprocessor preserves a
+// useful client contract without weakening the wire format or forking APIGen.
+func postprocessGeneratedTypescript(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read generated UI signal TypeScript: %w", err)
+	}
+	content := string(data)
+	for _, model := range []string{"DashboardInteractionCommandMapping", "DashboardInteractionSelectionMapping"} {
+		startMarker := "export interface " + model + " {\n"
+		start := strings.Index(content, startMarker)
+		if start < 0 {
+			return fmt.Errorf("generated UI signal TypeScript is missing %s", model)
+		}
+		endOffset := strings.Index(content[start:], "\n}\n")
+		if endOffset < 0 {
+			return fmt.Errorf("generated UI signal TypeScript has an unterminated %s", model)
+		}
+		end := start + endOffset
+		block := content[start:end]
+		const (
+			generated = "  value: unknown"
+			typed     = "  value: string | number | boolean | null"
+		)
+		switch {
+		case strings.Count(block, generated) == 1 && !strings.Contains(block, typed):
+			block = strings.Replace(block, generated, typed, 1)
+		case strings.Count(block, typed) == 1 && !strings.Contains(block, generated):
+			// Already postprocessed.
+		default:
+			return fmt.Errorf("generated UI signal TypeScript %s must contain exactly one interaction value field", model)
+		}
+		content = content[:start] + block + content[end:]
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write generated UI signal TypeScript: %w", err)
+	}
+	return nil
 }
 
 func postprocessGeneratedModels(path string) error {

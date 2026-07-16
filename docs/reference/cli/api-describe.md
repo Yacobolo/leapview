@@ -9,9 +9,3 @@ Describe a generated API operation
 ```sh
 libredash api describe <operation>
 ```
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

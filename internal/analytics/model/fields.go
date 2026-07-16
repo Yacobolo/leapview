@@ -6,6 +6,9 @@ import (
 )
 
 func (m *Model) ResolveDimension(ref string) (MetricDimension, error) {
+	if !strings.Contains(ref, ".") {
+		return MetricDimension{}, fmt.Errorf("semantic dimension %q is not a physical field", ref)
+	}
 	tableName, fieldName, err := splitSemanticField(ref)
 	if err != nil {
 		return MetricDimension{}, err
@@ -43,30 +46,40 @@ func (m *Model) ResolveRelationshipEndpoint(ref string) (MetricDimension, error)
 }
 
 func (m *Model) ResolveMeasure(ref string) (MetricMeasure, error) {
-	if !strings.Contains(ref, ".") {
-		if measure, ok := m.Measures[ref]; ok {
-			measure.Field = ref
-			measure.Name = ref
-			return measure, nil
-		}
+	measure, ok := m.Measures[ref]
+	if !ok {
 		return MetricMeasure{}, fmt.Errorf("unknown measure %q", ref)
 	}
-	tableName, fieldName, err := splitSemanticField(ref)
-	if err != nil {
-		return MetricMeasure{}, err
-	}
-	table, ok := m.Tables[tableName]
-	if !ok {
-		return MetricMeasure{}, fmt.Errorf("unknown table %q", tableName)
-	}
-	measure, ok := table.Measures[fieldName]
-	if !ok {
-		return MetricMeasure{}, fmt.Errorf("unknown measure %q", fieldName)
-	}
 	measure.Field = ref
-	measure.Table = defaultString(measure.Table, tableName)
-	measure.Name = fieldName
+	measure.Name = ref
 	return measure, nil
+}
+
+func (m *Model) ResolveSemanticDimension(ref string) (SemanticDimension, error) {
+	dimension, ok := m.Dimensions[ref]
+	if !ok {
+		return SemanticDimension{}, fmt.Errorf("unknown semantic dimension %q", ref)
+	}
+	dimension.Name = ref
+	return dimension, nil
+}
+
+func (m *Model) ValidateQueryDimension(ref string) error {
+	if _, ok := m.Dimensions[ref]; ok {
+		return nil
+	}
+	_, err := m.ResolveDimension(ref)
+	return err
+}
+
+func (m *Model) ValidateAggregateMember(ref string) error {
+	if _, ok := m.Measures[ref]; ok {
+		return nil
+	}
+	if _, ok := m.Metrics[ref]; ok {
+		return nil
+	}
+	return fmt.Errorf("unknown measure or metric %q", ref)
 }
 
 func (m *Model) ResolveField(ref string) (MetricDimension, MetricMeasure, string, error) {
@@ -95,11 +108,4 @@ func splitSemanticField(ref string) (string, string, error) {
 
 func (d MetricDimension) SQLExpression() string {
 	return d.Name
-}
-
-func (m MetricMeasure) SQLExpression() string {
-	if strings.TrimSpace(m.Expression) != "" {
-		return m.Expression
-	}
-	return m.Expr
 }

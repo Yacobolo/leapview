@@ -5,11 +5,13 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 )
 
 type Metrics interface {
+	consumer.Executor
 	Catalog() dashboard.Catalog
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
@@ -25,7 +27,6 @@ type Metrics interface {
 	QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error)
 	PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error)
 	RefreshMaterializations(ctx context.Context, modelID string) error
-	DataDir() string
 	Pages(dashboardID string) []dashboard.Page
 }
 

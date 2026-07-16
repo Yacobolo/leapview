@@ -59,7 +59,13 @@ func (h Handler) WorkspaceDataExplorerRedirect(w nethttp.ResponseWriter, r *neth
 
 func (h Handler) DataExplorerUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	clientID := pagestream.EnsureClientID(w, r)
-	updates := pagestream.NewSignalStream(w, r)
+	streamID := dataExplorerStreamID(clientID)
+	broker := h.broker()
+	var trace *pagestream.TraceStore
+	if broker != nil {
+		trace = broker.TraceStore()
+	}
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, streamID, "data-explorer.bootstrap"))
 	page, explorer, err := h.globalDataExplorerState(r, dataExplorerCommandFromQuery(r.URL.Query().Get("workspace"), r.URL.Query().Get("object")))
 	if err != nil {
 		nethttp.Error(w, err.Error(), statusForNotFound(err))
@@ -68,8 +74,8 @@ func (h Handler) DataExplorerUpdates(w nethttp.ResponseWriter, r *nethttp.Reques
 	if err := updates.Patch(ui.DataExplorerBootstrapSignals(h.catalogForWorkspacesPage(r, nil), page, explorer, h.currentRoleLabel(r), h.chromeOptions(r)...)); err != nil {
 		return
 	}
-	if broker := h.broker(); broker != nil {
-		_ = updates.Forward(r.Context(), broker, dataExplorerStreamID(clientID))
+	if broker != nil {
+		_ = updates.Forward(r.Context(), broker, streamID)
 		return
 	}
 	updates.Wait(r.Context())

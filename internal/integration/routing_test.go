@@ -14,14 +14,14 @@ func TestCommandPatchesAreScopedToClientAndPage(t *testing.T) {
 	drainInitialStreamPatches(t, otherClient)
 
 	status := h.postCommand(t, "/commands/select", mergeSignals(runtimeSignals("route-target", "overview"), map[string]any{
-		"interactionCommand": pointSelectionCommand("orders", "orders.status", "delivered"),
+		"interactionCommand": ordersRowSelectionCommand("delivered"),
 		"tableCommand":       tableCommand("orders_table", "all", 0, 50, 12, 0),
 	}))
-	if status != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", status, http.StatusNoContent)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
 	}
 
-	requireStatusLoading(t, []map[string]any{target.nextPatch(t)}, true)
+	requireStatusLoading(t, nextRefreshPatches(t, target), true)
 	otherClient.expectNoPatch(t, 150*time.Millisecond)
 }
 

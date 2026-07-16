@@ -10,16 +10,20 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/go-chi/chi/v5"
 )
 
 type fakeMetrics struct{}
 
+func (fakeMetrics) ExecuteConsumersPage(_ context.Context, _ consumer.Request, _ consumer.Publisher) error {
+	return nil
+}
+
 func (fakeMetrics) Catalog() dashboard.Catalog {
 	return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "workspace", Title: "Workspace"}}
 }
-func (fakeMetrics) DataDir() string { return ".data" }
 func (fakeMetrics) DefaultDashboardID() string {
 	return "dash"
 }
@@ -50,7 +54,7 @@ func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmod
 	}, &semanticmodel.Model{Name: "model", Title: "Model"}, true
 }
 func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, _ string, filters dashboard.Filters) (dashboard.Patch, error) {
-	return dashboard.Patch{Filters: filters.WithDefaults(), Status: dashboard.Status{DataDirectory: ".data"}}, nil
+	return dashboard.Patch{Filters: filters.WithDefaults()}, nil
 }
 func (fakeMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
 	return dashboard.Table{Title: request.Table}, nil

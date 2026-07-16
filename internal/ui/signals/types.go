@@ -207,7 +207,7 @@ func ChatTranscriptItem(item agent.ChatTranscriptItem) ChatTranscriptItemSignal 
 	return out
 }
 
-func DashboardInitialEnvelope(dataDir, clientID string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) DashboardEnvelope {
+func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) DashboardEnvelope {
 	activePage = activePage.WithDefaults()
 	tableRequest := DefaultTableRequest(report, activePage)
 	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters).WithDefaults()
@@ -235,12 +235,14 @@ func DashboardInitialEnvelope(dataDir, clientID string, catalog dashboard.Catalo
 			Components:     dashboardComponents(activePage),
 		},
 		Runtime: RouteRuntimeSignal{
-			Kind:        RouteDashboard,
-			ClientID:    optionalValue(clientID),
-			DashboardID: optionalValue(report.ID),
-			PageID:      optionalValue(activePage.ID),
-			ModelID:     optionalValue(modelID),
+			Kind:             RouteDashboard,
+			ClientID:         optionalValue(clientID),
+			StreamInstanceID: optionalValue(streamInstanceID),
+			DashboardID:      optionalValue(report.ID),
+			PageID:           optionalValue(activePage.ID),
+			ModelID:          optionalValue(modelID),
 		},
+		ComponentStatus:    map[string]DashboardComponentStatus{},
 		FilterConfig:       ReportFilterConfigsFromReport(report.FilterConfigForPage(activePage.ID)),
 		Filters:            DashboardFiltersFromDashboard(initialFilters),
 		URLParams:          report.URLParamsFromFiltersForPage(activePage.ID, initialFilters),
@@ -254,7 +256,6 @@ func DashboardInitialEnvelope(dataDir, clientID string, catalog dashboard.Catalo
 			Loading:       false,
 			Error:         "",
 			LastUpdated:   "",
-			DataDirectory: dataDir,
 			SetupRequired: false,
 		}),
 	}
@@ -411,7 +412,7 @@ func TableSignals(report reportdef.Dashboard, page dashboard.Page, request dashb
 			Interaction:   interactionSignal("row_selection", table.Interaction.RowSelection),
 			Selection:     []dashboard.InteractionSelectionEntry{},
 			Columns:       table.Columns,
-			TotalRows:     0,
+			Cardinality:   dashboard.TableCardinality{Kind: dashboard.CardinalityUnknown},
 			AvailableRows: 0,
 			IsCapped:      false,
 			RowCap:        dashboard.TableInteractiveRowCap,
@@ -679,6 +680,8 @@ func interactionSignal(kind string, selection reportdef.SelectionInteraction) da
 	for _, mapping := range selection.Mappings {
 		mappings = append(mappings, dashboard.InteractionConfigMapping{
 			Field: mapping.Field,
+			Fact:  mapping.Fact,
+			Grain: mapping.Grain,
 			Value: mapping.Value,
 			Label: mapping.Label,
 		})

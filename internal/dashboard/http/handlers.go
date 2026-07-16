@@ -3,21 +3,25 @@ package http
 import (
 	"context"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	"log/slog"
 	nethttp "net/http"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/libredash/internal/dashboard/ui"
+	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 
 type Metrics interface {
+	consumer.Executor
 	Catalog() dashboard.Catalog
-	DataDir() string
 	DefaultDashboardID() string
 	DefaultFilters(dashboardID string) dashboard.Filters
 	ModelIDForDashboard(dashboardID string) string
@@ -30,12 +34,18 @@ type Metrics interface {
 }
 
 type Handler struct {
-	Metrics             Metrics
-	MetricsForWorkspace func(workspaceID string) (Metrics, bool)
-	Broker              *pagestream.Broker
-	CurrentPrincipalID  func(r *nethttp.Request) string
-	CSRFToken           func(r *nethttp.Request) string
-	ChromeDecorators    func(r *nethttp.Request) []reportui.ChromeDecorator
+	Metrics              Metrics
+	MetricsForWorkspace  func(workspaceID string) (Metrics, bool)
+	Broker               *pagestream.Broker
+	Coordinators         *dashboardstream.Registry
+	Logger               *slog.Logger
+	RefreshStarted       dashboardstream.StartObserver
+	RefreshFinished      dashboardstream.SummaryObserver
+	RefreshEventObserved dashboardstream.EventPublisher
+	CacheObserved        dataquery.CacheOutcomeObserver
+	CurrentPrincipalID   func(r *nethttp.Request) string
+	CSRFToken            func(r *nethttp.Request) string
+	ChromeDecorators     func(r *nethttp.Request) []reportui.ChromeDecorator
 }
 
 func DashboardObjectRefs(r *nethttp.Request, workspaceID string) []access.ObjectRef {
@@ -101,7 +111,7 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 	if h.ChromeDecorators != nil {
 		chromeDecorators = h.ChromeDecorators(r)
 	}
-	if err := reportui.Page(metrics.DataDir(), clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, chromeDecorators...).Render(w); err != nil {
+	if err := reportui.Page(clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, chromeDecorators...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }

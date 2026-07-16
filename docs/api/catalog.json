@@ -1,7 +1,7 @@
 {
   "title": "LibreDash Headless API",
   "version": "1.0.0",
-  "description": "Headless API for LibreDash workspaces, publishes, access control, refreshes, and agent operations.",
+  "description": "Headless API for LibreDash workspaces, deployments, managed data, access control, refreshes, and agent operations.",
   "documents": [
     {
       "slug": "current-user",
@@ -24,9 +24,9 @@
       "summary": "Dashboard and semantic model read APIs."
     },
     {
-      "slug": "publishes",
-      "title": "Publishes",
-      "summary": "Dashboard-as-code publish operations."
+      "slug": "deployments",
+      "title": "Deployments",
+      "summary": "Project-scoped candidate staging and atomic serving-state and managed-data activation."
     },
     {
       "slug": "refresh-runs",
@@ -47,6 +47,11 @@
       "slug": "audit",
       "title": "Audit",
       "summary": "Workspace audit event discovery."
+    },
+    {
+      "slug": "managed-data",
+      "title": "Managed Data",
+      "summary": "Project-global managed-data revisions and uploads."
     }
   ]
 }

@@ -18,9 +18,3 @@ libredash admin restore [flags]
 | `--current-out` | string | `` | path for a backup of the current instance before replacement |
 | `--database-only` | bool | `false` | restore only the platform SQLite database |
 | `--from` | string | `` | backup archive path to restore |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

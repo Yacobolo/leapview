@@ -10,7 +10,7 @@ Inspect semantic models
 libredash semantic-models
 ```
 
-## Inherited options
+## Options
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |

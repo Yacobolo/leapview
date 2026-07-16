@@ -1283,7 +1283,7 @@ func knownPrivileges() []access.Privilege {
 		access.PrivilegePreviewData,
 		access.PrivilegeRefreshData,
 		access.PrivilegeDeploy,
-		access.PrivilegeActivatePublish,
+		access.PrivilegeActivateDeployment,
 		access.PrivilegeUseAgent,
 		access.PrivilegeViewAgent,
 		access.PrivilegeManageGrants,
@@ -1997,6 +1997,10 @@ func policyObjectRef(workspaceID string, object workspace.WorkspaceSecurableObje
 		if len(parts) >= 3 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
 			parent := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, parts[0]+"/"+parts[1], access.ItemObject(access.SecurableSemanticModel, workspaceID, parts[0]))
 			return access.ItemObjectWithParent(typ, workspaceID, objectID, parent)
+		}
+	case access.SecurableSemanticField:
+		if modelID, _, ok := strings.Cut(objectID, "/"); ok && strings.TrimSpace(modelID) != "" {
+			return access.ItemObjectWithParent(typ, workspaceID, objectID, access.ItemObject(access.SecurableSemanticModel, workspaceID, modelID))
 		}
 	}
 	return access.ItemObject(typ, workspaceID, objectID)

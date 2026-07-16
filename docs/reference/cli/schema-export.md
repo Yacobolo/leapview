@@ -16,9 +16,3 @@ libredash schema export [flags]
 | --- | --- | --- | --- |
 | `--format` | string | `json-schema` | schema output format |
 | `--out` | string | `schemas/json` | output directory |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

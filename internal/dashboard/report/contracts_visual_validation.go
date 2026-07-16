@@ -6,6 +6,10 @@ import (
 )
 
 func validateVisualQueryShape(name string, visual Visual) error {
+	dimensionCount := len(visual.Query.Dimensions)
+	if visual.Query.Time.Field != "" {
+		dimensionCount++
+	}
 	if visual.KindOrDefault() == "kpi" {
 		if visual.ShapeOrDefault() != "single_value" {
 			return fmt.Errorf("visual %q kind kpi requires shape single_value", name)
@@ -13,7 +17,7 @@ func validateVisualQueryShape(name string, visual Visual) error {
 		if len(visual.Query.Measures) != 1 {
 			return fmt.Errorf("visual %q kind kpi requires exactly one query measure", name)
 		}
-		if len(visual.Query.Dimensions) != 0 {
+		if dimensionCount != 0 {
 			return fmt.Errorf("visual %q kind kpi does not support query dimensions", name)
 		}
 		if !visual.Query.Series.IsZero() {
@@ -41,42 +45,42 @@ func validateVisualQueryShape(name string, visual Visual) error {
 	}
 	switch shape {
 	case "category_value":
-		if len(visual.Query.Dimensions) != 1 {
+		if dimensionCount != 1 {
 			return fmt.Errorf("visual %q shape category_value requires exactly one query dimension", name)
 		}
 		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_value does not support series", name)
 		}
 	case "category_series_value":
-		if len(visual.Query.Dimensions) != 1 {
+		if dimensionCount != 1 {
 			return fmt.Errorf("visual %q shape category_series_value requires exactly one query dimension", name)
 		}
 		if visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_series_value requires query series", name)
 		}
 	case "category_multi_measure":
-		if len(visual.Query.Dimensions) != 1 {
+		if dimensionCount != 1 {
 			return fmt.Errorf("visual %q shape category_multi_measure requires exactly one query dimension", name)
 		}
 		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_multi_measure does not support series", name)
 		}
 	case "category_delta":
-		if len(visual.Query.Dimensions) != 1 {
+		if dimensionCount != 1 {
 			return fmt.Errorf("visual %q shape category_delta requires exactly one query dimension", name)
 		}
 		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape category_delta does not support series", name)
 		}
 	case "binned_measure":
-		if len(visual.Query.Dimensions) != 0 {
+		if dimensionCount != 0 {
 			return fmt.Errorf("visual %q shape binned_measure does not support query dimensions", name)
 		}
 		if !visual.Query.Series.IsZero() {
 			return fmt.Errorf("visual %q shape binned_measure does not support series", name)
 		}
 	case "hierarchy":
-		if len(visual.Query.Dimensions) == 0 {
+		if dimensionCount == 0 {
 			return fmt.Errorf("visual %q shape hierarchy requires at least one query dimension", name)
 		}
 		if !visual.Query.Series.IsZero() {
@@ -150,7 +154,7 @@ func supportsPointSelection(visual Visual) bool {
 		return false
 	}
 	switch visual.ShapeOrDefault() {
-	case "hierarchy":
+	case "graph", "hierarchy":
 		return false
 	default:
 		return true

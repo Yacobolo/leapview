@@ -21,9 +21,4 @@ libredash api call <operation> [flags]
 | `--query` | stringArray | `[]` | query parameter as key=value; repeatable |
 | `--target` | string | `` | LibreDash server URL |
 | `--token` | string | `` | API token |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
+| `--workspace` | string | `` | default workspace path parameter |

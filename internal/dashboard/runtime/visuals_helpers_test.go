@@ -1,40 +1,37 @@
 package runtime
 
 import (
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"reflect"
 	"testing"
+
+	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	"github.com/Yacobolo/libredash/internal/dashboard"
+	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
 
-func TestQueryInlineMeasurePreservesSemanticFields(t *testing.T) {
-	measure := semanticmodel.MetricMeasure{
-		Field:       "one_off_orders",
-		Name:        "one_off_orders",
-		Label:       "One-off orders",
-		Description: "Inline order count",
-		Expr:        "COUNT(DISTINCT orders.order_id)",
-		Expression:  "COUNT(DISTINCT orders.order_id)",
-		Table:       "orders",
-		Grain:       "order_id",
-		Time:        "orders.purchase_timestamp",
-		Grains:      []string{"day", "month"},
-		Unit:        "orders",
-		Format:      "integer",
+func TestAggregateMemberMetadataResolvesMetricPresentation(t *testing.T) {
+	model := &semanticmodel.Model{Metrics: map[string]semanticmodel.Metric{
+		"tags_per_rating": {Label: "Tags per rating", Unit: "ratio", Format: "decimal"},
+	}}
+	got := aggregateMemberMetadata(model, "tags_per_rating")
+	if got.Label != "Tags per rating" || got.Unit != "ratio" || got.Format != "decimal" {
+		t.Fatalf("metric metadata = %#v", got)
 	}
+}
 
-	got := queryInlineMeasure(measure)
-
-	if got.Field != measure.Field || got.Name != measure.Name || got.Label != measure.Label || got.Description != measure.Description {
-		t.Fatalf("identity fields = %#v, want copied from %#v", got, measure)
+func TestCategoryMultiMeasureDatumsDecodesBundledWideRows(t *testing.T) {
+	runtime := &modelRuntime{model: &semanticmodel.Model{Measures: map[string]semanticmodel.MetricMeasure{
+		"rating_count": {Label: "Ratings"},
+		"tag_count":    {Label: "Tags"},
+	}}}
+	visual := reportdef.Visual{Query: reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "rating_count"}, {Field: "tag_count"}}}}
+	rows := []dashboard.Datum{{"label": "2024-01-01", "value_0": int64(8), "value_1": int64(3)}}
+	got := categoryMultiMeasureDatums(runtime, visual, rows)
+	want := []dashboard.Datum{
+		{"label": "2024-01-01", "series": "Ratings", "value": int64(8)},
+		{"label": "2024-01-01", "series": "Tags", "value": int64(3)},
 	}
-	if got.Expr != measure.Expr || got.Expression != measure.Expression || got.Table != measure.Table || got.Grain != measure.Grain || got.Time != measure.Time {
-		t.Fatalf("definition fields = %#v, want copied from %#v", got, measure)
-	}
-	if !reflect.DeepEqual(got.Grains, measure.Grains) || got.Unit != measure.Unit || got.Format != measure.Format {
-		t.Fatalf("format fields = %#v, want copied from %#v", got, measure)
-	}
-	got.Grains[0] = "week"
-	if measure.Grains[0] != "day" {
-		t.Fatalf("grains share backing array: got %#v source %#v", got.Grains, measure.Grains)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("datums = %#v, want %#v", got, want)
 	}
 }

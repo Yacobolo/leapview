@@ -15,9 +15,3 @@ libredash config validate [flags]
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--production` | bool | `false` | validate production requirements even when LIBREDASH_PRODUCTION is unset |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

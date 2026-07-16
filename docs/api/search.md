@@ -30,4 +30,3 @@ Progressive workspace discovery across BI assets.
 | `409` | The request conflicts with the current state of the server. |
 | `429` | Client error |
 | `500` | Server error |
-

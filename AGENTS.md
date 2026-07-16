@@ -42,7 +42,7 @@ The current product goal is to feel like a small Power BI-style workspace: dashb
 - `web/components/` contains Lit source components; `web/components/chart/` contains the visual renderer registry, ECharts renderer, adapters, maps, and shared chart types/utilities.
 - `docs/` owns authored and generated public documentation; `site/` owns site-specific browser source and static assets.
 - `static/` contains the built browser assets served by Go.
-- `internal/tools/bootstrapolist` downloads/syncs the Olist CSV dataset into `.data/olist` unless `LIBREDASH_DATA_DIR` is set.
+- `internal/tools/bootstrapolist` downloads the Olist CSV dataset to the explicit `--out` directory before managed-data plan/sync.
 
 ## Useful Commands
 

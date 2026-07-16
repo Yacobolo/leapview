@@ -117,19 +117,22 @@ type SemanticModelDescriptionResponse struct {
 }
 
 type SemanticModelCounts struct {
-	Sources       int `json:"sources"`
-	ModelTables   int `json:"model_tables"`
-	Fields        int `json:"fields"`
-	Measures      int `json:"measures"`
-	Relationships int `json:"relationships"`
+	Sources             int `json:"sources"`
+	ModelTables         int `json:"model_tables"`
+	Fields              int `json:"fields"`
+	Facts               int `json:"facts"`
+	ConformedDimensions int `json:"conformed_dimensions"`
+	AtomicMeasures      int `json:"atomic_measures"`
+	Metrics             int `json:"metrics"`
+	Relationships       int `json:"relationships"`
 }
 
 type SemanticModelTableSummary struct {
-	ID          string `json:"id"`
-	Kind        string `json:"kind"`
-	Source      string `json:"source"`
-	Description string `json:"description"`
-	Fields      int    `json:"fields"`
+	ID          string   `json:"id"`
+	Roles       []string `json:"roles"`
+	Source      string   `json:"source"`
+	Description string   `json:"description"`
+	Fields      int      `json:"fields"`
 }
 
 type SemanticDatasetSummary struct {
@@ -165,6 +168,7 @@ type SemanticFieldResponse struct {
 	Name        string   `json:"name"`
 	Label       string   `json:"label"`
 	Description string   `json:"description,omitempty"`
+	Type        string   `json:"type,omitempty"`
 	Unit        string   `json:"unit,omitempty"`
 	Format      string   `json:"format,omitempty"`
 	Grain       string   `json:"grain,omitempty"`
@@ -195,6 +199,7 @@ type SemanticSort struct {
 
 type SemanticFilter struct {
 	Field    string                `json:"field,omitempty"`
+	Fact     string                `json:"fact,omitempty"`
 	Operator string                `json:"operator,omitempty"`
 	Values   []any                 `json:"values,omitempty"`
 	Groups   []SemanticFilterGroup `json:"groups,omitempty"`
@@ -230,11 +235,15 @@ type SemanticQueryResponse struct {
 }
 
 type SemanticExplainResponse struct {
-	Mode     string           `json:"mode"`
-	SQL      string           `json:"sql"`
-	Args     []map[string]any `json:"args"`
-	Columns  []string         `json:"columns"`
-	Warnings []string         `json:"warnings"`
+	Mode                 string           `json:"mode"`
+	Facts                []string         `json:"facts"`
+	StitchDimensions     []string         `json:"stitchDimensions"`
+	PhysicalDependencies []string         `json:"physicalDependencies"`
+	RelationshipPaths    []string         `json:"relationshipPaths"`
+	SQL                  string           `json:"sql"`
+	Args                 []map[string]any `json:"args"`
+	Columns              []string         `json:"columns"`
+	Warnings             []string         `json:"warnings"`
 }
 
 type ModelDashboardUsage struct {

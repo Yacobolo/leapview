@@ -119,6 +119,7 @@ spec:
           toggle: true
           mappings:
           - field: orders.purchase_month
+            fact: orders
             value: label
             label: label
           targets:
@@ -143,6 +144,7 @@ spec:
           toggle: true
           mappings:
           - field: orders.status
+            fact: orders
             value: label
             label: label
           targets:
@@ -175,6 +177,7 @@ spec:
           toggle: true
           mappings:
           - field: orders.purchase_month
+            fact: orders
             value: label
             label: label
           targets:
@@ -200,6 +203,7 @@ spec:
           toggle: true
           mappings:
           - field: orders.category
+            fact: orders
             value: label
             label: label
           targets:
@@ -224,6 +228,7 @@ spec:
           toggle: true
           mappings:
           - field: orders.delivery_bucket
+            fact: orders
             value: label
             label: label
           targets:
@@ -1166,6 +1171,7 @@ spec:
           toggle: true
           mappings:
           - field: orders.order_id
+            fact: orders
             value: order_id
             label: order_id
           targets:

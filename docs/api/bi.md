@@ -499,3 +499,84 @@ Content types: `application/json`.
 | `429` | Client error |
 | `500` | Server error |
 
+## List semantic model fields
+
+`GET /api/v1/workspaces/{workspace}/semantic-models/{model}/fields`
+
+### Parameters
+
+| Name | In | Required | Type | Description |
+| --- | --- | --- | --- | --- |
+| `workspace` | path | Yes | string |  |
+| `model` | path | Yes | string |  |
+| `limit` | query | No | integer |  |
+| `pageToken` | query | No | string |  |
+
+### Responses
+
+| Status | Description |
+| --- | --- |
+| `200` | The request has succeeded. |
+| `400` | The server could not understand the request due to invalid syntax. |
+| `401` | Access is unauthorized. |
+| `403` | Access is forbidden. |
+| `404` | The server cannot find the requested resource. |
+| `409` | The request conflicts with the current state of the server. |
+| `429` | Client error |
+| `500` | Server error |
+
+## Query semantic model
+
+`POST /api/v1/workspaces/{workspace}/semantic-models/{model}/query`
+
+### Parameters
+
+| Name | In | Required | Type | Description |
+| --- | --- | --- | --- | --- |
+| `workspace` | path | Yes | string |  |
+| `model` | path | Yes | string |  |
+
+### Request body
+
+Content types: `application/json`.
+
+### Responses
+
+| Status | Description |
+| --- | --- |
+| `200` | The request has succeeded. |
+| `400` | The server could not understand the request due to invalid syntax. |
+| `401` | Access is unauthorized. |
+| `403` | Access is forbidden. |
+| `404` | The server cannot find the requested resource. |
+| `409` | The request conflicts with the current state of the server. |
+| `429` | Client error |
+| `500` | Server error |
+
+## Explain semantic model query
+
+`POST /api/v1/workspaces/{workspace}/semantic-models/{model}/query/explain`
+
+### Parameters
+
+| Name | In | Required | Type | Description |
+| --- | --- | --- | --- | --- |
+| `workspace` | path | Yes | string |  |
+| `model` | path | Yes | string |  |
+
+### Request body
+
+Content types: `application/json`.
+
+### Responses
+
+| Status | Description |
+| --- | --- |
+| `200` | The request has succeeded. |
+| `400` | The server could not understand the request due to invalid syntax. |
+| `401` | Access is unauthorized. |
+| `403` | Access is forbidden. |
+| `404` | The server cannot find the requested resource. |
+| `409` | The request conflicts with the current state of the server. |
+| `429` | Client error |
+| `500` | Server error |

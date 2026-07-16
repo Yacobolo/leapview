@@ -33,12 +33,16 @@ The complete reference for the `libredash` command-line interface.
 - [libredash dashboards table-data](/docs/cli/dashboards-table-data): Query dashboard table data
 - [libredash dashboards visual](/docs/cli/dashboards-visual): Describe a dashboard visual
 - [libredash dashboards visual-data](/docs/cli/dashboards-visual-data): Query dashboard visual data
+- [libredash data](/docs/cli/data): Manage project-global data revisions
+- [libredash data plan](/docs/cli/data-plan): Plan a local managed data revision
+- [libredash data revisions](/docs/cli/data-revisions): Inspect managed data revisions
+- [libredash data revisions current](/docs/cli/data-revisions-current): Print the active managed data revision
+- [libredash data revisions list](/docs/cli/data-revisions-list): List staged managed data revisions
+- [libredash data sync](/docs/cli/data-sync): Stage a managed data revision
+- [libredash deploy](/docs/cli/deploy): Atomically deploy a configuration-as-code project
 - [libredash healthcheck](/docs/cli/healthcheck): Check the local LibreDash readiness endpoint
 - [libredash login](/docs/cli/login): Store a LibreDash API token for a target
 - [libredash plan](/docs/cli/plan): Emit a deterministic configuration-as-code plan
-- [libredash publish](/docs/cli/publish): Publish a configuration-as-code project
-- [libredash publishes](/docs/cli/publishes): Inspect publishes
-- [libredash publishes list](/docs/cli/publishes-list): List publishes
 - [libredash schema](/docs/cli/schema): Inspect LibreDash YAML schemas
 - [libredash schema export](/docs/cli/schema-export): Export generated schema artifacts
 - [libredash search](/docs/cli/search): Search workspace assets

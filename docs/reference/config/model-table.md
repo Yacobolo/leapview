@@ -78,30 +78,10 @@ spec:
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
 
-### FieldRef
-
-| Field | Type | Required | Rules |
-| --- | --- | --- | --- |
-
 ### Identifier
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
-
-### Measure
-
-| Field | Type | Required | Rules |
-| --- | --- | --- | --- |
-| `description` | string | No |  |
-| `expr` | string | No |  |
-| `expression` | string | No |  |
-| `format` | string | No |  |
-| `grain` | `Identifier` | No |  |
-| `grains` | array of string | No |  |
-| `label` | string | No |  |
-| `table` | `Identifier` | No |  |
-| `time` | `FieldRef` | No |  |
-| `unit` | string | No |  |
 
 ### Metadata
 
@@ -122,7 +102,6 @@ spec:
 | `fields` | object | No | no additional fields |
 | `grain` | `Identifier` | No |  |
 | `kind` | string | No |  |
-| `measures` | object | No | no additional fields |
 | `primaryKey` | `Identifier` | Yes |  |
 | `source` | `ResourceID` | No |  |
 | `sources` | array of `ResourceID` | No |  |

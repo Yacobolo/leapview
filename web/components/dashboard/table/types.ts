@@ -1,6 +1,20 @@
+import type { InteractionMapping, InteractionSelectionEntry } from '../interaction-selection'
+
+export type {
+  InteractionMapping,
+  InteractionSelectionEntry,
+  InteractionSelectionValue,
+} from '../interaction-selection'
+
 export type SortDirection = 'asc' | 'desc'
 export type BlockID = 'a' | 'b' | 'c'
 export type TableKind = 'data_table' | 'matrix_table' | 'pivot_table'
+export type TableCardinalityKind = 'unknown' | 'lower_bound' | 'estimated' | 'exact'
+
+export interface TableCardinality {
+  kind: TableCardinalityKind
+  value: number
+}
 
 export interface TableSort {
   key: string
@@ -44,21 +58,6 @@ export interface InteractionConfig {
   targets?: string[]
 }
 
-export interface InteractionMapping {
-  field: string
-  value: string
-  label?: string
-}
-
-export interface InteractionSelectionEntry {
-  mappings?: Array<{
-    field?: string
-    value?: string
-    label?: string
-  }>
-  label?: string
-}
-
 export type TableRow = Record<string, unknown>
 
 export interface TableBlock {
@@ -77,7 +76,7 @@ export interface TableSignal {
   interaction: InteractionConfig
   selection?: InteractionSelectionEntry[]
   columns: TableColumn[]
-  totalRows: number
+  cardinality: TableCardinality
   availableRows: number
   isCapped: boolean
   rowCap: number

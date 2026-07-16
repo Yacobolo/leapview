@@ -268,7 +268,8 @@ spec:
 | `default` | `FilterDefault` | No |  |
 | `default_operator` | string | No |  |
 | `description` | string | No |  |
-| `field` | `FieldRef` | Yes |  |
+| `fact` | `Identifier` | No |  |
+| `field` | object | Yes |  |
 | `from_url_param` | string | No |  |
 | `label` | string | Yes |  |
 | `operator` | string | No |  |
@@ -373,7 +374,6 @@ spec:
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
 | `mappings` | array of object | No |  |
-| `mode` | string | No |  |
 | `targets` | array of `Identifier` | No |  |
 | `toggle` | boolean | No |  |
 
@@ -389,6 +389,7 @@ spec:
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
+| `cardinality` | object | No | one of `bounded`, `exact` |
 | `columns` | array of `TableColumn` | No |  |
 | `default_sort` | object | No | no additional fields |
 | `description` | string | No |  |

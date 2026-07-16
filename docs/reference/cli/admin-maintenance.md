@@ -19,9 +19,3 @@ libredash admin maintenance [flags]
 | `--audit-days` | int | `365` | audit event retention in days; 0 disables audit pruning |
 | `--auth-state-days` | int | `30` | expired or revoked auth state retention in days; 0 disables auth-state pruning |
 | `--query-days` | int | `90` | query event retention in days; 0 disables query pruning |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

@@ -10,12 +10,6 @@ Inspect and validate process-global configuration
 libredash config
 ```
 
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
-
 ## Subcommands
 
 - `libredash validate`: Validate the active server environment

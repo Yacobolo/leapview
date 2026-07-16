@@ -1,5 +1,12 @@
 package dashboard
 
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"time"
+)
+
 type Signals struct {
 	Filters            Filters            `json:"filters"`
 	Runtime            Runtime            `json:"runtime"`
@@ -162,10 +169,11 @@ type FilterControl struct {
 }
 
 type Runtime struct {
-	ClientID    string `json:"clientId"`
-	DashboardID string `json:"dashboardId"`
-	PageID      string `json:"pageId"`
-	ModelID     string `json:"modelId"`
+	ClientID         string `json:"clientId"`
+	StreamInstanceID string `json:"streamInstanceId"`
+	DashboardID      string `json:"dashboardId"`
+	PageID           string `json:"pageId"`
+	ModelID          string `json:"modelId"`
 }
 
 func (f Filters) WithDefaults() Filters {
@@ -193,10 +201,40 @@ type InteractionSelectionEntry struct {
 	Label    string                        `json:"label,omitempty"`
 }
 
+// InteractionSelectionValue is a JSON scalar carried from a rendered datum
+// into a stored interaction selection. Arrays and objects are never valid.
+type InteractionSelectionValue any
+
 type InteractionSelectionMapping struct {
-	Field string `json:"field"`
-	Value string `json:"value"`
-	Label string `json:"label,omitempty"`
+	Field string                    `json:"field"`
+	Fact  string                    `json:"fact,omitempty"`
+	Grain string                    `json:"grain,omitempty"`
+	Value InteractionSelectionValue `json:"value"`
+	Label string                    `json:"label,omitempty"`
+
+	decodedFromJSON bool
+	valuePresent    bool
+}
+
+func (m *InteractionSelectionMapping) UnmarshalJSON(data []byte) error {
+	type wireMapping InteractionSelectionMapping
+	var wire wireMapping
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*m = InteractionSelectionMapping(wire)
+	m.decodedFromJSON = true
+	_, m.valuePresent = fields["value"]
+	return nil
+}
+
+// HasValue distinguishes an explicit null selection from a missing JSON value.
+func (m InteractionSelectionMapping) HasValue() bool {
+	return !m.decodedFromJSON || m.valuePresent
 }
 
 type InteractionCommand struct {
@@ -211,9 +249,125 @@ type InteractionCommand struct {
 const UIRowSelectionField = "__libredash.rowKey"
 
 type InteractionCommandMapping struct {
-	Field string `json:"field"`
-	Value string `json:"value"`
-	Label string `json:"label,omitempty"`
+	Field string                    `json:"field"`
+	Fact  string                    `json:"fact,omitempty"`
+	Grain string                    `json:"grain,omitempty"`
+	Value InteractionSelectionValue `json:"value"`
+	Label string                    `json:"label,omitempty"`
+
+	decodedFromJSON bool
+	valuePresent    bool
+}
+
+func (m *InteractionCommandMapping) UnmarshalJSON(data []byte) error {
+	type wireMapping InteractionCommandMapping
+	var wire wireMapping
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*m = InteractionCommandMapping(wire)
+	m.decodedFromJSON = true
+	_, m.valuePresent = fields["value"]
+	return nil
+}
+
+// HasValue distinguishes a deliberately selected null from a missing JSON
+// member. Programmatically constructed commands are treated as explicit.
+func (m InteractionCommandMapping) HasValue() bool {
+	return !m.decodedFromJSON || m.valuePresent
+}
+
+func IsInteractionSelectionScalar(value InteractionSelectionValue) bool {
+	switch value := value.(type) {
+	case nil, string, bool:
+		return true
+	case float64:
+		return !math.IsNaN(value) && !math.IsInf(value, 0)
+	case float32:
+		return !math.IsNaN(float64(value)) && !math.IsInf(float64(value), 0)
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return true
+	default:
+		return false
+	}
+}
+
+func InteractionSelectionValueMatchesType(value InteractionSelectionValue, semanticType string, grain ...string) bool {
+	if value == nil {
+		return true
+	}
+	switch semanticType {
+	case "":
+		return IsInteractionSelectionScalar(value)
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "date":
+		text, ok := value.(string)
+		if !ok {
+			return false
+		}
+		if len(grain) > 0 && grain[0] != "" {
+			_, err := ParseInteractionSelectionTime(text, grain[0])
+			return err == nil
+		}
+		_, err := time.Parse(time.DateOnly, text)
+		return err == nil
+	case "timestamp":
+		text, ok := value.(string)
+		if !ok {
+			return false
+		}
+		if len(grain) > 0 && grain[0] != "" {
+			_, err := ParseInteractionSelectionTime(text, grain[0])
+			return err == nil
+		}
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05", time.DateOnly} {
+			if _, err := time.Parse(layout, text); err == nil {
+				return true
+			}
+		}
+		return false
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "number":
+		switch value.(type) {
+		case float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+// ParseInteractionSelectionTime accepts the canonical labels emitted by time-
+// grained queries as well as full date and timestamp values.
+func ParseInteractionSelectionTime(value string, grain string) (time.Time, error) {
+	if grain == "quarter" && len(value) == 7 && value[4:6] == "-Q" && value[6] >= '1' && value[6] <= '4' {
+		year, err := time.Parse("2006", value[:4])
+		if err == nil {
+			return year.AddDate(0, int(value[6]-'1')*3, 0), nil
+		}
+	}
+	grainLayouts := map[string]string{"month": "2006-01", "year": "2006"}
+	if layout := grainLayouts[grain]; layout != "" {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05", time.DateOnly} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid %s time value %q", grain, value)
 }
 
 func (c InteractionCommand) IsEmpty() bool {
@@ -227,7 +381,7 @@ func (c InteractionCommand) IsEmpty() bool {
 		return true
 	}
 	for _, mapping := range c.Mappings {
-		if mapping.Field == "" || mapping.Value == "" {
+		if mapping.Field == "" {
 			return true
 		}
 	}
@@ -316,8 +470,10 @@ func interactionSelectionEntry(incoming []InteractionCommandMapping) Interaction
 	for _, mapping := range incoming {
 		mappings = append(mappings, InteractionSelectionMapping{
 			Field: mapping.Field,
+			Fact:  mapping.Fact,
+			Grain: mapping.Grain,
 			Value: mapping.Value,
-			Label: defaultString(mapping.Label, mapping.Value),
+			Label: defaultString(mapping.Label, interactionSelectionValueLabel(mapping.Value)),
 		})
 	}
 	entry := InteractionSelectionEntry{Mappings: mappings}
@@ -353,7 +509,11 @@ func selectionEntriesEqual(left, right InteractionSelectionEntry) bool {
 }
 
 func selectionMappingKey(mapping InteractionSelectionMapping) string {
-	return mapping.Field + "\x00" + mapping.Value
+	value, err := json.Marshal(mapping.Value)
+	if err != nil {
+		value = []byte(fmt.Sprintf("%T:%v", mapping.Value, mapping.Value))
+	}
+	return mapping.Field + "\x00" + mapping.Fact + "\x00" + mapping.Grain + "\x00" + string(value)
 }
 
 func copySelectionEntry(entry InteractionSelectionEntry) InteractionSelectionEntry {
@@ -388,11 +548,18 @@ func interactionEntryLabel(entry InteractionSelectionEntry) string {
 	for _, mapping := range entry.Mappings {
 		label := mapping.Label
 		if label == "" {
-			label = selectionLabel(mapping.Field, []string{mapping.Value})
+			label = selectionLabel(mapping.Field, []string{interactionSelectionValueLabel(mapping.Value)})
 		}
 		labels = append(labels, label)
 	}
 	return joinValues(labels)
+}
+
+func interactionSelectionValueLabel(value InteractionSelectionValue) string {
+	if value == nil {
+		return "null"
+	}
+	return fmt.Sprint(value)
 }
 
 func defaultString(value, fallback string) string {
@@ -433,11 +600,25 @@ type FilterOption struct {
 }
 
 type Status struct {
-	Loading       bool   `json:"loading"`
-	Error         string `json:"error"`
-	LastUpdated   string `json:"lastUpdated"`
-	DataDirectory string `json:"dataDirectory"`
-	SetupRequired bool   `json:"setupRequired"`
+	Loading         bool     `json:"loading"`
+	Error           string   `json:"error"`
+	RefreshID       string   `json:"refreshId"`
+	Generation      int64    `json:"generation"`
+	LastUpdated     string   `json:"lastUpdated"`
+	SetupRequired   bool     `json:"setupRequired"`
+	ProgressPercent *float64 `json:"progressPercent"`
+}
+
+func NormalizeProgressPercent(percent *float64, loading bool) *float64 {
+	if percent == nil || math.IsNaN(*percent) || math.IsInf(*percent, 0) {
+		value := float64(100)
+		if loading {
+			value = 0
+		}
+		return &value
+	}
+	value := math.Max(0, math.Min(100, *percent))
+	return &value
 }
 
 type Visual struct {
@@ -472,6 +653,8 @@ type InteractionConfig struct {
 
 type InteractionConfigMapping struct {
 	Field string `json:"field"`
+	Fact  string `json:"fact,omitempty"`
+	Grain string `json:"grain,omitempty"`
 	Value string `json:"value"`
 	Label string `json:"label,omitempty"`
 }
@@ -590,7 +773,7 @@ type Table struct {
 	Interaction   InteractionConfig           `json:"interaction"`
 	Selection     []InteractionSelectionEntry `json:"selection"`
 	Columns       []TableColumn               `json:"columns"`
-	TotalRows     int                         `json:"totalRows"`
+	Cardinality   TableCardinality            `json:"cardinality"`
 	AvailableRows int                         `json:"availableRows"`
 	IsCapped      bool                        `json:"isCapped"`
 	RowCap        int                         `json:"rowCap"`
@@ -601,6 +784,30 @@ type Table struct {
 	Blocks        map[string]TableBlock       `json:"blocks"`
 	LoadingBlock  string                      `json:"loadingBlock"`
 	Error         string                      `json:"error"`
+}
+
+type TableCardinality struct {
+	Kind  string `json:"kind"`
+	Value int    `json:"value"`
+}
+
+const (
+	CardinalityUnknown    = "unknown"
+	CardinalityLowerBound = "lower_bound"
+	CardinalityEstimated  = "estimated"
+	CardinalityExact      = "exact"
+)
+
+func ExactCardinality(value int) TableCardinality {
+	return TableCardinality{Kind: CardinalityExact, Value: max(0, value)}
+}
+
+func LowerBoundCardinality(value int) TableCardinality {
+	return TableCardinality{Kind: CardinalityLowerBound, Value: max(0, value)}
+}
+
+func (c TableCardinality) ExactValue() (int, bool) {
+	return c.Value, c.Kind == CardinalityExact
 }
 
 type TableBlock struct {
@@ -661,7 +868,7 @@ func EmptyTable(request TableRequest, err error) Table {
 		Style:         TableStyle{}.WithDefaults(),
 		Selection:     []InteractionSelectionEntry{},
 		Columns:       OrdersTableColumns(),
-		TotalRows:     0,
+		Cardinality:   TableCardinality{Kind: CardinalityUnknown},
 		AvailableRows: 0,
 		IsCapped:      false,
 		RowCap:        TableInteractiveRowCap,
@@ -683,7 +890,7 @@ func emptyTableBlocks() map[string]TableBlock {
 	}
 }
 
-func EmptyPatch(filters Filters, dataDir string, err error) Patch {
+func EmptyPatch(filters Filters, err error) Patch {
 	message := ""
 	if err != nil {
 		message = err.Error()
@@ -692,10 +899,10 @@ func EmptyPatch(filters Filters, dataDir string, err error) Patch {
 	return Patch{
 		Filters: filters.WithDefaults(),
 		Status: Status{
-			Loading:       false,
-			Error:         message,
-			DataDirectory: dataDir,
-			SetupRequired: err != nil,
+			Loading:         false,
+			Error:           message,
+			SetupRequired:   err != nil,
+			ProgressPercent: NormalizeProgressPercent(nil, false),
 		},
 		Visuals: map[string]Visual{},
 	}

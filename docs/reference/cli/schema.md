@@ -10,12 +10,6 @@ Inspect LibreDash YAML schemas
 libredash schema
 ```
 
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |
-
 ## Subcommands
 
 - `libredash export`: Export generated schema artifacts

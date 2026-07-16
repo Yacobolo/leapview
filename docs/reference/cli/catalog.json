@@ -137,6 +137,41 @@
       "summary": "Query dashboard visual data"
     },
     {
+      "slug": "data",
+      "title": "libredash data",
+      "summary": "Manage project-global data revisions"
+    },
+    {
+      "slug": "data-plan",
+      "title": "libredash data plan",
+      "summary": "Plan a local managed data revision"
+    },
+    {
+      "slug": "data-revisions",
+      "title": "libredash data revisions",
+      "summary": "Inspect managed data revisions"
+    },
+    {
+      "slug": "data-revisions-current",
+      "title": "libredash data revisions current",
+      "summary": "Print the active managed data revision"
+    },
+    {
+      "slug": "data-revisions-list",
+      "title": "libredash data revisions list",
+      "summary": "List staged managed data revisions"
+    },
+    {
+      "slug": "data-sync",
+      "title": "libredash data sync",
+      "summary": "Stage a managed data revision"
+    },
+    {
+      "slug": "deploy",
+      "title": "libredash deploy",
+      "summary": "Atomically deploy a configuration-as-code project"
+    },
+    {
       "slug": "healthcheck",
       "title": "libredash healthcheck",
       "summary": "Check the local LibreDash readiness endpoint"
@@ -150,21 +185,6 @@
       "slug": "plan",
       "title": "libredash plan",
       "summary": "Emit a deterministic configuration-as-code plan"
-    },
-    {
-      "slug": "publish",
-      "title": "libredash publish",
-      "summary": "Publish a configuration-as-code project"
-    },
-    {
-      "slug": "publishes",
-      "title": "libredash publishes",
-      "summary": "Inspect publishes"
-    },
-    {
-      "slug": "publishes-list",
-      "title": "libredash publishes list",
-      "summary": "List publishes"
     },
     {
       "slug": "schema",

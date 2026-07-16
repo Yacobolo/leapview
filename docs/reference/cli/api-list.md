@@ -9,9 +9,3 @@ List generated API operations
 ```sh
 libredash api list
 ```
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

@@ -7,7 +7,7 @@ import { visualActionStyles } from '../visual-action-styles'
 import './renderers'
 import { chartInteractionDetailForDatum } from './interactions'
 import { chartRenderer } from './registry'
-import type { ChartDatum, ChartPayload, ChartRendererHandle, ChartType, VisualAction } from './types'
+import type { ChartDatum, ChartPayload, ChartRendererHandle, ChartType, InteractionSelectionEntry, VisualAction } from './types'
 import { chartColumns, chartRows, formatValue, normalizeShape, normalizeType, numberValue, stringValue, stylesFor } from './utils'
 
 const chartStyles = css`
@@ -195,12 +195,13 @@ class ChartVisual extends LitElement {
   @property({ type: String }) unit = ''
   @property({ type: String, attribute: 'visual-id' }) visualId = ''
   @property({ type: String }) type: ChartType | string = 'bar'
-  @property({ type: Array }) selection: string[] = []
+  @property({ type: Array }) selection: InteractionSelectionEntry[] = []
 
   static styles = [visualActionStyles, chartStyles]
 
   private rendererHandle?: ChartRendererHandle
   private rendererName = ''
+  private rendererInputSignature = ''
   private observer?: ResizeObserver
   private handleOutsidePointerDown = (event: PointerEvent) => {
     const details = this.renderRoot.querySelector<HTMLDetailsElement>('.options')
@@ -241,6 +242,7 @@ class ChartVisual extends LitElement {
     this.rendererHandle?.dispose()
     this.rendererHandle = undefined
     this.rendererName = ''
+    this.rendererInputSignature = ''
     super.disconnectedCallback()
   }
 
@@ -275,6 +277,10 @@ class ChartVisual extends LitElement {
 
   private renderChart(): void {
     const payload = this.payload
+    const tokens = stylesFor(this)
+    const signature = JSON.stringify([payload, tokens])
+    if (signature === this.rendererInputSignature) return
+    this.rendererInputSignature = signature
     const data = payload.data ?? []
     if (data.length === 0) {
       this.rendererHandle?.clear()
@@ -285,7 +291,7 @@ class ChartVisual extends LitElement {
       this.rendererHandle?.clear()
       return
     }
-    renderer.update(payload, stylesFor(this))
+    renderer.update(payload, tokens)
   }
 
   private ensureRenderer(name: string | undefined): ChartRendererHandle | undefined {

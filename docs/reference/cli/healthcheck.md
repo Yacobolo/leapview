@@ -16,9 +16,3 @@ libredash healthcheck [flags]
 | --- | --- | --- | --- |
 | `--timeout` | duration | `5s` | healthcheck HTTP timeout |
 | `--url` | string | `` | readiness URL to check |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

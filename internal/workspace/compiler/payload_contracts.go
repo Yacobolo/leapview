@@ -65,7 +65,6 @@ type sourceFieldPayloadV1 struct {
 }
 
 type modelTablePayloadV1 struct {
-	Kind               string                          `json:"Kind"`
 	Source             string                          `json:"Source"`
 	Sources            []string                        `json:"Sources"`
 	SourceDependencies []string                        `json:"SourceDependencies"`
@@ -76,7 +75,6 @@ type modelTablePayloadV1 struct {
 	Grain              string                          `json:"Grain"`
 	Dimensions         map[string]fieldPayloadV1       `json:"Dimensions"`
 	Fields             map[string]fieldPayloadV1       `json:"Fields"`
-	Measures           map[string]measurePayloadV1     `json:"Measures"`
 	Columns            map[string]modelColumnPayloadV1 `json:"Columns"`
 	Schema             schemaPayloadV1                 `json:"Schema"`
 }
@@ -91,16 +89,17 @@ type transformPayloadV1 struct {
 }
 
 type semanticModelPayloadV1 struct {
-	Name          string                         `json:"Name"`
-	Title         string                         `json:"Title"`
-	Description   string                         `json:"Description"`
-	BaseTable     string                         `json:"BaseTable"`
-	Connections   map[string]connectionPayloadV1 `json:"Connections"`
-	Sources       map[string]sourcePayloadV1     `json:"Sources"`
-	Tables        map[string]modelTablePayloadV1 `json:"Tables"`
-	Models        map[string]modelTablePayloadV1 `json:"Models"`
-	Measures      map[string]measurePayloadV1    `json:"Measures"`
-	Relationships []relationshipPayloadV1        `json:"Relationships"`
+	Name          string                                `json:"Name"`
+	Title         string                                `json:"Title"`
+	Description   string                                `json:"Description"`
+	Connections   map[string]connectionPayloadV1        `json:"Connections"`
+	Sources       map[string]sourcePayloadV1            `json:"Sources"`
+	Tables        map[string]modelTablePayloadV1        `json:"Tables"`
+	Models        map[string]modelTablePayloadV1        `json:"Models"`
+	Measures      map[string]measurePayloadV1           `json:"Measures"`
+	Dimensions    map[string]semanticDimensionPayloadV1 `json:"Dimensions"`
+	Metrics       map[string]metricPayloadV1            `json:"Metrics"`
+	Relationships []relationshipPayloadV1               `json:"Relationships"`
 }
 
 type fieldPayloadV1 struct {
@@ -115,18 +114,42 @@ type fieldPayloadV1 struct {
 }
 
 type measurePayloadV1 struct {
-	Field       string   `json:"Field"`
-	Table       string   `json:"Table"`
-	Name        string   `json:"Name"`
-	Label       string   `json:"Label"`
-	Description string   `json:"Description"`
-	Expr        string   `json:"Expr"`
-	Expression  string   `json:"Expression"`
-	Unit        string   `json:"Unit"`
-	Format      string   `json:"Format"`
-	Grain       string   `json:"Grain"`
-	Time        string   `json:"Time"`
-	Grains      []string `json:"Grains"`
+	Field           string `json:"Field"`
+	Fact            string `json:"Fact"`
+	Name            string `json:"Name"`
+	Label           string `json:"Label"`
+	Description     string `json:"Description"`
+	Aggregation     string `json:"Aggregation"`
+	InputField      string `json:"InputField"`
+	InputExpression string `json:"InputExpression"`
+	Empty           string `json:"Empty"`
+	Unit            string `json:"Unit"`
+	Format          string `json:"Format"`
+	Hidden          bool   `json:"Hidden"`
+}
+
+type semanticDimensionPayloadV1 struct {
+	Name        string                                       `json:"Name"`
+	Label       string                                       `json:"Label"`
+	Description string                                       `json:"Description"`
+	Type        string                                       `json:"Type"`
+	Grains      []string                                     `json:"Grains"`
+	Bindings    map[string]semanticDimensionBindingPayloadV1 `json:"Bindings"`
+}
+
+type semanticDimensionBindingPayloadV1 struct {
+	Field string   `json:"Field"`
+	Path  []string `json:"Path"`
+}
+
+type metricPayloadV1 struct {
+	Name        string `json:"Name"`
+	Label       string `json:"Label"`
+	Description string `json:"Description"`
+	Expression  string `json:"Expression"`
+	Unit        string `json:"Unit"`
+	Format      string `json:"Format"`
+	Hidden      bool   `json:"Hidden"`
 }
 
 type relationshipPayloadV1 struct {
@@ -135,7 +158,6 @@ type relationshipPayloadV1 struct {
 	From        string `json:"From"`
 	To          string `json:"To"`
 	Cardinality string `json:"Cardinality"`
-	Active      bool   `json:"Active"`
 }
 
 type modelColumnPayloadV1 struct {
@@ -173,6 +195,7 @@ type filterPayloadV1 struct {
 	Label            string                  `json:"Label"`
 	Description      string                  `json:"Description"`
 	Dimension        string                  `json:"Dimension"`
+	Fact             string                  `json:"Fact"`
 	Default          any                     `json:"Default"`
 	Custom           bool                    `json:"Custom"`
 	Presets          []filterPresetPayloadV1 `json:"Presets"`
@@ -222,6 +245,21 @@ type visualPayloadV1 struct {
 	Options         map[string]any       `json:"Options"`
 	RendererOptions map[string]any       `json:"RendererOptions"`
 	Encode          map[string]string    `json:"Encode"`
+	Interaction     selectionPayloadV1   `json:"Interaction"`
+}
+
+type selectionPayloadV1 struct {
+	Toggle   bool                        `json:"Toggle"`
+	Mappings []selectionMappingPayloadV1 `json:"Mappings"`
+	Targets  []string                    `json:"Targets"`
+}
+
+type selectionMappingPayloadV1 struct {
+	Field string `json:"Field"`
+	Fact  string `json:"Fact"`
+	Grain string `json:"Grain"`
+	Value string `json:"Value"`
+	Label string `json:"Label"`
 }
 
 type visualQueryPayloadV1 struct {
@@ -256,6 +294,7 @@ type tablePayloadV1 struct {
 	DataColumns []fieldRefPayloadV1 `json:"DataColumns"`
 	Style       tableStylePayloadV1 `json:"Style"`
 	DefaultSort tableSortPayloadV1  `json:"DefaultSort"`
+	Interaction selectionPayloadV1  `json:"Interaction"`
 }
 
 type tableQueryPayloadV1 struct {

@@ -2,6 +2,7 @@ package dataquery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -31,36 +32,25 @@ type Query struct {
 	Target        string
 	Fields        []Field
 	Measures      []Field
-	Value         Field
-	Time          Time
-	Filters       []Filter
-	Sort          []Sort
-	ColumnMasks   []ColumnMask
-	Offset        int
-	Limit         int
-	BinCount      int
-	IncludeTotal  bool
+	// AuthorizationFields preserves the logical projection used to authorize a
+	// physical query whose result shape intentionally omits those fields (for
+	// example, an exact COUNT for a governed dashboard table). Executors and
+	// planners must not project these fields.
+	AuthorizationFields []Field
+	Value               Field
+	Time                Time
+	Filters             []Filter
+	Sort                []Sort
+	ColumnMasks         []ColumnMask
+	Offset              int
+	Limit               int
+	BinCount            int
+	IncludeTotal        bool
 }
 
 type Field struct {
-	Field   string
-	Alias   string
-	Measure InlineMeasure
-}
-
-type InlineMeasure struct {
-	Field       string
-	Name        string
-	Label       string
-	Description string
-	Expr        string
-	Expression  string
-	Table       string
-	Grain       string
-	Time        string
-	Grains      []string
-	Unit        string
-	Format      string
+	Field string
+	Alias string
 }
 
 type Time struct {
@@ -71,6 +61,7 @@ type Time struct {
 
 type Filter struct {
 	Field    string
+	Fact     string
 	Operator string
 	Values   []any
 	Groups   []FilterGroup
@@ -97,22 +88,65 @@ type Column struct {
 type Row map[string]any
 
 type Result struct {
-	Columns        []Column
-	Rows           []Row
-	TotalRows      int
-	TotalRowsKnown bool
-	SQL            string
-	PlanText       string
-	DurationMS     int64
-	QueueWaitMS    int64
-	ExecutionMS    int64
-	ExecutionState string
-	RowsReturned   int
-	BytesEstimate  int64
-	Status         string
-	Error          string
-	Warnings       []string
+	Columns          []Column
+	Rows             []Row
+	TotalRows        int
+	TotalRowsKnown   bool
+	SQL              string
+	PlanText         string
+	DurationMS       int64
+	QueueWaitMS      int64
+	PlanningMS       int64
+	ConnectionWaitMS int64
+	DatabaseMS       int64
+	ExecutionMS      int64
+	ExecutionState   string
+	CacheOutcome     string
+	RowsReturned     int
+	BytesEstimate    int64
+	Status           string
+	Error            string
+	Warnings         []string
 }
+
+// BundleRequest identifies one independently decoded aggregate consumer. A
+// bundle executor must govern every Query before deciding whether the requests
+// are physically compatible.
+type BundleRequest struct {
+	ID    string
+	Query Query
+}
+
+type BundleResult struct {
+	Results map[string]Result
+	SQL     string
+}
+
+type BundleExecutor interface {
+	ExecuteDataQueryBundle(context.Context, []BundleRequest) (BundleResult, error)
+}
+
+type BundleIncompatibleError struct{ Err error }
+
+func (e *BundleIncompatibleError) Error() string {
+	return "data query bundle is incompatible: " + e.Err.Error()
+}
+func (e *BundleIncompatibleError) Unwrap() error { return e.Err }
+
+func IsBundleIncompatible(err error) bool {
+	var target *BundleIncompatibleError
+	return errors.As(err, &target)
+}
+
+type BundleBranchError struct {
+	ID  string
+	Err error
+}
+
+func (e *BundleBranchError) Error() string {
+	return fmt.Sprintf("data query bundle branch %q: %v", e.ID, e.Err)
+}
+func (e *BundleBranchError) Unwrap() error { return e.Err }
 
 const (
 	SurfaceDashboard    = "dashboard"
@@ -121,15 +155,16 @@ const (
 	SurfaceCLI          = "cli"
 	SurfaceDataExplorer = "data_explorer"
 
-	OperationDashboardAggregate    = "dashboard_aggregate"
-	OperationDashboardRows         = "dashboard_rows"
-	OperationDashboardCount        = "dashboard_count"
-	OperationDashboardHistogram    = "dashboard_histogram"
-	OperationDashboardDistribution = "dashboard_distribution"
-	OperationAPIQuery              = "api_query"
-	OperationAPIPreview            = "api_preview"
-	OperationAgentQuery            = "agent_query"
-	OperationPreviewWindow         = "preview_window"
+	OperationDashboardAggregate     = "dashboard_aggregate"
+	OperationDashboardRows          = "dashboard_rows"
+	OperationDashboardCount         = "dashboard_count"
+	OperationDashboardHistogram     = "dashboard_histogram"
+	OperationDashboardDistribution  = "dashboard_distribution"
+	OperationDashboardFilterOptions = "dashboard_filter_options"
+	OperationAPIQuery               = "api_query"
+	OperationAPIPreview             = "api_preview"
+	OperationAgentQuery             = "agent_query"
+	OperationPreviewWindow          = "preview_window"
 
 	StatusSuccess  = "success"
 	StatusError    = "error"
@@ -142,6 +177,11 @@ const (
 	ExecutionTimeout   = "timeout"
 	ExecutionSucceeded = "succeeded"
 	ExecutionFailed    = "failed"
+
+	CacheHit       = "hit"
+	CacheMiss      = "miss"
+	CacheCoalesced = "coalesced"
+	CacheError     = "error"
 )
 
 type Metadata struct {
@@ -250,7 +290,7 @@ func (q Query) Validate() error {
 		if strings.TrimSpace(q.Target) == "" {
 			return fmt.Errorf("%s query requires target", q.Kind)
 		}
-		if strings.TrimSpace(q.Value.Field) == "" && strings.TrimSpace(q.Value.Measure.Name) == "" {
+		if strings.TrimSpace(q.Value.Field) == "" {
 			return fmt.Errorf("%s query requires a value field", q.Kind)
 		}
 		if q.Kind == KindSemanticHistogram && q.BinCount <= 0 {

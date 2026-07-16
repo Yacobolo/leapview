@@ -191,7 +191,7 @@ func showcaseTable(id, title, kind string, style map[string]any, sortKey, direct
 	chunkSize := 50
 	return map[string]any{
 		"version": 2, "id": id, "kind": kind, "title": title, "style": style, "interaction": map[string]any{}, "selection": []map[string]any{}, "columns": columns,
-		"totalRows": len(rows), "availableRows": len(rows), "isCapped": false, "rowCap": 10000, "chunkSize": chunkSize, "rowHeight": 34, "resetVersion": 0,
+		"totalRows": len(rows), "cardinality": map[string]any{"kind": "exact", "value": len(rows)}, "availableRows": len(rows), "isCapped": false, "rowCap": 10000, "chunkSize": chunkSize, "rowHeight": 34, "resetVersion": 0,
 		"sort":         map[string]any{"key": sortKey, "direction": direction},
 		"blocks":       map[string]any{"a": map[string]any{"start": 0, "requestSeq": 0, "resetVersion": 0, "sort": map[string]any{"key": sortKey, "direction": direction}, "rows": rows}},
 		"loadingBlock": "", "error": "",

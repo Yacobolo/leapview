@@ -10,7 +10,6 @@ import (
 )
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-var aggregateWrapperPattern = regexp.MustCompile(`(?is)^\s*(?:AVG|SUM|MIN|MAX|MEDIAN|QUANTILE_CONT)\s*\((.+?)(?:,\s*[-0-9.]+)?\)\s*$`)
 
 func quoteIdent(value string) (string, error) {
 	if !identifierPattern.MatchString(value) {
@@ -93,30 +92,129 @@ func joinSQL(model *semanticmodel.Model, base string, aliases map[string]tableAl
 	return strings.Join(parts, "\n"), nil
 }
 
+func joinPathSQL(model *semanticmodel.Model, aliases pathAliasSet) (string, error) {
+	baseIdent, err := quoteIdent(aliases.BaseTable)
+	if err != nil {
+		return "", err
+	}
+	baseAlias, ok := aliases.ByPath[""]
+	if !ok {
+		return "", fmt.Errorf("missing base alias for fact %q", aliases.BaseTable)
+	}
+	parts := []string{"model." + baseIdent + " " + baseAlias.Alias}
+	for _, alias := range aliases.Ordered {
+		if len(alias.Path) == 0 {
+			return "", fmt.Errorf("join alias %q has no relationship path", alias.Alias)
+		}
+		parentPath := alias.Path[:len(alias.Path)-1]
+		parent, ok := aliases.ByPath[relationshipPathSignature(parentPath)]
+		if !ok {
+			return "", fmt.Errorf("missing parent alias for relationship path %q", relationshipPathSignature(alias.Path))
+		}
+		relationship := alias.Path[len(alias.Path)-1]
+		fromEndpoint, err := model.ResolveRelationshipEndpoint(relationship.From)
+		if err != nil {
+			return "", err
+		}
+		toEndpoint, err := model.ResolveRelationshipEndpoint(relationship.To)
+		if err != nil {
+			return "", err
+		}
+		leftEndpoint := fromEndpoint
+		rightEndpoint := toEndpoint
+		switch {
+		case parent.Table == fromEndpoint.Table && alias.Table == toEndpoint.Table:
+		case relationship.Cardinality == "one_to_one" && parent.Table == toEndpoint.Table && alias.Table == fromEndpoint.Table:
+			leftEndpoint = toEndpoint
+			rightEndpoint = fromEndpoint
+		default:
+			return "", fmt.Errorf("relationship path %q cannot join %q to %q", relationshipPathSignature(alias.Path), parent.Table, alias.Table)
+		}
+		rightIdent, err := quoteIdent(alias.Table)
+		if err != nil {
+			return "", err
+		}
+		leftAliases, err := aliases.context(parentPath)
+		if err != nil {
+			return "", err
+		}
+		rightAliases, err := aliases.context(alias.Path)
+		if err != nil {
+			return "", err
+		}
+		leftExpr := applyAliases(leftEndpoint.SQLExpression(), leftAliases, parent.Alias)
+		rightExpr := applyAliases(rightEndpoint.SQLExpression(), rightAliases, alias.Alias)
+		parts = append(parts, fmt.Sprintf("LEFT JOIN model.%s %s ON %s = %s", rightIdent, alias.Alias, leftExpr, rightExpr))
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
 func dimensionExpr(dimension semanticmodel.MetricDimension, aliases map[string]tableAlias) string {
 	alias := aliases[dimension.Table].Alias
 	return applyAliases(dimension.SQLExpression(), aliases, alias)
+}
+
+func dimensionExprForPath(dimension semanticmodel.MetricDimension, aliases pathAliasSet, path []semanticmodel.Relationship) (string, error) {
+	context, err := aliases.context(path)
+	if err != nil {
+		return "", err
+	}
+	alias, ok := context[dimension.Table]
+	if !ok {
+		return "", fmt.Errorf("relationship path %q does not expose table %q", relationshipPathSignature(path), dimension.Table)
+	}
+	return applyAliases(dimension.SQLExpression(), context, alias.Alias), nil
 }
 
 func dimensionWhereExpr(dimension semanticmodel.MetricDimension, aliases map[string]tableAlias) string {
 	return ""
 }
 
-func measureExpr(measure ResolvedMeasure, aliases map[string]tableAlias) string {
-	alias := aliases[measure.Table].Alias
-	return applyAliases(measure.SQLExpression(), aliases, alias)
+func measureExpr(model *semanticmodel.Model, measure ResolvedMeasure, aliases map[string]tableAlias) (string, error) {
+	input, err := rawMeasureExpr(model, measure, aliases)
+	if err != nil && measure.Aggregation != "count" {
+		return "", err
+	}
+	expr := ""
+	switch measure.Aggregation {
+	case "count":
+		expr = "COUNT(*)"
+	case "count_distinct":
+		expr = "COUNT(DISTINCT " + input + ")"
+	case "sum", "avg", "min", "max":
+		expr = strings.ToUpper(measure.Aggregation) + "(" + input + ")"
+	default:
+		return "", fmt.Errorf("measure %q has unsupported aggregation %q", measure.Name, measure.Aggregation)
+	}
+	return expr, nil
 }
 
-func rawMeasureExpr(measure ResolvedMeasure, aliases map[string]tableAlias) (string, error) {
-	expr := strings.TrimSpace(measure.SQLExpression())
-	if expr == "" {
-		return "", fmt.Errorf("measure %q is missing expression", measure.Label)
+func rawMeasureExpr(model *semanticmodel.Model, measure ResolvedMeasure, aliases map[string]tableAlias) (string, error) {
+	if measure.InputField != "" {
+		dimension, err := model.ResolveDimension(measure.InputField)
+		if err != nil {
+			return "", err
+		}
+		return dimensionExpr(dimension, aliases), nil
 	}
-	if matches := aggregateWrapperPattern.FindStringSubmatch(expr); len(matches) == 2 {
-		expr = strings.TrimSpace(matches[1])
-	} else if strings.Contains(expr, "(") {
-		return "", fmt.Errorf("measure %q cannot be used as a raw value expression", measure.Label)
+	if measure.InputExpr == "" {
+		return "", fmt.Errorf("measure %q has no raw input", measure.Name)
 	}
-	alias := aliases[measure.Table].Alias
-	return applyAliases(expr, aliases, alias), nil
+	var expression semanticmodel.Expression
+	if measure.InputExpression != nil {
+		expression = *measure.InputExpression
+	} else {
+		var err error
+		expression, err = semanticmodel.ParseExpression(measure.InputExpr)
+		if err != nil {
+			return "", err
+		}
+	}
+	return expression.SQL(func(ref string) (string, error) {
+		dimension, err := model.ResolveDimension(ref)
+		if err != nil {
+			return "", err
+		}
+		return dimensionExpr(dimension, aliases), nil
+	})
 }

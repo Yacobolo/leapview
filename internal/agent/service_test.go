@@ -856,15 +856,13 @@ func (fakeAgentMetrics) Report(id string) (reportdef.Dashboard, *semanticmodel.M
 
 func fakeSemanticModel() *semanticmodel.Model {
 	return &semanticmodel.Model{
-		Name:      "test",
-		Title:     "Test Model",
-		BaseTable: "orders",
+		Name:  "test",
+		Title: "Test Model",
 		Sources: map[string]semanticmodel.Source{
 			"orders": {Path: "orders.csv"},
 		},
 		Tables: map[string]semanticmodel.Table{
 			"orders": {
-				Kind:       "fact",
 				Source:     "orders",
 				PrimaryKey: "order_id",
 				Dimensions: map[string]semanticmodel.MetricDimension{
@@ -873,7 +871,7 @@ func fakeSemanticModel() *semanticmodel.Model {
 			},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{
-			"order_count": {Table: "orders", Grain: "order_id", Expression: "COUNT(DISTINCT orders.order_id)"},
+			"order_count": {Fact: "orders", Aggregation: "count_distinct", Input: semanticmodel.MeasureInput{Field: "orders.order_id"}, Empty: "zero"},
 		},
 	}
 }

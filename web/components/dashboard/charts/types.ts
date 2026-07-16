@@ -1,3 +1,10 @@
+import type {
+  InteractionMapping,
+  InteractionSelectionEntry,
+} from '../interaction-selection'
+
+export type { InteractionMapping, InteractionSelectionEntry, InteractionSelectionValue } from '../interaction-selection'
+
 export type ChartType =
   | 'line'
   | 'area'
@@ -44,21 +51,6 @@ export type InteractionConfig = {
   toggle?: boolean
   mappings?: InteractionMapping[]
   targets?: string[]
-}
-
-export type InteractionMapping = {
-  field: string
-  value: string
-  label?: string
-}
-
-export type InteractionSelectionEntry = {
-  mappings?: Array<{
-    field?: string
-    value?: string
-    label?: string
-  }>
-  label?: string
 }
 
 export type ChartPayload = {

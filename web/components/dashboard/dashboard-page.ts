@@ -3,7 +3,9 @@ import { property, state } from 'lit/decorators.js'
 import { RefreshCw } from 'lucide'
 import type {
   DashboardComponentSignal,
+  DashboardComponentStatus,
   DashboardFilters,
+  DashboardInteractionSelection,
   DashboardPageNavSignal,
   DashboardPageSignal,
   DashboardStatus,
@@ -20,18 +22,53 @@ import './report-canvas'
 import './report-footer'
 import './visual-modal'
 import { loadDashboardComponent } from './registry'
+import {
+  applyOptimisticInteraction,
+  canonicalSelectionEntriesForSource,
+  validateInteractionCommand,
+  type CanonicalInteractionSelection,
+  type InteractionConfigLike,
+  type OptimisticInteractionCommand,
+} from './interaction-selection'
 
 const emptyFilters: DashboardFilters = { controls: {}, selections: [] }
 const emptyStatus: DashboardStatus = {
   loading: false,
   error: '',
+  generation: 0,
   lastUpdated: '',
-  dataDirectory: '',
+  refreshId: '',
   setupRequired: false,
+  progressPercent: 100,
+}
+
+type DashboardRenderSnapshot = {
+  page: DashboardPageSignal
+  filterConfig: ReportFilterConfig[]
+  filters: DashboardFilters
+  filterOptions: Record<string, unknown>
+  visuals: Record<string, DashboardVisual>
+  tables: Record<string, DashboardTable>
+  status: DashboardStatus
+  componentStatus: Record<string, DashboardComponentStatus>
+}
+
+type DashboardRefreshProgress = {
+  active: boolean
+  complete: boolean
+  generation: number
+  percent: number
 }
 
 class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
+  @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
+  @state() private optimisticTargetKeys = new Set<string>()
+  private optimisticExpectedGeneration = 0
+  private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
+  private renderSnapshot?: DashboardRenderSnapshot
+  private visualProjectionCache = new Map<string, { signature: string; value: DashboardVisual }>()
+  private tableProjectionCache = new Map<string, { signature: string; value: DashboardTable }>()
 
   static styles = css`
     :host {
@@ -139,12 +176,42 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     }
 
     .body {
+      position: relative;
       display: grid;
       min-width: 0;
       min-height: 0;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: stretch;
       overflow: hidden;
+    }
+
+    .dashboard-refresh-progress {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: var(--zIndex-sticky, 50);
+      height: 2px;
+      overflow: hidden;
+      background: var(--ld-line-muted);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--motion-transition-stateChange);
+      transition-delay: 0s;
+    }
+
+    .dashboard-refresh-progress[data-active='true'] {
+      opacity: 1;
+      transition-delay: 0s;
+    }
+
+    .dashboard-refresh-progress[data-active='false'][data-complete='true'] {
+      transition-delay: 180ms;
+    }
+
+    .dashboard-refresh-progress-value {
+      width: 0;
+      height: 100%;
+      background: var(--ld-line-accent);
+      transition: width var(--motion-transition-stateChange);
     }
 
     .canvas-wrap {
@@ -232,11 +299,25 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       }
 
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      .dashboard-refresh-progress,
+      .dashboard-refresh-progress-value {
+        transition: none;
+      }
+    }
   `
 
   connectedCallback(): void {
     super.connectedCallback()
+    this.addEventListener('ld-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
     this.loadRenderedComponents()
+  }
+
+  disconnectedCallback(): void {
+    this.removeEventListener('ld-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
+    this.clearOptimisticRollbackTimer()
+    super.disconnectedCallback()
   }
 
   updated(): void {
@@ -248,6 +329,9 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       components: 'required',
     })
     this.loadRenderedComponents()
+    if (this.optimisticSelections && this.status.generation >= this.optimisticExpectedGeneration) {
+      this.clearOptimisticState()
+    }
   }
 
   get page(): DashboardPageSignal | null {
@@ -260,6 +344,15 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
   private get filters(): DashboardFilters {
     return this.signal<DashboardFilters>('filters', emptyFilters)
+  }
+
+  private get effectiveFilters(): DashboardFilters {
+    const filters = this.renderSnapshot?.filters ?? this.filters
+    if (!this.optimisticSelections) return filters
+    return {
+      ...filters,
+      selections: this.optimisticSelections as DashboardInteractionSelection[],
+    }
   }
 
   private get filterOptions(): Record<string, unknown> {
@@ -278,46 +371,99 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return this.signal<DashboardStatus>('status', emptyStatus)
   }
 
+  private get componentStatus(): Record<string, DashboardComponentStatus> {
+    return this.signal<Record<string, DashboardComponentStatus>>('componentStatus', {})
+  }
+
   render() {
-    if (!this.page) return html`<slot></slot>`
+    const page = this.page
+    if (!page) return html`<slot></slot>`
+    const snapshot: DashboardRenderSnapshot = {
+      page,
+      filterConfig: this.filterConfig,
+      filters: this.filters,
+      filterOptions: this.filterOptions,
+      visuals: this.visuals,
+      tables: this.tables,
+      status: this.status,
+      componentStatus: this.componentStatus,
+    }
+    this.renderSnapshot = snapshot
+    const refreshProgress = this.refreshProgress(snapshot)
     return html`
       <div class="route">
-        <ld-sub-sidebar .config=${this.pageSidebar()}></ld-sub-sidebar>
+        <ld-sub-sidebar .config=${this.pageSidebar(page)}></ld-sub-sidebar>
         <section class="main" aria-label="LibreDash report canvas">
           <header class="header">
             <div class="title-block">
-              <h1>${this.page.title}</h1>
-              <p class="detail">${this.page.headerDetail}</p>
+              <h1>${page.title}</h1>
+              <p class="detail">${page.headerDetail}</p>
             </div>
             <div class="actions">
-              <button class="icon-button" type="button" title="Refresh model materializations" aria-label="Refresh model materializations" ?disabled=${this.status.loading} @click=${this.refreshMaterializations}>
+              <button class="icon-button" type="button" title="Refresh model materializations" aria-label="Refresh model materializations" ?disabled=${snapshot.status.loading} @click=${this.refreshMaterializations}>
                 ${lucideIcon(RefreshCw)}
               </button>
             </div>
           </header>
           <div class="body">
+            ${this.renderRefreshProgress(refreshProgress)}
             <div class="canvas-wrap">
-              <ld-report-canvas width=${this.page.canvas.width} height=${this.page.canvas.height}>
-                ${this.page.components.map((component) => this.renderCanvasComponent(component))}
+              <ld-report-canvas width=${page.canvas.width} height=${page.canvas.height}>
+                ${page.components.map((component) => this.renderCanvasComponent(component))}
               </ld-report-canvas>
             </div>
             ${this.renderFilterDock()}
           </div>
-          <ld-report-footer .status=${this.status}></ld-report-footer>
+          <ld-report-footer .status=${snapshot.status}></ld-report-footer>
         </section>
       </div>
       <ld-visual-modal></ld-visual-modal>
     `
   }
 
-  private pageSidebar() {
+  private renderRefreshProgress(progress: DashboardRefreshProgress) {
+    const valueText = `${Math.round(progress.percent)}% of dashboard refresh complete`
+    return html`
+      <div
+        class="dashboard-refresh-progress"
+        data-dashboard-refresh-progress
+        data-active=${String(progress.active)}
+        data-complete=${String(progress.complete)}
+        data-generation=${progress.generation}
+        role="progressbar"
+        aria-label="Refreshing dashboard"
+        aria-hidden=${String(!progress.active)}
+        aria-valuemin="0"
+        aria-valuenow=${progress.percent}
+        aria-valuemax="100"
+        aria-valuetext=${valueText}
+      >
+        <div
+          class="dashboard-refresh-progress-value"
+          style=${`width:${progress.percent}%`}
+        ></div>
+      </div>
+    `
+  }
+
+  private refreshProgress(snapshot: DashboardRenderSnapshot): DashboardRefreshProgress {
+    const percent = snapshot.status.progressPercent ?? (snapshot.status.loading ? 0 : 100)
+    return {
+      active: snapshot.status.loading,
+      complete: !snapshot.status.loading && percent === 100,
+      generation: snapshot.status.generation,
+      percent,
+    }
+  }
+
+  private pageSidebar(page: DashboardPageSignal) {
     return {
       label: 'Pages',
       railLabel: 'Pages',
       ariaLabel: 'Report pages',
       storageKey: 'libredash-report-sidebar-collapsed',
-      activeId: this.page?.pageId ?? '',
-      items: this.page?.pages.map((item: DashboardPageNavSignal) => ({
+      activeId: page.pageId,
+      items: page.pages.map((item: DashboardPageNavSignal) => ({
         id: item.id,
         title: item.title,
         href: item.href,
@@ -328,6 +474,8 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
   private renderCanvasComponent(component: DashboardComponentSignal) {
     const filterVisual = component.kind === 'filter_card'
+    const statusKey = this.componentStatusKey(component)
+    const componentRefreshStatus = statusKey ? this.refreshStatusFor(statusKey) : undefined
     return html`
       <ld-dashboard-visual-frame
         data-canvas-visual
@@ -336,7 +484,9 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
         data-y=${component.y}
         data-w=${component.width}
         data-h=${component.height}
+        data-component-status-key=${statusKey || nothing}
         .transparent=${component.kind === 'header'}
+        .refreshStatus=${componentRefreshStatus}
       >
         ${this.renderComponentContent(component)}
       </ld-dashboard-visual-frame>
@@ -378,10 +528,10 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return html`
       <ld-filter-card
         filter-id=${component.filter}
-        config=${json(this.filterConfig)}
-        filters=${json(this.filters)}
-        options=${json(this.filterOptions)}
-        loading=${String(this.status.loading)}
+        config=${json(this.renderSnapshot?.filterConfig ?? this.filterConfig)}
+        filters=${json(this.effectiveFilters)}
+        options=${json(this.renderSnapshot?.filterOptions ?? this.filterOptions)}
+        loading=${String((this.renderSnapshot?.status ?? this.status).loading)}
       ></ld-filter-card>
     `
   }
@@ -399,7 +549,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   }
 
   private renderTable(component: DashboardComponentSignal) {
-    const table = component.table ? this.tables[component.table] : undefined
+    const table = this.tableFor(component)
     if (!table) return this.missingPayload('table')
     return html`<ld-report-table table-id=${component.table ?? ''} .table=${table}></ld-report-table>`
   }
@@ -407,10 +557,10 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   private renderFilterDock() {
     return html`
       <ld-filter-dock
-        .config=${this.filterConfig}
-        .filters=${this.filters}
-        .options=${this.filterOptions}
-        .loading=${this.status.loading}
+        .config=${this.renderSnapshot?.filterConfig ?? this.filterConfig}
+        .filters=${this.effectiveFilters}
+        .options=${this.renderSnapshot?.filterOptions ?? this.filterOptions}
+        .loading=${(this.renderSnapshot?.status ?? this.status).loading}
       ></ld-filter-dock>
     `
   }
@@ -420,11 +570,110 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   }
 
   private visualFor(component: DashboardComponentSignal): DashboardVisual | undefined {
-    return component.visual ? this.visuals[component.visual] : undefined
+    const visuals = this.renderSnapshot?.visuals ?? this.visuals
+    const visual = component.visual ? visuals[component.visual] : undefined
+    if (!visual) return undefined
+    const selection = canonicalSelectionEntriesForSource(this.effectiveFilters.selections, 'visual', component.visual ?? '')
+    const signature = stableSignature([visual, selection])
+    const cached = this.visualProjectionCache.get(component.visual ?? '')
+    if (cached?.signature === signature) return cached.value
+    const value = {
+      ...visual,
+      selection,
+    }
+    this.visualProjectionCache.set(component.visual ?? '', { signature, value })
+    return value
+  }
+
+  private tableFor(component: DashboardComponentSignal): DashboardTable | undefined {
+    const tables = this.renderSnapshot?.tables ?? this.tables
+    const table = component.table ? tables[component.table] : undefined
+    if (!table) return undefined
+    const selection = canonicalSelectionEntriesForSource(this.effectiveFilters.selections, 'table', component.table ?? '')
+    const signature = stableSignature([table, selection])
+    const cached = this.tableProjectionCache.get(component.table ?? '')
+    if (cached?.signature === signature) return cached.value
+    const value = { ...table, selection }
+    this.tableProjectionCache.set(component.table ?? '', { signature, value })
+    return value
+  }
+
+  private componentStatusKey(component: DashboardComponentSignal): string {
+    if (component.table) return `table:${component.table}`
+    if (component.visual) return `visual:${component.visual}`
+    return ''
+  }
+
+  private refreshStatusFor(key: string): DashboardComponentStatus | undefined {
+    if (this.optimisticTargetKeys.has(key)) {
+      return { generation: this.optimisticExpectedGeneration, loading: true, error: '' }
+    }
+    const snapshot = this.renderSnapshot
+    const refreshStatus = (snapshot?.componentStatus ?? this.componentStatus)[key]
+    if (!refreshStatus) return undefined
+    return {
+      ...refreshStatus,
+      loading: refreshStatus.loading && refreshStatus.generation === (snapshot?.status ?? this.status).generation,
+    }
   }
 
   private refreshMaterializations = (): void => {
     this.dispatchEvent(new CustomEvent('ld-refresh-materializations', { bubbles: true, composed: true }))
+  }
+
+  private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
+    const command = optimisticCommand(event.detail)
+    if (!command) return
+    const configured = this.interactionConfigFor(command.sourceKind, command.sourceId)
+    if (!validateInteractionCommand(command, configured)) return
+
+    const current = this.optimisticSelections ?? this.filters.selections
+    this.optimisticSelections = applyOptimisticInteraction(current, {
+      ...command,
+      toggle: configured?.toggle !== false,
+    })
+    this.optimisticTargetKeys = this.targetStatusKeys(configured?.targets ?? [])
+    this.optimisticExpectedGeneration = Math.max(
+      this.status.generation + 1,
+      this.optimisticExpectedGeneration + 1,
+    )
+    this.scheduleOptimisticRollback()
+  }
+
+  private interactionConfigFor(sourceKind: 'visual' | 'table', sourceId: string): InteractionConfigLike | undefined {
+    if (sourceKind === 'visual') return this.visuals[sourceId]?.interaction
+    return this.tables[sourceId]?.interaction
+  }
+
+  private targetStatusKeys(targets: readonly string[]): Set<string> {
+    const wanted = new Set(targets)
+    const keys = new Set<string>()
+    for (const component of this.page?.components ?? []) {
+      if (component.visual && (wanted.has(component.visual) || wanted.has(component.id))) {
+        keys.add(`visual:${component.visual}`)
+      }
+      if (component.table && (wanted.has(component.table) || wanted.has(component.id))) {
+        keys.add(`table:${component.table}`)
+      }
+    }
+    return keys
+  }
+
+  private scheduleOptimisticRollback(): void {
+    this.clearOptimisticRollbackTimer()
+    this.optimisticRollbackTimer = setTimeout(() => this.clearOptimisticState(), 10_000)
+  }
+
+  private clearOptimisticRollbackTimer(): void {
+    if (this.optimisticRollbackTimer !== undefined) clearTimeout(this.optimisticRollbackTimer)
+    this.optimisticRollbackTimer = undefined
+  }
+
+  private clearOptimisticState(): void {
+    this.clearOptimisticRollbackTimer()
+    this.optimisticSelections = null
+    this.optimisticTargetKeys = new Set<string>()
+    this.optimisticExpectedGeneration = this.status.generation
   }
 
   private loadRenderedComponents(): void {
@@ -443,8 +692,23 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   }
 }
 
+function optimisticCommand(value: unknown): OptimisticInteractionCommand | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const command = value as Partial<OptimisticInteractionCommand>
+  if (command.sourceKind !== 'visual' && command.sourceKind !== 'table') return undefined
+  if (typeof command.sourceId !== 'string' || typeof command.interactionKind !== 'string') return undefined
+  if (command.action !== 'set' && command.action !== 'replace' && command.action !== 'clear') return undefined
+  if (typeof command.toggle !== 'boolean' || !Array.isArray(command.mappings)) return undefined
+  return command as OptimisticInteractionCommand
+}
+
+function stableSignature(value: unknown): string {
+  return JSON.stringify(value)
+}
+
 class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
+  @property({ type: Object, attribute: false }) refreshStatus?: DashboardComponentStatus
 
   static styles = css`
     :host {
@@ -457,6 +721,7 @@ class DashboardVisualFrame extends LitElement {
     }
 
     .frame {
+      position: relative;
       height: 100%;
       min-width: 0;
       min-height: 0;
@@ -486,10 +751,76 @@ class DashboardVisualFrame extends LitElement {
       width: 100%;
       height: 100%;
     }
+
+    .refresh-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      background: color-mix(in srgb, var(--ld-bg-panel) 78%, transparent);
+      color: var(--ld-fg-muted);
+      padding: var(--base-size-12);
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    .refresh-overlay.error {
+      align-content: center;
+      gap: var(--base-size-4);
+      border: var(--ld-border-danger);
+      background: color-mix(in srgb, var(--ld-bg-danger-muted) 92%, transparent);
+      color: var(--ld-fg-danger);
+      text-align: center;
+    }
+
+    .refresh-overlay strong {
+      font-size: var(--ld-font-size-body-sm);
+      font-weight: var(--ld-font-weight-strong);
+    }
+
+    .refresh-overlay span {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: var(--ld-font-size-caption);
+    }
+
+    .spinner {
+      width: var(--base-size-16);
+      height: var(--base-size-16);
+      border: 2px solid var(--ld-line-muted);
+      border-top-color: var(--ld-fg-link);
+      border-radius: 50%;
+      animation: spin 700ms linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+    }
   `
 
   render() {
-    return html`<article class="frame"><slot></slot></article>`
+    const refreshStatus = this.refreshStatus
+    return html`
+      <article class="frame" aria-busy=${refreshStatus?.loading ? 'true' : 'false'}>
+        <slot></slot>
+        ${refreshStatus?.error ? html`
+          <div class="refresh-overlay error" role="alert">
+            <strong>Could not refresh this component</strong>
+            <span>${refreshStatus.error}</span>
+          </div>
+        ` : refreshStatus?.loading ? html`
+          <div class="refresh-overlay loading" role="status" aria-label="Refreshing component">
+            <span class="spinner" aria-hidden="true"></span>
+          </div>
+        ` : nothing}
+      </article>
+    `
   }
 }
 

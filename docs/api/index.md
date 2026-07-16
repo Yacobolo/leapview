@@ -2,7 +2,7 @@
 
 # API reference
 
-Headless API for LibreDash workspaces, publishes, access control, refreshes, and agent operations.
+Headless API for LibreDash workspaces, deployments, managed data, access control, refreshes, and agent operations.
 
 [Download the OpenAPI schema](/docs/openapi.yaml)
 
@@ -12,8 +12,9 @@ Headless API for LibreDash workspaces, publishes, access control, refreshes, and
 - [Workspaces](/docs/api/workspaces): Workspace and lineage discovery.
 - [Search](/docs/api/search): Progressive workspace discovery across BI assets.
 - [BI](/docs/api/bi): Dashboard and semantic model read APIs.
-- [Publishes](/docs/api/publishes): Dashboard-as-code publish operations.
+- [Deployments](/docs/api/deployments): Project-scoped candidate staging and atomic serving-state and managed-data activation.
 - [Refresh Runs](/docs/api/refresh-runs): Headless refresh run operations.
 - [Agent](/docs/api/agent): Headless agent conversation and run operations.
 - [Access](/docs/api/access): Principals, groups, roles, and role bindings.
 - [Audit](/docs/api/audit): Workspace audit event discovery.
+- [Managed Data](/docs/api/managed-data): Project-global managed-data revisions and uploads.

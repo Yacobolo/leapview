@@ -119,6 +119,151 @@ for (const viewport of [
       expect(tableState.rows).toBeGreaterThan(0)
       expect(tableState.cells).toBeGreaterThan(0)
 
+      const progressiveState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+        const root = element.shadowRoot
+        const chartFrame = root.querySelector('[data-component-status-key="visual:orders_chart"]') as any
+        const tableFrame = root.querySelector('[data-component-status-key="table:orders"]') as any
+        const kpiFrame = root.querySelector('[data-component-status-key="visual:orders_kpi"]') as any
+        const chart = chartFrame?.querySelector('ld-echart') as any
+        const table = tableFrame?.querySelector('ld-report-table') as any
+        await Promise.all([chartFrame?.updateComplete, tableFrame?.updateComplete, chart?.updateComplete, table?.updateComplete])
+        return {
+          chartBusy: chartFrame?.shadowRoot?.querySelector('article')?.getAttribute('aria-busy'),
+          chartLoadingLabel: chartFrame?.shadowRoot?.querySelector('[role="status"]')?.getAttribute('aria-label'),
+          tableAlert: tableFrame?.shadowRoot?.querySelector('[role="alert"]')?.textContent?.replace(/\s+/g, ' ').trim(),
+          tableRetainedRow: table?.shadowRoot?.textContent?.includes('o1'),
+          kpiHasOverlay: Boolean(kpiFrame?.shadowRoot?.querySelector('.refresh-overlay')),
+          chartSelection: chart?.chart?.selection,
+          tableSelection: table?.table?.selection,
+        }
+      })
+
+      expect(progressiveState).toEqual({
+        chartBusy: 'true',
+        chartLoadingLabel: 'Refreshing component',
+        tableAlert: 'Could not refresh this component Ratings query failed',
+        tableRetainedRow: true,
+        kpiHasOverlay: false,
+        chartSelection: [{ mappings: [{ field: 'orders.status', value: 'delivered', label: 'Delivered' }], label: 'Delivered' }],
+        tableSelection: [{ mappings: [{ field: 'orders.order_id', value: 'o1', label: 'o1' }], label: 'o1' }],
+      })
+
+      if (viewport.name === 'desktop') {
+        const updateIsolation = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+          const chart = element.shadowRoot.querySelector('ld-echart') as any
+          const direct = document.createElement('ld-echart') as any
+          direct.chart = structuredClone(chart.chart)
+          document.body.append(direct)
+          await direct.updateComplete
+          direct.rendererHandle?.dispose()
+          let directRendererUpdates = 0
+          direct.rendererHandle = {
+            update: () => { directRendererUpdates += 1 },
+            resize: () => {},
+            clear: () => {},
+            dispose: () => {},
+          }
+          direct.rendererName = 'echarts'
+          direct.chart = structuredClone(direct.chart)
+          await direct.updateComplete
+          const afterEquivalentClone = directRendererUpdates
+          direct.chart = { ...direct.chart, data: [{ label: 'delivered', value: 99 }] }
+          await direct.updateComplete
+          const afterDirectDataChange = directRendererUpdates
+          direct.remove()
+
+          let rendererUpdates = 0
+          chart.renderChart = () => { rendererUpdates += 1 }
+          const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev')
+
+          mergePatch({ componentStatus: { 'table:orders': { generation: 3, loading: true, error: '' } } })
+          await element.updateComplete
+          await chart.updateComplete
+          const afterUnrelatedPatch = rendererUpdates
+
+          mergePatch({ visuals: { orders_chart: { data: [{ label: 'delivered', value: 43 }, { label: 'shipped', value: 7 }] } } })
+          await element.updateComplete
+          await chart.updateComplete
+          return { afterEquivalentClone, afterDirectDataChange, afterUnrelatedPatch, afterChartPatch: rendererUpdates }
+        })
+
+        expect(updateIsolation).toEqual({
+          afterEquivalentClone: 0,
+          afterDirectDataChange: 1,
+          afterUnrelatedPatch: 0,
+          afterChartPatch: 1,
+        })
+      }
+
+      if (viewport.name === 'desktop') {
+        const optimistic = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+          const root = element.shadowRoot
+          const chart = root.querySelector('ld-echart') as any
+          const detail = (value: string) => ({
+            sourceKind: 'visual',
+            sourceId: 'orders_chart',
+            interactionKind: 'point_selection',
+            action: 'replace',
+            toggle: true,
+            mappings: [{ field: 'orders.status', value, label: value }],
+          })
+          chart.dispatchEvent(new CustomEvent('ld-interaction-select', { bubbles: true, composed: true, detail: detail('processing') }))
+          chart.dispatchEvent(new CustomEvent('ld-interaction-select', { bubbles: true, composed: true, detail: detail('complete') }))
+          await element.updateComplete
+          await chart.updateComplete
+
+          const kpiFrame = root.querySelector('[data-component-status-key="visual:orders_kpi"]') as any
+          const tableFrame = root.querySelector('[data-component-status-key="table:orders"]') as any
+          await Promise.all([kpiFrame.updateComplete, tableFrame.updateComplete])
+          const pending = {
+            selection: chart.chart.selection,
+            kpiBusy: kpiFrame.shadowRoot.querySelector('article')?.getAttribute('aria-busy'),
+            tableBusy: tableFrame.shadowRoot.querySelector('article')?.getAttribute('aria-busy'),
+          }
+
+          const beforeForged = JSON.stringify(chart.chart.selection)
+          chart.dispatchEvent(new CustomEvent('ld-interaction-select', {
+            bubbles: true,
+            composed: true,
+            detail: { ...detail('forged'), mappings: [{ field: 'orders.secret', value: 'forged' }] },
+          }))
+          await element.updateComplete
+
+          const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev')
+          mergePatch({
+            status: { generation: 4, refreshId: 'refresh-4', loading: true },
+            filters: {
+              selections: [{
+                id: 'visual:orders_chart:point_selection',
+                sourceKind: 'visual',
+                sourceId: 'orders_chart',
+                interactionKind: 'point_selection',
+                label: 'complete',
+                order: 1,
+                entries: [{ mappings: [{ field: 'orders.status', value: 'complete', label: 'complete' }], label: 'complete' }],
+              }],
+            },
+          })
+          await element.updateComplete
+          await chart.updateComplete
+          return {
+            pending,
+            forgedRolledBack: JSON.stringify(chart.chart.selection) === beforeForged,
+            canonical: chart.chart.selection,
+          }
+        })
+
+        expect(optimistic).toEqual({
+          pending: {
+            selection: [{ mappings: [{ field: 'orders.status', value: 'complete', label: 'complete' }], label: 'complete' }],
+            kpiBusy: 'true',
+            tableBusy: 'true',
+          },
+          forgedRolledBack: true,
+          canonical: [{ mappings: [{ field: 'orders.status', value: 'complete', label: 'complete' }], label: 'complete' }],
+        })
+      }
+
       if (viewport.name === 'desktop') {
         const dockState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
           const dock = element.shadowRoot.querySelector('ld-filter-dock') as HTMLElement
@@ -163,6 +308,151 @@ for (const viewport of [
   })
 }
 
+test('dashboard refresh progress follows only the latest generation', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => (
+      customElements.get('ld-dashboard-page')
+        && (document.querySelector('ld-dashboard-page') as any)?.page?.title === 'Executive Sales Dashboard'
+    ))
+
+    const states = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev')
+      const read = async () => {
+        await element.updateComplete
+        const progress = element.shadowRoot.querySelector('[data-dashboard-refresh-progress]')
+        const value = progress?.querySelector('.dashboard-refresh-progress-value')
+        return {
+          active: progress?.getAttribute('data-active'),
+          complete: progress?.getAttribute('data-complete'),
+          generation: progress?.getAttribute('data-generation'),
+          now: progress?.getAttribute('aria-valuenow'),
+          max: progress?.getAttribute('aria-valuemax'),
+          text: progress?.getAttribute('aria-valuetext'),
+          indeterminate: progress?.hasAttribute('data-indeterminate'),
+          width: value?.getAttribute('style'),
+          animationName: getComputedStyle(value).animationName,
+          fadeDelay: getComputedStyle(progress).transitionDelay,
+        }
+      }
+
+      const initial = await read()
+      mergePatch({
+        status: {
+          generation: 4,
+          refreshId: 'refresh-4',
+          loading: true,
+          progressPercent: null,
+        },
+        componentStatus: {
+          'visual:orders_chart': { generation: 4, loading: true, error: '' },
+        },
+      })
+      const planning = await read()
+      mergePatch({
+        status: {
+          generation: 4,
+          refreshId: 'refresh-4',
+          loading: true,
+          progressPercent: 0,
+        },
+        componentStatus: {
+          'visual:orders_chart': { generation: 4, loading: true, error: '' },
+        },
+      })
+      const started = await read()
+      mergePatch({
+        status: { progressPercent: 33.33333333333333 },
+        componentStatus: {
+          'visual:orders_chart': { generation: 4, loading: false, error: '' },
+          'visual:stale': { generation: 3, loading: false, error: '' },
+        },
+      })
+      const progressive = await read()
+      mergePatch({
+        componentStatus: {
+          'visual:orders_kpi': { generation: 4, loading: false, error: 'Query failed' },
+          'table:orders': { generation: 4, loading: false, error: '' },
+        },
+        status: {
+          generation: 4,
+          refreshId: 'refresh-4',
+          loading: false,
+          progressPercent: 100,
+        },
+      })
+      const complete = await read()
+      return { initial, planning, started, progressive, complete }
+    })
+
+    expect(states).toEqual({
+      initial: {
+        active: 'true',
+        complete: 'false',
+        generation: '3',
+        now: '50',
+        max: '100',
+        text: '50% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:50%',
+        animationName: 'none',
+        fadeDelay: '0s',
+      },
+      planning: {
+        active: 'true',
+        complete: 'false',
+        generation: '4',
+        now: '0',
+        max: '100',
+        text: '0% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:0%',
+        animationName: 'none',
+        fadeDelay: '0s',
+      },
+      started: {
+        active: 'true',
+        complete: 'false',
+        generation: '4',
+        now: '0',
+        max: '100',
+        text: '0% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:0%',
+        animationName: 'none',
+        fadeDelay: '0s',
+      },
+      progressive: {
+        active: 'true',
+        complete: 'false',
+        generation: '4',
+        now: '33.33333333333333',
+        max: '100',
+        text: '33% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:33.33333333333333%',
+        animationName: 'none',
+        fadeDelay: '0s',
+      },
+      complete: {
+        active: 'false',
+        complete: 'true',
+        generation: '4',
+        now: '100',
+        max: '100',
+        text: '100% of dashboard refresh complete',
+        indeterminate: false,
+        width: 'width:100%',
+        animationName: 'none',
+        fadeDelay: '0.18s',
+      },
+    })
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   const page = {
     kind: 'dashboard',
@@ -194,7 +484,29 @@ function testDocument(): string {
     operator: 'in',
     urlParam: 'state',
   }]
-  const filters = { controls: { state: { type: 'multi_select', operator: 'in', values: [] } }, selections: [] }
+  const filters = {
+    controls: { state: { type: 'multi_select', operator: 'in', values: [] } },
+    selections: [
+      {
+        id: 'visual:orders_chart:point_selection',
+        sourceKind: 'visual',
+        sourceId: 'orders_chart',
+        interactionKind: 'point_selection',
+        label: 'Delivered',
+        order: 1,
+        entries: [{ mappings: [{ field: 'orders.status', value: 'delivered', label: 'Delivered' }], label: 'Delivered' }],
+      },
+      {
+        id: 'table:orders:row_selection',
+        sourceKind: 'table',
+        sourceId: 'orders',
+        interactionKind: 'row_selection',
+        label: 'o1',
+        order: 2,
+        entries: [{ mappings: [{ field: 'orders.order_id', value: 'o1', label: 'o1' }], label: 'o1' }],
+      },
+    ],
+  }
   const visuals = {
     orders_kpi: {
       version: 3,
@@ -224,14 +536,14 @@ function testDocument(): string {
       type: 'bar',
       title: 'Orders by status',
       unit: 'orders',
-      interaction: { kind: 'point_selection', toggle: true, mappings: [{ field: 'orders.status', value: 'label' }] },
+      interaction: { kind: 'point_selection', toggle: true, mappings: [{ field: 'orders.status', value: 'label' }], targets: ['orders_kpi', 'orders'] },
       dimensions: ['status'],
       measure: 'order_count',
       measures: ['order_count'],
       series: [],
       options: {},
       rendererOptions: {},
-      selection: [],
+      selection: [{ mappings: [{ field: 'orders.status', value: 'shipped', label: 'Shipped' }], label: 'Shipped' }],
       data: [{ label: 'delivered', value: 42 }, { label: 'shipped', value: 7 }],
     },
   }
@@ -241,10 +553,10 @@ function testDocument(): string {
       kind: 'data_table',
       title: 'Orders',
       style: { density: 'compact', zebra: true, grid: 'full' },
-      interaction: { kind: 'row_selection', toggle: false, mappings: [] },
-      selection: [],
+      interaction: { kind: 'row_selection', toggle: false, mappings: [{ field: 'orders.order_id', value: 'order_id' }] },
+      selection: [{ mappings: [{ field: 'orders.order_id', value: 'server-value', label: 'Server value' }] }],
       columns: [{ key: 'order_id', label: 'Order', width: 180 }],
-      totalRows: 1,
+		cardinality: { kind: 'exact', value: 1 },
       availableRows: 1,
       isCapped: false,
       rowCap: 1000,
@@ -261,12 +573,25 @@ function testDocument(): string {
       error: '',
     },
   }
-  const status = { loading: false, error: '', lastUpdated: '12:00:00', dataDirectory: '.data/olist', setupRequired: false }
+  const status = {
+    loading: true,
+    error: '',
+    refreshId: 'refresh-3',
+    generation: 3,
+    lastUpdated: '12:00:00',
+    setupRequired: false,
+    progressPercent: 50,
+  }
+  const componentStatus = {
+    'visual:orders_chart': { generation: 3, loading: true, error: '' },
+    'table:orders': { generation: 3, loading: false, error: 'Ratings query failed' },
+  }
   const signals = {
     page,
     filterConfig,
     filters,
     filterOptions: { state: [{ value: 'SP', label: 'SP' }] },
+    componentStatus,
     visuals,
     tables,
     status,

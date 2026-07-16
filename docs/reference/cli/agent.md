@@ -10,7 +10,7 @@ Use the LibreDash read-only agent
 libredash agent
 ```
 
-## Inherited options
+## Options
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |

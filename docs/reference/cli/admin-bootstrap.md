@@ -9,9 +9,3 @@ Bootstrap an owner principal and API token
 ```sh
 libredash admin bootstrap
 ```
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

@@ -108,7 +108,7 @@ package contracts
 	id?:   string
 })
 
-#Privilege: "USE_WORKSPACE" | "VIEW_ITEM" | "EDIT_ITEM" | "MANAGE_ITEM" | "QUERY_DATA" | "PREVIEW_DATA" | "REFRESH_DATA" | "DEPLOY" | "ACTIVATE_PUBLISH" | "USE_AGENT" | "VIEW_AGENT" | "MANAGE_GRANTS" | "VIEW_AUDIT" | "MANAGE_WORKSPACE" | "MANAGE_PLATFORM"
+#Privilege: "USE_WORKSPACE" | "VIEW_ITEM" | "EDIT_ITEM" | "MANAGE_ITEM" | "QUERY_DATA" | "PREVIEW_DATA" | "REFRESH_DATA" | "DEPLOY" | "ACTIVATE_DEPLOYMENT" | "USE_AGENT" | "VIEW_AGENT" | "MANAGE_GRANTS" | "VIEW_AUDIT" | "MANAGE_WORKSPACE" | "MANAGE_PLATFORM"
 
 #AccessSubject: close({
 	kind!:        "principal" | "group" | "service_principal"
@@ -177,7 +177,7 @@ package contracts
 })
 
 #Connection: close({
-	kind!:        "local" | "s3" | "r2" | "gcs" | "http" | "azure_blob" | "postgres" | "mysql" | "sqlite" | "ducklake" | "quack"
+	kind!:        "managed" | "s3" | "r2" | "gcs" | "http" | "azure_blob" | "postgres" | "mysql" | "sqlite" | "ducklake" | "quack"
 	description?: string
 	path?:        string
 	root?:        string
@@ -228,49 +228,71 @@ package contracts
 			type?:        string
 		})
 	})
-	measures?: close({
-		[#Identifier]: #Measure
-	})
 	description?: string
 })
 
 #ProjectSemanticModelSpec: close({
-	baseTable!: #Identifier
-	tables: [...#Identifier]
+	tables!: [...#Identifier]
 	relationships?: [...#Relationship]
-	measures?: close({
-		defaults?:     #MeasureDefaults
-		[#Identifier]: #Measure | #MeasureDefaults
+	dimensions?: close({
+		[#Identifier]: #SemanticDimension
+	})
+	measures!: close({
+		[#Identifier]: #Measure
+	})
+	metrics?: close({
+		[#Identifier]: #Metric
 	})
 })
 
-#MeasureDefaults: close({
-	table?: #Identifier
-	grain?: #Identifier
-	time?:  #FieldRef
-	grains?: [...string]
-})
-
 #Measure: close({
-	table?:       #Identifier
+	fact!:        #Identifier
 	label?:       string
 	description?: string
-	expr?:        string
-	expression?:  string
+	aggregation!: "sum" | "count" | "count_distinct" | "avg" | "min" | "max"
+	input?: close({
+		field?: #FieldRef
+		expression?: string
+	})
+	filters?: [...close({
+		field!: #FieldRef
+		operator!: "equals" | "in" | "contains" | "starts_with" | "greater_than_or_equal" | "less_than"
+		values!: [..._]
+	})]
+	empty!: "zero" | "null"
 	unit?:        string
 	format?:      string
-	grain?:       #Identifier
-	time?:        #FieldRef
-	grains?: [...string]
+	hidden?:      bool
+})
+
+#SemanticDimension: close({
+	label?: string
+	description?: string
+	type!: "string" | "number" | "boolean" | "date" | "timestamp"
+	grains?: [...("day" | "week" | "month" | "quarter" | "year")]
+	bindings!: close({
+		[#Identifier]: close({
+			field!: #FieldRef
+			path?: [...#Identifier]
+		})
+	})
+})
+
+#Metric: close({
+	label?: string
+	description?: string
+	expression!: string
+	unit?: string
+	format?: string
+	hidden?: bool
 })
 
 #Relationship: close({
-	id?:          #Identifier
+	id!:          #Identifier
 	description?: string
 	from!:        #FieldRef
 	to!:          #FieldRef
-	cardinality?: string
-	active?:      bool
+	cardinality!: "many_to_one" | "one_to_one"
 })
 
 #Dashboard: close({
@@ -308,7 +330,8 @@ package contracts
 	type!:        "date_range" | "multi_select" | "text"
 	label!:       string
 	description?: string
-	field!:       #FieldRef
+	field!:       #FieldRef | #Identifier
+	fact?:        #Identifier
 	default?:     #FilterDefault
 	custom?:      bool
 	presets?: [...#FilterPreset]
@@ -366,7 +389,7 @@ package contracts
 	series?:     #FieldRefObject
 	measures?:   #MeasureRefs
 	time?: close({
-		field?: #FieldRef
+		field?: #FieldRef | #Identifier
 		grain?: string
 		alias?: #Identifier
 	})
@@ -375,22 +398,16 @@ package contracts
 })
 
 #FieldRefs: [...#FieldRefValue] | close({
-	[#Identifier]: #FieldRef | close({field: #FieldRef})
+	[#Identifier]: (#FieldRef | #Identifier) | close({field: #FieldRef | #Identifier})
 })
 
 #MeasureRefs: [...#FieldRefValue] | close({
 	[#Identifier]: null | close({
-		measure?: #Identifier | #FieldRef
-		expr?:    string
-		table?:   #Identifier
-		grain?:   #Identifier
-		time?:    #FieldRef
-		grains?: [...string]
-		format?: string
+		measure!: #Identifier
 	})
 })
 
-#FieldRefValue: #FieldRef | #FieldRefObject
+#FieldRefValue: #FieldRef | #Identifier | #FieldRefObject
 
 #FieldRefObject: close({
 	field!: #FieldRef | #Identifier
@@ -410,9 +427,10 @@ package contracts
 
 #SelectionInteraction: close({
 	toggle?: bool
-	mode?:   string
 	mappings?: [...close({
-		field!: #FieldRef
+		field!: #FieldRef | #Identifier
+		fact?:  #Identifier
+		grain?: "day" | "week" | "month" | "quarter" | "year"
 		value!: string
 		label?: string
 	})]
@@ -421,6 +439,7 @@ package contracts
 
 #Table: close({
 	kind?:        "data_table" | "matrix_table" | "pivot_table"
+	cardinality?: "bounded" | "exact"
 	title!:       string
 	description?: string
 	query!:       #TableQuery

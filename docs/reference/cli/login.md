@@ -16,9 +16,3 @@ libredash login [flags]
 | --- | --- | --- | --- |
 | `--target` | string | `` | LibreDash server URL |
 | `--token` | string | `` | API token |
-
-## Inherited options
-
-| Flag | Type | Default | Description |
-| --- | --- | --- | --- |
-| `--workspace` | string | `` | workspace id |

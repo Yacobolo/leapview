@@ -45,6 +45,9 @@ paths:
 	}
 
 	index := readGeneratedFile(t, filepath.Join(outDir, "index.md"))
+	if strings.HasSuffix(index, "\n\n") {
+		t.Errorf("index ends with an extra blank line: %q", index)
+	}
 	for _, want := range []string{"# API reference", "[Download the OpenAPI schema](/docs/openapi.yaml)", "[Things](/docs/api/things)"} {
 		if !strings.Contains(index, want) {
 			t.Errorf("index missing %q:\n%s", want, index)
@@ -52,6 +55,9 @@ paths:
 	}
 
 	article := readGeneratedFile(t, filepath.Join(outDir, "things.md"))
+	if strings.HasSuffix(article, "\n\n") {
+		t.Errorf("article ends with an extra blank line: %q", article)
+	}
 	for _, want := range []string{"# Things", "## List things", "`GET /v1/things`", "| `limit` | query | No | integer | Maximum results. |", "| `200` | Things returned. |"} {
 		if !strings.Contains(article, want) {
 			t.Errorf("article missing %q:\n%s", want, article)

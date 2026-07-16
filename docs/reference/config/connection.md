@@ -13,8 +13,8 @@ metadata:
   name: olist
   title: Olist CSV files
 spec:
-  kind: local
-  description: Local CSV files for the Olist ecommerce demo dataset.
+  kind: managed
+  description: Project-global managed Olist ecommerce demo data.
   credentials:
     provider: none
   defaults:
@@ -52,7 +52,7 @@ spec:
 | `defaults` | object | No | no additional fields |
 | `description` | string | No |  |
 | `host` | string | No |  |
-| `kind` | object | Yes | one of `local`, `s3`, `r2`, `gcs`, `http`, `azure_blob`, `postgres`, `mysql`, `sqlite`, `ducklake`, `quack` |
+| `kind` | object | Yes | one of `managed`, `s3`, `r2`, `gcs`, `http`, `azure_blob`, `postgres`, `mysql`, `sqlite`, `ducklake`, `quack` |
 | `options` | `AnyObject` | No |  |
 | `path` | string | No |  |
 | `port` | integer | No |  |

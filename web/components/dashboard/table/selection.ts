@@ -1,4 +1,10 @@
 import type { InteractionConfig, InteractionSelectionEntry, TableRow } from './types'
+import {
+  interactionMappingIdentityEqual,
+  interactionSelectionLabel,
+  interactionSelectionValue,
+  type InteractionSelectionMapping,
+} from '../interaction-selection'
 
 export const UI_ROW_SELECTION_FIELD = '__libredash.rowKey'
 
@@ -12,8 +18,10 @@ export interface RowSelectionCommand {
   toggle: boolean
   mappings: Array<{
     field: string
-    value: string
+    value: InteractionSelectionMapping['value']
     label: string
+    fact?: string
+    grain?: string
   }>
 }
 
@@ -70,11 +78,18 @@ export function buildRowSelectionCommand(input: {
 }
 
 function semanticCommandMappings(row: TableRow, mappings: NonNullable<InteractionConfig['mappings']>): RowSelectionCommand['mappings'] {
-  return mappings.map((mapping) => ({
-    field: mapping.field,
-    value: String(row[mapping.value] ?? ''),
-    label: String(row[mapping.label || mapping.value] ?? row[mapping.value] ?? ''),
-  })).filter((mapping) => mapping.value !== '')
+  return mappings.flatMap((mapping) => {
+    const value = interactionSelectionValue(row[mapping.value])
+    if (value === undefined) return []
+    const configuredLabel = mapping.label ? interactionSelectionValue(row[mapping.label]) : undefined
+    return [{
+      field: mapping.field,
+      ...(mapping.fact !== undefined ? { fact: mapping.fact } : {}),
+      ...(mapping.grain !== undefined ? { grain: mapping.grain } : {}),
+      value,
+      label: interactionSelectionLabel(configuredLabel === undefined ? value : configuredLabel),
+    }]
+  })
 }
 
 export function rowSelectionFromEntries(
@@ -115,8 +130,9 @@ function rowMatchesSelection(
     return selection.some((entry) => entry.mappings?.some((mapping) => mapping.field === UI_ROW_SELECTION_FIELD && mapping.value === key))
   }
   return selection.some((entry) => mappings.every((mapping) => {
-    const selected = entry.mappings?.find((candidate) => candidate.field === mapping.field)
-    return Boolean(selected?.value) && String(row[mapping.value] ?? '') === selected?.value
+    const selected = entry.mappings?.find((candidate) => interactionMappingIdentityEqual(candidate, mapping))
+    const value = interactionSelectionValue(row[mapping.value])
+    return selected !== undefined && value !== undefined && selected.value === value
   }))
 }
 
@@ -129,6 +145,6 @@ export function selectionLabels(selection: InteractionSelectionEntry[] | undefin
   if (entries.length === 0) return []
   return entries.map((entry) => {
     if (entry.label) return entry.label
-    return (entry.mappings ?? []).map((mapping) => mapping.label || mapping.value || '').filter(Boolean).join(', ')
+    return (entry.mappings ?? []).map((mapping) => mapping.label || interactionSelectionLabel(mapping.value)).filter(Boolean).join(', ')
   }).filter(Boolean)
 }

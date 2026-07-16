@@ -118,7 +118,8 @@ func (h Handler) StorageSignalUpdates(w nethttp.ResponseWriter, r *nethttp.Reque
 		nethttp.Error(w, "admin storage broker is not configured", nethttp.StatusInternalServerError)
 		return
 	}
-	updates := pagestream.NewSignalStream(w, r)
+	streamID := adminStorageStreamID(clientID)
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(h.Broker.TraceStore(), streamID, "admin.storage.bootstrap"))
 	data, err := h.adminDataForUpdates(r, "storage")
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
@@ -127,7 +128,7 @@ func (h Handler) StorageSignalUpdates(w nethttp.ResponseWriter, r *nethttp.Reque
 	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "storage", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
 		return
 	}
-	_ = updates.Forward(r.Context(), h.Broker, adminStorageStreamID(clientID))
+	_ = updates.Forward(r.Context(), h.Broker, streamID)
 }
 
 func (h Handler) StorageTableSelect(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -206,8 +207,12 @@ func (h Handler) adminDataForUpdates(r *nethttp.Request, active string) (ui.Admi
 }
 
 func (h Handler) patchAndWait(w nethttp.ResponseWriter, r *nethttp.Request, patch pagestream.SignalPatch) {
-	_ = pagestream.EnsureClientID(w, r)
-	updates := pagestream.NewSignalStream(w, r)
+	clientID := pagestream.EnsureClientID(w, r)
+	var trace *pagestream.TraceStore
+	if h.Broker != nil {
+		trace = h.Broker.TraceStore()
+	}
+	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, "admin:"+clientID, "admin.bootstrap"))
 	if err := updates.Patch(patch); err != nil {
 		return
 	}
