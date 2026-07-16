@@ -67,4 +67,4 @@ Use this review sequence:
 5. Browser checks for layout, accessibility, and interactions.
 6. Target-aware plan review before activation.
 
-Commit project resources, generated contract changes, tests, and documentation together when behavior changes. This keeps the repository an accurate record of the supported product.
+Commit project resources, source contract changes, public contract snapshots, tests, and authored documentation together when behavior changes. Build-only generated code and reference pages are recreated by `task generate` and remain outside Git. This keeps review focused on authoritative inputs without losing externally consumed schema or OpenAPI diffs.

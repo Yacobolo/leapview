@@ -47,7 +47,7 @@ LibreDash is a dashboards-as-code BI monolith. Go owns configuration compilation
 - `task test` generates required sources/assets and runs the complete Go and browser test suite.
 - `task ci` adds generated-artifact checks, static/race analysis, route QA, and deployment validation.
 - `task generate` regenerates sqlc, configuration, API, signal, and JSON Schema artifacts.
-- `task generated:check` verifies committed generated contracts are current.
+- `task generated:check` verifies intentional public contract snapshots are current.
 - `task dev:status`, `task dev:logs`, and `task dev:stop` manage the worktree-local server.
 
 Use `task ci` before handing off substantial changes. Follow red-green-refactor for features and fixes. Prefer long-term correctness, simplicity, robustness, and scalability over minimizing implementation cost.

@@ -3,28 +3,25 @@ version: '3'
 tasks:
   dev:
     desc: Start the managed LibreDash dev server for this worktree
-    deps:
-      - generate
-      - build
-      - bootstrap
     cmds:
+      - task: generate
+      - task: build
+      - task: bootstrap
       - ./scripts/dev-server.sh start
 
   dev:movielens:
     desc: Start the managed LibreDash dev server with the MovieLens 32M experiment project
-    deps:
-      - generate
-      - build
-      - bootstrap:movielens
     cmds:
+      - task: generate
+      - task: build
+      - task: bootstrap:movielens
       - LIBREDASH_DEV_RESTART=1 LIBREDASH_DEV_READY_ATTEMPTS=1800 ./scripts/dev-server.sh start dashboards/experiments/movielens/libredash.yaml movielens .data/movielens
 
   dev:quack:
     desc: Start the managed LibreDash dev server with the local Quack profile
-    deps:
-      - generate
-      - build
     cmds:
+      - task: generate
+      - task: build
       - ./scripts/dev-profile.sh quack start
 
   bootstrap:
@@ -93,17 +90,17 @@ tasks:
       - bun run build
 
   site:build:
-    desc: Build the LibreDash public site assets
-    deps:
-      - node:deps
+    desc: Build the LibreDash public site assets from generated contracts
     cmds:
+      - task: ui-signals:generate
+      - task: node:deps
       - bun run build:site
 
   site:binary:
-    desc: Build the independently deployable LibreDash public site binary
-    deps:
-      - site:build
+    desc: Build the independently deployable public site from generated documentation
     cmds:
+      - task: generate
+      - task: site:build
       - go build -o bin/libredash-site ./cmd/libredash-site
 
   site:image:
@@ -112,10 +109,10 @@ tasks:
       - docker build --file Dockerfile.site --tag libredash-site:local .
 
   site:dev:
-    desc: Start the LibreDash public site on http://localhost:8081
-    deps:
-      - site:build
+    desc: Start the public site from generated documentation on http://localhost:8081
     cmds:
+      - task: generate
+      - task: site:build
       - go run ./cmd/libredash-site
 
   bench:datastar-bridge:
@@ -155,15 +152,19 @@ tasks:
       - task: ui-signals:generate
       - task: schema:generate
       - task: cli-docs:generate
-      - task: docs:generate
+      - task: node:deps
+      - task: docs:render
 
   docs:generate:
-    desc: Generate the unified documentation catalog and search index
-    deps:
-      - config:generate
-      - schema:generate
-      - cli-docs:generate
-      - node:deps
+    desc: Generate reference documentation, the unified catalog, and the search index
+    cmds:
+      - task: schema:generate
+      - task: cli-docs:generate
+      - task: node:deps
+      - task: docs:render
+
+  docs:render:
+    internal: true
     method: checksum
     sources:
       - Taskfile.yml
@@ -197,6 +198,11 @@ tasks:
 
   cli-docs:generate:
     desc: Generate public CLI reference documentation from Cobra commands
+    deps:
+      - db:generate
+      - config:generate
+      - api:generate
+      - ui-signals:generate
     method: checksum
     sources:
       - Taskfile.yml
@@ -244,14 +250,14 @@ tasks:
       - go run ./internal/tools/configgen --check
 
   generated:check:
-    desc: Verify every committed generated artifact is current
+    desc: Verify intentional public contract snapshots are current
     deps:
       - generate
     cmds:
       - task: config:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/configuration.md internal/config/config_gen.go internal/configspec/names_gen.go schemas web/generated)"
-        test -z "$changed" || { printf 'committed generated artifacts are stale:\n%s\n' "$changed" >&2; exit 1; }
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml schemas/config schemas/json)"
+        test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
 
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces
@@ -279,6 +285,8 @@ tasks:
   schema:generate:
     desc: Generate JSON Schema artifacts for LibreDash YAML contracts
     deps:
+      - db:generate
+      - config:generate
       - api:generate
       - ui-signals:generate
     method: checksum
@@ -292,7 +300,6 @@ tasks:
       - internal/tools/schemadocgen/**/*.go
       - dashboards/**/*.yaml
     generates:
-      - schemas/json/catalog.schema.json
       - schemas/json/dashboard.schema.json
       - schemas/json/semantic-model.schema.json
       - docs/reference/config/catalog.json
@@ -319,10 +326,9 @@ tasks:
 
   test:
     desc: Run tests
-    deps:
-      - generate
-      - build
     cmds:
+      - task: generate
+      - task: build
       - bun run test:primer-primitives
       - bun run test:docs-diagrams
       - bun run test:primer-alignment

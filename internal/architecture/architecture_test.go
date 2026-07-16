@@ -706,6 +706,73 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 	}
 }
 
+func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
+	root := repoRoot(t)
+	files := map[string][]string{
+		".gitignore": {
+			"internal/config/config_gen.go",
+			"internal/configspec/names_gen.go",
+			"web/generated/",
+			"docs/catalog.json",
+			"docs/search-index.json",
+			"docs/configuration.md",
+			"docs/api/*.md",
+			"docs/reference/cli/",
+			"docs/reference/config/",
+		},
+		".dockerignore": {
+			"internal/config/config_gen.go",
+			"internal/configspec/names_gen.go",
+			"web/generated",
+			"docs/catalog.json",
+			"docs/search-index.json",
+			"docs/configuration.md",
+			"docs/api/*.md",
+			"docs/reference/cli",
+			"docs/reference/config",
+		},
+		filepath.Join(".github", "workflows", "ci.yml"): {
+			"Check generated build inputs are untracked",
+			"docs/catalog.json docs/search-index.json docs/configuration.md",
+			"'docs/api/*.md' docs/reference/cli docs/reference/config",
+			"internal/config/config_gen.go internal/configspec/names_gen.go web/generated",
+			"Check public contract snapshots",
+			".env.example docs/api/openapi.yaml schemas/config schemas/json",
+			"Check generation is deterministic",
+		},
+		"Dockerfile.site": {
+			"AS sourcegen",
+			"go run ./internal/tools/configgen",
+			"go run ./internal/tools/clidocgen",
+			"go run ./internal/tools/schemadocgen",
+			"go run ./internal/tools/openapidocgen",
+			"go run ./internal/tools/docsitegen",
+			"FROM sourcegen AS build",
+			"COPY --from=sourcegen /src/web/generated ./web/generated",
+		},
+		"Dockerfile": {
+			"COPY --from=sourcegen /src/internal/config/config_gen.go ./internal/config/config_gen.go",
+			"COPY --from=sourcegen /src/internal/configspec/names_gen.go ./internal/configspec/names_gen.go",
+		},
+		"Taskfile.yml": {
+			"desc: Build the LibreDash public site assets from generated contracts",
+			"desc: Build the independently deployable public site from generated documentation",
+			"desc: Start the public site from generated documentation on http://localhost:8081",
+		},
+	}
+	for name, fragments := range files {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, fragment := range fragments {
+			if !strings.Contains(string(body), fragment) {
+				t.Errorf("%s missing generated-input contract fragment %q", name, fragment)
+			}
+		}
+	}
+}
+
 func TestFixedPlatformSQLiteQueriesUseSQLC(t *testing.T) {
 	root := repoRoot(t)
 	queryContracts := map[string][]string{

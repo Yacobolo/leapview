@@ -43,12 +43,6 @@ jobs:
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
 
-      - name: Check generated configuration
-        run: task config:check
-
-      - name: Check generated documentation
-        run: task docs:check
-
       - name: Check generated database code is untracked
         run: |
           tracked="$(git ls-files -- internal/platform/db/db.go internal/platform/db/models.go 'internal/platform/db/*.sql.go')"
@@ -57,13 +51,77 @@ jobs:
             exit 1
           fi
 
+      - name: Check generated build inputs are untracked
+        run: |
+          tracked="$(git ls-files -- docs/catalog.json docs/search-index.json docs/configuration.md 'docs/api/*.md' docs/reference/cli docs/reference/config internal/config/config_gen.go internal/configspec/names_gen.go web/generated)"
+          if [ -n "$tracked" ]; then
+            printf 'derived build inputs must be generated, not committed:\n%s\n' "$tracked" >&2
+            exit 1
+          fi
+
       - name: Generate checked build inputs
         run: task generate
 
-      - name: Check committed generated artifacts
+      - name: Check generated configuration
+        run: task config:check
+
+      - name: Check generated documentation
+        run: task docs:check
+
+      - name: Check public contract snapshots
         run: |
-          changed="$(git status --porcelain -- .env.example docs/configuration.md internal/config/config_gen.go internal/configspec/names_gen.go schemas web/generated)"
-          test -z "$changed" || { printf 'committed generated artifacts are stale:\n%s\n' "$changed" >&2; exit 1; }
+          changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml schemas/config schemas/json)"
+          test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
+
+      - name: Check generation is deterministic
+        run: |
+          generated_paths=(
+            .env.example
+            api/gen
+            docs/api
+            docs/catalog.json
+            docs/configuration.md
+            docs/reference/cli
+            docs/reference/config
+            docs/search-index.json
+            internal/api/gen
+            internal/cli/gen
+            internal/config/config_gen.go
+            internal/configspec/names_gen.go
+            internal/platform/db/db.go
+            internal/platform/db/models.go
+            internal/platform/db/*.sql.go
+            internal/ui/signals/models.gen.go
+            schemas
+            web/generated
+          )
+          find "${generated_paths[@]}" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/generated-before.sha256
+          rm -rf \
+            .task \
+            api/gen \
+            docs/reference/cli \
+            docs/reference/config \
+            internal/api/gen \
+            internal/cli/gen \
+            schemas/config \
+            schemas/json \
+            web/generated
+          rm -f \
+            .env.example \
+            docs/api/*.md \
+            docs/api/openapi.yaml \
+            docs/catalog.json \
+            docs/configuration.md \
+            docs/search-index.json \
+            internal/config/config_gen.go \
+            internal/configspec/names_gen.go \
+            internal/platform/db/db.go \
+            internal/platform/db/models.go \
+            internal/platform/db/*.sql.go \
+            internal/ui/signals/models.gen.go
+          task generate
+          find "${generated_paths[@]}" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/generated-after.sha256
+          diff -u /tmp/generated-before.sha256 /tmp/generated-after.sha256
 
       - name: Build browser assets
         run: task build
@@ -81,10 +139,18 @@ jobs:
             api/gen/
             internal/api/gen/
             internal/cli/gen/
+            internal/config/config_gen.go
+            internal/configspec/names_gen.go
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
             internal/ui/signals/models.gen.go
+            docs/catalog.json
+            docs/search-index.json
+            docs/configuration.md
+            docs/api/*.md
+            docs/reference/cli/
+            docs/reference/config/
             schemas/json/
             web/generated/
             static/
