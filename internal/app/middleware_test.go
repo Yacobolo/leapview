@@ -219,6 +219,58 @@ func TestHealthRoutesAreUnauthenticated(t *testing.T) {
 	}
 }
 
+func TestLogoutSurfacesRevocationAuditFailure(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		Email:       "logout@example.com",
+		DisplayName: "Logout Test",
+	})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	token, err := repo.CreateSession(ctx, principal.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `
+		CREATE TRIGGER reject_session_revoked_audit
+		BEFORE INSERT ON audit_events
+		WHEN NEW.action = 'session.revoked'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced session revocation audit failure');
+		END;
+	`); err != nil {
+		t.Fatalf("create audit failure trigger: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "ld_session", Value: token})
+	rec := httptest.NewRecorder()
+	NewAuth(repo, "test", AuthConfig{}).Logout(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("logout status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if location := rec.Header().Get("Location"); location != "" {
+		t.Fatalf("logout Location = %q, want no redirect", location)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("logout cookies = %#v, want session cookie unchanged", cookies)
+	}
+	if got, err := repo.PrincipalForToken(ctx, token); err != nil || got.ID != principal.ID {
+		t.Fatalf("rolled-back session principal = %#v, err = %v", got, err)
+	}
+	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{Action: "sign_out"})
+	if err != nil {
+		t.Fatalf("list sign-out audit events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("sign-out audit events = %#v, want none", events)
+	}
+}
+
 func TestAPITokenOnlyAuthChallengesInsteadOfOIDCRedirect(t *testing.T) {
 	store := testStore(t)
 	server := NewWithOptions(fakeMetrics{}, Options{

@@ -251,10 +251,13 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("ld_session"); err == nil {
 		principal, _ := a.sessions.PrincipalForToken(r.Context(), cookie.Value)
-		_ = runAuthAuditedMutation(r, a.repo, func(txRepo access.Repository) (access.AuditEventInput, error) {
+		if err := runAuthAuditedMutation(r, a.repo, func(txRepo access.Repository) (access.AuditEventInput, error) {
 			mutationErr := txRepo.DeleteSession(r.Context(), cookie.Value)
 			return authAuditInput(r, "session.revoked", principal.ID, "", "session", "", "", "success", nil), mutationErr
-		})
+		}); err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 		recordAccessAudit(r, a.repo, "sign_out", principal.ID, "", "principal", principal.ID, "", "success", nil)
 	}
 	http.SetCookie(w, &http.Cookie{Name: "ld_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: a.cookieSecure})
