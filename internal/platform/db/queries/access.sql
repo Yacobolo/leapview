@@ -341,8 +341,8 @@ LIMIT ?;
 WITH params AS (
   SELECT CAST(sqlc.arg(email) AS TEXT) AS email, CAST(sqlc.arg(search) AS TEXT) AS search
 )
-SELECT principals.id, principals.kind, principals.email, principals.display_name,
-       principals.disabled_at, principals.created_at, principals.updated_at
+SELECT principals.id, principals.email, principals.display_name,
+       principals.created_at, principals.updated_at, principals.kind, principals.disabled_at
 FROM principals CROSS JOIN params
 WHERE (params.email = '' OR lower(principals.email) = lower(params.email))
   AND (params.search = '' OR lower(principals.email) LIKE '%' || lower(params.search) || '%'
@@ -509,4 +509,3 @@ SELECT privilege FROM role_grant_templates WHERE role_name = sqlc.arg(role_name)
 INSERT INTO grants (id, object_id, subject_type, subject_id, privilege)
 VALUES (sqlc.arg(id), sqlc.arg(object_id), sqlc.arg(subject_type), sqlc.arg(subject_id), sqlc.arg(privilege))
 ON CONFLICT(object_id, subject_type, subject_id, privilege) DO UPDATE SET id = excluded.id;
-
