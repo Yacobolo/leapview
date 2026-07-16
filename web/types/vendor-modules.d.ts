@@ -1,3 +1,5 @@
+declare module '*.css'
+
 declare module 'p5/color' {
   const addon: Function
   export default addon

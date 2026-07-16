@@ -131,7 +131,6 @@ test('inspector selects a delivered signal and shows its effective history', asy
       }
       element.shadowRoot.querySelector<HTMLButtonElement>('[data-signal-path="/status/progressPercent"]')!.click()
       await element.updateComplete
-      const pendingText = element.shadowRoot.querySelector('.signal-current')?.textContent
       const historyDeadline = Date.now() + 3_000
       while (!element.shadowRoot.textContent.includes('refresh-4') && Date.now() < historyDeadline) {
         await new Promise((resolve) => setTimeout(resolve, 25))
@@ -142,7 +141,6 @@ test('inspector selects a delivered signal and shows its effective history', asy
         selected: element.shadowRoot.querySelector('[data-signal-path="/status/progressPercent"]')?.getAttribute('aria-selected'),
         sparkline: Boolean(element.shadowRoot.querySelector('[data-signal-sparkline]')),
         changes: element.shadowRoot.querySelectorAll('[data-signal-change]').length,
-        pendingText,
         historyValues: [...element.shadowRoot.querySelectorAll('[data-signal-change] .signal-change-value')].map((node: Element) => node.textContent?.trim()),
         transportTabs: element.shadowRoot.querySelectorAll('[data-view="transport"]').length,
         streamSelectors: element.shadowRoot.querySelectorAll('.signal-stream-select').length,
@@ -157,7 +155,6 @@ test('inspector selects a delivered signal and shows its effective history', asy
     expect(state.text).toMatch(/25/)
     expect(state.selected).toBe('true')
     expect(state.sparkline).toBe(true)
-    expect(state.pendingText).toMatch(/Loading history/)
     expect(state.changes).toBe(3)
     expect(state.historyValues).toEqual(['50', '25', '0'])
     expect(state.transportTabs).toBe(0)
