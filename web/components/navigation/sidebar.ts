@@ -676,7 +676,7 @@ class LibreDashSidebar extends LitElement {
         border: 0;
         border-right: var(--ld-border-default);
         background: var(--ld-sidebar-bg);
-        box-shadow: var(--ld-shadow-floating, var(--shadow-floating-small, 0 8px 24px rgb(0 0 0 / 12%)));
+        box-shadow: var(--ld-shadow-floating);
         padding: var(--base-size-12);
         pointer-events: none;
         transform: translateX(-100%);
@@ -701,7 +701,7 @@ class LibreDashSidebar extends LitElement {
         align-items: center;
         justify-content: space-between;
         margin-bottom: var(--base-size-8);
-        border-bottom: var(--ld-border-muted, 1px solid var(--borderColor-muted, currentColor));
+        border-bottom: var(--ld-border-muted);
         padding-bottom: var(--base-size-8);
       }
 
