@@ -26,6 +26,137 @@ func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown route status = %d, want %d", response.StatusCode, http.StatusNotFound)
 	}
+	body := readBody(t, response)
+	if !strings.Contains(body, "Page not found") || !strings.Contains(body, `href="/docs"`) {
+		t.Fatalf("unknown route did not render the site 404 page:\n%s", body)
+	}
+}
+
+func TestSiteArticlePublishesSearchAndSocialMetadata(t *testing.T) {
+	baseURL, err := url.Parse("https://docs.libredash.dev")
+	if err != nil {
+		t.Fatalf("parse base URL: %v", err)
+	}
+	server := httptest.NewServer(NewHandlerWithOptions(Options{BaseURL: baseURL}))
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs/introduction")
+	if err != nil {
+		t.Fatalf("get article: %v", err)
+	}
+	defer response.Body.Close()
+	body := readBody(t, response)
+	document, ok := siteDocumentBySlug("introduction")
+	if !ok {
+		t.Fatal("introduction document not found")
+	}
+	for _, want := range []string{
+		`<meta name="description" content="` + document.summary + `">`,
+		`<link rel="canonical" href="https://docs.libredash.dev/docs/introduction">`,
+		`<meta property="og:title" content="` + document.title + `">`,
+		`<meta property="og:type" content="article">`,
+		`<meta property="og:url" content="https://docs.libredash.dev/docs/introduction">`,
+		`<meta name="twitter:card" content="summary">`,
+		`<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("article metadata missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestSitePublishesSitemapAndRobots(t *testing.T) {
+	baseURL, err := url.Parse("https://docs.libredash.dev")
+	if err != nil {
+		t.Fatalf("parse base URL: %v", err)
+	}
+	server := httptest.NewServer(NewHandlerWithOptions(Options{BaseURL: baseURL}))
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/sitemap.xml")
+	if err != nil {
+		t.Fatalf("get sitemap: %v", err)
+	}
+	sitemap := readBody(t, response)
+	response.Body.Close()
+	if got := response.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/xml") {
+		t.Fatalf("sitemap content type = %q", got)
+	}
+	for _, want := range []string{
+		"https://docs.libredash.dev/",
+		"https://docs.libredash.dev/charts",
+		"https://docs.libredash.dev/docs",
+		"https://docs.libredash.dev/docs/introduction",
+	} {
+		if !strings.Contains(sitemap, "<loc>"+want+"</loc>") {
+			t.Errorf("sitemap missing %q:\n%s", want, sitemap)
+		}
+	}
+	if strings.Contains(sitemap, "/docs/search") {
+		t.Fatalf("sitemap contains search page:\n%s", sitemap)
+	}
+
+	response, err = server.Client().Get(server.URL + "/robots.txt")
+	if err != nil {
+		t.Fatalf("get robots: %v", err)
+	}
+	robots := readBody(t, response)
+	response.Body.Close()
+	for _, want := range []string{
+		"User-agent: *",
+		"Disallow: /docs/search",
+		"Sitemap: https://docs.libredash.dev/sitemap.xml",
+	} {
+		if !strings.Contains(robots, want) {
+			t.Errorf("robots.txt missing %q:\n%s", want, robots)
+		}
+	}
+}
+
+func TestSiteProductionHeadersAndHealthEndpoints(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	for _, path := range []string{"/healthz", "/readyz"} {
+		response, err := server.Client().Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("get %s: %v", path, err)
+		}
+		body := readBody(t, response)
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK || strings.TrimSpace(body) != "ok" {
+			t.Errorf("%s = %d %q, want 200 ok", path, response.StatusCode, body)
+		}
+	}
+
+	response, err := server.Client().Get(server.URL + "/docs/introduction")
+	if err != nil {
+		t.Fatalf("get article: %v", err)
+	}
+	response.Body.Close()
+	for header, want := range map[string]string{
+		"Content-Security-Policy": "default-src 'self'",
+		"Referrer-Policy":         "strict-origin-when-cross-origin",
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
+		"Cache-Control":           "no-cache",
+	} {
+		if got := response.Header.Get(header); !strings.Contains(got, want) {
+			t.Errorf("%s = %q, want containing %q", header, got, want)
+		}
+	}
+	if got := response.Header.Get("Content-Security-Policy"); !strings.Contains(got, "script-src 'self' 'unsafe-eval'") {
+		t.Errorf("Content-Security-Policy = %q, want Datastar expression evaluation allowance", got)
+	}
+
+	response, err = server.Client().Get(server.URL + "/static/site-page.js")
+	if err != nil {
+		t.Fatalf("get site asset: %v", err)
+	}
+	response.Body.Close()
+	if got := response.Header.Get("Cache-Control"); got != "public, max-age=0, must-revalidate" {
+		t.Fatalf("site asset cache control = %q", got)
+	}
 }
 
 func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
@@ -37,7 +168,7 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
-	for _, path := range []string{"/static/site.css", "/static/site-page.js", "/shared/app.css", "/shared/theme.js", "/static/vendor/datastar-1.0.2.js"} {
+	for _, path := range []string{"/static/favicon.svg", "/static/site.css", "/static/site-page.js", "/shared/app.css", "/shared/theme.js", "/static/vendor/datastar-1.0.2.js"} {
 		response, err := server.Client().Get(server.URL + path)
 		if err != nil {
 			t.Fatalf("get %s: %v", path, err)

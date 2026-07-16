@@ -10,13 +10,24 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func sitePage() g.Node {
+type sitePageMetadata struct {
+	title       string
+	description string
+	canonical   string
+	contentType string
+	robots      string
+}
+
+const siteDatastarScriptURL = "/static/vendor/datastar-1.0.2.js"
+
+func sitePage(metadata sitePageMetadata) g.Node {
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:      "LibreDash — BI dashboards as code",
-		HTMLAttrs:  siteHTMLAttrs(),
-		Head:       siteHead(),
-		MainAttrs:  []g.Node{h.Class("site-page")},
-		UpdatesURL: "/updates",
+		Title:             metadata.title,
+		HTMLAttrs:         siteHTMLAttrs(),
+		Head:              siteHead(metadata),
+		MainAttrs:         []g.Node{h.Class("site-page")},
+		DatastarScriptURL: siteDatastarScriptURL,
+		UpdatesURL:        "/updates",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
 			siteHeader(false),
@@ -74,13 +85,14 @@ func sitePage() g.Node {
 	})
 }
 
-func chartsPage() g.Node {
+func chartsPage(metadata sitePageMetadata) g.Node {
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:      "LibreDash chart showcase",
-		HTMLAttrs:  siteHTMLAttrs(),
-		Head:       siteHead(),
-		MainAttrs:  []g.Node{h.Class("site-page")},
-		UpdatesURL: "/updates?view=charts",
+		Title:             metadata.title,
+		HTMLAttrs:         siteHTMLAttrs(),
+		Head:              siteHead(metadata),
+		MainAttrs:         []g.Node{h.Class("site-page")},
+		DatastarScriptURL: siteDatastarScriptURL,
+		UpdatesURL:        "/updates?view=charts",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
 			siteHeader(false),
@@ -97,13 +109,14 @@ func chartsPage() g.Node {
 	})
 }
 
-func docsIndexPage() g.Node {
+func docsIndexPage(metadata sitePageMetadata) g.Node {
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:      "LibreDash documentation",
-		HTMLAttrs:  siteHTMLAttrs(),
-		Head:       siteHead(),
-		MainAttrs:  []g.Node{h.Class("site-page")},
-		UpdatesURL: "/updates",
+		Title:             metadata.title,
+		HTMLAttrs:         siteHTMLAttrs(),
+		Head:              siteHead(metadata),
+		MainAttrs:         []g.Node{h.Class("site-page")},
+		DatastarScriptURL: siteDatastarScriptURL,
+		UpdatesURL:        "/updates",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
 			siteHeader(true),
@@ -112,13 +125,14 @@ func docsIndexPage() g.Node {
 	})
 }
 
-func docsSearchPage(query string) g.Node {
+func docsSearchPage(query string, metadata sitePageMetadata) g.Node {
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:      "Search LibreDash documentation",
-		HTMLAttrs:  siteHTMLAttrs(),
-		Head:       siteHead(),
-		MainAttrs:  []g.Node{h.Class("site-page")},
-		UpdatesURL: "/updates",
+		Title:             metadata.title,
+		HTMLAttrs:         siteHTMLAttrs(),
+		Head:              siteHead(metadata),
+		MainAttrs:         []g.Node{h.Class("site-page")},
+		DatastarScriptURL: siteDatastarScriptURL,
+		UpdatesURL:        "/updates",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
 			siteHeader(true),
@@ -127,17 +141,18 @@ func docsSearchPage(query string) g.Node {
 	})
 }
 
-func docsArticlePage(document siteDocument) g.Node {
+func docsArticlePage(document siteDocument, metadata sitePageMetadata) g.Node {
 	updatesURL := "/updates"
 	if document.chartID != "" {
 		updatesURL = "/updates?view=charts"
 	}
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:      document.title,
-		HTMLAttrs:  siteHTMLAttrs(),
-		Head:       siteHead(),
-		MainAttrs:  []g.Node{h.Class("site-page")},
-		UpdatesURL: updatesURL,
+		Title:             metadata.title,
+		HTMLAttrs:         siteHTMLAttrs(),
+		Head:              siteHead(metadata),
+		MainAttrs:         []g.Node{h.Class("site-page")},
+		DatastarScriptURL: siteDatastarScriptURL,
+		UpdatesURL:        updatesURL,
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
 			siteHeader(true),
@@ -146,14 +161,56 @@ func docsArticlePage(document siteDocument) g.Node {
 	})
 }
 
-func siteHead() []g.Node {
-	return []g.Node{
+func notFoundPage(metadata sitePageMetadata) g.Node {
+	return pagestream.RenderPage(pagestream.PageSpec{
+		Title:             metadata.title,
+		HTMLAttrs:         siteHTMLAttrs(),
+		Head:              siteHead(metadata),
+		MainAttrs:         []g.Node{h.Class("site-page")},
+		DatastarScriptURL: siteDatastarScriptURL,
+		UpdatesURL:        "/updates",
+		Body: []g.Node{
+			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
+			siteHeader(false),
+			h.Div(h.Class("site-shell"),
+				h.Section(h.ID("main-content"), h.Class("site-showcase-intro"),
+					h.P(h.Class("site-eyebrow"), g.Text("404")),
+					h.H1(g.Text("Page not found")),
+					h.P(h.Class("site-lede"), g.Text("The page may have moved, or the address may be incomplete.")),
+					h.Div(h.Class("site-actions"),
+						h.A(h.Class("site-button site-button-primary"), h.Href("/docs"), g.Text("Browse documentation")),
+						h.A(h.Class("site-button"), h.Href("/"), g.Text("Go to LibreDash")),
+					),
+				),
+			),
+			siteFooter(),
+		},
+	})
+}
+
+func siteHead(metadata sitePageMetadata) []g.Node {
+	nodes := []g.Node{
 		h.Meta(h.Name("view-transition"), h.Content("same-origin")),
+		h.Meta(h.Name("description"), h.Content(metadata.description)),
+		h.Link(h.Rel("canonical"), h.Href(metadata.canonical)),
+		h.Meta(g.Attr("property", "og:site_name"), h.Content("LibreDash")),
+		h.Meta(g.Attr("property", "og:title"), h.Content(metadata.title)),
+		h.Meta(g.Attr("property", "og:description"), h.Content(metadata.description)),
+		h.Meta(g.Attr("property", "og:type"), h.Content(metadata.contentType)),
+		h.Meta(g.Attr("property", "og:url"), h.Content(metadata.canonical)),
+		h.Meta(h.Name("twitter:card"), h.Content("summary")),
+		h.Meta(h.Name("twitter:title"), h.Content(metadata.title)),
+		h.Meta(h.Name("twitter:description"), h.Content(metadata.description)),
+		h.Link(h.Rel("icon"), h.Href("/static/favicon.svg"), h.Type("image/svg+xml")),
 		h.Link(h.Rel("stylesheet"), h.Href("/shared/app.css")),
 		h.Link(h.Rel("stylesheet"), h.Href("/static/site.css")),
 		h.Script(h.Src("/shared/theme.js")),
 		h.Script(h.Type("module"), h.Src("/static/site-page.js")),
 	}
+	if metadata.robots != "" {
+		nodes = append(nodes, h.Meta(h.Name("robots"), h.Content(metadata.robots)))
+	}
+	return nodes
 }
 
 func siteHeader(isDocs bool) g.Node {

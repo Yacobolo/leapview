@@ -2,6 +2,18 @@
 
 Semantic models give dashboards and integrations a shared business vocabulary. Build one after model tables have stable fields and grain; otherwise semantic definitions will hide unresolved data-shaping problems.
 
+## Before you begin
+
+Materialize each input model table and verify its declared grain, keys, types, and null behavior. Prepare trusted totals for at least one unfiltered question and one dimension-filtered question.
+
+Build the model in this sequence:
+
+1. Choose a coherent analytical domain and its fact tables.
+2. Add relationships whose cardinality is proven by data.
+3. Define base measures on explicit facts and fields.
+4. Compose derived metrics from named measures.
+5. Validate the resource, then verify representative business results.
+
 ## Design the semantic surface
 
 ### Choose the model boundary
@@ -71,13 +83,21 @@ For `many_to_one`, confirm the `to` field is unique and type-compatible with the
 
 Prefer one unambiguous relationship path. If the model needs role-playing dimensions or several paths between the same tables, give each path an explicit design rather than relying on query order.
 
-## Discover and inspect
+## Validate the semantic model
 
-Ensure the workspace includes semantic model files, validate the project, deploy to development, and inspect the model:
+Ensure the workspace includes semantic model files and validate the project:
 
 ```sh
 libredash validate --project dashboards/libredash.yaml
+```
 
+Validation should reject unknown tables, fields, measures, and malformed relationship definitions before deployment. Resolve every diagnostic at its source resource rather than compensating in a dashboard.
+
+## Verify business results
+
+Deploy to development and inspect the model:
+
+```sh
 libredash semantic-models describe sales \
   --workspace sales \
   --target "$LIBREDASH_TARGET" \
@@ -85,5 +105,11 @@ libredash semantic-models describe sales \
 ```
 
 Use the dataset, field, preview, explain, and query subcommands to test representative questions before building a dashboard. At minimum, compare unfiltered totals with a trusted baseline, filter by a dimension reached through each relationship, and verify empty-result behavior.
+
+## Troubleshooting
+
+Inflated measures usually indicate a violated relationship cardinality or an ambiguous join path. Missing values after filtering often indicate incompatible relationship key types or null keys. If a derived metric is wrong while both base measures are correct, test its zero and null cases separately and keep row-level cleanup out of the metric expression.
+
+## Next steps
 
 Continue with [Create a dashboard](/docs/guides/build/dashboard). See [Semantic Model configuration](/docs/config/semantic-model) and the generated [`semantic-models` CLI reference](/docs/cli/semantic-models) for exact operations.

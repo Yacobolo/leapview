@@ -2,6 +2,18 @@
 
 OpenID Connect provides interactive browser identity. LibreDash identifies a person by the stable pair of issuer and subject. Email and display name are profile metadata and may change without creating a new identity.
 
+## Before you begin
+
+Choose one trusted OIDC provider, a stable provider ID, and the exact external HTTPS origin served by the trusted reverse proxy. Obtain a test user without administrator privileges and access to both provider and LibreDash logs.
+
+Roll out identity in this order:
+
+1. Register one confidential web client with an exact callback URI.
+2. Store its secret and configure the complete LibreDash OIDC tuple.
+3. Configure trusted proxy, host, cookie, CSRF, and clock boundaries.
+4. Bind the test principal or provisioned group to a narrow role.
+5. Validate configuration and verify login, logout, denial, and audit behavior.
+
 ## Register the client
 
 Create a confidential web application in the identity provider. Register the exact public callback URL:
@@ -49,10 +61,30 @@ Use provider MFA and conditional access. Restrict who may use the client, protec
 
 When rotating the client secret, install the new value through the secret manager and coordinate restart without exposing either value. Verify login before revoking the old provider credential where the provider supports overlap.
 
-## Troubleshoot login
+## Validate the configuration
+
+Start LibreDash with production validation enabled before changing traffic. It must reject partial OIDC configuration, non-HTTPS production issuer or callback URLs, malformed provider IDs, and insecure cookie boundaries. Compare the configured callback with the provider registration character for character, including path and provider ID.
+
+Validate that the reverse proxy overwrites forwarding headers, the application trusts only that proxy, and the public host is explicitly allowed. Keep the previous authentication path available to an operator until the new flow is verified.
+
+## Verify identity and access
+
+Use the non-administrator test account to complete these checks:
+
+1. Sign in through the provider and confirm the expected issuer-subject principal is used.
+2. Verify only explicitly granted workspaces and actions are available.
+3. Sign out and confirm the browser session is no longer accepted.
+4. Remove or suspend access and verify the next authorization check denies it.
+5. Inspect audit and provider logs for the same event without raw tokens or secrets.
+
+Repeat a login after changing only profile metadata such as display name; it should update the same identity rather than create a new one.
+
+## Troubleshooting
 
 If the provider rejects the request, compare the callback URL character for character. If callback reaches LibreDash but state or cookie validation fails, check HTTPS, cookie security, allowed hosts, CSRF key consistency, proxy headers, and clock skew. If login succeeds but access is empty, inspect principal identity and grants rather than the OIDC handshake.
 
 Preserve correlation timestamps and inspect both provider logs and LibreDash audit/application logs without recording raw tokens.
 
-See [SCIM provisioning](/docs/security/scim), [Roles, grants, and policies](/docs/security/authorization), and [Authentication and authorization](/docs/enterprise-auth).
+## Next steps
+
+Configure [SCIM provisioning](/docs/security/scim) for directory lifecycle, review [Roles, grants, and policies](/docs/security/authorization), and complete the broader [Authentication and authorization](/docs/enterprise-auth) checklist.

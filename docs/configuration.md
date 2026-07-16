@@ -163,6 +163,12 @@ Run `libredash config validate` to validate the active environment, or add `--pr
 | `LIBREDASH_ADDR` | string | serve,healthcheck | supported | HTTP listen address. |
 | `LIBREDASH_PRODUCTION` | boolean / `false` | serve,admin | supported | Enable production serving and validation behavior. |
 
+## Site
+
+| Environment variable | Type / default | Scope | Lifecycle | Description |
+|---|---|---|---|---|
+| `LIBREDASH_SITE_BASE_URL` | string | public site | supported | Externally visible HTTP(S) origin used for canonical URLs, discovery documents, and transport policy. |
+
 ## Storage
 
 | Environment variable | Type / default | Scope | Lifecycle | Description |

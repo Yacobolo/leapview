@@ -2,6 +2,18 @@
 
 The included Sales workspace is a complete example of the dashboard-as-code workflow. Make and validate a small change there before creating connections, model tables, and semantic models from scratch.
 
+## Before you begin
+
+Complete [Installation](/docs/installation), bootstrap the Olist data, and keep the development target local. Use a branch where changing the example label and note is safe.
+
+Follow one reviewable loop:
+
+1. Confirm the unchanged sample dashboard works.
+2. Trace the resources that compose it.
+3. Change one semantic label and one dashboard note.
+4. Validate and plan the complete project.
+5. Deploy to development and verify the rendered behavior.
+
 ```mermaid
 flowchart LR
   accTitle: Dashboard authoring lifecycle
@@ -91,8 +103,27 @@ Apply it to the managed development target:
 task deploy:dev
 ```
 
+## Validate the project
+
+Run validation and planning once more immediately before deployment if another edit occurred after the earlier checks:
+
+```sh
+go run ./cmd/libredash validate --project dashboards/libredash.yaml
+go run ./cmd/libredash plan --project dashboards/libredash.yaml
+```
+
+The plan should contain only the resources you intended to change. Unexpected additions or removals usually indicate a discovery-pattern or stable-ID mistake.
+
+## Verify the dashboard
+
 Reload Executive Sales and confirm both label changes. Also change a date or state filter to verify that the KPI still participates in the shared query lifecycle.
 
 LibreDash validates all workspace candidates before switching the active project. A rejected candidate does not replace the last valid serving state. This makes validation and plan review normal parts of authoring rather than recovery steps.
+
+## Troubleshooting
+
+If the dashboard does not change, confirm the deployment targeted the same local instance shown in the browser and inspect `task dev:logs`. If validation cannot find `aov`, verify that the metric ID was not renamed. If the KPI changes but filtering does not, compare its semantic query and interaction scope with the original definition before editing presentation code.
+
+## Next steps
 
 Revert or keep the example changes as appropriate for your branch, then continue with [Build dashboards](/docs/guides/build) for the complete workflow.

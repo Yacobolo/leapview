@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .surface { fill: #ddf4ff; }
+    .mark { fill: none; stroke: #0969da; }
+    @media (prefers-color-scheme: dark) {
+      .surface { fill: #0c2d6b; }
+      .mark { stroke: #54aeff; }
+    }
+  </style>
+  <rect class="surface" width="32" height="32" rx="7" />
+  <path class="mark" d="M7 24V19m6 5V14m6 10V9m6 15V5M6.5 16.5l6-6 5 3 8-8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

@@ -9,6 +9,8 @@
     "build:site": "bun run build:css && bun scripts/build_site.ts",
     "build:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css",
     "docs:validate-diagrams": "bun scripts/validate_mermaid.ts",
+    "typecheck:contracts": "tsc --noEmit --project tsconfig.contracts.json",
+    "typecheck:app": "tsc --noEmit --project tsconfig.app.json",
     "generate:primer-primitives": "bun scripts/primer_primitives_reference.ts",
     "watch:css": "tailwindcss -i ./static/app.input.css -o ./static/app.css --watch",
     "test:primer-primitives": "bun test scripts/primer_primitives_reference.test.ts",

@@ -2,6 +2,18 @@
 
 Connections are project-global access definitions. Sources give individual files, objects, or tables stable logical names that workspaces can consume. This guide adds a managed CSV input; external connectors use the same resource relationship with connector-specific settings.
 
+## Before you begin
+
+Choose a development workspace, prepare a representative CSV with a stable header, and confirm that the project validates before your change. Do not begin with production credentials or an unbounded shared directory.
+
+The procedure is:
+
+1. Define one connection for the access and operational boundary.
+2. Define logical sources for the physical objects it exposes.
+3. Discover those resources and permit only the required workspace usage.
+4. Plan and stage the managed revision.
+5. Validate the graph and verify the source contract before modeling.
+
 ## Design the source boundary
 
 ### Choose a stable boundary
@@ -115,8 +127,16 @@ libredash data plan \
 
 Then stage it to a target with `libredash data sync`. Staging returns an immutable revision digest; deployment activates that reviewed digest separately.
 
-### Verify before modeling
+## Verify the source boundary
 
 Check that filenames match source paths exactly, source fields reflect the actual header, credentials resolve in the target environment, and the workspace lists every source its model SQL will read. Continue with [Define model tables](/docs/guides/build/model-tables).
 
-See [Connection configuration](/docs/config/connection), [Source configuration](/docs/config/source), and [Managed data ingestion](/docs/data-ingestion) for exact contracts and revision behavior.
+For managed data, retain the revision digest returned by staging and confirm that the target can resolve it before deployment. Re-run the plan against the same input directory; an unchanged directory should produce the same reviewed revision.
+
+## Troubleshooting
+
+If validation cannot discover the connection or source, resolve include patterns relative to `dashboards/libredash.yaml` and check for duplicate matches. If staging reports missing files, compare the source `path` with the case-sensitive filename beneath `--from`. If a model later reports denied source access, add the logical source ID to the workspace rather than bypassing the workspace boundary.
+
+## Next steps
+
+Continue with [Define model tables](/docs/guides/build/model-tables). See [Connection configuration](/docs/config/connection), [Source configuration](/docs/config/source), and [Managed data ingestion](/docs/data-ingestion) for exact contracts and revision behavior.

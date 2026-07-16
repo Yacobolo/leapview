@@ -2,7 +2,7 @@
 
 LibreDash currently builds and runs from a source checkout. The repository pins JavaScript dependencies and exposes repeatable development commands through Task, so installation is primarily about preparing the toolchain and verifying a clean build.
 
-## Prerequisites
+## Before you begin
 
 Install the following tools:
 
@@ -21,6 +21,13 @@ go version
 bun --version
 task --version
 ```
+
+Use this installation sequence:
+
+1. Prepare a clean checkout and install pinned dependencies.
+2. Generate contracts and build both application surfaces.
+3. Bootstrap the sample data and start the managed development server.
+4. Validate the repository, then verify the sample workspace in a browser.
 
 ## Prepare a checkout
 
@@ -81,7 +88,7 @@ task dev:stop
 
 Open the URL reported by `task dev`. The catalog should list the sample workspaces and dashboards.
 
-## Verify the installation
+## Validate the installation
 
 Run the full repository verification gate before beginning substantial work:
 
@@ -89,4 +96,16 @@ Run the full repository verification gate before beginning substantial work:
 task ci
 ```
 
-If generation fails, first confirm the pinned Go and Bun versions and rerun `task node:deps`. If the sample dashboards start but cannot query data, rerun `task bootstrap` and inspect `task dev:logs`. Continue with [Build your first dashboard](/docs/first-dashboard) once the catalog and a sample report page load successfully.
+The command must finish without generated-file differences, test failures, lint errors, or deployment-contract failures. Run it from the repository root so every path and generated-artifact check uses the intended workspace.
+
+## Verify the installation
+
+Open the URL reported by `task dev`, enter the Sales workspace, and load Executive Sales. Confirm that KPI cards, charts, filters, and the orders table finish loading. Then inspect `task dev:status` and verify that the managed process is healthy.
+
+## Troubleshooting
+
+If generation fails, confirm the pinned Go and Bun versions and rerun `task node:deps`. If assets appear stale, stop the managed server and restart `task dev` so generation and browser builds run again. If the sample dashboards load but cannot query data, rerun `task bootstrap` and inspect `task dev:logs` for the first backend error rather than the later browser symptom.
+
+## Next steps
+
+Continue with [Build your first dashboard](/docs/first-dashboard) once the catalog and a sample report page load successfully. Contributors should also read [Repository guide](/docs/contributing/repository) before changing generated contracts or runtime architecture.

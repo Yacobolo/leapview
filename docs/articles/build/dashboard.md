@@ -2,6 +2,18 @@
 
 A dashboard chooses one workspace semantic model and composes reusable filters, visual queries, tabular queries, and report pages. Build the smallest useful page first, verify its query behavior, and add interactions only after the standalone results are correct.
 
+## Before you begin
+
+Verify the semantic model with direct queries and choose a small decision-oriented page to build first. Prepare expected values for each initial visual at an unfiltered state and at least one filtered state.
+
+Use this sequence:
+
+1. Create the dashboard and one bounded, deterministically sorted visual query.
+2. Place that visual on a page with a compact-layout reading order.
+3. Add a KPI and verify both against direct semantic queries.
+4. Add filters and interactions one at a time.
+5. Validate, plan, deploy to development, and review every state.
+
 ## Define the dashboard surface
 
 ### Create the resource
@@ -91,7 +103,7 @@ libredash plan --project dashboards/libredash.yaml
 
 Validation checks contract shape and references. The plan shows the resource-level candidate. Neither proves that a visual communicates the right result, so deploy to development and verify the rendered page with representative data.
 
-### Review the page
+## Verify the rendered page
 
 Confirm that:
 
@@ -102,5 +114,11 @@ Confirm that:
 - empty, loading, and failure states are readable;
 - component order makes sense for keyboard and compact layouts;
 - limits and sorting remain useful for high-cardinality data.
+
+## Troubleshooting
+
+If a visual is empty, first run its semantic query without dashboard filters, then add filters one at a time. If values are correct but order changes between loads, add an explicit sort with a stable tie-breaker. If a compact layout reads poorly, fix component source order and placement together rather than using visual-only CSS reordering.
+
+## Next steps
 
 Continue with [Pages and layout](/docs/guides/build/pages-layout), [Filters and interactions](/docs/guides/build/filters-interactions), and [Tables, matrices, and pivots](/docs/guides/build/tables). Use [Dashboard configuration](/docs/config/dashboard) and [Visual types](/docs/charts/overview) for exact contracts.

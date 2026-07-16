@@ -2,6 +2,18 @@
 
 A model table transforms permitted project sources into a workspace-owned analytical table. The goal is not merely to make SQL run; it is to establish a stable grain and field contract that semantic measures can safely reuse.
 
+## Before you begin
+
+Complete [Connect a data source](/docs/guides/build/connect-data), stage a representative source revision, and profile its keys, nulls, and types. Write the intended output grain in one sentence before creating YAML.
+
+Work in this order:
+
+1. Declare the grain, primary key, permitted sources, and output fields.
+2. Implement source cleanup and grain-preserving SQL.
+3. Discover and validate the model resource.
+4. Refresh it with representative data.
+5. Verify keys, types, row counts, and repeatability.
+
 ## Design and create the table
 
 ### Start from the grain
@@ -78,7 +90,7 @@ libredash validate --project dashboards/libredash.yaml
 
 Validation checks configuration shape and references. Data-level correctness requires a materialization or preview against actual source data.
 
-### Verify the result
+## Verify the result
 
 After deploying and refreshing in development, verify:
 
@@ -94,5 +106,11 @@ Use the workspace asset page and refresh history to inspect the table and its li
 ## Choose the materialization boundary
 
 Keep reusable source cleanup and expensive cross-source shaping here. Put aggregations such as total revenue and average order value in semantic measures and metrics so they remain filter-aware. A model table should only be pre-aggregated when its declared row grain is intentionally aggregated.
+
+## Troubleshooting
+
+If refresh multiplies rows, inspect each join against the declared grain and aggregate child records before joining. If casts silently create nulls, query the rejected source values and decide whether the resource should normalize or fail them. If validation succeeds but SQL fails, remember that structural validation cannot prove runtime column names or data types; test the transform against the staged revision.
+
+## Next steps
 
 Continue with [Build a semantic model](/docs/guides/build/semantic-model). The generated [Model Table configuration](/docs/config/model-table) remains the exact syntax reference.

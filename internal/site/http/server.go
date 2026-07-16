@@ -2,10 +2,13 @@
 package http
 
 import (
+	"bytes"
 	"compress/gzip"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Yacobolo/libredash/pkg/pagestream"
@@ -13,23 +16,75 @@ import (
 	"github.com/starfederation/datastar-go/datastar"
 )
 
+// Options configures public URLs and production behavior for the site handler.
+type Options struct {
+	// BaseURL is the externally visible site origin. When omitted, canonical URLs
+	// are derived from each request, which is convenient for local development.
+	BaseURL *url.URL
+}
+
+type siteServer struct {
+	baseURL *url.URL
+}
+
 // NewHandler builds the public site HTTP handler without starting a server.
 func NewHandler() http.Handler {
+	return NewHandlerWithOptions(Options{})
+}
+
+// NewHandlerWithOptions builds the public site HTTP handler with deployment settings.
+func NewHandlerWithOptions(options Options) http.Handler {
+	server := &siteServer{baseURL: cloneURL(options.BaseURL)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", home)
-	mux.HandleFunc("GET /charts", charts)
-	mux.HandleFunc("GET /docs", docsIndex)
-	mux.HandleFunc("GET /docs/search", docsSearch)
+	mux.HandleFunc("GET /{$}", server.home)
+	mux.HandleFunc("GET /charts", server.charts)
+	mux.HandleFunc("GET /docs", server.docsIndex)
+	mux.HandleFunc("GET /docs/search", server.docsSearch)
 	mux.HandleFunc("GET /docs/search/active", docsActiveSearch)
 	mux.HandleFunc("GET /docs/openapi.yaml", docsOpenAPISpecification)
 	mux.HandleFunc("GET /docs/schemas/{schema}", docsConfigurationSchema)
-	mux.HandleFunc("GET /docs/{path...}", docsArticle)
+	mux.HandleFunc("GET /docs/{path...}", server.docsArticle)
 	mux.HandleFunc("GET /getting-started", gettingStarted)
+	mux.HandleFunc("GET /healthz", health)
+	mux.HandleFunc("GET /readyz", health)
+	mux.HandleFunc("GET /robots.txt", server.robots)
+	mux.HandleFunc("GET /sitemap.xml", server.sitemap)
 	mux.HandleFunc("GET /updates", updates)
 	mux.HandleFunc("POST /demo", updateDemo)
 	mux.Handle("GET /static/", compressedAssets(http.StripPrefix("/static/", http.FileServer(http.FS(siteassets.Static())))))
 	mux.Handle("GET /shared/", compressedAssets(http.StripPrefix("/shared/", http.FileServer(http.FS(siteassets.Shared())))))
-	return mux
+	mux.HandleFunc("GET /{path...}", server.notFound)
+	return server.productionHeaders(mux)
+}
+
+func cloneURL(value *url.URL) *url.URL {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func (s *siteServer) productionHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'")
+		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		if s.baseURL != nil && s.baseURL.Scheme == "https" {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/static/chunks/"):
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		case strings.HasPrefix(r.URL.Path, "/static/"), strings.HasPrefix(r.URL.Path, "/shared/"):
+			w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
+		default:
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func compressedAssets(next http.Handler) http.Handler {
@@ -83,32 +138,28 @@ func (w *gzipResponseWriter) Write(contents []byte) (int, error) {
 	return w.writer.Write(contents)
 }
 
-func home(w http.ResponseWriter, _ *http.Request) {
-	if err := sitePage().Render(w); err != nil {
-		http.Error(w, "render site page", http.StatusInternalServerError)
-	}
+func (s *siteServer) home(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, "LibreDash — BI dashboards as code", "Open-source business intelligence with versioned semantic models and dashboards defined in code.", "website", "")
+	renderHTML(w, http.StatusOK, sitePage(metadata), "render site page")
 }
 
-func charts(w http.ResponseWriter, _ *http.Request) {
-	if err := chartsPage().Render(w); err != nil {
-		http.Error(w, "render charts page", http.StatusInternalServerError)
-	}
+func (s *siteServer) charts(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, "LibreDash chart showcase", "Explore LibreDash charts, KPIs, tables, and other data visualization components.", "website", "")
+	renderHTML(w, http.StatusOK, chartsPage(metadata), "render charts page")
 }
 
 func gettingStarted(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/docs/getting-started", http.StatusPermanentRedirect)
 }
 
-func docsIndex(w http.ResponseWriter, _ *http.Request) {
-	if err := docsIndexPage().Render(w); err != nil {
-		http.Error(w, "render docs index", http.StatusInternalServerError)
-	}
+func (s *siteServer) docsIndex(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, "LibreDash documentation", "Learn how to install, model, build, secure, integrate, and operate LibreDash.", "website", "")
+	renderHTML(w, http.StatusOK, docsIndexPage(metadata), "render docs index")
 }
 
-func docsSearch(w http.ResponseWriter, r *http.Request) {
-	if err := docsSearchPage(strings.TrimSpace(r.URL.Query().Get("q"))).Render(w); err != nil {
-		http.Error(w, "render documentation search", http.StatusInternalServerError)
-	}
+func (s *siteServer) docsSearch(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, "Search LibreDash documentation", "Search LibreDash concepts, guides, commands, and API documentation.", "website", "noindex,follow")
+	renderHTML(w, http.StatusOK, docsSearchPage(strings.TrimSpace(r.URL.Query().Get("q")), metadata), "render documentation search")
 }
 
 func docsActiveSearch(w http.ResponseWriter, r *http.Request) {
@@ -147,15 +198,90 @@ func docsActiveSearch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func docsArticle(w http.ResponseWriter, r *http.Request) {
+func (s *siteServer) docsArticle(w http.ResponseWriter, r *http.Request) {
 	document, ok := siteDocumentBySlug(r.PathValue("path"))
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
-	if err := docsArticlePage(document).Render(w); err != nil {
-		http.Error(w, "render documentation article", http.StatusInternalServerError)
+	metadata := s.metadata(r, document.title, document.summary, "article", "")
+	renderHTML(w, http.StatusOK, docsArticlePage(document, metadata), "render documentation article")
+}
+
+func health(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, "ok\n")
+}
+
+func (s *siteServer) notFound(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, "Page not found — LibreDash", "The requested LibreDash page could not be found.", "website", "noindex,follow")
+	renderHTML(w, http.StatusNotFound, notFoundPage(metadata), "render not found page")
+}
+
+type renderable interface {
+	Render(io.Writer) error
+}
+
+func renderHTML(w http.ResponseWriter, status int, page renderable, errorMessage string) {
+	var body bytes.Buffer
+	if err := page.Render(&body); err != nil {
+		http.Error(w, errorMessage, http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(body.Bytes())
+}
+
+func (s *siteServer) metadata(r *http.Request, title, description, contentType, robots string) sitePageMetadata {
+	return sitePageMetadata{
+		title:       title,
+		description: description,
+		canonical:   s.absoluteURL(r, r.URL.Path),
+		contentType: contentType,
+		robots:      robots,
+	}
+}
+
+func (s *siteServer) absoluteURL(r *http.Request, requestedPath string) string {
+	base := url.URL{Scheme: "http", Host: r.Host}
+	if r.TLS != nil {
+		base.Scheme = "https"
+	}
+	if s.baseURL != nil {
+		base = *s.baseURL
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(requestedPath, "/")
+	if requestedPath == "/" {
+		base.Path = strings.TrimRight(base.Path, "/") + "/"
+	}
+	base.RawPath = ""
+	base.RawQuery = ""
+	base.Fragment = ""
+	return base.String()
+}
+
+func (s *siteServer) sitemap(w http.ResponseWriter, r *http.Request) {
+	paths := []string{"/", "/charts", "/docs"}
+	for _, document := range siteDocuments {
+		paths = append(paths, "/docs/"+document.slug)
+	}
+	var body bytes.Buffer
+	body.WriteString(xml.Header)
+	body.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`)
+	for _, path := range paths {
+		body.WriteString("<url><loc>")
+		_ = xml.EscapeText(&body, []byte(s.absoluteURL(r, path)))
+		body.WriteString("</loc></url>")
+	}
+	body.WriteString("</urlset>\n")
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	_, _ = w.Write(body.Bytes())
+}
+
+func (s *siteServer) robots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nDisallow: /docs/search\nSitemap: %s\n", s.absoluteURL(r, "/sitemap.xml"))
 }
 
 func docsOpenAPISpecification(w http.ResponseWriter, _ *http.Request) {

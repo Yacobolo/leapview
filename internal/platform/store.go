@@ -307,18 +307,11 @@ func samePath(a, b string) bool {
 }
 
 func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
-	var value string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM platform_settings WHERE key = ?`, key).Scan(&value)
-	return value, err
+	return s.q.GetPlatformSetting(ctx, key)
 }
 
 func (s *Store) UpsertSetting(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO platform_settings (key, value)
-VALUES (?, ?)
-ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-`, key, value)
-	return err
+	return s.q.UpsertPlatformSetting(ctx, db.UpsertPlatformSettingParams{Key: key, Value: value})
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -342,7 +335,10 @@ func (s *Store) migrate(ctx context.Context) error {
 }
 
 func (s *Store) seedDefaults(ctx context.Context) error {
-	if err := s.insertSettingIfMissing(ctx, agentconfig.SystemPromptSettingKey, agentconfig.DefaultSystemPrompt); err != nil {
+	if err := s.q.InsertPlatformSettingIfMissing(ctx, db.InsertPlatformSettingIfMissingParams{
+		Key:   agentconfig.SystemPromptSettingKey,
+		Value: agentconfig.DefaultSystemPrompt,
+	}); err != nil {
 		return err
 	}
 	for _, role := range access.DefaultRoles() {
@@ -358,34 +354,24 @@ func (s *Store) seedDefaults(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM role_grant_templates WHERE role_name = ?`, role.Name); err != nil {
+		if err := s.q.DeleteRoleGrantTemplates(ctx, role.Name); err != nil {
 			return err
 		}
 		for _, privilege := range role.Privileges {
-			if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO role_grant_templates (role_name, privilege)
-		VALUES (?, ?)
-	ON CONFLICT(role_name, privilege) DO NOTHING
-	`, role.Name, string(privilege)); err != nil {
+			if err := s.q.InsertRoleGrantTemplate(ctx, db.InsertRoleGrantTemplateParams{
+				RoleName:  role.Name,
+				Privilege: string(privilege),
+			}); err != nil {
 				return err
 			}
 		}
 	}
-	if _, err := s.db.ExecContext(ctx, `
-	INSERT INTO securable_objects (id, object_type, display_name)
-	VALUES ('platform', 'platform', 'Platform')
-	ON CONFLICT(id) DO UPDATE SET object_type = excluded.object_type, display_name = excluded.display_name, updated_at = CURRENT_TIMESTAMP
-	`); err != nil {
+	if err := s.q.UpsertSecurableObject(ctx, db.UpsertSecurableObjectParams{
+		ID:          "platform",
+		ObjectType:  "platform",
+		DisplayName: "Platform",
+	}); err != nil {
 		return err
 	}
 	return nil
-}
-
-func (s *Store) insertSettingIfMissing(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO platform_settings (key, value)
-VALUES (?, ?)
-ON CONFLICT(key) DO NOTHING
-`, key, value)
-	return err
 }

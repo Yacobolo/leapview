@@ -2,6 +2,18 @@
 
 The headless API is served beneath `/api/v1`. This guide verifies authentication, discovers a workspace, and shows how to move from raw HTTP to generated operation metadata.
 
+## Before you begin
+
+Choose a non-production or read-only workspace, create a narrowly scoped credential, and install `curl` plus the LibreDash CLI version compatible with the target. Keep a request-size limit and timeout policy ready for the client you will build.
+
+Follow this discovery path:
+
+1. Store the target and token outside source code and shell history.
+2. Identify the authenticated principal.
+3. List authorized workspaces and dashboards with bounded pagination.
+4. Describe the generated operation before calling it from the CLI.
+5. Validate status and schema handling, then verify an end-to-end read.
+
 ## Create a scoped credential
 
 Use a dedicated service principal or a user token issued for this integration. Grant only the workspace and privileges needed for the first call. Store the values in the current shell from a secret manager:
@@ -71,4 +83,18 @@ Use repeatable `--path key=value` and `--query key=value` arguments for paramete
 
 Set client timeouts, check status before decoding success payloads, cap response sizes appropriate to the operation, and avoid automatic retries for state-changing requests unless the operation documents safe idempotency. Honor `429` backoff and preserve request/operation IDs from responses or logs for support.
 
-Use the generated [API reference](/docs/api), [API conventions](/docs/guides/integrate/api-conventions), and downloadable [OpenAPI document](/docs/openapi.yaml) for exact contracts.
+## Validate the integration contract
+
+Use the downloadable OpenAPI document as the source of request and response shape. Confirm the client distinguishes authentication, authorization, validation, rate-limit, and server errors before adding business logic. Run the same safe read with an expired or revoked credential and with a credential lacking workspace access; both paths must fail closed without logging the bearer token.
+
+## Verify an end-to-end read
+
+Select one dashboard from discovery, describe its generated operation, and request a bounded read for a known page or visual. Compare the returned workspace and dashboard IDs with the discovery response, verify the status and content type before decoding, and confirm a correlation identifier is retained for support. Revoke the temporary credential when the quickstart is complete.
+
+## Troubleshooting
+
+For `401`, check token source, expiry, revocation, and target origin. For `403`, inspect effective workspace privileges instead of replacing the token with an administrator credential. For `404`, use IDs from discovery rather than display titles. For `429`, honor server backoff and reduce concurrency. If decoding fails on a success response, compare the target's OpenAPI contract with the client version before changing parsing heuristics.
+
+## Next steps
+
+Use the generated [API reference](/docs/api), [API conventions](/docs/guides/integrate/api-conventions), and downloadable [OpenAPI document](/docs/openapi.yaml) for exact contracts. For automation, move the tested operation into a client with bounded retries, structured logging, and credential rotation.
