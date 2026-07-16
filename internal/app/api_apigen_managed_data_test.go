@@ -78,7 +78,7 @@ func TestManagedDataAPIGenPrivilegesArePlatformGlobal(t *testing.T) {
 		if got := apigenOperationPrivileges[operation]; got != privilege {
 			t.Errorf("%s privilege = %q, want %q", operation, got, privilege)
 		}
-		if resolver, exists := apigenOperationObjectResolvers[operation]; exists || resolver != nil {
+		if resolver := apigenOperationObjectResolver(operation); resolver != nil {
 			t.Errorf("%s must not have a workspace object resolver", operation)
 		}
 	}

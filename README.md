@@ -10,12 +10,12 @@ task dev
 
 `task dev` installs JavaScript dependencies with Bun, builds Tailwind CSS and Bun-bundled browser assets, syncs the demo data, starts or reuses a managed dev server, chooses a worktree-safe port, and prints the URL. Use `task dev:status`, `task dev:logs`, and `task dev:stop` for lifecycle checks. Set `LIBREDASH_DEV_RESTART=1` to force a restart.
 
-Generated files such as `static/app.css`, route entrypoints, and other bundled component assets are intentionally not checked in. If you run the app without `task dev`, build assets first:
+Generated Go build inputs, `static/app.css`, route entrypoints, and other bundled component assets are intentionally not checked in. If you run the app without `task dev`, generate code and build assets first:
 
 ```sh
-bun install
-bun run build
-go run ./internal/tools/bootstrapolist --out .data/olist
+task generate
+task build
+task bootstrap
 go run ./cmd/libredash
 ```
 
@@ -39,6 +39,7 @@ go run ./cmd/libredash data sync --project dashboards/libredash.yaml --connectio
 - `dashboards/libredash.yaml` is the CaC project entrypoint for global connections/sources and workspace-scoped models, semantic models, dashboards, access, and agent policy.
 - Semantic model YAML follows `sources -> models -> semantic model`: sources are raw physical inputs, models are light DuckDB-backed preparation tables, and semantic models own tables, fields, relationships, and measures.
 - Dashboard YAML owns pages, filters, KPIs, visuals, tables, and interactions over semantic model fields and measures.
+- `api/typespec/*.tsp` is the source of truth for the headless API and its declarative privilege and exact-object scope metadata. `task api:generate` emits the server, CLI, privilege registry, and operation-to-scope assignments; request-aware domain object resolvers remain handwritten.
 - Lit route components consume typed Datastar-backed page signals; dashboard visuals bind to signal payloads such as `visuals.revenue`.
 - `api/signals/main.tsp` is the source of truth for UI signal payloads. APIGen generates the shared Go models and TypeScript types with `task ui-signals:generate`; handwritten adapters only translate internal dashboard domain values into those transport contracts.
 - The bundled `datastar-inspector` web component shows live Datastar signals in the browser.

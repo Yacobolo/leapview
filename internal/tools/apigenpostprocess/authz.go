@@ -17,6 +17,7 @@ type apiGenIR struct {
 
 type apiGenEndpoint struct {
 	OperationID string                     `json:"operation_id"`
+	Path        string                     `json:"path"`
 	Extensions  map[string]json.RawMessage `json:"extensions"`
 }
 
@@ -46,33 +47,22 @@ func writeAPIGenAuthorizationRegistry(irPath, outputPath string) error {
 }
 
 func generateAPIGenAuthorizationRegistry(ir []byte) ([]byte, error) {
-	var document apiGenIR
-	if err := json.Unmarshal(ir, &document); err != nil {
-		return nil, fmt.Errorf("decode APIGen IR: %w", err)
+	document, err := decodeAPIGenIR(ir)
+	if err != nil {
+		return nil, err
 	}
-	if len(document.Endpoints) == 0 {
-		return nil, fmt.Errorf("APIGen IR contains no endpoints")
+	endpoints, err := validateAPIGenEndpoints(document.Endpoints)
+	if err != nil {
+		return nil, err
 	}
 
 	knownPrivileges := make(map[access.Privilege]struct{})
 	for _, privilege := range access.KnownPrivileges() {
 		knownPrivileges[privilege] = struct{}{}
 	}
-	operations := make([]apiGenOperationPrivilege, 0, len(document.Endpoints))
-	seen := make(map[string]struct{}, len(document.Endpoints))
-	for index, endpoint := range document.Endpoints {
-		operationID := strings.TrimSpace(endpoint.OperationID)
-		if operationID == "" {
-			return nil, fmt.Errorf("endpoint %d: missing operation_id", index)
-		}
-		if operationID != endpoint.OperationID {
-			return nil, fmt.Errorf("endpoint %d: operation_id %q contains surrounding whitespace", index, endpoint.OperationID)
-		}
-		if _, duplicate := seen[operationID]; duplicate {
-			return nil, fmt.Errorf("duplicate operation_id %q", operationID)
-		}
-		seen[operationID] = struct{}{}
-
+	operations := make([]apiGenOperationPrivilege, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		operationID := endpoint.OperationID
 		rawAuthz, ok := endpoint.Extensions["x-authz"]
 		if !ok {
 			return nil, fmt.Errorf("%s: missing x-authz", operationID)
@@ -109,4 +99,33 @@ func generateAPIGenAuthorizationRegistry(ir []byte) ([]byte, error) {
 		return nil, fmt.Errorf("format APIGen authorization registry: %w", err)
 	}
 	return formatted, nil
+}
+
+func decodeAPIGenIR(ir []byte) (apiGenIR, error) {
+	var document apiGenIR
+	if err := json.Unmarshal(ir, &document); err != nil {
+		return apiGenIR{}, fmt.Errorf("decode APIGen IR: %w", err)
+	}
+	if len(document.Endpoints) == 0 {
+		return apiGenIR{}, fmt.Errorf("APIGen IR contains no endpoints")
+	}
+	return document, nil
+}
+
+func validateAPIGenEndpoints(endpoints []apiGenEndpoint) ([]apiGenEndpoint, error) {
+	seen := make(map[string]struct{}, len(endpoints))
+	for index := range endpoints {
+		operationID := strings.TrimSpace(endpoints[index].OperationID)
+		if operationID == "" {
+			return nil, fmt.Errorf("endpoint %d: missing operation_id", index)
+		}
+		if operationID != endpoints[index].OperationID {
+			return nil, fmt.Errorf("endpoint %d: operation_id %q contains surrounding whitespace", index, endpoints[index].OperationID)
+		}
+		if _, duplicate := seen[operationID]; duplicate {
+			return nil, fmt.Errorf("duplicate operation_id %q", operationID)
+		}
+		seen[operationID] = struct{}{}
+	}
+	return endpoints, nil
 }

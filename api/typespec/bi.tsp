@@ -363,6 +363,7 @@ op listDashboards(@path workspace: string, @query limit?: int32, @query pageToke
 @route("/workspaces/{workspace}/dashboards/{dashboard}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "describe"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "describe_dashboard", effect: "read", tags: #["dashboard", "catalog"],
@@ -376,6 +377,7 @@ op getDashboard(@path workspace: string, @path dashboard: string): OkJson<Dashbo
 @route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/components")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "components"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "list_dashboard_components", effect: "read", tags: #["dashboard", "visual"],
@@ -389,6 +391,7 @@ op listDashboardComponents(@path workspace: string, @path dashboard: string, @pa
 @route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "visual"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }, #{ source: "path", name: "visual", displayName: "visual" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "describe_dashboard_visual", effect: "read", tags: #["dashboard", "visual"],
@@ -415,6 +418,7 @@ op listSemanticModels(@path workspace: string, @query limit?: int32, @query page
 @route("/workspaces/{workspace}/semantic-models/{model}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "describe"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "describe_model", effect: "read", tags: #["semantic-model", "catalog"],
@@ -428,6 +432,7 @@ op getSemanticModel(@path workspace: string, @path("model") modelName: string): 
 @route("/workspaces/{workspace}/semantic-models/{model}/fields")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "model-fields"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "list_semantic_model_fields", effect: "read", tags: #["semantic-model", "field"],
@@ -441,6 +446,7 @@ op listSemanticModelFields(@path workspace: string, @path("model") modelName: st
 @route("/workspaces/{workspace}/semantic-models/{model}/query")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "model-query"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_semantic_model", effect: "read", tags: #["semantic-model", "query"],
@@ -454,6 +460,7 @@ op querySemanticModel(@path workspace: string, @path("model") modelName: string,
 @route("/workspaces/{workspace}/semantic-models/{model}/query/explain")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "model-explain"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "explain_semantic_model_query", effect: "read", tags: #["semantic-model", "query"],
@@ -467,6 +474,7 @@ op explainSemanticModelQuery(@path workspace: string, @path("model") modelName: 
 @route("/workspaces/{workspace}/semantic-models/{model}/datasets")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "datasets"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "list_semantic_datasets", effect: "read", tags: #["semantic-model", "dataset"],
@@ -480,6 +488,7 @@ op listSemanticDatasets(@path workspace: string, @path("model") modelName: strin
 @route("/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "dataset"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }, #{ source: "path", name: "dataset", displayName: "dataset" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "describe_semantic_dataset", effect: "read", tags: #["semantic-model", "dataset"],
@@ -493,6 +502,7 @@ op getSemanticDataset(@path workspace: string, @path("model") modelName: string,
 @route("/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/fields")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "fields"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }, #{ source: "path", name: "dataset", displayName: "dataset" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "list_semantic_fields", effect: "read", tags: #["semantic-model", "dataset", "field"],
@@ -506,6 +516,7 @@ op listSemanticFields(@path workspace: string, @path("model") modelName: string,
 @route("/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/query")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "query"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }, #{ source: "path", name: "dataset", displayName: "dataset" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_semantic_dataset", effect: "read", tags: #["semantic-model", "dataset", "query"],
@@ -519,6 +530,7 @@ op querySemanticDataset(@path workspace: string, @path("model") modelName: strin
 @route("/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/preview")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "PREVIEW_DATA" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "preview"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }, #{ source: "path", name: "dataset", displayName: "dataset" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "preview_semantic_dataset", effect: "read", tags: #["semantic-model", "dataset", "query"],
@@ -532,6 +544,7 @@ op previewSemanticDataset(@path workspace: string, @path("model") modelName: str
 @route("/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/query/explain")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "explain-query"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }, #{ source: "path", name: "dataset", displayName: "dataset" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "explain_semantic_query", effect: "read", tags: #["semantic-model", "dataset", "query"],
@@ -545,6 +558,7 @@ op explainSemanticQuery(@path workspace: string, @path("model") modelName: strin
 @route("/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/preview/explain")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "PREVIEW_DATA" })
+@extension("x-libredash-object-scope", "semantic-model")
 @apigen.cli(#{ command: #["semantic-models", "explain-preview"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }, #{ source: "path", name: "dataset", displayName: "dataset" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "explain_semantic_preview", effect: "read", tags: #["semantic-model", "dataset", "query"],
@@ -558,6 +572,7 @@ op explainSemanticPreview(@path workspace: string, @path("model") modelName: str
 @route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/query")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "query-page"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_dashboard_page", effect: "read", tags: #["dashboard", "query"],
@@ -571,6 +586,7 @@ op queryDashboardPage(@path workspace: string, @path dashboard: string, @path pa
 @route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}/data")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "visual-data"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }, #{ source: "path", name: "visual", displayName: "visual" }], output: #{ mode: "collection" }, pagination: #{ itemsField: "data" } })
 @apigen.tool(#{
   name: "query_dashboard_visual_data", effect: "read", tags: #["dashboard", "visual", "query"],
@@ -584,6 +600,7 @@ op queryDashboardVisualData(@path workspace: string, @path dashboard: string, @p
 @route("/workspaces/{workspace}/dashboards/{dashboard}/tables/{table}/query")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "query-table"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "table", displayName: "table" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_table", effect: "read", tags: #["dashboard", "query", "table"],
@@ -597,6 +614,7 @@ op queryDashboardTable(@path workspace: string, @path dashboard: string, @path t
 @route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/tables/{table}/data")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "table-data"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }, #{ source: "path", name: "table", displayName: "table" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_dashboard_table_data", effect: "read", tags: #["dashboard", "query", "table"],
@@ -610,6 +628,7 @@ op queryDashboardTableData(@path workspace: string, @path dashboard: string, @pa
 @route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/filters/{filter}/options")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
+@extension("x-libredash-object-scope", "dashboard")
 @apigen.cli(#{ command: #["dashboards", "filter-options"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }, #{ source: "path", name: "filter", displayName: "filter" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "list_dashboard_filter_options", effect: "read", tags: #["dashboard", "filter"],

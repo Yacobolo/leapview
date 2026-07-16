@@ -50,6 +50,7 @@ jobs:
         run: |
           tracked="$(git ls-files -- \
             internal/app/api_apigen_authz.gen.go \
+            internal/app/api_apigen_object_scopes.gen.go \
             'internal/api/gen/*.go' \
             'internal/cli/gen/*.go' \
             internal/ui/signals/models.gen.go \
@@ -81,6 +82,7 @@ jobs:
           path: |
             api/gen/
             internal/app/api_apigen_authz.gen.go
+            internal/app/api_apigen_object_scopes.gen.go
             internal/api/gen/
             internal/cli/gen/
             internal/platform/db/db.go

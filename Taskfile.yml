@@ -187,6 +187,7 @@ tasks:
       - api/gen/json-ir.json
       - api/gen/openapi.yaml
       - internal/app/api_apigen_authz.gen.go
+      - internal/app/api_apigen_object_scopes.gen.go
       - internal/api/gen/request_models.gen.go
       - internal/api/gen/server.apigen.gen.go
       - internal/cli/gen/apigen_registry.gen.go
