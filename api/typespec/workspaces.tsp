@@ -177,6 +177,7 @@ op getWorkspaceActiveAssetGraph(@path workspace: string, @query environment?: st
 @route("/workspaces/{workspace}/assets/{assetId}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "workspace-asset")
 @apigen.cli(#{ command: #["assets", "describe"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "assetId", displayName: "asset-id" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "describe_asset",
@@ -192,6 +193,7 @@ op getWorkspaceAsset(@path workspace: string, @path assetId: string): OkJson<Ass
 @route("/workspaces/{workspace}/assets/{assetId}/lineage")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-libredash-object-scope", "workspace-asset")
 @apigen.cli(#{ command: #["assets", "lineage"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "assetId", displayName: "asset-id" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "asset_lineage",

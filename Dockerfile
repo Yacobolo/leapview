@@ -48,6 +48,7 @@ RUN go mod download
 COPY . .
 COPY --from=sourcegen /src/api/gen ./api/gen
 COPY --from=sourcegen /src/internal/app/api_apigen_authz.gen.go ./internal/app/api_apigen_authz.gen.go
+COPY --from=sourcegen /src/internal/app/api_apigen_object_scopes.gen.go ./internal/app/api_apigen_object_scopes.gen.go
 COPY --from=sourcegen /src/internal/api/gen ./internal/api/gen
 COPY --from=sourcegen /src/internal/cli/gen ./internal/cli/gen
 COPY --from=sourcegen /src/internal/platform/db/db.go ./internal/platform/db/db.go

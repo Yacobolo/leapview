@@ -26,6 +26,9 @@ func main() {
 	if err := writeAPIGenAuthorizationRegistry("api/gen/json-ir.json", "internal/app/api_apigen_authz.gen.go"); err != nil {
 		fatal(err)
 	}
+	if err := writeAPIGenObjectScopes("api/gen/json-ir.json", "internal/app/api_apigen_object_scopes.gen.go"); err != nil {
+		fatal(err)
+	}
 }
 
 func widenGeneratedInt64Fields(path string) error {

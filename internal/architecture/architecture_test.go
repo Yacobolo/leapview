@@ -698,6 +698,49 @@ func TestAPIGenAuthorizationRegistryIsGeneratedBuildInput(t *testing.T) {
 	}
 }
 
+func TestAPIGenObjectScopesAreGeneratedBuildInput(t *testing.T) {
+	root := repoRoot(t)
+	resolverPath := filepath.Join(root, "internal", "app", "api_apigen_object_resolvers.go")
+	resolverBody, err := os.ReadFile(resolverPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", resolverPath, err)
+	}
+	if strings.Contains(string(resolverBody), "map[string]httpauth.ObjectResolver") {
+		t.Fatal("APIGen operation-to-object-scope assignments must be generated from TypeSpec metadata")
+	}
+
+	files := map[string][]string{
+		"Taskfile.yml": {
+			"internal/app/api_apigen_object_scopes.gen.go",
+			"go run ./internal/tools/apigenpostprocess",
+		},
+		".gitignore": {
+			"internal/app/api_apigen_object_scopes.gen.go",
+		},
+		".dockerignore": {
+			"internal/app/api_apigen_object_scopes.gen.go",
+		},
+		filepath.Join(".github", "workflows", "ci.yml"): {
+			"Check generated Go build inputs are untracked",
+			"internal/app/api_apigen_object_scopes.gen.go",
+		},
+		"Dockerfile": {
+			"COPY --from=sourcegen /src/internal/app/api_apigen_object_scopes.gen.go ./internal/app/api_apigen_object_scopes.gen.go",
+		},
+	}
+	for name, fragments := range files {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, fragment := range fragments {
+			if !strings.Contains(string(body), fragment) {
+				t.Errorf("%s missing APIGen object-scope generation fragment %q", name, fragment)
+			}
+		}
+	}
+}
+
 func TestStorageArchitectureSpecDocumentsGlobalDuckLakeCatalog(t *testing.T) {
 	root := repoRoot(t)
 	spec, err := os.ReadFile(filepath.Join(root, "docs", "storage-architecture-spec.md"))

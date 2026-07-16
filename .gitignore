@@ -11,6 +11,7 @@ coverage.out
 api/gen/
 internal/api/gen/
 internal/app/api_apigen_authz.gen.go
+internal/app/api_apigen_object_scopes.gen.go
 internal/ui/signals/models.gen.go
 internal/cli/gen/
 internal/platform/db/db.go

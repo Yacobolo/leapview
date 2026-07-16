@@ -290,58 +290,43 @@ func TestAPIGenOperationAuthCoverage(t *testing.T) {
 
 func TestAPIGenOperationObjectResolverCoverage(t *testing.T) {
 	contracts := apigenapi.GetAPIGenOperationContracts()
-	objectScopedOperations := []string{
-		"getWorkspaceAsset",
-		"getWorkspaceAssetLineage",
-		"listWorkspaceAssetEdges",
-		"getDashboard",
-		"listDashboardComponents",
-		"getDashboardVisual",
-		"queryDashboardPage",
-		"queryDashboardVisualData",
-		"queryDashboardTable",
-		"queryDashboardTableData",
-		"listDashboardFilterOptions",
-		"getSemanticModel",
-		"listSemanticModelFields",
-		"querySemanticModel",
-		"explainSemanticModelQuery",
-		"listSemanticDatasets",
-		"getSemanticDataset",
-		"listSemanticFields",
-		"querySemanticDataset",
-		"previewSemanticDataset",
-		"explainSemanticQuery",
-		"explainSemanticPreview",
-		"getAgentConversation",
-		"updateAgentConversation",
-		"archiveAgentConversation",
-		"listAgentMessages",
-		"createAgentTurn",
-		"listAgentRuns",
-		"getAgentRun",
-		"listAgentEvents",
-	}
-	for _, operationID := range objectScopedOperations {
-		if _, ok := contracts[operationID]; !ok {
-			t.Fatalf("%s missing generated contract", operationID)
+	const extension = "x-libredash-object-scope"
+	for operationID, contract := range contracts {
+		rawScope, hasMetadata := contract.Extensions[extension]
+		generatedScope, hasGeneratedScope := apigenOperationObjectScopes[operationID]
+		if hasMetadata != hasGeneratedScope {
+			t.Fatalf("%s metadata presence = %t, generated scope presence = %t", operationID, hasMetadata, hasGeneratedScope)
+		}
+		if !hasMetadata {
+			if apigenOperationObjectResolver(operationID) != nil {
+				t.Fatalf("%s has no object-scope metadata but resolves an exact object", operationID)
+			}
+			continue
+		}
+		scope, ok := rawScope.(string)
+		if !ok {
+			t.Fatalf("%s object-scope metadata type = %T, want string", operationID, rawScope)
+		}
+		if string(generatedScope) != scope {
+			t.Fatalf("%s generated scope = %q, metadata = %q", operationID, generatedScope, scope)
 		}
 		if _, ok := apigenOperationPrivileges[operationID]; !ok {
 			t.Fatalf("%s missing privilege mapping", operationID)
 		}
-		if apigenOperationObjectResolvers[operationID] == nil {
+		if apigenOperationObjectResolver(operationID) == nil {
 			t.Fatalf("%s missing exact object resolver", operationID)
 		}
 	}
-	for operationID := range apigenOperationObjectResolvers {
+	for operationID, scope := range apigenOperationObjectScopes {
 		if _, ok := contracts[operationID]; !ok {
-			t.Fatalf("%s has object resolver but no generated contract", operationID)
+			t.Fatalf("%s has generated object scope but no generated contract", operationID)
 		}
-		if _, ok := apigenOperationPrivileges[operationID]; !ok {
-			t.Fatalf("%s has object resolver but no privilege mapping", operationID)
+		if apigenObjectResolvers[scope] == nil {
+			t.Fatalf("%s uses scope %q without a domain resolver", operationID, scope)
 		}
 	}
 	for _, operationID := range []string{
+		"listWorkspaceAssetEdges",
 		"listWorkspaceAssets",
 		"listDashboards",
 		"listSemanticModels",
@@ -351,7 +336,7 @@ func TestAPIGenOperationObjectResolverCoverage(t *testing.T) {
 		"createRefreshRun",
 		"listRefreshRuns",
 	} {
-		if apigenOperationObjectResolvers[operationID] != nil {
+		if apigenOperationObjectResolver(operationID) != nil {
 			t.Fatalf("%s should stay workspace-scoped and not use an exact object resolver", operationID)
 		}
 	}
