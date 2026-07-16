@@ -581,7 +581,7 @@ function testDocument(includeShellScript: boolean, compact = false, history = fa
             --ld-border-muted: 1px solid #d8dee4;
             --ld-border-width: 1px;
             --ld-fg-muted: #57606a;
-            --ld-shadow-floating: 0 8px 24px rgb(31 35 40 / 12%);
+            --ld-shadow-floating: 0 8px 24px rgb(0 0 0 / 12%);
           }
         </style>
       </head>

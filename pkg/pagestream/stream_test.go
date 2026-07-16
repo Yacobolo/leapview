@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -99,7 +100,7 @@ func TestSignalStreamForwardRelaysBrokerPatchesAndCleansUp(t *testing.T) {
 	broker := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/updates", nil).WithContext(ctx)
-	rec := httptest.NewRecorder()
+	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 
 	go func() {
@@ -115,7 +116,7 @@ func TestSignalStreamForwardRelaysBrokerPatchesAndCleansUp(t *testing.T) {
 	})
 	broker.Publish("client:page", SignalPatch{"status": "broker"})
 	waitFor(t, time.Second, func() bool {
-		return len(ssetest.PatchSignals(t, rec.Body.String())) >= 1
+		return strings.Contains(rec.BodyString(), "broker")
 	})
 
 	cancel()
@@ -128,10 +129,43 @@ func TestSignalStreamForwardRelaysBrokerPatchesAndCleansUp(t *testing.T) {
 		t.Fatalf("subscriber count after cancellation = %d, want 0", got)
 	}
 
-	patches := ssetest.PatchSignals(t, rec.Body.String())
+	patches := ssetest.PatchSignals(t, rec.BodyString())
 	if len(patches) != 1 || patches[0]["status"] != "broker" {
 		t.Fatalf("stream patches = %#v", patches)
 	}
+}
+
+type synchronizedRecorder struct {
+	*httptest.ResponseRecorder
+	mu sync.Mutex
+}
+
+func newSynchronizedRecorder() *synchronizedRecorder {
+	return &synchronizedRecorder{ResponseRecorder: httptest.NewRecorder()}
+}
+
+func (r *synchronizedRecorder) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ResponseRecorder.Write(p)
+}
+
+func (r *synchronizedRecorder) WriteHeader(statusCode int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ResponseRecorder.WriteHeader(statusCode)
+}
+
+func (r *synchronizedRecorder) Flush() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ResponseRecorder.Flush()
+}
+
+func (r *synchronizedRecorder) BodyString() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.Body.String()
 }
 
 func TestSignalStreamForwardRequiresBrokerAndStreamID(t *testing.T) {

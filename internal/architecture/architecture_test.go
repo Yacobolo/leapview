@@ -71,6 +71,67 @@ func TestUIPackageIsRenderOnly(t *testing.T) {
 	}
 }
 
+func TestStaticSQLiteAdaptersUseGeneratedQueries(t *testing.T) {
+	generatedOnly := map[string]bool{
+		"internal/agent/sqlite":        true,
+		"internal/deployment/sqlite":   true,
+		"internal/manageddata/sqlite":  true,
+		"internal/servingstate/sqlite": true,
+		"internal/workspace/sqlite":    true,
+	}
+	for _, file := range productionGoFiles(t) {
+		if !generatedOnly[file.pkgDir] {
+			continue
+		}
+		for _, directCall := range []string{".QueryContext(", ".QueryRowContext(", ".ExecContext("} {
+			if strings.Contains(file.body, directCall) {
+				t.Fatalf("%s bypasses sqlc via %s", file.path, directCall)
+			}
+		}
+	}
+}
+
+func TestSQLCQueriesAreSplitByDomain(t *testing.T) {
+	root := repoRoot(t)
+	queryDir := filepath.Join(root, "internal", "platform", "db", "queries")
+	for _, domain := range []string{
+		"access.sql",
+		"agent.sql",
+		"deployment.sql",
+		"managed_data.sql",
+		"materialization.sql",
+		"platform.sql",
+		"query_history.sql",
+		"serving_state.sql",
+		"workspace.sql",
+	} {
+		contents, err := os.ReadFile(filepath.Join(queryDir, domain))
+		if err != nil {
+			t.Fatalf("read sqlc query domain %s: %v", domain, err)
+		}
+		if !strings.Contains(string(contents), "-- name:") {
+			t.Fatalf("sqlc query domain %s contains no named queries", domain)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "platform", "db", "queries.sql")); !os.IsNotExist(err) {
+		t.Fatal("legacy sqlc query monolith must not exist")
+	}
+}
+
+func TestSQLCUsesRuntimeMigrationsAsItsSchemaSource(t *testing.T) {
+	root := repoRoot(t)
+	config, err := os.ReadFile(filepath.Join(root, "sqlc.yaml"))
+	if err != nil {
+		t.Fatalf("read sqlc config: %v", err)
+	}
+	if !strings.Contains(string(config), `schema: "internal/platform/migrations"`) {
+		t.Fatal("sqlc must compile against the runtime Goose migrations")
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "platform", "db", "schema.sql")); !os.IsNotExist(err) {
+		t.Fatal("duplicate sqlc schema snapshot must not exist")
+	}
+}
+
 func TestAppIsCompositionOnly(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
@@ -552,25 +613,25 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 		".gitignore": {
 			"internal/platform/db/db.go",
 			"internal/platform/db/models.go",
-			"internal/platform/db/queries.sql.go",
+			"internal/platform/db/*.sql.go",
 		},
 		".dockerignore": {
 			"internal/platform/db/db.go",
 			"internal/platform/db/models.go",
-			"internal/platform/db/queries.sql.go",
+			"internal/platform/db/*.sql.go",
 		},
 		filepath.Join(".github", "workflows", "ci.yml"): {
 			"Check generated database code is untracked",
-			"git ls-files -- internal/platform/db/db.go internal/platform/db/models.go internal/platform/db/queries.sql.go",
+			"git ls-files -- internal/platform/db/db.go internal/platform/db/models.go 'internal/platform/db/*.sql.go'",
 			"internal/platform/db/db.go",
 			"internal/platform/db/models.go",
-			"internal/platform/db/queries.sql.go",
+			"internal/platform/db/*.sql.go",
 		},
 		"Dockerfile": {
 			"go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate",
 			"COPY --from=sourcegen /src/internal/platform/db/db.go ./internal/platform/db/db.go",
 			"COPY --from=sourcegen /src/internal/platform/db/models.go ./internal/platform/db/models.go",
-			"COPY --from=sourcegen /src/internal/platform/db/queries.sql.go ./internal/platform/db/queries.sql.go",
+			"COPY --from=sourcegen /src/internal/platform/db/*.sql.go ./internal/platform/db/",
 		},
 	}
 	for name, fragments := range files {
@@ -581,6 +642,57 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 		for _, fragment := range fragments {
 			if !strings.Contains(string(body), fragment) {
 				t.Errorf("%s missing sqlc generation contract fragment %q", name, fragment)
+			}
+		}
+	}
+}
+
+func TestFixedPlatformSQLiteQueriesUseSQLC(t *testing.T) {
+	root := repoRoot(t)
+	queryContracts := map[string][]string{
+		filepath.Join("internal", "platform", "db", "queries", "access.sql"): {
+			"-- name: DeleteRoleGrantTemplates :exec",
+			"-- name: InsertRoleGrantTemplate :exec",
+		},
+		filepath.Join("internal", "platform", "db", "queries", "platform.sql"): {
+			"-- name: InsertPlatformSettingIfMissing :exec",
+		},
+		filepath.Join("internal", "platform", "db", "queries", "managed_data.sql"): {
+			"-- name: ListManagedDataReachabilitySources :many",
+		},
+	}
+	for name, markers := range queryContracts {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(body), marker) {
+				t.Errorf("%s missing sqlc query %q", name, marker)
+			}
+		}
+	}
+
+	handwrittenSQL := map[string][]string{
+		filepath.Join("internal", "platform", "store.go"): {
+			"DELETE FROM role_grant_templates",
+			"INSERT INTO role_grant_templates",
+			"INSERT INTO securable_objects",
+			"INSERT INTO platform_settings",
+		},
+		filepath.Join("internal", "manageddata", "maintenance", "sqlite", "source.go"): {
+			"const reachabilityQuery",
+			"QueryContext(ctx, reachabilityQuery)",
+		},
+	}
+	for name, fragments := range handwrittenSQL {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, fragment := range fragments {
+			if strings.Contains(string(body), fragment) {
+				t.Errorf("%s retains fixed-shape SQLite query %q instead of using sqlc", name, fragment)
 			}
 		}
 	}

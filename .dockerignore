@@ -22,7 +22,7 @@ internal/api/gen
 internal/cli/gen
 internal/platform/db/db.go
 internal/platform/db/models.go
-internal/platform/db/queries.sql.go
+internal/platform/db/*.sql.go
 
 static/app.css
 static/*.js
