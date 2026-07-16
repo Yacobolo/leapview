@@ -72,6 +72,7 @@ type Auth struct {
 	sessions     sessionManager
 	workspaceID  string
 	devBypass    bool
+	devAPIToken  string
 	apiTokenOnly bool
 	localAuth    bool
 	enabled      bool
@@ -86,6 +87,7 @@ type Auth struct {
 
 type AuthConfig struct {
 	DevBypass       bool
+	DevAPIToken     string
 	APITokenOnly    bool
 	LocalAuth       bool
 	AzureClientID   string
@@ -104,6 +106,7 @@ func NewAuth(repo access.Repository, workspaceID string, cfg AuthConfig) *Auth {
 		sessions:     repo,
 		workspaceID:  workspaceID,
 		devBypass:    cfg.DevBypass,
+		devAPIToken:  strings.TrimSpace(cfg.DevAPIToken),
 		apiTokenOnly: cfg.APITokenOnly,
 		localAuth:    cfg.LocalAuth,
 		azureTenant:  cfg.AzureTenant,
@@ -134,6 +137,18 @@ func NewAuth(repo access.Repository, workspaceID string, cfg AuthConfig) *Auth {
 	auth.stateKey = derivedSecret(cfg.CSRFKey, "oidc-state")
 	auth.enabled = true
 	return auth
+}
+
+func (a *Auth) acceptsPublicBearer(r *http.Request) bool {
+	if a == nil || !a.devBypass {
+		return true
+	}
+	want := a.devAPIToken
+	if want == "" {
+		want = "dev"
+	}
+	got := bearerToken(r)
+	return got != "" && hmac.Equal([]byte(got), []byte(want))
 }
 
 func hasOIDCProvider(providers []oidcauth.Config, id string) bool {

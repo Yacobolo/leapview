@@ -65,13 +65,12 @@ type AgentTurnResponse struct {
 }
 
 type AgentEventResponse struct {
-	ID        string         `json:"id"`
-	RunID     string         `json:"runId"`
-	Seq       int64          `json:"seq"`
-	EventType string         `json:"eventType"`
-	Severity  string         `json:"severity"`
-	Payload   map[string]any `json:"payload"`
-	CreatedAt string         `json:"createdAt"`
+	ID           string         `json:"id"`
+	Event        string         `json:"event"`
+	ResourceType string         `json:"resourceType"`
+	ResourceID   string         `json:"resourceId"`
+	Data         map[string]any `json:"data"`
+	CreatedAt    string         `json:"createdAt"`
 }
 
 type AdminAgentToolResponse struct {

@@ -334,7 +334,6 @@ func TestAPIGenOperationObjectResolverCoverage(t *testing.T) {
 	objectScopedOperations := []string{
 		"getWorkspaceAsset",
 		"getWorkspaceAssetLineage",
-		"listWorkspaceAssetEdges",
 		"getDashboard",
 		"getDashboardPage",
 		"getDashboardTable",

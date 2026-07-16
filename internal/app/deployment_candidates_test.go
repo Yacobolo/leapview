@@ -90,6 +90,29 @@ type workspaceAssetGraphProvider interface {
 	WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool)
 }
 
+type authorizationGraphProvider struct{}
+
+func (authorizationGraphProvider) WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
+	wid := workspace.WorkspaceID(workspaceID)
+	sid := workspace.ServingStateID(servingStateID)
+	catalog := authorizationTestAsset(wid, sid, workspace.AssetTypeCatalog, workspaceID, "", "Catalog")
+	visible := authorizationTestAsset(wid, sid, workspace.AssetTypeDashboard, "visible", catalog.ID, "Visible")
+	hidden := authorizationTestAsset(wid, sid, workspace.AssetTypeDashboard, "hidden", catalog.ID, "Hidden")
+	return []workspace.Asset{catalog, visible, hidden}, []workspace.AssetEdge{
+		workspace.NewAssetEdge(wid, sid, catalog.ID, visible.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(wid, sid, catalog.ID, hidden.ID, workspace.AssetEdgeContains),
+		workspace.NewAssetEdge(wid, sid, visible.ID, hidden.ID, workspace.AssetEdgeUsesSemanticModel),
+	}, true
+}
+
+func authorizationTestAsset(workspaceID workspace.WorkspaceID, servingStateID workspace.ServingStateID, typ workspace.AssetType, key string, parentID workspace.AssetID, title string) workspace.Asset {
+	asset, err := workspace.NewAssetWithSourceFile(workspaceID, servingStateID, typ, key, parentID, title, "", "testdata/"+key+".yaml", string(typ)+".v1", map[string]any{"key": key})
+	if err != nil {
+		panic(err)
+	}
+	return asset
+}
+
 func (runtimeAssetMetrics) WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
 	connection, err := testWorkspaceAsset(
 		workspace.WorkspaceID(workspaceID),
@@ -436,6 +459,66 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 	}
 }
 
+func TestWorkspaceGraphAPIsFilterUnauthorizedNodesBeforeEdgesAndLineage(t *testing.T) {
+	store := testStore(t)
+	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", authorizationGraphProvider{})
+	ctx := context.Background()
+	repo := testAccessRepository(store)
+	principal := testPrincipal(t, ctx, store, "limited@example.com", "Limited", "")
+	workspaceObject := access.WorkspaceObject("test")
+	visibleObject := access.ItemObjectWithParent(access.SecurableDashboard, "test", "visible", workspaceObject)
+	hiddenObject := access.ItemObjectWithParent(access.SecurableDashboard, "test", "hidden", workspaceObject)
+	for _, object := range []access.ObjectRef{workspaceObject, visibleObject, hiddenObject} {
+		if _, err := repo.UpsertSecurableObject(ctx, object, ""); err != nil {
+			t.Fatalf("upsert securable object %#v: %v", object, err)
+		}
+	}
+	for _, grant := range []access.GrantInput{
+		{Object: workspaceObject, SubjectType: access.SubjectPrincipal, SubjectID: principal.ID, Privilege: access.PrivilegeUseWorkspace},
+		{Object: visibleObject, SubjectType: access.SubjectPrincipal, SubjectID: principal.ID, Privilege: access.PrivilegeViewItem},
+	} {
+		if _, err := repo.CreateGrant(ctx, grant); err != nil {
+			t.Fatalf("create grant %#v: %v", grant, err)
+		}
+	}
+	token, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
+		PrincipalID: principal.ID,
+		WorkspaceID: "test",
+		Name:        "limited-graph",
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace, access.PrivilegeViewItem},
+	})
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+
+	get := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+		rec := httptest.NewRecorder()
+		server.Routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d body=%s", path, rec.Code, rec.Body.String())
+		}
+		return rec
+	}
+
+	for _, path := range []string{
+		"/api/v1/workspaces/test/assets?include=all",
+		"/api/v1/workspaces/test/asset-edges",
+		"/api/v1/workspaces/test/active-asset-graph",
+		"/api/v1/workspaces/test/assets/dashboard:visible/lineage",
+	} {
+		body := get(path).Body.String()
+		if strings.Contains(body, "dashboard:hidden") || strings.Contains(body, `"hidden"`) {
+			t.Fatalf("GET %s leaked inaccessible graph node or edge: %s", path, body)
+		}
+		if path != "/api/v1/workspaces/test/assets/dashboard:visible/lineage" && !strings.Contains(body, "dashboard:visible") {
+			t.Fatalf("GET %s omitted readable node: %s", path, body)
+		}
+	}
+}
+
 func TestWorkspaceAssetAPIIncludeAllReturnsFullActiveServingStateGraph(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
@@ -565,6 +648,7 @@ func TestWorkspaceListUsesRepositoryActiveMetadataWithoutGraphLoads(t *testing.T
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), WorkspaceRepo: repo, DefaultWorkspaceID: "sales"})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces?environment=dev", nil)
+	req.Header.Set("Authorization", "Bearer dev")
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -1034,6 +1118,7 @@ func TestAssetViewsDefaultToConfiguredEnvironment(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer dev")
 			rec := httptest.NewRecorder()
 			server.Routes().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {

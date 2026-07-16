@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,12 @@ import (
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 )
 
+func newPublicAPIRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	req.Header.Set("Authorization", "Bearer dev")
+	return req
+}
+
 func TestBIAPIListResponsesUseStandardEnvelope(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
 
@@ -24,7 +31,7 @@ func TestBIAPIListResponsesUseStandardEnvelope(t *testing.T) {
 		{path: "/api/v1/workspaces/test/dashboards?limit=1", name: "dashboards"},
 		{path: "/api/v1/workspaces/test/semantic-models?limit=1", name: "semantic models"},
 	} {
-		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req := newPublicAPIRequest(http.MethodGet, tc.path, nil)
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
 		server.Routes().ServeHTTP(rec, req)
@@ -57,7 +64,7 @@ func TestBIAPIListResponsesUseStandardEnvelope(t *testing.T) {
 		{path: "/api/v1/workspaces/test/dashboards/executive-sales", want: `"detail_tools"`},
 		{path: "/api/v1/workspaces/test/semantic-models/test", want: `"model_tables"`},
 	} {
-		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req := newPublicAPIRequest(http.MethodGet, tc.path, nil)
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
 		server.Routes().ServeHTTP(rec, req)
@@ -74,14 +81,14 @@ func TestBIAPIUsesWorkspaceRouteScope(t *testing.T) {
 	})
 	server := NewWithOptions(metrics, Options{Store: testStore(t), DefaultWorkspaceID: "sales"})
 
-	okReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/operations/dashboards/fulfillment-operations", nil)
+	okReq := newPublicAPIRequest(http.MethodGet, "/api/v1/workspaces/operations/dashboards/fulfillment-operations", nil)
 	okRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(okRec, okReq)
 	if okRec.Code != http.StatusOK {
 		t.Fatalf("operations dashboard status=%d want=200 body=%s", okRec.Code, okRec.Body.String())
 	}
 
-	crossReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/operations/dashboards/executive-sales", nil)
+	crossReq := newPublicAPIRequest(http.MethodGet, "/api/v1/workspaces/operations/dashboards/executive-sales", nil)
 	crossRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(crossRec, crossReq)
 	if crossRec.Code != http.StatusNotFound {
@@ -91,7 +98,7 @@ func TestBIAPIUsesWorkspaceRouteScope(t *testing.T) {
 
 func TestBIAPIListPaginationRejectsMalformedLimit(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards?limit=oops", nil)
+	req := newPublicAPIRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards?limit=oops", nil)
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -104,7 +111,7 @@ func TestBIAPIListPaginationRejectsMalformedLimit(t *testing.T) {
 func TestBIAPIQueriesBoundRowsAndPageData(t *testing.T) {
 	server := NewWithOptions(manyRowsMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
 
-	pageReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/query", strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}}`))
+	pageReq := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/query", strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}}`))
 	pageReq.Header.Set("Accept", "application/json")
 	pageReq.Header.Set("Content-Type", "application/json")
 	pageRec := httptest.NewRecorder()
@@ -113,7 +120,7 @@ func TestBIAPIQueriesBoundRowsAndPageData(t *testing.T) {
 		t.Fatalf("page query status=%d body=%s", pageRec.Code, pageRec.Body.String())
 	}
 
-	tableReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/query", strings.NewReader(`{"limit":500}`))
+	tableReq := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/query", strings.NewReader(`{"limit":500}`))
 	tableReq.Header.Set("Accept", "application/json")
 	tableReq.Header.Set("Content-Type", "application/json")
 	tableRec := httptest.NewRecorder()
@@ -133,7 +140,7 @@ func TestBIAPIQueriesBoundRowsAndPageData(t *testing.T) {
 func TestBIAPIDashboardVisualDataSurface(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
 
-	componentReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview", nil)
+	componentReq := newPublicAPIRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview", nil)
 	componentReq.Header.Set("Accept", "application/json")
 	componentRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(componentRec, componentReq)
@@ -160,7 +167,7 @@ func TestBIAPIDashboardVisualDataSurface(t *testing.T) {
 		t.Fatalf("page response = %s", componentRec.Body.String())
 	}
 
-	visualReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders", nil)
+	visualReq := newPublicAPIRequest(http.MethodGet, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders", nil)
 	visualReq.Header.Set("Accept", "application/json")
 	visualRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(visualRec, visualReq)
@@ -168,7 +175,7 @@ func TestBIAPIDashboardVisualDataSurface(t *testing.T) {
 		t.Fatalf("visual describe status=%d body=%s", visualRec.Code, visualRec.Body.String())
 	}
 
-	dataReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/query", strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}}`))
+	dataReq := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/query", strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}}`))
 	dataReq.Header.Set("Accept", "application/json")
 	dataReq.Header.Set("Content-Type", "application/json")
 	dataRec := httptest.NewRecorder()
@@ -177,7 +184,7 @@ func TestBIAPIDashboardVisualDataSurface(t *testing.T) {
 		t.Fatalf("visual data status=%d body=%s", dataRec.Code, dataRec.Body.String())
 	}
 
-	tableReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/query", strings.NewReader(`{"limit":10}`))
+	tableReq := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/query", strings.NewReader(`{"limit":10}`))
 	tableReq.Header.Set("Accept", "application/json")
 	tableReq.Header.Set("Content-Type", "application/json")
 	tableRec := httptest.NewRecorder()
@@ -186,7 +193,7 @@ func TestBIAPIDashboardVisualDataSurface(t *testing.T) {
 		t.Fatalf("table data status=%d body=%s", tableRec.Code, tableRec.Body.String())
 	}
 
-	filterReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/state/values?limit=1", strings.NewReader(`{}`))
+	filterReq := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/state/values?limit=1", strings.NewReader(`{}`))
 	filterReq.Header.Set("Accept", "application/json")
 	filterReq.Header.Set("Content-Type", "application/json")
 	filterRec := httptest.NewRecorder()
@@ -198,8 +205,9 @@ func TestBIAPIDashboardVisualDataSurface(t *testing.T) {
 
 func TestSemanticAPIQueryAuditIncludesWorkspace(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/semantic-models/test/query", strings.NewReader(`{"dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"limit":1}`))
+	req := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/semantic-models/test/query", strings.NewReader(`{"dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"limit":1}`))
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer dev")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "req_api_workspace")
 	req.Header.Set("X-Correlation-ID", "corr_api_workspace")
@@ -225,7 +233,7 @@ func TestSemanticAPIQueryAuditIncludesWorkspace(t *testing.T) {
 		t.Fatalf("query event stored result row values: %s", event.QueryJSON)
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/query-events?search=req_api_workspace&limit=10", nil)
+	listReq := newPublicAPIRequest(http.MethodGet, "/api/v1/workspaces/test/query-events?search=req_api_workspace&limit=10", nil)
 	listReq.Header.Set("Accept", "application/json")
 	listRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(listRec, listReq)
@@ -239,8 +247,9 @@ func TestSemanticAPIQueryAuditIncludesWorkspace(t *testing.T) {
 
 func TestDashboardPageQueryWritesQueryEvents(t *testing.T) {
 	server := NewWithOptions(auditedDashboardMetrics{fakeMetrics: fakeMetrics{}}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/query", strings.NewReader(`{}`))
+	req := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/query", strings.NewReader(`{}`))
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer dev")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "req_dashboard_page")
 	rec := httptest.NewRecorder()
@@ -261,8 +270,9 @@ func TestDashboardPageQueryWritesQueryEvents(t *testing.T) {
 
 func TestDashboardTableWindowWritesQueryEvents(t *testing.T) {
 	server := NewWithOptions(auditedDashboardMetrics{fakeMetrics: fakeMetrics{}}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/query", strings.NewReader(`{"limit":10}`))
+	req := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/orders/query", strings.NewReader(`{"limit":10}`))
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer dev")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "req_dashboard_table")
 	rec := httptest.NewRecorder()
@@ -293,7 +303,7 @@ func TestBIAPIDashboardVisualDataSurfaceNotFoundAndMalformedBody(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/tables/missing/query"},
 		{method: http.MethodPost, path: "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/missing/values"},
 	} {
-		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
+		req := newPublicAPIRequest(tc.method, tc.path, strings.NewReader(`{}`))
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
@@ -303,7 +313,7 @@ func TestBIAPIDashboardVisualDataSurfaceNotFoundAndMalformedBody(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/query", strings.NewReader(`{"filters":`))
+	req := newPublicAPIRequest(http.MethodPost, "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/query", strings.NewReader(`{"filters":`))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -372,7 +382,7 @@ func TestBIAPISemanticDatasetSurface(t *testing.T) {
 			if tc.body == "" {
 				body = strings.NewReader(`{}`)
 			}
-			req := httptest.NewRequest(tc.method, tc.path, body)
+			req := newPublicAPIRequest(tc.method, tc.path, body)
 			req.Header.Set("Accept", "application/json")
 			if tc.method == http.MethodPost {
 				req.Header.Set("Content-Type", "application/json")
@@ -405,7 +415,7 @@ func TestBIAPISemanticDatasetErrors(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/workspaces/test/semantic-models/test/query", body: `{"dimensions":[{"field":"orders.status"}],"sort":[{"field":"missing"}]}`, status: http.StatusBadRequest},
 		{method: http.MethodPost, path: "/api/v1/workspaces/test/semantic-models/test/query", body: `{"dimensions":`, status: http.StatusBadRequest},
 	} {
-		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req := newPublicAPIRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		req.Header.Set("Accept", "application/json")
 		if tc.method == http.MethodPost {
 			req.Header.Set("Content-Type", "application/json")

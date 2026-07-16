@@ -53,6 +53,34 @@ model StatusResponse {
   status: string;
 }
 
+model AsyncProgress {
+  current?: int64;
+  total?: int64;
+  percent?: float64;
+  message?: string;
+}
+
+model AsyncStructuredError {
+  code: string;
+  detail: string;
+}
+
+model AsyncEventResponse {
+  id: string;
+  event: string;
+  resourceType: string;
+  resourceId: string;
+  createdAt: utcDateTime;
+  progress?: AsyncProgress;
+  error?: AsyncStructuredError;
+  data: Record<unknown>;
+}
+
+model AsyncEventListResponse {
+  items: AsyncEventResponse[];
+  page: PageInfo;
+}
+
 alias JSONObject = Record<string>;
 
 model OkJson<T> {
@@ -84,7 +112,7 @@ model ArrowStreamResponse {
 model EventStreamResponse {
   ...OkResponse;
   @header contentType: "text/event-stream";
-  @header cacheControl: "no-cache";
+  @header cacheControl: "no-store";
   @body body: string;
 }
 

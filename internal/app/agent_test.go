@@ -217,7 +217,7 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 	eventsReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID+"/runs/"+run.ID+"/events?limit=1", token, "")
 	eventsRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(eventsRec, eventsReq)
-	if eventsRec.Code != http.StatusOK || !strings.Contains(eventsRec.Body.String(), `"eventType":"model_request"`) {
+	if eventsRec.Code != http.StatusOK || !strings.Contains(eventsRec.Body.String(), `"event":"model_request"`) {
 		t.Fatalf("nested events status=%d body=%s", eventsRec.Code, eventsRec.Body.String())
 	}
 	if _, err := testAgentRepository(store).FinishRun(ctx, agent.RunFinish{

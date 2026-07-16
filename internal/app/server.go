@@ -14,8 +14,10 @@ import (
 	agentopenai "github.com/Yacobolo/libredash/internal/agent/openai"
 	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
+	apiidempotencysqlite "github.com/Yacobolo/libredash/internal/apiidempotency/sqlite"
 	"github.com/Yacobolo/libredash/internal/asyncjob"
 	asyncjobsqlite "github.com/Yacobolo/libredash/internal/asyncjob/sqlite"
+	cursorsigningsqlite "github.com/Yacobolo/libredash/internal/cursorsigning/sqlite"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	deploymenthttp "github.com/Yacobolo/libredash/internal/deployment/http"
@@ -123,6 +125,7 @@ type Server struct {
 	managedDataMaintenanceStarted bool
 	apiIdempotencyMu              sync.Mutex
 	apiIdempotency                map[string]*apiIdempotencyRecord
+	apiIdempotencyStore           *apiidempotencysqlite.Store
 }
 
 func New(metrics QueryMetrics) *Server {
@@ -227,6 +230,10 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.store = options.Store
 	if options.Store != nil {
 		server.asyncJobs = asyncjobsqlite.NewRepository(options.Store.SQLDB())
+		server.apiIdempotencyStore = apiidempotencysqlite.NewStore(options.Store.SQLDB())
+		if err := cursorsigningsqlite.Configure(context.Background(), options.Store.SQLDB()); err != nil {
+			server.logger.ErrorContext(context.Background(), "configure cursor signing failed", "error", err)
+		}
 	}
 	server.servingStateRepo = servingStateRepo
 	server.managedDataBindingRepo = managedDataBindingRepo

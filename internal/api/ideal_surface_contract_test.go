@@ -65,6 +65,37 @@ func TestIdealV1Surface(t *testing.T) {
 	}
 }
 
+func TestEveryPublicOperationUsesGlobalBearerSecurity(t *testing.T) {
+	spec := managedDataOpenAPISpec(t)
+	security, _ := spec["security"].([]any)
+	if len(security) != 1 {
+		t.Fatalf("global security = %#v", security)
+	}
+	requirement, _ := security[0].(map[string]any)
+	if _, ok := requirement["BearerAuth"]; !ok {
+		t.Fatalf("global bearer security missing: %#v", security)
+	}
+	schemes := openAPIMap(t, openAPIMap(t, spec, "components"), "securitySchemes")
+	bearer := openAPIMap(t, schemes, "BearerAuth")
+	if bearer["type"] != "http" || !strings.EqualFold(bearer["scheme"].(string), "bearer") {
+		t.Fatalf("BearerAuth = %#v", bearer)
+	}
+	for path, rawPath := range openAPIMap(t, spec, "paths") {
+		pathItem, _ := rawPath.(map[string]any)
+		for method, rawOperation := range pathItem {
+			operation, ok := rawOperation.(map[string]any)
+			if !ok || method == "parameters" {
+				continue
+			}
+			if override, exists := operation["security"]; exists {
+				if values, _ := override.([]any); len(values) == 0 {
+					t.Errorf("%s %s disables bearer security", method, path)
+				}
+			}
+		}
+	}
+}
+
 func TestIdealQueryAndEventRepresentations(t *testing.T) {
 	spec := managedDataOpenAPISpec(t)
 	paths := openAPIMap(t, spec, "paths")
@@ -120,6 +151,27 @@ func TestDashboardVisualResponsesAreShapeDiscriminated(t *testing.T) {
 		schema := openAPISchema(t, schemas, name)
 		if len(openAPIMap(t, schema, "properties")) == 0 {
 			t.Errorf("%s has no explicit fields", name)
+		}
+	}
+}
+
+func TestDashboardPageComponentsAreKindDiscriminated(t *testing.T) {
+	spec := managedDataOpenAPISpec(t)
+	schemas := openAPIMap(t, openAPIMap(t, spec, "components"), "schemas")
+	component := openAPISchema(t, schemas, "DashboardComponentResponse")
+	discriminator, _ := component["discriminator"].(map[string]any)
+	if discriminator["propertyName"] != "kind" {
+		t.Fatalf("page component discriminator = %#v", discriminator)
+	}
+	variants, _ := component["oneOf"].([]any)
+	if len(variants) != 3 {
+		t.Fatalf("page component variants = %d, want 3: %#v", len(variants), component)
+	}
+	for _, name := range []string{"DashboardVisualComponentResponse", "DashboardTableComponentResponse", "DashboardFilterComponentResponse"} {
+		variant := openAPISchema(t, schemas, name)
+		allOf, _ := variant["allOf"].([]any)
+		if len(allOf) != 2 {
+			t.Errorf("%s does not refine the shared component schema: %#v", name, variant)
 		}
 	}
 }
@@ -225,5 +277,12 @@ func TestIdealAPIUsesBoundedInputsAndBodylessDeletes(t *testing.T) {
 	if _, ok := properties["rendererOptions"]; ok {
 		t.Fatalf("renderer-specific options leaked at the top level: %#v", properties)
 	}
+	if _, ok := properties["options"]; ok {
+		t.Fatalf("unrestricted visual options leaked at the top level: %#v", properties)
+	}
 	_ = schemaProperty(t, visual, "extensions")
+	interaction := schemaProperty(t, visual, "interaction")
+	if interaction["$ref"] != "#/components/schemas/DashboardVisualInteractionConfig" {
+		t.Fatalf("visual interaction is not explicitly typed: %#v", interaction)
+	}
 }

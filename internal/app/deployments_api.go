@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
@@ -176,14 +175,7 @@ func (a apiGenAdapter) ListDeploymentEvents(w http.ResponseWriter, r *http.Reque
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Deployment events are unavailable", nil)
 		return
 	}
-	events, err := storedAsyncEvents(r.Context(), eventsRepo, "deployment", deploymentID)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Deployment events could not be loaded", nil)
-		return
-	}
-	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "deployment:"+project+":"+deploymentID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		return storedAsyncEvents(ctx, eventsRepo, "deployment", deploymentID)
-	})
+	writeStoredAsyncEventPage(w, r, eventsRepo, "deployment", deploymentID, params.Limit, params.PageToken, "deployment:"+project+":"+deploymentID)
 }
 
 func deploymentResponse(row apiadapter.Deployment, releaseID, actor string) apigenapi.DeploymentResponse {

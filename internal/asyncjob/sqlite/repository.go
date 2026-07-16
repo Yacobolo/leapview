@@ -115,22 +115,18 @@ func (r *Repository) AppendEvent(ctx context.Context, resourceKind, resourceID, 
 	if resourceKind == "" || resourceID == "" || eventType == "" || !json.Valid(data) {
 		return asyncjob.Event{}, fmt.Errorf("invalid async event")
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
+	row := r.db.QueryRowContext(ctx, `INSERT INTO api_async_events (resource_kind, resource_id, event_id, event_type, data_json)
+		SELECT ?, ?, COALESCE(MAX(event_id), 0) + 1, ?, ?
+		FROM api_async_events WHERE resource_kind = ? AND resource_id = ?
+		RETURNING event_id, resource_kind, resource_id, event_type, data_json, created_at`,
+		resourceKind, resourceID, eventType, string(data), resourceKind, resourceID)
+	var event asyncjob.Event
+	var encoded string
+	if err := row.Scan(&event.ID, &event.ResourceKind, &event.ResourceID, &event.EventType, &encoded, &event.CreatedAt); err != nil {
 		return asyncjob.Event{}, err
 	}
-	defer tx.Rollback()
-	var next int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(event_id), 0) + 1 FROM api_async_events WHERE resource_kind = ? AND resource_id = ?`, resourceKind, resourceID).Scan(&next); err != nil {
-		return asyncjob.Event{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO api_async_events (resource_kind, resource_id, event_id, event_type, data_json) VALUES (?, ?, ?, ?, ?)`, resourceKind, resourceID, next, eventType, string(data)); err != nil {
-		return asyncjob.Event{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return asyncjob.Event{}, err
-	}
-	return r.event(ctx, resourceKind, resourceID, next)
+	event.Data = []byte(encoded)
+	return event, nil
 }
 
 func (r *Repository) ListEvents(ctx context.Context, resourceKind, resourceID string, after int64, limit int) ([]asyncjob.Event, error) {

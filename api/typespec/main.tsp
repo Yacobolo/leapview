@@ -12,6 +12,8 @@ import "./agent.tsp";
 import "./access.tsp";
 import "./audit.tsp";
 import "./managed_data.tsp";
+import "./upload_tus.tsp";
+import "./upload_s3_multipart.tsp";
 
 using Http;
 using TypeSpec.OpenAPI;

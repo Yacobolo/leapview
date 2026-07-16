@@ -53,18 +53,6 @@ model ReleaseArtifactResponse {
   sizeBytes: int64;
 }
 
-model AsyncEventResponse {
-  id: string;
-  event: string;
-  data: Record<unknown>;
-  createdAt: utcDateTime;
-}
-
-model AsyncEventListResponse {
-  items: AsyncEventResponse[];
-  page: PageInfo;
-}
-
 @tag("Releases")
 @summary("List project releases")
 @route("/projects/{project}/releases")

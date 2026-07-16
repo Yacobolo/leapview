@@ -2,13 +2,17 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	apiidempotencysqlite "github.com/Yacobolo/libredash/internal/apiidempotency/sqlite"
+	"github.com/Yacobolo/libredash/internal/cursorsigning"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -81,6 +85,103 @@ func TestPublicProtocolIdempotencyReplaysAndRejectsDigestReuse(t *testing.T) {
 	}
 }
 
+func TestPublicProtocolIdempotencyReplaysAfterServerRestart(t *testing.T) {
+	store := testStore(t)
+	calls := 0
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Location", "/api/v1/principals/p-restart")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"p-restart"}`))
+	})
+	request := func(server *Server) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/principals", bytes.NewBufferString(`{"email":"restart@example.com"}`))
+		req.Header.Set("Authorization", "Bearer token-a")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "restart-safe")
+		rec := httptest.NewRecorder()
+		server.publicProtocolMiddleware(next).ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := request(NewWithOptions(fakeMetrics{}, Options{Store: store}))
+	second := request(NewWithOptions(fakeMetrics{}, Options{Store: store}))
+	if first.Code != http.StatusCreated || second.Code != http.StatusCreated || calls != 1 {
+		t.Fatalf("first=%d second=%d calls=%d firstBody=%s secondBody=%s", first.Code, second.Code, calls, first.Body.String(), second.Body.String())
+	}
+	if second.Header().Get("Idempotency-Replayed") != "true" || second.Header().Get("Location") != first.Header().Get("Location") {
+		t.Fatalf("restart replay headers = %#v", second.Header())
+	}
+}
+
+func TestDurableIdempotencyReclaimsExpiredPendingLease(t *testing.T) {
+	store := testStore(t)
+	db := store.SQLDB()
+	now := time.Now().UTC()
+	if _, err := db.ExecContext(context.Background(), `INSERT INTO api_idempotency_records(
+		scope, request_digest, state, owner_id, lease_expires_at, created_at, updated_at, expires_at
+	) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`,
+		"stale-scope", "same-digest", "dead-server", now.Add(-time.Minute).Format(time.RFC3339Nano),
+		now.Add(-time.Hour).Format(time.RFC3339Nano), now.Add(-time.Minute).Format(time.RFC3339Nano), now.Add(time.Hour).Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("seed stale lease: %v", err)
+	}
+	record, execute, err := apiidempotencysqlite.NewStore(db).Claim(context.Background(), "stale-scope", "same-digest", "replacement-server", apiIdempotencyLease, apiIdempotencyLifetime)
+	if err != nil {
+		t.Fatalf("reclaim stale lease: %v", err)
+	}
+	if !execute || record.Owner != "replacement-server" || record.Digest != "same-digest" || !record.LeaseExpires.After(now) {
+		t.Fatalf("reclaimed record = %#v execute=%v", record, execute)
+	}
+}
+
+func TestDurableIdempotencyDoesNotReplayTransientServerFailures(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store})
+	calls := 0
+	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	request := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/p/releases", bytes.NewBufferString(`{"projectDigest":"sha256:test"}`))
+		req.Header.Set("Authorization", "Bearer dev")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "retry-transient")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	first, second := request(), request()
+	if first.Code != http.StatusServiceUnavailable || second.Code != http.StatusCreated || calls != 2 {
+		t.Fatalf("first=%d second=%d calls=%d", first.Code, second.Code, calls)
+	}
+	if second.Header().Get("Idempotency-Replayed") != "" {
+		t.Fatalf("successful retry was incorrectly replayed: %#v", second.Header())
+	}
+}
+
+func TestPublicProtocolMapsStreamedBodyLimitTo413(t *testing.T) {
+	server := New(fakeMetrics{})
+	handler := requestBodyLimit(RequestBodyLimitConfig{Enabled: true, MaxBytes: 4})(server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/principals", strings.NewReader(`{"email":"long@example.com"}`))
+	req.ContentLength = -1
+	req.Header.Set("Authorization", "Bearer token")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "too-large")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "CONTENT_TOO_LARGE") {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPublicProtocolRequiresIdempotencyKeyForMutationsOnly(t *testing.T) {
 	server := New(fakeMetrics{})
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
@@ -98,6 +199,54 @@ func TestPublicProtocolRequiresIdempotencyKeyForMutationsOnly(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 		if rec.Code != tc.want {
 			t.Errorf("POST %s = %d, want %d body=%s", tc.path, rec.Code, tc.want, rec.Body.String())
+		}
+	}
+}
+
+func TestPublicProtocolAlwaysRequiresBearerCredentials(t *testing.T) {
+	server := New(fakeMetrics{})
+	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, tc := range []struct {
+		name          string
+		authorization string
+		want          int
+	}{
+		{name: "missing", want: http.StatusUnauthorized},
+		{name: "browser scheme", authorization: "Basic ZGV2OmRldg==", want: http.StatusUnauthorized},
+		{name: "empty bearer", authorization: "Bearer", want: http.StatusUnauthorized},
+		{name: "bearer", authorization: "Bearer dev", want: http.StatusNoContent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/capabilities", nil)
+			req.Header.Set("Authorization", tc.authorization)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d body=%s", rec.Code, tc.want, rec.Body.String())
+			}
+			if tc.want == http.StatusUnauthorized && rec.Header().Get("Content-Type") != "application/problem+json" {
+				t.Fatalf("content type = %q body=%s", rec.Header().Get("Content-Type"), rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestPublicProtocolValidatesConfiguredDevelopmentBearer(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Auth: NewAuth(nil, "", AuthConfig{DevBypass: true, DevAPIToken: "local-secret"})})
+	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for token, want := range map[string]int{"wrong": http.StatusUnauthorized, "local-secret": http.StatusNoContent} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/capabilities", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatalf("token %q status = %d, want %d body=%s", token, rec.Code, want, rec.Body.String())
 		}
 	}
 }
@@ -125,6 +274,7 @@ func TestPublicListCursorsAreSignedBoundAndUnwrapped(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	next := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1&pageToken="+url.QueryEscape(response.Page.NextCursor), nil)
+	next.Header.Set("Authorization", "Bearer token")
 	nextRec := httptest.NewRecorder()
 	handler.ServeHTTP(nextRec, next)
 	if nextRec.Code != http.StatusNoContent || seen != "raw-row-id" {
@@ -132,6 +282,7 @@ func TestPublicListCursorsAreSignedBoundAndUnwrapped(t *testing.T) {
 	}
 
 	cross := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/other/assets?limit=1&pageToken="+url.QueryEscape(response.Page.NextCursor), nil)
+	cross.Header.Set("Authorization", "Bearer token")
 	crossRec := httptest.NewRecorder()
 	handler.ServeHTTP(crossRec, cross)
 	if crossRec.Code != http.StatusBadRequest {
@@ -140,15 +291,40 @@ func TestPublicListCursorsAreSignedBoundAndUnwrapped(t *testing.T) {
 }
 
 func TestPublicListCursorRejectsUnavailableServingSnapshot(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{ID: "sales", ActiveServingStateID: "state-new"}}})
 	first := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1", nil)
 	first.Header.Set(apiCursorSnapshotHeader, "state-old")
 	cursor := signAPIPageCursor(first, "last-asset")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{ID: "sales", ActiveServingStateID: "state-new"}}})
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	next := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1&pageToken="+url.QueryEscape(cursor), nil)
+	next.Header.Set("Authorization", "Bearer token")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, next)
 	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "SNAPSHOT_UNAVAILABLE") {
 		t.Fatalf("snapshot change status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPublicListCursorSurvivesServerRestartFromDurableKeyRing(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1", nil)
+	cursor := signAPIPageCursor(request, "asset-a")
+	if err := cursorsigning.Configure("transient", map[string][]byte{"transient": bytes.Repeat([]byte{9}, 32)}); err != nil {
+		t.Fatal(err)
+	}
+	server = NewWithOptions(fakeMetrics{}, Options{Store: store})
+	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("pageToken"); got != "asset-a" {
+			t.Fatalf("unwrapped cursor = %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	next := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1&pageToken="+url.QueryEscape(cursor), nil)
+	next.Header.Set("Authorization", "Bearer token")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, next)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

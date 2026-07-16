@@ -130,7 +130,7 @@ alias ListWorkspaceAssetEdgesOK = OkJson<AssetEdgeListResponse>;
 @summary("List workspace asset edges")
 @route("/workspaces/{workspace}/asset-edges")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 @apigen.cli(#{ command: #["assets", "edges"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "list_workspace_asset_edges",
@@ -154,7 +154,7 @@ alias ListWorkspaceAssetsOK = OkJson<AssetListResponse>;
 @summary("List workspace assets")
 @route("/workspaces/{workspace}/assets")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 @apigen.cli(#{ command: #["assets", "list"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "list_assets",
@@ -176,7 +176,7 @@ op listWorkspaceAssets(@path workspace: string, @query type?: string, @query q?:
 @summary("Get the active asset graph")
 @route("/workspaces/{workspace}/active-asset-graph")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 op getWorkspaceActiveAssetGraph(@path workspace: string): OkJson<WorkspaceAssetGraphResponse> | CommonErrors;
 
 @tag("Workspaces")

@@ -138,9 +138,13 @@ func TestManagedDataAPIModelsAreBoundedAndBackendNeutral(t *testing.T) {
 		}
 	}
 
-	typespec, err := os.ReadFile(filepath.Join("..", "..", "api", "typespec", "managed_data.tsp"))
-	if err != nil {
-		t.Fatalf("read managed-data TypeSpec: %v", err)
+	var typespec []byte
+	for _, name := range []string{"managed_data.tsp", "upload_tus.tsp", "upload_s3_multipart.tsp"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "api", "typespec", name))
+		if err != nil {
+			t.Fatalf("read %s TypeSpec: %v", name, err)
+		}
+		typespec = append(typespec, raw...)
 	}
 	for _, bounds := range []string{
 		"@minItems(1)\n  @maxItems(10000)\n  files:",

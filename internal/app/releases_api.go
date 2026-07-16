@@ -200,14 +200,7 @@ func (a apiGenAdapter) ListReleaseEvents(w http.ResponseWriter, r *http.Request,
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Release events are unavailable", nil)
 		return
 	}
-	events, err := storedAsyncEvents(r.Context(), eventsRepo, "release", releaseID)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Release events could not be loaded", nil)
-		return
-	}
-	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "release:"+project+":"+releaseID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		return storedAsyncEvents(ctx, eventsRepo, "release", releaseID)
-	})
+	writeStoredAsyncEventPage(w, r, eventsRepo, "release", releaseID, params.Limit, params.PageToken, "release:"+project+":"+releaseID)
 }
 
 func releaseResponse(row release.Release) apigenapi.ReleaseResponse {

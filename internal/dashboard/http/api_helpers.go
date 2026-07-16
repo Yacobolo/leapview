@@ -1,10 +1,7 @@
 package http
 
 import (
-	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +10,8 @@ import (
 	nethttp "net/http"
 	"strings"
 	"time"
+
+	"github.com/Yacobolo/libredash/internal/cursorsigning"
 )
 
 type pageResponse struct {
@@ -78,9 +77,7 @@ func apiPageItemKey(value any) string {
 
 func encodeDashboardKeysetCursor(key, scope, snapshot string) string {
 	payload, _ := json.Marshal(dashboardKeysetCursor{Key: key, Scope: scope, Snapshot: snapshot, Expires: time.Now().Add(dashboardCursorLifetime).Unix()})
-	mac := hmac.New(sha256.New, dashboardCursorKey[:])
-	_, _ = mac.Write(payload)
-	return "d2." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+	return cursorsigning.Sign("d2", payload)
 }
 
 func decodeDashboardKeysetCursor(token, scope, snapshot string) (string, error) {
@@ -90,14 +87,8 @@ func decodeDashboardKeysetCursor(token, scope, snapshot string) (string, error) 
 	if !strings.HasPrefix(token, "d2.") {
 		return "", fmt.Errorf("invalid page token")
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, "d2."))
-	if err != nil || len(raw) <= sha256.Size {
-		return "", fmt.Errorf("invalid page token")
-	}
-	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
-	mac := hmac.New(sha256.New, dashboardCursorKey[:])
-	_, _ = mac.Write(payload)
-	if !hmac.Equal(signature, mac.Sum(nil)) {
+	payload, err := cursorsigning.Verify("d2", token)
+	if err != nil {
 		return "", fmt.Errorf("invalid page token")
 	}
 	var cursor dashboardKeysetCursor
@@ -156,14 +147,6 @@ func apiCursorOffsetForRequest(w nethttp.ResponseWriter, r *nethttp.Request, sco
 
 const dashboardCursorLifetime = 15 * time.Minute
 
-var dashboardCursorKey = func() [32]byte {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
-		panic(fmt.Sprintf("initialize dashboard cursor key: %v", err))
-	}
-	return key
-}()
-
 var errDashboardCursorSnapshot = errors.New("cursor serving snapshot is unavailable")
 
 type dashboardIndexCursor struct {
@@ -180,15 +163,8 @@ func decodeIndexCursor(token string, scopes ...string) (int, error) {
 	if !strings.HasPrefix(token, "d1.") {
 		return 0, fmt.Errorf("invalid page token")
 	}
-	token = strings.TrimPrefix(token, "d1.")
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil || len(raw) <= sha256.Size {
-		return 0, fmt.Errorf("invalid page token")
-	}
-	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
-	mac := hmac.New(sha256.New, dashboardCursorKey[:])
-	_, _ = mac.Write(payload)
-	if !hmac.Equal(signature, mac.Sum(nil)) {
+	payload, err := cursorsigning.Verify("d1", token)
+	if err != nil {
 		return 0, fmt.Errorf("invalid page token")
 	}
 	var cursor dashboardIndexCursor
@@ -208,9 +184,7 @@ func decodeIndexCursor(token string, scopes ...string) (int, error) {
 func encodeIndexCursor(offset int, scopes ...string) string {
 	scope, snapshot := dashboardCursorScopeParts(scopes...)
 	payload, _ := json.Marshal(dashboardIndexCursor{Offset: offset, Scope: scope, Snapshot: snapshot, Expires: time.Now().Add(dashboardCursorLifetime).Unix()})
-	mac := hmac.New(sha256.New, dashboardCursorKey[:])
-	_, _ = mac.Write(payload)
-	return "d1." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+	return cursorsigning.Sign("d1", payload)
 }
 
 func dashboardCursorScopeParts(scopes ...string) (string, string) {

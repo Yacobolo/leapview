@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -159,14 +158,7 @@ func (a apiGenAdapter) ListManagedDataUploadSessionEvents(w http.ResponseWriter,
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Upload events are unavailable", nil)
 		return
 	}
-	events, err := storedAsyncEvents(r.Context(), eventsRepo, "upload", sessionID)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Upload events could not be loaded", nil)
-		return
-	}
-	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "upload:"+projectID+":"+connectionID+":"+sessionID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		return storedAsyncEvents(ctx, eventsRepo, "upload", sessionID)
-	})
+	writeStoredAsyncEventPage(w, r, eventsRepo, "upload", sessionID, params.Limit, params.PageToken, "upload:"+projectID+":"+connectionID+":"+sessionID)
 }
 
 func (a apiGenAdapter) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) {
@@ -227,14 +219,7 @@ func (a apiGenAdapter) ListRefreshRunEvents(w http.ResponseWriter, r *http.Reque
 		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Refresh events are unavailable", nil)
 		return
 	}
-	events, err := storedAsyncEvents(r.Context(), eventsRepo, "refresh", runID)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Refresh events could not be loaded", nil)
-		return
-	}
-	writeAsyncEventPage(w, r, events, params.Limit, params.PageToken, "refresh:"+workspaceID+":"+runID, func(ctx context.Context) ([]apigenapi.AsyncEventResponse, error) {
-		return storedAsyncEvents(ctx, eventsRepo, "refresh", runID)
-	})
+	writeStoredAsyncEventPage(w, r, eventsRepo, "refresh", runID, params.Limit, params.PageToken, "refresh:"+workspaceID+":"+runID)
 }
 
 func _normalizeProjectID(value string) string { return strings.TrimSpace(value) }

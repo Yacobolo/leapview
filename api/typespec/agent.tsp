@@ -73,21 +73,6 @@ model AgentRunCreateRequest {
   correlationId?: string;
 }
 
-model AgentEventResponse {
-  id: string;
-  runId: string;
-  seq: int64;
-  eventType: string;
-  severity: string;
-  payload: Record<string>;
-  createdAt: utcDateTime;
-}
-
-model AgentEventListResponse {
-  items: AgentEventResponse[];
-  page: PageInfo;
-}
-
 alias ListAgentConversationsOK = OkJson<AgentConversationListResponse>;
 
 @tag("Agent")
@@ -159,14 +144,14 @@ alias GetAgentRunOK = OkJson<AgentRunResponse>;
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
 op getAgentRun(@path workspace: string, @path conversation: string, @path run: string): GetAgentRunOK | CommonErrors;
 
-alias ListAgentEventsOK = OkJson<AgentEventListResponse>;
+alias ListAgentEventsOK = OkJson<AsyncEventListResponse>;
 
 @tag("Agent")
 @summary("List agent run events")
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AgentEventListResponse> | CommonErrors;
+op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
 
 @tag("Agent")
 @summary("Create an asynchronous agent run")

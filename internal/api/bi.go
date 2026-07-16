@@ -80,6 +80,9 @@ type DashboardComponentResponse struct {
 	Y           float64                      `json:"y,omitempty"`
 	Width       float64                      `json:"width,omitempty"`
 	Height      float64                      `json:"height,omitempty"`
+	VisualID    string                       `json:"visualId,omitempty"`
+	TableID     string                       `json:"tableId,omitempty"`
+	FilterID    string                       `json:"filterId,omitempty"`
 }
 
 type DashboardComponentListResponse struct {
@@ -131,7 +134,6 @@ type DashboardVisualDescribeResponse struct {
 	Title       string                       `json:"title,omitempty"`
 	Description string                       `json:"description,omitempty"`
 	Query       map[string]any               `json:"query,omitempty"`
-	Options     map[string]any               `json:"options,omitempty"`
 	Extensions  map[string]map[string]any    `json:"extensions,omitempty"`
 	Interaction map[string]any               `json:"interaction,omitempty"`
 	Placement   *DashboardComponentPlacement `json:"placement,omitempty"`

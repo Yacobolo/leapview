@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	stdhttp "net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -416,29 +417,24 @@ func (h *Handler) ListEvents(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 }
 
 func (h *Handler) streamRunEvents(w stdhttp.ResponseWriter, r *stdhttp.Request, service *agent.Service, scope agent.Scope, conversationID, runID string) {
-	load := func() ([]agent.Event, agent.Run, error) {
-		var run agent.Run
-		var err error
-		if conversationID == "" {
-			run, err = service.GetRunByID(r.Context(), scope, runID)
-		} else {
-			run, err = service.GetRun(r.Context(), scope, conversationID, runID)
-		}
-		if err != nil {
-			return nil, agent.Run{}, err
-		}
-		events, err := service.ListEvents(r.Context(), scope, runID)
-		return events, run, err
-	}
-	events, run, err := load()
+	run, err := service.GetRun(r.Context(), scope, conversationID, runID)
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
 	lastID := strings.TrimSpace(r.Header.Get("Last-Event-ID"))
-	if _, ok := agentEventsAfter(events, lastID); !ok {
-		writeJSONError(w, fmt.Errorf("Last-Event-ID does not identify an event in this run"), stdhttp.StatusBadRequest)
-		return
+	if lastID != "" {
+		sequence, parseErr := strconv.ParseInt(lastID, 10, 64)
+		if parseErr != nil || sequence < 1 {
+			writeJSONError(w, fmt.Errorf("Last-Event-ID does not identify an event in this run"), stdhttp.StatusBadRequest)
+			return
+		}
+		previous := fmt.Sprintf("%020d", sequence-1)
+		probe, probeErr := service.ListRunEventsPage(r.Context(), scope, conversationID, runID, agent.Page{Limit: 1, After: previous})
+		if probeErr != nil || len(probe) != 1 || probe[0].ID != lastID {
+			writeJSONError(w, fmt.Errorf("Last-Event-ID does not identify an event in this run"), stdhttp.StatusBadRequest)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -449,21 +445,32 @@ func (h *Handler) streamRunEvents(w stdhttp.ResponseWriter, r *stdhttp.Request, 
 	flusher, _ := w.(stdhttp.Flusher)
 	heartbeat := time.NewTicker(15 * time.Second)
 	poll := time.NewTicker(time.Second)
+	reauthorize := time.NewTimer(5 * time.Minute)
 	defer heartbeat.Stop()
 	defer poll.Stop()
+	defer reauthorize.Stop()
 
 	for {
-		pending, ok := agentEventsAfter(events, lastID)
-		if !ok {
-			return
-		}
-		for _, event := range pending {
-			payload, _ := json.Marshal(agentEventDTO(event))
-			_, _ = fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.ID, event.EventType, payload)
-			lastID = event.ID
+		for {
+			page, pageErr := service.ListRunEventsPage(r.Context(), scope, conversationID, runID, agent.Page{Limit: 100, After: lastID})
+			if pageErr != nil {
+				return
+			}
+			for _, event := range page {
+				payload, _ := json.Marshal(agentEventDTO(event))
+				_, _ = fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.ID, event.EventType, payload)
+				lastID = event.ID
+			}
+			if len(page) < 100 {
+				break
+			}
 		}
 		if flusher != nil {
 			flusher.Flush()
+		}
+		run, err = service.GetRun(r.Context(), scope, conversationID, runID)
+		if err != nil {
+			return
 		}
 		if agentRunTerminal(run.Status) {
 			return
@@ -471,16 +478,14 @@ func (h *Handler) streamRunEvents(w stdhttp.ResponseWriter, r *stdhttp.Request, 
 		select {
 		case <-r.Context().Done():
 			return
+		case <-reauthorize.C:
+			return
 		case <-heartbeat.C:
 			_, _ = fmt.Fprint(w, ": heartbeat\n\n")
 			if flusher != nil {
 				flusher.Flush()
 			}
 		case <-poll.C:
-			events, run, err = load()
-			if err != nil {
-				return
-			}
 		}
 	}
 }
@@ -492,18 +497,6 @@ func agentAcceptsEventStream(value string) bool {
 		}
 	}
 	return false
-}
-
-func agentEventsAfter(events []agent.Event, lastID string) ([]agent.Event, bool) {
-	if lastID == "" {
-		return events, true
-	}
-	for index, event := range events {
-		if event.ID == lastID {
-			return events[index+1:], true
-		}
-	}
-	return nil, false
 }
 
 func agentRunTerminal(status string) bool {
@@ -718,12 +711,15 @@ func agentMessageDTO(row agent.Message) api.AgentMessageResponse {
 
 func agentEventDTO(row agent.Event) api.AgentEventResponse {
 	return api.AgentEventResponse{
-		ID:        row.ID,
-		RunID:     row.RunID,
-		Seq:       row.Seq,
-		EventType: row.EventType,
-		Severity:  row.Severity,
-		Payload:   jsonObject(row.PayloadJSON),
+		ID:           row.ID,
+		Event:        row.EventType,
+		ResourceType: "agent_run",
+		ResourceID:   row.RunID,
+		Data: map[string]any{
+			"sequence": row.Seq,
+			"severity": row.Severity,
+			"payload":  jsonObject(row.PayloadJSON),
+		},
 		CreatedAt: row.CreatedAt,
 	}
 }

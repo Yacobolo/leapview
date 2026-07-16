@@ -2,12 +2,12 @@ package app
 
 import (
 	"bytes"
-	"crypto/hmac"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +15,8 @@ import (
 	"time"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	apiidempotencysqlite "github.com/Yacobolo/libredash/internal/apiidempotency/sqlite"
+	"github.com/Yacobolo/libredash/internal/cursorsigning"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -27,14 +29,8 @@ type apiIdempotencyRecord struct {
 }
 
 const apiCursorLifetime = 15 * time.Minute
-
-var apiCursorKey = func() [32]byte {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
-		panic(fmt.Sprintf("initialize API cursor key: %v", err))
-	}
-	return key
-}()
+const apiIdempotencyLifetime = 24 * time.Hour
+const apiIdempotencyLease = 30 * time.Second
 
 type apiCursor struct {
 	Value    string `json:"value"`
@@ -54,8 +50,12 @@ func (s *Server) publicProtocolMiddleware(next http.Handler) http.Handler {
 		}
 		w.Header().Set("X-Request-ID", requestID)
 		r.Header.Set(apiCursorSnapshotHeader, s.cursorSnapshot(r))
-		if s.auth != nil && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Authorization"))), "bearer ") {
+		if bearerToken(r) == "" {
 			writeAPIProblem(w, r, http.StatusUnauthorized, "BEARER_REQUIRED", "The public API accepts bearer credentials only", nil)
+			return
+		}
+		if s.auth != nil && !s.auth.acceptsPublicBearer(r) {
+			writeAPIProblem(w, r, http.StatusUnauthorized, "INVALID_BEARER", "The bearer credential is invalid", nil)
 			return
 		}
 		if !unwrapAPIPageCursor(w, r) {
@@ -75,23 +75,20 @@ func unwrapAPIPageCursor(w http.ResponseWriter, r *http.Request) bool {
 	if token == "" {
 		return true
 	}
-	if strings.HasPrefix(token, "q1.") || strings.HasPrefix(token, "d1.") || strings.HasPrefix(token, "e1.") {
+	if hasNativeCursorPrefix(token) {
 		return true
 	}
 	if !strings.HasPrefix(token, "g1.") {
 		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", "The page cursor is invalid or expired", nil)
 		return false
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, "g1."))
-	if err != nil || len(raw) <= sha256.Size {
+	payload, err := cursorsigning.Verify("g1", token)
+	if err != nil {
 		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", "The page cursor is invalid or expired", nil)
 		return false
 	}
-	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
-	mac := hmac.New(sha256.New, apiCursorKey[:])
-	_, _ = mac.Write(payload)
 	var cursor apiCursor
-	if !hmac.Equal(signature, mac.Sum(nil)) || json.Unmarshal(payload, &cursor) != nil || cursor.Expires < time.Now().Unix() || cursor.Scope != apiCursorScope(r) {
+	if json.Unmarshal(payload, &cursor) != nil || cursor.Expires < time.Now().Unix() || cursor.Scope != apiCursorScope(r) {
 		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", "The page cursor is invalid or expired", nil)
 		return false
 	}
@@ -106,13 +103,20 @@ func unwrapAPIPageCursor(w http.ResponseWriter, r *http.Request) bool {
 
 func signAPIPageCursor(r *http.Request, value string) string {
 	value = strings.TrimSpace(value)
-	if value == "" || strings.HasPrefix(value, "g1.") || strings.HasPrefix(value, "q1.") || strings.HasPrefix(value, "d1.") || strings.HasPrefix(value, "e1.") {
+	if value == "" || strings.HasPrefix(value, "g1.") || hasNativeCursorPrefix(value) {
 		return value
 	}
 	payload, _ := json.Marshal(apiCursor{Value: value, Scope: apiCursorScope(r), Snapshot: apiCursorSnapshotForRequest(r), Expires: time.Now().Add(apiCursorLifetime).Unix()})
-	mac := hmac.New(sha256.New, apiCursorKey[:])
-	_, _ = mac.Write(payload)
-	return "g1." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+	return cursorsigning.Sign("g1", payload)
+}
+
+func hasNativeCursorPrefix(value string) bool {
+	for _, prefix := range []string{"q1.", "q2.", "d1.", "d2.", "e1."} {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func apiCursorSnapshotForRequest(r *http.Request) string {
@@ -213,13 +217,31 @@ func (s *Server) serveIdempotent(w http.ResponseWriter, r *http.Request, next ht
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeAPIProblem(w, r, http.StatusRequestEntityTooLarge, "CONTENT_TOO_LARGE", "The request body exceeds the configured size limit", nil)
+			return
+		}
 		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_REQUEST_BODY", "The request body could not be read", nil)
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	digest := apiRequestDigest(r, body)
-	scopeHash := sha256.Sum256([]byte(strings.TrimSpace(r.Header.Get("Authorization"))))
-	scope := hex.EncodeToString(scopeHash[:]) + ":" + key
+	callerScope := ""
+	if s.auth != nil {
+		if principal, _, ok := s.auth.authenticate(r); ok {
+			callerScope = principal.ID
+		}
+	}
+	if callerScope == "" {
+		scopeHash := sha256.Sum256([]byte(strings.TrimSpace(r.Header.Get("Authorization"))))
+		callerScope = hex.EncodeToString(scopeHash[:])
+	}
+	scope := callerScope + ":" + r.Method + ":" + r.URL.EscapedPath() + ":" + key
+	if s.apiIdempotencyStore != nil {
+		s.serveDurableIdempotent(w, r, next, scope, digest)
+		return
+	}
 
 	s.apiIdempotencyMu.Lock()
 	if existing := s.apiIdempotency[scope]; existing != nil {
@@ -251,6 +273,105 @@ func (s *Server) serveIdempotent(w http.ResponseWriter, r *http.Request, next ht
 	capture.flush(w)
 }
 
+func (s *Server) serveDurableIdempotent(w http.ResponseWriter, r *http.Request, next http.Handler, scope, digest string) {
+	owner := newAPIRequestID()
+	record, execute, err := s.apiIdempotencyStore.Claim(r.Context(), scope, digest, owner, apiIdempotencyLease, apiIdempotencyLifetime)
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "IDEMPOTENCY_UNAVAILABLE", "Idempotency state is unavailable", nil)
+		return
+	}
+	if record.Digest != digest {
+		writeAPIProblem(w, r, http.StatusConflict, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for a different request", nil)
+		return
+	}
+	if !execute {
+		if record.Status == 0 {
+			record, execute, err = waitForAPIIdempotency(r, s.apiIdempotencyStore, scope, digest, owner)
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					writeAPIProblem(w, r, http.StatusRequestTimeout, "IDEMPOTENCY_WAIT_CANCELLED", "The original request did not finish before this request was cancelled", nil)
+					return
+				}
+				writeAPIProblem(w, r, http.StatusInternalServerError, "IDEMPOTENCY_UNAVAILABLE", "Idempotency state is unavailable", nil)
+				return
+			}
+		}
+		if record.Digest != digest {
+			writeAPIProblem(w, r, http.StatusConflict, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for a different request", nil)
+			return
+		}
+		if !execute {
+			replayStoredIdempotentResponse(w, record.Status, record.Header, record.Body)
+			return
+		}
+	}
+
+	leaseCtx, stopLease := context.WithCancel(context.Background())
+	defer stopLease()
+	go renewAPIIdempotencyLease(leaseCtx, s.apiIdempotencyStore, scope, digest, owner)
+	capture := newProtocolResponseCapture()
+	next.ServeHTTP(capture, r)
+	record.Status = capture.statusCode()
+	record.Header = capture.header.Clone()
+	record.Body = append([]byte(nil), capture.body.Bytes()...)
+	persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancelPersist()
+	if record.Status >= http.StatusInternalServerError {
+		if err := s.apiIdempotencyStore.Abandon(persistCtx, scope, digest, owner); err != nil {
+			writeAPIProblem(w, r, http.StatusInternalServerError, "IDEMPOTENCY_UNAVAILABLE", "The failed request lease could not be released", nil)
+			return
+		}
+		capture.flush(w)
+		return
+	}
+	if err := s.apiIdempotencyStore.Complete(persistCtx, scope, digest, owner, record.Status, record.Header, record.Body); err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "IDEMPOTENCY_UNAVAILABLE", "The response could not be committed to durable idempotency state", nil)
+		return
+	}
+	capture.flush(w)
+}
+
+func waitForAPIIdempotency(r *http.Request, store *apiidempotencysqlite.Store, scope, digest, owner string) (apiidempotencysqlite.Record, bool, error) {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		record, err := store.Load(r.Context(), scope)
+		if err != nil {
+			return apiidempotencysqlite.Record{}, false, err
+		}
+		if record.Digest != digest || record.Status != 0 {
+			return record, false, nil
+		}
+		if !record.LeaseExpires.After(time.Now().UTC()) {
+			record, execute, claimErr := store.Claim(r.Context(), scope, digest, owner, apiIdempotencyLease, apiIdempotencyLifetime)
+			if claimErr != nil {
+				return apiidempotencysqlite.Record{}, false, claimErr
+			}
+			if execute || record.Digest != digest || record.Status != 0 {
+				return record, execute, nil
+			}
+		}
+		select {
+		case <-r.Context().Done():
+			return apiidempotencysqlite.Record{}, false, r.Context().Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func renewAPIIdempotencyLease(ctx context.Context, store *apiidempotencysqlite.Store, scope, digest, owner string) {
+	ticker := time.NewTicker(apiIdempotencyLease / 3)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = store.Renew(ctx, scope, digest, owner, apiIdempotencyLease)
+		}
+	}
+}
+
 func apiRequestDigest(r *http.Request, body []byte) string {
 	digest := sha256.New()
 	_, _ = fmt.Fprintf(digest, "%s\n%s\n%s\n%s\n", r.Method, r.URL.EscapedPath(), r.URL.Query().Encode(), strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))))
@@ -259,15 +380,19 @@ func apiRequestDigest(r *http.Request, body []byte) string {
 }
 
 func replayIdempotentResponse(w http.ResponseWriter, record *apiIdempotencyRecord) {
-	for key, values := range record.header {
+	replayStoredIdempotentResponse(w, record.status, record.header, record.body)
+}
+
+func replayStoredIdempotentResponse(w http.ResponseWriter, status int, header http.Header, body []byte) {
+	for key, values := range header {
 		for _, value := range values {
 			w.Header().Add(key, value)
 		}
 	}
 	w.Header().Set("Idempotency-Replayed", "true")
-	w.WriteHeader(record.status)
-	if len(record.body) != 0 {
-		_, _ = w.Write(record.body)
+	w.WriteHeader(status)
+	if len(body) != 0 {
+		_, _ = w.Write(body)
 	}
 }
 

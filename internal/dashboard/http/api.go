@@ -460,6 +460,9 @@ func publicDashboardPatch(patch dashboard.Patch) map[string]any {
 
 func publicDashboardVisual(visual dashboard.Visual) map[string]any {
 	extensions := map[string]map[string]any{}
+	if len(visual.Options) > 0 {
+		extensions["libredash"] = visual.Options
+	}
 	for namespace, options := range visual.RendererOptions {
 		extensions[namespace] = options
 	}
@@ -487,7 +490,7 @@ func publicDashboardVisual(visual dashboard.Visual) map[string]any {
 		"version": visual.Version, "id": visual.ID, "kind": visual.Kind, "shape": visual.Shape, "renderer": visual.Renderer,
 		"type": visual.Type, "title": visual.Title, "unit": visual.Unit, "format": visual.Format, "interaction": visual.Interaction,
 		"dimensions": visual.Dimensions, "measure": visual.Measure, "measures": visual.Measures, "series": visual.Series,
-		"options": visual.Options, "selection": visual.Selection, "data": data,
+		"selection": visual.Selection, "data": data,
 	}
 	if len(extensions) > 0 {
 		out["extensions"] = extensions
@@ -527,6 +530,14 @@ func dashboardComponentDTO(component dashboard.PageVisual, report reportdef.Dash
 			RowSpan: component.Placement.RowSpan,
 		}
 	}
+	switch out.Kind {
+	case "visual":
+		out.VisualID = out.Ref
+	case "table":
+		out.TableID = out.Ref
+	case "filter":
+		out.FilterID = out.Ref
+	}
 	return out
 }
 
@@ -551,15 +562,20 @@ func dashboardVisualDTO(visualID string, visual reportdef.Visual, component dash
 		Title:       firstNonEmpty(component.Title, visual.Title),
 		Description: firstNonEmpty(component.Description, visual.Description),
 		Query:       jsonMap(visual.Query),
-		Options:     visual.Options,
 		Interaction: jsonMap(visual.Interaction),
 		X:           component.X,
 		Y:           component.Y,
 		Width:       component.Width,
 		Height:      component.Height,
 	}
-	if len(visual.RendererOptions) > 0 {
-		out.Extensions = map[string]map[string]any{firstNonEmpty(visual.Renderer, "plugin"): visual.RendererOptions}
+	if len(visual.Options) > 0 || len(visual.RendererOptions) > 0 {
+		out.Extensions = map[string]map[string]any{}
+		if len(visual.Options) > 0 {
+			out.Extensions["libredash"] = visual.Options
+		}
+		if len(visual.RendererOptions) > 0 {
+			out.Extensions[firstNonEmpty(visual.Renderer, "plugin")] = visual.RendererOptions
+		}
 	}
 	if !component.Placement.IsZero() {
 		out.Placement = &api.DashboardComponentPlacement{

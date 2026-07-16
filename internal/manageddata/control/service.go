@@ -12,6 +12,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/manageddata"
@@ -29,6 +30,13 @@ type Service struct {
 	verifyConcurrency int
 	transport         Transport
 	now               func() time.Time
+	finalizeMu        sync.Mutex
+	finalizers        map[string]*finalizeLock
+}
+
+type finalizeLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 func New(repo Repository, blobs storage.BlobStore, config Config) (*Service, error) {
@@ -58,6 +66,7 @@ func New(repo Repository, blobs storage.BlobStore, config Config) (*Service, err
 	return &Service{
 		repo: repo, blobs: blobs, limits: config.Limits, uploadTTL: config.UploadTTL,
 		verifyConcurrency: concurrency, transport: config.Transport, now: clock,
+		finalizers: map[string]*finalizeLock{},
 	}, nil
 }
 
@@ -195,6 +204,8 @@ func (s *Service) RecoverUpload(ctx context.Context, request UploadRequest) (Upl
 }
 
 func (s *Service) FinalizeUpload(ctx context.Context, request UploadRequest) (FinalizeResult, error) {
+	release := s.lockFinalization(strings.TrimSpace(request.UploadID))
+	defer release()
 	started, err := s.BeginFinalizeUpload(ctx, request)
 	if err != nil {
 		return FinalizeResult{Upload: started}, err
@@ -207,6 +218,27 @@ func (s *Service) FinalizeUpload(ctx context.Context, request UploadRequest) (Fi
 		return s.finalizedResult(ctx, collection, session, started)
 	}
 	return s.CompleteFinalizeUpload(ctx, request)
+}
+
+func (s *Service) lockFinalization(uploadID string) func() {
+	s.finalizeMu.Lock()
+	lock := s.finalizers[uploadID]
+	if lock == nil {
+		lock = &finalizeLock{}
+		s.finalizers[uploadID] = lock
+	}
+	lock.refs++
+	s.finalizeMu.Unlock()
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		s.finalizeMu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(s.finalizers, uploadID)
+		}
+		s.finalizeMu.Unlock()
+	}
 }
 
 func (s *Service) BeginFinalizeUpload(ctx context.Context, request UploadRequest) (UploadResult, error) {
@@ -256,6 +288,18 @@ func (s *Service) BeginFinalizeUpload(ctx context.Context, request UploadRequest
 	}
 	session, err = s.repo.BeginUploadFinalization(ctx, session.ID)
 	if err != nil {
+		if errors.Is(err, manageddata.ErrConflict) {
+			concurrent, loadErr := s.repo.UploadSessionByID(ctx, session.ID)
+			if loadErr == nil {
+				switch concurrent.Status {
+				case manageddata.UploadStatusCommitting:
+					upload.Status = concurrent.Status
+					return upload, nil
+				case manageddata.UploadStatusComplete:
+					return s.inspectUpload(ctx, collection, concurrent, false)
+				}
+			}
+		}
 		return upload, repositoryError(err)
 	}
 	upload.Status = session.Status
@@ -300,10 +344,7 @@ func (s *Service) CompleteFinalizeUpload(ctx context.Context, request UploadRequ
 	})
 	if err != nil {
 		if errors.Is(err, manageddata.ErrConflict) {
-			session, err = s.repo.UploadSessionByID(ctx, session.ID)
-			if err == nil && session.Status == manageddata.UploadStatusComplete {
-				return s.finalizedResult(ctx, collection, session, upload)
-			}
+			return s.waitForConcurrentFinalization(ctx, collection, session.ID, upload)
 		}
 		return s.failFinalizeUpload(ctx, session.ID, upload, repositoryError(err))
 	}
@@ -312,6 +353,30 @@ func (s *Service) CompleteFinalizeUpload(ctx context.Context, request UploadRequ
 		return FinalizeResult{Upload: upload}, repositoryError(err)
 	}
 	return s.finalizedResultWithRevision(ctx, collection, session, upload, revision)
+}
+
+func (s *Service) waitForConcurrentFinalization(ctx context.Context, collection CollectionResult, sessionID string, upload UploadResult) (FinalizeResult, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		session, err := s.repo.UploadSessionByID(waitCtx, sessionID)
+		if err != nil {
+			return FinalizeResult{Upload: upload}, repositoryError(err)
+		}
+		switch session.Status {
+		case manageddata.UploadStatusComplete:
+			return s.finalizedResult(waitCtx, collection, session, upload)
+		case manageddata.UploadStatusFailed, manageddata.UploadStatusAborted, manageddata.UploadStatusExpired:
+			return FinalizeResult{Upload: terminalUpload(collection, session, upload.Manifest)}, fmt.Errorf("%w: concurrent finalization ended with status %q", ErrConflict, session.Status)
+		}
+		select {
+		case <-waitCtx.Done():
+			return FinalizeResult{Upload: upload}, fmt.Errorf("%w: wait for concurrent finalization: %v", ErrConflict, waitCtx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Service) failFinalizeUpload(ctx context.Context, sessionID string, upload UploadResult, finalizationErr error) (FinalizeResult, error) {

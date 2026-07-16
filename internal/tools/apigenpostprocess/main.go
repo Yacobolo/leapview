@@ -23,6 +23,9 @@ func main() {
 	if err := addVisualUnionOpenAPIYAML("api/gen/openapi.yaml"); err != nil {
 		fatal(err)
 	}
+	if err := addPageComponentUnionOpenAPIYAML("api/gen/openapi.yaml"); err != nil {
+		fatal(err)
+	}
 	if err := relaxEmbeddedOpenAPI("internal/api/gen/server.apigen.gen.go"); err != nil {
 		fatal(err)
 	}
@@ -30,6 +33,9 @@ func main() {
 		fatal(err)
 	}
 	if err := addVisualUnionEmbeddedOpenAPI("internal/api/gen/server.apigen.gen.go"); err != nil {
+		fatal(err)
+	}
+	if err := addPageComponentUnionEmbeddedOpenAPI("internal/api/gen/server.apigen.gen.go"); err != nil {
 		fatal(err)
 	}
 	if err := useGeneratedProblemDetails("internal/api/gen/server.apigen.gen.go"); err != nil {
@@ -63,6 +69,84 @@ var visualSchemas = []visualSchema{
 	{"geo", "GeoVisualDataResponse", "GeoVisualDatum", []string{"name", "value", "selected"}, []string{"name", "value"}},
 	{"ohlc", "OHLCVisualDataResponse", "OHLCVisualDatum", []string{"label", "open", "close", "low", "high"}, []string{"label", "open", "close", "low", "high"}},
 	{"distribution", "DistributionVisualDataResponse", "DistributionVisualDatum", []string{"label", "min", "q1", "median", "q3", "max"}, []string{"label", "min", "q1", "median", "q3", "max"}},
+}
+
+type pageComponentSchema struct {
+	kind       string
+	schemaName string
+	refField   string
+}
+
+var pageComponentSchemas = []pageComponentSchema{
+	{kind: "visual", schemaName: "DashboardVisualComponentResponse", refField: "visualId"},
+	{kind: "table", schemaName: "DashboardTableComponentResponse", refField: "tableId"},
+	{kind: "filter", schemaName: "DashboardFilterComponentResponse", refField: "filterId"},
+}
+
+func addPageComponentUnionEmbeddedOpenAPI(path string) error {
+	return mutateEmbeddedOpenAPI(path, addPageComponentUnionSchemas)
+}
+
+func addPageComponentUnionSchemas(doc map[string]any) error {
+	components, _ := doc["components"].(map[string]any)
+	schemas, _ := components["schemas"].(map[string]any)
+	base, _ := schemas["DashboardComponentResponse"].(map[string]any)
+	if base == nil {
+		return fmt.Errorf("dashboard page component OpenAPI base schema missing")
+	}
+	mapping := make(map[string]any, len(pageComponentSchemas))
+	oneOf := make([]any, 0, len(pageComponentSchemas))
+	for _, component := range pageComponentSchemas {
+		mapping[component.kind] = "#/components/schemas/" + component.schemaName
+		oneOf = append(oneOf, map[string]any{"$ref": "#/components/schemas/" + component.schemaName})
+		schemas[component.schemaName] = map[string]any{
+			"allOf": []any{
+				map[string]any{"$ref": "#/components/schemas/DashboardComponentResponse"},
+				map[string]any{
+					"type": "object", "additionalProperties": false,
+					"required": []any{"kind", component.refField},
+					"properties": map[string]any{
+						"kind":             map[string]any{"type": "string", "enum": []any{component.kind}},
+						component.refField: map[string]any{"type": "string"},
+					},
+				},
+			},
+		}
+	}
+	base["discriminator"] = map[string]any{"propertyName": "kind", "mapping": mapping}
+	base["oneOf"] = oneOf
+	return nil
+}
+
+func addPageComponentUnionOpenAPIYAML(path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text := string(raw)
+	const marker = "    DashboardComponentResponse:\n"
+	start := strings.Index(text, marker)
+	if start < 0 {
+		return fmt.Errorf("%s: dashboard page component schema missing", path)
+	}
+	insertAt := start + len(marker)
+	var union strings.Builder
+	union.WriteString("      discriminator:\n        propertyName: kind\n        mapping:\n")
+	for _, component := range pageComponentSchemas {
+		fmt.Fprintf(&union, "          %s: '#/components/schemas/%s'\n", component.kind, component.schemaName)
+	}
+	union.WriteString("      oneOf:\n")
+	for _, component := range pageComponentSchemas {
+		fmt.Fprintf(&union, "        - $ref: '#/components/schemas/%s'\n", component.schemaName)
+	}
+	text = text[:insertAt] + union.String() + text[insertAt:]
+
+	var variants strings.Builder
+	for _, component := range pageComponentSchemas {
+		fmt.Fprintf(&variants, "    %s:\n      allOf:\n        - $ref: '#/components/schemas/DashboardComponentResponse'\n        - type: object\n          additionalProperties: false\n          required:\n            - kind\n            - %s\n          properties:\n            kind:\n              type: string\n              enum:\n                - %s\n            %s:\n              type: string\n", component.schemaName, component.refField, component.kind, component.refField)
+	}
+	text = text[:start] + variants.String() + text[start:]
+	return os.WriteFile(path, []byte(text), 0o644)
 }
 
 func addVisualUnionEmbeddedOpenAPI(path string) error {
@@ -343,8 +427,8 @@ func widenGeneratedInt64Fields(path string) error {
 			}
 		}
 	}
-	if widened != 8 {
-		return fmt.Errorf("%s: widened %d generated int64 fields, want 8", path, widened)
+	if widened != 10 {
+		return fmt.Errorf("%s: widened %d generated int64 fields, want 10", path, widened)
 	}
 	output, err := os.Create(path)
 	if err != nil {
@@ -358,6 +442,9 @@ func widenGeneratedInt64Fields(path string) error {
 }
 
 func generatedInt64Field(typeName, fieldName string) bool {
+	if typeName == "AsyncProgress" {
+		return fieldName == "Current" || fieldName == "Total"
+	}
 	if typeName == "ReleaseArtifactResponse" {
 		return fieldName == "SizeBytes"
 	}

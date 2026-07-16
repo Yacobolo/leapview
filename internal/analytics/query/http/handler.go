@@ -2,10 +2,8 @@ package http
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,6 +20,7 @@ import (
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
 	"github.com/Yacobolo/libredash/internal/api"
+	"github.com/Yacobolo/libredash/internal/cursorsigning"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
@@ -1149,9 +1148,7 @@ func listPageItemKey(value any) string {
 
 func encodeListKeysetCursor(key, scope, snapshot string) string {
 	payload, _ := json.Marshal(listKeysetCursor{Key: key, Scope: scope, Snapshot: snapshot, Expires: time.Now().Add(indexCursorLifetime).Unix()})
-	mac := hmac.New(sha256.New, indexCursorKey[:])
-	_, _ = mac.Write(payload)
-	return "q2." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+	return cursorsigning.Sign("q2", payload)
 }
 
 func decodeListKeysetCursor(token, scope, snapshot string) (string, error) {
@@ -1161,14 +1158,8 @@ func decodeListKeysetCursor(token, scope, snapshot string) (string, error) {
 	if !strings.HasPrefix(token, "q2.") {
 		return "", fmt.Errorf("invalid page token")
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, "q2."))
-	if err != nil || len(raw) <= sha256.Size {
-		return "", fmt.Errorf("invalid page token")
-	}
-	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
-	mac := hmac.New(sha256.New, indexCursorKey[:])
-	_, _ = mac.Write(payload)
-	if !hmac.Equal(signature, mac.Sum(nil)) {
+	payload, err := cursorsigning.Verify("q2", token)
+	if err != nil {
 		return "", fmt.Errorf("invalid page token")
 	}
 	var cursor listKeysetCursor
@@ -1225,14 +1216,6 @@ func apiCursorOffsetForRequest(w nethttp.ResponseWriter, r *nethttp.Request, sco
 
 const indexCursorLifetime = 15 * time.Minute
 
-var indexCursorKey = func() [32]byte {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
-		panic(fmt.Sprintf("initialize query cursor key: %v", err))
-	}
-	return key
-}()
-
 type indexCursor struct {
 	Offset   int    `json:"offset"`
 	Scope    string `json:"scope"`
@@ -1249,15 +1232,8 @@ func decodeIndexCursor(token string, scopes ...string) (int, error) {
 	if !strings.HasPrefix(token, "q1.") {
 		return 0, fmt.Errorf("invalid page token")
 	}
-	token = strings.TrimPrefix(token, "q1.")
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil || len(raw) <= sha256.Size {
-		return 0, fmt.Errorf("invalid page token")
-	}
-	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
-	mac := hmac.New(sha256.New, indexCursorKey[:])
-	_, _ = mac.Write(payload)
-	if !hmac.Equal(signature, mac.Sum(nil)) {
+	payload, err := cursorsigning.Verify("q1", token)
+	if err != nil {
 		return 0, fmt.Errorf("invalid page token")
 	}
 	var cursor indexCursor
@@ -1281,9 +1257,7 @@ func encodeIndexCursor(offset int, scopes ...string) string {
 
 func encodeIndexCursorValue(cursor indexCursor) string {
 	payload, _ := json.Marshal(cursor)
-	mac := hmac.New(sha256.New, indexCursorKey[:])
-	_, _ = mac.Write(payload)
-	return "q1." + base64.RawURLEncoding.EncodeToString(append(payload, mac.Sum(nil)...))
+	return cursorsigning.Sign("q1", payload)
 }
 
 func cursorScopeParts(scopes ...string) (string, string) {

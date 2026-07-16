@@ -378,6 +378,55 @@ func (h Handler) filterReadableAssets(r *nethttp.Request, workspaceID string, as
 	return out, nil
 }
 
+func (h Handler) filterReadableAssetViewsAndEdges(r *nethttp.Request, workspaceID string, assets []workspace.AssetView, edges []workspace.AssetEdgeView) ([]workspace.AssetView, []workspace.AssetEdgeView, error) {
+	filtered, err := h.filterReadableAssets(r, workspaceID, assets)
+	if err != nil {
+		return nil, nil, err
+	}
+	readable := make(map[string]struct{}, len(filtered))
+	for _, asset := range filtered {
+		readable[asset.ID] = struct{}{}
+	}
+	filteredEdges := make([]workspace.AssetEdgeView, 0, len(edges))
+	for _, edge := range edges {
+		_, fromReadable := readable[edge.FromAssetID]
+		_, toReadable := readable[edge.ToAssetID]
+		if fromReadable && toReadable {
+			filteredEdges = append(filteredEdges, edge)
+		}
+	}
+	return filtered, filteredEdges, nil
+}
+
+func (h Handler) filterReadableAssetGraph(r *nethttp.Request, workspaceID string, graph workspace.AssetGraph) (workspace.AssetGraph, error) {
+	readable := make(map[workspace.AssetID]struct{}, len(graph.Assets))
+	assets := make([]workspace.Asset, 0, len(graph.Assets))
+	for _, asset := range graph.Assets {
+		object, securable := assetObjectForID(workspaceID, string(asset.ID))
+		allowed := true
+		var err error
+		if securable {
+			allowed, err = h.ReadModel.CanReadObject(r, object)
+		}
+		if err != nil {
+			return workspace.AssetGraph{}, err
+		}
+		if allowed {
+			assets = append(assets, asset)
+			readable[asset.ID] = struct{}{}
+		}
+	}
+	edges := make([]workspace.AssetEdge, 0, len(graph.Edges))
+	for _, edge := range graph.Edges {
+		_, fromReadable := readable[edge.FromAssetID]
+		_, toReadable := readable[edge.ToAssetID]
+		if fromReadable && toReadable {
+			edges = append(edges, edge)
+		}
+	}
+	return workspace.AssetGraph{Assets: assets, Edges: edges}, nil
+}
+
 func (h Handler) ActiveDeploymentGraph(w nethttp.ResponseWriter, r *nethttp.Request) {
 	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
 	repo, err := h.workspaceRepository()
@@ -396,6 +445,11 @@ func (h Handler) ActiveDeploymentGraph(w nethttp.ResponseWriter, r *nethttp.Requ
 		if !ok {
 			graph = workspace.AssetGraph{}
 		}
+	}
+	graph, err = h.filterReadableAssetGraph(r, workspaceID, graph)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusInternalServerError)
+		return
 	}
 	response, err := apiWorkspaceAssetGraphDTO(graph)
 	if err != nil {
@@ -423,9 +477,14 @@ func (h Handler) Asset(w nethttp.ResponseWriter, r *nethttp.Request) {
 
 func (h Handler) AssetEdges(w nethttp.ResponseWriter, r *nethttp.Request) {
 	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
-	_, edges, err := h.assetsAndEdges(r, workspaceID)
+	assets, edges, err := h.assetsAndEdges(r, workspaceID)
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
+	_, edges, err = h.filterReadableAssetViewsAndEdges(r, workspaceID, assets, edges)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusInternalServerError)
 		return
 	}
 	_ = writePagedJSON(w, r, apiAssetEdgeDTOs(edges))
@@ -441,6 +500,11 @@ func (h Handler) AssetLineage(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 	if _, ok := workspace.AssetByID(assets, assetID); !ok {
 		writeJSONError(w, fmt.Errorf("asset %q not found", assetID), nethttp.StatusNotFound)
+		return
+	}
+	_, edges, err = h.filterReadableAssetViewsAndEdges(r, workspaceID, assets, edges)
+	if err != nil {
+		writeJSONError(w, err, nethttp.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, api.AssetLineageResponse{
@@ -729,7 +793,7 @@ func objectPrivilegeRoleViews() []workspace.RoleView {
 }
 
 func assetAccessObject(r *nethttp.Request, workspaceID string) (access.ObjectRef, bool) {
-	raw := strings.TrimSpace(chi.URLParam(r, "asset"))
+	raw := strings.TrimSpace(firstNonEmpty(chi.URLParam(r, "assetId"), chi.URLParam(r, "asset")))
 	return assetObjectForID(workspaceID, raw)
 }
 

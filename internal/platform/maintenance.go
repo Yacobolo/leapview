@@ -105,6 +105,14 @@ func pruneArchivedAgentConversations(ctx context.Context, tx *sql.Tx, now time.T
 	if dryRun {
 		return countWhere(ctx, tx, "SELECT COUNT(*) "+query, cutoff)
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM api_async_events
+		WHERE resource_kind = 'agent_run' AND resource_id IN (
+			SELECT r.id FROM agent_runs r
+			JOIN agent_conversations c ON c.id = r.conversation_id
+			WHERE c.archived_at IS NOT NULL AND c.archived_at <> '' AND c.archived_at < ?
+		)`, cutoff); err != nil {
+		return 0, err
+	}
 	result, err := tx.ExecContext(ctx, "DELETE "+query, cutoff)
 	if err != nil {
 		return 0, err

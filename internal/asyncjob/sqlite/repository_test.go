@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -76,5 +77,42 @@ func TestRepositoryRejectsIdempotentJobIDWithDifferentPayload(t *testing.T) {
 	input.Payload = []byte(`{"a":2}`)
 	if _, err := repo.Enqueue(t.Context(), input); err == nil {
 		t.Fatal("different payload reused the same durable job ID")
+	}
+}
+
+func TestRepositoryAppendsConcurrentEventsWithContiguousResourceSequence(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "platform.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := NewRepository(store.SQLDB())
+
+	const count = 20
+	errors := make(chan error, count)
+	var group sync.WaitGroup
+	for index := 0; index < count; index++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			_, appendErr := repo.AppendEvent(t.Context(), "deployment", "deploy-1", "deployment.progress", []byte(`{"status":"running"}`))
+			errors <- appendErr
+		}()
+	}
+	group.Wait()
+	close(errors)
+	for appendErr := range errors {
+		if appendErr != nil {
+			t.Fatalf("append concurrent event: %v", appendErr)
+		}
+	}
+	events, err := repo.ListEvents(t.Context(), "deployment", "deploy-1", 0, count)
+	if err != nil || len(events) != count {
+		t.Fatalf("events=%d err=%v", len(events), err)
+	}
+	for index, event := range events {
+		if event.ID != int64(index+1) {
+			t.Fatalf("event %d ID=%d", index, event.ID)
+		}
 	}
 }

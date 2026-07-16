@@ -1,160 +1,26 @@
 package app
 
 import (
-	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/analytics/materialize"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	"github.com/Yacobolo/libredash/internal/asyncjob"
-	"github.com/Yacobolo/libredash/internal/deployment/apiadapter"
-	"github.com/Yacobolo/libredash/internal/manageddata/control"
-	"github.com/Yacobolo/libredash/internal/release"
+	"github.com/Yacobolo/libredash/internal/cursorsigning"
 )
 
 const asyncCursorLifetime = 15 * time.Minute
 const asyncHeartbeatInterval = 15 * time.Second
 const asyncEventPollInterval = time.Second
+const asyncStreamAuthorizationLifetime = 5 * time.Minute
 
-type asyncEventLoader func(context.Context) ([]apigenapi.AsyncEventResponse, error)
-
-func storedAsyncEvents(ctx context.Context, repo asyncjob.Repository, resourceKind, resourceID string) ([]apigenapi.AsyncEventResponse, error) {
-	if repo == nil {
-		return nil, fmt.Errorf("async event repository is unavailable")
-	}
-	rows, err := repo.ListEvents(ctx, resourceKind, resourceID, 0, 200)
-	if err != nil {
-		return nil, err
-	}
-	events := make([]apigenapi.AsyncEventResponse, 0, len(rows))
-	for _, row := range rows {
-		data := map[string]any{}
-		if err := json.Unmarshal(row.Data, &data); err != nil {
-			return nil, err
-		}
-		events = append(events, apigenapi.AsyncEventResponse{Id: fmt.Sprintf("%020d", row.ID), Event: row.EventType, Data: data, CreatedAt: row.CreatedAt})
-	}
-	return events, nil
-}
-
-var asyncCursorKey = func() [32]byte {
-	var key [32]byte
-	if _, err := rand.Read(key[:]); err != nil {
-		panic(fmt.Sprintf("initialize async event cursor key: %v", err))
-	}
-	return key
-}()
-
-type asyncCursor struct {
-	Scope   string `json:"scope"`
-	LastID  string `json:"lastId"`
-	Expires int64  `json:"expires"`
-}
-
-func releaseEvents(row release.Release) []apigenapi.AsyncEventResponse {
-	events := []apigenapi.AsyncEventResponse{newAsyncEvent(1, "release.created", row.CreatedAt, map[string]any{
-		"releaseId": row.ID, "projectId": row.ProjectID, "status": release.StatusDraft,
-	})}
-	artifacts := append([]release.Artifact(nil), row.Artifacts...)
-	sort.Slice(artifacts, func(i, j int) bool {
-		if artifacts[i].UploadedAt == artifacts[j].UploadedAt {
-			return artifacts[i].WorkspaceID < artifacts[j].WorkspaceID
-		}
-		return artifacts[i].UploadedAt < artifacts[j].UploadedAt
-	})
-	for _, artifact := range artifacts {
-		if artifact.UploadedAt == "" {
-			continue
-		}
-		events = append(events, newAsyncEvent(len(events)+1, "release.artifact_uploaded", artifact.UploadedAt, map[string]any{
-			"releaseId": row.ID, "workspaceId": artifact.WorkspaceID, "digest": artifact.ActualDigest,
-		}))
-	}
-	if row.Status != release.StatusDraft {
-		createdAt := row.FinalizedAt
-		if createdAt == "" {
-			createdAt = row.CreatedAt
-		}
-		data := map[string]any{"releaseId": row.ID, "status": row.Status}
-		if row.Error != "" {
-			data["error"] = row.Error
-		}
-		events = append(events, newAsyncEvent(len(events)+1, "release."+string(row.Status), createdAt, data))
-	}
-	return events
-}
-
-func deploymentEvents(row apiadapter.Deployment, releaseID string) []apigenapi.AsyncEventResponse {
-	events := []apigenapi.AsyncEventResponse{newAsyncEvent(1, "deployment.created", row.CreatedAt, map[string]any{
-		"deploymentId": row.ID, "projectId": row.Project, "releaseId": releaseID, "status": "queued",
-	})}
-	if row.Status != apiadapter.StatusPending {
-		createdAt := row.ActivatedAt
-		if createdAt == "" {
-			createdAt = row.CreatedAt
-		}
-		data := map[string]any{"deploymentId": row.ID, "releaseId": releaseID, "status": row.Status}
-		if row.Error != "" {
-			data["error"] = row.Error
-		}
-		events = append(events, newAsyncEvent(2, "deployment."+string(row.Status), createdAt, data))
-	}
-	return events
-}
-
-func uploadSessionEvents(row control.UploadResult) []apigenapi.AsyncEventResponse {
-	events := []apigenapi.AsyncEventResponse{newAsyncEvent(1, "upload_session.created", row.CreatedAt, map[string]any{
-		"uploadSessionId": row.ID, "projectId": row.Collection.Project, "connectionId": row.Collection.Connection, "status": "open",
-	})}
-	if string(row.Status) != "open" {
-		createdAt := row.CompletedAt
-		if createdAt == "" {
-			createdAt = row.CreatedAt
-		}
-		events = append(events, newAsyncEvent(2, "upload_session."+string(row.Status), createdAt, map[string]any{
-			"uploadSessionId": row.ID, "status": row.Status,
-		}))
-	}
-	return events
-}
-
-func refreshRunEvents(row materialize.RunRecord) []apigenapi.AsyncEventResponse {
-	events := []apigenapi.AsyncEventResponse{newAsyncEvent(1, "refresh.queued", row.CreatedAt, map[string]any{
-		"runId": row.ID, "workspaceId": row.WorkspaceID, "status": materialize.RunStatusQueued,
-	})}
-	if row.StartedAt != "" && row.Status != materialize.RunStatusQueued && row.Status != materialize.RunStatusCancelled {
-		events = append(events, newAsyncEvent(len(events)+1, "refresh.running", row.StartedAt, map[string]any{"runId": row.ID, "status": materialize.RunStatusRunning}))
-	}
-	if row.FinishedAt != "" {
-		data := map[string]any{"runId": row.ID, "status": row.Status}
-		if row.Error != "" {
-			data["error"] = row.Error
-		}
-		events = append(events, newAsyncEvent(len(events)+1, "refresh."+row.Status, row.FinishedAt, data))
-	}
-	return events
-}
-
-func newAsyncEvent(sequence int, event, createdAt string, data map[string]any) apigenapi.AsyncEventResponse {
-	return apigenapi.AsyncEventResponse{Id: fmt.Sprintf("%020d", sequence), Event: event, Data: data, CreatedAt: createdAt}
-}
-
-func writeAsyncEventPage(w http.ResponseWriter, r *http.Request, events []apigenapi.AsyncEventResponse, limit *int32, token *string, scope string, loaders ...asyncEventLoader) {
+func writeStoredAsyncEventPage(w http.ResponseWriter, r *http.Request, repo asyncjob.Repository, resourceKind, resourceID string, limit *int32, token *string, scope string) {
 	if acceptsEventStream(r.Header.Get("Accept")) {
-		var loader asyncEventLoader
-		if len(loaders) > 0 {
-			loader = loaders[0]
-		}
-		writeAsyncEventStream(w, r, events, loader)
+		writeStoredAsyncEventStream(w, r, repo, resourceKind, resourceID)
 		return
 	}
 	pageLimit := 50
@@ -167,12 +33,33 @@ func writeAsyncEventPage(w http.ResponseWriter, r *http.Request, events []apigen
 	}
 	pageToken := ""
 	if token != nil {
-		pageToken = *token
+		pageToken = strings.TrimSpace(*token)
 	}
-	items, next, err := pageAsyncEvents(events, pageLimit, pageToken, scope)
+	after, err := asyncEventCursorAfter(pageToken, scope)
 	if err != nil {
 		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", "The event cursor is invalid or expired", nil)
 		return
+	}
+	rows, err := repo.ListEvents(r.Context(), resourceKind, resourceID, after, pageLimit)
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Events could not be loaded", nil)
+		return
+	}
+	items, err := asyncEventResponses(rows)
+	if err != nil {
+		writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Events could not be decoded", nil)
+		return
+	}
+	next := ""
+	if len(rows) == pageLimit {
+		probe, probeErr := repo.ListEvents(r.Context(), resourceKind, resourceID, rows[len(rows)-1].ID, 1)
+		if probeErr != nil {
+			writeAPIProblem(w, r, http.StatusInternalServerError, "ASYNC_EVENT_READ_FAILED", "Events could not be loaded", nil)
+			return
+		}
+		if len(probe) != 0 {
+			next = encodeAsyncCursor(asyncCursor{Scope: scope, LastID: fmt.Sprintf("%020d", rows[len(rows)-1].ID), Expires: time.Now().Add(asyncCursorLifetime).Unix()})
+		}
 	}
 	page := apigenapi.PageInfo{}
 	if next != "" {
@@ -181,20 +68,69 @@ func writeAsyncEventPage(w http.ResponseWriter, r *http.Request, events []apigen
 	writeAPIJSON(w, http.StatusOK, apigenapi.AsyncEventListResponse{Items: items, Page: page})
 }
 
-func acceptsEventStream(accept string) bool {
-	for _, value := range strings.Split(accept, ",") {
-		if strings.EqualFold(strings.TrimSpace(strings.SplitN(value, ";", 2)[0]), "text/event-stream") {
-			return true
-		}
+func asyncEventCursorAfter(token, scope string) (int64, error) {
+	if token == "" {
+		return 0, nil
 	}
-	return false
+	cursor, err := decodeAsyncCursor(token)
+	if err != nil || cursor.Scope != scope || cursor.Expires < time.Now().Unix() || cursor.LastID == "" {
+		return 0, fmt.Errorf("invalid cursor")
+	}
+	after, err := strconv.ParseInt(cursor.LastID, 10, 64)
+	if err != nil || after < 1 {
+		return 0, fmt.Errorf("invalid cursor")
+	}
+	return after, nil
 }
 
-func writeAsyncEventStream(w http.ResponseWriter, r *http.Request, events []apigenapi.AsyncEventResponse, loader asyncEventLoader) {
+func asyncEventResponses(rows []asyncjob.Event) ([]apigenapi.AsyncEventResponse, error) {
+	events := make([]apigenapi.AsyncEventResponse, 0, len(rows))
+	for _, row := range rows {
+		data := map[string]any{}
+		if err := json.Unmarshal(row.Data, &data); err != nil {
+			return nil, err
+		}
+		response := apigenapi.AsyncEventResponse{
+			Id: fmt.Sprintf("%020d", row.ID), Event: row.EventType,
+			ResourceType: row.ResourceKind, ResourceId: row.ResourceID,
+			Data: data, CreatedAt: row.CreatedAt,
+		}
+		if raw, ok := data["progress"].(map[string]any); ok {
+			encoded, _ := json.Marshal(raw)
+			var progress apigenapi.AsyncProgress
+			if json.Unmarshal(encoded, &progress) == nil {
+				response.Progress = &progress
+				delete(data, "progress")
+			}
+		}
+		if raw, ok := data["error"].(map[string]any); ok {
+			encoded, _ := json.Marshal(raw)
+			var problem apigenapi.AsyncStructuredError
+			if json.Unmarshal(encoded, &problem) == nil && problem.Code != "" && problem.Detail != "" {
+				response.Error = &problem
+				delete(data, "error")
+			}
+		}
+		events = append(events, response)
+	}
+	return events, nil
+}
+
+func writeStoredAsyncEventStream(w http.ResponseWriter, r *http.Request, repo asyncjob.Repository, resourceKind, resourceID string) {
 	lastID := strings.TrimSpace(r.Header.Get("Last-Event-ID"))
-	if _, ok := asyncEventsAfter(events, lastID); !ok {
-		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_LAST_EVENT_ID", "Last-Event-ID does not identify an event in this resource", nil)
-		return
+	after := int64(0)
+	if lastID != "" {
+		parsed, err := strconv.ParseInt(lastID, 10, 64)
+		if err != nil || parsed < 1 {
+			writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_LAST_EVENT_ID", "Last-Event-ID does not identify an event in this resource", nil)
+			return
+		}
+		probe, err := repo.ListEvents(r.Context(), resourceKind, resourceID, parsed-1, 1)
+		if err != nil || len(probe) != 1 || probe[0].ID != parsed {
+			writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_LAST_EVENT_ID", "Last-Event-ID does not identify an event in this resource", nil)
+			return
+		}
+		after = parsed
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
@@ -204,28 +140,40 @@ func writeAsyncEventStream(w http.ResponseWriter, r *http.Request, events []apig
 	flusher, _ := w.(http.Flusher)
 	heartbeat := time.NewTicker(asyncHeartbeatInterval)
 	poll := time.NewTicker(asyncEventPollInterval)
+	reauthorize := time.NewTimer(asyncStreamAuthorizationLifetime)
 	defer heartbeat.Stop()
 	defer poll.Stop()
-
+	defer reauthorize.Stop()
 	for {
-		pending, ok := asyncEventsAfter(events, lastID)
-		if !ok {
+		rows, err := repo.ListEvents(r.Context(), resourceKind, resourceID, after, 200)
+		if err != nil {
 			return
 		}
-		for _, event := range pending {
-			payload, _ := json.Marshal(event.Data)
-			_, _ = fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.Id, event.Event, payload)
-			lastID = event.Id
+		for _, row := range rows {
+			responses, responseErr := asyncEventResponses([]asyncjob.Event{row})
+			if responseErr != nil {
+				return
+			}
+			payload, _ := json.Marshal(responses[0])
+			_, _ = fmt.Fprintf(w, "id: %020d\nevent: %s\ndata: %s\n\n", row.ID, row.EventType, payload)
+			after = row.ID
+			if terminalAsyncEvent(row.EventType) {
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
 		}
-		if flusher != nil {
+		if flusher != nil && len(rows) != 0 {
 			flusher.Flush()
 		}
-		if len(events) > 0 && terminalAsyncEvent(events[len(events)-1].Event) {
-			return
+		if len(rows) == 200 {
+			continue
 		}
-
 		select {
 		case <-r.Context().Done():
+			return
+		case <-reauthorize.C:
 			return
 		case <-heartbeat.C:
 			_, _ = fmt.Fprint(w, ": heartbeat\n\n")
@@ -233,27 +181,23 @@ func writeAsyncEventStream(w http.ResponseWriter, r *http.Request, events []apig
 				flusher.Flush()
 			}
 		case <-poll.C:
-			if loader != nil {
-				loaded, err := loader(r.Context())
-				if err != nil {
-					return
-				}
-				events = loaded
-			}
 		}
 	}
 }
 
-func asyncEventsAfter(events []apigenapi.AsyncEventResponse, lastID string) ([]apigenapi.AsyncEventResponse, bool) {
-	if lastID == "" {
-		return events, true
-	}
-	for index, event := range events {
-		if event.Id == lastID {
-			return events[index+1:], true
+type asyncCursor struct {
+	Scope   string `json:"scope"`
+	LastID  string `json:"lastId"`
+	Expires int64  `json:"expires"`
+}
+
+func acceptsEventStream(accept string) bool {
+	for _, value := range strings.Split(accept, ",") {
+		if strings.EqualFold(strings.TrimSpace(strings.SplitN(value, ";", 2)[0]), "text/event-stream") {
+			return true
 		}
 	}
-	return nil, false
+	return false
 }
 
 func terminalAsyncEvent(event string) bool {
@@ -269,57 +213,18 @@ func terminalAsyncEvent(event string) bool {
 	}
 }
 
-func pageAsyncEvents(events []apigenapi.AsyncEventResponse, limit int, token, scope string) ([]apigenapi.AsyncEventResponse, string, error) {
-	offset := 0
-	if token != "" {
-		cursor, err := decodeAsyncCursor(token)
-		if err != nil || cursor.Scope != scope || cursor.Expires < time.Now().Unix() || cursor.LastID == "" {
-			return nil, "", fmt.Errorf("invalid cursor")
-		}
-		offset = -1
-		for index, event := range events {
-			if event.Id == cursor.LastID {
-				offset = index + 1
-				break
-			}
-		}
-		if offset < 0 {
-			return nil, "", fmt.Errorf("cursor event is unavailable")
-		}
-	}
-	end := offset + limit
-	if end > len(events) {
-		end = len(events)
-	}
-	next := ""
-	if end < len(events) {
-		next = encodeAsyncCursor(asyncCursor{Scope: scope, LastID: events[end-1].Id, Expires: time.Now().Add(asyncCursorLifetime).Unix()})
-	}
-	return append([]apigenapi.AsyncEventResponse(nil), events[offset:end]...), next, nil
-}
-
 func encodeAsyncCursor(cursor asyncCursor) string {
 	payload, _ := json.Marshal(cursor)
-	mac := hmac.New(sha256.New, asyncCursorKey[:])
-	_, _ = mac.Write(payload)
-	value := append(payload, mac.Sum(nil)...)
-	return "e1." + base64.RawURLEncoding.EncodeToString(value)
+	return cursorsigning.Sign("e1", payload)
 }
 
 func decodeAsyncCursor(value string) (asyncCursor, error) {
 	if !strings.HasPrefix(value, "e1.") {
 		return asyncCursor{}, fmt.Errorf("invalid cursor")
 	}
-	value = strings.TrimPrefix(value, "e1.")
-	raw, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil || len(raw) <= sha256.Size {
+	payload, err := cursorsigning.Verify("e1", value)
+	if err != nil {
 		return asyncCursor{}, fmt.Errorf("invalid cursor")
-	}
-	payload, signature := raw[:len(raw)-sha256.Size], raw[len(raw)-sha256.Size:]
-	mac := hmac.New(sha256.New, asyncCursorKey[:])
-	_, _ = mac.Write(payload)
-	if !hmac.Equal(signature, mac.Sum(nil)) {
-		return asyncCursor{}, fmt.Errorf("invalid cursor signature")
 	}
 	var cursor asyncCursor
 	if err := json.Unmarshal(payload, &cursor); err != nil {

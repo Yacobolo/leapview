@@ -55,6 +55,7 @@ model DashboardComponentPlacement {
   rowSpan?: int32;
 }
 
+@discriminator("kind")
 model DashboardComponentResponse {
   id: string;
   kind: string;
@@ -70,14 +71,17 @@ model DashboardComponentResponse {
 
 model DashboardVisualComponentResponse extends DashboardComponentResponse {
   kind: "visual";
+  visualId: string;
 }
 
 model DashboardTableComponentResponse extends DashboardComponentResponse {
   kind: "table";
+  tableId: string;
 }
 
 model DashboardFilterComponentResponse extends DashboardComponentResponse {
   kind: "filter";
+  filterId: string;
 }
 
 model DashboardPageResponse {
@@ -85,6 +89,72 @@ model DashboardPageResponse {
   title: string;
   description?: string;
   components: DashboardComponentResponse[];
+}
+
+model DashboardVisualFieldRef {
+  field: string;
+  `alias`?: string;
+}
+
+model DashboardVisualQueryTime {
+  field: string;
+  grain: string;
+  `alias`?: string;
+}
+
+model DashboardVisualQuerySort {
+  field: string;
+  direction: string;
+  expr?: string;
+}
+
+model DashboardVisualQueryDefinition {
+  table?: string;
+  dimensions?: DashboardVisualFieldRef[];
+  series?: DashboardVisualFieldRef;
+  measures?: DashboardVisualFieldRef[];
+  time?: DashboardVisualQueryTime;
+  sort?: DashboardVisualQuerySort[];
+  limit?: QueryLimit;
+}
+
+model DashboardSelectionMappingDefinition {
+  field: string;
+  fact?: string;
+  grain?: string;
+  value: string;
+  label?: string;
+}
+
+model DashboardSelectionInteractionDefinition {
+  toggle?: boolean;
+  mappings?: DashboardSelectionMappingDefinition[];
+  targets?: string[];
+}
+
+model DashboardVisualInteractionDefinition {
+  pointSelection?: DashboardSelectionInteractionDefinition;
+  rowSelection?: DashboardSelectionInteractionDefinition;
+}
+
+model DashboardVisualInteractionConfig {
+  kind: string;
+  toggle: boolean;
+  mappings: DashboardSelectionMappingDefinition[];
+  targets?: string[];
+}
+
+model DashboardVisualSelectionMapping {
+  field: string;
+  fact?: string;
+  grain?: string;
+  value: DashboardVisualValue;
+  label?: string;
+}
+
+model DashboardVisualSelectionEntry {
+  mappings: DashboardVisualSelectionMapping[];
+  label?: string;
 }
 
 model DashboardVisualDescribeResponse {
@@ -96,10 +166,9 @@ model DashboardVisualDescribeResponse {
   type?: string;
   title?: string;
   description?: string;
-  query?: Record<string>;
-  options?: Record<string>;
+  query?: DashboardVisualQueryDefinition;
   extensions?: Record<Record<unknown>>;
-  interaction?: Record<string>;
+  interaction?: DashboardVisualInteractionDefinition;
   placement?: DashboardComponentPlacement;
   x?: float64;
   y?: float64;
@@ -505,14 +574,13 @@ model DashboardVisualDataResponse {
   title?: string;
   unit?: string;
   format?: string;
-  interaction?: Record<string>;
+  interaction?: DashboardVisualInteractionConfig;
   dimensions?: string[];
   measure?: string;
   measures?: string[];
   series?: string[];
-  options?: Record<string>;
   extensions?: Record<Record<unknown>>;
-  selection?: Record<string>[];
+  selection?: DashboardVisualSelectionEntry[];
   @maxItems(1000)
   data: DashboardVisualDatum[];
 }

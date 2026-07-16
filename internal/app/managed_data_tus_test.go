@@ -21,6 +21,7 @@ func TestManagedDataTusRouteRejectsClientCreatedUploads(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodPost, "/upload-protocols/tus", nil)
+	request.Header.Set("Authorization", "Bearer dev")
 	recorder := httptest.NewRecorder()
 	server.Routes().ServeHTTP(recorder, request)
 
@@ -72,6 +73,7 @@ func TestManagedDataTusRouteForwardsResumableOperations(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodPatch, "/upload-protocols/tus/tus_abc", nil)
+	request.Header.Set("Authorization", "Bearer dev")
 	recorder := httptest.NewRecorder()
 	server.Routes().ServeHTTP(recorder, request)
 

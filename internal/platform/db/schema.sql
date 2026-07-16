@@ -396,17 +396,6 @@ CREATE TABLE IF NOT EXISTS agent_messages (
   UNIQUE(conversation_id, seq)
 );
 
-CREATE TABLE IF NOT EXISTS agent_events (
-  id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
-  seq INTEGER NOT NULL,
-  event_type TEXT NOT NULL,
-  severity TEXT NOT NULL,
-  payload_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(run_id, seq)
-);
-
 CREATE INDEX IF NOT EXISTS serving_states_workspace_created_idx ON serving_states(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS assets_serving_state_type_idx ON assets(serving_state_id, asset_type);
 CREATE INDEX IF NOT EXISTS assets_serving_state_logical_idx ON assets(serving_state_id, logical_asset_id);
@@ -441,7 +430,6 @@ CREATE INDEX IF NOT EXISTS query_events_status_created_idx ON query_events(statu
 CREATE INDEX IF NOT EXISTS agent_conversations_owner_updated_idx ON agent_conversations(principal_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS agent_messages_conversation_seq_idx ON agent_messages(conversation_id, seq);
 CREATE INDEX IF NOT EXISTS agent_runs_conversation_started_idx ON agent_runs(conversation_id, started_at DESC);
-CREATE INDEX IF NOT EXISTS agent_events_run_seq_idx ON agent_events(run_id, seq);
 
 CREATE TABLE IF NOT EXISTS managed_data_collections (
   id TEXT PRIMARY KEY,
@@ -762,3 +750,31 @@ CREATE TABLE IF NOT EXISTS api_async_jobs (
 
 CREATE INDEX IF NOT EXISTS api_async_jobs_claim_idx
   ON api_async_jobs(status, lease_expires_at, created_at, id);
+
+CREATE TABLE IF NOT EXISTS api_idempotency_records (
+  scope TEXT PRIMARY KEY,
+  request_digest TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('pending', 'completed')),
+  response_status INTEGER,
+  response_headers_json TEXT,
+  response_body BLOB,
+  owner_id TEXT NOT NULL,
+  lease_expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS api_idempotency_records_expiry_idx
+  ON api_idempotency_records(expires_at);
+
+CREATE TABLE IF NOT EXISTS api_cursor_signing_keys (
+  key_id TEXT PRIMARY KEY,
+  secret BLOB NOT NULL CHECK(length(secret) >= 32),
+  active INTEGER NOT NULL DEFAULT 0 CHECK(active IN (0, 1)),
+  created_at TEXT NOT NULL,
+  retired_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS api_cursor_signing_keys_active_idx
+  ON api_cursor_signing_keys(active) WHERE active = 1;
