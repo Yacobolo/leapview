@@ -136,11 +136,11 @@ tasks:
       - Taskfile.yml
       - sqlc.yaml
       - internal/platform/db/schema.sql
-      - internal/platform/db/queries.sql
+      - internal/platform/db/queries/*.sql
     generates:
       - internal/platform/db/db.go
       - internal/platform/db/models.go
-      - internal/platform/db/queries.sql.go
+      - internal/platform/db/*.sql.go
     cmds:
       - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 
