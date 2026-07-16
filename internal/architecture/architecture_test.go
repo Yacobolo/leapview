@@ -118,6 +118,20 @@ func TestSQLCQueriesAreSplitByDomain(t *testing.T) {
 	}
 }
 
+func TestSQLCUsesRuntimeMigrationsAsItsSchemaSource(t *testing.T) {
+	root := repoRoot(t)
+	config, err := os.ReadFile(filepath.Join(root, "sqlc.yaml"))
+	if err != nil {
+		t.Fatalf("read sqlc config: %v", err)
+	}
+	if !strings.Contains(string(config), `schema: "internal/platform/migrations"`) {
+		t.Fatal("sqlc must compile against the runtime Goose migrations")
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "platform", "db", "schema.sql")); !os.IsNotExist(err) {
+		t.Fatal("duplicate sqlc schema snapshot must not exist")
+	}
+}
+
 func TestAppIsCompositionOnly(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {

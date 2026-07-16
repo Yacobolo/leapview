@@ -135,7 +135,7 @@ tasks:
     sources:
       - Taskfile.yml
       - sqlc.yaml
-      - internal/platform/db/schema.sql
+      - internal/platform/migrations/*.sql
       - internal/platform/db/queries/*.sql
     generates:
       - internal/platform/db/db.go

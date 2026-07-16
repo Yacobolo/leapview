@@ -1,7 +1,7 @@
 -- +goose Up
 -- LibreDash v1 platform control-plane schema.
--- This file mirrors internal/platform/db/schema.sql so the app can run the
--- same DDL during startup and future migration tooling has a stable entrypoint.
+-- Runtime migration and sqlc generation both use this migration chain as the
+-- authoritative SQLite schema source.
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
