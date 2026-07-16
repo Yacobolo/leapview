@@ -622,8 +622,7 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 			"internal/platform/db/*.sql.go",
 		},
 		filepath.Join(".github", "workflows", "ci.yml"): {
-			"Check generated database code is untracked",
-			"git ls-files -- internal/platform/db/db.go internal/platform/db/models.go 'internal/platform/db/*.sql.go'",
+			"Check generated Go build inputs are untracked",
 			"internal/platform/db/db.go",
 			"internal/platform/db/models.go",
 			"internal/platform/db/*.sql.go",
@@ -643,6 +642,57 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 		for _, fragment := range fragments {
 			if !strings.Contains(string(body), fragment) {
 				t.Errorf("%s missing sqlc generation contract fragment %q", name, fragment)
+			}
+		}
+	}
+}
+
+func TestAPIGenAuthorizationRegistryIsGeneratedBuildInput(t *testing.T) {
+	root := repoRoot(t)
+	appFiles, err := filepath.Glob(filepath.Join(root, "internal", "app", "*.go"))
+	if err != nil {
+		t.Fatalf("list app Go files: %v", err)
+	}
+	for _, path := range appFiles {
+		if strings.HasSuffix(path, ".gen.go") {
+			continue
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if strings.Contains(string(body), "var apigenOperationPrivileges") {
+			t.Fatalf("%s declares APIGen operation privileges; they must be generated from TypeSpec x-authz metadata", path)
+		}
+	}
+
+	files := map[string][]string{
+		"Taskfile.yml": {
+			"internal/app/api_apigen_authz.gen.go",
+			"go run ./internal/tools/apigenpostprocess",
+		},
+		".gitignore": {
+			"internal/app/api_apigen_authz.gen.go",
+		},
+		".dockerignore": {
+			"internal/app/api_apigen_authz.gen.go",
+		},
+		filepath.Join(".github", "workflows", "ci.yml"): {
+			"Check generated Go build inputs are untracked",
+			"internal/app/api_apigen_authz.gen.go",
+		},
+		"Dockerfile": {
+			"COPY --from=sourcegen /src/internal/app/api_apigen_authz.gen.go ./internal/app/api_apigen_authz.gen.go",
+		},
+	}
+	for name, fragments := range files {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, fragment := range fragments {
+			if !strings.Contains(string(body), fragment) {
+				t.Errorf("%s missing APIGen authorization generation fragment %q", name, fragment)
 			}
 		}
 	}
