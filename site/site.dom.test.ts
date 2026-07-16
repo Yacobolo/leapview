@@ -5,6 +5,7 @@ const sitePort = 20000 + (process.pid % 10000)
 const baseURL = `http://127.0.0.1:${sitePort}`
 let browser: Browser
 let siteProcess: ReturnType<typeof Bun.spawn>
+const siteReadyTimeout = 60_000
 
 beforeAll(async () => {
   siteProcess = Bun.spawn(['go', 'run', './cmd/libredash-site', '-addr', `127.0.0.1:${sitePort}`], {
@@ -15,7 +16,7 @@ beforeAll(async () => {
   })
   await waitForSite()
   browser = await chromium.launch()
-}, 15_000)
+}, siteReadyTimeout + 10_000)
 
 afterAll(async () => {
   await browser?.close()
@@ -985,8 +986,11 @@ test('chart showcase renders every supported visual type', async () => {
 }, 20_000)
 
 async function waitForSite(): Promise<void> {
-  const deadline = Date.now() + 10_000
+  const deadline = Date.now() + siteReadyTimeout
   while (Date.now() < deadline) {
+    if (siteProcess.exitCode !== null) {
+      throw new Error(`LibreDash site exited before becoming ready (code ${siteProcess.exitCode})`)
+    }
     try {
       const response = await fetch(baseURL)
       if (response.ok) return
