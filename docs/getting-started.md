@@ -20,14 +20,24 @@ task dev
 
 ## Edit the model and dashboard
 
-Keep your semantic model and report definition together under `dashboards/`.
+Keep the project entry point, shared data inputs, and workspace-owned models and dashboards together under `dashboards/`.
 
 ```text
 dashboards/
-  catalog.yaml
-  olist/
-    model.yaml
-    executive-sales.yaml
+  libredash.yaml
+  connections/
+    olist.yaml
+  sources/
+    olist.orders.yaml
+  workspaces/
+    sales/
+      workspace.yaml
+      models/
+        orders.yaml
+      semantic-models/
+        sales.yaml
+      dashboards/
+        executive-sales.yaml
 ```
 
 ## Explore the visual system

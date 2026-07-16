@@ -1,9 +1,6 @@
 import { LitElement, css, html } from 'lit'
 import { Blocks, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Server, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
-import '../../web/components/dashboard/charts/echart'
-import '../../web/components/dashboard/table/report-table'
-import '../../web/components/login/topology-background'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
 import type { TableSignal } from '../../web/components/dashboard/table/types'
@@ -726,3 +723,19 @@ class SiteChartShowcase extends DatastarLit(LitElement) {
 if (!customElements.get('ld-site-chart-showcase')) {
   customElements.define('ld-site-chart-showcase', SiteChartShowcase)
 }
+
+async function loadRouteComponents(): Promise<void> {
+  const imports: Promise<unknown>[] = []
+  if (document.querySelector('ld-site-chart-demo, ld-site-chart-showcase, ld-site-doc-chart')) {
+    imports.push(import('../../web/components/dashboard/charts/echart'))
+  }
+  if (document.querySelector('ld-site-chart-showcase')) {
+    imports.push(import('../../web/components/dashboard/table/report-table'))
+  }
+  if (document.querySelector('ld-topology-background')) {
+    imports.push(import('../../web/components/login/topology-background'))
+  }
+  await Promise.all(imports)
+}
+
+void loadRouteComponents()

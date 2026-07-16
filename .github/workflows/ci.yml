@@ -60,6 +60,9 @@ jobs:
       - name: Build browser assets
         run: task build
 
+      - name: Build public site assets
+        run: task site:build
+
       - name: Upload generated assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -77,6 +80,7 @@ jobs:
             schemas/json/
             web/generated/
             static/
+            site/static/
 
   go-tests:
     name: Go tests

@@ -99,6 +99,13 @@ tasks:
     cmds:
       - bun run build:site
 
+  site:binary:
+    desc: Build the independently deployable LibreDash public site binary
+    deps:
+      - site:build
+    cmds:
+      - go build -o bin/libredash-site ./cmd/libredash-site
+
   site:dev:
     desc: Start the LibreDash public site on http://localhost:8081
     deps:

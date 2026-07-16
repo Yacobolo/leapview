@@ -23,6 +23,9 @@ static/chunks/
 !static/login-background-loader.js
 !static/theme.js
 site/static/*.js
+site/static/chunks/
+site/static/shared/
+site/static/vendor/
 static/asset-lineage-graph.css
 static/semantic-model-graph.css
 .env

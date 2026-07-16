@@ -2,12 +2,82 @@ package http
 
 import (
 	"bufio"
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/not-a-real-route")
+	if err != nil {
+		t.Fatalf("get unknown route: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown route status = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	t.Chdir(filepath.Dir(workingDirectory))
+
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+	for _, path := range []string{"/static/site.css", "/static/site-page.js", "/shared/app.css", "/shared/theme.js", "/static/vendor/datastar-1.0.2.js"} {
+		response, err := server.Client().Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("get %s: %v", path, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Errorf("%s status = %d, want %d", path, response.StatusCode, http.StatusOK)
+		}
+	}
+}
+
+func TestSiteAssetsSupportGzipCompression(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/static/site-page.js", nil)
+	if err != nil {
+		t.Fatalf("create asset request: %v", err)
+	}
+	request.Header.Set("Accept-Encoding", "gzip")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("get compressed asset: %v", err)
+	}
+	defer response.Body.Close()
+	if got := response.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("asset content encoding = %q, want gzip", got)
+	}
+	compressed, err := gzip.NewReader(response.Body)
+	if err != nil {
+		t.Fatalf("open compressed asset: %v", err)
+	}
+	defer compressed.Close()
+	body, err := io.ReadAll(compressed)
+	if err != nil {
+		t.Fatalf("read compressed asset: %v", err)
+	}
+	if !strings.Contains(string(body), "customElements") {
+		t.Fatalf("compressed asset does not contain site bundle")
+	}
+}
 
 func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
@@ -115,6 +185,8 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 		"<h2>Bootstrap the workspace</h2>",
 		"task bootstrap",
 		"task dev",
+		"libredash.yaml",
+		"workspaces/",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("getting started page missing %q:\n%s", want, body)
@@ -126,8 +198,34 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 	if strings.Contains(body, "Guides and reference") {
 		t.Errorf("getting started page retains the redundant sidebar heading:\n%s", body)
 	}
+	if strings.Contains(body, "catalog.yaml") {
+		t.Errorf("getting started page retains the obsolete catalog layout:\n%s", body)
+	}
 	if strings.Contains(body, `<footer class="site-footer" role="contentinfo">`) {
 		t.Errorf("getting started page retains the marketing footer:\n%s", body)
+	}
+}
+
+func TestSiteCLIGuideUsesDeployCommand(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs/cli/validate-deploy")
+	if err != nil {
+		t.Fatalf("get deploy guide: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("deploy guide status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	body := readBody(t, response)
+	for _, want := range []string{"Validate, plan, and deploy", "libredash deploy --project dashboards/libredash.yaml"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("deploy guide missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "libredash publish") {
+		t.Errorf("deploy guide contains nonexistent publish command:\n%s", body)
 	}
 }
 
@@ -343,6 +441,26 @@ func TestSiteUpdatesSendInitialDemoSignal(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Errorf("initial updates missing %q:\n%s", want, line)
 		}
+	}
+}
+
+func TestSiteUpdatesCloseAfterInitialPatch(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = time.Second
+	response, err := client.Get(server.URL + "/updates")
+	if err != nil {
+		t.Fatalf("get updates: %v", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read bounded updates response: %v", err)
+	}
+	if !strings.Contains(string(body), `"metric":"revenue"`) {
+		t.Fatalf("bounded updates response does not contain initial patch:\n%s", body)
 	}
 }
 

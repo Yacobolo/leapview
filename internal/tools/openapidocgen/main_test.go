@@ -73,6 +73,51 @@ paths:
 	}
 }
 
+func TestGenerateRemovesStaleOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	specPath := filepath.Join(tempDir, "openapi.yaml")
+	outDir := filepath.Join(tempDir, "docs")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("create output fixture: %v", err)
+	}
+	stalePath := filepath.Join(outDir, "removed-tag.md")
+	if err := os.WriteFile(stalePath, []byte(generatedMarkdownMarker+"\n\nstale"), 0o644); err != nil {
+		t.Fatalf("write stale output fixture: %v", err)
+	}
+	ownedByUser := filepath.Join(outDir, "notes.md")
+	if err := os.WriteFile(ownedByUser, []byte("keep me"), 0o644); err != nil {
+		t.Fatalf("write user-owned output fixture: %v", err)
+	}
+	spec := `openapi: 3.0.0
+info:
+  title: Example API
+  version: 1.0.0
+tags:
+  - name: Things
+paths:
+  /v1/things:
+    get:
+      summary: List things
+      tags: [Things]
+      responses:
+        '200':
+          description: Things returned.
+`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec fixture: %v", err)
+	}
+
+	if err := generate(specPath, outDir); err != nil {
+		t.Fatalf("generate documentation: %v", err)
+	}
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("stale generated output still exists: %v", err)
+	}
+	if got := readGeneratedFile(t, ownedByUser); got != "keep me" {
+		t.Fatalf("user-owned output = %q, want %q", got, "keep me")
+	}
+}
+
 func readGeneratedFile(t *testing.T, path string) string {
 	t.Helper()
 	contents, err := os.ReadFile(path)

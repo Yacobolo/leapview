@@ -306,7 +306,7 @@ func siteDocsSidebar(current *siteDocument) g.Node {
 		documentationActive = true
 	}
 	documentationLinks = append(documentationLinks, h.Li(siteDocsNavGroup("charts", chartDocuments.section, chartActive, visualLinks)))
-	cliGuideActive := current != nil && (current.slug == "cli" || current.slug == "cli/authentication" || current.slug == "cli/targets" || current.slug == "cli/validate-publish" || current.slug == "cli/automation" || current.slug == "cli/troubleshooting")
+	cliGuideActive := current != nil && (current.slug == "cli" || current.slug == "cli/authentication" || current.slug == "cli/targets" || current.slug == "cli/validate-deploy" || current.slug == "cli/automation" || current.slug == "cli/troubleshooting")
 	cliReferenceActive := current != nil && strings.HasPrefix(current.slug, "cli/") && !cliGuideActive
 	cliActive := cliGuideActive || cliReferenceActive
 	cliLinks := make([]g.Node, 0, len(cliGuideDocuments)+1)

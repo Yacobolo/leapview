@@ -262,10 +262,10 @@ func loadCLIReferenceDocuments() []siteDocument {
 
 func loadCLIGuideDocuments() []siteDocument {
 	guides := []struct{ slug, title, summary, source string }{
-		{"cli", "CLI overview", "Install, validate, plan, and publish with the LibreDash CLI.", "overview"},
+		{"cli", "CLI overview", "Install, validate, plan, and deploy with the LibreDash CLI.", "overview"},
 		{"cli/authentication", "Install and authenticate", "Configure a CLI target and use tokens safely.", "authentication"},
 		{"cli/targets", "Targets and environments", "Keep local, staging, and production operations explicit.", "targets"},
-		{"cli/validate-publish", "Validate, plan, and publish", "Use the standard dashboard-as-code delivery workflow.", "validate-publish"},
+		{"cli/validate-deploy", "Validate, plan, and deploy", "Use the standard dashboard-as-code delivery workflow.", "validate-deploy"},
 		{"cli/automation", "Automation and CI", "Run LibreDash safely in continuous integration.", "automation"},
 		{"cli/troubleshooting", "Troubleshooting", "Diagnose local validation and remote operation failures.", "troubleshooting"},
 	}

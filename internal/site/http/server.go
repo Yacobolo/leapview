@@ -2,18 +2,21 @@
 package http
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/Yacobolo/libredash/pkg/pagestream"
+	siteassets "github.com/Yacobolo/libredash/site"
 	"github.com/starfederation/datastar-go/datastar"
 )
 
 // NewHandler builds the public site HTTP handler without starting a server.
 func NewHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", home)
+	mux.HandleFunc("GET /{$}", home)
 	mux.HandleFunc("GET /charts", charts)
 	mux.HandleFunc("GET /docs", docsIndex)
 	mux.HandleFunc("GET /docs/openapi.yaml", docsOpenAPISpecification)
@@ -26,10 +29,54 @@ func NewHandler() http.Handler {
 	mux.HandleFunc("GET /getting-started", gettingStarted)
 	mux.HandleFunc("GET /updates", updates)
 	mux.HandleFunc("POST /demo", updateDemo)
-	mux.Handle("GET /static/vendor/", http.StripPrefix("/static/vendor/", http.FileServer(http.Dir("static/vendor"))))
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("site/static"))))
-	mux.Handle("GET /shared/", http.StripPrefix("/shared/", http.FileServer(http.Dir("static"))))
+	mux.Handle("GET /static/", compressedAssets(http.StripPrefix("/static/", http.FileServer(http.FS(siteassets.Static())))))
+	mux.Handle("GET /shared/", compressedAssets(http.StripPrefix("/shared/", http.FileServer(http.FS(siteassets.Shared())))))
 	return mux
+}
+
+func compressedAssets(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !acceptsGzip(r.Header.Get("Accept-Encoding")) || r.Header.Get("Range") != "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		compressed := gzip.NewWriter(w)
+		defer compressed.Close()
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, writer: compressed}, r)
+	})
+}
+
+func acceptsGzip(header string) bool {
+	for _, value := range strings.Split(header, ",") {
+		parts := strings.Split(strings.TrimSpace(value), ";")
+		if parts[0] != "gzip" {
+			continue
+		}
+		for _, parameter := range parts[1:] {
+			if strings.TrimSpace(parameter) == "q=0" {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	writer io.Writer
+}
+
+func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	w.Header().Del("Content-Length")
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *gzipResponseWriter) Write(contents []byte) (int, error) {
+	w.Header().Del("Content-Length")
+	return w.writer.Write(contents)
 }
 
 func home(w http.ResponseWriter, _ *http.Request) {
@@ -133,7 +180,6 @@ func updates(w http.ResponseWriter, r *http.Request) {
 	if err := stream.Patch(patch); err != nil {
 		return
 	}
-	stream.Wait(r.Context())
 }
 
 func updateDemo(w http.ResponseWriter, r *http.Request) {

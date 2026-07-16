@@ -14,7 +14,7 @@
     "test:primer-alignment": "bun test scripts/check_primer_alignment.test.ts && bun scripts/check_primer_alignment.ts",
     "bench:datastar-bridge": "playwright install chromium && bun scripts/benchmark_datastar_bridge.ts",
     "test:theme": "playwright install chromium && bun test static/theme.dom.test.ts",
-    "test:site": "bun run build:site && playwright install chromium && bun test site/site.dom.test.ts",
+    "test:site": "bun run build:site && playwright install chromium && bun test scripts/build_site.test.ts site/site.dom.test.ts",
     "test:datastar-lit": "bun test web/components/shared/datastar-lit.test.ts web/components/shared/signal-contract.test.ts",
     "test:app-shell": "playwright install chromium && bun scripts/build_test_assets.ts app-shell && bun test web/components/app/app-shell.dom.test.ts",
     "test:table-selection": "bun test web/components/dashboard/table/selection.test.ts",

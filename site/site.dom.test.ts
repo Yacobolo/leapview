@@ -197,7 +197,7 @@ test('getting started route gives users a code-native first path', async () => {
     expect((await page.locator('.site-docs-article pre code').allTextContents()).map((content) => content.trim())).toEqual([
       'task bootstrap',
       'task dev',
-      'dashboards/\n  catalog.yaml\n  olist/\n    model.yaml\n    executive-sales.yaml',
+      'dashboards/\n  libredash.yaml\n  connections/\n    olist.yaml\n  sources/\n    olist.orders.yaml\n  workspaces/\n    sales/\n      workspace.yaml\n      models/\n        orders.yaml\n      semantic-models/\n        sales.yaml\n      dashboards/\n        executive-sales.yaml',
     ])
     expect(await page.getByRole('link', { name: 'Visual gallery' }).count()).toBeGreaterThan(0)
   } finally {

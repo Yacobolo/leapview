@@ -1,11 +1,11 @@
 # Targets and environments
 
-Use an explicit target for production-like operations and an explicit environment when creating a publish plan. Keep local development, staging, and production targets separate.
+Use an explicit target and environment for production-like plans and deployments. Keep local development, staging, and production targets separate.
 
 ```sh
-libredash plan dashboards/libredash.yaml \
+libredash plan --project dashboards/libredash.yaml \
   --target https://dash.staging.example.com \
   --environment staging
 ```
 
-The same project definition can be validated locally before it is published to a remote target.
+The same project definition can be validated locally before it is deployed to a remote target.
