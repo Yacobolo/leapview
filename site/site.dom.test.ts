@@ -326,12 +326,34 @@ test('documentation articles apply the shared Markdown treatment', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs/charts/line`)
-    const codeBlock = await page.locator('.site-docs-code-block').evaluate((element) => {
+    await page.waitForFunction(() => Boolean(document.querySelector('.site-docs-article ld-code-block .shiki')))
+    const codeBlock = await page.locator('.site-docs-article ld-code-block .code-block-shell').first().evaluate((element) => {
       const style = getComputedStyle(element)
-      return { borderTopWidth: style.borderTopWidth, borderRadius: style.borderRadius }
+      const toolbar = element.querySelector('.code-block-toolbar') as HTMLElement
+      return {
+        borderTopWidth: style.borderTopWidth,
+        borderRadius: style.borderRadius,
+        toolbarHeight: toolbar.getBoundingClientRect().height,
+      }
     })
     expect(codeBlock.borderTopWidth).toBe('1px')
     expect(codeBlock.borderRadius).not.toBe('0px')
+    expect(codeBlock.toolbarHeight).toBe(33)
+
+    await page.setViewportSize({ width: 390, height: 800 })
+    const compactCodeBlock = await page.locator('.site-docs-article ld-code-block').first().evaluate((element) => {
+      const article = element.closest('.site-docs-article') as HTMLElement
+      const pre = element.querySelector('pre') as HTMLElement
+      return {
+        articleWidth: article.getBoundingClientRect().width,
+        codeWidth: element.getBoundingClientRect().width,
+        overflowX: getComputedStyle(pre).overflowX,
+        pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      }
+    })
+    expect(compactCodeBlock.codeWidth).toBe(compactCodeBlock.articleWidth)
+    expect(compactCodeBlock.overflowX).toBe('auto')
+    expect(compactCodeBlock.pageOverflows).toBe(false)
 
     await page.goto(`${baseURL}/docs/configuration`)
     const tableHeader = await page.locator('.site-docs-article th').first().evaluate((element) => getComputedStyle(element).backgroundColor)
@@ -399,7 +421,11 @@ test('documentation articles provide a readable, navigable reference experience'
 
     expect(await page.locator('.site-docs-callout[data-callout="tip"]').count()).toBe(1)
     expect(await page.locator('.site-docs-callout-label').getByText('Tip', { exact: true }).isVisible()).toBe(true)
-    const codeBlock = page.locator('.site-docs-code-block').first()
+    await page.waitForFunction(() => Boolean(document.querySelector('.site-docs-article ld-code-block .shiki')))
+    const codeBlock = page.locator('.site-docs-article ld-code-block').first()
+    expect(await codeBlock.getAttribute('language')).toBe('sh')
+    expect(await codeBlock.getAttribute('toolbar')).not.toBeNull()
+    expect(await codeBlock.locator('.shiki').getAttribute('class')).toContain('github-light')
     expect(await codeBlock.getByText('Shell', { exact: true }).isVisible()).toBe(true)
     await codeBlock.getByRole('button', { name: 'Copy code' }).click()
     await page.waitForFunction(() => document.documentElement.dataset.copiedCode === 'libredash validate --project dashboards/libredash.yaml\n')
@@ -461,6 +487,57 @@ test('documentation navigation follows DuckDBs 900px drawer breakpoint', async (
       h2: Number.parseFloat(getComputedStyle(article.querySelector('h2') as Element).fontSize),
     }))
     expect(hierarchy.h1).toBeGreaterThan(hierarchy.h2)
+  } finally {
+    await page.close()
+  }
+})
+
+test('documentation navigation uses compact rows and Overview labels', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/docs/guides/build`)
+    const navigation = page.getByRole('navigation', { name: 'Documentation' })
+    const overview = navigation.locator('a[href="/docs/guides/build"]')
+    expect(await overview.innerText()).toBe('Overview')
+    expect(await overview.getAttribute('title')).toBe('Overview')
+    expect(await navigation.getByRole('link', { name: 'Build dashboards', exact: true }).count()).toBe(0)
+    expect(await page.getByRole('heading', { name: 'Build dashboards', exact: true }).isVisible()).toBe(true)
+
+    const metrics = await overview.evaluate((link) => {
+      const summary = link.closest('details')?.querySelector(':scope > summary') as HTMLElement
+      const summaryLabel = summary.querySelector('.site-docs-nav-label') as HTMLElement
+      const sidebar = link.closest('.site-docs-sidebar') as HTMLElement
+      const linkStyle = getComputedStyle(link)
+      const summaryStyle = getComputedStyle(summary)
+      const summaryLabelStyle = getComputedStyle(summaryLabel)
+      const sidebarStyle = getComputedStyle(sidebar)
+      return {
+        linkHeight: link.getBoundingClientRect().height,
+        linkOverflow: linkStyle.overflow,
+        linkPaddingBlock: Number.parseFloat(linkStyle.paddingTop),
+        linkTextOverflow: linkStyle.textOverflow,
+        linkWhiteSpace: linkStyle.whiteSpace,
+        scrollbarGutter: sidebarStyle.scrollbarGutter,
+        scrollbarWidth: sidebarStyle.scrollbarWidth,
+        summaryHeight: summary.getBoundingClientRect().height,
+        summaryLabelOverflow: summaryLabelStyle.overflow,
+        summaryLabelTextOverflow: summaryLabelStyle.textOverflow,
+        summaryLabelWhiteSpace: summaryLabelStyle.whiteSpace,
+        summaryPaddingBlock: Number.parseFloat(summaryStyle.paddingTop),
+      }
+    })
+    expect(metrics.linkHeight).toBe(28)
+    expect(metrics.summaryHeight).toBe(28)
+    expect(metrics.linkPaddingBlock).toBe(4)
+    expect(metrics.summaryPaddingBlock).toBe(4)
+    expect(metrics.linkOverflow).toBe('hidden')
+    expect(metrics.linkTextOverflow).toBe('ellipsis')
+    expect(metrics.linkWhiteSpace).toBe('nowrap')
+    expect(metrics.summaryLabelOverflow).toBe('hidden')
+    expect(metrics.summaryLabelTextOverflow).toBe('ellipsis')
+    expect(metrics.summaryLabelWhiteSpace).toBe('nowrap')
+    expect(metrics.scrollbarGutter).toBe('stable')
+    expect(metrics.scrollbarWidth).toBe('thin')
   } finally {
     await page.close()
   }
@@ -687,7 +764,16 @@ test('compact documentation navigation opens in a drawer', async () => {
   })
   const page = await context.newPage()
   try {
+    await page.addInitScript(() => {
+      const calls: Array<{ block?: ScrollLogicalPosition, href: string | null, inline?: ScrollLogicalPosition }> = []
+      ;(window as unknown as { siteDocsRevealCalls: typeof calls }).siteDocsRevealCalls = calls
+      Element.prototype.scrollIntoView = function scrollIntoView(options?: boolean | ScrollIntoViewOptions) {
+        const normalized = typeof options === 'object' ? options : {}
+        calls.push({ block: normalized.block, href: this.getAttribute('href'), inline: normalized.inline })
+      }
+    })
     await page.goto(`${baseURL}/docs/getting-started`)
+    await page.waitForFunction(() => (window as unknown as { siteDocsRevealCalls: Array<{ href: string | null }> }).siteDocsRevealCalls.some((call) => call.href === '/docs/getting-started'))
 
     const sidebar = page.locator('.site-docs-sidebar')
     const headerDrawerToggle = page.locator('ld-site-docs-drawer-toggle:not([placement])')
@@ -696,12 +782,19 @@ test('compact documentation navigation opens in a drawer', async () => {
     expect(await toggle.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
     expect(await toggle.getAttribute('aria-expanded')).toBe('false')
     expect(await sidebar.getAttribute('aria-hidden')).toBe('true')
+    const revealCount = await page.evaluate(() => (window as unknown as { siteDocsRevealCalls: unknown[] }).siteDocsRevealCalls.length)
 
     await toggle.click()
     await page.waitForFunction(() => document.querySelector('.site-docs-layout')?.classList.contains('site-docs-drawer-open'))
+    await page.waitForFunction((previousCount) => (window as unknown as { siteDocsRevealCalls: unknown[] }).siteDocsRevealCalls.length > previousCount, revealCount)
     expect(await headerDrawerToggle.evaluate((element) => element.shadowRoot?.querySelector('button')?.getAttribute('aria-expanded'))).toBe('true')
     expect(await sidebar.getAttribute('aria-hidden')).toBe('false')
     expect(await sidebar.locator('.site-docs-link').first().evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
+    expect(await page.evaluate(() => (window as unknown as { siteDocsRevealCalls: Array<{ block?: string, href: string | null, inline?: string }> }).siteDocsRevealCalls.at(-1))).toEqual({
+      block: 'nearest',
+      href: '/docs/getting-started',
+      inline: 'nearest',
+    })
     expect(await sidebar.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s')
 
     await page.locator('ld-site-docs-drawer-toggle[placement="drawer"]').getByRole('button', { name: 'Close documentation menu' }).click()

@@ -9,6 +9,13 @@
 ```yaml
 apiVersion: libredash.dev/v1
 kind: DataPolicy
+metadata:
+  name: example
+spec:
+  expression: {}
+  object:
+    type: workspace
+  policyType: row_filter
 ```
 
 ## Fields

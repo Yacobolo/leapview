@@ -1,6 +1,7 @@
 package http
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Yacobolo/libredash/pkg/pagestream"
@@ -321,14 +322,14 @@ func siteDocsSidebar(current *siteDocument) g.Node {
 		links := make([]g.Node, 0, len(section.Documents)+len(section.Groups))
 		for _, document := range section.Documents {
 			isCurrent := current != nil && current.slug == document.Slug
-			links = append(links, h.Li(siteDocsLink("/docs/"+document.Slug, document.Title, isCurrent)))
+			links = append(links, h.Li(siteDocsLink("/docs/"+document.Slug, siteDocsNavigationLabel(section.Title, document.Title), isCurrent)))
 		}
 		for _, group := range section.Groups {
 			groupActive := sectionActive && current.groupID == group.ID
 			groupLinks := make([]g.Node, 0, len(group.Documents))
 			for _, document := range group.Documents {
 				isCurrent := current != nil && current.slug == document.Slug
-				groupLinks = append(groupLinks, h.Li(siteDocsLink("/docs/"+document.Slug, document.Title, isCurrent)))
+				groupLinks = append(groupLinks, h.Li(siteDocsLink("/docs/"+document.Slug, siteDocsNavigationLabel(group.Title, document.Title), isCurrent)))
 			}
 			links = append(links, h.Li(siteDocsNavGroup(section.ID+"-"+group.ID, group.Title, groupActive, groupLinks)))
 		}
@@ -340,6 +341,13 @@ func siteDocsSidebar(current *siteDocument) g.Node {
 		),
 		h.Nav(g.Attr("aria-label", "Documentation"), g.Group(sections)),
 	)
+}
+
+func siteDocsNavigationLabel(parent, document string) string {
+	if strings.EqualFold(strings.TrimSpace(parent), strings.TrimSpace(document)) {
+		return "Overview"
+	}
+	return document
 }
 
 func siteDocsSearch(query string) g.Node {
@@ -378,7 +386,7 @@ func siteDocsNavGroup(group, label string, active bool, links []g.Node) g.Node {
 		attributes = append(attributes, g.Attr("open", "true"))
 	}
 	return g.El("details", g.Group(attributes),
-		g.El("summary", g.Text(label)),
+		g.El("summary", g.Attr("title", label), h.Span(h.Class("site-docs-nav-label"), g.Text(label))),
 		h.Ul(h.Class("site-docs-nav-tree"), g.Group(links)),
 	)
 }
@@ -388,7 +396,7 @@ func siteDocsLink(href, label string, current bool) g.Node {
 	if current {
 		class += " site-docs-link-current"
 	}
-	attrs := []g.Node{h.Class(class), h.Href(href)}
+	attrs := []g.Node{h.Class(class), h.Href(href), g.Attr("title", label)}
 	if current {
 		attrs = append(attrs, g.Attr("aria-current", "page"))
 	}

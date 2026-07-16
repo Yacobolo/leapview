@@ -60,3 +60,46 @@ func TestGenerateWritesACompleteSchemaReference(t *testing.T) {
 		t.Errorf("generated schema download missing: %v", err)
 	}
 }
+
+func TestExampleFromSchemaBuildsRequiredNestedValues(t *testing.T) {
+	t.Parallel()
+
+	root := schema{
+		"type": "object",
+		"properties": map[string]any{
+			"apiVersion": map[string]any{"const": "libredash.dev/v1"},
+			"kind":       map[string]any{"const": "Grant"},
+			"metadata":   map[string]any{"$ref": "#/$defs/%23Metadata"},
+			"spec": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"privilege": map[string]any{"enum": []any{"VIEW_ITEM", "EDIT_ITEM"}},
+				},
+				"required": []any{"privilege"},
+			},
+		},
+		"required": []any{"apiVersion", "kind", "metadata", "spec"},
+		"$defs": map[string]any{
+			"#Metadata": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"name": map[string]any{"type": "string"}},
+				"required":   []any{"name"},
+			},
+		},
+	}
+
+	example, err := exampleFromSchema(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `apiVersion: libredash.dev/v1
+kind: Grant
+metadata:
+  name: example
+spec:
+  privilege: VIEW_ITEM
+`
+	if example != want {
+		t.Errorf("example mismatch:\nwant:\n%s\ngot:\n%s", want, example)
+	}
+}

@@ -9,6 +9,14 @@
 ```yaml
 apiVersion: libredash.dev/v1
 kind: Grant
+metadata:
+  name: example
+spec:
+  object:
+    type: workspace
+  privilege: USE_WORKSPACE
+  subject:
+    kind: principal
 ```
 
 ## Fields

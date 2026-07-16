@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit'
 import { Blocks, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
+import '../../web/components/shared/code-block'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
 import type { TableSignal } from '../../web/components/dashboard/table/types'
 
@@ -609,6 +610,7 @@ function syncDocsDrawer(open = false): void {
   sidebar.setAttribute('aria-hidden', String(compact && !nextOpen))
   document.body.classList.toggle('site-docs-drawer-open', nextOpen)
   document.dispatchEvent(new CustomEvent('libredash-docs-drawer-state', { detail: { open: nextOpen } }))
+  if (nextOpen && !wasOpen) requestAnimationFrame(revealCurrentDocsLink)
   if (compact && wasOpen && !nextOpen) {
     document.querySelector<HTMLElement>('ld-site-docs-drawer-toggle:not([placement])')?.shadowRoot?.querySelector<HTMLButtonElement>('button')?.focus()
   }
@@ -630,6 +632,14 @@ document.addEventListener('keydown', (event) => {
 
 window.addEventListener('resize', () => syncDocsDrawer(document.querySelector('.site-docs-layout')?.classList.contains('site-docs-drawer-open')))
 syncDocsDrawer()
+requestAnimationFrame(revealCurrentDocsLink)
+
+function revealCurrentDocsLink(): void {
+  document.querySelector<HTMLElement>('.site-docs-link-current')?.scrollIntoView({
+    block: 'nearest',
+    inline: 'nearest',
+  })
+}
 
 class SiteMarkdownCopy extends LitElement {
   static properties = {
@@ -718,118 +728,24 @@ if (!customElements.get('ld-site-markdown-copy')) {
   customElements.define('ld-site-markdown-copy', SiteMarkdownCopy)
 }
 
-class SiteCodeCopy extends LitElement {
-  private copied = false
-  private resetTimer?: number
-
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    button {
-      display: inline-flex;
-      min-height: var(--control-minTarget-auto);
-      align-items: center;
-      gap: var(--base-size-4);
-      border: 0;
-      border-radius: var(--ld-radius-default);
-      background: transparent;
-      color: var(--ld-fg-muted);
-      cursor: pointer;
-      padding-inline: var(--base-size-8);
-      font: inherit;
-      font-size: var(--ld-text-caption-size);
-      font-weight: var(--ld-font-weight-medium);
-    }
-
-    button:hover,
-    button:focus-visible {
-      background: var(--ld-button-bg-hover);
-      color: var(--ld-fg-default);
-    }
-
-    button:focus-visible {
-      outline: var(--focus-outline);
-      outline-offset: var(--focus-outline-offset);
-    }
-  `
-
-  disconnectedCallback(): void {
-    window.clearTimeout(this.resetTimer)
-    super.disconnectedCallback()
-  }
-
-  render() {
-    const label = this.copied ? 'Code copied' : 'Copy code'
-    return html`<button type="button" aria-label=${label} @click=${this.copyCode}>
-      ${lucideIcon(this.copied ? Check : Copy, { size: 14, strokeWidth: 2 })}
-      <span>${this.copied ? 'Copied' : 'Copy'}</span>
-    </button>`
-  }
-
-  private copyCode = async (): Promise<void> => {
-    const source = this.closest('.site-docs-code-block')?.querySelector('pre code, pre')?.textContent
-    if (!source) return
-
-    try {
-      await writeClipboard(source)
-    } catch {
-      return
-    }
-
-    this.copied = true
-    this.requestUpdate()
-    window.clearTimeout(this.resetTimer)
-    this.resetTimer = window.setTimeout(() => {
-      this.copied = false
-      this.requestUpdate()
-    }, 2_000)
-  }
-}
-
-if (!customElements.get('ld-site-code-copy')) {
-  customElements.define('ld-site-code-copy', SiteCodeCopy)
-}
-
-const codeLanguageLabels: Record<string, string> = {
-  bash: 'Shell',
-  css: 'CSS',
-  go: 'Go',
-  html: 'HTML',
-  javascript: 'JavaScript',
-  js: 'JavaScript',
-  json: 'JSON',
-  markdown: 'Markdown',
-  md: 'Markdown',
-  sh: 'Shell',
-  shell: 'Shell',
-  sql: 'SQL',
-  ts: 'TypeScript',
-  typescript: 'TypeScript',
-  yaml: 'YAML',
-  yml: 'YAML',
-}
-
 function enhanceDocsCodeBlocks(): void {
   document.querySelectorAll<HTMLElement>('.site-docs-article pre').forEach((pre) => {
-    if (pre.closest('.site-docs-code-block')) return
+    if (pre.closest('ld-code-block')) return
 
     const code = pre.querySelector('code')
     const languageClass = Array.from(code?.classList ?? []).find((name) => name.startsWith('language-'))
     const language = languageClass?.slice('language-'.length).toLowerCase() ?? ''
-    const label = codeLanguageLabels[language] ?? (language ? language.toUpperCase() : 'Code')
-    const wrapper = document.createElement('div')
-    const toolbar = document.createElement('div')
-    const languageLabel = document.createElement('span')
+    const block = document.createElement('ld-code-block') as HTMLElement & {
+      code: string
+      copy: boolean
+      toolbar: boolean
+    }
 
-    wrapper.className = 'site-docs-code-block'
-    toolbar.className = 'site-docs-code-toolbar'
-    languageLabel.className = 'site-docs-code-language'
-    languageLabel.textContent = label
-    pre.replaceWith(wrapper)
-    toolbar.append(languageLabel, document.createElement('ld-site-code-copy'))
-    wrapper.append(toolbar, pre)
+    block.setAttribute('language', language || 'text')
+    block.code = code?.textContent ?? pre.textContent ?? ''
+    block.copy = true
+    block.toolbar = true
+    pre.replaceWith(block)
   })
 }
 
