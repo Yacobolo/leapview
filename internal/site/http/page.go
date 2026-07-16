@@ -1,8 +1,6 @@
 package http
 
 import (
-	"strings"
-
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -110,6 +108,21 @@ func docsIndexPage() g.Node {
 	})
 }
 
+func docsSearchPage(query string) g.Node {
+	return pagestream.RenderPage(pagestream.PageSpec{
+		Title:      "Search LibreDash documentation",
+		HTMLAttrs:  siteHTMLAttrs(),
+		Head:       siteHead(),
+		MainAttrs:  []g.Node{h.Class("site-page")},
+		UpdatesURL: "/updates",
+		Body: []g.Node{
+			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
+			siteHeader(true),
+			siteDocsLayout(nil, siteDocsSearch(query)),
+		},
+	})
+}
+
 func docsArticlePage(document siteDocument) g.Node {
 	updatesURL := "/updates"
 	if document.chartID != "" {
@@ -140,8 +153,13 @@ func siteHead() []g.Node {
 }
 
 func siteHeader(hasDocsDrawer bool) g.Node {
+	navigationLinks := []g.Node{h.A(h.Href("/docs"), g.Text("Docs"))}
+	if hasDocsDrawer {
+		navigationLinks = append(navigationLinks, h.A(h.Href("/docs/search"), g.Text("Search")))
+	}
+	navigationLinks = append(navigationLinks, h.A(h.Href("/#demo"), g.Text("Demo")), h.A(h.Href("/charts"), g.Text("Charts")))
 	actions := []g.Node{
-		h.Div(h.Class("site-nav-links"), h.A(h.Href("/docs"), g.Text("Docs")), h.A(h.Href("/#demo"), g.Text("Demo")), h.A(h.Href("/charts"), g.Text("Charts"))),
+		h.Div(h.Class("site-nav-links"), g.Group(navigationLinks)),
 	}
 	if hasDocsDrawer {
 		actions = append(actions, g.El("ld-site-docs-drawer-toggle"))
@@ -252,98 +270,70 @@ func siteDocsArticleHeader(document *siteDocument) g.Node {
 }
 
 func siteDocsIndex() g.Node {
-	documents := allSiteDocuments()
-	items := make([]g.Node, 0, len(documents))
-	for _, document := range documents {
+	items := make([]g.Node, 0, len(siteCatalog.Sections))
+	for _, section := range siteCatalog.Sections {
 		items = append(items, h.Li(
-			h.A(h.Href("/docs/"+document.slug), h.H2(g.Text(document.title)), h.P(g.Text(document.summary))),
+			h.A(h.Href(section.Href), h.H2(g.Text(section.Title)), h.P(g.Text(section.Summary))),
 		))
 	}
 	return h.Article(h.ID("main-content"), h.Class("site-docs-article site-docs-index"),
 		h.H1(g.Text("Documentation")),
-		h.P(g.Text("Guides and references for building dashboards with LibreDash.")),
-		h.Nav(g.Attr("aria-label", "Documentation articles"), h.Ul(h.Class("site-docs-index-list"), g.Group(items))),
+		h.P(g.Text("Follow a task-oriented path or open the generated reference for an exact contract.")),
+		docsSearchForm(""),
+		h.Nav(g.Attr("aria-label", "Documentation sections"), h.Ul(h.Class("site-docs-index-list"), g.Group(items))),
 	)
 }
 
 func siteDocsSidebar(current *siteDocument) g.Node {
-	documentationLinks := make([]g.Node, 0, len(siteDocuments)+1)
-	documentationActive := false
-	configurationActive := current != nil && (current.slug == "configuration" || strings.HasPrefix(current.slug, "config/"))
-	chartActive := current != nil && current.slug == chartOverviewDocument.slug
-	for _, document := range siteDocuments {
-		if document.slug == "configuration" {
-			continue
+	sections := make([]g.Node, 0, len(siteCatalog.Sections))
+	for _, section := range siteCatalog.Sections {
+		sectionActive := current != nil && current.sectionID == section.ID
+		links := make([]g.Node, 0, len(section.Documents)+len(section.Groups))
+		for _, document := range section.Documents {
+			isCurrent := current != nil && current.slug == document.Slug
+			links = append(links, h.Li(siteDocsLink("/docs/"+document.Slug, document.Title, isCurrent)))
 		}
-		isCurrent := current != nil && current.slug == document.slug
-		if isCurrent {
-			documentationActive = true
+		for _, group := range section.Groups {
+			groupActive := sectionActive && current.groupID == group.ID
+			groupLinks := make([]g.Node, 0, len(group.Documents))
+			for _, document := range group.Documents {
+				isCurrent := current != nil && current.slug == document.Slug
+				groupLinks = append(groupLinks, h.Li(siteDocsLink("/docs/"+document.Slug, document.Title, isCurrent)))
+			}
+			links = append(links, h.Li(siteDocsNavGroup(section.ID+"-"+group.ID, group.Title, groupActive, groupLinks)))
 		}
-		documentationLinks = append(documentationLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, isCurrent)))
-	}
-	visualLinks := []g.Node{
-		h.Li(siteDocsLink("/docs/"+chartOverviewDocument.slug, "Overview", current != nil && current.slug == chartOverviewDocument.slug)),
-	}
-	for _, document := range visualDocuments {
-		isCurrent := current != nil && current.slug == document.slug
-		if isCurrent {
-			chartActive = true
-		}
-		visualLinks = append(visualLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, isCurrent)))
-	}
-	configurationLinks := []g.Node{
-		h.Li(siteDocsLink("/docs/configuration", "Environment", current != nil && current.slug == "configuration")),
-	}
-	for _, document := range configurationReferenceDocuments {
-		isCurrent := current != nil && current.slug == document.slug
-		configurationLinks = append(configurationLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, isCurrent)))
-	}
-	if configurationActive {
-		documentationActive = true
-	}
-	documentationLinks = append(documentationLinks, h.Li(siteDocsNavGroup("configuration", "Configuration", configurationActive, configurationLinks)))
-	if chartActive {
-		documentationActive = true
-	}
-	documentationLinks = append(documentationLinks, h.Li(siteDocsNavGroup("charts", chartDocuments.section, chartActive, visualLinks)))
-	cliGuideActive := current != nil && (current.slug == "cli" || current.slug == "cli/authentication" || current.slug == "cli/targets" || current.slug == "cli/validate-deploy" || current.slug == "cli/automation" || current.slug == "cli/troubleshooting")
-	cliReferenceActive := current != nil && strings.HasPrefix(current.slug, "cli/") && !cliGuideActive
-	cliActive := cliGuideActive || cliReferenceActive
-	cliLinks := make([]g.Node, 0, len(cliGuideDocuments)+1)
-	for _, document := range cliGuideDocuments {
-		label := document.title
-		if document.slug == "cli" {
-			label = "Overview"
-		}
-		cliLinks = append(cliLinks, h.Li(siteDocsLink("/docs/"+document.slug, label, current != nil && current.slug == document.slug)))
-	}
-	commandLinks := make([]g.Node, 0, len(cliReferenceDocuments))
-	for _, document := range cliReferenceDocuments {
-		commandLinks = append(commandLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, current != nil && current.slug == document.slug)))
-	}
-	cliLinks = append(cliLinks, h.Li(siteDocsNavGroup("cli-commands", "Command reference", cliReferenceActive, commandLinks)))
-	if cliActive {
-		documentationActive = true
-	}
-	documentationLinks = append(documentationLinks, h.Li(siteDocsNavGroup("cli", "CLI reference", cliActive, cliLinks)))
-	apiLinks := []g.Node{
-		h.Li(siteDocsLink("/docs/api", "Overview", current != nil && current.slug == "api")),
-	}
-	apiActive := current != nil && current.slug == "api"
-	for _, document := range apiReferenceDocuments[1:] {
-		isCurrent := current != nil && current.slug == document.slug
-		if isCurrent {
-			apiActive = true
-		}
-		apiLinks = append(apiLinks, h.Li(siteDocsLink("/docs/"+document.slug, document.title, isCurrent)))
+		sections = append(sections, siteDocsNavGroup(section.ID, section.Title, sectionActive, links))
 	}
 	return h.Aside(h.Class("site-docs-sidebar"), h.ID("site-docs-sidebar"),
 		h.Div(h.Class("site-docs-drawer-actions"),
 			g.El("ld-site-docs-drawer-toggle", g.Attr("placement", "drawer")),
 		),
-		h.Nav(g.Attr("aria-label", "Documentation"),
-			siteDocsNavGroup("documentation", "Documentation", documentationActive, documentationLinks),
-			siteDocsNavGroup("api-reference", "API reference", apiActive, apiLinks),
+		h.Nav(g.Attr("aria-label", "Documentation"), g.Group(sections)),
+	)
+}
+
+func siteDocsSearch(query string) g.Node {
+	results := searchSiteDocuments(query)
+	items := make([]g.Node, 0, len(results))
+	for index, document := range results {
+		if index == 50 {
+			break
+		}
+		items = append(items, h.Li(h.A(h.Href("/docs/"+document.slug), h.H2(g.Text(document.title)), h.P(g.Text(document.summary)))))
+	}
+	content := []g.Node{h.H1(g.Text("Search documentation")), docsSearchForm(query)}
+	if query != "" {
+		content = append(content, h.P(g.Textf("%d results for %q", len(results), query)), h.Ul(h.Class("site-docs-index-list site-docs-search-results"), g.Group(items)))
+	}
+	return h.Article(h.ID("main-content"), h.Class("site-docs-article site-docs-index"), g.Group(content))
+}
+
+func docsSearchForm(query string) g.Node {
+	return h.Form(h.Class("site-docs-search"), h.Action("/docs/search"), h.Method("get"),
+		h.Label(h.For("docs-search-query"), g.Text("Search documentation")),
+		h.Div(h.Class("site-docs-search-controls"),
+			h.Input(h.ID("docs-search-query"), h.Name("q"), h.Type("search"), h.Value(query), h.Placeholder("Search concepts, guides, commands, and APIs")),
+			h.Button(h.Type("submit"), g.Text("Search")),
 		),
 	)
 }

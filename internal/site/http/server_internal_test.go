@@ -165,22 +165,22 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 	for _, want := range []string{
 		"<title>Get started with LibreDash</title>",
 		`<ld-site-docs-drawer-toggle></ld-site-docs-drawer-toggle>`,
-		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs">Documentation</a></li><li><span aria-current="page">Getting started</span></li></ol></nav>`,
+		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs/introduction">Start here</a></li><li><span aria-current="page">Getting started</span></li></ol></nav>`,
 		`<button class="site-docs-drawer-backdrop" type="button" aria-label="Close documentation menu" aria-hidden="true" tabindex="-1" data-site-docs-drawer-close="true"></button>`,
 		`<ld-site-markdown-copy`,
 		`<article id="main-content" class="site-docs-article">`,
 		`<aside class="site-docs-sidebar" id="site-docs-sidebar">`,
 		`<a class="site-docs-link site-docs-link-current" href="/docs/getting-started" aria-current="page">Get started with LibreDash</a>`,
-		`<details class="site-docs-nav-group" data-site-docs-group="configuration">`,
-		`<a class="site-docs-link" href="/docs/configuration">Environment</a>`,
-		`<a class="site-docs-link" href="/docs/enterprise-auth">Enterprise auth</a>`,
+		`<details class="site-docs-nav-group" data-site-docs-group="reference-configuration">`,
+		`<a class="site-docs-link" href="/docs/configuration">Environment variable reference</a>`,
+		`<a class="site-docs-link" href="/docs/enterprise-auth">Authentication and authorization</a>`,
 		`<a class="site-docs-link" href="/docs/storage-architecture">Storage architecture</a>`,
-		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="documentation" open="true">`,
-		`<summary>Documentation</summary>`,
-		`<details class="site-docs-nav-group" data-site-docs-group="charts">`,
+		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="start" open="true">`,
+		`<summary>Start here</summary>`,
+		`<details class="site-docs-nav-group" data-site-docs-group="reference-visuals">`,
 		`<summary>Charts</summary>`,
 		`<ul class="site-docs-nav-tree">`,
-		`<a class="site-docs-link" href="/docs/charts/overview">Overview</a>`,
+		`<a class="site-docs-link" href="/docs/charts/overview">Chart types</a>`,
 		"<h1>Get started with LibreDash</h1>",
 		"<h2>Bootstrap the workspace</h2>",
 		"task bootstrap",
@@ -229,7 +229,7 @@ func TestSiteCLIGuideUsesDeployCommand(t *testing.T) {
 	}
 }
 
-func TestSiteDocsIndexListsEveryArticle(t *testing.T) {
+func TestSiteDocsIndexListsEverySection(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
@@ -246,18 +246,90 @@ func TestSiteDocsIndexListsEveryArticle(t *testing.T) {
 	for _, want := range []string{
 		"<title>LibreDash documentation</title>",
 		"<h1>Documentation</h1>",
-		`href="/docs/getting-started"`,
-		`href="/docs/configuration"`,
+		`href="/docs/introduction"`,
+		`href="/docs/concepts"`,
+		`href="/docs/guides/build"`,
+		`href="/docs/data-ingestion"`,
+		`href="/docs/guides/operate"`,
 		`href="/docs/enterprise-auth"`,
-		`href="/docs/storage-architecture"`,
-		`href="/docs/charts/overview"`,
-		`href="/docs/charts/line"`,
-		`href="/docs/charts/kpi"`,
-		`href="/docs/api"`,
-		`href="/docs/api/workspaces"`,
+		`href="/docs/integrate"`,
+		`href="/docs/reference"`,
+		`href="/docs/architecture"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("docs index missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestSiteDocumentationCatalogRendersJourneySections(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs")
+	if err != nil {
+		t.Fatalf("get docs index: %v", err)
+	}
+	defer response.Body.Close()
+	body := readBody(t, response)
+	for _, want := range []string{"Start here", "Core concepts", "Build dashboards", "Manage data", "Deploy and operate", "Security and administration", "Integrate", "Reference", "Architecture and contributing"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("docs index missing journey section %q", want)
+		}
+	}
+}
+
+func TestSiteDocumentationSupportsNestedArticleSlugs(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs/concepts/query-lifecycle")
+	if err != nil {
+		t.Fatalf("get nested documentation article: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("nested documentation status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	body := readBody(t, response)
+	for _, want := range []string{"<h1>Query and interaction lifecycle</h1>", "Core concepts", "Datastar signal flow", `class="site-docs-pagination"`, `href="/docs/concepts/dashboards"`, `href="/docs/guides/build"`, "Edit this page"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("nested documentation missing %q", want)
+		}
+	}
+}
+
+func TestSiteDocumentationSearchFindsCatalogContent(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs/search?q=semantic+relationships")
+	if err != nil {
+		t.Fatalf("search documentation: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("search status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	body := readBody(t, response)
+	for _, want := range []string{"Search documentation", `value="semantic relationships"`, `href="/docs/concepts/semantic-models"`, "Semantic models"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("search result missing %q", want)
+		}
+	}
+}
+
+func TestEveryCatalogDocumentHasAReachableRoute(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+	for _, document := range allSiteDocuments() {
+		response, err := server.Client().Get(server.URL + "/docs/" + document.slug)
+		if err != nil {
+			t.Fatalf("get %s: %v", document.slug, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Errorf("%s status = %d, want %d", document.slug, response.StatusCode, http.StatusOK)
 		}
 	}
 }
@@ -332,7 +404,7 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 		"type: line",
 		`href="/docs/charts/line"`,
 		`href="/docs/charts/kpi"`,
-		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="charts" open="true">`,
+		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="reference-visuals" open="true">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("line chart documentation missing %q:\n%s", want, body)

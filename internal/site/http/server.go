@@ -19,13 +19,10 @@ func NewHandler() http.Handler {
 	mux.HandleFunc("GET /{$}", home)
 	mux.HandleFunc("GET /charts", charts)
 	mux.HandleFunc("GET /docs", docsIndex)
+	mux.HandleFunc("GET /docs/search", docsSearch)
 	mux.HandleFunc("GET /docs/openapi.yaml", docsOpenAPISpecification)
 	mux.HandleFunc("GET /docs/schemas/{schema}", docsConfigurationSchema)
-	mux.HandleFunc("GET /docs/api/{resource}", docsAPIReference)
-	mux.HandleFunc("GET /docs/charts/{chart}", docsChart)
-	mux.HandleFunc("GET /docs/config/{resource}", docsConfigurationReference)
-	mux.HandleFunc("GET /docs/cli/{command}", docsCLIReference)
-	mux.HandleFunc("GET /docs/{article}", docsArticle)
+	mux.HandleFunc("GET /docs/{path...}", docsArticle)
 	mux.HandleFunc("GET /getting-started", gettingStarted)
 	mux.HandleFunc("GET /updates", updates)
 	mux.HandleFunc("POST /demo", updateDemo)
@@ -101,36 +98,20 @@ func docsIndex(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+func docsSearch(w http.ResponseWriter, r *http.Request) {
+	if err := docsSearchPage(strings.TrimSpace(r.URL.Query().Get("q"))).Render(w); err != nil {
+		http.Error(w, "render documentation search", http.StatusInternalServerError)
+	}
+}
+
 func docsArticle(w http.ResponseWriter, r *http.Request) {
-	document, ok := siteDocumentBySlug(r.PathValue("article"))
+	document, ok := siteDocumentBySlug(r.PathValue("path"))
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	if err := docsArticlePage(document).Render(w); err != nil {
 		http.Error(w, "render documentation article", http.StatusInternalServerError)
-	}
-}
-
-func docsChart(w http.ResponseWriter, r *http.Request) {
-	document, ok := siteDocumentBySlug("charts/" + r.PathValue("chart"))
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if err := docsArticlePage(document).Render(w); err != nil {
-		http.Error(w, "render chart documentation", http.StatusInternalServerError)
-	}
-}
-
-func docsAPIReference(w http.ResponseWriter, r *http.Request) {
-	document, ok := siteDocumentBySlug("api/" + r.PathValue("resource"))
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if err := docsArticlePage(document).Render(w); err != nil {
-		http.Error(w, "render API reference", http.StatusInternalServerError)
 	}
 }
 
@@ -147,28 +128,6 @@ func docsConfigurationSchema(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/schema+json; charset=utf-8")
 	_, _ = w.Write(schema)
-}
-
-func docsConfigurationReference(w http.ResponseWriter, r *http.Request) {
-	document, ok := siteDocumentBySlug("config/" + r.PathValue("resource"))
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if err := docsArticlePage(document).Render(w); err != nil {
-		http.Error(w, "render configuration reference", http.StatusInternalServerError)
-	}
-}
-
-func docsCLIReference(w http.ResponseWriter, r *http.Request) {
-	document, ok := siteDocumentBySlug("cli/" + r.PathValue("command"))
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if err := docsArticlePage(document).Render(w); err != nil {
-		http.Error(w, "render CLI reference", http.StatusInternalServerError)
-	}
 }
 
 func updates(w http.ResponseWriter, r *http.Request) {

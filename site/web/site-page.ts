@@ -193,6 +193,7 @@ class SiteMobileMenu extends LitElement {
     </button>
     <nav id="site-mobile-navigation" aria-label="Site navigation" ?hidden=${!this.open}>
       <a href="/docs" @click=${this.close}>Docs</a>
+      <a href="/docs/search" @click=${this.close}>Search</a>
       <a href="/#demo" @click=${this.close}>Demo</a>
       <a href="/charts" @click=${this.close}>Charts</a>
     </nav>`

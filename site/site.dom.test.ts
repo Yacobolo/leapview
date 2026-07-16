@@ -157,30 +157,31 @@ test('getting started route gives users a code-native first path', async () => {
     expect(await sidebar.evaluate((element) => getComputedStyle(element).position)).toBe('sticky')
     const docsNavigation = page.getByRole('navigation', { name: 'Documentation' })
     expect(await docsNavigation.getByRole('link', { name: 'Get started with LibreDash' }).getAttribute('aria-current')).toBe('page')
-    const configurationGroup = sidebar.locator('details[data-site-docs-group="configuration"]')
+    const startGroup = sidebar.locator('details[data-site-docs-group="start"]')
+    expect(await startGroup.count()).toBe(1)
+    expect(await startGroup.getAttribute('open')).not.toBeNull()
+    const configurationGroup = sidebar.locator('details[data-site-docs-group="reference-configuration"]')
     expect(await configurationGroup.count()).toBe(1)
     expect(await configurationGroup.getAttribute('open')).toBeNull()
-    await configurationGroup.locator('summary').click()
-    expect(await configurationGroup.getByRole('link', { name: 'Environment' }).count()).toBe(1)
-    expect(await docsNavigation.getByRole('link', { name: 'Enterprise auth' }).count()).toBe(1)
-    expect(await docsNavigation.getByRole('link', { name: 'Storage architecture' }).count()).toBe(1)
-    expect(await docsNavigation.getByRole('link', { name: 'Dashboard demo' }).count()).toBe(0)
-    const documentationGroup = sidebar.locator('details[data-site-docs-group="documentation"]')
-    expect(await documentationGroup.count()).toBe(1)
-    expect(await documentationGroup.getAttribute('open')).not.toBeNull()
-    const chartGroup = sidebar.locator('details[data-site-docs-group="charts"]')
+    expect(await configurationGroup.locator('a[href="/docs/config/project"]').count()).toBe(1)
+    expect(await docsNavigation.locator('a[href="/docs/enterprise-auth"]').count()).toBe(1)
+    expect(await docsNavigation.locator('a[href="/docs/storage-architecture"]').count()).toBe(1)
+    expect(await docsNavigation.getByText('Dashboard demo', { exact: true }).count()).toBe(0)
+    const referenceGroup = sidebar.locator('details[data-site-docs-group="reference"]')
+    expect(await referenceGroup.count()).toBe(1)
+    expect(await referenceGroup.getAttribute('open')).toBeNull()
+    const chartGroup = sidebar.locator('details[data-site-docs-group="reference-visuals"]')
     expect(await chartGroup.count()).toBe(1)
     expect(await chartGroup.getAttribute('open')).toBeNull()
-    await chartGroup.locator('summary').click()
-    expect(await chartGroup.getAttribute('open')).not.toBeNull()
-    expect(await chartGroup.getByRole('link', { name: 'Overview' }).getAttribute('href')).toBe('/docs/charts/overview')
-    expect(await chartGroup.getByRole('link', { name: 'Line chart' }).count()).toBe(1)
-    const apiGroup = sidebar.locator('details[data-site-docs-group="api-reference"]')
+    expect(await chartGroup.locator('a[href="/docs/charts/overview"]').count()).toBe(1)
+    expect(await chartGroup.locator('a[href="/docs/charts/line"]').count()).toBe(1)
+    const apiGroup = sidebar.locator('details[data-site-docs-group="reference-api"]')
     expect(await apiGroup.count()).toBe(1)
     expect(await apiGroup.locator('a[href="/docs/api"]').getAttribute('href')).toBe('/docs/api')
     expect(await apiGroup.locator('a[href="/docs/api/workspaces"]').count()).toBe(1)
     const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(await breadcrumb.getByRole('link', { name: 'Documentation' }).count()).toBe(1)
+    expect(await breadcrumb.getByRole('link', { name: 'Start here' }).getAttribute('href')).toBe('/docs/introduction')
+    expect(await breadcrumb.getByRole('link', { name: 'Documentation' }).count()).toBe(0)
     expect(await breadcrumb.getByRole('link', { name: 'LibreDash' }).count()).toBe(0)
     expect(await breadcrumb.getByText('Getting started', { exact: true }).getAttribute('aria-current')).toBe('page')
 
@@ -205,17 +206,29 @@ test('getting started route gives users a code-native first path', async () => {
   }
 })
 
-test('documentation index links to every article', async () => {
+test('documentation index exposes every task-oriented section', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs`)
     expect(await page.getByRole('heading', { name: 'Documentation' }).isVisible()).toBe(true)
-    const articleNavigation = page.getByRole('navigation', { name: 'Documentation articles' })
-    for (const title of ['Get started with LibreDash', 'Configuration reference', 'Enterprise auth', 'Storage architecture']) {
+    const articleNavigation = page.getByRole('navigation', { name: 'Documentation sections' })
+    for (const title of ['Start here', 'Build dashboards', 'Deploy and operate', 'Reference', 'Architecture and contributing']) {
       expect(await articleNavigation.getByRole('heading', { name: title }).isVisible()).toBe(true)
     }
-    expect(await articleNavigation.getByRole('link', { name: /Chart types/ }).count()).toBe(1)
-    expect(await articleNavigation.getByRole('link', { name: /Line chart/ }).count()).toBe(1)
+    expect(await page.getByRole('searchbox', { name: 'Search documentation' }).count()).toBe(1)
+  } finally {
+    await page.close()
+  }
+})
+
+test('documentation search finds authored and generated content', async () => {
+  const page = await browser.newPage()
+  try {
+    await page.goto(`${baseURL}/docs/search?q=semantic+relationships`)
+    expect(await page.getByRole('heading', { name: 'Search documentation' }).isVisible()).toBe(true)
+    expect(await page.getByRole('searchbox', { name: 'Search documentation' }).inputValue()).toBe('semantic relationships')
+    expect(await page.getByRole('link', { name: 'Semantic models' }).count()).toBeGreaterThan(0)
+    expect(await page.getByText(/results for "semantic relationships"/).isVisible()).toBe(true)
   } finally {
     await page.close()
   }
@@ -226,10 +239,12 @@ test('chart documentation exposes a chart-specific configuration block', async (
   try {
     await page.goto(`${baseURL}/docs/charts/line`)
     const sidebar = page.locator('.site-docs-sidebar')
-    const documentationGroup = sidebar.locator('details[data-site-docs-group="documentation"]')
-    const chartGroup = sidebar.locator('details[data-site-docs-group="charts"]')
-    const apiGroup = sidebar.locator('details[data-site-docs-group="api-reference"]')
-    expect(await documentationGroup.count()).toBe(1)
+    const startGroup = sidebar.locator('details[data-site-docs-group="start"]')
+    const referenceGroup = sidebar.locator('details[data-site-docs-group="reference"]')
+    const chartGroup = sidebar.locator('details[data-site-docs-group="reference-visuals"]')
+    const apiGroup = sidebar.locator('details[data-site-docs-group="reference-api"]')
+    expect(await startGroup.count()).toBe(1)
+    expect(await referenceGroup.getAttribute('open')).not.toBeNull()
     expect(await chartGroup.getAttribute('open')).not.toBeNull()
     expect(await apiGroup.getAttribute('open')).toBeNull()
     const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' })

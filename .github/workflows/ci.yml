@@ -46,6 +46,9 @@ jobs:
       - name: Check generated configuration
         run: task config:check
 
+      - name: Check generated documentation
+        run: task docs:check
+
       - name: Check generated database code is untracked
         run: |
           tracked="$(git ls-files -- internal/platform/db/db.go internal/platform/db/models.go internal/platform/db/queries.sql.go)"
