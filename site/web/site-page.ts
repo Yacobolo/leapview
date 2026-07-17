@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, LayoutDashboard, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/code-block'
@@ -79,14 +79,7 @@ class SiteThemeToggle extends LitElement {
   render() {
     const nextMode = nextThemeMode[this.themeMode]
     const label = `${themeLabels[this.themeMode]}. Switch to ${themeLabels[nextMode]}.`
-    return html`<button
-      type="button"
-      data-theme-toggle
-      data-theme-mode=${this.themeMode}
-      aria-label=${label}
-      title=${label}
-      @click=${this.toggleTheme}
-    >
+    return html`<button type="button" data-theme-toggle data-theme-mode=${this.themeMode} aria-label=${label} title=${label} @click=${this.toggleTheme}>
       <span data-theme-icon="system" ?hidden=${this.themeMode !== 'system'}>${lucideIcon(Monitor)}</span>
       <span data-theme-icon="light" ?hidden=${this.themeMode !== 'light'}>${lucideIcon(Sun)}</span>
       <span data-theme-icon="dark" ?hidden=${this.themeMode !== 'dark'}>${lucideIcon(Moon)}</span>
@@ -192,15 +185,13 @@ class SiteMobileMenu extends LitElement {
 
   render() {
     const label = this.open ? 'Close site navigation' : 'Open site navigation'
-    return html`<button type="button" aria-label=${label} aria-controls="site-mobile-navigation" aria-expanded=${String(this.open)} @click=${this.toggle}>
-      ${lucideIcon(this.open ? X : Menu, { size: 20, strokeWidth: 2 })}
-    </button>
-    <nav id="site-mobile-navigation" aria-label="Site navigation" ?hidden=${!this.open}>
-      <a href="/docs" @click=${this.close}>Docs</a>
-      <a href="/docs/search" @click=${this.close}>Search</a>
-      <a href="/#demo" @click=${this.close}>Demo</a>
-      <a href="/charts" @click=${this.close}>Charts</a>
-    </nav>`
+    return html`<button type="button" aria-label=${label} aria-controls="site-mobile-navigation" aria-expanded=${String(this.open)} @click=${this.toggle}>${lucideIcon(this.open ? X : Menu, { size: 20, strokeWidth: 2 })}</button>
+      <nav id="site-mobile-navigation" aria-label="Site navigation" ?hidden=${!this.open}>
+        <a href="/docs" @click=${this.close}>Docs</a>
+        <a href="/docs/search" @click=${this.close}>Search</a>
+        <a href="/#demo" @click=${this.close}>Demo</a>
+        <a href="/charts" @click=${this.close}>Charts</a>
+      </nav>`
   }
 
   private toggle = (): void => {
@@ -429,8 +420,12 @@ class SiteSearch extends DatastarLit(LitElement) {
     }
 
     @media (width < 30rem) {
-      .trigger kbd { display: none; }
-      .panel { padding: var(--base-size-16); }
+      .trigger kbd {
+        display: none;
+      }
+      .panel {
+        padding: var(--base-size-16);
+      }
     }
   `
 
@@ -466,9 +461,7 @@ class SiteSearch extends DatastarLit(LitElement) {
           <div class="controls" @keydown=${this.handleInputKeydown}>
             <slot name="input"></slot>
           </div>
-          <section class="results" aria-live="polite" aria-busy=${String(loading)}>
-            ${this.renderResults(query, results, total, loading)}
-          </section>
+          <section class="results" aria-live="polite" aria-busy=${String(loading)}>${this.renderResults(query, results, total, loading)}</section>
         </div>
       </dialog>`
   }
@@ -479,10 +472,17 @@ class SiteSearch extends DatastarLit(LitElement) {
     if (results.length === 0) return html`<p class="status">No results for “${query}”.</p>`
     const label = `${total} ${total === 1 ? 'result' : 'results'}`
     return html`<p class="status">${label}</p>
-      <ul>${results.map((result) => html`<li><a href=${result.href}>
-        <strong>${result.title}</strong>
-        <span>${result.summary}</span>
-      </a></li>`)}</ul>`
+      <ul>
+        ${results.map(
+          (result) =>
+            html`<li>
+              <a href=${result.href}>
+                <strong>${result.title}</strong>
+                <span>${result.summary}</span>
+              </a>
+            </li>`,
+        )}
+      </ul>`
   }
 
   private openDialog = (): void => {
@@ -577,19 +577,15 @@ class SiteDocsDrawerToggle extends LitElement {
     const closeControl = this.placement === 'drawer'
     const label = closeControl || this.open ? 'Close documentation menu' : 'Open documentation menu'
     const icon = closeControl || this.open ? PanelLeftClose : PanelLeftOpen
-    return html`<button
-      type="button"
-      aria-label=${label}
-      aria-controls="site-docs-sidebar"
-      aria-expanded=${String(this.open)}
-      @click=${this.toggleDrawer}
-    >${lucideIcon(closeControl ? X : icon, { size: 18, strokeWidth: 2 })}</button>`
+    return html`<button type="button" aria-label=${label} aria-controls="site-docs-sidebar" aria-expanded=${String(this.open)} @click=${this.toggleDrawer}>${lucideIcon(closeControl ? X : icon, { size: 18, strokeWidth: 2 })}</button>`
   }
 
   private toggleDrawer = (): void => {
-    document.dispatchEvent(new CustomEvent('libredash-docs-drawer-request', {
-      detail: { open: this.placement === 'drawer' ? false : !this.open },
-    }))
+    document.dispatchEvent(
+      new CustomEvent('libredash-docs-drawer-request', {
+        detail: { open: this.placement === 'drawer' ? false : !this.open },
+      }),
+    )
   }
 }
 
@@ -609,7 +605,11 @@ function syncDocsDrawer(open = false): void {
   sidebar.inert = compact && !nextOpen
   sidebar.setAttribute('aria-hidden', String(compact && !nextOpen))
   document.body.classList.toggle('site-docs-drawer-open', nextOpen)
-  document.dispatchEvent(new CustomEvent('libredash-docs-drawer-state', { detail: { open: nextOpen } }))
+  document.dispatchEvent(
+    new CustomEvent('libredash-docs-drawer-state', {
+      detail: { open: nextOpen },
+    }),
+  )
   if (nextOpen && !wasOpen) requestAnimationFrame(revealCurrentDocsLink)
   if (compact && wasOpen && !nextOpen) {
     document.querySelector<HTMLElement>('ld-site-docs-drawer-toggle:not([placement])')?.shadowRoot?.querySelector<HTMLButtonElement>('button')?.focus()
@@ -902,7 +902,10 @@ class SiteMermaid extends LitElement {
     }
 
     const queued = mermaidRenderQueue.then(task, task)
-    mermaidRenderQueue = queued.then(() => undefined, () => undefined)
+    mermaidRenderQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    )
     await queued
   }
 }
@@ -1050,7 +1053,7 @@ class SiteBrandMark extends LitElement {
   `
 
   render() {
-    return lucideIcon(ChartNoAxesCombined, { size: 18, strokeWidth: 2.2 })
+    return lucideIcon(Blocks, { size: 18, strokeWidth: 2.2 })
   }
 }
 
@@ -1059,13 +1062,15 @@ if (!customElements.get('ld-site-brand-mark')) {
 }
 
 const featureIcons: Record<string, IconNode> = {
+  agent: Bot,
   blocks: Blocks,
-	boxes: Boxes,
+  boxes: Boxes,
   chart: ChartNoAxesCombined,
+  dashboard: LayoutDashboard,
   database: Database,
   'git-branch': GitBranch,
   radio: Radio,
-	server: Server,
+  server: Server,
 }
 
 class SiteFeatureIcon extends LitElement {
@@ -1089,7 +1094,10 @@ class SiteFeatureIcon extends LitElement {
   `
 
   render() {
-    return lucideIcon(featureIcons[this.name] ?? Blocks, { size: 22, strokeWidth: 1.8 })
+    return lucideIcon(featureIcons[this.name] ?? Blocks, {
+      size: 22,
+      strokeWidth: 1.8,
+    })
   }
 }
 
@@ -1106,7 +1114,7 @@ function currentThemeMode(): ThemeMode {
 }
 
 function normalizeThemeMode(mode: string | null | undefined): ThemeMode {
-	return mode === 'light' || mode === 'dark' || mode === 'system' ? mode : 'system'
+  return mode === 'light' || mode === 'dark' || mode === 'system' ? mode : 'system'
 }
 
 class SiteChartDemo extends DatastarLit(LitElement) {
@@ -1221,23 +1229,45 @@ class SiteArticleToc extends LitElement {
     requestAnimationFrame(() => this.collectSections())
   }
 
-  disconnectedCallback() { this.observer?.disconnect(); super.disconnectedCallback() }
+  disconnectedCallback() {
+    this.observer?.disconnect()
+    super.disconnectedCallback()
+  }
 
   private collectSections() {
     const headings = Array.from(document.querySelectorAll<HTMLElement>('.site-docs-article h2, .site-docs-article h3, .site-docs-article h4'))
     const used = new Set<string>()
     this.sections = headings.map((heading) => {
-      let id = heading.id || heading.textContent?.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section'
-      const base = id; let suffix = 2
+      let id =
+        heading.id ||
+        heading.textContent
+          ?.trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '') ||
+        'section'
+      const base = id
+      let suffix = 2
       while (used.has(id)) id = `${base}-${suffix++}`
-      used.add(id); heading.id = id
-      return { id, label: heading.textContent?.trim() ?? '', level: Number(heading.tagName.slice(1)) }
+      used.add(id)
+      heading.id = id
+      return {
+        id,
+        label: heading.textContent?.trim() ?? '',
+        level: Number(heading.tagName.slice(1)),
+      }
     })
     this.activeId = this.sections[0]?.id ?? ''
-    this.observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
-      if (visible?.target.id && this.activeId !== visible.target.id) { this.activeId = visible.target.id; this.requestUpdate() }
-    }, { rootMargin: '-18% 0px -70% 0px', threshold: 0 })
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
+        if (visible?.target.id && this.activeId !== visible.target.id) {
+          this.activeId = visible.target.id
+          this.requestUpdate()
+        }
+      },
+      { rootMargin: '-18% 0px -70% 0px', threshold: 0 },
+    )
     headings.forEach((heading) => this.observer?.observe(heading))
     this.requestUpdate()
   }
@@ -1259,17 +1289,30 @@ class SiteArticleToc extends LitElement {
   }
 
   private renderSections(sections: ArticleSectionNode[]): Array<ReturnType<typeof html>> {
-    return sections.map((section) => html`
-      <li class=${section.id === this.activeId ? 'current' : ''}>
-        <a class=${section.id === this.activeId ? 'active' : ''} data-level=${section.level} href=${`#${section.id}`}>${section.label}</a>
-        ${section.children.length ? html`<ul>${this.renderSections(section.children)}</ul>` : null}
-      </li>
-    `)
+    return sections.map(
+      (section) => html`
+        <li class=${section.id === this.activeId ? 'current' : ''}>
+          <a class=${section.id === this.activeId ? 'active' : ''} data-level=${section.level} href=${`#${section.id}`}>${section.label}</a>
+          ${
+            section.children.length
+              ? html`<ul>
+                  ${this.renderSections(section.children)}
+                </ul>`
+              : null
+          }
+        </li>
+      `,
+    )
   }
 
   render() {
     if (!this.sections.length) return null
-    return html`<nav aria-label="In this article"><h2>In this article</h2><ul id="toc">${this.renderSections(this.sectionTree())}</ul></nav>`
+    return html`<nav aria-label="In this article">
+      <h2>In this article</h2>
+      <ul id="toc">
+        ${this.renderSections(this.sectionTree())}
+      </ul>
+    </nav>`
   }
 }
 
@@ -1418,13 +1461,7 @@ class SiteChartShowcase extends DatastarLit(LitElement) {
           <h2 id="chart-showcase-heading">Charts</h2>
           <p>Renderer-neutral chart payloads, adapted by the product ECharts plugin.</p>
         </div>
-        <div class="chart-grid">
-          ${charts.map((chart) => html`<article class="chart">
-            ${chart.type === 'kpi'
-              ? html`<ld-kpi-card .visual=${chart}></ld-kpi-card>`
-              : html`<ld-echart .chart=${chart}></ld-echart>`}
-          </article>`)}
-        </div>
+        <div class="chart-grid">${charts.map((chart) => html`<article class="chart">${chart.type === 'kpi' ? html`<ld-kpi-card .visual=${chart}></ld-kpi-card>` : html`<ld-echart .chart=${chart}></ld-echart>`}</article>`)}</div>
       </section>
       <section class="showcase-section" aria-labelledby="table-showcase-heading">
         <div class="section-heading">
@@ -1432,9 +1469,12 @@ class SiteChartShowcase extends DatastarLit(LitElement) {
           <p>Table variants from the Visual Showcase dashboard, including density, grid, and conditional-formatting treatments.</p>
         </div>
         <div class="table-grid">
-          ${tables.map((table, index) => html`<article class="table-card ${index === 0 ? 'featured' : ''}">
-            <ld-report-table table-id=${table.title} .table=${table}></ld-report-table>
-          </article>`)}
+          ${tables.map(
+            (table, index) =>
+              html`<article class="table-card ${index === 0 ? 'featured' : ''}">
+                <ld-report-table table-id=${table.title} .table=${table}></ld-report-table>
+              </article>`,
+          )}
         </div>
       </section>
     `

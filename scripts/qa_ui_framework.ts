@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdir, readFile, readdir, rm } from 'node:fs/promises'
 
 const portFile = '.tmp/dev-server.port'
 const qaHome = '.tmp/qa-ui-framework/home'
@@ -43,6 +43,7 @@ async function resolveBaseURL(): Promise<string> {
     LIBREDASH_DEV_LOG_LINES: '0',
     LIBREDASH_DEV_SKIP_PUBLISH: '1',
     LIBREDASH_HOME: qaHome,
+    LIBREDASH_MANAGED_DATA_DIR: `${qaHome}/managed-data`,
     LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES: '67108864',
   }, 'ignore')
   void devTask.exited.then((code) => {
@@ -56,7 +57,7 @@ async function resolveBaseURL(): Promise<string> {
 }
 
 async function prepareManagedHome(): Promise<void> {
-  await rm(qaHome, { recursive: true, force: true })
+  await removeManagedHome()
   await mkdir(qaHome, { recursive: true })
 }
 
@@ -132,8 +133,34 @@ async function cleanup(): Promise<void> {
         devTask.kill()
       }
     }
+    await removeManagedHome()
+  }
+}
+
+async function removeManagedHome(): Promise<void> {
+  try {
+    await rm(qaHome, { recursive: true, force: true })
+  } catch (error) {
+    if (!isPermissionError(error)) throw error
+    await makeWritable(qaHome)
     await rm(qaHome, { recursive: true, force: true })
   }
+}
+
+async function makeWritable(path: string): Promise<void> {
+  await chmod(path, 0o700)
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    const child = `${path}/${entry.name}`
+    if (entry.isDirectory()) {
+      await makeWritable(child)
+    } else {
+      await chmod(child, 0o600)
+    }
+  }
+}
+
+function isPermissionError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && (error.code === 'EACCES' || error.code === 'EPERM')
 }
 
 async function run(command: string[], extraEnv: Record<string, string> = {}): Promise<void> {

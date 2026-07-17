@@ -115,6 +115,13 @@ tasks:
       - task: site:build
       - go run ./cmd/libredash-site
 
+  site:product-screenshot:
+    desc: Refresh the homepage screenshot from the real dashboard component fixture
+    deps:
+      - node:deps
+    cmds:
+      - LIBREDASH_TEST_CAPTURE_SITE_PRODUCT=1 bun test web/components/dashboard/dashboard-page.dom.test.ts --test-name-pattern 'dashboard page composes route UI on desktop'
+
   bench:datastar-bridge:
     desc: Benchmark legacy, Ignition, and DatastarLit bridges in Chromium
     deps:

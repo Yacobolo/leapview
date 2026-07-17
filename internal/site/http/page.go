@@ -20,6 +20,34 @@ type sitePageMetadata struct {
 
 const siteDatastarScriptURL = "/static/vendor/datastar-1.0.2.js"
 
+const siteHomepageDashboardYAML = `apiVersion: libredash.dev/v1
+kind: Dashboard
+metadata:
+  workspace: sales
+  name: executive-sales
+  title: Executive Sales
+spec:
+  semanticModel: sales
+  visuals:
+    total_orders:
+      kind: kpi
+      query:
+        measures:
+          order_count:
+  pages:
+    - name: overview
+      title: Overview
+      visuals:
+        - id: total_orders
+          kind: kpi_card
+          visual: total_orders
+          placement:
+            col: 1
+            row: 1
+            col_span: 3
+            row_span: 2
+`
+
 func sitePage(metadata sitePageMetadata) g.Node {
 	return pagestream.RenderPage(pagestream.PageSpec{
 		Title:             metadata.title,
@@ -33,24 +61,95 @@ func sitePage(metadata sitePageMetadata) g.Node {
 			siteHeader(false),
 			h.Section(h.ID("main-content"), h.Class("site-hero"),
 				g.El("ld-topology-background", h.Class("site-hero-background"), g.Attr("aria-hidden", "true")),
-				h.Div(h.Class("site-hero-content"),
-					h.P(h.Class("site-eyebrow"), g.Text("Business intelligence, defined in code")),
-					h.H1(g.Text("Build dashboards your data team can trust.")),
-					h.P(h.Class("site-lede"), g.Text("LibreDash turns versioned semantic models and dashboard definitions into a fast, interactive BI workspace.")),
-					h.Div(h.Class("site-actions"), h.A(h.Class("site-button site-button-primary"), h.Href("/docs/getting-started"), g.Text("Get started")), h.A(h.Class("site-button"), h.Href("#demo"), g.Text("Explore the demo"))),
+				h.Div(h.Class("site-hero-layout"),
+					h.Div(h.Class("site-hero-content"),
+						h.P(h.Class("site-eyebrow"), g.Text("Open-source analytics as code")),
+						h.H1(g.Text("Explore trusted data with dashboards and AI agents.")),
+						h.P(h.Class("site-lede"), g.Text("Define governed semantic models in YAML, review every change in Git, and give people two native interfaces: interactive dashboards and AI agents grounded in the same metrics, access rules, and runtime.")),
+						h.Div(h.Class("site-actions"), h.A(h.Class("site-button site-button-primary"), h.Href("/docs/getting-started"), g.Text("Get started")), h.A(h.Class("site-button"), h.Href("#product"), g.Text("See the product"))),
+					),
+					g.El("figure", h.Class("site-product-frame"),
+						h.Div(h.Class("site-product-frame-bar"),
+							h.Span(h.Class("site-product-frame-dots"), g.Attr("aria-hidden", "true"), h.I(), h.I(), h.I()),
+							h.Span(g.Text("Executive Sales · Overview")),
+						),
+						h.Img(
+							h.Class("site-product-screenshot"),
+							h.Src("/static/product-dashboard.png"),
+							h.Alt("LibreDash sales dashboard with a filter, KPI, chart, and analytical table"),
+							g.Attr("width", "1280"),
+							g.Attr("height", "520"),
+							g.Attr("fetchpriority", "high"),
+						),
+						g.El("figcaption", h.Class("site-product-caption"), g.Text("A real LibreDash report surface rendered from a versioned project.")),
+					),
 				),
-				h.Div(h.Class("site-hero-proof"),
-					siteProofItem("database", "Semantic layer", "Define measures, dimensions, and relationships once."),
-					siteProofItem("chart", "Interactive visuals", "Render focused components from streamed signal updates."),
-					siteProofItem("git-branch", "Versioned workspace", "Keep dashboards in the same workflow as your product."),
+				h.Div(h.Class("site-proof-strip"),
+					siteProofItem("blocks", "Open source", "MIT licensed"),
+					siteProofItem("server", "Self-hosted", "One deployable service"),
+					siteProofItem("database", "DuckDB-powered", "Fast analytical queries"),
+					siteProofItem("agent", "Agent-native", "Alongside dashboards"),
 				),
 			),
 			h.Div(h.Class("site-shell"),
+				h.Section(h.ID("product"), h.Class("site-workflow"),
+					h.Div(h.Class("site-section-intro"),
+						h.P(h.Class("site-eyebrow"), g.Text("Analytics as code")),
+						h.H2(g.Text("From versioned YAML to governed analytics.")),
+						h.P(g.Text("Keep definitions close to the data team, validate them before deployment, and let LibreDash serve the same trusted model through dashboards and agents.")),
+					),
+					h.Div(h.Class("site-workflow-grid"),
+						h.Div(h.Class("site-workflow-code"),
+							g.El("ld-code-block", g.Attr("language", "yaml"), g.Attr("code", siteHomepageDashboardYAML), g.Attr("copy", ""), g.Attr("toolbar", "")),
+						),
+						h.Ol(h.Class("site-workflow-steps"),
+							siteWorkflowStep("01", "Define", "Describe semantic models, measures, filters, visuals, and layouts as reviewed project resources."),
+							siteWorkflowStep("02", "Validate and deploy", "Catch contract errors locally, inspect a deployment plan, and publish one atomic workspace revision."),
+							siteWorkflowStep("03", "Explore and ask", "Open interactive dashboards, use workspace AI agents, or move between both without leaving the governed query boundary."),
+						),
+					),
+				),
+				h.Section(h.Class("site-stack-section"),
+					h.Div(h.Class("site-stack-heading"),
+						h.P(h.Class("site-eyebrow"), g.Text("Built for your stack")),
+						h.H2(g.Text("Keep your data platform. Add the BI layer.")),
+						h.P(g.Text("LibreDash sits after ingestion and transformation. Connect governed analytical data to versioned semantic models, dashboards, and AI agents without replacing the platform your team already runs.")),
+					),
+					h.Ol(h.Class("site-stack-flow"), g.Attr("aria-label", "LibreDash position in the data stack"),
+						siteStackStage("database", "01", "Sources", "Operational data enters the platform through the systems and formats you already use.", []string{"Apps", "Databases", "Files", "Object storage"}, false),
+						siteStackStage("boxes", "02", "Data platform", "Ingest, transform, govern, and publish analytical data in your existing platform.", []string{"Databricks", "Microsoft Fabric", "Snowflake", "Lakehouse / warehouse"}, false),
+						siteStackStage("blocks", "03", "LibreDash", "Add a code-native analytics layer with two native interfaces over the same governed runtime.", []string{"Semantic models", "Dashboards", "AI agents", "Governed access"}, true),
+					),
+					h.P(h.Class("site-stack-note"), g.Text("LibreDash can also work with managed or locally accessible sources when a separate data platform is unnecessary.")),
+				),
+				h.Section(h.Class("site-interfaces-section"),
+					h.Div(h.Class("site-interfaces-heading"),
+						h.P(h.Class("site-eyebrow"), g.Text("Native interfaces")),
+						h.H2(g.Text("Use dashboards, AI agents, or both.")),
+						h.P(g.Text("Dashboards provide repeatable visual analysis. AI agents provide an iterative conversational path. Both resolve data through the same semantic model, authorization, and data policies.")),
+					),
+					h.Div(h.Class("site-interfaces-grid"),
+						siteInterfaceCard("dashboard", "Dashboards", "Compose durable analytical views for recurring decisions, reviews, and shared operational context.", []string{"Charts, KPIs, filters, and BI tables", "Repeatable pages for teams and workflows", "Interactive exploration with server-owned queries"}, "Explore dashboard guides", "/docs/guides/build"),
+						siteInterfaceCard("agent", "AI agents", "Investigate workspace data through governed natural language and a policy-controlled catalog of analytical tools.", []string{"Workspace-scoped conversations and runs", "Evidence grounded in active semantic models", "The same access and data-policy boundaries"}, "Explore agent integrations", "/docs/guides/integrate/agent"),
+					),
+					h.Div(h.Class("site-interface-core"),
+						siteFeatureIcon("blocks"),
+						h.Div(
+							h.H3(g.Text("One governed semantic layer")),
+							h.P(g.Text("Define a metric once. Dashboards, API clients, and AI agents all consume the same reviewed meaning and runtime controls.")),
+						),
+						h.Ul(
+							h.Li(g.Text("Shared metrics")),
+							h.Li(g.Text("Shared authorization")),
+							h.Li(g.Text("Shared audit boundary")),
+						),
+					),
+				),
 				h.Section(h.ID("demo"), h.Class("site-product-proof"),
 					h.Div(h.Class("site-product-copy"),
-						h.P(h.Class("site-eyebrow"), g.Text("A real LibreDash surface")),
-						h.H2(g.Text("Start with the model. End with a dashboard.")),
-						h.P(h.Class("site-lede"), g.Text("LibreDash keeps the semantic model, dashboard definition, and runtime visual in one small, reviewable system.")),
+						h.P(h.Class("site-eyebrow"), g.Text("Live interaction")),
+						h.H2(g.Text("One model. Two ways to explore.")),
+						h.P(h.Class("site-lede"), g.Text("Switch the measure below to see a server-owned chart payload update without rebuilding the page or moving query ownership into the browser.")),
 						h.A(h.Class("site-button"), h.Href("/charts"), g.Text("Browse every visual")),
 					),
 					h.Div(h.Class("site-demo"),
@@ -62,21 +161,19 @@ func sitePage(metadata sitePageMetadata) g.Node {
 						g.El("ld-site-chart-demo"),
 					),
 				),
-				h.Section(h.Class("site-principles-section"),
-					h.Div(h.Class("site-principles-heading"), h.P(h.Class("site-eyebrow"), g.Text("Designed for data teams")), h.H2(g.Text("A deliberately small BI stack.")), h.P(g.Text("The essentials for making trustworthy dashboards without recreating an entire data platform."))),
-					h.Div(h.Class("site-principles"),
-						sitePrinciple("blocks", "Semantic first", "Model measures, dimensions, and relationships once, then reuse them everywhere."),
-						sitePrinciple("server", "Server-owned data", "Keep queries, filters, and payloads in one predictable runtime."),
-						sitePrinciple("chart", "Visual breadth", "Use a shared contract for charts, KPIs, tables, matrices, and pivots."),
-						sitePrinciple("git-branch", "Versioned by default", "Keep dashboards and models in the same reviewable workflow as the rest of your product."),
-						sitePrinciple("boxes", "Composable surfaces", "Bring focused web components together without a frontend framework layer."),
-						sitePrinciple("radio", "Interactive by default", "Stream small state updates into focused web components."),
+				h.Section(h.Class("site-capabilities-section"),
+					h.Div(h.Class("site-capabilities-heading"), h.P(h.Class("site-eyebrow"), g.Text("The analytics layer")), h.H2(g.Text("Everything needed for governed exploration.")), h.P(g.Text("A focused set of capabilities for teams that want trustworthy dashboards and agents without adopting another data platform."))),
+					h.Div(h.Class("site-capabilities"),
+						siteCapability("blocks", "Reusable semantics", "Define measures, dimensions, metrics, and relationships once, then reuse them across every interface."),
+						siteCapability("dashboard", "Interactive dashboards", "Compose charts, KPIs, filters, tables, matrices, and pivots from one renderer-neutral contract."),
+						siteCapability("agent", "Governed AI agents", "Ask iterative questions through policy-controlled tools grounded in active workspace semantics."),
+						siteCapability("git-branch", "Reviewable delivery", "Validate, plan, and deploy the analytics layer through the same Git workflow as application code."),
 					),
 				),
 				h.Section(h.Class("site-cta"),
-					h.P(h.Class("site-eyebrow"), g.Text("Open source BI")),
-					h.H2(g.Text("Bring your dashboards into the codebase.")),
-					h.P(g.Text("Explore the components, contracts, and visual types behind LibreDash.")),
+					h.P(h.Class("site-eyebrow"), g.Text("Open source analytics")),
+					h.H2(g.Text("Bring governed analytics into the codebase.")),
+					h.P(g.Text("Start with dashboards, AI agents, or both—each backed by the same versioned model and runtime controls.")),
 					h.Div(h.Class("site-actions"), h.A(h.Class("site-button site-button-primary"), h.Href("/docs/getting-started"), g.Text("Get started")), h.A(h.Class("site-button"), h.Href("/charts"), g.Text("See the visual gallery"))),
 				),
 			),
@@ -270,8 +367,48 @@ func siteHTMLAttrs() []g.Node {
 	}
 }
 
-func sitePrinciple(icon, title, body string) g.Node {
-	return h.Article(h.Class("site-principle"), siteFeatureIcon(icon), h.H3(g.Text(title)), h.P(g.Text(body)))
+func siteWorkflowStep(number, title, body string) g.Node {
+	return h.Li(
+		h.Span(h.Class("site-workflow-number"), g.Attr("aria-hidden", "true"), g.Text(number)),
+		h.Div(h.H3(g.Text(title)), h.P(g.Text(body))),
+	)
+}
+
+func siteStackStage(icon, number, title, body string, chips []string, featured bool) g.Node {
+	className := "site-stack-stage"
+	if featured {
+		className += " site-stack-stage-featured"
+	}
+	chipNodes := make([]g.Node, 0, len(chips))
+	for _, chip := range chips {
+		chipNodes = append(chipNodes, h.Li(g.Text(chip)))
+	}
+	return h.Li(h.Class(className),
+		h.Div(h.Class("site-stack-stage-header"),
+			siteFeatureIcon(icon),
+			h.Span(h.Class("site-stack-stage-number"), g.Text(number)),
+		),
+		h.H3(g.Text(title)),
+		h.P(g.Text(body)),
+		h.Ul(h.Class("site-stack-chips"), g.Group(chipNodes)),
+	)
+}
+
+func siteCapability(icon, title, body string) g.Node {
+	return h.Article(h.Class("site-capability"), siteFeatureIcon(icon), h.H3(g.Text(title)), h.P(g.Text(body)))
+}
+
+func siteInterfaceCard(icon, title, body string, points []string, linkLabel, href string) g.Node {
+	items := make([]g.Node, 0, len(points))
+	for _, point := range points {
+		items = append(items, h.Li(g.Text(point)))
+	}
+	return h.Article(h.Class("site-interface-card"),
+		h.Div(h.Class("site-interface-card-header"), siteFeatureIcon(icon), h.H3(g.Text(title))),
+		h.P(g.Text(body)),
+		h.Ul(h.Class("site-interface-points"), g.Group(items)),
+		h.A(h.Class("site-interface-link"), h.Href(href), g.Text(linkLabel)),
+	)
 }
 
 func siteProofItem(icon, title, body string) g.Node {
@@ -287,7 +424,7 @@ func siteFooter() g.Node {
 		h.Div(h.Class("site-footer-content"),
 			h.Div(h.Class("site-footer-brand-block"),
 				siteBrandLink(),
-				h.P(g.Text("A small, code-native BI workspace for teams that value trustworthy dashboards.")),
+				h.P(g.Text("A small, code-native analytics workspace for governed dashboards and AI agents.")),
 			),
 			siteFooterGroup("Explore", []siteFooterLink{
 				{label: "Documentation", href: "/docs"},
@@ -300,7 +437,7 @@ func siteFooter() g.Node {
 				{label: "Issues", href: "https://github.com/Yacobolo/libredash/issues"},
 			}),
 		),
-		h.Div(h.Class("site-footer-bottom"), h.P(g.Text("LibreDash — dashboards as code."))),
+		h.Div(h.Class("site-footer-bottom"), h.P(g.Text("LibreDash — governed analytics as code."))),
 	)
 }
 

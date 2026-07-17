@@ -139,7 +139,7 @@ func (w *gzipResponseWriter) Write(contents []byte) (int, error) {
 }
 
 func (s *siteServer) home(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, "LibreDash — BI dashboards as code", "Open-source business intelligence with versioned semantic models and dashboards defined in code.", "website", "")
+	metadata := s.metadata(r, "LibreDash — governed analytics with dashboards and AI agents", "Open-source analytics with versioned semantic models, interactive dashboards, and governed AI agents.", "website", "")
 	renderHTML(w, http.StatusOK, sitePage(metadata), "render site page")
 }
 

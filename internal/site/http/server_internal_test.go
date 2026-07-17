@@ -12,7 +12,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Yacobolo/libredash/internal/configschema"
 )
+
+func TestHomepageDashboardExampleMatchesThePublishedSchema(t *testing.T) {
+	if err := configschema.ValidateBytes(configschema.KindDashboardResource, "homepage-dashboard.yaml", []byte(siteHomepageDashboardYAML)); err != nil {
+		t.Fatalf("validate homepage dashboard example: %v", err)
+	}
+}
 
 func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
@@ -226,7 +234,7 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 
 	body := readBody(t, response)
 	for _, want := range []string{
-		"<title>LibreDash — BI dashboards as code</title>",
+		"<title>LibreDash — governed analytics with dashboards and AI agents</title>",
 		`data-color-mode="auto"`,
 		`/updates`,
 		`data-init="@get(&#39;/updates&#39;, {openWhenHidden: true})"`,
@@ -236,10 +244,18 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 		`<meta name="view-transition" content="same-origin">`,
 		`<ld-topology-background class="site-hero-background" aria-hidden="true"></ld-topology-background>`,
 		`<section id="main-content" class="site-hero">`,
-		`<div class="site-hero-proof">`,
+		`<div class="site-hero-layout">`,
+		`<img class="site-product-screenshot" src="/static/product-dashboard.png"`,
+		`<div class="site-proof-strip">`,
 		`<ld-site-feature-icon name="database" aria-hidden="true"></ld-site-feature-icon>`,
-		`<ld-site-feature-icon name="chart" aria-hidden="true"></ld-site-feature-icon>`,
+		`<ld-site-feature-icon name="dashboard" aria-hidden="true"></ld-site-feature-icon>`,
 		`<ld-site-feature-icon name="git-branch" aria-hidden="true"></ld-site-feature-icon>`,
+		`<section id="product" class="site-workflow">`,
+		`<ol class="site-stack-flow" aria-label="LibreDash position in the data stack">`,
+		`<section class="site-interfaces-section">`,
+		`<article class="site-interface-card">`,
+		`<ld-site-feature-icon name="agent" aria-hidden="true"></ld-site-feature-icon>`,
+		`<a class="site-interface-link" href="/docs/guides/integrate/agent">Explore agent integrations</a>`,
 		`<section id="demo" class="site-product-proof">`,
 		`<section class="site-cta">`,
 		`<footer class="site-footer" role="contentinfo">`,

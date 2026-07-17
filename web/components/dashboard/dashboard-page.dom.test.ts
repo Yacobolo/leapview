@@ -148,6 +148,26 @@ for (const viewport of [
         tableSelection: [{ mappings: [{ field: 'orders.order_id', value: 'o1', label: 'o1' }], label: 'o1' }],
       })
 
+      if (viewport.name === 'desktop' && process.env.LIBREDASH_TEST_CAPTURE_SITE_PRODUCT === '1') {
+        await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+          const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev')
+          mergePatch({
+            componentStatus: {
+              'visual:orders_chart': { generation: 3, loading: false, error: '' },
+              'table:orders': { generation: 3, loading: false, error: '' },
+            },
+            status: { loading: false, error: '', progressPercent: 100 },
+          })
+          await element.updateComplete
+        })
+        await page.screenshot({
+          path: join(projectRoot, 'site/static/product-dashboard.png'),
+          type: 'png',
+          animations: 'disabled',
+          clip: { x: 0, y: 0, width: 1280, height: 520 },
+        })
+      }
+
       if (viewport.name === 'desktop') {
         const updateIsolation = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
           const chart = element.shadowRoot.querySelector('ld-echart') as any

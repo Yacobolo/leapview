@@ -24,7 +24,7 @@ afterAll(async () => {
   await siteProcess?.exited
 })
 
-test('site streams an initial chart and switches its metric through PageStream', async () => {
+test('site explains the product, its workflow, and where it fits in the data stack', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(baseURL)
@@ -41,13 +41,55 @@ test('site streams an initial chart and switches its metric through PageStream',
       viewportWidth: window.innerWidth,
     }))
     expect(hero.width).toBe(hero.viewportWidth)
-    expect(hero.height).toBeGreaterThanOrEqual(hero.viewportHeight)
-    expect(await page.locator('.site-hero-proof .site-proof-item').count()).toBe(3)
-    expect(await page.locator('.site-principles .site-principle').count()).toBe(6)
-    expect(await page.locator('ld-site-feature-icon').count()).toBe(9)
+    expect(hero.height).toBeGreaterThan(hero.viewportHeight * 0.65)
+    expect(
+      await page
+        .getByRole('heading', {
+          name: 'Explore trusted data with dashboards and AI agents.',
+        })
+        .isVisible(),
+    ).toBe(true)
+    const productScreenshot = page.locator('img.site-product-screenshot')
+    expect(await productScreenshot.count()).toBe(1)
+    expect(await productScreenshot.getAttribute('alt')).toBe('LibreDash sales dashboard with a filter, KPI, chart, and analytical table')
+    await page.waitForFunction(() => {
+      const image = document.querySelector('img.site-product-screenshot') as HTMLImageElement | null
+      return Boolean(image?.complete && image.naturalWidth > 0)
+    })
+    expect(await page.locator('.site-proof-strip .site-proof-item').count()).toBe(4)
+    expect(
+      await page
+        .getByRole('heading', {
+          name: 'From versioned YAML to governed analytics.',
+        })
+        .isVisible(),
+    ).toBe(true)
+    expect(await page.locator('.site-workflow ld-code-block').count()).toBe(1)
+    expect(
+      await page
+        .getByRole('heading', {
+          name: 'Keep your data platform. Add the BI layer.',
+        })
+        .isVisible(),
+    ).toBe(true)
+    const stackFlow = page.getByRole('list', {
+      name: 'LibreDash position in the data stack',
+    })
+    expect(await stackFlow.locator('.site-stack-stage').count()).toBe(3)
+    expect(await stackFlow.getByRole('heading', { name: 'Sources' }).count()).toBe(1)
+    expect(await stackFlow.getByRole('heading', { name: 'Data platform' }).count()).toBe(1)
+    expect(await stackFlow.getByRole('heading', { name: 'LibreDash' }).count()).toBe(1)
+    const interfaces = page.locator('.site-interfaces-section')
+    expect(await interfaces.getByRole('heading', { name: 'Use dashboards, AI agents, or both.' }).count()).toBe(1)
+    expect(await interfaces.locator('.site-interface-card').count()).toBe(2)
+    expect(await interfaces.getByRole('heading', { name: 'Dashboards', exact: true }).count()).toBe(1)
+    expect(await interfaces.getByRole('heading', { name: 'AI agents', exact: true }).count()).toBe(1)
+    expect(await interfaces.getByRole('link', { name: 'Explore agent integrations' }).getAttribute('href')).toBe('/docs/guides/integrate/agent')
+    expect(await interfaces.locator('.site-interface-core').count()).toBe(1)
+    expect(await page.locator('.site-capabilities .site-capability').count()).toBe(4)
     expect(await page.getByRole('contentinfo').count()).toBe(1)
     expect(await page.locator('.site-product-proof ld-site-chart-demo').count()).toBe(1)
-    expect(await page.getByRole('heading', { name: 'Start with the model. End with a dashboard.' }).isVisible()).toBe(true)
+    expect(await page.getByRole('heading', { name: 'One model. Two ways to explore.' }).isVisible()).toBe(true)
     await page.evaluate(() => {
       document.documentElement.style.scrollBehavior = 'auto'
       window.scrollTo(0, 64)
@@ -73,8 +115,10 @@ test('site streams an initial chart and switches its metric through PageStream',
   }
 })
 
-test('site brand pairs the LibreDash wordmark with a Lucide dashboard mark', async () => {
-  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+test('site brand pairs the LibreDash wordmark with the Lucide Blocks mark', async () => {
+  const page = await browser.newPage({
+    viewport: { width: 1600, height: 900 },
+  })
   try {
     await page.goto(baseURL)
     const brand = page.getByRole('link', { name: 'LibreDash', exact: true }).first()
@@ -82,6 +126,9 @@ test('site brand pairs the LibreDash wordmark with a Lucide dashboard mark', asy
     expect(await mark.count()).toBe(1)
     expect(await mark.getAttribute('aria-hidden')).toBe('true')
     expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('svg').length)).toBe(1)
+    const blocks = page.locator('ld-site-feature-icon[name="blocks"]').first()
+    const [brandGlyph, blocksGlyph] = await Promise.all([mark.evaluate((element) => element.shadowRoot?.querySelector('svg')?.innerHTML), blocks.evaluate((element) => element.shadowRoot?.querySelector('svg')?.innerHTML)])
+    expect(brandGlyph).toBe(blocksGlyph)
     const navigation = await page.locator('.site-nav').evaluate((element) => ({
       left: element.getBoundingClientRect().left,
       width: element.getBoundingClientRect().width,
@@ -95,7 +142,9 @@ test('site brand pairs the LibreDash wordmark with a Lucide dashboard mark', asy
 })
 
 test('documentation header keeps only search and theme actions', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/introduction`)
     const header = page.locator('.site-header')
@@ -154,7 +203,7 @@ test('site supports system, light, and dark color modes', async () => {
   }
 })
 
-test('mobile landing page uses a compact menu and proof cards', async () => {
+test('mobile landing page keeps the product story compact and ordered', async () => {
   const context = await browser.newContext({
     hasTouch: true,
     viewport: { width: 320, height: 900 },
@@ -171,8 +220,9 @@ test('mobile landing page uses a compact menu and proof cards', async () => {
     expect(await menuButton.count()).toBe(1)
     expect(await menuButton.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
 
-    const principleColumns = await page.locator('.site-principles').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
-    expect(principleColumns).toBe(2)
+    const capabilityColumns = await page.locator('.site-capabilities').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+    expect(capabilityColumns).toBe(1)
+    expect(await page.locator('.site-interfaces-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
     expect(await menuButton.getAttribute('aria-expanded')).toBe('false')
 
     await menuButton.click()
@@ -181,14 +231,24 @@ test('mobile landing page uses a compact menu and proof cards', async () => {
     expect(await docsLink.count()).toBe(1)
     expect(await docsLink.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
 
-    const proofHeights = await page.locator('.site-hero-proof .site-proof-item').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
-    expect(proofHeights).toHaveLength(3)
+    const proofHeights = await page.locator('.site-proof-strip .site-proof-item').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
+    expect(proofHeights).toHaveLength(4)
     expect(Math.max(...proofHeights)).toBeLessThan(180)
+
+    expect(await page.getByRole('list', { name: 'LibreDash position in the data stack' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
+    const screenshot = page.locator('img.site-product-screenshot')
+    expect(await screenshot.evaluate((element) => element.getBoundingClientRect().width <= element.parentElement!.getBoundingClientRect().width)).toBe(true)
 
     await page.setViewportSize({ width: 533, height: 900 })
     const mobileHeroTitleSize = await page.locator('.site-hero h1').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     expect(mobileHeroTitleSize).toBeLessThanOrEqual(40)
-    expect(await page.locator('.site-principles-heading').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await page.locator('.site-capabilities-heading').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+
+    await page.setViewportSize({ width: 768, height: 900 })
+    expect(await page.getByRole('list', { name: 'LibreDash position in the data stack' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
+    expect(await page.locator('.site-capabilities').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2)
+    expect(await page.locator('.site-interfaces-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   } finally {
     await context.close()
@@ -214,7 +274,9 @@ test('getting started route gives users a code-native first path', async () => {
     const sidebar = page.locator('.site-docs-sidebar')
     expect(await sidebar.count()).toBe(1)
     expect(await sidebar.evaluate((element) => getComputedStyle(element).position)).toBe('sticky')
-    const docsNavigation = page.getByRole('navigation', { name: 'Documentation' })
+    const docsNavigation = page.getByRole('navigation', {
+      name: 'Documentation',
+    })
     expect(await docsNavigation.getByRole('link', { name: 'Get started with LibreDash' }).getAttribute('aria-current')).toBe('page')
     const startGroup = sidebar.locator('details[data-site-docs-group="start"]')
     expect(await startGroup.count()).toBe(1)
@@ -254,11 +316,7 @@ test('getting started route gives users a code-native first path', async () => {
     expect(await page.locator('html').getAttribute('data-copied-markdown')).toStartWith('# Get started with LibreDash')
 
     expect(await page.locator('.site-guide-step').count()).toBe(0)
-    expect((await page.locator('.site-docs-article pre code').allTextContents()).map((content) => content.trim())).toEqual([
-      'task bootstrap',
-      'task dev',
-      'dashboards/\n  libredash.yaml\n  connections/\n    olist.yaml\n  sources/\n    olist.orders.yaml\n  workspaces/\n    sales/\n      workspace.yaml\n      models/\n        orders.yaml\n      semantic-models/\n        sales.yaml\n      dashboards/\n        executive-sales.yaml',
-    ])
+    expect((await page.locator('.site-docs-article pre code').allTextContents()).map((content) => content.trim())).toEqual(['task bootstrap', 'task dev', 'dashboards/\n  libredash.yaml\n  connections/\n    olist.yaml\n  sources/\n    olist.orders.yaml\n  workspaces/\n    sales/\n      workspace.yaml\n      models/\n        orders.yaml\n      semantic-models/\n        sales.yaml\n      dashboards/\n        executive-sales.yaml'])
     expect(await page.getByRole('link', { name: 'Visual gallery' }).count()).toBeGreaterThan(0)
   } finally {
     await page.close()
@@ -270,7 +328,9 @@ test('documentation index exposes every task-oriented section', async () => {
   try {
     await page.goto(`${baseURL}/docs`)
     expect(await page.getByRole('heading', { name: 'Documentation' }).isVisible()).toBe(true)
-    const articleNavigation = page.getByRole('navigation', { name: 'Documentation sections' })
+    const articleNavigation = page.getByRole('navigation', {
+      name: 'Documentation sections',
+    })
     for (const title of ['Start here', 'Build dashboards', 'Deploy and operate', 'Reference', 'Architecture and contributing']) {
       expect(await articleNavigation.getByRole('heading', { name: title }).isVisible()).toBe(true)
     }
@@ -328,36 +388,45 @@ test('documentation articles apply the shared Markdown treatment', async () => {
   try {
     await page.goto(`${baseURL}/docs/charts/line`)
     await page.waitForFunction(() => Boolean(document.querySelector('.site-docs-article ld-code-block .shiki')))
-    const codeBlock = await page.locator('.site-docs-article ld-code-block .code-block-shell').first().evaluate((element) => {
-      const style = getComputedStyle(element)
-      const toolbar = element.querySelector('.code-block-toolbar') as HTMLElement
-      return {
-        borderTopWidth: style.borderTopWidth,
-        borderRadius: style.borderRadius,
-        toolbarHeight: toolbar.getBoundingClientRect().height,
-      }
-    })
+    const codeBlock = await page
+      .locator('.site-docs-article ld-code-block .code-block-shell')
+      .first()
+      .evaluate((element) => {
+        const style = getComputedStyle(element)
+        const toolbar = element.querySelector('.code-block-toolbar') as HTMLElement
+        return {
+          borderTopWidth: style.borderTopWidth,
+          borderRadius: style.borderRadius,
+          toolbarHeight: toolbar.getBoundingClientRect().height,
+        }
+      })
     expect(codeBlock.borderTopWidth).toBe('1px')
     expect(codeBlock.borderRadius).not.toBe('0px')
     expect(codeBlock.toolbarHeight).toBe(33)
 
     await page.setViewportSize({ width: 390, height: 800 })
-    const compactCodeBlock = await page.locator('.site-docs-article ld-code-block').first().evaluate((element) => {
-      const article = element.closest('.site-docs-article') as HTMLElement
-      const pre = element.querySelector('pre') as HTMLElement
-      return {
-        articleWidth: article.getBoundingClientRect().width,
-        codeWidth: element.getBoundingClientRect().width,
-        overflowX: getComputedStyle(pre).overflowX,
-        pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-      }
-    })
+    const compactCodeBlock = await page
+      .locator('.site-docs-article ld-code-block')
+      .first()
+      .evaluate((element) => {
+        const article = element.closest('.site-docs-article') as HTMLElement
+        const pre = element.querySelector('pre') as HTMLElement
+        return {
+          articleWidth: article.getBoundingClientRect().width,
+          codeWidth: element.getBoundingClientRect().width,
+          overflowX: getComputedStyle(pre).overflowX,
+          pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        }
+      })
     expect(compactCodeBlock.codeWidth).toBe(compactCodeBlock.articleWidth)
     expect(compactCodeBlock.overflowX).toBe('auto')
     expect(compactCodeBlock.pageOverflows).toBe(false)
 
     await page.goto(`${baseURL}/docs/configuration`)
-    const tableHeader = await page.locator('.site-docs-article th').first().evaluate((element) => getComputedStyle(element).backgroundColor)
+    const tableHeader = await page
+      .locator('.site-docs-article th')
+      .first()
+      .evaluate((element) => getComputedStyle(element).backgroundColor)
     expect(tableHeader).not.toBe('rgba(0, 0, 0, 0)')
 
     const siteCSS = await (await fetch(`${baseURL}/static/site.css`)).text()
@@ -368,7 +437,9 @@ test('documentation articles apply the shared Markdown treatment', async () => {
 })
 
 test('documentation Mermaid fences render as accessible responsive diagrams', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/introduction`)
     const diagram = page.locator('ld-site-mermaid').first()
@@ -402,7 +473,9 @@ test('documentation Mermaid fences render as accessible responsive diagrams', as
 })
 
 test('documentation articles provide a readable, navigable reference experience', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/guides/build`)
     await page.evaluate(() => {
@@ -468,10 +541,13 @@ test('documentation articles provide a readable, navigable reference experience'
 
     const activeGroup = page.locator('.site-docs-nav-group-active > summary').first()
     const currentLink = page.locator('.site-docs-link-current')
-    const navigationTreatment = await activeGroup.evaluate((summary, link) => ({
-      groupBackground: getComputedStyle(summary).backgroundColor,
-      linkBackground: getComputedStyle(link as Element).backgroundColor,
-    }), await currentLink.elementHandle())
+    const navigationTreatment = await activeGroup.evaluate(
+      (summary, link) => ({
+        groupBackground: getComputedStyle(summary).backgroundColor,
+        linkBackground: getComputedStyle(link as Element).backgroundColor,
+      }),
+      await currentLink.elementHandle(),
+    )
     expect(navigationTreatment.groupBackground).toBe('rgba(0, 0, 0, 0)')
     expect(navigationTreatment.linkBackground).not.toBe(navigationTreatment.groupBackground)
 
@@ -528,7 +604,9 @@ test('documentation navigation follows DuckDBs 900px drawer breakpoint', async (
 })
 
 test('documentation navigation uses compact rows and Overview labels', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/guides/build`)
     const navigation = page.getByRole('navigation', { name: 'Documentation' })
@@ -588,36 +666,39 @@ test('documentation navigation uses compact rows and Overview labels', async () 
 })
 
 test('documentation reading columns stay centered and readable at every layout tier', async () => {
-  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1600, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/introduction`)
 
-    const measure = () => page.locator('.site-docs-reading-layout').evaluate((reading) => {
-      const content = document.querySelector('.site-docs-content') as HTMLElement
-      const shell = reading.querySelector('.site-guide-shell') as HTMLElement
-      const article = reading.querySelector('.site-docs-article') as HTMLElement
-      const paragraph = article.querySelector('p') as HTMLElement
-      const outline = reading.querySelector('ld-site-article-toc') as HTMLElement
-      const contentRect = content.getBoundingClientRect()
-      const contentStyle = getComputedStyle(content)
-      const readingRect = reading.getBoundingClientRect()
-      const articleRect = article.getBoundingClientRect()
-      const paragraphRect = paragraph.getBoundingClientRect()
-      const shellRect = shell.getBoundingClientRect()
-      const sectionHeading = article.querySelector('h2') as HTMLElement
-      const precedingBlock = sectionHeading.previousElementSibling as HTMLElement
-      return {
-        articleLeftSpace: articleRect.left - shellRect.left,
-        articleRightSpace: shellRect.right - articleRect.right,
-        articleWidth: articleRect.width,
-        outlineVisible: getComputedStyle(outline).display !== 'none',
-        paragraphWidth: paragraphRect.width,
-        readingLeftSpace: readingRect.left - (contentRect.left + Number.parseFloat(contentStyle.paddingLeft)),
-        readingRightSpace: contentRect.right - Number.parseFloat(contentStyle.paddingRight) - readingRect.right,
-        sectionGap: sectionHeading.getBoundingClientRect().top - precedingBlock.getBoundingClientRect().bottom,
-        shellWidth: shellRect.width,
-      }
-    })
+    const measure = () =>
+      page.locator('.site-docs-reading-layout').evaluate((reading) => {
+        const content = document.querySelector('.site-docs-content') as HTMLElement
+        const shell = reading.querySelector('.site-guide-shell') as HTMLElement
+        const article = reading.querySelector('.site-docs-article') as HTMLElement
+        const paragraph = article.querySelector('p') as HTMLElement
+        const outline = reading.querySelector('ld-site-article-toc') as HTMLElement
+        const contentRect = content.getBoundingClientRect()
+        const contentStyle = getComputedStyle(content)
+        const readingRect = reading.getBoundingClientRect()
+        const articleRect = article.getBoundingClientRect()
+        const paragraphRect = paragraph.getBoundingClientRect()
+        const shellRect = shell.getBoundingClientRect()
+        const sectionHeading = article.querySelector('h2') as HTMLElement
+        const precedingBlock = sectionHeading.previousElementSibling as HTMLElement
+        return {
+          articleLeftSpace: articleRect.left - shellRect.left,
+          articleRightSpace: shellRect.right - articleRect.right,
+          articleWidth: articleRect.width,
+          outlineVisible: getComputedStyle(outline).display !== 'none',
+          paragraphWidth: paragraphRect.width,
+          readingLeftSpace: readingRect.left - (contentRect.left + Number.parseFloat(contentStyle.paddingLeft)),
+          readingRightSpace: contentRect.right - Number.parseFloat(contentStyle.paddingRight) - readingRect.right,
+          sectionGap: sectionHeading.getBoundingClientRect().top - precedingBlock.getBoundingClientRect().bottom,
+          shellWidth: shellRect.width,
+        }
+      })
 
     const wide = await measure()
     expect(wide.outlineVisible).toBe(true)
@@ -663,7 +744,9 @@ test('documentation reading columns stay centered and readable at every layout t
 })
 
 test('documentation CSS keeps site tokens available and fragment targets below the sticky header', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/getting-started`)
     const runtimeStyles = await page.locator('.site-docs-article').evaluate((article) => ({
@@ -699,32 +782,35 @@ test('site disables smooth scrolling for reduced motion', async () => {
 })
 
 test('documentation header keeps the Markdown copy action beside the title at every width', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/configuration`)
 
-    const measure = () => page.locator('.site-docs-article').evaluate((article) => {
-      const button = document.querySelector('ld-site-markdown-copy')?.shadowRoot?.querySelector('button')
-      const title = article.querySelector('h1')
-      const action = article.querySelector('.site-docs-article-actions')
-      const buttonStyle = button ? getComputedStyle(button) : null
-      const titleRect = title?.getBoundingClientRect()
-      const actionRect = action?.getBoundingClientRect()
-      const buttonRect = button?.getBoundingClientRect()
-      return {
-        actionTop: actionRect?.top ?? 0,
-        buttonFontSize: Number.parseFloat(buttonStyle?.fontSize ?? '0'),
-        buttonHeight: buttonRect?.height ?? 0,
-        buttonLeft: buttonRect?.left ?? 0,
-        buttonRight: buttonRect?.right ?? 0,
-        pageWidth: document.documentElement.scrollWidth,
-        titleBottom: titleRect?.bottom ?? 0,
-        titleLeft: titleRect?.left ?? 0,
-        titleRight: titleRect?.right ?? 0,
-        titleTop: titleRect?.top ?? 0,
-        viewportWidth: window.innerWidth,
-      }
-    })
+    const measure = () =>
+      page.locator('.site-docs-article').evaluate((article) => {
+        const button = document.querySelector('ld-site-markdown-copy')?.shadowRoot?.querySelector('button')
+        const title = article.querySelector('h1')
+        const action = article.querySelector('.site-docs-article-actions')
+        const buttonStyle = button ? getComputedStyle(button) : null
+        const titleRect = title?.getBoundingClientRect()
+        const actionRect = action?.getBoundingClientRect()
+        const buttonRect = button?.getBoundingClientRect()
+        return {
+          actionTop: actionRect?.top ?? 0,
+          buttonFontSize: Number.parseFloat(buttonStyle?.fontSize ?? '0'),
+          buttonHeight: buttonRect?.height ?? 0,
+          buttonLeft: buttonRect?.left ?? 0,
+          buttonRight: buttonRect?.right ?? 0,
+          pageWidth: document.documentElement.scrollWidth,
+          titleBottom: titleRect?.bottom ?? 0,
+          titleLeft: titleRect?.left ?? 0,
+          titleRight: titleRect?.right ?? 0,
+          titleTop: titleRect?.top ?? 0,
+          viewportWidth: window.innerWidth,
+        }
+      })
 
     for (const width of [1440, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 })
@@ -743,7 +829,9 @@ test('documentation header keeps the Markdown copy action beside the title at ev
 })
 
 test('documentation articles end with a DuckDB-style About this page panel', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/getting-started`)
     const article = page.locator('.site-docs-article')
@@ -755,31 +843,32 @@ test('documentation articles end with a DuckDB-style About this page panel', asy
     expect(await panel.getByRole('link', { name: 'See this page as Markdown', exact: true }).getAttribute('href')).toBe('https://raw.githubusercontent.com/Yacobolo/libredash/main/docs/getting-started.md')
     expect(await panel.getByRole('link', { name: 'Edit this page on GitHub', exact: true }).getAttribute('href')).toBe('https://github.com/Yacobolo/libredash/edit/main/docs/getting-started.md')
 
-    const measure = () => panel.evaluate((element) => {
-      const article = element.closest('.site-docs-article') as HTMLElement
-      const heading = element.querySelector('h2') as HTMLElement
-      const list = element.querySelector('ul') as HTMLElement
-      const item = element.querySelector('li') as HTMLElement
-      const panelStyle = getComputedStyle(element)
-      const headingStyle = getComputedStyle(heading)
-      const listStyle = getComputedStyle(list)
-      const itemStyle = getComputedStyle(item)
-      return {
-        articleWidth: article.getBoundingClientRect().width,
-        background: panelStyle.backgroundColor,
-        borderRadius: Number.parseFloat(panelStyle.borderRadius),
-        headingFontSize: Number.parseFloat(headingStyle.fontSize),
-        headingLineHeight: Number.parseFloat(headingStyle.lineHeight),
-        headingMarginBottom: Number.parseFloat(headingStyle.marginBottom),
-        itemFontSize: Number.parseFloat(itemStyle.fontSize),
-        itemLineHeight: Number.parseFloat(itemStyle.lineHeight),
-        listStyle: listStyle.listStyleType,
-        marginTop: Number.parseFloat(panelStyle.marginTop),
-        padding: Number.parseFloat(panelStyle.paddingTop),
-        paddingLeft: Number.parseFloat(listStyle.paddingLeft),
-        panelWidth: element.getBoundingClientRect().width,
-      }
-    })
+    const measure = () =>
+      panel.evaluate((element) => {
+        const article = element.closest('.site-docs-article') as HTMLElement
+        const heading = element.querySelector('h2') as HTMLElement
+        const list = element.querySelector('ul') as HTMLElement
+        const item = element.querySelector('li') as HTMLElement
+        const panelStyle = getComputedStyle(element)
+        const headingStyle = getComputedStyle(heading)
+        const listStyle = getComputedStyle(list)
+        const itemStyle = getComputedStyle(item)
+        return {
+          articleWidth: article.getBoundingClientRect().width,
+          background: panelStyle.backgroundColor,
+          borderRadius: Number.parseFloat(panelStyle.borderRadius),
+          headingFontSize: Number.parseFloat(headingStyle.fontSize),
+          headingLineHeight: Number.parseFloat(headingStyle.lineHeight),
+          headingMarginBottom: Number.parseFloat(headingStyle.marginBottom),
+          itemFontSize: Number.parseFloat(itemStyle.fontSize),
+          itemLineHeight: Number.parseFloat(itemStyle.lineHeight),
+          listStyle: listStyle.listStyleType,
+          marginTop: Number.parseFloat(panelStyle.marginTop),
+          padding: Number.parseFloat(panelStyle.paddingTop),
+          paddingLeft: Number.parseFloat(listStyle.paddingLeft),
+          panelWidth: element.getBoundingClientRect().width,
+        }
+      })
 
     const desktop = await measure()
     expect(desktop.background).not.toBe('rgba(0, 0, 0, 0)')
@@ -813,19 +902,35 @@ test('compact documentation navigation opens in a drawer', async () => {
   const page = await context.newPage()
   try {
     await page.addInitScript(() => {
-      const calls: Array<{ block?: ScrollLogicalPosition, href: string | null, inline?: ScrollLogicalPosition }> = []
+      const calls: Array<{
+        block?: ScrollLogicalPosition
+        href: string | null
+        inline?: ScrollLogicalPosition
+      }> = []
       ;(window as unknown as { siteDocsRevealCalls: typeof calls }).siteDocsRevealCalls = calls
       Element.prototype.scrollIntoView = function scrollIntoView(options?: boolean | ScrollIntoViewOptions) {
         const normalized = typeof options === 'object' ? options : {}
-        calls.push({ block: normalized.block, href: this.getAttribute('href'), inline: normalized.inline })
+        calls.push({
+          block: normalized.block,
+          href: this.getAttribute('href'),
+          inline: normalized.inline,
+        })
       }
     })
     await page.goto(`${baseURL}/docs/getting-started`)
-    await page.waitForFunction(() => (window as unknown as { siteDocsRevealCalls: Array<{ href: string | null }> }).siteDocsRevealCalls.some((call) => call.href === '/docs/getting-started'))
+    await page.waitForFunction(() =>
+      (
+        window as unknown as {
+          siteDocsRevealCalls: Array<{ href: string | null }>
+        }
+      ).siteDocsRevealCalls.some((call) => call.href === '/docs/getting-started'),
+    )
 
     const sidebar = page.locator('.site-docs-sidebar')
     const headerDrawerToggle = page.locator('ld-site-docs-drawer-toggle:not([placement])')
-    const toggle = page.getByRole('button', { name: 'Open documentation menu' })
+    const toggle = page.getByRole('button', {
+      name: 'Open documentation menu',
+    })
     expect(await toggle.isVisible()).toBe(true)
     expect(await toggle.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
     expect(await toggle.getAttribute('aria-expanded')).toBe('false')
@@ -837,8 +942,25 @@ test('compact documentation navigation opens in a drawer', async () => {
     await page.waitForFunction((previousCount) => (window as unknown as { siteDocsRevealCalls: unknown[] }).siteDocsRevealCalls.length > previousCount, revealCount)
     expect(await headerDrawerToggle.evaluate((element) => element.shadowRoot?.querySelector('button')?.getAttribute('aria-expanded'))).toBe('true')
     expect(await sidebar.getAttribute('aria-hidden')).toBe('false')
-    expect(await sidebar.locator('.site-docs-link').first().evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
-    expect(await page.evaluate(() => (window as unknown as { siteDocsRevealCalls: Array<{ block?: string, href: string | null, inline?: string }> }).siteDocsRevealCalls.at(-1))).toEqual({
+    expect(
+      await sidebar
+        .locator('.site-docs-link')
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().height),
+    ).toBeGreaterThanOrEqual(44)
+    expect(
+      await page.evaluate(() =>
+        (
+          window as unknown as {
+            siteDocsRevealCalls: Array<{
+              block?: string
+              href: string | null
+              inline?: string
+            }>
+          }
+        ).siteDocsRevealCalls.at(-1),
+      ),
+    ).toEqual({
       block: 'nearest',
       href: '/docs/getting-started',
       inline: 'nearest',
@@ -854,7 +976,9 @@ test('compact documentation navigation opens in a drawer', async () => {
 })
 
 test('documentation outlines match the compact DuckDB article navigation treatment', async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  })
   try {
     await page.goto(`${baseURL}/docs/guides/build/model-tables`)
     const toc = page.locator('ld-site-article-toc')
@@ -970,8 +1094,7 @@ test('chart showcase renders every supported visual type', async () => {
       const showcase = document.querySelector('ld-site-chart-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
       return showcase?.shadowRoot?.querySelectorAll('ld-report-table').length === 9
     })
-    await page.waitForFunction(() => Array.from(document.querySelector('ld-site-chart-showcase')?.shadowRoot?.querySelectorAll('ld-report-table') ?? [])
-      .every((table) => Boolean(table.shadowRoot?.querySelector('h2'))))
+    await page.waitForFunction(() => Array.from(document.querySelector('ld-site-chart-showcase')?.shadowRoot?.querySelectorAll('ld-report-table') ?? []).every((table) => Boolean(table.shadowRoot?.querySelector('h2'))))
     const tables = await page.locator('ld-site-chart-showcase').evaluate((element) => ({
       cards: element.shadowRoot?.querySelectorAll('.table-card').length,
       tables: element.shadowRoot?.querySelectorAll('ld-report-table').length,
