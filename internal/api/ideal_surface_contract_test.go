@@ -170,7 +170,8 @@ func TestDashboardPageComponentsAreKindDiscriminated(t *testing.T) {
 	for _, name := range []string{"DashboardVisualComponentResponse", "DashboardTableComponentResponse", "DashboardFilterComponentResponse"} {
 		variant := openAPISchema(t, schemas, name)
 		allOf, _ := variant["allOf"].([]any)
-		if len(allOf) != 2 {
+		base, _ := firstOpenAPIRef(allOf)
+		if len(allOf) != 1 || base != "#/components/schemas/DashboardComponentResponseBase" {
 			t.Errorf("%s does not refine the shared component schema: %#v", name, variant)
 		}
 	}
@@ -272,7 +273,7 @@ func TestIdealAPIUsesBoundedInputsAndBodylessDeletes(t *testing.T) {
 	if queryLimit["minimum"] != float64(1) || queryLimit["maximum"] != float64(1000) {
 		t.Fatalf("query limit schema = %#v", queryLimit)
 	}
-	visual := openAPISchema(t, schemas, "DashboardVisualDataResponse")
+	visual := openAPISchema(t, schemas, "DashboardVisualDataResponseBase")
 	properties := openAPIMap(t, visual, "properties")
 	if _, ok := properties["rendererOptions"]; ok {
 		t.Fatalf("renderer-specific options leaked at the top level: %#v", properties)
@@ -285,4 +286,16 @@ func TestIdealAPIUsesBoundedInputsAndBodylessDeletes(t *testing.T) {
 	if interaction["$ref"] != "#/components/schemas/DashboardVisualInteractionConfig" {
 		t.Fatalf("visual interaction is not explicitly typed: %#v", interaction)
 	}
+}
+
+func firstOpenAPIRef(values []any) (string, bool) {
+	if len(values) == 0 {
+		return "", false
+	}
+	value, ok := values[0].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	ref, ok := value["$ref"].(string)
+	return ref, ok
 }

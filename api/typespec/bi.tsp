@@ -182,7 +182,7 @@ model DashboardTableDescribeResponse {
   title?: string;
   description?: string;
   columns: DashboardTableColumn[];
-  query?: Record<string>;
+  query?: Record<unknown>;
   placement?: DashboardComponentPlacement;
 }
 
@@ -406,7 +406,7 @@ model SemanticExplainResponse {
   physicalDependencies: string[];
   relationshipPaths: string[];
   sql: string;
-  args: Record<string>[];
+  args: Record<unknown>[];
   columns: string[];
   warnings: string[];
 }
@@ -428,8 +428,8 @@ model SemanticModelDescriptionResponse {
 }
 
 model DashboardFilters {
-  controls?: Record<string>;
-  selections?: Record<string>[];
+  controls?: Record<unknown>;
+  selections?: Record<unknown>[];
 }
 
 model DashboardPageQueryRequest {
@@ -443,9 +443,9 @@ model DashboardTableQueryRequest {
 }
 
 model DashboardPageQueryResponse {
-  filters: Record<string>;
-  filterOptions?: Record<string>;
-  status?: Record<string>;
+  filters: Record<unknown>;
+  filterOptions?: Record<unknown>;
+  status?: Record<unknown>;
   visuals: Record<DashboardVisualDataResponse>;
 }
 

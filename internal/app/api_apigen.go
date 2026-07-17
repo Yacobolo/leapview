@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,12 +30,77 @@ func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r
 	}
 	a.server.protectWithObjects(privilege, apigenOperationObjectResolvers[operationID], http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buffered := newAPIGenResponseBuffer(w, r)
-		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, buffered, r); !ok {
+		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, apiGenTransportErrorResponder{server: a.server}, buffered, r); !ok {
 			http.NotFound(w, r)
 			return
 		}
 		buffered.flush()
 	})).ServeHTTP(w, r)
+}
+
+type apiGenTransportErrorResponder struct {
+	server *Server
+}
+
+func (responder apiGenTransportErrorResponder) RespondTransportError(ctx context.Context, w http.ResponseWriter, r *http.Request, failure apigenapi.GenTransportError) {
+	if responder.server != nil && responder.server.logger != nil && failure.Cause != nil {
+		log := responder.server.logger.DebugContext
+		if failure.StatusCode >= http.StatusInternalServerError {
+			log = responder.server.logger.ErrorContext
+		}
+		log(ctx, "APIGen transport error", "operation", failure.OperationID, "kind", failure.Kind, "status", failure.StatusCode, "error", failure.Cause)
+	}
+	requestID := ""
+	instance := ""
+	if r != nil {
+		requestID = r.Header.Get("X-Request-ID")
+		instance = r.URL.Path
+	}
+	problem := apigenapi.ProblemDetails{
+		Type:      "https://libredash.dev/problems/" + strings.ToLower(strings.ReplaceAll(failure.Code, "_", "-")),
+		Title:     http.StatusText(failure.StatusCode),
+		Status:    int32(failure.StatusCode),
+		Detail:    failure.PublicDetail,
+		Instance:  instance,
+		Code:      failure.Code,
+		RequestId: requestID,
+		Errors:    []apigenapi.ProblemFieldError{},
+	}
+	if field := transportErrorField(failure); field != "" {
+		problem.Detail = strings.TrimSuffix(failure.PublicDetail, ".") + " \"" + field + "\"."
+		problem.Errors = append(problem.Errors, apigenapi.ProblemFieldError{
+			Code:   failure.Code,
+			Detail: failure.PublicDetail,
+			Field:  field,
+		})
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(failure.StatusCode)
+	_ = json.NewEncoder(w).Encode(problem)
+}
+
+func transportErrorField(failure apigenapi.GenTransportError) string {
+	if failure.Cause == nil {
+		return ""
+	}
+	switch failure.Kind {
+	case "path_parameter", "query_parameter", "header_parameter":
+	default:
+		return ""
+	}
+	message := failure.Cause.Error()
+	marker := "parameter \""
+	start := strings.Index(message, marker)
+	if start < 0 {
+		return ""
+	}
+	start += len(marker)
+	end := strings.IndexByte(message[start:], '"')
+	if end < 0 {
+		return ""
+	}
+	return message[start : start+end]
 }
 
 type apiGenResponseBuffer struct {

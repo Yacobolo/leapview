@@ -1,3 +1,4 @@
+import "@yacobolo/apigen";
 import "./common.tsp";
 import "./capabilities.tsp";
 import "./projects.tsp";
@@ -23,4 +24,17 @@ using TypeSpec.OpenAPI;
 @info(#{ version: "1.0.0" })
 @useAuth(BearerAuth)
 @tagMetadata(#[#{ name: "System", description: "API capabilities and protocol discovery." }, #{ name: "Projects", description: "Read-only project registry." }, #{ name: "Releases", description: "Immutable project releases and artifacts." }, #{ name: "Current User", description: "Current principal, sessions, tokens, and privileges." }, #{ name: "Workspaces", description: "Workspace and lineage discovery." }, #{ name: "Search", description: "Progressive workspace discovery across BI assets." }, #{ name: "BI", description: "Dashboard and semantic model read APIs." }, #{ name: "Deployments", description: "Atomic project release deployment." }, #{ name: "Refresh Runs", description: "Headless refresh run operations." }, #{ name: "Agent", description: "Headless agent conversation and run operations." }, #{ name: "Access", description: "Principals, groups, roles, and role bindings." }, #{ name: "Audit", description: "Workspace audit event discovery." }, #{ name: "Managed Data", description: "Project-global managed-data revisions and uploads." }])
+@apigen.transportErrors(ProblemDetails, #{
+  contentType: "application/problem+json",
+  failures: #[
+    #{ kind: "path_parameter", statusCode: 400, code: "INVALID_REQUEST", publicDetail: "Invalid path parameter." },
+    #{ kind: "query_parameter", statusCode: 400, code: "INVALID_REQUEST", publicDetail: "Invalid query parameter." },
+    #{ kind: "header_parameter", statusCode: 400, code: "INVALID_REQUEST", publicDetail: "Invalid request header." },
+    #{ kind: "malformed_body", statusCode: 400, code: "INVALID_REQUEST_BODY", publicDetail: "Invalid request body." },
+    #{ kind: "multipart", statusCode: 400, code: "INVALID_MULTIPART_BODY", publicDetail: "Invalid multipart body." },
+    #{ kind: "unsupported_media_type", statusCode: 415, code: "UNSUPPORTED_MEDIA_TYPE", publicDetail: "Unsupported media type." },
+    #{ kind: "handler", statusCode: 500, code: "INTERNAL_ERROR", publicDetail: "Internal server error." },
+    #{ kind: "response_serialization", statusCode: 500, code: "INTERNAL_ERROR", publicDetail: "Internal server error." },
+  ],
+})
 namespace LibreDashAPI;

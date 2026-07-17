@@ -50,7 +50,7 @@ func (r apiSnapshotWorkspaceRepository) AssetVersions(context.Context, workspace
 	return nil, nil
 }
 
-func TestAPIGenUsesTypeSpecV040(t *testing.T) {
+func TestAPIGenUsesTypeSpecV053(t *testing.T) {
 	root := projectRoot(t)
 	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
 	if err != nil {
@@ -78,16 +78,16 @@ func TestAPIGenUsesTypeSpecV040(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile",
-		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all",
+		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 typespec-compile",
+		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 all",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile.yml missing generation command %q", want)
 		}
 	}
-	for _, forbidden := range []string{"cue-compile", "apigen@v0.2.0", "apigen@v0.3.0", "apigen@v0.3.2", "apigen@v0.3.3"} {
+	for _, forbidden := range []string{"cue-compile", "apigen@v0.2.0", "apigen@v0.3.0", "apigen@v0.3.2", "apigen@v0.3.3", "apigen@v0.4.0", "apigen@v0.5.0", "apigen@v0.5.1", "apigen@v0.5.2", "apigenpostprocess"} {
 		if strings.Contains(taskText, forbidden) {
-			t.Fatalf("Taskfile.yml should not contain %q after APIGen v0.4.0 migration", forbidden)
+			t.Fatalf("Taskfile.yml should not contain %q after APIGen v0.5.3 migration", forbidden)
 		}
 	}
 
@@ -99,8 +99,24 @@ func TestAPIGenUsesTypeSpecV040(t *testing.T) {
 	if err := json.Unmarshal(ir, &irDoc); err != nil {
 		t.Fatalf("decode APIGen IR: %v", err)
 	}
-	if got := irDoc["schema_version"]; got != "v3" {
-		t.Fatalf("APIGen IR schema_version = %#v, want v3", got)
+	if got := irDoc["schema_version"]; got != "v4" {
+		t.Fatalf("APIGen IR schema_version = %#v, want v4", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "internal", "tools", "apigenpostprocess")); !os.IsNotExist(err) {
+		t.Fatalf("APIGen v0.5.3 should not require a postprocessor, stat error = %v", err)
+	}
+	for path, forbidden := range map[string]string{
+		filepath.Join(root, "api", "typespec", "bi.tsp"):                        "toolbelt#34",
+		filepath.Join(root, "internal", "agent", "tools", "apigen_provider.go"): "projectUnionToolResult",
+	} {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if strings.Contains(string(content), forbidden) {
+			t.Fatalf("APIGen v0.5.3 superseded workaround %q in %s", forbidden, path)
+		}
 	}
 }
 
@@ -205,8 +221,8 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 	if err := json.Unmarshal(ir, &irDoc); err != nil {
 		t.Fatalf("decode UI signal contract IR: %v", err)
 	}
-	if irDoc.SchemaVersion != "v3" {
-		t.Fatalf("UI signal IR schema_version = %q, want v3", irDoc.SchemaVersion)
+	if irDoc.SchemaVersion != "v4" {
+		t.Fatalf("UI signal IR schema_version = %q, want v4", irDoc.SchemaVersion)
 	}
 	if len(irDoc.Contracts) != 75 {
 		t.Fatalf("UI signal IR contracts = %d, want 75", len(irDoc.Contracts))

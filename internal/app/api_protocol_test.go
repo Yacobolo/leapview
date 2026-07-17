@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	apiidempotencysqlite "github.com/Yacobolo/libredash/internal/apiidempotency/sqlite"
 	"github.com/Yacobolo/libredash/internal/cursorsigning"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -47,6 +49,50 @@ func TestAPIGenResponseBufferNormalizesLegacyErrorsAsProblemDetails(t *testing.T
 		if _, ok := problem[key]; !ok {
 			t.Errorf("problem missing %s: %#v", key, problem)
 		}
+	}
+}
+
+func TestAPIGenTransportErrorsUseProblemDetailsWithoutLeakingCause(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects?limit=bad", nil)
+	req.Header.Set("X-Request-ID", "req_transport")
+	recorder := httptest.NewRecorder()
+	apiGenTransportErrorResponder{}.RespondTransportError(req.Context(), recorder, req, apigenapi.GenTransportError{
+		OperationID: "listProjects", Kind: "query_parameter", StatusCode: http.StatusBadRequest,
+		Code: "INVALID_REQUEST", PublicDetail: "Invalid query parameter.", Cause: errors.New("secret parser detail"),
+	})
+
+	if recorder.Code != http.StatusBadRequest || recorder.Header().Get("Content-Type") != "application/problem+json" {
+		t.Fatalf("response = %d %q body=%s", recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "secret parser detail") {
+		t.Fatalf("transport cause leaked to client: %s", recorder.Body.String())
+	}
+	var problem apigenapi.ProblemDetails
+	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "INVALID_REQUEST" || problem.RequestId != "req_transport" || problem.Instance != "/api/v1/projects" || problem.Detail != "Invalid query parameter." {
+		t.Fatalf("problem = %#v", problem)
+	}
+}
+
+func TestAPIGenTransportErrorsIdentifyInvalidParameterWithoutLeakingValue(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects?limit=secret-value", nil)
+	recorder := httptest.NewRecorder()
+	apiGenTransportErrorResponder{}.RespondTransportError(req.Context(), recorder, req, apigenapi.GenTransportError{
+		OperationID: "listProjects", Kind: "query_parameter", StatusCode: http.StatusBadRequest,
+		Code: "INVALID_REQUEST", PublicDetail: "Invalid query parameter.", Cause: errors.New(`invalid query parameter "limit": invalid integer "secret-value"`),
+	})
+
+	if strings.Contains(recorder.Body.String(), "secret-value") {
+		t.Fatalf("transport value leaked to client: %s", recorder.Body.String())
+	}
+	var problem apigenapi.ProblemDetails
+	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Detail != `Invalid query parameter "limit".` || len(problem.Errors) != 1 || problem.Errors[0].Field != "limit" {
+		t.Fatalf("problem = %#v", problem)
 	}
 }
 

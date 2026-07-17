@@ -43,3 +43,16 @@ func TestGeneratedCLIRegistryContainsCoreCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestGeneratedVisualCLIUsesUnionCollectionMetadata(t *testing.T) {
+	for _, spec := range cligen.APIGeneratedCommandSpecs {
+		if spec.OperationID != "queryDashboardVisualData" {
+			continue
+		}
+		if spec.Output.Mode != "collection" || spec.Pagination == nil || spec.Pagination.ItemsField != "data" {
+			t.Fatalf("visual CLI metadata = output %#v pagination %#v, want data collection", spec.Output, spec.Pagination)
+		}
+		return
+	}
+	t.Fatal("queryDashboardVisualData CLI metadata missing")
+}

@@ -434,7 +434,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules",
 		"ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm",
 		"go run ./internal/tools/configgen",
-		"go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0",
+		"go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3",
 		"typespec-compile -manifest api/apigen.yaml -target ui-signals",
 		"all -manifest api/apigen.yaml -target ui-signals",
 		"go run ./internal/tools/uisignalspostprocess",
@@ -500,6 +500,14 @@ func TestDevelopmentServerTracksCompiledFallbackProcess(t *testing.T) {
 	if !strings.Contains(qaText, "const managedServerReadyAttempts = 1800") ||
 		!strings.Contains(qaText, "attempt < managedServerReadyAttempts") {
 		t.Fatal("UI framework QA must allow a cold Go build before checking server readiness")
+	}
+	for _, want := range []string{
+		"LIBREDASH_MANAGED_DATA_DIR: `${qaHome}/managed-data`",
+		"['chmod', '-R', 'u+w', qaHome]",
+	} {
+		if !strings.Contains(qaText, want) {
+			t.Fatalf("UI framework QA must isolate and clean managed-data state: missing %q", want)
+		}
 	}
 }
 

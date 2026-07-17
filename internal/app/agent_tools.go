@@ -83,7 +83,7 @@ func (s *Server) agentAPIGenToolProvider() agenttools.APIGenProvider {
 		},
 		Dispatch: func(operationID string, request *http.Request) (*http.Response, bool) {
 			recorder := httptest.NewRecorder()
-			if ok := apigenapi.DispatchAPIGenOperation(operationID, apiGenAdapter{server: s}, recorder, request); !ok {
+			if ok := apigenapi.DispatchAPIGenOperation(operationID, apiGenAdapter{server: s}, apiGenTransportErrorResponder{server: s}, recorder, request); !ok {
 				return nil, false
 			}
 			return recorder.Result(), true

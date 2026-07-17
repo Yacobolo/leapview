@@ -56,7 +56,7 @@ model AgentMessageResponse {
   seq: int64;
   role: string;
   contentText?: string;
-  content?: Record<string>;
+  content?: Record<unknown>;
   toolCallId?: string;
   toolName?: string;
   isError?: boolean;

@@ -81,7 +81,7 @@ model AsyncEventListResponse {
   page: PageInfo;
 }
 
-alias JSONObject = Record<string>;
+alias JSONObject = Record<unknown>;
 
 model OkJson<T> {
   ...OkResponse;
@@ -107,6 +107,7 @@ model ArrowStreamResponse {
   @header("X-Serving-Snapshot") servingSnapshot: string;
   @header("X-Next-Cursor") nextCursor?: string;
   @header cacheControl: "no-store";
+  @body body: bytes;
 }
 
 model EventStreamResponse {

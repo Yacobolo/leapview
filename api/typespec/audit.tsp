@@ -15,7 +15,7 @@ model AuditEventResponse {
   status?: string;
   requestId?: string;
   correlationId?: string;
-  metadata: Record<string>;
+  metadata: Record<unknown>;
   createdAt: utcDateTime;
 }
 
@@ -44,7 +44,7 @@ model QueryEventResponse {
   error?: string;
   sql?: string;
   planText?: string;
-  query: Record<string>;
+  query: Record<unknown>;
   createdAt: utcDateTime;
 }
 

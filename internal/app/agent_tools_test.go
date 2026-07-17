@@ -623,7 +623,48 @@ func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
 		if operation.Tool.Output.Mode == "" || len(operation.Tool.OutputSchema) == 0 {
 			t.Fatalf("agent operation %s (%s) has no typed output contract", operation.Contract.OperationID, operation.Tool.Name)
 		}
+		if operation.Tool.ResponseContentType != "application/json" {
+			t.Fatalf("agent operation %s (%s) response content type = %q, want application/json", operation.Contract.OperationID, operation.Tool.Name, operation.Tool.ResponseContentType)
+		}
 	}
+}
+
+func TestAPIGenVisualToolUsesGeneratedUnionProjection(t *testing.T) {
+	for _, operation := range agenttools.APIGenOperations() {
+		if operation.Tool.Name != "query_dashboard_visual_data" {
+			continue
+		}
+		if operation.Tool.Output.Mode != "project" {
+			t.Fatalf("visual tool output mode = %q, want project", operation.Tool.Output.Mode)
+		}
+		foundDataCount := false
+		for _, projection := range operation.Tool.Output.Select {
+			if projection.Source == "/data" && projection.CountAs == "count" {
+				foundDataCount = true
+				break
+			}
+		}
+		if !foundDataCount {
+			t.Fatalf("visual tool projections lack generated data count: %#v", operation.Tool.Output.Select)
+		}
+		var schema struct {
+			Properties map[string]any `json:"properties"`
+			Required   []string       `json:"required"`
+		}
+		if err := json.Unmarshal(operation.Tool.OutputSchema, &schema); err != nil {
+			t.Fatalf("decode visual output schema: %v", err)
+		}
+		for _, field := range []string{"title", "shape", "data", "count"} {
+			if _, ok := schema.Properties[field]; !ok {
+				t.Fatalf("visual output schema lacks projected property %q: %#v", field, schema.Properties)
+			}
+		}
+		if !stringSliceHas(schema.Required, "data") || !stringSliceHas(schema.Required, "count") {
+			t.Fatalf("visual output required = %#v, want data and count", schema.Required)
+		}
+		return
+	}
+	t.Fatal("query_dashboard_visual_data tool missing")
 }
 
 func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
