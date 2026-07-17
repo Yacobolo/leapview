@@ -1,11 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *testing.T) {
@@ -42,7 +45,8 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
 	writeFixture(t, root, "reference/cli/deploy.md", "# Deploy\n")
 	writeFixture(t, root, "reference/cli/catalog.json", `{"documents":[{"slug":"deploy","title":"libredash deploy","summary":"Deploy a project."}]}`)
 
-	if err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json")); err != nil {
+	searchPath := filepath.Join(root, "search-index.sqlite3")
+	if err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), searchPath); err != nil {
 		t.Fatalf("generate documentation catalog: %v", err)
 	}
 
@@ -67,13 +71,25 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
 		t.Fatal("generated collection document is not marked as generated")
 	}
 
-	var search []searchDocument
-	decodeFixture(t, filepath.Join(root, "search-index.json"), &search)
-	if got, want := len(search), 3; got != want {
+	database, err := sql.Open("sqlite", "file:"+searchPath+"?mode=ro")
+	if err != nil {
+		t.Fatalf("open generated search index: %v", err)
+	}
+	defer database.Close()
+
+	var count int
+	if err := database.QueryRow(`SELECT count(*) FROM search_documents`).Scan(&count); err != nil {
+		t.Fatalf("count generated search documents: %v", err)
+	}
+	if got, want := count, 3; got != want {
 		t.Fatalf("search documents = %d, want %d", got, want)
 	}
-	if !strings.Contains(search[2].Text, "Deploy") {
-		t.Fatalf("search text does not include Markdown content: %q", search[2].Text)
+	var slug string
+	if err := database.QueryRow(`SELECT slug FROM search_documents WHERE search_documents MATCH ? ORDER BY bm25(search_documents, 0, 12, 5, 1, 1, 1, 0)`, `"deploy"*`).Scan(&slug); err != nil {
+		t.Fatalf("query generated search index: %v", err)
+	}
+	if slug != "cli/deploy" {
+		t.Fatalf("search result = %q, want %q", slug, "cli/deploy")
 	}
 }
 
@@ -87,7 +103,7 @@ func TestGenerateRejectsUnknownNavigationFields(t *testing.T) {
 `)
 	writeFixture(t, root, "projects.md", "# Projects, workspaces, and environments\n")
 
-	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json"))
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
 	if err == nil || !strings.Contains(err.Error(), "field workspaces not found") {
 		t.Fatalf("generate error = %v, want strict unknown-field error", err)
 	}
@@ -105,7 +121,7 @@ func TestGenerateRejectsDuplicateSlugs(t *testing.T) {
 	writeFixture(t, root, "one.md", "# One\n")
 	writeFixture(t, root, "two.md", "# Two\n")
 
-	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json"))
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
 	if err == nil || !strings.Contains(err.Error(), `duplicate documentation slug "duplicate"`) {
 		t.Fatalf("generate error = %v, want duplicate slug error", err)
 	}
@@ -120,7 +136,7 @@ func TestGenerateRejectsMissingDocumentSource(t *testing.T) {
       - {slug: missing, title: Missing, source: missing.md}
 `)
 
-	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json"))
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
 	if err == nil || !strings.Contains(err.Error(), "missing.md") {
 		t.Fatalf("generate error = %v, want missing source error", err)
 	}
@@ -137,7 +153,7 @@ func TestGenerateRejectsOrphanedMarkdown(t *testing.T) {
 	writeFixture(t, root, "one.md", "# One\n")
 	writeFixture(t, root, "orphan.md", "# Orphan\n")
 
-	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json"))
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
 	if err == nil || !strings.Contains(err.Error(), "orphaned documentation source orphan.md") {
 		t.Fatalf("generate error = %v, want orphaned source error", err)
 	}
@@ -153,7 +169,7 @@ func TestGenerateRejectsBrokenInternalLink(t *testing.T) {
 `)
 	writeFixture(t, root, "one.md", "# One\n\n[Missing](/docs/missing)\n")
 
-	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json"))
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
 	if err == nil || !strings.Contains(err.Error(), "broken documentation link /docs/missing") {
 		t.Fatalf("generate error = %v, want broken link error", err)
 	}
@@ -169,7 +185,7 @@ func TestGenerateRejectsInvalidYAMLExample(t *testing.T) {
 `)
 	writeFixture(t, root, "one.md", "# One\n\n```yaml\nitems: [unterminated\n```\n")
 
-	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.json"))
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
 	if err == nil || !strings.Contains(err.Error(), "invalid YAML example") {
 		t.Fatalf("generate error = %v, want invalid YAML example error", err)
 	}
@@ -179,7 +195,7 @@ func TestCheckGeneratedRejectsOutdatedArtifacts(t *testing.T) {
 	root := t.TempDir()
 	navigation := filepath.Join(root, "navigation.yaml")
 	catalog := filepath.Join(root, "catalog.json")
-	search := filepath.Join(root, "search-index.json")
+	search := filepath.Join(root, "search-index.sqlite3")
 	writeFixture(t, root, "navigation.yaml", `sections:
   - id: start
     title: Start
@@ -188,7 +204,7 @@ func TestCheckGeneratedRejectsOutdatedArtifacts(t *testing.T) {
 `)
 	writeFixture(t, root, "one.md", "# One\n")
 	writeFixture(t, root, "catalog.json", "{}\n")
-	writeFixture(t, root, "search-index.json", "[]\n")
+	writeFixture(t, root, "search-index.sqlite3", "[]\n")
 
 	err := checkGenerated(navigation, catalog, search)
 	if err == nil || !strings.Contains(err.Error(), "catalog.json is out of date") {

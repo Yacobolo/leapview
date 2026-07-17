@@ -1,5 +1,5 @@
 // Command docsitegen composes authored navigation with generated reference
-// catalogs into the runtime catalog and search index used by the public site.
+// catalogs into the runtime catalog and FTS5 search index used by the public site.
 package main
 
 import (
@@ -13,13 +13,14 @@ import (
 	"regexp"
 	"strings"
 
+	docsearch "github.com/Yacobolo/libredash/internal/site/search/sqlite"
 	"gopkg.in/yaml.v3"
 )
 
 func main() {
 	navigation := flag.String("navigation", "docs/navigation.yaml", "authored documentation navigation manifest")
 	catalog := flag.String("catalog", "docs/catalog.json", "generated runtime catalog")
-	search := flag.String("search", "docs/search-index.json", "generated search index")
+	search := flag.String("search", "docs/"+docsearch.Filename, "generated FTS5 search index")
 	check := flag.Bool("check", false, "verify generated artifacts are current without changing them")
 	flag.Parse()
 	var err error
@@ -94,16 +95,6 @@ type generatedGroup struct {
 	Documents []documentSpec `json:"documents"`
 }
 
-type searchDocument struct {
-	Slug      string `json:"slug"`
-	Title     string `json:"title"`
-	Summary   string `json:"summary"`
-	Section   string `json:"section"`
-	Group     string `json:"group,omitempty"`
-	Text      string `json:"text"`
-	Generated bool   `json:"generated,omitempty"`
-}
-
 type referenceCatalog struct {
 	Documents []struct {
 		Slug    string `json:"slug"`
@@ -138,7 +129,7 @@ func generate(navigationPath, catalogPath, searchPath string) error {
 	}
 	root := filepath.Dir(navigationPath)
 	catalog := generatedCatalog{Sections: make([]generatedSection, 0, len(manifest.Sections))}
-	search := make([]searchDocument, 0)
+	search := make([]docsearch.Document, 0)
 	seenSlugs := map[string]struct{}{}
 	seenSources := map[string]struct{}{}
 
@@ -199,7 +190,7 @@ func generate(navigationPath, catalogPath, searchPath string) error {
 	if err := writeJSON(catalogPath, catalog); err != nil {
 		return err
 	}
-	return writeJSON(searchPath, search)
+	return docsearch.Build(searchPath, search)
 }
 
 func checkGenerated(navigationPath, catalogPath, searchPath string) error {
@@ -210,7 +201,7 @@ func checkGenerated(navigationPath, catalogPath, searchPath string) error {
 	defer os.RemoveAll(temporary)
 
 	generatedCatalog := filepath.Join(temporary, "catalog.json")
-	generatedSearch := filepath.Join(temporary, "search-index.json")
+	generatedSearch := filepath.Join(temporary, docsearch.Filename)
 	if err := generate(navigationPath, generatedCatalog, generatedSearch); err != nil {
 		return err
 	}
@@ -236,7 +227,7 @@ func checkGenerated(navigationPath, catalogPath, searchPath string) error {
 	return nil
 }
 
-func addDocument(root, section, group string, document documentSpec, seenSlugs, seenSources map[string]struct{}, output *[]documentSpec, search *[]searchDocument) error {
+func addDocument(root, section, group string, document documentSpec, seenSlugs, seenSources map[string]struct{}, output *[]documentSpec, search *[]docsearch.Document) error {
 	document.Slug = strings.Trim(document.Slug, "/")
 	if document.Slug == "" || document.Title == "" || document.Source == "" {
 		return fmt.Errorf("documentation entry requires slug, title, and source")
@@ -255,7 +246,7 @@ func addDocument(root, section, group string, document documentSpec, seenSlugs, 
 	}
 	seenSources[filepath.ToSlash(document.Source)] = struct{}{}
 	*output = append(*output, document)
-	*search = append(*search, searchDocument{Slug: document.Slug, Title: document.Title, Summary: document.Summary, Section: section, Group: group, Text: string(contents), Generated: document.Generated})
+	*search = append(*search, docsearch.Document{Slug: document.Slug, Title: document.Title, Summary: document.Summary, Section: section, Category: group, Body: string(contents), Generated: document.Generated})
 	return nil
 }
 

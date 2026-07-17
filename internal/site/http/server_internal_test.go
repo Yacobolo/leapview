@@ -480,27 +480,6 @@ func TestDocumentationNavigationUsesExplicitOverviewLabelsAndDeveloperGroups(t *
 	}
 }
 
-func TestDocumentationSearchPrefersAuthoredGuidanceOverGeneratedReference(t *testing.T) {
-	documents := []siteDocument{
-		{slug: "generated-exact", title: "Access policy", generated: true},
-		{slug: "authored-title", title: "Access policy guide"},
-		{slug: "authored-body", title: "Authorization guide", markdown: "Choose a workspace access policy."},
-		{slug: "generated-title", title: "Workspace access policy configuration", generated: true},
-		{slug: "generated-body", title: "Grant configuration", markdown: "Exact workspace access policy fields.", generated: true},
-	}
-
-	results := searchDocuments(documents, "access policy")
-	if len(results) != 5 {
-		t.Fatalf("search results = %d, want 5", len(results))
-	}
-	want := []string{"generated-exact", "authored-title", "authored-body", "generated-title", "generated-body"}
-	for index, document := range results {
-		if document.slug != want[index] {
-			t.Errorf("search result %d = %q, want %q", index, document.slug, want[index])
-		}
-	}
-}
-
 func TestSiteDocumentationActiveSearchStreamsRankedResults(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()

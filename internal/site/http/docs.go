@@ -2,13 +2,14 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sort"
 	"strings"
 
 	content "github.com/Yacobolo/libredash/docs"
+	docsearch "github.com/Yacobolo/libredash/internal/site/search/sqlite"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	g "maragu.dev/gomponents"
@@ -75,7 +76,28 @@ var documentation = loadDocumentation()
 var siteCatalog = documentation.catalog
 var siteDocuments = documentation.documents
 var siteDocumentsBySlug = documentation.bySlug
+var documentationSearchIndex = loadDocumentationSearchIndex()
 var visualDocuments = documentsInCatalogGroup("reference", "visuals", true)
+
+func loadDocumentationSearchIndex() *docsearch.Index {
+	index, err := docsearch.Open(content.Files, docsearch.Filename)
+	if err != nil {
+		panic(fmt.Sprintf("open documentation search index: %v", err))
+	}
+	slugs, err := index.Slugs(context.Background())
+	if err != nil {
+		panic(fmt.Sprintf("read documentation search index: %v", err))
+	}
+	if len(slugs) != len(siteDocuments) {
+		panic(fmt.Sprintf("documentation search index contains %d documents, catalog contains %d", len(slugs), len(siteDocuments)))
+	}
+	for _, slug := range slugs {
+		if _, exists := siteDocumentsBySlug[slug]; !exists {
+			panic(fmt.Sprintf("documentation search index contains unknown slug %q", slug))
+		}
+	}
+	return index
+}
 
 func loadDocumentation() loadedDocumentation {
 	catalogContents, err := content.Files.ReadFile("catalog.json")
@@ -175,63 +197,17 @@ func siteDocumentBySlug(slug string) (siteDocument, bool) {
 }
 
 func searchSiteDocuments(query string) []siteDocument {
-	return searchDocuments(siteDocuments, query)
-}
-
-func searchDocuments(documents []siteDocument, query string) []siteDocument {
-	terms := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
-	if len(terms) == 0 {
-		return nil
+	matches, err := documentationSearchIndex.Search(context.Background(), query, len(siteDocuments))
+	if err != nil {
+		panic(fmt.Sprintf("search documentation: %v", err))
 	}
-	normalizedQuery := strings.Join(terms, " ")
-	type match struct {
-		document siteDocument
-		score    int
-	}
-	matches := make([]match, 0)
-	for _, document := range documents {
-		title := strings.ToLower(document.title)
-		haystack := strings.ToLower(document.title + " " + document.summary + " " + document.markdown)
-		matchesTitle := true
-		matchesDocument := true
-		titleMatchCount := 0
-		for _, term := range terms {
-			if !strings.Contains(haystack, term) {
-				matchesDocument = false
-				break
-			}
-			if !strings.Contains(title, term) {
-				matchesTitle = false
-			} else {
-				titleMatchCount++
-			}
-		}
-		if !matchesDocument {
-			continue
-		}
-		score := 100
-		switch {
-		case title == normalizedQuery:
-			score = 500
-		case !document.generated && matchesTitle:
-			score = 400
-		case !document.generated:
-			score = 300
-		case matchesTitle:
-			score = 200
-		}
-		score += titleMatchCount * 10
-		matches = append(matches, match{document: document, score: score})
-	}
-	sort.SliceStable(matches, func(i, j int) bool {
-		if matches[i].score == matches[j].score {
-			return matches[i].document.title < matches[j].document.title
-		}
-		return matches[i].score > matches[j].score
-	})
 	results := make([]siteDocument, 0, len(matches))
 	for _, match := range matches {
-		results = append(results, match.document)
+		document, exists := siteDocumentsBySlug[match.Slug]
+		if !exists {
+			panic(fmt.Sprintf("documentation search returned unknown slug %q", match.Slug))
+		}
+		results = append(results, document)
 	}
 	return results
 }

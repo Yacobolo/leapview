@@ -19,7 +19,7 @@ internal/platform/db/models.go
 internal/platform/db/*.sql.go
 web/generated/
 docs/catalog.json
-docs/search-index.json
+docs/search-index.sqlite3
 docs/configuration.md
 docs/api/*.md
 docs/reference/cli/

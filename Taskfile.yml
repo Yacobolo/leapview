@@ -156,7 +156,7 @@ tasks:
       - task: docs:render
 
   docs:generate:
-    desc: Generate reference documentation, the unified catalog, and the search index
+    desc: Generate reference documentation, the unified catalog, and the FTS5 search index
     cmds:
       - task: schema:generate
       - task: cli-docs:generate
@@ -183,13 +183,13 @@ tasks:
       - internal/tools/docsitegen/**/*.go
     generates:
       - docs/catalog.json
-      - docs/search-index.json
+      - docs/search-index.sqlite3
     cmds:
       - bun run docs:validate-diagrams
       - go run ./internal/tools/docsitegen
 
   docs:check:
-    desc: Verify the unified documentation catalog and search index are current
+    desc: Verify the unified documentation catalog and FTS5 search index are current
     deps:
       - node:deps
     cmds:
