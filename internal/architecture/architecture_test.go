@@ -80,7 +80,10 @@ func TestStaticSQLiteAdaptersUseGeneratedQueries(t *testing.T) {
 		"internal/workspace/sqlite":    true,
 	}
 	generatedOnlyFiles := map[string]bool{
-		"internal/access/sqlite/api_symmetry.go": true,
+		"internal/access/sqlite/api_symmetry.go":        true,
+		"internal/access/sqlite/authorization.go":       true,
+		"internal/analytics/materialize/sqlite/runs.go": true,
+		"internal/queryaudit/sqlite/repository.go":      true,
 	}
 	for _, file := range productionGoFiles(t) {
 		if !generatedOnly[file.pkgDir] && !generatedOnlyFiles[file.path] {
@@ -89,27 +92,6 @@ func TestStaticSQLiteAdaptersUseGeneratedQueries(t *testing.T) {
 		for _, directCall := range []string{".QueryContext(", ".QueryRowContext(", ".ExecContext("} {
 			if strings.Contains(file.body, directCall) {
 				t.Fatalf("%s bypasses sqlc via %s", file.path, directCall)
-			}
-		}
-	}
-}
-
-func TestRefreshCancellationUsesGeneratedQueries(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.path != "internal/analytics/materialize/sqlite/runs.go" {
-			continue
-		}
-		start := strings.Index(file.body, "func (r *SQLRunRepository) CancelRun")
-		if start < 0 {
-			t.Fatalf("%s has no CancelRun implementation", file.path)
-		}
-		body := file.body[start:]
-		if end := strings.Index(body[1:], "\nfunc "); end >= 0 {
-			body = body[:end+1]
-		}
-		for _, directCall := range []string{".QueryContext(", ".QueryRowContext(", ".ExecContext("} {
-			if strings.Contains(body, directCall) {
-				t.Fatalf("%s CancelRun bypasses sqlc via %s", file.path, directCall)
 			}
 		}
 	}
