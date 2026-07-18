@@ -745,7 +745,7 @@ func TestHomeRouteRendersDashboardCatalog(t *testing.T) {
 			t.Fatalf("home sidebar rendered removed navigation %q:\n%s", notWant, body)
 		}
 	}
-	if !strings.Contains(rendered, `"id":"chat"`) || !strings.Contains(rendered, `"href":"/chat"`) {
+	if !strings.Contains(rendered, `"id":"chat"`) || !strings.Contains(rendered, `"href":"/chats"`) {
 		t.Fatalf("home sidebar did not render global chat navigation:\n%s", body)
 	}
 	if strings.Contains(rendered, `<ld-sub-sidebar`) {

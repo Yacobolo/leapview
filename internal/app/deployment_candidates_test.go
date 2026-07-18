@@ -695,7 +695,7 @@ func TestWorkspaceListPageDoesNotRenderWorkspaceScopedChat(t *testing.T) {
 			t.Fatalf("workspace list rendered workspace-scoped chat %q:\n%s", notWant, rec.Body.String())
 		}
 	}
-	if !strings.Contains(rendered, `"id":"chat"`) || !strings.Contains(rendered, `"href":"/chat"`) {
+	if !strings.Contains(rendered, `"id":"chat"`) || !strings.Contains(rendered, `"href":"/chats"`) {
 		t.Fatalf("workspace list did not render global chat navigation:\n%s", rec.Body.String())
 	}
 	if !strings.Contains(rendered, `"workspaceTitle":"LibreDash"`) {
