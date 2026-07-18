@@ -29,7 +29,12 @@ func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r
 		http.NotFound(w, r)
 		return
 	}
-	a.server.protectWithObjects(privilege, apigenOperationObjectResolvers[operationID], http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	objectResolver, ok := apigenOperationObjectResolver(operationID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	a.server.protectWithObjects(privilege, objectResolver, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buffered := newAPIGenResponseBuffer(w, r)
 		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, apiGenTransportErrorResponder{server: a.server}, buffered, r); !ok {
 			http.NotFound(w, r)
