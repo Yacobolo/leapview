@@ -498,6 +498,13 @@ func TestPublicSiteProductionContainerContractExists(t *testing.T) {
 	}
 	text := string(dockerfile)
 	for _, want := range []string{
+		"FROM node:24-bookworm@sha256:",
+		"FROM golang:1.25-bookworm@sha256:",
+		"go run ./internal/tools/configgen",
+		"go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3",
+		"typespec-compile -manifest api/apigen.yaml -target ui-signals",
+		"all -manifest api/apigen.yaml -target ui-signals",
+		"go run ./internal/tools/uisignalspostprocess",
 		"FROM oven/bun:1.3.7@sha256:",
 		"RUN bun install --frozen-lockfile --no-cache",
 		"RUN bun run build:site",
@@ -513,6 +520,9 @@ func TestPublicSiteProductionContainerContractExists(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("Dockerfile.site missing production container contract fragment %q", want)
 		}
+	}
+	if strings.Contains(text, "apigen@v0.4.0") || strings.Contains(text, "apigenpostprocess") {
+		t.Error("Dockerfile.site still uses the retired APIGen v0.4 generation pipeline")
 	}
 }
 
