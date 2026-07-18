@@ -97,6 +97,7 @@ op createAgentConversation(@path workspace: string, @header("Idempotency-Key") i
 @route("/workspaces/{workspace}/agent/conversations/{conversation}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op archiveAgentConversation(@path workspace: string, @path conversation: string): NoContentResponse | CommonErrors;
 
 alias GetAgentConversationOK = OkJson<AgentConversationResponse>;
@@ -106,6 +107,7 @@ alias GetAgentConversationOK = OkJson<AgentConversationResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op getAgentConversation(@path workspace: string, @path conversation: string): GetAgentConversationOK | CommonErrors;
 
 alias UpdateAgentConversationOK = OkJson<AgentConversationResponse>;
@@ -115,6 +117,7 @@ alias UpdateAgentConversationOK = OkJson<AgentConversationResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op updateAgentConversation(@path workspace: string, @path conversation: string, @header("If-Match") ifMatch: string, @body body: AgentConversationPatchRequest): UpdateAgentConversationOK | CommonErrors;
 
 alias ListAgentMessagesOK = OkJson<AgentMessageListResponse>;
@@ -124,6 +127,7 @@ alias ListAgentMessagesOK = OkJson<AgentMessageListResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/messages")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op listAgentMessages(@path workspace: string, @path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentMessagesOK | CommonErrors;
 
 alias ListAgentRunsOK = OkJson<AgentRunListResponse>;
@@ -133,6 +137,7 @@ alias ListAgentRunsOK = OkJson<AgentRunListResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op listAgentRuns(@path workspace: string, @path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentRunsOK | CommonErrors;
 
 alias GetAgentRunOK = OkJson<AgentRunResponse>;
@@ -142,6 +147,7 @@ alias GetAgentRunOK = OkJson<AgentRunResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op getAgentRun(@path workspace: string, @path conversation: string, @path run: string): GetAgentRunOK | CommonErrors;
 
 alias ListAgentEventsOK = OkJson<AsyncEventListResponse>;
@@ -151,6 +157,7 @@ alias ListAgentEventsOK = OkJson<AsyncEventListResponse>;
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
 
 @tag("Agent")
@@ -158,6 +165,7 @@ op listAgentEvents(@path workspace: string, @path conversation: string, @path ru
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op createAgentRun(@path workspace: string, @path conversation: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: AgentRunCreateRequest): AcceptedJson<AgentRunResponse> | CommonErrors;
 
 @tag("Agent")
@@ -165,4 +173,5 @@ op createAgentRun(@path workspace: string, @path conversation: string, @header("
 @route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
+@extension("x-libredash-object-scope", "agent-conversation")
 op cancelAgentRun(@path workspace: string, @path conversation: string, @path run: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<AgentRunResponse> | CommonErrors;
