@@ -110,7 +110,7 @@ func (h *Handler) UploadCandidateArtifact(w stdhttp.ResponseWriter, r *stdhttp.R
 	}
 	row, err := h.servingStateByIDForScope(r.Context(), repo, servingStateID, projectID, workspace)
 	if err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
+		writeCandidateScopeError(w, err)
 		return
 	}
 	artifactStore := servingstatefs.NewArtifactStore(h.options.ArtifactDir)
@@ -134,7 +134,7 @@ func (h *Handler) ValidateCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request
 		return
 	}
 	if _, err := h.servingStateByIDForScope(r.Context(), repo, servingStateID, projectID, workspace); err != nil {
-		writeJSONError(w, err, statusForNotFound(err))
+		writeCandidateScopeError(w, err)
 		return
 	}
 	if h.options.BindingRepository == nil {
@@ -172,9 +172,27 @@ func (h *Handler) servingStateByIDForScope(ctx context.Context, repo Repository,
 		return servingstate.State{}, servingstate.ErrNotFound
 	}
 	if h.options.InstanceEnvironment != "" && string(row.Environment) != h.options.InstanceEnvironment {
-		return servingstate.State{}, servingstate.ErrNotFound
+		return servingstate.State{}, &candidateEnvironmentConflict{requested: string(row.Environment), instance: h.options.InstanceEnvironment}
 	}
 	return row, nil
+}
+
+type candidateEnvironmentConflict struct {
+	requested string
+	instance  string
+}
+
+func (e *candidateEnvironmentConflict) Error() string {
+	return fmt.Sprintf("requested environment %q does not match instance environment %q", e.requested, e.instance)
+}
+
+func writeCandidateScopeError(w stdhttp.ResponseWriter, err error) {
+	var conflict *candidateEnvironmentConflict
+	if errors.As(err, &conflict) {
+		writeEnvironmentConflict(w, conflict.requested, conflict.instance)
+		return
+	}
+	writeJSONError(w, err, statusForNotFound(err))
 }
 
 func (h *Handler) repository() (Repository, error) {

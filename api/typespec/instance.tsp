@@ -12,5 +12,5 @@ model InstanceResponse {
 @summary("Get this LibreDash instance identity")
 @route("/instance")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@apigen.authz(#{ mode: "authenticated" })
 op getInstance(): OkJson<InstanceResponse> | CommonErrors;

@@ -32,7 +32,7 @@ Keep a tested local break-glass path only when policy permits it. Audit every us
 
 Check that the intended project deployment is active in the instance environment and that the principal has workspace access. A successful application upgrade does not publish a project.
 
-List workspaces through the CLI/API with the same principal. Inspect deployment activation, workspace role bindings, and active environment selection.
+List workspaces through the CLI/API with the same principal. Inspect deployment activation, the instance environment returned by `GET /api/v1/instance`, and workspace role bindings.
 
 ## Dashboards load but queries fail
 

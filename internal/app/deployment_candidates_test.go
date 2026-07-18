@@ -222,6 +222,37 @@ func TestDeploymentAPIRequiresAuthentication(t *testing.T) {
 	assertAPIError(t, rec, http.StatusUnauthorized, "unauthorized")
 }
 
+func TestDeploymentCandidateMutationsReturnEnvironmentConflict(t *testing.T) {
+	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
+	ctx := context.Background()
+	store := testStore(t)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := servingstatesqlite.NewRepository(store.SQLDB()).Create(ctx, servingstate.CreateInput{WorkspaceID: "test", ProjectID: "project", Environment: "prod", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test", DefaultEnvironment: "dev"})
+	basePath := "/api/v1/projects/project/workspaces/test/deployment-candidates/" + string(candidate.ID)
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPut, basePath+"/artifact", strings.NewReader("artifact")),
+		httptest.NewRequest(http.MethodPost, basePath+"/validate", nil),
+	} {
+		request.Header.Set("Authorization", "Bearer dev")
+		request.Header.Set("Accept", "application/json")
+		if request.Method == http.MethodPut {
+			request.Header.Set("Content-Type", "application/octet-stream")
+		}
+		recorder := httptest.NewRecorder()
+		server.Routes().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), `"requestedEnvironment":"prod"`) || !strings.Contains(recorder.Body.String(), `"instanceEnvironment":"dev"`) {
+			t.Fatalf("environment conflict response = %d %s", recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func TestDeploymentAPIRejectsBrowserPostWithoutCSRF(t *testing.T) {
 	t.Setenv("LIBREDASH_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)

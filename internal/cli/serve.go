@@ -246,11 +246,12 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		managedDataMultipart = multipartService
 		managedDataMultipartService = multipartService
 	}
-	if err := materializesqlite.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalServingStates(ctx, "refresh did not complete"); err != nil {
+	if err := materializesqlite.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalServingStates(ctx, string(environment), "refresh did not complete"); err != nil {
 		cleanup()
 		return nil, nil, err
 	}
 	if _, err := storagemaintenance.Run(ctx, servingStateRepo, storagemaintenance.Options{
+		Environment: environment,
 		RootDir:     cfg.HomeDir,
 		CatalogPath: duckLakeCatalogPath,
 		DataPath:    cfg.DuckLakeDataDir(),
@@ -282,6 +283,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 					protected = registry.LeasedSnapshots()
 				}
 				if _, err := storagemaintenance.Run(context.Background(), servingStateRepo, storagemaintenance.Options{
+					Environment:                  environment,
 					RootDir:                      cfg.HomeDir,
 					CatalogPath:                  duckLakeCatalogPath,
 					DataPath:                     cfg.DuckLakeDataDir(),

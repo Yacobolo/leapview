@@ -55,6 +55,7 @@ func TestControllerLifecycleWithStateAwareUpgradeRollback(t *testing.T) {
 set -euo pipefail
 root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 printf '%s\n' "$*" >>"$root/docker.log"
+if [[ -n "${FAKE_DOCKER_FAIL_COMMAND:-}" && " $* " == *" ${FAKE_DOCKER_FAIL_COMMAND} "* ]]; then exit 42; fi
 if [[ "${1:-}" == inspect ]]; then
   template="${3:-}"
   if [[ "$template" == *Running* ]]; then printf 'true\n'; exit 0; fi
@@ -107,12 +108,23 @@ esac
 		t.Fatalf("one-time credentials were not deleted: %v", err)
 	}
 	runController(t, root, fakeDocker, "", "start")
+	t.Setenv("FAKE_DOCKER_FAIL_COMMAND", "admin backup")
+	if output, err := runControllerResult(root, fakeDocker, "", "backup"); err == nil || !strings.Contains(output, "previous service state was restored") {
+		t.Fatalf("failed backup result = %v, %s", err, output)
+	}
+	t.Setenv("FAKE_DOCKER_FAIL_COMMAND", "")
 	backupOutput := runController(t, root, fakeDocker, "", "backup")
 	backupPath := strings.TrimSpace(backupOutput)
 	if _, err := os.Stat(backupPath); err != nil {
 		t.Fatalf("backup missing: %v (%s)", err, backupOutput)
 	}
 	runController(t, root, fakeDocker, "", "restore", backupPath)
+	t.Setenv("FAKE_DOCKER_FAIL_COMMAND", "pull libredash")
+	if output, err := runControllerResult(root, fakeDocker, "", "upgrade", newImage); err == nil || !strings.Contains(output, "previous image and service state were restored") {
+		t.Fatalf("failed pull result = %v, %s", err, output)
+	}
+	requireDeploymentImage(t, root, oldImage)
+	t.Setenv("FAKE_DOCKER_FAIL_COMMAND", "")
 
 	output, err := runControllerResult(root, fakeDocker, newImage, "upgrade", newImage)
 	if err == nil || !strings.Contains(output, "previous image and state were restored") {
@@ -127,6 +139,68 @@ esac
 	if err != nil || !strings.Contains(string(log), "admin restore") {
 		t.Fatalf("controller did not restore paired state: %v\n%s", err, log)
 	}
+}
+
+func TestControllerInitializationIsRetryableAndRequiresPinnedProxy(t *testing.T) {
+	image := "example.com/libredash@sha256:" + strings.Repeat("a", 64)
+	setup := func(t *testing.T) (string, string) {
+		t.Helper()
+		root := t.TempDir()
+		copyDeploymentFile(t, root, "libredashctl", 0o700)
+		copyDeploymentFile(t, root, "deployment.env.example", 0o600)
+		fakeDocker := filepath.Join(root, "fake-docker")
+		if err := os.WriteFile(fakeDocker, []byte(`#!/usr/bin/env bash
+set -euo pipefail
+root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+if [[ -f "$root/fail-validation" && " $* " == *" config validate "* ]]; then exit 42; fi
+if [[ " $* " == *" admin initialize "* ]]; then
+  printf '{"email":"admin@example.com","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-19T00:00:00Z"}\n'
+fi
+`), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return root, fakeDocker
+	}
+
+	t.Run("retry after validation failure", func(t *testing.T) {
+		root, fakeDocker := setup(t)
+		if err := os.WriteFile(filepath.Join(root, "fail-validation"), []byte("fail\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := runControllerResult(root, fakeDocker, "", "init", "--admin-email", "admin@example.com", "--domain", "dash.example.com", "--image", image); err == nil || !strings.Contains(output, "initialization can be retried") {
+			t.Fatalf("failed initialization = %v, %s", err, output)
+		}
+		for _, name := range []string{"libredash.env", "initial-credentials.json"} {
+			if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+				t.Fatalf("partial initialization retained %s: %v", name, err)
+			}
+		}
+		if err := os.Remove(filepath.Join(root, "fail-validation")); err != nil {
+			t.Fatal(err)
+		}
+		runController(t, root, fakeDocker, "", "init", "--admin-email", "admin@example.com", "--domain", "dash.example.com", "--image", image)
+	})
+
+	t.Run("mutable proxy image", func(t *testing.T) {
+		root, fakeDocker := setup(t)
+		examplePath := filepath.Join(root, "deployment.env.example")
+		contents, err := os.ReadFile(examplePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(contents), "\n")
+		for i := range lines {
+			if strings.HasPrefix(lines[i], "CADDY_IMAGE=") {
+				lines[i] = "CADDY_IMAGE=caddy:latest"
+			}
+		}
+		if err := os.WriteFile(examplePath, []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := runControllerResult(root, fakeDocker, "", "init", "--admin-email", "admin@example.com", "--domain", "dash.example.com", "--image", image); err == nil || !strings.Contains(output, "image must be pinned by digest") {
+			t.Fatalf("mutable proxy result = %v, %s", err, output)
+		}
+	})
 }
 
 func copyDeploymentFile(t *testing.T, targetDir, name string, mode os.FileMode) {

@@ -67,6 +67,7 @@ init_instance() {
     $1=="COMPOSE_HTTPS" {print "COMPOSE_HTTPS=" https; next}
     {print}
   ' "$DEPLOYMENT_ENV" >"$tmp" && chmod 0600 "$tmp" && mv "$tmp" "$DEPLOYMENT_ENV"
+  require_digest "$(env_value CADDY_IMAGE "$DEPLOYMENT_ENV")"
   umask 077
   {
     printf 'LIBREDASH_PRODUCTION=1\nLIBREDASH_ENVIRONMENT=%s\nLIBREDASH_ADDR=:8080\n' "$environment"
@@ -77,11 +78,11 @@ init_instance() {
   } >"$APP_ENV"
   chmod 0600 "$APP_ENV"
   mkdir -p "$ROOT/backups"
-  compose pull libredash
-  compose run --rm --no-deps libredash config validate --production
-  compose run --rm --no-deps libredash admin initialize --format json >"$INITIAL_CREDENTIALS"
+  if ! compose pull libredash; then rm -f "$APP_ENV" "$INITIAL_CREDENTIALS"; fail "initial image pull failed; initialization can be retried"; fi
+  if ! compose run --rm --no-deps libredash config validate --production; then rm -f "$APP_ENV" "$INITIAL_CREDENTIALS"; fail "configuration validation failed; initialization can be retried"; fi
+  if ! compose config --quiet; then rm -f "$APP_ENV" "$INITIAL_CREDENTIALS"; fail "Compose configuration is invalid; initialization can be retried"; fi
+  if ! compose run --rm --no-deps libredash admin initialize --format json >"$INITIAL_CREDENTIALS"; then rm -f "$APP_ENV" "$INITIAL_CREDENTIALS"; fail "offline initialization failed; initialization can be retried"; fi
   chmod 0600 "$INITIAL_CREDENTIALS"
-  compose config --quiet
   printf 'initialized environment %s; run ./libredashctl start\n' "$environment"
 }
 
@@ -92,13 +93,15 @@ first_login() { require_file "$INITIAL_CREDENTIALS"; umask 077; local value; val
 
 backup() {
   lock
-  local was_running=false name path
-  is_running && was_running=true
-  [[ "$was_running" == true ]] && compose stop -t 120 libredash
+  local was_running=false name path backup_status=0
+  if is_running; then was_running=true; fi
+  if [[ "$was_running" == true ]]; then compose stop -t 120 libredash; fi
   name="${1:-libredash-$(timestamp).tar.gz}"; name="$(basename "$name")"; path="$ROOT/backups/$name"
-  compose run --rm --no-deps libredash admin backup --out "/backups/$name"
-  sha256_file "$path" >"$path.sha256"; chmod 0600 "$path" "$path.sha256"
-  [[ "$was_running" == true ]] && start
+  compose run --rm --no-deps libredash admin backup --out "/backups/$name" || backup_status=$?
+  if [[ "$backup_status" -eq 0 ]]; then sha256_file "$path" >"$path.sha256" || backup_status=$?; fi
+  if [[ "$backup_status" -eq 0 ]]; then chmod 0600 "$path" "$path.sha256" || backup_status=$?; fi
+  if [[ "$was_running" == true ]]; then start; fi
+  [[ "$backup_status" -eq 0 ]] || fail "backup failed; the previous service state was restored"
   if [[ -n "${LIBREDASHCTL_BACKUP_HOOK:-}" ]]; then
     "$LIBREDASHCTL_BACKUP_HOOK" "$path"
   fi
@@ -113,9 +116,13 @@ restore_archive() {
 restore() {
   [[ $# -ge 1 ]] || fail "restore requires an archive"
   local archive="$1"; [[ -f "$archive" ]] || archive="$ROOT/backups/$(basename "$archive")"; [[ -f "$archive" ]] || fail "archive not found"
-  lock; is_running && compose stop -t 120 libredash
+  lock
+  if is_running; then compose stop -t 120 libredash; fi
   local before="$ROOT/backups/pre-restore-$(timestamp).tar.gz"
-  restore_archive "$archive" "$before"
+  if ! restore_archive "$archive" "$before"; then
+    start || true
+    fail "restore failed before health checking; the previous service state was restarted"
+  fi
   if ! start; then
     compose stop -t 30 libredash || true
     restore_archive "$before" "$ROOT/backups/failed-restore-$(timestamp).tar.gz"
@@ -135,10 +142,20 @@ upgrade() {
   local next="$1" current checkpoint
   current="$(env_value LIBREDASH_IMAGE "$DEPLOYMENT_ENV")"; require_digest "$current"; [[ "$next" != "$current" ]] || { printf 'already running %s\n' "$next"; return; }
   checkpoint="$ROOT/backups/pre-upgrade-$(timestamp).tar.gz"
-  is_running && compose stop -t 120 libredash
-  compose run --rm --no-deps libredash admin backup --out "/backups/$(basename "$checkpoint")"
+  local was_running=false
+  if is_running; then was_running=true; fi
+  if [[ "$was_running" == true ]]; then compose stop -t 120 libredash; fi
+  if ! compose run --rm --no-deps libredash admin backup --out "/backups/$(basename "$checkpoint")"; then
+    if [[ "$was_running" == true ]]; then start || true; fi
+    fail "pre-upgrade backup failed; the previous service state was restored"
+  fi
   printf 'PREVIOUS_IMAGE=%s\nCHECKPOINT=%s\n' "$current" "$checkpoint" >"$ROLLBACK_ENV"; chmod 0600 "$ROLLBACK_ENV"
-  set_image "$next"; compose pull libredash
+  set_image "$next"
+  if ! compose pull libredash; then
+    set_image "$current"
+    if [[ "$was_running" == true ]]; then start || true; fi
+    fail "upgrade image pull failed; the previous image and service state were restored"
+  fi
   if ! start; then
     compose stop -t 30 libredash || true; set_image "$current"
     restore_archive "$checkpoint" "$ROOT/backups/failed-upgrade-$(timestamp).tar.gz"
@@ -151,7 +168,7 @@ rollback() {
   require_file "$ROLLBACK_ENV"; lock
   local image checkpoint; image="$(env_value PREVIOUS_IMAGE "$ROLLBACK_ENV")"; checkpoint="$(env_value CHECKPOINT "$ROLLBACK_ENV")"
   require_digest "$image"; [[ -f "$checkpoint" ]] || fail "rollback checkpoint is missing"
-  is_running && compose stop -t 120 libredash
+  if is_running; then compose stop -t 120 libredash; fi
   set_image "$image"; restore_archive "$checkpoint" "$ROOT/backups/pre-rollback-$(timestamp).tar.gz"; start
 }
 

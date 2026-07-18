@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/go-chi/chi/v5"
@@ -23,8 +24,19 @@ func (a apiGenAdapter) GetInstance(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r *http.Request) {
-	privilege, ok := apigenOperationPrivileges[operationID]
-	if !ok {
+	contract, ok := apigenapi.GetAPIGenOperationContracts()[operationID]
+	if !ok || !contract.Protected {
+		http.NotFound(w, r)
+		return
+	}
+	var privilege access.Privilege
+	if contract.AuthzMode == "privilege" {
+		privilege, ok = apigenOperationPrivileges[operationID]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+	} else if contract.AuthzMode != "authenticated" {
 		http.NotFound(w, r)
 		return
 	}

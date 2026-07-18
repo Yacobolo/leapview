@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/access"
-	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
 	"github.com/Yacobolo/libredash/internal/instancelock"
 	"github.com/Yacobolo/libredash/internal/platform"
@@ -22,108 +20,13 @@ import (
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
 
-func TestAdminBootstrapProductionRequiresConfiguredEmail(t *testing.T) {
-	ctx := context.Background()
-	home := t.TempDir()
-	setAdminStorageEnv(t, home)
-	t.Setenv("LIBREDASH_PRODUCTION", "1")
-
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
-	cmd.SetArgs([]string{"bootstrap"})
-
-	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "LIBREDASH_BOOTSTRAP_ADMIN_EMAIL") {
-		t.Fatalf("bootstrap error = %v, want bootstrap admin email requirement", err)
+func TestAdminDoesNotExposeUnrestrictedBootstrap(t *testing.T) {
+	cmd := adminCommand(context.Background(), &rootOptions{})
+	for _, child := range cmd.Commands() {
+		if child.Name() == "bootstrap" {
+			t.Fatal("admin bootstrap command remains exposed")
+		}
 	}
-}
-
-func TestAdminBootstrapProductionCreatesConfiguredAdminToken(t *testing.T) {
-	ctx := context.Background()
-	home := t.TempDir()
-	setAdminStorageEnv(t, home)
-	t.Setenv("LIBREDASH_PRODUCTION", "1")
-	t.Setenv("LIBREDASH_BOOTSTRAP_ADMIN_EMAIL", "owner@example.com")
-
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"bootstrap"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("admin bootstrap: %v", err)
-	}
-
-	token := strings.TrimSpace(out.String())
-	if token == "" {
-		t.Fatal("bootstrap token output is empty")
-	}
-	store, err := platform.Open(ctx, filepath.Join(home, "libredash.db"))
-	if err != nil {
-		t.Fatalf("open platform store: %v", err)
-	}
-	defer store.Close()
-	repo := accesssqlite.NewRepository(store.SQLDB())
-	principal, err := repo.PrincipalForAPIToken(ctx, token)
-	if err != nil {
-		t.Fatalf("resolve bootstrap token: %v", err)
-	}
-	if principal.Email != "owner@example.com" {
-		t.Fatalf("bootstrap principal email = %q, want owner@example.com", principal.Email)
-	}
-	decision, err := repo.Authorize(ctx, principal.ID, access.PrivilegeManagePlatform, access.PlatformObject())
-	if err != nil {
-		t.Fatalf("authorize bootstrap principal: %v", err)
-	}
-	if !decision.Allowed {
-		t.Fatalf("bootstrap principal missing platform admin authorization: %#v", decision)
-	}
-}
-
-func TestAdminBootstrapRotatesPreviousBootstrapTokens(t *testing.T) {
-	ctx := context.Background()
-	home := t.TempDir()
-	setAdminStorageEnv(t, home)
-	t.Setenv("LIBREDASH_PRODUCTION", "1")
-	t.Setenv("LIBREDASH_BOOTSTRAP_ADMIN_EMAIL", "owner@example.com")
-
-	first := runAdminBootstrapForTest(t, ctx)
-	second := runAdminBootstrapForTest(t, ctx)
-	if first == second {
-		t.Fatal("bootstrap returned the same token twice, want rotation")
-	}
-
-	store, err := platform.Open(ctx, filepath.Join(home, "libredash.db"))
-	if err != nil {
-		t.Fatalf("open platform store: %v", err)
-	}
-	defer store.Close()
-	repo := accesssqlite.NewRepository(store.SQLDB())
-	if _, err := repo.PrincipalForAPIToken(ctx, first); err == nil {
-		t.Fatal("first bootstrap token still authenticates after second bootstrap")
-	}
-	if principal, err := repo.PrincipalForAPIToken(ctx, second); err != nil {
-		t.Fatalf("second bootstrap token does not authenticate: %v", err)
-	} else if principal.Email != "owner@example.com" {
-		t.Fatalf("second bootstrap token principal = %q, want owner@example.com", principal.Email)
-	}
-}
-
-func runAdminBootstrapForTest(t *testing.T, ctx context.Context) string {
-	t.Helper()
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"bootstrap"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("admin bootstrap: %v", err)
-	}
-	token := strings.TrimSpace(out.String())
-	if token == "" {
-		t.Fatal("bootstrap token output is empty")
-	}
-	return token
 }
 
 func TestAdminBackupWritesInstanceArchive(t *testing.T) {
@@ -328,6 +231,50 @@ func TestAdminRestoreReplacesPlatformDatabase(t *testing.T) {
 	}
 }
 
+func TestAdminDatabaseRestoreRejectsAnotherInstanceEnvironment(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	setAdminStorageEnv(t, home)
+	current, err := platform.Open(ctx, filepath.Join(home, "libredash.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := current.BindInstanceEnvironment(ctx, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	if err := current.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(t.TempDir(), "prod.db")
+	source, err := platform.Open(ctx, sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := source.BindInstanceEnvironment(ctx, "prod"); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := filepath.Join(t.TempDir(), "prod-backup.db")
+	if err := source.Backup(ctx, backupPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = runAdminRestore(ctx, &rootOptions{restoreFrom: backupPath, restoreBefore: filepath.Join(t.TempDir(), "before.db"), confirmRestore: true, databaseOnly: true}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), `bound to environment "prod"`) {
+		t.Fatalf("database restore error = %v", err)
+	}
+	after, err := platform.Open(ctx, filepath.Join(home, "libredash.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer after.Close()
+	if environment, err := after.InstanceEnvironment(ctx); err != nil || environment != "dev" {
+		t.Fatalf("current environment changed to %q: %v", environment, err)
+	}
+}
+
 func TestAdminMaintenanceDryRunReportsOperationalRetentionCandidates(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
@@ -443,7 +390,6 @@ func TestOfflineInstanceOperationsRequireExclusiveInstanceLock(t *testing.T) {
 		run  func() error
 	}{
 		{name: "initialize", run: func() error { return runAdminInitialize(context.Background(), "json", &bytes.Buffer{}) }},
-		{name: "bootstrap", run: func() error { return runAdminBootstrap(context.Background(), &bytes.Buffer{}) }},
 		{name: "backup", run: func() error {
 			return runAdminBackup(context.Background(), &rootOptions{backupOut: filepath.Join(t.TempDir(), "backup.tar.gz")}, &bytes.Buffer{})
 		}},
@@ -540,7 +486,7 @@ func TestAdminStorageCleanupRejectsMissingReferencedSnapshot(t *testing.T) {
 	setAdminStorageEnv(t, home)
 	root := home
 	seedAdminDuckLakeSnapshots(t, ctx, home, root)
-	recordAdminDeploymentSnapshot(t, ctx, home, "prod", 999)
+	recordAdminDeploymentSnapshot(t, ctx, home, "dev", 999)
 
 	opts := &rootOptions{}
 	cmd := adminCommand(ctx, opts)

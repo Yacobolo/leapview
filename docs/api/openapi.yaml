@@ -364,9 +364,6 @@ paths:
                 requestId: example
       tags:
         - Instance
-      x-authz:
-        mode: privilege
-        privilege: USE_WORKSPACE
   /api/v1/me:
     get:
       operationId: getCurrentPrincipal

@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/mail"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/instancelock"
 	"github.com/Yacobolo/libredash/internal/platform"
+	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
 	"github.com/spf13/cobra"
@@ -33,13 +36,6 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 		},
 	}
 	initialize.Flags().StringVar(&initializeFormat, "format", "json", "output format (json)")
-	bootstrap := &cobra.Command{
-		Use:   "bootstrap",
-		Short: "Bootstrap an owner principal and API token",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminBootstrap(ctx, cmd.OutOrStdout())
-		},
-	}
 	storage := &cobra.Command{Use: "storage", Short: "Maintain analytical storage"}
 	cleanup := &cobra.Command{
 		Use:   "cleanup",
@@ -82,7 +78,7 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	restore.Flags().StringVar(&opts.restoreBefore, "current-out", "", "path for a backup of the current instance before replacement")
 	restore.Flags().BoolVar(&opts.confirmRestore, "confirm", false, "confirm replacement of the configured LibreDash instance")
 	restore.Flags().BoolVar(&opts.databaseOnly, "database-only", false, "restore only the platform SQLite database")
-	parent.AddCommand(initialize, bootstrap, storage, maintenance, backup, restore)
+	parent.AddCommand(initialize, storage, maintenance, backup, restore)
 	return parent
 }
 
@@ -103,7 +99,7 @@ func runAdminInitialize(ctx context.Context, format string, out io.Writer) error
 	if err != nil {
 		return err
 	}
-	email, err := bootstrapAdminEmail(cfg)
+	email, err := initialAdminEmail(cfg)
 	if err != nil {
 		return err
 	}
@@ -175,68 +171,17 @@ const (
 	defaultAuthStateRetentionDays     = 30
 )
 
-func runAdminBootstrap(ctx context.Context, out io.Writer) error {
-	cfg := config.MustLoad()
-	email, err := bootstrapAdminEmail(cfg)
-	if err != nil {
-		return err
-	}
-	lock, err := instancelock.Acquire(cfg.HomeDir)
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
-	store, err := platform.Open(ctx, cfg.DBPath())
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	accessRepo := accesssqlite.NewRepository(store.SQLDB())
-	principal, err := accessRepo.SetPlatformRole(ctx, access.PlatformRoleInput{Email: email, DisplayName: email, Role: access.RolePlatformAdmin})
-	if err != nil {
-		return err
-	}
-	token, created, err := accessRepo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
-		PrincipalID: principal.ID,
-		Name:        "bootstrap",
-	})
-	if err != nil {
-		return err
-	}
-	if err := revokePreviousBootstrapTokens(ctx, accessRepo, principal.ID, created.ID); err != nil {
-		return err
-	}
-	fmt.Fprintln(out, token)
-	return nil
-}
-
-func revokePreviousBootstrapTokens(ctx context.Context, repo *accesssqlite.Repository, principalID, keepID string) error {
-	tokens, err := repo.ListAPITokens(ctx, principalID)
-	if err != nil {
-		return err
-	}
-	for _, token := range tokens {
-		if token.ID == keepID || token.Name != "bootstrap" || token.RevokedAt != "" {
-			continue
-		}
-		if err := repo.RevokeAPIToken(ctx, token.ID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func bootstrapAdminEmail(cfg config.Config) (string, error) {
+func initialAdminEmail(cfg config.Config) (string, error) {
 	email := strings.TrimSpace(cfg.BootstrapEmail)
 	if email == "" {
 		if cfg.Production {
-			return "", fmt.Errorf("production admin bootstrap requires LIBREDASH_BOOTSTRAP_ADMIN_EMAIL")
+			return "", fmt.Errorf("production instance initialization requires LIBREDASH_BOOTSTRAP_ADMIN_EMAIL")
 		}
 		email = "admin@localhost"
 	}
 	parsed, err := mail.ParseAddress(email)
 	if err != nil || parsed.Address == "" {
-		return "", fmt.Errorf("admin bootstrap requires a valid LIBREDASH_BOOTSTRAP_ADMIN_EMAIL")
+		return "", fmt.Errorf("instance initialization requires a valid LIBREDASH_BOOTSTRAP_ADMIN_EMAIL")
 	}
 	return parsed.Address, nil
 }
@@ -290,7 +235,14 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) erro
 		return err
 	}
 	defer lock.Release()
+	expectedEnvironment, err := restoreTargetEnvironment(ctx, cfg)
+	if err != nil {
+		return err
+	}
 	if opts.databaseOnly {
+		if err := platform.ValidateDatabaseInstanceEnvironment(ctx, opts.restoreFrom, string(expectedEnvironment)); err != nil {
+			return err
+		}
 		if err := platform.Restore(ctx, cfg.DBPath(), opts.restoreFrom, opts.restoreBefore); err != nil {
 			return err
 		}
@@ -307,7 +259,7 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) erro
 		TargetHomeDir:        cfg.HomeDir,
 		BackupPath:           opts.restoreFrom,
 		CurrentBackupOut:     opts.restoreBefore,
-		ExpectedEnvironment:  string(serveEnvironment(cfg.Production, "", cfg.Environment)),
+		ExpectedEnvironment:  string(expectedEnvironment),
 		PreserveRelativeFile: instancelock.FileName,
 	}); err != nil {
 		return err
@@ -317,6 +269,27 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) erro
 		fmt.Fprintf(out, "previous instance backup: %s\n", opts.restoreBefore)
 	}
 	return nil
+}
+
+func restoreTargetEnvironment(ctx context.Context, cfg config.Config) (servingstate.Environment, error) {
+	if _, err := os.Stat(cfg.DBPath()); err == nil {
+		store, err := platform.Open(ctx, cfg.DBPath())
+		if err != nil {
+			return "", err
+		}
+		environment, environmentErr := offlineInstanceEnvironment(ctx, store, cfg)
+		closeErr := store.Close()
+		if environmentErr != nil {
+			return "", environmentErr
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+		return environment, nil
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	return serveEnvironment(cfg.Production, "", cfg.Environment), nil
 }
 
 func validateFullInstanceArchiveLayout(cfg config.Config) error {
@@ -354,7 +327,12 @@ func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Write
 	}
 	defer store.Close()
 	repo := servingstatesqlite.NewRepository(store.SQLDB())
+	environment, err := offlineInstanceEnvironment(ctx, store, cfg)
+	if err != nil {
+		return err
+	}
 	_, err = storagemaintenance.Run(ctx, repo, storagemaintenance.Options{
+		Environment: environment,
 		RootDir:     cfg.HomeDir,
 		CatalogPath: cfg.DuckLakeCatalogPath(),
 		DataPath:    cfg.DuckLakeDataDir(),
@@ -365,6 +343,24 @@ func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Write
 		return fmt.Errorf("storage cleanup: %w", err)
 	}
 	return nil
+}
+
+func offlineInstanceEnvironment(ctx context.Context, store *platform.Store, cfg config.Config) (servingstate.Environment, error) {
+	bound, err := store.InstanceEnvironment(ctx)
+	if err == nil {
+		if requested := strings.TrimSpace(cfg.Environment); requested != "" && requested != bound {
+			return "", fmt.Errorf("LibreDash instance is bound to environment %q, not %q", bound, requested)
+		}
+		return servingstate.Environment(bound), nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("read instance environment: %w", err)
+	}
+	environment := serveEnvironment(cfg.Production, "", cfg.Environment)
+	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
+		return "", err
+	}
+	return environment, nil
 }
 
 func runAdminMaintenance(ctx context.Context, opts *rootOptions, out io.Writer) error {

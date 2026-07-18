@@ -1265,8 +1265,9 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 	defer store.Close()
 	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 	if _, err := store.SQLDB().ExecContext(ctx, `
-		INSERT INTO serving_states (id, workspace_id, status, digest, manifest_json, created_by)
-		VALUES ('dep_failed', 'test', 'failed', 'sha256:failed', '{}', 'test')
+		INSERT INTO serving_states (id, workspace_id, environment, status, digest, manifest_json, created_by)
+		VALUES ('dep_failed', 'test', 'dev', 'failed', 'sha256:failed', '{}', 'test'),
+		       ('dep_prod_failed', 'test', 'prod', 'failed', 'sha256:prod-failed', '{}', 'test')
 	`); err != nil {
 		t.Fatalf("seed failed deployment: %v", err)
 	}
@@ -1284,6 +1285,19 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 	if _, err := repo.MarkRunRunning(ctx, "test", failedDeploymentRun.ID); err != nil {
 		t.Fatalf("mark terminal deployment run running: %v", err)
 	}
+	otherEnvironmentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+		WorkspaceID:    "test",
+		ModelID:        "olist",
+		ServingStateID: "dep_prod_failed",
+		TargetType:     analyticsmaterialize.TargetModelTable,
+		TargetID:       "olist.prod_orders",
+	})
+	if err != nil {
+		t.Fatalf("create other environment run: %v", err)
+	}
+	if _, err := repo.MarkRunRunning(ctx, "test", otherEnvironmentRun.ID); err != nil {
+		t.Fatalf("mark other environment run running: %v", err)
+	}
 	activeDeploymentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
@@ -1298,7 +1312,7 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 		t.Fatalf("mark active deployment run running: %v", err)
 	}
 
-	if err := repo.FailRunsForTerminalServingStates(ctx, "refresh did not complete"); err != nil {
+	if err := repo.FailRunsForTerminalServingStates(ctx, "dev", "refresh did not complete"); err != nil {
 		t.Fatalf("fail terminal deployment runs: %v", err)
 	}
 
@@ -1315,6 +1329,13 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 	}
 	if storedActive.Status != analyticsmaterialize.RunStatusRunning || storedActive.Error != "" || storedActive.FinishedAt != "" {
 		t.Fatalf("active deployment run = %#v, want still running", storedActive)
+	}
+	storedOther, err := repo.GetRun(ctx, "test", otherEnvironmentRun.ID)
+	if err != nil {
+		t.Fatalf("get other environment run: %v", err)
+	}
+	if storedOther.Status != analyticsmaterialize.RunStatusRunning {
+		t.Fatalf("other environment run status = %q, want running", storedOther.Status)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 func TestGetInstanceReturnsConfiguredEnvironment(t *testing.T) {
 	store := testStore(t)
 	principal := testPrincipal(t, context.Background(), store, "publisher@example.com", "Publisher", access.RoleOwner)
-	token, _ := testScopedAPIToken(t, context.Background(), store, access.APITokenInput{PrincipalID: principal.ID, Name: "publisher", Privileges: []access.Privilege{access.PrivilegeUseWorkspace}})
+	token, _ := testScopedAPIToken(t, context.Background(), store, access.APITokenInput{PrincipalID: principal.ID, Name: "publisher", Privileges: []access.Privilege{access.PrivilegeIngestData}})
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	server := NewWithOptions(nil, Options{Store: store, Auth: auth, DefaultEnvironment: "prod"})
 	unauthenticated := httptest.NewRecorder()
