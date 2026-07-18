@@ -2,62 +2,6 @@ package http
 
 import "github.com/Yacobolo/libredash/pkg/pagestream"
 
-type demoMetric struct {
-	Title string
-	Unit  string
-	Data  []map[string]any
-}
-
-var demoMetrics = map[string]demoMetric{
-	"revenue": {
-		Title: "Monthly revenue",
-		Unit:  "USD",
-		Data: []map[string]any{
-			{"label": "Jan", "value": 182000},
-			{"label": "Feb", "value": 211000},
-			{"label": "Mar", "value": 248000},
-			{"label": "Apr", "value": 237000},
-			{"label": "May", "value": 286000},
-			{"label": "Jun", "value": 324000},
-		},
-	},
-	"orders": {
-		Title: "Monthly orders",
-		Unit:  "orders",
-		Data: []map[string]any{
-			{"label": "Jan", "value": 1240},
-			{"label": "Feb", "value": 1430},
-			{"label": "Mar", "value": 1610},
-			{"label": "Apr", "value": 1580},
-			{"label": "May", "value": 1790},
-			{"label": "Jun", "value": 2010},
-		},
-	},
-}
-
-func demoPatch(metric string) pagestream.SignalPatch {
-	demo := demoMetrics[metric]
-	return pagestream.SignalPatch{
-		"demo": map[string]any{
-			"metric": metric,
-			"chart": map[string]any{
-				"version":     3,
-				"id":          "site-demo",
-				"kind":        "chart",
-				"shape":       "category_value",
-				"renderer":    "echarts",
-				"type":        "line",
-				"title":       demo.Title,
-				"unit":        demo.Unit,
-				"format":      "currency",
-				"interaction": map[string]any{"kind": "point_selection"},
-				"data":        demo.Data,
-				"options":     map[string]any{"show_labels": false},
-			},
-		},
-	}
-}
-
 func chartShowcasePatch() pagestream.SignalPatch {
 	return pagestream.SignalPatch{"charts": chartShowcase(), "tables": tableShowcase()}
 }

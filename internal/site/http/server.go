@@ -13,7 +13,6 @@ import (
 
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	siteassets "github.com/Yacobolo/libredash/site"
-	"github.com/starfederation/datastar-go/datastar"
 )
 
 // Options configures public URLs and production behavior for the site handler.
@@ -50,7 +49,6 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.HandleFunc("GET /robots.txt", server.robots)
 	mux.HandleFunc("GET /sitemap.xml", server.sitemap)
 	mux.HandleFunc("GET /updates", updates)
-	mux.HandleFunc("POST /demo", updateDemo)
 	mux.Handle("GET /static/", compressedAssets(http.StripPrefix("/static/", http.FileServer(http.FS(siteassets.Static())))))
 	mux.Handle("GET /shared/", compressedAssets(http.StripPrefix("/shared/", http.FileServer(http.FS(siteassets.Shared())))))
 	mux.HandleFunc("GET /{path...}", server.notFound)
@@ -301,29 +299,11 @@ func docsConfigurationSchema(w http.ResponseWriter, r *http.Request) {
 
 func updates(w http.ResponseWriter, r *http.Request) {
 	stream := pagestream.NewSignalStream(w, r)
-	patch := demoPatch("revenue")
+	patch := pagestream.SignalPatch{"site": map[string]any{"ready": true}}
 	if r.URL.Query().Get("view") == "charts" {
 		patch = chartShowcasePatch()
 	}
 	if err := stream.Patch(patch); err != nil {
 		return
 	}
-}
-
-func updateDemo(w http.ResponseWriter, r *http.Request) {
-	var signals struct {
-		Demo struct {
-			Metric string `json:"metric"`
-		} `json:"demo"`
-	}
-	if err := datastar.ReadSignals(r, &signals); err != nil {
-		http.Error(w, "read demo signals", http.StatusBadRequest)
-		return
-	}
-	metric := strings.TrimSpace(signals.Demo.Metric)
-	if _, ok := demoMetrics[metric]; !ok {
-		http.Error(w, fmt.Sprintf("unknown demo metric %q", metric), http.StatusBadRequest)
-		return
-	}
-	_ = pagestream.PatchResponse(w, r, demoPatch(metric))
 }

@@ -6,10 +6,6 @@ import '../../web/components/shared/code-block'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
 import type { TableSignal } from '../../web/components/dashboard/table/types'
 
-type DemoSignal = {
-  chart?: ChartPayload
-}
-
 type ThemeMode = 'system' | 'light' | 'dark'
 
 const nextThemeMode: Record<ThemeMode, ThemeMode> = {
@@ -189,7 +185,6 @@ class SiteMobileMenu extends LitElement {
       <nav id="site-mobile-navigation" aria-label="Site navigation" ?hidden=${!this.open}>
         <a href="/docs" @click=${this.close}>Docs</a>
         <a href="/docs/search" @click=${this.close}>Search</a>
-        <a href="/#demo" @click=${this.close}>Demo</a>
         <a href="/charts" @click=${this.close}>Charts</a>
       </nav>`
   }
@@ -1117,28 +1112,6 @@ function normalizeThemeMode(mode: string | null | undefined): ThemeMode {
   return mode === 'light' || mode === 'dark' || mode === 'system' ? mode : 'system'
 }
 
-class SiteChartDemo extends DatastarLit(LitElement) {
-  static styles = css`
-    :host {
-      display: block;
-      min-height: 28rem;
-    }
-
-    ld-echart {
-      height: 28rem;
-    }
-  `
-
-  render() {
-    const demo = this.signal<DemoSignal>('demo', {})
-    return html`<ld-echart .chart=${demo.chart ?? null}></ld-echart>`
-  }
-}
-
-if (!customElements.get('ld-site-chart-demo')) {
-  customElements.define('ld-site-chart-demo', SiteChartDemo)
-}
-
 type ArticleSection = { id: string; label: string; level: number }
 type ArticleSectionNode = ArticleSection & { children: ArticleSectionNode[] }
 
@@ -1487,14 +1460,14 @@ if (!customElements.get('ld-site-chart-showcase')) {
 
 async function loadRouteComponents(): Promise<void> {
   const imports: Promise<unknown>[] = []
-  if (document.querySelector('ld-site-chart-demo, ld-site-chart-showcase, ld-site-doc-chart')) {
+  if (document.querySelector('ld-site-chart-showcase, ld-site-doc-chart')) {
     imports.push(import('../../web/components/dashboard/charts/echart'))
   }
   if (document.querySelector('ld-site-chart-showcase')) {
     imports.push(import('../../web/components/dashboard/table/report-table'))
   }
-  if (document.querySelector('ld-topology-background')) {
-    imports.push(import('../../web/components/login/topology-background'))
+  if (document.querySelector('ld-site-flow-background')) {
+    imports.push(import('./site-flow-background'))
   }
   await Promise.all(imports)
 }

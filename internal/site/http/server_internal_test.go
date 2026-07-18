@@ -242,10 +242,11 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 		`/static/site.css`,
 		`/static/site-page.js`,
 		`<meta name="view-transition" content="same-origin">`,
-		`<ld-topology-background class="site-hero-background" aria-hidden="true"></ld-topology-background>`,
+		`<ld-site-flow-background class="site-hero-background" aria-hidden="true"></ld-site-flow-background>`,
 		`<section id="main-content" class="site-hero">`,
 		`<div class="site-hero-layout">`,
-		`<img class="site-product-screenshot" src="/static/product-dashboard.png"`,
+		`<img class="site-product-screenshot site-product-screenshot-light" src="/static/product-dashboard-light.png"`,
+		`<img class="site-product-screenshot site-product-screenshot-dark" src="/static/product-dashboard-dark.png"`,
 		`<div class="site-proof-strip">`,
 		`<ld-site-feature-icon name="database" aria-hidden="true"></ld-site-feature-icon>`,
 		`<ld-site-feature-icon name="dashboard" aria-hidden="true"></ld-site-feature-icon>`,
@@ -256,18 +257,17 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 		`<article class="site-interface-card">`,
 		`<ld-site-feature-icon name="agent" aria-hidden="true"></ld-site-feature-icon>`,
 		`<a class="site-interface-link" href="/docs/guides/integrate/agent">Explore agent integrations</a>`,
-		`<section id="demo" class="site-product-proof">`,
 		`<section class="site-cta">`,
 		`<footer class="site-footer" role="contentinfo">`,
 		`<header class="site-header">`,
 		`<ld-site-theme-toggle></ld-site-theme-toggle>`,
-		"<ld-site-chart-demo>",
-		`data-on:click="@post(&#39;/demo&#39;, {payload: {demo: {metric: &#39;revenue&#39;}}})"`,
-		`data-on:click="@post(&#39;/demo&#39;, {payload: {demo: {metric: &#39;orders&#39;}}})"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("home page missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "One model. Two ways to explore.") {
+		t.Error("home page still renders the removed live-interaction section")
 	}
 }
 
@@ -693,7 +693,7 @@ func TestSiteGettingStartedRedirectsToDocumentation(t *testing.T) {
 	}
 }
 
-func TestSiteUpdatesSendInitialDemoSignal(t *testing.T) {
+func TestSiteUpdatesSendReadySignal(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
@@ -706,8 +706,8 @@ func TestSiteUpdatesSendInitialDemoSignal(t *testing.T) {
 		t.Fatalf("updates content type = %q, want text/event-stream", got)
 	}
 
-	line := readSSEUntil(t, response, `"metric":"revenue"`)
-	for _, want := range []string{`event: datastar-patch-signals`, `"demo"`, `"title":"Monthly revenue"`} {
+	line := readSSEUntil(t, response, `"ready":true`)
+	for _, want := range []string{`event: datastar-patch-signals`, `"site"`, `"ready":true`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("initial updates missing %q:\n%s", want, line)
 		}
@@ -729,7 +729,7 @@ func TestSiteUpdatesCloseAfterInitialPatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read bounded updates response: %v", err)
 	}
-	if !strings.Contains(string(body), `"metric":"revenue"`) {
+	if !strings.Contains(string(body), `"ready":true`) {
 		t.Fatalf("bounded updates response does not contain initial patch:\n%s", body)
 	}
 }
@@ -749,40 +749,6 @@ func TestSiteChartShowcaseUpdatesIncludeEveryChartType(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Errorf("chart showcase updates missing %q:\n%s", want, line)
 		}
-	}
-}
-
-func TestSiteDemoCommandPatchesRequestedMetric(t *testing.T) {
-	server := httptest.NewServer(NewHandler())
-	defer server.Close()
-
-	response, err := server.Client().Post(server.URL+"/demo", "application/json", strings.NewReader(`{"demo":{"metric":"orders"}}`))
-	if err != nil {
-		t.Fatalf("post demo: %v", err)
-	}
-	defer response.Body.Close()
-	if got := response.Header.Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
-		t.Fatalf("demo content type = %q, want text/event-stream", got)
-	}
-	body := readBody(t, response)
-	for _, want := range []string{`"metric":"orders"`, `"title":"Monthly orders"`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("demo response missing %q:\n%s", want, body)
-		}
-	}
-}
-
-func TestSiteDemoCommandRejectsUnknownMetric(t *testing.T) {
-	server := httptest.NewServer(NewHandler())
-	defer server.Close()
-
-	response, err := server.Client().Post(server.URL+"/demo", "application/json", strings.NewReader(`{"demo":{"metric":"unknown"}}`))
-	if err != nil {
-		t.Fatalf("post demo: %v", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusBadRequest {
-		t.Fatalf("demo status = %d, want %d", response.StatusCode, http.StatusBadRequest)
 	}
 }
 

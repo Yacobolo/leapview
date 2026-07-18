@@ -28,8 +28,18 @@ test('site explains the product, its workflow, and where it fits in the data sta
   const page = await browser.newPage()
   try {
     await page.goto(baseURL)
-    await page.waitForFunction(() => Boolean(customElements.get('ld-topology-background')))
-    expect(await page.locator('ld-topology-background.site-hero-background').count()).toBe(1)
+    await page.waitForFunction(() => Boolean(customElements.get('ld-site-flow-background')))
+    expect(await page.locator('ld-site-flow-background.site-hero-background').count()).toBe(1)
+    await page.waitForFunction(() => {
+      const host = document.querySelector('ld-site-flow-background')
+      const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+      return Boolean(canvas && canvas.width > 0 && canvas.height > 0)
+    })
+    const flowBackground = page.locator('ld-site-flow-background')
+    const firstFlowFrame = await flowBackground.evaluate((host) => (host.shadowRoot?.querySelector('canvas') as HTMLCanvasElement).toDataURL())
+    await page.waitForTimeout(100)
+    const secondFlowFrame = await flowBackground.evaluate((host) => (host.shadowRoot?.querySelector('canvas') as HTMLCanvasElement).toDataURL())
+    expect(secondFlowFrame).not.toBe(firstFlowFrame)
     const header = page.locator('.site-header')
     expect(await header.isVisible()).toBe(true)
     expect(await header.getAttribute('aria-hidden')).toBeNull()
@@ -40,8 +50,15 @@ test('site explains the product, its workflow, and where it fits in the data sta
       viewportHeight: window.innerHeight,
       viewportWidth: window.innerWidth,
     }))
+    const flowFrame = await flowBackground.evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      return { height: bounds.height, top: bounds.top }
+    })
     expect(hero.width).toBe(hero.viewportWidth)
     expect(hero.height).toBeGreaterThan(hero.viewportHeight * 0.65)
+    expect(flowFrame.top).toBeCloseTo(await page.locator('.site-hero').evaluate((element) => element.getBoundingClientRect().top), 1)
+    expect(flowFrame.height).toBeLessThanOrEqual(992)
+    expect(flowFrame.height).toBeLessThan(hero.height)
     expect(
       await page
         .getByRole('heading', {
@@ -49,13 +66,23 @@ test('site explains the product, its workflow, and where it fits in the data sta
         })
         .isVisible(),
     ).toBe(true)
-    const productScreenshot = page.locator('img.site-product-screenshot')
-    expect(await productScreenshot.count()).toBe(1)
-    expect(await productScreenshot.getAttribute('alt')).toBe('LibreDash sales dashboard with a filter, KPI, chart, and analytical table')
+    const productScreenshots = page.locator('img.site-product-screenshot')
+    expect(await productScreenshots.count()).toBe(2)
+    const lightProductScreenshot = page.locator('img.site-product-screenshot-light')
+    const darkProductScreenshot = page.locator('img.site-product-screenshot-dark')
+    expect(await lightProductScreenshot.getAttribute('alt')).toBe('LibreDash Visual Showcase overview with KPIs, line, donut, and bar charts, and an analytical table')
+    expect(await darkProductScreenshot.getAttribute('alt')).toBe('LibreDash Visual Showcase overview with KPIs, line, donut, and bar charts, and an analytical table')
     await page.waitForFunction(() => {
-      const image = document.querySelector('img.site-product-screenshot') as HTMLImageElement | null
-      return Boolean(image?.complete && image.naturalWidth > 0)
+      const images = Array.from(document.querySelectorAll<HTMLImageElement>('img.site-product-screenshot'))
+      return images.length === 2 && images.every((image) => image.complete && image.naturalWidth > 0)
     })
+    expect(await lightProductScreenshot.isVisible()).toBe(true)
+    expect(await darkProductScreenshot.isVisible()).toBe(false)
+    const productFrameCenter = await page.locator('.site-product-frame').evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return { frame: rect.left + rect.width / 2, viewport: window.innerWidth / 2 }
+    })
+    expect(Math.abs(productFrameCenter.frame - productFrameCenter.viewport)).toBeLessThanOrEqual(1)
     expect(await page.locator('.site-proof-strip .site-proof-item').count()).toBe(4)
     expect(
       await page
@@ -88,28 +115,108 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await interfaces.locator('.site-interface-core').count()).toBe(1)
     expect(await page.locator('.site-capabilities .site-capability').count()).toBe(4)
     expect(await page.getByRole('contentinfo').count()).toBe(1)
-    expect(await page.locator('.site-product-proof ld-site-chart-demo').count()).toBe(1)
-    expect(await page.getByRole('heading', { name: 'One model. Two ways to explore.' }).isVisible()).toBe(true)
+    expect(await page.locator('.site-product-proof, ld-site-chart-demo').count()).toBe(0)
+    expect(await page.getByRole('heading', { name: 'One model. Two ways to explore.' }).count()).toBe(0)
     await page.evaluate(() => {
       document.documentElement.style.scrollBehavior = 'auto'
       window.scrollTo(0, 64)
     })
     expect(await header.isVisible()).toBe(true)
     expect(await header.evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBe(0)
-    await page.waitForFunction(() => {
-      const demo = document.querySelector('ld-site-chart-demo') as HTMLElement & { shadowRoot: ShadowRoot }
-      const chart = demo?.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { title?: string } }
-      return chart?.chart?.title === 'Monthly revenue'
-    })
-    expect(await page.getByRole('heading', { name: 'Monthly revenue' }).isVisible()).toBe(true)
+  } finally {
+    await page.close()
+  }
+})
 
-    await page.getByRole('button', { name: 'Orders' }).click()
+test('homepage flow background renders from design tokens and respects reduced motion', async () => {
+  const context = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } })
+  const page = await context.newPage()
+  try {
+    await page.goto(baseURL)
     await page.waitForFunction(() => {
-      const demo = document.querySelector('ld-site-chart-demo') as HTMLElement & { shadowRoot: ShadowRoot }
-      const chart = demo?.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { title?: string } }
-      return chart?.chart?.title === 'Monthly orders'
+      const host = document.querySelector('ld-site-flow-background')
+      const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+      return Boolean(canvas && canvas.width > 0 && canvas.height > 0)
     })
-    expect(await page.getByRole('heading', { name: 'Monthly orders' }).isVisible()).toBe(true)
+    const firstFrame = await page.locator('ld-site-flow-background').evaluate((host) => {
+      const canvas = host.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+      if (!canvas) throw new Error('flow canvas is missing')
+      const style = getComputedStyle(host)
+      const rootStyle = getComputedStyle(document.documentElement)
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('flow canvas context is missing')
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      const activeRows = new Set<number>()
+      let activeSamples = 0
+      let sampleCount = 0
+      let leftY = 0
+      let leftSamples = 0
+      let rightY = 0
+      let rightSamples = 0
+      for (let y = 0; y < canvas.height; y += 4) {
+        for (let x = 0; x < canvas.width; x += 4) {
+          sampleCount++
+          if (pixels[(y * canvas.width + x) * 4 + 3]! <= 2) continue
+          activeRows.add(y)
+          activeSamples++
+          if (x < canvas.width * 0.2) {
+            leftY += y
+            leftSamples++
+          }
+          if (x > canvas.width * 0.8) {
+            rightY += y
+            rightSamples++
+          }
+        }
+      }
+      return {
+        image: canvas.toDataURL(),
+        lineStart: style.getPropertyValue('--site-flow-line-start').trim(),
+        lineEnd: style.getPropertyValue('--site-flow-line-end').trim(),
+        data1: rootStyle.getPropertyValue('--ld-data-1').trim(),
+        data7: rootStyle.getPropertyValue('--ld-data-7').trim(),
+        activeRowRatio: activeRows.size / Math.ceil(canvas.height / 4),
+        activeSampleRatio: activeSamples / sampleCount,
+        directionalDelta: Math.abs(leftY / leftSamples - rightY / rightSamples) / canvas.height,
+      }
+    })
+    await page.waitForTimeout(150)
+    const secondFrame = await page.locator('ld-site-flow-background').evaluate((host) => {
+      const canvas = host.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+      if (!canvas) throw new Error('flow canvas is missing')
+      return canvas.toDataURL()
+    })
+    expect(firstFrame.image).toBe(secondFrame)
+    expect(firstFrame.lineStart).toBe(firstFrame.data1)
+    expect(firstFrame.lineEnd).toBe(firstFrame.data7)
+    expect(firstFrame.activeRowRatio).toBeGreaterThan(0.65)
+    expect(firstFrame.activeSampleRatio).toBeGreaterThan(0.04)
+    expect(firstFrame.directionalDelta).toBeGreaterThan(0.32)
+  } finally {
+    await context.close()
+  }
+})
+
+test('homepage flow background stays centered and bounded on ultra-wide screens', async () => {
+  const page = await browser.newPage({ viewport: { width: 2560, height: 1000 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => {
+      const host = document.querySelector('ld-site-flow-background')
+      const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+      return Boolean(canvas && canvas.width > 0 && canvas.height > 0)
+    })
+    const geometry = await page.locator('ld-site-flow-background').evaluate((host) => {
+      const bounds = host.getBoundingClientRect()
+      return {
+        center: bounds.left + bounds.width / 2,
+        viewportCenter: window.innerWidth / 2,
+        width: bounds.width,
+      }
+    })
+    expect(geometry.width).toBeLessThanOrEqual(1920)
+    expect(Math.abs(geometry.center - geometry.viewportCenter)).toBeLessThanOrEqual(1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   } finally {
     await page.close()
   }
@@ -168,7 +275,7 @@ test('documentation header keeps only search and theme actions', async () => {
     await page.goto(baseURL)
     const siteActions = page.locator('.site-header .site-nav-actions')
     expect(await siteActions.getByRole('link', { name: 'Docs', exact: true }).count()).toBe(1)
-    expect(await siteActions.getByRole('link', { name: 'Demo', exact: true }).count()).toBe(1)
+    expect(await siteActions.getByRole('link', { name: 'Demo', exact: true }).count()).toBe(0)
     expect(await siteActions.getByRole('link', { name: 'Charts', exact: true }).count()).toBe(1)
   } finally {
     await page.close()
@@ -193,11 +300,15 @@ test('site supports system, light, and dark color modes', async () => {
     await toggle.click()
     await page.waitForFunction(() => document.documentElement.dataset.colorMode === 'light')
     expect(await toggle.getAttribute('data-theme-mode')).toBe('light')
+    expect(await page.locator('img.site-product-screenshot-light').isVisible()).toBe(true)
+    expect(await page.locator('img.site-product-screenshot-dark').isVisible()).toBe(false)
 
     await toggle.click()
     await page.waitForFunction(() => document.documentElement.dataset.colorMode === 'dark')
     expect(await toggle.getAttribute('data-theme-mode')).toBe('dark')
     expect(await page.locator('html').evaluate((element) => getComputedStyle(element).colorScheme)).toBe('dark')
+    expect(await page.locator('img.site-product-screenshot-light').isVisible()).toBe(false)
+    expect(await page.locator('img.site-product-screenshot-dark').isVisible()).toBe(true)
   } finally {
     await page.close()
   }
@@ -236,8 +347,9 @@ test('mobile landing page keeps the product story compact and ordered', async ()
     expect(Math.max(...proofHeights)).toBeLessThan(180)
 
     expect(await page.getByRole('list', { name: 'LibreDash position in the data stack' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
-    const screenshot = page.locator('img.site-product-screenshot')
+    const screenshot = page.locator('img.site-product-screenshot-light')
     expect(await screenshot.evaluate((element) => element.getBoundingClientRect().width <= element.parentElement!.getBoundingClientRect().width)).toBe(true)
+    expect(await page.locator('ld-site-flow-background').evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(800)
 
     await page.setViewportSize({ width: 533, height: 900 })
     const mobileHeroTitleSize = await page.locator('.site-hero h1').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
