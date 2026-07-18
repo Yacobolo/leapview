@@ -34,6 +34,7 @@ type Options struct {
 	CurrentPrincipal    func(*stdhttp.Request) (Principal, bool)
 	ArtifactDir         string
 	DefaultEnvironment  string
+	InstanceEnvironment string
 	WorkspaceID         func(string) string
 }
 
@@ -53,6 +54,10 @@ func (h *Handler) CreateCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, 
 	}
 	if input.Environment == "" {
 		writeJSONError(w, fmt.Errorf("environment is required"), stdhttp.StatusBadRequest)
+		return
+	}
+	if h.options.InstanceEnvironment != "" && input.Environment != h.options.InstanceEnvironment {
+		writeEnvironmentConflict(w, input.Environment, h.options.InstanceEnvironment)
 		return
 	}
 	workspaceID := h.workspaceID(workspaceName)
@@ -166,6 +171,9 @@ func (h *Handler) servingStateByIDForScope(ctx context.Context, repo Repository,
 	if projectID != "" && row.ProjectID != projectID {
 		return servingstate.State{}, servingstate.ErrNotFound
 	}
+	if h.options.InstanceEnvironment != "" && string(row.Environment) != h.options.InstanceEnvironment {
+		return servingstate.State{}, servingstate.ErrNotFound
+	}
 	return row, nil
 }
 
@@ -206,10 +214,7 @@ func candidateDTO(row servingstate.State) apigenapi.DeploymentCandidateResponse 
 	return out
 }
 
-func requestServingEnvironment(r *stdhttp.Request, fallback string) servingstate.Environment {
-	if query := r.URL.Query().Get("environment"); query != "" {
-		fallback = query
-	}
+func requestServingEnvironment(_ *stdhttp.Request, fallback string) servingstate.Environment {
 	return servingstate.NormalizeEnvironment(servingstate.Environment(fallback))
 }
 
@@ -224,6 +229,15 @@ func writeJSONError(w stdhttp.ResponseWriter, err error, status int) {
 		Code:      status,
 		Message:   err.Error(),
 		Details:   map[string]any{},
+		RequestID: "",
+	})
+}
+
+func writeEnvironmentConflict(w stdhttp.ResponseWriter, requested, instance string) {
+	writeJSON(w, stdhttp.StatusConflict, api.ErrorResponse{
+		Code:      stdhttp.StatusConflict,
+		Message:   fmt.Sprintf("requested environment %q does not match instance environment %q", requested, instance),
+		Details:   map[string]any{"requestedEnvironment": requested, "instanceEnvironment": instance},
 		RequestID: "",
 	})
 }

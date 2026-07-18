@@ -95,6 +95,7 @@ RUN mkdir -p /var/lib/libredash && \
 USER libredash
 
 ENV LIBREDASH_ADDR=:8080 \
+    LIBREDASH_ENVIRONMENT=prod \
     LIBREDASH_HOME=/var/lib/libredash \
     LIBREDASH_MANAGED_DATA_DIR=/var/lib/libredash/managed-data \
     LIBREDASH_PRODUCTION=1

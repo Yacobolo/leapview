@@ -78,6 +78,18 @@ func TestRevisionOperationsAreScopedAndPaginated(t *testing.T) {
 	assertPublicError(t, recorder, http.StatusNotFound, "unrelated-secret")
 }
 
+func TestCurrentRevisionRejectsEnvironmentOutsideInstance(t *testing.T) {
+	options := handlerOptions(metadataFixture(), nil, nil)
+	options.InstanceEnvironment = "prod"
+	handler := managedhttp.NewHandler(options)
+	recorder := call(t, ``, func(w http.ResponseWriter, r *http.Request) {
+		handler.GetManagedDataEnvironmentRevision(w, r, "project-a", "orders", "staging")
+	})
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), `"requestedEnvironment":"staging"`) || !strings.Contains(recorder.Body.String(), `"instanceEnvironment":"prod"`) {
+		t.Fatalf("environment conflict = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestUploadSessionOperationsUseControlServiceAndPrincipal(t *testing.T) {
 	uploads := &fakeUploads{result: uploadFixture()}
 	handler := newHandler(metadataFixture(), uploads, nil)

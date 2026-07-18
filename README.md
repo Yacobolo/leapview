@@ -1,8 +1,21 @@
 # LibreDash
 
-LibreDash is a small fullstack Go dashboard demo using gomponents, Datastar signals, Lit web components, and DuckDB over local Olist CSV files.
+LibreDash is a dashboards-as-code BI monolith using Go, Datastar, Lit, DuckDB, and one global DuckLake catalog per instance.
 
-## Run
+## Install
+
+Docker Compose is the primary v1 deployment. Download the versioned Compose archive from a release, then initialize one production instance:
+
+```sh
+cp deployment.env.example deployment.env
+./libredashctl init --admin-email admin@example.com --domain dash.example.com
+./libredashctl start
+./libredashctl first-login
+```
+
+See [the Compose package](deploy/compose/README.md) and [self-hosting guide](docs/articles/operate/self-hosting.md). The Hetzner Terraform module is a provider recipe layered on the same single-instance contract.
+
+## Contributor development
 
 ```sh
 task dev
@@ -131,10 +144,9 @@ connections:
   prod_lake:
     kind: s3
     scope: s3://analytics-prod/
-    auth:
-      access_key_id: ${AWS_ACCESS_KEY_ID}
-      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-      region: ${AWS_REGION}
+    credentials:
+      provider: ambient
+      region: eu-west-1
 
 sources:
   sales_events:
@@ -150,8 +162,9 @@ connections:
   azure_lake:
     kind: azure_blob
     scope: az://warehouse/
-    auth:
-      connection_string: ${AZURE_STORAGE_CONNECTION_STRING}
+    credentials:
+      provider: env
+      secret: AZURE_STORAGE_CREDENTIALS
 
 sources:
   delta_orders:
@@ -166,8 +179,9 @@ Postgres table:
 connections:
   crm:
     kind: postgres
-    auth:
-      connection_string: ${CRM_DATABASE_URL}
+    credentials:
+      provider: env
+      secret: CRM_DATABASE_URL
 
 sources:
   crm_accounts:
@@ -182,10 +196,9 @@ connections:
   prod_lake:
     kind: s3
     scope: s3://analytics-prod/
-    auth:
-      access_key_id: ${AWS_ACCESS_KEY_ID}
-      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-      region: ${AWS_REGION}
+    credentials:
+      provider: ambient
+      region: eu-west-1
 
 sources:
   product_embeddings:
@@ -201,10 +214,9 @@ connections:
     kind: ducklake
     scope: s3://analytics-prod/ducklake/
     path: metadata.ducklake
-    auth:
-      access_key_id: ${AWS_ACCESS_KEY_ID}
-      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-      region: ${AWS_REGION}
+    credentials:
+      provider: env
+      secret: COMMERCE_DUCKLAKE_CREDENTIALS
     options:
       data_path: data
 
@@ -221,8 +233,9 @@ connections:
   remote_quack:
     kind: quack
     path: quack:quack.example.com:443
-    auth:
-      token: ${LIBREDASH_QUACK_TOKEN}
+    credentials:
+      provider: env
+      secret: LIBREDASH_QUACK_TOKEN
 
 sources:
   remote_schemata:
@@ -230,7 +243,7 @@ sources:
     object: information_schema.schemata
 ```
 
-LibreDash owns the credential contract. Connection `auth` fields are resolved from `${ENV_VAR}` references or literal config values, validated by connection kind, and compiled into temporary DuckDB secrets internally. External secret managers such as Infisical should inject environment variables before `libredash serve` starts.
+LibreDash owns the credential contract. Use `credentials.provider: env` with an environment-variable name for explicit JSON credentials, `provider: ambient` for the S3 or Azure default credential chain, and `provider: none` only for deliberately public S3/HTTP data. LibreDash validates each mode and compiles temporary, path-scoped DuckDB secrets internally.
 
 For file and table paths, LibreDash infers `format` from clear extensions such as `.csv`, `.csv.gz`, `.json`, `.jsonl`, `.ndjson`, `.parquet`, `.xlsx`, `.txt`, `.blob`, `.vortex`, and `.lance`. Set source-level `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. Advanced DuckDB integrations should be modeled explicitly before being exposed in source YAML.
 
@@ -247,27 +260,23 @@ After data or YAML changes, run `task deploy:dev` and refresh or navigate the
 UI. The server reads workspace assets, details, lineage, and versions from the
 active deployment records.
 
-For the supported small production topology, use the [Hetzner single-node
-guide](deploy/hetzner/README.md). It provisions pinned release images, HTTPS,
-generated secrets, restricted SSH, backups, and healthchecked upgrades with
-rollback using Terraform. The remaining examples in this section describe
-custom deployments. See [managed data ingestion](docs/data-ingestion.md) for
-planning, staging, and inspecting project-global file revisions.
+For production, use the generic [Docker Compose package](deploy/compose/README.md). It provides pinned release images, optional Caddy HTTPS, generated secrets, complete instance backups, and health-checked image-and-state rollback. The [Hetzner recipe](deploy/hetzner/README.md) adds cloud provisioning and off-host operations.
 
 Production mode serves the active deployed BI-as-code bundle from `.libredash` by default:
 
 ```sh
 export LIBREDASH_PRODUCTION=1
+export LIBREDASH_ENVIRONMENT=prod
 export LIBREDASH_LOCAL_AUTH=1 # or configure OIDC/Azure below
 export LIBREDASH_CSRF_KEY=<32+ byte secret>
 export LIBREDASH_ALLOWED_HOSTS=localhost
 export LIBREDASH_METRICS_BEARER_TOKEN=<32+ byte secret>
 export LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+libredash admin initialize --format json
 libredash serve --production
-libredash admin bootstrap
-SYNC_OUTPUT="$(libredash data sync --project dashboards/libredash.yaml --connection olist --from /srv/olist --target http://localhost:8080 --token <token>)"
+SYNC_OUTPUT="$(libredash data sync --project dashboards/libredash.yaml --connection olist --from /srv/olist --target http://localhost:8080 --token <publisher-token-from-initialize>)"
 REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
-libredash deploy --project dashboards/libredash.yaml --revision "olist=$REVISION" --target http://localhost:8080 --token <token> --environment prod --auto-approve
+libredash deploy --project dashboards/libredash.yaml --revision "olist=$REVISION" --target http://localhost:8080 --token <publisher-token-from-initialize> --environment prod --auto-approve
 ```
 
 `deploy` validates the complete project, pins each supplied managed data
@@ -321,6 +330,7 @@ production configuration is:
 
 ```sh
 LIBREDASH_PRODUCTION=1
+LIBREDASH_ENVIRONMENT=prod
 LIBREDASH_HOME=/var/lib/libredash
 LIBREDASH_LOCAL_AUTH=1
 LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com

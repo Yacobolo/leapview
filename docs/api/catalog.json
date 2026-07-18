@@ -4,6 +4,11 @@
   "description": "Headless API for LibreDash workspaces, deployments, managed data, access control, refreshes, and agent operations.",
   "documents": [
     {
+      "slug": "instance",
+      "title": "Instance",
+      "summary": "The immutable serving identity of this LibreDash installation."
+    },
+    {
       "slug": "current-user",
       "title": "Current User",
       "summary": "Current principal, sessions, tokens, and privileges."

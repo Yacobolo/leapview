@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/mail"
@@ -12,6 +14,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/config"
+	"github.com/Yacobolo/libredash/internal/instancelock"
 	"github.com/Yacobolo/libredash/internal/platform"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
@@ -20,6 +23,16 @@ import (
 
 func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	parent := &cobra.Command{Use: "admin", Short: "Administrative utilities"}
+	initializeFormat := "json"
+	initialize := &cobra.Command{
+		Use:   "initialize",
+		Short: "Initialize one instance administrator and publisher credential",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAdminInitialize(ctx, initializeFormat, cmd.OutOrStdout())
+		},
+	}
+	initialize.Flags().StringVar(&initializeFormat, "format", "json", "output format (json)")
 	bootstrap := &cobra.Command{
 		Use:   "bootstrap",
 		Short: "Bootstrap an owner principal and API token",
@@ -69,8 +82,90 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	restore.Flags().StringVar(&opts.restoreBefore, "current-out", "", "path for a backup of the current instance before replacement")
 	restore.Flags().BoolVar(&opts.confirmRestore, "confirm", false, "confirm replacement of the configured LibreDash instance")
 	restore.Flags().BoolVar(&opts.databaseOnly, "database-only", false, "restore only the platform SQLite database")
-	parent.AddCommand(bootstrap, storage, maintenance, backup, restore)
+	parent.AddCommand(initialize, bootstrap, storage, maintenance, backup, restore)
 	return parent
+}
+
+var errInstanceAlreadyInitialized = errors.New("LibreDash instance is already initialized")
+
+type initialInstanceCredentials struct {
+	Email                   string `json:"email"`
+	TemporaryPassword       string `json:"temporaryPassword"`
+	PublisherToken          string `json:"publisherToken"`
+	PublisherTokenExpiresAt string `json:"publisherTokenExpiresAt"`
+}
+
+func runAdminInitialize(ctx context.Context, format string, out io.Writer) error {
+	if format != "json" {
+		return fmt.Errorf("admin initialize supports only --format json")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	email, err := bootstrapAdminEmail(cfg)
+	if err != nil {
+		return err
+	}
+	lock, err := instancelock.Acquire(cfg.HomeDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	store, err := platform.Open(ctx, cfg.DBPath())
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	environment := serveEnvironment(cfg.Production, "", cfg.Environment)
+	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
+		return err
+	}
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	var result initialInstanceCredentials
+	err = repo.RunAuditedMutationBatch(ctx, func(txRepo access.Repository) ([]access.AuditEventInput, error) {
+		sqliteRepo, ok := txRepo.(*accesssqlite.Repository)
+		if !ok {
+			return nil, fmt.Errorf("initialize access transaction is unavailable")
+		}
+		inserted, err := sqliteRepo.InsertPlatformSettingIfMissing(ctx, "instance.initialized", time.Now().UTC().Format(time.RFC3339))
+		if err != nil {
+			return nil, err
+		}
+		if !inserted {
+			return nil, errInstanceAlreadyInitialized
+		}
+		created, err := txRepo.CreateLocalUser(ctx, access.LocalUserInput{Email: email, DisplayName: email, MustChange: true})
+		if err != nil {
+			return nil, err
+		}
+		principal, err := txRepo.SetPlatformRole(ctx, access.PlatformRoleInput{PrincipalID: created.Principal.ID, Email: email, DisplayName: email, Role: access.RolePlatformAdmin})
+		if err != nil {
+			return nil, err
+		}
+		expires := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+		token, _, err := txRepo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
+			PrincipalID: principal.ID,
+			Name:        "initial-publisher",
+			Privileges: []access.Privilege{
+				access.PrivilegeUseWorkspace, access.PrivilegeViewItem, access.PrivilegeQueryData,
+				access.PrivilegeRefreshData, access.PrivilegeDeploy, access.PrivilegeActivateDeployment,
+				access.PrivilegeViewData, access.PrivilegeIngestData,
+			},
+			ExpiresAt: expires,
+		})
+		if err != nil {
+			return nil, err
+		}
+		result = initialInstanceCredentials{Email: email, TemporaryPassword: created.Password, PublisherToken: token, PublisherTokenExpiresAt: expires.Format(time.RFC3339)}
+		return []access.AuditEventInput{{PrincipalID: principal.ID, Action: "instance.initialized", TargetType: "instance", TargetID: string(environment), Privilege: access.PrivilegeManagePlatform, Status: "success"}}, nil
+	})
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(out)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(result)
 }
 
 const (
@@ -86,6 +181,11 @@ func runAdminBootstrap(ctx context.Context, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	lock, err := instancelock.Acquire(cfg.HomeDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return err
@@ -146,6 +246,11 @@ func runAdminBackup(ctx context.Context, opts *rootOptions, out io.Writer) error
 		return fmt.Errorf("admin backup requires --out")
 	}
 	cfg := config.MustLoad()
+	lock, err := instancelock.Acquire(cfg.HomeDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	if opts.databaseOnly {
 		store, err := platform.Open(ctx, cfg.DBPath())
 		if err != nil {
@@ -180,6 +285,11 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) erro
 		return fmt.Errorf("admin restore requires --confirm")
 	}
 	cfg := config.MustLoad()
+	lock, err := instancelock.Acquire(cfg.HomeDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	if opts.databaseOnly {
 		if err := platform.Restore(ctx, cfg.DBPath(), opts.restoreFrom, opts.restoreBefore); err != nil {
 			return err
@@ -194,9 +304,11 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) erro
 		return err
 	}
 	if err := platform.RestoreInstance(ctx, platform.InstanceRestoreOptions{
-		TargetHomeDir:    cfg.HomeDir,
-		BackupPath:       opts.restoreFrom,
-		CurrentBackupOut: opts.restoreBefore,
+		TargetHomeDir:        cfg.HomeDir,
+		BackupPath:           opts.restoreFrom,
+		CurrentBackupOut:     opts.restoreBefore,
+		ExpectedEnvironment:  string(serveEnvironment(cfg.Production, "", cfg.Environment)),
+		PreserveRelativeFile: instancelock.FileName,
 	}); err != nil {
 		return err
 	}
@@ -212,19 +324,30 @@ func validateFullInstanceArchiveLayout(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	catalogAbs, err := filepath.Abs(cfg.DuckLakeCatalogPath())
-	if err != nil {
-		return err
+	paths := map[string]string{"DuckLake catalog": cfg.DuckLakeCatalogPath(), "DuckLake data": cfg.DuckLakeDataDir(), "artifact": cfg.ArtifactDir(), "runtime": cfg.RuntimeDir()}
+	if cfg.ManagedDataBackend == "local" || cfg.ManagedDataBackend == "" {
+		paths["managed-data"] = cfg.ManagedDataDir
 	}
-	rel, err := filepath.Rel(homeAbs, catalogAbs)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("full instance backup/restore requires DuckLake catalog path inside LIBREDASH_HOME; got %s outside %s", cfg.DuckLakeCatalogPath(), cfg.HomeDir)
+	for label, path := range paths {
+		pathAbs, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(homeAbs, pathAbs)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("full instance backup/restore requires %s path inside LIBREDASH_HOME; got %s outside %s", label, path, cfg.HomeDir)
+		}
 	}
 	return nil
 }
 
 func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Writer) error {
 	cfg := config.MustLoad()
+	lock, err := acquireDestructiveMaintenanceLock(cfg, opts.apply)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return err
@@ -249,6 +372,11 @@ func runAdminMaintenance(ctx context.Context, opts *rootOptions, out io.Writer) 
 		return fmt.Errorf("retention days must be zero or greater")
 	}
 	cfg := config.MustLoad()
+	lock, err := acquireDestructiveMaintenanceLock(cfg, opts.apply)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	store, err := platform.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return err
@@ -277,6 +405,13 @@ func runAdminMaintenance(ctx context.Context, opts *rootOptions, out io.Writer) 
 	fmt.Fprintf(out, "stale api tokens: %d\n", result.StaleAPITokensDeleted)
 	fmt.Fprintf(out, "stale service principal secrets: %d\n", result.StaleServicePrincipalSecretsDeleted)
 	return nil
+}
+
+func acquireDestructiveMaintenanceLock(cfg config.Config, apply bool) (*instancelock.Lock, error) {
+	if !apply {
+		return nil, nil
+	}
+	return instancelock.Acquire(cfg.HomeDir)
 }
 
 func days(value int) time.Duration {

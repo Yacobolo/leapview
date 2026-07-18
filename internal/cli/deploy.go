@@ -62,7 +62,7 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	command.Flags().StringVar(&opts.target, "target", "", "LibreDash server URL")
 	command.Flags().StringVar(&opts.token, "token", "", "API token")
 	command.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "libredash.yaml"), "project path")
-	command.Flags().StringVar(&opts.environment, "environment", "dev", "deployment environment")
+	command.Flags().StringVar(&opts.environment, "environment", "", "assert the target instance environment")
 	command.Flags().StringArrayVar(&revisions, "revision", nil, "managed revision pin as connection=sha256:<digest> (repeatable)")
 	command.Flags().BoolVar(&opts.autoApprove, "auto-approve", false, "approve and activate the deployment without prompting")
 	return command
@@ -73,8 +73,8 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	request.Environment = strings.TrimSpace(request.Environment)
 	request.Target = strings.TrimSpace(request.Target)
 	request.Token = strings.TrimSpace(request.Token)
-	if ctx == nil || request.ProjectPath == "" || request.Environment == "" || request.Target == "" || request.Token == "" {
-		return fmt.Errorf("deploy requires project, environment, target, and token")
+	if ctx == nil || request.ProjectPath == "" || request.Target == "" || request.Token == "" {
+		return fmt.Errorf("deploy requires project, target, and token")
 	}
 	project, err := workspacecompiler.LoadProject(request.ProjectPath)
 	if err != nil {
@@ -90,6 +90,11 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	if len(workspaceIDs) == 0 {
 		return fmt.Errorf("project %q has no workspaces", request.ProjectPath)
 	}
+	environment, err := targetEnvironment(ctx, request.HTTPClient, request.Target, request.Token, request.Environment)
+	if err != nil {
+		return err
+	}
+	request.Environment = environment
 
 	cliOpts := &rootOptions{
 		target: request.Target, token: request.Token, catalog: request.ProjectPath,
@@ -365,10 +370,7 @@ func streamProjectArtifact(ctx context.Context, uploadURL, token, projectPath st
 }
 
 func cliEnvironment(opts *rootOptions) string {
-	if opts.environment == "" {
-		return "dev"
-	}
-	return opts.environment
+	return strings.TrimSpace(opts.environment)
 }
 
 func confirmDeployment(opts *rootOptions, in *os.File, out io.Writer) error {

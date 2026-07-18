@@ -45,9 +45,10 @@ func (s *Server) deploymentCandidateHTTPHandler() *servingstatehttp.Handler {
 			principal, ok := s.auth.Principal(r)
 			return servingstatehttp.Principal{ID: principal.ID}, ok
 		},
-		ArtifactDir:        s.artifactDir,
-		DefaultEnvironment: s.defaultEnvironment,
-		WorkspaceID:        s.workspaceID,
+		ArtifactDir:         s.artifactDir,
+		DefaultEnvironment:  s.defaultEnvironment,
+		InstanceEnvironment: s.defaultEnvironment,
+		WorkspaceID:         s.workspaceID,
 	})
 }
 
@@ -67,9 +68,6 @@ func (s *Server) defaultServingEnvironment() servingstate.Environment {
 }
 
 func (s *Server) requestServingEnvironment(r *http.Request) servingstate.Environment {
-	if query := r.URL.Query().Get("environment"); query != "" {
-		return servingstate.NormalizeEnvironment(servingstate.Environment(query))
-	}
 	return s.defaultServingEnvironment()
 }
 

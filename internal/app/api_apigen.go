@@ -18,6 +18,10 @@ type apiGenAdapter struct {
 	server *Server
 }
 
+func (a apiGenAdapter) GetInstance(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, apigenapi.InstanceResponse{Environment: a.server.defaultEnvironment})
+}
+
 func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r *http.Request) {
 	privilege, ok := apigenOperationPrivileges[operationID]
 	if !ok {
@@ -200,7 +204,7 @@ func (a apiGenAdapter) ListWorkspaceAssets(w http.ResponseWriter, r *http.Reques
 	a.server.workspaceHTTPHandler().Assets(w, r)
 }
 
-func (a apiGenAdapter) GetWorkspaceActiveAssetGraph(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenGetWorkspaceActiveAssetGraphParams) {
+func (a apiGenAdapter) GetWorkspaceActiveAssetGraph(w http.ResponseWriter, r *http.Request, _ string) {
 	a.server.workspaceHTTPHandler().ActiveDeploymentGraph(w, r)
 }
 

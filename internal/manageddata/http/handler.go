@@ -33,6 +33,10 @@ var (
 )
 
 func (h *Handler) GetManagedDataEnvironmentRevision(w stdhttp.ResponseWriter, r *stdhttp.Request, project, connection, environment string) {
+	if h.options.InstanceEnvironment != "" && environment != h.options.InstanceEnvironment {
+		h.writeJSON(w, stdhttp.StatusConflict, map[string]any{"code": stdhttp.StatusConflict, "message": fmt.Sprintf("requested environment %q does not match instance environment %q", environment, h.options.InstanceEnvironment), "details": map[string]any{"requestedEnvironment": environment, "instanceEnvironment": h.options.InstanceEnvironment}, "requestId": ""})
+		return
+	}
 	collection, ok := h.collection(w, r, project, connection)
 	if !ok {
 		return

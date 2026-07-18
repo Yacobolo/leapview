@@ -24,6 +24,7 @@ import (
 	deploymenthttp "github.com/Yacobolo/libredash/internal/deployment/http"
 	deploymentsqlite "github.com/Yacobolo/libredash/internal/deployment/sqlite"
 	"github.com/Yacobolo/libredash/internal/execution"
+	"github.com/Yacobolo/libredash/internal/instancelock"
 	manageddataapiadapter "github.com/Yacobolo/libredash/internal/manageddata/apiadapter"
 	manageddatahttp "github.com/Yacobolo/libredash/internal/manageddata/http"
 	manageddataresolver "github.com/Yacobolo/libredash/internal/manageddata/resolver"
@@ -52,7 +53,7 @@ func serveCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.addr, "addr", "", "listen address; defaults to the configured address")
-	cmd.Flags().StringVar(&opts.environment, "environment", "", "serving environment; defaults to prod in production and dev otherwise")
+	cmd.Flags().StringVar(&opts.environment, "environment", "", "instance environment; overrides LIBREDASH_ENVIRONMENT, then defaults to prod in production and dev otherwise")
 	cmd.Flags().BoolVar(&opts.production, "production", false, "serve active serving state from the platform DB")
 	return cmd
 }
@@ -71,7 +72,12 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if err := cfg.Validate(config.ProfileServe); err != nil {
 		return err
 	}
-	environment := serveEnvironment(production, opts.environment)
+	environment := serveEnvironment(production, opts.environment, cfg.Environment)
+	instanceLock, err := instancelock.Acquire(cfg.HomeDir)
+	if err != nil {
+		return err
+	}
+	defer instanceLock.Release()
 	server, cleanup, err := servingStateBackedServer(ctx, cfg, production, environment)
 	if err != nil {
 		return err
@@ -95,8 +101,11 @@ func serveProductionMode(cfg config.Config, opts rootOptions) bool {
 	return opts.production || cfg.Production
 }
 
-func serveEnvironment(production bool, value string) servingstate.Environment {
-	if strings.TrimSpace(value) != "" {
+func serveEnvironment(production bool, flagValue, configuredValue string) servingstate.Environment {
+	if value := strings.TrimSpace(flagValue); value != "" {
+		return servingstate.NormalizeEnvironment(servingstate.Environment(value))
+	}
+	if value := strings.TrimSpace(configuredValue); value != "" {
 		return servingstate.NormalizeEnvironment(servingstate.Environment(value))
 	}
 	if production {
@@ -187,6 +196,10 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		return nil, nil, err
 	}
 	cleanup := func() { _ = store.Close() }
+	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	accessRepo := accesssqlite.NewRepository(store.SQLDB())
 	workspaceRepo := workspacesqlite.NewRepositoryWithSecurables(store.SQLDB(), accessRepo)
 	if !production {

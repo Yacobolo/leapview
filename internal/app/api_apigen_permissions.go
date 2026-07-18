@@ -10,6 +10,7 @@ import (
 )
 
 var apigenOperationPrivileges = map[string]access.Privilege{
+	"getInstance":                          access.PrivilegeUseWorkspace,
 	"getCurrentPrincipal":                  access.PrivilegeUseWorkspace,
 	"listCurrentEffectivePrivileges":       access.PrivilegeUseWorkspace,
 	"listCurrentAPITokens":                 access.PrivilegeManageGrants,

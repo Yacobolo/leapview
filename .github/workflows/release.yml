@@ -93,4 +93,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s\n' '${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}' > image-reference.txt
-          gh release upload '${{ github.event.release.tag_name }}' image-reference.txt --clobber
+          package="libredash-compose-${{ github.event.release.tag_name }}"
+          mkdir -p "dist/$package"
+          cp deploy/compose/compose.yaml deploy/compose/compose.https.yaml deploy/compose/Caddyfile deploy/compose/libredashctl deploy/compose/README.md "dist/$package/"
+          cp deploy/compose/libredash.env.example "dist/$package/libredash.env.example"
+          sed "s|ghcr.io/yacobolo/libredash@sha256:<release-digest>|${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}|" deploy/compose/deployment.env.example > "dist/$package/deployment.env.example"
+          cp image-reference.txt "dist/$package/"
+          (cd "dist/$package" && sha256sum Caddyfile README.md compose.https.yaml compose.yaml deployment.env.example image-reference.txt libredash.env.example libredashctl > SHA256SUMS)
+          tar -C dist -czf "dist/$package.tar.gz" "$package"
+          sha256sum "dist/$package.tar.gz" > "dist/$package.tar.gz.sha256"
+          gh release upload '${{ github.event.release.tag_name }}' image-reference.txt "dist/$package.tar.gz" "dist/$package.tar.gz.sha256" --clobber

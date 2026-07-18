@@ -33,11 +33,12 @@ type UploadCoordinator interface {
 }
 
 type Options struct {
-	Repository       Repository
-	Uploads          UploadCoordinator
-	Multipart        s3multipart.Coordinator
-	CurrentPrincipal func(*stdhttp.Request) (Principal, bool)
-	MaxJSONBodyBytes int64
+	Repository          Repository
+	Uploads             UploadCoordinator
+	Multipart           s3multipart.Coordinator
+	CurrentPrincipal    func(*stdhttp.Request) (Principal, bool)
+	MaxJSONBodyBytes    int64
+	InstanceEnvironment string
 }
 
 type Handler struct {

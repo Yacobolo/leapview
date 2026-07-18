@@ -4,6 +4,8 @@ info:
   version: 1.0.0
   description: Headless API for LibreDash workspaces, deployments, managed data, access control, refreshes, and agent operations.
 tags:
+  - name: Instance
+    description: The immutable serving identity of this LibreDash installation.
   - name: Current User
     description: Current principal, sessions, tokens, and privileges.
   - name: Workspaces
@@ -262,6 +264,109 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+  /api/v1/instance:
+    get:
+      operationId: getInstance
+      summary: Get this LibreDash instance identity
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+              example:
+                environment: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '429':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 1
+                details:
+                  key: example
+                message: example
+                requestId: example
+      tags:
+        - Instance
+      x-authz:
+        mode: privilege
+        privilege: USE_WORKSPACE
   /api/v1/me:
     get:
       operationId: getCurrentPrincipal
@@ -4963,13 +5068,6 @@ paths:
       operationId: listWorkspaces
       summary: List workspaces
       parameters:
-        - name: environment
-          in: query
-          required: false
-          schema:
-            type: string
-          example: example
-          explode: false
         - name: limit
           in: query
           required: false
@@ -5124,13 +5222,6 @@ paths:
           schema:
             type: string
           example: example
-        - name: environment
-          in: query
-          required: false
-          schema:
-            type: string
-          example: example
-          explode: false
       responses:
         '200':
           description: The request has succeeded.
@@ -17222,6 +17313,16 @@ components:
         id: example
         name: example
         updatedAt: "2026-01-02T15:04:05Z"
+    InstanceResponse:
+      type: object
+      required:
+        - environment
+      properties:
+        environment:
+          type: string
+          example: example
+      example:
+        environment: example
     LocalPasswordResetResponse:
       type: object
       required:

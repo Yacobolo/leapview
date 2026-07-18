@@ -1,111 +1,80 @@
 # Installation
 
-LibreDash currently builds and runs from a source checkout. The repository pins JavaScript dependencies and exposes repeatable development commands through Task, so installation is primarily about preparing the toolchain and verifying a clean build.
+Docker Compose is the primary LibreDash v1 installation. One Compose project is one LibreDash instance: one process, persistent state volume, environment, control database, and global DuckLake catalog.
 
 ## Before you begin
 
-Install the following tools:
+Install Docker Engine with the Compose plugin, choose the DNS name for the instance, and prepare a host directory that is writable only by the deployment operator. Production releases require an immutable image digest; do not substitute a floating image tag.
 
-- Git.
-- The Go version declared by `go.mod`.
-- Bun using the version declared in `package.json` and CI.
-- [Task](https://taskfile.dev/) for repository workflows.
-- A supported local shell. The documented commands assume a POSIX-style shell.
+## Install with Docker Compose
 
-DuckDB is linked through the Go application; a separate DuckDB server is not required. Container tooling, Terraform, and cloud credentials are only needed for the deployment workflows that use them.
+1. Download the `libredash-compose-<version>.tar.gz` asset and checksum from a LibreDash release.
+2. Verify the checksum and extract the archive into the host directory. The archive contains an immutable application image reference, the base Compose stack, an optional Caddy HTTPS overlay, and `libredashctl`.
+3. Copy the deployment template and initialize the instance:
 
-Confirm the core tools before continuing:
 
 ```sh
-go version
-bun --version
-task --version
+cp deployment.env.example deployment.env
+./libredashctl init \
+  --admin-email admin@example.com \
+  --domain dash.example.com \
+  --environment prod
 ```
 
-Use this installation sequence:
+4. Start the instance and consume the one-time credentials:
 
-1. Prepare a clean checkout and install pinned dependencies.
-2. Generate contracts and build both application surfaces.
-3. Bootstrap the sample data and start the managed development server.
-4. Validate the repository, then verify the sample workspace in a browser.
+```sh
+./libredashctl start
+./libredashctl first-login
+```
 
-## Prepare a checkout
+Initialization generates production secrets, creates the persistent volume, validates configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
 
-Clone the repository and enter it, then install the exact JavaScript dependency graph recorded in the lockfile:
+The Caddy overlay is enabled by default. Pass `--no-https` only when an existing trusted HTTPS proxy fronts the localhost-bound application port. Keep secure cookies and the public allowed host configured for that proxy.
+
+## Understand the instance boundary
+
+All application-owned local state is under `/var/lib/libredash` in one named volume. External customer sources such as S3 remain external and are not included in instance backups. Local managed uploads are included; S3-backed managed uploads require bucket-native backup and versioning.
+
+Use separate Compose project directories and names for development, staging, and production. Never scale one project to multiple application containers or point two processes at the same volume.
+
+Common operations are:
+
+```sh
+./libredashctl status
+./libredashctl logs
+./libredashctl backup
+./libredashctl restore backups/libredash-<timestamp>.tar.gz
+./libredashctl upgrade ghcr.io/yacobolo/libredash@sha256:<digest>
+./libredashctl rollback --confirm
+```
+
+Upgrades create a state checkpoint. A failed health check restores both the previous image and state; manual rollback requires confirmation because it discards state created after the checkpoint.
+
+## Contributor installation
+
+Source checkout is the contributor workflow, not the production packaging path. Install the Go version from `go.mod`, Bun, and Task, then run:
 
 ```sh
 task node:deps
-```
-
-Generate schemas, API surfaces, configuration references, CLI references, and other build inputs:
-
-```sh
 task generate
-```
-
-Generated files should be treated according to the repository conventions. Some are committed contract artifacts; others are temporary build inputs. Use the Task targets rather than running individual generators unless you are working on a generator itself.
-
-## Build LibreDash
-
-Build browser assets and the Go packages:
-
-```sh
-task build
-go build ./cmd/libredash
-```
-
-The documentation portal is an independently deployable binary. Build it when you are working on the public site:
-
-```sh
-task site:binary
-```
-
-## Prepare the sample data
-
-The included workspaces use the Olist sample dataset. Bootstrap it through the managed repository workflow:
-
-```sh
-task bootstrap
-```
-
-The bootstrap tool downloads inputs to its explicit managed-data location and prepares them for planning and synchronization. Do not commit downloaded datasets or point multiple worktrees at an implicit shared directory.
-
-## Start the development server
-
-Use the managed development workflow:
-
-```sh
 task dev
 ```
 
-It generates required inputs, builds assets, starts a worktree-local server, and records process state and logs beneath `.tmp/`. Use these companion commands instead of finding or killing processes manually:
+Use `task dev:status`, `task dev:logs`, and `task dev:stop` for the worktree-local server. Run `task ci` before handing off substantial changes.
 
-```sh
-task dev:status
-task dev:logs
-task dev:stop
-```
+## Validate
 
-Open the URL reported by `task dev`. The catalog should list the sample workspaces and dashboards.
+Run `docker compose config --quiet` and `./libredashctl status`. The application container must report healthy, and the resolved image must include a `sha256` digest.
 
-## Validate the installation
+## Verify
 
-Run the full repository verification gate before beginning substantial work:
-
-```sh
-task ci
-```
-
-The command must finish without generated-file differences, test failures, lint errors, or deployment-contract failures. Run it from the repository root so every path and generated-artifact check uses the intended workspace.
-
-## Verify the installation
-
-Open the URL reported by `task dev`, enter the Sales workspace, and load Executive Sales. Confirm that KPI cards, charts, filters, and the orders table finish loading. Then inspect `task dev:status` and verify that the managed process is healthy.
+Open the configured HTTPS URL, sign in with the temporary administrator credentials, and change the password when prompted. Then create a backup with `./libredashctl backup` and confirm that both the archive and its checksum exist in `backups/`.
 
 ## Troubleshooting
 
-If generation fails, confirm the pinned Go and Bun versions and rerun `task node:deps`. If assets appear stale, stop the managed server and restart `task dev` so generation and browser builds run again. If the sample dashboards load but cannot query data, rerun `task bootstrap` and inspect `task dev:logs` for the first backend error rather than the later browser symptom.
+Use `./libredashctl logs` when startup or health checks fail. A second process cannot open the same state volume, and an instance initialized for one environment cannot be started as another; use a separate Compose project and volume instead of changing `LIBREDASH_ENVIRONMENT`.
 
 ## Next steps
 
-Continue with [Build your first dashboard](/docs/first-dashboard) once the catalog and a sample report page load successfully. Contributors should also read [Repository guide](/docs/contributing/repository) before changing generated contracts or runtime architecture.
+Continue with [Self-hosting](/docs/guides/operate/self-hosting), [Connect a data source](/docs/guides/build/connect-data), and [Build your first dashboard](/docs/first-dashboard).

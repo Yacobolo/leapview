@@ -13,6 +13,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	analyticsducklake "github.com/Yacobolo/libredash/internal/analytics/ducklake"
+	"github.com/Yacobolo/libredash/internal/instancelock"
 	"github.com/Yacobolo/libredash/internal/platform"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
@@ -397,6 +398,66 @@ func TestAdminMaintenanceApplyPrunesOperationalHistory(t *testing.T) {
 	requireAdminRowExists(t, ctx, home, "sessions", "session_recent")
 	requireAdminRowExists(t, ctx, home, "api_tokens", "token_recent")
 	requireAdminRowExists(t, ctx, home, "service_principal_secrets", "secret_recent")
+}
+
+func TestDestructiveAdminMaintenanceRequiresExclusiveInstanceLock(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		run  func(context.Context, *rootOptions, *bytes.Buffer) error
+	}{
+		{name: "operational", run: func(ctx context.Context, opts *rootOptions, out *bytes.Buffer) error {
+			return runAdminMaintenance(ctx, opts, out)
+		}},
+		{name: "analytical storage", run: func(ctx context.Context, opts *rootOptions, out *bytes.Buffer) error {
+			return runAdminStorageCleanup(ctx, opts, out)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home := t.TempDir()
+			setAdminStorageEnv(t, home)
+			held, err := instancelock.Acquire(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer held.Release()
+			var out bytes.Buffer
+			err = test.run(context.Background(), &rootOptions{apply: true}, &out)
+			if err == nil || !strings.Contains(err.Error(), "already using LIBREDASH_HOME") {
+				t.Fatalf("destructive maintenance error = %v", err)
+			}
+		})
+	}
+}
+
+func TestOfflineInstanceOperationsRequireExclusiveInstanceLock(t *testing.T) {
+	home := t.TempDir()
+	setAdminStorageEnv(t, home)
+	t.Setenv("LIBREDASH_BOOTSTRAP_ADMIN_EMAIL", "owner@example.com")
+	held, err := instancelock.Acquire(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	for _, operation := range []struct {
+		name string
+		run  func() error
+	}{
+		{name: "initialize", run: func() error { return runAdminInitialize(context.Background(), "json", &bytes.Buffer{}) }},
+		{name: "bootstrap", run: func() error { return runAdminBootstrap(context.Background(), &bytes.Buffer{}) }},
+		{name: "backup", run: func() error {
+			return runAdminBackup(context.Background(), &rootOptions{backupOut: filepath.Join(t.TempDir(), "backup.tar.gz")}, &bytes.Buffer{})
+		}},
+		{name: "restore", run: func() error {
+			return runAdminRestore(context.Background(), &rootOptions{restoreFrom: filepath.Join(t.TempDir(), "backup.tar.gz"), confirmRestore: true}, &bytes.Buffer{})
+		}},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			err := operation.run()
+			if err == nil || !strings.Contains(err.Error(), "already using LIBREDASH_HOME") {
+				t.Fatalf("offline operation error = %v", err)
+			}
+		})
+	}
 }
 
 func TestAdminStorageCleanupDryRunReconcilesReferencedSnapshots(t *testing.T) {

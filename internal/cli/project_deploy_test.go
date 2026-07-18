@@ -33,6 +33,8 @@ func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
 		mu.Unlock()
 		workspaceID := workspaceIDFromAPIPath(r.URL.Path)
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/instance":
+			writeCLIJSON(t, w, apigenapi.InstanceResponse{Environment: "prod"})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/workspaces/"+workspaceID+"/deployment-candidates"):

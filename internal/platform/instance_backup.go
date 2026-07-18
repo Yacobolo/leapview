@@ -33,9 +33,11 @@ type InstanceBackupOptions struct {
 }
 
 type InstanceRestoreOptions struct {
-	TargetHomeDir    string
-	BackupPath       string
-	CurrentBackupOut string
+	TargetHomeDir        string
+	BackupPath           string
+	CurrentBackupOut     string
+	ExpectedEnvironment  string
+	PreserveRelativeFile string
 }
 
 type instanceBackupManifest struct {
@@ -214,6 +216,10 @@ func RestoreInstance(ctx context.Context, options InstanceRestoreOptions) error 
 	targetHome := strings.TrimSpace(options.TargetHomeDir)
 	backupPath := strings.TrimSpace(options.BackupPath)
 	currentBackupOut := strings.TrimSpace(options.CurrentBackupOut)
+	preserveRelativeFile, err := validatePreservedRelativeFile(options.PreserveRelativeFile)
+	if err != nil {
+		return err
+	}
 	if targetHome == "" {
 		return fmt.Errorf("instance restore target home dir is required")
 	}
@@ -241,23 +247,10 @@ func RestoreInstance(ctx context.Context, options InstanceRestoreOptions) error 
 		}
 	}
 
-	exists, nonEmpty, err := dirExistsNonEmpty(targetAbs)
+	exists, nonEmpty, err := dirExistsNonEmptyExcept(targetAbs, preserveRelativeFile)
 	if err != nil {
 		return err
 	}
-	if exists && nonEmpty {
-		if currentBackupOut == "" {
-			return fmt.Errorf("current instance backup path is required when restoring over an existing home dir")
-		}
-		if err := BackupInstance(ctx, InstanceBackupOptions{
-			HomeDir: targetAbs,
-			DBPath:  filepath.Join(targetAbs, instanceBackupDBName),
-			OutPath: currentBackupOut,
-		}); err != nil {
-			return fmt.Errorf("backup current instance: %w", err)
-		}
-	}
-
 	parent := filepath.Dir(targetAbs)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
@@ -274,6 +267,37 @@ func RestoreInstance(ctx context.Context, options InstanceRestoreOptions) error 
 	}()
 	if err := extractInstanceBackup(ctx, backupAbs, tmpRestore); err != nil {
 		return err
+	}
+	if environment := strings.TrimSpace(options.ExpectedEnvironment); environment != "" {
+		restored, err := Open(ctx, filepath.Join(tmpRestore, instanceBackupDBName))
+		if err != nil {
+			return fmt.Errorf("open restored instance environment: %w", err)
+		}
+		bindErr := restored.BindInstanceEnvironment(ctx, environment)
+		closeErr := restored.Close()
+		if bindErr != nil {
+			return fmt.Errorf("validate restored instance environment: %w", bindErr)
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	if exists && nonEmpty {
+		if currentBackupOut == "" {
+			return fmt.Errorf("current instance backup path is required when restoring over an existing home dir")
+		}
+		if err := BackupInstance(ctx, InstanceBackupOptions{
+			HomeDir: targetAbs,
+			DBPath:  filepath.Join(targetAbs, instanceBackupDBName),
+			OutPath: currentBackupOut,
+		}); err != nil {
+			return fmt.Errorf("backup current instance: %w", err)
+		}
+	}
+	if preserveRelativeFile != "" {
+		if err := preserveFileAcrossRestore(targetAbs, tmpRestore, preserveRelativeFile); err != nil {
+			return err
+		}
 	}
 
 	oldTarget := ""
@@ -294,6 +318,61 @@ func RestoreInstance(ctx context.Context, options InstanceRestoreOptions) error 
 		_ = os.RemoveAll(oldTarget)
 	}
 	return nil
+}
+
+func validatePreservedRelativeFile(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	clean := filepath.Clean(value)
+	if filepath.IsAbs(clean) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("preserved restore file must be a relative path inside the instance home")
+	}
+	return clean, nil
+}
+
+func preserveFileAcrossRestore(currentHome, restoredHome, relativePath string) error {
+	currentPath := filepath.Join(currentHome, relativePath)
+	info, err := os.Lstat(currentPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("preserved restore path %q is not a regular file", relativePath)
+	}
+	restoredPath := filepath.Join(restoredHome, relativePath)
+	if err := os.Remove(restoredPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(restoredPath), instanceRestoreDirMode); err != nil {
+		return err
+	}
+	if err := os.Link(currentPath, restoredPath); err != nil {
+		return fmt.Errorf("preserve restore file %q: %w", relativePath, err)
+	}
+	return nil
+}
+
+func dirExistsNonEmptyExcept(path, ignoredRelativeFile string) (bool, bool, error) {
+	exists, _, err := dirExistsNonEmpty(path)
+	if err != nil || !exists {
+		return exists, false, err
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false, false, err
+	}
+	for _, entry := range entries {
+		if ignoredRelativeFile != "" && entry.Name() == ignoredRelativeFile {
+			continue
+		}
+		return true, true, nil
+	}
+	return true, false, nil
 }
 
 func extractInstanceBackup(ctx context.Context, archivePath, targetDir string) error {

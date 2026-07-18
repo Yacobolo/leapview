@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${LIBREDASHCTL_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}"
+DOCKER_BIN="${LIBREDASHCTL_DOCKER_BIN:-docker}"
+DEPLOYMENT_ENV="$ROOT/deployment.env"
+APP_ENV="$ROOT/libredash.env"
+INITIAL_CREDENTIALS="$ROOT/initial-credentials.json"
+ROLLBACK_ENV="$ROOT/rollback.env"
+LOCK_DIR="$ROOT/.libredashctl.lock"
+
+fail() { printf 'libredashctl: %s\n' "$*" >&2; exit 1; }
+require_file() { [[ -s "$1" ]] || fail "required file is missing or empty: $1"; }
+env_value() { awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$2"; }
+require_digest() { [[ "$1" =~ ^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$ ]] || fail "image must be pinned by digest"; }
+random_hex() { openssl rand -hex 32; }
+timestamp() { printf '%s-%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$$"; }
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+lock() { mkdir "$LOCK_DIR" 2>/dev/null || fail "another LibreDash operation is running"; trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM; }
+
+compose() {
+  require_file "$DEPLOYMENT_ENV"
+  local files=(-f "$ROOT/compose.yaml")
+  if [[ "$(env_value COMPOSE_HTTPS "$DEPLOYMENT_ENV")" == "1" ]]; then files+=(-f "$ROOT/compose.https.yaml"); fi
+  "$DOCKER_BIN" compose --project-directory "$ROOT" --env-file "$DEPLOYMENT_ENV" "${files[@]}" "$@"
+}
+
+container_id() { compose ps -q libredash; }
+is_running() { local id; id="$(container_id 2>/dev/null || true)"; [[ -n "$id" && "$($DOCKER_BIN inspect -f '{{.State.Running}}' "$id" 2>/dev/null || true)" == true ]]; }
+wait_healthy() {
+  local id status attempt; id="$(container_id)"; [[ -n "$id" ]] || return 1
+  for attempt in $(seq 1 120); do
+    status="$($DOCKER_BIN inspect -f '{{.State.Health.Status}}' "$id" 2>/dev/null || true)"
+    [[ "$status" == healthy ]] && return 0
+    [[ "$status" == unhealthy ]] && break
+    sleep 2
+  done
+  compose logs --tail=100 libredash >&2 || true
+  return 1
+}
+
+init_instance() {
+  local admin="" domain="" environment="prod" https=1 image=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --admin-email) admin="$2"; shift 2 ;;
+      --domain) domain="$2"; shift 2 ;;
+      --environment) environment="$2"; shift 2 ;;
+      --image) image="$2"; shift 2 ;;
+      --no-https) https=0; shift ;;
+      *) fail "unknown init argument: $1" ;;
+    esac
+  done
+  [[ -n "$admin" ]] || fail "init requires --admin-email"
+  [[ -n "$domain" ]] || fail "init requires --domain (the public host, including with an external proxy)"
+  [[ ! -e "$APP_ENV" && ! -e "$INITIAL_CREDENTIALS" ]] || fail "instance is already initialized"
+  [[ -s "$DEPLOYMENT_ENV" ]] || cp "$ROOT/deployment.env.example" "$DEPLOYMENT_ENV"
+  [[ -n "$image" ]] || image="$(env_value LIBREDASH_IMAGE "$DEPLOYMENT_ENV")"
+  require_digest "$image"
+  lock
+  local tmp="$DEPLOYMENT_ENV.tmp"
+  awk -F= -v image="$image" -v domain="$domain" -v https="$https" '
+    $1=="LIBREDASH_IMAGE" {print "LIBREDASH_IMAGE=" image; next}
+    $1=="CADDY_DOMAIN" {print "CADDY_DOMAIN=" domain; next}
+    $1=="COMPOSE_HTTPS" {print "COMPOSE_HTTPS=" https; next}
+    {print}
+  ' "$DEPLOYMENT_ENV" >"$tmp" && chmod 0600 "$tmp" && mv "$tmp" "$DEPLOYMENT_ENV"
+  umask 077
+  {
+    printf 'LIBREDASH_PRODUCTION=1\nLIBREDASH_ENVIRONMENT=%s\nLIBREDASH_ADDR=:8080\n' "$environment"
+    printf 'LIBREDASH_HOME=/var/lib/libredash\nLIBREDASH_MANAGED_DATA_BACKEND=local\nLIBREDASH_MANAGED_DATA_DIR=/var/lib/libredash/managed-data\n'
+    printf 'LIBREDASH_LOCAL_AUTH=1\nLIBREDASH_COOKIE_SECURE=true\nLIBREDASH_TRUST_PROXY_HEADERS=true\n'
+    printf 'LIBREDASH_ALLOWED_HOSTS=%s\nLIBREDASH_BOOTSTRAP_ADMIN_EMAIL=%s\n' "$domain" "$admin"
+    printf 'LIBREDASH_CSRF_KEY=%s\nLIBREDASH_METRICS_BEARER_TOKEN=%s\n' "$(random_hex)" "$(random_hex)"
+  } >"$APP_ENV"
+  chmod 0600 "$APP_ENV"
+  mkdir -p "$ROOT/backups"
+  compose pull libredash
+  compose run --rm --no-deps libredash config validate --production
+  compose run --rm --no-deps libredash admin initialize --format json >"$INITIAL_CREDENTIALS"
+  chmod 0600 "$INITIAL_CREDENTIALS"
+  compose config --quiet
+  printf 'initialized environment %s; run ./libredashctl start\n' "$environment"
+}
+
+start() { compose up -d; wait_healthy; }
+status() { compose ps; local id; id="$(container_id)"; [[ -n "$id" ]] && "$DOCKER_BIN" exec "$id" libredash healthcheck; }
+logs() { compose logs "${@:-libredash}"; }
+first_login() { require_file "$INITIAL_CREDENTIALS"; umask 077; local value; value="$(<"$INITIAL_CREDENTIALS")"; printf '%s\n' "$value"; rm -f "$INITIAL_CREDENTIALS"; }
+
+backup() {
+  lock
+  local was_running=false name path
+  is_running && was_running=true
+  [[ "$was_running" == true ]] && compose stop -t 120 libredash
+  name="${1:-libredash-$(timestamp).tar.gz}"; name="$(basename "$name")"; path="$ROOT/backups/$name"
+  compose run --rm --no-deps libredash admin backup --out "/backups/$name"
+  sha256_file "$path" >"$path.sha256"; chmod 0600 "$path" "$path.sha256"
+  [[ "$was_running" == true ]] && start
+  if [[ -n "${LIBREDASHCTL_BACKUP_HOOK:-}" ]]; then
+    "$LIBREDASHCTL_BACKUP_HOOK" "$path"
+  fi
+  printf '%s\n' "$path"
+}
+
+restore_archive() {
+  local archive="$1" before="$2"
+  compose run --rm --no-deps libredash admin restore --from "/backups/$(basename "$archive")" --current-out "/backups/$(basename "$before")" --confirm
+}
+
+restore() {
+  [[ $# -ge 1 ]] || fail "restore requires an archive"
+  local archive="$1"; [[ -f "$archive" ]] || archive="$ROOT/backups/$(basename "$archive")"; [[ -f "$archive" ]] || fail "archive not found"
+  lock; is_running && compose stop -t 120 libredash
+  local before="$ROOT/backups/pre-restore-$(timestamp).tar.gz"
+  restore_archive "$archive" "$before"
+  if ! start; then
+    compose stop -t 30 libredash || true
+    restore_archive "$before" "$ROOT/backups/failed-restore-$(timestamp).tar.gz"
+    start || true
+    fail "restored state failed health checks; previous state was reinstated"
+  fi
+}
+
+set_image() {
+  local image="$1" tmp="$DEPLOYMENT_ENV.tmp"
+  awk -F= -v image="$image" '$1=="LIBREDASH_IMAGE" {print "LIBREDASH_IMAGE=" image; next} {print}' "$DEPLOYMENT_ENV" >"$tmp"
+  chmod 0600 "$tmp" && mv "$tmp" "$DEPLOYMENT_ENV"
+}
+
+upgrade() {
+  [[ $# -eq 1 ]] || fail "upgrade requires one image digest"; require_digest "$1"; lock
+  local next="$1" current checkpoint
+  current="$(env_value LIBREDASH_IMAGE "$DEPLOYMENT_ENV")"; require_digest "$current"; [[ "$next" != "$current" ]] || { printf 'already running %s\n' "$next"; return; }
+  checkpoint="$ROOT/backups/pre-upgrade-$(timestamp).tar.gz"
+  is_running && compose stop -t 120 libredash
+  compose run --rm --no-deps libredash admin backup --out "/backups/$(basename "$checkpoint")"
+  printf 'PREVIOUS_IMAGE=%s\nCHECKPOINT=%s\n' "$current" "$checkpoint" >"$ROLLBACK_ENV"; chmod 0600 "$ROLLBACK_ENV"
+  set_image "$next"; compose pull libredash
+  if ! start; then
+    compose stop -t 30 libredash || true; set_image "$current"
+    restore_archive "$checkpoint" "$ROOT/backups/failed-upgrade-$(timestamp).tar.gz"
+    start || true; fail "upgrade failed; previous image and state were restored"
+  fi
+}
+
+rollback() {
+  [[ "${1:-}" == --confirm ]] || fail "rollback discards post-upgrade state; pass --confirm"
+  require_file "$ROLLBACK_ENV"; lock
+  local image checkpoint; image="$(env_value PREVIOUS_IMAGE "$ROLLBACK_ENV")"; checkpoint="$(env_value CHECKPOINT "$ROLLBACK_ENV")"
+  require_digest "$image"; [[ -f "$checkpoint" ]] || fail "rollback checkpoint is missing"
+  is_running && compose stop -t 120 libredash
+  set_image "$image"; restore_archive "$checkpoint" "$ROOT/backups/pre-rollback-$(timestamp).tar.gz"; start
+}
+
+usage() { printf '%s\n' 'Usage: libredashctl init|start|status|logs|first-login|backup|restore|upgrade|rollback'; }
+command="${1:-help}"; [[ $# -eq 0 ]] || shift
+case "$command" in
+  init) init_instance "$@";; start) start || fail "LibreDash did not become healthy";; status) status;; logs) logs "$@";; first-login) first_login;;
+  backup) backup "$@";; restore) restore "$@";; upgrade) upgrade "$@";; rollback) rollback "$@";;
+  help|-h|--help) usage;; *) fail "unknown command: $command";;
+esac
