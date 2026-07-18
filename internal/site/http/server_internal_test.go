@@ -176,7 +176,7 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
-	for _, path := range []string{"/static/favicon.svg", "/static/site.css", "/static/site-page.js", "/shared/app.css", "/shared/theme.js", "/static/vendor/datastar-1.0.2.js"} {
+	for _, path := range []string{"/static/favicon.svg", "/static/site.css", "/static/site-page.js", "/shared/app.css", "/shared/theme.js", "/shared/files/inter-latin-wght-normal.woff2", "/static/vendor/datastar-1.0.2.js", "/static/vendor/github-mark.svg"} {
 		response, err := server.Client().Get(server.URL + path)
 		if err != nil {
 			t.Fatalf("get %s: %v", path, err)
@@ -234,11 +234,12 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 
 	body := readBody(t, response)
 	for _, want := range []string{
-		"<title>LibreDash — governed analytics with dashboards and AI agents</title>",
+		"<title>LeapView — agent-native BI and analytics as code</title>",
 		`data-color-mode="auto"`,
 		`/updates`,
 		`data-init="@get(&#39;/updates&#39;, {openWhenHidden: true})"`,
 		`/shared/app.css`,
+		`<link rel="preload" href="/shared/files/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin="anonymous">`,
 		`/static/site.css`,
 		`/static/site-page.js`,
 		`<meta name="view-transition" content="same-origin">`,
@@ -252,7 +253,7 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 		`<ld-site-feature-icon name="dashboard" aria-hidden="true"></ld-site-feature-icon>`,
 		`<ld-site-feature-icon name="git-branch" aria-hidden="true"></ld-site-feature-icon>`,
 		`<section id="product" class="site-workflow">`,
-		`<ol class="site-stack-flow" aria-label="LibreDash position in the data stack">`,
+		`<ol class="site-stack-flow" aria-label="LeapView position in the data stack">`,
 		`<section class="site-interfaces-section">`,
 		`<article class="site-interface-card">`,
 		`<ld-site-feature-icon name="agent" aria-hidden="true"></ld-site-feature-icon>`,
@@ -268,6 +269,9 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 	}
 	if strings.Contains(body, "One model. Two ways to explore.") {
 		t.Error("home page still renders the removed live-interaction section")
+	}
+	if strings.Contains(body, "site-capabilities-section") {
+		t.Error("home page still renders the redundant capabilities section")
 	}
 }
 
@@ -286,7 +290,7 @@ func TestSiteChartsRendersPageStreamShowcase(t *testing.T) {
 
 	body := readBody(t, response)
 	for _, want := range []string{
-		"<title>LibreDash chart showcase</title>",
+		"<title>LeapView chart showcase</title>",
 		`data-init="@get(&#39;/updates?view=charts&#39;, {openWhenHidden: true})"`,
 		"<ld-site-chart-showcase>",
 	} {
@@ -392,7 +396,7 @@ func TestSiteDocsIndexListsEverySection(t *testing.T) {
 
 	body := readBody(t, response)
 	for _, want := range []string{
-		"<title>LibreDash documentation</title>",
+		"<title>LeapView documentation</title>",
 		"<h1>Documentation</h1>",
 		`href="/docs/introduction"`,
 		`href="/docs/concepts"`,

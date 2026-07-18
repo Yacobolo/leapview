@@ -62,7 +62,7 @@ func run(ctx context.Context, address string, baseURL *url.URL) error {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("LibreDash site listening on %s", address)
+		log.Printf("LeapView site listening on %s", address)
 		serverErrors <- server.ListenAndServe()
 	}()
 

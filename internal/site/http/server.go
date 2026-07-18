@@ -1,4 +1,4 @@
-// Package http serves the public LibreDash website and documentation portal.
+// Package http serves the public LeapView website and documentation portal.
 package http
 
 import (
@@ -137,12 +137,12 @@ func (w *gzipResponseWriter) Write(contents []byte) (int, error) {
 }
 
 func (s *siteServer) home(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, "LibreDash — governed analytics with dashboards and AI agents", "Open-source analytics with versioned semantic models, interactive dashboards, and governed AI agents.", "website", "")
+	metadata := s.metadata(r, siteBrandName+" — agent-native BI and analytics as code", "Build dashboards as code, keep analytics in version control, and explore data with native AI agents.", "website", "")
 	renderHTML(w, http.StatusOK, sitePage(metadata), "render site page")
 }
 
 func (s *siteServer) charts(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, "LibreDash chart showcase", "Explore LibreDash charts, KPIs, tables, and other data visualization components.", "website", "")
+	metadata := s.metadata(r, siteBrandName+" chart showcase", "Explore "+siteBrandName+" charts, KPIs, tables, and other data visualization components.", "website", "")
 	renderHTML(w, http.StatusOK, chartsPage(metadata), "render charts page")
 }
 
@@ -151,12 +151,12 @@ func gettingStarted(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *siteServer) docsIndex(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, "LibreDash documentation", "Learn how to install, model, build, secure, integrate, and operate LibreDash.", "website", "")
+	metadata := s.metadata(r, siteBrandName+" documentation", "Learn how to install, model, build, secure, integrate, and operate "+siteBrandName+".", "website", "")
 	renderHTML(w, http.StatusOK, docsIndexPage(metadata), "render docs index")
 }
 
 func (s *siteServer) docsSearch(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, "Search LibreDash documentation", "Search LibreDash concepts, guides, commands, and API documentation.", "website", "noindex,follow")
+	metadata := s.metadata(r, "Search "+siteBrandName+" documentation", "Search "+siteBrandName+" concepts, guides, commands, and API documentation.", "website", "noindex,follow")
 	renderHTML(w, http.StatusOK, docsSearchPage(strings.TrimSpace(r.URL.Query().Get("q")), metadata), "render documentation search")
 }
 
@@ -212,7 +212,7 @@ func health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *siteServer) notFound(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, "Page not found — LibreDash", "The requested LibreDash page could not be found.", "website", "noindex,follow")
+	metadata := s.metadata(r, "Page not found — "+siteBrandName, "The requested "+siteBrandName+" page could not be found.", "website", "noindex,follow")
 	renderHTML(w, http.StatusNotFound, notFoundPage(metadata), "render not found page")
 }
 

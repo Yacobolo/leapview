@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, LayoutDashboard, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, Copy, Database, Eclipse, GitBranch, LayoutDashboard, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/code-block'
@@ -1036,19 +1036,16 @@ class SiteBrandMark extends LitElement {
   static styles = css`
     :host {
       display: inline-grid;
-      width: var(--base-size-28);
-      height: var(--base-size-28);
+      width: var(--base-size-24);
+      height: var(--base-size-24);
       flex: 0 0 auto;
       place-items: center;
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-accent-muted);
       color: var(--ld-fg-accent);
     }
   `
 
   render() {
-    return lucideIcon(Blocks, { size: 18, strokeWidth: 2.2 })
+    return lucideIcon(Eclipse, { size: 22, strokeWidth: 2.2 })
   }
 }
 

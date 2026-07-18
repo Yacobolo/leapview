@@ -62,22 +62,34 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(
       await page
         .getByRole('heading', {
-          name: 'Explore trusted data with dashboards and AI agents.',
+          name: 'The agent-native BI platform.',
         })
         .isVisible(),
     ).toBe(true)
+    expect(await page.locator('.site-hero').getByText('Build dashboards as code, keep analytics in version control, and explore data with AI agents.').count()).toBe(1)
+    const githubLinks = page.getByRole('link', { name: 'View on GitHub' })
+    expect(await githubLinks.count()).toBe(2)
+    expect(await githubLinks.first().getAttribute('href')).toBe('https://github.com/Yacobolo/libredash')
+    expect(await githubLinks.locator('.site-github-mark').count()).toBe(2)
+    expect(
+      await githubLinks
+        .first()
+        .locator('.site-github-mark')
+        .evaluate((element) => getComputedStyle(element).maskImage),
+    ).toContain('/static/vendor/github-mark.svg')
     const productScreenshots = page.locator('img.site-product-screenshot')
     expect(await productScreenshots.count()).toBe(2)
     const lightProductScreenshot = page.locator('img.site-product-screenshot-light')
     const darkProductScreenshot = page.locator('img.site-product-screenshot-dark')
-    expect(await lightProductScreenshot.getAttribute('alt')).toBe('LibreDash Visual Showcase overview with KPIs, line, donut, and bar charts, and an analytical table')
-    expect(await darkProductScreenshot.getAttribute('alt')).toBe('LibreDash Visual Showcase overview with KPIs, line, donut, and bar charts, and an analytical table')
+    expect(await lightProductScreenshot.getAttribute('alt')).toBe('LeapView Visual Showcase overview with KPIs, line, donut, and bar charts, and an analytical table')
+    expect(await darkProductScreenshot.getAttribute('alt')).toBe('LeapView Visual Showcase overview with KPIs, line, donut, and bar charts, and an analytical table')
     await page.waitForFunction(() => {
       const images = Array.from(document.querySelectorAll<HTMLImageElement>('img.site-product-screenshot'))
       return images.length === 2 && images.every((image) => image.complete && image.naturalWidth > 0)
     })
     expect(await lightProductScreenshot.isVisible()).toBe(true)
     expect(await darkProductScreenshot.isVisible()).toBe(false)
+    expect(await page.locator('.site-product-caption').count()).toBe(0)
     const productFrameCenter = await page.locator('.site-product-frame').evaluate((element) => {
       const rect = element.getBoundingClientRect()
       return { frame: rect.left + rect.width / 2, viewport: window.innerWidth / 2 }
@@ -87,7 +99,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(
       await page
         .getByRole('heading', {
-          name: 'From versioned YAML to governed analytics.',
+          name: 'Ship analytics like software.',
         })
         .isVisible(),
     ).toBe(true)
@@ -95,25 +107,31 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(
       await page
         .getByRole('heading', {
-          name: 'Keep your data platform. Add the BI layer.',
+          name: 'Fits your existing data stack.',
         })
         .isVisible(),
     ).toBe(true)
     const stackFlow = page.getByRole('list', {
-      name: 'LibreDash position in the data stack',
+      name: 'LeapView position in the data stack',
     })
     expect(await stackFlow.locator('.site-stack-stage').count()).toBe(3)
     expect(await stackFlow.getByRole('heading', { name: 'Sources' }).count()).toBe(1)
     expect(await stackFlow.getByRole('heading', { name: 'Data platform' }).count()).toBe(1)
-    expect(await stackFlow.getByRole('heading', { name: 'LibreDash' }).count()).toBe(1)
+    expect(await stackFlow.getByRole('heading', { name: 'LeapView' }).count()).toBe(1)
     const interfaces = page.locator('.site-interfaces-section')
-    expect(await interfaces.getByRole('heading', { name: 'Use dashboards, AI agents, or both.' }).count()).toBe(1)
+    expect(await interfaces.getByRole('heading', { name: 'Dashboards and agents, together.' }).count()).toBe(1)
     expect(await interfaces.locator('.site-interface-card').count()).toBe(2)
     expect(await interfaces.getByRole('heading', { name: 'Dashboards', exact: true }).count()).toBe(1)
     expect(await interfaces.getByRole('heading', { name: 'AI agents', exact: true }).count()).toBe(1)
     expect(await interfaces.getByRole('link', { name: 'Explore agent integrations' }).getAttribute('href')).toBe('/docs/guides/integrate/agent')
     expect(await interfaces.locator('.site-interface-core').count()).toBe(1)
-    expect(await page.locator('.site-capabilities .site-capability').count()).toBe(4)
+    expect(await page.locator('.site-capabilities-section, .site-capabilities, .site-capability').count()).toBe(0)
+    expect(await page.locator('.site-shell').evaluate((element) => Array.from(element.children).map((child) => child.className))).toEqual([
+      'site-interfaces-section',
+      'site-workflow',
+      'site-stack-section',
+      'site-cta',
+    ])
     expect(await page.getByRole('contentinfo').count()).toBe(1)
     expect(await page.locator('.site-product-proof, ld-site-chart-demo').count()).toBe(0)
     expect(await page.getByRole('heading', { name: 'One model. Two ways to explore.' }).count()).toBe(0)
@@ -222,20 +240,36 @@ test('homepage flow background stays centered and bounded on ultra-wide screens'
   }
 })
 
-test('site brand pairs the LibreDash wordmark with the Lucide Blocks mark', async () => {
+test('site brand pairs the LeapView wordmark with the Lucide Eclipse mark', async () => {
   const page = await browser.newPage({
     viewport: { width: 1600, height: 900 },
   })
   try {
     await page.goto(baseURL)
-    const brand = page.getByRole('link', { name: 'LibreDash', exact: true }).first()
+    const brand = page.getByRole('link', { name: 'LeapView', exact: true }).first()
     const mark = brand.locator('ld-site-brand-mark')
     expect(await mark.count()).toBe(1)
     expect(await mark.getAttribute('aria-hidden')).toBe('true')
     expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('svg').length)).toBe(1)
-    const blocks = page.locator('ld-site-feature-icon[name="blocks"]').first()
-    const [brandGlyph, blocksGlyph] = await Promise.all([mark.evaluate((element) => element.shadowRoot?.querySelector('svg')?.innerHTML), blocks.evaluate((element) => element.shadowRoot?.querySelector('svg')?.innerHTML)])
-    expect(brandGlyph).toBe(blocksGlyph)
+    expect(await mark.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
+    expect(await mark.evaluate((element) => getComputedStyle(element).borderWidth)).toBe('0px')
+    const lockup = await brand.evaluate((element) => {
+      const mark = element.querySelector('ld-site-brand-mark')
+      const glyph = mark?.shadowRoot?.querySelector('svg')
+      const wordmark = element.querySelector('span')
+      const glyphBounds = glyph?.getBoundingClientRect()
+      const wordmarkBounds = wordmark?.getBoundingClientRect()
+      if (!glyphBounds || !wordmarkBounds) throw new Error('brand lockup is incomplete')
+      return {
+        opticalGap: wordmarkBounds.left - glyphBounds.right,
+        centerDelta: Math.abs((glyphBounds.top + glyphBounds.bottom) / 2 - (wordmarkBounds.top + wordmarkBounds.bottom) / 2),
+      }
+    })
+    expect(lockup.opticalGap).toBeGreaterThanOrEqual(6)
+    expect(lockup.opticalGap).toBeLessThanOrEqual(8)
+    expect(lockup.centerDelta).toBeLessThanOrEqual(1)
+    expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('circle[cx="12"][cy="12"][r="10"]').length)).toBe(1)
+    expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('path[d="M12 2a7 7 0 1 0 10 10"]').length)).toBe(1)
     const navigation = await page.locator('.site-nav').evaluate((element) => ({
       left: element.getBoundingClientRect().left,
       width: element.getBoundingClientRect().width,
@@ -243,6 +277,36 @@ test('site brand pairs the LibreDash wordmark with the Lucide Blocks mark', asyn
     }))
     expect(navigation.left).toBe(0)
     expect(navigation.width).toBe(navigation.viewportWidth)
+  } finally {
+    await page.close()
+  }
+})
+
+test('site loads Inter and uses a readable marketing and documentation type scale', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  try {
+    await page.goto(baseURL)
+    const fontLoaded = await page.evaluate(async () => {
+      await document.fonts.load('400 16px "Inter Variable"')
+      return document.fonts.check('400 16px "Inter Variable"')
+    })
+    expect(fontLoaded).toBe(true)
+
+    const marketingType = await page.evaluate(() => {
+      const heading = getComputedStyle(document.querySelector<HTMLElement>('.site-hero h1')!)
+      const button = getComputedStyle(document.querySelector<HTMLElement>('.site-button')!)
+      return {
+        headingTracking: Number.parseFloat(heading.letterSpacing),
+        buttonSize: Number.parseFloat(button.fontSize),
+      }
+    })
+    expect(marketingType.headingTracking).toBeLessThan(0)
+    expect(marketingType.buttonSize).toBeGreaterThanOrEqual(14)
+
+    await page.goto(`${baseURL}/docs/introduction`)
+    expect(
+      await page.locator('.site-docs-article').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+    ).toBeGreaterThanOrEqual(16)
   } finally {
     await page.close()
   }
@@ -256,7 +320,7 @@ test('documentation header keeps only search and theme actions', async () => {
     await page.goto(`${baseURL}/docs/introduction`)
     const header = page.locator('.site-header')
     const actions = header.locator('.site-nav-actions')
-    expect(await header.getByRole('link', { name: 'LibreDash', exact: true }).count()).toBe(1)
+    expect(await header.getByRole('link', { name: 'LeapView', exact: true }).count()).toBe(1)
     expect(await actions.locator('ld-site-search').count()).toBe(1)
     expect(await actions.locator('ld-site-theme-toggle').count()).toBe(1)
     expect(await actions.locator('ld-site-docs-drawer-toggle').count()).toBe(0)
@@ -331,8 +395,6 @@ test('mobile landing page keeps the product story compact and ordered', async ()
     expect(await menuButton.count()).toBe(1)
     expect(await menuButton.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
 
-    const capabilityColumns = await page.locator('.site-capabilities').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
-    expect(capabilityColumns).toBe(1)
     expect(await page.locator('.site-interfaces-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
     expect(await menuButton.getAttribute('aria-expanded')).toBe('false')
 
@@ -346,7 +408,7 @@ test('mobile landing page keeps the product story compact and ordered', async ()
     expect(proofHeights).toHaveLength(4)
     expect(Math.max(...proofHeights)).toBeLessThan(180)
 
-    expect(await page.getByRole('list', { name: 'LibreDash position in the data stack' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
+    expect(await page.getByRole('list', { name: 'LeapView position in the data stack' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
     const screenshot = page.locator('img.site-product-screenshot-light')
     expect(await screenshot.evaluate((element) => element.getBoundingClientRect().width <= element.parentElement!.getBoundingClientRect().width)).toBe(true)
     expect(await page.locator('ld-site-flow-background').evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(800)
@@ -354,12 +416,10 @@ test('mobile landing page keeps the product story compact and ordered', async ()
     await page.setViewportSize({ width: 533, height: 900 })
     const mobileHeroTitleSize = await page.locator('.site-hero h1').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     expect(mobileHeroTitleSize).toBeLessThanOrEqual(40)
-    expect(await page.locator('.site-capabilities-heading').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
     await page.setViewportSize({ width: 768, height: 900 })
-    expect(await page.getByRole('list', { name: 'LibreDash position in the data stack' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
-    expect(await page.locator('.site-capabilities').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2)
+    expect(await page.getByRole('list', { name: 'LeapView position in the data stack' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
     expect(await page.locator('.site-interfaces-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   } finally {
@@ -628,7 +688,7 @@ test('documentation articles provide a readable, navigable reference experience'
     })
     expect(typography.headingFontSize).toBe(36)
     expect(typography.headingLineHeight / typography.headingFontSize).toBeCloseTo(1.2, 2)
-    expect(typography.paragraphFontSize).toBe(15)
+    expect(typography.paragraphFontSize).toBe(16)
     expect(typography.paragraphLineHeight / typography.paragraphFontSize).toBeCloseTo(1.65, 2)
     expect(typography.codeFontSize).toBe(14)
     expect(typography.navigationFontSize).toBe(13)

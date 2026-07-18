@@ -20,6 +20,24 @@ test('site entrypoint is a production bundle with lazy feature chunks', async ()
   expect(chunks.some((path) => path.includes('topology-background'))).toBe(false)
 })
 
+test('site build vendors the GitHub mark used by repository links', async () => {
+  const mark = Bun.file('site/static/vendor/github-mark.svg')
+  expect(await mark.exists()).toBe(true)
+  expect(await mark.text()).toContain('viewBox="0 0 24 24"')
+})
+
+test('site build publishes every Inter subset referenced by the shared stylesheet', async () => {
+  const sourceFonts: string[] = []
+  const glob = new Bun.Glob('static/files/inter-*.woff2')
+  for await (const path of glob.scan({ cwd: '.', onlyFiles: true })) sourceFonts.push(path)
+
+  expect(sourceFonts.length).toBeGreaterThan(0)
+  for (const sourcePath of sourceFonts) {
+    const fileName = sourcePath.split('/').at(-1)
+    expect(await Bun.file(`site/static/shared/files/${fileName}`).exists()).toBe(true)
+  }
+})
+
 test('homepage flow background is composed only from continuous ribbons', async () => {
   const source = await Bun.file('site/web/site-flow-background.ts').text()
 
