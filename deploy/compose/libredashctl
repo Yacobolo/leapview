@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${LIBREDASHCTL_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}"
+ROOT="${LIBREDASHCTL_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)}"
 DOCKER_BIN="${LIBREDASHCTL_DOCKER_BIN:-docker}"
 DEPLOYMENT_ENV="$ROOT/deployment.env"
 APP_ENV="$ROOT/libredash.env"
@@ -30,8 +30,9 @@ compose() {
 container_id() { compose ps -q libredash; }
 is_running() { local id; id="$(container_id 2>/dev/null || true)"; [[ -n "$id" && "$($DOCKER_BIN inspect -f '{{.State.Running}}' "$id" 2>/dev/null || true)" == true ]]; }
 wait_healthy() {
-  local id status attempt; id="$(container_id)"; [[ -n "$id" ]] || return 1
-  for attempt in $(seq 1 120); do
+  local id status attempt=0; id="$(container_id)"; [[ -n "$id" ]] || return 1
+  while (( attempt < 120 )); do
+    attempt=$((attempt + 1))
     status="$($DOCKER_BIN inspect -f '{{.State.Health.Status}}' "$id" 2>/dev/null || true)"
     [[ "$status" == healthy ]] && return 0
     [[ "$status" == unhealthy ]] && break
@@ -118,7 +119,8 @@ restore() {
   local archive="$1"; [[ -f "$archive" ]] || archive="$ROOT/backups/$(basename "$archive")"; [[ -f "$archive" ]] || fail "archive not found"
   lock
   if is_running; then compose stop -t 120 libredash; fi
-  local before="$ROOT/backups/pre-restore-$(timestamp).tar.gz"
+  local before
+  before="$ROOT/backups/pre-restore-$(timestamp).tar.gz"
   if ! restore_archive "$archive" "$before"; then
     start || true
     fail "restore failed before health checking; the previous service state was restarted"
