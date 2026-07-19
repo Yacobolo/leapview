@@ -23,8 +23,8 @@ docs/catalog.json
 docs/search-index.sqlite3
 docs/configuration.md
 docs/api/*.md
+docs/api/operations.json
 docs/reference/cli/*
-!docs/reference/cli/manifest.json
 docs/reference/config/
 static/app.css
 static/asset-version.txt

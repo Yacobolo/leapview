@@ -293,7 +293,7 @@ tasks:
     cmds:
       - task: config:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/api/operations.json docs/reference/cli/manifest.json docs/llms.txt schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt schemas/config schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
 
   api:generate:
