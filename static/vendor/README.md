@@ -8,3 +8,17 @@
 - Upstream: `https://github.com/starfederation/datastar`
 
 LibreDash serves Datastar locally so page streaming does not depend on a CDN at runtime.
+
+## Integration logos
+
+The public-site build vendors the grayscale SVGs used by DuckDB's
+[`#ecosystem`](https://duckdb.org/#ecosystem) diagram. They were extracted from
+`_includes/ecosystem_diagram.html` in `duckdb/duckdb-web` revision
+`ecc3163f86370638a5eea3961932fd1e16e8def1`.
+
+Hetzner is not present in DuckDB's diagram. Its square glyph comes from
+`simple-icons/simple-icons` revision
+`a78ea66ee5d93dfd2ab07458de8dff522dcf3d91` and uses the same grayscale
+treatment as the DuckDB-derived assets.
+
+The logos identify third-party compatibility and do not imply endorsement.
