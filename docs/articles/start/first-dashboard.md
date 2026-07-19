@@ -47,7 +47,7 @@ dashboards/workspaces/sales/semantic-models/sales.yaml
 dashboards/workspaces/sales/dashboards/executive-sales.yaml
 ```
 
-Read them from the outside in. The project discovers the Sales workspace. The workspace permits specific Olist sources and discovers its models, semantic model, dashboard, access rules, and agent policy. The dashboard finally refers to fields and measures exposed by the `sales` semantic model.
+Read them from the outside in. The project discovers the Sales workspace. The workspace permits specific Olist sources and discovers its models, semantic model, dashboard, and access rules. The dashboard finally refers to fields and measures exposed by the `sales` semantic model.
 
 ## Add a semantic metric
 

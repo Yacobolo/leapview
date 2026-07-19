@@ -297,7 +297,7 @@ LibreDash has peer product interfaces:
 ```text
 REST API / APIGen
 CLI
-agent tools
+built-in agent and MCP tools
 UI / HTML / Datastar
 ```
 
@@ -308,7 +308,7 @@ Rules:
 - TypeSpec/APIGen owns the canonical headless REST contract and generator metadata.
 - API DTOs live in `internal/api` as framework-neutral wire contracts only.
 - CLI commands should use generated APIGen operation metadata where possible, with small UX wrappers only when needed.
-- Agent tools should derive from APIGen operation metadata, then be filtered by risk, permission, workspace scope, credential constraints, and agent policy.
+- The built-in agent and MCP should consume one governed tool catalog derived from APIGen operation metadata, with shared risk, permission, explicit workspace argument, credential, execution, projection, audit, and error behavior.
 - UI routes may render HTML and Datastar patches, but must call the same capability use cases as API, CLI, and agent interfaces for the same behavior.
 - Datastar signal shapes are UI-private adapter contracts. They must not become headless API DTOs.
 

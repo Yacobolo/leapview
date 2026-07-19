@@ -26,17 +26,16 @@ Connections and sources live at project scope so several workspaces can depend o
 
 ## Workspace
 
-A workspace is the primary product ownership and authorization boundary. It owns:
+A workspace is an asset container. It owns:
 
 - model tables and their materialization lifecycle;
 - semantic models and business definitions;
 - dashboards and report pages;
-- groups, role bindings, grants, and data policies;
-- an optional agent policy.
+- groups, role bindings, grants, and data policies that govern those assets.
 
 Workspace resources include `metadata.workspace` where their schema requires it. References must remain inside the allowed workspace and project graph. A Sales dashboard should not silently reach an Operations model table merely because both files exist in the repository.
 
-Use one workspace for a coherent audience and governed semantic surface. Do not create a workspace per dashboard; several related dashboards should normally reuse one workspace semantic layer. Split workspaces when ownership, source permissions, authorization, or operational lifecycle differs materially.
+Use one workspace for a coherent collection of related assets. Do not create a workspace per dashboard; several related dashboards should normally reuse one workspace semantic layer. Agent conversations and identities remain global. A workspace-aware tool selects the container explicitly and then enforces its asset privileges and data policies.
 
 ## Environment
 

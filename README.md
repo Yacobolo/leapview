@@ -35,9 +35,9 @@ go run ./cmd/libredash data sync --project dashboards/libredash.yaml --connectio
 - `GET /workspaces/{workspace}/assets/{asset}/details` renders canonical asset details, including semantic model, model table, field, measure, source, and dashboard definitions.
 - `GET /workspaces/{workspace}/assets/{asset}/lineage` renders canonical asset lineage.
 - `GET /updates?...` is the canonical long-running Datastar SSE transport; pages open it from `data-init`, and commands publish signal patches back to that stream.
-- `GET /workspaces/{workspace}/chat` renders workspace-scoped agent chat when the workspace policy enables it.
+- `GET /chats` renders global, principal-owned agent conversations; workspace-aware tools select an asset workspace explicitly.
 - DuckDB registers local CSV files as views and materializes model-scoped import tables.
-- `dashboards/libredash.yaml` is the CaC project entrypoint for global connections/sources and workspace-scoped models, semantic models, dashboards, access, and agent policy.
+- `dashboards/libredash.yaml` is the CaC project entrypoint for global connections/sources and workspace-scoped models, semantic models, dashboards, and access resources.
 - Semantic model YAML follows `sources -> models -> semantic model`: sources are raw physical inputs, models are light DuckDB-backed preparation tables, and semantic models own tables, fields, relationships, and measures.
 - Dashboard YAML owns pages, filters, KPIs, visuals, tables, and interactions over semantic model fields and measures.
 - Lit route components consume typed Datastar-backed page signals; dashboard visuals bind to signal payloads such as `visuals.revenue`.

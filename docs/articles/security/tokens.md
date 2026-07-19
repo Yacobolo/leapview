@@ -17,7 +17,7 @@ Examples of separate identities include:
 - a project deployer for one environment;
 - a managed-data publisher for one project;
 - a read-only semantic-query integration for one workspace;
-- an agent workload allowed to use one agent policy;
+- an MCP workload allowed to use the agent and only the required asset workspaces;
 - a monitoring principal for bounded synthetic queries.
 
 Do not grant platform administration because a narrower workflow initially returns `403`. Inspect effective privileges and add the missing specific privilege at the correct scope.

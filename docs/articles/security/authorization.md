@@ -4,7 +4,7 @@ LibreDash authorization assigns privileges on securable resources to principals,
 
 ## Securable hierarchy
 
-Securable objects include workspaces, dashboards, semantic models, sources, model tables, agent policies, datasets, tables, and columns. Objects participate in a parent hierarchy, so effective access may include inherited privileges as well as direct grants.
+Securable objects include workspaces, dashboards, semantic models, sources, model tables, datasets, tables, and columns. Objects participate in a parent hierarchy, so effective access may include inherited privileges as well as direct grants.
 
 Review the effective privilege result rather than assuming a direct binding is the only source of access. The Current User and Access APIs expose effective-privilege views for this purpose.
 

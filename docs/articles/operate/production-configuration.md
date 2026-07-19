@@ -16,6 +16,8 @@ Run this in artifact smoke tests and again in the deployment environment. `--pro
 
 Set the listen address and explicit accepted hosts. Terminate TLS at a maintained reverse proxy or load balancer and preserve the public scheme/host required by authentication callbacks.
 
+Set `LIBREDASH_PUBLIC_URL` to the application deployment's canonical HTTPS origin. The MCP endpoint and OAuth resource are derived as `${LIBREDASH_PUBLIC_URL}/mcp`, so this must be the BI application's address, not the separate `https://leapview.dev` documentation site. See [Connect an MCP host](/docs/guides/integrate/mcp) for the complete discovery and authentication flow.
+
 `LIBREDASH_TRUST_PROXY_HEADERS` must be enabled only when requests arrive through a trusted proxy that overwrites client-address headers. Never trust forwarding headers from an arbitrary public client.
 
 Browser authentication in production requires secure cookies. Configure exact public OIDC or Azure callback URLs and register those same URLs with the identity provider.
@@ -69,5 +71,6 @@ Before exposing traffic:
 6. Readiness fails when required persistent dependencies are unavailable.
 7. A backup and isolated restore have been tested.
 8. Query and refresh limits fit host capacity.
+9. MCP OAuth discovery uses the intended deployment origin and `/mcp` rejects general API tokens.
 
 Use the generated [environment variable reference](/docs/configuration) as the source of truth; it is generated from the runtime configuration specification and includes every cross-field relationship.

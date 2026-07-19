@@ -536,6 +536,31 @@ func TestEveryCatalogDocumentHasAReachableRoute(t *testing.T) {
 	}
 }
 
+func TestSiteServesDeploymentScopedMCPGuide(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs/guides/integrate/mcp")
+	if err != nil {
+		t.Fatalf("get MCP guide: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("MCP guide status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	body := readBody(t, response)
+	for _, want := range []string{
+		"Connect an MCP host to LibreDash",
+		"https://bi.example.com/mcp",
+		"https://leapview.dev",
+		"remote MCP custom connector guide",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("MCP guide missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestSiteChartsDocumentationParentPathIsNotAnArticle(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()

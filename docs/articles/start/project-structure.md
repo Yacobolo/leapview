@@ -58,7 +58,6 @@ Each `workspace.yaml` declares which project sources the workspace may consume a
 - `semantic-models/` contains reusable dimensions, measures, metrics, and relationships.
 - `dashboards/` contains filters, visual queries, tables, pages, and layout.
 - `access/` contains groups, role bindings, grants, and data policies.
-- `agent/` contains the optional workspace agent policy.
 
 Workspace metadata supplies the stable resource name used in routes and authorization. Renaming that identifier is not the same as changing its display title; treat identifier changes as migrations.
 

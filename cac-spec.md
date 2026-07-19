@@ -50,7 +50,8 @@ Platform resources must not depend on workspace resources.
 
 ### Workspace
 
-A workspace is a BI asset and permission boundary.
+A workspace is a BI asset container and the authorization parent for the assets
+inside it. It is not a conversation or agent-identity boundary.
 
 Workspace resources:
 
@@ -61,7 +62,6 @@ Workspace resources:
 - `SemanticModel`
 - `Dashboard`
 - Materialization settings
-- Workspace agent policy
 
 Workspace resources may depend on platform resources and resources in the same
 workspace. They must not depend on another workspace unless an explicit sharing
@@ -445,7 +445,6 @@ The plan must report:
 - Breaking changes
 - Materialization impact
 - Access policy changes, if access is managed from code
-- Agent policy changes, if agent policy is managed from code
 
 The plan must be deterministic for the same inputs.
 

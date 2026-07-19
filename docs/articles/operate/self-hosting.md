@@ -26,7 +26,7 @@ go build ./cmd/libredash
 
 Production automation should publish an OCI image and record its digest. Deploy the digest, not a mutable tag. The public documentation site is a separate binary and can be built with `task site:binary` when it is part of the release.
 
-Build the public site image with `task site:image` (which uses `Dockerfile.site`). Set `LIBREDASH_SITE_BASE_URL` to its external HTTPS origin so canonical URLs, the sitemap, robots discovery, and HSTS describe the deployment rather than the internal listener. Point orchestration probes at `/healthz` and `/readyz` on port 8081.
+Build the public site image with `task site:image` (which uses `Dockerfile.site`). The official documentation deployment uses `LIBREDASH_SITE_BASE_URL=https://leapview.dev`. Set that variable to the site's external HTTPS origin for another deployment so canonical URLs, the sitemap, robots discovery, and HSTS describe the deployment rather than the internal listener. Point orchestration probes at `/healthz` and `/readyz` on port 8081.
 
 ## Validate the deployment contract
 

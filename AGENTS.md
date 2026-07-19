@@ -4,7 +4,7 @@ LibreDash is a dashboards-as-code BI monolith. Go owns configuration compilation
 
 ## Architecture
 
-- `dashboards/libredash.yaml` is the project entrypoint. It references global connections and sources plus workspace-scoped models, semantic models, dashboards, access policy, and agent policy.
+- `dashboards/libredash.yaml` is the project entrypoint. It references global connections and sources plus workspace-scoped models, semantic models, dashboards, and access policy.
 - `internal/workspace/compiler/` loads, validates, and compiles the project into deployable serving-state artifacts.
 - `internal/deployment/`, `internal/servingstate/`, and `internal/runtimehost/` prepare immutable serving-state generations, activate them per workspace/environment, lease DuckLake snapshots, and drain readers safely during cutover.
 - `internal/manageddata/` implements local and S3-backed ingestion, revisions, upload protocols, runtime views, retention, and binding resolution.

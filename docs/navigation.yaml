@@ -234,8 +234,12 @@ sections:
         source: articles/integrate/headless-bi.md
       - slug: guides/integrate/agent
         title: Agent integrations
-        summary: Configure agent policies, tools, and conversations.
+        summary: Use global conversations and the shared governed tool catalog.
         source: articles/integrate/agent.md
+      - slug: guides/integrate/mcp
+        title: Connect an MCP host
+        summary: Connect Claude and other MCP hosts to a LibreDash deployment over OAuth.
+        source: articles/integrate/mcp.md
       - slug: cli/automation
         title: Automation and CI
         summary: Run validation and deployments safely in CI.

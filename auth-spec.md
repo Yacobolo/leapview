@@ -164,9 +164,11 @@ not role names.
 
 Workspace access and item access are separate.
 
-A user can receive access to a dashboard, semantic model, or agent policy
-without becoming a workspace admin. This mirrors Fabric item sharing while using
-the same grant engine internally.
+A user can receive access to a dashboard or semantic model without becoming a
+workspace admin. Agent access is principal-scoped: `VIEW_AGENT` governs global
+conversation reads and `USE_AGENT` governs turns and MCP access, while every
+workspace-aware tool independently authorizes the selected asset workspace.
+This mirrors Fabric item sharing while using the same grant engine internally.
 
 Examples:
 

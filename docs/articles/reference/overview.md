@@ -4,7 +4,7 @@ Reference pages describe exact accepted syntax and supported machine contracts. 
 
 ## Configuration
 
-YAML resource pages are generated from exported schemas and include a representative example, field table, nested definitions, and downloadable JSON Schema. The catalog covers projects, connections, sources, workspaces, model tables, semantic models, dashboards, access resources, and agent policies.
+YAML resource pages are generated from exported schemas and include a representative example, field table, nested definitions, and downloadable JSON Schema. The catalog covers projects, connections, sources, workspaces, model tables, semantic models, dashboards, and access resources.
 
 When a guide and reference appear to disagree on exact syntax, follow the generated resource page and report the guide drift. Do not hand-edit generated pages.
 
