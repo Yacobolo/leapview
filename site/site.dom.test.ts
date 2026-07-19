@@ -188,10 +188,9 @@ test('site explains the product, its workflow, and where it fits in the data sta
     const clientInterfaces = productNode.getByRole('list', { name: 'LeapView interfaces' })
     expect(await clientInterfaces.locator('.site-stack-client-interface').count()).toBe(4)
     for (const [label, icon] of [
-      ['Web app', 'dashboard'],
+      ['Web app', 'square-mouse-pointer'],
       ['CLI', 'terminal'],
       ['REST API', 'code-xml'],
-      ['MCP', 'waypoints'],
     ]) {
       const clientInterface = clientInterfaces.locator(`.site-stack-client-interface[aria-label="${label}"]`)
       expect(await clientInterface.count()).toBe(1)
@@ -201,6 +200,9 @@ test('site explains the product, its workflow, and where it fits in the data sta
       expect(await clientInterface.evaluate((element) => element.childNodes.length)).toBe(1)
     }
     const mcpInterface = clientInterfaces.locator('.site-stack-client-interface[aria-label="MCP"]')
+    expect(await mcpInterface.locator('.site-stack-mcp-mark[aria-hidden="true"] > svg').count()).toBe(1)
+    expect(await mcpInterface.locator('ld-site-feature-icon').count()).toBe(0)
+    expect(await mcpInterface.evaluate((element) => element.childNodes.length)).toBe(1)
     expect(
       await mcpInterface.evaluate((element) => ({
         content: getComputedStyle(element, '::after').content,

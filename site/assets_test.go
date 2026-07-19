@@ -22,3 +22,15 @@ func TestIntegrationLogoRejectsPathTraversal(t *testing.T) {
 		t.Fatal("expected path traversal to be rejected")
 	}
 }
+
+func TestMCPMarkReturnsOfficialVendoredSVG(t *testing.T) {
+	mark, err := MCPMark()
+	if err != nil {
+		t.Fatalf("read MCP mark: %v", err)
+	}
+	for _, expected := range []string{`viewBox="0 0 180 180"`, `stroke="currentColor"`} {
+		if !strings.Contains(mark, expected) {
+			t.Errorf("MCP mark does not contain %q", expected)
+		}
+	}
+}

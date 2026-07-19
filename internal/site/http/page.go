@@ -416,22 +416,38 @@ func siteStackProductNode() g.Node {
 		h.Div(h.Class("site-stack-client-surface"),
 			h.H4(g.Text("Interfaces")),
 			h.Ul(h.Class("site-stack-client-interfaces"), g.Attr("aria-label", siteBrandName+" interfaces"),
-				siteStackClientInterface("Web app", "dashboard"),
-				siteStackClientInterface("CLI", "terminal"),
-				siteStackClientInterface("REST API", "code-xml"),
-				siteStackClientInterface("MCP", "waypoints"),
+				siteStackClientInterface("Web app", siteStackFeatureIcon("square-mouse-pointer")),
+				siteStackClientInterface("CLI", siteStackFeatureIcon("terminal")),
+				siteStackClientInterface("REST API", siteStackFeatureIcon("code-xml")),
+				siteStackClientInterface("MCP", siteStackMCPMark()),
 			),
 		),
 	)
 }
 
-func siteStackClientInterface(label, icon string) g.Node {
+func siteStackClientInterface(label string, icon g.Node) g.Node {
 	return h.Li(
 		h.Class("site-stack-integration site-stack-client-interface"),
 		g.Attr("aria-label", label),
 		g.Attr("data-label", label),
 		g.Attr("tabindex", "0"),
-		g.El("ld-site-feature-icon", g.Attr("name", icon), g.Attr("plain", ""), g.Attr("aria-hidden", "true")),
+		icon,
+	)
+}
+
+func siteStackFeatureIcon(name string) g.Node {
+	return g.El("ld-site-feature-icon", g.Attr("name", name), g.Attr("plain", ""), g.Attr("aria-hidden", "true"))
+}
+
+func siteStackMCPMark() g.Node {
+	mark, err := siteassets.MCPMark()
+	if err != nil {
+		panic(err)
+	}
+	return h.Span(
+		h.Class("site-stack-mcp-mark"),
+		g.Attr("aria-hidden", "true"),
+		g.Raw(mark),
 	)
 }
 

@@ -1357,6 +1357,19 @@ ld-site-search:not(:defined) > .site-search-active-input {
   color: var(--ld-fg-muted);
 }
 
+.site-stack-mcp-mark {
+  display: block;
+  width: var(--base-size-24);
+  height: var(--base-size-24);
+  color: currentColor;
+}
+
+.site-stack-mcp-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .site-stack-edges {
   position: absolute;
   z-index: 1;

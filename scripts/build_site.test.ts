@@ -26,6 +26,16 @@ test('site build vendors the GitHub mark used by repository links', async () => 
   expect(await mark.text()).toContain('viewBox="0 0 24 24"')
 })
 
+test('site build vendors the official MCP mark used by the interface diagram', async () => {
+  const mark = Bun.file('site/static/vendor/mcp-mark.svg')
+  expect(await mark.exists()).toBe(true)
+  const source = await mark.text()
+  expect(source).toContain('viewBox="0 0 180 180"')
+  expect(source).toContain('stroke="currentColor"')
+  expect(source).not.toContain('<script')
+  expect(source).not.toContain('xlink:href')
+})
+
 test('site build vendors the featured integration logos', async () => {
   for (const name of [
     'postgresql',

@@ -9,6 +9,18 @@
 
 LibreDash serves Datastar locally so page streaming does not depend on a CDN at runtime.
 
+## Model Context Protocol mark
+
+- File: `mcp-mark.svg`
+- Source: `docs/favicon.svg` in the official
+  [`modelcontextprotocol/modelcontextprotocol`](https://github.com/modelcontextprotocol/modelcontextprotocol)
+  repository
+- License: MIT
+
+The transparent, `currentColor` variant preserves the official mark geometry
+while allowing the public site to apply its Primer-backed foreground tokens in
+light and dark themes.
+
 ## Integration logos
 
 The public-site build vendors the grayscale SVGs used by DuckDB's

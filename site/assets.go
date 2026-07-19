@@ -38,6 +38,17 @@ func IntegrationLogo(name string) (string, error) {
 	return string(contents), nil
 }
 
+// MCPMark returns the official, trusted Model Context Protocol mark for inline
+// rendering. The mark uses currentColor so the containing interface tile can
+// source its foreground from the site's Primer-backed tokens.
+func MCPMark() (string, error) {
+	contents, err := files.ReadFile("static/vendor/mcp-mark.svg")
+	if err != nil {
+		return "", fmt.Errorf("read MCP mark: %w", err)
+	}
+	return string(contents), nil
+}
+
 func sub(path string) fs.FS {
 	static, err := fs.Sub(files, path)
 	if err != nil {

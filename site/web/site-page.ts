@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database, Eclipse, GitBranch, LayoutDashboard, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, SquareTerminal, Sun, Waypoints, X, type IconNode } from 'lucide'
+import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database, Eclipse, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, SquareMousePointer, SquareTerminal, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/code-block'
@@ -1069,13 +1069,12 @@ const featureIcons: Record<string, IconNode> = {
   boxes: Boxes,
   chart: ChartNoAxesCombined,
   'code-xml': CodeXml,
-  dashboard: LayoutDashboard,
   database: Database,
   'git-branch': GitBranch,
   radio: Radio,
   server: Server,
+  'square-mouse-pointer': SquareMousePointer,
   terminal: SquareTerminal,
-  waypoints: Waypoints,
 }
 
 class SiteFeatureIcon extends LitElement {

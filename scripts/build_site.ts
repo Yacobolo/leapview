@@ -24,6 +24,7 @@ await Promise.all([
   Bun.write('site/static/shared/theme.js', Bun.file('static/theme.js')),
   Bun.write('site/static/vendor/datastar-1.0.2.js', Bun.file('static/vendor/datastar-1.0.2.js')),
   Bun.write('site/static/vendor/github-mark.svg', Bun.file('static/vendor/github-mark.svg')),
+  Bun.write('site/static/vendor/mcp-mark.svg', Bun.file('static/vendor/mcp-mark.svg')),
   ...integrationLogoCopies,
   ...fontCopies,
 ])
