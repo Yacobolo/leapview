@@ -17,6 +17,13 @@ package contracts
 	secret!:   string
 })
 
+#AmbientCredentials: close({
+	provider!:    "ambient"
+	region?:      string
+	endpoint?:    string
+	accountName?: string
+})
+
 #APIVersion: "libredash.dev/v1"
 
 #Metadata: close({
@@ -187,7 +194,7 @@ package contracts
 	database?:    string
 	username?:    string
 	sslMode?:     string
-	credentials?: #NoCredentials | #EnvCredentials
+	credentials?: #NoCredentials | #EnvCredentials | #AmbientCredentials
 	options?:     #AnyObject
 	defaults?: close({
 		options?: #AnyObject

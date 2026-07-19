@@ -101,7 +101,8 @@ WHERE refresh_job_runs.status IN (sqlc.arg(queued_status), sqlc.arg(running_stat
   AND job_id IN (
     SELECT j.id FROM refresh_jobs j
     JOIN serving_states d ON d.id = j.serving_state_id
-    WHERE d.status IN ('failed', 'delete_scheduled', 'deleted')
+    WHERE d.environment = sqlc.arg(environment)
+      AND d.status IN ('failed', 'delete_scheduled', 'deleted')
   );
 
 -- name: FailTerminalServingStateJobs :exec
@@ -109,7 +110,9 @@ UPDATE refresh_jobs
 SET status = sqlc.arg(failed_status), updated_at = CURRENT_TIMESTAMP
 WHERE refresh_jobs.status IN (sqlc.arg(queued_status), sqlc.arg(running_status))
   AND serving_state_id IN (
-    SELECT id FROM serving_states WHERE status IN ('failed', 'delete_scheduled', 'deleted')
+    SELECT id FROM serving_states
+    WHERE environment = sqlc.arg(environment)
+      AND status IN ('failed', 'delete_scheduled', 'deleted')
   );
 
 -- name: MarkMaterializationRunActive :execresult

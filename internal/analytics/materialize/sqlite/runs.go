@@ -353,7 +353,7 @@ func (r *SQLRunRepository) CancelRun(ctx context.Context, workspaceID, runID str
 	return r.GetRun(ctx, workspaceID, runID)
 }
 
-func (r *SQLRunRepository) FailRunsForTerminalServingStates(ctx context.Context, message string) error {
+func (r *SQLRunRepository) FailRunsForTerminalServingStates(ctx context.Context, environment, message string) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("refresh run database is required")
 	}
@@ -369,12 +369,12 @@ func (r *SQLRunRepository) FailRunsForTerminalServingStates(ctx context.Context,
 	q := r.q.WithTx(tx)
 	if err := q.FailTerminalServingStateRuns(ctx, platformdb.FailTerminalServingStateRunsParams{
 		FailedStatus: materialize.RunStatusFailed, ErrorMessage: message,
-		QueuedStatus: materialize.RunStatusQueued, RunningStatus: materialize.RunStatusRunning,
+		QueuedStatus: materialize.RunStatusQueued, RunningStatus: materialize.RunStatusRunning, Environment: environment,
 	}); err != nil {
 		return err
 	}
 	if err := q.FailTerminalServingStateJobs(ctx, platformdb.FailTerminalServingStateJobsParams{
-		FailedStatus: materialize.RunStatusFailed, QueuedStatus: materialize.RunStatusQueued, RunningStatus: materialize.RunStatusRunning,
+		FailedStatus: materialize.RunStatusFailed, QueuedStatus: materialize.RunStatusQueued, RunningStatus: materialize.RunStatusRunning, Environment: environment,
 	}); err != nil {
 		return err
 	}

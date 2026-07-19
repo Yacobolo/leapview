@@ -94,6 +94,7 @@ func newDuckLakeHarness(t *testing.T, opts ...func(*app.Options)) *duckLakeHarne
 		Environment:  servingstate.DefaultEnvironment,
 		OnDrained: func(servingstate.ID, int64) {
 			_, _ = storagemaintenance.Run(context.Background(), deploymentRepo, storagemaintenance.Options{
+				Environment:                  servingstate.DefaultEnvironment,
 				RootDir:                      homeDir,
 				CatalogPath:                  catalogPath,
 				DataPath:                     dataPath,
@@ -558,7 +559,7 @@ func TestDuckLakeCleanupProtectsLeasedSnapshots(t *testing.T) {
 		t.Fatalf("refresh status = %d", got)
 	}
 	h.waitLatestRun(t, analyticsmaterialize.TargetModelTable, "sales.orders", analyticsmaterialize.RunStatusSucceeded)
-	report, err := storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: true})
+	report, err := storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{Environment: servingstate.DefaultEnvironment, RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: true})
 	if err != nil {
 		t.Fatalf("cleanup dry-run: %v", err)
 	}
@@ -568,7 +569,7 @@ func TestDuckLakeCleanupProtectsLeasedSnapshots(t *testing.T) {
 	if err := h.deployments.ReleaseQuerySnapshotLease(ctx, leaseID); err != nil {
 		t.Fatalf("release lease: %v", err)
 	}
-	report, err = storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: false})
+	report, err = storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{Environment: servingstate.DefaultEnvironment, RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: false})
 	if err != nil {
 		t.Fatalf("cleanup apply: %v", err)
 	}
@@ -600,7 +601,7 @@ func TestDuckLakeSnapshotProtectedByRunningQueryLease(t *testing.T) {
 		lease.Release()
 		t.Fatalf("active snapshot = %d, want newer than leased snapshot %d", got, initial)
 	}
-	report, err := storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: true})
+	report, err := storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{Environment: servingstate.DefaultEnvironment, RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: true})
 	if err != nil {
 		lease.Release()
 		t.Fatalf("cleanup dry-run: %v", err)
@@ -610,7 +611,7 @@ func TestDuckLakeSnapshotProtectedByRunningQueryLease(t *testing.T) {
 		t.Fatalf("lease-protected snapshots = %#v, want %d", report.LeaseProtectedSnapshots, initial)
 	}
 	lease.Release()
-	report, err = storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: false})
+	report, err = storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{Environment: servingstate.DefaultEnvironment, RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: false})
 	if err != nil {
 		t.Fatalf("cleanup apply after lease release: %v", err)
 	}
@@ -640,7 +641,7 @@ func TestDuckLakeCleanupRemovesUnleasedStaleSnapshots(t *testing.T) {
 		t.Fatalf("snapshot %d disappeared while lease was still held", initial)
 	}
 	lease.Release()
-	report, err := storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: false})
+	report, err := storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{Environment: servingstate.DefaultEnvironment, RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: false})
 	if err != nil {
 		t.Fatalf("cleanup apply: %v", err)
 	}
@@ -649,6 +650,35 @@ func TestDuckLakeCleanupRemovesUnleasedStaleSnapshots(t *testing.T) {
 	}
 	if containsSnapshot(h.duckLakeSnapshotIDs(t), initial) {
 		t.Fatalf("snapshot %d still exists after cleanup", initial)
+	}
+}
+
+func TestDuckLakeCleanupPreservesForeignEnvironmentSnapshots(t *testing.T) {
+	h := newDuckLakeHarness(t)
+	ctx := context.Background()
+	initial := h.activeSnapshot(t)
+	foreign, err := h.deployments.Create(ctx, servingstate.CreateInput{WorkspaceID: "sales", ProjectID: "historical", Environment: "prod", CreatedBy: "integration"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.deployments.RecordDuckLakeSnapshot(ctx, foreign.ID, initial); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.SQLDB().ExecContext(ctx, "UPDATE serving_states SET status = ? WHERE id = ?", string(servingstate.StatusInactive), string(foreign.ID)); err != nil {
+		t.Fatal(err)
+	}
+	writeMutatedOlistFixture(t, h.dataDir)
+	ordersAssetID := integrationAssetID(t, h.store, "sales", "model_table", "sales.orders")
+	if got := h.postAuthenticated(t, "/workspaces/sales/assets/"+ordersAssetID+"/refresh"); got != http.StatusNoContent {
+		t.Fatalf("refresh status = %d", got)
+	}
+	h.waitLatestRun(t, analyticsmaterialize.TargetModelTable, "sales.orders", analyticsmaterialize.RunStatusSucceeded)
+	report, err := storagemaintenance.Run(ctx, h.deployments, storagemaintenance.Options{Environment: servingstate.DefaultEnvironment, RootDir: h.homeDir, CatalogPath: h.catalogPath, DataPath: h.dataPath, DryRun: false})
+	if err != nil {
+		t.Fatalf("cleanup apply: %v", err)
+	}
+	if !containsSnapshot(report.ForeignProtectedSnapshots, initial) || !containsSnapshot(h.duckLakeSnapshotIDs(t), initial) {
+		t.Fatalf("foreign snapshot %d was not preserved: %#v", initial, report)
 	}
 }
 

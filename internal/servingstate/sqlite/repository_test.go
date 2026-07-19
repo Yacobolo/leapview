@@ -380,7 +380,7 @@ func TestRepositoryListsReferencedDuckLakeSnapshots(t *testing.T) {
 		t.Fatalf("mark prod inactive: %v", err)
 	}
 
-	got, err := repo.ReferencedDuckLakeSnapshots(ctx)
+	got, err := repo.ReferencedDuckLakeSnapshots(ctx, string(servingstate.DefaultEnvironment))
 	if err != nil {
 		t.Fatalf("referenced snapshots: %v", err)
 	}
@@ -392,6 +392,13 @@ func TestRepositoryListsReferencedDuckLakeSnapshots(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("referenced snapshots = %#v, want %#v", got, want)
 		}
+	}
+	foreign, err := repo.ForeignEnvironmentDuckLakeSnapshots(ctx, string(servingstate.DefaultEnvironment))
+	if err != nil {
+		t.Fatalf("foreign environment snapshots: %v", err)
+	}
+	if len(foreign) != 1 || foreign[0] != 11 {
+		t.Fatalf("foreign environment snapshots = %#v, want [11]", foreign)
 	}
 }
 
@@ -423,7 +430,7 @@ func TestRepositoryPersistsQuerySnapshotLeaseLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create lease: %v", err)
 	}
-	leased, err := repo.LeasedDuckLakeSnapshots(ctx)
+	leased, err := repo.LeasedDuckLakeSnapshots(ctx, string(servingstate.DefaultEnvironment))
 	if err != nil {
 		t.Fatalf("leased snapshots: %v", err)
 	}
@@ -433,7 +440,7 @@ func TestRepositoryPersistsQuerySnapshotLeaseLifecycle(t *testing.T) {
 	if err := repo.ReleaseQuerySnapshotLease(ctx, leaseID); err != nil {
 		t.Fatalf("release lease: %v", err)
 	}
-	leased, err = repo.LeasedDuckLakeSnapshots(ctx)
+	leased, err = repo.LeasedDuckLakeSnapshots(ctx, string(servingstate.DefaultEnvironment))
 	if err != nil {
 		t.Fatalf("leased snapshots after release: %v", err)
 	}
@@ -504,7 +511,7 @@ func TestRepositoryActivationMarksPreviousActiveDeploymentDraining(t *testing.T)
 	}
 }
 
-func TestRepositoryReconcileRetentionDeletesDrainingDeploymentsWithoutGrace(t *testing.T) {
+func TestRepositoryReconcileRetentionDeletesDrainingDeploymentsOnlyInEnvironment(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
@@ -530,12 +537,20 @@ func TestRepositoryReconcileRetentionDeletesDrainingDeploymentsWithoutGrace(t *t
 	if _, err := repo.Activate(ctx, "test", servingstate.DefaultEnvironment, second.ID); err != nil {
 		t.Fatalf("activate second: %v", err)
 	}
+	prod, err := repo.Create(ctx, servingstate.CreateInput{WorkspaceID: "test", Environment: "prod", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("create prod: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, "UPDATE serving_states SET status = ? WHERE id = ?", string(servingstate.StatusDraining), string(prod.ID)); err != nil {
+		t.Fatalf("mark prod draining: %v", err)
+	}
 	requireDeploymentStatus(t, ctx, repo, first.ID, servingstate.StatusDraining)
-	if err := repo.ReconcileRetention(ctx, time.Now()); err != nil {
+	if err := repo.ReconcileRetention(ctx, servingstate.DefaultEnvironment, time.Now()); err != nil {
 		t.Fatalf("reconcile retention: %v", err)
 	}
 	requireDeploymentStatus(t, ctx, repo, first.ID, servingstate.StatusDeleted)
 	requireDeploymentStatus(t, ctx, repo, second.ID, servingstate.StatusActive)
+	requireDeploymentStatus(t, ctx, repo, prod.ID, servingstate.StatusDraining)
 }
 
 func TestRepositorySaveValidatedRejectsMismatchedArtifactEnvironment(t *testing.T) {

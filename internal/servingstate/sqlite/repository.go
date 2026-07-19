@@ -75,16 +75,20 @@ func (r *Repository) RecordDuckLakeSnapshot(ctx context.Context, servingStateID 
 	})
 }
 
-func (r *Repository) ReferencedDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
-	return r.q.ListReferencedDuckLakeSnapshots(ctx)
+func (r *Repository) ReferencedDuckLakeSnapshots(ctx context.Context, environment string) ([]int64, error) {
+	return r.q.ListReferencedDuckLakeSnapshots(ctx, environment)
 }
 
-func (r *Repository) ActiveDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
-	return r.q.ListActiveDuckLakeSnapshots(ctx)
+func (r *Repository) ActiveDuckLakeSnapshots(ctx context.Context, environment string) ([]int64, error) {
+	return r.q.ListActiveDuckLakeSnapshots(ctx, environment)
 }
 
-func (r *Repository) LeasedDuckLakeSnapshots(ctx context.Context) ([]int64, error) {
-	return r.q.ListLeasedDuckLakeSnapshots(ctx)
+func (r *Repository) LeasedDuckLakeSnapshots(ctx context.Context, environment string) ([]int64, error) {
+	return r.q.ListLeasedDuckLakeSnapshots(ctx, environment)
+}
+
+func (r *Repository) ForeignEnvironmentDuckLakeSnapshots(ctx context.Context, environment string) ([]int64, error) {
+	return r.q.ListForeignEnvironmentDuckLakeSnapshots(ctx, environment)
 }
 
 func (r *Repository) CreateQuerySnapshotLease(ctx context.Context, input servingstate.SnapshotLeaseInput) (string, error) {
@@ -145,30 +149,30 @@ func (r *Repository) ExtendQuerySnapshotLease(ctx context.Context, id string, ex
 	return nil
 }
 
-func (r *Repository) ReleaseExpiredQuerySnapshotLeases(ctx context.Context) error {
-	return r.q.ReleaseExpiredQuerySnapshotLeases(ctx)
+func (r *Repository) ReleaseExpiredQuerySnapshotLeases(ctx context.Context, environment string) error {
+	return r.q.ReleaseExpiredQuerySnapshotLeases(ctx, environment)
 }
 
-func (r *Repository) ExpireInactiveServingStates(ctx context.Context) error {
-	return r.q.ExpireInactiveServingStates(ctx)
+func (r *Repository) ExpireInactiveServingStates(ctx context.Context, environment string) error {
+	return r.q.ExpireInactiveServingStates(ctx, environment)
 }
 
-func (r *Repository) ScheduleExpiredServingStateDeletion(ctx context.Context) error {
-	return r.q.ScheduleExpiredServingStateDeletion(ctx)
+func (r *Repository) ScheduleExpiredServingStateDeletion(ctx context.Context, environment string) error {
+	return r.q.ScheduleExpiredServingStateDeletion(ctx, environment)
 }
 
-func (r *Repository) MarkDeleteScheduledServingStatesDeleted(ctx context.Context) error {
-	return r.q.MarkDeleteScheduledServingStatesDeleted(ctx)
+func (r *Repository) MarkDeleteScheduledServingStatesDeleted(ctx context.Context, environment string) error {
+	return r.q.MarkDeleteScheduledServingStatesDeleted(ctx, environment)
 }
 
-func (r *Repository) ReconcileRetention(ctx context.Context, now time.Time) error {
+func (r *Repository) ReconcileRetention(ctx context.Context, environment servingstate.Environment, now time.Time) error {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	if err := r.q.MarkDrainingServingStatesDeleteScheduled(ctx); err != nil {
+	if err := r.q.MarkDrainingServingStatesDeleteScheduled(ctx, string(environment)); err != nil {
 		return err
 	}
-	return r.q.MarkDeleteScheduledServingStatesDeleted(ctx)
+	return r.q.MarkDeleteScheduledServingStatesDeleted(ctx, string(environment))
 }
 
 func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingstate.ID, validation servingstate.Validation, artifact servingstate.Artifact) (servingstate.State, error) {

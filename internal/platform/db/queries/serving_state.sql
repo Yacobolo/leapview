@@ -15,6 +15,7 @@ WHERE active.workspace_id = ? AND active.environment = ?;
 SELECT DISTINCT ducklake_snapshot_id
 FROM serving_states
 WHERE ducklake_snapshot_id > 0
+  AND environment = sqlc.arg(environment)
   AND status = 'active'
 ORDER BY ducklake_snapshot_id;
 
@@ -22,6 +23,7 @@ ORDER BY ducklake_snapshot_id;
 SELECT DISTINCT ducklake_snapshot_id
 FROM serving_states
 WHERE ducklake_snapshot_id > 0
+  AND environment = sqlc.arg(environment)
   AND status = 'active'
 ORDER BY ducklake_snapshot_id;
 
@@ -29,14 +31,24 @@ ORDER BY ducklake_snapshot_id;
 SELECT DISTINCT ducklake_snapshot_id
 FROM query_snapshot_leases
 WHERE ducklake_snapshot_id > 0
+  AND environment = sqlc.arg(environment)
   AND released_at IS NULL
   AND expires_at > CURRENT_TIMESTAMP
+ORDER BY ducklake_snapshot_id;
+
+-- name: ListForeignEnvironmentDuckLakeSnapshots :many
+SELECT DISTINCT ducklake_snapshot_id
+FROM serving_states
+WHERE ducklake_snapshot_id > 0
+  AND environment <> sqlc.arg(environment)
+  AND status <> 'deleted'
 ORDER BY ducklake_snapshot_id;
 
 -- name: ExpireInactiveServingStates :exec
 UPDATE serving_states
 SET status = 'expired', error = ''
-WHERE status = 'inactive';
+WHERE status = 'inactive'
+  AND environment = sqlc.arg(environment);
 
 -- name: MarkOtherServingStatesDraining :exec
 UPDATE serving_states
@@ -51,17 +63,20 @@ WHERE workspace_id = ?
 -- name: MarkDrainingServingStatesDeleteScheduled :exec
 UPDATE serving_states
 SET status = 'delete_scheduled', error = ''
-WHERE status = 'draining';
+WHERE status = 'draining'
+  AND environment = sqlc.arg(environment);
 
 -- name: ScheduleExpiredServingStateDeletion :exec
 UPDATE serving_states
 SET status = 'delete_scheduled', error = ''
-WHERE status = 'expired';
+WHERE status = 'expired'
+  AND environment = sqlc.arg(environment);
 
 -- name: MarkDeleteScheduledServingStatesDeleted :exec
 UPDATE serving_states
 SET status = 'deleted', error = ''
-WHERE status = 'delete_scheduled';
+WHERE status = 'delete_scheduled'
+  AND environment = sqlc.arg(environment);
 
 -- name: UpdateServingStateValidated :exec
 UPDATE serving_states
@@ -121,6 +136,7 @@ WHERE id = ?
 UPDATE query_snapshot_leases
 SET released_at = CURRENT_TIMESTAMP
 WHERE released_at IS NULL
+  AND environment = sqlc.arg(environment)
   AND expires_at <= CURRENT_TIMESTAMP;
 
 -- name: ClearAssetsForServingState :exec
