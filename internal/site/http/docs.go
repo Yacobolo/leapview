@@ -250,13 +250,6 @@ func siteDocsArticle(document siteDocument) g.Node {
 		panic(fmt.Sprintf("render documentation Markdown: %v", err))
 	}
 	renderedHTML := rendered.String()
-	if reference, ok := visualReferenceForDocument(document.slug); ok {
-		firstHeading := strings.Index(renderedHTML, "<h2")
-		if firstHeading < 0 {
-			panic(fmt.Sprintf("visual documentation has no variation headings: %s", document.slug))
-		}
-		renderedHTML = renderedHTML[:firstHeading] + renderVisualAPIReference(reference) + renderedHTML[firstHeading:]
-	}
 	for index, shortcode := range shortcodes {
 		placeholderID := fmt.Sprintf("LIBREDASH_DOCS_CHART_PLACEHOLDER_%d", index)
 		placeholder := "<p>" + placeholderID + "</p>\n"
@@ -278,6 +271,9 @@ func siteDocsArticle(document siteDocument) g.Node {
 		}
 		renderedHTML = strings.Replace(renderedHTML, placeholder, component, 1)
 	}
+	if reference, ok := visualReferenceForDocument(document.slug); ok {
+		renderedHTML += renderVisualAPIReference(reference)
+	}
 
 	return h.Article(
 		h.ID("main-content"),
@@ -289,35 +285,27 @@ func siteDocsArticle(document siteDocument) g.Node {
 }
 
 func renderVisualAPIReference(reference visualdocs.DocumentReference) string {
-	node := h.Section(
-		h.Class("site-visual-api-summary"),
-		g.Attr("aria-labelledby", "site-visual-api-summary"),
-		h.H2(h.ID("site-visual-api-summary"), g.Text("API at a glance")),
-		h.Dl(
-			h.Dt(g.Text("Kind")), h.Dd(visualCodeNodes(strings.Split(reference.Kind, ", "))...),
-			h.Dt(g.Text("Renderer")), h.Dd(visualCodeNodes(strings.Split(reference.Renderer, ", "))...),
-			h.Dt(g.Text("Shapes")), h.Dd(visualCodeNodes(reference.Shapes)...),
-			h.Dt(g.Text("Query fields")), h.Dd(visualCodeNodes(reference.QueryFields)...),
-			h.Dt(g.Text("Options")), h.Dd(visualCodeNodes(reference.Options)...),
+	node := g.Group([]g.Node{
+		h.H2(h.ID("site-visual-api-reference"), g.Text("API reference")),
+		h.P(
+			g.Text("Kind: "), g.Group(visualCodeNodes(strings.Split(reference.Kind, ", "))),
+			g.Text(". Renderer: "), g.Group(visualCodeNodes(strings.Split(reference.Renderer, ", "))),
+			g.Text(". Supported result shapes: "), g.Group(visualCodeNodes(reference.Shapes)),
+			g.Text("."),
+		),
+		h.Table(
+			g.Attr("aria-labelledby", "site-visual-api-reference"),
+			h.THead(h.Tr(
+				h.Th(g.Attr("scope", "col"), g.Text("Field")),
+				h.Th(g.Attr("scope", "col"), g.Text("Type")),
+				h.Th(g.Attr("scope", "col"), g.Text("Default")),
+				h.Th(g.Attr("scope", "col"), g.Text("Allowed values")),
+				h.Th(g.Attr("scope", "col"), g.Text("Description")),
+			)),
+			h.TBody(g.Map(reference.Fields, renderVisualFieldReference)...),
 		),
 		h.P(h.Strong(g.Text("Accessibility. ")), g.Text(reference.Accessibility)),
-		h.H3(h.ID("site-visual-field-reference"), g.Text("Configuration fields")),
-		h.Div(
-			h.Class("site-visual-field-reference-scroll"),
-			h.Table(
-				h.Class("site-visual-field-reference"),
-				g.Attr("aria-labelledby", "site-visual-field-reference"),
-				h.THead(h.Tr(
-					h.Th(g.Attr("scope", "col"), g.Text("Field")),
-					h.Th(g.Attr("scope", "col"), g.Text("Type")),
-					h.Th(g.Attr("scope", "col"), g.Text("Default")),
-					h.Th(g.Attr("scope", "col"), g.Text("Allowed values")),
-					h.Th(g.Attr("scope", "col"), g.Text("Description")),
-				)),
-				h.TBody(g.Map(reference.Fields, renderVisualFieldReference)...),
-			),
-		),
-	)
+	})
 	return renderSiteNode(node)
 }
 

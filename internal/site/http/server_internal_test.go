@@ -601,10 +601,8 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 		`data-init="@get(&#39;/updates?view=visual-docs&amp;document=charts%2Fline&#39;, {openWhenHidden: true})"`,
 		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs/charts/overview">Charts</a></li><li><span aria-current="page">Line chart</span></li></ol></nav>`,
 		"<h1>Line chart</h1>",
-		`<section class="site-visual-api-summary" aria-labelledby="site-visual-api-summary">`,
-		`<h2 id="site-visual-api-summary">API at a glance</h2>`,
-		`<dt>Shapes</dt><dd><code>category_series_value</code> <code>category_value</code></dd>`,
-		`<table class="site-visual-field-reference" aria-labelledby="site-visual-field-reference">`,
+		`<h2 id="site-visual-api-reference">API reference</h2>`,
+		`<table aria-labelledby="site-visual-api-reference">`,
 		`<th scope="col">Field</th><th scope="col">Type</th><th scope="col">Default</th><th scope="col">Allowed values</th><th scope="col">Description</th>`,
 		`<code>options.step</code>`,
 		`<code>string | boolean</code>`,
@@ -623,6 +621,15 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("line chart documentation missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, `class="site-visual-api-summary"`) || strings.Contains(body, `class="site-visual-field-reference"`) {
+		t.Error("API reference is rendered inside a visual-specific container instead of the article's Markdown flow")
+	}
+	stepped := strings.Index(body, "<h2>Stepped line</h2>")
+	api := strings.Index(body, `<h2 id="site-visual-api-reference">API reference</h2>`)
+	about := strings.Index(body, `<h2 id="site-docs-about-this-page">About this page</h2>`)
+	if stepped < 0 || api < stepped || about < api {
+		t.Errorf("article order = stepped %d, API %d, about %d; want examples, API reference, footer", stepped, api, about)
 	}
 }
 
