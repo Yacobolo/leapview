@@ -127,8 +127,9 @@ type ToolCall struct {
 }
 
 type ToolResult struct {
-	Content        any
-	DisplayContent any
+	Content        any // Canonical result validated against the tool output schema.
+	ModelContent   any // Optional compact projection sent only to the model.
+	DisplayContent any // Optional rich projection retained for the embedding UI.
 	IsError        bool
 	Fatal          bool
 }
@@ -256,7 +257,11 @@ func (a *Agent) runOneTool(ctx context.Context, call ToolCall) (result toolExecu
 		result.message = a.toolErrorMessage(call, "tool_result_invalid", "Tool returned no JSON-serializable result.", nil, false)
 		return result
 	}
-	body, err := formatToolOutput(toolResult.Content, a.def.ToolOutput)
+	modelContent := toolResult.Content
+	if toolResult.ModelContent != nil {
+		modelContent = toolResult.ModelContent
+	}
+	body, err := formatToolOutput(modelContent, a.def.ToolOutput)
 	if err != nil {
 		result.message = a.toolErrorMessage(call, "tool_result_invalid", "Tool output was not JSON-serializable.", []string{err.Error()}, false)
 		return result

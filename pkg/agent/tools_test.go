@@ -507,7 +507,8 @@ func TestToolDisplayContentIsNotSentBackToModel(t *testing.T) {
 			InputSchema: json.RawMessage(`{"type":"object"}`),
 			Handler: ToolHandlerFunc(func(context.Context, ToolCall) (ToolResult, error) {
 				return ToolResult{
-					Content:        map[string]any{"ok": true, "id": "agent_table_1"},
+					Content:        display,
+					ModelContent:   map[string]any{"ok": true, "id": "agent_table_1"},
 					DisplayContent: display,
 				}, nil
 			}),

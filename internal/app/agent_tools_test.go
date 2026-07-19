@@ -198,7 +198,7 @@ func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("query_visual returned error: %#v", result.Content)
 	}
-	compact, err := json.Marshal(result.Content)
+	compact, err := json.Marshal(result.ModelContent)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("query_visual returned error: %#v", result.Content)
 	}
-	compact, err := json.Marshal(result.Content)
+	compact, err := json.Marshal(result.ModelContent)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
@@ -419,8 +419,8 @@ func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run second query_visual: %v", err)
 	}
-	firstBody, _ := json.Marshal(first.Content)
-	secondBody, _ := json.Marshal(second.Content)
+	firstBody, _ := json.Marshal(first.ModelContent)
+	secondBody, _ := json.Marshal(second.ModelContent)
 	var firstCompact, secondCompact struct {
 		ID     string `json:"id"`
 		Signal string `json:"signal"`

@@ -137,7 +137,8 @@ func (p VisualProvider) Run(ctx context.Context, scope Scope, call agentcore.Too
 		return apigenAgentToolError("query_visual_failed", err.Error())
 	}
 	return agentcore.ToolResult{
-		Content: map[string]any{
+		Content: result,
+		ModelContent: map[string]any{
 			"ok":      true,
 			"kind":    result.Kind,
 			"id":      result.ID,

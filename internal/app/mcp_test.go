@@ -17,6 +17,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/access/http/mcpoauth"
 	agentcap "github.com/Yacobolo/libredash/internal/agent"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
@@ -139,6 +140,86 @@ func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
 	if !jsonObjectsEqual(callResponse.Result.StructuredContent, textContent) {
 		t.Fatalf("structured and text output differ: structured=%#v text=%#v", callResponse.Result.StructuredContent, textContent)
 	}
+
+	visual := mcpRequest(t, handler, "mcp-secret", "2025-11-25", `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_visual","arguments":{"workspace":"test","kind":"chart","model":"test","dataset":"orders","dimensions":[{"field":"orders.status"}],"measures":[{"field":"order_count"}],"limit":10}}}`)
+	if visual.Code != http.StatusOK {
+		t.Fatalf("query_visual = %d body=%s", visual.Code, visual.Body.String())
+	}
+	var visualResponse struct {
+		Result struct {
+			IsError           bool           `json:"isError"`
+			StructuredContent map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(visual.Body.Bytes(), &visualResponse); err != nil {
+		t.Fatalf("decode query_visual: %v", err)
+	}
+	if visualResponse.Result.IsError || visualResponse.Result.StructuredContent["patch"] == nil {
+		t.Fatalf("query_visual result = %#v body=%s", visualResponse.Result, visual.Body.String())
+	}
+}
+
+func TestMCPGoSDKClientInteroperability(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(fakeMetrics{}, Options{
+		Store: store,
+		Auth:  testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
+	})
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+
+	httpClient := *live.Client()
+	httpClient.Transport = bearerRoundTripper{base: httpClient.Transport, token: "mcp-secret"}
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "libredash-interoperability-test", Version: "1"}, nil)
+	session, err := client.Connect(context.Background(), &mcpsdk.StreamableClientTransport{
+		Endpoint:             live.URL + "/mcp",
+		HTTPClient:           &httpClient,
+		MaxRetries:           -1,
+		DisableStandaloneSSE: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("connect MCP SDK client: %v", err)
+	}
+	defer session.Close()
+
+	tools, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools through MCP SDK: %v", err)
+	}
+	if len(tools.Tools) == 0 {
+		t.Fatal("MCP SDK returned no tools")
+	}
+
+	result, err := session.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name: "query_visual",
+		Arguments: map[string]any{
+			"workspace":  "test",
+			"kind":       "chart",
+			"model":      "test",
+			"dataset":    "orders",
+			"dimensions": []map[string]any{{"field": "orders.status"}},
+			"measures":   []map[string]any{{"field": "order_count"}},
+			"limit":      10,
+		},
+	})
+	if err != nil {
+		t.Fatalf("call query_visual through MCP SDK: %v", err)
+	}
+	structured, ok := result.StructuredContent.(map[string]any)
+	if result.IsError || !ok || structured["patch"] == nil {
+		t.Fatalf("MCP SDK query_visual result = %#v", result)
+	}
+}
+
+type bearerRoundTripper struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (t bearerRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(clone)
 }
 
 func TestMCPReturnsValidationFailuresAsToolErrorsAndRejectsOrigins(t *testing.T) {
