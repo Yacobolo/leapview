@@ -8,6 +8,7 @@ import (
 	"time"
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
+	manageddatabinding "github.com/Yacobolo/libredash/internal/manageddata/binding"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -61,6 +62,14 @@ func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh
 	if repo == nil {
 		return refresh.Service{}, fmt.Errorf("serving state repository is required")
 	}
+	hooks := []refresh.CandidateValidationHook{}
+	if s.managedDataBindingRepo != nil {
+		binder, err := manageddatabinding.New(s.managedDataBindingRepo)
+		if err != nil {
+			return refresh.Service{}, err
+		}
+		hooks = append(hooks, binder)
+	}
 	return refresh.Service{
 		ServingStates: repo,
 		Runs:          runRepo,
@@ -69,11 +78,13 @@ func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh
 			DuckDBDir:       s.duckDBDir,
 			DuckLakeCatalog: s.duckLakeCatalogPath,
 			DuckLakeData:    s.duckLakeDataPath,
+			ManagedData:     s.managedDataResolver,
 		},
-		Runtime:      appRefreshRuntimeHost{reloader: s.reloader},
-		Retention:    appRefreshRetention{server: s},
-		Publisher:    appRefreshPublisher{server: s},
-		DataVersions: s.refreshPipelineRepo,
+		Runtime:                  appRefreshRuntimeHost{reloader: s.reloader},
+		Retention:                appRefreshRetention{server: s},
+		Publisher:                appRefreshPublisher{server: s},
+		DataVersions:             s.refreshPipelineRepo,
+		CandidateValidationHooks: hooks,
 	}, nil
 }
 
@@ -92,7 +103,10 @@ func (appRefreshArtifactLoader) Load(_ context.Context, artifact servingstate.Ar
 	if err != nil {
 		return refresh.LoadedArtifact{}, err
 	}
-	return refresh.LoadedArtifact{Definition: compiled.Definition, Graph: compiled.Graph}, nil
+	return refresh.LoadedArtifact{
+		Definition: compiled.Definition, Graph: compiled.Graph,
+		ManagedDataRevisions: compiled.ManagedDataRevisions,
+	}, nil
 }
 
 type appRefreshRuntimeHost struct {

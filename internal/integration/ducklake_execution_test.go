@@ -26,6 +26,8 @@ import (
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/execution"
+	"github.com/Yacobolo/libredash/internal/manageddata"
+	manageddatasqlite "github.com/Yacobolo/libredash/internal/manageddata/sqlite"
 	"github.com/Yacobolo/libredash/internal/platform"
 	"github.com/Yacobolo/libredash/internal/queryaudit"
 	queryauditsqlite "github.com/Yacobolo/libredash/internal/queryaudit/sqlite"
@@ -87,6 +89,7 @@ func newDuckLakeHarness(t *testing.T, opts ...func(*app.Options)) *duckLakeHarne
 	deploymentRepo := servingstatesqlite.NewRepository(store.SQLDB())
 	projectPath := discoverCatalogPath(t)
 	initial := createAndActivateProjectDeployment(t, ctx, deploymentRepo, artifactDir, projectPath, dataDir, duckDBDir, workspaceID, "integration")
+	seedIntegrationManagedDataRevision(t, ctx, store, initial.ProjectID)
 	var registry *runtimehost.Registry
 	registry = runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
 		Repo:         deploymentRepo,
@@ -130,6 +133,7 @@ func newDuckLakeHarness(t *testing.T, opts ...func(*app.Options)) *duckLakeHarne
 		DuckDBDir:           duckDBDir,
 		DuckLakeCatalogPath: catalogPath,
 		DuckLakeDataPath:    dataPath,
+		ManagedDataResolver: staticIntegrationManagedDataResolver{root: dataDir},
 		DefaultWorkspaceID:  workspaceID,
 		DefaultEnvironment:  string(servingstate.DefaultEnvironment),
 		Executor:            execution.New(execution.DefaultConfig()),
@@ -164,6 +168,44 @@ func newDuckLakeHarness(t *testing.T, opts ...func(*app.Options)) *duckLakeHarne
 		stopServerBackgroundForTest(t, server)
 	})
 	return h
+}
+
+func seedIntegrationManagedDataRevision(t *testing.T, ctx context.Context, store *platform.Store, projectID string) {
+	t.Helper()
+	repository := manageddatasqlite.NewRepository(store.SQLDB())
+	collection, err := repository.CreateCollection(ctx, manageddata.CreateCollectionInput{
+		ID: "olist", ProjectID: projectID, ConnectionName: "olist", Name: "Olist",
+	})
+	if err != nil {
+		t.Fatalf("create integration managed-data collection: %v", err)
+	}
+	manifest := integrationManagedDataManifest()
+	session, err := repository.CreateUploadSession(ctx, manageddata.CreateUploadSessionInput{
+		CollectionID: collection.ID, Manifest: manifest, StorageBackend: "local",
+		StagingPrefix: "integration/olist", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("create integration managed-data upload: %v", err)
+	}
+	if _, err := repository.CompleteUpload(ctx, manageddata.CompleteUploadInput{
+		SessionID: session.ID,
+		Files: []manageddata.StoredFile{{
+			File: manifest.Files[0], StorageKey: "integration/fixture.csv",
+		}},
+	}); err != nil {
+		t.Fatalf("complete integration managed-data upload: %v", err)
+	}
+}
+
+type staticIntegrationManagedDataResolver struct {
+	root string
+}
+
+func (r staticIntegrationManagedDataResolver) ResolveManagedData(context.Context, servingstate.ID) (runtimehost.ManagedDataResolution, error) {
+	return runtimehost.ManagedDataResolution{
+		RevisionID: integrationOlistManagedDataRevision,
+		Roots:      map[string]string{"olist": r.root},
+	}, nil
 }
 
 func registryLeasedSnapshots(registry *runtimehost.Registry) []int64 {

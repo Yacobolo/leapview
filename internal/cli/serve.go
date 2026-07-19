@@ -396,8 +396,9 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 			Repository: managedDataAPI, Uploads: managedDataControl,
 			Multipart: managedDataMultipart,
 		},
-		Deployment:     deploymenthttp.Options{Coordinator: deploymentAPI},
-		ManagedDataTus: managedDataStorage.tus,
+		ManagedDataResolver: managedDataResolver,
+		Deployment:          deploymenthttp.Options{Coordinator: deploymentAPI},
+		ManagedDataTus:      managedDataStorage.tus,
 		ManagedDataExpirer: managedDataMaintenance{
 			uploads: managedDataControl, multipart: managedDataMultipartService,
 			uploadTTL: cfg.ManagedDataUploadSessionTTL, collector: managedDataCollector, runtime: managedDataRuntimeCollector,

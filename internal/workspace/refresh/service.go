@@ -33,8 +33,9 @@ type RunRepository interface {
 }
 
 type LoadedArtifact struct {
-	Definition *workspace.Definition
-	Graph      workspace.AssetGraph
+	Definition           *workspace.Definition
+	Graph                workspace.AssetGraph
+	ManagedDataRevisions map[string]string
 }
 
 type ArtifactLoader interface {
@@ -76,20 +77,25 @@ type DataVersionRepository interface {
 	SaveDataVersion(context.Context, refreshpipeline.DataVersion) error
 }
 
+type CandidateValidationHook interface {
+	AfterArtifactValidation(context.Context, servingstate.State, servingstate.Validation) error
+}
+
 type atomicRefreshActivator interface {
 	ActivateRefresh(context.Context, servingstate.WorkspaceID, servingstate.Environment, servingstate.ID, refreshpipeline.DataVersion) (servingstate.State, error)
 }
 
 type Service struct {
-	ServingStates ServingStateRepository
-	Runs          RunRepository
-	Artifacts     ArtifactLoader
-	Materializer  Materializer
-	Runtime       RuntimeHost
-	Retention     RetentionRunner
-	Publisher     Publisher
-	DataVersions  DataVersionRepository
-	Now           func() time.Time
+	ServingStates            ServingStateRepository
+	Runs                     RunRepository
+	Artifacts                ArtifactLoader
+	Materializer             Materializer
+	Runtime                  RuntimeHost
+	Retention                RetentionRunner
+	Publisher                Publisher
+	DataVersions             DataVersionRepository
+	CandidateValidationHooks []CandidateValidationHook
+	Now                      func() time.Time
 }
 
 type ServingState struct {
@@ -162,7 +168,7 @@ func (s Service) QueuePipelineRefresh(ctx context.Context, input QueuePipelineIn
 	}
 	candidate, err := s.CreateRefreshCandidate(ctx, RefreshCandidateInput{
 		WorkspaceID: input.WorkspaceID, Environment: environment, CreatedBy: input.PrincipalID,
-		Active: active, ArtifactGraph: loaded.Graph,
+		Active: active, ArtifactGraph: loaded.Graph, ManagedDataRevisions: loaded.ManagedDataRevisions,
 	})
 	if err != nil {
 		return QueueAssetResult{}, err
@@ -381,11 +387,12 @@ func (s Service) publish(ctx context.Context, workspaceID, environment, targetTy
 }
 
 type RefreshCandidateInput struct {
-	WorkspaceID   string
-	Environment   servingstate.Environment
-	CreatedBy     string
-	Active        ServingState
-	ArtifactGraph workspace.AssetGraph
+	WorkspaceID          string
+	Environment          servingstate.Environment
+	CreatedBy            string
+	Active               ServingState
+	ArtifactGraph        workspace.AssetGraph
+	ManagedDataRevisions map[string]string
 }
 
 func (s Service) Active(ctx context.Context, workspaceID string, environment servingstate.Environment) (ServingState, error) {
@@ -426,20 +433,39 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 		SizeBytes:      active.Artifact.SizeBytes,
 		CreatedAt:      active.Artifact.CreatedAt,
 	}
-	validated, err := s.ServingStates.SaveValidated(ctx, created.ID, servingstate.Validation{
-		Digest:            active.State.Digest,
-		ManifestJSON:      active.State.ManifestJSON,
-		ProjectID:         active.State.ProjectID,
-		ProjectDigest:     active.State.ProjectDigest,
-		ProjectWorkspaces: append([]string(nil), active.State.ProjectWorkspaces...),
-		AccessPolicy:      accessPolicy,
-		Graph:             RetargetAssetGraph(input.ArtifactGraph, workspace.WorkspaceID(input.WorkspaceID), workspace.ServingStateID(created.ID)),
-	}, candidateArtifact)
+	validation := servingstate.Validation{
+		Digest:               active.State.Digest,
+		ManifestJSON:         active.State.ManifestJSON,
+		ProjectID:            active.State.ProjectID,
+		ProjectDigest:        active.State.ProjectDigest,
+		ProjectWorkspaces:    append([]string(nil), active.State.ProjectWorkspaces...),
+		AccessPolicy:         accessPolicy,
+		ManagedDataRevisions: cloneStringMap(input.ManagedDataRevisions),
+		Graph:                RetargetAssetGraph(input.ArtifactGraph, workspace.WorkspaceID(input.WorkspaceID), workspace.ServingStateID(created.ID)),
+	}
+	for _, hook := range s.CandidateValidationHooks {
+		if hook == nil {
+			continue
+		}
+		if err := hook.AfterArtifactValidation(ctx, created, validation); err != nil {
+			_ = s.ServingStates.MarkFailed(ctx, created.ID, err)
+			return ServingState{}, err
+		}
+	}
+	validated, err := s.ServingStates.SaveValidated(ctx, created.ID, validation, candidateArtifact)
 	if err != nil {
 		_ = s.ServingStates.MarkFailed(ctx, created.ID, err)
 		return ServingState{}, err
 	}
 	return ServingState{State: validated, Artifact: candidateArtifact}, nil
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (s Service) RecordSnapshot(ctx context.Context, candidate ServingState, snapshotID int64) error {

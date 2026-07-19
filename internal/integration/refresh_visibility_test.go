@@ -114,6 +114,10 @@ func TestRefreshVisibilityStreamsAndPersistsSemanticModelRuns(t *testing.T) {
 	if publicRun["pipelineId"] != "sales-refresh" || publicRun["semanticModel"] != "sales" || publicRun["trigger"] != "manual" {
 		t.Fatalf("manual refresh API response = %#v", publicRun)
 	}
+	createdAt, _ := publicRun["createdAt"].(string)
+	if _, err := time.Parse(time.RFC3339Nano, createdAt); err != nil {
+		t.Fatalf("manual refresh API createdAt = %q, want RFC3339: %v", createdAt, err)
+	}
 	for _, internalField := range []string{"modelId", "servingStateId", "targetType", "targetId", "parentRunId"} {
 		if _, exists := publicRun[internalField]; exists {
 			t.Fatalf("manual refresh API exposed internal field %q: %#v", internalField, publicRun)

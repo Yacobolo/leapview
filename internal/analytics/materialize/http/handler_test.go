@@ -47,6 +47,21 @@ func TestPipelineRunResponseForRejectsDependencyRun(t *testing.T) {
 	}
 }
 
+func TestPipelineRunResponseForNormalizesSQLiteTimestamps(t *testing.T) {
+	response, ok := PipelineRunResponseFor(materialize.RunRecord{
+		ID: "run_1", WorkspaceID: "sales", ModelID: "sales",
+		TargetType: materialize.TargetRefreshPipeline, TargetID: "sales.sales-refresh", TriggerType: materialize.TriggerManual,
+		Status: materialize.RunStatusSucceeded, CreatedAt: "2026-07-19 06:00:00",
+		StartedAt: "2026-07-19 06:00:00.123", FinishedAt: "2026-07-19T06:01:00+02:00",
+	})
+	if !ok {
+		t.Fatal("PipelineRunResponseFor() rejected a valid pipeline run")
+	}
+	if response.CreatedAt != "2026-07-19T06:00:00Z" || response.StartedAt != "2026-07-19T06:00:00.123Z" || response.FinishedAt != "2026-07-19T04:01:00Z" {
+		t.Fatalf("normalized timestamps = (%q, %q, %q)", response.CreatedAt, response.StartedAt, response.FinishedAt)
+	}
+}
+
 func TestHandlerSeparatesPipelineVisibilityFromExecutionAuthorization(t *testing.T) {
 	repo := &authorizationRunRepository{runs: []materialize.RunRecord{{
 		ID: "run_1", WorkspaceID: "sales", Environment: "dev", ModelID: "sales",

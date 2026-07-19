@@ -160,6 +160,59 @@ func TestServiceQueuePipelineRefreshCreatesFullSemanticModelRun(t *testing.T) {
 	}
 }
 
+func TestServiceQueuePipelineRefreshPinsCandidateManagedDataRevisions(t *testing.T) {
+	repo := newFakeRepo()
+	hook := &fakeCandidateValidationHook{}
+	service := Service{
+		ServingStates: repo,
+		Runs:          repo,
+		Artifacts: fakeArtifactLoader{
+			definition:           refreshTestDefinition(),
+			managedDataRevisions: map[string]string{"olist": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		},
+		CandidateValidationHooks: []CandidateValidationHook{hook},
+	}
+
+	_, err := service.QueuePipelineRefresh(t.Context(), QueuePipelineInput{
+		WorkspaceID: "sales", Environment: servingstate.DefaultEnvironment, PrincipalID: "principal",
+		PipelineID: "sales-refresh", TriggerType: materialize.TriggerManual,
+	})
+	if err != nil {
+		t.Fatalf("QueuePipelineRefresh() error = %v", err)
+	}
+	want := map[string]string{"olist": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	if hook.candidate.ID != "dep_candidate" || !reflect.DeepEqual(hook.validation.ManagedDataRevisions, want) {
+		t.Fatalf("candidate hook = (%q, %#v), want dep_candidate and %#v", hook.candidate.ID, hook.validation.ManagedDataRevisions, want)
+	}
+	if !reflect.DeepEqual(repo.savedValidation.ManagedDataRevisions, want) {
+		t.Fatalf("saved managed-data revisions = %#v, want %#v", repo.savedValidation.ManagedDataRevisions, want)
+	}
+}
+
+func TestServiceQueuePipelineRefreshFailsCandidateWhenManagedDataPinningFails(t *testing.T) {
+	repo := newFakeRepo()
+	service := Service{
+		ServingStates: repo,
+		Runs:          repo,
+		Artifacts: fakeArtifactLoader{
+			definition:           refreshTestDefinition(),
+			managedDataRevisions: map[string]string{"olist": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		},
+		CandidateValidationHooks: []CandidateValidationHook{&fakeCandidateValidationHook{err: errors.New("pin failed")}},
+	}
+
+	_, err := service.QueuePipelineRefresh(t.Context(), QueuePipelineInput{
+		WorkspaceID: "sales", Environment: servingstate.DefaultEnvironment,
+		PipelineID: "sales-refresh", TriggerType: materialize.TriggerManual,
+	})
+	if err == nil || !strings.Contains(err.Error(), "pin failed") {
+		t.Fatalf("QueuePipelineRefresh() error = %v, want pin failure", err)
+	}
+	if repo.failedDeployment != "dep_candidate" || len(repo.createdRuns) != 0 {
+		t.Fatalf("failed candidate = %q created runs = %#v, want failed candidate and no runs", repo.failedDeployment, repo.createdRuns)
+	}
+}
+
 func TestServiceQueuePipelineRefreshRejectsSupersededScheduledArtifact(t *testing.T) {
 	repo := newFakeRepo()
 	service := Service{
@@ -381,11 +434,24 @@ func (r *fakeRepo) MarkRunFailed(_ context.Context, _ string, runID, _ string) (
 }
 
 type fakeArtifactLoader struct {
-	definition *workspace.Definition
+	definition           *workspace.Definition
+	managedDataRevisions map[string]string
 }
 
 func (l fakeArtifactLoader) Load(context.Context, servingstate.Artifact) (LoadedArtifact, error) {
-	return LoadedArtifact{Definition: l.definition, Graph: workspace.AssetGraph{}}, nil
+	return LoadedArtifact{Definition: l.definition, Graph: workspace.AssetGraph{}, ManagedDataRevisions: l.managedDataRevisions}, nil
+}
+
+type fakeCandidateValidationHook struct {
+	candidate  servingstate.State
+	validation servingstate.Validation
+	err        error
+}
+
+func (h *fakeCandidateValidationHook) AfterArtifactValidation(_ context.Context, candidate servingstate.State, validation servingstate.Validation) error {
+	h.candidate = candidate
+	h.validation = validation
+	return h.err
 }
 
 type fakeMaterializer struct {

@@ -31,6 +31,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 	refreshpipelinesqlite "github.com/Yacobolo/libredash/internal/refreshpipeline/sqlite"
 	releasesqlite "github.com/Yacobolo/libredash/internal/release/sqlite"
+	"github.com/Yacobolo/libredash/internal/runtimehost"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	"github.com/Yacobolo/libredash/internal/staticasset"
@@ -85,6 +86,7 @@ type Server struct {
 	store                           *platform.Store
 	servingStateRepo                servingStateRepository
 	managedDataBindingRepo          manageddatabinding.Repository
+	managedDataResolver             runtimehost.ManagedDataResolver
 	refreshPipelineRepo             refreshpipeline.Repository
 	refreshPipelineClock            refreshpipeline.Clock
 	workspaceRepo                   workspace.Repository
@@ -159,6 +161,7 @@ type Options struct {
 	Store                     *platform.Store
 	ServingStateRepo          servingStateRepository
 	ManagedDataBindingRepo    manageddatabinding.Repository
+	ManagedDataResolver       runtimehost.ManagedDataResolver
 	WorkspaceRepo             workspace.Repository
 	AssetCatalog              workspace.AssetCatalogReader
 	AccessRepo                access.Repository
@@ -247,6 +250,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	server.servingStateRepo = servingStateRepo
 	server.managedDataBindingRepo = managedDataBindingRepo
+	server.managedDataResolver = options.ManagedDataResolver
 	server.workspaceRepo = options.WorkspaceRepo
 	server.assetCatalog = options.AssetCatalog
 	server.accessRepo = options.AccessRepo

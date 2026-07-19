@@ -65,11 +65,23 @@ func PipelineRunResponseFor(run materialize.RunRecord) (PipelineRunResponse, boo
 	if pipelineID == "" {
 		return PipelineRunResponse{}, false
 	}
+	createdAt, err := api.NormalizeTimestamp(run.CreatedAt)
+	if err != nil || createdAt == "" {
+		return PipelineRunResponse{}, false
+	}
+	startedAt, err := api.NormalizeTimestamp(run.StartedAt)
+	if err != nil {
+		return PipelineRunResponse{}, false
+	}
+	finishedAt, err := api.NormalizeTimestamp(run.FinishedAt)
+	if err != nil {
+		return PipelineRunResponse{}, false
+	}
 	return PipelineRunResponse{
 		ID: run.ID, WorkspaceID: run.WorkspaceID, PipelineID: pipelineID, SemanticModel: run.ModelID,
 		PrincipalID: run.PrincipalID, PrincipalDisplayName: run.PrincipalDisplayName, Trigger: run.TriggerType,
-		RetryOf: run.RetryOf, Status: run.Status, Error: run.Error, CreatedAt: run.CreatedAt,
-		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
+		RetryOf: run.RetryOf, Status: run.Status, Error: run.Error, CreatedAt: createdAt,
+		StartedAt: startedAt, FinishedAt: finishedAt,
 	}, true
 }
 
