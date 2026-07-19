@@ -1,10 +1,11 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, Copy, Database, Eclipse, GitBranch, LayoutDashboard, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database, Eclipse, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, SquareMousePointer, SquareTerminal, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/code-block'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
 import type { TableSignal } from '../../web/components/dashboard/table/types'
+import { visualExampleHighlightLines } from './visual-example-highlights'
 
 type ThemeMode = 'system' | 'light' | 'dark'
 
@@ -962,16 +963,69 @@ function enhanceDocsCodeBlocks(): void {
       return
     }
     const block = document.createElement('ld-code-block') as HTMLElement & {
+      clearFocusedLines(): void
       code: string
       copy: boolean
+      focusLines(lines: readonly number[]): void
+      highlightedLines: number[]
       toolbar: boolean
     }
 
     block.setAttribute('language', language || 'text')
     block.code = code?.textContent ?? pre.textContent ?? ''
+    const keyFields = pre.previousElementSibling
+    const visualExample = keyFields?.matches('.site-visual-key-fields') ? keyFields.previousElementSibling : null
+    if (language === 'yaml' && keyFields instanceof HTMLElement && visualExample?.matches('ld-site-visual-example')) {
+      const fields = JSON.parse(keyFields.dataset.keyFields ?? '[]') as string[]
+      const exampleID = visualExample.getAttribute('example-id') ?? ''
+      block.dataset.visualExample = exampleID
+      block.dataset.highlightedFields = fields.join(',')
+      block.highlightedLines = visualExampleHighlightLines(block.code, fields)
+      block.id = `visual-example-${exampleID}-yaml`
+      enhanceVisualKeyFieldControls(keyFields, block)
+    }
     block.copy = true
     block.toolbar = true
     pre.replaceWith(block)
+  })
+}
+
+function enhanceVisualKeyFieldControls(
+  container: HTMLElement,
+  block: HTMLElement & { clearFocusedLines(): void; code: string; focusLines(lines: readonly number[]): void },
+): void {
+  let focusedField = ''
+  let hoveredField = ''
+  const lines = new Map<string, number[]>()
+  const apply = (): void => {
+    const field = focusedField || hoveredField
+    if (!field) {
+      block.clearFocusedLines()
+      return
+    }
+    block.focusLines(lines.get(field) ?? [])
+  }
+
+  container.querySelectorAll<HTMLButtonElement>('[data-visual-key-field]').forEach((control) => {
+    const field = control.dataset.visualKeyField ?? ''
+    lines.set(field, visualExampleHighlightLines(block.code, [field]))
+    control.setAttribute('aria-controls', block.id)
+    control.addEventListener('focus', () => {
+      focusedField = field
+      apply()
+    })
+    control.addEventListener('blur', () => {
+      focusedField = ''
+      apply()
+    })
+    control.addEventListener('pointerenter', () => {
+      hoveredField = field
+      apply()
+    })
+    control.addEventListener('pointerleave', () => {
+      hoveredField = ''
+      apply()
+    })
   })
 }
 
@@ -1042,6 +1096,16 @@ class SiteBrandMark extends LitElement {
       place-items: center;
       color: var(--ld-fg-accent);
     }
+
+    :host([large]) {
+      width: var(--base-size-40);
+      height: var(--base-size-40);
+    }
+
+    :host([large]) svg {
+      width: var(--base-size-32);
+      height: var(--base-size-32);
+    }
   `
 
   render() {
@@ -1058,11 +1122,13 @@ const featureIcons: Record<string, IconNode> = {
   blocks: Blocks,
   boxes: Boxes,
   chart: ChartNoAxesCombined,
-  dashboard: LayoutDashboard,
+  'code-xml': CodeXml,
   database: Database,
   'git-branch': GitBranch,
   radio: Radio,
   server: Server,
+  'square-mouse-pointer': SquareMousePointer,
+  terminal: SquareTerminal,
 }
 
 class SiteFeatureIcon extends LitElement {
@@ -1082,6 +1148,15 @@ class SiteFeatureIcon extends LitElement {
       border-radius: var(--ld-radius-large);
       background: var(--ld-bg-control);
       color: var(--ld-fg-accent);
+    }
+
+    :host([plain]) {
+      width: var(--base-size-28);
+      height: var(--base-size-28);
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--ld-fg-muted);
     }
   `
 
@@ -1288,12 +1363,12 @@ class SiteArticleToc extends LitElement {
 
 if (!customElements.get('ld-site-article-toc')) customElements.define('ld-site-article-toc', SiteArticleToc)
 
-class SiteDocsChart extends DatastarLit(LitElement) {
+class SiteVisualExample extends DatastarLit(LitElement) {
   static properties = {
-    chartId: { type: String, attribute: 'chart-id' },
+    exampleId: { type: String, attribute: 'example-id' },
   }
 
-  declare chartId: string
+  declare exampleId: string
 
   static styles = css`
     :host {
@@ -1312,11 +1387,19 @@ class SiteDocsChart extends DatastarLit(LitElement) {
       display: block;
       height: 28rem;
     }
+
+    :host([kind='kpi']) {
+      min-height: 13rem;
+    }
+
+    :host([kind='kpi']) ld-kpi-card {
+      height: 13rem;
+    }
   `
 
   render() {
     const charts = this.signal<ChartPayload[]>('charts', [])
-    const chart = charts.find((candidate) => candidate.id === this.chartId) ?? null
+    const chart = charts.find((candidate) => candidate.id === this.exampleId) ?? null
     if (chart?.type === 'kpi') {
       return html`<ld-kpi-card .visual=${chart}></ld-kpi-card>`
     }
@@ -1324,8 +1407,8 @@ class SiteDocsChart extends DatastarLit(LitElement) {
   }
 }
 
-if (!customElements.get('ld-site-doc-chart')) {
-  customElements.define('ld-site-doc-chart', SiteDocsChart)
+if (!customElements.get('ld-site-visual-example')) {
+  customElements.define('ld-site-visual-example', SiteVisualExample)
 }
 
 class SiteChartShowcase extends DatastarLit(LitElement) {
@@ -1457,7 +1540,7 @@ if (!customElements.get('ld-site-chart-showcase')) {
 
 async function loadRouteComponents(): Promise<void> {
   const imports: Promise<unknown>[] = []
-  if (document.querySelector('ld-site-chart-showcase, ld-site-doc-chart')) {
+  if (document.querySelector('ld-site-chart-showcase, ld-site-visual-example')) {
     imports.push(import('../../web/components/dashboard/charts/echart'))
   }
   if (document.querySelector('ld-site-chart-showcase')) {
