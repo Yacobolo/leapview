@@ -1,6 +1,6 @@
 # Self-hosting
 
-LibreDash v1 supports a single-instance topology. The generic Docker Compose package is the primary deployment; the Hetzner Terraform module layers cloud provisioning, firewalling, scheduled backups, and Restic onto the same application and initialization contracts.
+LibreDash v1 supports a single-instance topology. The public container image is the application distribution. The generic Docker Compose package is the recommended production operations layer, while the Hetzner Terraform module adds cloud provisioning, firewalling, scheduled backups, and Restic to the same application and initialization contracts.
 
 ## Before you begin
 
@@ -14,7 +14,7 @@ Horizontal replicas, a shared SQLite home, and a remote multi-writer DuckLake ca
 
 ## Deploy Compose
 
-Use the versioned Compose archive attached to the application release. It embeds the immutable application image digest.
+For a localhost evaluation, follow the pull-and-run flow in [Installation](/docs/installation). For production, use the versioned Compose archive attached to the application release. It consumes the same public image and embeds its immutable digest.
 
 1. Copy the deployment template and review its image digest, localhost bind, domain, and memory limit.
 2. Initialize the persistent volume and offline administrator:
@@ -32,6 +32,8 @@ cp deployment.env.example deployment.env
 ```
 
 For an existing reverse proxy, pass `--no-https`, keep the application bound to localhost, and forward the original scheme and host. Do not expose the unencrypted application port publicly.
+
+The controller is optional if an existing container platform already provides equivalent secret management, health checks, graceful shutdown, backup validation, and image-and-state rollback. Those contracts remain required even when Compose is not used.
 
 ## Persistent and external storage
 

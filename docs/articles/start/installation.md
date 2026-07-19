@@ -1,12 +1,49 @@
 # Installation
 
-Docker Compose is the primary LibreDash v1 installation. One Compose project is one LibreDash instance: one process, persistent state volume, environment, control database, and global DuckLake catalog.
+LibreDash ships as a public multi-architecture container image. Pulling that image is the primary onboarding path; no source checkout, registry login, or installer is required. One running container with one persistent state volume is one LibreDash instance.
 
 ## Before you begin
 
-Install Docker Engine with the Compose plugin, choose the DNS name for the instance, and prepare a host directory that is writable only by the deployment operator. Production releases require an immutable image digest; do not substitute a floating image tag.
+Install Docker Engine. The quick start below is a localhost-only development instance for evaluation. A public production instance additionally needs Docker Compose, a DNS name, HTTPS, durable secret storage, and off-host backups.
 
-## Install with Docker Compose
+## Try it from the public image
+
+Pull the current stable release, create its persistent state volume, and initialize one local administrator:
+
+```sh
+docker pull ghcr.io/yacobolo/libredash:latest
+docker volume create libredash-state
+umask 077
+docker run --rm \
+  --volume libredash-state:/var/lib/libredash \
+  --env LIBREDASH_PRODUCTION=0 \
+  --env LIBREDASH_ENVIRONMENT=dev \
+  --env LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@localhost \
+  ghcr.io/yacobolo/libredash:latest \
+  admin initialize --format json > initial-credentials.json
+```
+
+Start the same instance on the loopback interface:
+
+```sh
+docker run --detach --name libredash --init \
+  --publish 127.0.0.1:8080:8080 \
+  --volume libredash-state:/var/lib/libredash \
+  --env LIBREDASH_PRODUCTION=0 \
+  --env LIBREDASH_ENVIRONMENT=dev \
+  --env LIBREDASH_LOCAL_AUTH=1 \
+  ghcr.io/yacobolo/libredash:latest serve
+```
+
+Open <http://localhost:8080> and sign in with the temporary password in `initial-credentials.json`. Keep that owner-readable file private: it also contains a restricted publisher token that expires after 24 hours. Delete the file when you no longer need either credential.
+
+The state survives removal or replacement of the container because it lives in `libredash-state`. To stop and remove only the container, run `docker rm --force libredash`. Removing the named volume deletes the instance and is not part of normal shutdown.
+
+Use `latest` for this disposable evaluation path. Pin a release version or digest anywhere repeatability matters.
+
+## Run a durable production instance
+
+The released Compose package is the recommended operations layer around the same public image. It is not a separate LibreDash distribution. It supplies hardened container settings, generated production secrets, optional Caddy HTTPS, validated backup and restore, and paired image-and-state rollback.
 
 1. Download the `libredash-compose-<version>.tar.gz` asset and checksum from a LibreDash release.
 2. Verify the checksum and extract the archive into the host directory. The archive contains an immutable application image reference, the base Compose stack, an optional Caddy HTTPS overlay, and `libredashctl`.
@@ -29,6 +66,8 @@ cp deployment.env.example deployment.env
 ```
 
 Initialization generates production secrets, creates the persistent volume, validates configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
+
+`libredashctl` is an optional production operations controller, not a prerequisite for pulling or running LibreDash. You may manage the image with your existing container platform if it preserves the same single-process, persistent-home, initialization, backup, and environment contracts.
 
 The Caddy overlay is enabled by default. Pass `--no-https` only when an existing trusted HTTPS proxy fronts the localhost-bound application port. Keep secure cookies and the public allowed host configured for that proxy.
 
@@ -65,7 +104,7 @@ Use `task dev:status`, `task dev:logs`, and `task dev:stop` for the worktree-loc
 
 ## Validate
 
-Run `docker compose config --quiet` and `./libredashctl status`. The application container must report healthy, and the resolved image must include a `sha256` digest.
+For the local image path, run `docker inspect --format '{{.State.Health.Status}}' libredash` and expect `healthy`. For Compose, run `docker compose config --quiet` and `./libredashctl status`. A production application container must report healthy, and its resolved image must include a `sha256` digest.
 
 ## Verify
 

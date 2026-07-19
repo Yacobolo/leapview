@@ -4,16 +4,36 @@ LibreDash is a dashboards-as-code BI monolith using Go, Datastar, Lit, DuckDB, a
 
 ## Install
 
-Docker Compose is the primary v1 deployment. Download the versioned Compose archive from a release, then initialize one production instance:
+The public container image is the quickest way to try LibreDash. This starts a
+single development instance on localhost with persistent state:
 
 ```sh
-cp deployment.env.example deployment.env
-./libredashctl init --admin-email admin@example.com --domain dash.example.com
-./libredashctl start
-./libredashctl first-login
+docker pull ghcr.io/yacobolo/libredash:latest
+docker volume create libredash-state
+umask 077
+docker run --rm \
+  --volume libredash-state:/var/lib/libredash \
+  --env LIBREDASH_PRODUCTION=0 \
+  --env LIBREDASH_ENVIRONMENT=dev \
+  --env LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@localhost \
+  ghcr.io/yacobolo/libredash:latest \
+  admin initialize --format json > initial-credentials.json
+docker run --detach --name libredash --init \
+  --publish 127.0.0.1:8080:8080 \
+  --volume libredash-state:/var/lib/libredash \
+  --env LIBREDASH_PRODUCTION=0 \
+  --env LIBREDASH_ENVIRONMENT=dev \
+  --env LIBREDASH_LOCAL_AUTH=1 \
+  ghcr.io/yacobolo/libredash:latest serve
 ```
 
-See [the Compose package](deploy/compose/README.md) and [self-hosting guide](docs/articles/operate/self-hosting.md). The Hetzner Terraform module is a provider recipe layered on the same single-instance contract.
+Read `initial-credentials.json`, open <http://localhost:8080>, and sign in with
+the temporary administrator password. This pull-and-run path is for local
+evaluation only. For a durable production instance, use the released
+[Compose operations package](deploy/compose/README.md), which pins an immutable
+image digest and adds generated secrets, HTTPS, backups, and state-aware
+upgrades. See the [installation guide](docs/articles/start/installation.md) and
+[self-hosting guide](docs/articles/operate/self-hosting.md).
 
 ## Contributor development
 

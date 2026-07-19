@@ -30,6 +30,43 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 	}
 }
 
+func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
+	release := read(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
+	for _, required := range []string{
+		"IMAGE_NAME: ghcr.io/yacobolo/libredash",
+		"docker/setup-qemu-action@",
+		"type=raw,value=latest",
+		"platforms: linux/amd64,linux/arm64",
+		"Verify anonymous image pull",
+		"docker logout ghcr.io",
+		"docker buildx imagetools inspect",
+	} {
+		if !strings.Contains(release, required) {
+			t.Fatalf("release workflow missing public image contract %q", required)
+		}
+	}
+	if strings.Index(release, "docker/setup-qemu-action@") > strings.Index(release, "docker/setup-buildx-action@") {
+		t.Fatal("release workflow must install emulation before creating the multi-platform builder")
+	}
+
+	for _, name := range []string{
+		filepath.Join("..", "..", "README.md"),
+		filepath.Join("..", "..", "docs", "articles", "start", "installation.md"),
+	} {
+		document := read(t, name)
+		image := strings.Index(document, "ghcr.io/yacobolo/libredash:latest")
+		pull := strings.Index(document, "docker pull")
+		initialize := strings.Index(document, "admin initialize --format json")
+		controller := strings.Index(document, "./libredashctl init")
+		if image < 0 || pull < 0 || initialize < 0 {
+			t.Errorf("%s does not document pull-first public image onboarding", name)
+		}
+		if controller >= 0 && image > controller {
+			t.Errorf("%s presents the operations controller before the public image", name)
+		}
+	}
+}
+
 func TestControllerSyntaxAndLifecycleCommands(t *testing.T) {
 	controller := filepath.Join("libredashctl")
 	if output, err := exec.Command("bash", "-n", controller).CombinedOutput(); err != nil {
