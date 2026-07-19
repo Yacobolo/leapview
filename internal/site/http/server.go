@@ -40,7 +40,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.Handle("POST /mcp", documentationMCP)
 	mux.Handle("DELETE /mcp", documentationMCP)
 	mux.HandleFunc("GET /{$}", server.home)
-	mux.HandleFunc("GET /charts", server.charts)
+	mux.HandleFunc("GET /visuals", server.visuals)
 	mux.HandleFunc("GET /docs", server.docsIndex)
 	mux.HandleFunc("GET /docs/search", server.docsSearch)
 	mux.HandleFunc("GET /docs/search/active", docsActiveSearch)
@@ -150,9 +150,9 @@ func (s *siteServer) home(w http.ResponseWriter, r *http.Request) {
 	renderHTML(w, http.StatusOK, sitePage(metadata), "render site page")
 }
 
-func (s *siteServer) charts(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, siteBrandName+" chart showcase", "Explore "+siteBrandName+" charts, KPIs, tables, and other data visualization components.", "website", "")
-	renderHTML(w, http.StatusOK, chartsPage(metadata), "render charts page")
+func (s *siteServer) visuals(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, siteBrandName+" visual showcase", "Explore "+siteBrandName+" charts, KPIs, tables, matrices, and pivots.", "website", "")
+	renderHTML(w, http.StatusOK, visualsPage(metadata), "render visuals page")
 }
 
 func gettingStarted(w http.ResponseWriter, r *http.Request) {
@@ -273,7 +273,7 @@ func (s *siteServer) absoluteURL(r *http.Request, requestedPath string) string {
 }
 
 func (s *siteServer) sitemap(w http.ResponseWriter, r *http.Request) {
-	paths := []string{"/", "/charts", "/docs"}
+	paths := []string{"/", "/visuals", "/docs"}
 	for _, document := range siteDocuments {
 		paths = append(paths, "/docs/"+document.slug)
 	}
@@ -313,15 +313,15 @@ func docsConfigurationSchema(w http.ResponseWriter, r *http.Request) {
 func updates(w http.ResponseWriter, r *http.Request) {
 	patch := pagestream.SignalPatch{"site": map[string]any{"ready": true}}
 	switch r.URL.Query().Get("view") {
-	case "charts":
-		patch = chartShowcasePatch()
+	case "visuals":
+		patch = visualShowcasePatch()
 	case "visual-docs":
 		examples, ok := visualExamplesForDocument(r.URL.Query().Get("document"))
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		patch = pagestream.SignalPatch{"charts": examples}
+		patch = pagestream.SignalPatch{"visuals": examples}
 	}
 	stream := pagestream.NewSignalStream(w, r)
 	if err := stream.Patch(patch); err != nil {
