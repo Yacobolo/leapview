@@ -63,6 +63,46 @@ func TestAdminBackupWritesInstanceArchive(t *testing.T) {
 	}
 }
 
+func TestAdminBackupStreamsRestorableInstanceArchive(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	setAdminStorageEnv(t, home)
+	store, err := platform.Open(ctx, filepath.Join(home, "libredash.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertSetting(ctx, "stream-test", "preserved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	if err := runAdminBackup(ctx, &rootOptions{backupOut: "-"}, &archive); err != nil {
+		t.Fatalf("stream backup: %v", err)
+	}
+	if archive.Len() < 2 || archive.Bytes()[0] != 0x1f || archive.Bytes()[1] != 0x8b {
+		t.Fatalf("stream backup is not a gzip archive: %x", archive.Bytes())
+	}
+	targetHome := filepath.Join(t.TempDir(), "volume", "home")
+	setAdminStorageEnv(t, targetHome)
+	var restoreOutput bytes.Buffer
+	if err := runAdminRestore(ctx, &rootOptions{restoreFrom: "-", confirmRestore: true}, bytes.NewReader(archive.Bytes()), &restoreOutput); err != nil {
+		t.Fatalf("restore streamed backup: %v", err)
+	}
+	if !strings.Contains(restoreOutput.String(), "instance restored from: stdin") {
+		t.Fatalf("restore output = %q", restoreOutput.String())
+	}
+	restored, err := platform.Open(ctx, filepath.Join(targetHome, "libredash.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if value, err := restored.GetSetting(ctx, "stream-test"); err != nil || value != "preserved" {
+		t.Fatalf("streamed setting = %q, %v", value, err)
+	}
+}
+
 func TestAdminBackupRejectsExternalDuckLakeCatalog(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
@@ -261,7 +301,7 @@ func TestAdminDatabaseRestoreRejectsAnotherInstanceEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = runAdminRestore(ctx, &rootOptions{restoreFrom: backupPath, restoreBefore: filepath.Join(t.TempDir(), "before.db"), confirmRestore: true, databaseOnly: true}, &bytes.Buffer{})
+	err = runAdminRestore(ctx, &rootOptions{restoreFrom: backupPath, restoreBefore: filepath.Join(t.TempDir(), "before.db"), confirmRestore: true, databaseOnly: true}, nil, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), `bound to environment "prod"`) {
 		t.Fatalf("database restore error = %v", err)
 	}
@@ -394,7 +434,7 @@ func TestOfflineInstanceOperationsRequireExclusiveInstanceLock(t *testing.T) {
 			return runAdminBackup(context.Background(), &rootOptions{backupOut: filepath.Join(t.TempDir(), "backup.tar.gz")}, &bytes.Buffer{})
 		}},
 		{name: "restore", run: func() error {
-			return runAdminRestore(context.Background(), &rootOptions{restoreFrom: filepath.Join(t.TempDir(), "backup.tar.gz"), confirmRestore: true}, &bytes.Buffer{})
+			return runAdminRestore(context.Background(), &rootOptions{restoreFrom: filepath.Join(t.TempDir(), "backup.tar.gz"), confirmRestore: true}, nil, &bytes.Buffer{})
 		}},
 	} {
 		t.Run(operation.name, func(t *testing.T) {

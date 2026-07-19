@@ -18,6 +18,12 @@ docker run --rm \
   --env LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@localhost \
   ghcr.io/yacobolo/libredash:latest \
   admin initialize --format json > initial-credentials.json
+docker run --rm \
+  --volume libredash-state:/var/lib/libredash \
+  --env LIBREDASH_PRODUCTION=0 \
+  --env LIBREDASH_ENVIRONMENT=dev \
+  ghcr.io/yacobolo/libredash:latest \
+  admin initialize --acknowledge-credentials
 docker run --detach --name libredash --init \
   --publish 127.0.0.1:8080:8080 \
   --volume libredash-state:/var/lib/libredash \
@@ -292,7 +298,8 @@ export LIBREDASH_CSRF_KEY=<32+ byte secret>
 export LIBREDASH_ALLOWED_HOSTS=localhost
 export LIBREDASH_METRICS_BEARER_TOKEN=<32+ byte secret>
 export LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
-libredash admin initialize --format json
+libredash admin initialize --format json > initial-credentials.json
+libredash admin initialize --acknowledge-credentials
 libredash serve --production
 SYNC_OUTPUT="$(libredash data sync --project dashboards/libredash.yaml --connection olist --from /srv/olist --target http://localhost:8080 --token <publisher-token-from-initialize>)"
 REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
@@ -351,7 +358,7 @@ production configuration is:
 ```sh
 LIBREDASH_PRODUCTION=1
 LIBREDASH_ENVIRONMENT=prod
-LIBREDASH_HOME=/var/lib/libredash
+LIBREDASH_HOME=/var/lib/libredash/home
 LIBREDASH_LOCAL_AUTH=1
 LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 LIBREDASH_CSRF_KEY=<32+ byte secret>

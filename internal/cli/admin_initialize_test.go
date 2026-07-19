@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,8 +62,43 @@ func TestAdminInitializeCreatesOneTimeCredentialBundle(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if err := acknowledgeInitialCredentials(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	out.Reset()
 	if err := runAdminInitialize(context.Background(), "json", &out); err == nil || !strings.Contains(err.Error(), "already initialized") {
 		t.Fatalf("second initialize error = %v", err)
 	}
+}
+
+func TestAdminInitializeReplaysCredentialsAfterDeliveryFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("LIBREDASH_HOME", home)
+	t.Setenv("LIBREDASH_PRODUCTION", "1")
+	t.Setenv("LIBREDASH_ENVIRONMENT", "prod")
+	t.Setenv("LIBREDASH_BOOTSTRAP_ADMIN_EMAIL", "owner@example.com")
+
+	if err := runAdminInitialize(context.Background(), "json", errorWriter{}); err == nil {
+		t.Fatal("initialize output failure = nil")
+	}
+	var recovered bytes.Buffer
+	if err := runAdminInitialize(context.Background(), "json", &recovered); err != nil {
+		t.Fatalf("recover initialization credentials: %v", err)
+	}
+	var credentials initialInstanceCredentials
+	if err := json.Unmarshal(recovered.Bytes(), &credentials); err != nil || credentials.TemporaryPassword == "" || credentials.PublisherToken == "" {
+		t.Fatalf("recovered credentials = %#v, %v", credentials, err)
+	}
+	if err := acknowledgeInitialCredentials(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(initialCredentialRecoveryPath(home)); !os.IsNotExist(err) {
+		t.Fatalf("credential recovery file remains after acknowledgement: %v", err)
+	}
+}
+
+type errorWriter struct{}
+
+func (errorWriter) Write([]byte) (int, error) {
+	return 0, errors.New("credential destination failed")
 }

@@ -16,7 +16,6 @@ services:
       - "${COMPOSE_APP_BIND:-127.0.0.1:8080}:8080"
     volumes:
       - libredash-state:/var/lib/libredash
-      - ./backups:/backups
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=512m
     healthcheck:

@@ -18,6 +18,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/config"
 	"github.com/Yacobolo/libredash/internal/instancelock"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/securefs"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	storagemaintenance "github.com/Yacobolo/libredash/internal/storage/maintenance"
@@ -27,15 +28,20 @@ import (
 func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	parent := &cobra.Command{Use: "admin", Short: "Administrative utilities"}
 	initializeFormat := "json"
+	acknowledgeCredentials := false
 	initialize := &cobra.Command{
 		Use:   "initialize",
 		Short: "Initialize one instance administrator and publisher credential",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if acknowledgeCredentials {
+				return acknowledgeInitialCredentials(ctx)
+			}
 			return runAdminInitialize(ctx, initializeFormat, cmd.OutOrStdout())
 		},
 	}
 	initialize.Flags().StringVar(&initializeFormat, "format", "json", "output format (json)")
+	initialize.Flags().BoolVar(&acknowledgeCredentials, "acknowledge-credentials", false, "remove the recoverable initialization credential bundle after it has been stored safely")
 	storage := &cobra.Command{Use: "storage", Short: "Maintain analytical storage"}
 	cleanup := &cobra.Command{
 		Use:   "cleanup",
@@ -71,11 +77,11 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 		Use:   "restore",
 		Short: "Restore LibreDash from a validated instance backup",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminRestore(ctx, opts, cmd.OutOrStdout())
+			return runAdminRestore(ctx, opts, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
 	restore.Flags().StringVar(&opts.restoreFrom, "from", "", "backup archive path to restore")
-	restore.Flags().StringVar(&opts.restoreBefore, "current-out", "", "path for a backup of the current instance before replacement")
+	restore.Flags().StringVar(&opts.restoreBefore, "current-out", "", "path for a backup of the current instance before replacement; - creates and discards a validated temporary checkpoint")
 	restore.Flags().BoolVar(&opts.confirmRestore, "confirm", false, "confirm replacement of the configured LibreDash instance")
 	restore.Flags().BoolVar(&opts.databaseOnly, "database-only", false, "restore only the platform SQLite database")
 	parent.AddCommand(initialize, storage, maintenance, backup, restore)
@@ -83,6 +89,11 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 }
 
 var errInstanceAlreadyInitialized = errors.New("LibreDash instance is already initialized")
+
+const (
+	instanceInitializedSetting        = "instance.initialized"
+	initialCredentialRecoveryFileName = ".initial-credentials.json"
+)
 
 type initialInstanceCredentials struct {
 	Email                   string `json:"email"`
@@ -96,10 +107,6 @@ func runAdminInitialize(ctx context.Context, format string, out io.Writer) error
 		return fmt.Errorf("admin initialize supports only --format json")
 	}
 	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	email, err := initialAdminEmail(cfg)
 	if err != nil {
 		return err
 	}
@@ -117,14 +124,35 @@ func runAdminInitialize(ctx context.Context, format string, out io.Writer) error
 	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
 		return err
 	}
+	recoveryPath := initialCredentialRecoveryPath(cfg.HomeDir)
+	if _, err := store.GetSetting(ctx, instanceInitializedSetting); err == nil {
+		credentials, readErr := readInitialCredentialRecovery(recoveryPath)
+		if readErr == nil {
+			return writeAll(out, credentials)
+		}
+		if os.IsNotExist(readErr) {
+			return errInstanceAlreadyInitialized
+		}
+		return readErr
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err := os.Remove(recoveryPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale initialization credentials: %w", err)
+	}
+	email, err := initialAdminEmail(cfg)
+	if err != nil {
+		return err
+	}
 	repo := accesssqlite.NewRepository(store.SQLDB())
 	var result initialInstanceCredentials
+	var encodedResult []byte
 	err = repo.RunAuditedMutationBatch(ctx, func(txRepo access.Repository) ([]access.AuditEventInput, error) {
 		sqliteRepo, ok := txRepo.(*accesssqlite.Repository)
 		if !ok {
 			return nil, fmt.Errorf("initialize access transaction is unavailable")
 		}
-		inserted, err := sqliteRepo.InsertPlatformSettingIfMissing(ctx, "instance.initialized", time.Now().UTC().Format(time.RFC3339))
+		inserted, err := sqliteRepo.InsertPlatformSettingIfMissing(ctx, instanceInitializedSetting, time.Now().UTC().Format(time.RFC3339))
 		if err != nil {
 			return nil, err
 		}
@@ -154,14 +182,121 @@ func runAdminInitialize(ctx context.Context, format string, out io.Writer) error
 			return nil, err
 		}
 		result = initialInstanceCredentials{Email: email, TemporaryPassword: created.Password, PublisherToken: token, PublisherTokenExpiresAt: expires.Format(time.RFC3339)}
+		encodedResult, err = json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		encodedResult = append(encodedResult, '\n')
+		if err := writeInitialCredentialRecovery(recoveryPath, encodedResult); err != nil {
+			return nil, err
+		}
 		return []access.AuditEventInput{{PrincipalID: principal.ID, Action: "instance.initialized", TargetType: "instance", TargetID: string(environment), Privilege: access.PrivilegeManagePlatform, Status: "success"}}, nil
 	})
 	if err != nil {
+		_ = os.Remove(recoveryPath)
 		return err
 	}
-	encoder := json.NewEncoder(out)
-	encoder.SetEscapeHTML(false)
-	return encoder.Encode(result)
+	return writeAll(out, encodedResult)
+}
+
+func acknowledgeInitialCredentials(ctx context.Context) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	lock, err := instancelock.Acquire(cfg.HomeDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	store, err := platform.Open(ctx, cfg.DBPath())
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if _, err := offlineInstanceEnvironment(ctx, store, cfg); err != nil {
+		return err
+	}
+	if _, err := store.GetSetting(ctx, instanceInitializedSetting); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("LibreDash instance has not been initialized")
+		}
+		return err
+	}
+	if err := os.Remove(initialCredentialRecoveryPath(cfg.HomeDir)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("acknowledge initialization credentials: %w", err)
+	}
+	return nil
+}
+
+func initialCredentialRecoveryPath(homeDir string) string {
+	return filepath.Join(homeDir, initialCredentialRecoveryFileName)
+}
+
+func readInitialCredentialRecovery(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("initialization credential recovery file %q must be a private regular file", path)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var credentials initialInstanceCredentials
+	if err := json.Unmarshal(contents, &credentials); err != nil || credentials.Email == "" || credentials.TemporaryPassword == "" || credentials.PublisherToken == "" {
+		return nil, fmt.Errorf("initialization credential recovery file %q is invalid", path)
+	}
+	return contents, nil
+}
+
+func writeInitialCredentialRecovery(path string, contents []byte) error {
+	if err := securefs.EnsurePrivateDir(filepath.Dir(path)); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".initial-credentials-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(securefs.PrivateFileMode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(contents); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	if err := directory.Sync(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeAll(out io.Writer, contents []byte) error {
+	written, err := out.Write(contents)
+	if err == nil && written != len(contents) {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 const (
@@ -190,7 +325,17 @@ func runAdminBackup(ctx context.Context, opts *rootOptions, out io.Writer) error
 	if opts.backupOut == "" {
 		return fmt.Errorf("admin backup requires --out")
 	}
+	backupPath := opts.backupOut
+	stream := backupPath == "-"
 	cfg := config.MustLoad()
+	if stream && opts.databaseOnly {
+		var err error
+		backupPath, err = unusedTemporaryPathIn(filepath.Dir(cfg.HomeDir), "libredash-backup-*.db")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(backupPath)
+	}
 	lock, err := instancelock.Acquire(cfg.HomeDir)
 	if err != nil {
 		return err
@@ -202,27 +347,33 @@ func runAdminBackup(ctx context.Context, opts *rootOptions, out io.Writer) error
 			return err
 		}
 		defer store.Close()
-		if err := store.Backup(ctx, opts.backupOut); err != nil {
+		if err := store.Backup(ctx, backupPath); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "database backup written: %s\n", opts.backupOut)
+		if stream {
+			return copyFile(out, backupPath)
+		}
+		fmt.Fprintf(out, "database backup written: %s\n", backupPath)
 		return nil
 	}
 	if err := validateFullInstanceArchiveLayout(cfg); err != nil {
 		return err
 	}
+	if stream {
+		return platform.BackupInstanceToWriter(ctx, cfg.HomeDir, cfg.DBPath(), out)
+	}
 	if err := platform.BackupInstance(ctx, platform.InstanceBackupOptions{
 		HomeDir: cfg.HomeDir,
 		DBPath:  cfg.DBPath(),
-		OutPath: opts.backupOut,
+		OutPath: backupPath,
 	}); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "instance backup written: %s\n", opts.backupOut)
+	fmt.Fprintf(out, "instance backup written: %s\n", backupPath)
 	return nil
 }
 
-func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) error {
+func runAdminRestore(ctx context.Context, opts *rootOptions, in io.Reader, out io.Writer) error {
 	if opts.restoreFrom == "" {
 		return fmt.Errorf("admin restore requires --from")
 	}
@@ -230,6 +381,35 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) erro
 		return fmt.Errorf("admin restore requires --confirm")
 	}
 	cfg := config.MustLoad()
+	restorePath := opts.restoreFrom
+	restoreLabel := restorePath
+	stream := restorePath == "-"
+	if stream {
+		restoreLabel = "stdin"
+	}
+	if stream && opts.databaseOnly {
+		if in == nil {
+			return fmt.Errorf("admin restore --from - requires standard input")
+		}
+		var err error
+		restorePath, err = copyReaderToTemporaryFile(in, filepath.Dir(cfg.HomeDir), "libredash-restore-*.db")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(restorePath)
+	}
+	if stream && !opts.databaseOnly && in == nil {
+		return fmt.Errorf("admin restore --from - requires standard input")
+	}
+	restoreBefore := opts.restoreBefore
+	if restoreBefore == "-" {
+		var err error
+		restoreBefore, err = unusedTemporaryPathIn(filepath.Dir(cfg.HomeDir), "libredash-current-backup-*.tar.gz")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(restoreBefore)
+	}
 	lock, err := instancelock.Acquire(cfg.HomeDir)
 	if err != nil {
 		return err
@@ -240,35 +420,105 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, out io.Writer) erro
 		return err
 	}
 	if opts.databaseOnly {
-		if err := platform.ValidateDatabaseInstanceEnvironment(ctx, opts.restoreFrom, string(expectedEnvironment)); err != nil {
+		if err := platform.ValidateDatabaseInstanceEnvironment(ctx, restorePath, string(expectedEnvironment)); err != nil {
 			return err
 		}
-		if err := platform.Restore(ctx, cfg.DBPath(), opts.restoreFrom, opts.restoreBefore); err != nil {
+		if err := platform.Restore(ctx, cfg.DBPath(), restorePath, restoreBefore); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "database restored from: %s\n", opts.restoreFrom)
-		if opts.restoreBefore != "" {
-			fmt.Fprintf(out, "previous database backup: %s\n", opts.restoreBefore)
+		fmt.Fprintf(out, "database restored from: %s\n", restoreLabel)
+		if restoreBefore != "" && opts.restoreBefore != "-" {
+			fmt.Fprintf(out, "previous database backup: %s\n", restoreBefore)
 		}
 		return nil
 	}
 	if err := validateFullInstanceArchiveLayout(cfg); err != nil {
 		return err
 	}
-	if err := platform.RestoreInstance(ctx, platform.InstanceRestoreOptions{
+	restoreOptions := platform.InstanceRestoreOptions{
 		TargetHomeDir:        cfg.HomeDir,
-		BackupPath:           opts.restoreFrom,
-		CurrentBackupOut:     opts.restoreBefore,
+		BackupPath:           restorePath,
+		CurrentBackupOut:     restoreBefore,
 		ExpectedEnvironment:  string(expectedEnvironment),
 		PreserveRelativeFile: instancelock.FileName,
-	}); err != nil {
+	}
+	if stream {
+		restoreOptions.BackupPath = ""
+		err = platform.RestoreInstanceFromReader(ctx, restoreOptions, in)
+	} else {
+		err = platform.RestoreInstance(ctx, restoreOptions)
+	}
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "instance restored from: %s\n", opts.restoreFrom)
-	if opts.restoreBefore != "" {
-		fmt.Fprintf(out, "previous instance backup: %s\n", opts.restoreBefore)
+	fmt.Fprintf(out, "instance restored from: %s\n", restoreLabel)
+	if restoreBefore != "" && opts.restoreBefore != "-" {
+		fmt.Fprintf(out, "previous instance backup: %s\n", restoreBefore)
 	}
 	return nil
+}
+
+func unusedTemporaryPathIn(directory, pattern string) (string, error) {
+	if err := os.MkdirAll(directory, securefs.PrivateDirMode); err != nil {
+		return "", err
+	}
+	file, err := os.CreateTemp(directory, pattern)
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	if err := os.Remove(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func copyFile(out io.Writer, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(out, file)
+	return err
+}
+
+func copyReaderToTemporaryFile(in io.Reader, directory, pattern string) (string, error) {
+	if err := os.MkdirAll(directory, securefs.PrivateDirMode); err != nil {
+		return "", err
+	}
+	file, err := os.CreateTemp(directory, pattern)
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(path)
+		}
+	}()
+	if err := file.Chmod(securefs.PrivateFileMode); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if _, err := io.Copy(file, in); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	cleanup = false
+	return path, nil
 }
 
 func restoreTargetEnvironment(ctx context.Context, cfg config.Config) (servingstate.Environment, error) {

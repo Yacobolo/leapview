@@ -21,6 +21,12 @@ docker run --rm \
   --env LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@localhost \
   ghcr.io/yacobolo/libredash:latest \
   admin initialize --format json > initial-credentials.json
+docker run --rm \
+  --volume libredash-state:/var/lib/libredash \
+  --env LIBREDASH_PRODUCTION=0 \
+  --env LIBREDASH_ENVIRONMENT=dev \
+  ghcr.io/yacobolo/libredash:latest \
+  admin initialize --acknowledge-credentials
 ```
 
 Start the same instance on the loopback interface:
@@ -35,7 +41,7 @@ docker run --detach --name libredash --init \
   ghcr.io/yacobolo/libredash:latest serve
 ```
 
-Open <http://localhost:8080> and sign in with the temporary password in `initial-credentials.json`. Keep that owner-readable file private: it also contains a restricted publisher token that expires after 24 hours. Delete the file when you no longer need either credential.
+Open <http://localhost:8080> and sign in with the temporary password in `initial-credentials.json`. Keep that owner-readable file private: it also contains a restricted publisher token that expires after 24 hours. The acknowledgement command removes LibreDash's recovery copy only after the redirected file exists; delete your file when you no longer need either credential.
 
 The state survives removal or replacement of the container because it lives in `libredash-state`. To stop and remove only the container, run `docker rm --force libredash`. Removing the named volume deletes the instance and is not part of normal shutdown.
 

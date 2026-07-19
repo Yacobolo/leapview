@@ -24,6 +24,14 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 	if strings.Contains(compose, "container_name:") {
 		t.Fatal("generic Compose must allow independent project names on one host")
 	}
+	if strings.Contains(compose, "./backups:/backups") {
+		t.Fatal("backup archives must cross the container boundary as streams, not through a host bind with incompatible ownership")
+	}
+	for _, name := range []string{"libredash.env.example", "libredashctl"} {
+		if !strings.Contains(read(t, name), "LIBREDASH_HOME=/var/lib/libredash/home") {
+			t.Fatalf("%s must place LIBREDASH_HOME beneath the mounted volume so restore can replace it", name)
+		}
+	}
 	https := read(t, "compose.https.yaml")
 	if !strings.Contains(https, "CADDY_IMAGE") || !strings.Contains(https, "443:443/udp") {
 		t.Fatal("HTTPS overlay is incomplete")
@@ -81,6 +89,16 @@ func TestControllerSyntaxAndLifecycleCommands(t *testing.T) {
 	if !strings.Contains(contents, "admin initialize --format json") || !strings.Contains(contents, "pre-upgrade-") {
 		t.Fatal("controller does not use offline initialization and state-aware upgrades")
 	}
+	for _, required := range []string{
+		"flock -n",
+		"admin backup --out -",
+		"admin restore --from -",
+		"admin initialize --acknowledge-credentials",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Fatalf("controller missing resilient lifecycle contract %q", required)
+		}
+	}
 }
 
 func TestControllerLifecycleWithStateAwareUpgradeRollback(t *testing.T) {
@@ -111,7 +129,7 @@ done
 case "${command:-}" in
   ps) [[ " $* " == *' -q '* ]] && printf 'fake-container\n' ;;
   run)
-    if [[ " $* " == *' admin initialize '* ]]; then
+    if [[ " $* " == *' admin initialize --format json '* ]]; then
       printf '{"email":"admin@example.com","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-19T00:00:00Z"}\n'
     elif [[ " $* " == *' admin backup '* ]]; then
       output=""
@@ -119,9 +137,13 @@ case "${command:-}" in
         if [[ "$1" == --out ]]; then output="$2"; break; fi
         shift
       done
-      output="$root/${output#/}"
-      mkdir -p "$(dirname -- "$output")"
-      printf 'validated archive\n' >"$output"
+      if [[ "$output" == - ]]; then
+        printf 'validated archive\n'
+      else
+        output="$root/${output#/}"
+        mkdir -p "$(dirname -- "$output")"
+        printf 'validated archive\n' >"$output"
+      fi
     fi
     ;;
 esac
@@ -190,7 +212,7 @@ func TestControllerInitializationIsRetryableAndRequiresPinnedProxy(t *testing.T)
 set -euo pipefail
 root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 if [[ -f "$root/fail-validation" && " $* " == *" config validate "* ]]; then exit 42; fi
-if [[ " $* " == *" admin initialize "* ]]; then
+if [[ " $* " == *" admin initialize --format json "* ]]; then
   printf '{"email":"admin@example.com","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-19T00:00:00Z"}\n'
 fi
 `), 0o700); err != nil {
