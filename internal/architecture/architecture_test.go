@@ -808,6 +808,17 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 		}
 	}
 
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadStep := workflowStep(string(workflow), "      - name: Upload generated assets", "\n  go-tests:")
+	for _, artifact := range []string{"docs/api/operations.json", "docs/reference/cli/"} {
+		if !strings.Contains(uploadStep, artifact) {
+			t.Errorf("generated asset upload is missing build-only machine documentation %q", artifact)
+		}
+	}
+
 	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
 		t.Fatal(err)
@@ -825,6 +836,19 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			t.Errorf("generated:check treats build-only artifact %q as a public snapshot", generated)
 		}
 	}
+}
+
+func workflowStep(workflow, startMarker, endMarker string) string {
+	start := strings.Index(workflow, startMarker)
+	if start < 0 {
+		return ""
+	}
+	rest := workflow[start+len(startMarker):]
+	end := strings.Index(rest, endMarker)
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
 }
 
 func generatedCheckCommand(taskfile string) string {
