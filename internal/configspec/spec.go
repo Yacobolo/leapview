@@ -115,6 +115,7 @@ var settings = []Setting{
 	{Name: "LIBREDASH_MANAGED_DATA_S3_SESSION_TOKEN", Field: "ManagedDataS3SessionToken", Type: TypeString, Category: "managed data", Scope: "serve", Description: "Optional temporary S3 session token for managed-data storage.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_MANAGED_DATA_UPLOAD_SESSION_TTL", Field: "ManagedDataUploadSessionTTL", Type: TypeDuration, Default: "24h", Category: "managed data", Scope: "serve", Description: "Lifetime of an incomplete managed-data upload session.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_METRICS_BEARER_TOKEN", Field: "MetricsBearerToken", Type: TypeString, Category: "operations", Scope: "serve", Description: "Bearer token protecting the Prometheus metrics endpoint; production requires at least 32 characters.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", EnvExample: "replace-with-at-least-32-characters"},
+	{Name: "LIBREDASH_MCP_OAUTH_ISSUER_URL", Field: "MCPOAuthIssuerURL", Type: TypeString, Category: "authentication", Scope: "serve", Description: "Optional external OAuth issuer for MCP JWT access tokens; when omitted, LibreDash provides the MCP authorization server.", Example: "https://identity.example.com", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_PERF_ITERATIONS", Type: TypeInt, Default: "5", Category: "development", Scope: "dashboard performance QA", Description: "Measured interaction iterations run by the configured dashboard performance scenario.", Lifecycle: "development"},
 	{Name: "LIBREDASH_PERF_ENFORCE_THRESHOLDS", Type: TypeBool, Default: "false", Category: "development", Scope: "dashboard performance QA", Description: "Fail dashboard performance QA when phase latency or query-count thresholds are exceeded.", Lifecycle: "development"},
 	{Name: "LIBREDASH_PERF_LOG", Type: TypeString, Default: ".tmp/dev-server.log", Category: "development", Scope: "dashboard performance QA", Description: "Development server log consumed by dashboard performance QA.", Lifecycle: "development"},
@@ -132,6 +133,7 @@ var settings = []Setting{
 	{Name: "LIBREDASH_OIDC_PROVIDER_ID", Field: "OIDCProviderID", Type: TypeString, Default: "oidc", Category: "authentication", Scope: "serve", Description: "Route-safe identifier for the generic OIDC provider.", Example: "oidc", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_OIDC_SCOPES", Field: "OIDCScopes", Type: TypeString, Category: "authentication", Scope: "serve", Description: "Comma- or whitespace-separated additional OIDC scopes.", Example: "openid profile email", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_PRODUCTION", Field: "Production", Type: TypeBool, Category: "server", Scope: "serve,admin", Description: "Enable production serving and validation behavior.", Default: "false", Runtime: true, Lifecycle: "supported", EnvExample: "1"},
+	{Name: "LIBREDASH_PUBLIC_URL", Field: "PublicURL", Type: TypeString, Category: "server", Scope: "serve", Description: "Canonical externally visible LibreDash origin used for MCP resource identity and OAuth discovery.", Example: "https://libredash.example.com", Runtime: true, Lifecycle: "supported", EnvExample: "https://libredash.example.com"},
 	{Name: "LIBREDASH_QUACK_TOKEN", Type: TypeString, Category: "connection", Scope: "Quack development profile", Description: "Credential injected into the Quack connection declaration.", Example: SecretPlaceholder, Secret: true, Lifecycle: "external"},
 	{Name: "LIBREDASH_SCIM_BEARER_TOKEN", Field: "SCIMBearerToken", Type: TypeString, Category: "authentication", Scope: "serve", Description: "Bearer token enabling SCIM provisioning; production requires at least 32 characters when set.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LIBREDASH_SITE_BASE_URL", Type: TypeString, Category: "site", Scope: "public site", Description: "Externally visible HTTP(S) origin used for canonical URLs, discovery documents, and transport policy.", Example: "https://docs.libredash.dev", Lifecycle: "supported"},
@@ -146,18 +148,19 @@ var settings = []Setting{
 type PredicateKind string
 
 const (
-	PredicateAll       PredicateKind = "all"
-	PredicateAny       PredicateKind = "any"
-	PredicateNot       PredicateKind = "not"
-	PredicatePresent   PredicateKind = "present"
-	PredicateTrue      PredicateKind = "true"
-	PredicateMinLength PredicateKind = "min_length"
-	PredicateHTTPSURL  PredicateKind = "https_url"
-	PredicateSlug      PredicateKind = "route_slug"
-	PredicateEquals    PredicateKind = "equals"
-	PredicateOneOf     PredicateKind = "one_of"
-	PredicatePositive  PredicateKind = "positive"
-	PredicateAtLeast   PredicateKind = "at_least_setting"
+	PredicateAll         PredicateKind = "all"
+	PredicateAny         PredicateKind = "any"
+	PredicateNot         PredicateKind = "not"
+	PredicatePresent     PredicateKind = "present"
+	PredicateTrue        PredicateKind = "true"
+	PredicateMinLength   PredicateKind = "min_length"
+	PredicateHTTPSURL    PredicateKind = "https_url"
+	PredicateHTTPSOrigin PredicateKind = "https_origin"
+	PredicateSlug        PredicateKind = "route_slug"
+	PredicateEquals      PredicateKind = "equals"
+	PredicateOneOf       PredicateKind = "one_of"
+	PredicatePositive    PredicateKind = "positive"
+	PredicateAtLeast     PredicateKind = "at_least_setting"
 )
 
 type Predicate struct {
@@ -180,8 +183,9 @@ func True(name string) Predicate    { return Predicate{Kind: PredicateTrue, Name
 func MinLength(name string, minimum int) Predicate {
 	return Predicate{Kind: PredicateMinLength, Name: name, Minimum: minimum}
 }
-func HTTPSURL(name string) Predicate  { return Predicate{Kind: PredicateHTTPSURL, Name: name} }
-func RouteSlug(name string) Predicate { return Predicate{Kind: PredicateSlug, Name: name} }
+func HTTPSURL(name string) Predicate    { return Predicate{Kind: PredicateHTTPSURL, Name: name} }
+func HTTPSOrigin(name string) Predicate { return Predicate{Kind: PredicateHTTPSOrigin, Name: name} }
+func RouteSlug(name string) Predicate   { return Predicate{Kind: PredicateSlug, Name: name} }
 func Equals(name, value string) Predicate {
 	return Predicate{Kind: PredicateEquals, Name: name, Value: value}
 }
@@ -221,7 +225,10 @@ var rules = []Rule{
 	{ID: "production-auth-mode", Description: "Production requires local, API-token-only, OIDC, or Azure authentication.", When: production, Assert: Any(True("LIBREDASH_LOCAL_AUTH"), True("LIBREDASH_API_TOKEN_ONLY_AUTH"), oidcComplete, azureComplete), Message: "production serve requires OIDC auth env vars, Azure auth env vars, LIBREDASH_LOCAL_AUTH, or LIBREDASH_API_TOKEN_ONLY_AUTH"},
 	{ID: "production-csrf-key", Description: "Production requires a CSRF key with at least 32 characters.", When: production, Assert: MinLength("LIBREDASH_CSRF_KEY", 32), Message: "production serve requires LIBREDASH_CSRF_KEY with at least 32 characters"},
 	{ID: "production-metrics-token", Description: "Production requires a metrics bearer token with at least 32 characters.", When: production, Assert: MinLength("LIBREDASH_METRICS_BEARER_TOKEN", 32), Message: "production metrics scraping requires LIBREDASH_METRICS_BEARER_TOKEN with at least 32 characters"},
-	{ID: "production-allowed-host", Description: "Production requires an explicit allowed host or a browser-auth callback host.", When: production, Assert: Any(Present("LIBREDASH_ALLOWED_HOSTS"), Present("LIBREDASH_OIDC_CALLBACK_URL"), Present("LIBREDASH_AZURE_CALLBACK_URL")), Message: "production serve requires LIBREDASH_ALLOWED_HOSTS or an OIDC/Azure callback URL host"},
+	{ID: "production-public-url", Description: "Production requires a canonical public URL.", When: production, Assert: Present("LIBREDASH_PUBLIC_URL"), Message: "production serve requires LIBREDASH_PUBLIC_URL"},
+	{ID: "production-public-url-https", Description: "The production public URL must be an HTTPS origin without a path, query, fragment, or credentials.", When: production, Assert: HTTPSOrigin("LIBREDASH_PUBLIC_URL"), Message: "production serve requires LIBREDASH_PUBLIC_URL to be an https origin"},
+	{ID: "production-mcp-oauth-issuer-https", Description: "An external production MCP OAuth issuer must use HTTPS.", When: All(production, Present("LIBREDASH_MCP_OAUTH_ISSUER_URL")), Assert: HTTPSURL("LIBREDASH_MCP_OAUTH_ISSUER_URL"), Message: "production serve requires LIBREDASH_MCP_OAUTH_ISSUER_URL to be an https URL"},
+	{ID: "production-allowed-host", Description: "Production derives an allowed host from its public URL, explicit hosts, or a browser-auth callback host.", When: production, Assert: Any(Present("LIBREDASH_PUBLIC_URL"), Present("LIBREDASH_ALLOWED_HOSTS"), Present("LIBREDASH_OIDC_CALLBACK_URL"), Present("LIBREDASH_AZURE_CALLBACK_URL")), Message: "production serve requires LIBREDASH_PUBLIC_URL, LIBREDASH_ALLOWED_HOSTS, or an OIDC/Azure callback URL host"},
 	{ID: "production-secure-cookie", Description: "Production browser authentication requires secure cookies unless API-token-only mode is also enabled.", When: All(production, browserAuth, Not(True("LIBREDASH_API_TOKEN_ONLY_AUTH"))), Assert: True("LIBREDASH_COOKIE_SECURE"), Message: "production browser auth requires LIBREDASH_COOKIE_SECURE=true"},
 	{ID: "production-oidc-issuer-https", Description: "The production OIDC issuer must use HTTPS.", When: All(production, oidcComplete), Assert: HTTPSURL("LIBREDASH_OIDC_ISSUER_URL"), Message: "production serve requires LIBREDASH_OIDC_ISSUER_URL to be an https URL"},
 	{ID: "production-oidc-callback-https", Description: "The production OIDC callback must use HTTPS.", When: All(production, oidcComplete), Assert: HTTPSURL("LIBREDASH_OIDC_CALLBACK_URL"), Message: "production serve requires LIBREDASH_OIDC_CALLBACK_URL to be an https URL"},
@@ -304,6 +311,11 @@ func (p Predicate) Evaluate(values map[string]any) bool {
 		value, _ := values[p.Name].(string)
 		parsed, err := url.Parse(strings.TrimSpace(value))
 		return err == nil && parsed.Scheme == "https" && parsed.Host != ""
+	case PredicateHTTPSOrigin:
+		value, _ := values[p.Name].(string)
+		parsed, err := url.Parse(strings.TrimSpace(value))
+		return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil &&
+			(parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == ""
 	case PredicateSlug:
 		return routeSlug(values[p.Name])
 	case PredicateEquals:

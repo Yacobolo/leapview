@@ -28,7 +28,7 @@ func (s *Server) mcpHandler() http.Handler {
 		JSONResponse: true,
 		Logger:       s.logger,
 	})
-	protected := s.protectMCPBearer(transport)
+	protected := s.protectMCPAccessToken(transport)
 	originProtection := http.NewCrossOriginProtection()
 	return originProtection.Handler(protected)
 }
@@ -116,25 +116,35 @@ func mcpErrorResult(code, message string) *mcp.CallToolResult {
 	}
 }
 
-func (s *Server) protectMCPBearer(next http.Handler) http.Handler {
+func (s *Server) protectMCPAccessToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.auth == nil {
-			writeBearerChallenge(w, r)
+		if s.auth == nil || s.mcpOAuthResource == nil {
+			if s.mcpOAuthResource != nil {
+				s.mcpOAuthResource.Challenge(w)
+			} else {
+				writeBearerChallenge(w, r)
+			}
 			return
 		}
 		r = r.WithContext(access.WithAuthorizationCache(r.Context()))
-		principal, credential, ok := s.auth.authenticateBearer(r)
-		if !ok {
-			writeBearerChallenge(w, r)
-			return
+		var principal Principal
+		if s.auth.devBypass && s.auth.acceptsPublicBearer(r) {
+			principal = localDeveloperPrincipal()
+		} else {
+			credential, err := s.mcpOAuthResource.Authenticate(r.Context(), bearerToken(r))
+			if err != nil {
+				s.mcpOAuthResource.Challenge(w)
+				return
+			}
+			principal = Principal{
+				ID: credential.Principal.ID, Email: credential.Principal.Email,
+				DisplayName: credential.Principal.DisplayName,
+			}
 		}
 		ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
-		if credential != nil {
-			ctx = context.WithValue(ctx, apiCredentialContextKey{}, *credential)
-		}
 		r = r.WithContext(ctx)
 		if !principal.DevBypass {
-			allowed, err := s.authorizeGlobalAgentPrivilege(r.Context(), principal.ID, credential, access.PrivilegeUseAgent)
+			allowed, err := s.authorizeGlobalAgentPrivilege(r.Context(), principal.ID, nil, access.PrivilegeUseAgent)
 			if err != nil {
 				writeAuthError(w, r, err, http.StatusInternalServerError)
 				return

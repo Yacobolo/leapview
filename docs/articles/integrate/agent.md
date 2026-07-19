@@ -35,11 +35,17 @@ A typical client creates or selects a conversation, starts a run, records its id
 
 ## Integrate through MCP
 
-Connect a Streamable HTTP MCP client to `/mcp` and send an existing LibreDash API token as a bearer credential. LibreDash implements the 2025-11-25 protocol with stateless JSON responses and exposes tools only—no resources, prompts, nested conversation tools, or stdio transport.
+Set `LIBREDASH_PUBLIC_URL` to LibreDash's canonical HTTPS origin, then give an MCP host such as Claude the URL `https://<your-libredash-host>/mcp`. The host discovers authorization automatically and opens LibreDash's sign-in and consent flow. LibreDash implements Streamable HTTP 2025-11-25 with stateless JSON responses and exposes tools only—no resources, prompts, nested conversation tools, or stdio transport.
 
-MCP and built-in chat consume the same catalog, schemas, handlers, authorization, projections, audit path, and execution errors. Successful tool calls return both `structuredContent` and equivalent JSON text. MCP access requires `USE_AGENT`; each tool additionally requires its generated resource privilege. Workspace-bound tokens may call tools only for their bound workspace.
+MCP and built-in chat consume the same catalog, schemas, handlers, authorization, projections, audit path, and execution errors. Successful tool calls return both `structuredContent` and equivalent JSON text. MCP access requires `USE_AGENT`; each tool additionally requires its generated workspace or resource privilege.
 
-Browser sessions are not accepted at `/mcp`. Cross-origin requests are rejected. OAuth-based MCP authorization is outside the current surface.
+By default, LibreDash is the MCP authorization server. It supports authorization code with S256 PKCE, refresh-token rotation, OAuth protected-resource and authorization-server discovery, Client ID Metadata Documents, and Dynamic Client Registration. The user approves the coarse `mcp:use` scope; live LibreDash RBAC and data policies remain authoritative for every tool call. Access tokens last 15 minutes and refresh tokens last 30 days.
+
+General LibreDash API tokens and browser-session cookies are intentionally rejected at `/mcp`. A development bearer token remains available only with the local development bypass. Automated MCP clients use an existing LibreDash service-principal ID and secret with the OAuth `client_credentials` grant, the `mcp:use` scope, and an exact `resource` of `${LIBREDASH_PUBLIC_URL}/mcp`.
+
+To delegate MCP authorization to an organization-wide provider, set `LIBREDASH_MCP_OAUTH_ISSUER_URL`. The issuer must publish OpenID Connect discovery and sign JWT access tokens whose audience is exactly `${LIBREDASH_PUBLIC_URL}/mcp`, whose subject identifies the user, and whose scope contains `mcp:use`. LibreDash maps the external subject/email to a principal, then applies the same live authorization checks. In this mode clients use the external provider's advertised authorization endpoints; LibreDash's embedded authorization endpoints are unavailable.
+
+Cross-origin MCP requests are rejected. OAuth tokens are bearer credentials on the wire, so deploy only behind HTTPS and never place them in URLs or logs.
 
 ## Validate answers and operate safely
 

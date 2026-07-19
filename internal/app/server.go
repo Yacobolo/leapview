@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/access/http/mcpoauth"
 	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
 	"github.com/Yacobolo/libredash/internal/agent"
 	agentopenai "github.com/Yacobolo/libredash/internal/agent/openai"
@@ -126,6 +127,9 @@ type Server struct {
 	apiIdempotencyMu              sync.Mutex
 	apiIdempotency                map[string]*apiIdempotencyRecord
 	apiIdempotencyStore           *apiidempotencysqlite.Store
+	mcpOAuth                      *mcpoauth.Service
+	mcpOAuthResource              mcpoauth.ResourceServer
+	mcpOAuthInitErr               error
 }
 
 func New(metrics QueryMetrics) *Server {
@@ -182,6 +186,12 @@ type Options struct {
 	ManagedDataTus            http.Handler
 	ManagedDataExpirer        managedDataUploadExpirer
 	ManagedDataExpireInterval time.Duration
+	MCPOAuth                  MCPOAuthConfig
+}
+
+type MCPOAuthConfig struct {
+	PublicURL string
+	IssuerURL string
 }
 
 func NewWithOptions(metrics QueryMetrics, options Options) *Server {
@@ -245,6 +255,22 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	server.agent = options.Agent
 	server.auth = options.Auth
+	if server.store != nil && server.auth != nil && server.accessRepo != nil {
+		publicURL := strings.TrimSuffix(strings.TrimSpace(options.MCPOAuth.PublicURL), "/")
+		if publicURL == "" {
+			publicURL = "http://localhost:8080"
+		}
+		if issuerURL := strings.TrimSpace(options.MCPOAuth.IssuerURL); issuerURL != "" {
+			server.mcpOAuthResource, server.mcpOAuthInitErr = mcpoauth.NewExternal(server.accessRepo, mcpoauth.ExternalConfig{
+				IssuerURL: issuerURL, ResourceURL: publicURL + "/mcp",
+			})
+		} else {
+			server.mcpOAuth, server.mcpOAuthInitErr = mcpoauth.New(server.store.SQLDB(), server.accessRepo, mcpoauth.Config{
+				IssuerURL: publicURL, ResourceURL: publicURL + "/mcp", Secret: server.auth.mcpOAuthSecret(),
+			})
+			server.mcpOAuthResource = server.mcpOAuth
+		}
+	}
 	server.reloader = options.Reloader
 	server.artifactDir = options.ArtifactDir
 	server.duckDBDir = options.DuckDBDir
@@ -276,6 +302,9 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 		if server.pageStreamTrace != nil {
 			server.pageStreamTrace.SetLogger(options.Logger)
 		}
+	}
+	if server.mcpOAuthInitErr != nil {
+		server.logger.ErrorContext(context.Background(), "initialize MCP OAuth failed", "error", server.mcpOAuthInitErr)
 	}
 	if err := server.registerDefaultWorkspaceSecurable(context.Background()); err != nil {
 		server.logger.ErrorContext(context.Background(), "register default workspace securable failed", "workspace", server.defaultWorkspaceID, "error", err)

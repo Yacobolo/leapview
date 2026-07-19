@@ -11,6 +11,7 @@ LIBREDASH_PRODUCTION=true
 LIBREDASH_LOCAL_AUTH=true
 LIBREDASH_CSRF_KEY=<at-least-32-character-random-secret>
 LIBREDASH_COOKIE_SECURE=true
+LIBREDASH_PUBLIC_URL=https://dash.example.com
 LIBREDASH_ALLOWED_HOSTS=dash.example.com
 ```
 

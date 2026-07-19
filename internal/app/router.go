@@ -100,8 +100,18 @@ func (s *Server) Routes() http.Handler {
 		r.Use(s.rateLimits.authMiddleware())
 		r.Get("/auth/{provider}", s.authBegin)
 		r.Get("/auth/{provider}/callback", s.authCallback)
-		r.Post("/oauth/token", s.accessHTTPHandler().OAuthToken)
+		r.Post("/oauth/token", s.mcpOAuthToken)
+		r.Post("/oauth/register", s.mcpOAuthRegister)
+		r.Post("/oauth/revoke", s.mcpOAuthRevoke)
 	})
+	mux.Get("/.well-known/oauth-protected-resource", s.mcpProtectedResourceMetadata)
+	mux.Get("/.well-known/oauth-protected-resource/mcp", s.mcpProtectedResourceMetadata)
+	mux.Get("/.well-known/oauth-authorization-server", s.mcpAuthorizationServerMetadata)
+	if s.auth != nil {
+		authorize := s.auth.Middleware("", http.HandlerFunc(s.mcpOAuthAuthorize))
+		mux.Method(http.MethodGet, "/oauth/authorize", s.csrf(authorize))
+		mux.Method(http.MethodPost, "/oauth/authorize", s.csrf(authorize))
+	}
 	if s.store != nil {
 		if s.auth != nil {
 			mux.With(s.rateLimits.apiMiddleware()).Handle("/mcp", s.mcpHandler())

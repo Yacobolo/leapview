@@ -260,7 +260,8 @@ Production mode serves the active deployed BI-as-code bundle from `.libredash` b
 export LIBREDASH_PRODUCTION=1
 export LIBREDASH_LOCAL_AUTH=1 # or configure OIDC/Azure below
 export LIBREDASH_CSRF_KEY=<32+ byte secret>
-export LIBREDASH_ALLOWED_HOSTS=localhost
+export LIBREDASH_PUBLIC_URL=https://libredash.example.com
+export LIBREDASH_ALLOWED_HOSTS=libredash.example.com
 export LIBREDASH_METRICS_BEARER_TOKEN=<32+ byte secret>
 export LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 libredash serve --production
@@ -308,7 +309,8 @@ docker run --rm -p 8080:8080 \
   -v libredash-data:/var/lib/libredash \
   -e LIBREDASH_API_TOKEN_ONLY_AUTH=1 \
   -e LIBREDASH_CSRF_KEY=<32+ byte secret> \
-  -e LIBREDASH_ALLOWED_HOSTS=localhost \
+  -e LIBREDASH_PUBLIC_URL=https://libredash.example.com \
+  -e LIBREDASH_ALLOWED_HOSTS=libredash.example.com \
   -e LIBREDASH_METRICS_BEARER_TOKEN=<32+ byte secret> \
   -e LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
   libredash
@@ -325,6 +327,7 @@ LIBREDASH_HOME=/var/lib/libredash
 LIBREDASH_LOCAL_AUTH=1
 LIBREDASH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 LIBREDASH_CSRF_KEY=<32+ byte secret>
+LIBREDASH_PUBLIC_URL=https://libredash.example.com
 LIBREDASH_ALLOWED_HOSTS=libredash.example.com
 LIBREDASH_METRICS_BEARER_TOKEN=<32+ byte secret>
 LIBREDASH_COOKIE_SECURE=true
@@ -349,7 +352,7 @@ infisical run --env=prod -- libredash serve --production
 Use the generated `.env.example` as a valid local-auth production baseline; do not commit real `.env` files.
 
 Production serve keeps the control-plane SQLite database and DuckLake catalog in separate files under `LIBREDASH_HOME`. It enables structured request logs, security headers, allowed-host validation, rate limits, a 128 MiB request body limit, bounded interactive query execution, and OAuth state cookies derived from `LIBREDASH_CSRF_KEY`.
-`LIBREDASH_ALLOWED_HOSTS` accepts exact hosts and `*.example.com` wildcards. Browser auth deployments also allow the hosts from configured OIDC/Azure callback URLs; API-token-only production must set the allowlist explicitly.
+`LIBREDASH_ALLOWED_HOSTS` accepts exact hosts and `*.example.com` wildcards. Production also allows the host from `LIBREDASH_PUBLIC_URL` and configured OIDC/Azure callback URLs. The public URL must be HTTPS and match the externally reachable origin; terminate TLS in the server or a trusted reverse proxy.
 Operational probes are exposed at `/healthz` and `/readyz`; Prometheus-compatible HTTP metrics are exposed at `/metrics`. Production requires `LIBREDASH_METRICS_BEARER_TOKEN`, and metrics scrapes must send `Authorization: Bearer <token>`.
 
 ## Test

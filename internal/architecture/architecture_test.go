@@ -675,6 +675,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"LIBREDASH_CSRF_KEY=",
 		"LIBREDASH_METRICS_BEARER_TOKEN=",
 		"LIBREDASH_ALLOWED_HOSTS=",
+		"LIBREDASH_PUBLIC_URL=",
 		"/healthz",
 		"/readyz",
 		"/metrics",

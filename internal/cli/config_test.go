@@ -25,6 +25,7 @@ func TestConfigValidateDoesNotExposeSecretValues(t *testing.T) {
 	t.Setenv("LIBREDASH_PRODUCTION", "1")
 	t.Setenv("LIBREDASH_LOCAL_AUTH", "1")
 	t.Setenv("LIBREDASH_ALLOWED_HOSTS", "libredash.example.com")
+	t.Setenv("LIBREDASH_PUBLIC_URL", "https://libredash.example.com")
 	t.Setenv("LIBREDASH_COOKIE_SECURE", "true")
 	t.Setenv("LIBREDASH_CSRF_KEY", secret)
 	t.Setenv("LIBREDASH_METRICS_BEARER_TOKEN", "0123456789abcdef0123456789abcdef")

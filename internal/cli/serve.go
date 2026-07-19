@@ -68,6 +68,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if addr == "" {
 		addr = cfg.ListenAddr()
 	}
+	cfg.Addr = addr
 	if err := cfg.Validate(config.ProfileServe); err != nil {
 		return err
 	}
@@ -374,9 +375,13 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		Logger:              slog.Default(),
 		SCIMBearerToken:     cfg.SCIMBearerToken,
 		MetricsBearerToken:  cfg.MetricsBearerToken,
-		AllowedHosts:        allowedHosts,
-		Executor:            execution.New(cfg.ExecutionConfig()),
-		JobLeaseTimeout:     cfg.ExecJobLeaseTimeout,
+		MCPOAuth: app.MCPOAuthConfig{
+			PublicURL: firstConfigured(cfg.PublicURL, listenURL(cfg.ListenAddr())),
+			IssuerURL: cfg.MCPOAuthIssuerURL,
+		},
+		AllowedHosts:    allowedHosts,
+		Executor:        execution.New(cfg.ExecutionConfig()),
+		JobLeaseTimeout: cfg.ExecJobLeaseTimeout,
 		ManagedData: manageddatahttp.Options{
 			Repository: managedDataAPI, Uploads: managedDataControl,
 			Multipart: managedDataMultipart,
@@ -390,4 +395,13 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,
 	})
 	return server, cleanupWithRegistry, nil
+}
+
+func firstConfigured(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }

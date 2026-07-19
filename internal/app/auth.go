@@ -619,8 +619,8 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, nil, true
 }
 
-// authenticateBearer is the shared REST/MCP bearer credential resolver. It
-// deliberately never falls back to browser sessions.
+// authenticateBearer resolves LibreDash REST API tokens. MCP OAuth tokens use
+// the resource-server verifier and never enter the REST credential path.
 func (a *Auth) authenticateBearer(r *http.Request) (Principal, *access.APICredential, bool) {
 	if a == nil || bearerToken(r) == "" {
 		return Principal{}, nil, false
@@ -800,6 +800,14 @@ func (a *Auth) decodeOIDCState(value string) (string, string, error) {
 func derivedSecret(secret, purpose string) []byte {
 	base := csrfKey(secret)
 	sum := sha256.Sum256(append([]byte("libredash:"+purpose+":"), base...))
+	return sum[:]
+}
+
+func (a *Auth) mcpOAuthSecret() []byte {
+	if a == nil {
+		return nil
+	}
+	sum := sha256.Sum256(append([]byte("libredash:mcp-oauth:"), a.stateKey...))
 	return sum[:]
 }
 

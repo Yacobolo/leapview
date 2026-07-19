@@ -122,7 +122,7 @@ func (c Config) ProductionAllowedHosts() ([]string, error) {
 		return nil, err
 	}
 	seen := map[string]struct{}{}
-	out := make([]string, 0, len(hosts)+2)
+	out := make([]string, 0, len(hosts)+3)
 	add := func(host string) {
 		if host == "" {
 			return
@@ -136,7 +136,7 @@ func (c Config) ProductionAllowedHosts() ([]string, error) {
 	for _, host := range hosts {
 		add(host)
 	}
-	for _, raw := range []string{c.OIDCCallbackURL, c.AzureCallbackURL} {
+	for _, raw := range []string{c.PublicURL, c.OIDCCallbackURL, c.AzureCallbackURL} {
 		host, err := callbackAllowedHost(raw)
 		if err != nil {
 			return nil, err
