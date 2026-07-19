@@ -34,11 +34,12 @@ type includeList struct {
 }
 
 type workspaceSpec struct {
-	Uses           workspaceUses `yaml:"uses"`
-	Models         includeList   `yaml:"models"`
-	SemanticModels includeList   `yaml:"semanticModels"`
-	Dashboards     includeList   `yaml:"dashboards"`
-	Access         includeList   `yaml:"access"`
+	Uses             workspaceUses `yaml:"uses"`
+	Models           includeList   `yaml:"models"`
+	SemanticModels   includeList   `yaml:"semanticModels"`
+	Dashboards       includeList   `yaml:"dashboards"`
+	Access           includeList   `yaml:"access"`
+	RefreshPipelines includeList   `yaml:"refreshPipelines"`
 }
 
 type workspaceUses struct {
@@ -146,4 +147,17 @@ type workspaceDataPolicySpec struct {
 	Subject    workspaceRoleBindingSubjectSpec `yaml:"subject"`
 	PolicyType string                          `yaml:"policyType"`
 	Expression yaml.Node                       `yaml:"expression"`
+}
+type refreshPipelineSpec struct {
+	SemanticModel string                `yaml:"semanticModel"`
+	On            refreshPipelineOnSpec `yaml:"on"`
+}
+
+type refreshPipelineOnSpec struct {
+	Schedule []refreshPipelineScheduleSpec `yaml:"schedule"`
+}
+
+type refreshPipelineScheduleSpec struct {
+	Cron     string `yaml:"cron"`
+	Timezone string `yaml:"timezone"`
 }

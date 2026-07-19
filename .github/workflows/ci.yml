@@ -53,7 +53,7 @@ jobs:
 
       - name: Check generated build inputs are untracked
         run: |
-          tracked="$(git ls-files -- docs/catalog.json docs/search-index.sqlite3 docs/configuration.md 'docs/api/*.md' docs/reference/cli docs/reference/config internal/config/config_gen.go internal/configspec/names_gen.go web/generated)"
+          tracked="$(git ls-files -- docs/catalog.json docs/search-index.sqlite3 docs/configuration.md docs/visuals/examples.gen.json 'docs/api/*.md' docs/reference/cli docs/reference/config internal/config/config_gen.go internal/configspec/names_gen.go web/generated)"
           if [ -n "$tracked" ]; then
             printf 'derived build inputs must be generated, not committed:\n%s\n' "$tracked" >&2
             exit 1
@@ -84,6 +84,7 @@ jobs:
             docs/reference/cli
             docs/reference/config
             docs/search-index.sqlite3
+            docs/visuals/examples.gen.json
             internal/api/gen
             internal/cli/gen
             internal/config/config_gen.go
@@ -113,6 +114,7 @@ jobs:
             docs/catalog.json \
             docs/configuration.md \
             docs/search-index.sqlite3 \
+            docs/visuals/examples.gen.json \
             internal/config/config_gen.go \
             internal/configspec/names_gen.go \
             internal/platform/db/db.go \
@@ -147,6 +149,7 @@ jobs:
             internal/ui/signals/models.gen.go
             docs/catalog.json
             docs/search-index.sqlite3
+            docs/visuals/examples.gen.json
             docs/configuration.md
             docs/api/*.md
             docs/reference/cli/
@@ -178,7 +181,27 @@ jobs:
           name: generated-assets
           path: .
 
+      - name: Start MinIO source integration service
+        run: |
+          docker run --detach --name libredash-minio \
+            --publish 127.0.0.1:9000:9000 \
+            --env MINIO_ROOT_USER=libredash \
+            --env MINIO_ROOT_PASSWORD=libredash-integration-secret \
+            minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
+            server /data --address :9000
+          attempt=0
+          until curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 60 ]; then
+              docker logs libredash-minio
+              exit 1
+            fi
+            sleep 1
+          done
+
       - name: Run Go tests
+        env:
+          LIBREDASH_TEST_MINIO_ENDPOINT: http://127.0.0.1:9000
         run: go test ./...
 
   site-image:
@@ -428,7 +451,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Test deployment lifecycle
-        run: go test ./deploy/hetzner
+        run: go test ./deploy/compose ./deploy/hetzner
 
       - name: Lint workflow definitions
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
@@ -437,7 +460,8 @@ jobs:
         run: >-
           docker run --rm -v "$PWD:/mnt:ro"
           koalaman/shellcheck:stable@sha256:bb596a0d169b85ddd81d8b6d3a2ff6d5baf5fca10b97f575ebc647c3dff62b3d
-          deploy/hetzner/files/libredashctl
+          deploy/hetzner/files/libredashctl-wrapper
+          deploy/hetzner/files/libredash-backup-hook
           deploy/hetzner/files/provision.sh.tftpl
 
       - name: Initialize Terraform providers

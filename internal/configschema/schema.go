@@ -32,6 +32,7 @@ const (
 	KindWorkspaceRoleBinding  Kind = "workspace-role-binding"
 	KindGrant                 Kind = "grant"
 	KindDataPolicy            Kind = "data-policy"
+	KindRefreshPipeline       Kind = "refresh-pipeline"
 	KindModelTable            Kind = "model-table"
 	KindSemanticModelResource Kind = "semantic-model-resource"
 	KindDashboardResource     Kind = "dashboard-resource"
@@ -159,7 +160,7 @@ func compiledDefinition(kind Kind) (*cue.Context, cue.Value, string, error) {
 }
 
 func JSONSchemaFiles() (map[string][]byte, error) {
-	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindGrant, KindDataPolicy, KindModelTable, KindSemanticModelResource, KindDashboardResource}
+	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindGrant, KindDataPolicy, KindRefreshPipeline, KindModelTable, KindSemanticModelResource, KindDashboardResource}
 	files := map[string][]byte{}
 	for _, kind := range kinds {
 		content, err := JSONSchema(kind)
@@ -189,6 +190,8 @@ func JSONSchemaFilename(kind Kind) string {
 		return "grant.schema.json"
 	case KindDataPolicy:
 		return "data-policy.schema.json"
+	case KindRefreshPipeline:
+		return "refresh-pipeline.schema.json"
 	case KindModelTable:
 		return "model-table.schema.json"
 	case KindSemanticModelResource:
@@ -243,6 +246,8 @@ func definitionName(kind Kind) (string, error) {
 		return "GrantResource", nil
 	case KindDataPolicy:
 		return "DataPolicyResource", nil
+	case KindRefreshPipeline:
+		return "RefreshPipelineResource", nil
 	case KindModelTable:
 		return "ModelTableResource", nil
 	case KindSemanticModelResource:
@@ -419,6 +424,9 @@ var schemaOverlays = map[Kind]schemaOverlay{
 		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 	KindDataPolicy: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
+	},
+	KindRefreshPipeline: {
 		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 	KindModelTable: {

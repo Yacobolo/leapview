@@ -354,6 +354,17 @@ type workspaceRoleBindingSubjectPayloadV1 struct {
 	Group       string `json:"Group"`
 }
 
+type refreshPipelinePayloadV1 struct {
+	ID            string                             `json:"ID"`
+	Name          string                             `json:"Name"`
+	SemanticModel string                             `json:"SemanticModel"`
+	Schedules     []refreshPipelineSchedulePayloadV1 `json:"Schedules"`
+}
+
+type refreshPipelineSchedulePayloadV1 struct {
+	Cron     string `json:"Cron"`
+	Timezone string `json:"Timezone"`
+}
 type pageItemPayloadV1 struct {
 	ID          string          `json:"ID"`
 	Kind        string          `json:"Kind"`

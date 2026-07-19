@@ -42,8 +42,8 @@ func TestGlobalAgentMigrationPreservesConversationMessagesRunsAndEvents(t *testi
 		t.Fatalf("seed event: %v", err)
 	}
 
-	if err := goose.UpToContext(ctx, db, "migrations", 36); err != nil {
-		t.Fatalf("migrate to 36: %v", err)
+	if err := goose.UpToContext(ctx, db, "migrations", 37); err != nil {
+		t.Fatalf("migrate to 37: %v", err)
 	}
 	var workspaceColumns int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('agent_conversations') WHERE name = 'workspace_id'`).Scan(&workspaceColumns); err != nil {

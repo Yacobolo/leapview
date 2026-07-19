@@ -3,6 +3,7 @@ package compiler
 import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -30,6 +31,7 @@ type WorkspaceProject struct {
 	AccessRoleBindings    map[string]workspace.WorkspaceRoleBinding
 	AccessGrants          map[string]workspace.WorkspaceGrant
 	AccessDataPolicies    map[string]workspace.WorkspaceDataPolicy
+	RefreshPipelines      map[string]refreshpipeline.Definition
 	ModelTitles           map[string]string
 	ModelDescriptions     map[string]string
 	DashboardTitles       map[string]string
@@ -40,6 +42,7 @@ type WorkspaceProject struct {
 	SemanticModelPaths    map[string]string
 	DashboardPaths        map[string]string
 	AccessPaths           map[string]string
+	RefreshPipelinePaths  map[string]string
 }
 
 type CompiledProject struct {

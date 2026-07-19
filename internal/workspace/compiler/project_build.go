@@ -9,6 +9,7 @@ import (
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -220,9 +221,10 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 			Grants:       copyWorkspaceGrants(workspaceProject.AccessGrants),
 			DataPolicies: copyWorkspaceDataPolicies(workspaceProject.AccessDataPolicies),
 		},
-		BaseDir:     project.BaseDir,
-		SourceIDs:   sourceIDs,
-		SourceFiles: workspaceProject.sourceFiles(project),
+		RefreshPipelines: copyRefreshPipelines(workspaceProject.RefreshPipelines),
+		BaseDir:          project.BaseDir,
+		SourceIDs:        sourceIDs,
+		SourceFiles:      workspaceProject.sourceFiles(project),
 	}
 	for _, modelName := range sortedMapKeys(workspaceProject.SemanticModels) {
 		semanticSpec := workspaceProject.SemanticModels[modelName]
@@ -288,7 +290,19 @@ func (workspaceProject *WorkspaceProject) sourceFiles(project Project) map[strin
 			sourceFiles[string(workspace.NewAssetID(workspace.AssetTypeWorkspaceRoleBinding, workspaceKey(name)))] = path
 		}
 	}
+	for name, path := range workspaceProject.RefreshPipelinePaths {
+		sourceFiles[string(workspace.NewAssetID(workspace.AssetTypeRefreshPipeline, workspaceKey(name)))] = path
+	}
 	return sourceFiles
+}
+
+func copyRefreshPipelines(in map[string]refreshpipeline.Definition) map[string]refreshpipeline.Definition {
+	out := make(map[string]refreshpipeline.Definition, len(in))
+	for name, pipeline := range in {
+		pipeline.Schedules = append([]refreshpipeline.Schedule{}, pipeline.Schedules...)
+		out[name] = pipeline
+	}
+	return out
 }
 
 func (workspaceProject *WorkspaceProject) semanticModel(project Project, modelName string, semanticSpec projectSemanticModelSpec, sourceAliases map[string]string) (*semanticmodel.Model, error) {

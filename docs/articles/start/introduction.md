@@ -32,7 +32,7 @@ flowchart LR
 2. Model tables and semantic models turn those inputs into reusable analytical concepts.
 3. Dashboards compose semantic queries into filters, KPIs, charts, tables, and report pages.
 
-Workspace access resources apply alongside those layers. The global agent and MCP execute the same governed tools against an explicitly selected asset workspace. Environments select which validated project and data revisions are active without requiring a second copy of the YAML tree.
+Workspace access resources apply alongside those layers. The global agent and MCP execute the same governed tools against an explicitly selected asset workspace. Separate dev, staging, and production instances can run the same validated project source without requiring a second copy of the YAML tree.
 
 ## How a request is served
 
@@ -42,6 +42,6 @@ This division keeps credentials, unrestricted SQL, authorization, and query trut
 
 ## What lives in the repository
 
-A typical project contains one project manifest, project-global connections and sources, and one or more workspaces. Each workspace owns its model tables, semantic models, dashboards, role bindings, policies, and optional agent configuration. Generated JSON Schemas describe the exact shape of every resource.
+A typical project contains one project manifest, project-global connections and sources, and one or more workspaces. Each workspace owns its model tables, semantic models, dashboards, role bindings, data policies, and refresh pipelines. Generated JSON Schemas describe the exact shape of every resource.
 
 Start with [Get started with LibreDash](/docs/getting-started) to run the included project. Then read [Projects, workspaces, and environments](/docs/concepts/projects-workspaces-environments) before creating a project of your own.

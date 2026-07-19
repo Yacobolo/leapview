@@ -3,6 +3,7 @@ package workspace
 import (
 	"github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 )
 
 type Catalog struct {
@@ -33,11 +34,12 @@ type CatalogDashboard struct {
 }
 
 type Definition struct {
-	Catalog     Catalog
-	Models      map[string]*model.Model
-	Dashboards  map[string]*report.Dashboard
-	Access      AccessPolicy
-	BaseDir     string
-	SourceIDs   map[string]string
-	SourceFiles map[string]string
+	Catalog          Catalog
+	Models           map[string]*model.Model
+	Dashboards       map[string]*report.Dashboard
+	Access           AccessPolicy
+	RefreshPipelines map[string]refreshpipeline.Definition
+	BaseDir          string
+	SourceIDs        map[string]string
+	SourceFiles      map[string]string
 }

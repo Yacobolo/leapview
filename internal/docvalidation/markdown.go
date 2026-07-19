@@ -23,6 +23,7 @@ var schemaKinds = map[string]configschema.Kind{
 	"WorkspaceRoleBinding": configschema.KindWorkspaceRoleBinding,
 	"Grant":                configschema.KindGrant,
 	"DataPolicy":           configschema.KindDataPolicy,
+	"RefreshPipeline":      configschema.KindRefreshPipeline,
 	"ModelTable":           configschema.KindModelTable,
 	"SemanticModel":        configschema.KindSemanticModelResource,
 	"Dashboard":            configschema.KindDashboardResource,

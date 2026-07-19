@@ -330,7 +330,7 @@ test('workspace access modal normalizes Go-shaped access signals', async () => {
   }
 })
 
-test('workspace asset refresh page renders refresh tab and emits refresh events', async () => {
+test('refresh pipeline page renders run history and emits run-now events', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(`${baseURL}/asset`)
@@ -339,37 +339,37 @@ test('workspace asset refresh page renders refresh tab and emits refresh events'
     const state = await page.evaluate(async () => {
       const asset = document.querySelector('ld-workspace-asset-page') as any
       let refreshEvents = 0
-      asset.addEventListener('ld-refresh-materializations', () => { refreshEvents += 1 })
+      asset.addEventListener('ld-run-refresh-pipeline', () => { refreshEvents += 1 })
       const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
       mergePatch({ page: {
         kind: 'workspace_asset',
-        title: 'Olist Commerce',
+        title: 'Sales refresh',
         workspaceId: 'libredash',
-        assetId: 'semantic_model:olist',
+        assetId: 'refresh_pipeline:sales-refresh',
         activeSection: 'refreshes',
         asset: {
-          id: 'semantic_model:olist',
-          title: 'Olist Commerce',
-          description: 'Brazilian ecommerce model.',
-          type: 'semantic_model',
-          typeLabel: 'Semantic model',
-          key: 'olist',
-          detailHref: '/workspaces/libredash/assets/semantic_model:olist/details',
-          openHref: '/workspaces/libredash/assets/semantic_model:olist/details',
+          id: 'refresh_pipeline:sales-refresh',
+          title: 'Sales refresh',
+          description: '',
+          type: 'refresh_pipeline',
+          typeLabel: 'Refresh pipeline',
+          key: 'sales-refresh',
+          detailHref: '/workspaces/libredash/assets/refresh_pipeline:sales-refresh/details',
+          openHref: '/workspaces/libredash/assets/refresh_pipeline:sales-refresh/details',
         },
         breadcrumbs: [
           { label: 'Workspaces', href: '/workspaces' },
           { label: 'LibreDash Workspace', href: '/workspaces/libredash' },
-          { label: 'Olist Commerce', current: true },
+          { label: 'Sales refresh', current: true },
         ],
         actions: [
-          { label: 'Refresh materializations', icon: 'refresh', command: 'refresh-materializations' },
+          { label: 'Run now', icon: 'refresh', command: 'run-refresh-pipeline' },
           { label: 'Back to workspace', href: '/workspaces/libredash', icon: 'back' },
         ],
         tabs: [
-          { id: 'details', label: 'Details', href: '/workspaces/libredash/assets/semantic_model:olist/details', active: false },
-          { id: 'refreshes', label: 'Refreshes', href: '/workspaces/libredash/assets/semantic_model:olist/refreshes', active: true },
-          { id: 'lineage', label: 'Lineage', href: '/workspaces/libredash/assets/semantic_model:olist/lineage', active: false, count: 1 },
+          { id: 'details', label: 'Details', href: '/workspaces/libredash/assets/refresh_pipeline:sales-refresh/details', active: false },
+          { id: 'refreshes', label: 'Refreshes', href: '/workspaces/libredash/assets/refresh_pipeline:sales-refresh/refreshes', active: true },
+          { id: 'lineage', label: 'Lineage', href: '/workspaces/libredash/assets/refresh_pipeline:sales-refresh/lineage', active: false, count: 1 },
         ],
         refresh: {
           status: 'succeeded',
@@ -387,7 +387,7 @@ test('workspace asset refresh page renders refresh tab and emits refresh events'
         },
       } })
       await asset.updateComplete
-      const button = asset.shadowRoot.querySelector('button[aria-label="Refresh materializations"]') as HTMLButtonElement
+      const button = asset.shadowRoot.querySelector('button[aria-label="Run now"]') as HTMLButtonElement
       button.click()
       return {
         activeTab: asset.shadowRoot.querySelector('.tabs a.active')?.textContent?.trim(),
