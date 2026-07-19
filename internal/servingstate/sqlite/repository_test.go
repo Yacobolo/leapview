@@ -3,12 +3,15 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -276,6 +279,77 @@ func TestRepositoryTracksActiveDeploymentsPerEnvironment(t *testing.T) {
 	}
 	if activeDev.ID != dev.ID || activeProd.ID != prod.ID {
 		t.Fatalf("active dev/prod = %s/%s, want %s/%s", activeDev.ID, activeProd.ID, dev.ID, prod.ID)
+	}
+}
+
+func TestRepositoryActivateRefreshAtomicallyAdvancesAllDataVersions(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := repo.Create(ctx, servingstate.CreateInput{WorkspaceID: "test", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.SaveValidated(ctx, first.ID, validationGraph(first.ID), artifact(first.ID, "test")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordDuckLakeSnapshot(ctx, first.ID, 7); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Activate(ctx, "test", servingstate.DefaultEnvironment, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := "2026-01-01T00:00:00Z"
+	for _, modelID := range []string{"b", "unchanged"} {
+		if _, err := store.SQLDB().ExecContext(ctx, `INSERT INTO semantic_model_data_versions (workspace_id, environment, semantic_model_id, snapshot_id, serving_state_id, refreshed_at, source) VALUES ('test', 'dev', ?, 7, ?, ?, 'publish')`, modelID, first.ID, oldTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	second, err := repo.Create(ctx, servingstate.CreateInput{WorkspaceID: "test", CreatedBy: "tester", Source: servingstate.SourceRefresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.SaveValidated(ctx, second.ID, validationGraph(second.ID), artifact(second.ID, "test")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordDuckLakeSnapshot(ctx, second.ID, 9); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `
+INSERT INTO refresh_jobs (id, workspace_id, serving_state_id, model_id, kind, status) VALUES ('job_1', 'test', ?, 'b', 'refresh_pipeline', 'running');
+INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, trigger_type, status) VALUES ('run_1', 'job_1', 'dev', 'refresh_pipeline', 'test.daily', 'manual', 'running');
+`, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	refreshedAt := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	if _, err := repo.ActivateRefresh(ctx, "test", servingstate.DefaultEnvironment, second.ID, refreshpipeline.DataVersion{
+		WorkspaceID: "test", Environment: "dev", SemanticModel: "b", SnapshotID: 9, ServingStateID: string(second.ID),
+		RefreshedAt: refreshedAt, Source: refreshpipeline.DataVersionSourceRefresh, PipelineID: "daily", RunID: "run_1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.SQLDB().QueryContext(ctx, `SELECT semantic_model_id, snapshot_id, serving_state_id, refreshed_at, source, COALESCE(pipeline_id, '') FROM semantic_model_data_versions ORDER BY semantic_model_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var model, state, timestamp, source, pipeline string
+		var snapshot int64
+		if err := rows.Scan(&model, &snapshot, &state, &timestamp, &source, &pipeline); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, model+"|"+fmt.Sprint(snapshot)+"|"+state+"|"+timestamp+"|"+source+"|"+pipeline)
+	}
+	want := []string{
+		"b|9|" + string(second.ID) + "|" + refreshedAt.Format(time.RFC3339Nano) + "|refresh|daily",
+		"unchanged|9|" + string(second.ID) + "|" + oldTime + "|publish|",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("data versions = %#v, want %#v", got, want)
 	}
 }
 

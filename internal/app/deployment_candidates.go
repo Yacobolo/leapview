@@ -21,6 +21,7 @@ type runtimeReloader interface {
 
 type servingStateRepository interface {
 	workspacerefresh.ServingStateRepository
+	ListActiveScopes(context.Context) ([]servingstate.ActiveScope, error)
 }
 
 func (s *Server) servingStateRepository() (servingStateRepository, error) {

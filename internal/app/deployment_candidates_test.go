@@ -179,10 +179,6 @@ func (emptyPageRuntimeAssetMetrics) SemanticModel(modelID string) (*semanticmode
 	}, true
 }
 
-func (emptyPageRuntimeAssetMetrics) RefreshModelTables(context.Context, string, []string) error {
-	return nil
-}
-
 func testWorkspaceAsset(workspaceID workspace.WorkspaceID, servingStateID workspace.ServingStateID, typ workspace.AssetType, key string, parentID workspace.AssetID, title, description, payloadSchema string, payload any) (workspace.Asset, error) {
 	sourceFile := "testdata/" + strings.ReplaceAll(string(typ)+"-"+key, ".", "-") + ".yaml"
 	return workspace.NewAssetWithSourceFile(workspaceID, servingStateID, typ, key, parentID, title, description, sourceFile, payloadSchema, payload)
