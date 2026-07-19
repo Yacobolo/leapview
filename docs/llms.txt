@@ -1,0 +1,192 @@
+# LibreDash
+
+> Dashboards-as-code BI with generated, machine-readable CLI, API, configuration, and visual documentation.
+
+## Agent entry points
+
+- [Documentation MCP](/mcp): read-only Streamable HTTP MCP with docs_catalog, docs_search, and docs_read tools.
+- [CLI manifest](/docs/cli/manifest.json): versioned command syntax, arguments, flags, defaults, side effects, and confirmation behavior.
+- [API operation manifest](/docs/api/operations.json): versioned operation IDs, routes, authorization, safety metadata, and request/response schemas.
+- [OpenAPI schema](/docs/openapi.yaml): complete generated OpenAPI contract.
+
+Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api/operations/{operationId}.json|md`. Prefer search and focused reads over loading complete manifests. Public documentation tools never execute commands or API operations.
+
+## Documentation
+
+### Start here
+
+- [What is LibreDash?](/docs/introduction): Understand the problems LibreDash solves and its code-native model.
+- [Installation](/docs/installation): Pull the public image locally or prepare a durable production instance.
+- [Get started with LibreDash](/docs/getting-started): Bootstrap, edit, and run the included project from a source checkout.
+- [Build your first dashboard](/docs/first-dashboard): Change a model and dashboard and deploy it locally.
+- [Project structure](/docs/project-structure): Learn how project-global resources and workspace resources are organized.
+
+### Core concepts
+
+- [Core concepts](/docs/concepts): A map of the concepts used throughout LibreDash.
+- [Projects, workspaces, and environments](/docs/concepts/projects-workspaces-environments): Understand ownership, isolation, and deployment scope.
+- [Connections and sources](/docs/concepts/connections-sources): Separate physical data access from reusable logical source definitions.
+- [Model tables](/docs/concepts/model-tables): Materialize reusable analytical tables from source data.
+- [Semantic models](/docs/concepts/semantic-models): Define datasets, dimensions, measures, and relationships once.
+- [Dashboards, pages, and visuals](/docs/concepts/dashboards): Understand the presentation resources rendered by the BI workspace.
+- [Query and interaction lifecycle](/docs/concepts/query-lifecycle): Follow a user interaction from signals through DuckDB and back.
+
+### Build dashboards
+
+- [Build dashboards](/docs/guides/build): Follow the dashboard-as-code authoring workflow.
+- [Connect a data source](/docs/guides/build/connect-data): Add a connection and source definitions to a project.
+- [Define model tables](/docs/guides/build/model-tables): Turn source data into stable analytical tables.
+- [Build a semantic model](/docs/guides/build/semantic-model): Expose reusable fields, measures, and relationships.
+- [Create a dashboard](/docs/guides/build/dashboard): Define a workspace dashboard and its first report page.
+- [Pages and layout](/docs/guides/build/pages-layout): Compose responsive report pages from code.
+- [Filters and interactions](/docs/guides/build/filters-interactions): Configure filter cards and cross-visual selections.
+- [Tables, matrices, and pivots](/docs/guides/build/tables): Choose and configure tabular BI surfaces.
+- [Dashboard authoring patterns](/docs/guides/build/patterns): Apply maintainable modeling and presentation conventions.
+
+### Manage data
+
+- [Managed data ingestion](/docs/data-ingestion): Plan, stage, and activate immutable project-global data revisions.
+- [Data revisions and activation](/docs/guides/data/revisions): Understand revision identity and atomic activation.
+- [Materialization and refresh](/docs/guides/data/refresh): Refresh model tables without disrupting active queries.
+- [Storage and recovery](/docs/guides/data/storage-recovery): Operate local or object-backed analytical storage safely.
+- [Data troubleshooting](/docs/guides/data/troubleshooting): Diagnose planning, upload, revision, and refresh failures.
+
+### Deploy and operate
+
+- [Deploy and operate LibreDash](/docs/guides/operate): Understand the production delivery and operations workflow.
+- [Validate, plan, and deploy](/docs/cli/validate-deploy): Use the standard atomic delivery workflow.
+- [Targets and environments](/docs/cli/targets): Keep local, staging, and production changes explicit.
+- [Production configuration](/docs/guides/operate/production-configuration): Configure secrets, storage, auth, and runtime boundaries.
+- [Self-hosting](/docs/guides/operate/self-hosting): Build and run a supported single-node deployment.
+- [Health and observability](/docs/guides/operate/observability): Monitor health, query activity, refreshes, and deployments.
+- [Backup and restore](/docs/guides/operate/backup-restore): Create, validate, and restore consistent instance backups.
+- [Upgrades and migrations](/docs/guides/operate/upgrades): Upgrade binaries and persistent state with rollback boundaries.
+- [Operational troubleshooting](/docs/guides/operate/troubleshooting): Diagnose deployment and runtime failures systematically.
+
+### Security and administration
+
+- [Authentication and authorization](/docs/enterprise-auth): Understand LibreDash identity and authorization boundaries.
+- [Local authentication](/docs/security/local-auth): Configure self-hosted and break-glass local users.
+- [OIDC](/docs/security/oidc): Connect an enterprise identity provider for browser login.
+- [SCIM provisioning](/docs/security/scim): Provision users, groups, and memberships from a directory.
+- [Roles, grants, and policies](/docs/security/authorization): Assign least-privilege access to securable resources.
+- [Service principals and API tokens](/docs/security/tokens): Authenticate non-human workloads with scoped credentials.
+- [Audit events](/docs/security/audit): Inspect security and administrative activity.
+
+### Integrate
+
+- [Integrate with LibreDash](/docs/integrate): Choose between CLI, API, and agent integration surfaces.
+- [CLI overview](/docs/cli): Install, authenticate, validate, plan, and deploy with the CLI.
+- [Install and authenticate the CLI](/docs/cli/authentication): Configure targets and use API tokens safely.
+- [API quickstart](/docs/guides/integrate/api-quickstart): Authenticate and call the headless API.
+- [API conventions](/docs/guides/integrate/api-conventions): Handle authentication, errors, and pagination consistently.
+- [Headless BI queries](/docs/guides/integrate/headless-bi): Query dashboards and semantic models through stable contracts.
+- [Agent integrations](/docs/guides/integrate/agent): Configure agent policies, tools, and conversations.
+- [Automation and CI](/docs/cli/automation): Run validation and deployments safely in CI.
+
+### Reference
+
+- [Reference](/docs/reference): Find exact syntax and supported contracts.
+- [Environment variable reference](/docs/configuration): Process-wide settings generated from the runtime configuration specification.
+- [Supported capabilities](/docs/reference/capabilities): Review supported resource, data, visual, and integration surfaces.
+- [CLI troubleshooting](/docs/cli/troubleshooting): Diagnose local validation and remote operation failures.
+
+#### Configuration
+
+- [Configuration reference](/docs/config): Choose a resource kind and open its generated field reference and JSON Schema.
+- [Project configuration](/docs/config/project): Fields and validation rules for the Project YAML resource.
+- [Connection configuration](/docs/config/connection): Fields and validation rules for the Connection YAML resource.
+- [Source configuration](/docs/config/source): Fields and validation rules for the Source YAML resource.
+- [Workspace configuration](/docs/config/workspace): Fields and validation rules for the Workspace YAML resource.
+- [Model Table configuration](/docs/config/model-table): Fields and validation rules for the ModelTable YAML resource.
+- [Semantic Model configuration](/docs/config/semantic-model): Fields and validation rules for the SemanticModel YAML resource.
+- [Dashboard configuration](/docs/config/dashboard): Fields and validation rules for the Dashboard YAML resource.
+- [Workspace Group configuration](/docs/config/workspace-group): Fields and validation rules for the WorkspaceGroup YAML resource.
+- [Workspace Role Binding configuration](/docs/config/workspace-role-binding): Fields and validation rules for the WorkspaceRoleBinding YAML resource.
+- [Grant configuration](/docs/config/grant): Fields and validation rules for the Grant YAML resource.
+- [Data Policy configuration](/docs/config/data-policy): Fields and validation rules for the DataPolicy YAML resource.
+- [Workspace Agent Policy configuration](/docs/config/workspace-agent-policy): Fields and validation rules for the WorkspaceAgentPolicy YAML resource.
+- [Refresh Pipeline configuration](/docs/config/refresh-pipeline): Fields and validation rules for the RefreshPipeline YAML resource.
+
+#### CLI commands
+
+- [CLI command reference](/docs/cli/reference): Browse every generated LibreDash command.
+- [libredash admin](/docs/cli/admin): Administrative utilities
+- [libredash agent](/docs/cli/agent): Use the LibreDash read-only agent
+- [libredash api](/docs/cli/api): Call any generated LibreDash API operation
+- [libredash config](/docs/cli/config): Inspect and validate process-global configuration
+- [libredash dashboards](/docs/cli/dashboards): Inspect dashboards
+- [libredash data](/docs/cli/data): Manage project-global data revisions
+- [libredash deploy](/docs/cli/deploy): Atomically deploy a configuration-as-code project
+- [libredash healthcheck](/docs/cli/healthcheck): Check the local LibreDash readiness endpoint
+- [libredash login](/docs/cli/login): Store a LibreDash API token for a target
+- [libredash plan](/docs/cli/plan): Emit a deterministic configuration-as-code plan
+- [libredash schema](/docs/cli/schema): Inspect LibreDash YAML schemas
+- [libredash search](/docs/cli/search): Search workspace assets
+- [libredash semantic-models](/docs/cli/semantic-models): Inspect semantic models
+- [libredash serve](/docs/cli/serve): Run the LibreDash HTTP server
+- [libredash validate](/docs/cli/validate): Validate a configuration-as-code project
+- [libredash workspaces](/docs/cli/workspaces): Inspect workspaces
+
+#### API reference
+
+- [API reference](/docs/api): Browse the generated headless API contract.
+- [System](/docs/api/system): API capabilities and protocol discovery.
+- [Instance](/docs/api/instance): The immutable serving identity of this LibreDash installation.
+- [Projects](/docs/api/projects): Read-only project registry.
+- [Releases](/docs/api/releases): Immutable project releases and artifacts.
+- [Current User](/docs/api/current-user): Current principal, sessions, tokens, and privileges.
+- [Workspaces](/docs/api/workspaces): Workspace and lineage discovery.
+- [Search](/docs/api/search): Progressive workspace discovery across BI assets.
+- [BI](/docs/api/bi): Dashboard and semantic model read APIs.
+- [Deployments](/docs/api/deployments): Atomic project release deployment.
+- [Refresh Runs](/docs/api/refresh-runs): Headless refresh run operations.
+- [Agent](/docs/api/agent): Headless agent conversation and run operations.
+- [Access](/docs/api/access): Principals, groups, roles, and role bindings.
+- [Audit](/docs/api/audit): Workspace audit event discovery.
+- [Managed Data](/docs/api/managed-data): Project-global managed-data revisions and uploads.
+
+#### Charts
+
+- [Chart types](/docs/charts/overview): Choose from every supported LibreDash visual type.
+- [Line chart](/docs/charts/line): Configuration and query shape for the Line chart visual.
+- [Area chart](/docs/charts/area): Configuration and query shape for the Area chart visual.
+- [Bar chart](/docs/charts/bar): Configuration and query shape for the Bar chart visual.
+- [Column chart](/docs/charts/column): Configuration and query shape for the Column chart visual.
+- [Pie chart](/docs/charts/pie): Configuration and query shape for the Pie chart visual.
+- [Donut chart](/docs/charts/donut): Configuration and query shape for the Donut chart visual.
+- [Scatter chart](/docs/charts/scatter): Configuration and query shape for the Scatter chart visual.
+- [Funnel chart](/docs/charts/funnel): Configuration and query shape for the Funnel chart visual.
+- [Treemap](/docs/charts/treemap): Configuration and query shape for the Treemap visual.
+- [Gauge](/docs/charts/gauge): Configuration and query shape for the Gauge visual.
+- [Heatmap](/docs/charts/heatmap): Configuration and query shape for the Heatmap visual.
+- [Sankey](/docs/charts/sankey): Configuration and query shape for the Sankey visual.
+- [Graph](/docs/charts/graph): Configuration and query shape for the Graph visual.
+- [Map](/docs/charts/map): Configuration and query shape for the Map visual.
+- [Candlestick chart](/docs/charts/candlestick): Configuration and query shape for the Candlestick chart visual.
+- [Boxplot](/docs/charts/boxplot): Configuration and query shape for the Boxplot visual.
+- [Combo chart](/docs/charts/combo): Configuration and query shape for the Combo chart visual.
+- [Waterfall chart](/docs/charts/waterfall): Configuration and query shape for the Waterfall chart visual.
+- [Histogram](/docs/charts/histogram): Configuration and query shape for the Histogram visual.
+- [Radar chart](/docs/charts/radar): Configuration and query shape for the Radar chart visual.
+- [Tree](/docs/charts/tree): Configuration and query shape for the Tree visual.
+- [Sunburst](/docs/charts/sunburst): Configuration and query shape for the Sunburst visual.
+- [KPI](/docs/charts/kpi): Configuration and query shape for the KPI visual.
+
+### Architecture and contributing
+
+
+#### Architecture
+
+- [Architecture overview](/docs/architecture): See how the monolith, contracts, storage, and browser components fit together.
+- [Runtime architecture](/docs/architecture/runtime): Follow routing, query execution, and streamed UI updates.
+- [Storage architecture](/docs/storage-architecture): Understand DuckLake, DuckDB, snapshots, and serving pointers.
+- [Datastar signal flow](/docs/architecture/datastar): Understand server-owned state and SSE response contracts.
+- [Visual plugin architecture](/docs/architecture/visual-plugins): Understand renderer-neutral shapes and renderer adapters.
+
+#### Contributing
+
+- [Repository and development workflow](/docs/contributing/repository): Work effectively in the LibreDash monorepo.
+- [Add a visual type](/docs/contributing/visual): Extend contracts, rendering, documentation, and tests together.
+- [Add a configuration resource](/docs/contributing/configuration): Extend schemas, generated references, and validation together.
+- [Write documentation](/docs/contributing/documentation): Author procedural guides and accessible diagrams that remain valid with the product.

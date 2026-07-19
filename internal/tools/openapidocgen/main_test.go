@@ -35,6 +35,25 @@ paths:
       responses:
         '200':
           description: Things returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Thing'
+      x-authz:
+        mode: privilege
+        privilege: READ_THINGS
+      x-apigen-tool:
+        name: list_things
+        effect: read
+        confirmation: never
+components:
+  schemas:
+    Thing:
+      type: object
+      properties:
+        id: {type: string}
 `
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec fixture: %v", err)
@@ -58,7 +77,7 @@ paths:
 	if strings.HasSuffix(article, "\n\n") {
 		t.Errorf("article ends with an extra blank line: %q", article)
 	}
-	for _, want := range []string{"# Things", "## List things", "`GET /v1/things`", "| `limit` | query | No | integer | Maximum results. |", "| `200` | Things returned. |"} {
+	for _, want := range []string{"# Things", "## List things", "`GET /v1/things`", "Operation ID: `listThings`", "Effect: `read`", "Required privilege: `READ_THINGS`", "/docs/api/operations/listThings.json", "| `limit` | query | No | integer | Maximum results. |", "| `200` | Things returned. |"} {
 		if !strings.Contains(article, want) {
 			t.Errorf("article missing %q:\n%s", want, article)
 		}
@@ -70,6 +89,46 @@ paths:
 	}
 	if got := readGeneratedFile(t, filepath.Join(outDir, "openapi.yaml")); got != spec {
 		t.Errorf("generated OpenAPI copy = %q, want source spec", got)
+	}
+
+	operations := readGeneratedFile(t, filepath.Join(outDir, "operations.json"))
+	for _, want := range []string{
+		`"schemaVersion": 1`,
+		`"operationId": "listThings"`,
+		`"method": "GET"`,
+		`"path": "/v1/things"`,
+		`"effect": "read"`,
+		`"confirmation": "never"`,
+		`"privilege": "READ_THINGS"`,
+		`"contentType": "application/json"`,
+		`"$ref": "#/components/schemas/Thing"`,
+		`"Thing": {`,
+	} {
+		if !strings.Contains(operations, want) {
+			t.Errorf("operation manifest missing %q:\n%s", want, operations)
+		}
+	}
+}
+
+func TestGenerateRejectsOperationWithoutOperationID(t *testing.T) {
+	tempDir := t.TempDir()
+	specPath := filepath.Join(tempDir, "openapi.yaml")
+	spec := `openapi: 3.0.0
+info: {title: Example API, version: 1.0.0}
+tags: [{name: Things}]
+paths:
+  /things:
+    get:
+      tags: [Things]
+      responses:
+        '200': {description: ok}
+`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := generate(specPath, filepath.Join(tempDir, "docs"))
+	if err == nil || !strings.Contains(err.Error(), "GET /things is missing operationId") {
+		t.Fatalf("generate error = %v", err)
 	}
 }
 
@@ -97,6 +156,7 @@ tags:
 paths:
   /v1/things:
     get:
+      operationId: listThings
       summary: List things
       tags: [Things]
       responses:

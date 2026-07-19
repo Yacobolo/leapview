@@ -33,8 +33,11 @@ type openAPISpec struct {
 		Version     string `yaml:"version"`
 		Description string `yaml:"description"`
 	} `yaml:"info"`
-	Tags  []openAPITag                    `yaml:"tags"`
-	Paths map[string]map[string]operation `yaml:"paths"`
+	Tags       []openAPITag                    `yaml:"tags"`
+	Paths      map[string]map[string]operation `yaml:"paths"`
+	Components struct {
+		Schemas map[string]any `yaml:"schemas"`
+	} `yaml:"components"`
 }
 
 type openAPITag struct {
@@ -43,12 +46,15 @@ type openAPITag struct {
 }
 
 type operation struct {
-	Summary     string              `yaml:"summary"`
-	Description string              `yaml:"description"`
-	Tags        []string            `yaml:"tags"`
-	Parameters  []parameter         `yaml:"parameters"`
-	RequestBody requestBody         `yaml:"requestBody"`
-	Responses   map[string]response `yaml:"responses"`
+	OperationID   string              `yaml:"operationId"`
+	Summary       string              `yaml:"summary"`
+	Description   string              `yaml:"description"`
+	Tags          []string            `yaml:"tags"`
+	Parameters    []parameter         `yaml:"parameters"`
+	RequestBody   requestBody         `yaml:"requestBody"`
+	Responses     map[string]response `yaml:"responses"`
+	Authorization map[string]any      `yaml:"x-authz"`
+	Tool          toolMetadata        `yaml:"x-apigen-tool"`
 }
 
 type parameter struct {
@@ -66,7 +72,62 @@ type requestBody struct {
 }
 
 type response struct {
-	Description string `yaml:"description"`
+	Description string         `yaml:"description"`
+	Content     map[string]any `yaml:"content"`
+}
+
+type toolMetadata struct {
+	Name         string `yaml:"name" json:"name,omitempty"`
+	Effect       string `yaml:"effect" json:"effect,omitempty"`
+	Confirmation string `yaml:"confirmation" json:"confirmation,omitempty"`
+}
+
+type operationManifest struct {
+	SchemaVersion int                `json:"schemaVersion"`
+	APIVersion    string             `json:"apiVersion"`
+	Operations    []machineOperation `json:"operations"`
+	Schemas       map[string]any     `json:"schemas"`
+}
+
+type machineOperation struct {
+	OperationID   string              `json:"operationId"`
+	Method        string              `json:"method"`
+	Path          string              `json:"path"`
+	Summary       string              `json:"summary"`
+	Description   string              `json:"description"`
+	Tags          []string            `json:"tags"`
+	Effect        string              `json:"effect"`
+	Confirmation  string              `json:"confirmation"`
+	Authorization map[string]any      `json:"authorization,omitempty"`
+	Tool          *toolMetadata       `json:"tool,omitempty"`
+	Parameters    []machineParameter  `json:"parameters"`
+	RequestBody   *machineRequestBody `json:"requestBody,omitempty"`
+	Responses     []machineResponse   `json:"responses"`
+}
+
+type machineParameter struct {
+	Name        string         `json:"name"`
+	In          string         `json:"in"`
+	Required    bool           `json:"required"`
+	Description string         `json:"description"`
+	Schema      map[string]any `json:"schema,omitempty"`
+}
+
+type machineRequestBody struct {
+	Required    bool             `json:"required"`
+	Description string           `json:"description"`
+	Content     []machineContent `json:"content"`
+}
+
+type machineResponse struct {
+	Status      string           `json:"status"`
+	Description string           `json:"description"`
+	Content     []machineContent `json:"content"`
+}
+
+type machineContent struct {
+	ContentType string         `json:"contentType"`
+	Schema      map[string]any `json:"schema,omitempty"`
 }
 
 type generatedCatalog struct {
@@ -124,6 +185,17 @@ func generate(specPath, outDir string) error {
 	if len(documents) == 0 {
 		return fmt.Errorf("OpenAPI contract does not define tagged operations")
 	}
+	operations, err := machineOperations(spec)
+	if err != nil {
+		return err
+	}
+	encodedOperations, err := json.MarshalIndent(operationManifest{SchemaVersion: 1, APIVersion: spec.Info.Version, Operations: operations, Schemas: spec.Components.Schemas}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode API operation manifest: %w", err)
+	}
+	if err := writeBytes(filepath.Join(outDir, "operations.json"), append(encodedOperations, '\n')); err != nil {
+		return err
+	}
 
 	catalog := generatedCatalog{
 		Title:       spec.Info.Title,
@@ -154,7 +226,7 @@ func cleanGeneratedOutput(outDir string) error {
 	}
 	for _, entry := range entries {
 		path := filepath.Join(outDir, entry.Name())
-		if entry.Name() == "catalog.json" || entry.Name() == "index.md" || entry.Name() == "openapi.yaml" {
+		if entry.Name() == "catalog.json" || entry.Name() == "index.md" || entry.Name() == "openapi.yaml" || entry.Name() == "operations.json" {
 			if err := os.Remove(path); err != nil {
 				return err
 			}
@@ -174,6 +246,104 @@ func cleanGeneratedOutput(outDir string) error {
 		}
 	}
 	return nil
+}
+
+func machineOperations(spec openAPISpec) ([]machineOperation, error) {
+	operations := []machineOperation{}
+	seen := map[string]struct{}{}
+	for path, pathItem := range spec.Paths {
+		for method, value := range pathItem {
+			method = strings.ToUpper(method)
+			if !isHTTPMethod(method) {
+				continue
+			}
+			if value.OperationID == "" {
+				return nil, fmt.Errorf("%s %s is missing operationId", method, path)
+			}
+			if _, exists := seen[value.OperationID]; exists {
+				return nil, fmt.Errorf("duplicate operationId %q", value.OperationID)
+			}
+			seen[value.OperationID] = struct{}{}
+			effect := value.Tool.Effect
+			if effect == "" {
+				effect = defaultOperationEffect(method)
+			}
+			confirmation := value.Tool.Confirmation
+			if confirmation == "" {
+				confirmation = defaultOperationConfirmation(effect)
+			}
+			parameters := make([]machineParameter, 0, len(value.Parameters))
+			for _, parameter := range value.Parameters {
+				parameters = append(parameters, machineParameter{Name: parameter.Name, In: parameter.In, Required: parameter.Required, Description: parameter.Description, Schema: parameter.Schema})
+			}
+			var body *machineRequestBody
+			if len(value.RequestBody.Content) > 0 {
+				body = &machineRequestBody{Required: value.RequestBody.Required, Description: value.RequestBody.Description, Content: machineContents(value.RequestBody.Content)}
+			}
+			statuses := make([]string, 0, len(value.Responses))
+			for status := range value.Responses {
+				statuses = append(statuses, status)
+			}
+			sort.Strings(statuses)
+			responses := make([]machineResponse, 0, len(statuses))
+			for _, status := range statuses {
+				response := value.Responses[status]
+				responses = append(responses, machineResponse{Status: status, Description: response.Description, Content: machineContents(response.Content)})
+			}
+			var tool *toolMetadata
+			if value.Tool.Name != "" || value.Tool.Effect != "" || value.Tool.Confirmation != "" {
+				copy := value.Tool
+				tool = &copy
+			}
+			operations = append(operations, machineOperation{
+				OperationID: value.OperationID, Method: method, Path: path, Summary: value.Summary,
+				Description: value.Description, Tags: append([]string(nil), value.Tags...), Effect: effect,
+				Confirmation: confirmation, Authorization: value.Authorization, Tool: tool,
+				Parameters: parameters, RequestBody: body, Responses: responses,
+			})
+		}
+	}
+	sort.Slice(operations, func(i, j int) bool { return operations[i].OperationID < operations[j].OperationID })
+	return operations, nil
+}
+
+func machineContents(content map[string]any) []machineContent {
+	contentTypes := make([]string, 0, len(content))
+	for contentType := range content {
+		contentTypes = append(contentTypes, contentType)
+	}
+	sort.Strings(contentTypes)
+	contents := make([]machineContent, 0, len(contentTypes))
+	for _, contentType := range contentTypes {
+		entry, _ := content[contentType].(map[string]any)
+		schema, _ := entry["schema"].(map[string]any)
+		contents = append(contents, machineContent{ContentType: contentType, Schema: schema})
+	}
+	return contents
+}
+
+func defaultOperationEffect(method string) string {
+	switch method {
+	case "GET", "HEAD", "OPTIONS":
+		return "read"
+	case "PUT":
+		return "idempotent-write"
+	case "DELETE":
+		return "destructive"
+	default:
+		return "write"
+	}
+}
+
+func defaultOperationConfirmation(effect string) string {
+	switch effect {
+	case "destructive":
+		return "required"
+	case "write", "idempotent-write":
+		return "conditional"
+	default:
+		return "never"
+	}
 }
 
 func operationsByTag(spec openAPISpec) map[string][]taggedOperation {
@@ -208,6 +378,7 @@ func renderIndexDocument(catalog generatedCatalog) string {
 		markdown.WriteString(strings.TrimSpace(catalog.Description) + "\n\n")
 	}
 	markdown.WriteString("[Download the OpenAPI schema](/docs/openapi.yaml)\n\n")
+	markdown.WriteString("For agents and tooling, use the [versioned operation manifest](/docs/api/operations.json) or the read-only [documentation MCP](/mcp). Focused operation slices are available at `/docs/api/operations/{operationId}.json` and `.md`.\n\n")
 	markdown.WriteString("## Resources\n\n")
 	for _, document := range catalog.Documents {
 		markdown.WriteString(fmt.Sprintf("- [%s](/docs/api/%s)", document.Title, document.Slug))
@@ -236,11 +407,30 @@ func renderTagDocument(tag openAPITag, operations []taggedOperation) string {
 		if operation.Value.Description != "" {
 			markdown.WriteString(strings.TrimSpace(operation.Value.Description) + "\n\n")
 		}
+		writeOperationMetadata(&markdown, operation)
 		writeParameters(&markdown, operation.Value.Parameters)
 		writeRequestBody(&markdown, operation.Value.RequestBody)
 		writeResponses(&markdown, operation.Value.Responses)
 	}
 	return strings.TrimRight(markdown.String(), "\n") + "\n"
+}
+
+func writeOperationMetadata(markdown *strings.Builder, tagged taggedOperation) {
+	effect := tagged.Value.Tool.Effect
+	if effect == "" {
+		effect = defaultOperationEffect(tagged.Method)
+	}
+	confirmation := tagged.Value.Tool.Confirmation
+	if confirmation == "" {
+		confirmation = defaultOperationConfirmation(effect)
+	}
+	markdown.WriteString("Operation ID: `" + tagged.Value.OperationID + "`  \n")
+	markdown.WriteString("Effect: `" + effect + "`  \n")
+	markdown.WriteString("Confirmation: `" + confirmation + "`  \n")
+	if privilege, ok := tagged.Value.Authorization["privilege"]; ok {
+		markdown.WriteString("Required privilege: `" + fmt.Sprint(privilege) + "`  \n")
+	}
+	markdown.WriteString("Focused reference: [JSON](/docs/api/operations/" + tagged.Value.OperationID + ".json) · [Markdown](/docs/api/operations/" + tagged.Value.OperationID + ".md)\n\n")
 }
 
 func writeParameters(markdown *strings.Builder, parameters []parameter) {

@@ -74,6 +74,7 @@ func NewCommand(ctx context.Context) *cobra.Command {
 	root.AddCommand(loginCommand(opts))
 	root.AddCommand(adminCommand(ctx, opts))
 	root.AddCommand(healthcheckCommand(ctx, opts))
+	annotateCommandDocumentation(root)
 	return root
 }
 
