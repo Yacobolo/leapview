@@ -47,7 +47,7 @@ func loadVisualDocumentation() visualDocumentationArtifact {
 			}
 		}
 		reference, ok := artifact.References[slug]
-		if !ok || reference.Kind == "" || reference.Renderer == "" || len(reference.Shapes) == 0 || len(reference.QueryFields) == 0 || reference.Accessibility == "" {
+		if !ok || reference.Kind == "" || reference.Renderer == "" || len(reference.Shapes) == 0 || len(reference.QueryFields) == 0 || len(reference.Fields) == 0 || reference.Accessibility == "" {
 			panic(fmt.Sprintf("generated visual documentation %q has an incomplete API reference", slug))
 		}
 	}

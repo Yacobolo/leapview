@@ -178,7 +178,11 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 		}
 		slug := "charts/" + document.Source
 		artifact.Documents[slug] = payloads
-		artifact.References[slug] = buildVisualDocumentReference(examplesByPage[document.Source])
+		reference, err := buildVisualDocumentReference(examplesByPage[document.Source])
+		if err != nil {
+			return visualExamplesArtifact{}, fmt.Errorf("build %s field reference: %w", document.Source, err)
+		}
+		artifact.References[slug] = reference
 		artifact.Showcase = append(artifact.Showcase, payloads[0])
 	}
 	return artifact, nil
@@ -279,7 +283,7 @@ func inspectPayloadValue(value any, path string, finiteNumbers *int) error {
 	return nil
 }
 
-func buildVisualDocumentReference(examples []visualExample) visualDocumentReference {
+func buildVisualDocumentReference(examples []visualExample) (visualDocumentReference, error) {
 	kinds := map[string]struct{}{}
 	renderers := map[string]struct{}{}
 	shapes := map[string]struct{}{}
@@ -304,8 +308,13 @@ func buildVisualDocumentReference(examples []visualExample) visualDocumentRefere
 	reference.Shapes = sortedSet(shapes)
 	reference.QueryFields = sortedSet(queryFields)
 	reference.Options = sortedSet(options)
+	fields, err := visualFieldReferences(reference.QueryFields, reference.Options, examples[0].Visual.Type)
+	if err != nil {
+		return visualDocumentReference{}, err
+	}
+	reference.Fields = fields
 	reference.Accessibility = visualAccessibilityGuidance(examples[0].Visual)
-	return reference
+	return reference, nil
 }
 
 func collectQueryFields(query reportdef.VisualQuery, fields map[string]struct{}) {
@@ -323,6 +332,12 @@ func collectQueryFields(query reportdef.VisualQuery, fields map[string]struct{})
 	}
 	if query.Time.Field != "" {
 		fields["time"] = struct{}{}
+	}
+	if len(query.Sort) > 0 {
+		fields["sort"] = struct{}{}
+	}
+	if query.Limit > 0 {
+		fields["limit"] = struct{}{}
 	}
 }
 

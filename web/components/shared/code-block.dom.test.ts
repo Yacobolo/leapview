@@ -80,6 +80,9 @@ test('code block highlights product and documentation languages with GitHub them
       yaml.toolbar = true
       document.body.append(yaml)
       await waitFor(() => Boolean(yaml.querySelector('.shiki.github-light')))
+      yaml.focusLines([2])
+      const yamlFocusedLines = [...yaml.querySelectorAll('.line.code-block-focused-line')].map((line) => line.textContent?.trim())
+      yaml.clearFocusedLines()
 
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
       document.execCommand = (command) => {
@@ -136,6 +139,8 @@ test('code block highlights product and documentation languages with GitHub them
         yamlText: yaml.textContent || '',
         yamlLanguage: yaml.querySelector('.code-block-language')?.textContent || '',
         yamlHighlightedLines: [...yaml.querySelectorAll('.line.code-block-highlighted-line')].map((line) => line.textContent?.trim()),
+        yamlFocusedLines,
+        yamlFocusCleared: !yaml.hasAttribute('data-line-focus') && !yaml.querySelector('.code-block-focused-line'),
         yamlHighlightMarkerWidth: getComputedStyle(yaml.querySelector('.line.code-block-highlighted-line')!, '::before').width,
         yamlCopyLabel: yaml.querySelector('.code-block-copy')?.getAttribute('aria-label') || '',
         copiedCode: document.documentElement.dataset.copiedCode || '',
@@ -160,6 +165,8 @@ test('code block highlights product and documentation languages with GitHub them
     expect(state.yamlText).toContain('apiVersion: libredash.dev/v1')
     expect(state.yamlLanguage).toBe('YAML')
     expect(state.yamlHighlightedLines).toEqual(['kind: Project'])
+    expect(state.yamlFocusedLines).toEqual(['kind: Project'])
+    expect(state.yamlFocusCleared).toBe(true)
     expect(state.yamlHighlightMarkerWidth).toBe('4px')
     expect(state.yamlCopyLabel).toBe('Code copied')
     expect(state.copiedCode).toBe('apiVersion: libredash.dev/v1\nkind: Project')

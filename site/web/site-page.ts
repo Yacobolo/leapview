@@ -963,8 +963,10 @@ function enhanceDocsCodeBlocks(): void {
       return
     }
     const block = document.createElement('ld-code-block') as HTMLElement & {
+      clearFocusedLines(): void
       code: string
       copy: boolean
+      focusLines(lines: readonly number[]): void
       highlightedLines: number[]
       toolbar: boolean
     }
@@ -979,10 +981,51 @@ function enhanceDocsCodeBlocks(): void {
       block.dataset.visualExample = exampleID
       block.dataset.highlightedFields = fields.join(',')
       block.highlightedLines = visualExampleHighlightLines(block.code, fields)
+      block.id = `visual-example-${exampleID}-yaml`
+      enhanceVisualKeyFieldControls(keyFields, block)
     }
     block.copy = true
     block.toolbar = true
     pre.replaceWith(block)
+  })
+}
+
+function enhanceVisualKeyFieldControls(
+  container: HTMLElement,
+  block: HTMLElement & { clearFocusedLines(): void; code: string; focusLines(lines: readonly number[]): void },
+): void {
+  let focusedField = ''
+  let hoveredField = ''
+  const lines = new Map<string, number[]>()
+  const apply = (): void => {
+    const field = focusedField || hoveredField
+    if (!field) {
+      block.clearFocusedLines()
+      return
+    }
+    block.focusLines(lines.get(field) ?? [])
+  }
+
+  container.querySelectorAll<HTMLButtonElement>('[data-visual-key-field]').forEach((control) => {
+    const field = control.dataset.visualKeyField ?? ''
+    lines.set(field, visualExampleHighlightLines(block.code, [field]))
+    control.setAttribute('aria-controls', block.id)
+    control.addEventListener('focus', () => {
+      focusedField = field
+      apply()
+    })
+    control.addEventListener('blur', () => {
+      focusedField = ''
+      apply()
+    })
+    control.addEventListener('pointerenter', () => {
+      hoveredField = field
+      apply()
+    })
+    control.addEventListener('pointerleave', () => {
+      hoveredField = ''
+      apply()
+    })
   })
 }
 

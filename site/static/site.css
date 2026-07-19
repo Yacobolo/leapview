@@ -865,6 +865,57 @@ ld-site-search:not(:defined) > .site-search-active-input {
   font-size: var(--ld-text-body-sm-size);
 }
 
+.site-docs-article .site-visual-api-summary > h3 {
+  margin: var(--base-size-24) 0 var(--base-size-12);
+  font-size: var(--ld-text-title-md-size);
+  line-height: var(--ld-line-height-tight);
+}
+
+.site-visual-field-reference-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: var(--ld-border-muted);
+  border-radius: var(--ld-radius-default);
+}
+
+.site-visual-field-reference {
+  width: 100%;
+  min-width: calc(var(--base-size-128) * 5);
+  border-collapse: collapse;
+  background: var(--ld-bg-panel);
+  font-size: var(--ld-text-body-sm-size);
+  line-height: var(--ld-line-height-normal);
+}
+
+.site-visual-field-reference th,
+.site-visual-field-reference td {
+  border-bottom: var(--ld-border-muted);
+  padding: var(--base-size-8) var(--base-size-12);
+  text-align: left;
+  vertical-align: top;
+}
+
+.site-visual-field-reference thead th {
+  background: var(--ld-bg-panel-muted);
+  color: var(--ld-fg-muted);
+  font-weight: var(--ld-font-weight-strong);
+  white-space: nowrap;
+}
+
+.site-visual-field-reference tbody th {
+  font-weight: var(--ld-font-weight-medium);
+  white-space: nowrap;
+}
+
+.site-visual-field-reference tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.site-visual-field-reference td:last-child {
+  min-width: calc(var(--base-size-128) * 2);
+  color: var(--ld-fg-muted);
+}
+
 .site-visual-key-fields {
   display: flex;
   flex-wrap: wrap;
@@ -881,6 +932,36 @@ ld-site-search:not(:defined) > .site-search-active-input {
 
 .site-visual-key-fields strong {
   color: var(--ld-fg-default);
+}
+
+.site-visual-key-field {
+  display: inline-flex;
+  min-height: var(--control-small-size);
+  align-items: center;
+  border: var(--ld-border-muted);
+  border-radius: var(--ld-radius-default);
+  background: var(--ld-bg-panel);
+  color: var(--ld-fg-accent);
+  cursor: pointer;
+  font: inherit;
+  padding-inline: var(--base-size-8);
+}
+
+.site-visual-key-field:hover,
+.site-visual-key-field:focus-visible {
+  border-color: var(--ld-line-accent);
+  background: var(--ld-bg-control-hover);
+  outline: 0;
+}
+
+.site-visual-key-field:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.site-visual-key-field code {
+  padding: 0;
+  background: transparent;
 }
 
 @media (max-width: 34rem) {

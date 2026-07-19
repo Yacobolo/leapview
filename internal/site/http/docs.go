@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	stdhtml "html"
 	"net/url"
 	"regexp"
 	"strings"
@@ -290,17 +289,36 @@ func siteDocsArticle(document siteDocument) g.Node {
 }
 
 func renderVisualAPIReference(reference visualdocs.DocumentReference) string {
-	return `<section class="site-visual-api-summary" aria-labelledby="site-visual-api-summary">` +
-		`<h2 id="site-visual-api-summary">API at a glance</h2>` +
-		`<dl>` +
-		`<dt>Kind</dt><dd>` + renderVisualCodeValues(strings.Split(reference.Kind, ", ")) + `</dd>` +
-		`<dt>Renderer</dt><dd>` + renderVisualCodeValues(strings.Split(reference.Renderer, ", ")) + `</dd>` +
-		`<dt>Shapes</dt><dd>` + renderVisualCodeValues(reference.Shapes) + `</dd>` +
-		`<dt>Query fields</dt><dd>` + renderVisualCodeValues(reference.QueryFields) + `</dd>` +
-		`<dt>Options</dt><dd>` + renderVisualCodeValues(reference.Options) + `</dd>` +
-		`</dl>` +
-		`<p><strong>Accessibility.</strong> ` + stdhtml.EscapeString(reference.Accessibility) + `</p>` +
-		`</section>`
+	node := h.Section(
+		h.Class("site-visual-api-summary"),
+		g.Attr("aria-labelledby", "site-visual-api-summary"),
+		h.H2(h.ID("site-visual-api-summary"), g.Text("API at a glance")),
+		h.Dl(
+			h.Dt(g.Text("Kind")), h.Dd(visualCodeNodes(strings.Split(reference.Kind, ", "))...),
+			h.Dt(g.Text("Renderer")), h.Dd(visualCodeNodes(strings.Split(reference.Renderer, ", "))...),
+			h.Dt(g.Text("Shapes")), h.Dd(visualCodeNodes(reference.Shapes)...),
+			h.Dt(g.Text("Query fields")), h.Dd(visualCodeNodes(reference.QueryFields)...),
+			h.Dt(g.Text("Options")), h.Dd(visualCodeNodes(reference.Options)...),
+		),
+		h.P(h.Strong(g.Text("Accessibility. ")), g.Text(reference.Accessibility)),
+		h.H3(h.ID("site-visual-field-reference"), g.Text("Configuration fields")),
+		h.Div(
+			h.Class("site-visual-field-reference-scroll"),
+			h.Table(
+				h.Class("site-visual-field-reference"),
+				g.Attr("aria-labelledby", "site-visual-field-reference"),
+				h.THead(h.Tr(
+					h.Th(g.Attr("scope", "col"), g.Text("Field")),
+					h.Th(g.Attr("scope", "col"), g.Text("Type")),
+					h.Th(g.Attr("scope", "col"), g.Text("Default")),
+					h.Th(g.Attr("scope", "col"), g.Text("Allowed values")),
+					h.Th(g.Attr("scope", "col"), g.Text("Description")),
+				)),
+				h.TBody(g.Map(reference.Fields, renderVisualFieldReference)...),
+			),
+		),
+	)
+	return renderSiteNode(node)
 }
 
 func renderVisualKeyFields(fields []string) string {
@@ -308,21 +326,68 @@ func renderVisualKeyFields(fields []string) string {
 	if err != nil {
 		panic(fmt.Sprintf("encode visual key fields: %v", err))
 	}
-	return `<div class="site-visual-key-fields" aria-label="Key fields" data-key-fields="` + stdhtml.EscapeString(string(encoded)) + `"><strong>Key fields</strong>` + renderVisualCodeValues(fields) + `</div>`
+	buttons := g.Map(fields, func(field string) g.Node {
+		return h.Button(
+			h.Type("button"),
+			h.Class("site-visual-key-field"),
+			g.Attr("data-visual-key-field", field),
+			g.Attr("aria-label", "Highlight "+field+" in YAML"),
+			h.Code(g.Text(field)),
+		)
+	})
+	return renderSiteNode(h.Div(
+		h.Class("site-visual-key-fields"),
+		g.Attr("aria-label", "Key fields"),
+		g.Attr("data-key-fields", string(encoded)),
+		h.Strong(g.Text("Key fields")),
+		g.Group(buttons),
+	))
 }
 
-func renderVisualCodeValues(values []string) string {
+func renderVisualFieldReference(field visualdocs.FieldReference) g.Node {
+	return h.Tr(
+		h.Th(g.Attr("scope", "row"), h.Code(g.Text(field.Path))),
+		h.Td(h.Code(g.Text(field.Type))),
+		h.Td(visualFieldValueNodes(field.Default)...),
+		h.Td(visualFieldValueNodes(field.AllowedValues...)...),
+		h.Td(g.Text(field.Description)),
+	)
+
+}
+
+func visualCodeNodes(values []string) []g.Node {
 	if len(values) == 0 {
-		return `<span>None</span>`
+		return []g.Node{h.Span(g.Text("None"))}
 	}
-	var rendered strings.Builder
+	nodes := make([]g.Node, 0, len(values)*2-1)
+	for index, value := range values {
+		if index > 0 {
+			nodes = append(nodes, g.Text(" "))
+		}
+		nodes = append(nodes, h.Code(g.Text(value)))
+	}
+	return nodes
+}
+
+func visualFieldValueNodes(values ...string) []g.Node {
+	nonEmpty := make([]string, 0, len(values))
 	for _, value := range values {
-		rendered.WriteString(`<code>`)
-		rendered.WriteString(stdhtml.EscapeString(value))
-		rendered.WriteString(`</code>`)
-		rendered.WriteByte(' ')
+		if value != "" {
+			nonEmpty = append(nonEmpty, value)
+		}
 	}
-	return strings.TrimSpace(rendered.String())
+	if len(nonEmpty) == 0 {
+		return []g.Node{g.Text("—")}
+	}
+	return visualCodeNodes(nonEmpty)
+}
+
+func renderSiteNode(node g.Node) string {
+	var rendered strings.Builder
+	if err := node.Render(&rendered); err != nil {
+		panic(fmt.Sprintf("render site component: %v", err))
+	}
+	return rendered.String()
 }
 
 func siteDocsArticleFooter(document siteDocument) g.Node {

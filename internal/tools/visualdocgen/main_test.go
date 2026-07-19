@@ -11,6 +11,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/visualdocs"
 )
 
 func TestParseVisualExamplesUsesMarkedYAMLAsSource(t *testing.T) {
@@ -54,7 +55,7 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := artifact.Version, 2; got != want {
+	if got, want := artifact.Version, 3; got != want {
 		t.Fatalf("version = %d, want %d", got, want)
 	}
 	lineReference := artifact.References["charts/line"]
@@ -66,6 +67,25 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	}
 	if got := strings.Join(lineReference.Examples["revenue_line_step"].KeyFields, ","); !strings.Contains(got, "options.step") || strings.Contains(got, "query.series") {
 		t.Fatalf("stepped line key fields = %q", got)
+	}
+	fields := make(map[string]visualdocs.FieldReference, len(lineReference.Fields))
+	for _, field := range lineReference.Fields {
+		fields[field.Path] = field
+	}
+	if got, want := fields["query.dimensions"].Type, "field mapping"; got != want {
+		t.Fatalf("query.dimensions type = %q, want %q", got, want)
+	}
+	if got, want := fields["query.limit"].Default, "no limit"; got != want {
+		t.Fatalf("query.limit default = %q, want %q", got, want)
+	}
+	if got, want := fields["options.step"].Type, "string | boolean"; got != want {
+		t.Fatalf("options.step type = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(fields["options.step"].AllowedValues, ","), "start,middle,end,true"; got != want {
+		t.Fatalf("options.step values = %q, want %q", got, want)
+	}
+	if fields["options.step"].Description == "" {
+		t.Fatal("options.step description is empty")
 	}
 	if got := artifact.References["charts/map"].Accessibility; !strings.Contains(got, "map identifiers") {
 		t.Fatalf("map accessibility guidance = %q", got)

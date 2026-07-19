@@ -4,7 +4,7 @@ package visualdocs
 
 import "github.com/Yacobolo/libredash/internal/dashboard"
 
-const ArtifactVersion = 2
+const ArtifactVersion = 3
 
 type Artifact struct {
 	Version    int                           `json:"version"`
@@ -19,8 +19,17 @@ type DocumentReference struct {
 	Shapes        []string                    `json:"shapes"`
 	QueryFields   []string                    `json:"queryFields"`
 	Options       []string                    `json:"options"`
+	Fields        []FieldReference            `json:"fields"`
 	Accessibility string                      `json:"accessibility"`
 	Examples      map[string]ExampleReference `json:"examples"`
+}
+
+type FieldReference struct {
+	Path          string   `json:"path"`
+	Type          string   `json:"type"`
+	Default       string   `json:"default,omitempty"`
+	AllowedValues []string `json:"allowedValues,omitempty"`
+	Description   string   `json:"description"`
 }
 
 type ExampleReference struct {

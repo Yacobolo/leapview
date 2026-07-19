@@ -60,6 +60,7 @@ class CodeBlock extends LitElement {
   private renderToken = 0
   private copiedTimeout = 0
   private highlightPromise: Promise<void> = Promise.resolve()
+  private focusedLineNumbers = new Set<number>()
 
   createRenderRoot(): HTMLElement {
     return this
@@ -80,6 +81,19 @@ class CodeBlock extends LitElement {
     if (changed.has('code') || changed.has('language') || changed.has('format') || changed.has('highlightedLines')) {
       this.highlightPromise = this.highlight()
     }
+    if (changed.has('highlighted')) this.applyFocusedLines()
+  }
+
+  focusLines(lines: readonly number[]): void {
+    this.focusedLineNumbers = new Set(lines)
+    this.toggleAttribute('data-line-focus', this.focusedLineNumbers.size > 0)
+    this.applyFocusedLines()
+  }
+
+  clearFocusedLines(): void {
+    this.focusedLineNumbers.clear()
+    this.removeAttribute('data-line-focus')
+    this.applyFocusedLines()
   }
 
   protected async getUpdateComplete(): Promise<boolean> {
@@ -135,6 +149,7 @@ class CodeBlock extends LitElement {
       const lineHighlightTransformer: ShikiTransformer = {
         name: 'libredash-highlighted-lines',
         line(hast, line) {
+          hast.properties['data-code-line'] = String(line)
           if (highlightedLines.has(line)) this.addClassToHast(hast, 'code-block-highlighted-line')
         },
       }
@@ -193,6 +208,13 @@ class CodeBlock extends LitElement {
   private setPreparedCode(code: string): void {
     this.preparedKey = this.codeKey
     this.preparedCode = code
+  }
+
+  private applyFocusedLines(): void {
+    this.querySelectorAll<HTMLElement>('.line[data-code-line]').forEach((line) => {
+      const lineNumber = Number(line.dataset.codeLine)
+      line.classList.toggle('code-block-focused-line', this.focusedLineNumbers.has(lineNumber))
+    })
   }
 
   private copyCode = async (event: Event): Promise<void> => {
@@ -387,6 +409,22 @@ const codeBlockStyles = `
     width: var(--base-size-4);
     background: var(--ld-line-accent);
     content: '';
+  }
+
+  ld-code-block[data-line-focus] .shiki .code-block-highlighted-line {
+    background: transparent;
+  }
+
+  ld-code-block[data-line-focus] .shiki .code-block-highlighted-line::before {
+    background: transparent;
+  }
+
+  ld-code-block[data-line-focus] .shiki .code-block-focused-line {
+    background: var(--ld-bg-accent-muted);
+  }
+
+  ld-code-block[data-line-focus] .shiki .code-block-focused-line::before {
+    background: var(--ld-line-accent);
   }
 
   ld-code-block .code-block-fallback {

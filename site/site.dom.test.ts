@@ -543,6 +543,13 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(await breadcrumb.getByRole('link', { name: 'Documentation' }).count()).toBe(0)
     expect(await page.getByRole('heading', { name: 'Line chart' }).isVisible()).toBe(true)
     expect(await page.getByRole('heading', { name: 'API at a glance' }).isVisible()).toBe(true)
+    expect(await page.getByRole('heading', { name: 'Configuration fields' }).isVisible()).toBe(true)
+    const fieldReference = page.locator('.site-visual-field-reference')
+    expect(await fieldReference.getByRole('columnheader').allTextContents()).toEqual(['Field', 'Type', 'Default', 'Allowed values', 'Description'])
+    const stepReference = fieldReference.getByRole('row').filter({ hasText: 'options.step' })
+    expect(await stepReference.count()).toBe(1)
+    expect(await stepReference.textContent()).toContain('string | boolean')
+    expect(await stepReference.textContent()).toContain('start')
     expect(await page.getByRole('heading', { name: 'Basic' }).isVisible()).toBe(true)
     expect(await page.getByRole('heading', { name: 'Multiple series' }).isVisible()).toBe(true)
     expect(await page.getByRole('heading', { name: 'Stepped line' }).isVisible()).toBe(true)
@@ -576,6 +583,14 @@ test('chart documentation renders every executable variation from its YAML', asy
       marker: getComputedStyle(line, '::before').width,
       padding: getComputedStyle(line).paddingInlineStart,
     }))).toEqual({ display: 'inline-block', marker: '4px', padding: '0px' })
+    const stepField = page.getByRole('button', { name: 'Highlight options.step in YAML' })
+    expect(await stepField.count()).toBe(1)
+    expect(await stepField.getAttribute('aria-controls')).toBe('visual-example-revenue_line_step-yaml')
+    await stepField.focus()
+    await page.waitForFunction(() => document.querySelectorAll('ld-code-block[data-visual-example="revenue_line_step"] .code-block-focused-line').length === 1)
+    expect(await steppedConfiguration.locator('.code-block-focused-line').allTextContents()).toEqual(['      step: middle'])
+    await stepField.blur()
+    await page.waitForFunction(() => document.querySelectorAll('ld-code-block[data-visual-example="revenue_line_step"] .code-block-focused-line').length === 0)
     const stepped = await page.locator('ld-site-visual-example').nth(2).evaluate((element) => {
       const visual = element.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { options?: Record<string, unknown> } }
       return visual?.chart?.options?.step
