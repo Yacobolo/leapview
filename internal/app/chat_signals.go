@@ -152,7 +152,6 @@ func (s *Server) chatConversations(ctx context.Context, scope agent.Scope) []ui.
 func chatConversationSummary(row agent.Conversation) ui.ChatConversationSummary {
 	return ui.ChatConversationSummary{
 		ID:          row.ID,
-		WorkspaceID: row.WorkspaceID,
 		PrincipalID: row.PrincipalID,
 		Title:       row.Title,
 		Status:      row.Status,

@@ -81,7 +81,8 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [API quickstart](/docs/guides/integrate/api-quickstart): Authenticate and call the headless API.
 - [API conventions](/docs/guides/integrate/api-conventions): Handle authentication, errors, and pagination consistently.
 - [Headless BI queries](/docs/guides/integrate/headless-bi): Query dashboards and semantic models through stable contracts.
-- [Agent integrations](/docs/guides/integrate/agent): Configure agent policies, tools, and conversations.
+- [Agent integrations](/docs/guides/integrate/agent): Use global conversations and the shared governed tool catalog.
+- [Connect an MCP host](/docs/guides/integrate/mcp): Connect Claude and other MCP hosts to a LibreDash deployment over OAuth.
 - [Automation and CI](/docs/cli/automation): Run validation and deployments safely in CI.
 
 ### Reference
@@ -105,7 +106,6 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Workspace Role Binding configuration](/docs/config/workspace-role-binding): Fields and validation rules for the WorkspaceRoleBinding YAML resource.
 - [Grant configuration](/docs/config/grant): Fields and validation rules for the Grant YAML resource.
 - [Data Policy configuration](/docs/config/data-policy): Fields and validation rules for the DataPolicy YAML resource.
-- [Workspace Agent Policy configuration](/docs/config/workspace-agent-policy): Fields and validation rules for the WorkspaceAgentPolicy YAML resource.
 - [Refresh Pipeline configuration](/docs/config/refresh-pipeline): Fields and validation rules for the RefreshPipeline YAML resource.
 
 #### CLI commands
@@ -146,32 +146,35 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Audit](/docs/api/audit): Workspace audit event discovery.
 - [Managed Data](/docs/api/managed-data): Project-global managed-data revisions and uploads.
 
-#### Charts
+#### Visuals
 
-- [Chart types](/docs/charts/overview): Choose from every supported LibreDash visual type.
-- [Line chart](/docs/charts/line): Configuration and query shape for the Line chart visual.
-- [Area chart](/docs/charts/area): Configuration and query shape for the Area chart visual.
-- [Bar chart](/docs/charts/bar): Configuration and query shape for the Bar chart visual.
-- [Column chart](/docs/charts/column): Configuration and query shape for the Column chart visual.
-- [Pie chart](/docs/charts/pie): Configuration and query shape for the Pie chart visual.
-- [Donut chart](/docs/charts/donut): Configuration and query shape for the Donut chart visual.
-- [Scatter chart](/docs/charts/scatter): Configuration and query shape for the Scatter chart visual.
-- [Funnel chart](/docs/charts/funnel): Configuration and query shape for the Funnel chart visual.
-- [Treemap](/docs/charts/treemap): Configuration and query shape for the Treemap visual.
-- [Gauge](/docs/charts/gauge): Configuration and query shape for the Gauge visual.
-- [Heatmap](/docs/charts/heatmap): Configuration and query shape for the Heatmap visual.
-- [Sankey](/docs/charts/sankey): Configuration and query shape for the Sankey visual.
-- [Graph](/docs/charts/graph): Configuration and query shape for the Graph visual.
-- [Map](/docs/charts/map): Configuration and query shape for the Map visual.
-- [Candlestick chart](/docs/charts/candlestick): Configuration and query shape for the Candlestick chart visual.
-- [Boxplot](/docs/charts/boxplot): Configuration and query shape for the Boxplot visual.
-- [Combo chart](/docs/charts/combo): Configuration and query shape for the Combo chart visual.
-- [Waterfall chart](/docs/charts/waterfall): Configuration and query shape for the Waterfall chart visual.
-- [Histogram](/docs/charts/histogram): Configuration and query shape for the Histogram visual.
-- [Radar chart](/docs/charts/radar): Configuration and query shape for the Radar chart visual.
-- [Tree](/docs/charts/tree): Configuration and query shape for the Tree visual.
-- [Sunburst](/docs/charts/sunburst): Configuration and query shape for the Sunburst visual.
-- [KPI](/docs/charts/kpi): Configuration and query shape for the KPI visual.
+- [Visual types](/docs/visuals/overview): Choose from every supported LibreDash visual type.
+- [Line chart](/docs/visuals/line): Configuration and query shape for the Line chart visual.
+- [Area chart](/docs/visuals/area): Configuration and query shape for the Area chart visual.
+- [Bar chart](/docs/visuals/bar): Configuration and query shape for the Bar chart visual.
+- [Column chart](/docs/visuals/column): Configuration and query shape for the Column chart visual.
+- [Pie chart](/docs/visuals/pie): Configuration and query shape for the Pie chart visual.
+- [Donut chart](/docs/visuals/donut): Configuration and query shape for the Donut chart visual.
+- [Scatter chart](/docs/visuals/scatter): Configuration and query shape for the Scatter chart visual.
+- [Funnel chart](/docs/visuals/funnel): Configuration and query shape for the Funnel chart visual.
+- [Treemap](/docs/visuals/treemap): Configuration and query shape for the Treemap visual.
+- [Gauge](/docs/visuals/gauge): Configuration and query shape for the Gauge visual.
+- [Heatmap](/docs/visuals/heatmap): Configuration and query shape for the Heatmap visual.
+- [Sankey](/docs/visuals/sankey): Configuration and query shape for the Sankey visual.
+- [Graph](/docs/visuals/graph): Configuration and query shape for the Graph visual.
+- [Map](/docs/visuals/map): Configuration and query shape for the Map visual.
+- [Candlestick chart](/docs/visuals/candlestick): Configuration and query shape for the Candlestick chart visual.
+- [Boxplot](/docs/visuals/boxplot): Configuration and query shape for the Boxplot visual.
+- [Combo chart](/docs/visuals/combo): Configuration and query shape for the Combo chart visual.
+- [Waterfall chart](/docs/visuals/waterfall): Configuration and query shape for the Waterfall chart visual.
+- [Histogram](/docs/visuals/histogram): Configuration and query shape for the Histogram visual.
+- [Radar chart](/docs/visuals/radar): Configuration and query shape for the Radar chart visual.
+- [Tree](/docs/visuals/tree): Configuration and query shape for the Tree visual.
+- [Sunburst](/docs/visuals/sunburst): Configuration and query shape for the Sunburst visual.
+- [KPI](/docs/visuals/kpi): Configuration and query shape for the KPI visual.
+- [Table](/docs/visuals/table): Configuration and query shape for the Table visual.
+- [Matrix](/docs/visuals/matrix): Configuration and query shape for the Matrix visual.
+- [Pivot](/docs/visuals/pivot): Configuration and query shape for the Pivot visual.
 
 ### Architecture and contributing
 

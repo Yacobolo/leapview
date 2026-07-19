@@ -21,7 +21,7 @@ const modelRequestPurposeTitle agentcore.ModelRequestPurpose = "title_generation
 var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>\s*`)
 
 func (s *Service) ConversationNeedsGeneratedTitle(ctx context.Context, scope Scope, conversationID string) (bool, error) {
-	conversation, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	conversation, err := s.repo.GetConversation(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return false, err
 	}
@@ -43,7 +43,7 @@ func (s *Service) GenerateConversationTitle(ctx context.Context, scope Scope, co
 	if s.model == nil {
 		return Conversation{}, fmt.Errorf("agent model is required")
 	}
-	conversation, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	conversation, err := s.repo.GetConversation(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -79,14 +79,14 @@ func (s *Service) GenerateConversationTitle(ctx context.Context, scope Scope, co
 		return conversation, nil
 	}
 
-	latest, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	latest, err := s.repo.GetConversation(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return conversation, err
 	}
 	if !isDefaultConversationTitle(latest.Title) {
 		return latest, nil
 	}
-	updated, err := s.repo.UpdateDefaultConversationTitle(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, title)
+	updated, err := s.repo.UpdateDefaultConversationTitle(ctx, scope.PrincipalID, conversationID, title)
 	if errors.Is(err, ErrNotFound) {
 		return latest, nil
 	}
@@ -97,7 +97,7 @@ func (s *Service) GenerateConversationTitle(ctx context.Context, scope Scope, co
 }
 
 func firstUserPromptForTitle(ctx context.Context, repo Repository, scope Scope, conversationID string) (string, bool, error) {
-	messages, err := repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	messages, err := repo.ListMessages(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return "", false, err
 	}

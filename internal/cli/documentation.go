@@ -48,7 +48,6 @@ var documentedCommandSafety = map[string]commandSafety{
 	"libredash dashboards list":                 {effect: "read", confirmation: "never"},
 	"libredash dashboards page":                 {effect: "read", confirmation: "never"},
 	"libredash dashboards query-page":           {effect: "read", confirmation: "never"},
-	"libredash dashboards table-data":           {effect: "read", confirmation: "never"},
 	"libredash dashboards visual":               {effect: "read", confirmation: "never"},
 	"libredash dashboards visual-data":          {effect: "read", confirmation: "never"},
 	"libredash data plan":                       {effect: "read", confirmation: "never"},

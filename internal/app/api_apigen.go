@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/access/httpauth"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/go-chi/chi/v5"
@@ -44,12 +45,21 @@ func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r
 		http.NotFound(w, r)
 		return
 	}
-	objectResolver, ok := apigenOperationObjectResolver(operationID)
-	if !ok {
-		http.NotFound(w, r)
-		return
+	var objectResolver httpauth.ObjectResolver
+	if !isGlobalAgentOperation(operationID) {
+		objectResolver, ok = apigenOperationObjectResolver(operationID)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
 	}
-	a.server.protectWithObjects(privilege, objectResolver, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	protected := a.server.protectWithObjects
+	if isGlobalAgentOperation(operationID) {
+		protected = func(privilege access.Privilege, _ httpauth.ObjectResolver, next http.Handler) http.Handler {
+			return a.server.protectGlobalAgent(privilege, next)
+		}
+	}
+	protected(privilege, objectResolver, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buffered := newAPIGenResponseBuffer(w, r)
 		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, apiGenTransportErrorResponder{server: a.server}, buffered, r); !ok {
 			http.NotFound(w, r)
@@ -57,6 +67,16 @@ func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r
 		}
 		buffered.flush()
 	})).ServeHTTP(w, r)
+}
+
+func isGlobalAgentOperation(operationID string) bool {
+	switch operationID {
+	case "listAgentConversations", "createAgentConversation", "archiveAgentConversation", "getAgentConversation", "updateAgentConversation",
+		"listAgentMessages", "listAgentRuns", "createAgentRun", "getAgentRun", "cancelAgentRun", "listAgentEvents":
+		return true
+	default:
+		return false
+	}
 }
 
 func apigenOperationPrivilege(operationID string) (access.Privilege, bool) {
@@ -507,48 +527,48 @@ func (a apiGenAdapter) GetRefreshRun(w http.ResponseWriter, r *http.Request, _, 
 	a.server.refreshRunHTTP().GetRun(w, r)
 }
 
-func (a apiGenAdapter) ListAgentConversations(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAgentConversationsParams) {
+func (a apiGenAdapter) ListAgentConversations(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListAgentConversationsParams) {
 	a.server.agentHTTPHandler().ListConversations(w, r)
 }
 
-func (a apiGenAdapter) CreateAgentConversation(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateAgentConversationHeaders) {
+func (a apiGenAdapter) CreateAgentConversation(w http.ResponseWriter, r *http.Request, _ apigenapi.GenCreateAgentConversationHeaders) {
 	a.server.agentHTTPHandler().CreateConversation(w, r)
 }
 
-func (a apiGenAdapter) GetAgentConversation(w http.ResponseWriter, r *http.Request, _, _ string) {
+func (a apiGenAdapter) GetAgentConversation(w http.ResponseWriter, r *http.Request, _ string) {
 	a.server.agentHTTPHandler().GetConversation(w, r)
 }
 
-func (a apiGenAdapter) UpdateAgentConversation(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateAgentConversationHeaders) {
+func (a apiGenAdapter) UpdateAgentConversation(w http.ResponseWriter, r *http.Request, _ string, headers apigenapi.GenUpdateAgentConversationHeaders) {
 	r.Header.Set("If-Match", headers.IfMatch)
 	a.server.agentHTTPHandler().UpdateConversation(w, r)
 }
 
-func (a apiGenAdapter) ArchiveAgentConversation(w http.ResponseWriter, r *http.Request, _, _ string) {
+func (a apiGenAdapter) ArchiveAgentConversation(w http.ResponseWriter, r *http.Request, _ string) {
 	a.server.agentHTTPHandler().ArchiveConversation(w, r)
 }
 
-func (a apiGenAdapter) ListAgentMessages(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListAgentMessagesParams) {
+func (a apiGenAdapter) ListAgentMessages(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAgentMessagesParams) {
 	a.server.agentHTTPHandler().ListMessages(w, r)
 }
 
-func (a apiGenAdapter) CreateAgentRun(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenCreateAgentRunHeaders) {
+func (a apiGenAdapter) CreateAgentRun(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateAgentRunHeaders) {
 	a.server.agentHTTPHandler().CreateRun(w, r)
 }
 
-func (a apiGenAdapter) ListAgentRuns(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListAgentRunsParams) {
+func (a apiGenAdapter) ListAgentRuns(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAgentRunsParams) {
 	a.server.agentHTTPHandler().ListRuns(w, r)
 }
 
-func (a apiGenAdapter) GetAgentRun(w http.ResponseWriter, r *http.Request, _, _, _ string) {
+func (a apiGenAdapter) GetAgentRun(w http.ResponseWriter, r *http.Request, _, _ string) {
 	a.server.agentHTTPHandler().GetRun(w, r)
 }
 
-func (a apiGenAdapter) ListAgentEvents(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenListAgentEventsParams, _ apigenapi.GenListAgentEventsHeaders) {
+func (a apiGenAdapter) ListAgentEvents(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListAgentEventsParams, _ apigenapi.GenListAgentEventsHeaders) {
 	a.server.agentHTTPHandler().ListEvents(w, r)
 }
 
-func (a apiGenAdapter) CancelAgentRun(w http.ResponseWriter, r *http.Request, _, _, _ string, _ apigenapi.GenCancelAgentRunHeaders) {
+func (a apiGenAdapter) CancelAgentRun(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenCancelAgentRunHeaders) {
 	a.server.agentHTTPHandler().CancelRun(w, r)
 }
 

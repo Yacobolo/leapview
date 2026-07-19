@@ -12,7 +12,6 @@ LibreDash supports these versioned YAML resource families:
 - analytical data: ModelTable and SemanticModel;
 - presentation: Dashboard;
 - access: WorkspaceGroup, WorkspaceRoleBinding, Grant, and DataPolicy;
-- agent governance: WorkspaceAgentPolicy.
 
 All resources use the `apiVersion`, `kind`, `metadata`, and `spec` envelope. JSON Schemas and generated reference pages define required fields and accepted values.
 
@@ -54,7 +53,8 @@ The supported Hetzner module provides a single-node production topology with Cad
 - TypeSpec/OpenAPI-derived HTTP API.
 - Workspace search and catalog/lineage discovery.
 - Dashboard and semantic headless BI queries.
-- Policy-controlled workspace agent conversations, messages, runs, events, and turns.
+- Principal-owned global agent conversations, messages, runs, events, and turns.
+- An OAuth-protected, tools-only MCP endpoint at `/mcp` using the same governed BI catalog as the built-in agent, with embedded PKCE consent or an external JWT issuer.
 - Prometheus metrics protected by a bearer token.
 
 ## Boundaries

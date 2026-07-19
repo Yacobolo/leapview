@@ -28,7 +28,6 @@ func (s *storeEventSink) Emit(ctx context.Context, event agentcore.Event) error 
 		s.mu.Unlock()
 	}
 	row, err := s.repo.AppendEvent(ctx, EventInput{
-		WorkspaceID: s.scope.WorkspaceID,
 		PrincipalID: s.scope.PrincipalID,
 		RunID:       s.runID,
 		Sequence:    event.Sequence,

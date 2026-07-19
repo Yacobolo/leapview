@@ -41,15 +41,34 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	for _, operation := range operations {
 		operation := operationForScope(operation, scope)
 		definitions = append(definitions, agentcore.ToolDefinition{
-			Name:        operation.Tool.Name,
-			Description: operation.Tool.Description,
-			InputSchema: append(json.RawMessage(nil), operation.Tool.InputSchema...),
+			Name:         operation.Tool.Name,
+			Description:  operation.Tool.Description,
+			InputSchema:  append(json.RawMessage(nil), operation.Tool.InputSchema...),
+			OutputSchema: requireToolObjectSchema(operation.Tool.OutputSchema),
+			Effect:       string(operation.Tool.Effect),
+			Tags:         append([]string(nil), operation.Tool.Tags...),
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
 				return p.Run(ctx, scope, operation, call), nil
 			}),
 		})
 	}
 	return definitions
+}
+
+func requireToolObjectSchema(input json.RawMessage) json.RawMessage {
+	var schema map[string]any
+	if err := json.Unmarshal(input, &schema); err != nil || schema == nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	if _, ok := schema["type"]; ok {
+		return append(json.RawMessage(nil), input...)
+	}
+	schema["type"] = "object"
+	output, err := json.Marshal(schema)
+	if err != nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	return output
 }
 
 func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOperation, call agentcore.ToolCall) agentcore.ToolResult {

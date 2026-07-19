@@ -14,7 +14,6 @@ model AgentConversationPatchRequest {
 
 model AgentConversationResponse {
   id: string;
-  workspaceId: string;
   principalId: string;
   title: string;
   status: string;
@@ -34,7 +33,6 @@ model AgentConversationListResponse {
 model AgentRunResponse {
   id: string;
   conversationId: string;
-  workspaceId: string;
   principalId: string;
   status: string;
   "model"?: string;
@@ -77,101 +75,92 @@ alias ListAgentConversationsOK = OkJson<AgentConversationListResponse>;
 
 @tag("Agent")
 @summary("List agent conversations")
-@route("/workspaces/{workspace}/agent/conversations")
+@route("/agent/conversations")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-@apigen.cli(#{ command: #["agent", "conversations"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }], output: #{ mode: "raw" } })
-op listAgentConversations(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentConversationsOK | CommonErrors;
+@apigen.cli(#{ command: #["agent", "conversations"], output: #{ mode: "raw" } })
+op listAgentConversations(@query limit?: ListLimit, @query pageToken?: PageToken): ListAgentConversationsOK | CommonErrors;
 
 alias CreateAgentConversationCreated = CreatedJson<AgentConversationResponse>;
 
 @tag("Agent")
 @summary("Create an agent conversation")
-@route("/workspaces/{workspace}/agent/conversations")
+@route("/agent/conversations")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-op createAgentConversation(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: AgentConversationCreateRequest): CreateAgentConversationCreated | CommonErrors;
+op createAgentConversation(@header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: AgentConversationCreateRequest): CreateAgentConversationCreated | CommonErrors;
 
 @tag("Agent")
 @summary("Archive an agent conversation")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}")
+@route("/agent/conversations/{conversation}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op archiveAgentConversation(@path workspace: string, @path conversation: string): NoContentResponse | CommonErrors;
+op archiveAgentConversation(@path conversation: string): NoContentResponse | CommonErrors;
 
 alias GetAgentConversationOK = OkJson<AgentConversationResponse>;
 
 @tag("Agent")
 @summary("Get an agent conversation")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}")
+@route("/agent/conversations/{conversation}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op getAgentConversation(@path workspace: string, @path conversation: string): GetAgentConversationOK | CommonErrors;
+op getAgentConversation(@path conversation: string): GetAgentConversationOK | CommonErrors;
 
 alias UpdateAgentConversationOK = OkJson<AgentConversationResponse>;
 
 @tag("Agent")
 @summary("Update an agent conversation")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}")
+@route("/agent/conversations/{conversation}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op updateAgentConversation(@path workspace: string, @path conversation: string, @header("If-Match") ifMatch: string, @body body: AgentConversationPatchRequest): UpdateAgentConversationOK | CommonErrors;
+op updateAgentConversation(@path conversation: string, @header("If-Match") ifMatch: string, @body body: AgentConversationPatchRequest): UpdateAgentConversationOK | CommonErrors;
 
 alias ListAgentMessagesOK = OkJson<AgentMessageListResponse>;
 
 @tag("Agent")
 @summary("List agent messages")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}/messages")
+@route("/agent/conversations/{conversation}/messages")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op listAgentMessages(@path workspace: string, @path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentMessagesOK | CommonErrors;
+op listAgentMessages(@path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentMessagesOK | CommonErrors;
 
 alias ListAgentRunsOK = OkJson<AgentRunListResponse>;
 
 @tag("Agent")
 @summary("List agent runs")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs")
+@route("/agent/conversations/{conversation}/runs")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op listAgentRuns(@path workspace: string, @path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentRunsOK | CommonErrors;
+op listAgentRuns(@path conversation: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListAgentRunsOK | CommonErrors;
 
 alias GetAgentRunOK = OkJson<AgentRunResponse>;
 
 @tag("Agent")
 @summary("Get an agent run")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}")
+@route("/agent/conversations/{conversation}/runs/{run}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op getAgentRun(@path workspace: string, @path conversation: string, @path run: string): GetAgentRunOK | CommonErrors;
+op getAgentRun(@path conversation: string, @path run: string): GetAgentRunOK | CommonErrors;
 
 alias ListAgentEventsOK = OkJson<AsyncEventListResponse>;
 
 @tag("Agent")
 @summary("List agent run events")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events")
+@route("/agent/conversations/{conversation}/runs/{run}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op listAgentEvents(@path workspace: string, @path conversation: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
+op listAgentEvents(@path conversation: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
 
 @tag("Agent")
 @summary("Create an asynchronous agent run")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs")
+@route("/agent/conversations/{conversation}/runs")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op createAgentRun(@path workspace: string, @path conversation: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: AgentRunCreateRequest): AcceptedJson<AgentRunResponse> | CommonErrors;
+op createAgentRun(@path conversation: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: AgentRunCreateRequest): AcceptedJson<AgentRunResponse> | CommonErrors;
 
 @tag("Agent")
 @summary("Cancel an agent run")
-@route("/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/cancel")
+@route("/agent/conversations/{conversation}/runs/{run}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
-@extension("x-libredash-object-scope", "agent-conversation")
-op cancelAgentRun(@path workspace: string, @path conversation: string, @path run: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<AgentRunResponse> | CommonErrors;
+op cancelAgentRun(@path conversation: string, @path run: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<AgentRunResponse> | CommonErrors;

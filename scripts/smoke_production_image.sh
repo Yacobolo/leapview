@@ -29,6 +29,7 @@ docker run -d --name "$container" \
   -e "LIBREDASH_CSRF_KEY=${csrf_key}" \
   -e "LIBREDASH_METRICS_BEARER_TOKEN=${metrics_token}" \
   -e LIBREDASH_ALLOWED_HOSTS=127.0.0.1,localhost \
+  -e LIBREDASH_PUBLIC_URL=https://localhost \
   "$image" >/dev/null
 
 for _ in $(seq 1 90); do

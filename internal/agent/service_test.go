@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
-	"github.com/Yacobolo/libredash/internal/workspace"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -62,55 +60,8 @@ func TestServiceAppendsHostProvidedTools(t *testing.T) {
 	}
 }
 
-func TestServiceAppliesWorkspaceAgentPolicyToTools(t *testing.T) {
-	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
-	service.SetToolProviders(func(Scope) []agentcore.ToolDefinition {
-		return []agentcore.ToolDefinition{
-			{Name: "query_visual"},
-			{Name: "query_denied"},
-			{Name: "search_workspace"},
-		}
-	})
-	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
-		return workspace.AgentPolicy{
-			Enabled: true,
-			Tools: workspace.AgentPolicyTools{
-				Allow: []string{"query_denied", "query_visual"},
-				Deny:  []string{"query_denied"},
-			},
-		}, true
-	})
-
-	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	if got := toolNames(tools); !reflect.DeepEqual(got, []string{"query_visual"}) {
-		t.Fatalf("tools = %#v, want query_visual only", got)
-	}
-}
-
-func TestServiceRejectsDisabledWorkspaceAgentPolicy(t *testing.T) {
-	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
-	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
-		return workspace.AgentPolicy{Enabled: false}, true
-	})
-
-	_, err := service.Prompt(context.Background(), PromptInput{
-		Scope:          Scope{WorkspaceID: "test", PrincipalID: "principal"},
-		ConversationID: "conv_test",
-		Input:          "hello",
-	})
-	if !errors.Is(err, ErrPolicyDisabled) {
-		t.Fatalf("Prompt() error = %v, want ErrPolicyDisabled", err)
-	}
-	if err == nil || !strings.Contains(err.Error(), "workspace policy") {
-		t.Fatalf("Prompt() error = %v, want policy-specific message", err)
-	}
-}
-
-func TestServiceRejectsGloballyDisabledAgentSeparatelyFromPolicy(t *testing.T) {
+func TestServiceRejectsGloballyDisabledAgent(t *testing.T) {
 	service := NewService(fakeAgentMetrics{}, nil, Config{})
-	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
-		return workspace.AgentPolicy{Enabled: true}, true
-	})
 
 	_, err := service.Prompt(context.Background(), PromptInput{
 		Scope:          Scope{WorkspaceID: "test", PrincipalID: "principal"},
@@ -120,20 +71,13 @@ func TestServiceRejectsGloballyDisabledAgentSeparatelyFromPolicy(t *testing.T) {
 	if !errors.Is(err, ErrDisabled) {
 		t.Fatalf("Prompt() error = %v, want ErrDisabled", err)
 	}
-	if errors.Is(err, ErrPolicyDisabled) {
-		t.Fatalf("Prompt() error = %v, did not want ErrPolicyDisabled", err)
-	}
 }
 
-func TestServiceUsesConfiguredSystemPromptWithoutWorkspaceInstructionComposition(t *testing.T) {
+func TestServiceUsesConfiguredSystemPrompt(t *testing.T) {
 	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
 	service.SetSystemPromptProvider(func(context.Context) (string, error) {
 		return "Stored platform system prompt.", nil
 	})
-	service.SetPolicyProvider(func(Scope) (workspace.AgentPolicy, bool) {
-		return workspace.AgentPolicy{Enabled: true, Instructions: "Prefer sales semantic models."}, true
-	})
-
 	prompt, err := service.systemPrompt(context.Background())
 	if err != nil {
 		t.Fatalf("system prompt: %v", err)
@@ -179,28 +123,28 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 	if !strings.Contains(result.Content, "Executive Sales") || result.StopReason != agentcore.StopReasonCompleted {
 		t.Fatalf("result = %#v", result)
 	}
-	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	messages, err := store.ListMessages(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
 	if len(messages) != 4 {
 		t.Fatalf("messages len = %d, want user/assistant/tool/assistant: %#v", len(messages), messages)
 	}
-	runs, err := store.ListRuns(ctx, "test", principal.ID, conversation.ID)
+	runs, err := store.ListRuns(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
 	}
 	if len(runs) != 1 || runs[0].ID != result.RunID {
 		t.Fatalf("runs = %#v result=%#v", runs, result)
 	}
-	events, err := store.ListEvents(ctx, "test", principal.ID, result.RunID)
+	events, err := store.ListEvents(ctx, principal.ID, result.RunID)
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
 	if len(events) == 0 || events[0].Seq != 1 {
 		t.Fatalf("events = %#v", events)
 	}
-	updated, err := store.GetConversation(ctx, "test", principal.ID, conversation.ID)
+	updated, err := store.GetConversation(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("get updated conversation: %v", err)
 	}
@@ -234,7 +178,7 @@ func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
 	if !service.ConversationRunning(conversation.ID) {
 		t.Fatal("conversation should be marked running after start")
 	}
-	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	messages, err := store.ListMessages(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
@@ -252,7 +196,7 @@ func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
 	if service.ConversationRunning(conversation.ID) {
 		t.Fatal("conversation should not be running after completion")
 	}
-	messages, err = store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	messages, err = store.ListMessages(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list completed messages: %v", err)
 	}
@@ -310,14 +254,14 @@ func TestServiceCompletePromptFailureLeavesSubmittedUserMessage(t *testing.T) {
 	if _, err := service.CompletePrompt(ctx, started, nil); err == nil {
 		t.Fatal("complete prompt succeeded against failing model")
 	}
-	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	messages, err := store.ListMessages(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
 	if len(messages) != 1 || messages[0].Role != MessageRoleUser || messages[0].ContentText != "Keep failed input" {
 		t.Fatalf("messages after failure = %#v, want submitted user prompt", messages)
 	}
-	runs, err := store.ListRuns(ctx, "test", principal.ID, conversation.ID)
+	runs, err := store.ListRuns(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
 	}
@@ -354,14 +298,14 @@ func TestServiceStartedPromptAbortReleasesRunningAndFailsRun(t *testing.T) {
 	if service.ConversationRunning(conversation.ID) {
 		t.Fatal("conversation should not be running after abort")
 	}
-	runs, err := store.ListRuns(ctx, "test", principal.ID, conversation.ID)
+	runs, err := store.ListRuns(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
 	}
 	if len(runs) != 1 || runs[0].Status != RunStatusFailed || !strings.Contains(runs[0].Error, "background startup failed") {
 		t.Fatalf("runs after abort = %#v, want failed run with first abort error", runs)
 	}
-	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	messages, err := store.ListMessages(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
@@ -457,7 +401,7 @@ func TestServicePromptPersistsDisplayContentButSendsCompactToolResult(t *testing
 	if toolMessage.Role != agentcore.RoleTool || strings.Contains(toolMessage.Content, "delivered") || !strings.Contains(toolMessage.Content, "visuals.agent_visual_1") {
 		t.Fatalf("model-visible tool message = %#v", toolMessage)
 	}
-	messages, err := store.ListMessages(ctx, "test", principal.ID, conversation.ID)
+	messages, err := store.ListMessages(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
@@ -477,7 +421,7 @@ func TestServicePromptPersistsDisplayContentButSendsCompactToolResult(t *testing
 	if !strings.Contains(storedTool.ContentJSON, "display_content") || !strings.Contains(storedTool.ContentJSON, "delivered") {
 		t.Fatalf("stored content_json missing display artifact: %s", storedTool.ContentJSON)
 	}
-	updated, err := store.GetConversation(ctx, "test", principal.ID, conversation.ID)
+	updated, err := store.GetConversation(ctx, principal.ID, conversation.ID)
 	if err != nil {
 		t.Fatalf("get conversation: %v", err)
 	}
@@ -503,7 +447,6 @@ func TestServiceGenerateConversationTitleUsesNoToolsAndSavesCleanTitle(t *testin
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleUser,
@@ -553,7 +496,6 @@ func TestServiceGenerateConversationTitleFallsBackWhenModelReturnsEmptyContent(t
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleUser,
@@ -596,7 +538,6 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 	}
 	for _, text := range []string{"hello", "again"} {
 		if _, err := store.AppendMessage(ctx, MessageInput{
-			WorkspaceID:    scope.WorkspaceID,
 			PrincipalID:    scope.PrincipalID,
 			ConversationID: multi.ID,
 			Role:           MessageRoleUser,
@@ -617,7 +558,6 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 		t.Fatalf("create failing conversation: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		ConversationID: failing.ID,
 		Role:           MessageRoleUser,
@@ -645,7 +585,6 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleUser,
@@ -654,7 +593,6 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 		t.Fatalf("append user: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleSummary,
@@ -663,7 +601,6 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 		t.Fatalf("append summary: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleAssistant,
@@ -673,7 +610,6 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 		t.Fatalf("append assistant tool call: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleTool,
@@ -684,7 +620,6 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 		t.Fatalf("append tool: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleAssistant,
@@ -740,7 +675,6 @@ func TestServiceConversationTranscriptExtractsVisualArtifact(t *testing.T) {
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleTool,
@@ -782,7 +716,6 @@ func TestServiceConversationTranscriptRejectsVerboseArtifactPayload(t *testing.T
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, err := store.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		Role:           MessageRoleTool,
@@ -1128,7 +1061,6 @@ func (s *testAgentStore) CreateConversation(_ context.Context, input Conversatio
 	}
 	conversation := Conversation{
 		ID:             s.id("agentconv"),
-		WorkspaceID:    input.WorkspaceID,
 		PrincipalID:    input.PrincipalID,
 		Title:          title,
 		Status:         ConversationStatusActive,
@@ -1141,32 +1073,32 @@ func (s *testAgentStore) CreateConversation(_ context.Context, input Conversatio
 	return conversation, nil
 }
 
-func (s *testAgentStore) ListConversations(_ context.Context, workspaceID, principalID string) ([]Conversation, error) {
-	return s.ListConversationsPage(context.Background(), workspaceID, principalID, Page{})
+func (s *testAgentStore) ListConversations(_ context.Context, principalID string) ([]Conversation, error) {
+	return s.ListConversationsPage(context.Background(), principalID, Page{})
 }
 
-func (s *testAgentStore) ListConversationsPage(_ context.Context, workspaceID, principalID string, page Page) ([]Conversation, error) {
+func (s *testAgentStore) ListConversationsPage(_ context.Context, principalID string, page Page) ([]Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []Conversation
 	for _, conversation := range s.conversations {
-		if conversation.WorkspaceID == workspaceID && conversation.PrincipalID == principalID && conversation.Status == ConversationStatusActive {
+		if conversation.PrincipalID == principalID && conversation.Status == ConversationStatusActive {
 			out = append(out, conversation)
 		}
 	}
 	return pageTestRows(out, page, func(row Conversation) string { return row.ID }), nil
 }
 
-func (s *testAgentStore) GetConversation(_ context.Context, workspaceID, principalID, conversationID string) (Conversation, error) {
+func (s *testAgentStore) GetConversation(_ context.Context, principalID, conversationID string) (Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.conversationLocked(workspaceID, principalID, conversationID)
+	return s.conversationLocked(principalID, conversationID)
 }
 
 func (s *testAgentStore) UpdateConversation(_ context.Context, input ConversationUpdate) (Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	conversation, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, input.ConversationID)
+	conversation, err := s.conversationLocked(input.PrincipalID, input.ConversationID)
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -1179,10 +1111,10 @@ func (s *testAgentStore) UpdateConversation(_ context.Context, input Conversatio
 	return conversation, nil
 }
 
-func (s *testAgentStore) ArchiveConversation(_ context.Context, workspaceID, principalID, conversationID string) (Conversation, error) {
+func (s *testAgentStore) ArchiveConversation(_ context.Context, principalID, conversationID string) (Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	conversation, err := s.conversationLocked(workspaceID, principalID, conversationID)
+	conversation, err := s.conversationLocked(principalID, conversationID)
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -1193,10 +1125,10 @@ func (s *testAgentStore) ArchiveConversation(_ context.Context, workspaceID, pri
 	return conversation, nil
 }
 
-func (s *testAgentStore) UpdateDefaultConversationTitle(_ context.Context, workspaceID, principalID, conversationID, title string) (Conversation, error) {
+func (s *testAgentStore) UpdateDefaultConversationTitle(_ context.Context, principalID, conversationID, title string) (Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	conversation, err := s.conversationLocked(workspaceID, principalID, conversationID)
+	conversation, err := s.conversationLocked(principalID, conversationID)
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -1209,10 +1141,10 @@ func (s *testAgentStore) UpdateDefaultConversationTitle(_ context.Context, works
 	return conversation, nil
 }
 
-func (s *testAgentStore) UpdateConversationTranscript(_ context.Context, workspaceID, principalID, conversationID, transcriptJSON string) (Conversation, error) {
+func (s *testAgentStore) UpdateConversationTranscript(_ context.Context, principalID, conversationID, transcriptJSON string) (Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	conversation, err := s.conversationLocked(workspaceID, principalID, conversationID)
+	conversation, err := s.conversationLocked(principalID, conversationID)
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -1225,7 +1157,7 @@ func (s *testAgentStore) UpdateConversationTranscript(_ context.Context, workspa
 func (s *testAgentStore) AppendMessage(_ context.Context, input MessageInput) (Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, input.ConversationID); err != nil {
+	if _, err := s.conversationLocked(input.PrincipalID, input.ConversationID); err != nil {
 		return Message{}, err
 	}
 	message := Message{
@@ -1245,14 +1177,14 @@ func (s *testAgentStore) AppendMessage(_ context.Context, input MessageInput) (M
 	return message, nil
 }
 
-func (s *testAgentStore) ListMessages(_ context.Context, workspaceID, principalID, conversationID string) ([]Message, error) {
-	return s.ListMessagesPage(context.Background(), workspaceID, principalID, conversationID, Page{})
+func (s *testAgentStore) ListMessages(_ context.Context, principalID, conversationID string) ([]Message, error) {
+	return s.ListMessagesPage(context.Background(), principalID, conversationID, Page{})
 }
 
-func (s *testAgentStore) ListMessagesPage(_ context.Context, workspaceID, principalID, conversationID string, page Page) ([]Message, error) {
+func (s *testAgentStore) ListMessagesPage(_ context.Context, principalID, conversationID string, page Page) ([]Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
+	if _, err := s.conversationLocked(principalID, conversationID); err != nil {
 		return nil, err
 	}
 	return pageTestRows(s.messages[conversationID], page, func(row Message) string { return row.ID }), nil
@@ -1261,7 +1193,7 @@ func (s *testAgentStore) ListMessagesPage(_ context.Context, workspaceID, princi
 func (s *testAgentStore) CreateRun(_ context.Context, input RunInput) (Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, input.ConversationID); err != nil {
+	if _, err := s.conversationLocked(input.PrincipalID, input.ConversationID); err != nil {
 		return Run{}, err
 	}
 	runID := strings.TrimSpace(input.RunID)
@@ -1277,7 +1209,7 @@ func (s *testAgentStore) CreateRun(_ context.Context, input RunInput) (Run, erro
 func (s *testAgentStore) FinishRun(_ context.Context, input RunFinish) (Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, input.ConversationID); err != nil {
+	if _, err := s.conversationLocked(input.PrincipalID, input.ConversationID); err != nil {
 		return Run{}, err
 	}
 	run, ok := s.runs[input.RunID]
@@ -1295,14 +1227,14 @@ func (s *testAgentStore) FinishRun(_ context.Context, input RunFinish) (Run, err
 	return run, nil
 }
 
-func (s *testAgentStore) ListRuns(_ context.Context, workspaceID, principalID, conversationID string) ([]Run, error) {
-	return s.ListRunsPage(context.Background(), workspaceID, principalID, conversationID, Page{})
+func (s *testAgentStore) ListRuns(_ context.Context, principalID, conversationID string) ([]Run, error) {
+	return s.ListRunsPage(context.Background(), principalID, conversationID, Page{})
 }
 
-func (s *testAgentStore) ListRunsPage(_ context.Context, workspaceID, principalID, conversationID string, page Page) ([]Run, error) {
+func (s *testAgentStore) ListRunsPage(_ context.Context, principalID, conversationID string, page Page) ([]Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
+	if _, err := s.conversationLocked(principalID, conversationID); err != nil {
 		return nil, err
 	}
 	var out []Run
@@ -1314,10 +1246,10 @@ func (s *testAgentStore) ListRunsPage(_ context.Context, workspaceID, principalI
 	return pageTestRows(out, page, func(row Run) string { return row.ID }), nil
 }
 
-func (s *testAgentStore) GetRun(_ context.Context, workspaceID, principalID, conversationID, runID string) (Run, error) {
+func (s *testAgentStore) GetRun(_ context.Context, principalID, conversationID, runID string) (Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
+	if _, err := s.conversationLocked(principalID, conversationID); err != nil {
 		return Run{}, err
 	}
 	run, ok := s.runs[runID]
@@ -1327,14 +1259,14 @@ func (s *testAgentStore) GetRun(_ context.Context, workspaceID, principalID, con
 	return run, nil
 }
 
-func (s *testAgentStore) GetRunByID(_ context.Context, workspaceID, principalID, runID string) (Run, error) {
+func (s *testAgentStore) GetRunByID(_ context.Context, principalID, runID string) (Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	conversationID, ok := s.runConversation[runID]
 	if !ok {
 		return Run{}, sql.ErrNoRows
 	}
-	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
+	if _, err := s.conversationLocked(principalID, conversationID); err != nil {
 		return Run{}, err
 	}
 	return s.runs[runID], nil
@@ -1347,7 +1279,7 @@ func (s *testAgentStore) AppendEvent(_ context.Context, input EventInput) (Event
 	if !ok {
 		return Event{}, sql.ErrNoRows
 	}
-	if _, err := s.conversationLocked(input.WorkspaceID, input.PrincipalID, conversationID); err != nil {
+	if _, err := s.conversationLocked(input.PrincipalID, conversationID); err != nil {
 		return Event{}, err
 	}
 	event := Event{
@@ -1363,26 +1295,26 @@ func (s *testAgentStore) AppendEvent(_ context.Context, input EventInput) (Event
 	return event, nil
 }
 
-func (s *testAgentStore) ListEvents(_ context.Context, workspaceID, principalID, runID string) ([]Event, error) {
-	return s.ListEventsPage(context.Background(), workspaceID, principalID, runID, Page{})
+func (s *testAgentStore) ListEvents(_ context.Context, principalID, runID string) ([]Event, error) {
+	return s.ListEventsPage(context.Background(), principalID, runID, Page{})
 }
 
-func (s *testAgentStore) ListEventsPage(_ context.Context, workspaceID, principalID, runID string, page Page) ([]Event, error) {
+func (s *testAgentStore) ListEventsPage(_ context.Context, principalID, runID string, page Page) ([]Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	conversationID, ok := s.runConversation[runID]
 	if !ok {
 		return nil, sql.ErrNoRows
 	}
-	if _, err := s.conversationLocked(workspaceID, principalID, conversationID); err != nil {
+	if _, err := s.conversationLocked(principalID, conversationID); err != nil {
 		return nil, err
 	}
 	return pageTestRows(s.events[runID], page, func(row Event) string { return row.ID }), nil
 }
 
-func (s *testAgentStore) conversationLocked(workspaceID, principalID, conversationID string) (Conversation, error) {
+func (s *testAgentStore) conversationLocked(principalID, conversationID string) (Conversation, error) {
 	conversation, ok := s.conversations[conversationID]
-	if !ok || conversation.WorkspaceID != workspaceID || conversation.PrincipalID != principalID {
+	if !ok || conversation.PrincipalID != principalID {
 		return Conversation{}, sql.ErrNoRows
 	}
 	return conversation, nil
@@ -1429,18 +1361,4 @@ func pageTestRows[T any](rows []T, page Page, id func(T) string) []T {
 		end = len(rows)
 	}
 	return append([]T(nil), rows[start:end]...)
-}
-
-func testConversation(id, workspaceID, principalID, title, status, metadataJSON, transcriptJSON, createdAt, updatedAt string) Conversation {
-	return Conversation{
-		ID:             id,
-		WorkspaceID:    workspaceID,
-		PrincipalID:    principalID,
-		Title:          title,
-		Status:         status,
-		MetadataJSON:   metadataJSON,
-		TranscriptJSON: transcriptJSON,
-		CreatedAt:      createdAt,
-		UpdatedAt:      updatedAt,
-	}
 }

@@ -156,7 +156,6 @@ func renderProjectPlan(out io.Writer, plan workspacecompiler.ProjectPlan) error 
 		fmt.Fprintf(out, "  dashboards %s\n", strings.Join(workspace.Dashboards, ","))
 		fmt.Fprintf(out, "  workspace_groups %s\n", strings.Join(workspace.WorkspaceGroups, ","))
 		fmt.Fprintf(out, "  workspace_role_bindings %s\n", strings.Join(workspace.WorkspaceRoleBindings, ","))
-		fmt.Fprintf(out, "  workspace_agent_policies %s\n", strings.Join(workspace.WorkspaceAgentPolicies, ","))
 		if len(workspace.Changes) > 0 || len(workspace.DependencyChanges) > 0 {
 			fmt.Fprintf(out, "  changes +%d ~%d -%d dependencies %d\n", workspace.Summary.Added, workspace.Summary.Changed, workspace.Summary.Removed, workspace.Summary.DependencyChanges)
 			for _, change := range workspace.Changes {
@@ -254,9 +253,6 @@ func planChangeAnnotations(change workspacecompiler.ProjectPlanChange) string {
 	}
 	if change.AccessImpact {
 		parts = append(parts, "access")
-	}
-	if change.AgentPolicyImpact {
-		parts = append(parts, "agent_policy")
 	}
 	return strings.Join(parts, ",")
 }

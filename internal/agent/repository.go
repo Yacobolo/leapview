@@ -25,7 +25,6 @@ const (
 
 type Conversation struct {
 	ID             string
-	WorkspaceID    string
 	PrincipalID    string
 	Title          string
 	Status         string
@@ -82,21 +81,18 @@ type Event struct {
 }
 
 type ConversationInput struct {
-	WorkspaceID  string
 	PrincipalID  string
 	Title        string
 	MetadataJSON string
 }
 
 type ConversationUpdate struct {
-	WorkspaceID    string
 	PrincipalID    string
 	ConversationID string
 	Title          string
 }
 
 type MessageInput struct {
-	WorkspaceID    string
 	PrincipalID    string
 	ConversationID string
 	RunID          string
@@ -109,7 +105,6 @@ type MessageInput struct {
 }
 
 type RunInput struct {
-	WorkspaceID    string
 	PrincipalID    string
 	ConversationID string
 	RunID          string
@@ -118,7 +113,6 @@ type RunInput struct {
 }
 
 type RunFinish struct {
-	WorkspaceID    string
 	PrincipalID    string
 	ConversationID string
 	RunID          string
@@ -132,7 +126,6 @@ type RunFinish struct {
 }
 
 type EventInput struct {
-	WorkspaceID string
 	PrincipalID string
 	RunID       string
 	Sequence    int64
@@ -143,23 +136,23 @@ type EventInput struct {
 
 type Repository interface {
 	CreateConversation(ctx context.Context, input ConversationInput) (Conversation, error)
-	ListConversations(ctx context.Context, workspaceID, principalID string) ([]Conversation, error)
-	ListConversationsPage(ctx context.Context, workspaceID, principalID string, page Page) ([]Conversation, error)
-	GetConversation(ctx context.Context, workspaceID, principalID, conversationID string) (Conversation, error)
+	ListConversations(ctx context.Context, principalID string) ([]Conversation, error)
+	ListConversationsPage(ctx context.Context, principalID string, page Page) ([]Conversation, error)
+	GetConversation(ctx context.Context, principalID, conversationID string) (Conversation, error)
 	UpdateConversation(ctx context.Context, input ConversationUpdate) (Conversation, error)
-	ArchiveConversation(ctx context.Context, workspaceID, principalID, conversationID string) (Conversation, error)
-	UpdateDefaultConversationTitle(ctx context.Context, workspaceID, principalID, conversationID, title string) (Conversation, error)
-	UpdateConversationTranscript(ctx context.Context, workspaceID, principalID, conversationID, transcriptJSON string) (Conversation, error)
+	ArchiveConversation(ctx context.Context, principalID, conversationID string) (Conversation, error)
+	UpdateDefaultConversationTitle(ctx context.Context, principalID, conversationID, title string) (Conversation, error)
+	UpdateConversationTranscript(ctx context.Context, principalID, conversationID, transcriptJSON string) (Conversation, error)
 	AppendMessage(ctx context.Context, input MessageInput) (Message, error)
-	ListMessages(ctx context.Context, workspaceID, principalID, conversationID string) ([]Message, error)
-	ListMessagesPage(ctx context.Context, workspaceID, principalID, conversationID string, page Page) ([]Message, error)
+	ListMessages(ctx context.Context, principalID, conversationID string) ([]Message, error)
+	ListMessagesPage(ctx context.Context, principalID, conversationID string, page Page) ([]Message, error)
 	CreateRun(ctx context.Context, input RunInput) (Run, error)
 	FinishRun(ctx context.Context, input RunFinish) (Run, error)
-	ListRuns(ctx context.Context, workspaceID, principalID, conversationID string) ([]Run, error)
-	ListRunsPage(ctx context.Context, workspaceID, principalID, conversationID string, page Page) ([]Run, error)
-	GetRun(ctx context.Context, workspaceID, principalID, conversationID, runID string) (Run, error)
-	GetRunByID(ctx context.Context, workspaceID, principalID, runID string) (Run, error)
+	ListRuns(ctx context.Context, principalID, conversationID string) ([]Run, error)
+	ListRunsPage(ctx context.Context, principalID, conversationID string, page Page) ([]Run, error)
+	GetRun(ctx context.Context, principalID, conversationID, runID string) (Run, error)
+	GetRunByID(ctx context.Context, principalID, runID string) (Run, error)
 	AppendEvent(ctx context.Context, input EventInput) (Event, error)
-	ListEvents(ctx context.Context, workspaceID, principalID, runID string) ([]Event, error)
-	ListEventsPage(ctx context.Context, workspaceID, principalID, runID string, page Page) ([]Event, error)
+	ListEvents(ctx context.Context, principalID, runID string) ([]Event, error)
+	ListEventsPage(ctx context.Context, principalID, runID string, page Page) ([]Event, error)
 }

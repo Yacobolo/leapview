@@ -31,6 +31,27 @@ surprise: true
 	assertDiagnostic(t, err, "schema.unknown_field", "field not allowed")
 }
 
+func TestValidateBytesRejectsRemovedWorkspaceAgentPolicyInclude(t *testing.T) {
+	err := ValidateBytes(KindWorkspace, "workspace.yaml", []byte(`
+apiVersion: libredash.dev/v1
+kind: Workspace
+metadata:
+  name: sales
+spec:
+  uses:
+    sources: []
+  models:
+    include: []
+  semanticModels:
+    include: []
+  dashboards:
+    include: []
+  agentPolicy:
+    include: [agent/*.yaml]
+`))
+	assertDiagnostic(t, err, "schema.unknown_field", "agentPolicy")
+}
+
 func TestValidateBytesRejectsWrongEnvelopeType(t *testing.T) {
 	err := ValidateBytes(KindWorkspace, "workspace.yaml", []byte(`
 apiVersion: libredash.dev/v1
@@ -454,8 +475,6 @@ func kindForResourceFile(t *testing.T, path string) (Kind, bool) {
 		return KindWorkspaceGroup, true
 	case "WorkspaceRoleBinding":
 		return KindWorkspaceRoleBinding, true
-	case "WorkspaceAgentPolicy":
-		return KindWorkspaceAgentPolicy, true
 	case "ModelTable":
 		return KindModelTable, true
 	case "SemanticModel":

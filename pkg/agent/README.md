@@ -178,6 +178,11 @@ handler failures use the same formatter and become model-visible tool-result
 messages, allowing the model to repair the next call. Fatal tool outcomes stop
 the run after appending the tool result:
 
+`ToolResult.Content` is the canonical result validated against the tool's
+output schema and returned by transport adapters. A handler may set
+`ModelContent` to a smaller model-only projection and `DisplayContent` to a
+richer UI projection without changing that canonical contract.
+
 ```go
 return agent.ToolResult{
 	Content: map[string]any{"draft_id": draft.ID},

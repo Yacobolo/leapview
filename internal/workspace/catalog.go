@@ -38,23 +38,8 @@ type Definition struct {
 	Models           map[string]*model.Model
 	Dashboards       map[string]*report.Dashboard
 	Access           AccessPolicy
-	AgentPolicies    map[string]AgentPolicy
-	AgentPolicy      AgentPolicy
 	RefreshPipelines map[string]refreshpipeline.Definition
 	BaseDir          string
 	SourceIDs        map[string]string
 	SourceFiles      map[string]string
-}
-
-type AgentPolicy struct {
-	ID           string
-	Name         string
-	Enabled      bool
-	Tools        AgentPolicyTools
-	Instructions string
-}
-
-type AgentPolicyTools struct {
-	Allow []string
-	Deny  []string
 }

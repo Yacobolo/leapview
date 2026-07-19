@@ -22,7 +22,7 @@ Charts are renderer-neutral at the dashboard contract. LibreDash maps visual sha
 
 ## Delivery and ownership
 
-A **project** is the atomic configuration delivery unit. It discovers global connections and sources plus one or more workspaces. A **workspace** owns model tables, semantic models, dashboards, access configuration, and optional agent policy. An **environment** such as `dev`, `staging`, or `prod` selects an active validated deployment and managed-data revisions.
+A **project** is the atomic configuration delivery unit. It discovers global connections and sources plus one or more workspaces. A **workspace** is an asset container for model tables, semantic models, dashboards, and access configuration. Agent conversations are global and principal-owned; tools select a workspace only when operating on its assets. An **environment** such as `dev`, `staging`, or `prod` selects an active validated deployment and managed-data revisions.
 
 These boundaries solve different problems:
 

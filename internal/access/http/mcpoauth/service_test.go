@@ -1,0 +1,341 @@
+package mcpoauth_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Yacobolo/libredash/internal/access"
+	"github.com/Yacobolo/libredash/internal/access/http/mcpoauth"
+	accesssqlite "github.com/Yacobolo/libredash/internal/access/sqlite"
+	"github.com/Yacobolo/libredash/internal/platform"
+)
+
+const (
+	testIssuer   = "https://libredash.example"
+	testResource = "https://libredash.example/mcp"
+	testRedirect = "https://client.example/callback"
+)
+
+func TestAuthorizationCodePKCERefreshAndRevocation(t *testing.T) {
+	ctx := context.Background()
+	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{Email: "user@example.com", DisplayName: "MCP User"})
+	if err != nil {
+		t.Fatalf("create principal: %v", err)
+	}
+	service, err := mcpoauth.New(store.SQLDB(), repo, mcpoauth.Config{
+		IssuerURL:   testIssuer,
+		ResourceURL: testResource,
+		Secret:      []byte("0123456789abcdef0123456789abcdef"),
+	})
+	if err != nil {
+		t.Fatalf("new OAuth service: %v", err)
+	}
+
+	registered := registerClient(t, service)
+	verifier := "abcdefghijklmnopqrstuvwxyz-._~ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	challengeBytes := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(challengeBytes[:])
+	authorizeURL := testIssuer + "/oauth/authorize?" + url.Values{
+		"response_type":         {"code"},
+		"client_id":             {registered.ClientID},
+		"redirect_uri":          {testRedirect},
+		"scope":                 {"mcp:use offline_access"},
+		"state":                 {"client-state"},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+		"resource":              {testResource},
+	}.Encode()
+
+	consentRequest := httptest.NewRequest(http.MethodGet, authorizeURL, nil)
+	consent, err := service.Consent(consentRequest)
+	if err != nil {
+		t.Fatalf("parse consent: %v", err)
+	}
+	if consent.ClientID != registered.ClientID || consent.ClientName != "Test Client" || consent.Resource != testResource {
+		t.Fatalf("consent = %#v", consent)
+	}
+
+	authorizeRequest := httptest.NewRequest(http.MethodPost, authorizeURL, nil)
+	authorizeResponse := httptest.NewRecorder()
+	service.Authorize(authorizeResponse, authorizeRequest, principal.ID, true)
+	if authorizeResponse.Code != http.StatusSeeOther {
+		t.Fatalf("authorize status = %d body=%s", authorizeResponse.Code, authorizeResponse.Body.String())
+	}
+	callback, err := url.Parse(authorizeResponse.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse callback: %v", err)
+	}
+	if callback.Query().Get("state") != "client-state" || callback.Query().Get("code") == "" {
+		t.Fatalf("callback = %s", callback)
+	}
+
+	token := exchangeCode(t, service, registered.ClientID, callback.Query().Get("code"), verifier)
+	if token.AccessToken == "" || token.RefreshToken == "" || token.TokenType != "bearer" || token.ExpiresIn <= 0 {
+		t.Fatalf("token response = %#v", token)
+	}
+	credential, err := service.Authenticate(ctx, token.AccessToken)
+	if err != nil {
+		t.Fatalf("authenticate access token: %v", err)
+	}
+	if credential.Principal.ID != principal.ID || credential.Resource != testResource || !credential.HasScope("mcp:use") {
+		t.Fatalf("credential = %#v", credential)
+	}
+
+	refreshed := refreshToken(t, service, registered.ClientID, token.RefreshToken)
+	if refreshed.AccessToken == "" || refreshed.RefreshToken == "" || refreshed.RefreshToken == token.RefreshToken {
+		t.Fatalf("refreshed token = %#v", refreshed)
+	}
+	if _, err := service.Authenticate(ctx, token.AccessToken); err == nil {
+		t.Fatal("rotated access token remained valid")
+	}
+	assertOAuthError(t, http.StatusBadRequest, func(rec *httptest.ResponseRecorder) {
+		request := formRequest("/oauth/token", url.Values{
+			"grant_type":    {"refresh_token"},
+			"client_id":     {registered.ClientID},
+			"refresh_token": {token.RefreshToken},
+			"resource":      {testResource},
+		})
+		service.Token(rec, request)
+	})
+
+	revokeRequest := formRequest("/oauth/revoke", url.Values{
+		"client_id": {registered.ClientID},
+		"token":     {refreshed.RefreshToken},
+	})
+	revokeResponse := httptest.NewRecorder()
+	service.Revoke(revokeResponse, revokeRequest)
+	if revokeResponse.Code != http.StatusOK {
+		t.Fatalf("revoke status = %d body=%s", revokeResponse.Code, revokeResponse.Body.String())
+	}
+	if _, err := service.Authenticate(ctx, refreshed.AccessToken); err == nil {
+		t.Fatal("revoked access token remained valid")
+	}
+}
+
+func TestRejectsMissingPKCEAndWrongResource(t *testing.T) {
+	service := testService(t)
+	registered := registerClient(t, service)
+	for name, values := range map[string]url.Values{
+		"missing PKCE": {
+			"response_type": {"code"}, "client_id": {registered.ClientID}, "redirect_uri": {testRedirect},
+			"scope": {"mcp:use"}, "resource": {testResource},
+		},
+		"wrong resource": {
+			"response_type": {"code"}, "client_id": {registered.ClientID}, "redirect_uri": {testRedirect},
+			"scope": {"mcp:use"}, "resource": {"https://other.example/mcp"},
+			"code_challenge": {strings.Repeat("a", 43)}, "code_challenge_method": {"S256"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, testIssuer+"/oauth/authorize?"+values.Encode(), nil)
+			if _, err := service.Consent(request); err == nil {
+				t.Fatal("Consent succeeded")
+			}
+		})
+	}
+}
+
+func TestClientIDMetadataDocumentRegistration(t *testing.T) {
+	const clientID = "https://client.example/oauth/client-metadata.json"
+	ctx := context.Background()
+	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	metadataClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		body := `{"client_id":"` + clientID + `","client_name":"CIMD Client","redirect_uris":["` + testRedirect + `"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none","logo_uri":"https://client.example/logo.png"}`
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+	})}
+	service, err := mcpoauth.New(store.SQLDB(), repo, mcpoauth.Config{
+		IssuerURL: testIssuer, ResourceURL: testResource,
+		Secret: []byte("0123456789abcdef0123456789abcdef"), ClientMetadataHTTPClient: metadataClient,
+	})
+	if err != nil {
+		t.Fatalf("new OAuth service: %v", err)
+	}
+	challenge := base64.RawURLEncoding.EncodeToString(make([]byte, sha256.Size))
+	request := httptest.NewRequest(http.MethodGet, testIssuer+"/oauth/authorize?"+url.Values{
+		"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {testRedirect},
+		"scope": {"mcp:use"}, "resource": {testResource},
+		"code_challenge": {challenge}, "code_challenge_method": {"S256"}, "state": {"client-state"},
+	}.Encode(), nil)
+	consent, err := service.Consent(request)
+	if err != nil {
+		t.Fatalf("resolve CIMD consent: %v", err)
+	}
+	if consent.ClientID != clientID || consent.ClientName != "CIMD Client" {
+		t.Fatalf("consent = %#v", consent)
+	}
+}
+
+func TestServicePrincipalClientCredentials(t *testing.T) {
+	ctx := context.Background()
+	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	principal, err := repo.CreateServicePrincipal(ctx, access.ServicePrincipalInput{ID: "sp_mcp", DisplayName: "MCP automation"})
+	if err != nil {
+		t.Fatalf("create service principal: %v", err)
+	}
+	secret, _, err := repo.CreateServicePrincipalSecret(ctx, principal.ID, access.ServicePrincipalSecretInput{Name: "mcp"})
+	if err != nil {
+		t.Fatalf("create service principal secret: %v", err)
+	}
+	service, err := mcpoauth.New(store.SQLDB(), repo, mcpoauth.Config{
+		IssuerURL: testIssuer, ResourceURL: testResource,
+		Secret: []byte("0123456789abcdef0123456789abcdef"), AccessTokenTTL: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new OAuth service: %v", err)
+	}
+
+	token := tokenRequest(t, service, formRequest("/oauth/token", url.Values{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {principal.ID},
+		"client_secret": {secret},
+		"scope":         {"mcp:use"},
+		"resource":      {testResource},
+	}))
+	if token.RefreshToken != "" {
+		t.Fatalf("client credentials refresh token = %q, want empty", token.RefreshToken)
+	}
+	credential, err := service.Authenticate(ctx, token.AccessToken)
+	if err != nil {
+		t.Fatalf("authenticate service token: %v", err)
+	}
+	if credential.Principal.ID != principal.ID || !credential.HasScope(mcpoauth.ScopeMCPUse) {
+		t.Fatalf("credential = %#v", credential)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, err := service.Authenticate(ctx, token.AccessToken); err == nil {
+		t.Fatal("expired service token remained valid")
+	}
+
+	assertOAuthError(t, http.StatusUnauthorized, func(rec *httptest.ResponseRecorder) {
+		service.Token(rec, formRequest("/oauth/token", url.Values{
+			"grant_type": {"client_credentials"}, "client_id": {principal.ID},
+			"client_secret": {"wrong"}, "scope": {"mcp:use"}, "resource": {testResource},
+		}))
+	})
+}
+
+func registerClient(t *testing.T, service *mcpoauth.Service) mcpoauth.RegistrationResponse {
+	t.Helper()
+	body := `{"client_name":"Test Client","redirect_uris":["` + testRedirect + `"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none","logo_uri":"https://client.example/logo.png"}`
+	request := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	service.Register(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("register status = %d body=%s", response.Code, response.Body.String())
+	}
+	var registered mcpoauth.RegistrationResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &registered); err != nil {
+		t.Fatalf("decode registration: %v", err)
+	}
+	if registered.ClientID == "" || registered.TokenEndpointAuthMethod != "none" {
+		t.Fatalf("registration = %#v", registered)
+	}
+	return registered
+}
+
+func exchangeCode(t *testing.T, service *mcpoauth.Service, clientID, code, verifier string) mcpoauth.TokenResponse {
+	t.Helper()
+	request := formRequest("/oauth/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {clientID},
+		"code":          {code},
+		"redirect_uri":  {testRedirect},
+		"code_verifier": {verifier},
+		"resource":      {testResource},
+	})
+	return tokenRequest(t, service, request)
+}
+
+func refreshToken(t *testing.T, service *mcpoauth.Service, clientID, refreshToken string) mcpoauth.TokenResponse {
+	t.Helper()
+	request := formRequest("/oauth/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {clientID},
+		"refresh_token": {refreshToken},
+		"resource":      {testResource},
+	})
+	return tokenRequest(t, service, request)
+}
+
+func tokenRequest(t *testing.T, service *mcpoauth.Service, request *http.Request) mcpoauth.TokenResponse {
+	t.Helper()
+	response := httptest.NewRecorder()
+	service.Token(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("token status = %d body=%s", response.Code, response.Body.String())
+	}
+	var token mcpoauth.TokenResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &token); err != nil {
+		t.Fatalf("decode token: %v", err)
+	}
+	return token
+}
+
+func formRequest(path string, values url.Values) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return request
+}
+
+func assertOAuthError(t *testing.T, status int, run func(*httptest.ResponseRecorder)) {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	run(recorder)
+	if recorder.Code != status {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, status, recorder.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil || body["error"] == nil {
+		t.Fatalf("OAuth error body = %s err=%v", recorder.Body.String(), err)
+	}
+}
+
+func testService(t *testing.T) *mcpoauth.Service {
+	t.Helper()
+	ctx := context.Background()
+	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "libredash.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	service, err := mcpoauth.New(store.SQLDB(), repo, mcpoauth.Config{
+		IssuerURL: testIssuer, ResourceURL: testResource,
+		Secret: []byte("0123456789abcdef0123456789abcdef"),
+	})
+	if err != nil {
+		t.Fatalf("new OAuth service: %v", err)
+	}
+	return service
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return fn(request) }

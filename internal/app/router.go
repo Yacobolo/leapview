@@ -50,10 +50,10 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/workspaces/{workspace}/assets/{asset}/refresh", s.protectedWithObjects(access.PrivilegeRefreshData, s.workspaceAssetObjectRefs, workspaceHTTP.RefreshAsset))
 		r.Get("/workspaces/{workspace}/data", s.protected(access.PrivilegeViewItem, workspaceHTTP.WorkspaceDataExplorerRedirect))
 		agentHTTP := s.agentHTTPHandler()
-		r.Get("/chats", s.protected(access.PrivilegeViewAgent, agentHTTP.Chat))
-		r.Get("/chats/new", s.protected(access.PrivilegeViewAgent, agentHTTP.ChatNew))
-		r.Get("/chats/{conversation}", s.protected(access.PrivilegeViewAgent, agentHTTP.ChatConversation))
-		r.Post("/chats/turns", s.protected(access.PrivilegeUseAgent, agentHTTP.ChatTurn))
+		r.Get("/chats", s.globalAgentProtected(access.PrivilegeViewAgent, agentHTTP.Chat))
+		r.Get("/chats/new", s.globalAgentProtected(access.PrivilegeViewAgent, agentHTTP.ChatNew))
+		r.Get("/chats/{conversation}", s.globalAgentProtected(access.PrivilegeViewAgent, agentHTTP.ChatConversation))
+		r.Post("/chats/turns", s.globalAgentProtected(access.PrivilegeUseAgent, agentHTTP.ChatTurn))
 		r.Get("/chat", redirectLegacyChat)
 		r.Get("/chat/updates", http.NotFound)
 		r.Get("/chat/*", redirectLegacyChat)
@@ -99,9 +99,22 @@ func (s *Server) Routes() http.Handler {
 		r.Use(s.rateLimits.authMiddleware())
 		r.Get("/auth/{provider}", s.authBegin)
 		r.Get("/auth/{provider}/callback", s.authCallback)
-		r.Post("/oauth/token", s.accessHTTPHandler().OAuthToken)
+		r.Post("/oauth/token", s.oauthToken)
+		r.Post("/oauth/register", s.mcpOAuthRegister)
+		r.Post("/oauth/revoke", s.mcpOAuthRevoke)
 	})
+	mux.Get("/.well-known/oauth-protected-resource", s.mcpProtectedResourceMetadata)
+	mux.Get("/.well-known/oauth-protected-resource/mcp", s.mcpProtectedResourceMetadata)
+	mux.Get("/.well-known/oauth-authorization-server", s.mcpAuthorizationServerMetadata)
+	if s.auth != nil {
+		authorize := s.auth.Middleware("", http.HandlerFunc(s.mcpOAuthAuthorize))
+		mux.Method(http.MethodGet, "/oauth/authorize", s.csrf(authorize))
+		mux.Method(http.MethodPost, "/oauth/authorize", s.csrf(authorize))
+	}
 	if s.store != nil {
+		if s.auth != nil {
+			mux.With(s.rateLimits.apiMiddleware()).Handle("/mcp", s.mcpHandler())
+		}
 		if strings.TrimSpace(s.scimBearerToken) != "" {
 			if repo, err := s.accessRepository(); err == nil && repo != nil {
 				if handler, err := scimprov.NewHandler(scimprov.Options{Repository: repo, BearerToken: s.scimBearerToken}); err == nil {
@@ -158,6 +171,69 @@ func (s *Server) protected(privilege access.Privilege, handler http.HandlerFunc)
 
 func (s *Server) protectedWithObjects(privilege access.Privilege, objectResolver httpauth.ObjectResolver, handler http.HandlerFunc) http.HandlerFunc {
 	return s.protectWithObjects(privilege, objectResolver, handler).ServeHTTP
+}
+
+func (s *Server) globalAgentProtected(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {
+	return s.protectGlobalAgent(privilege, handler).ServeHTTP
+}
+
+func (s *Server) protectGlobalAgent(privilege access.Privilege, next http.Handler) http.Handler {
+	if s.auth == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), principalContextKey{}, localDeveloperPrincipal())
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	return s.auth.Middleware("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := s.auth.Principal(r)
+		if !ok {
+			writeAuthError(w, r, errUnauthorized, http.StatusUnauthorized)
+			return
+		}
+		if principal.DevBypass {
+			next.ServeHTTP(w, r)
+			return
+		}
+		var credential *access.APICredential
+		if resolved, ok := s.auth.APICredential(r); ok {
+			credential = &resolved
+		}
+		allowed, err := s.authorizeGlobalAgentPrivilege(r.Context(), principal.ID, credential, privilege)
+		if err != nil {
+			writeAuthError(w, r, err, http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			writeAuthError(w, r, errForbidden, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
+func (s *Server) authorizeGlobalAgentPrivilege(ctx context.Context, principalID string, credential *access.APICredential, privilege access.Privilege) (bool, error) {
+	workspaceRepo, err := s.workspaceRepository()
+	if err != nil {
+		return false, err
+	}
+	accessRepo, err := s.accessRepository()
+	if err != nil {
+		return false, err
+	}
+	workspaces, err := workspaceRepo.List(ctx)
+	if err != nil {
+		return false, err
+	}
+	objects := make([]access.ObjectRef, 0, len(workspaces))
+	for _, item := range workspaces {
+		workspaceID := string(item.ID)
+		if credential != nil && !apiTokenAllows(credential.Token, workspaceID, privilege) {
+			continue
+		}
+		objects = append(objects, access.WorkspaceObject(workspaceID))
+	}
+	decision, err := accessRepo.AuthorizeAny(ctx, principalID, privilege, objects)
+	return decision.Allowed, err
 }
 
 func (s *Server) protect(privilege access.Privilege, next http.Handler) http.Handler {

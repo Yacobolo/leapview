@@ -59,7 +59,7 @@ func pageSliceForRequest[T any](w nethttp.ResponseWriter, r *nethttp.Request, it
 	if end < len(items) {
 		nextCursor = encodeDashboardKeysetCursor(apiPageItemKey(items[end-1]), scope, snapshot)
 	}
-	return append([]T(nil), items[start:end]...), nextCursor, true
+	return append(make([]T, 0, end-start), items[start:end]...), nextCursor, true
 }
 
 type dashboardKeysetCursor struct {

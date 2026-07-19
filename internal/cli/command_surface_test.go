@@ -93,3 +93,16 @@ func TestDeployCommandDescribesAtomicProjectRevisionPins(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentCommandIsGlobal(t *testing.T) {
+	command := agentCommand(context.Background(), &rootOptions{})
+	if command.PersistentFlags().Lookup("workspace") != nil {
+		t.Fatal("global agent command still exposes --workspace")
+	}
+	if got := agentConversationEndpoint("https://libredash.example", nil); got != "https://libredash.example/api/v1/agent/conversations" {
+		t.Fatalf("conversation endpoint = %q", got)
+	}
+	if got := agentRunEndpoint("https://libredash.example", "conv_1", "run_1"); got != "https://libredash.example/api/v1/agent/conversations/conv_1/runs/run_1" {
+		t.Fatalf("run endpoint = %q", got)
+	}
+}

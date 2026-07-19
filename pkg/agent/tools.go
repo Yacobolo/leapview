@@ -13,10 +13,101 @@ import (
 )
 
 type ToolDefinition struct {
-	Name        string
-	Description string
-	InputSchema json.RawMessage
-	Handler     ToolHandler
+	Name         string
+	Description  string
+	InputSchema  json.RawMessage
+	OutputSchema json.RawMessage
+	Effect       string
+	Tags         []string
+	Handler      ToolHandler
+}
+
+// ToolCatalog is the transport- and model-independent executable tool surface.
+// Schemas are compiled when the catalog is constructed and reused for every
+// invocation through that catalog.
+type ToolCatalog struct {
+	tools       map[string]*compiledTool
+	definitions []ToolDefinition
+	specs       []ToolSpec
+}
+
+func NewToolCatalog(definitions []ToolDefinition) (*ToolCatalog, error) {
+	tools, specs, err := compileTools(definitions)
+	if err != nil {
+		return nil, err
+	}
+	cloned := make([]ToolDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		definition.InputSchema = append(json.RawMessage(nil), definition.InputSchema...)
+		definition.OutputSchema = append(json.RawMessage(nil), definition.OutputSchema...)
+		definition.Tags = append([]string(nil), definition.Tags...)
+		cloned = append(cloned, definition)
+	}
+	return &ToolCatalog{tools: tools, definitions: cloned, specs: specs}, nil
+}
+
+func (c *ToolCatalog) Definitions() []ToolDefinition {
+	if c == nil {
+		return nil
+	}
+	out := make([]ToolDefinition, 0, len(c.definitions))
+	for _, definition := range c.definitions {
+		definition.InputSchema = append(json.RawMessage(nil), definition.InputSchema...)
+		definition.OutputSchema = append(json.RawMessage(nil), definition.OutputSchema...)
+		definition.Tags = append([]string(nil), definition.Tags...)
+		out = append(out, definition)
+	}
+	return out
+}
+
+func (c *ToolCatalog) Specs() []ToolSpec {
+	if c == nil {
+		return nil
+	}
+	return append([]ToolSpec(nil), c.specs...)
+}
+
+func (c *ToolCatalog) Execute(ctx context.Context, call ToolCall) (ToolResult, error) {
+	if c == nil {
+		return ToolResult{}, fmt.Errorf("tool catalog is not configured")
+	}
+	tool, ok := c.tools[call.Name]
+	if !ok {
+		return ToolResult{}, fmt.Errorf("unknown tool %q", call.Name)
+	}
+	if err := validateCompiledToolCall(tool, call); err != nil {
+		return ToolResult{}, err
+	}
+	result, err := tool.def.Handler.Run(ctx, call)
+	if err != nil || result.IsError || tool.outputSchema == nil || result.Content == nil {
+		return result, err
+	}
+	encoded, err := json.Marshal(result.Content)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("tool output was not JSON serializable: %w", err)
+	}
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(encoded))
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("tool output was not valid JSON: %w", err)
+	}
+	if err := tool.outputSchema.Validate(instance); err != nil {
+		return ToolResult{}, fmt.Errorf("tool output did not match the schema: %w", err)
+	}
+	return result, nil
+}
+
+func validateCompiledToolCall(tool *compiledTool, call ToolCall) error {
+	if !json.Valid(call.Arguments) {
+		return fmt.Errorf("tool arguments must be valid JSON")
+	}
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(call.Arguments))
+	if err != nil {
+		return fmt.Errorf("tool arguments must be valid JSON: %w", err)
+	}
+	if err := tool.schema.Validate(instance); err != nil {
+		return fmt.Errorf("tool arguments did not match the schema: %w", err)
+	}
+	return nil
 }
 
 type ToolHandler interface {
@@ -36,15 +127,17 @@ type ToolCall struct {
 }
 
 type ToolResult struct {
-	Content        any
-	DisplayContent any
+	Content        any // Canonical result validated against the tool output schema.
+	ModelContent   any // Optional compact projection sent only to the model.
+	DisplayContent any // Optional rich projection retained for the embedding UI.
 	IsError        bool
 	Fatal          bool
 }
 
 type compiledTool struct {
-	def    ToolDefinition
-	schema *jsonschema.Schema
+	def          ToolDefinition
+	schema       *jsonschema.Schema
+	outputSchema *jsonschema.Schema
 }
 
 type toolExecutionResult struct {
@@ -80,7 +173,6 @@ func (a *Agent) executeToolCalls(ctx context.Context, run *runState, turnID stri
 		index := index
 		group.Go(func() error {
 			call := calls[index]
-			tool := a.tools[call.Name]
 			_ = run.emit(groupCtx, Event{
 				Type:       EventTypeToolStart,
 				Severity:   SeverityInfo,
@@ -88,7 +180,7 @@ func (a *Agent) executeToolCalls(ctx context.Context, run *runState, turnID stri
 				ToolCallID: call.ID,
 				ToolName:   call.Name,
 			})
-			result := a.runOneTool(groupCtx, call, tool)
+			result := a.runOneTool(groupCtx, call)
 			_ = run.emit(groupCtx, Event{
 				Type:       EventTypeToolEnd,
 				Severity:   eventSeverityForToolResult(result.message),
@@ -129,20 +221,13 @@ func (a *Agent) validateToolCall(call ToolCall) (Message, bool) {
 	if !ok {
 		return a.toolErrorMessage(call, "unknown_tool", fmt.Sprintf("Tool %q is not configured.", call.Name), nil, true), false
 	}
-	if !json.Valid(call.Arguments) {
-		return a.toolErrorMessage(call, "invalid_tool_arguments", "Tool arguments must be valid JSON.", nil, true), false
-	}
-	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(call.Arguments))
-	if err != nil {
-		return a.toolErrorMessage(call, "invalid_tool_arguments", "Tool arguments must be valid JSON.", []string{err.Error()}, true), false
-	}
-	if err := tool.schema.Validate(instance); err != nil {
+	if err := validateCompiledToolCall(tool, call); err != nil {
 		return a.toolErrorMessage(call, "invalid_tool_arguments", "Tool arguments did not match the schema.", []string{err.Error()}, true), false
 	}
 	return Message{}, true
 }
 
-func (a *Agent) runOneTool(ctx context.Context, call ToolCall, tool *compiledTool) (result toolExecutionResult) {
+func (a *Agent) runOneTool(ctx context.Context, call ToolCall) (result toolExecutionResult) {
 	toolCtx, cancel := context.WithTimeout(ctx, a.def.Limits.ToolTimeout)
 	defer cancel()
 	defer func() {
@@ -151,7 +236,7 @@ func (a *Agent) runOneTool(ctx context.Context, call ToolCall, tool *compiledToo
 		}
 	}()
 
-	toolResult, err := tool.def.Handler.Run(toolCtx, call)
+	toolResult, err := a.catalog.Execute(toolCtx, call)
 	if err != nil {
 		var fatal fatalToolError
 		if ctxErr := toolCtx.Err(); ctxErr != nil {
@@ -172,7 +257,11 @@ func (a *Agent) runOneTool(ctx context.Context, call ToolCall, tool *compiledToo
 		result.message = a.toolErrorMessage(call, "tool_result_invalid", "Tool returned no JSON-serializable result.", nil, false)
 		return result
 	}
-	body, err := formatToolOutput(toolResult.Content, a.def.ToolOutput)
+	modelContent := toolResult.Content
+	if toolResult.ModelContent != nil {
+		modelContent = toolResult.ModelContent
+	}
+	body, err := formatToolOutput(modelContent, a.def.ToolOutput)
 	if err != nil {
 		result.message = a.toolErrorMessage(call, "tool_result_invalid", "Tool output was not JSON-serializable.", []string{err.Error()}, false)
 		return result

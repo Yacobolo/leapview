@@ -71,9 +71,6 @@
         "access": {
           "$ref": "#/$defs/%23IncludeList"
         },
-        "agentPolicy": {
-          "$ref": "#/$defs/%23IncludeList"
-        },
         "dashboards": {
           "$ref": "#/$defs/%23IncludeList"
         },
@@ -104,7 +101,6 @@
       },
       "required": [
         "access",
-        "agentPolicy",
         "dashboards",
         "models",
         "semanticModels",

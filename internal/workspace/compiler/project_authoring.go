@@ -39,7 +39,6 @@ type workspaceSpec struct {
 	SemanticModels   includeList   `yaml:"semanticModels"`
 	Dashboards       includeList   `yaml:"dashboards"`
 	Access           includeList   `yaml:"access"`
-	AgentPolicy      includeList   `yaml:"agentPolicy"`
 	RefreshPipelines includeList   `yaml:"refreshPipelines"`
 }
 
@@ -222,18 +221,6 @@ type workspaceDataPolicySpec struct {
 	PolicyType string                          `yaml:"policyType"`
 	Expression yaml.Node                       `yaml:"expression"`
 }
-
-type workspaceAgentPolicySpec struct {
-	Enabled      bool                          `yaml:"enabled"`
-	Tools        workspaceAgentPolicyToolsSpec `yaml:"tools"`
-	Instructions string                        `yaml:"instructions"`
-}
-
-type workspaceAgentPolicyToolsSpec struct {
-	Allow []string `yaml:"allow"`
-	Deny  []string `yaml:"deny"`
-}
-
 type refreshPipelineSpec struct {
 	SemanticModel string                `yaml:"semanticModel"`
 	On            refreshPipelineOnSpec `yaml:"on"`

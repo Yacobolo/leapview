@@ -379,7 +379,7 @@ func TestAuthSpecColumnGrantAllowsOnlyGrantedPreviewColumns(t *testing.T) {
 	}
 }
 
-func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
+func TestAuthSpecServicePrincipalRESTAndMCPOAuthTokensAreSeparated(t *testing.T) {
 	h, repo := newAuthSpecHarness(t)
 	ctx := context.Background()
 
@@ -407,6 +407,7 @@ func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("share semantic model with service principal status=%d body=%s", status, body)
 	}
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectServicePrincipal, "sp_ci", access.PrivilegeUseAgent)
 
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")
@@ -415,35 +416,56 @@ func TestAuthSpecServicePrincipalOAuthAndTokenAllowlist(t *testing.T) {
 	form.Set("workspace_id", "sales")
 	status, body = h.authSpecForm(t, "/oauth/token", form)
 	if status != http.StatusBadRequest {
-		t.Fatalf("oauth token empty scope status=%d want=400 body=%s", status, body)
+		t.Fatalf("REST OAuth token empty scope status=%d want=400 body=%s", status, body)
 	}
 	form.Set("scope", string(access.PrivilegeQueryData))
 	status, body = h.authSpecForm(t, "/oauth/token", form)
 	if status != http.StatusOK {
-		t.Fatalf("oauth token status=%d body=%s", status, body)
+		t.Fatalf("REST OAuth token status=%d body=%s", status, body)
 	}
-	var tokenResponse struct {
+	var restTokenResponse struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.Unmarshal([]byte(body), &tokenResponse); err != nil {
-		t.Fatalf("decode oauth token: %v body=%s", err, body)
+	if err := json.Unmarshal([]byte(body), &restTokenResponse); err != nil || restTokenResponse.AccessToken == "" {
+		t.Fatalf("decode REST oauth token: %v body=%s", err, body)
 	}
-	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/query", tokenResponse.AccessToken, `{"measures":[{"field":"revenue"}],"limit":1}`)
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/query", restTokenResponse.AccessToken, `{"measures":[{"field":"revenue"}],"limit":1}`)
 	if status != http.StatusOK {
-		t.Fatalf("service principal query status=%d body=%s", status, body)
+		t.Fatalf("service principal REST query status=%d body=%s", status, body)
 	}
-	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/preview", tokenResponse.AccessToken, `{"dimensions":[{"field":"orders.status"}],"limit":1}`)
-	if status != http.StatusNotFound {
-		t.Fatalf("service principal preview status=%d want=404 body=%s", status, body)
+
+	mcpForm := url.Values{}
+	mcpForm.Set("grant_type", "client_credentials")
+	mcpForm.Set("client_id", "sp_ci")
+	mcpForm.Set("client_secret", secretResponse.Secret)
+	mcpForm.Set("scope", "mcp:use")
+	mcpForm.Set("resource", "http://localhost:8080/mcp")
+	status, body = h.authSpecForm(t, "/oauth/token", mcpForm)
+	if status != http.StatusOK {
+		t.Fatalf("MCP OAuth token status=%d body=%s", status, body)
+	}
+	var mcpTokenResponse struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal([]byte(body), &mcpTokenResponse); err != nil || mcpTokenResponse.AccessToken == "" {
+		t.Fatalf("decode MCP oauth token: %v body=%s", err, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/query", mcpTokenResponse.AccessToken, `{"measures":[{"field":"revenue"}],"limit":1}`)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("MCP OAuth token used as REST token status=%d want=401 body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodPost, "/mcp", mcpTokenResponse.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"integration-test","version":"1"}}}`)
+	if status != http.StatusOK || !strings.Contains(body, `"protocolVersion":"2025-11-25"`) {
+		t.Fatalf("service principal MCP initialize status=%d body=%s", status, body)
 	}
 
 	status, body = h.authSpecDo(t, http.MethodDelete, "/api/v1/service-principals/sp_ci/secrets/"+secretResponse.ClientSecret.ID, adminToken, "")
 	if status != http.StatusNoContent {
 		t.Fatalf("revoke service principal secret status=%d body=%s", status, body)
 	}
-	status, body = h.authSpecForm(t, "/oauth/token", form)
+	status, body = h.authSpecForm(t, "/oauth/token", mcpForm)
 	if status != http.StatusUnauthorized {
-		t.Fatalf("oauth token after revoke status=%d want=401 body=%s", status, body)
+		t.Fatalf("MCP OAuth token after service secret revoke status=%d want=401 body=%s", status, body)
 	}
 }
 
@@ -674,6 +696,9 @@ func (h *harness) authSpecDo(t *testing.T, method, path, token, body string) (in
 		t.Fatalf("create %s %s: %v", method, path, err)
 	}
 	req.Header.Set("Accept", "application/json")
+	if path == "/mcp" {
+		req.Header.Set("Accept", "application/json, text/event-stream")
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

@@ -43,6 +43,8 @@ TARGET="http://127.0.0.1:$PORT"
 export LIBREDASH_HOME="$TMP_DIR/home"
 export LIBREDASH_ADDR="127.0.0.1:$PORT"
 export LIBREDASH_PRODUCTION=true
+export LIBREDASH_PUBLIC_URL="https://localhost"
+export LIBREDASH_ALLOWED_HOSTS="127.0.0.1,localhost"
 export LIBREDASH_ENVIRONMENT=dev
 export LIBREDASH_API_TOKEN_ONLY_AUTH=true
 export LIBREDASH_CSRF_KEY="agent-e2e-csrf-key-agent-e2e-csrf-key"
@@ -77,7 +79,7 @@ REVISION="$(awk '$1 == "staged" { print $2 }' <<<"$SYNC_OUTPUT")"
 }
 "$BIN" deploy --target "$TARGET" --token "$TOKEN" --project dashboards/libredash.yaml --revision "olist=$REVISION" --auto-approve
 
-OUTPUT="$("$BIN" agent ask "List the dashboards I can use in this workspace and mention the Olist context." --target "$TARGET" --token "$TOKEN" --workspace sales --json)"
+OUTPUT="$("$BIN" agent ask "List the dashboards I can use in the sales workspace and mention the Olist context." --target "$TARGET" --token "$TOKEN" --json)"
 echo "$OUTPUT"
 
 if ! grep -Eiq 'executive|sales|olist' <<<"$OUTPUT"; then

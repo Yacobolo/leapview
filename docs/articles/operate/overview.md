@@ -16,7 +16,7 @@ An application release should not modify project YAML as a side effect. When a r
 
 ## Project delivery
 
-Project delivery changes connections, sources, workspaces, model tables, semantic models, dashboards, access resources, agent policies, and managed-data revision pins. The normal flow is:
+Project delivery changes connections, sources, workspaces, model tables, semantic models, dashboards, access resources, and managed-data revision pins. The normal flow is:
 
 ```sh
 libredash validate --project dashboards/libredash.yaml

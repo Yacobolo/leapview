@@ -292,6 +292,8 @@ func predicateSchema(predicate configspec.Predicate) any {
 		return map[string]any{"required": []string{predicate.Name}, "properties": map[string]any{predicate.Name: map[string]any{"minLength": predicate.Minimum}}}
 	case configspec.PredicateHTTPSURL:
 		return map[string]any{"required": []string{predicate.Name}, "properties": map[string]any{predicate.Name: map[string]any{"pattern": "^https://[^/]+"}}}
+	case configspec.PredicateHTTPSOrigin:
+		return map[string]any{"required": []string{predicate.Name}, "properties": map[string]any{predicate.Name: map[string]any{"pattern": `^https://[^/@?#]+/?$`}}}
 	case configspec.PredicateSlug:
 		return map[string]any{"properties": map[string]any{predicate.Name: map[string]any{"maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}}}
 	case configspec.PredicateEquals:

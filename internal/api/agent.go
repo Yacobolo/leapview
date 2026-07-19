@@ -10,7 +10,6 @@ type AgentConversationUpdateRequest struct {
 
 type AgentConversationResponse struct {
 	ID              string `json:"id"`
-	WorkspaceID     string `json:"workspaceId"`
 	PrincipalID     string `json:"principalId"`
 	Title           string `json:"title"`
 	Status          string `json:"status"`
@@ -25,7 +24,6 @@ type AgentConversationResponse struct {
 type AgentRunResponse struct {
 	ID             string `json:"id"`
 	ConversationID string `json:"conversationId"`
-	WorkspaceID    string `json:"workspaceId"`
 	PrincipalID    string `json:"principalId"`
 	Status         string `json:"status"`
 	Model          string `json:"model,omitempty"`

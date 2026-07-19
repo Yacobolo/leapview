@@ -287,12 +287,12 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		"/api/v1/projects/{project}/deployments",
 		"/api/v1/workspaces/{workspace}/refresh-runs",
 		"/api/v1/workspaces/{workspace}/refresh-runs/{run}",
-		"/api/v1/workspaces/{workspace}/agent/conversations",
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}",
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/messages",
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs",
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}",
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events",
+		"/api/v1/agent/conversations",
+		"/api/v1/agent/conversations/{conversation}",
+		"/api/v1/agent/conversations/{conversation}/messages",
+		"/api/v1/agent/conversations/{conversation}/runs",
+		"/api/v1/agent/conversations/{conversation}/runs/{run}",
+		"/api/v1/agent/conversations/{conversation}/runs/{run}/events",
 		"/api/v1/principals",
 		"/api/v1/principals/{principal}",
 		"/api/v1/principals/{principal}/password-reset",
@@ -357,6 +357,12 @@ func TestAPIGenOperationObjectResolverCoverage(t *testing.T) {
 	contracts := apigenapi.GetAPIGenOperationContracts()
 	objectScoped := 0
 	for operationID, contract := range contracts {
+		if isGlobalAgentOperation(operationID) {
+			if _, hasScope := contract.Extensions[apiGenObjectScopeExtension]; hasScope {
+				t.Fatalf("%s global agent operation retains object-scope metadata", operationID)
+			}
+			continue
+		}
 		expectedScope, ambiguous := apigenObjectScopeForPath(contract.Path)
 		if ambiguous {
 			t.Fatalf("%s path %q selects multiple object scopes", operationID, contract.Path)
@@ -604,7 +610,7 @@ func TestAPIGenListOperationsUseStandardEnvelope(t *testing.T) {
 		{"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets", "get"},
 		{"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/fields", "get"},
 		{"/api/v1/workspaces/{workspace}/refresh-runs", "get"},
-		{"/api/v1/workspaces/{workspace}/agent/conversations", "get"},
+		{"/api/v1/agent/conversations", "get"},
 	} {
 		operation := mustOpenAPIOperation(t, paths, tc.path, tc.method)
 		for _, want := range []string{"limit", "pageToken"} {

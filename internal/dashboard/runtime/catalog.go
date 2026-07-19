@@ -29,27 +29,8 @@ func (m *Service) WorkspaceAssets(workspaceID, servingStateID string) ([]workspa
 	return m.catalog.WorkspaceAssets(workspaceID, servingStateID)
 }
 
-func (m *Service) AgentPolicy() workspace.AgentPolicy {
-	return m.catalog.AgentPolicy()
-}
-
 func (s *CatalogService) Catalog() dashboard.Catalog {
 	return s.catalog
-}
-
-func (s *CatalogService) AgentPolicy() workspace.AgentPolicy {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.workspace == nil {
-		return workspace.DefaultAgentPolicy()
-	}
-	policy := s.workspace.AgentPolicy
-	if !policy.Enabled && len(policy.Tools.Allow) == 0 && len(policy.Tools.Deny) == 0 && policy.Instructions == "" {
-		if len(s.workspace.AgentPolicies) == 0 {
-			return workspace.DefaultAgentPolicy()
-		}
-	}
-	return policy
 }
 
 func (s *CatalogService) WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {

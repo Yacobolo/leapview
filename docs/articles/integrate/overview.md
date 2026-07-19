@@ -1,6 +1,6 @@
 # Integrate with LibreDash
 
-LibreDash exposes CLI, HTTP API, and workspace-agent surfaces backed by the same active projects, authorization, data policies, and semantic contracts. Choose the highest-level stable operation that fits the task instead of reconstructing internal workflows from low-level calls.
+LibreDash exposes CLI, HTTP API, built-in agent, and remote MCP surfaces backed by the same active projects, authorization, data policies, and semantic contracts. Choose the highest-level stable operation that fits the task instead of reconstructing internal workflows from low-level calls.
 
 ## CLI
 
@@ -25,9 +25,13 @@ The API is the right boundary when an application needs long-lived programmatic 
 
 ## Agent
 
-Workspace agent conversations provide governed natural-language exploration through an explicitly allowed tool catalog. The agent works inside workspace authorization and semantic boundaries. It is not a way to bypass modeling or expose unrestricted SQL.
+Agent conversations are global and owned by the authenticated principal. The built-in agent provides governed natural-language exploration through the shared tool catalog. A workspace is selected only when a workspace-aware tool is called, and the tool still enforces that workspace's resource privileges and semantic boundaries. The agent is not a way to bypass modeling or expose unrestricted SQL.
 
 Use the agent when a user benefits from iterative question/answer and can validate results against delivered evidence. Use deterministic BI endpoints for scheduled reporting, financial controls, or other workflows where a natural-language interpretation would be an unnecessary source of variability.
+
+## MCP
+
+Use the deployment-specific `${LIBREDASH_PUBLIC_URL}/mcp` endpoint to make the same governed BI tools available in Claude or another remote MCP host. MCP is tools-only and does not expose LibreDash conversations, prompts, resources, or unrestricted SQL. Interactive clients use OAuth discovery and consent; automated workloads exchange a service-principal credential for an audience-bound MCP access token.
 
 ## Identity and scope
 
@@ -49,4 +53,4 @@ Design integrations to:
 
 Prefer `libredash deploy` over manually creating and activating deployment candidates. Prefer dashboard or semantic query endpoints over building SQL from catalog metadata.
 
-Start with [API quickstart](/docs/guides/integrate/api-quickstart), [Headless BI queries](/docs/guides/integrate/headless-bi), or [Agent integrations](/docs/guides/integrate/agent).
+Start with [API quickstart](/docs/guides/integrate/api-quickstart), [Headless BI queries](/docs/guides/integrate/headless-bi), [Agent integrations](/docs/guides/integrate/agent), or [Connect an MCP host](/docs/guides/integrate/mcp).

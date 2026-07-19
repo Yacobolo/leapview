@@ -31,7 +31,6 @@ type WorkspaceProject struct {
 	AccessRoleBindings    map[string]workspace.WorkspaceRoleBinding
 	AccessGrants          map[string]workspace.WorkspaceGrant
 	AccessDataPolicies    map[string]workspace.WorkspaceDataPolicy
-	AgentPolicies         map[string]workspace.AgentPolicy
 	RefreshPipelines      map[string]refreshpipeline.Definition
 	ModelTitles           map[string]string
 	ModelDescriptions     map[string]string
@@ -43,7 +42,6 @@ type WorkspaceProject struct {
 	SemanticModelPaths    map[string]string
 	DashboardPaths        map[string]string
 	AccessPaths           map[string]string
-	AgentPolicyPaths      map[string]string
 	RefreshPipelinePaths  map[string]string
 }
 

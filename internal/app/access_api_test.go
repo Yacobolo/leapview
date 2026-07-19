@@ -382,7 +382,7 @@ func TestSecretMintingResponsesDisableHTTPStorage(t *testing.T) {
 		{
 			name: "oauth token",
 			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("grant_type=client_credentials&client_id="+servicePrincipal.ID+"&client_secret="+spSecret+"&workspace_id=test&scope="+string(access.PrivilegeUseWorkspace)))
+				req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("grant_type=client_credentials&client_id="+servicePrincipal.ID+"&client_secret="+spSecret+"&scope=mcp%3Ause&resource=http%3A%2F%2Flocalhost%3A8080%2Fmcp"))
 				req.Header.Set("Accept", "application/json")
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				return req

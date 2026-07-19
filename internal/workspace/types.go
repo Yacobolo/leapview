@@ -19,7 +19,6 @@ const (
 	AssetTypeVisual               AssetType = "visual"
 	AssetTypeWorkspaceGroup       AssetType = "workspace_group"
 	AssetTypeWorkspaceRoleBinding AssetType = "workspace_role_binding"
-	AssetTypeWorkspaceAgentPolicy AssetType = "workspace_agent_policy"
 	AssetTypeRefreshPipeline      AssetType = "refresh_pipeline"
 )
 

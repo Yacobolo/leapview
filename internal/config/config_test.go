@@ -179,6 +179,7 @@ func TestValidateProductionAuthRejectsDevBypass(t *testing.T) {
 func TestValidateProductionAuthAllowsGenericOIDC(t *testing.T) {
 	cfg := Config{
 		Production:         true,
+		PublicURL:          "https://app.example",
 		OIDCIssuerURL:      "https://issuer.example",
 		OIDCClientID:       "client-id",
 		OIDCSecret:         "client-secret",
@@ -212,6 +213,7 @@ func TestValidateProductionAuthRejectsInvalidOIDCProviderID(t *testing.T) {
 func TestValidateProductionAuthAllowsLocalAuth(t *testing.T) {
 	cfg := Config{
 		Production:         true,
+		PublicURL:          "https://libredash.example.com",
 		LocalAuth:          true,
 		AllowedHosts:       "libredash.example.com",
 		CSRFKey:            "0123456789abcdef0123456789abcdef",
@@ -238,6 +240,7 @@ func TestValidateProductionAuthRejectsInsecureBrowserAuthCookies(t *testing.T) {
 	}
 
 	cfg.APITokenOnlyAuth = true
+	cfg.PublicURL = "https://app.example"
 	if err := cfg.ValidateProductionAuth(); err != nil {
 		t.Fatalf("api-token-only production should allow explicitly insecure browser cookies: %v", err)
 	}
@@ -320,6 +323,7 @@ func TestValidateProductionAuthRequiresStrongSCIMBearerWhenConfigured(t *testing
 	}
 
 	cfg.SCIMBearerToken = "0123456789abcdef0123456789abcdef"
+	cfg.PublicURL = "https://libredash.example.com"
 	if err := cfg.ValidateProductionAuth(); err != nil {
 		t.Fatalf("strong SCIM bearer token rejected: %v", err)
 	}
@@ -338,6 +342,7 @@ func TestValidateProductionAuthRequiresStrongMetricsBearerWhenConfigured(t *test
 	}
 
 	cfg.MetricsBearerToken = "0123456789abcdef0123456789abcdef"
+	cfg.PublicURL = "https://libredash.example.com"
 	if err := cfg.ValidateProductionAuth(); err != nil {
 		t.Fatalf("strong metrics bearer token rejected: %v", err)
 	}
@@ -354,15 +359,54 @@ func TestValidateProductionAuthRequiresAllowedHostForAPITokenOnly(t *testing.T) 
 		t.Fatal("expected API-token-only production to require LIBREDASH_ALLOWED_HOSTS")
 	}
 
-	cfg.AllowedHosts = "libredash.example.com"
+	cfg.PublicURL = "https://libredash.example.com"
 	if err := cfg.ValidateProductionAuth(); err != nil {
-		t.Fatalf("explicit production allowed host rejected: %v", err)
+		t.Fatalf("production public URL rejected: %v", err)
+	}
+}
+
+func TestValidateProductionAuthRejectsMissingOrInsecurePublicURL(t *testing.T) {
+	cfg := Config{
+		Production: true, APITokenOnlyAuth: true, AllowedHosts: "libredash.example.com",
+		CSRFKey: "0123456789abcdef0123456789abcdef", MetricsBearerToken: "0123456789abcdef0123456789abcdef",
+	}
+	if err := cfg.ValidateProductionAuth(); err == nil {
+		t.Fatal("expected missing public URL to fail production validation")
+	}
+	cfg.PublicURL = "http://libredash.example.com"
+	if err := cfg.ValidateProductionAuth(); err == nil {
+		t.Fatal("expected insecure public URL to fail production validation")
+	}
+	for _, invalid := range []string{
+		"https://user@libredash.example.com", "https://libredash.example.com/base",
+		"https://libredash.example.com?tenant=one", "https://libredash.example.com/#fragment",
+	} {
+		cfg.PublicURL = invalid
+		if err := cfg.ValidateProductionAuth(); err == nil {
+			t.Fatalf("expected non-origin public URL %q to fail production validation", invalid)
+		}
+	}
+}
+
+func TestValidateProductionAuthRejectsInsecureExternalMCPOAuthIssuer(t *testing.T) {
+	cfg := Config{
+		Production: true, APITokenOnlyAuth: true, PublicURL: "https://libredash.example.com",
+		MCPOAuthIssuerURL: "http://identity.example.com", CSRFKey: "0123456789abcdef0123456789abcdef",
+		MetricsBearerToken: "0123456789abcdef0123456789abcdef",
+	}
+	if err := cfg.ValidateProductionAuth(); err == nil {
+		t.Fatal("expected insecure external MCP OAuth issuer to fail production validation")
+	}
+	cfg.MCPOAuthIssuerURL = "https://identity.example.com"
+	if err := cfg.ValidateProductionAuth(); err != nil {
+		t.Fatalf("secure external MCP OAuth issuer rejected: %v", err)
 	}
 }
 
 func TestProductionAllowedHostsDerivesBrowserAuthCallbackHosts(t *testing.T) {
 	cfg := Config{
 		Production:         true,
+		PublicURL:          "https://public.example.com",
 		OIDCIssuerURL:      "https://issuer.example",
 		OIDCClientID:       "client-id",
 		OIDCSecret:         "client-secret",
@@ -378,7 +422,7 @@ func TestProductionAllowedHostsDerivesBrowserAuthCallbackHosts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("production allowed hosts: %v", err)
 	}
-	for _, want := range []string{"ops.example.com", "*.trusted.example.com", "app.example.com", "tenant.example.com"} {
+	for _, want := range []string{"ops.example.com", "*.trusted.example.com", "public.example.com", "app.example.com", "tenant.example.com"} {
 		if !containsString(hosts, want) {
 			t.Fatalf("allowed hosts = %#v, missing %q", hosts, want)
 		}

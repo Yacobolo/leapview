@@ -162,7 +162,6 @@ func loadWorkspaces(project *Project, includes []string) error {
 			AccessRoleBindings:    map[string]workspace.WorkspaceRoleBinding{},
 			AccessGrants:          map[string]workspace.WorkspaceGrant{},
 			AccessDataPolicies:    map[string]workspace.WorkspaceDataPolicy{},
-			AgentPolicies:         map[string]workspace.AgentPolicy{},
 			RefreshPipelines:      map[string]refreshpipeline.Definition{},
 			ModelTitles:           map[string]string{},
 			ModelDescriptions:     map[string]string{},
@@ -174,7 +173,6 @@ func loadWorkspaces(project *Project, includes []string) error {
 			SemanticModelPaths:    map[string]string{},
 			DashboardPaths:        map[string]string{},
 			AccessPaths:           map[string]string{},
-			AgentPolicyPaths:      map[string]string{},
 			RefreshPipelinePaths:  map[string]string{},
 		}
 		for _, source := range spec.Uses.Sources {
@@ -194,9 +192,6 @@ func loadWorkspaces(project *Project, includes []string) error {
 			return err
 		}
 		if err := loadWorkspaceAccess(workspaceProject, workspaceDir, spec.Access.Include); err != nil {
-			return err
-		}
-		if err := loadWorkspaceAgentPolicies(workspaceProject, workspaceDir, spec.AgentPolicy.Include); err != nil {
 			return err
 		}
 		project.Workspaces[id] = workspaceProject
@@ -438,39 +433,6 @@ func loadWorkspaceAccess(workspaceProject *WorkspaceProject, baseDir string, inc
 	return nil
 }
 
-func loadWorkspaceAgentPolicies(workspaceProject *WorkspaceProject, baseDir string, includes []string) error {
-	paths, err := expandIncludes(baseDir, includes)
-	if err != nil {
-		return err
-	}
-	for _, path := range paths {
-		envelope, err := readEnvelope(path)
-		if err != nil {
-			return err
-		}
-		if envelope.Kind != "WorkspaceAgentPolicy" {
-			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "kind", "%s kind = %q, want WorkspaceAgentPolicy", path, envelope.Kind)
-		}
-		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
-			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
-		}
-		var spec workspaceAgentPolicySpec
-		if err := envelope.Spec.Decode(&spec); err != nil {
-			return resourceError(path, envelopeResourceID(envelope, workspaceProject.ID), "spec", "%s spec: %s", path, err.Error())
-		}
-		name := envelope.Metadata.Name
-		if name == "" {
-			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
-		}
-		if _, exists := workspaceProject.AgentPolicies[name]; exists {
-			return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate WorkspaceAgentPolicy %q in workspace %q", name, workspaceProject.ID)
-		}
-		workspaceProject.AgentPolicies[name] = projectWorkspaceAgentPolicy(name, spec)
-		workspaceProject.AgentPolicyPaths[name] = path
-	}
-	return nil
-}
-
 func readEnvelope(path string) (resourceEnvelope, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -554,11 +516,6 @@ func envelopeResourceID(envelope resourceEnvelope, fallbackWorkspace string) str
 			return ""
 		}
 		return "data_policy:" + workspaceID + "." + name
-	case "WorkspaceAgentPolicy":
-		if workspaceID == "" {
-			return ""
-		}
-		return "workspace_agent_policy:" + workspaceID + "." + name
 	case "RefreshPipeline":
 		if workspaceID == "" {
 			return ""
@@ -597,8 +554,6 @@ func schemaKindForEnvelope(content []byte) (configschema.Kind, bool) {
 		return configschema.KindGrant, true
 	case "DataPolicy":
 		return configschema.KindDataPolicy, true
-	case "WorkspaceAgentPolicy":
-		return configschema.KindWorkspaceAgentPolicy, true
 	case "RefreshPipeline":
 		return configschema.KindRefreshPipeline, true
 	case "ModelTable":

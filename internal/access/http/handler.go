@@ -383,6 +383,9 @@ func (h Handler) UpdatePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	writeJSON(w, stdhttp.StatusOK, principalDTO(principal))
 }
 
+// OAuthToken issues the existing REST API credential used by service-principal
+// automation. MCP tokens share the public token endpoint but are routed to the
+// MCP authorization server before this handler is called.
 func (h Handler) OAuthToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	repo, err := h.repository()
 	if err != nil {
@@ -2069,7 +2072,6 @@ func validWorkspaceSecurableType(typ access.SecurableType) bool {
 		access.SecurableSemanticField,
 		access.SecurableSource,
 		access.SecurableModelTable,
-		access.SecurableAgentPolicy,
 		access.SecurableDataset,
 		access.SecurableTable,
 		access.SecurableColumn:

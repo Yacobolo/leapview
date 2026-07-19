@@ -36,6 +36,7 @@ func TestGeneratedEnvironmentSchemaEnforcesProductionRelationships(t *testing.T)
 		"LIBREDASH_CSRF_KEY":             "0123456789abcdef0123456789abcdef",
 		"LIBREDASH_METRICS_BEARER_TOKEN": "0123456789abcdef0123456789abcdef",
 		"LIBREDASH_ALLOWED_HOSTS":        "libredash.example.com",
+		"LIBREDASH_PUBLIC_URL":           "https://libredash.example.com",
 		"LIBREDASH_COOKIE_SECURE":        "true",
 	}
 	if err := schema.Validate(valid); err != nil {

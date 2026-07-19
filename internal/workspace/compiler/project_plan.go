@@ -16,20 +16,19 @@ type ProjectPlan struct {
 }
 
 type ProjectPlanWorkspace struct {
-	ID                     string                        `json:"id"`
-	Connections            []string                      `json:"connections"`
-	Sources                []string                      `json:"sources"`
-	ModelTables            []string                      `json:"modelTables"`
-	SemanticModels         []string                      `json:"semanticModels"`
-	Dashboards             []string                      `json:"dashboards"`
-	WorkspaceGroups        []string                      `json:"workspaceGroups"`
-	WorkspaceRoleBindings  []string                      `json:"workspaceRoleBindings"`
-	Grants                 []string                      `json:"grants"`
-	DataPolicies           []string                      `json:"dataPolicies"`
-	WorkspaceAgentPolicies []string                      `json:"workspaceAgentPolicies"`
-	Changes                []ProjectPlanChange           `json:"changes,omitempty"`
-	DependencyChanges      []ProjectPlanDependencyChange `json:"dependencyChanges,omitempty"`
-	Summary                ProjectPlanSummary            `json:"summary,omitempty"`
+	ID                    string                        `json:"id"`
+	Connections           []string                      `json:"connections"`
+	Sources               []string                      `json:"sources"`
+	ModelTables           []string                      `json:"modelTables"`
+	SemanticModels        []string                      `json:"semanticModels"`
+	Dashboards            []string                      `json:"dashboards"`
+	WorkspaceGroups       []string                      `json:"workspaceGroups"`
+	WorkspaceRoleBindings []string                      `json:"workspaceRoleBindings"`
+	Grants                []string                      `json:"grants"`
+	DataPolicies          []string                      `json:"dataPolicies"`
+	Changes               []ProjectPlanChange           `json:"changes,omitempty"`
+	DependencyChanges     []ProjectPlanDependencyChange `json:"dependencyChanges,omitempty"`
+	Summary               ProjectPlanSummary            `json:"summary,omitempty"`
 }
 
 type ProjectPlanSummary struct {
@@ -40,7 +39,6 @@ type ProjectPlanSummary struct {
 	Breaking              bool `json:"breaking,omitempty"`
 	MaterializationImpact bool `json:"materializationImpact,omitempty"`
 	AccessImpact          bool `json:"accessImpact,omitempty"`
-	AgentPolicyImpact     bool `json:"agentPolicyImpact,omitempty"`
 }
 
 type ProjectPlanChange struct {
@@ -52,7 +50,6 @@ type ProjectPlanChange struct {
 	Breaking              bool   `json:"breaking,omitempty"`
 	MaterializationImpact bool   `json:"materializationImpact,omitempty"`
 	AccessImpact          bool   `json:"accessImpact,omitempty"`
-	AgentPolicyImpact     bool   `json:"agentPolicyImpact,omitempty"`
 }
 
 type ProjectPlanDependencyChange struct {
@@ -74,17 +71,16 @@ func PlanProject(projectPath string) (ProjectPlan, error) {
 		workspaceProject := project.Workspaces[workspaceID]
 		connections := workspaceConnections(project, workspaceProject)
 		plan.Workspaces = append(plan.Workspaces, ProjectPlanWorkspace{
-			ID:                     workspaceID,
-			Connections:            sortedMapKeys(connections),
-			Sources:                sortedSetKeys(workspaceProject.AllowedSources),
-			ModelTables:            sortedMapKeys(workspaceProject.Models),
-			SemanticModels:         sortedMapKeys(workspaceProject.SemanticModels),
-			Dashboards:             sortedMapKeys(workspaceProject.Dashboards),
-			WorkspaceGroups:        sortedMapKeys(workspaceProject.AccessGroups),
-			WorkspaceRoleBindings:  sortedMapKeys(workspaceProject.AccessRoleBindings),
-			Grants:                 sortedMapKeys(workspaceProject.AccessGrants),
-			DataPolicies:           sortedMapKeys(workspaceProject.AccessDataPolicies),
-			WorkspaceAgentPolicies: sortedMapKeys(workspaceProject.AgentPolicies),
+			ID:                    workspaceID,
+			Connections:           sortedMapKeys(connections),
+			Sources:               sortedSetKeys(workspaceProject.AllowedSources),
+			ModelTables:           sortedMapKeys(workspaceProject.Models),
+			SemanticModels:        sortedMapKeys(workspaceProject.SemanticModels),
+			Dashboards:            sortedMapKeys(workspaceProject.Dashboards),
+			WorkspaceGroups:       sortedMapKeys(workspaceProject.AccessGroups),
+			WorkspaceRoleBindings: sortedMapKeys(workspaceProject.AccessRoleBindings),
+			Grants:                sortedMapKeys(workspaceProject.AccessGrants),
+			DataPolicies:          sortedMapKeys(workspaceProject.AccessDataPolicies),
 		})
 	}
 	return plan, nil
@@ -190,9 +186,6 @@ func diffAssetGraphs(authored, active workspace.AssetGraph) ([]ProjectPlanChange
 		if change.AccessImpact {
 			summary.AccessImpact = true
 		}
-		if change.AgentPolicyImpact {
-			summary.AgentPolicyImpact = true
-		}
 	}
 	for _, change := range dependencyChanges {
 		if change.Breaking {
@@ -248,7 +241,6 @@ func projectPlanChange(action string, asset, active workspace.Asset, reason stri
 		Breaking:              breaking,
 		MaterializationImpact: materializationAssetType(asset.Type),
 		AccessImpact:          accessAssetType(asset.Type),
-		AgentPolicyImpact:     agentPolicyAssetType(asset.Type),
 	}
 }
 
@@ -431,10 +423,6 @@ func accessAssetType(typ workspace.AssetType) bool {
 	default:
 		return false
 	}
-}
-
-func agentPolicyAssetType(typ workspace.AssetType) bool {
-	return typ == workspace.AssetTypeWorkspaceAgentPolicy
 }
 
 func semanticBreakingChange(authored, active workspace.Asset, impact planImpactContext) bool {

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	agenttools "github.com/Yacobolo/libredash/internal/agent/tools"
 	"github.com/Yacobolo/libredash/internal/configschema"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/workspace"
@@ -120,43 +119,6 @@ func TestCompileRequiresExplicitWorkspaceID(t *testing.T) {
 	}
 }
 
-func TestCompileProjectCompilesWorkspaceAgentPolicy(t *testing.T) {
-	projectPath := writeProjectFixture(t, map[string]string{
-		"libredash.yaml":                                   projectYAML(),
-		"connections/olist.yaml":                           connectionYAML("olist"),
-		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
-		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
-		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAgentPolicy("sales"),
-		"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{"search_workspace", "query_visual"}, []string{"query_dashboard_visual"}, "Prefer concise BI answers."),
-		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
-		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
-		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
-	})
-
-	compiled, err := CompileProject(projectPath, Options{ServingStateID: "dep_test"})
-	if err != nil {
-		t.Fatalf("CompileProject() error = %v", err)
-	}
-	definition := compiled.Workspaces["sales"].Definition
-	if !definition.AgentPolicy.Enabled {
-		t.Fatalf("effective agent policy disabled, want enabled")
-	}
-	if !reflect.DeepEqual(definition.AgentPolicy.Tools.Allow, []string{"query_visual", "search_workspace"}) {
-		t.Fatalf("allow = %#v, want sorted query_visual/search_workspace", definition.AgentPolicy.Tools.Allow)
-	}
-	if !reflect.DeepEqual(definition.AgentPolicy.Tools.Deny, []string{"query_dashboard_visual"}) {
-		t.Fatalf("deny = %#v, want query_dashboard_visual", definition.AgentPolicy.Tools.Deny)
-	}
-	if definition.AgentPolicy.Instructions != "Prefer concise BI answers." {
-		t.Fatalf("instructions = %q", definition.AgentPolicy.Instructions)
-	}
-	if _, ok := definition.AgentPolicies["default"]; !ok {
-		t.Fatalf("agent policies = %#v, want default", definition.AgentPolicies)
-	}
-	assertGraphAsset(t, compiled.Workspaces["sales"].Workspace.Graph, "workspace_agent_policy:sales.default")
-	assertAssetSourceFileContains(t, compiled.Workspaces["sales"].Workspace.Graph, "workspace_agent_policy:sales.default", filepath.Join("workspaces", "sales", "agent", "default.yaml"))
-}
-
 func TestCompileProjectCompilesRefreshPipeline(t *testing.T) {
 	projectPath := writeProjectFixture(t, map[string]string{
 		"libredash.yaml":                                        projectYAML(),
@@ -261,67 +223,6 @@ func TestCompileProjectRejectsInvalidRefreshPipeline(t *testing.T) {
 			}
 			for path, content := range tc.files {
 				files[path] = content
-			}
-			projectPath := writeProjectFixture(t, files)
-			_, err := CompileProject(projectPath, Options{ServingStateID: "dep_test"})
-			assertCompileErrorContains(t, err, tc.want)
-			assertDiagnostic(t, err, tc.id, tc.field)
-		})
-	}
-}
-
-func TestCompileProjectRejectsInvalidWorkspaceAgentPolicy(t *testing.T) {
-	cases := []struct {
-		name  string
-		file  string
-		want  string
-		field string
-		id    string
-	}{
-		{
-			name:  "unknown tool",
-			file:  workspaceAgentPolicyYAML("sales", "default", true, []string{"missing_tool"}, nil, ""),
-			want:  `unknown agent tool "missing_tool"`,
-			field: "spec.tools.allow",
-			id:    "workspace_agent_policy:sales.default",
-		},
-		{
-			name:  "allow deny conflict",
-			file:  workspaceAgentPolicyYAML("sales", "default", true, []string{"query_visual"}, []string{"query_visual"}, ""),
-			want:  `both allowed and denied`,
-			field: "spec.tools",
-			id:    "workspace_agent_policy:sales.default",
-		},
-		{
-			name:  "workspace mismatch",
-			file:  workspaceAgentPolicyYAML("operations", "default", true, []string{"query_visual"}, nil, ""),
-			want:  `workspace = "operations", want "sales"`,
-			field: "metadata.workspace",
-			id:    "workspace_agent_policy:operations.default",
-		},
-		{
-			name:  "duplicate policy",
-			file:  workspaceAgentPolicyYAML("sales", "default", true, []string{"query_visual"}, nil, ""),
-			want:  `duplicate WorkspaceAgentPolicy "default"`,
-			field: "metadata.name",
-			id:    "workspace_agent_policy:sales.default",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			files := map[string]string{
-				"libredash.yaml":                                   projectYAML(),
-				"connections/olist.yaml":                           connectionYAML("olist"),
-				"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
-				"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
-				"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAgentPolicy("sales"),
-				"workspaces/sales/agent/default.yaml":              tc.file,
-				"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
-				"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
-				"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
-			}
-			if tc.name == "duplicate policy" {
-				files["workspaces/sales/agent/duplicate.yaml"] = tc.file
 			}
 			projectPath := writeProjectFixture(t, files)
 			_, err := CompileProject(projectPath, Options{ServingStateID: "dep_test"})
@@ -474,10 +375,9 @@ func TestPlanProjectIsStableAndSorted(t *testing.T) {
 		"connections/olist.yaml":                           connectionYAML("olist"),
 		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
 		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
-		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccessAndAgentPolicy("sales"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccess("sales"),
 		"workspaces/sales/access/analysts.yaml":            workspaceGroupYAML("sales", "analysts", "analyst@example.com"),
 		"workspaces/sales/access/analysts-viewer.yaml":     workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
-		"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{"list_assets"}, nil, "Answer from sales assets."),
 		"workspaces/sales/models/z-orders.yaml":            modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
 		"workspaces/sales/models/a-customers.yaml":         modelTableYAML("sales", "customers", "olist.customers", "customer_id", "SELECT customer_id, order_status AS status FROM source.\"olist.customers\""),
 		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
@@ -503,9 +403,6 @@ func TestPlanProjectIsStableAndSorted(t *testing.T) {
 	}
 	if got := first.Workspaces[0].WorkspaceRoleBindings; !reflect.DeepEqual(got, []string{"analysts-viewer"}) {
 		t.Fatalf("workspace role bindings = %#v, want analysts-viewer", got)
-	}
-	if got := first.Workspaces[0].WorkspaceAgentPolicies; !reflect.DeepEqual(got, []string{"default"}) {
-		t.Fatalf("workspace agent policies = %#v, want default", got)
 	}
 }
 
@@ -579,10 +476,9 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 		"connections/olist.yaml":                           connectionYAML("olist"),
 		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
 		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
-		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccessAndAgentPolicy("sales"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAccess("sales"),
 		"workspaces/sales/access/analysts.yaml":            workspaceGroupYAML("sales", "analysts", "analyst@example.com"),
 		"workspaces/sales/access/analysts-viewer.yaml":     workspaceRoleBindingGroupYAML("sales", "analysts-viewer", "viewer", "analysts"),
-		"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{"list_assets"}, nil, "Answer from sales assets."),
 		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
 		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
 		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
@@ -608,8 +504,6 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 			activeGraph.Assets[index].ContentHash = "old-source-hash"
 		case "workspace_group:sales.analysts":
 			activeGraph.Assets[index].ContentHash = "old-access-hash"
-		case "workspace_agent_policy:sales.default":
-			activeGraph.Assets[index].ContentHash = "old-agent-policy-hash"
 		}
 	}
 
@@ -621,10 +515,7 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 	if !summary.Breaking || !summary.MaterializationImpact || !summary.AccessImpact {
 		t.Fatalf("summary = %#v, want breaking, materialization, and access impact", summary)
 	}
-	if !summary.AgentPolicyImpact {
-		t.Fatalf("summary = %#v, want agent policy impact", summary)
-	}
-	var sourceBreaking, groupAccess, agentPolicyImpact bool
+	var sourceBreaking, groupAccess bool
 	for _, change := range plan.Workspaces[0].Changes {
 		if change.ID == "source:olist.orders" {
 			sourceBreaking = change.Breaking && change.MaterializationImpact
@@ -632,34 +523,9 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 		if change.ID == "workspace_group:sales.analysts" {
 			groupAccess = change.AccessImpact
 		}
-		if change.ID == "workspace_agent_policy:sales.default" {
-			agentPolicyImpact = change.AgentPolicyImpact && !change.AccessImpact
-		}
 	}
 	if !sourceBreaking || !groupAccess {
 		t.Fatalf("changes = %#v, want source breaking/materialization and group access impact", plan.Workspaces[0].Changes)
-	}
-	if !agentPolicyImpact {
-		t.Fatalf("changes = %#v, want agent policy impact without access impact", plan.Workspaces[0].Changes)
-	}
-}
-
-func TestWorkspaceAgentPolicyValidationUsesRuntimeAgentToolRegistry(t *testing.T) {
-	for _, tool := range agenttools.ToolNames() {
-		projectPath := writeProjectFixture(t, map[string]string{
-			"libredash.yaml":                                   projectYAML(),
-			"connections/olist.yaml":                           connectionYAML("olist"),
-			"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
-			"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
-			"workspaces/sales/workspace.yaml":                  workspaceYAMLWithAgentPolicy("sales"),
-			"workspaces/sales/agent/default.yaml":              workspaceAgentPolicyYAML("sales", "default", true, []string{tool}, nil, "Use allowed tools."),
-			"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
-			"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
-			"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
-		})
-		if _, err := CompileProject(projectPath, Options{}); err != nil {
-			t.Fatalf("CompileProject() rejected runtime agent tool %q: %v", tool, err)
-		}
 	}
 }
 
@@ -1461,8 +1327,6 @@ spec:
       - dashboards/*.yaml
   access:
     include: []
-  agentPolicy:
-    include: []
 `
 }
 
@@ -1494,62 +1358,16 @@ spec:
 	return content
 }
 
-func workspaceYAMLWithAccess(name string) string {
-	return strings.Replace(workspaceYAML(name), "include: []", "include:\n      - access/*.yaml", 1)
-}
-
-func workspaceYAMLWithAgentPolicy(name string) string {
-	return strings.Replace(workspaceYAML(name), "  agentPolicy:\n    include: []", "  agentPolicy:\n    include:\n      - agent/*.yaml", 1)
-}
-
-func workspaceYAMLWithAccessAndAgentPolicy(name string) string {
-	return strings.Replace(workspaceYAMLWithAccess(name), "  agentPolicy:\n    include: []", "  agentPolicy:\n    include:\n      - agent/*.yaml", 1)
-}
-
-func workspaceAgentPolicyYAML(workspaceID, name string, enabled bool, allow, deny []string, instructions string) string {
-	return `
-apiVersion: libredash.dev/v1
-kind: WorkspaceAgentPolicy
-metadata:
-  workspace: ` + workspaceID + `
-  name: ` + name + `
-spec:
-  enabled: ` + fmtBool(enabled) + `
-  tools:
-    allow:
-` + indentedStringList(allow, 6) + `    deny:
-` + indentedStringList(deny, 6) + `  instructions: ` + quoteYAML(instructions) + `
-`
-}
-
-func fmtBool(value bool) string {
-	if value {
-		return "true"
-	}
-	return "false"
-}
-
-func indentedStringList(values []string, spaces int) string {
-	if len(values) == 0 {
-		return strings.Repeat(" ", spaces) + "[]\n"
-	}
-	var builder strings.Builder
-	prefix := strings.Repeat(" ", spaces)
-	for _, value := range values {
-		builder.WriteString(prefix)
-		builder.WriteString("- ")
-		builder.WriteString(value)
-		builder.WriteByte('\n')
-	}
-	return builder.String()
-}
-
 func quoteYAML(value string) string {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		panic(err)
 	}
 	return string(encoded)
+}
+
+func workspaceYAMLWithAccess(name string) string {
+	return strings.Replace(workspaceYAML(name), "include: []", "include:\n      - access/*.yaml", 1)
 }
 
 func modelTableYAML(workspace, name, source, key, sql string) string {

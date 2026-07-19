@@ -75,8 +75,7 @@ package contracts
 		models!:         #IncludeList
 		semanticModels!: #IncludeList
 		dashboards!:     #IncludeList
-		access!:         #IncludeList
-		agentPolicy!:    #IncludeList
+		access!:           #IncludeList
 		refreshPipelines?: #IncludeList
 	})
 })
@@ -112,7 +111,7 @@ package contracts
 })
 
 #SecurableObjectRef: close({
-	type!: "workspace" | "dashboard" | "semantic_model" | "source" | "model_table" | "agent_policy" | "dataset" | "table" | "column"
+	type!: "workspace" | "dashboard" | "semantic_model" | "source" | "model_table" | "dataset" | "table" | "column"
 	id?:   string
 })
 
@@ -149,20 +148,6 @@ package contracts
 	})
 })
 
-#WorkspaceAgentPolicyResource: close({
-	apiVersion!: #APIVersion
-	kind!:       "WorkspaceAgentPolicy"
-	metadata!:   #Metadata
-	spec!: close({
-		enabled!: bool
-		tools!: close({
-			allow?: [...#ResourceID]
-			deny?:  [...#ResourceID]
-		})
-		instructions?: string
-	})
-})
-
 #RefreshPipelineResource: close({
 	apiVersion!: #APIVersion
 	kind!:       "RefreshPipeline"
@@ -177,7 +162,6 @@ package contracts
 		})
 	})
 })
-
 #ModelTableResource: close({
 	apiVersion!: #APIVersion
 	kind!:       "ModelTable"

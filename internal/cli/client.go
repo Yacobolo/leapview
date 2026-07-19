@@ -15,6 +15,10 @@ import (
 )
 
 func doJSON(ctx context.Context, method, endpoint, token string, body io.Reader, out any) error {
+	return doJSONWithHeaders(ctx, method, endpoint, token, nil, body, out)
+}
+
+func doJSONWithHeaders(ctx context.Context, method, endpoint, token string, headers map[string]string, body io.Reader, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
 		return err
@@ -25,6 +29,9 @@ func doJSON(ctx context.Context, method, endpoint, token string, body io.Reader,
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

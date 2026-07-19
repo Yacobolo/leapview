@@ -73,7 +73,18 @@ func compileTools(tools []ToolDefinition) (map[string]*compiledTool, []ToolSpec,
 			return nil, nil, NewError(ErrorCodeInvalidArgument, fmt.Sprintf("tool %q schema did not compile", tool.Name), err)
 		}
 		tool.InputSchema = append(json.RawMessage(nil), schemaRaw...)
-		registry[tool.Name] = &compiledTool{def: tool, schema: schema}
+		var outputSchema *jsonschema.Schema
+		if len(tool.OutputSchema) > 0 {
+			if !json.Valid(tool.OutputSchema) {
+				return nil, nil, NewError(ErrorCodeInvalidArgument, fmt.Sprintf("tool %q output schema is invalid JSON", tool.Name), nil)
+			}
+			outputSchema, err = compileSchema(tool.Name+"-output", tool.OutputSchema)
+			if err != nil {
+				return nil, nil, NewError(ErrorCodeInvalidArgument, fmt.Sprintf("tool %q output schema did not compile", tool.Name), err)
+			}
+			tool.OutputSchema = append(json.RawMessage(nil), tool.OutputSchema...)
+		}
+		registry[tool.Name] = &compiledTool{def: tool, schema: schema, outputSchema: outputSchema}
 		specs = append(specs, ToolSpec{Name: tool.Name, Description: tool.Description, InputSchema: append(json.RawMessage(nil), schemaRaw...)})
 	}
 	return registry, specs, nil

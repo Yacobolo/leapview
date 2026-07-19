@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agent"
 	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
 )
@@ -22,7 +23,7 @@ func TestAgentAPIReportsDisabledWhenProviderMissing(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{}), DefaultWorkspaceID: "test"})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agent/conversations", nil)
 	req.Header.Set("Authorization", "Bearer dev")
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -41,18 +42,53 @@ func TestGlobalAgentAPIListsPrincipalConversations(t *testing.T) {
 	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
 
-	createReq := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/agent/conversations", token, `{"title":"Global ask"}`)
+	createReq := authedJSONRequest(http.MethodPost, "/api/v1/agent/conversations", token, `{"title":"Global ask"}`)
 	createRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(createRec, createReq)
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", createRec.Code, createRec.Body.String())
 	}
 
-	listReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations", token, "")
+	listReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations", token, "")
 	listRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(listRec, listReq)
 	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), "Global ask") {
 		t.Fatalf("list status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	if strings.Contains(listRec.Body.String(), "workspaceId") {
+		t.Fatalf("global conversation response retains workspaceId: %s", listRec.Body.String())
+	}
+
+	scopedToken, _, err := testAccessRepository(store).CreateAPITokenWithMetadata(ctx, access.APITokenInput{
+		PrincipalID: principal.ID,
+		WorkspaceID: "test",
+		Name:        "agent-workspace-bound",
+		Privileges:  []access.Privilege{access.PrivilegeUseAgent, access.PrivilegeViewAgent},
+	})
+	if err != nil {
+		t.Fatalf("create workspace-bound token: %v", err)
+	}
+	scopedReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations", scopedToken, "")
+	scopedRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(scopedRec, scopedReq)
+	if scopedRec.Code != http.StatusOK || !strings.Contains(scopedRec.Body.String(), "Global ask") {
+		t.Fatalf("workspace-bound token did not retain principal conversation ownership: status=%d body=%s", scopedRec.Code, scopedRec.Body.String())
+	}
+
+	other := testPrincipal(t, ctx, store, "other@example.com", "Other", "viewer")
+	otherToken := testAPIToken(t, ctx, store, other.ID, "agent-other")
+	otherReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations", otherToken, "")
+	otherRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(otherRec, otherReq)
+	if otherRec.Code != http.StatusOK || strings.Contains(otherRec.Body.String(), "Global ask") {
+		t.Fatalf("principal isolation failed: status=%d body=%s", otherRec.Code, otherRec.Body.String())
+	}
+
+	legacyReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations", token, "")
+	legacyRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(legacyRec, legacyReq)
+	if legacyRec.Code != http.StatusNotFound {
+		t.Fatalf("legacy workspace agent route status=%d, want 404 body=%s", legacyRec.Code, legacyRec.Body.String())
 	}
 }
 
@@ -79,7 +115,7 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 			t.Fatalf("model request system prompt = %#v", req.Messages)
 		}
 		if calls.Add(1) == 1 {
-			writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"list_dashboards","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`)
+			writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"list_dashboards","arguments":"{\"workspace\":\"test\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`)
 			return
 		}
 		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"Executive Sales is available."},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}}`)
@@ -97,7 +133,7 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 		_ = server.StopBackgroundJobs(stopCtx)
 	})
 
-	createReq := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/agent/conversations", token, `{"title":"Ask"}`)
+	createReq := authedJSONRequest(http.MethodPost, "/api/v1/agent/conversations", token, `{"title":"Ask"}`)
 	createRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(createRec, createReq)
 	if createRec.Code != http.StatusCreated {
@@ -109,7 +145,7 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 	}
 	conversationID := created["id"].(string)
 
-	turnReq := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/agent/conversations/"+conversationID+"/runs", token, `{"input":"What dashboards can I use?","correlationId":"corr_1"}`)
+	turnReq := authedJSONRequest(http.MethodPost, "/api/v1/agent/conversations/"+conversationID+"/runs", token, `{"input":"What dashboards can I use?","correlationId":"corr_1"}`)
 	turnReq.Header.Set("Idempotency-Key", "agent-run-1")
 	turnRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(turnRec, turnReq)
@@ -123,7 +159,7 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 	runID := turn["id"].(string)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		runReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversationID+"/runs/"+runID, token, "")
+		runReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations/"+conversationID+"/runs/"+runID, token, "")
 		runRec := httptest.NewRecorder()
 		server.Routes().ServeHTTP(runRec, runReq)
 		if strings.Contains(runRec.Body.String(), `"status":"completed"`) {
@@ -132,13 +168,13 @@ func TestAgentAPIConversationTurnPersistsMessagesAndEvents(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	messagesReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversationID+"/messages", token, "")
+	messagesReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations/"+conversationID+"/messages", token, "")
 	messagesRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(messagesRec, messagesReq)
 	if messagesRec.Code != http.StatusOK || !strings.Contains(messagesRec.Body.String(), "Executive Sales") {
 		t.Fatalf("messages status=%d body=%s", messagesRec.Code, messagesRec.Body.String())
 	}
-	eventsReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversationID+"/runs/"+runID+"/events", token, "")
+	eventsReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations/"+conversationID+"/runs/"+runID+"/events", token, "")
 	eventsRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(eventsRec, eventsReq)
 	if eventsRec.Code != http.StatusOK || !strings.Contains(eventsRec.Body.String(), "model_response") {
@@ -166,13 +202,12 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
-	scope := agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	scope := agent.Scope{PrincipalID: principal.ID}
 	conversation, err := agentService.CreateConversation(ctx, scope, "Original")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
 	run, err := testAgentRepository(store).CreateRun(ctx, agent.RunInput{
-		WorkspaceID:    "test",
 		PrincipalID:    principal.ID,
 		ConversationID: conversation.ID,
 		RunID:          "run_test",
@@ -182,7 +217,6 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 		t.Fatalf("create run: %v", err)
 	}
 	if _, err := testAgentRepository(store).AppendEvent(ctx, agent.EventInput{
-		WorkspaceID: "test",
 		PrincipalID: principal.ID,
 		RunID:       run.ID,
 		Sequence:    1,
@@ -192,7 +226,7 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 		t.Fatalf("append event: %v", err)
 	}
 
-	updateReq := authedJSONRequest(http.MethodPatch, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID, token, `{"title":"Updated"}`)
+	updateReq := authedJSONRequest(http.MethodPatch, "/api/v1/agent/conversations/"+conversation.ID, token, `{"title":"Updated"}`)
 	updateReq.Header.Set("If-Match", "*")
 	updateRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(updateRec, updateReq)
@@ -200,32 +234,32 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 		t.Fatalf("update status=%d body=%s", updateRec.Code, updateRec.Body.String())
 	}
 
-	runsReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID+"/runs?limit=1", token, "")
+	runsReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations/"+conversation.ID+"/runs?limit=1", token, "")
 	runsRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(runsRec, runsReq)
 	if runsRec.Code != http.StatusOK || !strings.Contains(runsRec.Body.String(), `"id":"run_test"`) {
 		t.Fatalf("runs status=%d body=%s", runsRec.Code, runsRec.Body.String())
 	}
 
-	runReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID+"/runs/"+run.ID, token, "")
+	runReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations/"+conversation.ID+"/runs/"+run.ID, token, "")
 	runRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(runRec, runReq)
 	if runRec.Code != http.StatusOK || !strings.Contains(runRec.Body.String(), `"conversationId":"`+conversation.ID+`"`) {
 		t.Fatalf("run status=%d body=%s", runRec.Code, runRec.Body.String())
 	}
 
-	eventsReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID+"/runs/"+run.ID+"/events?limit=1", token, "")
+	eventsReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations/"+conversation.ID+"/runs/"+run.ID+"/events?limit=1", token, "")
 	eventsRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(eventsRec, eventsReq)
 	if eventsRec.Code != http.StatusOK || !strings.Contains(eventsRec.Body.String(), `"event":"model_request"`) {
 		t.Fatalf("nested events status=%d body=%s", eventsRec.Code, eventsRec.Body.String())
 	}
 	if _, err := testAgentRepository(store).FinishRun(ctx, agent.RunFinish{
-		WorkspaceID: "test", PrincipalID: principal.ID, ConversationID: conversation.ID, RunID: run.ID, Status: agent.RunStatusCompleted,
+		PrincipalID: principal.ID, ConversationID: conversation.ID, RunID: run.ID, Status: agent.RunStatusCompleted,
 	}); err != nil {
 		t.Fatalf("finish run: %v", err)
 	}
-	sseReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID+"/runs/"+run.ID+"/events", token, "")
+	sseReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations/"+conversation.ID+"/runs/"+run.ID+"/events", token, "")
 	sseReq.Header.Set("Accept", "text/event-stream")
 	sseRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(sseRec, sseReq)
@@ -233,13 +267,13 @@ func TestAgentAPISupportsConversationAndRunReads(t *testing.T) {
 		t.Fatalf("SSE events status=%d headers=%v body=%s", sseRec.Code, sseRec.Header(), sseRec.Body.String())
 	}
 
-	archiveReq := authedJSONRequest(http.MethodDelete, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID, token, "")
+	archiveReq := authedJSONRequest(http.MethodDelete, "/api/v1/agent/conversations/"+conversation.ID, token, "")
 	archiveRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(archiveRec, archiveReq)
 	if archiveRec.Code != http.StatusNoContent || archiveRec.Body.Len() != 0 {
 		t.Fatalf("archive status=%d body=%s", archiveRec.Code, archiveRec.Body.String())
 	}
-	listReq := authedJSONRequest(http.MethodGet, "/api/v1/workspaces/test/agent/conversations", token, "")
+	listReq := authedJSONRequest(http.MethodGet, "/api/v1/agent/conversations", token, "")
 	listRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(listRec, listReq)
 	if listRec.Code != http.StatusOK || strings.Contains(listRec.Body.String(), conversation.ID) {
@@ -260,7 +294,7 @@ func TestAgentAPIRejectsConcurrentTurnsForConversation(t *testing.T) {
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
-	conversation, err := agentService.CreateConversation(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Ask")
+	conversation, err := agentService.CreateConversation(ctx, agent.Scope{PrincipalID: principal.ID}, "Ask")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
@@ -271,7 +305,7 @@ func TestAgentAPIRejectsConcurrentTurnsForConversation(t *testing.T) {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			req := authedJSONRequest(http.MethodPost, "/api/v1/workspaces/test/agent/conversations/"+conversation.ID+"/runs", token, `{"input":"hello"}`)
+			req := authedJSONRequest(http.MethodPost, "/api/v1/agent/conversations/"+conversation.ID+"/runs", token, `{"input":"hello"}`)
 			req.Header.Set("Idempotency-Key", fmt.Sprintf("concurrent-%d", index))
 			rec := httptest.NewRecorder()
 			server.Routes().ServeHTTP(rec, req)
