@@ -2,7 +2,6 @@ package app
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/Yacobolo/libredash/internal/agent"
 	dashboardui "github.com/Yacobolo/libredash/internal/dashboard/ui"
@@ -39,12 +38,5 @@ func (s *Server) chatChromeScope(r *http.Request) agent.Scope {
 		principalID = principal.ID
 		devBypass = principal.DevBypass
 	}
-	return agent.Scope{WorkspaceID: s.chatDefaultWorkspaceID(), PrincipalID: principalID, DevAuthBypass: devBypass}
-}
-
-func (s *Server) chatDefaultWorkspaceID() string {
-	if strings.TrimSpace(s.defaultWorkspaceID) != "" {
-		return s.defaultWorkspaceID
-	}
-	return s.workspaceID("")
+	return agent.Scope{PrincipalID: principalID, DevAuthBypass: devBypass}
 }

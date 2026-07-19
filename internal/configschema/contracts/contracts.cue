@@ -69,7 +69,6 @@ package contracts
 		semanticModels!: #IncludeList
 		dashboards!:     #IncludeList
 		access!:         #IncludeList
-		agentPolicy!:    #IncludeList
 	})
 })
 
@@ -104,7 +103,7 @@ package contracts
 })
 
 #SecurableObjectRef: close({
-	type!: "workspace" | "dashboard" | "semantic_model" | "source" | "model_table" | "agent_policy" | "dataset" | "table" | "column"
+	type!: "workspace" | "dashboard" | "semantic_model" | "source" | "model_table" | "dataset" | "table" | "column"
 	id?:   string
 })
 
@@ -138,20 +137,6 @@ package contracts
 		subject?:    #AccessSubject
 		policyType!: "row_filter" | "column_mask"
 		expression!: #AnyObject
-	})
-})
-
-#WorkspaceAgentPolicyResource: close({
-	apiVersion!: #APIVersion
-	kind!:       "WorkspaceAgentPolicy"
-	metadata!:   #Metadata
-	spec!: close({
-		enabled!: bool
-		tools!: close({
-			allow?: [...#ResourceID]
-			deny?:  [...#ResourceID]
-		})
-		instructions?: string
 	})
 })
 

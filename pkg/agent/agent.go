@@ -11,6 +11,7 @@ var errContextLimitStop = errors.New("agent context limit reached")
 
 type Agent struct {
 	def       Definition
+	catalog   *ToolCatalog
 	tools     map[string]*compiledTool
 	toolSpecs []ToolSpec
 
@@ -61,11 +62,11 @@ func New(def Definition) (*Agent, error) {
 	if err := validateToolOutputConfig(def.ToolOutput); err != nil {
 		return nil, err
 	}
-	tools, specs, err := compileTools(def.Tools)
+	catalog, err := NewToolCatalog(def.Tools)
 	if err != nil {
 		return nil, err
 	}
-	return &Agent{def: def, tools: tools, toolSpecs: specs, transcript: cloneMessages(def.InitialTranscript)}, nil
+	return &Agent{def: def, catalog: catalog, tools: catalog.tools, toolSpecs: catalog.Specs(), transcript: cloneMessages(def.InitialTranscript)}, nil
 }
 
 func (a *Agent) Prompt(ctx context.Context, req PromptRequest) (RunResult, error) {

@@ -836,8 +836,6 @@ func assetObjectForID(workspaceID, raw string) (access.ObjectRef, bool) {
 		}
 		model := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, access.WorkspaceObject(workspaceID))
 		return access.ItemObjectWithParent(access.SecurableSemanticField, workspaceID, modelID+"/"+memberID, model), true
-	case workspace.AssetTypeWorkspaceAgentPolicy:
-		return access.ItemObjectWithParent(access.SecurableAgentPolicy, workspaceID, objectID, access.WorkspaceObject(workspaceID)), true
 	default:
 		return access.ObjectRef{}, false
 	}

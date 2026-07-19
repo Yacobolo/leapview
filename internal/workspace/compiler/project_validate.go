@@ -64,31 +64,6 @@ func validateProject(project Project) error {
 		if err := validateWorkspaceAccess(workspaceProject); err != nil {
 			return err
 		}
-		if err := validateWorkspaceAgentPolicies(workspaceProject); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateWorkspaceAgentPolicies(workspaceProject *WorkspaceProject) error {
-	for name, policy := range workspaceProject.AgentPolicies {
-		path := workspaceProject.AgentPolicyPaths[name]
-		allow := map[string]struct{}{}
-		for _, tool := range policy.Tools.Allow {
-			if !workspace.IsKnownAgentTool(tool) {
-				return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "spec.tools.allow", "WorkspaceAgentPolicy %q.%q references unknown agent tool %q", workspaceProject.ID, name, tool)
-			}
-			allow[tool] = struct{}{}
-		}
-		for _, tool := range policy.Tools.Deny {
-			if !workspace.IsKnownAgentTool(tool) {
-				return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "spec.tools.deny", "WorkspaceAgentPolicy %q.%q references unknown agent tool %q", workspaceProject.ID, name, tool)
-			}
-			if _, ok := allow[tool]; ok {
-				return resourceError(path, "workspace_agent_policy:"+workspaceProject.ID+"."+name, "spec.tools", "WorkspaceAgentPolicy %q.%q agent tool %q is both allowed and denied", workspaceProject.ID, name, tool)
-			}
-		}
 	}
 	return nil
 }
@@ -197,7 +172,6 @@ func validateWorkspaceObjectRef(path, resourceID, kind, workspaceID, name string
 		access.SecurableSemanticModel,
 		access.SecurableSource,
 		access.SecurableModelTable,
-		access.SecurableAgentPolicy,
 		access.SecurableDataset,
 		access.SecurableTable,
 		access.SecurableColumn:

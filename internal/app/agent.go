@@ -15,12 +15,9 @@ func (s *Server) agentHTTPHandler() *agenthttp.Handler {
 		settings = s.store
 	}
 	return agenthttp.NewHandler(agenthttp.Options{
-		Service:             s.agent,
-		Settings:            settings,
-		DefaultWorkspace:    s.defaultWorkspaceID,
-		WorkspaceID:         s.workspaceID,
-		Broker:              s.broker,
-		CatalogForWorkspace: s.catalogForWorkspace,
+		Service:  s.agent,
+		Settings: settings,
+		Broker:   s.broker,
 		CSRFToken: func(r *http.Request) string {
 			return csrfToken(r, s.auth)
 		},

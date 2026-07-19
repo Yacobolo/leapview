@@ -11,6 +11,33 @@ import (
 	"time"
 )
 
+func TestToolCatalogCompilesSchemasOnceAndPropagatesCancellation(t *testing.T) {
+	catalog, err := NewToolCatalog([]ToolDefinition{{
+		Name:         "wait",
+		Description:  "Wait for cancellation.",
+		InputSchema:  json.RawMessage(`{"type":"object","additionalProperties":false}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}`),
+		Effect:       "read",
+		Handler: ToolHandlerFunc(func(ctx context.Context, _ ToolCall) (ToolResult, error) {
+			<-ctx.Done()
+			return ToolResult{}, ctx.Err()
+		}),
+	}})
+	if err != nil {
+		t.Fatalf("new catalog: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = catalog.Execute(ctx, ToolCall{ID: "call-1", Name: "wait", Arguments: json.RawMessage(`{}`)})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("execute error = %v, want context canceled", err)
+	}
+	definitions := catalog.Definitions()
+	if len(definitions) != 1 || definitions[0].Effect != "read" || len(definitions[0].OutputSchema) == 0 {
+		t.Fatalf("catalog metadata = %#v", definitions)
+	}
+}
+
 func TestToolValidationFailuresBecomeToolResults(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -80,10 +80,6 @@ type materializationRuntime interface {
 	RefreshMaterializations(ctx context.Context, modelID string) error
 }
 
-type agentPolicyProvider interface {
-	AgentPolicy() workspace.AgentPolicy
-}
-
 func NewRuntimeMetrics(provider runtimeProvider, workspaceID string) QueryMetrics {
 	return runtimeMetrics{provider: provider, workspaceID: workspaceID}
 }
@@ -394,19 +390,6 @@ func (m runtimeMetrics) WorkspaceAssets(workspaceID, servingStateID string) ([]w
 		return nil, nil, false
 	}
 	return port.WorkspaceAssets(workspaceID, servingStateID)
-}
-
-func (m runtimeMetrics) AgentPolicy() workspace.AgentPolicy {
-	runtime, release, err := m.active(context.Background())
-	if err != nil {
-		return workspace.DefaultAgentPolicy()
-	}
-	defer release()
-	provider, ok := runtime.(agentPolicyProvider)
-	if !ok {
-		return workspace.DefaultAgentPolicy()
-	}
-	return provider.AgentPolicy()
 }
 
 func (m runtimeMetrics) RuntimeReady(ctx context.Context, workspaceID string) error {

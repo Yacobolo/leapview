@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access/httpauth"
-	agenthttp "github.com/Yacobolo/libredash/internal/agent/http"
 	queryhttp "github.com/Yacobolo/libredash/internal/analytics/query/http"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	dashboardhttp "github.com/Yacobolo/libredash/internal/dashboard/http"
@@ -21,10 +20,9 @@ type apiGenObjectScope struct {
 // TypeSpec assigns operations to these domain scopes. The handwritten boundary
 // only maps a stable scope name to the domain behavior that resolves objects.
 var apiGenObjectScopes = map[string]apiGenObjectScope{
-	"agent-conversation": {pathParameter: "conversation", resolver: agenthttp.ConversationObjectRefs},
-	"dashboard":          {pathParameter: "dashboard", resolver: dashboardhttp.DashboardObjectRefs},
-	"semantic-model":     {pathParameter: "model", resolver: queryhttp.SemanticDatasetObjectRefs},
-	"workspace-asset":    {pathParameter: "assetId", resolver: workspacehttp.AssetObjectRefs},
+	"dashboard":       {pathParameter: "dashboard", resolver: dashboardhttp.DashboardObjectRefs},
+	"semantic-model":  {pathParameter: "model", resolver: queryhttp.SemanticDatasetObjectRefs},
+	"workspace-asset": {pathParameter: "assetId", resolver: workspacehttp.AssetObjectRefs},
 }
 
 func apigenOperationObjectResolver(operationID string) (httpauth.ObjectResolver, bool) {

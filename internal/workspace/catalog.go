@@ -33,26 +33,11 @@ type CatalogDashboard struct {
 }
 
 type Definition struct {
-	Catalog       Catalog
-	Models        map[string]*model.Model
-	Dashboards    map[string]*report.Dashboard
-	Access        AccessPolicy
-	AgentPolicies map[string]AgentPolicy
-	AgentPolicy   AgentPolicy
-	BaseDir       string
-	SourceIDs     map[string]string
-	SourceFiles   map[string]string
-}
-
-type AgentPolicy struct {
-	ID           string
-	Name         string
-	Enabled      bool
-	Tools        AgentPolicyTools
-	Instructions string
-}
-
-type AgentPolicyTools struct {
-	Allow []string
-	Deny  []string
+	Catalog     Catalog
+	Models      map[string]*model.Model
+	Dashboards  map[string]*report.Dashboard
+	Access      AccessPolicy
+	BaseDir     string
+	SourceIDs   map[string]string
+	SourceFiles map[string]string
 }

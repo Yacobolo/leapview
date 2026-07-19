@@ -16,13 +16,12 @@ import (
 
 func TestAgentConversationsDecodesEnvelopePreservingJSONOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/workspaces/test/agent/conversations" {
+		if r.URL.Path != "/api/v1/agent/conversations" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		writeCLIJSON(t, w, map[string]any{
 			"items": []map[string]any{{
 				"id":          "conv_1",
-				"workspaceId": "test",
 				"principalId": "prn_1",
 				"title":       "Ask",
 				"status":      "active",
@@ -35,7 +34,7 @@ func TestAgentConversationsDecodesEnvelopePreservingJSONOutput(t *testing.T) {
 	defer server.Close()
 
 	output := captureStdout(t, func() {
-		err := runAgentConversations(context.Background(), &rootOptions{target: server.URL, token: "token", workspaceID: "test", jsonOutput: true})
+		err := runAgentConversations(context.Background(), &rootOptions{target: server.URL, token: "token", jsonOutput: true})
 		if err != nil {
 			t.Fatalf("run conversations: %v", err)
 		}
@@ -82,7 +81,7 @@ func TestFriendlyListCommandsPassPaginationQuery(t *testing.T) {
 			name:    "agent conversations",
 			command: agentCommand,
 			args:    []string{"conversations"},
-			path:    "/api/v1/workspaces/test/agent/conversations",
+			path:    "/api/v1/agent/conversations",
 		},
 		{
 			name:    "search",
@@ -373,7 +372,7 @@ func TestAgentToolsCommandListsGeneratedTools(t *testing.T) {
 			t.Fatalf("agent tools: %v", err)
 		}
 	})
-	for _, want := range []string{"NAME", "PRIVILEGE", "list_dashboards", "VIEW_ITEM", "list_assets", "describe_asset", "asset_lineage", "search_workspace", "query_dashboard_visual_data", "query_semantic_model", "explain_semantic_model_query"} {
+	for _, want := range []string{"NAME", "PRIVILEGE", "list_dashboards", "VIEW_ITEM", "list_assets", "describe_asset", "asset_lineage", "search_workspace", "query_dashboard_visual_data", "query_semantic_model", "explain_semantic_model_query", "query_visual"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("agent tools output missing %q:\n%s", want, output)
 		}
@@ -391,15 +390,24 @@ func captureStdout(t *testing.T, fn func()) string {
 	defer func() {
 		os.Stdout = original
 	}()
+	type readResult struct {
+		bytes []byte
+		err   error
+	}
+	readDone := make(chan readResult, 1)
+	go func() {
+		bytes, err := io.ReadAll(read)
+		readDone <- readResult{bytes: bytes, err: err}
+	}()
 	fn()
 	if err := write.Close(); err != nil {
 		t.Fatalf("close stdout pipe: %v", err)
 	}
-	bytes, err := io.ReadAll(read)
-	if err != nil {
-		t.Fatalf("read stdout: %v", err)
+	result := <-readDone
+	if result.err != nil {
+		t.Fatalf("read stdout: %v", result.err)
 	}
-	return string(bytes)
+	return string(result.bytes)
 }
 
 func writeCLIJSON(t *testing.T, w http.ResponseWriter, value any) {

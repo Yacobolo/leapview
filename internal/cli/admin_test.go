@@ -626,9 +626,9 @@ func seedAdminOperationalHistory(t *testing.T, ctx context.Context, home string,
 		('query_recent', 'sales', 'principal_1', 'success', ?)`, old, recent); err != nil {
 		t.Fatalf("seed query events: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO agent_conversations (id, workspace_id, principal_id, title, status, archived_at, created_at, updated_at) VALUES
-		('agent_old', 'sales', 'principal_1', 'Old', 'archived', ?, ?, ?),
-		('agent_recent', 'sales', 'principal_1', 'Recent', 'archived', ?, ?, ?)`,
+	if _, err := db.ExecContext(ctx, `INSERT INTO agent_conversations (id, principal_id, title, status, archived_at, created_at, updated_at) VALUES
+		('agent_old', 'principal_1', 'Old', 'archived', ?, ?, ?),
+		('agent_recent', 'principal_1', 'Recent', 'archived', ?, ?, ?)`,
 		old, old, old, recent, recent, recent); err != nil {
 		t.Fatalf("seed agent conversations: %v", err)
 	}

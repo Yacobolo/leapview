@@ -74,5 +74,5 @@ func chatStreamID(scope agent.Scope, clientID string) string {
 	if strings.TrimSpace(clientID) == "" {
 		clientID = "default"
 	}
-	return "chat:" + clientID + ":" + scope.WorkspaceID + ":" + scope.PrincipalID
+	return "chat:" + clientID + ":" + scope.PrincipalID
 }

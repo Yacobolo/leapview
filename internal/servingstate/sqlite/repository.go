@@ -624,8 +624,6 @@ func securableRefsForAsset(workspaceID string, asset platformdb.Asset) ([]access
 		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, key, workspaceObject), key != ""
 	case workspace.AssetTypeSource:
 		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableSource, workspaceID, key, workspaceObject), key != ""
-	case workspace.AssetTypeWorkspaceAgentPolicy:
-		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableAgentPolicy, workspaceID, key, workspaceObject), key != ""
 	case workspace.AssetTypeModelTable:
 		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableModelTable, workspaceID, key, workspaceObject), key != ""
 	case workspace.AssetTypeSemanticTable:

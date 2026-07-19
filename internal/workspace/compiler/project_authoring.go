@@ -39,7 +39,6 @@ type workspaceSpec struct {
 	SemanticModels includeList   `yaml:"semanticModels"`
 	Dashboards     includeList   `yaml:"dashboards"`
 	Access         includeList   `yaml:"access"`
-	AgentPolicy    includeList   `yaml:"agentPolicy"`
 }
 
 type workspaceUses struct {
@@ -147,15 +146,4 @@ type workspaceDataPolicySpec struct {
 	Subject    workspaceRoleBindingSubjectSpec `yaml:"subject"`
 	PolicyType string                          `yaml:"policyType"`
 	Expression yaml.Node                       `yaml:"expression"`
-}
-
-type workspaceAgentPolicySpec struct {
-	Enabled      bool                          `yaml:"enabled"`
-	Tools        workspaceAgentPolicyToolsSpec `yaml:"tools"`
-	Instructions string                        `yaml:"instructions"`
-}
-
-type workspaceAgentPolicyToolsSpec struct {
-	Allow []string `yaml:"allow"`
-	Deny  []string `yaml:"deny"`
 }

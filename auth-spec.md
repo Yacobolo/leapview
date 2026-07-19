@@ -87,7 +87,6 @@ platform
       semantic_model
       source
       model_table
-      agent_policy
     data_object
       dataset
       table

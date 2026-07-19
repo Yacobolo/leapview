@@ -8,7 +8,7 @@ LibreDash configuration resources use versioned YAML envelopes and generated JSO
 - Use **Connection** and **Source** to separate physical access credentials from reusable data inputs.
 - Use **Workspace**, **WorkspaceGroup**, **WorkspaceRoleBinding**, and **Grant** to define ownership and access boundaries.
 - Use **ModelTable**, **SemanticModel**, and **Dashboard** for analytical modeling and presentation.
-- Use **DataPolicy** and **WorkspaceAgentPolicy** for governed data and agent behavior.
+- Use **DataPolicy** for governed row and column access. Agent provider settings and the system prompt are installation-wide runtime configuration.
 
 Each generated page includes a representative YAML resource, a field table, nested definitions, and a downloadable schema. Complete resources containing `apiVersion` and `kind` are validated against these same schemas when documentation tests run.
 

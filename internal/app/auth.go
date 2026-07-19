@@ -602,13 +602,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 		return localDeveloperPrincipal(), nil, true
 	}
 	if token := bearerToken(r); token != "" {
-		credential, err := a.repo.CredentialForAPIToken(r.Context(), token)
-		if err == nil {
-			principal := credential.Principal
-			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
-		}
-		a.auditDisabledCredentialFailure(r, "api_token", token)
-		return Principal{}, nil, false
+		return a.authenticateBearer(r)
 	}
 	if a.apiTokenOnly {
 		return Principal{}, nil, false
@@ -623,6 +617,28 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 		return Principal{}, nil, false
 	}
 	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, nil, true
+}
+
+// authenticateBearer is the shared REST/MCP bearer credential resolver. It
+// deliberately never falls back to browser sessions.
+func (a *Auth) authenticateBearer(r *http.Request) (Principal, *access.APICredential, bool) {
+	if a == nil || bearerToken(r) == "" {
+		return Principal{}, nil, false
+	}
+	if a.devBypass {
+		if !a.acceptsPublicBearer(r) {
+			return Principal{}, nil, false
+		}
+		return localDeveloperPrincipal(), nil, true
+	}
+	token := bearerToken(r)
+	credential, err := a.repo.CredentialForAPIToken(r.Context(), token)
+	if err == nil {
+		principal := credential.Principal
+		return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
+	}
+	a.auditDisabledCredentialFailure(r, "api_token", token)
+	return Principal{}, nil, false
 }
 
 func hasSessionCookie(r *http.Request) bool {

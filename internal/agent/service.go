@@ -9,13 +9,11 @@ import (
 	"sync"
 
 	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
-	"github.com/Yacobolo/libredash/internal/workspace"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 )
 
 var (
 	ErrDisabled          = errors.New("agent is not configured")
-	ErrPolicyDisabled    = errors.New("agent is disabled by workspace policy")
 	ErrBusy              = errors.New("agent conversation already has a running turn")
 	ErrRunNotCancellable = errors.New("agent run is not cancellable")
 )
@@ -44,8 +42,6 @@ type CredentialScope struct {
 
 type ToolProvider func(scope Scope) []agentcore.ToolDefinition
 
-type PolicyProvider func(scope Scope) (workspace.AgentPolicy, bool)
-
 type SystemPromptProvider func(ctx context.Context) (string, error)
 
 type Service struct {
@@ -55,7 +51,6 @@ type Service struct {
 	model   agentcore.Model
 
 	toolProviders        []ToolProvider
-	policyProvider       PolicyProvider
 	systemPromptProvider SystemPromptProvider
 
 	mu      sync.Mutex
@@ -107,10 +102,6 @@ func (s *Service) AppendToolProviders(providers ...ToolProvider) {
 	s.toolProviders = append(s.toolProviders, providers...)
 }
 
-func (s *Service) SetPolicyProvider(provider PolicyProvider) {
-	s.policyProvider = provider
-}
-
 func (s *Service) SetSystemPromptProvider(provider SystemPromptProvider) {
 	s.systemPromptProvider = provider
 }
@@ -141,7 +132,6 @@ func (s *Service) CreateConversation(ctx context.Context, scope Scope, title str
 		return Conversation{}, fmt.Errorf("agent store is required")
 	}
 	return s.repo.CreateConversation(ctx, ConversationInput{
-		WorkspaceID:  scope.WorkspaceID,
 		PrincipalID:  scope.PrincipalID,
 		Title:        title,
 		MetadataJSON: `{}`,
@@ -149,20 +139,19 @@ func (s *Service) CreateConversation(ctx context.Context, scope Scope, title str
 }
 
 func (s *Service) ListConversations(ctx context.Context, scope Scope) ([]Conversation, error) {
-	return s.repo.ListConversations(ctx, scope.WorkspaceID, scope.PrincipalID)
+	return s.repo.ListConversations(ctx, scope.PrincipalID)
 }
 
 func (s *Service) ListConversationsPage(ctx context.Context, scope Scope, page Page) ([]Conversation, error) {
-	return s.repo.ListConversationsPage(ctx, scope.WorkspaceID, scope.PrincipalID, normalizePage(page))
+	return s.repo.ListConversationsPage(ctx, scope.PrincipalID, normalizePage(page))
 }
 
 func (s *Service) GetConversation(ctx context.Context, scope Scope, conversationID string) (Conversation, error) {
-	return s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	return s.repo.GetConversation(ctx, scope.PrincipalID, conversationID)
 }
 
 func (s *Service) UpdateConversation(ctx context.Context, scope Scope, conversationID, title string) (Conversation, error) {
 	return s.repo.UpdateConversation(ctx, ConversationUpdate{
-		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		ConversationID: conversationID,
 		Title:          title,
@@ -170,23 +159,23 @@ func (s *Service) UpdateConversation(ctx context.Context, scope Scope, conversat
 }
 
 func (s *Service) ArchiveConversation(ctx context.Context, scope Scope, conversationID string) (Conversation, error) {
-	return s.repo.ArchiveConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	return s.repo.ArchiveConversation(ctx, scope.PrincipalID, conversationID)
 }
 
 func (s *Service) ListMessages(ctx context.Context, scope Scope, conversationID string) ([]Message, error) {
-	return s.repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	return s.repo.ListMessages(ctx, scope.PrincipalID, conversationID)
 }
 
 func (s *Service) ListMessagesPage(ctx context.Context, scope Scope, conversationID string, page Page) ([]Message, error) {
-	return s.repo.ListMessagesPage(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, normalizePage(page))
+	return s.repo.ListMessagesPage(ctx, scope.PrincipalID, conversationID, normalizePage(page))
 }
 
 func (s *Service) ListRunsPage(ctx context.Context, scope Scope, conversationID string, page Page) ([]Run, error) {
-	return s.repo.ListRunsPage(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, normalizePage(page))
+	return s.repo.ListRunsPage(ctx, scope.PrincipalID, conversationID, normalizePage(page))
 }
 
 func (s *Service) GetRun(ctx context.Context, scope Scope, conversationID, runID string) (Run, error) {
-	return s.repo.GetRun(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, runID)
+	return s.repo.GetRun(ctx, scope.PrincipalID, conversationID, runID)
 }
 
 func (s *Service) CancelRun(ctx context.Context, scope Scope, conversationID, runID string) error {
@@ -222,25 +211,25 @@ func (s *Service) CancelPersistedRun(ctx context.Context, scope Scope, conversat
 }
 
 func (s *Service) GetRunByID(ctx context.Context, scope Scope, runID string) (Run, error) {
-	return s.repo.GetRunByID(ctx, scope.WorkspaceID, scope.PrincipalID, runID)
+	return s.repo.GetRunByID(ctx, scope.PrincipalID, runID)
 }
 
 func (s *Service) ListEvents(ctx context.Context, scope Scope, runID string) ([]Event, error) {
-	return s.repo.ListEvents(ctx, scope.WorkspaceID, scope.PrincipalID, runID)
+	return s.repo.ListEvents(ctx, scope.PrincipalID, runID)
 }
 
 func (s *Service) ListRunEventsPage(ctx context.Context, scope Scope, conversationID, runID string, page Page) ([]Event, error) {
-	if _, err := s.repo.GetRun(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, runID); err != nil {
+	if _, err := s.repo.GetRun(ctx, scope.PrincipalID, conversationID, runID); err != nil {
 		return nil, err
 	}
-	return s.repo.ListEventsPage(ctx, scope.WorkspaceID, scope.PrincipalID, runID, normalizePage(page))
+	return s.repo.ListEventsPage(ctx, scope.PrincipalID, runID, normalizePage(page))
 }
 
 func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversationID string) ([]EventEnvelope, error) {
-	if _, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
+	if _, err := s.repo.GetConversation(ctx, scope.PrincipalID, conversationID); err != nil {
 		return nil, err
 	}
-	messages, err := s.repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	messages, err := s.repo.ListMessages(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -248,12 +237,12 @@ func (s *Service) ConversationEvents(ctx context.Context, scope Scope, conversat
 	for _, message := range messages {
 		events = append(events, messageEnvelope(conversationID, message))
 	}
-	runs, err := s.repo.ListRuns(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	runs, err := s.repo.ListRuns(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return nil, err
 	}
 	for _, run := range runs {
-		runEvents, err := s.repo.ListEvents(ctx, scope.WorkspaceID, scope.PrincipalID, run.ID)
+		runEvents, err := s.repo.ListEvents(ctx, scope.PrincipalID, run.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -286,10 +275,10 @@ func (s *Service) ConversationTranscript(ctx context.Context, scope Scope, conve
 }
 
 func (s *Service) ConversationTranscriptState(ctx context.Context, scope Scope, conversationID string) (ChatTranscriptState, error) {
-	if _, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID); err != nil {
+	if _, err := s.repo.GetConversation(ctx, scope.PrincipalID, conversationID); err != nil {
 		return ChatTranscriptState{}, err
 	}
-	messages, err := s.repo.ListMessages(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	messages, err := s.repo.ListMessages(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return ChatTranscriptState{}, err
 	}

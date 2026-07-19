@@ -97,7 +97,6 @@
             "semantic_model",
             "source",
             "model_table",
-            "agent_policy",
             "dataset",
             "table",
             "column"

@@ -36,8 +36,8 @@ func TestIdealV1Surface(t *testing.T) {
 		"/api/v1/workspaces/{workspace}/semantic-models/{model}/sources":                             {"get"},
 		"/api/v1/workspaces/{workspace}/refresh-runs/{run}/events":                                   {"get"},
 		"/api/v1/workspaces/{workspace}/refresh-runs/{run}/cancel":                                   {"post"},
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs":                     {"get", "post"},
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/cancel":        {"post"},
+		"/api/v1/agent/conversations/{conversation}/runs":                                            {"get", "post"},
+		"/api/v1/agent/conversations/{conversation}/runs/{run}/cancel":                               {"post"},
 		"/api/v1/workspaces/{workspace}/grants/{grant}":                                              {"get", "patch", "delete"},
 		"/api/v1/workspaces/{workspace}/data-policies/{policy}":                                      {"get", "patch", "delete"},
 	}
@@ -48,7 +48,6 @@ func TestIdealV1Surface(t *testing.T) {
 	}
 
 	removed := []string{
-		"/api/v1/agent/conversations",
 		"/api/v1/projects/{project}/workspaces/{workspace}/deployment-candidates",
 		"/api/v1/projects/{project}/deployments/{deployment}/activate",
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/components",
@@ -56,7 +55,7 @@ func TestIdealV1Surface(t *testing.T) {
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/tables/{table}/data",
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/filters/{filter}/options",
 		"/api/v1/workspaces/{workspace}/semantic-models/{model}/datasets/{dataset}/query",
-		"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/turns",
+		"/api/v1/agent/conversations/{conversation}/turns",
 	}
 	for _, path := range removed {
 		if _, ok := paths[path]; ok {
@@ -111,7 +110,7 @@ func TestIdealQueryAndEventRepresentations(t *testing.T) {
 		{"/api/v1/projects/{project}/releases/{release}/events", "get", "text/event-stream"},
 		{"/api/v1/projects/{project}/deployments/{deployment}/events", "get", "text/event-stream"},
 		{"/api/v1/workspaces/{workspace}/refresh-runs/{run}/events", "get", "text/event-stream"},
-		{"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs/{run}/events", "get", "text/event-stream"},
+		{"/api/v1/agent/conversations/{conversation}/runs/{run}/events", "get", "text/event-stream"},
 	} {
 		op := openAPIOperation(t, paths, tc.path, tc.method)
 		if !operationHasResponseMedia(op, "200", tc.media) {
@@ -226,7 +225,7 @@ func TestIdealAPIUsesProblemDetailsAndMutationHeaders(t *testing.T) {
 		{"/api/v1/projects/{project}/releases/{release}/finalize", "post"},
 		{"/api/v1/projects/{project}/deployments", "post"},
 		{"/api/v1/workspaces/{workspace}/refresh-runs", "post"},
-		{"/api/v1/workspaces/{workspace}/agent/conversations/{conversation}/runs", "post"},
+		{"/api/v1/agent/conversations/{conversation}/runs", "post"},
 	} {
 		op := openAPIOperation(t, paths, tc.path, tc.method)
 		if !operationHasParameter(op, "header", "Idempotency-Key") {

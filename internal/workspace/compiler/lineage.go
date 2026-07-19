@@ -100,14 +100,6 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 			edge(id, groupID, workspace.AssetEdgeUsesGroup)
 		}
 	}
-	for _, policyName := range sortedMapKeys(definition.AgentPolicies) {
-		policy := definition.AgentPolicies[policyName]
-		id, err := add(workspace.AssetTypeWorkspaceAgentPolicy, workspaceKey(policyName), catalogID, policy.Name, "", workspaceAgentPolicyPayload(policy))
-		if err != nil {
-			return workspace.AssetGraph{}, err
-		}
-		edge(catalogID, id, workspace.AssetEdgeContains)
-	}
 	for _, modelEntry := range definition.Catalog.SemanticModels {
 		model := definition.Models[modelEntry.ID]
 		for _, connectionName := range sortedMapKeys(model.Connections) {

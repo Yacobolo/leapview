@@ -173,19 +173,6 @@ func normalizeYAMLValue(value any) any {
 	}
 }
 
-func projectWorkspaceAgentPolicy(name string, spec workspaceAgentPolicySpec) workspace.AgentPolicy {
-	return workspace.AgentPolicy{
-		ID:      name,
-		Name:    name,
-		Enabled: spec.Enabled,
-		Tools: workspace.AgentPolicyTools{
-			Allow: sortedUniqueTrimmed(spec.Tools.Allow),
-			Deny:  sortedUniqueTrimmed(spec.Tools.Deny),
-		},
-		Instructions: strings.TrimSpace(spec.Instructions),
-	}
-}
-
 func sortedUniqueTrimmed(values []string) []string {
 	seen := map[string]struct{}{}
 	for _, value := range values {
@@ -233,11 +220,9 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 			Grants:       copyWorkspaceGrants(workspaceProject.AccessGrants),
 			DataPolicies: copyWorkspaceDataPolicies(workspaceProject.AccessDataPolicies),
 		},
-		AgentPolicies: copyAgentPolicies(workspaceProject.AgentPolicies),
-		AgentPolicy:   effectiveAgentPolicy(workspaceProject.AgentPolicies),
-		BaseDir:       project.BaseDir,
-		SourceIDs:     sourceIDs,
-		SourceFiles:   workspaceProject.sourceFiles(project),
+		BaseDir:     project.BaseDir,
+		SourceIDs:   sourceIDs,
+		SourceFiles: workspaceProject.sourceFiles(project),
 	}
 	for _, modelName := range sortedMapKeys(workspaceProject.SemanticModels) {
 		semanticSpec := workspaceProject.SemanticModels[modelName]
@@ -302,9 +287,6 @@ func (workspaceProject *WorkspaceProject) sourceFiles(project Project) map[strin
 		case "WorkspaceRoleBinding":
 			sourceFiles[string(workspace.NewAssetID(workspace.AssetTypeWorkspaceRoleBinding, workspaceKey(name)))] = path
 		}
-	}
-	for name, path := range workspaceProject.AgentPolicyPaths {
-		sourceFiles[string(workspace.NewAssetID(workspace.AssetTypeWorkspaceAgentPolicy, workspaceKey(name)))] = path
 	}
 	return sourceFiles
 }
@@ -503,71 +485,6 @@ func copyWorkspaceDataPolicies(in map[string]workspace.WorkspaceDataPolicy) map[
 	out := make(map[string]workspace.WorkspaceDataPolicy, len(in))
 	for key, value := range in {
 		out[key] = value
-	}
-	return out
-}
-
-func copyAgentPolicies(in map[string]workspace.AgentPolicy) map[string]workspace.AgentPolicy {
-	out := make(map[string]workspace.AgentPolicy, len(in))
-	for key, value := range in {
-		value.Tools.Allow = append([]string{}, value.Tools.Allow...)
-		value.Tools.Deny = append([]string{}, value.Tools.Deny...)
-		out[key] = value
-	}
-	return out
-}
-
-func effectiveAgentPolicy(policies map[string]workspace.AgentPolicy) workspace.AgentPolicy {
-	effective := workspace.DefaultAgentPolicy()
-	included := sortedMapKeys(policies)
-	denySet := map[string]struct{}{}
-	var allowSet map[string]struct{}
-	var instructions []string
-	for _, name := range included {
-		policy := policies[name]
-		if !policy.Enabled {
-			effective.Enabled = false
-		}
-		if len(policy.Tools.Allow) > 0 {
-			next := stringSet(policy.Tools.Allow)
-			if allowSet == nil {
-				allowSet = next
-			} else {
-				allowSet = intersectStringSets(allowSet, next)
-			}
-		}
-		for _, tool := range policy.Tools.Deny {
-			denySet[tool] = struct{}{}
-		}
-		if policy.Instructions != "" {
-			instructions = append(instructions, policy.Instructions)
-		}
-	}
-	if allowSet != nil {
-		for tool := range denySet {
-			delete(allowSet, tool)
-		}
-		effective.Tools.Allow = sortedSetKeys(allowSet)
-	}
-	effective.Tools.Deny = sortedSetKeys(denySet)
-	effective.Instructions = strings.Join(instructions, "\n\n")
-	return effective
-}
-
-func stringSet(values []string) map[string]struct{} {
-	out := map[string]struct{}{}
-	for _, value := range values {
-		out[value] = struct{}{}
-	}
-	return out
-}
-
-func intersectStringSets(left, right map[string]struct{}) map[string]struct{} {
-	out := map[string]struct{}{}
-	for value := range left {
-		if _, ok := right[value]; ok {
-			out[value] = struct{}{}
-		}
 	}
 	return out
 }

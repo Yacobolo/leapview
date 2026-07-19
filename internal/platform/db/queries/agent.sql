@@ -1,6 +1,6 @@
 -- name: CreateAgentConversation :one
-INSERT INTO agent_conversations (id, workspace_id, principal_id, title, status, metadata_json, transcript_json)
-VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(principal_id), sqlc.arg(title), sqlc.arg(status), sqlc.arg(metadata_json), sqlc.arg(transcript_json))
+INSERT INTO agent_conversations (id, principal_id, title, status, metadata_json, transcript_json)
+VALUES (sqlc.arg(id), sqlc.arg(principal_id), sqlc.arg(title), sqlc.arg(status), sqlc.arg(metadata_json), sqlc.arg(transcript_json))
 RETURNING *;
 
 -- name: ListAgentConversations :many
@@ -113,7 +113,7 @@ UPDATE agent_conversations
 SET title = sqlc.arg(title), updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(conversation_id)
   AND principal_id = sqlc.arg(principal_id) AND status = 'active'
-RETURNING id, workspace_id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at;
+RETURNING id, principal_id, title, status, metadata_json, transcript_json, created_at, updated_at, archived_at;
 
 -- name: GetAgentRunInConversation :one
 SELECT r.id, r.conversation_id, r.status, r.model, r.stop_reason, r.input_tokens, r.output_tokens,

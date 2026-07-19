@@ -398,7 +398,6 @@ model ChatConversationSummary {
   `title`: string;
   `titlePending`?: boolean;
   `updatedAt`: string;
-  `workspaceId`: string;
 }
 
 @apigen.contract(#{ kind: "ui-envelope", tags: #["chat", "envelope"] })

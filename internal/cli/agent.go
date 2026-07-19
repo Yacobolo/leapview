@@ -10,16 +10,18 @@ import (
 	"os"
 	"sort"
 	"text/tabwriter"
+	"time"
 
+	agenttools "github.com/Yacobolo/libredash/internal/agent/tools"
 	"github.com/Yacobolo/libredash/internal/api"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 	apigenagenttool "github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 	"github.com/spf13/cobra"
 )
 
 func agentCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	parent := &cobra.Command{Use: "agent", Short: "Use the LibreDash read-only agent"}
-	parent.PersistentFlags().StringVar(&opts.workspaceID, "workspace", opts.workspaceID, "workspace id")
 	ask := &cobra.Command{
 		Use:   "ask [question]",
 		Short: "Ask the LibreDash read-only agent a question",
@@ -66,21 +68,44 @@ func runAgentAsk(ctx context.Context, opts *rootOptions, question string) error 
 	if conversationID == "" {
 		body, _ := json.Marshal(api.AgentConversationCreateRequest{Title: "CLI conversation"})
 		var conversation api.AgentConversationResponse
-		if err := doJSON(ctx, http.MethodPost, agentConversationEndpoint(target, opts.workspaceID, nil), token, bytes.NewReader(body), &conversation); err != nil {
+		if err := doJSONWithHeaders(ctx, http.MethodPost, agentConversationEndpoint(target, nil), token, map[string]string{"Idempotency-Key": fmt.Sprintf("cli-conversation-%d", time.Now().UnixNano())}, bytes.NewReader(body), &conversation); err != nil {
 			return err
 		}
 		conversationID = conversation.ID
 	}
 	body, _ := json.Marshal(api.AgentTurnRequest{Input: question})
-	var result api.AgentTurnResponse
-	if err := doJSON(ctx, http.MethodPost, agentTurnEndpoint(target, opts.workspaceID, conversationID), token, bytes.NewReader(body), &result); err != nil {
+	var run api.AgentRunResponse
+	if err := doJSONWithHeaders(ctx, http.MethodPost, agentRunEndpoint(target, conversationID, ""), token, map[string]string{"Idempotency-Key": fmt.Sprintf("cli-run-%d", time.Now().UnixNano())}, bytes.NewReader(body), &run); err != nil {
 		return err
 	}
-	if opts.jsonOutput {
-		return json.NewEncoder(os.Stdout).Encode(result)
+	for run.Status == "queued" || run.Status == "running" {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+		if err := doJSON(ctx, http.MethodGet, agentRunEndpoint(target, conversationID, run.ID), token, nil, &run); err != nil {
+			return err
+		}
 	}
-	fmt.Println(result.Content)
-	fmt.Printf("\nconversation=%s run=%s stop=%s\n", result.ConversationID, result.RunID, result.StopReason)
+	var messages apiListResponse[api.AgentMessageResponse]
+	if err := doJSON(ctx, http.MethodGet, agentMessagesEndpoint(target, conversationID), token, nil, &messages); err != nil {
+		return err
+	}
+	content := ""
+	for _, message := range messages.Items {
+		if message.RunID == run.ID && message.Role == "assistant" && message.ContentText != "" {
+			content = message.ContentText
+		}
+	}
+	if opts.jsonOutput {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"conversationId": conversationID, "run": run, "content": content})
+	}
+	fmt.Println(content)
+	fmt.Printf("\nconversation=%s run=%s stop=%s\n", conversationID, run.ID, run.StopReason)
+	if run.Status != "completed" {
+		return fmt.Errorf("agent run ended with status %s: %s", run.Status, run.Error)
+	}
 	return nil
 }
 
@@ -90,7 +115,7 @@ func runAgentConversations(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	var response apiListResponse[api.AgentConversationResponse]
-	if err := doJSON(ctx, http.MethodGet, agentConversationEndpoint(target, opts.workspaceID, paginationQuery(opts)), token, nil, &response); err != nil {
+	if err := doJSON(ctx, http.MethodGet, agentConversationEndpoint(target, paginationQuery(opts)), token, nil, &response); err != nil {
 		return err
 	}
 	rows := response.Items
@@ -116,20 +141,38 @@ func runAgentTools() error {
 	}
 	operationContracts := apigenapi.GetAPIGenOperationContracts()
 	toolContracts := apigenapi.GetAPIGenToolContracts()
-	rows := make([]row, 0, len(toolContracts))
+	definitions := map[string]agentcore.ToolDefinition{}
+	for _, definition := range (agenttools.APIGenProvider{}).Definitions(agenttools.Scope{}) {
+		definitions[definition.Name] = definition
+	}
+	for _, definition := range (agenttools.VisualProvider{}).Definitions(agenttools.Scope{}) {
+		definitions[definition.Name] = definition
+	}
+	rows := make([]row, 0, len(definitions))
 	for _, tool := range toolContracts {
 		contract, ok := operationContracts[tool.OperationID]
 		if !ok {
 			continue
 		}
 		authz, _ := contract.Extensions["x-authz"].(map[string]any)
+		definition := definitions[tool.Name]
 		rows = append(rows, row{
 			name:        tool.Name,
 			operationID: contract.OperationID,
 			privilege:   cliStringFromMap(authz, "privilege"),
 			effect:      string(tool.Effect),
 			defaults:    cliAgentToolDefaults(tool.Bindings),
-			inputSchema: string(tool.InputSchema),
+			inputSchema: string(definition.InputSchema),
+		})
+	}
+	if visual, ok := definitions[agenttools.QueryVisualToolName]; ok {
+		rows = append(rows, row{
+			name:        visual.Name,
+			operationID: "manual",
+			privilege:   "QUERY_DATA",
+			effect:      visual.Effect,
+			defaults:    `{}`,
+			inputSchema: string(visual.InputSchema),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -154,13 +197,24 @@ func cliAgentToolDefaults(bindings []apigenagenttool.Binding) string {
 	return string(encoded)
 }
 
-func agentConversationEndpoint(target, workspaceID string, query url.Values) string {
-	u, _ := apiOperationURL(target, "listAgentConversations", map[string]string{"workspace": workspaceID}, query)
+func agentConversationEndpoint(target string, query url.Values) string {
+	u, _ := apiOperationURL(target, "listAgentConversations", nil, query)
 	return u
 }
 
-func agentTurnEndpoint(target, workspaceID, conversationID string) string {
-	u, _ := apiOperationURL(target, "createAgentTurn", map[string]string{"workspace": workspaceID, "conversation": conversationID}, nil)
+func agentRunEndpoint(target, conversationID, runID string) string {
+	operation := "createAgentRun"
+	params := map[string]string{"conversation": conversationID}
+	if runID != "" {
+		operation = "getAgentRun"
+		params["run"] = runID
+	}
+	u, _ := apiOperationURL(target, operation, params, nil)
+	return u
+}
+
+func agentMessagesEndpoint(target, conversationID string) string {
+	u, _ := apiOperationURL(target, "listAgentMessages", map[string]string{"conversation": conversationID}, nil)
 	return u
 }
 

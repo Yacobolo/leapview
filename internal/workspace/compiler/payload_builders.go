@@ -451,19 +451,6 @@ func workspaceRoleBindingPayload(binding workspace.WorkspaceRoleBinding) workspa
 	}
 }
 
-func workspaceAgentPolicyPayload(policy workspace.AgentPolicy) workspaceAgentPolicyPayloadV1 {
-	return workspaceAgentPolicyPayloadV1{
-		ID:      policy.ID,
-		Name:    policy.Name,
-		Enabled: policy.Enabled,
-		Tools: workspaceAgentPolicyToolsPayloadV1{
-			Allow: append([]string{}, policy.Tools.Allow...),
-			Deny:  append([]string{}, policy.Tools.Deny...),
-		},
-		Instructions: policy.Instructions,
-	}
-}
-
 func pageCanvasPayload(canvas dashboard.PageCanvas) pageCanvasV1 {
 	return pageCanvasV1{Width: canvas.Width, Height: canvas.Height}
 }

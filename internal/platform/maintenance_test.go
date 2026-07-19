@@ -241,10 +241,10 @@ func seedOperationalHistory(t *testing.T, ctx context.Context, store *Store, now
 	}
 	oldArchived := sqliteTime(now.Add(-(181 * 24 * time.Hour)))
 	recentArchived := sqliteTime(now.Add(-(10 * 24 * time.Hour)))
-	if _, err := db.ExecContext(ctx, `INSERT INTO agent_conversations (id, workspace_id, principal_id, title, status, archived_at, created_at, updated_at) VALUES
-		('agent_archived_old', 'sales', 'principal_1', 'Old Archived', 'archived', ?, ?, ?),
-		('agent_archived_recent', 'sales', 'principal_1', 'Recent Archived', 'archived', ?, ?, ?),
-		('agent_active_old', 'sales', 'principal_1', 'Active Old', 'active', NULL, ?, ?)`,
+	if _, err := db.ExecContext(ctx, `INSERT INTO agent_conversations (id, principal_id, title, status, archived_at, created_at, updated_at) VALUES
+		('agent_archived_old', 'principal_1', 'Old Archived', 'archived', ?, ?, ?),
+		('agent_archived_recent', 'principal_1', 'Recent Archived', 'archived', ?, ?, ?),
+		('agent_active_old', 'principal_1', 'Active Old', 'active', NULL, ?, ?)`,
 		oldArchived, oldArchived, oldArchived,
 		recentArchived, recentArchived, recentArchived,
 		oldArchived, oldArchived); err != nil {

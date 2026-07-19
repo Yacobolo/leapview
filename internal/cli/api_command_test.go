@@ -34,7 +34,7 @@ func TestAPICommandCallUsesGeneratedContract(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s", r.Method)
 		}
-		if r.URL.Path != "/api/v1/workspaces/test/agent/conversations/conv_1/runs" {
+		if r.URL.Path != "/api/v1/agent/conversations/conv_1/runs" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if got := r.URL.Query().Get("trace"); got != "1" {

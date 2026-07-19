@@ -262,7 +262,7 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 			t.Fatalf("draft chat stream missing %q:\n%s", want, updatesBody)
 		}
 	}
-	conversations, err := testAgentRepository(store).ListConversations(ctx, "test", principal.ID)
+	conversations, err := testAgentRepository(store).ListConversations(ctx, principal.ID)
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
@@ -304,7 +304,6 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 		t.Fatalf("create owned: %v", err)
 	}
 	if _, err := testAgentRepository(store).AppendMessage(ctx, agent.MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    owner.ID,
 		ConversationID: owned.ID,
 		Role:           agent.MessageRoleUser,
@@ -359,7 +358,6 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, err := testAgentRepository(store).AppendMessage(ctx, agent.MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    owner.ID,
 		ConversationID: conversation.ID,
 		Role:           agent.MessageRoleTool,
@@ -417,7 +415,6 @@ func TestChatConversationRouteQueuesMissingTitleRepair(t *testing.T) {
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, err := testAgentRepository(store).AppendMessage(ctx, agent.MessageInput{
-		WorkspaceID:    "test",
 		PrincipalID:    owner.ID,
 		ConversationID: conversation.ID,
 		Role:           agent.MessageRoleUser,
@@ -464,7 +461,6 @@ func TestChatConversationRouteSkipsTitleRepairForManualAndMultiUserTitles(t *tes
 	}
 	for _, text := range []string{"hello", "again"} {
 		if _, err := testAgentRepository(store).AppendMessage(ctx, agent.MessageInput{
-			WorkspaceID:    "test",
 			PrincipalID:    owner.ID,
 			ConversationID: multi.ID,
 			Role:           agent.MessageRoleUser,
@@ -550,7 +546,7 @@ func TestChatTurnStreamsDatastarSignalsAndPersistsEvents(t *testing.T) {
 			t.Fatalf("turn response leaked raw event %q:\n%s", unwanted, body)
 		}
 	}
-	conversations, err := testAgentRepository(store).ListConversations(ctx, "test", principal.ID)
+	conversations, err := testAgentRepository(store).ListConversations(ctx, principal.ID)
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
@@ -602,7 +598,7 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 	if !strings.Contains(body, "window.location.href") || strings.Contains(body, "window.history.replaceState") {
 		t.Fatalf("draft turn should return backend redirect, got:\n%s", body)
 	}
-	conversations, err := testAgentRepository(store).ListConversations(ctx, "test", principal.ID)
+	conversations, err := testAgentRepository(store).ListConversations(ctx, principal.ID)
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
@@ -837,7 +833,7 @@ func waitForAgentConversationTitle(t *testing.T, store *platform.Store, workspac
 	deadline := time.Now().Add(time.Second)
 	var got string
 	for time.Now().Before(deadline) {
-		conversation, err := testAgentRepository(store).GetConversation(context.Background(), workspaceID, principalID, conversationID)
+		conversation, err := testAgentRepository(store).GetConversation(context.Background(), principalID, conversationID)
 		if err != nil {
 			t.Fatalf("get conversation: %v", err)
 		}

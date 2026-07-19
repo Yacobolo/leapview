@@ -22,5 +22,3 @@ spec:
       - dashboards/*.yaml
   access:
     include: []
-  agentPolicy:
-    include: []

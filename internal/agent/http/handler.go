@@ -18,7 +18,6 @@ import (
 	agentconfig "github.com/Yacobolo/libredash/internal/agent/config"
 	"github.com/Yacobolo/libredash/internal/api"
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
-	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/ui"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
@@ -40,10 +39,7 @@ type Options struct {
 	Settings               Settings
 	CurrentPrincipal       func(*stdhttp.Request) (Principal, bool)
 	CurrentCredential      func(*stdhttp.Request) (access.APICredential, bool)
-	WorkspaceID            func(string) string
-	DefaultWorkspace       string
 	Broker                 *pagestream.Broker
-	CatalogForWorkspace    func(string) dashboard.Catalog
 	CSRFToken              func(*stdhttp.Request) string
 	CurrentRoleLabel       func(*stdhttp.Request) string
 	ChatSignal             func(context.Context, agent.Scope, string, string, bool) ui.ChatViewState
@@ -261,7 +257,7 @@ func (h *Handler) CreateTurn(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	})
 	if err != nil {
 		status := stdhttp.StatusInternalServerError
-		if errors.Is(err, agent.ErrDisabled) || errors.Is(err, agent.ErrPolicyDisabled) {
+		if errors.Is(err, agent.ErrDisabled) {
 			status = stdhttp.StatusServiceUnavailable
 		} else if agent.IsBusy(err) {
 			status = stdhttp.StatusConflict
@@ -302,7 +298,7 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	if err != nil {
 		status := stdhttp.StatusInternalServerError
 		switch {
-		case errors.Is(err, agent.ErrDisabled), errors.Is(err, agent.ErrPolicyDisabled):
+		case errors.Is(err, agent.ErrDisabled):
 			status = stdhttp.StatusServiceUnavailable
 		case agent.IsBusy(err):
 			status = stdhttp.StatusConflict
@@ -320,7 +316,7 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Location", "/api/v1/workspaces/"+scope.WorkspaceID+"/agent/conversations/"+started.ConversationID+"/runs/"+started.RunID)
+	w.Header().Set("Location", "/api/v1/agent/conversations/"+started.ConversationID+"/runs/"+started.RunID)
 	if h.options.EnqueueRun == nil {
 		_ = started.Abort(context.Background(), fmt.Errorf("durable agent queue is unavailable"))
 		writeJSONError(w, fmt.Errorf("durable agent queue is unavailable"), stdhttp.StatusServiceUnavailable)
@@ -353,7 +349,7 @@ func (h *Handler) CancelRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 				writeJSONError(w, err, stdhttp.StatusInternalServerError)
 				return
 			}
-			w.Header().Set("Location", "/api/v1/workspaces/"+scope.WorkspaceID+"/agent/conversations/"+conversationID+"/runs/"+runID)
+			w.Header().Set("Location", "/api/v1/agent/conversations/"+conversationID+"/runs/"+runID)
 			writeJSON(w, stdhttp.StatusAccepted, agentRunDTO(run, scope))
 			return
 		}
@@ -371,7 +367,7 @@ func (h *Handler) CancelRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Location", "/api/v1/workspaces/"+scope.WorkspaceID+"/agent/conversations/"+conversationID+"/runs/"+runID)
+	w.Header().Set("Location", "/api/v1/agent/conversations/"+conversationID+"/runs/"+runID)
 	writeJSON(w, stdhttp.StatusAccepted, agentRunDTO(run, scope))
 }
 
@@ -581,7 +577,7 @@ func (h *Handler) AdminDetails(ctx context.Context) (api.AdminAgentResponse, err
 	}
 	if h.options.Service != nil {
 		out.Model = h.options.Service.Model()
-		out.Tools = adminAgentToolDTOs(h.options.Service.ToolDefinitions(agent.Scope{WorkspaceID: h.options.DefaultWorkspace, PrincipalID: "admin", DevAuthBypass: true}))
+		out.Tools = adminAgentToolDTOs(h.options.Service.ToolDefinitions(agent.Scope{PrincipalID: "admin", DevAuthBypass: true}))
 	}
 	return out, nil
 }
@@ -601,7 +597,6 @@ func (h *Handler) agentRequest(w stdhttp.ResponseWriter, r *stdhttp.Request) (*a
 		return nil, agent.Scope{}, false
 	}
 	scope := agent.Scope{
-		WorkspaceID:   h.workspaceID(chi.URLParam(r, "workspace")),
 		PrincipalID:   principal.ID,
 		DevAuthBypass: principal.DevAuthBypass,
 	}
@@ -625,13 +620,6 @@ func (h *Handler) SystemPrompt(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return agentconfig.NormalizeSystemPrompt(prompt)
-}
-
-func (h *Handler) workspaceID(candidate string) string {
-	if h.options.WorkspaceID != nil {
-		return h.options.WorkspaceID(candidate)
-	}
-	return candidate
 }
 
 type adminAgentCommandSignals struct {
@@ -664,7 +652,6 @@ func privilegeStrings(values []access.Privilege) []string {
 func agentConversationDTO(row agent.Conversation) api.AgentConversationResponse {
 	out := api.AgentConversationResponse{
 		ID:          row.ID,
-		WorkspaceID: row.WorkspaceID,
 		PrincipalID: row.PrincipalID,
 		Title:       row.Title,
 		Status:      row.Status,
@@ -679,7 +666,6 @@ func agentRunDTO(row agent.Run, scope agent.Scope) api.AgentRunResponse {
 	return api.AgentRunResponse{
 		ID:             row.ID,
 		ConversationID: row.ConversationID,
-		WorkspaceID:    scope.WorkspaceID,
 		PrincipalID:    scope.PrincipalID,
 		Status:         row.Status,
 		Model:          row.Model,

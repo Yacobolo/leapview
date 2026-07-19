@@ -1,10 +1,10 @@
 # Agent integrations
 
-LibreDash agents operate inside a workspace and use a policy-controlled tool catalog. They reuse active dashboards and semantic models and do not bypass authorization, data policies, or the governed query layer.
+LibreDash conversations are global and owned by the authenticated principal. Workspaces are asset containers: a workspace-aware tool requires an explicit `workspace` argument, then enforces the bearer credential's workspace restriction, the principal's privileges, data policies, and the governed query layer.
 
-## Configure the model provider
+## Configure the built-in model provider
 
-The server uses an OpenAI-compatible provider configuration:
+The built-in chat surface uses an OpenAI-compatible provider configuration:
 
 ```sh
 LIBREDASH_AGENT_BASE_URL=https://api.openai.com/v1
@@ -12,75 +12,39 @@ LIBREDASH_AGENT_MODEL=<model-id>
 LIBREDASH_AGENT_API_KEY=<secret>
 ```
 
-Store the API key in the deployment secret manager. Provider prompts and responses may contain business context; review the provider's data handling, retention, regional, and contractual requirements before enabling the feature.
+Store the API key in the deployment secret manager. The global administrator-controlled system prompt is configured in the agent administration page. Provider prompts and responses may contain business context; review the provider's data handling, retention, regional, and contractual requirements before enabling it.
 
-## Define workspace policy
-
-Create a `WorkspaceAgentPolicy` discovered by the workspace:
-
-```yaml
-apiVersion: libredash.dev/v1
-kind: WorkspaceAgentPolicy
-metadata:
-  workspace: sales
-  name: default
-spec:
-  enabled: true
-  tools:
-    allow:
-      - list_dashboards
-      - describe_dashboard
-      - query_dashboard_page
-      - list_semantic_models
-      - describe_model
-      - query_semantic_dataset
-      - explain_semantic_query
-    deny: []
-  instructions: Use the sales workspace semantic models for revenue and order questions. Cite the dashboard or semantic result used.
-```
-
-Allow only tools needed for the workspace use case. The current built-in surface is analytical and discovery-oriented; keep any future write-capable or administrative tools in a separately reviewed privilege boundary.
-
-Instructions guide behavior but are not an authorization control. The server must still enforce tool allowlists, principal privileges, data policy, and resource identity.
+The MCP endpoint does not depend on this provider configuration. External MCP hosts can use LibreDash tools when the built-in model is disabled.
 
 ## Ask through the CLI
 
 ```sh
 libredash agent ask \
-  --workspace sales \
   --target "$LIBREDASH_TARGET" \
   --token "$LIBREDASH_API_TOKEN" \
-  "Which categories contributed most to revenue?"
+  "Which categories contributed most to revenue in the sales workspace?"
 ```
 
-The command returns conversation/run output. Use `--conversation <id>` to continue an existing conversation and `--json` for machine processing. List conversations with bounded pagination through `libredash agent conversations`.
+Use `--conversation <id>` to continue an existing principal-owned conversation and `--json` for machine processing. List conversations with bounded pagination through `libredash agent conversations`. The CLI follows the asynchronous run to a terminal state.
 
-For automation, follow terminal run state rather than assuming the first response contains the complete answer. Preserve conversation and run IDs for correlation.
+## Integrate through REST
 
-## Integrate through the API
+The generated [Agent API](/docs/api/agent) is rooted at `/api/v1/agent` and exposes global conversation creation, update, archive, messages, runs, and run events. The removed `/api/v1/workspaces/{workspace}/agent` routes have no compatibility aliases.
 
-The generated [Agent API](/docs/api/agent) exposes conversation creation/update/archive, messages, runs, run events, and turns. A typical client:
+A typical client creates or selects a conversation, starts a run, records its identity, follows the run/event surface to a documented terminal state, renders the assistant message and tool evidence, and archives conversations according to retention policy. List endpoints use opaque pagination tokens.
 
-1. creates or selects a workspace conversation;
-2. posts a turn;
-3. records the returned run identity;
-4. polls or consumes the supported run/event surface;
-5. stops at a documented terminal state;
-6. renders the assistant message and tool evidence;
-7. archives conversations according to policy.
+## Integrate through MCP
 
-List endpoints use opaque pagination tokens. Do not assume every transient event is retained forever or that events arrive as a complete global ordering across separate runs.
+Connect a Streamable HTTP MCP client to `/mcp` and send an existing LibreDash API token as a bearer credential. LibreDash implements the 2025-11-25 protocol with stateless JSON responses and exposes tools only—no resources, prompts, nested conversation tools, or stdio transport.
 
-## Validate answers
+MCP and built-in chat consume the same catalog, schemas, handlers, authorization, projections, audit path, and execution errors. Successful tool calls return both `structuredContent` and equivalent JSON text. MCP access requires `USE_AGENT`; each tool additionally requires its generated resource privilege. Workspace-bound tokens may call tools only for their bound workspace.
 
-Natural-language output is not a replacement for governed results. Present tool evidence, resource identity, filters, and relevant time/deployment context so a user can validate the claim. Use deterministic semantic or dashboard queries for automated decisions that cannot tolerate interpretive variation.
+Browser sessions are not accepted at `/mcp`. Cross-origin requests are rejected. OAuth-based MCP authorization is outside the current surface.
 
-Test refusal and empty-result behavior, policy-denied tools, unauthorized data, ambiguous questions, provider timeouts, cancelled runs, and active deployment changes.
+## Validate answers and operate safely
 
-## Security and operations
+Natural-language output is not a replacement for governed results. Present tool evidence, resource identity, filters, and relevant time or deployment context so a user can validate claims. Use deterministic semantic or dashboard queries for automated decisions that cannot tolerate interpretive variation.
 
-Give agent users only `USE_AGENT`/view and query privileges required for the workspace. Audit conversation and tool activity where events are emitted. Apply bounded retention with `libredash admin maintenance`; archived conversations should not remain indefinitely by accident.
+Test empty results, authorization failures, workspace-bound credentials, ambiguous questions, provider timeouts, cancelled runs, and active deployment changes. Audit conversation and tool activity, apply bounded retention with `libredash admin maintenance`, and never log provider API keys or raw sensitive prompts into general diagnostics.
 
-Monitor provider latency, failures, token/cost usage where available, run duration, tool errors, and repeated policy denial. Never log provider API keys or raw sensitive prompts into general diagnostics.
-
-See [Workspace Agent Policy configuration](/docs/config/workspace-agent-policy), [Service principals and API tokens](/docs/security/tokens), and the generated [`agent` CLI reference](/docs/cli/agent).
+See [Service principals and API tokens](/docs/security/tokens) and the generated [`agent` CLI reference](/docs/cli/agent).

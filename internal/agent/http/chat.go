@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/ui"
@@ -36,17 +35,6 @@ type ChatTurnExecution struct {
 	ClientID           string
 	LiveConversations  []ui.ChatConversationSummary
 	Emit               ChatTurnEmitter
-}
-
-func ConversationObjectRefs(r *nethttp.Request, workspaceID string) []access.ObjectRef {
-	objects := []access.ObjectRef{}
-	if conversationID := strings.TrimSpace(chi.URLParam(r, "conversation")); conversationID != "" {
-		objects = append(objects, access.ItemObjectWithParent(access.SecurableAgentPolicy, workspaceID, "conversation/"+conversationID, access.WorkspaceObject(workspaceID)))
-	}
-	if strings.TrimSpace(workspaceID) != "" {
-		objects = append(objects, access.WorkspaceObject(workspaceID))
-	}
-	return objects
 }
 
 func (h *Handler) Chat(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -113,7 +101,7 @@ func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	scope := h.chatScope(r)
 	signal, view := h.chatBootstrapSignal(r, scope)
 	workspaceID := ""
-	catalog := h.catalogForWorkspace(h.chatDefaultWorkspaceID())
+	catalog := dashboard.Catalog{}
 	streamID := chatStreamID(scope, chatClientID(r))
 	var trace *pagestream.TraceStore
 	if h.options.Broker != nil {
@@ -135,7 +123,7 @@ func (h *Handler) renderChat(w nethttp.ResponseWriter, r *nethttp.Request, view 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
 	workspaceID := ""
-	catalog := h.catalogForWorkspace(h.chatDefaultWorkspaceID())
+	catalog := dashboard.Catalog{}
 	if err := ui.ChatPage(catalog, workspaceID, h.csrfToken(r), h.currentRoleLabel(r), view, signal).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
@@ -157,7 +145,7 @@ func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Reques
 		return
 	}
 	go h.completeDraftChatTurn(service, scope, clientID, started)
-	_ = pagestream.Redirect(w, r, chatRoutePath(scope.WorkspaceID, conversation.ID))
+	_ = pagestream.Redirect(w, r, chatRoutePath(conversation.ID))
 }
 
 func (h *Handler) completeDraftChatTurn(service *agent.Service, scope agent.Scope, clientID string, started *agent.StartedPrompt) {
@@ -253,7 +241,13 @@ func (h *Handler) chatScope(r *nethttp.Request) agent.Scope {
 			devBypass = principal.DevAuthBypass
 		}
 	}
-	return agent.Scope{PrincipalID: principalID, DevAuthBypass: devBypass}
+	scope := agent.Scope{PrincipalID: principalID, DevAuthBypass: devBypass}
+	if h.options.CurrentCredential != nil {
+		if credential, ok := h.options.CurrentCredential(r); ok {
+			scope.Credential = agentCredentialScope(credential)
+		}
+	}
+	return scope
 }
 
 func (h *Handler) chatSignal(ctx context.Context, scope agent.Scope, activeID, statusErr string, running bool) ui.ChatViewState {
@@ -275,13 +269,6 @@ func (h *Handler) chatConversations(ctx context.Context, scope agent.Scope) []ui
 	return signal.Agent.Conversations
 }
 
-func (h *Handler) catalogForWorkspace(workspaceID string) dashboard.Catalog {
-	if h.options.CatalogForWorkspace == nil {
-		return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspaceID}}
-	}
-	return h.options.CatalogForWorkspace(workspaceID)
-}
-
 func (h *Handler) csrfToken(r *nethttp.Request) string {
 	if h.options.CSRFToken == nil {
 		return ""
@@ -294,13 +281,6 @@ func (h *Handler) currentRoleLabel(r *nethttp.Request) string {
 		return ""
 	}
 	return h.options.CurrentRoleLabel(r)
-}
-
-func (h *Handler) chatDefaultWorkspaceID() string {
-	if strings.TrimSpace(h.options.DefaultWorkspace) != "" {
-		return h.options.DefaultWorkspace
-	}
-	return h.workspaceID("")
 }
 
 func chatTurnStatusError(err error) string {
@@ -321,7 +301,7 @@ func chatSignalPatch(signal ui.ChatViewState) pagestream.SignalPatch {
 	}
 }
 
-func chatRoutePath(_ string, parts ...string) string {
+func chatRoutePath(parts ...string) string {
 	path := "/chats"
 	for _, part := range parts {
 		part = strings.Trim(part, "/")
@@ -344,5 +324,5 @@ func chatStreamID(scope agent.Scope, clientID string) string {
 	if strings.TrimSpace(clientID) == "" {
 		clientID = "default"
 	}
-	return "chat:" + clientID + ":" + scope.WorkspaceID + ":" + scope.PrincipalID
+	return "chat:" + clientID + ":" + scope.PrincipalID
 }

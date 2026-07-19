@@ -54,9 +54,6 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 	if !s.Enabled() {
 		return nil, ErrDisabled
 	}
-	if policy, ok := s.policyForScope(input.Scope); ok && !policy.Enabled {
-		return nil, ErrPolicyDisabled
-	}
 	if s.repo == nil {
 		return nil, fmt.Errorf("agent store is required")
 	}
@@ -73,7 +70,7 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		}
 	}()
 
-	conversation, err := s.repo.GetConversation(ctx, input.Scope.WorkspaceID, input.Scope.PrincipalID, input.ConversationID)
+	conversation, err := s.repo.GetConversation(ctx, input.Scope.PrincipalID, input.ConversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +84,6 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 	}
 	runID := newID("run")
 	run, err := s.repo.CreateRun(ctx, RunInput{
-		WorkspaceID:    input.Scope.WorkspaceID,
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
 		RunID:          runID,
@@ -139,9 +135,6 @@ func (s *Service) ResumePrompt(ctx context.Context, scope Scope, conversationID,
 	if !s.Enabled() {
 		return nil, ErrDisabled
 	}
-	if policy, ok := s.policyForScope(scope); ok && !policy.Enabled {
-		return nil, ErrPolicyDisabled
-	}
 	if s.repo == nil {
 		return nil, fmt.Errorf("agent store is required")
 	}
@@ -158,14 +151,14 @@ func (s *Service) ResumePrompt(ctx context.Context, scope Scope, conversationID,
 			s.release(conversationID)
 		}
 	}()
-	run, err := s.repo.GetRun(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID, runID)
+	run, err := s.repo.GetRun(ctx, scope.PrincipalID, conversationID, runID)
 	if err != nil {
 		return nil, err
 	}
 	if run.Status != RunStatusRunning {
 		return nil, fmt.Errorf("run %q is not resumable from status %q", runID, run.Status)
 	}
-	conversation, err := s.repo.GetConversation(ctx, scope.WorkspaceID, scope.PrincipalID, conversationID)
+	conversation, err := s.repo.GetConversation(ctx, scope.PrincipalID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +368,6 @@ func (s *Service) appendMessage(ctx context.Context, input PromptInput, runID st
 		return nil
 	}
 	row, err := s.repo.AppendMessage(ctx, MessageInput{
-		WorkspaceID:    input.Scope.WorkspaceID,
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
 		RunID:          runID,
@@ -397,7 +389,7 @@ func (s *Service) persistTranscript(ctx context.Context, input PromptInput, tran
 	if err != nil {
 		return err
 	}
-	_, err = s.repo.UpdateConversationTranscript(ctx, input.Scope.WorkspaceID, input.Scope.PrincipalID, input.ConversationID, string(bytes))
+	_, err = s.repo.UpdateConversationTranscript(ctx, input.Scope.PrincipalID, input.ConversationID, string(bytes))
 	return err
 }
 
@@ -416,7 +408,6 @@ func (s *Service) finishRun(ctx context.Context, input PromptInput, runID, statu
 		errText = runErr.Error()
 	}
 	_, err := s.repo.FinishRun(ctx, RunFinish{
-		WorkspaceID:    input.Scope.WorkspaceID,
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
 		RunID:          runID,

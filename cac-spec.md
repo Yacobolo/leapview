@@ -270,9 +270,6 @@ spec:
   access:
     include:
       - access/*.yaml
-  agentPolicy:
-    include:
-      - agent/*.yaml
 ```
 
 `spec.uses.sources` is an allowlist. Workspace model tables must not read sources
@@ -390,37 +387,13 @@ Rules:
 Global admin UI must not imply that users belong to one workspace. Workspace
 access UI manages workspace role bindings.
 
-## Agent Policy
+## Agent configuration
 
-Workspace agent policy is authored with workspace-local resources. Provider
-credentials, model choice, and base URL remain runtime configuration.
-
-```yaml
-apiVersion: libredash.dev/v1
-kind: WorkspaceAgentPolicy
-metadata:
-  workspace: sales
-  name: default
-spec:
-  enabled: true
-  tools:
-    allow:
-      - search_workspace
-      - list_assets
-      - query_visual
-    deny: []
-  instructions: "Answer from sales workspace assets."
-```
-
-Rules:
-
-- `Workspace.spec.agentPolicy.include` is required and may be empty.
-- `enabled: false` disables chat turns for the workspace.
-- Chat routes are workspace-scoped: `/workspaces/{workspace}/chat...`.
-- Empty `tools.allow` means all read-only BI tools are eligible.
-- `tools.deny` is applied after `tools.allow`.
-- `tools.allow` and `tools.deny` must not contain the same tool.
-- `instructions` are appended after the built-in safety prompt.
+Agent provider credentials, model choice, and the administrator-controlled
+system prompt are global runtime configuration. Conversations are owned by a
+principal. A workspace is selected only by an explicit argument to a
+workspace-aware tool, and every tool call enforces credential and resource
+authorization for that workspace.
 
 ## Environments
 

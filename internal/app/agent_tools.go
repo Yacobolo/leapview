@@ -15,43 +15,30 @@ import (
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
-	"github.com/Yacobolo/libredash/internal/workspace"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 )
 
 func (s *Server) configureAgentTools() {
+	if s.agent != nil && s.store != nil {
+		s.agent.SetSystemPromptProvider(s.agentSystemPrompt)
+	}
 	if s.agent == nil {
 		return
 	}
-	if s.store != nil {
-		s.agent.SetSystemPromptProvider(s.agentSystemPrompt)
-	}
-	s.agent.SetPolicyProvider(s.agentPolicyForScope)
-	visualProvider := s.agentVisualToolProvider()
-	apigenProvider := s.agentAPIGenToolProvider()
 	s.agent.AppendToolProviders(
 		func(scope agentcap.Scope) []agentcore.ToolDefinition {
-			return visualProvider.Definitions(agentToolsScope(scope))
-		},
-		func(scope agentcap.Scope) []agentcore.ToolDefinition {
-			return apigenProvider.Definitions(agentToolsScope(scope))
+			return s.agentToolDefinitions(scope)
 		},
 	)
 }
 
-func (s *Server) agentPolicyForScope(scope agentcap.Scope) (workspace.AgentPolicy, bool) {
-	if strings.TrimSpace(scope.WorkspaceID) == "" {
-		return workspace.DefaultAgentPolicy(), true
-	}
-	metrics, ok := s.metricsForWorkspace(scope.WorkspaceID)
-	if !ok || metrics == nil {
-		return workspace.AgentPolicy{}, false
-	}
-	provider, ok := metrics.(agentPolicyProvider)
-	if !ok {
-		return workspace.AgentPolicy{}, false
-	}
-	return provider.AgentPolicy(), true
+// agentToolDefinitions is the single governed tool catalog consumed by the
+// built-in agent and protocol adapters such as MCP.
+func (s *Server) agentToolDefinitions(scope agentcap.Scope) []agentcore.ToolDefinition {
+	toolScope := agentToolsScope(scope)
+	definitions := s.agentVisualToolProvider().Definitions(toolScope)
+	definitions = append(definitions, s.agentAPIGenToolProvider().Definitions(toolScope)...)
+	return definitions
 }
 
 func (s *Server) agentVisualToolProvider() agenttools.VisualProvider {
@@ -104,6 +91,21 @@ func (s *Server) agentAPIGenToolProvider() agenttools.APIGenProvider {
 				principal = localDeveloperPrincipal()
 			}
 			ctx := context.WithValue(request.Context(), principalContextKey{}, principal)
+			if scope.Credential.Restricted || scope.Credential.WorkspaceID != "" || len(scope.Credential.Privileges) > 0 {
+				privileges := make([]access.Privilege, 0, len(scope.Credential.Privileges))
+				for _, privilege := range scope.Credential.Privileges {
+					privileges = append(privileges, access.Privilege(privilege))
+				}
+				credential := access.APICredential{
+					Principal: access.Principal{ID: scope.PrincipalID},
+					Token: access.APIToken{
+						PrincipalID: scope.PrincipalID,
+						WorkspaceID: scope.Credential.WorkspaceID,
+						Privileges:  privileges,
+					},
+				}
+				ctx = context.WithValue(ctx, apiCredentialContextKey{}, credential)
+			}
 			request = request.WithContext(ctx)
 			recorder := httptest.NewRecorder()
 			if ok := apigenapi.DispatchAPIGenOperation(operationID, apiGenAdapter{server: s}, apiGenTransportErrorResponder{server: s}, recorder, request); !ok {
@@ -162,6 +164,9 @@ func (s *Server) authorizeAgentPrivilege(ctx context.Context, scope agentcap.Sco
 		return agenttools.ToolError("unauthorized", "agent tool requires an authenticated principal"), false
 	}
 	if !agentCredentialAllowsPrivilege(scope, privilege) {
+		if repo, err := s.accessRepository(); err == nil && repo != nil {
+			recordAgentToolAudit(ctx, repo, scope, privilege, targetType, targetID, "denied", fmt.Errorf("credential restriction"))
+		}
 		return agenttools.ToolError("forbidden", "credential is not allowed to call this tool"), false
 	}
 	if scope.DevAuthBypass {

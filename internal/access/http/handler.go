@@ -2069,7 +2069,6 @@ func validWorkspaceSecurableType(typ access.SecurableType) bool {
 		access.SecurableSemanticField,
 		access.SecurableSource,
 		access.SecurableModelTable,
-		access.SecurableAgentPolicy,
 		access.SecurableDataset,
 		access.SecurableTable,
 		access.SecurableColumn:

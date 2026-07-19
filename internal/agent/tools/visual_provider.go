@@ -86,9 +86,12 @@ func (p VisualProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 		inputSchema = requireToolStringProperty(inputSchema, "workspace")
 	}
 	return []agentcore.ToolDefinition{{
-		Name:        agentVisualToolName,
-		Description: "Create one read-only chart or BI table artifact from LibreDash semantic model fields. Data is queried from semantic models; do not provide inline data.",
-		InputSchema: inputSchema,
+		Name:         agentVisualToolName,
+		Description:  "Create one read-only chart or BI table artifact from LibreDash semantic model fields. Data is queried from semantic models; do not provide inline data.",
+		InputSchema:  inputSchema,
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"id":{"type":"string"},"patch":{"type":"object"},"summary":{"type":"string"}},"required":["kind","id","patch","summary"],"additionalProperties":false}`),
+		Effect:       "read",
+		Tags:         []string{"analytics", "visualization"},
 		Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
 			return p.Run(ctx, scope, call), nil
 		}),
